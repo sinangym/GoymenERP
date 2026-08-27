@@ -41,6 +41,7 @@ jobs:
           issue = os.environ['ISSUE_NUMBER']
           token = os.environ['GH_TOKEN']
           expected_archive_sha = os.environ['EXPECTED_ARCHIVE_SHA256']
+
           expected_chunk_sha = {
               0: 'bd333f9425d2e31c95d23c455dc57b500c0d92fa9fb7c750f54a510b9d66a47b',
               1: '412dce7eaebdd21e95c02b80e83b2e5dcb46e512a224e393a89751b4cb4cf59a',
@@ -49,6 +50,12 @@ jobs:
               4: 'c755c985536b509b7a754fac4fe9d37ca9b0ba36c5274cc9f7b42057e128d7c3',
               5: '4560fd3929f2d5851b1040dd5e83897d1c8e859701d583cced46cb6927854c81',
               6: 'c6eff5c0ad0826df8df6d31f405fd570fa8970f1961d5b43c5cf73d10a5b4691',
+          }
+          expected_chunk2_part_sha = {
+              0: 'f7ef1a7f758d8d1241e01d42af843cf7ba3b471cca0ba6d3cd3dfcf58d983e48',
+              1: '7e81acf675f3e586aa17b7599600f8d1b732a50da9744f44f5bd84f1d64e3bde',
+              2: '4a190cd6adbb740aca1298338a46b1883a3f2421baffdc551a6a06fc03451421',
+              3: '580982117aca94e6b20b17cfb927b38e355f7df9b4811cb616ba23bb991e444e',
           }
 
           request = urllib.request.Request(
@@ -63,26 +70,49 @@ jobs:
               comments = json.load(response)
 
           chunks = {}
+          chunk2_parts = {}
           candidates = {}
+
           for item in comments:
               body = item.get('body') or ''
+
               match = re.match(
                   r'^GOYMEN_SEED_XZ2_CHUNK\s+(\d{2})/06\n([A-Za-z0-9+/=]+)\s*$',
                   body,
               )
-              if not match:
+              if match:
+                  index = int(match.group(1))
+                  payload = match.group(2)
+                  digest = hashlib.sha256(payload.encode('ascii')).hexdigest()
+                  candidates.setdefault(f'chunk-{index}', []).append((len(payload), digest))
+                  if expected_chunk_sha.get(index) == digest:
+                      chunks[index] = payload
                   continue
-              index = int(match.group(1))
-              payload = match.group(2)
-              digest = hashlib.sha256(payload.encode('ascii')).hexdigest()
-              candidates.setdefault(index, []).append((len(payload), digest))
-              if expected_chunk_sha.get(index) == digest:
-                  chunks[index] = payload
+
+              part_match = re.match(
+                  r'^GOYMEN_SEED_XZ2_CHUNK2_PART\s+(\d)/03\n([A-Za-z0-9+/=]+)\s*$',
+                  body,
+              )
+              if part_match:
+                  part_index = int(part_match.group(1))
+                  payload = part_match.group(2)
+                  digest = hashlib.sha256(payload.encode('ascii')).hexdigest()
+                  candidates.setdefault(f'chunk-2-part-{part_index}', []).append((len(payload), digest))
+                  if expected_chunk2_part_sha.get(part_index) == digest:
+                      chunk2_parts[part_index] = payload
+
+          if 2 not in chunks and sorted(chunk2_parts) == [0, 1, 2, 3]:
+              rebuilt_chunk2 = ''.join(chunk2_parts[index] for index in range(4))
+              rebuilt_digest = hashlib.sha256(rebuilt_chunk2.encode('ascii')).hexdigest()
+              if rebuilt_digest != expected_chunk_sha[2]:
+                  raise SystemExit(f'Rebuilt chunk 2 checksum mismatch: {rebuilt_digest}')
+              chunks[2] = rebuilt_chunk2
 
           expected_indexes = list(range(7))
           if sorted(chunks) != expected_indexes:
               raise SystemExit(
-                  f'No verified complete chunk set. verified={sorted(chunks)}, candidates={candidates}'
+                  f'No verified complete chunk set. verified={sorted(chunks)}, '
+                  f'chunk2_parts={sorted(chunk2_parts)}, candidates={candidates}'
               )
 
           archive_bytes = base64.b64decode(
