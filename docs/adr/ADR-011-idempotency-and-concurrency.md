@@ -63,8 +63,9 @@ project-reference kenarına izin verir:
 İstisna `docs/architecture/MODULE_DEPENDENCY_ALLOWLIST.json` içinde bu ADR'ye bağlıdır.
 Organization'dan Idempotency Domain'e ayrıca doğrudan project reference verilmez;
 başka Idempotency Infrastructure servisine erişim veya kenarın genişletilmesi bu kararın
-kapsamında değildir. Architecture dependency guard, allowlist dışındaki ve artık gerçek
-grafikte bulunmayan stale kenarları reddeder.
+kapsamında değildir. Architecture dependency guard, allowlist dışındaki modüller arası
+Domain/Infrastructure hedeflerini ve artık gerçek grafikte bulunmayan stale istisnaları
+reddeder; Application contract kullanımı bu istisna listesine alınmaz.
 
 ## Migration ve rollback
 

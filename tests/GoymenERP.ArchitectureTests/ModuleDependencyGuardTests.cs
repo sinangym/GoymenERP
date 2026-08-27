@@ -10,11 +10,11 @@ public sealed class ModuleDependencyGuardTests
         "docs/architecture/MODULE_DEPENDENCY_ALLOWLIST.json";
 
     [Fact]
-    public void Cross_module_project_references_match_exact_allowlist()
+    public void Restricted_cross_module_project_references_match_exact_allowlist()
     {
         var repositoryRoot = FindRepositoryRoot();
         var modulesRoot = Path.Combine(repositoryRoot, "src", "backend", "Modules");
-        var actualEdges = ReadCrossModuleEdges(repositoryRoot, modulesRoot);
+        var actualEdges = ReadRestrictedCrossModuleEdges(repositoryRoot, modulesRoot);
         var allowlist = ReadAllowlist(repositoryRoot);
 
         Assert.Equal(1, allowlist.SchemaVersion);
@@ -52,16 +52,31 @@ public sealed class ModuleDependencyGuardTests
     }
 
     [Fact]
-    public void Unlisted_cross_module_project_reference_is_rejected()
+    public void Unlisted_cross_module_infrastructure_reference_is_rejected()
     {
         var actualEdges = new[]
         {
-            new DependencyEdge("Modules/Sales/Sales.csproj", "Modules/Stock/Stock.csproj")
+            new DependencyEdge(
+                "Modules/Sales/Sales.Infrastructure.csproj",
+                "Modules/Stock/Stock.Infrastructure.csproj")
         };
 
         var validationErrors = ValidateDependencyGraph(actualEdges, Array.Empty<DependencyEdge>());
 
-        Assert.Contains("Unauthorized cross-module project references", validationErrors.Single());
+        Assert.Contains(
+            "Unauthorized restricted cross-module project references",
+            validationErrors.Single());
+    }
+
+    [Theory]
+    [InlineData("GoymenERP.Modules.Stock.Application.csproj", false)]
+    [InlineData("GoymenERP.Modules.Stock.Domain.csproj", true)]
+    [InlineData("GoymenERP.Modules.Stock.Infrastructure.csproj", true)]
+    public void Only_domain_and_infrastructure_targets_require_an_explicit_allowlist(
+        string targetProject,
+        bool expected)
+    {
+        Assert.Equal(expected, IsRestrictedCrossModuleTarget(targetProject));
     }
 
     [Fact]
@@ -91,7 +106,7 @@ public sealed class ModuleDependencyGuardTests
         if (unauthorizedEdges.Length > 0)
         {
             validationErrors.Add(
-                "Unauthorized cross-module project references:\n"
+                "Unauthorized restricted cross-module project references:\n"
                 + string.Join("\n", unauthorizedEdges.Select(edge => $"- {edge}")));
         }
 
@@ -105,7 +120,7 @@ public sealed class ModuleDependencyGuardTests
         return validationErrors;
     }
 
-    private static SortedSet<DependencyEdge> ReadCrossModuleEdges(
+    private static SortedSet<DependencyEdge> ReadRestrictedCrossModuleEdges(
         string repositoryRoot,
         string modulesRoot)
     {
@@ -144,6 +159,11 @@ public sealed class ModuleDependencyGuardTests
                     continue;
                 }
 
+                if (!IsRestrictedCrossModuleTarget(targetPath))
+                {
+                    continue;
+                }
+
                 edges.Add(new DependencyEdge(
                     ToRepositoryPath(repositoryRoot, projectPath),
                     ToRepositoryPath(repositoryRoot, targetPath)));
@@ -151,6 +171,13 @@ public sealed class ModuleDependencyGuardTests
         }
 
         return edges;
+    }
+
+    private static bool IsRestrictedCrossModuleTarget(string targetProjectPath)
+    {
+        var projectName = Path.GetFileNameWithoutExtension(targetProjectPath);
+        return projectName.EndsWith(".Domain", StringComparison.Ordinal)
+               || projectName.EndsWith(".Infrastructure", StringComparison.Ordinal);
     }
 
     private static DependencyAllowlist ReadAllowlist(string repositoryRoot)

@@ -48,9 +48,9 @@ audit ve command result birlikte rollback olur.
 
 ## Doğrulama
 
-- Release backend: **57/57** (56 çözüm testi + ayrı gerçek SQL kabul testi).
+- Release backend: **60/60** (59 çözüm testi + ayrı gerçek SQL kabul testi).
   - Idempotency unit: 3/3.
-  - Architecture dependency guard: 3/3.
+  - Architecture dependency guard: 6/6.
   - Organization unit: 12/12.
   - Identity unit: 7/7.
   - Audit unit: 5/5.
@@ -67,6 +67,11 @@ audit ve command result birlikte rollback olur.
   farklı-key concurrency, `rowversion`, atomik rollback ve `51010` doğrulandı.
 - Dört idempotent migration scripti yeniden üretildi; API ve web container image'ları
   güncel kaynakla başarılı oluşturuldu.
+
+ERP-000E, global `AT-005` için beklenen/mevcut sürüm backend contract'ını otomatik
+kanıtlar. Çatışma farkının gerçek kullanıcı arayüzünde gösterilmesi ve E2E kanıtı bu
+platform görevinin kapsamında değildir; bu nedenle global `AT-005` durumu `Taslak`
+kalmaya devam eder.
 
 ## Açık sınır ve sonraki kapı
 

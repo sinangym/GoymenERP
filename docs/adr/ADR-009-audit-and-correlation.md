@@ -91,7 +91,9 @@ atomiklik kararı yalnız aşağıdaki exact project-reference kenarına izin ve
 İstisna `docs/architecture/MODULE_DEPENDENCY_ALLOWLIST.json` içinde bu ADR'ye bağlıdır.
 Başka Audit Infrastructure servisine erişim, başka modül tablosuna doğrudan yazma veya
 kenarın genişletilmesi bu kararın kapsamında değildir. Architecture dependency guard,
-allowlist dışındaki ve artık gerçek grafikte bulunmayan stale kenarları reddeder.
+allowlist dışındaki modüller arası Domain/Infrastructure hedeflerini ve artık gerçek
+grafikte bulunmayan stale istisnaları reddeder; Application contract kullanımı bu
+istisna listesine alınmaz.
 
 ## Migration ve geri alma
 

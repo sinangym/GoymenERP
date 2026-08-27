@@ -3,7 +3,7 @@ AT-001,"Kullanıcı yalnız yetkili şirket, şube ve depo kayıtlarını görü
 AT-002,"Global arama yetkisiz kaydı sonuç, öneri, toplam veya sayı olarak sızdırmaz.",TBD,P0/P1,E2E+Contract,Taslak,
 AT-003,"Kritik değişiklik önce/sonra, neden, kullanıcı, rol ve korelasyonla audit üretir.",Platform.Audit,P0/P1,Unit+HTTP+SQL Server,Otomatik,"AuditAcceptanceTests; SqlServerRelationalAcceptanceTests"
 AT-004,Oluşturan kişi yüksek riskli kendi işlemini görev ayrılığına aykırı onaylayamaz.,TBD,P0/P1,E2E+Contract,Taslak,
-AT-005,Eşzamanlı değişiklikte ikinci kullanıcıya çatışma ve fark gösterilir.,Platform.Idempotency,P0/P1,Unit+HTTP+SQL Server,Otomatik,"IdempotencyAcceptanceTests; SqlServerRelationalAcceptanceTests"
+AT-005,Eşzamanlı değişiklikte ikinci kullanıcıya çatışma ve fark gösterilir.,Platform.Idempotency,P0/P1,E2E+Contract,Taslak,"Backend contract otomatik: IdempotencyAcceptanceTests; SqlServerRelationalAcceptanceTests. Kullanıcı arayüzü ve E2E kanıtı bekliyor."
 AT-006,Başarısız kaydetme kullanıcının form verisini kaybettirmez.,TBD,P0/P1,E2E+Contract,Taslak,
 AT-007,İptal ve ters işlem geçmişi silmez.,TBD,P0/P1,E2E+Contract,Taslak,
 AT-008,Şirket kapsamı değişikliği açık formu sessizce başka şirkete taşımaz.,TBD,P0/P1,E2E+Contract,Taslak,
