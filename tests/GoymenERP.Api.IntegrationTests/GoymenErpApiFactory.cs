@@ -1,5 +1,7 @@
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Domain.Events;
+using GoymenERP.Modules.Idempotency.Domain.Executions;
+using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
@@ -58,6 +60,10 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
             services.RemoveAll<IDbContextOptionsConfiguration<AuditDbContext>>();
             services.AddDbContext<AuditDbContext>(options =>
                 options.UseInMemoryDatabase(_databaseName));
+            services.RemoveAll<DbContextOptions<CommandExecutionDbContext>>();
+            services.RemoveAll<IDbContextOptionsConfiguration<CommandExecutionDbContext>>();
+            services.AddDbContext<CommandExecutionDbContext>(options =>
+                options.UseInMemoryDatabase(_databaseName));
         });
     }
 
@@ -101,6 +107,19 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
             .AsNoTracking()
             .Where(x => x.CorrelationId == correlationId)
             .OrderBy(x => x.OccurredAtUtc)
+            .ToListAsync();
+    }
+
+    public async Task<IReadOnlyList<CommandExecution>> GetCommandExecutionsAsync(
+        string idempotencyKey)
+    {
+        var keyHash = IdempotencyHash.ComputeKey(idempotencyKey);
+        await using var scope = Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<CommandExecutionDbContext>();
+        return await dbContext.CommandExecutions
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(x => x.IdempotencyKeyHash == keyHash)
             .ToListAsync();
     }
 }

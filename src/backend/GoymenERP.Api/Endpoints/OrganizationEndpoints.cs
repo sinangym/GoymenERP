@@ -91,22 +91,20 @@ public static class OrganizationEndpoints
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
-            var result = await service.SetLocationActiveStateAsync(
+            var execution = await service.SetLocationActiveStateAsync(
                 id,
                 command,
                 metadata,
                 cancellationToken);
 
-            return result switch
+            if (execution.IsReplay)
             {
-                CommandResult.Succeeded => Results.NoContent(),
-                CommandResult.NotFound => NotFound(),
-                CommandResult.VersionConflict => Results.Problem(
-                    title: "Kayıt güncellendi.",
-                    detail: "Kayıt başka bir işlem tarafından değiştirildi; veriyi yenileyin.",
-                    statusCode: StatusCodes.Status409Conflict),
-                _ => Results.StatusCode(StatusCodes.Status500InternalServerError),
-            };
+                httpContext.Response.Headers["Idempotency-Replayed"] = "true";
+                httpContext.Response.Headers["Idempotency-Original-Correlation-Id"] =
+                    execution.OriginalCorrelationId;
+            }
+
+            return ToHttpResult(execution.Response);
         }).RequireCompanyContext()
             .RequireAuthorization(ErpPermissions.OrganizationLocationsStatusUpdate);
 
@@ -126,6 +124,16 @@ public static class OrganizationEndpoints
             title: "Kayıt bulunamadı.",
             detail: "İstenen kayıt bulunamadı veya bu bağlamda kullanılamıyor.",
             statusCode: StatusCodes.Status404NotFound);
+    }
+
+    private static IResult ToHttpResult(CommandResponseSnapshot response)
+    {
+        return response.StatusCode == StatusCodes.Status204NoContent
+            ? Results.NoContent()
+            : Results.Problem(
+                title: response.Title,
+                detail: response.Detail,
+                statusCode: response.StatusCode);
     }
 
     private static bool TryReadCommandMetadata(

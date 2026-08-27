@@ -148,6 +148,18 @@ dotnet tool run dotnet-ef migrations script --idempotent `
   --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj `
   --context IdentityDbContext `
   --output artifacts/identity-migration.sql
+
+dotnet tool run dotnet-ef migrations script --idempotent `
+  --project src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj `
+  --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj `
+  --context AuditDbContext `
+  --output artifacts/audit-migration.sql
+
+dotnet tool run dotnet-ef migrations script --idempotent `
+  --project src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/GoymenERP.Modules.Idempotency.Infrastructure.csproj `
+  --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj `
+  --context CommandExecutionDbContext `
+  --output artifacts/idempotency-migration.sql
 ```
 
 ## Geçici varsayımlar ve sonraki kapılar
@@ -159,9 +171,10 @@ dotnet tool run dotnet-ef migrations script --idempotent `
   karara bağlanmalıdır.
 - Production SSO sağlayıcısı, MFA ve dış erişim politikası `OPEN-013` kapanışında seçilir;
   mevcut OIDC/JWT yolu sağlayıcıya özel kod içermez.
-- Kalıcı append-only audit/korelasyon ERP-000D; idempotency store ve concurrency ayrımı
-  ERP-000E; outbox/inbox ERP-000F görevidir. ERP-000C bunların deposunu sahiplenmez.
+- Kalıcı append-only audit/korelasyon ERP-000D olarak `main`dedir. ERP-000E kalıcı
+  idempotency store, response replay ve SQL `rowversion` ekler; outbox/inbox ERP-000F
+  görevidir.
 - SQL Server nihai ürün kararı değildir; PoC performans, Türkçe arama, restore ve üç yıllık
   veri hacmi testlerinden geçmelidir.
-- ERP-000D’ye geçmeden önce kimlik eşleme, RBAC/ABAC, SoD ve Company isolation testlerinin
-  tamamı yeşil kalmalıdır.
+- ERP-000F’ye geçmeden önce kimlik, Company isolation, audit, idempotency ve concurrency
+  kabul testlerinin tamamı yeşil kalmalıdır.

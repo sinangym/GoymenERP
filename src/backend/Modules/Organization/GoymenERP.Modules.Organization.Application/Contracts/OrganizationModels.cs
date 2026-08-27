@@ -56,4 +56,50 @@ public enum CommandResult
     Succeeded = 1,
     NotFound = 2,
     VersionConflict = 3,
+    IdempotencyConflict = 4,
+}
+
+public sealed record CommandExecutionResult(
+    CommandResponseSnapshot Response,
+    bool IsReplay,
+    string OriginalCorrelationId)
+{
+    public CommandResult Result => Response.Result;
+}
+
+public sealed record CommandResponseSnapshot(
+    CommandResult Result,
+    int StatusCode,
+    string? Title,
+    string? Detail);
+
+public static class CommandResponses
+{
+    public static CommandResponseSnapshot For(CommandResult result)
+    {
+        return result switch
+        {
+            CommandResult.Succeeded => new CommandResponseSnapshot(
+                result,
+                204,
+                null,
+                null),
+            CommandResult.NotFound => new CommandResponseSnapshot(
+                result,
+                404,
+                "Kayıt bulunamadı.",
+                "İstenen kayıt bulunamadı veya bu bağlamda kullanılamıyor."),
+            CommandResult.VersionConflict => new CommandResponseSnapshot(
+                result,
+                409,
+                "Kayıt güncellendi.",
+                "Kayıt başka bir işlem tarafından değiştirildi; veriyi yenileyin."),
+            CommandResult.IdempotencyConflict => new CommandResponseSnapshot(
+                result,
+                409,
+                "Idempotency-Key çakışması.",
+                "Aynı Idempotency-Key farklı bir komut içeriği veya kullanıcıyla tekrar kullanılamaz."),
+            _ => throw new ArgumentOutOfRangeException(nameof(result), result, null),
+        };
+    }
 }

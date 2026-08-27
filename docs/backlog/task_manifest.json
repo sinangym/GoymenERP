@@ -37,7 +37,7 @@
     {
       "id": "ERP-000D",
       "title": "Audit ve korelasyon",
-      "status": "in_review",
+      "status": "done",
       "depends_on": [
         "ERP-000A"
       ],
@@ -48,9 +48,9 @@
     {
       "id": "ERP-000E",
       "title": "Idempotency ve concurrency",
-      "status": "ready",
+      "status": "in_review",
       "depends_on": [
-        "ERP-000A"
+        "ERP-000D"
       ],
       "scope": "Idempotency key store, rowversion, duplicate command protection.",
       "acceptance": "Aynı komut iki kez ikinci kayıt oluşturmaz; conflict farkı döner.",
@@ -61,7 +61,7 @@
       "title": "Outbox/inbox",
       "status": "ready",
       "depends_on": [
-        "ERP-000A"
+        "ERP-000E"
       ],
       "scope": "Transactional outbox, consumer inbox/dedup, retry/backoff.",
       "acceptance": "DB commit ile mesaj kaybı/kopyası test edilir.",

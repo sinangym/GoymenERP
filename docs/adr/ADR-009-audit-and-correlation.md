@@ -1,7 +1,7 @@
 # ADR-009 — Append-only Audit ve Korelasyon Sınırı
 
 - Tarih: 2026-08-27
-- Durum: Uygulandı, review bekliyor
+- Durum: Uygulandı ve `main`e alındı (`908bbfd5083debfabbe660d45b7ec99fa6d1b9d6`)
 - Görev: ERP-000D
 - İlgili kararlar: `DEC-AI-005`, `ADR-009`, `AT-003`,
   `ORTAK_KAYIT_METADATA`, `GOZLEMLENEBILIRLIK_GUVENLIK`
