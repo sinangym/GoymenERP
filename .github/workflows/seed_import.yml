@@ -57,6 +57,11 @@ jobs:
               2: '4a190cd6adbb740aca1298338a46b1883a3f2421baffdc551a6a06fc03451421',
               3: '580982117aca94e6b20b17cfb927b38e355f7df9b4811cb616ba23bb991e444e',
           }
+          expected_part0_sub_sha = {
+              0: '3ad99b6488ed7051c1339bebb063cfd43861abdb949328774c4c7444b4d691c8',
+              1: 'ff074182e9acb712d831051ecd2362836104a40c07cee6389ed06893c0ac383e',
+              2: 'bd7f089f0be80f59f4fa78530e25852bf9cd2fede2abf5569ba3017ced676503',
+          }
 
           request = urllib.request.Request(
               f'https://api.github.com/repos/{repo}/issues/{issue}/comments?per_page=100',
@@ -71,6 +76,7 @@ jobs:
 
           chunks = {}
           chunk2_parts = {}
+          part0_subs = {}
           candidates = {}
 
           for item in comments:
@@ -100,6 +106,26 @@ jobs:
                   candidates.setdefault(f'chunk-2-part-{part_index}', []).append((len(payload), digest))
                   if expected_chunk2_part_sha.get(part_index) == digest:
                       chunk2_parts[part_index] = payload
+                  continue
+
+              sub_match = re.match(
+                  r'^GOYMEN_SEED_XZ2_CHUNK2_PART0_SUB\s+(\d)/02\n([A-Za-z0-9+/=]+)\s*$',
+                  body,
+              )
+              if sub_match:
+                  sub_index = int(sub_match.group(1))
+                  payload = sub_match.group(2)
+                  digest = hashlib.sha256(payload.encode('ascii')).hexdigest()
+                  candidates.setdefault(f'chunk-2-part-0-sub-{sub_index}', []).append((len(payload), digest))
+                  if expected_part0_sub_sha.get(sub_index) == digest:
+                      part0_subs[sub_index] = payload
+
+          if 0 not in chunk2_parts and sorted(part0_subs) == [0, 1, 2]:
+              rebuilt_part0 = ''.join(part0_subs[index] for index in range(3))
+              rebuilt_part0_digest = hashlib.sha256(rebuilt_part0.encode('ascii')).hexdigest()
+              if rebuilt_part0_digest != expected_chunk2_part_sha[0]:
+                  raise SystemExit(f'Rebuilt chunk 2 part 0 checksum mismatch: {rebuilt_part0_digest}')
+              chunk2_parts[0] = rebuilt_part0
 
           if 2 not in chunks and sorted(chunk2_parts) == [0, 1, 2, 3]:
               rebuilt_chunk2 = ''.join(chunk2_parts[index] for index in range(4))
@@ -112,7 +138,8 @@ jobs:
           if sorted(chunks) != expected_indexes:
               raise SystemExit(
                   f'No verified complete chunk set. verified={sorted(chunks)}, '
-                  f'chunk2_parts={sorted(chunk2_parts)}, candidates={candidates}'
+                  f'chunk2_parts={sorted(chunk2_parts)}, part0_subs={sorted(part0_subs)}, '
+                  f'candidates={candidates}'
               )
 
           archive_bytes = base64.b64decode(
