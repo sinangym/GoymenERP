@@ -1,7 +1,7 @@
 # ADR-004 — Kimlik ve Yetkilendirme Sınırı
 
 - Tarih: 2026-08-27
-- Durum: Uygulandı, review bekliyor
+- Durum: Uygulandı ve `main`e alındı (`fe87fc4f995a4dc4fb2e38b1399e96c95a2d09cd`)
 - Görev: ERP-000C
 - İlgili kararlar: `OPEN-013`, `YETKI_MODELI`, `GOREV_AYRILIGI_ONAY`,
   `AI_YETKI_SOZLESMESI`

@@ -4,6 +4,7 @@ using GoymenERP.Modules.Organization.Domain.Companies;
 using GoymenERP.Modules.Organization.Domain.Locations;
 using GoymenERP.Modules.Organization.Domain.Sites;
 using GoymenERP.Modules.Organization.Domain.WorkCenters;
+using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Organization.Infrastructure.Persistence;
@@ -30,6 +31,7 @@ public sealed class OrganizationDbContext(
         ConfigureSite(modelBuilder);
         ConfigureLocation(modelBuilder);
         ConfigureWorkCenter(modelBuilder);
+        modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
     }
 
     public override int SaveChanges()

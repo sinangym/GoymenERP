@@ -36,12 +36,19 @@ public sealed record PageResult<T>(
     int PageSize,
     int TotalCount);
 
-public sealed record SetLocationActiveState(bool IsActive, long ExpectedVersion);
+public sealed record SetLocationActiveState(
+    bool IsActive,
+    long ExpectedVersion,
+    string Reason);
 
 public sealed record CommandMetadata(
     Guid CompanyId,
     string ActorId,
     string CorrelationId,
+    string? CausationId,
+    string SourceChannel,
+    string? ClientIpAddress,
+    string? UserAgent,
     string IdempotencyKey);
 
 public enum CommandResult

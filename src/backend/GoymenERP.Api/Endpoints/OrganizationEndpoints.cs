@@ -1,5 +1,6 @@
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Organization.Application.Contracts;
 
@@ -64,13 +65,24 @@ public static class OrganizationEndpoints
                 IOrganizationService service,
                 ICurrentUser currentUser,
                 ICompanyContext companyContext,
+                ICorrelationContext correlationContext,
                 HttpContext httpContext,
                 CancellationToken cancellationToken) =>
         {
+            if (string.IsNullOrWhiteSpace(command.Reason)
+                || command.Reason.Trim().Length > 1000)
+            {
+                return Results.Problem(
+                    title: "Gerekçe gerekli.",
+                    detail: "Kritik değişiklik için 1-1000 karakter arasında bir gerekçe girin.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
             if (!TryReadCommandMetadata(
                     httpContext,
                     currentUser,
                     companyContext,
+                    correlationContext,
                     out var metadata))
             {
                 return Results.Problem(
@@ -120,31 +132,29 @@ public static class OrganizationEndpoints
         HttpContext httpContext,
         ICurrentUser currentUser,
         ICompanyContext companyContext,
+        ICorrelationContext correlationContext,
         out CommandMetadata metadata)
     {
         const int maximumMetadataLength = 128;
         var idempotencyKey = httpContext.Request.Headers["Idempotency-Key"].ToString().Trim();
-        var correlationId = httpContext.Request.Headers["X-Correlation-Id"].ToString().Trim();
-
-        if (string.IsNullOrWhiteSpace(correlationId))
-        {
-            correlationId = httpContext.TraceIdentifier;
-        }
 
         if (string.IsNullOrWhiteSpace(idempotencyKey)
             || idempotencyKey.Length > maximumMetadataLength
-            || correlationId.Length > maximumMetadataLength
+            || !correlationContext.IsResolved
             || string.IsNullOrWhiteSpace(currentUser.UserId))
         {
             metadata = null!;
             return false;
         }
 
-        httpContext.Response.Headers["X-Correlation-Id"] = correlationId;
         metadata = new CommandMetadata(
             companyContext.CompanyId,
             currentUser.UserId,
-            correlationId,
+            correlationContext.CorrelationId,
+            correlationContext.CausationId,
+            correlationContext.SourceChannel,
+            correlationContext.ClientIpAddress,
+            correlationContext.UserAgent,
             idempotencyKey);
         return true;
     }

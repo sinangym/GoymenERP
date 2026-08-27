@@ -107,7 +107,10 @@ public sealed class CompanyIsolationTests(GoymenErpApiFactory factory)
 
         var response = await client.PutAsJsonAsync(
             $"/api/v1/organization/locations/{location.Id}/active-state",
-            new SetLocationActiveState(!location.IsActive, location.Version));
+            new SetLocationActiveState(
+                !location.IsActive,
+                location.Version,
+                "Yetkisiz yazma güvenlik testi"));
         var after = await factory.GetLocationIgnoringFiltersAsync(
             TestCompanyIds.CompanyA,
             "OSM-H0");
@@ -172,7 +175,10 @@ public sealed class CompanyIsolationTests(GoymenErpApiFactory factory)
 
         var response = await client.PutAsJsonAsync(
             $"/api/v1/organization/locations/{before.Id}/active-state",
-            new SetLocationActiveState(!before.IsActive, before.Version));
+            new SetLocationActiveState(
+                !before.IsActive,
+                before.Version,
+                "Şirketler arası komut izolasyonu testi"));
         var body = await response.Content.ReadAsStringAsync();
         var after = await factory.GetLocationIgnoringFiltersAsync(
             TestCompanyIds.CompanyB,
@@ -196,7 +202,10 @@ public sealed class CompanyIsolationTests(GoymenErpApiFactory factory)
 
         var response = await client.PutAsJsonAsync(
             $"/api/v1/organization/locations/{companyALocation.Id}/active-state",
-            new SetLocationActiveState(!companyALocation.IsActive, companyALocation.Version));
+            new SetLocationActiveState(
+                !companyALocation.IsActive,
+                companyALocation.Version,
+                "Lokasyon durum değişikliği kabul testi"));
         var companyAAfter = await factory.GetLocationIgnoringFiltersAsync(
             TestCompanyIds.CompanyA,
             "OSM-H2");
@@ -233,7 +242,10 @@ public sealed class CompanyIsolationTests(GoymenErpApiFactory factory)
 
         var response = await client.PutAsJsonAsync(
             $"/api/v1/organization/locations/{location.Id}/active-state",
-            new SetLocationActiveState(!location.IsActive, location.Version));
+            new SetLocationActiveState(
+                !location.IsActive,
+                location.Version,
+                "Eksik idempotency bilgisi testi"));
         var after = await factory.GetLocationIgnoringFiltersAsync(
             TestCompanyIds.CompanyA,
             "OSM-H4");

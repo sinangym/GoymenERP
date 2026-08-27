@@ -1,3 +1,5 @@
+using GoymenERP.Modules.Audit.Infrastructure.Persistence;
+using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
@@ -36,6 +38,8 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
                 ["BootstrapIdentity:Users:3:DisplayName"] = "Şirket A Salt Okuma Kullanıcısı",
                 ["BootstrapIdentity:Users:4:UserId"] = TestUsers.Unprovisioned,
                 ["BootstrapIdentity:Users:4:DisplayName"] = "ERP Kaydı Olmayan Kullanıcı",
+                ["BootstrapIdentity:Users:5:UserId"] = TestUsers.SiteAuditReader,
+                ["BootstrapIdentity:Users:5:DisplayName"] = "Dar Kapsam Audit Test Kullanıcısı",
             });
         });
 
@@ -43,12 +47,17 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
         {
             services.RemoveAll<DbContextOptions<OrganizationDbContext>>();
             services.RemoveAll<IDbContextOptionsConfiguration<OrganizationDbContext>>();
-            services.AddDbContext<OrganizationDbContext>(options =>
-                options.UseInMemoryDatabase(_databaseName));
+            services.AddDbContext<OrganizationDbContext>((serviceProvider, options) =>
+                options.UseInMemoryDatabase(_databaseName)
+                    .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
             services.RemoveAll<DbContextOptions<IdentityDbContext>>();
             services.RemoveAll<IDbContextOptionsConfiguration<IdentityDbContext>>();
             services.AddDbContext<IdentityDbContext>(options =>
                 options.UseInMemoryDatabase($"{_databaseName}-identity"));
+            services.RemoveAll<DbContextOptions<AuditDbContext>>();
+            services.RemoveAll<IDbContextOptionsConfiguration<AuditDbContext>>();
+            services.AddDbContext<AuditDbContext>(options =>
+                options.UseInMemoryDatabase(_databaseName));
         });
     }
 
@@ -81,6 +90,19 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
             .Select(x => new LocationSnapshot(x.Id, x.IsActive, x.Version))
             .SingleAsync();
     }
+
+    public async Task<IReadOnlyList<AuditEvent>> GetAuditEventsIgnoringFiltersAsync(
+        string correlationId)
+    {
+        await using var scope = Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AuditDbContext>();
+        return await dbContext.AuditEvents
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(x => x.CorrelationId == correlationId)
+            .OrderBy(x => x.OccurredAtUtc)
+            .ToListAsync();
+    }
 }
 
 public static class TestCompanyIds
@@ -103,6 +125,8 @@ public static class TestUsers
     public const string CompanyAViewer = "company-a-viewer";
 
     public const string Unprovisioned = "unprovisioned-user";
+
+    public const string SiteAuditReader = "site-audit-reader";
 }
 
 public sealed record LocationSnapshot(Guid Id, bool IsActive, long Version);

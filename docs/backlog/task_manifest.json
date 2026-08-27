@@ -6,7 +6,7 @@
     {
       "id": "ERP-000A",
       "title": "Repository ve solution iskeleti",
-      "status": "ready",
+      "status": "done",
       "depends_on": [],
       "scope": "Kök AGENTS.md, docs, src/tests/infra; .NET solution ve React app; build/test workflow.",
       "acceptance": "Repo temiz makinede build olur.",
@@ -15,7 +15,7 @@
     {
       "id": "ERP-000B",
       "title": "Çok şirket çekirdeği",
-      "status": "ready",
+      "status": "done",
       "depends_on": [
         "ERP-000A"
       ],
@@ -26,7 +26,7 @@
     {
       "id": "ERP-000C",
       "title": "Kimlik ve yetki iskeleti",
-      "status": "ready",
+      "status": "done",
       "depends_on": [
         "ERP-000A"
       ],
@@ -37,7 +37,7 @@
     {
       "id": "ERP-000D",
       "title": "Audit ve korelasyon",
-      "status": "ready",
+      "status": "in_review",
       "depends_on": [
         "ERP-000A"
       ],

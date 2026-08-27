@@ -48,6 +48,18 @@
             "Subject": "company-a-viewer"
           }
         ]
+      },
+      {
+        "Id": "20000000-0000-0000-0000-000000000005",
+        "DisplayName": "Şirket A Dar Kapsam Audit Test Kullanıcısı",
+        "Email": null,
+        "ExternalIdentities": [
+          {
+            "Id": "21000000-0000-0000-0000-000000000005",
+            "Issuer": "urn:goymen:development-bootstrap",
+            "Subject": "site-audit-reader"
+          }
+        ]
       }
     ],
     "Roles": [
@@ -184,6 +196,21 @@
         "Id": "40000000-0000-0000-0000-000000000005",
         "UserId": "20000000-0000-0000-0000-000000000004",
         "RoleId": "30000000-0000-0000-0000-000000000001",
+        "CompanyId": "10000000-0000-0000-0000-000000000001",
+        "ValidFromUtc": "2026-01-01T00:00:00+00:00",
+        "ValidUntilUtc": null,
+        "ApprovedByUserId": "20000000-0000-0000-0000-000000000003",
+        "Scopes": [
+          {
+            "Type": "Site",
+            "Id": "b2954a9f-482e-6bc4-48c0-706312c64ed4"
+          }
+        ]
+      },
+      {
+        "Id": "40000000-0000-0000-0000-000000000006",
+        "UserId": "20000000-0000-0000-0000-000000000005",
+        "RoleId": "30000000-0000-0000-0000-000000000005",
         "CompanyId": "10000000-0000-0000-0000-000000000001",
         "ValidFromUtc": "2026-01-01T00:00:00+00:00",
         "ValidUntilUtc": null,

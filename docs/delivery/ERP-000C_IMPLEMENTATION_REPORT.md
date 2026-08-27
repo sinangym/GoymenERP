@@ -3,7 +3,8 @@
 - Tarih: 2026-08-27
 - Dal: `codex/erp-000c-identity-authorization`
 - Taban: `main` / `518052c1fbad0486ee3aaea08589bca6099c1011`
-- Durum: Uygulama ve yerel kabul doğrulaması tamamlandı; review/PR öncesi
+- Durum: Kabul edildi ve `main`e squash merge edildi
+- Merge commit: `fe87fc4f995a4dc4fb2e38b1399e96c95a2d09cd`
 
 ## Tamamlanan kapsam
 

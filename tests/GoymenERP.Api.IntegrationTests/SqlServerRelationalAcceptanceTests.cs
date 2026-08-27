@@ -1,12 +1,16 @@
 using System.Net;
 using System.Net.Http.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.Modules.Audit.Application.Contracts;
+using GoymenERP.Modules.Audit.Domain.Events;
+using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Organization.Domain.Sites;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -35,6 +39,9 @@ public sealed class SqlServerRelationalAcceptanceTests
             await AssertTenantWriteGuardAsync(factory);
             await AssertCompositeForeignKeyAsync(factory.DatabaseConnectionString);
             await AssertHttpIsolationAsync(factory, factory.DatabaseConnectionString);
+            await AssertAuditAppendOnlyAtomicityAndIsolationAsync(
+                factory,
+                factory.DatabaseConnectionString);
         }
         finally
         {
@@ -59,6 +66,11 @@ public sealed class SqlServerRelationalAcceptanceTests
                 connection,
                 "SELECT COUNT(*) FROM [identity].[__EFMigrationsHistory];"));
         Assert.Equal(
+            1,
+            await ScalarAsync<int>(
+                connection,
+                "SELECT COUNT(*) FROM [audit].[__EFMigrationsHistory];"));
+        Assert.Equal(
             2,
             await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM [organization].[Companies];"));
         Assert.Equal(
@@ -71,14 +83,17 @@ public sealed class SqlServerRelationalAcceptanceTests
             10,
             await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM [organization].[WorkCenters];"));
         Assert.Equal(
-            4,
+            5,
             await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM [identity].[Users];"));
         Assert.Equal(
             5,
             await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM [identity].[Roles];"));
         Assert.Equal(
-            5,
+            6,
             await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM [identity].[RoleAssignments];"));
+        Assert.Equal(
+            0,
+            await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM [audit].[AuditEvents];"));
     }
 
     private static async Task AssertIdentityRelationalConstraintsAsync(string connectionString)
@@ -268,7 +283,10 @@ public sealed class SqlServerRelationalAcceptanceTests
             "/api/v1/organization/locations?pageSize=100");
         var viewerWrite = await viewerClient.PutAsJsonAsync(
             $"/api/v1/organization/locations/{viewerLocation.Id}/active-state",
-            new SetLocationActiveState(!viewerLocation.IsActive, viewerLocation.Version));
+            new SetLocationActiveState(
+                !viewerLocation.IsActive,
+                viewerLocation.Version,
+                "Yetkisiz ilişkisel yazma testi"));
 
         Assert.Equal(8, Assert.IsType<PageResult<LocationSummary>>(viewerLocations).TotalCount);
         Assert.Equal(HttpStatusCode.Forbidden, viewerWrite.StatusCode);
@@ -284,6 +302,225 @@ public sealed class SqlServerRelationalAcceptanceTests
             SiteType.Factory);
     }
 
+    private static async Task AssertAuditAppendOnlyAtomicityAndIsolationAsync(
+        SqlServerRelationalApiFactory factory,
+        string connectionString)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        var companyALocation = await ReadLocationProbeAsync(
+            connection,
+            """
+            SELECT TOP (1) [Id], [IsActive], [Version]
+            FROM [organization].[Locations]
+            WHERE [CompanyId] = @CompanyId AND [Code] <> N'OSM-H0'
+            ORDER BY [Code] DESC;
+            """,
+            new SqlParameter("@CompanyId", TestCompanyIds.CompanyA));
+        var rejectedCorrelationId = $"audit-reject-{Guid.NewGuid():N}";
+
+        await ExecuteNonQueryAsync(
+            connection,
+            """
+            CREATE TRIGGER [audit].[TR_AuditEvents_RejectInsertProbe]
+            ON [audit].[AuditEvents]
+            AFTER INSERT
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+                THROW 51001, 'Relational atomicity rejection probe.', 1;
+            END;
+            """);
+
+        HttpResponseMessage rejectedResponse;
+        try
+        {
+            using var rejectedClient = factory.CreateClientFor(
+                TestUsers.CompanyA,
+                TestCompanyIds.CompanyA);
+            rejectedClient.DefaultRequestHeaders.Remove("X-Correlation-Id");
+            rejectedClient.DefaultRequestHeaders.Add(
+                "X-Correlation-Id",
+                rejectedCorrelationId);
+            rejectedResponse = await rejectedClient.PutAsJsonAsync(
+                $"/api/v1/organization/locations/{companyALocation.Id}/active-state",
+                new SetLocationActiveState(
+                    !companyALocation.IsActive,
+                    companyALocation.Version,
+                    "Atomik audit rollback testi"));
+        }
+        finally
+        {
+            await ExecuteNonQueryAsync(
+                connection,
+                "DROP TRIGGER [audit].[TR_AuditEvents_RejectInsertProbe];");
+        }
+
+        Assert.Equal(HttpStatusCode.InternalServerError, rejectedResponse.StatusCode);
+        var afterRejectedCommand = await ReadLocationProbeAsync(
+            connection,
+            """
+            SELECT [Id], [IsActive], [Version]
+            FROM [organization].[Locations]
+            WHERE [Id] = @Id;
+            """,
+            new SqlParameter("@Id", companyALocation.Id));
+        Assert.Equal(companyALocation, afterRejectedCommand);
+        Assert.Equal(
+            0,
+            await ScalarAsync<int>(
+                connection,
+                "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [CorrelationId] = @CorrelationId;",
+                new SqlParameter("@CorrelationId", rejectedCorrelationId)));
+
+        var correlationId = $"audit-success-{Guid.NewGuid():N}";
+        var causationId = $"http-{Guid.NewGuid():N}";
+        using var companyAClient = factory.CreateClientFor(
+            TestUsers.CompanyA,
+            TestCompanyIds.CompanyA);
+        companyAClient.DefaultRequestHeaders.Remove("X-Correlation-Id");
+        companyAClient.DefaultRequestHeaders.Add("X-Correlation-Id", correlationId);
+        companyAClient.DefaultRequestHeaders.Add("X-Causation-Id", causationId);
+        var successResponse = await companyAClient.PutAsJsonAsync(
+            $"/api/v1/organization/locations/{companyALocation.Id}/active-state",
+            new SetLocationActiveState(
+                !companyALocation.IsActive,
+                companyALocation.Version,
+                "SQL Server kalıcı audit kabul testi"));
+
+        Assert.Equal(HttpStatusCode.NoContent, successResponse.StatusCode);
+        Assert.Equal(
+            1,
+            await ScalarAsync<int>(
+                connection,
+                "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [CorrelationId] = @CorrelationId;",
+                new SqlParameter("@CorrelationId", correlationId)));
+        Assert.Equal(
+            TestCompanyIds.CompanyA,
+            await ScalarAsync<Guid>(
+                connection,
+                "SELECT [CompanyId] FROM [audit].[AuditEvents] WHERE [CorrelationId] = @CorrelationId;",
+                new SqlParameter("@CorrelationId", correlationId)));
+        Assert.Equal(
+            "SQL Server kalıcı audit kabul testi",
+            await ScalarAsync<string>(
+                connection,
+                "SELECT [Reason] FROM [audit].[AuditEvents] WHERE [CorrelationId] = @CorrelationId;",
+                new SqlParameter("@CorrelationId", correlationId)));
+        Assert.Equal(
+            causationId,
+            await ScalarAsync<string>(
+                connection,
+                "SELECT [CausationId] FROM [audit].[AuditEvents] WHERE [CorrelationId] = @CorrelationId;",
+                new SqlParameter("@CorrelationId", correlationId)));
+        Assert.Equal(
+            64,
+            (await ScalarAsync<string>(
+                connection,
+                "SELECT [IntegrityHash] FROM [audit].[AuditEvents] WHERE [CorrelationId] = @CorrelationId;",
+                new SqlParameter("@CorrelationId", correlationId))).Length);
+
+        await using (var persistedAuditScope = factory.Services.CreateAsyncScope())
+        {
+            persistedAuditScope.ServiceProvider
+                .GetRequiredService<ICompanyContext>()
+                .Set(TestCompanyIds.CompanyA);
+            var auditDbContext = persistedAuditScope.ServiceProvider
+                .GetRequiredService<AuditDbContext>();
+            var persistedAuditEvent = await auditDbContext.AuditEvents
+                .AsNoTracking()
+                .SingleAsync(x => x.CorrelationId == correlationId);
+            Assert.Equal(
+                AuditEventIntegrity.Compute(persistedAuditEvent.ToIntegrityEnvelope()),
+                persistedAuditEvent.IntegrityHash);
+        }
+
+        using var siteAuditReader = factory.CreateClientFor(
+            TestUsers.SiteAuditReader,
+            TestCompanyIds.CompanyA);
+        var siteScopedAuditRead = await siteAuditReader.GetAsync("/api/v1/audit/events");
+        Assert.Equal(HttpStatusCode.Forbidden, siteScopedAuditRead.StatusCode);
+
+        var afterSuccessfulCommand = await ReadLocationProbeAsync(
+            connection,
+            """
+            SELECT [Id], [IsActive], [Version]
+            FROM [organization].[Locations]
+            WHERE [Id] = @Id;
+            """,
+            new SqlParameter("@Id", companyALocation.Id));
+        using var noChangeClient = factory.CreateClientFor(
+            TestUsers.CompanyA,
+            TestCompanyIds.CompanyA);
+        var noChangeResponse = await noChangeClient.PutAsJsonAsync(
+            $"/api/v1/organization/locations/{companyALocation.Id}/active-state",
+            new SetLocationActiveState(
+                afterSuccessfulCommand.IsActive,
+                afterSuccessfulCommand.Version,
+                "No-change audit ve keyset testi"));
+        Assert.Equal(HttpStatusCode.NoContent, noChangeResponse.StatusCode);
+
+        var updateException = await Assert.ThrowsAsync<SqlException>(() => ExecuteNonQueryAsync(
+            connection,
+            "UPDATE [audit].[AuditEvents] SET [Reason] = N'Değiştirildi' WHERE [CorrelationId] = @CorrelationId;",
+            new SqlParameter("@CorrelationId", correlationId)));
+        Assert.Equal(51000, updateException.Number);
+        var deleteException = await Assert.ThrowsAsync<SqlException>(() => ExecuteNonQueryAsync(
+            connection,
+            "DELETE FROM [audit].[AuditEvents] WHERE [CorrelationId] = @CorrelationId;",
+            new SqlParameter("@CorrelationId", correlationId)));
+        Assert.Equal(51000, deleteException.Number);
+
+        var companyBLocation = await ReadLocationProbeAsync(
+            connection,
+            """
+            SELECT TOP (1) [Id], [IsActive], [Version]
+            FROM [organization].[Locations]
+            WHERE [CompanyId] = @CompanyId
+            ORDER BY [Code] DESC;
+            """,
+            new SqlParameter("@CompanyId", TestCompanyIds.CompanyB));
+        var companyBCorrelationId = $"audit-company-b-{Guid.NewGuid():N}";
+        using var companyBClient = factory.CreateClientFor(
+            TestUsers.CompanyB,
+            TestCompanyIds.CompanyB);
+        companyBClient.DefaultRequestHeaders.Remove("X-Correlation-Id");
+        companyBClient.DefaultRequestHeaders.Add("X-Correlation-Id", companyBCorrelationId);
+        var companyBWrite = await companyBClient.PutAsJsonAsync(
+            $"/api/v1/organization/locations/{companyBLocation.Id}/active-state",
+            new SetLocationActiveState(
+                !companyBLocation.IsActive,
+                companyBLocation.Version,
+                "Audit şirket izolasyonu ilişkisel testi"));
+        Assert.Equal(HttpStatusCode.NoContent, companyBWrite.StatusCode);
+
+        using var adminAClient = factory.CreateClientFor(
+            TestUsers.GroupAdmin,
+            TestCompanyIds.CompanyA);
+        var companyBProbeFromA = await adminAClient.GetFromJsonAsync<AuditEventPage>(
+            $"/api/v1/audit/events?correlationId={companyBCorrelationId}");
+        Assert.Empty(Assert.IsType<AuditEventPage>(companyBProbeFromA).Items);
+        using var adminBClient = factory.CreateClientFor(
+            TestUsers.GroupAdmin,
+            TestCompanyIds.CompanyB);
+        var companyBResult = await adminBClient.GetFromJsonAsync<AuditEventPage>(
+            $"/api/v1/audit/events?correlationId={companyBCorrelationId}");
+        Assert.Equal(
+            TestCompanyIds.CompanyB,
+            Assert.Single(Assert.IsType<AuditEventPage>(companyBResult).Items).CompanyId);
+
+        var firstPage = await adminAClient.GetFromJsonAsync<AuditEventPage>(
+            "/api/v1/audit/events?pageSize=1");
+        var firstPageResult = Assert.IsType<AuditEventPage>(firstPage);
+        Assert.Single(firstPageResult.Items);
+        Assert.NotNull(firstPageResult.NextCursor);
+        var secondPage = await adminAClient.GetFromJsonAsync<AuditEventPage>(
+            $"/api/v1/audit/events?pageSize=1&cursor={Uri.EscapeDataString(firstPageResult.NextCursor)}");
+        Assert.NotEqual(
+            Assert.Single(firstPageResult.Items).Id,
+            Assert.Single(Assert.IsType<AuditEventPage>(secondPage).Items).Id);
+    }
+
     private static async Task<T> ScalarAsync<T>(
         SqlConnection connection,
         string commandText,
@@ -294,6 +531,17 @@ public sealed class SqlServerRelationalAcceptanceTests
         command.Parameters.AddRange(parameters);
         var value = await command.ExecuteScalarAsync();
         return Assert.IsType<T>(value);
+    }
+
+    private static async Task ExecuteNonQueryAsync(
+        SqlConnection connection,
+        string commandText,
+        params SqlParameter[] parameters)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = commandText;
+        command.Parameters.AddRange(parameters);
+        await command.ExecuteNonQueryAsync();
     }
 
     private static async Task<LocationProbe> ReadLocationProbeAsync(
@@ -382,6 +630,10 @@ internal sealed class SqlServerRelationalApiFactory : WebApplicationFactory<Prog
                 ["BootstrapIdentity:Users:1:DisplayName"] = "Şirket B SQL Test Kullanıcısı",
                 ["BootstrapIdentity:Users:2:UserId"] = TestUsers.CompanyAViewer,
                 ["BootstrapIdentity:Users:2:DisplayName"] = "Şirket A SQL Salt Okuma Kullanıcısı",
+                ["BootstrapIdentity:Users:3:UserId"] = TestUsers.GroupAdmin,
+                ["BootstrapIdentity:Users:3:DisplayName"] = "Grup SQL Test Yöneticisi",
+                ["BootstrapIdentity:Users:4:UserId"] = TestUsers.SiteAuditReader,
+                ["BootstrapIdentity:Users:4:DisplayName"] = "Dar Kapsam Audit SQL Test Kullanıcısı",
             });
         });
     }

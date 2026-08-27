@@ -7,6 +7,11 @@
     <Project Path="src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/GoymenERP.BuildingBlocks.csproj" />
   </Folder>
   <Folder Name="/src/backend/Modules/" />
+  <Folder Name="/src/backend/Modules/Audit/">
+    <Project Path="src/backend/Modules/Audit/GoymenERP.Modules.Audit.Application/GoymenERP.Modules.Audit.Application.csproj" />
+    <Project Path="src/backend/Modules/Audit/GoymenERP.Modules.Audit.Domain/GoymenERP.Modules.Audit.Domain.csproj" />
+    <Project Path="src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj" />
+  </Folder>
   <Folder Name="/src/backend/Modules/Identity/">
     <Project Path="src/backend/Modules/Identity/GoymenERP.Modules.Identity.Application/GoymenERP.Modules.Identity.Application.csproj" />
     <Project Path="src/backend/Modules/Identity/GoymenERP.Modules.Identity.Domain/GoymenERP.Modules.Identity.Domain.csproj" />
@@ -18,6 +23,7 @@
     <Project Path="src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/GoymenERP.Modules.Organization.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/GoymenERP.Audit.UnitTests/GoymenERP.Audit.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj" />
     <Project Path="tests/GoymenERP.Organization.UnitTests/GoymenERP.Organization.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.Identity.UnitTests/GoymenERP.Identity.UnitTests.csproj" />
