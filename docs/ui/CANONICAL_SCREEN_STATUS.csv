@@ -1,0 +1,160 @@
+﻿canonical_id,domain,name,scope,reference_coverage,reference_records
+D-01,Ana Sayfa ve Çalışma Merkezi,Rol Bazlı Ana Sayfa,Dashboard/KPI,CANDIDATE_EXACT_REFERENCE,DASHBOARD-REFERENCE-D-01
+D-02,Ana Sayfa ve Çalışma Merkezi,Benim İşlerim,Görev listesi + detay,DECISION_ONLY_REFERENCE_MISSING,
+D-03,Ana Sayfa ve Çalışma Merkezi,Yönetim Özeti,Kontrol merkezi,DECISION_ONLY_REFERENCE_MISSING,
+D-04,Ana Sayfa ve Çalışma Merkezi,Operasyon Nabzı,Kontrol merkezi,DECISION_ONLY_REFERENCE_MISSING,
+D-05,Ana Sayfa ve Çalışma Merkezi,Onaylarım,Liste + onay workspace,CONFIRMED_SPLIT_MERGE_REFERENCE,FINANCE-V3V4-F-12
+D-06,Ana Sayfa ve Çalışma Merkezi,Bildirim ve İstisnalar,Liste + detay,CONFIRMED_SPLIT_MERGE_REFERENCE,DISPATCH-INVOICE-DCE-01;FINANCE-V3V4-F-12
+D-07,Ana Sayfa ve Çalışma Merkezi,Favoriler / Son Kullanılanlar / Kaydedilmiş Görünümler,Kişisel çalışma alanı,DECISION_ONLY_REFERENCE_MISSING,
+S-01,Satış,Satış Talebi / Teklif Havuzu,"Talep, teklif ve fırsat bağlantısı",CONFIRMED_SPLIT_MERGE_REFERENCE,MASTER3-S-01
+S-02,Satış,Satış Siparişleri,Liste + hızlı detay,CONFIRMED_SPLIT_MERGE_REFERENCE,MASTER3-S-01
+S-03,Satış,Yeni/Düzenle Satış Siparişi,Rehberli form,CONFIRMED_SPLIT_MERGE_REFERENCE,MASTER3-S-03;MASTER3-S-04;MASTER3-S-05;PRODUCT-U-06
+S-04,Satış,Sipariş 360,"Satırlar, tahsis, gerçekleşme, faturalar, belgeler, revizyon",CONFIRMED_SPLIT_MERGE_REFERENCE,MASTER3-S-02;MASTER3-S-03;MASTER3-S-04;MASTER3-S-07;MASTER3-S-09;MASTER3-S-12
+S-05,Satış,Fiyat–İskonto–Marj–Risk Kontrolü,Karşılaştırma/önizleme,DECISION_ONLY_REFERENCE_MISSING,
+S-06,Satış,Satış Onayları,Onay kuyruğu,DECISION_ONLY_REFERENCE_MISSING,
+S-07,Satış,Sevkiyat / İrsaliyeler,Kaynak sipariş ve yükleme bağlamı,CONFIRMED_SPLIT_MERGE_REFERENCE,DISPATCH-INVOICE-SDH-01;MASTER3-S-07
+S-08,Satış,Faturaya Hazır,Gerçekleşme–belge kontrolü,CONFIRMED_SPLIT_MERGE_REFERENCE,DISPATCH-INVOICE-SDH-01;DISPATCH-INVOICE-SDW-02;MASTER3-S-09;MASTER3-S-10
+S-09,Satış,Satış Faturaları,"Liste, detay, durum ve gönderim",CONFIRMED_SPLIT_MERGE_REFERENCE,DISPATCH-INVOICE-SDH-01;DISPATCH-INVOICE-SDW-02;MASTER3-S-09;MASTER3-S-10
+S-10,Satış,İade / Düzeltme / İptal,Kaynak yaşam döngüsü görünümü,CONFIRMED_SPLIT_MERGE_REFERENCE,DISPATCH-INVOICE-DCR-01;DISPATCH-INVOICE-SDH-01
+S-11,Satış,Satış İletişimi ve Sözleşmeler,Belge ve iletişim zaman çizgisi,CONFIRMED_SPLIT_MERGE_REFERENCE,MASTER3-S-11
+P-01,Satın Alma,Satın Alma Talepleri / İhtiyaç Havuzu,"Stok, satış, üretim ve manuel ihtiyaç",DECISION_ONLY_REFERENCE_MISSING,
+P-02,Satın Alma,Teklif ve Tedarikçi Karşılaştırma,"Fiyat, kalite, termin, koşul",DECISION_ONLY_REFERENCE_MISSING,
+P-03,Satın Alma,Satın Alma Siparişleri,Liste + hızlı detay,CONFIRMED_EXACT_REFERENCE,MASTER3-P-01
+P-04,Satın Alma,Yeni/Düzenle Satın Alma Siparişi,Rehberli form,CONFIRMED_EXACT_REFERENCE,MASTER3-P-08;MASTER3-P-12;PRODUCT-U-06
+P-05,Satın Alma,Sipariş 360 / Termin Dilimleri,"Sipariş, teyit, yolda, kabul, fatura",CONFIRMED_SPLIT_MERGE_REFERENCE,MASTER3-P-02;MASTER3-P-03;MASTER3-P-06;MASTER3-P-07;MASTER3-P-09
+P-06,Satın Alma,Beklenen Teslimatlar,Gelecek arz ve gecikme,CONFIRMED_SPLIT_MERGE_REFERENCE,MASTER3-P-03;MASTER3-P-09
+P-07,Satın Alma,Mal/Hizmet Kabulü,Sipariş–irsaliye–kantar–kalite,CONFIRMED_SPLIT_MERGE_REFERENCE,DISPATCH-INVOICE-PDH-01;DISPATCH-INVOICE-PDW-01;MASTER3-P-04;MASTER3-P-10
+P-08,Satın Alma,Gelen Faturalar,Liste ve belge kontrolü,CONFIRMED_SPLIT_MERGE_REFERENCE,DISPATCH-INVOICE-PDH-01;DISPATCH-INVOICE-PDW-02;MASTER3-P-05;MASTER3-P-11
+P-09,Satın Alma,Üçlü Kontrol,Sipariş ↔ kabul/irsaliye ↔ fatura,CONFIRMED_SPLIT_MERGE_REFERENCE,DISPATCH-INVOICE-PDH-01;DISPATCH-INVOICE-PDW-02;MASTER3-P-05;MASTER3-P-11
+P-10,Satın Alma,Red / İade / Düzeltme,Kaynak miktar ilişkisi,CONFIRMED_SPLIT_MERGE_REFERENCE,DISPATCH-INVOICE-DCR-01;DISPATCH-INVOICE-PDH-01;MASTER3-P-07
+P-11,Satın Alma,Satın Alma Onayları,Onay kuyruğu,DECISION_ONLY_REFERENCE_MISSING,
+P-12,Satın Alma,Tedarikçi Performansı,"Termin, fiyat ve kalite",DECISION_ONLY_REFERENCE_MISSING,
+U-01,"Ürün, Hizmet, Fiyat ve İşletme Alımları",Ürünler,Liste + Ürün 360,CONFIRMED_SPLIT_MERGE_REFERENCE,PRODUCT-U-01;PRODUCT-U-01A
+U-02,"Ürün, Hizmet, Fiyat ve İşletme Alımları",Yeni/Düzenle Ürün,"Kimlik, sınıf, roller, teknik nitelik",CANDIDATE_EXACT_REFERENCE,PRODUCT-U-02;PRODUCT-U-03;PRODUCT-U-04
+U-03,"Ürün, Hizmet, Fiyat ve İşletme Alımları",Hizmetler,Liste + detay,CANDIDATE_EXACT_REFERENCE,PRODUCT-H-01
+U-04,"Ürün, Hizmet, Fiyat ve İşletme Alımları",Yeni/Düzenle Hizmet,Ticari hizmet kartı,CANDIDATE_EXACT_REFERENCE,PRODUCT-H-02;PRODUCT-H-03
+U-05,"Ürün, Hizmet, Fiyat ve İşletme Alımları",Fiyatlar,"Liste, sürüm ve geçerlilik",CANDIDATE_EXACT_REFERENCE,PRODUCT-PRICE-01;PRODUCT-PRICE-04
+U-06,"Ürün, Hizmet, Fiyat ve İşletme Alımları",Fiyat Simülasyonu / Toplu Güncelleme,Etki önizlemesi,CANDIDATE_EXACT_REFERENCE,PRODUCT-PRICE-02
+U-07,"Ürün, Hizmet, Fiyat ve İşletme Alımları",Paket Standartları,Sürümlü paket/adet/ağırlık,CANDIDATE_EXACT_REFERENCE,PRODUCT-U-05
+U-08,"Ürün, Hizmet, Fiyat ve İşletme Alımları",Birim ve Dönüşümler,Birim sözleşmesi,CANDIDATE_OR_UNRESOLVED_REFERENCE,PRODUCT-A-01
+U-09,"Ürün, Hizmet, Fiyat ve İşletme Alımları",Teknik Şablon ve Dinamik Nitelikler,Grup/aile şablonu,CANDIDATE_OR_UNRESOLVED_REFERENCE,PRODUCT-A-01
+U-10,"Ürün, Hizmet, Fiyat ve İşletme Alımları",Excel İçe Aktarma,Eşleme–önizleme–onay,CANDIDATE_EXACT_REFERENCE,PRODUCT-PRICE-03
+IA-01,"Ürün, Hizmet, Fiyat ve İşletme Alımları",İşletme Alım İhtiyaçları,Sarf/bakım/yedek parça/genel gider,DECISION_ONLY_REFERENCE_MISSING,
+IA-02,"Ürün, Hizmet, Fiyat ve İşletme Alımları",İşletme Alım Sipariş/Kabul,Ticari katalogdan ayrı operasyon,DECISION_ONLY_REFERENCE_MISSING,
+C-01,Cari,Cari Kartlar,Tek hukuki kimlik listesi,CONFIRMED_EXACT_REFERENCE,CARI-ROUTE-01
+C-02,Cari,Yeni/Düzenle Cari,"Kimlik, roller, şirket hesapları",CONFIRMED_SPLIT_MERGE_REFERENCE,CARI-ROUTE-04;CARI-ROUTE-09
+C-03,Cari,Cari 360,"Özet, roller, risk, zaman çizgisi",CONFIRMED_EXACT_REFERENCE,CARI-ROUTE-03;CARI-ROUTE-05;CARI-ROUTE-07
+C-04,Cari,Cari Hesap Takibi,Ekstre ve hesap görünümü,CONFIRMED_SPLIT_MERGE_REFERENCE,CARI-ROUTE-02;CARI-ROUTE-06
+C-05,Cari,Açık Kalemler,Fatura/taksit ve kapama,CONFIRMED_SPLIT_MERGE_REFERENCE,CARI-ROUTE-02;CARI-ROUTE-06
+C-06,Cari,Adres / Kişi / İletişim,Şube ve muhataplar,CONFIRMED_SPLIT_MERGE_REFERENCE,CARI-ROUTE-04
+C-07,Cari,Banka / Vergi / Sicil,Hassas ve tarihçeli kayıt,CONFIRMED_SPLIT_MERGE_REFERENCE,CARI-ROUTE-04;CARI-ROUTE-08;CARI-ROUTE-10
+C-08,Cari,Risk / Limit / Vade,Brüt/net risk ve sevkiyat kararı,CONFIRMED_SPLIT_MERGE_REFERENCE,CARI-ROUTE-02;CARI-ROUTE-06;CARI-ROUTE-10
+C-09,Cari,Mutabakat,"Taslak, gönderim, cevap ve fark",CONFIRMED_SPLIT_MERGE_REFERENCE,CARI-ROUTE-02;CARI-ROUTE-06
+C-10,Cari,Belgeler / Sözleşmeler,Cari belge referansları,CONFIRMED_SPLIT_MERGE_REFERENCE,CARI-ROUTE-08
+C-11,Cari,Mükerrer ve Birleştirme,Karşılaştırma + onay,CONFIRMED_SPLIT_MERGE_REFERENCE,CARI-ROUTE-09;CARI-ROUTE-10
+C-12,Cari,İlişki / Takip Görevleri,"Görüşme, söz ve sorumluluk",DECISION_ONLY_REFERENCE_MISSING,
+ST-01,"Stok, Malzeme ve Tahsis",Stok / Malzeme Pozisyonu,Fiziksel + gelecek arz birleşik görünüm,CONFIRMED_SPLIT_MERGE_REFERENCE,MASTER3-S-06
+ST-02,"Stok, Malzeme ve Tahsis",Malzeme/Etiket 360,"Kimlik, sahiplik, konum, miktar, soy ağacı",DECISION_ONLY_REFERENCE_MISSING,
+ST-03,"Stok, Malzeme ve Tahsis",Depo/Lokasyon Görünümü,Tesis–depo–alan–raf,DECISION_ONLY_REFERENCE_MISSING,
+ST-04,"Stok, Malzeme ve Tahsis",Stok Hareket Zaman Çizgisi,"Giriş, çıkış, transfer, ters kayıt",DECISION_ONLY_REFERENCE_MISSING,
+ST-05,"Stok, Malzeme ve Tahsis",Sayım ve Fark Yönetimi,"Sayım, karşılaştırma, onay",DECISION_ONLY_REFERENCE_MISSING,
+ST-06,"Stok, Malzeme ve Tahsis",Kalite/Sistem Blokajı,"Karantina, blok, serbest bırakma",DECISION_ONLY_REFERENCE_MISSING,
+ST-07,"Stok, Malzeme ve Tahsis",Transfer / Emanet / Dış Fason,İki bacaklı hareket,DECISION_ONLY_REFERENCE_MISSING,
+ST-08,"Stok, Malzeme ve Tahsis",Gelecek Arz,"Alış siparişi, yolda, üretim bekleniyor",DECISION_ONLY_REFERENCE_MISSING,
+AL-01,"Stok, Malzeme ve Tahsis",Talep Havuzu,Satış/üretim/sevkiyat ihtiyacı,CONFIRMED_SPLIT_MERGE_REFERENCE,MASTER3-S-06
+AL-02,"Stok, Malzeme ve Tahsis",Kaynak Önerisi,Uygun stok/gelecek alım/üretim,CONFIRMED_SPLIT_MERGE_REFERENCE,MASTER3-S-06
+AL-03,"Stok, Malzeme ve Tahsis",Aktif Tahsisler,Çoktan çoğa tahsis,CONFIRMED_SPLIT_MERGE_REFERENCE,MASTER3-S-06
+AL-04,"Stok, Malzeme ve Tahsis",Tahsis Revizyonu,"Miktar, kaynak, öncelik ve etki",CONFIRMED_SPLIT_MERGE_REFERENCE,MASTER3-S-06
+AL-05,"Stok, Malzeme ve Tahsis",Serbest Bırakma / Sona Erme,Kontrollü geri açma,CONFIRMED_SPLIT_MERGE_REFERENCE,MASTER3-S-06
+AL-06,"Stok, Malzeme ve Tahsis",Çakışma ve Öncelik,Eşzamanlılık ve istisna,CONFIRMED_SPLIT_MERGE_REFERENCE,MASTER3-S-06
+PR-01,Üretim ve Kalite,Üretim Yönetimi Ana Bakış,"KPI, darboğaz, istisna",DECISION_ONLY_REFERENCE_MISSING,
+PR-02,Üretim ve Kalite,Üretim Planları,Liste + detay,DECISION_ONLY_REFERENCE_MISSING,
+PR-03,Üretim ve Kalite,Yeni Üretim Planı Ortak Kabuğu,"Bağlam, kaynak, hesap, çıktı, denge, onay",DECISION_ONLY_REFERENCE_MISSING,
+PR-04,Üretim ve Kalite,Boy Kesme Planlayıcı,Boy/adet/kg/metre/kalan/kerf,DECISION_ONLY_REFERENCE_MISSING,
+PR-05,Üretim ve Kalite,Dilme ve Bobin Sarım Planlayıcı,"En kombinasyonu, kg, metre, çap",DECISION_ONLY_REFERENCE_MISSING,
+PR-06,Üretim ve Kalite,Boru/Profil Planlayıcı,Paket/adet/boy/kg/hat/süre,DECISION_ONLY_REFERENCE_MISSING,
+PR-07,Üretim ve Kalite,Boyama Planlayıcı,"Yüzey, geçiş, hız, boya, kalite",DECISION_ONLY_REFERENCE_MISSING,
+PR-08,Üretim ve Kalite,Soğuk Hadde Planlayıcı,"Kalınlık, metre, redüksiyon, fire",DECISION_ONLY_REFERENCE_MISSING,
+PR-09,Üretim ve Kalite,Plan Detayı / Revizyon,Snapshot ve fark,DECISION_ONLY_REFERENCE_MISSING,
+PR-10,Üretim ve Kalite,Aktif Üretim Kuyruğu,"Sıra, hat, kalıp, setup",DECISION_ONLY_REFERENCE_MISSING,
+PR-11,Üretim ve Kalite,Üretim Takvimi / Gantt,İş merkezi takvimi,DECISION_ONLY_REFERENCE_MISSING,
+PR-12,Üretim ve Kalite,Üretim/Baç Başlatma,Kaynak ve ön koşul kontrolü,DECISION_ONLY_REFERENCE_MISSING,
+PR-13,Üretim ve Kalite,Hammadde Ekle/Değiştir,Tahsis ve genealoji,DECISION_ONLY_REFERENCE_MISSING,
+PR-14,Üretim ve Kalite,Üretim Gerçekleştirme,Hızlı tamamlama / fiilî / istisna,DECISION_ONLY_REFERENCE_MISSING,
+PR-15,Üretim ve Kalite,Gerçekleşmeler,Plan–gerçek ve ters işlem,DECISION_ONLY_REFERENCE_MISSING,
+PR-16,Üretim ve Kalite,Reçete / Formül / Tolerans,Sürümlü master,DECISION_ONLY_REFERENCE_MISSING,
+PR-17,Üretim ve Kalite,Hat / Kalıp / Kapasite,İş merkezi masterı,DECISION_ONLY_REFERENCE_MISSING,
+Q-01,Üretim ve Kalite,Giriş Kalite,Mal kabul bağlantısı,DECISION_ONLY_REFERENCE_MISSING,
+Q-02,Üretim ve Kalite,Proses Kalite,Üretim içi kontrol,DECISION_ONLY_REFERENCE_MISSING,
+Q-03,Üretim ve Kalite,Nihai Kalite,Çıkış/serbest bırakma,DECISION_ONLY_REFERENCE_MISSING,
+Q-04,Üretim ve Kalite,Karantina ve Bloklar,Stok uygunluğu,DECISION_ONLY_REFERENCE_MISSING,
+Q-05,Üretim ve Kalite,Uygunsuzluk / Sapma / Yeniden İşleme,CAPA genişleme bağı,DECISION_ONLY_REFERENCE_MISSING,
+Q-06,Üretim ve Kalite,Numune / Test / Sertifika / MTC,Kalite kanıtı,DECISION_ONLY_REFERENCE_MISSING,
+L-01,"Lojistik, Sevkiyat, Kantar ve Mal Kabul",Sevk Edilebilir Siparişler,Kaynak/tahsis kontrolü,DECISION_ONLY_REFERENCE_MISSING,
+L-02,"Lojistik, Sevkiyat, Kantar ve Mal Kabul",Yükleme Talimatları,"Plan, araç, durak, miktar",DECISION_ONLY_REFERENCE_MISSING,
+L-03,"Lojistik, Sevkiyat, Kantar ve Mal Kabul",Yeni/Düzenle Yükleme Talimatı,Bağlamsal workspace,CONFIRMED_SPLIT_MERGE_REFERENCE,DISPATCH-INVOICE-SDW-01;MASTER3-S-08
+L-04,"Lojistik, Sevkiyat, Kantar ve Mal Kabul",Araç / Sürücü / Kapı,Operasyon master ve oturum,DECISION_ONLY_REFERENCE_MISSING,
+L-05,"Lojistik, Sevkiyat, Kantar ve Mal Kabul",Fiilî Yükleme,Etiket ve gerçek miktar,CONFIRMED_SPLIT_MERGE_REFERENCE,DISPATCH-INVOICE-SDW-01;MASTER3-S-07;MASTER3-S-08
+L-06,"Lojistik, Sevkiyat, Kantar ve Mal Kabul",Kantar Oturumu,"Brüt, dara, net ve fark",DECISION_ONLY_REFERENCE_MISSING,
+L-07,"Lojistik, Sevkiyat, Kantar ve Mal Kabul",Sevkiyat Gerçekleşmesi,Plan–gerçek uzlaştırma,CONFIRMED_SPLIT_MERGE_REFERENCE,DISPATCH-INVOICE-SDW-01;MASTER3-S-07;MASTER3-S-08
+L-08,"Lojistik, Sevkiyat, Kantar ve Mal Kabul",Satış İrsaliyesi Hazırlığı,Gerçekleşmeden belgeye,CONFIRMED_SPLIT_MERGE_REFERENCE,DISPATCH-INVOICE-SDW-01;MASTER3-S-07;MASTER3-S-08
+L-09,"Lojistik, Sevkiyat, Kantar ve Mal Kabul",Beklenen Alış / Kapı Kabulü,Tedarik geliş kaydı,CONFIRMED_SPLIT_MERGE_REFERENCE,MASTER3-P-04
+L-10,"Lojistik, Sevkiyat, Kantar ve Mal Kabul",Mal Kabulü,"İrsaliye, kantar, kalite ve kabul",CONFIRMED_SPLIT_MERGE_REFERENCE,DISPATCH-INVOICE-PDW-01;MASTER3-P-04;MASTER3-P-10
+L-11,"Lojistik, Sevkiyat, Kantar ve Mal Kabul",Transfer / Yolda / Hedef Kabul,İki bacaklı lojistik,DECISION_ONLY_REFERENCE_MISSING,
+L-12,"Lojistik, Sevkiyat, Kantar ve Mal Kabul",Teslimat ve Farklar,"Eksik, fazla, hasar, red",CONFIRMED_SPLIT_MERGE_REFERENCE,DISPATCH-INVOICE-DCR-01
+B-01,Belgeler ve iletişim,Belge Gelen Kutusu,Dosya/e-posta/tarama girişleri,DECISION_ONLY_REFERENCE_MISSING,
+B-02,Belgeler ve iletişim,Belge Görüntüleme ve OCR,Orijinal + çıkarım,CONFIRMED_SPLIT_MERGE_REFERENCE,DISPATCH-INVOICE-DCD-01
+B-03,Belgeler ve iletişim,Sınıflandırma / Kayıt Eşleştirme,AI taslak ve kullanıcı doğrulama,DECISION_ONLY_REFERENCE_MISSING,
+B-04,Belgeler ve iletişim,Mükerrer Kontrol,Hash + anahtar karşılaştırma,DECISION_ONLY_REFERENCE_MISSING,
+B-05,Belgeler ve iletişim,Onay ve İşleme Kuyruğu,Belgeden ERP kaydına,DECISION_ONLY_REFERENCE_MISSING,
+B-06,Belgeler ve iletişim,Merkezi Belge Arşivi,"Sanal klasör, metadata, sürüm",CONFIRMED_SPLIT_MERGE_REFERENCE,MASTER3-P-06;MASTER3-S-11
+B-07,Belgeler ve iletişim,Belge 360 / Bağlı Kayıtlar,Tek dosya–çok referans,CONFIRMED_SPLIT_MERGE_REFERENCE,DISPATCH-INVOICE-DCD-01;MASTER3-P-06;MASTER3-S-11
+B-08,Belgeler ve iletişim,Çıktı / Dışa Aktar / Paylaş,PDF/XLSX/CSV/XML/JSON,DECISION_ONLY_REFERENCE_MISSING,
+B-09,Belgeler ve iletişim,E-posta Taslağı ve Gönderim,Kime/CC/Konu/Gövde/Ek,CONFIRMED_SPLIT_MERGE_REFERENCE,MASTER3-P-06;MASTER3-S-11
+B-10,Belgeler ve iletişim,Paylaşım ve Gönderim Geçmişi,Yetkili audit,DECISION_ONLY_REFERENCE_MISSING,
+B-11,Belgeler ve iletişim,E-belge Durumu,Adaptör/entegrasyon durumu,DECISION_ONLY_REFERENCE_MISSING,
+M-01,Muhasebe,Muhasebe Kontrol Merkezi,"Hata, bekleyen, dönem",DECISION_ONLY_REFERENCE_MISSING,
+M-02,Muhasebe,Faturalar ve Belgeler,Kaynak belge kontrolü,DECISION_ONLY_REFERENCE_MISSING,
+M-03,Muhasebe,Cari Hesaplar,Muhasebe/ticari bağlantı,DECISION_ONLY_REFERENCE_MISSING,
+M-04,Muhasebe,Muhasebe Fişleri,"Taslak, onay, ters kayıt",DECISION_ONLY_REFERENCE_MISSING,
+M-05,Muhasebe,Hesap Planı ve Boyutlar,"Hesap, merkez, proje boyutu",DECISION_ONLY_REFERENCE_MISSING,
+M-06,Muhasebe,Mizan / Defter / Yasal Rapor,Dönemsel rapor,DECISION_ONLY_REFERENCE_MISSING,
+M-07,Muhasebe,Dönem ve Vergi,"Kilit, kontrol, KDV/vergi",DECISION_ONLY_REFERENCE_MISSING,
+M-08,Muhasebe,Mahsup ve Mutabakat,Açık kalem bağlantısı,DECISION_ONLY_REFERENCE_MISSING,
+M-09,Muhasebe,Maliyet Muhasebesi,Genişleme/karar kapısı,DECISION_ONLY_REFERENCE_MISSING,
+F-01,Finans ve Hazine,Finans Genel Bakış,"Likidite, vade, risk, onay",CONFIRMED_EXACT_REFERENCE,FINANCE-V3V4-F-01
+F-02,Finans ve Hazine,Tahsilat / Ödeme Kaydı,Finansal kaynak oluşturma,CONFIRMED_EXACT_REFERENCE,FINANCE-V3V4-F-02
+F-03,Finans ve Hazine,Finansal Dağıtım ve Açık Kalem Kontrolü,Çoktan çoğa dağıtım,CONFIRMED_EXACT_REFERENCE,FINANCE-V3V4-F-03
+F-04,Finans ve Hazine,Banka Hesapları ve Ekstre,Defter/ekstre/valör/mutabakat,CONFIRMED_SPLIT_MERGE_REFERENCE,FINANCE-V3V4-F-05
+F-05,Finans ve Hazine,Kasa ve Virman,Nakit ve hesap transferi,CONFIRMED_SPLIT_MERGE_REFERENCE,FINANCE-V3V4-F-05
+F-06,Finans ve Hazine,Çek / Senet,"Portföy, ciro, tahsil, red",CONFIRMED_SPLIT_MERGE_REFERENCE,FINANCE-V3V4-F-07
+F-07,Finans ve Hazine,POS / Şirket Kartı / DBS,Şirket kullanımı; tedarikçi POS yok,CONFIRMED_SPLIT_MERGE_REFERENCE,FINANCE-V3V4-F-07
+F-08,Finans ve Hazine,Krediler ve Finansman,"Tesis, kullandırım, taksit, maliyet",CONFIRMED_SPLIT_MERGE_REFERENCE,FINANCE-V3V4-F-09
+F-09,Finans ve Hazine,Banka Limitleri,"Nakdi/gayrinakdi, kullanım, boş limit",CONFIRMED_SPLIT_MERGE_REFERENCE,FINANCE-V3V4-F-09
+F-10,Finans ve Hazine,Teminatlar ve Covenant,"Tahsis, sözleşme, uyarı",CONFIRMED_EXACT_REFERENCE,FINANCE-V3V4-F-10
+F-11,Finans ve Hazine,Nakit Akışı,"İlk 30 gün günlük, 13 hafta haftalık",CONFIRMED_SPLIT_MERGE_REFERENCE,FINANCE-V3V4-F-08
+F-12,Finans ve Hazine,Bütçe / Borç Servisi / Senaryo,Baz–iyimser–stres,CONFIRMED_SPLIT_MERGE_REFERENCE,FINANCE-V3V4-F-08;FINANCE-V3V4-F-11
+F-13,Finans ve Hazine,Cari Risk ve Tahsilat Takibi,"Limit, gecikme, hukuk, söz",CONFIRMED_EXACT_REFERENCE,FINANCE-V3V4-F-04
+F-14,Finans ve Hazine,Grup İçi Finans,"Karşı hareket, netleştirme, eliminasyon",DECISION_ONLY_REFERENCE_MISSING,
+F-15,Finans ve Hazine,Ödeme Önerisi ve Banka Talimatı,Hazırla–kontrol–onay–sonuç,CONFIRMED_EXACT_REFERENCE,FINANCE-V3V4-F-06
+F-16,Finans ve Hazine,Finans Mutabakatı,Banka/Mikro/entegrasyon farkı,CONFIRMED_SPLIT_MERGE_REFERENCE,FINANCE-V3V4-F-12
+F-17,Finans ve Hazine,Finans Raporları ve Audit,"Yaşlandırma, maliyet, performans",CONFIRMED_SPLIT_MERGE_REFERENCE,FINANCE-V3V4-F-13
+R-01,"Raporlar, AI Merkezi, Ana Veriler ve Sistem Yönetimi",Kurumsal Rapor Merkezi,Yetkili semantik raporlar,DECISION_ONLY_REFERENCE_MISSING,
+R-02,"Raporlar, AI Merkezi, Ana Veriler ve Sistem Yönetimi",Satış / Alış / Stok / Üretim / Lojistik,Alan raporları,DECISION_ONLY_REFERENCE_MISSING,
+R-03,"Raporlar, AI Merkezi, Ana Veriler ve Sistem Yönetimi",Finans / Cari / Kârlılık / Nakit,Finansal analiz,CONFIRMED_SPLIT_MERGE_REFERENCE,FINANCE-V3V4-F-13
+R-04,"Raporlar, AI Merkezi, Ana Veriler ve Sistem Yönetimi",Veri Kalitesi / Entegrasyon Sağlığı,"Mükerrer, eksik, gecikme",CONFIRMED_SPLIT_MERGE_REFERENCE,DISPATCH-INVOICE-DCE-01;PRODUCT-U-04
+R-05,"Raporlar, AI Merkezi, Ana Veriler ve Sistem Yönetimi",Zamanlanmış Rapor / Dışa Aktarım,Kuyruk ve teslimat,CONFIRMED_SPLIT_MERGE_REFERENCE,FINANCE-V3V4-F-13
+AI-01,"Raporlar, AI Merkezi, Ana Veriler ve Sistem Yönetimi",AI Merkezi,"Görev, öneri ve günlük özet",DECISION_ONLY_REFERENCE_MISSING,
+AI-02,"Raporlar, AI Merkezi, Ana Veriler ve Sistem Yönetimi",Öneri / Onay / Sonuç Kalitesi,Eval ve geri bildirim,DECISION_ONLY_REFERENCE_MISSING,
+AI-03,"Raporlar, AI Merkezi, Ana Veriler ve Sistem Yönetimi",Araç / Politika / Veri Kapsamı,Sürüm ve güvenlik,DECISION_ONLY_REFERENCE_MISSING,
+AV-01,"Raporlar, AI Merkezi, Ana Veriler ve Sistem Yönetimi",Şirket / Tesis / Şube / Depo / Lokasyon,Organizasyon masterı,DECISION_ONLY_REFERENCE_MISSING,
+AV-02,"Raporlar, AI Merkezi, Ana Veriler ve Sistem Yönetimi",Birim / Para / Kur / Vergi,Ortak master,CANDIDATE_OR_UNRESOLVED_REFERENCE,PRODUCT-A-01
+AV-03,"Raporlar, AI Merkezi, Ana Veriler ve Sistem Yönetimi",Durum / İş Akışı / Numara Serisi,Ortak politika,DECISION_ONLY_REFERENCE_MISSING,
+SY-01,"Raporlar, AI Merkezi, Ana Veriler ve Sistem Yönetimi",Kullanıcılar,"Kimlik, durum, oturum",DECISION_ONLY_REFERENCE_MISSING,
+SY-02,"Raporlar, AI Merkezi, Ana Veriler ve Sistem Yönetimi",Roller ve Yetkiler,RBAC + ABAC,DECISION_ONLY_REFERENCE_MISSING,
+SY-03,"Raporlar, AI Merkezi, Ana Veriler ve Sistem Yönetimi",AI Yetki Taslağı,Fark/risk/önizleme,DECISION_ONLY_REFERENCE_MISSING,
+SY-04,"Raporlar, AI Merkezi, Ana Veriler ve Sistem Yönetimi",Onay Matrisi / Eşik / Vekâlet,Görev ayrılığı,DECISION_ONLY_REFERENCE_MISSING,
+SY-05,"Raporlar, AI Merkezi, Ana Veriler ve Sistem Yönetimi",Belge ve İletişim Şablonları,PDF/e-posta/paylaşım varsayılanı,DECISION_ONLY_REFERENCE_MISSING,
+SY-06,"Raporlar, AI Merkezi, Ana Veriler ve Sistem Yönetimi",Entegrasyon ve Veri Eşlemeleri,"Durum, hata, tekrar",DECISION_ONLY_REFERENCE_MISSING,
+SY-07,"Raporlar, AI Merkezi, Ana Veriler ve Sistem Yönetimi",Audit ve Sistem Sağlığı,"İş izi, log, metrik, alarm",DECISION_ONLY_REFERENCE_MISSING,
+SY-08,"Raporlar, AI Merkezi, Ana Veriler ve Sistem Yönetimi",Güvenlik / Saklama / Gizlilik,"MFA, maskeleme, retention",DECISION_ONLY_REFERENCE_MISSING,
