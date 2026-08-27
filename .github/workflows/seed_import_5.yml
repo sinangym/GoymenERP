@@ -1,0 +1,123 @@
+name: Temporary repository seed import v5
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: read
+
+jobs:
+  import-seed:
+    if: github.event.issue.title == 'GOYMEN_SEED_IMPORT_V1' && contains(github.event.comment.body, 'GOYMEN_SEED5_FINAL')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct and import repository seed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          EXPECTED_ZIP_SHA256: 0b63c98a425da721a0902dba5dfa5d7f9abf94f95a2621345a7eddd837b82594
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, json, os, re, shutil, subprocess, tempfile, urllib.request, zipfile
+
+          repo = os.environ['GH_REPOSITORY']
+          issue = os.environ['ISSUE_NUMBER']
+          token = os.environ['GH_TOKEN']
+          expected_sha = os.environ['EXPECTED_ZIP_SHA256']
+
+          req = urllib.request.Request(
+              f'https://api.github.com/repos/{repo}/issues/{issue}/comments?per_page=100',
+              headers={
+                  'Authorization': f'Bearer {token}',
+                  'Accept': 'application/vnd.github+json',
+                  'X-GitHub-Api-Version': '2022-11-28',
+              },
+          )
+          with urllib.request.urlopen(req) as response:
+              comments = json.load(response)
+
+          chunks = {}
+          for item in comments:
+              body = item.get('body') or ''
+              match = re.match(r'^GOYMEN_SEED5_CHUNK\s+(\d{2})/04\n([A-Za-z0-9+/=]+)(?:\nGOYMEN_SEED5_FINAL)?\s*$', body)
+              if match:
+                  chunks[int(match.group(1))] = match.group(2)
+
+          expected_indexes = list(range(5))
+          if sorted(chunks) != expected_indexes:
+              raise SystemExit(f'Chunk set incomplete: got {sorted(chunks)}, expected {expected_indexes}')
+
+          raw = base64.b64decode(''.join(chunks[index] for index in expected_indexes), validate=True)
+          actual_sha = hashlib.sha256(raw).hexdigest()
+          if actual_sha != expected_sha:
+              raise SystemExit(f'ZIP checksum mismatch: {actual_sha}')
+
+          work = tempfile.mkdtemp(prefix='goymen-seed-')
+          archive = os.path.join(work, 'seed.zip')
+          with open(archive, 'wb') as handle:
+              handle.write(raw)
+          extract = os.path.join(work, 'extract')
+          with zipfile.ZipFile(archive) as package:
+              package.extractall(extract)
+
+          matches = []
+          for current_root, directories, files in os.walk(extract):
+              if os.path.basename(current_root) == '15_REPO_SEED':
+                  matches.append(current_root)
+          if len(matches) != 1:
+              raise SystemExit(f'Expected exactly one 15_REPO_SEED, got {matches}')
+          seed = matches[0]
+
+          seed_files = []
+          for current_root, directories, files in os.walk(seed):
+              for name in files:
+                  seed_files.append(os.path.relpath(os.path.join(current_root, name), seed).replace(os.sep, '/'))
+          seed_files.sort()
+          if len(seed_files) != 40:
+              raise SystemExit(f'Expected 40 seed files, got {len(seed_files)}')
+
+          repository_root = os.getcwd()
+          for name in os.listdir(repository_root):
+              if name == '.git':
+                  continue
+              target = os.path.join(repository_root, name)
+              if os.path.isdir(target) and not os.path.islink(target):
+                  shutil.rmtree(target)
+              else:
+                  os.remove(target)
+
+          for name in os.listdir(seed):
+              source = os.path.join(seed, name)
+              target = os.path.join(repository_root, name)
+              if os.path.isdir(source):
+                  shutil.copytree(source, target)
+              else:
+                  shutil.copy2(source, target)
+
+          actual_files = []
+          for current_root, directories, files in os.walk(repository_root):
+              if '.git' in directories:
+                  directories.remove('.git')
+              for name in files:
+                  actual_files.append(os.path.relpath(os.path.join(current_root, name), repository_root).replace(os.sep, '/'))
+          actual_files.sort()
+          if actual_files != seed_files:
+              missing = sorted(set(seed_files) - set(actual_files))
+              extra = sorted(set(actual_files) - set(seed_files))
+              raise SystemExit(f'Repository tree mismatch. missing={missing}, extra={extra}')
+
+          subprocess.run(['git', 'config', 'user.name', 'Göymen ERP Seed Import'], check=True)
+          subprocess.run(['git', 'config', 'user.email', 'actions@users.noreply.github.com'], check=True)
+          subprocess.run(['git', 'add', '-A'], check=True)
+          subprocess.run(['git', 'commit', '-m', 'Import complete Göymen ERP repository seed v1.0'], check=True)
+          subprocess.run(['git', 'push', 'origin', 'HEAD:main'], check=True)
+          print('Imported 40/40 repository seed files successfully.')
+          PY
