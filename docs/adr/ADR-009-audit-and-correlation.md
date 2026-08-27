@@ -1,7 +1,7 @@
 # ADR-009 — Append-only Audit ve Korelasyon Sınırı
 
 - Tarih: 2026-08-27
-- Durum: Uygulandı, review bekliyor
+- Durum: Uygulandı ve `main`e alındı (`908bbfd5083debfabbe660d45b7ec99fa6d1b9d6`)
 - Görev: ERP-000D
 - İlgili kararlar: `DEC-AI-005`, `ADR-009`, `AT-003`,
   `ORTAK_KAYIT_METADATA`, `GOZLEMLENEBILIRLIK_GUVENLIK`
@@ -79,6 +79,21 @@ bu karardan ayrı kalmalıdır.
   başına ilan edemez.
 - Onay alanı nullable'dır; gerçek approval motoru bağlandığında request/decision/approver
   snapshot'ı aynı olay zarfına yazılır.
+
+## Dar modül bağımlılığı istisnası
+
+`OrganizationDbContext`, audit taslağını iş değişikliğiyle aynı EF `SaveChanges` ve SQL
+transaction'ında kalıcılaştırmak için Audit'in EF model mapping uzantısını kullanır. Bu
+atomiklik kararı yalnız aşağıdaki exact project-reference kenarına izin verir:
+
+`Organization.Infrastructure -> Audit.Infrastructure`
+
+İstisna `docs/architecture/MODULE_DEPENDENCY_ALLOWLIST.json` içinde bu ADR'ye bağlıdır.
+Başka Audit Infrastructure servisine erişim, başka modül tablosuna doğrudan yazma veya
+kenarın genişletilmesi bu kararın kapsamında değildir. Architecture dependency guard,
+allowlist dışındaki modüller arası Domain/Infrastructure hedeflerini ve artık gerçek
+grafikte bulunmayan stale istisnaları reddeder; Application contract kullanımı bu
+istisna listesine alınmaz.
 
 ## Migration ve geri alma
 

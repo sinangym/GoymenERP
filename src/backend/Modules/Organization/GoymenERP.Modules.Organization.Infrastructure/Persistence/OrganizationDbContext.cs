@@ -5,6 +5,8 @@ using GoymenERP.Modules.Organization.Domain.Locations;
 using GoymenERP.Modules.Organization.Domain.Sites;
 using GoymenERP.Modules.Organization.Domain.WorkCenters;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
+using GoymenERP.Modules.Idempotency.Domain.Executions;
+using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Organization.Infrastructure.Persistence;
@@ -23,6 +25,8 @@ public sealed class OrganizationDbContext(
 
     public DbSet<WorkCenter> WorkCenters => Set<WorkCenter>();
 
+    public DbSet<CommandExecution> CommandExecutions => Set<CommandExecution>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -32,6 +36,9 @@ public sealed class OrganizationDbContext(
         ConfigureLocation(modelBuilder);
         ConfigureWorkCenter(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
+        modelBuilder.ConfigureCommandExecution(excludeFromMigrations: true);
+        modelBuilder.Entity<CommandExecution>()
+            .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     public override int SaveChanges()
@@ -66,6 +73,7 @@ public sealed class OrganizationDbContext(
         entity.Property(x => x.Code).HasMaxLength(64).IsRequired();
         entity.Property(x => x.LegalName).HasMaxLength(250).IsRequired();
         entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.RowVersion).IsRowVersion();
         entity.HasIndex(x => x.Code).IsUnique();
     }
 
@@ -117,6 +125,7 @@ public sealed class OrganizationDbContext(
         entity.Property(x => x.Code).HasMaxLength(64).IsRequired();
         entity.Property(x => x.Name).HasMaxLength(200).IsRequired();
         entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.RowVersion).IsRowVersion();
         entity.HasIndex(x => new { x.CompanyId, x.Code }).IsUnique();
         entity.HasIndex(x => new { x.CompanyId, x.IsActive });
     }
@@ -161,6 +170,27 @@ public sealed class OrganizationDbContext(
             if (entry.State == EntityState.Modified)
             {
                 entry.Entity.Touch(now);
+            }
+        }
+
+
+        foreach (var entry in ChangeTracker.Entries<CommandExecution>())
+        {
+            if (entry.State == EntityState.Unchanged)
+            {
+                continue;
+            }
+
+            if (entry.State is EntityState.Modified or EntityState.Deleted)
+            {
+                throw new InvalidOperationException(
+                    "Idempotency kayıtları değiştirilemez veya silinemez.");
+            }
+
+            if (!companyContext.IsResolved || entry.Entity.CompanyId != companyContext.CompanyId)
+            {
+                throw new InvalidOperationException(
+                    "Idempotency kaydı aktif şirket bağlamıyla eşleşmelidir.");
             }
         }
     }

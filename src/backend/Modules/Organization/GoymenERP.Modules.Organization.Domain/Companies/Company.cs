@@ -31,6 +31,8 @@ public sealed class Company
 
     public long Version { get; private set; } = 1;
 
+    public byte[] RowVersion { get; private set; } = [];
+
     public DateTimeOffset CreatedAtUtc { get; private set; } = DateTimeOffset.UtcNow;
 
     public DateTimeOffset UpdatedAtUtc { get; private set; } = DateTimeOffset.UtcNow;

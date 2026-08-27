@@ -16,7 +16,7 @@ public interface IOrganizationService
 
     Task<IReadOnlyList<WorkCenterSummary>> GetWorkCentersAsync(CancellationToken cancellationToken);
 
-    Task<CommandResult> SetLocationActiveStateAsync(
+    Task<CommandExecutionResult> SetLocationActiveStateAsync(
         Guid id,
         SetLocationActiveState command,
         CommandMetadata metadata,

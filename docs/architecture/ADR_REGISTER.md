@@ -12,3 +12,4 @@
 | ADR-008 | AI | Backend tool gateway, local-first | Kabul |
 | ADR-009 | Audit | Append-only/değiştirilemez uygulama erişimi | Kabul |
 | ADR-010 | Yayın | Ayrı ortam, CI/CD, rollback manifesti | Kabul |
+| ADR-011 | Idempotency/Concurrency | Kalıcı sonuç replay + SQL rowversion | Review |
