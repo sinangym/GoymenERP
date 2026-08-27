@@ -81,3 +81,33 @@ OPEN DECISIONS: OPEN-021
 MAIN SHA: 5f577892e9eeb51034cb8906e8a5e01a31d8680c
 ACTIVE PRS: #8 Draft; #6 Draft; #2 Draft
 ```
+
+## 2026-08-28 01:02 +03:00 — Döngü 3
+
+- Governance Draft PR #8 içinde bulunan self-authority-escalation açığı kapatıldı. Repo
+  protokolünün dış yazma/merge yetkisi üretmediği; governance, CI, acceptance durumu ve test
+  kapısı değişikliklerinin otomatik merge edilemeyeceği kesinleştirildi. `AGENTS.md` protokolü
+  yeni döngüler için keşfedilebilir yapıyor. Head `b8ae919a0b8809802b4f1f60cc2c56f0bcaec7ad`
+  için CI run `33119693982` dört işte başarılı oldu; PR Draft bırakıldı.
+- UI katalog golden validator Draft PR #9 olarak açıldı. Head
+  `0e253bf0f684a42113200f611a2725db07a484be` üzerinde 24/24 fixture testi ile gerçek
+  katalogda 72 kaynak kayıt, 159 kanonik ekran, 72 ekran kartı, 77 özgün varlık, 5 prototip,
+  19 seçilmiş kaynak ve exact 101 manifest girdisi doğrulandı. Symlink/sınıf-kökü ve yanlış
+  karar kabulü blockerları kapatıldı; bağımsız yeniden incelemede yeni P0/P1 bulunmadı.
+  UI run `33120492323` ve ana CI run `33120492302` tamamen başarılı; PR Draft bırakıldı.
+- Raporlama deltası Draft PR #2 güncel `main` ile salt-okunur incelendi. Merge conflict,
+  mevcut kabul kanıtının gerilemesi, task manifest drift, canonical karar keşfi, `OPEN-020`
+  veri güvenliği bağı, RPT-001/RPT-003 kabul döngüsü ve R-06/R-07 UI katalog uyumsuzluğu
+  olmak üzere yedi blocker PR yorumuna kaydedildi. PR merge edilmedi.
+- ERP-000E Draft PR #6 değişmedi; final CI yeşil ve insan review kapısında. ERP-000F
+  başlatılmadı, `OPEN-021` açık kaldı ve `main` değiştirilmedi.
+
+```text
+DONE: PR #6 final kanıt; PR #8 governance guard; PR #9 UI golden validator; PR #2 blocker review
+IN REVIEW: ERP-000E Draft #6; governance Draft #8; UI validator Draft #9
+BLOCKED: ERP-000F (ERP-000E insan review ve merge kapısı); PR #2 (yedi blocker)
+SAFE NEXT: insan review sonrası PR #6 merge kararı; ardından bağımlı dalları güncel main ile senkronize et
+OPEN DECISIONS: OPEN-021; OPEN-020 raporlama AI sağlayıcı/veri sınıfı bağı
+MAIN SHA: 5f577892e9eeb51034cb8906e8a5e01a31d8680c
+ACTIVE PRS: #9 Draft; #8 Draft; #6 Draft; #2 Draft
+```
