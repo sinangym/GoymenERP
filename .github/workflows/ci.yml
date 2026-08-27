@@ -18,10 +18,10 @@ jobs:
     name: Backend build, test and migration
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup .NET 10
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
 
@@ -54,10 +54,10 @@ jobs:
       run:
         working-directory: src/frontend/goymen-erp-web
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -78,7 +78,7 @@ jobs:
     env:
       MSSQL_SA_PASSWORD: Local_Only_Strong_Password_123!
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Validate compose model
         run: docker compose -f infra/docker-compose.yml config --quiet
