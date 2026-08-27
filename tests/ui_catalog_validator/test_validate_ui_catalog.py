@@ -13,6 +13,7 @@ from tools.validate_ui_catalog import (
     EXPECTED_CANONICAL_SCREENS,
     EXPECTED_ORIGINAL_ASSETS,
     EXPECTED_PROTOTYPES,
+    EXPECTED_SELECTED_SOURCES,
     EXPECTED_SOURCE_RECORDS,
     SCREEN_CATALOG_FIELDS,
     validate_repository,
@@ -97,6 +98,43 @@ class UiCatalogValidatorTests(unittest.TestCase):
 
         self.assert_error_contains("Unresolved decision reference")
 
+    def test_narrative_decision_mention_does_not_resolve_reference(self) -> None:
+        reconciliation = self.root / "docs/ui/SOURCE_RECONCILIATION.md"
+        reconciliation.write_text(
+            reconciliation.read_text(encoding="utf-8")
+            + "Narrative-only candidate UI-MAP-999 is not accepted.\n",
+            encoding="utf-8",
+        )
+        rows = self._read_csv("docs/ui/SCREEN_CATALOG.csv")
+        rows[0]["decision_refs"] = json.dumps(["UI-MAP-999"])
+        self._write_csv("docs/ui/SCREEN_CATALOG.csv", SCREEN_CATALOG_FIELDS, rows)
+        card = self.root / rows[0]["screen_card"]
+        card.write_text(
+            card.read_text(encoding="utf-8").replace(
+                'decision_refs: ["UI-MAP-001"]',
+                'decision_refs: ["UI-MAP-999"]',
+            ),
+            encoding="utf-8",
+        )
+
+        self.assert_error_contains("Unresolved decision reference 'UI-MAP-999'")
+
+    def test_unexpected_accepted_decision_is_rejected(self) -> None:
+        reconciliation = self.root / "docs/ui/SOURCE_RECONCILIATION.md"
+        reconciliation.write_text(
+            reconciliation.read_text(encoding="utf-8")
+            + "**UI-MAP-007:** unexpected accepted fixture decision\n",
+            encoding="utf-8",
+        )
+
+        self.assert_error_contains("Unexpected accepted UI mapping decisions")
+
+    def test_unmanifested_selected_source_is_rejected(self) -> None:
+        source = self.root / "docs/ui/sources/test/unmanifested.md"
+        source.write_text("unmanifested source\n", encoding="utf-8")
+
+        self.assert_error_contains("SELECTED_SOURCE filesystem/manifest mismatch")
+
     def test_frontmatter_catalog_parity_mismatch_is_rejected(self) -> None:
         card = self.root / "docs/ui/screens/test/REC-001.md"
         card.write_text(
@@ -121,12 +159,14 @@ class UiCatalogValidatorTests(unittest.TestCase):
         cards_root = ui_root / "screens/test"
         originals_root = ui_root / "assets/original/test"
         prototypes_root = ui_root / "prototypes/test"
+        sources_root = ui_root / "sources/test"
         cards_root.mkdir(parents=True)
         originals_root.mkdir(parents=True)
         prototypes_root.mkdir(parents=True)
+        sources_root.mkdir(parents=True)
 
         decisions = "\n".join(
-            f"UI-MAP-{number:03d}: fixture decision"
+            f"**UI-MAP-{number:03d}:** fixture decision"
             for number in range(1, 7)
         )
         (ui_root / "SOURCE_RECONCILIATION.md").write_text(
@@ -212,6 +252,14 @@ class UiCatalogValidatorTests(unittest.TestCase):
             asset_rows.append(
                 self._asset_row(prototype_relative, "REFERENCE_PROTOTYPE")
             )
+
+        for index in range(1, EXPECTED_SELECTED_SOURCES + 1):
+            source_relative = f"docs/ui/sources/test/source-{index:03d}.md"
+            (self.root / source_relative).write_text(
+                f"# selected source {index}\n",
+                encoding="utf-8",
+            )
+            asset_rows.append(self._asset_row(source_relative, "SELECTED_SOURCE"))
 
         for index in range(1, EXPECTED_CANONICAL_SCREENS + 1):
             record_id = (

@@ -18,6 +18,7 @@ EXPECTED_SOURCE_RECORDS = 72
 EXPECTED_CANONICAL_SCREENS = 159
 EXPECTED_ORIGINAL_ASSETS = 77
 EXPECTED_PROTOTYPES = 5
+EXPECTED_SELECTED_SOURCES = 19
 EXPECTED_DECISION_IDS = {f"UI-MAP-{number:03d}" for number in range(1, 7)}
 ALLOWED_NON_CANONICAL_RELATED_REFERENCE_IDS = {"GLOBAL-SHELL"}
 
@@ -184,6 +185,24 @@ def _duplicates(values: Iterable[str]) -> list[str]:
     return sorted(value for value, count in Counter(values).items() if count > 1)
 
 
+def _accepted_ui_mapping_decisions(reconciliation_text: str) -> set[str]:
+    definition_ids = set(
+        re.findall(
+            r"^\s*(?:-\s*)?\*\*(UI-MAP-\d{3}):\*\*",
+            reconciliation_text,
+            flags=re.MULTILINE,
+        )
+    )
+    summary_ids = set(
+        re.findall(
+            r"^\s*\|\s*`(UI-MAP-\d{3})`\s*\|",
+            reconciliation_text,
+            flags=re.MULTILINE,
+        )
+    )
+    return definition_ids | summary_ids
+
+
 def validate_repository(repository_root: Path | str) -> list[str]:
     """Return every catalog validation error found under ``repository_root``."""
 
@@ -242,12 +261,18 @@ def validate_repository(repository_root: Path | str) -> list[str]:
     except (OSError, UnicodeError) as exc:
         errors.append(f"Cannot read decision source {reconciliation_path}: {exc}")
         reconciliation_text = ""
-    resolved_decisions = set(re.findall(r"\bUI-MAP-\d{3}\b", reconciliation_text))
+    resolved_decisions = _accepted_ui_mapping_decisions(reconciliation_text)
     missing_golden_decisions = sorted(EXPECTED_DECISION_IDS - resolved_decisions)
     if missing_golden_decisions:
         errors.append(
             "Missing golden UI mapping decisions in SOURCE_RECONCILIATION.md: "
             + ", ".join(missing_golden_decisions)
+        )
+    unexpected_decisions = sorted(resolved_decisions - EXPECTED_DECISION_IDS)
+    if unexpected_decisions:
+        errors.append(
+            "Unexpected accepted UI mapping decisions in SOURCE_RECONCILIATION.md: "
+            + ", ".join(unexpected_decisions)
         )
 
     expected_reference_records: dict[str, set[str]] = defaultdict(set)
@@ -286,7 +311,10 @@ def validate_repository(repository_root: Path | str) -> list[str]:
                     f"Unresolved related reference {related_id!r} in {record_id}"
                 )
         for decision_id in parsed_lists["decision_refs"]:
-            if decision_id not in resolved_decisions:
+            if (
+                decision_id not in EXPECTED_DECISION_IDS
+                or decision_id not in resolved_decisions
+            ):
                 errors.append(
                     f"Unresolved decision reference {decision_id!r} in {record_id}"
                 )
@@ -362,6 +390,11 @@ def validate_repository(repository_root: Path | str) -> list[str]:
         errors.append(
             f"Golden REFERENCE_PROTOTYPE count mismatch: expected {EXPECTED_PROTOTYPES}, "
             f"got {artifact_counts['REFERENCE_PROTOTYPE']}"
+        )
+    if artifact_counts["SELECTED_SOURCE"] != EXPECTED_SELECTED_SOURCES:
+        errors.append(
+            f"Golden SELECTED_SOURCE count mismatch: expected {EXPECTED_SELECTED_SOURCES}, "
+            f"got {artifact_counts['SELECTED_SOURCE']}"
         )
 
     for row_number, row in enumerate(asset_rows, start=2):
@@ -441,6 +474,29 @@ def validate_repository(repository_root: Path | str) -> list[str]:
             f"missing={sorted(manifest_prototype_paths - actual_prototype_paths)!r}"
         )
 
+    sources_root = ui_root / "sources"
+    actual_source_paths = {
+        _relative_repo_path(root, path.resolve())
+        for path in sources_root.rglob("*")
+        if path.is_file()
+    }
+    manifest_source_paths = {
+        row.get("repo_path", "")
+        for row in asset_rows
+        if row.get("artifact_class") == "SELECTED_SOURCE"
+    }
+    if len(actual_source_paths) != EXPECTED_SELECTED_SOURCES:
+        errors.append(
+            f"Golden selected source filesystem count mismatch: "
+            f"expected {EXPECTED_SELECTED_SOURCES}, got {len(actual_source_paths)}"
+        )
+    if actual_source_paths != manifest_source_paths:
+        errors.append(
+            "SELECTED_SOURCE filesystem/manifest mismatch: "
+            f"unmanifested={sorted(actual_source_paths - manifest_source_paths)!r}, "
+            f"missing={sorted(manifest_source_paths - actual_source_paths)!r}"
+        )
+
     for row_number, row in enumerate(screen_rows, start=2):
         record_id = row.get("record_id", "") or f"row-{row_number}"
         card_path = _repo_path(root, row.get("screen_card", ""))
@@ -492,6 +548,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"- source cards: {EXPECTED_SOURCE_RECORDS}/{EXPECTED_SOURCE_RECORDS}")
     print(f"- ORIGINAL_ASSET files: {EXPECTED_ORIGINAL_ASSETS}/{EXPECTED_ORIGINAL_ASSETS}")
     print(f"- reference prototypes: {EXPECTED_PROTOTYPES}/{EXPECTED_PROTOTYPES}")
+    print(f"- selected source files: {EXPECTED_SELECTED_SOURCES}/{EXPECTED_SELECTED_SOURCES}")
     print("- catalog/card/reference/hash parity: verified")
     return 0
 
