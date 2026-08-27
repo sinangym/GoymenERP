@@ -8,9 +8,10 @@ public sealed class HttpCurrentUser(IHttpContextAccessor httpContextAccessor) : 
     private ClaimsPrincipal Principal => httpContextAccessor.HttpContext?.User
         ?? new ClaimsPrincipal();
 
-    public bool IsAuthenticated => Principal.Identity?.IsAuthenticated == true;
+    public bool IsAuthenticated => Principal.Identity?.IsAuthenticated == true
+        && !string.IsNullOrWhiteSpace(UserId);
 
-    public string? UserId => Principal.FindFirstValue(ClaimTypes.NameIdentifier);
+    public string? UserId => Principal.FindFirstValue(GoymenClaimTypes.UserId);
 
     public IReadOnlySet<Guid> AllowedCompanyIds => Principal
         .FindAll(GoymenClaimTypes.CompanyAccess)

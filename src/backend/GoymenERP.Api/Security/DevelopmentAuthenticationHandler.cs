@@ -41,9 +41,9 @@ public sealed class DevelopmentAuthenticationHandler(
         {
             new(ClaimTypes.NameIdentifier, selectedUser.UserId),
             new(ClaimTypes.Name, selectedUser.DisplayName),
+            new(GoymenClaimTypes.IdentityIssuer, BootstrapIdentityOptions.Issuer),
+            new(GoymenClaimTypes.IdentitySubject, selectedUser.UserId),
         };
-        claims.AddRange(selectedUser.AllowedCompanyIds.Select(companyId =>
-            new Claim(GoymenClaimTypes.CompanyAccess, companyId.ToString("D"))));
 
         var identity = new ClaimsIdentity(claims, SchemeName);
         var ticket = new AuthenticationTicket(new ClaimsPrincipal(identity), SchemeName);

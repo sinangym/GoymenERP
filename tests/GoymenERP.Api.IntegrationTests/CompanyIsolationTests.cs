@@ -41,6 +41,82 @@ public sealed class CompanyIsolationTests(GoymenErpApiFactory factory)
     }
 
     [Fact]
+    public async Task ProvisionedIdentity_IsResolvedToStableLocalUser()
+    {
+        using var client = factory.CreateClientFor(TestUsers.CompanyA);
+
+        var response = await client.GetAsync("/api/v1/identity/me");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains(
+            "20000000-0000-0000-0000-000000000001",
+            body,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            TestCompanyIds.CompanyA.ToString(),
+            body,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(
+            TestCompanyIds.CompanyB.ToString(),
+            body,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task AuthenticatedButUnprovisionedIdentity_IsDeniedByDefaultPolicy()
+    {
+        using var client = factory.CreateClientFor(TestUsers.Unprovisioned);
+
+        var response = await client.GetAsync("/api/v1/organization/companies");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SiteScopedViewer_SeesOnlyAuthorizedHierarchy()
+    {
+        using var client = factory.CreateClientFor(
+            TestUsers.CompanyAViewer,
+            TestCompanyIds.CompanyA);
+
+        var sites = await client.GetFromJsonAsync<List<SiteSummary>>(
+            "/api/v1/organization/sites",
+            JsonOptions);
+        var locations = await client.GetFromJsonAsync<PageResult<LocationSummary>>(
+            "/api/v1/organization/locations?pageSize=100",
+            JsonOptions);
+        var workCenters = await client.GetFromJsonAsync<List<WorkCenterSummary>>(
+            "/api/v1/organization/work-centers",
+            JsonOptions);
+
+        Assert.Equal("SITE-OSM", Assert.Single(Assert.IsType<List<SiteSummary>>(sites)).Code);
+        Assert.Equal(8, Assert.IsType<PageResult<LocationSummary>>(locations).TotalCount);
+        Assert.Equal(5, Assert.IsType<List<WorkCenterSummary>>(workCenters).Count);
+    }
+
+    [Fact]
+    public async Task ReadOnlyRole_CannotInvokeWriteEndpoint()
+    {
+        var location = await factory.GetLocationIgnoringFiltersAsync(
+            TestCompanyIds.CompanyA,
+            "OSM-H0");
+        using var client = factory.CreateClientFor(
+            TestUsers.CompanyAViewer,
+            TestCompanyIds.CompanyA);
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/v1/organization/locations/{location.Id}/active-state",
+            new SetLocationActiveState(!location.IsActive, location.Version));
+        var after = await factory.GetLocationIgnoringFiltersAsync(
+            TestCompanyIds.CompanyA,
+            "OSM-H0");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(location, after);
+    }
+
+    [Fact]
     public async Task SelectedCompanyHeader_CannotEscalateAuthorization()
     {
         using var client = factory.CreateClientFor(TestUsers.CompanyA, TestCompanyIds.CompanyB);

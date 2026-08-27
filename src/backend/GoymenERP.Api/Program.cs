@@ -4,12 +4,16 @@ using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Organization.Infrastructure;
-using Microsoft.AspNetCore.Authentication;
+using GoymenERP.Modules.Identity.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Configuration.AddJsonFile(
     "Seed/organization-seed.json",
+    optional: false,
+    reloadOnChange: false);
+builder.Configuration.AddJsonFile(
+    "Seed/identity-seed.json",
     optional: false,
     reloadOnChange: false);
 
@@ -18,15 +22,9 @@ builder.Services.AddHealthChecks();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICompanyContext, CompanyContext>();
 builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
-builder.Services.Configure<BootstrapIdentityOptions>(
-    builder.Configuration.GetSection(BootstrapIdentityOptions.SectionName));
-builder.Services
-    .AddAuthentication(DevelopmentAuthenticationHandler.SchemeName)
-    .AddScheme<AuthenticationSchemeOptions, DevelopmentAuthenticationHandler>(
-        DevelopmentAuthenticationHandler.SchemeName,
-        _ => { });
-builder.Services.AddAuthorization();
 builder.Services.AddOrganizationModule(builder.Configuration);
+builder.Services.AddIdentityModule(builder.Configuration);
+builder.Services.AddErpAuthentication(builder.Configuration, builder.Environment);
 
 var allowedOrigins = builder.Configuration
     .GetSection("Cors:AllowedOrigins")
@@ -47,10 +45,12 @@ app.UseAuthorization();
 
 app.MapHealthChecks("/health/live").AllowAnonymous();
 app.MapOrganizationEndpoints();
+app.MapIdentityEndpoints();
 
 if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
 {
     await app.Services.InitializeOrganizationModuleAsync();
+    await app.Services.InitializeIdentityModuleAsync();
 }
 
 await app.RunAsync();

@@ -1,4 +1,5 @@
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
+using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -23,17 +24,18 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
         {
             configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
+                ["Authentication:Mode"] = "DevelopmentBootstrap",
                 ["BootstrapIdentity:HeaderName"] = "X-Development-User",
                 ["BootstrapIdentity:Users:0:UserId"] = TestUsers.CompanyA,
                 ["BootstrapIdentity:Users:0:DisplayName"] = "Şirket A Test Kullanıcısı",
-                ["BootstrapIdentity:Users:0:AllowedCompanyIds:0"] = TestCompanyIds.CompanyA.ToString(),
                 ["BootstrapIdentity:Users:1:UserId"] = TestUsers.CompanyB,
                 ["BootstrapIdentity:Users:1:DisplayName"] = "Şirket B Test Kullanıcısı",
-                ["BootstrapIdentity:Users:1:AllowedCompanyIds:0"] = TestCompanyIds.CompanyB.ToString(),
                 ["BootstrapIdentity:Users:2:UserId"] = TestUsers.GroupAdmin,
                 ["BootstrapIdentity:Users:2:DisplayName"] = "Grup Test Yöneticisi",
-                ["BootstrapIdentity:Users:2:AllowedCompanyIds:0"] = TestCompanyIds.CompanyA.ToString(),
-                ["BootstrapIdentity:Users:2:AllowedCompanyIds:1"] = TestCompanyIds.CompanyB.ToString(),
+                ["BootstrapIdentity:Users:3:UserId"] = TestUsers.CompanyAViewer,
+                ["BootstrapIdentity:Users:3:DisplayName"] = "Şirket A Salt Okuma Kullanıcısı",
+                ["BootstrapIdentity:Users:4:UserId"] = TestUsers.Unprovisioned,
+                ["BootstrapIdentity:Users:4:DisplayName"] = "ERP Kaydı Olmayan Kullanıcı",
             });
         });
 
@@ -43,6 +45,10 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
             services.RemoveAll<IDbContextOptionsConfiguration<OrganizationDbContext>>();
             services.AddDbContext<OrganizationDbContext>(options =>
                 options.UseInMemoryDatabase(_databaseName));
+            services.RemoveAll<DbContextOptions<IdentityDbContext>>();
+            services.RemoveAll<IDbContextOptionsConfiguration<IdentityDbContext>>();
+            services.AddDbContext<IdentityDbContext>(options =>
+                options.UseInMemoryDatabase($"{_databaseName}-identity"));
         });
     }
 
@@ -93,6 +99,10 @@ public static class TestUsers
     public const string CompanyB = "company-b-user";
 
     public const string GroupAdmin = "group-bootstrap-admin";
+
+    public const string CompanyAViewer = "company-a-viewer";
+
+    public const string Unprovisioned = "unprovisioned-user";
 }
 
 public sealed record LocationSnapshot(Guid Id, bool IsActive, long Version);

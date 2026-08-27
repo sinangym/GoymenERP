@@ -1,0 +1,200 @@
+{
+  "IdentitySeed": {
+    "Users": [
+      {
+        "Id": "20000000-0000-0000-0000-000000000001",
+        "DisplayName": "Şirket A Geliştirme Kullanıcısı",
+        "Email": null,
+        "ExternalIdentities": [
+          {
+            "Id": "21000000-0000-0000-0000-000000000001",
+            "Issuer": "urn:goymen:development-bootstrap",
+            "Subject": "company-a-user"
+          }
+        ]
+      },
+      {
+        "Id": "20000000-0000-0000-0000-000000000002",
+        "DisplayName": "Şirket B Geliştirme Kullanıcısı",
+        "Email": null,
+        "ExternalIdentities": [
+          {
+            "Id": "21000000-0000-0000-0000-000000000002",
+            "Issuer": "urn:goymen:development-bootstrap",
+            "Subject": "company-b-user"
+          }
+        ]
+      },
+      {
+        "Id": "20000000-0000-0000-0000-000000000003",
+        "DisplayName": "Grup Geliştirme Yöneticisi",
+        "Email": null,
+        "ExternalIdentities": [
+          {
+            "Id": "21000000-0000-0000-0000-000000000003",
+            "Issuer": "urn:goymen:development-bootstrap",
+            "Subject": "group-bootstrap-admin"
+          }
+        ]
+      },
+      {
+        "Id": "20000000-0000-0000-0000-000000000004",
+        "DisplayName": "Şirket A Salt Okuma Kullanıcısı",
+        "Email": null,
+        "ExternalIdentities": [
+          {
+            "Id": "21000000-0000-0000-0000-000000000004",
+            "Issuer": "urn:goymen:development-bootstrap",
+            "Subject": "company-a-viewer"
+          }
+        ]
+      }
+    ],
+    "Roles": [
+      {
+        "Id": "30000000-0000-0000-0000-000000000001",
+        "Code": "ORGANIZATION_READER",
+        "Name": "Organizasyon Okuma",
+        "IsSystem": true,
+        "Permissions": [
+          "organization.context.read",
+          "organization.sites.read",
+          "organization.locations.read",
+          "organization.work-centers.read",
+          "identity.profile.read"
+        ]
+      },
+      {
+        "Id": "30000000-0000-0000-0000-000000000002",
+        "Code": "ORGANIZATION_OPERATOR",
+        "Name": "Organizasyon Operasyonu",
+        "IsSystem": true,
+        "Permissions": [
+          "organization.context.read",
+          "organization.sites.read",
+          "organization.locations.read",
+          "organization.work-centers.read",
+          "organization.locations.status.update",
+          "identity.profile.read"
+        ]
+      },
+      {
+        "Id": "30000000-0000-0000-0000-000000000003",
+        "Code": "SYSTEM_ADMINISTRATOR",
+        "Name": "Sistem Yöneticisi",
+        "IsSystem": true,
+        "Permissions": [
+          "organization.context.read",
+          "organization.sites.read",
+          "organization.locations.read",
+          "organization.work-centers.read",
+          "organization.locations.status.update",
+          "identity.profile.read",
+          "identity.access.request",
+          "identity.access.approve",
+          "identity.roles.manage",
+          "identity.audit.read"
+        ]
+      },
+      {
+        "Id": "30000000-0000-0000-0000-000000000004",
+        "Code": "SECURITY_ADMINISTRATOR",
+        "Name": "Yetki Yöneticisi",
+        "IsSystem": true,
+        "Permissions": [
+          "identity.profile.read",
+          "identity.access.request",
+          "identity.roles.manage"
+        ]
+      },
+      {
+        "Id": "30000000-0000-0000-0000-000000000005",
+        "Code": "SECURITY_APPROVER",
+        "Name": "Yetki Onaylayıcısı",
+        "IsSystem": true,
+        "Permissions": [
+          "identity.profile.read",
+          "identity.access.approve",
+          "identity.audit.read"
+        ]
+      }
+    ],
+    "Assignments": [
+      {
+        "Id": "40000000-0000-0000-0000-000000000001",
+        "UserId": "20000000-0000-0000-0000-000000000001",
+        "RoleId": "30000000-0000-0000-0000-000000000002",
+        "CompanyId": "10000000-0000-0000-0000-000000000001",
+        "ValidFromUtc": "2026-01-01T00:00:00+00:00",
+        "ValidUntilUtc": null,
+        "ApprovedByUserId": "20000000-0000-0000-0000-000000000003",
+        "Scopes": [
+          {
+            "Type": "Company",
+            "Id": "10000000-0000-0000-0000-000000000001"
+          }
+        ]
+      },
+      {
+        "Id": "40000000-0000-0000-0000-000000000002",
+        "UserId": "20000000-0000-0000-0000-000000000002",
+        "RoleId": "30000000-0000-0000-0000-000000000002",
+        "CompanyId": "10000000-0000-0000-0000-000000000002",
+        "ValidFromUtc": "2026-01-01T00:00:00+00:00",
+        "ValidUntilUtc": null,
+        "ApprovedByUserId": "20000000-0000-0000-0000-000000000003",
+        "Scopes": [
+          {
+            "Type": "Company",
+            "Id": "10000000-0000-0000-0000-000000000002"
+          }
+        ]
+      },
+      {
+        "Id": "40000000-0000-0000-0000-000000000003",
+        "UserId": "20000000-0000-0000-0000-000000000003",
+        "RoleId": "30000000-0000-0000-0000-000000000003",
+        "CompanyId": "10000000-0000-0000-0000-000000000001",
+        "ValidFromUtc": "2026-01-01T00:00:00+00:00",
+        "ValidUntilUtc": null,
+        "ApprovedByUserId": null,
+        "Scopes": [
+          {
+            "Type": "Company",
+            "Id": "10000000-0000-0000-0000-000000000001"
+          }
+        ]
+      },
+      {
+        "Id": "40000000-0000-0000-0000-000000000004",
+        "UserId": "20000000-0000-0000-0000-000000000003",
+        "RoleId": "30000000-0000-0000-0000-000000000003",
+        "CompanyId": "10000000-0000-0000-0000-000000000002",
+        "ValidFromUtc": "2026-01-01T00:00:00+00:00",
+        "ValidUntilUtc": null,
+        "ApprovedByUserId": null,
+        "Scopes": [
+          {
+            "Type": "Company",
+            "Id": "10000000-0000-0000-0000-000000000002"
+          }
+        ]
+      },
+      {
+        "Id": "40000000-0000-0000-0000-000000000005",
+        "UserId": "20000000-0000-0000-0000-000000000004",
+        "RoleId": "30000000-0000-0000-0000-000000000001",
+        "CompanyId": "10000000-0000-0000-0000-000000000001",
+        "ValidFromUtc": "2026-01-01T00:00:00+00:00",
+        "ValidUntilUtc": null,
+        "ApprovedByUserId": "20000000-0000-0000-0000-000000000003",
+        "Scopes": [
+          {
+            "Type": "Site",
+            "Id": "b2954a9f-482e-6bc4-48c0-706312c64ed4"
+          }
+        ]
+      }
+    ]
+  }
+}
