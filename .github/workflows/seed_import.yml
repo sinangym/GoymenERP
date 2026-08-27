@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   import-seed:
-    if: github.event.issue.title == 'GOYMEN_SEED_IMPORT_V1' && contains(github.event.comment.body, 'GOYMEN_SEED_XZ_FINAL')
+    if: github.event.issue.title == 'GOYMEN_SEED_IMPORT_V1' && contains(github.event.comment.body, 'GOYMEN_SEED_XZ2_FINAL')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -42,11 +42,13 @@ jobs:
           token = os.environ['GH_TOKEN']
           expected_archive_sha = os.environ['EXPECTED_ARCHIVE_SHA256']
           expected_chunk_sha = {
-              0: '81834a14636d43481493c2f0df7f954c8e6d411d0dce41445694ca7c3a17f05e',
-              1: 'c607424ef3cb5d3d28ffdf986c26805f6bcff3f9a5867b0a929c9f443ee4430c',
-              2: 'e110f0986fd3dcf4c8154d506cdb6ba455a593781810ed87b97a42ebd62b782f',
-              3: '7f8fe5d130764853bbc227e76928df7d2a6f4bc1f6bdc41fed1f4afbf857b045',
-              4: 'f9aae062316be22c45337c93c17654e42a1ad49d9e224a9e0736ed98e36291ab',
+              0: 'bd333f9425d2e31c95d23c455dc57b500c0d92fa9fb7c750f54a510b9d66a47b',
+              1: '412dce7eaebdd21e95c02b80e83b2e5dcb46e512a224e393a89751b4cb4cf59a',
+              2: 'b66683f98848757772acc66533d4833f9f281587187f6e217d13549de4adc389',
+              3: '400fd33e9c0929a4a17fe06723ac50855950e8eba366f914df9f1850d537f119',
+              4: 'c755c985536b509b7a754fac4fe9d37ca9b0ba36c5274cc9f7b42057e128d7c3',
+              5: '4560fd3929f2d5851b1040dd5e83897d1c8e859701d583cced46cb6927854c81',
+              6: 'c6eff5c0ad0826df8df6d31f405fd570fa8970f1961d5b43c5cf73d10a5b4691',
           }
 
           request = urllib.request.Request(
@@ -65,7 +67,7 @@ jobs:
           for item in comments:
               body = item.get('body') or ''
               match = re.match(
-                  r'^GOYMEN_SEED_XZ_CHUNK\s+(\d{2})/04\n([A-Za-z0-9+/=]+)(?:\nGOYMEN_SEED_XZ_FINAL)?\s*$',
+                  r'^GOYMEN_SEED_XZ2_CHUNK\s+(\d{2})/06\n([A-Za-z0-9+/=]+)\s*$',
                   body,
               )
               if not match:
@@ -77,7 +79,7 @@ jobs:
               if expected_chunk_sha.get(index) == digest:
                   chunks[index] = payload
 
-          expected_indexes = list(range(5))
+          expected_indexes = list(range(7))
           if sorted(chunks) != expected_indexes:
               raise SystemExit(
                   f'No verified complete chunk set. verified={sorted(chunks)}, candidates={candidates}'
