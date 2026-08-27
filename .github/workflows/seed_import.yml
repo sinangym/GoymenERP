@@ -40,7 +40,14 @@ jobs:
           repo = os.environ['GH_REPOSITORY']
           issue = os.environ['ISSUE_NUMBER']
           token = os.environ['GH_TOKEN']
-          expected_sha = os.environ['EXPECTED_ARCHIVE_SHA256']
+          expected_archive_sha = os.environ['EXPECTED_ARCHIVE_SHA256']
+          expected_chunk_sha = {
+              0: '81834a14636d43481493c2f0df7f954c8e6d411d0dce41445694ca7c3a17f05e',
+              1: 'c607424ef3cb5d3d28ffdf986c26805f6bcff3f9a5867b0a929c9f443ee4430c',
+              2: 'e110f0986fd3dcf4c8154d506cdb6ba455a593781810ed87b97a42ebd62b782f',
+              3: '7f8fe5d130764853bbc227e76928df7d2a6f4bc1f6bdc41fed1f4afbf857b045',
+              4: 'f9aae062316be22c45337c93c17654e42a1ad49d9e224a9e0736ed98e36291ab',
+          }
 
           request = urllib.request.Request(
               f'https://api.github.com/repos/{repo}/issues/{issue}/comments?per_page=100',
@@ -54,26 +61,35 @@ jobs:
               comments = json.load(response)
 
           chunks = {}
+          candidates = {}
           for item in comments:
               body = item.get('body') or ''
               match = re.match(
                   r'^GOYMEN_SEED_XZ_CHUNK\s+(\d{2})/04\n([A-Za-z0-9+/=]+)(?:\nGOYMEN_SEED_XZ_FINAL)?\s*$',
                   body,
               )
-              if match:
-                  chunks[int(match.group(1))] = match.group(2)
+              if not match:
+                  continue
+              index = int(match.group(1))
+              payload = match.group(2)
+              digest = hashlib.sha256(payload.encode('ascii')).hexdigest()
+              candidates.setdefault(index, []).append((len(payload), digest))
+              if expected_chunk_sha.get(index) == digest:
+                  chunks[index] = payload
 
           expected_indexes = list(range(5))
           if sorted(chunks) != expected_indexes:
-              raise SystemExit(f'Chunk set incomplete: got {sorted(chunks)}, expected {expected_indexes}')
+              raise SystemExit(
+                  f'No verified complete chunk set. verified={sorted(chunks)}, candidates={candidates}'
+              )
 
           archive_bytes = base64.b64decode(
               ''.join(chunks[index] for index in expected_indexes),
               validate=True,
           )
-          actual_sha = hashlib.sha256(archive_bytes).hexdigest()
-          if actual_sha != expected_sha:
-              raise SystemExit(f'Archive checksum mismatch: {actual_sha}')
+          actual_archive_sha = hashlib.sha256(archive_bytes).hexdigest()
+          if actual_archive_sha != expected_archive_sha:
+              raise SystemExit(f'Archive checksum mismatch: {actual_archive_sha}')
 
           work = tempfile.mkdtemp(prefix='goymen-seed-')
           archive_path = os.path.join(work, 'seed.tar.xz')
