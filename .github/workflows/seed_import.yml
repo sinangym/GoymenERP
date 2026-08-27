@@ -47,11 +47,11 @@ jobs:
           chunks = {}
           for c in comments:
               body = c.get('body') or ''
-              m = re.match(r'^GOYMEN_SEED_CHUNK\s+(\d{2})/06\n([A-Za-z0-9+/=]+)(?:\nGOYMEN_SEED_FINAL)?\s*$', body)
+              m = re.match(r'^GOYMEN_SEED_CHUNK\s+(\d{2})/25\n([A-Za-z0-9+/=]+)(?:\nGOYMEN_SEED_FINAL)?\s*$', body)
               if m:
                   chunks[int(m.group(1))] = m.group(2)
 
-          expected_indexes = list(range(7))
+          expected_indexes = list(range(26))
           if sorted(chunks) != expected_indexes:
               raise SystemExit(f'Chunk set incomplete: got {sorted(chunks)}, expected {expected_indexes}')
 
