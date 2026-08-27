@@ -2,9 +2,9 @@
 
 Göymen ERP’nin bağımsız, modüler monolit uygulama repository’si.
 
-Bu dal ERP-000A+B kapsamındaki platform ve çok şirket omurgasını içerir. Satış, stok,
-üretim, finans, gerçek SSO, gerçek AI, Mikro/e-fatura ve R-06/R-07 rapor oluşturucu
-henüz uygulanmamıştır.
+Bu dal ERP-000A+B temelinin üzerine ERP-000C kimlik ve yetki iskeletini uygular. Satış,
+stok, üretim, finans, seçilmiş production SSO sağlayıcısı, gerçek AI, Mikro/e-fatura ve
+R-06/R-07 rapor oluşturucu henüz uygulanmamıştır.
 
 ## Uygulanan kapsam
 
@@ -15,6 +15,13 @@ henüz uygulanmamıştır.
 - Zorunlu `CompanyId`, request-scoped `CompanyContext`, EF global query filter ve
   DbContext seviyesinde fail-closed tenant write guard.
 - Claim kapsamına göre şirket seçici API/UI iskeleti.
+- Sağlayıcıdan bağımsız OIDC/JWT doğrulama yolu ve yalnız Development/Testing ortamında
+  çalışabilen yerel bootstrap kimliği.
+- Dış `issuer + subject` değerini değişmez yerel ERP kullanıcısına bağlayan Identity modülü.
+- Rol→izin RBAC modeli; şirket/tesis/lokasyon/iş merkezi kapsamlı ABAC filtreleri.
+- Backend policy enforcement, varsayılan deny ve eşlenmemiş dış kimliğin reddi.
+- Kritik yetki taleplerinde talep eden/hedef kullanıcı ile onaylayanın ayrılması için SoD
+  domain temeli.
 - Osmaniye, Gaziantep ve dış depoları okuyan idempotent JSON seed mekanizması.
 - Query, command, ID, URL, query-parametresi, hata ve toplam sayı izolasyon testleri.
 - Açık ve yalnız bootstrap/seed akışına ayrılmış çok şirketli sistem-write scope.
@@ -27,13 +34,16 @@ src/
   backend/
     BuildingBlocks/
     GoymenERP.Api/
-    Modules/Organization/
+    Modules/
+      Identity/
+      Organization/
       Domain/
       Application/
       Infrastructure/
   frontend/goymen-erp-web/
 tests/
   GoymenERP.Organization.UnitTests/
+  GoymenERP.Identity.UnitTests/
   GoymenERP.Api.IntegrationTests/
 infra/
   docker-compose.yml
@@ -77,14 +87,21 @@ npm ci
 npm run dev
 ```
 
-Development/Testing ortamındaki geçici kimlik, `X-Development-User` başlığını sunucu
-konfigürasyonundaki kullanıcılarla eşler. İstemci varsayılan olarak `company-a-user`
-kullanır. Bu mekanizma Production’da kimlik doğrulamaz; ERP-000C’de gerçek OIDC/SSO ile
-değiştirilecektir.
+Development/Testing ortamındaki geçici kimlik, `X-Development-User` başlığını yalnız
+izinli bootstrap subject listesiyle doğrular. Ardından subject, Identity veritabanındaki
+yerel kullanıcı/rol/atama kayıtlarıyla eşlenir. İstemci varsayılan olarak
+`company-a-user` kullanır. Bootstrap mekanizması Production’da başlatılamaz.
+
+Production yolu `Authentication:Mode=OidcJwtBearer` ile çalışır; `Authority` ve
+`Audience` verilmezse uygulama fail-closed açılmaz. OIDC sağlayıcısı kullanıcıyı
+doğrular, ancak şirket/rol/izin kapsamının kaynağı ERP veritabanıdır. `OPEN-013`
+kapanana kadar belirli bir sağlayıcı, MFA veya dış erişim politikası sabitlenmemiştir.
 
 Şirket kapsamlı API çağrıları ayrıca `X-Company-Id` ister. Bu değer, kullanıcının sunucu
-tarafı claim kapsamına karşı kontrol edilir; istemcinin gönderdiği ID tek başına yetki
-vermez. Mutating command istekleri ayrıca `Idempotency-Key` ister; `X-Correlation-Id`
+tarafı aktif rol atamalarından üretilen şirket kapsamına karşı kontrol edilir; istemcinin
+gönderdiği ID tek başına yetki vermez. Organization sorguları ayrıca şirket/tesis/
+lokasyon/iş merkezi ABAC kapsamıyla filtrelenir. Mutating command istekleri ayrıca
+`Idempotency-Key` ister; `X-Correlation-Id`
 gelmezse sunucu üretir. Kalıcı idempotency kaydı ve audit pipeline sonraki platform
 görevinde tamamlanacaktır.
 
@@ -125,6 +142,12 @@ dotnet tool run dotnet-ef migrations script --idempotent `
   --project src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/GoymenERP.Modules.Organization.Infrastructure.csproj `
   --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj `
   --output artifacts/organization-migration.sql
+
+dotnet tool run dotnet-ef migrations script --idempotent `
+  --project src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/GoymenERP.Modules.Identity.Infrastructure.csproj `
+  --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj `
+  --context IdentityDbContext `
+  --output artifacts/identity-migration.sql
 ```
 
 ## Geçici varsayımlar ve sonraki kapılar
@@ -134,8 +157,11 @@ dotnet tool run dotnet-ef migrations script --idempotent `
 - Fiziksel tesis/lokasyon şablonu iki hukuki şirket için company-scoped kayıtlar üretir.
   Ortak fiziksel yer kimliği gereksinimi, gerçek sahiplik/işletmeci bilgisiyle ayrıca
   karara bağlanmalıdır.
-- Production kimliği, ayrıntılı RBAC/SoD, audit pipeline, idempotency/correlation command
-  zarfı ve şirket veri paketi ERP-000C ve sonraki platform görevleridir.
+- Production SSO sağlayıcısı, MFA ve dış erişim politikası `OPEN-013` kapanışında seçilir;
+  mevcut OIDC/JWT yolu sağlayıcıya özel kod içermez.
+- Kalıcı append-only audit/korelasyon ERP-000D; idempotency store ve concurrency ayrımı
+  ERP-000E; outbox/inbox ERP-000F görevidir. ERP-000C bunların deposunu sahiplenmez.
 - SQL Server nihai ürün kararı değildir; PoC performans, Türkçe arama, restore ve üç yıllık
   veri hacmi testlerinden geçmelidir.
-- ERP-000C’ye geçmeden önce Company isolation testlerinin tamamı yeşil kalmalıdır.
+- ERP-000D’ye geçmeden önce kimlik eşleme, RBAC/ABAC, SoD ve Company isolation testlerinin
+  tamamı yeşil kalmalıdır.

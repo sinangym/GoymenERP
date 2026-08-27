@@ -47,6 +47,15 @@ jobs:
           --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj
           --output artifacts/organization-migration.sql
 
+      - name: Generate identity idempotent SQL migration script
+        run: >-
+          dotnet tool run dotnet-ef migrations script
+          --idempotent
+          --project src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/GoymenERP.Modules.Identity.Infrastructure.csproj
+          --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj
+          --context IdentityDbContext
+          --output artifacts/identity-migration.sql
+
   frontend:
     name: Frontend lint, test and build
     runs-on: ubuntu-latest

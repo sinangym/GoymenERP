@@ -24,13 +24,15 @@ public static class OrganizationEndpoints
 
         group.MapGet("/context", (ICompanyContext context) =>
                 Results.Ok(new { companyId = context.CompanyId }))
-            .RequireCompanyContext();
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.OrganizationContextRead);
 
         group.MapGet("/sites", async (
                 IOrganizationService service,
                 CancellationToken cancellationToken) =>
             Results.Ok(await service.GetSitesAsync(cancellationToken)))
-            .RequireCompanyContext();
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.OrganizationSitesRead);
 
         group.MapGet("/locations", async (
                 int? page,
@@ -41,7 +43,8 @@ public static class OrganizationEndpoints
                 page ?? 1,
                 pageSize ?? 25,
                 cancellationToken)))
-            .RequireCompanyContext();
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.OrganizationLocationsRead);
 
         group.MapGet("/locations/{id:guid}", async (
                 Guid id,
@@ -52,7 +55,8 @@ public static class OrganizationEndpoints
             return location is null
                 ? NotFound()
                 : Results.Ok(location);
-        }).RequireCompanyContext();
+        }).RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.OrganizationLocationsRead);
 
         group.MapPut("/locations/{id:guid}/active-state", async (
                 Guid id,
@@ -91,13 +95,15 @@ public static class OrganizationEndpoints
                     statusCode: StatusCodes.Status409Conflict),
                 _ => Results.StatusCode(StatusCodes.Status500InternalServerError),
             };
-        }).RequireCompanyContext();
+        }).RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.OrganizationLocationsStatusUpdate);
 
         group.MapGet("/work-centers", async (
                 IOrganizationService service,
                 CancellationToken cancellationToken) =>
             Results.Ok(await service.GetWorkCentersAsync(cancellationToken)))
-            .RequireCompanyContext();
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.OrganizationWorkCentersRead);
 
         return endpoints;
     }

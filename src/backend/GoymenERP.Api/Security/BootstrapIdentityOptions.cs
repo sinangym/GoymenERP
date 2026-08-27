@@ -4,6 +4,8 @@ public sealed class BootstrapIdentityOptions
 {
     public const string SectionName = "BootstrapIdentity";
 
+    public const string Issuer = "urn:goymen:development-bootstrap";
+
     public string HeaderName { get; init; } = "X-Development-User";
 
     public List<BootstrapUser> Users { get; init; } = [];
@@ -15,5 +17,4 @@ public sealed class BootstrapUser
 
     public string DisplayName { get; init; } = string.Empty;
 
-    public List<Guid> AllowedCompanyIds { get; init; } = [];
 }

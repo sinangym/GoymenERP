@@ -10,6 +10,7 @@ internal sealed class OrganizationService(
     OrganizationDbContext dbContext,
     ICurrentUser currentUser,
     ICompanyContext companyContext,
+    IErpAuthorizationService authorizationService,
     ILogger<OrganizationService> logger)
     : IOrganizationService
 {
@@ -35,8 +36,27 @@ internal sealed class OrganizationService(
     public async Task<IReadOnlyList<SiteSummary>> GetSitesAsync(
         CancellationToken cancellationToken)
     {
-        return await dbContext.Sites
-            .AsNoTracking()
+        var scope = await authorizationService.GetPermissionScopeAsync(
+            ErpPermissions.OrganizationSitesRead,
+            companyContext.CompanyId,
+            cancellationToken);
+        var siteIds = scope.SiteIds.ToArray();
+        var locationIds = scope.LocationIds.ToArray();
+        var workCenterIds = scope.WorkCenterIds.ToArray();
+        var query = dbContext.Sites.AsNoTracking();
+        if (!scope.IsCompanyWide)
+        {
+            query = query.Where(site =>
+                siteIds.Contains(site.Id)
+                || dbContext.Locations.Any(location =>
+                    location.SiteId == site.Id
+                    && (locationIds.Contains(location.Id)
+                        || dbContext.WorkCenters.Any(workCenter =>
+                            workCenter.LocationId == location.Id
+                            && workCenterIds.Contains(workCenter.Id)))));
+        }
+
+        return await query
             .OrderBy(x => x.Code)
             .Select(x => new SiteSummary(
                 x.Id,
@@ -54,7 +74,12 @@ internal sealed class OrganizationService(
     {
         var normalizedPage = Math.Max(page, 1);
         var normalizedPageSize = Math.Clamp(pageSize, 1, MaximumPageSize);
-        var query = dbContext.Locations.AsNoTracking().OrderBy(x => x.Code);
+        var scope = await authorizationService.GetPermissionScopeAsync(
+            ErpPermissions.OrganizationLocationsRead,
+            companyContext.CompanyId,
+            cancellationToken);
+        var query = ApplyLocationScope(dbContext.Locations.AsNoTracking(), scope)
+            .OrderBy(x => x.Code);
         var totalCount = await query.CountAsync(cancellationToken);
         var items = await query
             .Skip((normalizedPage - 1) * normalizedPageSize)
@@ -76,12 +101,15 @@ internal sealed class OrganizationService(
             totalCount);
     }
 
-    public Task<LocationSummary?> GetLocationAsync(
+    public async Task<LocationSummary?> GetLocationAsync(
         Guid id,
         CancellationToken cancellationToken)
     {
-        return dbContext.Locations
-            .AsNoTracking()
+        var scope = await authorizationService.GetPermissionScopeAsync(
+            ErpPermissions.OrganizationLocationsRead,
+            companyContext.CompanyId,
+            cancellationToken);
+        return await ApplyLocationScope(dbContext.Locations.AsNoTracking(), scope)
             .Where(x => x.Id == id)
             .Select(x => new LocationSummary(
                 x.Id,
@@ -97,8 +125,25 @@ internal sealed class OrganizationService(
     public async Task<IReadOnlyList<WorkCenterSummary>> GetWorkCentersAsync(
         CancellationToken cancellationToken)
     {
-        return await dbContext.WorkCenters
-            .AsNoTracking()
+        var scope = await authorizationService.GetPermissionScopeAsync(
+            ErpPermissions.OrganizationWorkCentersRead,
+            companyContext.CompanyId,
+            cancellationToken);
+        var siteIds = scope.SiteIds.ToArray();
+        var locationIds = scope.LocationIds.ToArray();
+        var workCenterIds = scope.WorkCenterIds.ToArray();
+        var query = dbContext.WorkCenters.AsNoTracking();
+        if (!scope.IsCompanyWide)
+        {
+            query = query.Where(workCenter =>
+                workCenterIds.Contains(workCenter.Id)
+                || locationIds.Contains(workCenter.LocationId)
+                || dbContext.Locations.Any(location =>
+                    location.Id == workCenter.LocationId
+                    && siteIds.Contains(location.SiteId)));
+        }
+
+        return await query
             .OrderBy(x => x.Code)
             .Select(x => new WorkCenterSummary(
                 x.Id,
@@ -118,7 +163,11 @@ internal sealed class OrganizationService(
     {
         ValidateCommandMetadata(metadata);
 
-        var location = await dbContext.Locations
+        var scope = await authorizationService.GetPermissionScopeAsync(
+            ErpPermissions.OrganizationLocationsStatusUpdate,
+            companyContext.CompanyId,
+            cancellationToken);
+        var location = await ApplyLocationScope(dbContext.Locations, scope)
             .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
 
         if (location is null)
@@ -149,6 +198,27 @@ internal sealed class OrganizationService(
         {
             return CommandResult.VersionConflict;
         }
+    }
+
+    private IQueryable<GoymenERP.Modules.Organization.Domain.Locations.Location>
+        ApplyLocationScope(
+            IQueryable<GoymenERP.Modules.Organization.Domain.Locations.Location> query,
+            PermissionScope scope)
+    {
+        if (scope.IsCompanyWide)
+        {
+            return query;
+        }
+
+        var siteIds = scope.SiteIds.ToArray();
+        var locationIds = scope.LocationIds.ToArray();
+        var workCenterIds = scope.WorkCenterIds.ToArray();
+        return query.Where(location =>
+            locationIds.Contains(location.Id)
+            || siteIds.Contains(location.SiteId)
+            || dbContext.WorkCenters.Any(workCenter =>
+                workCenter.LocationId == location.Id
+                && workCenterIds.Contains(workCenter.Id)));
     }
 
     private void ValidateCommandMetadata(CommandMetadata metadata)
