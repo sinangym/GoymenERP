@@ -1,5 +1,7 @@
+using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -11,6 +13,7 @@ internal sealed class OrganizationService(
     ICurrentUser currentUser,
     ICompanyContext companyContext,
     IErpAuthorizationService authorizationService,
+    IAuditEventCollector auditEventCollector,
     ILogger<OrganizationService> logger)
     : IOrganizationService
 {
@@ -180,7 +183,45 @@ internal sealed class OrganizationService(
             return CommandResult.VersionConflict;
         }
 
+        ValidateReason(command.Reason);
+        var versionBefore = location.Version;
+        var stateChanged = location.IsActive != command.IsActive;
+        var beforeJson = SerializeLocationAuditSnapshot(
+            location,
+            location.IsActive,
+            versionBefore);
         location.SetActive(command.IsActive);
+        var versionAfter = stateChanged ? versionBefore + 1 : versionBefore;
+        var afterJson = SerializeLocationAuditSnapshot(
+            location,
+            command.IsActive,
+            versionAfter);
+        auditEventCollector.Enqueue(new AuditEventDraft(
+            metadata.CompanyId,
+            "organization.location.active-state.changed.v1",
+            "Organization.Location",
+            id.ToString("D"),
+            stateChanged
+                ? command.IsActive ? "Activate" : "Deactivate"
+                : "NoChange",
+            versionBefore,
+            versionAfter,
+            AuditActorTypes.User,
+            metadata.ActorId,
+            ErpPermissions.OrganizationLocationsStatusUpdate,
+            scope.RoleCodes,
+            beforeJson,
+            afterJson,
+            command.Reason.Trim(),
+            ApprovalContextJson: null,
+            AuditAiInvolvement.None,
+            AiContextJson: null,
+            metadata.SourceChannel,
+            metadata.ClientIpAddress,
+            metadata.UserAgent,
+            metadata.CorrelationId,
+            metadata.CausationId,
+            metadata.IdempotencyKey));
 
         try
         {
@@ -226,9 +267,38 @@ internal sealed class OrganizationService(
         if (metadata.CompanyId != companyContext.CompanyId
             || !string.Equals(metadata.ActorId, currentUser.UserId, StringComparison.Ordinal)
             || string.IsNullOrWhiteSpace(metadata.CorrelationId)
+            || string.IsNullOrWhiteSpace(metadata.SourceChannel)
             || string.IsNullOrWhiteSpace(metadata.IdempotencyKey))
         {
             throw new InvalidOperationException("Command yürütme bağlamı geçersiz.");
         }
+    }
+
+    private static void ValidateReason(string reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason) || reason.Trim().Length > 1000)
+        {
+            throw new ArgumentException(
+                "Kritik değişiklik için 1-1000 karakter arasında bir gerekçe zorunludur.",
+                nameof(reason));
+        }
+    }
+
+    private static string SerializeLocationAuditSnapshot(
+        GoymenERP.Modules.Organization.Domain.Locations.Location location,
+        bool isActive,
+        long version)
+    {
+        return JsonSerializer.Serialize(new
+        {
+            location.Id,
+            location.CompanyId,
+            location.SiteId,
+            location.Code,
+            location.Name,
+            location.IsExternal,
+            IsActive = isActive,
+            Version = version,
+        });
     }
 }

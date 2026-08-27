@@ -56,6 +56,15 @@ jobs:
           --context IdentityDbContext
           --output artifacts/identity-migration.sql
 
+      - name: Generate audit idempotent SQL migration script
+        run: >-
+          dotnet tool run dotnet-ef migrations script
+          --idempotent
+          --project src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj
+          --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj
+          --context AuditDbContext
+          --output artifacts/audit-migration.sql
+
   frontend:
     name: Frontend lint, test and build
     runs-on: ubuntu-latest

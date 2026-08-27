@@ -1,10 +1,15 @@
 using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.Multitenancy;
+using GoymenERP.Api.Observability;
 using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Audit.Infrastructure;
+using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Infrastructure;
 using GoymenERP.Modules.Identity.Infrastructure;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -21,8 +26,13 @@ builder.Services.AddProblemDetails();
 builder.Services.AddHealthChecks();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICompanyContext, CompanyContext>();
+builder.Services.AddScoped<ICorrelationContext, CorrelationContext>();
 builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
-builder.Services.AddOrganizationModule(builder.Configuration);
+builder.Services.AddAuditModule(builder.Configuration);
+builder.Services.AddOrganizationModule(
+    builder.Configuration,
+    (services, options) => options.AddInterceptors(
+        services.GetRequiredService<AuditSaveChangesInterceptor>()));
 builder.Services.AddIdentityModule(builder.Configuration);
 builder.Services.AddErpAuthentication(builder.Configuration, builder.Environment);
 
@@ -38,6 +48,7 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 app.UseExceptionHandler();
+app.UseMiddleware<CorrelationContextMiddleware>();
 app.UseCors();
 app.UseAuthentication();
 app.UseMiddleware<CompanyContextMiddleware>();
@@ -46,11 +57,13 @@ app.UseAuthorization();
 app.MapHealthChecks("/health/live").AllowAnonymous();
 app.MapOrganizationEndpoints();
 app.MapIdentityEndpoints();
+app.MapAuditEndpoints();
 
 if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
 {
     await app.Services.InitializeOrganizationModuleAsync();
     await app.Services.InitializeIdentityModuleAsync();
+    await app.Services.InitializeAuditModuleAsync();
 }
 
 await app.RunAsync();

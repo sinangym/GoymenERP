@@ -38,6 +38,7 @@ public sealed class ErpAuthorizationServiceTests
 
         Assert.True(scope.IsGranted);
         Assert.False(scope.IsCompanyWide);
+        Assert.Single(scope.RoleCodes);
         Assert.Contains(siteId, scope.SiteIds);
         Assert.False(otherCompanyScope.IsGranted);
     }

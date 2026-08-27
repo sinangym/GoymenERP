@@ -3,7 +3,8 @@
 - Tarih: 2026-08-27
 - Dal: `feature/erp-000ab-platform-core`
 - Taban: `main` / `f5483edd76e1141656b02a1fdebb53a0caa04f46`
-- Durum: Kodlama ve yerel kabul doğrulaması tamamlandı; feature dalı review için hazırlandı.
+- Durum: Kabul edildi ve `main`e squash merge edildi.
+- Merge commit: `518052c1fbad0486ee3aaea08589bca6099c1011`
 
 ## Kapsam sonucu
 

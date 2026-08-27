@@ -11,7 +11,8 @@ public static class OrganizationModuleExtensions
 {
     public static IServiceCollection AddOrganizationModule(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        Action<IServiceProvider, DbContextOptionsBuilder>? configureDbContext = null)
     {
         var provider = configuration["DB_PROVIDER"] ?? "SqlServer";
         if (!string.Equals(provider, "SqlServer", StringComparison.OrdinalIgnoreCase))
@@ -30,10 +31,13 @@ public static class OrganizationModuleExtensions
 
         services.Configure<OrganizationSeedOptions>(
             configuration.GetSection(OrganizationSeedOptions.SectionName));
-        services.AddDbContext<OrganizationDbContext>(options =>
+        services.AddDbContext<OrganizationDbContext>((serviceProvider, options) =>
+        {
             options.UseSqlServer(
                 connectionString,
-                sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", "organization")));
+                sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", "organization"));
+            configureDbContext?.Invoke(serviceProvider, options);
+        });
         services.AddScoped<OrganizationBootstrapWriteScope>();
         services.AddScoped<IOrganizationService, OrganizationService>();
         services.AddScoped<OrganizationDataSeeder>();

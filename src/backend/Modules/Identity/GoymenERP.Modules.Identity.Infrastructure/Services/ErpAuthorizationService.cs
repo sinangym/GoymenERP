@@ -41,45 +41,63 @@ internal sealed class ErpAuthorizationService(
         }
 
         var now = DateTimeOffset.UtcNow;
-        var scopes = await dbContext.RoleAssignments
+        var authorizationRows = await dbContext.RoleAssignments
             .AsNoTracking()
             .Where(assignment => assignment.UserId == userId
                 && assignment.CompanyId == companyId
                 && assignment.Status == RoleAssignmentStatus.Active
                 && assignment.ValidFromUtc <= now
                 && (!assignment.ValidUntilUtc.HasValue || assignment.ValidUntilUtc > now)
-                && dbContext.Roles.Any(role => role.Id == assignment.RoleId && role.IsActive)
                 && dbContext.RolePermissions.Any(rolePermission =>
                     rolePermission.RoleId == assignment.RoleId
                     && rolePermission.PermissionCode == permission))
-            .SelectMany(assignment => assignment.Scopes)
-            .Select(scope => new ScopeProjection(scope.ScopeType, scope.ScopeId))
+            .Join(
+                dbContext.Roles.AsNoTracking().Where(role => role.IsActive),
+                assignment => assignment.RoleId,
+                role => role.Id,
+                (assignment, role) => new { Assignment = assignment, RoleCode = role.Code })
+            .SelectMany(
+                item => item.Assignment.Scopes,
+                (item, scope) => new AuthorizationProjection(
+                    item.RoleCode,
+                    scope.ScopeType,
+                    scope.ScopeId))
             .Distinct()
             .ToListAsync(cancellationToken);
 
-        var result = BuildScope(companyId, scopes);
+        var result = BuildScope(companyId, authorizationRows);
         _requestCache[cacheKey] = result;
         return result;
     }
 
     private static PermissionScope BuildScope(
         Guid companyId,
-        IReadOnlyCollection<ScopeProjection> scopes)
+        IReadOnlyCollection<AuthorizationProjection> authorizationRows)
     {
-        if (scopes.Count == 0)
+        if (authorizationRows.Count == 0)
         {
             return PermissionScope.Denied;
         }
 
-        var companyWide = scopes.Any(x =>
+        var companyWide = authorizationRows.Any(x =>
             x.Type == AccessScopeType.Company && x.Id == companyId);
         return new PermissionScope(
             true,
             companyWide,
-            scopes.Where(x => x.Type == AccessScopeType.Site).Select(x => x.Id).ToHashSet(),
-            scopes.Where(x => x.Type == AccessScopeType.Location).Select(x => x.Id).ToHashSet(),
-            scopes.Where(x => x.Type == AccessScopeType.WorkCenter).Select(x => x.Id).ToHashSet());
+            authorizationRows.Select(x => x.RoleCode).ToHashSet(StringComparer.Ordinal),
+            authorizationRows.Where(x => x.Type == AccessScopeType.Site)
+                .Select(x => x.Id)
+                .ToHashSet(),
+            authorizationRows.Where(x => x.Type == AccessScopeType.Location)
+                .Select(x => x.Id)
+                .ToHashSet(),
+            authorizationRows.Where(x => x.Type == AccessScopeType.WorkCenter)
+                .Select(x => x.Id)
+                .ToHashSet());
     }
 
-    private sealed record ScopeProjection(AccessScopeType Type, Guid Id);
+    private sealed record AuthorizationProjection(
+        string RoleCode,
+        AccessScopeType Type,
+        Guid Id);
 }
