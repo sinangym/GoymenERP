@@ -7,6 +7,7 @@ using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
+using GoymenERP.Modules.Idempotency.Infrastructure;
 using GoymenERP.Modules.Organization.Infrastructure;
 using GoymenERP.Modules.Identity.Infrastructure;
 using Microsoft.EntityFrameworkCore;
@@ -29,6 +30,7 @@ builder.Services.AddScoped<ICompanyContext, CompanyContext>();
 builder.Services.AddScoped<ICorrelationContext, CorrelationContext>();
 builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
 builder.Services.AddAuditModule(builder.Configuration);
+builder.Services.AddIdempotencyModule(builder.Configuration);
 builder.Services.AddOrganizationModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
@@ -64,6 +66,7 @@ if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
     await app.Services.InitializeOrganizationModuleAsync();
     await app.Services.InitializeIdentityModuleAsync();
     await app.Services.InitializeAuditModuleAsync();
+    await app.Services.InitializeIdempotencyModuleAsync();
 }
 
 await app.RunAsync();
