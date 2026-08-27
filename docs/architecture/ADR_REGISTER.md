@@ -9,6 +9,6 @@
 | ADR-005 | Dosya | Nesne deposu + DB metadata/hash | Kabul |
 | ADR-006 | Olay/entegrasyon | Outbox/inbox + idempotency | Kabul |
 | ADR-007 | Arama | İlişkisel full-text; gerekirse OpenSearch | Kabul |
-| ADR-008 | AI | Backend tool gateway, local-first | Kabul |
+| ADR-008 | AI | Responses API + Structured Outputs + strict function tools; gerektiğinde Agents SDK; ChatKit opsiyonel; Agent Builder yok | Kabul |
 | ADR-009 | Audit | Append-only/değiştirilemez uygulama erişimi | Kabul |
 | ADR-010 | Yayın | Ayrı ortam, CI/CD, rollback manifesti | Kabul |
