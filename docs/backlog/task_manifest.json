@@ -1,0 +1,170 @@
+{
+  "version": "1.0",
+  "epic": "ERP-000",
+  "owner": "Sinan Göymen",
+  "tasks": [
+    {
+      "id": "ERP-000A",
+      "title": "Repository ve solution iskeleti",
+      "status": "ready",
+      "depends_on": [],
+      "scope": "Kök AGENTS.md, docs, src/tests/infra; .NET solution ve React app; build/test workflow.",
+      "acceptance": "Repo temiz makinede build olur.",
+      "priority": "P0"
+    },
+    {
+      "id": "ERP-000B",
+      "title": "Çok şirket çekirdeği",
+      "status": "ready",
+      "depends_on": [
+        "ERP-000A"
+      ],
+      "scope": "Organization modülü, CompanyContext, şirket seçici, zorunlu CompanyId, izolasyon testleri.",
+      "acceptance": "Yetkisiz şirket verisi query/command/search/audit içinde sızmaz.",
+      "priority": "P0"
+    },
+    {
+      "id": "ERP-000C",
+      "title": "Kimlik ve yetki iskeleti",
+      "status": "ready",
+      "depends_on": [
+        "ERP-000A"
+      ],
+      "scope": "Bootstrap local admin; OIDC abstraction; RBAC+ABAC policy model.",
+      "acceptance": "Backend yetki testleri; UI buton gizleme tek kontrol değildir.",
+      "priority": "P0"
+    },
+    {
+      "id": "ERP-000D",
+      "title": "Audit ve korelasyon",
+      "status": "ready",
+      "depends_on": [
+        "ERP-000A"
+      ],
+      "scope": "Append-only audit event, before/after, actor, company, IP/channel, correlation/causation.",
+      "acceptance": "Normal kullanıcı audit değiştiremez; kritik command audit üretir.",
+      "priority": "P0"
+    },
+    {
+      "id": "ERP-000E",
+      "title": "Idempotency ve concurrency",
+      "status": "ready",
+      "depends_on": [
+        "ERP-000A"
+      ],
+      "scope": "Idempotency key store, rowversion, duplicate command protection.",
+      "acceptance": "Aynı komut iki kez ikinci kayıt oluşturmaz; conflict farkı döner.",
+      "priority": "P0"
+    },
+    {
+      "id": "ERP-000F",
+      "title": "Outbox/inbox",
+      "status": "ready",
+      "depends_on": [
+        "ERP-000A"
+      ],
+      "scope": "Transactional outbox, consumer inbox/dedup, retry/backoff.",
+      "acceptance": "DB commit ile mesaj kaybı/kopyası test edilir.",
+      "priority": "P0"
+    },
+    {
+      "id": "ERP-000G",
+      "title": "Belge kasası çekirdeği",
+      "status": "ready",
+      "depends_on": [
+        "ERP-000A"
+      ],
+      "scope": "Blob/document/version/link metadata, hash dedup, access policy.",
+      "acceptance": "Aynı blob çok bağlam; yetki sızıntısı yok; sürüm auditli.",
+      "priority": "P0"
+    },
+    {
+      "id": "ERP-000H",
+      "title": "Türkçe PDF ve adlandırma PoC",
+      "status": "ready",
+      "depends_on": [
+        "ERP-000A"
+      ],
+      "scope": "Unicode dosya adı, gömülü font stratejisi, sözleşme PDF örneği.",
+      "acceptance": "Türkçe karakter golden testi geçer.",
+      "priority": "P0"
+    },
+    {
+      "id": "ERP-000I",
+      "title": "Global arama PoC",
+      "status": "ready",
+      "depends_on": [
+        "ERP-000A"
+      ],
+      "scope": "Company/permission scoped exact/full-text search, keyset pagination.",
+      "acceptance": "Sentetik hacimde p95 hedefi ve veri tekrar/atlama testi.",
+      "priority": "P0"
+    },
+    {
+      "id": "ERP-000J",
+      "title": "AI gateway iskeleti",
+      "status": "ready",
+      "depends_on": [
+        "ERP-000A"
+      ],
+      "scope": "Tool registry, policy check, audit envelope, no direct DB.",
+      "acceptance": "AI yetki aşamaz; write tool onaysız uygulanmaz.",
+      "priority": "P0"
+    },
+    {
+      "id": "ERP-000K",
+      "title": "Ortak React kabuğu",
+      "status": "ready",
+      "depends_on": [
+        "ERP-000A"
+      ],
+      "scope": "Lacivert nav, top bar, company switcher, list/workspace/drawer patterns.",
+      "acceptance": "Responsive ve klavye smoke testleri.",
+      "priority": "P0"
+    },
+    {
+      "id": "ERP-000L",
+      "title": "Gözlemlenebilirlik",
+      "status": "ready",
+      "depends_on": [
+        "ERP-000A"
+      ],
+      "scope": "Structured logs, metrics, traces, health checks, correlation.",
+      "acceptance": "Hata ve yavaş sorgu tanılanabilir.",
+      "priority": "P0"
+    },
+    {
+      "id": "ERP-000M",
+      "title": "SQL Server PoC ve migrations",
+      "status": "ready",
+      "depends_on": [
+        "ERP-000A"
+      ],
+      "scope": "EF Core setup, dev container/env, migrations, constraints/indexes.",
+      "acceptance": "Concurrency/search/audit/restore testleri.",
+      "priority": "P0"
+    },
+    {
+      "id": "ERP-000N",
+      "title": "Backup/restore runbook",
+      "status": "ready",
+      "depends_on": [
+        "ERP-000A"
+      ],
+      "scope": "DB + object store backup, restore and checksum script.",
+      "acceptance": "Gerçek prova başarılı ve dokümante.",
+      "priority": "P0"
+    },
+    {
+      "id": "ERP-000O",
+      "title": "CI/CD ve kalite kapıları",
+      "status": "ready",
+      "depends_on": [
+        "ERP-000A"
+      ],
+      "scope": "Build, unit, integration, lint, security scan, artifact manifest.",
+      "acceptance": "Başarısız kapı merge/yayın engeller.",
+      "priority": "P0"
+    }
+  ]
+}

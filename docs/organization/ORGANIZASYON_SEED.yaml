@@ -1,0 +1,46 @@
+version: 1
+status: draft_with_locked_locations
+organization_group:
+  code: GOYMEN
+  name: Göymen Grubu
+legal_entities:
+  - code: TBD-GOY-01
+    legal_name: KULLANICI_TARAFINDAN_DOLDURULACAK
+    tax_number: TBD
+    active: true
+  - code: TBD-GOY-02
+    legal_name: KULLANICI_TARAFINDAN_DOLDURULACAK
+    tax_number: TBD
+    active: true
+sites:
+  - code: SITE-OSM
+    name: Göymen Osmaniye Yerleşkesi
+    type: internal
+  - code: SITE-GAZ
+    name: Göymen Gaziantep Depo Yerleşkesi
+    type: internal
+  - code: SITE-EXT
+    name: Harici Depolar
+    type: external_group
+locations:
+  - { code: OSM-H0, name: Göymen Osmaniye Depo Hol-0, site: SITE-OSM, external: false }
+  - { code: OSM-H1, name: Göymen Osmaniye Depo Hol-1, site: SITE-OSM, external: false }
+  - { code: OSM-H2, name: Göymen Osmaniye Depo Hol-2, site: SITE-OSM, external: false }
+  - { code: OSM-H3, name: Göymen Osmaniye Depo Hol-3, site: SITE-OSM, external: false }
+  - { code: OSM-H4, name: Göymen Osmaniye Depo Hol-4, site: SITE-OSM, external: false }
+  - { code: OSM-H5, name: Göymen Osmaniye Depo Hol-5, site: SITE-OSM, external: false }
+  - { code: OSM-H6, name: Göymen Osmaniye Depo Hol-6, site: SITE-OSM, external: false }
+  - { code: OSM-H7, name: Göymen Osmaniye Depo Hol-7, site: SITE-OSM, external: false }
+  - { code: GAZ-DEP, name: Göymen Gaziantep Depo, site: SITE-GAZ, external: false }
+  - { code: EXT-BASTUG, name: Baştuğ Depo, site: SITE-EXT, external: true }
+  - { code: EXT-SELIMOGLU, name: Selimoğlu Depo, site: SITE-EXT, external: true }
+  - { code: EXT-ALYA, name: Alya Depo, site: SITE-EXT, external: true }
+  - { code: EXT-SADILER, name: Şadiler Depo, site: SITE-EXT, external: true }
+  - { code: EXT-TOSCELIK, name: Tosçelik Depo, site: SITE-EXT, external: true }
+  - { code: EXT-DOGRULUK, name: Doğruluk Depo, site: SITE-EXT, external: true }
+work_centers:
+  - { code: WC-PAINT, name: Boya Hattı, location: OSM-H0 }
+  - { code: WC-TUBE, name: Boru & Profil Hattı, location: OSM-H1 }
+  - { code: WC-SLIT, name: Dilme Hattı, location: OSM-H3 }
+  - { code: WC-CR, name: Soğuk Hadde Hattı, location: OSM-H3 }
+  - { code: WC-CUT, name: Boy Kesme Hattı, location: OSM-H6 }

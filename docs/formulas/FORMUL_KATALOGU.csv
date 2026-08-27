@@ -1,0 +1,84 @@
+﻿FormulaId,Hesap,FormulVeyaKural
+MAT-001,Varsayılan çelik yoğunluğu,"`7,85 kg/dm³ = 7850 kg/m³`; ürün/malzeme masterı üstündür"
+MAT-002,Sac birim kg,`t(mm) × en(mm) × boy(mm) × yoğunluk(kg/dm³) / 1.000.000`
+MAT-003,Sac toplam kg,`BirimKg × Adet`
+MAT-004,Teorik adet,`GirilenKg / BirimKg`
+MAT-005,Kare dış çevre,`4 × A`
+MAT-006,Dikdörtgen dış çevre,`2 × (A + B)`
+MAT-007,Yuvarlak dış çevre,`π × DışÇap`
+MAT-008,Etkin çevre,Yuvarlak: `Çevre − π×t`; kare/dikdörtgen: `Çevre − 4×t`
+MAT-009,Profil/boru birim kg,`EtkinÇevre × t × Boy × Yoğunluk / 1.000.000`
+CUT-001,Satır birim kg,"`SacBirimKg(t, en, hedefBoy)`"
+CUT-002,Satır plan kg,`BirimKg × Adet`
+CUT-003,Satır çıkış metre,`HedefBoy(mm) / 1000 × Adet`
+CUT-004,Ham toplam metre,`HamKg × 1000 / (t × en × yoğunluk)`
+CUT-005,Kalan kg,`HamKg − ΣPlanKg`
+CUT-006,Kalan metre,`HamToplamMetre − ΣPlanMetre`
+CUT-007,Bir ham boydan kesim adedi,`floor(HamBoy / (HedefBoy + KesimPayı))` hedef davranış
+CUT-008,Boy firesi,`HamBoy − (HedefBoy × KesimAdedi) − (KesimPayı × KesimSayısı)` hedef davranış
+SLT-001,1 mm en kg,`HamKg / NetKullanılabilirEn(mm)`
+SLT-002,Satır kullanılan en,`BantEn × BantAdet`
+SLT-003,Satır kg,`1mmEnKg × KullanılanEn`
+SLT-004,Toplam kullanılan en,`ΣSatırKullanılanEn`
+SLT-005,Kalan en,`NetEn − ToplamKullanılanEn`
+SLT-006,Plan kg,`ΣSatırKg`
+SLT-007,Kalan kg,`HamKg − PlanKg`
+SLT-008,Teorik bant adedi,`floor(HamEn / BantEn)`
+SLT-009,En firesi,`HamEn − BantEn × Adet`; bıçak/kenar kaybı ayrıca
+SLT-010,Hat süresi,`AnaBobinYürüyenMetre / HatHızı(m/dk)`
+WND-001,Kg/metre,`Yoğunluk(kg/m³) × t(m) × BantEn(m)`
+WND-002,Gerekli metre,`HedefKg / KgMetre`
+WND-003,Dış çap,`sqrt(İçÇap² + 4 × t(mm) × GerekliMetre(m) × 1000 / π)`
+WND-004,Sarım yüksekliği,`(DışÇap − İçÇap) / 2`
+WND-005,Maksimum metre,`((MaxDışÇap² − İçÇap²) × π) / (4 × t × 1000)`
+WND-006,Maksimum tek bobin kg,`MaksimumMetre × KgMetre`
+WND-007,Grup maksimum kg,`MaksTekBobinKg × Adet`
+WND-008,Metre yeterli,`YürüyenMetre + ToleransMetre ≥ GerekliMetre` veya kg toleransı
+WND-009,Çap uygun,`HesaplananDışÇap ≤ MaxDışÇap`
+WND-010,Bobin kırılımı,Toplam kg → hedef kg'lik tam bobinler + tolerans üstü kalan bobin
+TUB-001,Toplam adet,`PaketSayısı × PaketİçiAdet`
+TUB-002,Toplam metre,`ToplamAdet × Boy(mm) / 1000`
+TUB-003,Tahmini çalışma süresi,`ToplamMetre / HatHızı(m/dk)`
+TUB-004,Toplam kg,`BirimKg × ToplamAdet`
+PNT-001,Toplam adet,`PaketSayısı × PaketİçiAdet`
+PNT-002,Toplam profil metre,`Adet × Boy(mm) / 1000`
+PNT-003,Hat geçiş metre,`ToplamProfilMetre / EşZamanlıProfilAdedi`
+PNT-004,Tahmini süre,`HatGeçişMetre / HatHızı`
+PNT-005,Boyanacak alan,`ProfilÇevre(mm) × Boy(mm) × Adet / 1.000.000`
+PNT-006,Teorik boya litre,`Alan × Mikron / (KatıMaddeOranı × 1000) × FireKatsayısı`
+CR-001,Giriş metre,`HamKg × 1000 / (GirişKalınlık × En × Yoğunluk)`
+CR-002,Çıkış kg,`HamKg − FireKg`
+CR-003,Teorik uzama oranı,`GirişKalınlık / HedefKalınlık`
+CR-004,Çıkış metre,`ÇıkışKg × 1000 / (HedefKalınlık × En × Yoğunluk)`
+CR-005,Redüksiyon %,`(GirişKalınlık − HedefKalınlık) / GirişKalınlık × 100`
+BAL-001,Donör beklenen ana ürün,`HammaddeKg − Fire/Bakiye/İkinciKaliteKg`; yalnız eski davranış referansı
+BAL-002,Donör fark,`BeklenenAnaÜrün − GerçekleşenAnaÜrün`
+BAL-003,Hedef kütle farkı,Yukarıdaki tüm kategorili denklem
+BAL-004,Fire %,`FireKg / HammaddeKg × 100`
+BAL-005,Boş gerçek miktar dağıtımı,Ağırlık: plan teorik kg → birimkg×adet → adet; son satır yuvarlama farkı
+BAL-006,Fiilî birim kg,`GerçekKg / GerçekAdet`
+INV-001,Fiziksel kalan,`Σ İşaret × FiilîHareketMiktarı`; her birim ayrı
+INV-002,Eski müsait,`Kalan − ManuelRezerv`; hedefte kullanılmaz
+INV-003,Serbest fiziki,Yukarıdaki hedef denklem
+INV-004,Tahsis kalan,`TahsisMiktarı − Tüketilen − SerbestBırakılan − İptal`
+INV-005,Satış satırı açık ihtiyaç,`NetAktifSipariş − Gerçekleşen − İptal`
+INV-006,Alış siparişi kalan,`OnaylıSipariş − İptal − KabulNet − KesinRed/İadeEtkisi`
+INV-007,Üretim planı kalan çıktı,`OnaylıPlanÇıktısı − GerçekleşenÇıktı − İptal`
+INV-008,Tahsis edilebilir paket,`floor(KalanPaket × SerbestKg / KalanKg)`; yalnız homojen pakette yardımcı
+INV-009,Projected ATP(t),`SerbestFiziki + t'ye kadar uygun alış + uygun plan çıktısı − t'ye kadar açık ihtiyaç`
+INV-010,Müşteri koruması,`GelecekTahsis + FizikselRezervasyon`; kaynak türü dönüşürken toplam korunur
+WGT-001,Net tartım kg,`
+WGT-002,Kantar farkı,`Gerçek/KantarKg − Beklenen/İrsaliyeKg`
+GR-001,Mal kabul kg farkı,`GerçekKg − PlanKg`
+GR-002,Mal kabul adet farkı,`GerçekAdet − PlanAdet`
+GR-003,Büyük sapma,Ürün farkı veya `
+VAR-001,Plan–gerçek kg farkı,`ΣGerçekKg − ΣPlanKg`
+VAR-002,Plan–gerçek adet farkı,`ΣGerçekAdet − ΣPlanAdet`
+VAR-003,Süre sapması,`GerçekÜretimSüresi − PlanlananSüre`
+PRICE-001,Efektif gerçek TL/kg,`GerçekleşenTicariTutar / GerçekİrsaliyeKantarKg`
+PRICE-002,Efektif teorik TL/kg,`GerçekleşenTicariTutar / TeorikKg`; teorik etiketi zorunlu
+SIM-001,İskontolu TL/birim,`Liste × (100 − İskonto%) / 100`
+SIM-002,Profil USD/kg,`İskontoluTL/metre / KgMetre / Kur`
+SIM-003,Sac kg/adet,MAT-002 ile aynı servis
+SIM-004,Sac toplam TL,`ToplamKg × İskontoluTL/kg`
+SIM-005,USD/kg,`İskontoluTL/kg / Kur`

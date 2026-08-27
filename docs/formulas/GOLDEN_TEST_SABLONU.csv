@@ -1,0 +1,2 @@
+﻿TestId,FormulaId,FormulaVersion,Senaryo,GirdiJSON,BeklenenCiktiJSON,Birimler,Yuvarlama,Tolerans,Kaynak,Onaylayan,Durum
+GT-EXAMPLE,SLT-001,1,Normal,"{""HamKg"":28750,""NetEnMm"":1500}","{""KgPerMm"":19.1666667}",kg/mm,AwayFromZero,TBD,StokERP golden,Sinan Göymen,Taslak

@@ -1,0 +1,73 @@
+# Kritik Kabul Senaryoları
+
+Master Rapor v3.0’dan **70 kabul senaryosu** çıkarılmıştır. Her senaryo gerçek test verisi, rol, adım, beklenen kayıt, beklenmeyen etki ve audit kanıtıyla ayrıntılandırılacaktır.
+- **AT-001:** Kullanıcı yalnız yetkili şirket, şube ve depo kayıtlarını görür.
+- **AT-002:** Global arama yetkisiz kaydı sonuç, öneri, toplam veya sayı olarak sızdırmaz.
+- **AT-003:** Kritik değişiklik önce/sonra, neden, kullanıcı, rol ve korelasyonla audit üretir.
+- **AT-004:** Oluşturan kişi yüksek riskli kendi işlemini görev ayrılığına aykırı onaylayamaz.
+- **AT-005:** Eşzamanlı değişiklikte ikinci kullanıcıya çatışma ve fark gösterilir.
+- **AT-006:** Başarısız kaydetme kullanıcının form verisini kaybettirmez.
+- **AT-007:** İptal ve ters işlem geçmişi silmez.
+- **AT-008:** Şirket kapsamı değişikliği açık formu sessizce başka şirkete taşımaz.
+- **AT-009:** Aynı VKN/kimlik için ikinci cari kontrollü mükerrer uyarısı üretir.
+- **AT-010:** Tek cari kimliği müşteri ve tedarikçi rollerini ayrı hesaplarla taşır.
+- **AT-011:** TRY, USD ve EUR bakiyeleri açıklamasız tek sayıya netleştirilmez.
+- **AT-012:** Cari birleştirme ilişkili belge ve audit bağlarını kaybetmez.
+- **AT-013:** Pasif cari yeni işleme seçilemez; geçmiş kayıtta görünür kalır.
+- **AT-014:** Eksik zorunlu vergi/banka belgesi doğru akışı doğru noktada durdurur.
+- **AT-015:** Ürün sınıfı ve ticari rol bağımsızdır; çelişki kontrol edilir.
+- **AT-016:** Birim dönüşümü yuvarlama/tolerans golden örneğini geçer.
+- **AT-017:** Paket standardının yeni sürümü geçmiş siparişi değiştirmez.
+- **AT-018:** Fiyat sürümü para, birim, KDV, kanal ve geçerlilik bağlamını korur.
+- **AT-019:** Excel içe aktarma eşleme/önizleme/onay olmadan kayıt yazmaz.
+- **AT-020:** Aynı Excel dosyasının tekrarı mükerrer kalıcı kayıt üretmez.
+- **AT-021:** Satış siparişi fiyat alt sınırını aşarsa doğru onaya gider.
+- **AT-022:** Risk limiti aşımı siparişi sessizce serbest bırakmaz.
+- **AT-023:** Onaylı siparişte kritik satır değişikliği eski onayı geçersizleştirir.
+- **AT-024:** Kısmi teslimat sipariş kalanını doğru tutar.
+- **AT-025:** Satış ve satın alma belgeleri operasyon listelerinde karışmaz.
+- **AT-026:** Satın alma siparişi fazla/eksik teslimat toleransını uygular.
+- **AT-027:** Tedarikçi fiyat/miktar farkı kullanıcı onayı olmadan faturaya geçmez.
+- **AT-028:** İade kaynak sipariş, teslimat ve fatura bağını korur.
+- **AT-029:** Fiziksel mevcut ile mülkiyet sahibi ayrı doğru gösterilir.
+- **AT-030:** Müşteri malzemesi şirket serbest stoku gibi satılamaz.
+- **AT-031:** Fasoncudaki şirket malzemesi doğru emanet/lokasyon durumunda görünür.
+- **AT-032:** Aktif tahsis serbest miktarı düşürür ama stok hareketi oluşturmaz.
+- **AT-033:** Aynı etiket izin verilenden fazla aktif tahsis edilemez.
+- **AT-034:** Tahsis serbest bırakılınca kalan doğru geri döner.
+- **AT-035:** Kalite bloğu serbest miktardan doğru düşer.
+- **AT-036:** Yüklemeye tutulan miktar başka siparişe kaynak olamaz.
+- **AT-037:** Sayım farkı neden ve onay olmadan kesinleşmez.
+- **AT-038:** Etiket bölme/birleştirme soy ağacını korur.
+- **AT-039:** Lot/rulo/ısı/MTC bağı girişten çıkışa izlenir.
+- **AT-040:** Serbest fiziksel miktarın her bileşeni kaynak kayda açılır.
+- **AT-041:** Kaynağı hazır olmayan plan hazır durumuna geçemez.
+- **AT-042:** Fiilî üretim tüketimi tahsis ve fiziksel mevcudu aşamaz.
+- **AT-043:** Boy kesme çıktıları + kalan + fire girdiyi tolerans içinde dengeler.
+- **AT-044:** Dilme kombinasyonu genişlik ve kenar firesini dengeler.
+- **AT-045:** Boru/profil adet–boy–kg dönüşümü golden örneğini geçer.
+- **AT-046:** Boyama girdisi iyi/ikinci kalite/yeniden işleme/kayıp ile dengelenir.
+- **AT-047:** Soğuk hadde giriş/çıkış/proses kaybı ortak dengeyi sağlar.
+- **AT-048:** Tolerans dışı kütle farkı onaysız kapanamaz.
+- **AT-049:** Yeni reçete/formül/tolerans sürümü geçmiş gerçekleşmeyi değiştirmez.
+- **AT-050:** Çıktı etiketi bütün kaynak girdilere geri izlenir.
+- **AT-051:** Kalite karantinasındaki çıktı sevkiyata açılamaz.
+- **AT-052:** Düzeltme önceki gerçekleşmeyi silmez; ters/düzeltme zinciri kurar.
+- **AT-053:** Kantar neti iki tartım ve brüt/dara yönüyle tutarlıdır.
+- **AT-054:** Fiilî yüklenen etiketler tahsis ve sevkiyat planıyla uzlaştırılır.
+- **AT-055:** Aynı sevkiyat gerçekleşmesi iki kez irsaliye/faturaya bağlanamaz.
+- **AT-056:** OCR/AI çıkarımı ham belge ve kullanıcı düzeltmesiyle izlenir.
+- **AT-057:** Aynı belge hash'i ve benzer anahtarlar mükerrer uyarısı üretir.
+- **AT-058:** Ödeme/tahsilat açık kalem ve banka hareketine çift yönlü bağlanır.
+- **AT-059:** AI kalıcı değişikliği fark önizlemesi ve yetkili onay olmadan uygulamaz.
+- **AT-060:** AI yetkisiz şirket verisini cevap, özet, araç çağrısı veya kaynakta sızdırmaz.
+- **AT-061:** Üretim planı girdisi değişince `Hesapla` düğmesi olmadan doğru önizleme güncellenir; kayıt oluşmaz.
+- **AT-062:** Eksik/geçersiz üretim girdisinde eski sonuç güncel gibi kalmaz; neden ve eksik alan görünür.
+- **AT-063:** Stok satırından Üretim Planla, Tahsis Revize ve Yükleme Talimatı işlemleri doğru satır bağlamıyla açılır.
+- **AT-064:** Alış siparişi kalanı `Kaynak/Durum = Alış Siparişi` görünür fakat mal kabulden önce fiziksel/serbest stoğu artırmaz.
+- **AT-065:** Tek belge bir kez saklanır; stok/cari/muhasebe/finans ekranları aynı olay ve dosya referansını gösterir.
+- **AT-066:** PDF adı Türkçe karakterleri korur, yasak dosya karakterlerini güvenli dönüştürür ve gömülü fontla doğru render olur.
+- **AT-067:** WhatsApp Business olmadan Paylaş işlemi desteklenen cihazda sistem paylaşım penceresini açar; destek yoksa indir + metin kopyala çalışır.
+- **AT-068:** AI kişi bazlı yetki taslağı ve risk/fark üretir fakat yetkili yönetici onayı olmadan izin değişmez.
+- **AT-069:** Yetkili global arama temsilî üç yıllık hacmin üç katında belirlenen p95 hedefini geçer; derin sayfalama veri atlamaz/tekrarlamaz.
+- **AT-070:** Yedekten nokta-zaman geri yükleme ve nesne dosyası bütünlüğü gerçek provada mutabık sonuç verir.
