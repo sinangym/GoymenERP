@@ -5,7 +5,7 @@ source_id: "P-12"
 canonical_ids: ["P-04"]
 conditional_workspace_ids: ["U-02"]
 mapping_status: EMBEDDED_COMPONENT
-decision_refs: ["UI-MAP-001"]
+decision_refs: ["UI-MAP-001", "UI-MAP-002"]
 source_status: DESIGNED_FINAL_QA
 visual_status: DESIGNED_FINAL_QA
 capture_quality: PARTIAL_CROP
