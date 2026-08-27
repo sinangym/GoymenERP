@@ -3,7 +3,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\BuildingBlocks\GoymenERP.BuildingBlocks\GoymenERP.BuildingBlocks.csproj" />
     <ProjectReference Include="..\..\Audit\GoymenERP.Modules.Audit.Infrastructure\GoymenERP.Modules.Audit.Infrastructure.csproj" />
-    <ProjectReference Include="..\..\Idempotency\GoymenERP.Modules.Idempotency.Domain\GoymenERP.Modules.Idempotency.Domain.csproj" />
     <ProjectReference Include="..\..\Idempotency\GoymenERP.Modules.Idempotency.Infrastructure\GoymenERP.Modules.Idempotency.Infrastructure.csproj" />
     <ProjectReference Include="..\GoymenERP.Modules.Organization.Domain\GoymenERP.Modules.Organization.Domain.csproj" />
     <ProjectReference Include="..\GoymenERP.Modules.Organization.Application\GoymenERP.Modules.Organization.Application.csproj" />

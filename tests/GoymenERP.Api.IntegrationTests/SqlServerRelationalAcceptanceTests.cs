@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Audit.Domain.Events;
@@ -629,6 +630,63 @@ public sealed class SqlServerRelationalAcceptanceTests
                 new SqlParameter("@Replay", replayCorrelation),
                 new SqlParameter("@Conflict", payloadConflictCorrelation)));
 
+        var scopeAllowedLocation = await ReadLocationProbeAsync(
+            connection,
+            "SELECT [Id], [IsActive], [Version] FROM [organization].[Locations] WHERE [CompanyId] = @CompanyId AND [Code] = N'GAZ-DEP';",
+            new SqlParameter("@CompanyId", TestCompanyIds.CompanyA));
+        var companyAOperatorAssignmentId = Guid.Parse(
+            "40000000-0000-0000-0000-000000000001");
+        await ExecuteNonQueryAsync(
+            connection,
+            "DELETE FROM [identity].[RoleAssignmentScopes] WHERE [RoleAssignmentId] = @AssignmentId;",
+            new SqlParameter("@AssignmentId", companyAOperatorAssignmentId));
+        await ExecuteNonQueryAsync(
+            connection,
+            "INSERT INTO [identity].[RoleAssignmentScopes] ([RoleAssignmentId], [CompanyId], [ScopeType], [ScopeId]) VALUES (@AssignmentId, @CompanyId, N'Location', @ScopeId);",
+            new SqlParameter("@AssignmentId", companyAOperatorAssignmentId),
+            new SqlParameter("@CompanyId", TestCompanyIds.CompanyA),
+            new SqlParameter("@ScopeId", scopeAllowedLocation.Id));
+        HttpResponseMessage deniedReplayResponse;
+        var deniedReplayCorrelation = $"sql-idem-scope-denied-{Guid.NewGuid():N}";
+        try
+        {
+            using var deniedReplayClient = factory.CreateClientFor(
+                TestUsers.CompanyA,
+                TestCompanyIds.CompanyA);
+            SetRequestIdentity(deniedReplayClient, replayKey, deniedReplayCorrelation);
+            deniedReplayResponse = await deniedReplayClient.PutAsJsonAsync(
+                $"/api/v1/organization/locations/{replayLocation.Id}/active-state",
+                replayCommand);
+        }
+        finally
+        {
+            await ExecuteNonQueryAsync(
+                connection,
+                "DELETE FROM [identity].[RoleAssignmentScopes] WHERE [RoleAssignmentId] = @AssignmentId;",
+                new SqlParameter("@AssignmentId", companyAOperatorAssignmentId));
+            await ExecuteNonQueryAsync(
+                connection,
+                "INSERT INTO [identity].[RoleAssignmentScopes] ([RoleAssignmentId], [CompanyId], [ScopeType], [ScopeId]) VALUES (@AssignmentId, @CompanyId, N'Company', @CompanyId);",
+                new SqlParameter("@AssignmentId", companyAOperatorAssignmentId),
+                new SqlParameter("@CompanyId", TestCompanyIds.CompanyA));
+        }
+
+        Assert.Equal(HttpStatusCode.NotFound, deniedReplayResponse.StatusCode);
+        Assert.False(deniedReplayResponse.Headers.Contains("Idempotency-Replayed"));
+        Assert.False(deniedReplayResponse.Headers.Contains("Idempotency-Original-Correlation-Id"));
+        Assert.Equal(
+            1,
+            await ScalarAsync<int>(
+                connection,
+                "SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [IdempotencyKeyHash] = @KeyHash;",
+                new SqlParameter("@KeyHash", replayKeyHash)));
+        Assert.Equal(
+            0,
+            await ScalarAsync<int>(
+                connection,
+                "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [CorrelationId] = @CorrelationId;",
+                new SqlParameter("@CorrelationId", deniedReplayCorrelation)));
+
         const string companyScopedKey = "sql-company-scoped-key";
         var companyScopedKeyHash = IdempotencyHash.ComputeKey(companyScopedKey);
         var companyALocation = await ReadLocationProbeAsync(
@@ -775,7 +833,13 @@ public sealed class SqlServerRelationalAcceptanceTests
                 $"/api/v1/organization/locations/{concurrencyLocation.Id}/active-state",
                 concurrencyCommand));
         Assert.Contains(concurrencyResponses, x => x.StatusCode == HttpStatusCode.NoContent);
-        Assert.Contains(concurrencyResponses, x => x.StatusCode == HttpStatusCode.Conflict);
+        var concurrencyConflict = Assert.Single(
+            concurrencyResponses,
+            x => x.StatusCode == HttpStatusCode.Conflict);
+        await AssertVersionConflictAsync(
+            concurrencyConflict,
+            concurrencyLocation.Version,
+            concurrencyLocation.Version + 1);
         Assert.Equal(
             1,
             await ScalarAsync<int>(
@@ -783,6 +847,21 @@ public sealed class SqlServerRelationalAcceptanceTests
                 "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [CorrelationId] IN (@First, @Second);",
                 new SqlParameter("@First", concurrencyCorrelations[0]),
                 new SqlParameter("@Second", concurrencyCorrelations[1])));
+        var persistedConflictJson = await ScalarAsync<string>(
+            connection,
+            "SELECT [ResponseJson] FROM [idempotency].[CommandExecutions] WHERE [Outcome] = N'VersionConflict' AND [OriginalCorrelationId] IN (@First, @Second);",
+            new SqlParameter("@First", concurrencyCorrelations[0]),
+            new SqlParameter("@Second", concurrencyCorrelations[1]));
+        using (var persistedConflict = JsonDocument.Parse(persistedConflictJson))
+        {
+            var conflict = persistedConflict.RootElement.GetProperty("Conflict");
+            Assert.Equal(
+                concurrencyLocation.Version,
+                conflict.GetProperty("ExpectedVersion").GetInt64());
+            Assert.Equal(
+                concurrencyLocation.Version + 1,
+                conflict.GetProperty("CurrentVersion").GetInt64());
+        }
 
         var rejectedLocation = await ReadLocationProbeAsync(
             connection,
@@ -889,6 +968,17 @@ public sealed class SqlServerRelationalAcceptanceTests
         client.DefaultRequestHeaders.Add("Idempotency-Key", idempotencyKey);
         client.DefaultRequestHeaders.Remove("X-Correlation-Id");
         client.DefaultRequestHeaders.Add("X-Correlation-Id", correlationId);
+    }
+
+    private static async Task AssertVersionConflictAsync(
+        HttpResponseMessage response,
+        long expectedVersion,
+        long currentVersion)
+    {
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var conflict = document.RootElement.GetProperty("conflict");
+        Assert.Equal(expectedVersion, conflict.GetProperty("expectedVersion").GetInt64());
+        Assert.Equal(currentVersion, conflict.GetProperty("currentVersion").GetInt64());
     }
 
     private static async Task<T> ScalarAsync<T>(

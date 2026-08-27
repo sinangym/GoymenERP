@@ -71,7 +71,12 @@ public sealed record CommandResponseSnapshot(
     CommandResult Result,
     int StatusCode,
     string? Title,
-    string? Detail);
+    string? Detail,
+    VersionConflictSnapshot? Conflict = null);
+
+public sealed record VersionConflictSnapshot(
+    long ExpectedVersion,
+    long CurrentVersion);
 
 public static class CommandResponses
 {
@@ -89,11 +94,9 @@ public static class CommandResponses
                 404,
                 "Kayıt bulunamadı.",
                 "İstenen kayıt bulunamadı veya bu bağlamda kullanılamıyor."),
-            CommandResult.VersionConflict => new CommandResponseSnapshot(
-                result,
-                409,
-                "Kayıt güncellendi.",
-                "Kayıt başka bir işlem tarafından değiştirildi; veriyi yenileyin."),
+            CommandResult.VersionConflict => throw new ArgumentException(
+                "Version conflict cevabı beklenen ve mevcut sürümü içermelidir.",
+                nameof(result)),
             CommandResult.IdempotencyConflict => new CommandResponseSnapshot(
                 result,
                 409,
@@ -101,5 +104,17 @@ public static class CommandResponses
                 "Aynı Idempotency-Key farklı bir komut içeriği veya kullanıcıyla tekrar kullanılamaz."),
             _ => throw new ArgumentOutOfRangeException(nameof(result), result, null),
         };
+    }
+
+    public static CommandResponseSnapshot VersionConflict(
+        long expectedVersion,
+        long currentVersion)
+    {
+        return new CommandResponseSnapshot(
+            CommandResult.VersionConflict,
+            409,
+            "Kayıt güncellendi.",
+            "Kayıt başka bir işlem tarafından değiştirildi; beklenen ve mevcut sürüm farkını inceleyip veriyi yenileyin.",
+            new VersionConflictSnapshot(expectedVersion, currentVersion));
     }
 }

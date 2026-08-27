@@ -133,7 +133,13 @@ public static class OrganizationEndpoints
             : Results.Problem(
                 title: response.Title,
                 detail: response.Detail,
-                statusCode: response.StatusCode);
+                statusCode: response.StatusCode,
+                extensions: response.Conflict is null
+                    ? null
+                    : new Dictionary<string, object?>
+                    {
+                        ["conflict"] = response.Conflict,
+                    });
     }
 
     private static bool TryReadCommandMetadata(

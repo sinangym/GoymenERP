@@ -80,6 +80,19 @@ bu karardan ayrı kalmalıdır.
 - Onay alanı nullable'dır; gerçek approval motoru bağlandığında request/decision/approver
   snapshot'ı aynı olay zarfına yazılır.
 
+## Dar modül bağımlılığı istisnası
+
+`OrganizationDbContext`, audit taslağını iş değişikliğiyle aynı EF `SaveChanges` ve SQL
+transaction'ında kalıcılaştırmak için Audit'in EF model mapping uzantısını kullanır. Bu
+atomiklik kararı yalnız aşağıdaki exact project-reference kenarına izin verir:
+
+`Organization.Infrastructure -> Audit.Infrastructure`
+
+İstisna `docs/architecture/MODULE_DEPENDENCY_ALLOWLIST.json` içinde bu ADR'ye bağlıdır.
+Başka Audit Infrastructure servisine erişim, başka modül tablosuna doğrudan yazma veya
+kenarın genişletilmesi bu kararın kapsamında değildir. Architecture dependency guard,
+allowlist dışındaki ve artık gerçek grafikte bulunmayan stale kenarları reddeder.
+
 ## Migration ve geri alma
 
 `audit` şeması ayrı migrations history ve tek başlangıç migration'ına sahiptir. Tablo

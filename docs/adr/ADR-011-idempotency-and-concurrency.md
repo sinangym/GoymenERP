@@ -25,13 +25,18 @@ değişikliği ile audit kanıtından ayrışmamalıdır.
    replay eder. Response `Idempotency-Replayed: true` ve ilk correlation kimliğini
    taşıyan `Idempotency-Original-Correlation-Id` header'larını ekler.
 5. Yetki ve aktif `CompanyContext` kontrolü replay kontrolünden önce kalır. Yetkisi
-   kaldırılan aktör eski sonucu idempotency üzerinden okuyamaz. Global query filter ve
-   write guard şirket sınırını ayrıca zorunlu tutar.
+   kaldırılan aktör eski sonucu idempotency üzerinden okuyamaz. Site/Location/WorkCenter
+   kapsamı olan komutlarda hedef kaynağın güncel kapsamı da kalıcı sonuç okunmadan önce
+   yeniden doğrulanır; kapsam dışına çıkan hedef `404` döner ve replay/original-correlation
+   header'ları açıklanmaz. Global query filter ve write guard şirket sınırını ayrıca
+   zorunlu tutar.
 6. Başarılı kritik komutta business update + append-only audit insert + command result
    insert aynı EF `SaveChanges` ve SQL transaction'ındadır. Üçünden biri reddedilirse
    tamamı rollback olur. Transient/500 sonuç kalıcı başarı gibi kaydedilmez.
 7. Yetkili terminal `NotFound` ve `VersionConflict` sonuçları da semantik olarak replay
    edilebilir. Böylece aynı key'in daha sonra farklı sonuç üretmesi engellenir.
+   `VersionConflict` snapshot'ı beklenen ve kalıcı kayıttan okunan mevcut sürümü taşır;
+   API bu farkı makine-okunur `conflict` uzantısı olarak döndürür.
 8. Paralel aynı-key yarışında SQL unique index tek kazanan bırakır; kaybeden rollback
    sonrası kazananın kalıcı sonucunu okur. Farklı key yarışında beklenen iş `Version`
    değeri ve SQL Server `rowversion` birlikte optimistic concurrency uygular.
@@ -46,6 +51,21 @@ değişikliği ile audit kanıtından ayrışmamalıdır.
 - Genel middleware bütün endpoint'leri sihirli biçimde idempotent yapmaz. Her kritik
   command sürümlü canonical fingerprint ve kalıcı response sözleşmesini açıkça bağlar.
 
+## Dar modül bağımlılığı istisnası
+
+`OrganizationDbContext`, business update, audit insert ve tamamlanmış command result
+insert'ini aynı EF `SaveChanges` ve SQL transaction'ında atomik tutmak için Idempotency
+Infrastructure'ın EF model mapping uzantısını kullanır. Bu karar yalnız aşağıdaki exact
+project-reference kenarına izin verir:
+
+`Organization.Infrastructure -> Idempotency.Infrastructure`
+
+İstisna `docs/architecture/MODULE_DEPENDENCY_ALLOWLIST.json` içinde bu ADR'ye bağlıdır.
+Organization'dan Idempotency Domain'e ayrıca doğrudan project reference verilmez;
+başka Idempotency Infrastructure servisine erişim veya kenarın genişletilmesi bu kararın
+kapsamında değildir. Architecture dependency guard, allowlist dışındaki ve artık gerçek
+grafikte bulunmayan stale kenarları reddeder.
+
 ## Migration ve rollback
 
 - `InitialIdempotency`, ayrı `[idempotency].[__EFMigrationsHistory]`, unique index,
@@ -59,11 +79,12 @@ değişikliği ile audit kanıtından ayrışmamalıdır.
 
 - Unit: canonical key/payload hash, hash/JSON doğrulaması ve Company write guard.
 - HTTP: aynı request replay, payload/aktör çakışması, `NotFound` ve `VersionConflict`
-  terminal replay, stale expected version ve şirketler arası aynı-key izolasyonu.
+  terminal replay, beklenen/mevcut sürüm farkı, yetki kapsamı daraltıldıktan sonra güvenli
+  replay reddi, stale expected version ve şirketler arası aynı-key izolasyonu.
 - Gerçek SQL Server: kalıcı HTTP response snapshot, şirketler arası aynı-key izolasyonu,
   aynı-key paralel retry, farklı-key concurrency yarışı, unique index, gerçek `rowversion`,
-  idempotency insert hata enjeksiyonunda business+audit rollback ve update/delete `51010`
-  reddi.
+  daraltılmış kaynak kapsamından replay reddi, kalıcı conflict farkı, idempotency insert
+  hata enjeksiyonunda business+audit rollback ve update/delete `51010` reddi.
 
 ERP-000E ancak review ve uzak CI kapıları geçtikten sonra `done` yapılır. Bu gerçekleşmeden
 ERP-000F başlatılmaz.

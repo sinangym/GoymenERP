@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
+using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Organization.Application.Contracts;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -143,6 +145,14 @@ public sealed class IdempotencyAcceptanceTests(GoymenErpApiFactory factory)
 
         Assert.Equal(HttpStatusCode.Conflict, first.StatusCode);
         Assert.Equal(HttpStatusCode.Conflict, replay.StatusCode);
+        await AssertVersionConflictAsync(
+            first,
+            command.ExpectedVersion,
+            location.Version);
+        await AssertVersionConflictAsync(
+            replay,
+            command.ExpectedVersion,
+            location.Version);
         Assert.Equal("true", Assert.Single(replay.Headers.GetValues("Idempotency-Replayed")));
         Assert.Equal(location, after);
         Assert.Empty(await factory.GetAuditEventsIgnoringFiltersAsync(firstCorrelation));
@@ -222,6 +232,10 @@ public sealed class IdempotencyAcceptanceTests(GoymenErpApiFactory factory)
 
         Assert.Equal(HttpStatusCode.NoContent, first.StatusCode);
         Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+        await AssertVersionConflictAsync(
+            stale,
+            before.Version,
+            before.Version + 1);
         Assert.Equal(before.Version + 1, after.Version);
         Assert.Single(await factory.GetAuditEventsIgnoringFiltersAsync(firstCorrelation));
         Assert.Empty(await factory.GetAuditEventsIgnoringFiltersAsync(staleCorrelation));
@@ -267,6 +281,64 @@ public sealed class IdempotencyAcceptanceTests(GoymenErpApiFactory factory)
         Assert.Contains(executions, execution => execution.CompanyId == TestCompanyIds.CompanyB);
     }
 
+    [Fact]
+    public async Task ReplayAfterResourceScopeIsNarrowed_DoesNotRevealStoredResult()
+    {
+        const string key = "idem-scope-narrowing";
+        var firstCorrelation = $"idem-scope-first-{Guid.NewGuid():N}";
+        var deniedCorrelation = $"idem-scope-denied-{Guid.NewGuid():N}";
+        var target = await factory.GetLocationIgnoringFiltersAsync(
+            TestCompanyIds.CompanyA,
+            "OSM-H7");
+        var stillAllowed = await factory.GetLocationIgnoringFiltersAsync(
+            TestCompanyIds.CompanyA,
+            "GAZ-DEP");
+        var command = new SetLocationActiveState(
+            !target.IsActive,
+            target.Version,
+            "Kapsam daraltma sonrası replay güvenlik testi");
+        using var firstClient = factory.CreateClientFor(
+            TestUsers.CompanyA,
+            TestCompanyIds.CompanyA);
+        SetRequestIdentity(firstClient, key, firstCorrelation);
+        var first = await firstClient.PutAsJsonAsync(
+            $"/api/v1/organization/locations/{target.Id}/active-state",
+            command);
+
+        HttpResponseMessage deniedReplay;
+        await factory.ReplaceUserAssignmentScopeAsync(
+            TestUsers.CompanyA,
+            TestCompanyIds.CompanyA,
+            AccessScopeType.Location,
+            stillAllowed.Id);
+        try
+        {
+            using var deniedClient = factory.CreateClientFor(
+                TestUsers.CompanyA,
+                TestCompanyIds.CompanyA);
+            SetRequestIdentity(deniedClient, key, deniedCorrelation);
+            deniedReplay = await deniedClient.PutAsJsonAsync(
+                $"/api/v1/organization/locations/{target.Id}/active-state",
+                command);
+        }
+        finally
+        {
+            await factory.ReplaceUserAssignmentScopeAsync(
+                TestUsers.CompanyA,
+                TestCompanyIds.CompanyA,
+                AccessScopeType.Company,
+                TestCompanyIds.CompanyA);
+        }
+
+        Assert.Equal(HttpStatusCode.NoContent, first.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, deniedReplay.StatusCode);
+        Assert.False(deniedReplay.Headers.Contains("Idempotency-Replayed"));
+        Assert.False(deniedReplay.Headers.Contains("Idempotency-Original-Correlation-Id"));
+        Assert.Single(await factory.GetCommandExecutionsAsync(key));
+        Assert.Single(await factory.GetAuditEventsIgnoringFiltersAsync(firstCorrelation));
+        Assert.Empty(await factory.GetAuditEventsIgnoringFiltersAsync(deniedCorrelation));
+    }
+
     private static void SetRequestIdentity(
         HttpClient client,
         string idempotencyKey,
@@ -276,5 +348,16 @@ public sealed class IdempotencyAcceptanceTests(GoymenErpApiFactory factory)
         client.DefaultRequestHeaders.Add("Idempotency-Key", idempotencyKey);
         client.DefaultRequestHeaders.Remove("X-Correlation-Id");
         client.DefaultRequestHeaders.Add("X-Correlation-Id", correlationId);
+    }
+
+    private static async Task AssertVersionConflictAsync(
+        HttpResponseMessage response,
+        long expectedVersion,
+        long currentVersion)
+    {
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var conflict = document.RootElement.GetProperty("conflict");
+        Assert.Equal(expectedVersion, conflict.GetProperty("expectedVersion").GetInt64());
+        Assert.Equal(currentVersion, conflict.GetProperty("currentVersion").GetInt64());
     }
 }

@@ -36,6 +36,13 @@ jobs:
       - name: Test
         run: dotnet test GoymenERP.slnx --configuration Release --no-build --logger "console;verbosity=normal"
 
+      - name: Architecture dependency guard
+        run: >-
+          dotnet test tests/GoymenERP.ArchitectureTests/GoymenERP.ArchitectureTests.csproj
+          --configuration Release
+          --no-build
+          --logger "console;verbosity=normal"
+
       - name: Check vulnerable dependencies
         run: dotnet list GoymenERP.slnx package --vulnerable --include-transitive
 

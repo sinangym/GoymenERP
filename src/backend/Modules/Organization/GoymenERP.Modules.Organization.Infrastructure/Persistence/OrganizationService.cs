@@ -182,36 +182,47 @@ internal sealed class OrganizationService(
                 command.IsActive,
                 command.ExpectedVersion,
                 command.Reason.Trim()));
+        var location = await ApplyLocationScope(dbContext.Locations, scope)
+            .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         var existingExecution = await FindCommandExecutionAsync(
             idempotencyKeyHash,
             cancellationToken);
         if (existingExecution is not null)
         {
+            if (!scope.IsCompanyWide && location is null)
+            {
+                return new CommandExecutionResult(
+                    CommandResponses.For(CommandResult.NotFound),
+                    false,
+                    metadata.CorrelationId);
+            }
+
             return ResolveExistingExecution(existingExecution, requestHash, metadata);
         }
-
-        var location = await ApplyLocationScope(dbContext.Locations, scope)
-            .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
 
         if (location is null)
         {
             return await CompleteCommandAsync(
-                CommandResult.NotFound,
+                CommandResponses.For(CommandResult.NotFound),
                 idempotencyKeyHash,
                 requestHash,
                 metadata,
                 hasBusinessMutation: false,
+                concurrencyContext: null,
                 cancellationToken);
         }
 
         if (location.Version != command.ExpectedVersion)
         {
             return await CompleteCommandAsync(
-                CommandResult.VersionConflict,
+                CommandResponses.VersionConflict(
+                    command.ExpectedVersion,
+                    location.Version),
                 idempotencyKeyHash,
                 requestHash,
                 metadata,
                 hasBusinessMutation: false,
+                concurrencyContext: null,
                 cancellationToken);
         }
 
@@ -255,11 +266,12 @@ internal sealed class OrganizationService(
             metadata.IdempotencyKey));
 
         var result = await CompleteCommandAsync(
-            CommandResult.Succeeded,
+            CommandResponses.For(CommandResult.Succeeded),
             idempotencyKeyHash,
             requestHash,
             metadata,
             hasBusinessMutation: true,
+            new CommandConcurrencyContext(id, command.ExpectedVersion, scope),
             cancellationToken);
         logger.LogInformation(
             "Organization location active state command completed. CompanyId={CompanyId} LocationId={LocationId} ActorId={ActorId} CorrelationId={CorrelationId} Result={Result} IsReplay={IsReplay}",
@@ -273,14 +285,14 @@ internal sealed class OrganizationService(
     }
 
     private async Task<CommandExecutionResult> CompleteCommandAsync(
-        CommandResult result,
+        CommandResponseSnapshot response,
         string idempotencyKeyHash,
         string requestHash,
         CommandMetadata metadata,
         bool hasBusinessMutation,
+        CommandConcurrencyContext? concurrencyContext,
         CancellationToken cancellationToken)
     {
-        var response = CommandResponses.For(result);
         dbContext.CommandExecutions.Add(CommandExecution.Complete(new CommandExecutionData(
             Guid.NewGuid(),
             metadata.CompanyId,
@@ -288,7 +300,7 @@ internal sealed class OrganizationService(
             idempotencyKeyHash,
             requestHash,
             metadata.ActorId,
-            result.ToString(),
+            response.Result.ToString(),
             response.StatusCode,
             JsonSerializer.Serialize(response),
             metadata.CorrelationId,
@@ -311,12 +323,29 @@ internal sealed class OrganizationService(
                 return ResolveExistingExecution(winner, requestHash, metadata);
             }
 
+            if (concurrencyContext is null)
+            {
+                throw;
+            }
+
+            var currentVersion = await ApplyLocationScope(
+                    dbContext.Locations.AsNoTracking(),
+                    concurrencyContext.Scope)
+                .Where(x => x.Id == concurrencyContext.LocationId)
+                .Select(x => (long?)x.Version)
+                .SingleOrDefaultAsync(cancellationToken);
+            var terminalResponse = currentVersion.HasValue
+                ? CommandResponses.VersionConflict(
+                    concurrencyContext.ExpectedVersion,
+                    currentVersion.Value)
+                : CommandResponses.For(CommandResult.NotFound);
             return await CompleteCommandAsync(
-                CommandResult.VersionConflict,
+                terminalResponse,
                 idempotencyKeyHash,
                 requestHash,
                 metadata,
                 hasBusinessMutation: false,
+                concurrencyContext: null,
                 cancellationToken);
         }
         catch (DbUpdateException)
@@ -444,5 +473,10 @@ internal sealed class OrganizationService(
         bool IsActive,
         long ExpectedVersion,
         string Reason);
+
+    private sealed record CommandConcurrencyContext(
+        Guid LocationId,
+        long ExpectedVersion,
+        PermissionScope Scope);
 
 }

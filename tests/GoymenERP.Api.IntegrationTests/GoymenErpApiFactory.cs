@@ -2,6 +2,7 @@ using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
+using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
@@ -121,6 +122,33 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
             .AsNoTracking()
             .Where(x => x.IdempotencyKeyHash == keyHash)
             .ToListAsync();
+    }
+
+    public async Task ReplaceUserAssignmentScopeAsync(
+        string externalSubject,
+        Guid companyId,
+        AccessScopeType scopeType,
+        Guid scopeId)
+    {
+        await using var scope = Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+        var userId = await dbContext.ExternalIdentities
+            .Where(x => x.Subject == externalSubject)
+            .Select(x => x.UserId)
+            .SingleAsync();
+        var operatorRoleIds = dbContext.RolePermissions
+            .Where(x => x.PermissionCode == "organization.locations.status.update")
+            .Select(x => x.RoleId);
+        var assignment = await dbContext.RoleAssignments
+            .Include(x => x.Scopes)
+            .SingleAsync(x =>
+                x.UserId == userId
+                && x.CompanyId == companyId
+                && operatorRoleIds.Contains(x.RoleId));
+
+        dbContext.RoleAssignmentScopes.RemoveRange(assignment.Scopes);
+        assignment.AddScope(scopeType, scopeId);
+        await dbContext.SaveChangesAsync();
     }
 }
 
