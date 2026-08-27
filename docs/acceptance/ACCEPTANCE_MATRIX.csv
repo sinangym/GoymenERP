@@ -1,4 +1,4 @@
-﻿AcceptanceId,Aciklama,Modul,Oncelik,TestKatmani,Durum,Kanıt
+AcceptanceId,Aciklama,Modul,Oncelik,TestKatmani,Durum,Kanıt
 AT-001,"Kullanıcı yalnız yetkili şirket, şube ve depo kayıtlarını görür.",TBD,P0/P1,E2E+Contract,Taslak,
 AT-002,"Global arama yetkisiz kaydı sonuç, öneri, toplam veya sayı olarak sızdırmaz.",TBD,P0/P1,E2E+Contract,Taslak,
 AT-003,"Kritik değişiklik önce/sonra, neden, kullanıcı, rol ve korelasyonla audit üretir.",TBD,P0/P1,E2E+Contract,Taslak,
@@ -69,3 +69,11 @@ AT-067,WhatsApp Business olmadan Paylaş işlemi desteklenen cihazda sistem payl
 AT-068,AI kişi bazlı yetki taslağı ve risk/fark üretir fakat yetkili yönetici onayı olmadan izin değişmez.,TBD,P0/P1,E2E+Contract,Taslak,
 AT-069,Yetkili global arama temsilî üç yıllık hacmin üç katında belirlenen p95 hedefini geçer; derin sayfalama veri atlamaz/tekrarlamaz.,TBD,P0/P1,E2E+Contract,Taslak,
 AT-070,Yedekten nokta-zaman geri yükleme ve nesne dosyası bütünlüğü gerçek provada mutabık sonuç verir.,TBD,P0/P1,E2E+Contract,Taslak,
+AT-071,"Rapor taslağı varsayılan olarak yalnız sahibine görünür; açık paylaşım olmadan başka kullanıcı adı, filtre veya tanım içeriğini göremez",Raporlama,P0/P1,E2E+Contract+Authorization,Taslak,
+AT-072,"Rapor taslağı isimlendirme, sürüm, kopyalama, güncelleme, arşivleme ve yeniden çalıştırmada eski sürümleri/audit bağını kaybetmez",Raporlama,P0/P1,E2E+Contract+Authorization,Taslak,
+AT-073,"Kaydedilmiş rapor taslağı sonuç satırı/snapshot saklamaz; aynı sürüm yeniden çalıştırıldığında güncel veri kesiminden sonuç üretir",Raporlama,P0/P1,E2E+Contract+Authorization,Taslak,
+AT-074,"Kullanıcının şirket/alan/satır yetkisi sonradan kaldırılırsa eski taslak, paylaşım veya zamanlama bu veriyi yeniden açamaz; güncel RBAC/ABAC uygulanır",Raporlama,P0/P1,E2E+Contract+Authorization,Taslak,
+AT-075,"AI Rapor Oluşturucu ham SQL üretemez/çalıştıramaz; bilinmeyen veya yetkisiz alan/ölçü içeren tanım Structured Output/semantic schema doğrulamasında reddedilir",AI/Raporlama,P0/P1,E2E+Contract+Authorization,Taslak,
+AT-076,"Paylaşılan veya zamanlanmış rapor çalıştırmasında sahibi/çalıştırma kimliği, CompanyContext ve teslimat alıcısı yeniden yetkilendirilir; yetki yoksa artifact üretilmez",Raporlama,P0/P1,E2E+Contract+Authorization,Taslak,
+AT-077,"Taslak oluşturma/değiştirme/kopyalama/arşivleme, paylaşım, zamanlama, her ReportRun ve XLSX/PDF dışa aktarımı kullanıcı, şirket, ReportVersion ve korelasyonla audit üretir",Raporlama,P0/P1,E2E+Contract+Authorization,Taslak,
+AT-078,"XLSX/PDF çıktısı çalıştırılan ReportVersion, filtre özeti, veri kesim zamanı ve yetkili şirket kapsamıyla tutarlıdır; artifact Merkezi Belge Kasasına güvenli referansla bağlanır",Raporlama/Belge,P0/P1,E2E+Contract+Authorization,Taslak,
