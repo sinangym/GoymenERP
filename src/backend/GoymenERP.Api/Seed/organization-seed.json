@@ -1,0 +1,88 @@
+{
+  "OrganizationSeed": {
+    "Companies": [
+      {
+        "Id": "10000000-0000-0000-0000-000000000001",
+        "Code": "TBD-GOY-01",
+        "LegalName": "Göymen Grup Şirket 1 (Teyit Bekliyor)",
+        "IsPlaceholder": true
+      },
+      {
+        "Id": "10000000-0000-0000-0000-000000000002",
+        "Code": "TBD-GOY-02",
+        "LegalName": "Göymen Grup Şirket 2 (Teyit Bekliyor)",
+        "IsPlaceholder": true
+      }
+    ],
+    "SiteTemplates": [
+      {
+        "Code": "SITE-OSM",
+        "Name": "Osmaniye Fabrika",
+        "Type": "Factory",
+        "Locations": [
+          { "Code": "OSM-H0", "Name": "Hol 0 - Boyama" },
+          { "Code": "OSM-H1", "Name": "Hol 1 - Boru / Profil" },
+          { "Code": "OSM-H2", "Name": "Hol 2" },
+          { "Code": "OSM-H3", "Name": "Hol 3 - Dilme / Soğuk Hadde" },
+          { "Code": "OSM-H4", "Name": "Hol 4" },
+          { "Code": "OSM-H5", "Name": "Hol 5" },
+          { "Code": "OSM-H6", "Name": "Hol 6 - Boy Kesme" },
+          { "Code": "OSM-H7", "Name": "Hol 7" }
+        ]
+      },
+      {
+        "Code": "SITE-GAZ",
+        "Name": "Gaziantep Depo",
+        "Type": "Warehouse",
+        "Locations": [
+          { "Code": "GAZ-DEP", "Name": "Gaziantep Depo" }
+        ]
+      },
+      {
+        "Code": "SITE-EXT",
+        "Name": "Dış Depolar",
+        "Type": "ExternalWarehouse",
+        "Locations": [
+          { "Code": "EXT-BASTUG", "Name": "Baştuğ Dış Depo" },
+          { "Code": "EXT-SELIMOGLU", "Name": "Selimoğlu Dış Depo" },
+          { "Code": "EXT-ALYA", "Name": "Alya Dış Depo" },
+          { "Code": "EXT-SADILER", "Name": "Sadiler Dış Depo" },
+          { "Code": "EXT-TOSCELIK", "Name": "Tosçelik Dış Depo" },
+          { "Code": "EXT-DOGRULUK", "Name": "Doğruluk Dış Depo" }
+        ]
+      }
+    ],
+    "WorkCenters": [
+      {
+        "Code": "WC-PAINT",
+        "Name": "Boyama Hattı",
+        "LocationCode": "OSM-H0",
+        "Kind": "Paint"
+      },
+      {
+        "Code": "WC-TUBE",
+        "Name": "Boru / Profil Hattı",
+        "LocationCode": "OSM-H1",
+        "Kind": "TubeProfile"
+      },
+      {
+        "Code": "WC-SLIT",
+        "Name": "Dilme Hattı",
+        "LocationCode": "OSM-H3",
+        "Kind": "Slitting"
+      },
+      {
+        "Code": "WC-CR",
+        "Name": "Soğuk Hadde Hattı",
+        "LocationCode": "OSM-H3",
+        "Kind": "ColdRolling"
+      },
+      {
+        "Code": "WC-CUT",
+        "Name": "Boy Kesme Hattı",
+        "LocationCode": "OSM-H6",
+        "Kind": "CutToLength"
+      }
+    ]
+  }
+}

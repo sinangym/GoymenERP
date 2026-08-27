@@ -1,0 +1,50 @@
+name: goymen-erp
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?MSSQL_SA_PASSWORD must be set}
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$${MSSQL_SA_PASSWORD}" -C -Q "SELECT 1" || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  api:
+    build:
+      context: ..
+      dockerfile: src/backend/GoymenERP.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      DB_PROVIDER: SqlServer
+      DB_CONNECTION_STRING: Server=sqlserver,1433;Database=GoymenErp;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True
+    ports:
+      - "5080:8080"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ..
+      dockerfile: src/frontend/goymen-erp-web/Dockerfile
+      args:
+        VITE_BOOTSTRAP_IDENTITY_ENABLED: "true"
+        VITE_DEV_USER: ${VITE_DEV_USER:-company-a-user}
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+
+volumes:
+  sqlserver-data:

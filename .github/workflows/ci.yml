@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend build, test and migration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore tools and packages
+        run: |
+          dotnet tool restore
+          dotnet restore GoymenERP.slnx
+
+      - name: Build
+        run: dotnet build GoymenERP.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test GoymenERP.slnx --configuration Release --no-build --logger "console;verbosity=normal"
+
+      - name: Check vulnerable dependencies
+        run: dotnet list GoymenERP.slnx package --vulnerable --include-transitive
+
+      - name: Generate idempotent SQL migration script
+        run: >-
+          dotnet tool run dotnet-ef migrations script
+          --idempotent
+          --project src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/GoymenERP.Modules.Organization.Infrastructure.csproj
+          --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj
+          --output artifacts/organization-migration.sql
+
+  frontend:
+    name: Frontend lint, test and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/frontend/goymen-erp-web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: src/frontend/goymen-erp-web/package-lock.json
+
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  containers:
+    name: Container build
+    needs:
+      - backend
+      - frontend
+    runs-on: ubuntu-latest
+    env:
+      MSSQL_SA_PASSWORD: Local_Only_Strong_Password_123!
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate compose model
+        run: docker compose -f infra/docker-compose.yml config --quiet
+
+      - name: Build application images
+        run: docker compose -f infra/docker-compose.yml build api web
