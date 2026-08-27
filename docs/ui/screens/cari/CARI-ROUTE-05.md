@@ -2,8 +2,10 @@
 record_id: "CARI-ROUTE-05"
 source_namespace: "CARI-HTML-2026-08-24"
 source_id: "cari/:id/orders/*"
-canonical_ids: ["C-03", "S-02", "P-03"]
-mapping_status: CANDIDATE_SPLIT
+canonical_ids: ["C-03"]
+related_reference_ids: ["S-02", "P-03"]
+mapping_status: EMBEDDED_COMPONENT
+decision_refs: ["UI-MAP-003"]
 source_status: DESIGNED_NOT_LOCKED
 visual_status: PROTOTYPE_REFERENCE
 source_date: "2026-08-24"
@@ -31,7 +33,8 @@ Referans; sabit lacivert kabuk, hash tabanlı route, yoğun liste/360 içeriği,
 ## Kanıt ve uzlaştırma
 
 - Prototip: ../../prototypes/cari/cari-workspace-v3.html
-- Aday kanonik hedef: C-03, S-02, P-03
-- Eşleme: CANDIDATE_SPLIT
+- Kanonik hedef: C-03 içinde Siparişler bileşeni
+- İlişkili dış-domain referansları: S-02, P-03
+- Eşleme: EMBEDDED_COMPONENT
 - Kimlik notu: Bu route kaydı resmî yeni ekran ID değildir.
 - Responsive notu: body min-width 900px olduğundan telefon akışı tamamlanmış sayılmaz.

@@ -3,7 +3,8 @@ record_id: "MASTER3-S-03"
 source_namespace: "MASTER-DOCX-2026-08-23"
 source_id: "S-03"
 canonical_ids: ["S-03", "S-04"]
-mapping_status: CANDIDATE_MERGE
+mapping_status: SPLIT
+decision_refs: ["UI-MAP-001"]
 source_status: LOCKED_VISUAL
 visual_status: LOCKED_VISUAL
 capture_quality: FULL
@@ -32,6 +33,6 @@ Görsel permission, CompanyId, onay, formül veya transaction kaynağı değildi
 - Master render sayfası: 20
 - Kaynak statüsü: `LOCKED_VISUAL`
 - Yakalama kalitesi: `FULL`
-- Aday kanonik hedef: `S-03`, `S-04`
-- Eşleme statüsü: `CANDIDATE_MERGE`
+- Kanonik hedef: `S-03`, `S-04`
+- Eşleme statüsü: `SPLIT`
 - Not: Stok yetersizliği uyarıdır; iş kuralı ve onay sınırı feature/acceptance kaynağından gelir.

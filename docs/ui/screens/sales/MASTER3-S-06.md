@@ -3,7 +3,8 @@ record_id: "MASTER3-S-06"
 source_namespace: "MASTER-DOCX-2026-08-23"
 source_id: "S-06"
 canonical_ids: ["ST-01", "AL-01", "AL-02", "AL-03", "AL-04", "AL-05", "AL-06"]
-mapping_status: CANDIDATE_SPLIT
+mapping_status: SPLIT
+decision_refs: ["UI-MAP-001"]
 source_status: LOCKED_VISUAL
 visual_status: LOCKED_VISUAL
 capture_quality: FULL
@@ -32,6 +33,6 @@ Görsel permission, CompanyId, onay, formül veya transaction kaynağı değildi
 - Master render sayfası: 23
 - Kaynak statüsü: `LOCKED_VISUAL`
 - Yakalama kalitesi: `FULL`
-- Aday kanonik hedef: `ST-01`, `AL-01`, `AL-02`, `AL-03`, `AL-04`, `AL-05`, `AL-06`
-- Eşleme statüsü: `CANDIDATE_SPLIT`
+- Kanonik hedef: `ST-01`, `AL-01`, `AL-02`, `AL-03`, `AL-04`, `AL-05`, `AL-06`
+- Eşleme statüsü: `SPLIT`
 - Not: Repo kanonunda S-06 Satış Onaylarıdır; bu kaynak kimliği doğrudan kanonik ad olarak kullanılamaz.

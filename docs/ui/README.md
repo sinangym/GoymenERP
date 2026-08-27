@@ -11,6 +11,7 @@ Katalog `main` dalındaki `docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md` dosyasın�
 - Repo görünürlüğü doğrulaması: `PRIVATE`
 - Kod kapsamı: yok; bu paket yalnız `docs/ui` içeriğidir.
 - ERP-000E ve ERP-000F kapsamı: bu dala karıştırılmamıştır.
+- Güncel kapsam: 72 kaynak kayıt, 159 kanonik ekran, 77 özgün görsel, 5 HTML prototip ve 101 hash doğrulamalı repo varlığı.
 
 ## Klasörler
 
@@ -35,12 +36,33 @@ Katalog `main` dalındaki `docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md` dosyasın�
 | `LOCKED_VISUAL` | Kaynak belgesinde kilitli olduğu açıkça yazan ve görseli bulunan ekran |
 | `DESIGNED_FINAL_QA` | Tasarlanmış; küçük alan/kolon düzeltmeleri için kullanıcı kabulü gereken ekran |
 | `DESIGNED_NOT_LOCKED` | Görsel veya prototip mevcut; kaynak statüsü henüz kilit değil |
-| `DECISION_ONLY_VISUAL_MISSING` | İşlev/UI kararları var; özgün ekran görseli bulunamadı |
+| `DECISION_ONLY_REFERENCE_MISSING` | İşlev/UI kararları var; doğrudan görsel veya prototip referansı bulunamadı |
 | `PROTOTYPE_REFERENCE` | HTML’de çalışan referans var; production uygulaması değildir |
 | `HISTORICAL_REFERENCE` | Daha güncel kaynağı geçersiz kılamayan tarihsel referans |
 | `UNMAPPED_LEGACY` | Kaynak kimliği var; kanonik kimliğe güvenli eşleme henüz yok |
 
-Eşleme statüleri `EXACT`, `SPLIT`, `MERGE`, `EMBEDDED_COMPONENT`, `UNRESOLVED` ve bunların henüz onaylanmamış `CANDIDATE_*` biçimleridir. `CANDIDATE_*` kayıtları kodlama yetkisi vermez.
+Eşleme statülerinin yönü kaynak kayıttan repo kanonik ekranına doğrudur:
+
+- `EXACT`: işlevsel 1:1 referans; kaynak ve kanonik kimliğin aynı olduğu anlamına gelmez.
+- `SPLIT`: tek kaynak kayıt birden fazla kanonik hedefe ayrılır.
+- `MERGE`: birden fazla kaynak kayıt aynı kanonik hedefte birleşir; satırdaki statü baskın ilişkidir.
+- `EMBEDDED_COMPONENT`: kaynak ekran kanonik ekranın sekmesi, drawer’ı veya workspace’idir.
+- `CANDIDATE_*` ve `UNRESOLVED`: eşleme henüz uygulama kaynağı olacak kesinlikte değildir.
+
+`related_reference_ids` yalnız dış-domain bağlantısını; `conditional_workspace_ids` ise yalnız belirli bir kullanıcı eyleminde açılan workspace’i gösterir. Bu alanlar doğrudan kanonik eşleme veya ekran sahipliği üretmez.
+
+## Kabul edilen UI uzlaştırma kararları
+
+`UI-MAP-*` kayıtları bu katalog içindeki kaynak–ekran topolojisini kesinleştirir; repo Master, iş kuralı veya domain Karar Sicili yerine geçmez.
+
+| Karar | Sonuç |
+|---|---|
+| `UI-MAP-001` | Repo Master kimlikleri kanonik; eski Master DOCX S/P kodları yalnız `source_id` |
+| `UI-MAP-002` | Kaynak S-12, S-04 içindeki Revizyon & Geçmiş sekmesi; S-10 yalnız koşullu düzeltme/iptal workspace’i |
+| `UI-MAP-003` | Cari route kayıtları yeni ID değildir; C-01…C-11’e bağlanır, C-12 referansı eksiktir |
+| `UI-MAP-004` | İrsaliye/Fatura SDH/SDW/PDH/PDW kodları kaynak alias’ı; kanonik hedefler S/P/L/B ailesidir; statü kilitli değildir |
+| `UI-MAP-005` | Finans v3 işlevsel taban, v4 kullanıcı kolaylığı/navigasyon/AI deltasıdır |
+| `UI-MAP-006` | Yeni görsel sırası: Sistem Yönetimi → Belgeler → Stok & Tahsis → Üretim → Finans eksikleri → Raporlar |
 
 ## Kaynak kullanma kuralı
 

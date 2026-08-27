@@ -3,7 +3,8 @@ record_id: "MASTER3-S-09"
 source_namespace: "MASTER-DOCX-2026-08-23"
 source_id: "S-09"
 canonical_ids: ["S-04", "S-08", "S-09"]
-mapping_status: CANDIDATE_SPLIT
+mapping_status: SPLIT
+decision_refs: ["UI-MAP-001"]
 source_status: LOCKED_VISUAL
 visual_status: LOCKED_VISUAL
 capture_quality: PARTIAL_CROP
@@ -32,6 +33,6 @@ Görsel permission, CompanyId, onay, formül veya transaction kaynağı değildi
 - Master render sayfası: 26
 - Kaynak statüsü: `LOCKED_VISUAL`
 - Yakalama kalitesi: `PARTIAL_CROP`
-- Aday kanonik hedef: `S-04`, `S-08`, `S-09`
-- Eşleme statüsü: `CANDIDATE_SPLIT`
+- Kanonik hedef: `S-04`, `S-08`, `S-09`
+- Eşleme statüsü: `SPLIT`
 - Not: Kaynak PNG yatay kırpılmıştır; eksik sağ alan pixel zorunluluğu sayılmaz.

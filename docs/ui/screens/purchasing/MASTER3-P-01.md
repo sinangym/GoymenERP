@@ -3,7 +3,8 @@ record_id: "MASTER3-P-01"
 source_namespace: "MASTER-DOCX-2026-08-23"
 source_id: "P-01"
 canonical_ids: ["P-03"]
-mapping_status: CANDIDATE_EXACT
+mapping_status: EXACT
+decision_refs: ["UI-MAP-001"]
 source_status: LOCKED_VISUAL
 visual_status: LOCKED_VISUAL
 capture_quality: FULL
@@ -32,6 +33,6 @@ Görsel permission, CompanyId, onay, formül veya transaction kaynağı değildi
 - Master render sayfası: 30
 - Kaynak statüsü: `LOCKED_VISUAL`
 - Yakalama kalitesi: `FULL`
-- Aday kanonik hedef: `P-03`
-- Eşleme statüsü: `CANDIDATE_EXACT`
+- Kanonik hedef: `P-03`
+- Eşleme statüsü: `EXACT`
 - Not: Kaynak P-01 ile kanonik P-01 aynı değildir; aday hedef P-03’tür.

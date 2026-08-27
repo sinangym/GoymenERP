@@ -3,7 +3,8 @@ record_id: "MASTER3-P-05"
 source_namespace: "MASTER-DOCX-2026-08-23"
 source_id: "P-05"
 canonical_ids: ["P-08", "P-09"]
-mapping_status: CANDIDATE_SPLIT
+mapping_status: SPLIT
+decision_refs: ["UI-MAP-001"]
 source_status: DESIGNED_FINAL_QA
 visual_status: DESIGNED_FINAL_QA
 capture_quality: FULL
@@ -32,6 +33,6 @@ Görsel permission, CompanyId, onay, formül veya transaction kaynağı değildi
 - Master render sayfası: 34
 - Kaynak statüsü: `DESIGNED_FINAL_QA`
 - Yakalama kalitesi: `FULL`
-- Aday kanonik hedef: `P-08`, `P-09`
-- Eşleme statüsü: `CANDIDATE_SPLIT`
+- Kanonik hedef: `P-08`, `P-09`
+- Eşleme statüsü: `SPLIT`
 - Not: Kısmi faturalama ve kur/vade farkları ayrıca doğrulanmalıdır.

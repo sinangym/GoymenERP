@@ -3,7 +3,8 @@ record_id: "MASTER3-P-04"
 source_namespace: "MASTER-DOCX-2026-08-23"
 source_id: "P-04"
 canonical_ids: ["P-07", "L-09", "L-10"]
-mapping_status: CANDIDATE_SPLIT
+mapping_status: SPLIT
+decision_refs: ["UI-MAP-001"]
 source_status: DESIGNED_FINAL_QA
 visual_status: DESIGNED_FINAL_QA
 capture_quality: FULL
@@ -32,6 +33,6 @@ Görsel permission, CompanyId, onay, formül veya transaction kaynağı değildi
 - Master render sayfası: 33
 - Kaynak statüsü: `DESIGNED_FINAL_QA`
 - Yakalama kalitesi: `FULL`
-- Aday kanonik hedef: `P-07`, `L-09`, `L-10`
-- Eşleme statüsü: `CANDIDATE_SPLIT`
+- Kanonik hedef: `P-07`, `L-09`, `L-10`
+- Eşleme statüsü: `SPLIT`
 - Not: Net kabulün stok etkisi transaction ve acceptance kaynağına bağlıdır.

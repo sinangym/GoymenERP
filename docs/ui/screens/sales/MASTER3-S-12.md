@@ -2,8 +2,10 @@
 record_id: "MASTER3-S-12"
 source_namespace: "MASTER-DOCX-2026-08-23"
 source_id: "S-12"
-canonical_ids: ["S-04", "S-10"]
-mapping_status: UNRESOLVED
+canonical_ids: ["S-04"]
+conditional_workspace_ids: ["S-10"]
+mapping_status: EMBEDDED_COMPONENT
+decision_refs: ["UI-MAP-001", "UI-MAP-002"]
 source_status: LOCKED_VISUAL
 visual_status: LOCKED_VISUAL
 capture_quality: PARTIAL_CROP
@@ -32,6 +34,7 @@ Görsel permission, CompanyId, onay, formül veya transaction kaynağı değildi
 - Master render sayfası: 29
 - Kaynak statüsü: `LOCKED_VISUAL`
 - Yakalama kalitesi: `PARTIAL_CROP`
-- Aday kanonik hedef: `S-04`, `S-10`
-- Eşleme statüsü: `UNRESOLVED`
-- Not: Repo kanonunda S-12 yoktur; kesin hedef Karar Sicili ile çözülmelidir.
+- Kanonik hedef: `S-04`
+- Koşullu ilişkili workspace: `S-10`
+- Eşleme statüsü: `EMBEDDED_COMPONENT`
+- Karar: Kaynak `S-12`, yeni kanonik ekran değildir; `S-04 Sipariş 360` içindeki `Revizyon & Geçmiş` sekmesidir. Düzeltme veya iptal gerektiğinde kanonik `S-10` workspace'i açılır.

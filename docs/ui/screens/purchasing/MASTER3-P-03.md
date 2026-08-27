@@ -3,7 +3,8 @@ record_id: "MASTER3-P-03"
 source_namespace: "MASTER-DOCX-2026-08-23"
 source_id: "P-03"
 canonical_ids: ["P-05", "P-06"]
-mapping_status: CANDIDATE_SPLIT
+mapping_status: SPLIT
+decision_refs: ["UI-MAP-001"]
 source_status: LOCKED_VISUAL
 visual_status: LOCKED_VISUAL
 capture_quality: FULL
@@ -32,6 +33,6 @@ Görsel permission, CompanyId, onay, formül veya transaction kaynağı değildi
 - Master render sayfası: 32
 - Kaynak statüsü: `LOCKED_VISUAL`
 - Yakalama kalitesi: `FULL`
-- Aday kanonik hedef: `P-05`, `P-06`
-- Eşleme statüsü: `CANDIDATE_SPLIT`
+- Kanonik hedef: `P-05`, `P-06`
+- Eşleme statüsü: `SPLIT`
 - Not: Termin riski önerisi AI olabilir; kesin durum backend iş kuralıdır.

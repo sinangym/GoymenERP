@@ -3,7 +3,8 @@ record_id: "MASTER3-S-01"
 source_namespace: "MASTER-DOCX-2026-08-23"
 source_id: "S-01"
 canonical_ids: ["S-01", "S-02"]
-mapping_status: CANDIDATE_SPLIT
+mapping_status: SPLIT
+decision_refs: ["UI-MAP-001"]
 source_status: LOCKED_VISUAL
 visual_status: LOCKED_VISUAL
 capture_quality: FULL
@@ -32,6 +33,6 @@ Görsel permission, CompanyId, onay, formül veya transaction kaynağı değildi
 - Master render sayfası: 18
 - Kaynak statüsü: `LOCKED_VISUAL`
 - Yakalama kalitesi: `FULL`
-- Aday kanonik hedef: `S-01`, `S-02`
-- Eşleme statüsü: `CANDIDATE_SPLIT`
+- Kanonik hedef: `S-01`, `S-02`
+- Eşleme statüsü: `SPLIT`
 - Not: Talep ve sipariş ayrımını yeni kanonik ekranlara bölerken tek yaşam döngüsü korunmalıdır.

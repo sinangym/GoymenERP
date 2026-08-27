@@ -1,6 +1,6 @@
 # UI kaynak uzlaştırması
 
-Bu kayıt, aynı ekran kimliklerinin farklı belgelerde farklı anlam taşıdığı durumları açık tutar. Amaç geçmişi silmek değil; Codex’in bir kaynağı diğerinin yerine yanlışlıkla kullanmasını engellemektir.
+Bu kayıt, aynı ekran kimliklerinin farklı belgelerde farklı anlam taşıdığı durumları açık tutar. Amaç geçmişi silmek değil; Codex’in bir kaynağı diğerinin yerine yanlışlıkla kullanmasını engellemektir. `UI-MAP-001…006` kararları 27 Ağustos 2026 kullanıcı kabulüyle UI referans topolojisi için kesinleştirilmiştir; repo Master veya domain iş kurallarını değiştirmez.
 
 ## 1. Yetki ve kaynak önceliği
 
@@ -24,7 +24,9 @@ Ekli `Goymen_ERP_Master_Kararlar_ve_Kilitli_Ekran_Tasarimlari_Raporu_v3_0(2).doc
 - DOCX `S-12` vardır; repo satış kataloğu `S-11` ile biter.
 - DOCX `P-01` alış siparişleri listesidir; repo `P-01` ihtiyaç havuzu, `P-03` satın alma siparişleridir.
 
-Bu nedenle dosya adındaki `S-*`/`P-*` yalnız `source_id` sayılır. `canonical_ids` ekran kartında ayrı ve `CANDIDATE_*` statüsüyle tutulur. Karar Sicili onayı olmadan repo kanonik kimlikleri değiştirilmez.
+**UI-MAP-001:** Dosya adındaki `S-*`/`P-*` yalnız `source_id` sayılır. Repo Master kimlikleri kanonik kalır; kabul edilen `EXACT/SPLIT/MERGE/EMBEDDED_COMPONENT` ilişkileri yalnız kaynak görselin hangi kanonik ekran veya bileşene referans olduğunu gösterir.
+
+**UI-MAP-002:** Kaynak `S-12`, kanonik `S-04 Sipariş 360` içindeki `Revizyon & Geçmiş` sekmesidir. `S-10` yalnız düzeltme/iptal eyleminde açılan `conditional_workspace_ids` kaydıdır; S-12 için eşdeğer ikinci kanonik hedef değildir. Aynı model kaynak `P-12` için uygulanır: `P-04` içindeki ürün kırılımı workspace’i, gerektiğinde koşullu `U-02` akışını açar.
 
 ## 3. Master DOCX güvenilir bölüm sınırı
 
@@ -45,14 +47,17 @@ Katalogda bu dört kayıt `PRICE-01…PRICE-04` record kimliğiyle tutulur; özg
 ## 5. Finans sürüm ilişkisi
 
 - Finans v1 kimlik anlamları tarihsel kaynaktır; aktif referans değildir.
-- Finans v3, 13 ana ekran ve 73 işlem workspace’inin ayrıntılı temelidir.
+- Finans v3, 13 ana ekran, 73 işlem workspace’i ve 26 doğrulanmış PNG’nin ayrıntılı temelidir.
 - Finans v4, v3’ü silmez; navigasyon, rol/yoğunluk görünümü, “Benim İşlerim/Sade” varsayılanı ve görünür AI kontrol katmanını ekler.
-- Finans v3/v4’te kilitli özgün ekran PNG seti bulunmadı; buna karşılık iki self-contained HTML prototip vardır. `F-01…F-13` kayıtları `PROTOTYPE_REFERENCE` olarak tutulur, pixel-kilitli statü verilmez.
-- Finans v3/v4 kaynak kimlikleri ile repo kanonik `F-01…F-17` anlamları ilk üç ekrandan sonra kayar; uzlaştırma `CANDIDATE_*` olarak tutulur.
+- Finans v4 8 doğrulanmış PNG ile kullanıcı kolaylığı/navigasyon/AI deltasını görselleştirir.
+- İki self-contained HTML ve toplam 34 PNG `PROTOTYPE_REFERENCE` olarak tutulur; pixel-kilitli statü verilmez.
+- **UI-MAP-005:** Finans v3/v4 kaynak kimlikleri ile repo kanonik `F-01…F-17` anlamları ilk üç ekrandan sonra kaydığı için kaynak ID’ler korunmuş, katalogdaki kanonik referans topolojisi kesinleştirilmiştir.
 
 ## 6. Cari prototip kimlikleri
 
-Cari HTML kendi içinde resmî ekran ID taşımıyor. `CARI-ROUTE-01…10`, hash tabanlı route ve çalışma alanlarını kataloglamak için oluşturulmuş record kimlikleridir; yeni kanonik ekran ilanı değildir. Repo `C-01…C-10` eşlemeleri adaydır.
+Cari HTML kendi içinde resmî ekran ID taşımıyor. `CARI-ROUTE-01…10`, hash tabanlı route ve çalışma alanlarını kataloglamak için oluşturulmuş record kimlikleridir; yeni kanonik ekran ilanı değildir.
+
+**UI-MAP-003:** Route kayıtları C-01…C-11’e kesin referans olarak bağlanır. C-05 ve C-07 kaynakları C-03 içindeki gömülü bileşenlerdir. S/P/ST/AL/B/R/SY bağlantıları doğrudan Cari sahipliği üretmez; `related_reference_ids` alanında tutulur. `C-12 İlişki/Takip Görevleri` için görev CRUD, sorumlu, termin, sonuç, hatırlatma ve audit akışını gösteren yeni görsel/workspace hazırlanmalıdır.
 
 Üç Cari HTML dosyası byte-for-byte aynıdır. Repo yalnız temel adlı tek kopyayı taşır; `(1)` ve `(2)` kopyaları manifestte yinelenen kaynak olarak belirtilir.
 
@@ -60,15 +65,24 @@ Cari HTML kendi içinde resmî ekran ID taşımıyor. `CARI-ROUTE-01…10`, hash
 
 24 Ağustos 2026 şartnamesinin açık statüsü “Tasarım önerisi tamamlandı — kullanıcı kabulü sonrası kilitlenebilir”dir. HTML önizlemesindeki “nihai” ifadeleri bunu tek başına `LOCKED` yapmaz.
 
-Şartname metni `SW-01/SW-02/PW-01/PW-02`, final tablosu ise `SDW-01/SDW-02/PDW-01/PDW-02` kullanır. Katalog final tablo kimliklerini record ID yapar; kısa kimlikleri alias olarak saklar. Repo kanonik S/P/L/B ekranlarına eşleme adaydır.
+Şartname metni `SW-01/SW-02/PW-01/PW-02`, final tablosu ise `SDW-01/SDW-02/PDW-01/PDW-02` kullanır. Katalog final tablo kimliklerini record ID yapar; kısa kimlikleri alias olarak saklar.
 
-## 8. Açık kararlar
+**UI-MAP-004:** SDH/SDW/PDH/PDW kimlikleri yalnız kaynak alias’ıdır; gerçek kanonik hedefler repo S/P/L/B ekranlarıdır. Referans topolojisi kesinleştirilmiştir ancak tasarım `DESIGNED_NOT_LOCKED` kalır. Bu karar, birleşik menü veya kullanıcı kabulünü kendiliğinden kilitlemez.
 
-Kodlama öncesinde şu konular Karar Sicili/ADR ile sonuçlandırılmalıdır:
+## 8. Karara bağlanan altı uzlaştırma
 
-1. DOCX S/P kimliklerinin repo kanonik kimliklerine kesin split/merge eşlemesi.
-2. `S-12` revizyon ekranının kanonik `S-04`, `S-10` veya yeni alt workspace olarak yeri.
-3. Cari route kayıtlarının `C-01…C-12` kapsamındaki kesin sınırı.
-4. İrsaliye/Fatura şartnamesinin kullanıcı kabulü ve kısa/final workspace kimliği standardı.
-5. Finans `F-01…F-13` v3/v4 ekranlarının repo `F-01…F-17` ile kesin uzlaştırması.
-6. Görseli eksik Finans, Stok, Üretim, Belge, Rapor ve Sistem Yönetimi ekranlarının hangi sırayla üretileceği.
+| Karar | Kesin sonuç |
+|---|---|
+| `UI-MAP-001` | Repo Master kanonik ID’leri değişmez; eski DOCX S/P kodları yalnız kaynak kimliğidir |
+| `UI-MAP-002` | S-12 → S-04 Revizyon & Geçmiş sekmesi; S-10 yalnız koşullu workspace |
+| `UI-MAP-003` | Cari route’ları C-01…C-11’e bağlanır; yeni ID üretmez; C-12 referansı eksiktir |
+| `UI-MAP-004` | İrsaliye/Fatura kaynak alias’ları S/P/L/B kanonik hedeflerine bağlanır; statü `DESIGNED_NOT_LOCKED` |
+| `UI-MAP-005` | Finans v3 işlevsel taban, v4 kullanıcı kolaylığı/navigasyon/AI deltasıdır |
+| `UI-MAP-006` | Görsel üretme sırası Sistem Yönetimi → Belgeler → Stok & Tahsis → Üretim → Finans eksikleri → Raporlar |
+
+## 9. Kalan sınırlar
+
+- Ürün/Hizmet paketindeki `CANDIDATE_*` kayıtları ve `PRODUCT-U-04 UNRESOLVED` bu altı kararın kapsamı dışındadır; ayrıca onaylanmadan kesin sayılmaz.
+- Dashboard görseli D-01 ve global kabuk için güçlü adaydır fakat kilitli değildir.
+- C-12 için yeni görsel/workspace hazırlanmalıdır.
+- UI eşlemesinin kesinleşmesi permission, CompanyId, formül, onay, audit veya domain davranışını kesinleştirmez; ilgili repo DEC/ADR/acceptance kaydı kodlama öncesinde yine zorunludur.

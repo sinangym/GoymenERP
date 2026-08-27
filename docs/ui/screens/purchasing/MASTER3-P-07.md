@@ -3,7 +3,8 @@ record_id: "MASTER3-P-07"
 source_namespace: "MASTER-DOCX-2026-08-23"
 source_id: "P-07"
 canonical_ids: ["P-05", "P-10"]
-mapping_status: CANDIDATE_SPLIT
+mapping_status: SPLIT
+decision_refs: ["UI-MAP-001"]
 source_status: DESIGNED_FINAL_QA
 visual_status: DESIGNED_FINAL_QA
 capture_quality: PARTIAL_CROP
@@ -32,6 +33,6 @@ Görsel permission, CompanyId, onay, formül veya transaction kaynağı değildi
 - Master render sayfası: 36
 - Kaynak statüsü: `DESIGNED_FINAL_QA`
 - Yakalama kalitesi: `PARTIAL_CROP`
-- Aday kanonik hedef: `P-05`, `P-10`
-- Eşleme statüsü: `CANDIDATE_SPLIT`
+- Kanonik hedef: `P-05`, `P-10`
+- Eşleme statüsü: `SPLIT`
 - Not: Kaynak PNG düşük genişliktedir; kanonik yerleşim kesin değildir.

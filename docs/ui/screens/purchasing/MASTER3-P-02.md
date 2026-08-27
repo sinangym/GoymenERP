@@ -3,7 +3,8 @@ record_id: "MASTER3-P-02"
 source_namespace: "MASTER-DOCX-2026-08-23"
 source_id: "P-02"
 canonical_ids: ["P-05"]
-mapping_status: CANDIDATE_MERGE
+mapping_status: MERGE
+decision_refs: ["UI-MAP-001"]
 source_status: LOCKED_VISUAL
 visual_status: LOCKED_VISUAL
 capture_quality: FULL
@@ -32,6 +33,6 @@ Görsel permission, CompanyId, onay, formül veya transaction kaynağı değildi
 - Master render sayfası: 31
 - Kaynak statüsü: `LOCKED_VISUAL`
 - Yakalama kalitesi: `FULL`
-- Aday kanonik hedef: `P-05`
-- Eşleme statüsü: `CANDIDATE_MERGE`
+- Kanonik hedef: `P-05`
+- Eşleme statüsü: `MERGE`
 - Not: Kanonik Sipariş 360/Termin Dilimleri ile uzlaştırılmalıdır.

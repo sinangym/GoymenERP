@@ -3,7 +3,8 @@ record_id: "MASTER3-S-07"
 source_namespace: "MASTER-DOCX-2026-08-23"
 source_id: "S-07"
 canonical_ids: ["S-04", "S-07", "L-05", "L-07", "L-08"]
-mapping_status: CANDIDATE_SPLIT
+mapping_status: SPLIT
+decision_refs: ["UI-MAP-001"]
 source_status: LOCKED_VISUAL
 visual_status: LOCKED_VISUAL
 capture_quality: FULL
@@ -32,6 +33,6 @@ Görsel permission, CompanyId, onay, formül veya transaction kaynağı değildi
 - Master render sayfası: 24
 - Kaynak statüsü: `LOCKED_VISUAL`
 - Yakalama kalitesi: `FULL`
-- Aday kanonik hedef: `S-04`, `S-07`, `L-05`, `L-07`, `L-08`
-- Eşleme statüsü: `CANDIDATE_SPLIT`
+- Kanonik hedef: `S-04`, `S-07`, `L-05`, `L-07`, `L-08`
+- Eşleme statüsü: `SPLIT`
 - Not: Planlanan, fiilî, fark, net ve fatura durumları ayrı tutulur.

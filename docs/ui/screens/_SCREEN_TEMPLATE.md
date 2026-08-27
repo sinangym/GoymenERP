@@ -3,7 +3,10 @@ record_id: ""
 source_namespace: ""
 source_id: ""
 canonical_ids: []
+related_reference_ids: []
+conditional_workspace_ids: []
 mapping_status: UNRESOLVED
+decision_refs: []
 source_status: ""
 visual_status: ""
 source_date: ""

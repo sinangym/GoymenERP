@@ -2,8 +2,10 @@
 record_id: "MASTER3-P-12"
 source_namespace: "MASTER-DOCX-2026-08-23"
 source_id: "P-12"
-canonical_ids: ["P-04", "U-02"]
-mapping_status: UNRESOLVED
+canonical_ids: ["P-04"]
+conditional_workspace_ids: ["U-02"]
+mapping_status: EMBEDDED_COMPONENT
+decision_refs: ["UI-MAP-001"]
 source_status: DESIGNED_FINAL_QA
 visual_status: DESIGNED_FINAL_QA
 capture_quality: PARTIAL_CROP
@@ -32,6 +34,7 @@ Görsel permission, CompanyId, onay, formül veya transaction kaynağı değildi
 - Master render sayfası: 41
 - Kaynak statüsü: `DESIGNED_FINAL_QA`
 - Yakalama kalitesi: `PARTIAL_CROP`
-- Aday kanonik hedef: `P-04`, `U-02`
-- Eşleme statüsü: `UNRESOLVED`
-- Not: Kanonik domain sahipliği ve ekran sınırı Karar Sicili ile netleşmelidir.
+- Kanonik hedef: `P-04`
+- Koşullu ilişkili workspace: `U-02`
+- Eşleme statüsü: `EMBEDDED_COMPONENT`
+- Karar: Kaynak `P-12`, kanonik `P-04` alış sipariş satırı akışındaki ürün kırılımı workspace'idir; yeni ürün kartı gereksiniminde kanonik `U-02` akışına bağlanır. Yeni kanonik ekran ID oluşturmaz.

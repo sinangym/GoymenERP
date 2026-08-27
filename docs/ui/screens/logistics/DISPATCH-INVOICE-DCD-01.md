@@ -5,6 +5,7 @@ source_id: "DCD-01"
 legacy_aliases: []
 canonical_ids: ["B-02", "B-07"]
 mapping_status: EMBEDDED_COMPONENT
+decision_refs: ["UI-MAP-004"]
 source_status: DESIGNED_NOT_LOCKED
 visual_status: PROTOTYPE_REFERENCE
 source_date: "2026-08-24"
@@ -31,6 +32,6 @@ Planlanan miktar stok hareketi değildir; fiilî/net kabul ve faturalama payı a
 - HTML prototip: ../../prototypes/dispatch-invoice/dispatch-invoice-workspace.html
 - Statik önizleme: ../../assets/original/dispatch-invoice-archive/irsaliye-fatura-calisma-alani-onizleme.png
 - Legacy alias: yok
-- Aday kanonik hedef: B-02, B-07
+- Kanonik hedef: B-02, B-07
 - Eşleme: EMBEDDED_COMPONENT
 - Statü notu: Kaynak kendi metnine göre kullanıcı kabulü sonrası kilitlenebilir; şu anda LOCKED değildir.

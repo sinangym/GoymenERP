@@ -3,7 +3,9 @@ record_id: "FINANCE-V3V4-F-01"
 source_namespace: "FINANCE-V3-BASE-V4-DELTA"
 source_id: "F-01"
 canonical_ids: ["F-01"]
-mapping_status: CANDIDATE_EXACT
+mapping_status: EXACT
+decision_refs: ["UI-MAP-005"]
+preview_index: "FINANCE_PREVIEW_INDEX.md"
 source_status: ACTIVE_BASE_PLUS_DELTA
 visual_status: PROTOTYPE_REFERENCE
 source_version: "v3 + v4"
@@ -31,6 +33,7 @@ AI rolü: Günlük işleri ve nakit riskini önceliklendirir. AI finansal kaynak
 - v3 UI/UX: ../../sources/finance/v3/FINANS_UI_UX_KARARLARI.md
 - v4 navigasyon/AI deltası: ../../sources/finance/v4/02_EKRAN_VE_NAVIGASYON_MIMARISI.md
 - Prototipler: ../../prototypes/finance/v3/Goymen_ERP_Finans_Tam_Calisma_Alani_v3.html ve ../../prototypes/finance/v4/Goymen_ERP_Finans_AI_Kullanici_Odakli_v4.html
-- Aday kanonik hedef: F-01
-- Eşleme: CANDIDATE_EXACT
+- Önizleme indeksi: [FINANCE_PREVIEW_INDEX.md](FINANCE_PREVIEW_INDEX.md)
+- Kanonik hedef: F-01
+- Eşleme: EXACT
 - Kimlik notu: v3/v4 kaynak F-* anlamı repo kanonik F-* ile her satırda aynı değildir.

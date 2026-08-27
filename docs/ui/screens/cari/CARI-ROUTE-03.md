@@ -3,7 +3,8 @@ record_id: "CARI-ROUTE-03"
 source_namespace: "CARI-HTML-2026-08-24"
 source_id: "cari/:id/summary"
 canonical_ids: ["C-03"]
-mapping_status: CANDIDATE_EXACT
+mapping_status: EXACT
+decision_refs: ["UI-MAP-003"]
 source_status: DESIGNED_NOT_LOCKED
 visual_status: PROTOTYPE_REFERENCE
 source_date: "2026-08-24"
@@ -31,7 +32,7 @@ Referans; sabit lacivert kabuk, hash tabanlı route, yoğun liste/360 içeriği,
 ## Kanıt ve uzlaştırma
 
 - Prototip: ../../prototypes/cari/cari-workspace-v3.html
-- Aday kanonik hedef: C-03
-- Eşleme: CANDIDATE_EXACT
+- Kanonik hedef: C-03
+- Eşleme: EXACT
 - Kimlik notu: Bu route kaydı resmî yeni ekran ID değildir.
 - Responsive notu: body min-width 900px olduğundan telefon akışı tamamlanmış sayılmaz.

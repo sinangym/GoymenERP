@@ -3,7 +3,8 @@ record_id: "MASTER3-S-08"
 source_namespace: "MASTER-DOCX-2026-08-23"
 source_id: "S-08"
 canonical_ids: ["L-03", "L-05", "L-07", "L-08"]
-mapping_status: CANDIDATE_SPLIT
+mapping_status: SPLIT
+decision_refs: ["UI-MAP-001"]
 source_status: LOCKED_VISUAL
 visual_status: LOCKED_VISUAL
 capture_quality: FULL
@@ -32,6 +33,6 @@ Görsel permission, CompanyId, onay, formül veya transaction kaynağı değildi
 - Master render sayfası: 25
 - Kaynak statüsü: `LOCKED_VISUAL`
 - Yakalama kalitesi: `FULL`
-- Aday kanonik hedef: `L-03`, `L-05`, `L-07`, `L-08`
-- Eşleme statüsü: `CANDIDATE_SPLIT`
+- Kanonik hedef: `L-03`, `L-05`, `L-07`, `L-08`
+- Eşleme statüsü: `SPLIT`
 - Not: Çoklu yükleme noktası ve çoklu sipariş senaryosu acceptance ile doğrulanmalıdır.
