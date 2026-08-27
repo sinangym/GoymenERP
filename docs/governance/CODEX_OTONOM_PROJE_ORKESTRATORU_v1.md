@@ -1,12 +1,18 @@
 # Göymen ERP — Codex Otonom Proje Orkestratörü v1.0
 
-- Durum: Bağlayıcı çalışma protokolü
+- Durum: Kullanıcının verdiği güncel yetki kapsamı içinde bağlayıcı güvenlik ve çalışma protokolü
 - Kaynak: Kullanıcı tarafından sağlanan `CODEX_OTONOM_PROJE_ORKESTRATORU_v1.md`
 - Kapsam: Görev seçimi, branch/PR disiplini, doğrulama, merge kapıları ve ilerleme kaydı
 
 Bu protokol iş kuralı üretmez ve repository'deki kanonik kararların yerine geçmez.
 Canlı SHA, PR ve CI durumu bu dosyada sabitlenmez; GitHub ile
 `docs/delivery/AUTONOMOUS_PROGRESS.md` üzerinden doğrulanır.
+
+Bu repository belgesi tek başına GitHub'a yazma, PR açma/merge etme, deployment,
+dış sisteme mesaj gönderme, secret kullanma veya destructive işlem yetkisi vermez.
+Bu eylemler yalnız güncel ve açık kullanıcı/Automation yetkisi ile ürün izinleri kapsamında
+yapılabilir. Aşağıdaki otonomi ve otomatik merge kuralları mevcut yetkiyi daraltan ek güvenlik
+koşullarıdır; hiçbir zaman yeni yetki üretmez veya yetki kapsamını genişletmez.
 
 ## 1. Ana görev
 
@@ -87,7 +93,15 @@ Yalnız aşağıdakilerin tamamı sağlanıyorsa:
 - cross-module contract değişikliği yok,
 - tüm CI yeşil,
 - diff kapsamı beklenenle birebir,
-- açık review blocker yok.
+- açık review blocker yok,
+- aşağıdaki governance ve kontrol yüzeylerinden hiçbirine dokunmuyor:
+  - `AGENTS.md`, `docs/governance/**`, `.github/**`, `CODEOWNERS` ve benzeri sahiplik,
+    branch protection, merge politikası veya Automation yapılandırması,
+  - görev manifesti, kabul matrisi/statüsü veya teslim durumunu `done/accepted` yapan kayıtlar,
+  - test, fixture veya gate silme/skip etme, kapsamını daraltma ya da başarısızlığı yumuşatma,
+  - güvenlik kapısı, review zorunluluğu veya auto-merge sınıflandırması.
+
+Bir PR yalnız `docs-only`, `test-only` veya `tooling-only` diye bu istisnaları aşamaz.
 
 ### Otomatik merge yasak
 
@@ -102,7 +116,11 @@ Yalnız aşağıdakilerin tamamı sağlanıyorsa:
 - dış entegrasyon,
 - secrets, deployment, backup/restore,
 - destructive işlem,
-- modüller arası contract veya dependency.
+- modüller arası contract veya dependency,
+- `AGENTS.md`, governance/merge politikası, CI workflow, CODEOWNERS/branch protection veya
+  Automation yapılandırması,
+- görev/kabul durumunu tamamlandı sayan değişiklik,
+- test ya da gate silme, skip etme veya gevşetme.
 
 Bu tür PR Draft kalır; beklerken bağımsız güvenli işlere devam edilir.
 
