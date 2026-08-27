@@ -58,3 +58,26 @@ OPEN DECISIONS: OPEN-021
 MAIN SHA: 5f577892e9eeb51034cb8906e8a5e01a31d8680c
 ACTIVE PRS: #6 Draft; #2 Draft
 ```
+
+## 2026-08-28 00:41 +03:00 — Döngü 2
+
+- ERP-000E head `7723ccdf6c7b72db8cbf9f01016cfbd41312135d` için CI run
+  `33119029839` dört işte tamamen başarılı oldu: backend build/test/migration ve
+  architecture guard, frontend lint/test/build, gerçek SQL Server relational acceptance ve
+  container build.
+- Nihai kabul kanıtı Draft PR #6'ya yorum olarak kaydedildi; PR kritik insan review kapısı
+  nedeniyle Draft bırakıldı ve merge edilmedi.
+- Governance protokolü ile bu ilerleme günlüğü Draft PR #8 altında ayrıştırıldı. İlk CI run
+  `33119090777` dört işte tamamen başarılı oldu.
+- ERP-000F başlatılmadı; `OPEN-021` açık kaldı.
+- UI katalog golden validator bağımsız docs/tooling işi olarak ayrı dalda yürütülüyor.
+
+```text
+DONE: PR #6 final CI 33119029839; PR #8 ilk CI 33119090777
+IN REVIEW: ERP-000E Draft PR #6; governance Draft PR #8
+BLOCKED: ERP-000F (ERP-000E insan review ve merge kapısı)
+SAFE NEXT: UI katalog golden validator
+OPEN DECISIONS: OPEN-021
+MAIN SHA: 5f577892e9eeb51034cb8906e8a5e01a31d8680c
+ACTIVE PRS: #8 Draft; #6 Draft; #2 Draft
+```
