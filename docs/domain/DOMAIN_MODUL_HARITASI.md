@@ -15,9 +15,21 @@
 | Cari Finans | Açık kalem, dağıtım | Open item lifecycle |
 | Hazine | Banka/kasa, para kaynağı, çek/senet/POS/DBS | Financial source events |
 | Muhasebe | Hesap planı, fiş, dönem, mizan | Accounting classification/status |
-| Raporlama | Türetilmiş semantik projeksiyon | Read-only analytics |
-| AI | Tool catalog, prompt/policy, suggestion/audit | Yetkili ve şemalı yardım |
+| Raporlama | SemanticFieldCatalog, ReportDefinition, ReportVersion, ReportShare, ReportSchedule, ReportRun, ReportArtifact ve türetilmiş semantik projeksiyon | Yetki-kapsamlı read-only analytics ve sürümlü rapor tanımı |
+| AI | Tool catalog, prompt/policy, suggestion/audit ve şemalı ReportDefinitionDraft | Yetkili ve şemalı yardım; ham SQL yok |
 
 ## Sınır ilkesi
 
 Bir modül başka modülün tablosuna doğrudan yazmaz. Yazma, sahip modülün komut servisi ve transaction/event sözleşmesi üzerinden yapılır.
+
+## Raporlama semantik alt modeli (v1.1)
+
+- `SemanticFieldCatalog`: kullanıcı/AI için izinli veri kümelerini, alanları, ölçüleri, tipleri, ilişkileri ve yetki etiketlerini yayımlar.
+- `ReportDefinition`: kullanıcı niyetinin kalıcı semantik tanımıdır; sonuç satırlarını saklamaz.
+- `ReportVersion`: tanım değişikliklerini değişmez sürümler halinde tutar.
+- `ReportShare`: taslağın kimlerle paylaşılabildiğini tutar; veri satırı yetkisi vermez.
+- `ReportSchedule`: zamanlama, sahip/çalıştırma kimliği, şirket kapsamı ve teslimat politikasını tutar.
+- `ReportRun`: her çalıştırmanın ReportVersion, veri kesim zamanı, güncel yetki sonucu, parametre ve audit/korelasyon bağını tutar.
+- `ReportArtifact`: XLSX/PDF gibi üretilen dosyanın Belge Kasası referansını taşır.
+
+AI `ReportDefinitionDraft` üretebilir. Kalıcı tanım yalnız şema/politika doğrulaması ve kullanıcı eylemi sonrasında oluşturulur. Semantic query compiler, tanımı parametrik ve izinli sorguya çevirir; AI kaynak veritabanı için SQL metni üretmez.
