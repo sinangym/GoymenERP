@@ -1,5 +1,5 @@
 {
-  "version": "1.0",
+  "version": "1.1",
   "epic": "ERP-000",
   "owner": "Sinan Göymen",
   "tasks": [
@@ -165,6 +165,49 @@
       "scope": "Build, unit, integration, lint, security scan, artifact manifest.",
       "acceptance": "Başarısız kapı merge/yayın engeller.",
       "priority": "P0"
+    },
+    {
+      "id": "ERP-RPT-001",
+      "title": "Semantik rapor tanımı ve Rapor Taslaklarım",
+      "status": "backlog",
+      "depends_on": [
+        "ERP-000B",
+        "ERP-000C",
+        "ERP-000D"
+      ],
+      "scope": "SemanticFieldCatalog, ReportDefinition/Version/Share, user-private drafts, version/copy/archive/rerun. Result rows are not persisted as definition.",
+      "acceptance": "AT-071..AT-074 ve AT-077 geçer.",
+      "priority": "P1",
+      "blocks_erp_000ab": false
+    },
+    {
+      "id": "ERP-RPT-002",
+      "title": "AI ile Rapor Oluşturucu",
+      "status": "backlog",
+      "depends_on": [
+        "ERP-RPT-001",
+        "ERP-000J"
+      ],
+      "scope": "Responses API + Structured Outputs ile ReportDefinitionDraft; strict schema/function tools; no raw SQL; semantic validation/compiler.",
+      "acceptance": "AT-075 ve yetki/AI contract testleri geçer.",
+      "priority": "P1",
+      "blocks_erp_000ab": false
+    },
+    {
+      "id": "ERP-RPT-003",
+      "title": "Rapor paylaşım, zamanlama ve XLSX/PDF çıktısı",
+      "status": "backlog",
+      "depends_on": [
+        "ERP-RPT-001",
+        "ERP-000G",
+        "ERP-000H",
+        "ERP-000O"
+      ],
+      "scope": "ReportSchedule/Run/Artifact, permission re-check, queued export, document-vault artifact, sharing/delivery audit.",
+      "acceptance": "AT-076..AT-078 geçer.",
+      "priority": "P1",
+      "blocks_erp_000ab": false
     }
-  ]
+  ],
+  "delta": "R-06 Rapor Taslaklarım + R-07 AI ile Rapor Oluşturucu; AT-071..078; ADR-008 AI architecture update"
 }
