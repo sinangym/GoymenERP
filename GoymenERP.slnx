@@ -1,0 +1,19 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/backend/">
+    <Project Path="src/backend/GoymenERP.Api/GoymenERP.Api.csproj" />
+  </Folder>
+  <Folder Name="/src/backend/BuildingBlocks/">
+    <Project Path="src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/GoymenERP.BuildingBlocks.csproj" />
+  </Folder>
+  <Folder Name="/src/backend/Modules/" />
+  <Folder Name="/src/backend/Modules/Organization/">
+    <Project Path="src/backend/Modules/Organization/GoymenERP.Modules.Organization.Application/GoymenERP.Modules.Organization.Application.csproj" />
+    <Project Path="src/backend/Modules/Organization/GoymenERP.Modules.Organization.Domain/GoymenERP.Modules.Organization.Domain.csproj" />
+    <Project Path="src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/GoymenERP.Modules.Organization.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj" />
+    <Project Path="tests/GoymenERP.Organization.UnitTests/GoymenERP.Organization.UnitTests.csproj" />
+  </Folder>
+</Solution>

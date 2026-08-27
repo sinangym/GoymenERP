@@ -8,6 +8,7 @@ obj/
 node_modules/
 dist/
 .vite/
+src/frontend/goymen-erp-web/src/assets/hero.png
 
 # Environment / secrets
 .env

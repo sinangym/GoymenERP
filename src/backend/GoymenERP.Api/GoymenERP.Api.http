@@ -1,0 +1,21 @@
+@GoymenERP.Api_HostAddress = http://localhost:5080
+@DevelopmentUser = company-a-user
+@CompanyId = 10000000-0000-0000-0000-000000000001
+
+GET {{GoymenERP.Api_HostAddress}}/health/live
+Accept: application/json
+
+###
+
+GET {{GoymenERP.Api_HostAddress}}/api/v1/organization/companies
+X-Development-User: {{DevelopmentUser}}
+Accept: application/json
+
+###
+
+GET {{GoymenERP.Api_HostAddress}}/api/v1/organization/locations?page=1&pageSize=25
+X-Development-User: {{DevelopmentUser}}
+X-Company-Id: {{CompanyId}}
+Accept: application/json
+
+###

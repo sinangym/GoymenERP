@@ -1,0 +1,13 @@
+**/bin
+**/obj
+**/node_modules
+**/dist
+.git
+.github
+.vs
+.vscode
+TestResults
+artifacts
+coverage
+.env
+secrets
