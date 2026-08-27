@@ -17,15 +17,21 @@
     <Project Path="src/backend/Modules/Identity/GoymenERP.Modules.Identity.Domain/GoymenERP.Modules.Identity.Domain.csproj" />
     <Project Path="src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/GoymenERP.Modules.Identity.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/src/backend/Modules/Idempotency/">
+    <Project Path="src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Domain/GoymenERP.Modules.Idempotency.Domain.csproj" />
+    <Project Path="src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/GoymenERP.Modules.Idempotency.Infrastructure.csproj" />
+  </Folder>
   <Folder Name="/src/backend/Modules/Organization/">
     <Project Path="src/backend/Modules/Organization/GoymenERP.Modules.Organization.Application/GoymenERP.Modules.Organization.Application.csproj" />
     <Project Path="src/backend/Modules/Organization/GoymenERP.Modules.Organization.Domain/GoymenERP.Modules.Organization.Domain.csproj" />
     <Project Path="src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/GoymenERP.Modules.Organization.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/GoymenERP.ArchitectureTests/GoymenERP.ArchitectureTests.csproj" />
     <Project Path="tests/GoymenERP.Audit.UnitTests/GoymenERP.Audit.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj" />
     <Project Path="tests/GoymenERP.Organization.UnitTests/GoymenERP.Organization.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.Identity.UnitTests/GoymenERP.Identity.UnitTests.csproj" />
+    <Project Path="tests/GoymenERP.Idempotency.UnitTests/GoymenERP.Idempotency.UnitTests.csproj" />
   </Folder>
 </Solution>

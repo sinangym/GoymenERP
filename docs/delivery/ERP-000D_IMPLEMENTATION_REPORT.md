@@ -3,8 +3,8 @@
 - Tarih: 2026-08-27
 - Dal: `codex/erp-000d-audit-correlation`
 - Taban: `main` / `fe87fc4f995a4dc4fb2e38b1399e96c95a2d09cd`
-- Durum: İki review blocker'ı kapatıldı ve yerel kabul doğrulaması tamamlandı;
-  uzak CI ve son re-review bekleniyor
+- Merge commit: `908bbfd5083debfabbe660d45b7ec99fa6d1b9d6`
+- Durum: Kabul edildi ve `main`e alındı
 - Bağlayıcı ADR: `docs/adr/ADR-009-audit-and-correlation.md`
 
 ## Sonuç
@@ -150,5 +150,5 @@ dışındadır; `OPEN-018` ve backup/restore çalışmasıyla production öncesi
 - WORM/harici audit arşivi, legal hold ve retention politikası.
 - Sentetik büyük audit hacmi p95/indeks PoC'si ERP-000M performans kapısında ölçülmelidir.
 
-ERP-000D review ve uzak CI geçmeden task `done` yapılmamalı ve ERP-000E'ye
-başlanmamalıdır.
+ERP-000D kabulü tamamlanmıştır. Sonraki platform kapısı ERP-000E kalıcı idempotency ve
+concurrency sözleşmesidir.

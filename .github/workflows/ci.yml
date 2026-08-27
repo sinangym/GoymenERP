@@ -36,6 +36,13 @@ jobs:
       - name: Test
         run: dotnet test GoymenERP.slnx --configuration Release --no-build --logger "console;verbosity=normal"
 
+      - name: Architecture dependency guard
+        run: >-
+          dotnet test tests/GoymenERP.ArchitectureTests/GoymenERP.ArchitectureTests.csproj
+          --configuration Release
+          --no-build
+          --logger "console;verbosity=normal"
+
       - name: Check vulnerable dependencies
         run: dotnet list GoymenERP.slnx package --vulnerable --include-transitive
 
@@ -64,6 +71,15 @@ jobs:
           --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj
           --context AuditDbContext
           --output artifacts/audit-migration.sql
+
+      - name: Generate idempotency idempotent SQL migration script
+        run: >-
+          dotnet tool run dotnet-ef migrations script
+          --idempotent
+          --project src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/GoymenERP.Modules.Idempotency.Infrastructure.csproj
+          --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj
+          --context CommandExecutionDbContext
+          --output artifacts/idempotency-migration.sql
 
   frontend:
     name: Frontend lint, test and build

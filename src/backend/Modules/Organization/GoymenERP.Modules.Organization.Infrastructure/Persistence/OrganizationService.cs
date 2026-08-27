@@ -2,6 +2,7 @@ using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
+using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -18,6 +19,9 @@ internal sealed class OrganizationService(
     : IOrganizationService
 {
     private const int MaximumPageSize = 100;
+    private const int CommandExecutionSchemaVersion = 1;
+    private const string SetLocationActiveStateCommandName =
+        "organization.location.set-active-state.v1";
 
     public async Task<IReadOnlyList<CompanySummary>> GetAuthorizedCompaniesAsync(
         CancellationToken cancellationToken)
@@ -158,32 +162,70 @@ internal sealed class OrganizationService(
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<CommandResult> SetLocationActiveStateAsync(
+    public async Task<CommandExecutionResult> SetLocationActiveStateAsync(
         Guid id,
         SetLocationActiveState command,
         CommandMetadata metadata,
         CancellationToken cancellationToken)
     {
         ValidateCommandMetadata(metadata);
+        ValidateReason(command.Reason);
 
         var scope = await authorizationService.GetPermissionScopeAsync(
             ErpPermissions.OrganizationLocationsStatusUpdate,
             companyContext.CompanyId,
             cancellationToken);
+        var idempotencyKeyHash = IdempotencyHash.ComputeKey(metadata.IdempotencyKey);
+        var requestHash = IdempotencyHash.ComputePayload(
+            new SetLocationActiveStateFingerprint(
+                id,
+                command.IsActive,
+                command.ExpectedVersion,
+                command.Reason.Trim()));
         var location = await ApplyLocationScope(dbContext.Locations, scope)
             .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var existingExecution = await FindCommandExecutionAsync(
+            idempotencyKeyHash,
+            cancellationToken);
+        if (existingExecution is not null)
+        {
+            if (!scope.IsCompanyWide && location is null)
+            {
+                return new CommandExecutionResult(
+                    CommandResponses.For(CommandResult.NotFound),
+                    false,
+                    metadata.CorrelationId);
+            }
+
+            return ResolveExistingExecution(existingExecution, requestHash, metadata);
+        }
 
         if (location is null)
         {
-            return CommandResult.NotFound;
+            return await CompleteCommandAsync(
+                CommandResponses.For(CommandResult.NotFound),
+                idempotencyKeyHash,
+                requestHash,
+                metadata,
+                hasBusinessMutation: false,
+                concurrencyContext: null,
+                cancellationToken);
         }
 
         if (location.Version != command.ExpectedVersion)
         {
-            return CommandResult.VersionConflict;
+            return await CompleteCommandAsync(
+                CommandResponses.VersionConflict(
+                    command.ExpectedVersion,
+                    location.Version),
+                idempotencyKeyHash,
+                requestHash,
+                metadata,
+                hasBusinessMutation: false,
+                concurrencyContext: null,
+                cancellationToken);
         }
 
-        ValidateReason(command.Reason);
         var versionBefore = location.Version;
         var stateChanged = location.IsActive != command.IsActive;
         var beforeJson = SerializeLocationAuditSnapshot(
@@ -223,22 +265,146 @@ internal sealed class OrganizationService(
             metadata.CausationId,
             metadata.IdempotencyKey));
 
+        var result = await CompleteCommandAsync(
+            CommandResponses.For(CommandResult.Succeeded),
+            idempotencyKeyHash,
+            requestHash,
+            metadata,
+            hasBusinessMutation: true,
+            new CommandConcurrencyContext(id, command.ExpectedVersion, scope),
+            cancellationToken);
+        logger.LogInformation(
+            "Organization location active state command completed. CompanyId={CompanyId} LocationId={LocationId} ActorId={ActorId} CorrelationId={CorrelationId} Result={Result} IsReplay={IsReplay}",
+            metadata.CompanyId,
+            id,
+            metadata.ActorId,
+            metadata.CorrelationId,
+            result.Result,
+            result.IsReplay);
+        return result;
+    }
+
+    private async Task<CommandExecutionResult> CompleteCommandAsync(
+        CommandResponseSnapshot response,
+        string idempotencyKeyHash,
+        string requestHash,
+        CommandMetadata metadata,
+        bool hasBusinessMutation,
+        CommandConcurrencyContext? concurrencyContext,
+        CancellationToken cancellationToken)
+    {
+        dbContext.CommandExecutions.Add(CommandExecution.Complete(new CommandExecutionData(
+            Guid.NewGuid(),
+            metadata.CompanyId,
+            SetLocationActiveStateCommandName,
+            idempotencyKeyHash,
+            requestHash,
+            metadata.ActorId,
+            response.Result.ToString(),
+            response.StatusCode,
+            JsonSerializer.Serialize(response),
+            metadata.CorrelationId,
+            DateTimeOffset.UtcNow,
+            CommandExecutionSchemaVersion)));
+
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
-            logger.LogInformation(
-                "Organization location active state updated. CompanyId={CompanyId} LocationId={LocationId} ActorId={ActorId} CorrelationId={CorrelationId} IdempotencyKeySupplied={IdempotencyKeySupplied}",
-                metadata.CompanyId,
-                id,
-                metadata.ActorId,
-                metadata.CorrelationId,
-                true);
-            return CommandResult.Succeeded;
+            return new CommandExecutionResult(response, false, metadata.CorrelationId);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (DbUpdateConcurrencyException) when (hasBusinessMutation)
         {
-            return CommandResult.VersionConflict;
+            dbContext.ChangeTracker.Clear();
+            var winner = await FindCommandExecutionAsync(
+                idempotencyKeyHash,
+                cancellationToken);
+            if (winner is not null)
+            {
+                return ResolveExistingExecution(winner, requestHash, metadata);
+            }
+
+            if (concurrencyContext is null)
+            {
+                throw;
+            }
+
+            var currentVersion = await ApplyLocationScope(
+                    dbContext.Locations.AsNoTracking(),
+                    concurrencyContext.Scope)
+                .Where(x => x.Id == concurrencyContext.LocationId)
+                .Select(x => (long?)x.Version)
+                .SingleOrDefaultAsync(cancellationToken);
+            var terminalResponse = currentVersion.HasValue
+                ? CommandResponses.VersionConflict(
+                    concurrencyContext.ExpectedVersion,
+                    currentVersion.Value)
+                : CommandResponses.For(CommandResult.NotFound);
+            return await CompleteCommandAsync(
+                terminalResponse,
+                idempotencyKeyHash,
+                requestHash,
+                metadata,
+                hasBusinessMutation: false,
+                concurrencyContext: null,
+                cancellationToken);
         }
+        catch (DbUpdateException)
+        {
+            dbContext.ChangeTracker.Clear();
+            var winner = await FindCommandExecutionAsync(
+                idempotencyKeyHash,
+                cancellationToken);
+            if (winner is null)
+            {
+                throw;
+            }
+
+            return ResolveExistingExecution(winner, requestHash, metadata);
+        }
+    }
+
+    private Task<CommandExecution?> FindCommandExecutionAsync(
+        string idempotencyKeyHash,
+        CancellationToken cancellationToken)
+    {
+        return dbContext.CommandExecutions
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                execution =>
+                    execution.CommandName == SetLocationActiveStateCommandName
+                    && execution.IdempotencyKeyHash == idempotencyKeyHash,
+                cancellationToken);
+    }
+
+    private static CommandExecutionResult ResolveExistingExecution(
+        CommandExecution execution,
+        string requestHash,
+        CommandMetadata metadata)
+    {
+        if (!string.Equals(execution.ActorId, metadata.ActorId, StringComparison.Ordinal)
+            || !string.Equals(execution.RequestHash, requestHash, StringComparison.Ordinal))
+        {
+            return new CommandExecutionResult(
+                CommandResponses.For(CommandResult.IdempotencyConflict),
+                false,
+                metadata.CorrelationId);
+        }
+
+        var response = JsonSerializer.Deserialize<CommandResponseSnapshot>(
+            execution.ResponseJson);
+        if (response is null
+            || !string.Equals(
+                response.Result.ToString(),
+                execution.Outcome,
+                StringComparison.Ordinal)
+            || response.StatusCode != execution.HttpStatusCode
+            || response.Result == CommandResult.IdempotencyConflict)
+        {
+            throw new InvalidOperationException(
+                "Kalıcı idempotency sonucu tanımlı command sözleşmesiyle uyumsuz.");
+        }
+
+        return new CommandExecutionResult(response, true, execution.OriginalCorrelationId);
     }
 
     private IQueryable<GoymenERP.Modules.Organization.Domain.Locations.Location>
@@ -301,4 +467,16 @@ internal sealed class OrganizationService(
             Version = version,
         });
     }
+
+    private sealed record SetLocationActiveStateFingerprint(
+        Guid LocationId,
+        bool IsActive,
+        long ExpectedVersion,
+        string Reason);
+
+    private sealed record CommandConcurrencyContext(
+        Guid LocationId,
+        long ExpectedVersion,
+        PermissionScope Scope);
+
 }

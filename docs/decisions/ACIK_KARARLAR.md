@@ -23,3 +23,4 @@ Bu maddeler repository ve platform iskeletini başlatmaya engel değildir. Ancak
 | OPEN-018 | Belge türü bazlı saklama/imha süreleri ve legal hold | Policy tablosu ve audit akışı kurulur. | Belge kasası production öncesi |
 | OPEN-019 | PDF font ailesi ve marka/antet dosyaları | Türkçe Unicode/gömülü font kabul testi zorunlu; dosya pakete eklenmez. | PDF UAT öncesi |
 | OPEN-020 | Bulut AI sağlayıcısı, sözleşme, KVKK aktarım politikası ve izinli veri sınıfları | Yerel-first, default-deny bulut politikası. | Bulut AI production çağrısı öncesi |
+| OPEN-021 | Idempotency replay saklama süresi, partition ve yetkili imha politikası | ERP-000E kayıtları silinmez; ham anahtar tutulmaz. Temizleme işi production'da açılmaz. | Production yük/retention kapısı öncesi |
