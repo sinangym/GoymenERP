@@ -27,6 +27,12 @@ güvenlik sınırını tek başına sağlayamaz.
   boyunca değiştirilemeyen `CompanyContext` içine alınır.
 - Site, Location ve WorkCenter için `CompanyId` zorunludur.
 - EF Core global query filter seçili CompanyId’yi otomatik uygular.
+- `OrganizationDbContext`, eklenen/değiştirilen/silinen tenant kayıtlarında aktif
+  `CompanyContext` bulunmasını ve entity CompanyId ile birebir eşleşmesini hem senkron hem
+  asenkron save yolunda zorunlu tutar.
+- Çok şirketli başlangıç seed’i, normal request write yolunu sessizce atlamaz; yalnız
+  Infrastructure içinden etkinleştirilebilen, açık ve yaşam süresi sınırlı
+  `OrganizationBootstrapWriteScope` kullanır.
 - `(CompanyId, Code)` unique indeksleri ve bileşik foreign key’ler, şirketler arası
   hiyerarşi bağlantısını veritabanı düzeyinde engeller.
 - Başka şirketin bilinen ID’sine query/command, aynı genel 404 sonucunu üretir.
@@ -51,3 +57,8 @@ mevcut CompanyId sözleşmesi veri paketi ayırma ve taşıma sınırı olarak k
 
 `CompanyIsolationTests`; selector, header yükseltme, query parametresi, doğrudan URL,
 başka şirkete command, hata içeriği ve toplam sayı senaryolarını doğrular.
+
+`OrganizationTenantWriteGuardTests`; çözümsüz, eşleşmeyen, eşleşen ve açık bootstrap
+write yollarını doğrular. `SqlServerRelationalAcceptanceTests` ise CI’daki gerçek SQL
+Server üzerinde migration + seed, write guard, composite FK hata 547 ve HTTP 404/403
+izolasyonunu birlikte çalıştırır.

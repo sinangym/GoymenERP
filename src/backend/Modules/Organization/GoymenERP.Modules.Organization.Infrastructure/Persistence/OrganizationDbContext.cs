@@ -10,7 +10,8 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence;
 
 public sealed class OrganizationDbContext(
     DbContextOptions<OrganizationDbContext> options,
-    ICompanyContext companyContext)
+    ICompanyContext companyContext,
+    OrganizationBootstrapWriteScope bootstrapWriteScope)
     : DbContext(options)
 {
     public DbSet<Company> Companies => Set<Company>();
@@ -31,11 +32,28 @@ public sealed class OrganizationDbContext(
         ConfigureWorkCenter(modelBuilder);
     }
 
+    public override int SaveChanges()
+    {
+        return SaveChanges(acceptAllChangesOnSuccess: true);
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        ApplyTenantWriteGuards();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        return SaveChangesAsync(acceptAllChangesOnSuccess: true, cancellationToken);
+    }
+
     public override Task<int> SaveChangesAsync(
+        bool acceptAllChangesOnSuccess,
         CancellationToken cancellationToken = default)
     {
         ApplyTenantWriteGuards();
-        return base.SaveChangesAsync(cancellationToken);
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
     }
 
     private static void ConfigureCompany(ModelBuilder modelBuilder)
@@ -107,7 +125,7 @@ public sealed class OrganizationDbContext(
 
         foreach (var entry in ChangeTracker.Entries<TenantEntity>())
         {
-            if (entry.State is not (EntityState.Added or EntityState.Modified))
+            if (entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted))
             {
                 continue;
             }
@@ -121,6 +139,21 @@ public sealed class OrganizationDbContext(
                 && entry.Property(x => x.CompanyId).IsModified)
             {
                 throw new InvalidOperationException("Bir organizasyon kaydının CompanyId değeri değiştirilemez.");
+            }
+
+            if (!bootstrapWriteScope.IsActive)
+            {
+                if (!companyContext.IsResolved)
+                {
+                    throw new InvalidOperationException(
+                        "Organizasyon yazma işlemi için aktif şirket bağlamı zorunludur.");
+                }
+
+                if (entry.Entity.CompanyId != companyContext.CompanyId)
+                {
+                    throw new InvalidOperationException(
+                        "Organizasyon kaydının CompanyId değeri aktif şirket bağlamıyla eşleşmelidir.");
+                }
             }
 
             if (entry.State == EntityState.Modified)

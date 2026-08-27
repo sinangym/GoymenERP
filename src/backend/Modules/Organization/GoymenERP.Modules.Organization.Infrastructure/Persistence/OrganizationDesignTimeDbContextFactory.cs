@@ -15,6 +15,9 @@ public sealed class OrganizationDesignTimeDbContextFactory
                 sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", "organization"))
             .Options;
 
-        return new OrganizationDbContext(options, new CompanyContext());
+        return new OrganizationDbContext(
+            options,
+            new CompanyContext(),
+            new OrganizationBootstrapWriteScope());
     }
 }

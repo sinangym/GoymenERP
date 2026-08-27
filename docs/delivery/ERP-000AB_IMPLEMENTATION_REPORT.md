@@ -27,7 +27,8 @@ verilen `CODEX_START_ERP-000A_B_v1.1.md`, ZIP içindeki dosyayla aynı
 - React 19 + TypeScript 6 + Vite şirket seçici/organizasyon UI iskeleti.
 - SQL Server + EF Core 10.0.8, `organization` şeması ve ilk migration.
 - Docker Compose ile SQL Server, API ve web servisleri.
-- GitHub Actions ile backend, frontend, migration, bağımlılık ve container build kapıları.
+- GitHub Actions ile backend, frontend, migration, bağımlılık, gerçek SQL Server kabulü
+  ve container build kapıları.
 
 ## CompanyId güvenlik sözleşmesi
 
@@ -36,6 +37,11 @@ verilen `CODEX_START_ERP-000A_B_v1.1.md`, ZIP içindeki dosyayla aynı
 - CompanyContext request-scoped ve aynı istek içinde değiştirilemez.
 - Site, Location ve WorkCenter kayıtlarında CompanyId zorunludur.
 - EF global filtreleri bütün tenant sorgularına seçili CompanyId koşulunu ekler.
+- DbContext, Added/Modified/Deleted tenant kayıtlarında çözülmüş CompanyContext ve entity
+  CompanyId eşleşmesini hem senkron hem asenkron save yolunda fail-closed uygular.
+- Çok şirketli seed yalnız Infrastructure içinde etkinleştirilebilen açık ve süreli
+  `OrganizationBootstrapWriteScope` üzerinden yazılır; normal request write yolu bunu
+  etkinleştiremez.
 - `(CompanyId, Code)` unique indeksleri bulunur.
 - Location→Site ve WorkCenter→Location foreign key’leri CompanyId’yi bileşik anahtarın
   parçası yapar; şirketler arası hiyerarşi bağlantısı SQL Server’da da engellenir.
@@ -62,8 +68,9 @@ Seed kaynağı: `src/backend/GoymenERP.Api/Seed/organization-seed.json`.
 ### Otomatik testler
 
 - Backend build: 0 uyarı, 0 hata.
-- Unit: 5/5 geçti.
+- Unit: 10/10 geçti; bunun 5’i tenant write guard ve bootstrap scope senaryosudur.
 - HTTP integration: 10/10 geçti.
+- SQL Server relational acceptance: 1/1 geçti.
 - Frontend API sözleşmesi: 2/2 geçti.
 - Frontend lint ve production build: geçti.
 - NuGet transitif vulnerability taraması: bilinen açık yok.
@@ -75,6 +82,11 @@ HTTP integration senaryoları; anonim erişim, authorized company selector, yetk
 şirket başlığı, query parametresiyle filtre atlama, doğrudan B şirketi ID’si, B şirketi
 command hedefi, seçili şirket command’ı, eksik CompanyContext, eksik Idempotency-Key ve
 work-center kapsamını içerir.
+
+Relational CI senaryosu gerçek SQL Server 2022 service container üzerinde benzersiz bir
+veritabanı oluşturur; migration ve seed sayımlarını, çözümsüz/eşleşmeyen tenant write
+reddini, çapraz-şirket composite FK için SQL hata 547’yi ve HTTP 404/403 izolasyonunu
+doğrular. Geçici veritabanı test sonunda kapatılıp silinir.
 
 ### Gerçek SQL Server/LocalDB kanıtı
 
@@ -136,5 +148,6 @@ Başlık: `feat(platform): implement ERP-000A+B multi-company core`
 5. Query/command/ID/URL/filter/error/count izolasyon testlerini ekler.
 6. Docker/dev ve CI doğrulama zincirini ekler.
 
-Merge kapısı: CI yeşil olmalı ve Company isolation testlerinden hiçbiri atlanmamalıdır.
+Merge kapısı: CI yeşil olmalı; Company isolation ve SQL Server relational acceptance
+testlerinden hiçbiri atlanmamalıdır.
 Bu PR, Draft PR #2 raporlama deltasını merge etmez ve ERP-000C’yi başlatmaz.

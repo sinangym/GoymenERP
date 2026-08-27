@@ -10,6 +10,7 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Seeding;
 
 internal sealed class OrganizationDataSeeder(
     OrganizationDbContext dbContext,
+    OrganizationBootstrapWriteScope bootstrapWriteScope,
     IOptions<OrganizationSeedOptions> options)
 {
     public async Task SeedAsync(CancellationToken cancellationToken)
@@ -108,6 +109,7 @@ internal sealed class OrganizationDataSeeder(
             }
         }
 
+        using var bootstrapWrite = bootstrapWriteScope.BeginBootstrapWrite();
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 

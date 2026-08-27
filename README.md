@@ -12,11 +12,13 @@ henüz uygulanmamıştır.
 - Domain/Application/Infrastructure/API sınırları olan Organization modülü.
 - SQL Server + EF Core migration başlangıcı.
 - `Company`, `Site`, `Location`, `WorkCenter` modelleri.
-- Zorunlu `CompanyId`, request-scoped `CompanyContext` ve EF global query filter.
+- Zorunlu `CompanyId`, request-scoped `CompanyContext`, EF global query filter ve
+  DbContext seviyesinde fail-closed tenant write guard.
 - Claim kapsamına göre şirket seçici API/UI iskeleti.
 - Osmaniye, Gaziantep ve dış depoları okuyan idempotent JSON seed mekanizması.
 - Query, command, ID, URL, query-parametresi, hata ve toplam sayı izolasyon testleri.
-- Docker Compose, iki uygulama imajı ve GitHub Actions CI.
+- Açık ve yalnız bootstrap/seed akışına ayrılmış çok şirketli sistem-write scope.
+- Docker Compose, iki uygulama imajı ve gerçek SQL Server kabul işi içeren GitHub Actions CI.
 
 ## Proje yapısı
 
@@ -101,6 +103,20 @@ npm run lint
 npm test
 npm run build
 ```
+
+Gerçek SQL Server relational kabul testi, çalışan bir test SQL Server bağlantısını yalnız
+environment değişkeninden alır ve benzersiz geçici veritabanını test sonunda siler:
+
+```powershell
+$env:GOYMEN_ERP_TEST_SQLSERVER_CONNECTION = "Server=localhost,1433;Database=master;User Id=sa;Password=<yerel-secret>;Encrypt=True;TrustServerCertificate=True"
+dotnet test tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj `
+  --configuration Release `
+  --filter "FullyQualifiedName~SqlServerRelationalAcceptanceTests"
+```
+
+Bağlantı değişkeni yoksa bu özel test standart yerel test koşusunda açıkça `Skipped`
+görünür; CI’daki `SQL Server relational acceptance` işi değişkeni zorunlu tanımlar ve
+testi atlamadan çalıştırır.
 
 Idempotent SQL migration betiği:
 

@@ -34,6 +34,7 @@ public static class OrganizationModuleExtensions
             options.UseSqlServer(
                 connectionString,
                 sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", "organization")));
+        services.AddScoped<OrganizationBootstrapWriteScope>();
         services.AddScoped<IOrganizationService, OrganizationService>();
         services.AddScoped<OrganizationDataSeeder>();
 
