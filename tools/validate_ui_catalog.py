@@ -7,6 +7,7 @@ import argparse
 import csv
 import hashlib
 import json
+import posixpath
 import re
 import sys
 from collections import Counter, defaultdict
@@ -19,8 +20,17 @@ EXPECTED_CANONICAL_SCREENS = 159
 EXPECTED_ORIGINAL_ASSETS = 77
 EXPECTED_PROTOTYPES = 5
 EXPECTED_SELECTED_SOURCES = 19
+EXPECTED_MANIFEST_ASSETS = (
+    EXPECTED_ORIGINAL_ASSETS + EXPECTED_PROTOTYPES + EXPECTED_SELECTED_SOURCES
+)
 EXPECTED_DECISION_IDS = {f"UI-MAP-{number:03d}" for number in range(1, 7)}
 ALLOWED_NON_CANONICAL_RELATED_REFERENCE_IDS = {"GLOBAL-SHELL"}
+ARTIFACT_CLASS_ROOTS = {
+    "ORIGINAL_ASSET": PurePosixPath("docs/ui/assets/original"),
+    "REFERENCE_PROTOTYPE": PurePosixPath("docs/ui/prototypes"),
+    "SELECTED_SOURCE": PurePosixPath("docs/ui/sources"),
+}
+SCREEN_CARD_ROOT = PurePosixPath("docs/ui/screens")
 
 SCREEN_CATALOG_FIELDS = (
     "record_id",
@@ -157,8 +167,60 @@ def _parse_frontmatter(path: Path, errors: list[str]) -> dict[str, Any]:
     return metadata
 
 
-def _repo_path(root: Path, raw_path: str) -> Path:
-    return root.joinpath(*PurePosixPath(raw_path).parts).resolve()
+def _lexical_repo_path(raw_path: str) -> PurePosixPath | None:
+    """Return an exact normalized relative POSIX repo path, or ``None``."""
+
+    if not raw_path or "\\" in raw_path:
+        return None
+    path = PurePosixPath(raw_path)
+    if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
+        return None
+    if path.as_posix() != raw_path:
+        return None
+    return path
+
+
+def _is_under(path: PurePosixPath, expected_root: PurePosixPath) -> bool:
+    try:
+        relative = path.relative_to(expected_root)
+    except ValueError:
+        return False
+    return bool(relative.parts)
+
+
+def _has_symlink_component(root: Path, lexical_path: PurePosixPath) -> bool:
+    current = root
+    for part in lexical_path.parts:
+        current = current / part
+        if current.is_symlink():
+            return True
+    return False
+
+
+def _safe_repo_file(
+    root: Path,
+    raw_path: str,
+    *,
+    expected_roots: tuple[PurePosixPath, ...],
+) -> tuple[Path | None, PurePosixPath | None, str | None]:
+    lexical_path = _lexical_repo_path(raw_path)
+    if lexical_path is None:
+        return None, None, "path is not an exact lexical repo-relative POSIX path"
+    if not any(_is_under(lexical_path, expected_root) for expected_root in expected_roots):
+        return None, lexical_path, "path is outside its allowed repository root"
+    if _has_symlink_component(root, lexical_path):
+        return None, lexical_path, "path or an ancestor is a symbolic link"
+
+    candidate = root.joinpath(*lexical_path.parts)
+    try:
+        resolved = candidate.resolve(strict=True)
+    except OSError:
+        return None, lexical_path, "file does not exist"
+    if not _is_within(root, resolved):
+        return None, lexical_path, "resolved path escapes the repository root"
+    if not candidate.is_file():
+        return None, lexical_path, "path is not a regular file"
+    return candidate, lexical_path, None
 
 
 def _is_within(root: Path, candidate: Path) -> bool:
@@ -171,6 +233,47 @@ def _is_within(root: Path, candidate: Path) -> bool:
 
 def _relative_repo_path(root: Path, path: Path) -> str:
     return path.relative_to(root).as_posix()
+
+
+def _filesystem_files(
+    root: Path,
+    lexical_root: PurePosixPath,
+    label: str,
+    errors: list[str],
+) -> set[str]:
+    directory = root.joinpath(*lexical_root.parts)
+    paths: set[str] = set()
+    if _has_symlink_component(root, lexical_root):
+        errors.append(
+            f"Symbolic link is forbidden at or above {label}: "
+            f"{lexical_root.as_posix()}"
+        )
+        return paths
+    for path in directory.rglob("*"):
+        lexical_path = _relative_repo_path(root, path)
+        if path.is_symlink():
+            errors.append(f"Symbolic link is forbidden under {label}: {lexical_path}")
+            continue
+        if path.is_file():
+            paths.add(lexical_path)
+    return paths
+
+
+def _primary_reference_repo_path(
+    card_lexical_path: PurePosixPath,
+    raw_reference: str,
+) -> PurePosixPath | None:
+    if not raw_reference or "\\" in raw_reference:
+        return None
+    reference = PurePosixPath(raw_reference)
+    if reference.is_absolute():
+        return None
+    normalized = posixpath.normpath(
+        (card_lexical_path.parent / reference).as_posix()
+    )
+    if normalized in {"", ".", ".."} or normalized.startswith("../"):
+        return None
+    return _lexical_repo_path(normalized)
 
 
 def _sha256(path: Path) -> str:
@@ -186,21 +289,36 @@ def _duplicates(values: Iterable[str]) -> list[str]:
 
 
 def _accepted_ui_mapping_decisions(reconciliation_text: str) -> set[str]:
-    definition_ids = set(
-        re.findall(
-            r"^\s*(?:-\s*)?\*\*(UI-MAP-\d{3}):\*\*",
-            reconciliation_text,
-            flags=re.MULTILINE,
-        )
+    section_match = re.search(
+        r"^## 8\. Karara bağlanan altı uzlaştırma\s*$\n(?P<body>.*?)(?=^##\s|\Z)",
+        reconciliation_text,
+        flags=re.MULTILINE | re.DOTALL,
     )
-    summary_ids = set(
-        re.findall(
-            r"^\s*\|\s*`(UI-MAP-\d{3})`\s*\|",
-            reconciliation_text,
-            flags=re.MULTILINE,
-        )
-    )
-    return definition_ids | summary_ids
+    if section_match is None:
+        return set()
+    lines = section_match.group("body").splitlines()
+    for index, line in enumerate(lines[:-1]):
+        if not re.fullmatch(
+            r"\s*\|\s*Karar\s*\|\s*(?:Kesin sonuç|Sonuç)\s*\|\s*",
+            line,
+        ):
+            continue
+        if not re.fullmatch(r"\s*\|\s*:?-+:?\s*\|\s*:?-+:?\s*\|\s*", lines[index + 1]):
+            return set()
+
+        accepted: set[str] = set()
+        for row in lines[index + 2 :]:
+            if not row.strip():
+                break
+            row_match = re.fullmatch(
+                r"\s*\|\s*`(UI-MAP-\d{3})`\s*\|[^\n]*\|\s*",
+                row,
+            )
+            if row_match is None:
+                break
+            accepted.add(row_match.group(1))
+        return accepted
+    return set()
 
 
 def validate_repository(repository_root: Path | str) -> list[str]:
@@ -321,9 +439,16 @@ def validate_repository(repository_root: Path | str) -> list[str]:
 
         raw_card_path = row.get("screen_card", "")
         card_paths.append(raw_card_path)
-        card_path = _repo_path(root, raw_card_path)
-        if not _is_within(root, card_path) or not card_path.is_file():
-            errors.append(f"Missing or unsafe screen card for {record_id}: {raw_card_path}")
+        card_path, _, card_error = _safe_repo_file(
+            root,
+            raw_card_path,
+            expected_roots=(SCREEN_CARD_ROOT,),
+        )
+        if card_error is not None or card_path is None:
+            errors.append(
+                f"Missing or unsafe screen card for {record_id}: {raw_card_path} "
+                f"({card_error})"
+            )
             continue
 
         metadata = _parse_frontmatter(card_path, errors)
@@ -381,6 +506,16 @@ def validate_repository(repository_root: Path | str) -> list[str]:
         )
     manifest_path_set = set(manifest_paths)
     artifact_counts = Counter(row.get("artifact_class", "") for row in asset_rows)
+    if len(asset_rows) != EXPECTED_MANIFEST_ASSETS:
+        errors.append(
+            f"Golden manifest asset count mismatch: expected {EXPECTED_MANIFEST_ASSETS}, "
+            f"got {len(asset_rows)}"
+        )
+    unknown_artifact_classes = sorted(set(artifact_counts) - set(ARTIFACT_CLASS_ROOTS))
+    if unknown_artifact_classes:
+        errors.append(
+            "Unknown artifact_class values: " + ", ".join(unknown_artifact_classes)
+        )
     if artifact_counts["ORIGINAL_ASSET"] != EXPECTED_ORIGINAL_ASSETS:
         errors.append(
             f"Golden ORIGINAL_ASSET count mismatch: expected {EXPECTED_ORIGINAL_ASSETS}, "
@@ -399,11 +534,19 @@ def validate_repository(repository_root: Path | str) -> list[str]:
 
     for row_number, row in enumerate(asset_rows, start=2):
         raw_path = row.get("repo_path", "")
-        path = _repo_path(root, raw_path)
-        if not _is_within(root, path) or not path.is_file():
+        artifact_class = row.get("artifact_class", "")
+        expected_root = ARTIFACT_CLASS_ROOTS.get(artifact_class)
+        path, _, path_error = _safe_repo_file(
+            root,
+            raw_path,
+            expected_roots=(expected_root,) if expected_root else tuple(
+                ARTIFACT_CLASS_ROOTS.values()
+            ),
+        )
+        if path_error is not None or path is None:
             errors.append(
                 f"Missing or unsafe manifest asset at ASSET_MANIFEST.csv:{row_number}: "
-                f"{raw_path}"
+                f"{raw_path} ({path_error})"
             )
             continue
 
@@ -433,12 +576,12 @@ def validate_repository(repository_root: Path | str) -> list[str]:
                     f"got {actual_hash}"
                 )
 
-    original_root = ui_root / "assets" / "original"
-    actual_original_paths = {
-        _relative_repo_path(root, path.resolve())
-        for path in original_root.rglob("*")
-        if path.is_file()
-    }
+    actual_original_paths = _filesystem_files(
+        root,
+        ARTIFACT_CLASS_ROOTS["ORIGINAL_ASSET"],
+        "ORIGINAL_ASSET",
+        errors,
+    )
     manifest_original_paths = {
         row.get("repo_path", "")
         for row in asset_rows
@@ -451,12 +594,12 @@ def validate_repository(repository_root: Path | str) -> list[str]:
             f"missing={sorted(manifest_original_paths - actual_original_paths)!r}"
         )
 
-    prototype_root = ui_root / "prototypes"
-    actual_prototype_paths = {
-        _relative_repo_path(root, path.resolve())
-        for path in prototype_root.rglob("*")
-        if path.is_file()
-    }
+    actual_prototype_paths = _filesystem_files(
+        root,
+        ARTIFACT_CLASS_ROOTS["REFERENCE_PROTOTYPE"],
+        "REFERENCE_PROTOTYPE",
+        errors,
+    )
     manifest_prototype_paths = {
         row.get("repo_path", "")
         for row in asset_rows
@@ -474,12 +617,12 @@ def validate_repository(repository_root: Path | str) -> list[str]:
             f"missing={sorted(manifest_prototype_paths - actual_prototype_paths)!r}"
         )
 
-    sources_root = ui_root / "sources"
-    actual_source_paths = {
-        _relative_repo_path(root, path.resolve())
-        for path in sources_root.rglob("*")
-        if path.is_file()
-    }
+    actual_source_paths = _filesystem_files(
+        root,
+        ARTIFACT_CLASS_ROOTS["SELECTED_SOURCE"],
+        "SELECTED_SOURCE",
+        errors,
+    )
     manifest_source_paths = {
         row.get("repo_path", "")
         for row in asset_rows
@@ -499,23 +642,39 @@ def validate_repository(repository_root: Path | str) -> list[str]:
 
     for row_number, row in enumerate(screen_rows, start=2):
         record_id = row.get("record_id", "") or f"row-{row_number}"
-        card_path = _repo_path(root, row.get("screen_card", ""))
-        if not _is_within(root, card_path) or not card_path.is_file():
+        card_path, card_lexical_path, card_error = _safe_repo_file(
+            root,
+            row.get("screen_card", ""),
+            expected_roots=(SCREEN_CARD_ROOT,),
+        )
+        if card_error is not None or card_path is None or card_lexical_path is None:
             continue
         primary_reference = row.get("primary_reference", "")
         if not primary_reference:
             errors.append(f"Missing primary_reference for {record_id}")
             continue
         for raw_reference in primary_reference.split(" ve "):
-            reference_path = card_path.parent.joinpath(
-                *PurePosixPath(raw_reference).parts
-            ).resolve()
-            if not _is_within(root, reference_path) or not reference_path.is_file():
+            reference_lexical_path = _primary_reference_repo_path(
+                card_lexical_path,
+                raw_reference,
+            )
+            if reference_lexical_path is None:
                 errors.append(
                     f"Missing or unsafe primary_reference for {record_id}: {raw_reference}"
                 )
                 continue
-            repository_reference = _relative_repo_path(root, reference_path)
+            reference_path, _, reference_error = _safe_repo_file(
+                root,
+                reference_lexical_path.as_posix(),
+                expected_roots=tuple(ARTIFACT_CLASS_ROOTS.values()),
+            )
+            if reference_error is not None or reference_path is None:
+                errors.append(
+                    f"Missing or unsafe primary_reference for {record_id}: "
+                    f"{raw_reference} ({reference_error})"
+                )
+                continue
+            repository_reference = reference_lexical_path.as_posix()
             if repository_reference not in manifest_path_set:
                 errors.append(
                     f"Unmanifested primary_reference for {record_id}: "

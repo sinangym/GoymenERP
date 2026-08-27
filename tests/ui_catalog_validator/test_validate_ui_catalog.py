@@ -122,12 +122,143 @@ class UiCatalogValidatorTests(unittest.TestCase):
     def test_unexpected_accepted_decision_is_rejected(self) -> None:
         reconciliation = self.root / "docs/ui/SOURCE_RECONCILIATION.md"
         reconciliation.write_text(
-            reconciliation.read_text(encoding="utf-8")
-            + "**UI-MAP-007:** unexpected accepted fixture decision\n",
+            reconciliation.read_text(encoding="utf-8").replace(
+                "| `UI-MAP-006` | fixture decision |",
+                "| `UI-MAP-006` | fixture decision |\n"
+                "| `UI-MAP-007` | unexpected accepted fixture decision |",
+            ),
             encoding="utf-8",
         )
 
         self.assert_error_contains("Unexpected accepted UI mapping decisions")
+
+    def test_bold_definition_cannot_replace_missing_summary_decision(self) -> None:
+        reconciliation = self.root / "docs/ui/SOURCE_RECONCILIATION.md"
+        reconciliation.write_text(
+            reconciliation.read_text(encoding="utf-8").replace(
+                "| `UI-MAP-006` | fixture decision |",
+                "**UI-MAP-006:** definition outside the accepted summary table",
+            ),
+            encoding="utf-8",
+        )
+
+        self.assert_error_contains("Missing golden UI mapping decisions")
+
+    def test_later_table_shaped_decision_cannot_resolve_reference(self) -> None:
+        reconciliation = self.root / "docs/ui/SOURCE_RECONCILIATION.md"
+        reconciliation.write_text(
+            reconciliation.read_text(encoding="utf-8")
+            + "\n## 9. Rejected decisions\n\n"
+            + "| `UI-MAP-999` | explicitly rejected |\n",
+            encoding="utf-8",
+        )
+        rows = self._read_csv("docs/ui/SCREEN_CATALOG.csv")
+        rows[0]["decision_refs"] = json.dumps(["UI-MAP-999"])
+        self._write_csv("docs/ui/SCREEN_CATALOG.csv", SCREEN_CATALOG_FIELDS, rows)
+        card = self.root / rows[0]["screen_card"]
+        card.write_text(
+            card.read_text(encoding="utf-8").replace(
+                'decision_refs: ["UI-MAP-001"]',
+                'decision_refs: ["UI-MAP-999"]',
+            ),
+            encoding="utf-8",
+        )
+
+        self.assert_error_contains("Unresolved decision reference 'UI-MAP-999'")
+
+    def test_manifest_path_must_be_exact_lexical_repo_path(self) -> None:
+        rows = self._read_csv("docs/ui/ASSET_MANIFEST.csv")
+        rows[0]["repo_path"] = (
+            "docs/ui/assets/original/test/../test/asset-001.bin"
+        )
+        self._write_csv("docs/ui/ASSET_MANIFEST.csv", ASSET_MANIFEST_FIELDS, rows)
+
+        self.assert_error_contains("exact lexical repo-relative POSIX path")
+
+    def test_artifact_class_must_match_its_allowed_root(self) -> None:
+        rows = self._read_csv("docs/ui/ASSET_MANIFEST.csv")
+        rows[0]["artifact_class"] = "SELECTED_SOURCE"
+        self._write_csv("docs/ui/ASSET_MANIFEST.csv", ASSET_MANIFEST_FIELDS, rows)
+
+        self.assert_error_contains("outside its allowed repository root")
+
+    def test_unknown_artifact_class_is_rejected(self) -> None:
+        rows = self._read_csv("docs/ui/ASSET_MANIFEST.csv")
+        rows[0]["artifact_class"] = "UNREVIEWED_FILE"
+        self._write_csv("docs/ui/ASSET_MANIFEST.csv", ASSET_MANIFEST_FIELDS, rows)
+
+        self.assert_error_contains("Unknown artifact_class values")
+
+    def test_manifest_total_must_equal_golden_total(self) -> None:
+        rows = self._read_csv("docs/ui/ASSET_MANIFEST.csv")
+        removed = rows.pop()
+        (self.root / removed["repo_path"]).unlink()
+        self._write_csv("docs/ui/ASSET_MANIFEST.csv", ASSET_MANIFEST_FIELDS, rows)
+
+        self.assert_error_contains("Golden manifest asset count mismatch")
+
+    def test_screen_card_outside_screen_root_is_rejected(self) -> None:
+        rows = self._read_csv("docs/ui/SCREEN_CATALOG.csv")
+        rows[0]["screen_card"] = "docs/ui/sources/test/source-001.md"
+        self._write_csv("docs/ui/SCREEN_CATALOG.csv", SCREEN_CATALOG_FIELDS, rows)
+
+        self.assert_error_contains("Missing or unsafe screen card")
+
+    def test_manifest_symlink_is_rejected(self) -> None:
+        link = self.root / "docs/ui/assets/original/test/asset-001.bin"
+        target = self.root / "manifest-symlink-target.bin"
+        target.write_bytes(link.read_bytes())
+        link.unlink()
+        try:
+            link.symlink_to(target)
+        except (NotImplementedError, OSError) as exc:
+            self.skipTest(f"symbolic links are unavailable: {exc}")
+
+        self.assert_error_contains("symbolic link")
+
+    def test_primary_reference_symlink_is_rejected(self) -> None:
+        link = self.root / "docs/ui/assets/original/test/asset-001.bin"
+        target = self.root / "primary-reference-symlink-target.bin"
+        target.write_bytes(link.read_bytes())
+        link.unlink()
+        try:
+            link.symlink_to(target)
+        except (NotImplementedError, OSError) as exc:
+            self.skipTest(f"symbolic links are unavailable: {exc}")
+
+        self.assert_error_contains("Missing or unsafe primary_reference")
+
+    def test_manifest_ancestor_symlink_is_rejected(self) -> None:
+        link = self.root / "docs/ui/sources/test"
+        target = self.root / "docs/ui/sources/test-backing"
+        link.rename(target)
+        try:
+            link.symlink_to(target, target_is_directory=True)
+        except (NotImplementedError, OSError) as exc:
+            self.skipTest(f"symbolic links are unavailable: {exc}")
+
+        self.assert_error_contains("symbolic link")
+
+    def test_screen_card_symlink_is_rejected(self) -> None:
+        link = self.root / "docs/ui/screens/test/REC-001.md"
+        target = self.root / "screen-card-symlink-target.md"
+        target.write_text(link.read_text(encoding="utf-8"), encoding="utf-8")
+        link.unlink()
+        try:
+            link.symlink_to(target)
+        except (NotImplementedError, OSError) as exc:
+            self.skipTest(f"symbolic links are unavailable: {exc}")
+
+        self.assert_error_contains("symbolic link")
+
+    def test_primary_reference_outside_asset_roots_is_rejected(self) -> None:
+        readme = self.root / "docs/ui/README.md"
+        readme.write_text("fixture README\n", encoding="utf-8")
+        rows = self._read_csv("docs/ui/SCREEN_CATALOG.csv")
+        rows[0]["primary_reference"] = "../../README.md"
+        self._write_csv("docs/ui/SCREEN_CATALOG.csv", SCREEN_CATALOG_FIELDS, rows)
+
+        self.assert_error_contains("Missing or unsafe primary_reference")
 
     def test_unmanifested_selected_source_is_rejected(self) -> None:
         source = self.root / "docs/ui/sources/test/unmanifested.md"
@@ -166,11 +297,17 @@ class UiCatalogValidatorTests(unittest.TestCase):
         sources_root.mkdir(parents=True)
 
         decisions = "\n".join(
-            f"**UI-MAP-{number:03d}:** fixture decision"
+            f"| `UI-MAP-{number:03d}` | fixture decision |"
             for number in range(1, 7)
         )
         (ui_root / "SOURCE_RECONCILIATION.md").write_text(
-            decisions + "\n",
+            "# Fixture reconciliation\n\n"
+            "**UI-MAP-001:** a definition is not acceptance\n\n"
+            "## 8. Karara bağlanan altı uzlaştırma\n\n"
+            "| Karar | Sonuç |\n"
+            "|---|---|\n"
+            + decisions
+            + "\n\n## 9. Kalan sınırlar\n",
             encoding="utf-8",
         )
 
