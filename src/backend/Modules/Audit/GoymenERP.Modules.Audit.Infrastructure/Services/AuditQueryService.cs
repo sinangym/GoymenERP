@@ -25,7 +25,7 @@ internal sealed class AuditQueryService(
             ErpPermissions.IdentityAuditRead,
             companyContext.CompanyId,
             cancellationToken);
-        if (!scope.IsGranted)
+        if (!scope.IsGranted || !scope.IsCompanyWide)
         {
             return new AuditEventPage([], NormalizePageSize(pageSize), null);
         }

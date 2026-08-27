@@ -38,7 +38,16 @@ public static class ErpPermissions
         ],
         StringComparer.Ordinal);
 
+    public static IReadOnlySet<string> CompanyWideOnly { get; } = new HashSet<string>(
+        [
+            IdentityAuditRead,
+        ],
+        StringComparer.Ordinal);
+
     public static bool IsKnown(string permission) => All.Contains(permission);
 
     public static bool IsCritical(string permission) => Critical.Contains(permission);
+
+    public static bool RequiresCompanyWideScope(string permission) =>
+        CompanyWideOnly.Contains(permission);
 }

@@ -212,7 +212,7 @@ internal sealed class OrganizationService(
             scope.RoleCodes,
             beforeJson,
             afterJson,
-            command.Reason.Trim(),
+            command.Reason,
             ApprovalContextJson: null,
             AuditAiInvolvement.None,
             AiContextJson: null,

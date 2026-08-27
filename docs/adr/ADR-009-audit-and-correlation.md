@@ -38,6 +38,10 @@ bu karardan ayrı kalmalıdır.
    - correlation/causation kimlikleri,
    - ham değer yerine SHA-256 idempotency key özeti,
    - schema version, outcome ve bütün olay zarfının SHA-256 integrity hash'i.
+   Integrity hash ham draft üzerinden değil, önce trim/normalize edilerek kalıcılaştırılacak
+   canonical audit zarfı üzerinden üretilir. Kalıcı satırın tüm zarf alanları yeniden
+   okunarak aynı SHA-256 değeri hesaplanabilmelidir; rol kodları tekrarsız ve ordinal
+   sıralı JSON olarak zarfın parçasıdır.
 4. HTTP başlangıcında istek kapsamlı, değiştirilemez `CorrelationContext` kurulur.
    İstemciden correlation/causation kabul ediliyorsa yalnız 128 karaktere kadar güvenli
    ASCII kimliği geçerlidir; yoksa correlation üretilir ve response header'a yazılır.
@@ -51,8 +55,12 @@ bu karardan ayrı kalmalıdır.
    - `AuditDbContext.SaveChanges*` tüm normal yazmaları reddeder,
    - interceptor tracked audit update/delete durumunu reddeder,
    - SQL Server trigger doğrudan `UPDATE` ve `DELETE` işlemlerini `51000` ile reddeder.
-7. `/api/v1/audit/events` yalnız `identity.audit.read` izni ve aktif `CompanyContext`
-   ile okunur. Global EF filter her sorgu yolunda şirketi uygular; sayfa boyutu
+7. `/api/v1/audit/events` yalnız aktif şirket için **Company kapsamlı**
+   `identity.audit.read` izni ve aktif `CompanyContext` ile okunur. Audit olayı henüz
+   Site/Location/WorkCenter kaynak kapsamı taşımadığı için dar kapsamlı izin fail-closed
+   reddedilir. Kural merkezi authorization servisinde, ayrıca query service içinde
+   savunma katmanı olarak uygulanır. Global EF filter her sorgu yolunda şirketi uygular;
+   sayfa boyutu
    en fazla 100'dür. Büyük tabloda ileri sayfaların maliyetini büyütmemek için
    `(CompanyId, OccurredAtUtc, Id)` indeksine bağlı cursor/keyset sayfalama kullanılır;
    pahalı global toplam sorgusu üretilmez.
@@ -85,10 +93,11 @@ içindir.
 
 ## Test ve kanıt
 
-- Unit: correlation bağlamı değişmezliği, normal AuditDbContext yazma reddi ve SHA-256
-  kanıt doğrulaması.
+- Unit: correlation bağlamı değişmezliği, normal AuditDbContext yazma reddi, dar
+  kapsamlı audit izni reddi ve canonical kalıcı zarftan SHA-256 yeniden hesaplama.
 - HTTP integration: tam audit zarfı, zorunlu gerekçe, güvenli correlation, permission
-  reddi ve A/B şirket okuma izolasyonu.
+  reddi, Site kapsamlı audit rolüne `403` ve A/B şirket okuma izolasyonu.
 - Gerçek SQL Server: migration/seed, insert hata verdiğinde iş update rollback'i,
-  başarılı atomik update+audit, `UPDATE/DELETE` trigger reddi ve şirket filtreli audit
-  okuması.
+  başarılı atomik update+audit, kalıcı satırdan integrity hash yeniden hesaplama,
+  dar kapsamlı audit rolüne `403`, `UPDATE/DELETE` trigger reddi ve şirket filtreli
+  audit okuması.

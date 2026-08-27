@@ -59,6 +59,35 @@ public sealed class ErpAuthorizationServiceTests
     }
 
     [Fact]
+    public async Task AuditRead_WithSiteScope_IsDeniedBecauseCompanyScopeIsRequired()
+    {
+        var userId = Guid.NewGuid();
+        var companyId = Guid.NewGuid();
+        await using var dbContext = CreateDbContext();
+        AddAssignment(
+            dbContext,
+            userId,
+            companyId,
+            ErpPermissions.IdentityAuditRead,
+            AccessScopeType.Site,
+            Guid.NewGuid());
+        await dbContext.SaveChangesAsync();
+        var service = new ErpAuthorizationService(
+            dbContext,
+            new FakeCurrentUser(userId, companyId));
+
+        var scope = await service.GetPermissionScopeAsync(
+            ErpPermissions.IdentityAuditRead,
+            companyId);
+        var isGranted = await service.HasPermissionAsync(
+            ErpPermissions.IdentityAuditRead,
+            companyId);
+
+        Assert.Equal(PermissionScope.Denied, scope);
+        Assert.False(isGranted);
+    }
+
+    [Fact]
     public async Task ExpiredAssignment_IsDenied()
     {
         var userId = Guid.NewGuid();

@@ -66,6 +66,11 @@ internal sealed class ErpAuthorizationService(
             .ToListAsync(cancellationToken);
 
         var result = BuildScope(companyId, authorizationRows);
+        if (ErpPermissions.RequiresCompanyWideScope(permission) && !result.IsCompanyWide)
+        {
+            result = PermissionScope.Denied;
+        }
+
         _requestCache[cacheKey] = result;
         return result;
     }

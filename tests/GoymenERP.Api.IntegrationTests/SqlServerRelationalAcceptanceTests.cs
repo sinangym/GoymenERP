@@ -2,12 +2,15 @@ using System.Net;
 using System.Net.Http.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Application.Contracts;
+using GoymenERP.Modules.Audit.Domain.Events;
+using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Organization.Domain.Sites;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -80,13 +83,13 @@ public sealed class SqlServerRelationalAcceptanceTests
             10,
             await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM [organization].[WorkCenters];"));
         Assert.Equal(
-            4,
+            5,
             await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM [identity].[Users];"));
         Assert.Equal(
             5,
             await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM [identity].[Roles];"));
         Assert.Equal(
-            5,
+            6,
             await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM [identity].[RoleAssignments];"));
         Assert.Equal(
             0,
@@ -417,6 +420,27 @@ public sealed class SqlServerRelationalAcceptanceTests
                 "SELECT [IntegrityHash] FROM [audit].[AuditEvents] WHERE [CorrelationId] = @CorrelationId;",
                 new SqlParameter("@CorrelationId", correlationId))).Length);
 
+        await using (var persistedAuditScope = factory.Services.CreateAsyncScope())
+        {
+            persistedAuditScope.ServiceProvider
+                .GetRequiredService<ICompanyContext>()
+                .Set(TestCompanyIds.CompanyA);
+            var auditDbContext = persistedAuditScope.ServiceProvider
+                .GetRequiredService<AuditDbContext>();
+            var persistedAuditEvent = await auditDbContext.AuditEvents
+                .AsNoTracking()
+                .SingleAsync(x => x.CorrelationId == correlationId);
+            Assert.Equal(
+                AuditEventIntegrity.Compute(persistedAuditEvent.ToIntegrityEnvelope()),
+                persistedAuditEvent.IntegrityHash);
+        }
+
+        using var siteAuditReader = factory.CreateClientFor(
+            TestUsers.SiteAuditReader,
+            TestCompanyIds.CompanyA);
+        var siteScopedAuditRead = await siteAuditReader.GetAsync("/api/v1/audit/events");
+        Assert.Equal(HttpStatusCode.Forbidden, siteScopedAuditRead.StatusCode);
+
         var afterSuccessfulCommand = await ReadLocationProbeAsync(
             connection,
             """
@@ -608,6 +632,8 @@ internal sealed class SqlServerRelationalApiFactory : WebApplicationFactory<Prog
                 ["BootstrapIdentity:Users:2:DisplayName"] = "Şirket A SQL Salt Okuma Kullanıcısı",
                 ["BootstrapIdentity:Users:3:UserId"] = TestUsers.GroupAdmin,
                 ["BootstrapIdentity:Users:3:DisplayName"] = "Grup SQL Test Yöneticisi",
+                ["BootstrapIdentity:Users:4:UserId"] = TestUsers.SiteAuditReader,
+                ["BootstrapIdentity:Users:4:DisplayName"] = "Dar Kapsam Audit SQL Test Kullanıcısı",
             });
         });
     }

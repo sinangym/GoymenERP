@@ -1,7 +1,9 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
+using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
+using GoymenERP.Modules.Audit.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Audit.UnitTests;
@@ -49,6 +51,52 @@ public sealed class AuditFoundationTests
         Assert.Contains("SHA-256", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void AuditEvent_RejectsHashThatDoesNotMatchPersistedEnvelope()
+    {
+        var data = CreateData(Guid.NewGuid()) with { IntegrityHash = new string('B', 64) };
+
+        var exception = Assert.Throws<ArgumentException>(() => AuditEvent.Create(data));
+
+        Assert.Contains("canonical audit zarfıyla eşleşmelidir", exception.Message);
+    }
+
+    [Fact]
+    public void CanonicalPersistedEnvelope_RecomputesIntegrityHash()
+    {
+        var auditEvent = AuditEventFactory.Create(new AuditEventDraft(
+            Guid.NewGuid(),
+            "  test.event.v1  ",
+            "  Test.Entity  ",
+            $"  {Guid.NewGuid():D}  ",
+            "  Update  ",
+            1,
+            2,
+            "  User  ",
+            $"  {Guid.NewGuid():D}  ",
+            "  test.permission  ",
+            [" ROLE_B ", "ROLE_A", "ROLE_B"],
+            "  {\"value\":1}  ",
+            "  {\"value\":2}  ",
+            "  gerekçe  ",
+            "  {\"approval\":true}  ",
+            "  None  ",
+            "  {\"model\":\"test\"}  ",
+            "  Web  ",
+            "  127.0.0.1  ",
+            "  unit-test  ",
+            "  correlation-test  ",
+            "  causation-test  ",
+            "  idempotency-test  "));
+
+        Assert.Equal("test.event.v1", auditEvent.EventType);
+        Assert.Equal("gerekçe", auditEvent.Reason);
+        Assert.Equal("[\"ROLE_A\",\"ROLE_B\"]", auditEvent.RoleCodesJson);
+        Assert.Equal(
+            AuditEventIntegrity.Compute(auditEvent.ToIntegrityEnvelope()),
+            auditEvent.IntegrityHash);
+    }
+
     private static AuditEvent CreateEvent(Guid companyId)
     {
         return AuditEvent.Create(CreateData(companyId));
@@ -56,7 +104,7 @@ public sealed class AuditFoundationTests
 
     private static AuditEventData CreateData(Guid companyId)
     {
-        return new AuditEventData(
+        var envelope = new AuditEventEnvelope(
             Guid.NewGuid(),
             companyId,
             DateTimeOffset.UtcNow,
@@ -83,7 +131,7 @@ public sealed class AuditFoundationTests
             "causation-test",
             new string('A', 64),
             "Succeeded",
-            1,
-            new string('B', 64));
+            1);
+        return new AuditEventData(envelope, AuditEventIntegrity.Compute(envelope));
     }
 }

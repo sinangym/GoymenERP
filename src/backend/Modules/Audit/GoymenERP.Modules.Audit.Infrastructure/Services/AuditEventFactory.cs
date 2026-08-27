@@ -14,26 +14,57 @@ internal static class AuditEventFactory
     public static AuditEvent Create(AuditEventDraft draft)
     {
         ArgumentNullException.ThrowIfNull(draft);
-        ValidateJson(draft.BeforeJson, nameof(draft.BeforeJson));
-        ValidateJson(draft.AfterJson, nameof(draft.AfterJson));
-        ValidateOptionalJson(draft.ApprovalContextJson, nameof(draft.ApprovalContextJson));
-        ValidateOptionalJson(draft.AiContextJson, nameof(draft.AiContextJson));
+        var eventType = CanonicalRequired(draft.EventType, nameof(draft.EventType));
+        var entityType = CanonicalRequired(draft.EntityType, nameof(draft.EntityType));
+        var entityId = CanonicalRequired(draft.EntityId, nameof(draft.EntityId));
+        var operation = CanonicalRequired(draft.Operation, nameof(draft.Operation));
+        var actorType = CanonicalRequired(draft.ActorType, nameof(draft.ActorType));
+        var actorId = CanonicalRequired(draft.ActorId, nameof(draft.ActorId));
+        var permissionCode = CanonicalRequired(
+            draft.PermissionCode,
+            nameof(draft.PermissionCode));
+        var beforeJson = CanonicalRequired(draft.BeforeJson, nameof(draft.BeforeJson));
+        var afterJson = CanonicalRequired(draft.AfterJson, nameof(draft.AfterJson));
+        var reason = CanonicalRequired(draft.Reason, nameof(draft.Reason));
+        var approvalContextJson = CanonicalOptional(draft.ApprovalContextJson);
+        var aiInvolvement = CanonicalRequired(
+            draft.AiInvolvement,
+            nameof(draft.AiInvolvement));
+        var aiContextJson = CanonicalOptional(draft.AiContextJson);
+        var sourceChannel = CanonicalRequired(
+            draft.SourceChannel,
+            nameof(draft.SourceChannel));
+        var clientIpAddress = CanonicalOptional(draft.ClientIpAddress);
+        var userAgent = CanonicalOptional(draft.UserAgent);
+        var correlationId = CanonicalRequired(
+            draft.CorrelationId,
+            nameof(draft.CorrelationId));
+        var causationId = CanonicalOptional(draft.CausationId);
+        var idempotencyKey = CanonicalRequired(
+            draft.IdempotencyKey,
+            nameof(draft.IdempotencyKey));
+        var outcome = CanonicalRequired(draft.Outcome, nameof(draft.Outcome));
+
+        ValidateJson(beforeJson, nameof(draft.BeforeJson));
+        ValidateJson(afterJson, nameof(draft.AfterJson));
+        ValidateOptionalJson(approvalContextJson, nameof(draft.ApprovalContextJson));
+        ValidateOptionalJson(aiContextJson, nameof(draft.AiContextJson));
         ValidateAllowed(
-            draft.ActorType,
+            actorType,
             nameof(draft.ActorType),
             AuditActorTypes.User,
             AuditActorTypes.System,
             AuditActorTypes.Integration,
             AuditActorTypes.Ai);
         ValidateAllowed(
-            draft.AiInvolvement,
+            aiInvolvement,
             nameof(draft.AiInvolvement),
             AuditAiInvolvement.None,
             AuditAiInvolvement.Assisted,
             AuditAiInvolvement.Proposed,
             AuditAiInvolvement.Executed);
         ValidateAllowed(
-            draft.SourceChannel,
+            sourceChannel,
             nameof(draft.SourceChannel),
             SourceChannels.Web,
             SourceChannels.Mobile,
@@ -41,7 +72,7 @@ internal static class AuditEventFactory
             SourceChannels.Integration,
             SourceChannels.AiAssisted,
             SourceChannels.System);
-        ValidateAllowed(draft.Outcome, nameof(draft.Outcome), AuditOutcomes.Succeeded);
+        ValidateAllowed(outcome, nameof(draft.Outcome), AuditOutcomes.Succeeded);
 
         var id = Guid.NewGuid();
         var occurredAtUtc = DateTimeOffset.UtcNow;
@@ -51,68 +82,38 @@ internal static class AuditEventFactory
                 .Select(x => x.Trim())
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(x => x, StringComparer.Ordinal));
-        var idempotencyKeyHash = Hash(draft.IdempotencyKey.Trim());
-        var hashPayload = new
-        {
-            Id = id,
-            draft.CompanyId,
-            OccurredAtUtc = occurredAtUtc,
-            draft.EventType,
-            draft.EntityType,
-            draft.EntityId,
-            draft.Operation,
-            draft.EntityVersionBefore,
-            draft.EntityVersionAfter,
-            draft.ActorType,
-            draft.ActorId,
-            draft.PermissionCode,
-            RoleCodesJson = roleCodesJson,
-            draft.BeforeJson,
-            draft.AfterJson,
-            draft.Reason,
-            draft.ApprovalContextJson,
-            draft.AiInvolvement,
-            draft.AiContextJson,
-            draft.SourceChannel,
-            draft.ClientIpAddress,
-            draft.UserAgent,
-            draft.CorrelationId,
-            draft.CausationId,
-            IdempotencyKeyHash = idempotencyKeyHash,
-            draft.Outcome,
-            SchemaVersion = CurrentSchemaVersion,
-        };
-        var integrityHash = Hash(JsonSerializer.Serialize(hashPayload));
-
-        return AuditEvent.Create(new AuditEventData(
+        var idempotencyKeyHash = Hash(idempotencyKey);
+        var envelope = new AuditEventEnvelope(
             id,
             draft.CompanyId,
             occurredAtUtc,
-            draft.EventType,
-            draft.EntityType,
-            draft.EntityId,
-            draft.Operation,
+            eventType,
+            entityType,
+            entityId,
+            operation,
             draft.EntityVersionBefore,
             draft.EntityVersionAfter,
-            draft.ActorType,
-            draft.ActorId,
-            draft.PermissionCode,
+            actorType,
+            actorId,
+            permissionCode,
             roleCodesJson,
-            draft.BeforeJson,
-            draft.AfterJson,
-            draft.Reason,
-            draft.ApprovalContextJson,
-            draft.AiInvolvement,
-            draft.AiContextJson,
-            draft.SourceChannel,
-            draft.ClientIpAddress,
-            draft.UserAgent,
-            draft.CorrelationId,
-            draft.CausationId,
+            beforeJson,
+            afterJson,
+            reason,
+            approvalContextJson,
+            aiInvolvement,
+            aiContextJson,
+            sourceChannel,
+            clientIpAddress,
+            userAgent,
+            correlationId,
+            causationId,
             idempotencyKeyHash,
-            draft.Outcome,
-            CurrentSchemaVersion,
-            integrityHash));
+            outcome,
+            CurrentSchemaVersion);
+        var integrityHash = AuditEventIntegrity.Compute(envelope);
+
+        return AuditEvent.Create(new AuditEventData(envelope, integrityHash));
     }
 
     private static void ValidateJson(string json, string parameterName)
@@ -143,6 +144,19 @@ internal static class AuditEventFactory
     private static string Hash(string value)
     {
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
+    }
+
+    private static string CanonicalRequired(string? value, string parameterName)
+    {
+        var canonical = value?.Trim();
+        return string.IsNullOrWhiteSpace(canonical)
+            ? throw new ArgumentException("Audit değeri boş olamaz.", parameterName)
+            : canonical;
+    }
+
+    private static string? CanonicalOptional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     private static void ValidateAllowed(

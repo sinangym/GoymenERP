@@ -8,41 +8,64 @@ public sealed class AuditEvent
 
     private AuditEvent(AuditEventData data)
     {
-        Id = RequireId(data.Id, nameof(data.Id));
-        CompanyId = RequireId(data.CompanyId, nameof(data.CompanyId));
-        OccurredAtUtc = data.OccurredAtUtc;
-        EventType = RequireText(data.EventType, nameof(data.EventType), 160);
-        EntityType = RequireText(data.EntityType, nameof(data.EntityType), 160);
-        EntityId = RequireText(data.EntityId, nameof(data.EntityId), 128);
-        Operation = RequireText(data.Operation, nameof(data.Operation), 64);
-        EntityVersionBefore = data.EntityVersionBefore;
-        EntityVersionAfter = data.EntityVersionAfter;
-        ActorType = RequireText(data.ActorType, nameof(data.ActorType), 32);
-        ActorId = RequireText(data.ActorId, nameof(data.ActorId), 128);
-        PermissionCode = RequireText(data.PermissionCode, nameof(data.PermissionCode), 160);
-        RoleCodesJson = RequireText(data.RoleCodesJson, nameof(data.RoleCodesJson), 2000);
-        BeforeJson = RequireText(data.BeforeJson, nameof(data.BeforeJson), int.MaxValue);
-        AfterJson = RequireText(data.AfterJson, nameof(data.AfterJson), int.MaxValue);
-        Reason = RequireText(data.Reason, nameof(data.Reason), 1000);
-        ApprovalContextJson = NormalizeOptional(data.ApprovalContextJson);
-        AiInvolvement = RequireText(data.AiInvolvement, nameof(data.AiInvolvement), 32);
-        AiContextJson = NormalizeOptional(data.AiContextJson);
-        SourceChannel = RequireText(data.SourceChannel, nameof(data.SourceChannel), 32);
+        ArgumentNullException.ThrowIfNull(data.Envelope);
+        var envelope = data.Envelope;
+        Id = RequireId(envelope.Id, nameof(envelope.Id));
+        CompanyId = RequireId(envelope.CompanyId, nameof(envelope.CompanyId));
+        OccurredAtUtc = envelope.OccurredAtUtc;
+        EventType = RequireText(envelope.EventType, nameof(envelope.EventType), 160);
+        EntityType = RequireText(envelope.EntityType, nameof(envelope.EntityType), 160);
+        EntityId = RequireText(envelope.EntityId, nameof(envelope.EntityId), 128);
+        Operation = RequireText(envelope.Operation, nameof(envelope.Operation), 64);
+        EntityVersionBefore = envelope.EntityVersionBefore;
+        EntityVersionAfter = envelope.EntityVersionAfter;
+        ActorType = RequireText(envelope.ActorType, nameof(envelope.ActorType), 32);
+        ActorId = RequireText(envelope.ActorId, nameof(envelope.ActorId), 128);
+        PermissionCode = RequireText(
+            envelope.PermissionCode,
+            nameof(envelope.PermissionCode),
+            160);
+        RoleCodesJson = RequireText(envelope.RoleCodesJson, nameof(envelope.RoleCodesJson), 2000);
+        BeforeJson = RequireText(envelope.BeforeJson, nameof(envelope.BeforeJson), int.MaxValue);
+        AfterJson = RequireText(envelope.AfterJson, nameof(envelope.AfterJson), int.MaxValue);
+        Reason = RequireText(envelope.Reason, nameof(envelope.Reason), 1000);
+        ApprovalContextJson = NormalizeOptional(envelope.ApprovalContextJson);
+        AiInvolvement = RequireText(
+            envelope.AiInvolvement,
+            nameof(envelope.AiInvolvement),
+            32);
+        AiContextJson = NormalizeOptional(envelope.AiContextJson);
+        SourceChannel = RequireText(envelope.SourceChannel, nameof(envelope.SourceChannel), 32);
         ClientIpAddress = NormalizeOptional(
-            data.ClientIpAddress,
-            nameof(data.ClientIpAddress),
+            envelope.ClientIpAddress,
+            nameof(envelope.ClientIpAddress),
             64);
-        UserAgent = NormalizeOptional(data.UserAgent, nameof(data.UserAgent), 512);
-        CorrelationId = RequireText(data.CorrelationId, nameof(data.CorrelationId), 128);
-        CausationId = NormalizeOptional(data.CausationId, nameof(data.CausationId), 128);
+        UserAgent = NormalizeOptional(envelope.UserAgent, nameof(envelope.UserAgent), 512);
+        CorrelationId = RequireText(
+            envelope.CorrelationId,
+            nameof(envelope.CorrelationId),
+            128);
+        CausationId = NormalizeOptional(
+            envelope.CausationId,
+            nameof(envelope.CausationId),
+            128);
         IdempotencyKeyHash = RequireSha256(
-            data.IdempotencyKeyHash,
-            nameof(data.IdempotencyKeyHash));
-        Outcome = RequireText(data.Outcome, nameof(data.Outcome), 32);
-        SchemaVersion = data.SchemaVersion > 0
-            ? data.SchemaVersion
-            : throw new ArgumentOutOfRangeException(nameof(data.SchemaVersion));
+            envelope.IdempotencyKeyHash,
+            nameof(envelope.IdempotencyKeyHash));
+        Outcome = RequireText(envelope.Outcome, nameof(envelope.Outcome), 32);
+        SchemaVersion = envelope.SchemaVersion > 0
+            ? envelope.SchemaVersion
+            : throw new ArgumentOutOfRangeException(nameof(envelope.SchemaVersion));
         IntegrityHash = RequireSha256(data.IntegrityHash, nameof(data.IntegrityHash));
+        if (!string.Equals(
+                IntegrityHash,
+                AuditEventIntegrity.Compute(ToIntegrityEnvelope()),
+                StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "IntegrityHash kalıcı canonical audit zarfıyla eşleşmelidir.",
+                nameof(data.IntegrityHash));
+        }
     }
 
     public Guid Id { get; private set; }
@@ -107,6 +130,38 @@ public sealed class AuditEvent
         return new AuditEvent(data);
     }
 
+    public AuditEventEnvelope ToIntegrityEnvelope()
+    {
+        return new AuditEventEnvelope(
+            Id,
+            CompanyId,
+            OccurredAtUtc,
+            EventType,
+            EntityType,
+            EntityId,
+            Operation,
+            EntityVersionBefore,
+            EntityVersionAfter,
+            ActorType,
+            ActorId,
+            PermissionCode,
+            RoleCodesJson,
+            BeforeJson,
+            AfterJson,
+            Reason,
+            ApprovalContextJson,
+            AiInvolvement,
+            AiContextJson,
+            SourceChannel,
+            ClientIpAddress,
+            UserAgent,
+            CorrelationId,
+            CausationId,
+            IdempotencyKeyHash,
+            Outcome,
+            SchemaVersion);
+    }
+
     private static Guid RequireId(Guid value, string parameterName)
     {
         return value == Guid.Empty
@@ -161,7 +216,7 @@ public sealed class AuditEvent
     }
 }
 
-public sealed record AuditEventData(
+public sealed record AuditEventEnvelope(
     Guid Id,
     Guid CompanyId,
     DateTimeOffset OccurredAtUtc,
@@ -188,5 +243,8 @@ public sealed record AuditEventData(
     string? CausationId,
     string IdempotencyKeyHash,
     string Outcome,
-    int SchemaVersion,
+    int SchemaVersion);
+
+public sealed record AuditEventData(
+    AuditEventEnvelope Envelope,
     string IntegrityHash);

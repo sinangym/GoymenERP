@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
+using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Organization.Application.Contracts;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -30,7 +31,7 @@ public sealed class AuditAcceptanceTests(GoymenErpApiFactory factory)
             new SetLocationActiveState(
                 !location.IsActive,
                 location.Version,
-                "Planlı lokasyon bakımına hazırlık"));
+                "  Planlı lokasyon bakımına hazırlık  "));
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         Assert.Equal(
@@ -57,12 +58,27 @@ public sealed class AuditAcceptanceTests(GoymenErpApiFactory factory)
         Assert.Equal(location.Version + 1, auditEvent.EntityVersionAfter);
         Assert.Equal(64, auditEvent.IdempotencyKeyHash.Length);
         Assert.Equal(64, auditEvent.IntegrityHash.Length);
+        Assert.Equal(
+            AuditEventIntegrity.Compute(auditEvent.ToIntegrityEnvelope()),
+            auditEvent.IntegrityHash);
         Assert.DoesNotContain("Idempotency-Key", auditEvent.IdempotencyKeyHash, StringComparison.Ordinal);
 
         using var before = JsonDocument.Parse(auditEvent.BeforeJson);
         using var after = JsonDocument.Parse(auditEvent.AfterJson);
         Assert.Equal(location.IsActive, before.RootElement.GetProperty("IsActive").GetBoolean());
         Assert.Equal(!location.IsActive, after.RootElement.GetProperty("IsActive").GetBoolean());
+    }
+
+    [Fact]
+    public async Task SiteScopedAuditPermission_CannotReadCompanyWideAudit()
+    {
+        using var client = factory.CreateClientFor(
+            TestUsers.SiteAuditReader,
+            TestCompanyIds.CompanyA);
+
+        var response = await client.GetAsync("/api/v1/audit/events");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]

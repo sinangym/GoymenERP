@@ -3,7 +3,8 @@
 - Tarih: 2026-08-27
 - Dal: `codex/erp-000d-audit-correlation`
 - Taban: `main` / `fe87fc4f995a4dc4fb2e38b1399e96c95a2d09cd`
-- Durum: Uygulama ve yerel kabul doğrulaması tamamlandı; review için hazır
+- Durum: İki review blocker'ı kapatıldı ve yerel kabul doğrulaması tamamlandı;
+  uzak CI ve son re-review bekleniyor
 - Bağlayıcı ADR: `docs/adr/ADR-009-audit-and-correlation.md`
 
 ## Sonuç
@@ -34,9 +35,12 @@ idempotency/concurrency ile ERP-000F outbox/inbox kapsamı da bu göreve karış
 - Şirket, zaman, correlation ve entity erişim yolları için indeksler.
 - JSON geçerliliği, boş CompanyId ve schema version SQL check constraint'leri.
 - SHA-256 idempotency key özeti ve tüm kanıt zarfı için SHA-256 integrity hash.
+- Draft değerlerini önce kalıcı biçime canonicalize eden, hash'i aynı zarf üzerinden
+  üreten ve DB satırından yeniden hesaplanabilir kılan integrity sözleşmesi.
 - Server tarafından kurulan değişmez `CorrelationContext` ve response correlation
   header'ı.
-- `identity.audit.read` + `CompanyContext` korumalı audit okuma endpoint'i.
+- Yalnız Company kapsamlı `identity.audit.read` + `CompanyContext` korumalı audit okuma
+  endpoint'i; Site/Location/WorkCenter kapsamlı izin fail-closed reddedilir.
 - Yüksek hacim için toplam saymayan, indeks uyumlu cursor/keyset sayfalama.
 - Etkili RBAC rol kodlarının permission scope ile birlikte snapshot olarak taşınması.
 - AT-003 kabul matrisinin otomatik kanıtlarla güncellenmesi.
@@ -92,10 +96,15 @@ version conflict, eksik gerekçe veya geçersiz correlation kalıcı başarılı
 - EF interceptor tracked audit `Modified/Deleted` durumunu reddeder.
 - SQL trigger doğrudan `UPDATE/DELETE` işlemlerini hata `51000` ile reddeder.
 - Audit okuma permission kontrolünü hem endpoint hem query service uygular.
+- `identity.audit.read` merkezi authorization katmanında Company kapsamı zorunlu bir
+  permission'dır; dar kapsamlı rol HTTP katmanında `403` alır.
 - EF global query filter seçili `CompanyId` değerini her audit sorgusunda zorunlu tutar.
 - A şirketinde audit okuyan grup yöneticisi, B şirketi correlation kimliğini bilse dahi
   sonuç veya toplam bilgisi alamaz.
 - Ham idempotency anahtarı audit tablosuna yazılmaz.
+- Integrity hash ham draft'tan değil; trim edilmiş zorunlu/opsiyonel alanlar, tekrarsız
+  ve sıralı rol kodları ile kalıcılaştırılan canonical zarftan hesaplanır. Bu nedenle
+  SQL Server'dan okunan satır aynı SHA-256 değerini yeniden üretir.
 
 SQL sysadmin teknik olarak trigger'ı devre dışı bırakabilir. Off-site/WORM arşiv,
 legal hold, imzalı/zaman damgalı dış kanıt ve retention/imha politikası bu kabulün
@@ -113,15 +122,16 @@ dışındadır; `OPEN-018` ve backup/restore çalışmasıyla production öncesi
 
 ## Doğrulama sonucu
 
-- Release backend testleri: toplam **38/38** geçti.
-  - Audit unit: 3/3.
-  - Identity unit: 6/6.
+- Release backend testleri: toplam **42/42** geçti.
+  - Audit unit: 5/5.
+  - Identity unit: 7/7.
   - Organization unit: 10/10.
-  - HTTP/claims/audit integration: 18/18.
+  - HTTP/claims/audit integration: 19/19.
   - Gerçek Docker SQL Server relational acceptance: 1/1.
 - SQL kabulünde migration/seed, audit insert hata enjeksiyonu ile atomik rollback,
   başarılı update+audit, no-change audit, SQL `51000` update/delete reddi, rol/izin
-  snapshot'ı, A/B audit izolasyonu ve gerçek SQL keyset sayfalama doğrulandı.
+  snapshot'ı, canonical kalıcı zarftan integrity hash yeniden hesaplama, dar kapsamlı
+  audit okuyucuya `403`, A/B audit izolasyonu ve gerçek SQL keyset sayfalama doğrulandı.
 - Organization, Identity ve Audit idempotent migration scriptleri üretildi.
 - `dotnet format --verify-no-changes` ve `git diff --check` geçti.
 - NuGet vulnerability taraması: bilinen açık yok.
