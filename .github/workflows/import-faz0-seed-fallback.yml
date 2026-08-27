@@ -1,0 +1,97 @@
+name: Import Faz 0 Repository Seed Fallback
+
+on:
+  push:
+    paths:
+      - .github/workflows/import-faz0-seed-fallback.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  SEED_PASSPHRASE: GEF0-7bb6d4d1-29b8-4e1c-b50e-9acaf7b19b4e
+
+jobs:
+  import-seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Acquire package
+        shell: bash
+        run: |
+          set -euo pipefail
+          urls=(
+            "https://goymen-erp-seed-260827a.loca.lt/seed.enc"
+            "https://goymen-erp-seed-260827b.loca.lt/seed.enc"
+            "https://goymen-erp-seed-260827c.loca.lt/seed.enc"
+            "http://bore.pub:45031/seed.enc"
+            "http://bore.pub:45037/seed.enc"
+            "http://bore.pub:45041/seed.enc"
+            "http://bore.pub:45043/seed.enc"
+            "http://bore.pub:45047/seed.enc"
+            "https://goymen-erp-seed-260827.serveo.net/seed.enc"
+          )
+          ok=0
+          for url in "${urls[@]}"; do
+            rm -f /tmp/seed.enc /tmp/faz0.zip
+            curl --fail --silent --show-error --location --retry 2 \
+              --connect-timeout 10 --max-time 150 \
+              -H "bypass-tunnel-reminder: true" "$url" -o /tmp/seed.enc || continue
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+              -in /tmp/seed.enc -out /tmp/faz0.zip \
+              -pass "pass:${SEED_PASSPHRASE}" >/dev/null 2>&1 || continue
+            unzip -tq /tmp/faz0.zip >/dev/null || continue
+            ok=1
+            break
+          done
+          test "$ok" = 1
+
+      - name: Install exact repository seed
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/faz0 && mkdir -p /tmp/faz0
+          unzip -q /tmp/faz0.zip -d /tmp/faz0
+          seed="$(find /tmp/faz0 -type d -name 15_REPO_SEED -print -quit)"
+          test -n "$seed"
+          test "$(find "$seed" -type f | wc -l | tr -d ' ')" = 40
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a "$seed"/. .
+          test "$(find . -path './.git' -prune -o -type f -print | wc -l | tr -d ' ')" = 40
+          test -f AGENTS.md
+          test -f README.md
+          test -f docs/decisions/KARAR_SICILI.md
+          test -f docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md
+          test -f docs/backlog/task_manifest.json
+
+      - name: Commit and push
+        id: push
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Sinan Göymen"
+          git config user.email "235009049+sinangym@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "Seed repository from Faz 0 package v1.0"
+            git push origin HEAD:main
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Completion callback
+        if: always()
+        shell: bash
+        run: |
+          sha='${{ steps.push.outputs.sha }}'
+          for base in \
+            'https://goymen-erp-seed-260827a.loca.lt' \
+            'https://goymen-erp-seed-260827b.loca.lt' \
+            'https://goymen-erp-seed-260827c.loca.lt'; do
+            curl -sS --max-time 10 -H 'bypass-tunnel-reminder: true' \
+              "${base}/COMPLETE_${sha}" >/dev/null || true
+          done
