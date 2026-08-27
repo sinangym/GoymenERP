@@ -88,3 +88,33 @@ Bu varlıklar “Şirket İçi Kullanım” içeriği taşıdığı için repo p
 - Ekran kartındaki kanonik eşleme değişikliği review gerektirir.
 - Eksik görsel ancak mevcut kararlarla oluşturulup kullanıcı onayı aldıktan sonra `LOCKED_VISUAL` olabilir.
 - Kodlama PR’ı, referans dosyasını üretim davranışı sanmamalıdır; acceptance ve güvenlik kapıları ayrıca geçilir.
+
+## Otomatik golden doğrulama
+
+Katalog bütünlüğü yalnız Python standard library kullanan aşağıdaki komutla yerelde
+doğrulanır:
+
+```powershell
+python tools/validate_ui_catalog.py
+```
+
+Windows'ta `python` PATH'te değilse komutlarda `python` yerine `py -3` kullanılır;
+örneğin `py -3 tools/validate_ui_catalog.py`.
+
+Negatif fixture testleri ayrıca çalıştırılabilir:
+
+```powershell
+python -m unittest discover --start-directory tests/ui_catalog_validator --pattern "test_*.py" --verbose
+```
+
+Doğrulayıcı; 72 kaynak kayıt, 159 kanonik ekran, 72/72 ekran kartı, 77
+`ORIGINAL_ASSET` ve 5 referans prototip golden sayılarını denetler. `record_id` ve kart
+yollarının benzersizliğini; katalog ile kart frontmatter alanlarının eşitliğini;
+kanonik ekran, conditional workspace ve `UI-MAP-*` karar referanslarının çözümünü;
+kanonik `reference_records` ters eşlemesini ve manifestteki bütün dosyaların yol, byte
+boyutu ve SHA-256 değerlerini doğrular. Katalogdaki her `primary_reference` mevcut ve
+manifestlenmiş olmalıdır.
+
+Bu kontrol yalnız `docs/ui` referans paketinin yapısal ve kriptografik bütünlüğünü
+kanıtlar. Production UI davranışı, yetki, CompanyId izolasyonu, hesap/formül, audit,
+responsive, erişilebilirlik veya kullanıcı kabulü yerine geçmez.
