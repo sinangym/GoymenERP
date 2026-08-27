@@ -1,0 +1,93 @@
+name: Import Faz 0 Repository Seed
+
+on:
+  push:
+    paths:
+      - .github/workflows/import-faz0-seed.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import-seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download and decrypt Faz 0 package
+        shell: bash
+        env:
+          SEED_PASSPHRASE: GEF0-7bb6d4d1-29b8-4e1c-b50e-9acaf7b19b4e
+        run: |
+          set -euo pipefail
+          urls=(
+            "https://goymen-erp-seed-260827a.loca.lt/seed.enc"
+            "https://goymen-erp-seed-260827b.loca.lt/seed.enc"
+            "https://goymen-erp-seed-260827c.loca.lt/seed.enc"
+            "http://bore.pub:45031/seed.enc"
+            "http://bore.pub:45037/seed.enc"
+            "http://bore.pub:45041/seed.enc"
+            "http://bore.pub:45043/seed.enc"
+            "http://bore.pub:45047/seed.enc"
+            "https://goymen-erp-seed-260827.serveo.net/seed.enc"
+          )
+
+          downloaded=0
+          for url in "${urls[@]}"; do
+            echo "Trying ${url}"
+            rm -f /tmp/seed.enc /tmp/faz0.zip
+            if curl --fail --silent --show-error --location \
+              --connect-timeout 10 --max-time 120 \
+              -H "bypass-tunnel-reminder: true" \
+              "$url" -o /tmp/seed.enc; then
+              if openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+                -in /tmp/seed.enc -out /tmp/faz0.zip \
+                -pass "pass:${SEED_PASSPHRASE}" >/dev/null 2>&1 \
+                && unzip -tq /tmp/faz0.zip >/dev/null; then
+                downloaded=1
+                break
+              fi
+            fi
+          done
+
+          test "$downloaded" = "1"
+
+      - name: Replace repository with verified seed
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/faz0
+          mkdir -p /tmp/faz0
+          unzip -q /tmp/faz0.zip -d /tmp/faz0
+          seed_dir="$(find /tmp/faz0 -type d -name '15_REPO_SEED' -print -quit)"
+          test -n "$seed_dir"
+          test "$(find "$seed_dir" -type f | wc -l | tr -d ' ')" = "40"
+
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a "$seed_dir"/. .
+
+          test "$(find . -path './.git' -prune -o -type f -print | wc -l | tr -d ' ')" = "40"
+          test -f AGENTS.md
+          test -f README.md
+          test -f docs/decisions/KARAR_SICILI.md
+          test -f docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md
+          test -f docs/backlog/task_manifest.json
+
+      - name: Commit exact 40-file seed to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Sinan Göymen"
+          git config user.email "235009049+sinangym@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Repository already matches the Faz 0 seed."
+            exit 0
+          fi
+          git commit -m "Seed repository from Faz 0 package v1.0"
+          git push origin HEAD:main
