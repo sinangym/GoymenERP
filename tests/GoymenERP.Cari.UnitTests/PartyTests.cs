@@ -24,25 +24,22 @@ public sealed class PartyTests
     }
 
     [Fact]
-    public void Cari_code_is_not_mutable_after_creation()
+    public void Group_party_identity_has_no_public_mutation_before_cross_company_policy()
     {
-        var property = typeof(Party).GetProperty(nameof(Party.CariCode));
+        var publicMutationMethods = typeof(Party)
+            .GetMethods()
+            .Where(method =>
+                method.DeclaringType == typeof(Party)
+                && !method.IsStatic
+                && !method.IsSpecialName)
+            .Select(method => method.Name)
+            .ToArray();
 
-        Assert.NotNull(property);
-        Assert.False(property!.SetMethod?.IsPublic ?? false);
-    }
-
-    [Fact]
-    public void Sensitive_legal_name_has_no_public_mutation_before_approval_wiring()
-    {
-        var property = typeof(Party).GetProperty(nameof(Party.LegalName));
-
-        Assert.NotNull(property);
-        Assert.False(property!.SetMethod?.IsPublic ?? false);
-        Assert.DoesNotContain(
-            typeof(Party).GetMethods(),
-            method => method.Name.Contains("LegalName", StringComparison.Ordinal)
-                      && method.Name != $"get_{nameof(Party.LegalName)}");
+        Assert.Empty(publicMutationMethods);
+        Assert.False(typeof(Party).GetProperty(nameof(Party.CariCode))!.SetMethod?.IsPublic ?? false);
+        Assert.False(typeof(Party).GetProperty(nameof(Party.LegalName))!.SetMethod?.IsPublic ?? false);
+        Assert.False(typeof(Party).GetProperty(nameof(Party.TradeName))!.SetMethod?.IsPublic ?? false);
+        Assert.False(typeof(Party).GetProperty(nameof(Party.IsActive))!.SetMethod?.IsPublic ?? false);
     }
 
     [Fact]
@@ -53,23 +50,5 @@ public sealed class PartyTests
             default,
             PartyKind.LegalEntity,
             "Geçersiz Cari"));
-    }
-
-    [Fact]
-    public void Deactivate_and_reactivate_preserve_identity()
-    {
-        var id = Guid.NewGuid();
-        var code = PartyCode.FromSequence(9);
-        var party = new Party(id, code, PartyKind.LegalEntity, "Göymen Test A.Ş.");
-
-        party.Deactivate();
-        Assert.False(party.IsActive);
-        Assert.Equal(id, party.Id);
-        Assert.Equal(code, party.CariCode);
-
-        party.Reactivate();
-        Assert.True(party.IsActive);
-        Assert.Equal(id, party.Id);
-        Assert.Equal(code, party.CariCode);
     }
 }
