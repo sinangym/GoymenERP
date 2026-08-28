@@ -7,6 +7,7 @@ using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
+using GoymenERP.Modules.Counterparty.Infrastructure;
 using GoymenERP.Modules.Idempotency.Infrastructure;
 using GoymenERP.Modules.Organization.Infrastructure;
 using GoymenERP.Modules.Identity.Infrastructure;
@@ -36,6 +37,7 @@ builder.Services.AddOrganizationModule(
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
 builder.Services.AddIdentityModule(builder.Configuration);
+builder.Services.AddCounterpartyModule(builder.Configuration);
 builder.Services.AddErpAuthentication(builder.Configuration, builder.Environment);
 
 var allowedOrigins = builder.Configuration
@@ -60,6 +62,7 @@ app.MapHealthChecks("/health/live").AllowAnonymous();
 app.MapOrganizationEndpoints();
 app.MapIdentityEndpoints();
 app.MapAuditEndpoints();
+app.MapCounterpartyEndpoints();
 
 if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
 {
@@ -67,6 +70,7 @@ if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
     await app.Services.InitializeIdentityModuleAsync();
     await app.Services.InitializeAuditModuleAsync();
     await app.Services.InitializeIdempotencyModuleAsync();
+    await app.Services.InitializeCounterpartyModuleAsync();
 }
 
 await app.RunAsync();
