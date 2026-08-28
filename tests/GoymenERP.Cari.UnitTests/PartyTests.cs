@@ -1,6 +1,6 @@
 using GoymenERP.Modules.Counterparty.Domain.Parties;
 
-namespace GoymenERP.Cari.UnitTests;
+namespace GoymenERP.Counterparty.UnitTests;
 
 public sealed class PartyTests
 {
@@ -17,7 +17,7 @@ public sealed class PartyTests
             "Örnek Ticari Ad");
 
         Assert.Equal(kind, party.Kind);
-        Assert.Equal("CAR-000042", party.CariCode.Value);
+        Assert.Equal("CAR-000042", party.Code.Value);
         Assert.Equal("Örnek Taraf", party.LegalName);
         Assert.Equal("Örnek Ticari Ad", party.TradeName);
         Assert.True(party.IsActive);
@@ -36,7 +36,7 @@ public sealed class PartyTests
             .ToArray();
 
         Assert.Empty(publicMutationMethods);
-        Assert.False(typeof(Party).GetProperty(nameof(Party.CariCode))!.SetMethod?.IsPublic ?? false);
+        Assert.False(typeof(Party).GetProperty(nameof(Party.Code))!.SetMethod?.IsPublic ?? false);
         Assert.False(typeof(Party).GetProperty(nameof(Party.LegalName))!.SetMethod?.IsPublic ?? false);
         Assert.False(typeof(Party).GetProperty(nameof(Party.TradeName))!.SetMethod?.IsPublic ?? false);
         Assert.False(typeof(Party).GetProperty(nameof(Party.IsActive))!.SetMethod?.IsPublic ?? false);
