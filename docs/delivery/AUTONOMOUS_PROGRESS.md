@@ -111,3 +111,71 @@ OPEN DECISIONS: OPEN-021; OPEN-020 raporlama AI sağlayıcı/veri sınıfı bağ
 MAIN SHA: 5f577892e9eeb51034cb8906e8a5e01a31d8680c
 ACTIVE PRS: #9 Draft; #8 Draft; #6 Draft; #2 Draft
 ```
+
+## 2026-08-28 03:04 +03:00 — Döngü 4
+
+- ERP-000E kullanıcı tarafından kabul edildi ve PR #6, `main` dalına
+  `9f08ff16447eca89682d0a084e2341b9c2b433c2` commit'iyle squash merge edildi.
+- Governance Draft PR #8 güncel `main` ile conflict olmadan senkronize edildi. Head
+  `f8703278c186ae4f2b25462880604e6084fc5ee0` için CI run `33128061915`; backend,
+  frontend, gerçek SQL Server relational acceptance ve container build işlerinde tamamen
+  başarılı oldu. Self-review yeni kod/güvenlik blocker'ı bulmadı.
+- UI katalog golden validator Draft PR #9 güncel `main` ile conflict olmadan senkronize
+  edildi. Head `8e7d41a5ff0f972007a70b43a53573a490ff23a3` için UI run `33128067501`
+  ve ana CI run `33128067513` tamamen başarılı oldu; 24/24 yerel fixture testi ve gerçek
+  katalog doğrulaması da geçti. Self-review yeni P0/P1 bulmadı.
+- PR #8 `AGENTS.md` ve governance politikasına, PR #9 ise `.github` CI workflow'una
+  dokunduğu için protokolün kontrol yüzeyi istisnası uygulandı. İki PR da başarılı
+  doğrulamaya rağmen otomatik merge edilmedi ve insan/ChatGPT review'u için Draft kaldı.
+- Draft PR #2'nin daha önce kaydedilmiş yedi blocker'ı korunuyor; conflict veya mimari
+  tutarsızlık sessizce çözülmedi.
+- ERP-000F readiness incelemesi implementation için `NO-GO`, yalnız spec/ADR/acceptance
+  hazırlığı için `GO` verdi. Gerçek `ADR-006`, event ownership/schema, dispatcher
+  lease/crash recovery, poison/dead-letter, inbox atomikliği, ordering, messaging
+  retention ve gerçek SQL race kabul sözleşmeleri eksik. Üretim kodu/migration yazılmadı;
+  güncel `main`den `codex/erp-000f-spec-gate` spec-only dalı ayrıldı.
+
+```text
+DONE: ERP-000E PR #6 merge 9f08ff1; PR #8/#9 main sync ve güncel yeşil CI
+IN REVIEW: governance Draft #8; UI validator Draft #9
+BLOCKED: ERP-000F implementation (ADR/spec/acceptance ve açık kararlar); PR #2 (yedi blocker)
+SAFE NEXT: ERP-000F spec-only ADR/OPEN/acceptance Draft PR; PR #8/#9 insan review'u
+OPEN DECISIONS: OPEN-020; OPEN-021; ERP-000F için OPEN-022..OPEN-025 hazırlanacak
+MAIN SHA: 9f08ff16447eca89682d0a084e2341b9c2b433c2
+ACTIVE PRS: #9 Draft; #8 Draft; #2 Draft
+```
+
+## 2026-08-28 03:32 +03:00 — Döngü 5
+
+- ERP-000F readiness için güncel `main`den ayrılan `codex/erp-000f-spec-gate` dalında
+  yalnız dokümantasyon kapsamlı Draft PR #10 açıldı. Head
+  `fd5d2e905fb5cc3ff27a4b51b77edd8338bf53fa` ve CI run `33129862266`; backend,
+  frontend, gerçek SQL Server relational acceptance ve container build işlerinin tamamı
+  başarılı oldu.
+- PR #10, fiziksel ADR-006 önerisini, `OPEN-022`…`OPEN-025` bloklayıcı kararlarını,
+  ERP-000F feature/readiness sözleşmesini ve `AT-079`…`AT-094` arasındaki 16 taslak kabul
+  senaryosunu ekledi. Toplam 86 acceptance ID benzersiz; yeni kanıt alanları bilinçli olarak
+  boş ve durumlar `Taslak` kaldı. PR #2 için ayrılmış `AT-071`…`AT-078` değiştirilmedi.
+- Üç bağımsız self-review; tenant scheduler/context, outbox/inbox unique scope,
+  event/envelope hash sürümleme, lease fencing, audit aktörü, harici duplicate sınırı ve
+  coding gate üzerinde kalan P0/P1 bulmadı.
+- ERP-000F implementation hâlâ `NO-GO / BLOCKED` durumundadır. ADR-006 insan review'uyla
+  kabul edilmeden ve `OPEN-022`…`OPEN-025` kapanmadan feature veya test-substrate kodu,
+  migration, worker, adapter ya da pilot event başlatılmadı.
+- Governance Draft PR #8 head `f8703278c186ae4f2b25462880604e6084fc5ee0`, CI
+  `33128061915`; UI validator Draft PR #9 head
+  `8e7d41a5ff0f972007a70b43a53573a490ff23a3`, UI/ana CI `33128067501` ve
+  `33128067513` ile yeşildir. İkisi de kontrol yüzeyine dokunduğu için manuel review'da
+  ve Draft kalır.
+- Draft PR #2'nin yedi blocker'ı korunmuştur; conflict ve mimari tutarsızlıklar sessizce
+  çözülmemiştir.
+
+```text
+DONE: ERP-000E PR #6 merge; PR #8/#9 güncel yeşil CI; ERP-000F spec/readiness PR #10 yeşil CI
+IN REVIEW: ERP-000F spec Draft #10; governance Draft #8; UI validator Draft #9
+BLOCKED: ERP-000F implementation (ADR-006 + OPEN-022..025); PR #2 (yedi blocker)
+SAFE NEXT: PR #10/#8/#9 manuel review; yalnız bağımsız ve kontrol yüzeyi olmayan güvenli işler
+OPEN DECISIONS: OPEN-020; OPEN-021; OPEN-022; OPEN-023; OPEN-024; OPEN-025
+MAIN SHA: 9f08ff16447eca89682d0a084e2341b9c2b433c2
+ACTIVE PRS: #10 Draft; #9 Draft; #8 Draft; #2 Draft
+```
