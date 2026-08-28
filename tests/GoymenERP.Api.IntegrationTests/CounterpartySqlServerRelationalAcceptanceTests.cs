@@ -112,11 +112,9 @@ public sealed class CounterpartySqlServerRelationalAcceptanceTests
         SqlServerRelationalApiFactory factory,
         Guid partyId)
     {
-        using var client = factory.CreateClientFor(
-            TestUsers.GroupAdmin,
-            TestCompanyIds.CompanyA);
+        using var groupClient = factory.CreateClientFor(TestUsers.GroupAdmin);
 
-        using var groupResponse = await client.GetAsync("/api/v1/counterparties");
+        using var groupResponse = await groupClient.GetAsync("/api/v1/counterparties");
         Assert.Equal(HttpStatusCode.OK, groupResponse.StatusCode);
         using var groupJson = JsonDocument.Parse(
             await groupResponse.Content.ReadAsStringAsync());
@@ -129,8 +127,10 @@ public sealed class CounterpartySqlServerRelationalAcceptanceTests
             .ToArray();
         Assert.Equal(2, groupAccounts.Length);
 
-        using var companyResponse = await client.GetAsync(
-            $"/api/v1/counterparties?companyId={TestCompanyIds.CompanyA}");
+        using var companyClient = factory.CreateClientFor(
+            TestUsers.GroupAdmin,
+            TestCompanyIds.CompanyA);
+        using var companyResponse = await companyClient.GetAsync("/api/v1/counterparties");
         Assert.Equal(HttpStatusCode.OK, companyResponse.StatusCode);
         using var companyJson = JsonDocument.Parse(
             await companyResponse.Content.ReadAsStringAsync());
@@ -144,6 +144,13 @@ public sealed class CounterpartySqlServerRelationalAcceptanceTests
         Assert.Equal(
             TestCompanyIds.CompanyA,
             companyAccounts[0].GetProperty("companyId").GetGuid());
+
+        using var conflictingFilter = await companyClient.GetAsync(
+            $"/api/v1/counterparties?companyId={TestCompanyIds.CompanyB}");
+        Assert.Equal(HttpStatusCode.OK, conflictingFilter.StatusCode);
+        using var conflictingJson = JsonDocument.Parse(
+            await conflictingFilter.Content.ReadAsStringAsync());
+        Assert.Empty(conflictingJson.RootElement.EnumerateArray());
     }
 
     private static Task InsertPartyAsync(
