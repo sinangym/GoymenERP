@@ -8,13 +8,13 @@ public sealed class Party
 
     public Party(
         Guid id,
-        PartyCode cariCode,
+        PartyCode partyCode,
         PartyKind kind,
         string legalName,
         string? tradeName = null)
     {
         Id = RequireId(id, nameof(id));
-        CariCode = PartyCode.Parse(cariCode.Value);
+        Code = PartyCode.Parse(partyCode.Value);
         Kind = RequireKnownKind(kind);
         LegalName = RequireText(legalName, nameof(legalName), 250);
         TradeName = NormalizeOptionalText(tradeName, nameof(tradeName), 200);
@@ -25,7 +25,7 @@ public sealed class Party
 
     public Guid Id { get; private set; }
 
-    public PartyCode CariCode { get; private set; }
+    public PartyCode Code { get; private set; }
 
     public PartyKind Kind { get; private set; }
 
