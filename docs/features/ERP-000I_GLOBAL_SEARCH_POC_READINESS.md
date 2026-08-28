@@ -86,11 +86,11 @@ Kaynak önceliği kök `AGENTS.md` sırasına göre uygulanmıştır:
   SQL Server kabul kanıtları vardır;
 - append-only audit/correlation ve kalıcı idempotency/concurrency omurgası mevcuttur.
 
-Mevcut `task_manifest.json` satırı bu omurgalara rağmen ERP-000I'yi yalnız ERP-000A'ya
-bağlar ve `ready` işaretler. Bu belge paylaşılan manifesti değiştirmez; implementation
-öncesi ayrı registry review'u, ERP-000B/C/D/E bağımlılıklarını, async projection
-seçilirse ERP-000F'yi ve SQL/observability kanıt sahipliğini görünür biçimde
-uzlaştırmalıdır.
+İncelenen `main` snapshot'ındaki `task_manifest.json` satırı bu omurgalara rağmen
+ERP-000I'yi yalnız ERP-000A'ya bağlar ve `ready` işaretler. Bu dal manifestte yalnız
+ERP-000I satırını `blocked` yapar; ERP-000B/C/D/E ile ERP-000L/M bağımlılıklarını ve
+`ADR-007`, `OPEN-015`, `ERP-000I-SEARCH-CONTRACT` blockerlarını görünür kılar. Async
+projection seçilirse ERP-000F bağımlılığı karar anında ayrıca eklenmelidir.
 
 Bu temel, aramanın güvenli olacağını kendiliğinden kanıtlamaz. Search modülü aynı
 sınırları kendi query, projection, cache, pagination ve result-open yollarında ayrıca
@@ -516,6 +516,13 @@ onaylandığında GO olabilir:
     netleştirilmelidir.
 12. Migration/rollback, feature flag ve devre dışı bırakma planı onaylanmalıdır.
 
+`ERP-000I-SEARCH-CONTRACT`, yeni kanonik bir karar veya acceptance kimliği değildir.
+Manifest tabanlı orkestrasyonun bu task-local hazırlık paketindeki Türkçe arama,
+pilot result type/permission–ABAC, projection/freshness, cursor/invalidation ve
+audit/privacy kararları kapanmadan görevi seçmesini engelleyen aggregate blocker etiketidir.
+Merkezî karar sicili bu konuları mevcut kararlara bağladığında veya yeni kanonik kimlikler
+atadığında manifestte onların yerini almalıdır.
+
 Bu kapılar kapanmadan:
 
 - `Platform.Search` modülü veya public Search API oluşturulmaz;
@@ -524,6 +531,16 @@ Bu kapılar kapanmadan:
 - kaynak modül tablosuna doğrudan Search bağımlılığı kurulmaz;
 - production ranking, normalizasyon, timeout, page size veya SLO değeri tahmin edilmez;
 - task `ready/done` kabul edilmez.
+
+### 14.1 Paralel Draft PR ve merge sırası kapısı
+
+Bu dal `docs/backlog/task_manifest.json` dosyasını değiştirir. Aynı dosyanın ERP-000E/F
+gerçeği Draft PR #10'da, ERP-000G gerçeği Draft PR #11'de güncellenmektedir. Bu nedenle
+PR #10 ve ardından PR #11 merge edilmeden bu dal merge edilmez. Sonrasında güncel `main`
+ile senkronize edilip E/F/G/I durum, dependency ve blocker gerçeğinin birlikte korunduğu
+yeniden doğrulanır. Conflict veya semantik fark sessizce çözülmez; insan review'una
+taşınır. ERP-000H için ayrı readiness dalı da aynı manifesti değiştirirse o dal, bu dalın
+merge ve senkronizasyonundan sonra güncellenmelidir.
 
 ## 15. Önerilen sonraki kesin adım
 

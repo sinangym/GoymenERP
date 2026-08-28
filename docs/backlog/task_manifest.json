@@ -92,12 +92,23 @@
     {
       "id": "ERP-000I",
       "title": "Global arama PoC",
-      "status": "ready",
+      "status": "blocked",
       "depends_on": [
-        "ERP-000A"
+        "ERP-000A",
+        "ERP-000B",
+        "ERP-000C",
+        "ERP-000D",
+        "ERP-000E",
+        "ERP-000L",
+        "ERP-000M"
       ],
-      "scope": "Company/permission scoped exact/full-text search, keyset pagination.",
-      "acceptance": "Sentetik hacimde p95 hedefi ve veri tekrar/atlama testi.",
+      "scope": "Company/permission scoped exact/full-text search, Turkish search semantics, derived projection, stable keyset cursor and real SQL Server load proof.",
+      "acceptance": "Physical ADR-007, OPEN-015 and ERP-000I-SEARCH-CONTRACT gate close; AT-002/AT-069 and task-local scenarios produce real SQL Server security/performance evidence.",
+      "blocked_by": [
+        "ADR-007",
+        "OPEN-015",
+        "ERP-000I-SEARCH-CONTRACT"
+      ],
       "priority": "P0"
     },
     {
