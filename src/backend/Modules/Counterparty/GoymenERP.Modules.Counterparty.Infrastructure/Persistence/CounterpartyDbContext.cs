@@ -1,6 +1,9 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
+using GoymenERP.Modules.Idempotency.Domain.Executions;
+using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
@@ -14,13 +17,22 @@ public sealed class CounterpartyDbContext(
 
     public DbSet<CompanyPartyAccount> CompanyPartyAccounts => Set<CompanyPartyAccount>();
 
+    public DbSet<CommandExecution> CommandExecutions => Set<CommandExecution>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
 
+        modelBuilder.HasSequence<long>("PartyCodeSequence", "counterparty")
+            .StartsAt(1L)
+            .IncrementsBy(1);
         ConfigureParty(modelBuilder);
         ConfigureCompanyPartyAccount(modelBuilder);
         ConfigureOrganizationCompanyReference(modelBuilder);
+        modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
+        modelBuilder.ConfigureCommandExecution(excludeFromMigrations: true);
+        modelBuilder.Entity<CommandExecution>()
+            .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     public override int SaveChanges()
@@ -180,6 +192,27 @@ public sealed class CounterpartyDbContext(
             {
                 throw new InvalidOperationException(
                     "Cari hesap yazması aktif şirket bağlamıyla eşleşmelidir.");
+            }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<CommandExecution>())
+        {
+            if (entry.State == EntityState.Unchanged)
+            {
+                continue;
+            }
+
+            if (entry.State is EntityState.Modified or EntityState.Deleted)
+            {
+                throw new InvalidOperationException(
+                    "Idempotency kayıtları değiştirilemez veya silinemez.");
+            }
+
+            if (!companyContext.IsResolved
+                || entry.Entity.CompanyId != companyContext.CompanyId)
+            {
+                throw new InvalidOperationException(
+                    "Idempotency kaydı aktif şirket bağlamıyla eşleşmelidir.");
             }
         }
     }
