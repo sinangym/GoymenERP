@@ -1,0 +1,103 @@
+{
+  "template_id": "ERP-000M-WORKLOAD-PROFILE-TEMPLATE-V1",
+  "artifact_state": "INPUT_TEMPLATE",
+  "decision_state": "UNDECIDED",
+  "metadata": {
+    "owner": "__REQUIRED_INPUT__:OWNER__",
+    "source": "__REQUIRED_INPUT__:SOURCE__",
+    "captured_at_utc": "__REQUIRED_INPUT__:CAPTURED_AT_UTC__",
+    "source_commit": "__REQUIRED_INPUT__:SOURCE_COMMIT__",
+    "tool_versions": [
+      {
+        "tool_role": "__REQUIRED_INPUT__:TOOL_ROLE__",
+        "tool_name": "__REQUIRED_INPUT__:TOOL_NAME__",
+        "tool_version": "__REQUIRED_INPUT__:TOOL_VERSION__",
+        "evidence_ref": "__REQUIRED_INPUT__:TOOL_VERSION_EVIDENCE_REF__"
+      }
+    ]
+  },
+  "anonymization": {
+    "dataset_class": "__REQUIRED_INPUT__:ANONYMIZED_DATASET_CLASS__",
+    "anonymization_method": "__REQUIRED_INPUT__:ANONYMIZATION_METHOD__",
+    "source_approval_ref": "__REQUIRED_INPUT__:SOURCE_APPROVAL_REF__",
+    "review_owner": "__REQUIRED_INPUT__:ANONYMIZATION_REVIEW_OWNER__",
+    "reviewed_at_utc": "__REQUIRED_INPUT__:ANONYMIZATION_REVIEWED_AT_UTC__"
+  },
+  "dataset": {
+    "generator": {
+      "name": "__REQUIRED_INPUT__:GENERATOR_NAME__",
+      "version": "__REQUIRED_INPUT__:GENERATOR_VERSION__",
+      "source_commit": "__REQUIRED_INPUT__:GENERATOR_SOURCE_COMMIT__",
+      "seed": "__REQUIRED_INPUT__:GENERATOR_SEED__",
+      "configuration_hash_sha256": "__REQUIRED_INPUT__:GENERATOR_CONFIGURATION_HASH_SHA256__",
+      "dataset_hash_sha256": "__REQUIRED_INPUT__:DATASET_HASH_SHA256__",
+      "reproduction_instructions_ref": "__REQUIRED_INPUT__:REPRODUCTION_INSTRUCTIONS_REF__"
+    },
+    "volume_classes": [
+      {
+        "entity_class": "__REQUIRED_INPUT__:ANONYMIZED_ENTITY_CLASS__",
+        "record_count": "__REQUIRED_INPUT__:OPEN-015:RECORD_COUNT__",
+        "distribution_description": "__REQUIRED_INPUT__:OPEN-015:DISTRIBUTION_DESCRIPTION__",
+        "source_ref": "__REQUIRED_INPUT__:VOLUME_SOURCE_REF__"
+      }
+    ]
+  },
+  "workload": {
+    "window": {
+      "window_name": "__REQUIRED_INPUT__:ANONYMIZED_WINDOW_NAME__",
+      "duration": "__REQUIRED_INPUT__:OPEN-015:MEASUREMENT_WINDOW__",
+      "warm_cold_condition": "__REQUIRED_INPUT__:WARM_COLD_CONDITION__",
+      "source_ref": "__REQUIRED_INPUT__:WINDOW_SOURCE_REF__"
+    },
+    "concurrency": {
+      "concurrent_actor_count": "__REQUIRED_INPUT__:OPEN-015:CONCURRENT_ACTOR_COUNT__",
+      "read_concurrency": "__REQUIRED_INPUT__:OPEN-015:READ_CONCURRENCY__",
+      "write_concurrency": "__REQUIRED_INPUT__:OPEN-015:WRITE_CONCURRENCY__",
+      "long_running_operation_concurrency": "__REQUIRED_INPUT__:OPEN-015:LONG_RUNNING_OPERATION_CONCURRENCY__",
+      "source_ref": "__REQUIRED_INPUT__:CONCURRENCY_SOURCE_REF__"
+    },
+    "operation_classes": [
+      {
+        "operation_class": "__REQUIRED_INPUT__:ANONYMIZED_OPERATION_CLASS__",
+        "read_write_class": "__REQUIRED_INPUT__:READ_WRITE_CLASS__",
+        "mix_share": "__REQUIRED_INPUT__:OPEN-015:OPERATION_MIX_SHARE__",
+        "arrival_pattern": "__REQUIRED_INPUT__:OPEN-015:ARRIVAL_PATTERN__",
+        "volume_per_window": "__REQUIRED_INPUT__:OPEN-015:OPERATION_VOLUME_PER_WINDOW__",
+        "scenario_ref": "__REQUIRED_INPUT__:TASK_LOCAL_SCENARIO_REF__",
+        "source_ref": "__REQUIRED_INPUT__:OPERATION_SOURCE_REF__"
+      }
+    ]
+  },
+  "candidate_inputs": {
+    "provider": "__REQUIRED_INPUT__:ADR-003:PROVIDER__",
+    "edition": "__REQUIRED_INPUT__:ADR-003:EDITION__",
+    "collation": "__REQUIRED_INPUT__:ADR-003:COLLATION__",
+    "full_text_language": "__REQUIRED_INPUT__:ADR-003:FULL_TEXT_LANGUAGE__",
+    "isolation_level": "__REQUIRED_INPUT__:ADR-003:ISOLATION_LEVEL__",
+    "topology": "__REQUIRED_INPUT__:OPEN-017:TOPOLOGY__"
+  },
+  "performance_acceptance_inputs": [
+    {
+      "metric_name": "__REQUIRED_INPUT__:OPEN-015:METRIC_NAME__",
+      "threshold": "__REQUIRED_INPUT__:OPEN-015:THRESHOLD__",
+      "unit": "__REQUIRED_INPUT__:OPEN-015:THRESHOLD_UNIT__",
+      "decision_ref": "__REQUIRED_INPUT__:THRESHOLD_DECISION_REF__"
+    }
+  ],
+  "evidence": {
+    "environment_inventory_ref": "__REQUIRED_INPUT__:ENVIRONMENT_INVENTORY_REF__",
+    "evidence_manifest_ref": "__REQUIRED_INPUT__:EVIDENCE_MANIFEST_REF__",
+    "workload_profile_hash_sha256": "__REQUIRED_INPUT__:WORKLOAD_PROFILE_HASH_SHA256__",
+    "evidence_refs": [
+      "__REQUIRED_INPUT__:WORKLOAD_EVIDENCE_REF__"
+    ]
+  },
+  "redaction_control": {
+    "anonymization_attestation": "__REQUIRED_INPUT__:ANONYMIZATION_ATTESTATION__",
+    "sensitive_material_scan_tool": "__REQUIRED_INPUT__:SENSITIVE_MATERIAL_SCAN_TOOL__",
+    "sensitive_material_scan_tool_version": "__REQUIRED_INPUT__:SENSITIVE_MATERIAL_SCAN_TOOL_VERSION__",
+    "scan_evidence_ref": "__REQUIRED_INPUT__:SENSITIVE_MATERIAL_SCAN_EVIDENCE_REF__",
+    "review_owner": "__REQUIRED_INPUT__:REDACTION_REVIEW_OWNER__",
+    "reviewed_at_utc": "__REQUIRED_INPUT__:REDACTION_REVIEWED_AT_UTC__"
+  }
+}

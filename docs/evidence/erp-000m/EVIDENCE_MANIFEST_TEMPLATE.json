@@ -1,0 +1,88 @@
+{
+  "template_id": "ERP-000M-EVIDENCE-MANIFEST-TEMPLATE-V1",
+  "artifact_state": "INPUT_TEMPLATE",
+  "decision_state": "UNDECIDED",
+  "metadata": {
+    "owner": "__REQUIRED_INPUT__:OWNER__",
+    "source": "__REQUIRED_INPUT__:SOURCE__",
+    "captured_at_utc": "__REQUIRED_INPUT__:CAPTURED_AT_UTC__",
+    "source_commit": "__REQUIRED_INPUT__:SOURCE_COMMIT__",
+    "tool_versions": [
+      {
+        "tool_role": "__REQUIRED_INPUT__:TOOL_ROLE__",
+        "tool_name": "__REQUIRED_INPUT__:TOOL_NAME__",
+        "tool_version": "__REQUIRED_INPUT__:TOOL_VERSION__",
+        "evidence_ref": "__REQUIRED_INPUT__:TOOL_VERSION_EVIDENCE_REF__"
+      }
+    ]
+  },
+  "environment": {
+    "inventory_ref": "__REQUIRED_INPUT__:ENVIRONMENT_INVENTORY_REF__",
+    "inventory_hash_sha256": "__REQUIRED_INPUT__:ENVIRONMENT_INVENTORY_HASH_SHA256__",
+    "provider": "__REQUIRED_INPUT__:ADR-003:PROVIDER__",
+    "edition": "__REQUIRED_INPUT__:ADR-003:EDITION__",
+    "collation": "__REQUIRED_INPUT__:ADR-003:COLLATION__",
+    "full_text_language": "__REQUIRED_INPUT__:ADR-003:FULL_TEXT_LANGUAGE__",
+    "isolation_level": "__REQUIRED_INPUT__:ADR-003:ISOLATION_LEVEL__",
+    "topology": "__REQUIRED_INPUT__:OPEN-017:TOPOLOGY__"
+  },
+  "workload": {
+    "profile_ref": "__REQUIRED_INPUT__:WORKLOAD_PROFILE_REF__",
+    "profile_hash_sha256": "__REQUIRED_INPUT__:WORKLOAD_PROFILE_HASH_SHA256__",
+    "generator_version": "__REQUIRED_INPUT__:GENERATOR_VERSION__",
+    "generator_seed": "__REQUIRED_INPUT__:GENERATOR_SEED__",
+    "generator_configuration_hash_sha256": "__REQUIRED_INPUT__:GENERATOR_CONFIGURATION_HASH_SHA256__",
+    "dataset_hash_sha256": "__REQUIRED_INPUT__:DATASET_HASH_SHA256__",
+    "reproduction_instructions_ref": "__REQUIRED_INPUT__:REPRODUCTION_INSTRUCTIONS_REF__"
+  },
+  "artifacts": [
+    {
+      "evidence_id": "__REQUIRED_INPUT__:EVIDENCE_ID__",
+      "evidence_class": "__REQUIRED_INPUT__:EVIDENCE_CLASS__",
+      "path_or_uri_ref": "__REQUIRED_INPUT__:EVIDENCE_LOCATION_REF__",
+      "source_ref": "__REQUIRED_INPUT__:EVIDENCE_SOURCE_REF__",
+      "captured_at_utc": "__REQUIRED_INPUT__:EVIDENCE_CAPTURED_AT_UTC__",
+      "source_commit": "__REQUIRED_INPUT__:EVIDENCE_SOURCE_COMMIT__",
+      "producing_tool_name": "__REQUIRED_INPUT__:PRODUCING_TOOL_NAME__",
+      "producing_tool_version": "__REQUIRED_INPUT__:PRODUCING_TOOL_VERSION__",
+      "sha256": "__REQUIRED_INPUT__:EVIDENCE_SHA256__",
+      "byte_count": "__REQUIRED_INPUT__:EVIDENCE_BYTE_COUNT__",
+      "environment_ref": "__REQUIRED_INPUT__:ARTIFACT_ENVIRONMENT_REF__",
+      "workload_ref": "__REQUIRED_INPUT__:ARTIFACT_WORKLOAD_REF__",
+      "redaction_evidence_ref": "__REQUIRED_INPUT__:ARTIFACT_REDACTION_EVIDENCE_REF__"
+    }
+  ],
+  "measurements": [
+    {
+      "measurement_id": "__REQUIRED_INPUT__:MEASUREMENT_ID__",
+      "operation_class_ref": "__REQUIRED_INPUT__:ANONYMIZED_OPERATION_CLASS_REF__",
+      "metric_name": "__REQUIRED_INPUT__:METRIC_NAME__",
+      "measured_value": "__REQUIRED_INPUT__:MEASURED_VALUE__",
+      "unit": "__REQUIRED_INPUT__:MEASUREMENT_UNIT__",
+      "measurement_window": "__REQUIRED_INPUT__:MEASUREMENT_WINDOW__",
+      "warm_cold_condition": "__REQUIRED_INPUT__:WARM_COLD_CONDITION__",
+      "threshold": "__REQUIRED_INPUT__:OPEN-015:THRESHOLD__",
+      "threshold_decision_ref": "__REQUIRED_INPUT__:THRESHOLD_DECISION_REF__",
+      "outcome": "__REQUIRED_INPUT__:HUMAN_REVIEWED_OUTCOME__",
+      "evidence_refs": [
+        "__REQUIRED_INPUT__:MEASUREMENT_EVIDENCE_REF__"
+      ]
+    }
+  ],
+  "reproducibility": {
+    "execution_runbook_ref": "__REQUIRED_INPUT__:EXECUTION_RUNBOOK_REF__",
+    "cleanup_runbook_ref": "__REQUIRED_INPUT__:CLEANUP_RUNBOOK_REF__",
+    "failure_result_ref": "__REQUIRED_INPUT__:FAILURE_RESULT_REF__",
+    "manifest_hash_sha256": "__REQUIRED_INPUT__:MANIFEST_HASH_SHA256__",
+    "reproduction_review_owner": "__REQUIRED_INPUT__:REPRODUCTION_REVIEW_OWNER__",
+    "reproduction_reviewed_at_utc": "__REQUIRED_INPUT__:REPRODUCTION_REVIEWED_AT_UTC__"
+  },
+  "redaction_control": {
+    "sensitive_material_policy_ref": "__REQUIRED_INPUT__:SENSITIVE_MATERIAL_POLICY_REF__",
+    "scan_tool_name": "__REQUIRED_INPUT__:SENSITIVE_MATERIAL_SCAN_TOOL__",
+    "scan_tool_version": "__REQUIRED_INPUT__:SENSITIVE_MATERIAL_SCAN_TOOL_VERSION__",
+    "scan_evidence_ref": "__REQUIRED_INPUT__:SENSITIVE_MATERIAL_SCAN_EVIDENCE_REF__",
+    "review_owner": "__REQUIRED_INPUT__:REDACTION_REVIEW_OWNER__",
+    "reviewed_at_utc": "__REQUIRED_INPUT__:REDACTION_REVIEWED_AT_UTC__"
+  }
+}
