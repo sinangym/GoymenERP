@@ -1,3 +1,4 @@
+using GoymenERP.BuildingBlocks.Multitenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 
@@ -16,6 +17,19 @@ public sealed class CounterpartyDesignTimeDbContextFactory
                     "counterparty"))
             .Options;
 
-        return new CounterpartyDbContext(options);
+        return new CounterpartyDbContext(options, new DesignTimeCompanyContext());
+    }
+
+    private sealed class DesignTimeCompanyContext : ICompanyContext
+    {
+        public bool IsResolved => false;
+
+        public Guid CompanyId => Guid.Empty;
+
+        public void Set(Guid companyId)
+        {
+            throw new InvalidOperationException(
+                "Design-time Counterparty DbContext şirket bağlamı çözmez.");
+        }
     }
 }
