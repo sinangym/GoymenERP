@@ -71,6 +71,8 @@ Kaynak önceliği kök `AGENTS.md` sırasına göre uygulanmıştır:
 - `AT-002`: yetkisiz kayıt sonuç, öneri, toplam veya sayı üzerinden sızamaz.
 - `AT-069`: yetkili arama temsili üç yıllık hacmin üç katında kilitlenecek p95'i ve
   tekrar/atlama yapmayan derin sayfalamayı kanıtlar.
+- `AT-002` ve `AT-069`, güncel `ACCEPTANCE_MATRIX.csv` içinde `Taslak` durumundadır;
+  kanıt alanları boştur ve bu belge onları geçmiş/tamamlanmış saymaz.
 - `OPEN-015`: üç yıllık veri, eşzamanlı kullanıcı, belge/OCR hacmi ve yoğun saatler
   henüz açıktır.
 
