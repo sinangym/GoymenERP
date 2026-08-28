@@ -1,6 +1,6 @@
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 
-namespace GoymenERP.Cari.UnitTests;
+namespace GoymenERP.Counterparty.UnitTests;
 
 public sealed class CompanyPartyAccountTests
 {
