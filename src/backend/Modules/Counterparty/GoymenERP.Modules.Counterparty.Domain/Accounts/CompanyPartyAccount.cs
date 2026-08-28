@@ -88,23 +88,21 @@ public sealed class CompanyPartyAccount
 
     public void Deactivate()
     {
-        if (!IsActive)
+        if (IsActive)
         {
-            return;
+            IsActive = false;
         }
 
-        IsActive = false;
         Touch(DateTimeOffset.UtcNow);
     }
 
     public void Reactivate()
     {
-        if (IsActive)
+        if (!IsActive)
         {
-            return;
+            IsActive = true;
         }
 
-        IsActive = true;
         Touch(DateTimeOffset.UtcNow);
     }
 
