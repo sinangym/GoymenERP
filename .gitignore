@@ -26,6 +26,10 @@ TestResults/
 coverage/
 artifacts/
 
+# Python tooling
+__pycache__/
+*.py[cod]
+
 # OS
 .DS_Store
 Thumbs.db
