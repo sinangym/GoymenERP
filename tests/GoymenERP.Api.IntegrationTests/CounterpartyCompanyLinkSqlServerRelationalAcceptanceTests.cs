@@ -290,15 +290,17 @@ public sealed class CounterpartyCompanyLinkSqlServerRelationalAcceptanceTests
             }
 
             var differentKeyParty = await CreatePartyAsync(factory, "SQL Different-Key Link Yarış Cari A.Ş.");
+            var differentKeyA = $"cari-link-race-diff-a-{Guid.NewGuid():N}";
+            var differentKeyB = $"cari-link-race-diff-b-{Guid.NewGuid():N}";
             using var differentClientA = factory.CreateClientFor(TestUsers.GroupAdmin, TestCompanyIds.CompanyB);
             using var differentClientB = factory.CreateClientFor(TestUsers.GroupAdmin, TestCompanyIds.CompanyB);
             SetRequestIdentity(
                 differentClientA,
-                $"cari-link-race-diff-a-{Guid.NewGuid():N}",
+                differentKeyA,
                 $"cari-link-race-diff-corr-a-{Guid.NewGuid():N}");
             SetRequestIdentity(
                 differentClientB,
-                $"cari-link-race-diff-b-{Guid.NewGuid():N}",
+                differentKeyB,
                 $"cari-link-race-diff-corr-b-{Guid.NewGuid():N}");
             var differentResponses = await Task.WhenAll(
                 differentClientA.PostAsJsonAsync(
@@ -325,9 +327,26 @@ public sealed class CounterpartyCompanyLinkSqlServerRelationalAcceptanceTests
                     2,
                     await ScalarAsync<int>(
                         connection,
-                        "SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [CompanyId] = @CompanyB AND [CommandName] = N'counterparty.company-account.create.v1' AND [ResponseJson] LIKE @PartyPattern;",
+                        "SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [CompanyId] = @CompanyB AND [CommandName] = N'counterparty.company-account.create.v1' AND [IdempotencyKeyHash] IN (@KeyHashA, @KeyHashB);",
                         new SqlParameter("@CompanyB", TestCompanyIds.CompanyB),
-                        new SqlParameter("@PartyPattern", $"%{differentKeyParty.PartyId:D}%")));
+                        new SqlParameter("@KeyHashA", IdempotencyHash.ComputeKey(differentKeyA)),
+                        new SqlParameter("@KeyHashB", IdempotencyHash.ComputeKey(differentKeyB))));
+                Assert.Equal(
+                    1,
+                    await ScalarAsync<int>(
+                        connection,
+                        "SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [CompanyId] = @CompanyB AND [CommandName] = N'counterparty.company-account.create.v1' AND [IdempotencyKeyHash] IN (@KeyHashA, @KeyHashB) AND [Outcome] = N'Created';",
+                        new SqlParameter("@CompanyB", TestCompanyIds.CompanyB),
+                        new SqlParameter("@KeyHashA", IdempotencyHash.ComputeKey(differentKeyA)),
+                        new SqlParameter("@KeyHashB", IdempotencyHash.ComputeKey(differentKeyB))));
+                Assert.Equal(
+                    1,
+                    await ScalarAsync<int>(
+                        connection,
+                        "SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [CompanyId] = @CompanyB AND [CommandName] = N'counterparty.company-account.create.v1' AND [IdempotencyKeyHash] IN (@KeyHashA, @KeyHashB) AND [Outcome] = N'AlreadyLinked';",
+                        new SqlParameter("@CompanyB", TestCompanyIds.CompanyB),
+                        new SqlParameter("@KeyHashA", IdempotencyHash.ComputeKey(differentKeyA)),
+                        new SqlParameter("@KeyHashB", IdempotencyHash.ComputeKey(differentKeyB))));
             }
             finally
             {
