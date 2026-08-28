@@ -10,6 +10,8 @@ public sealed class CounterpartyMigrationArtifactContractTests
 {
     private const string ContractPath =
         "src/backend/Modules/Counterparty/COUNTERPARTY_MIGRATION_ARTIFACT.json";
+    private const string ExpectedContractSource =
+        "docs/features/CARI_MIGRATION_ARTIFACT_CONTRACT_v1.md";
     private const string ExpectedProject =
         "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/GoymenERP.Modules.Counterparty.Infrastructure.csproj";
     private const string ExpectedStartupProject =
@@ -75,7 +77,7 @@ public sealed class CounterpartyMigrationArtifactContractTests
             1,
             "CHATGPT-CARI",
             "Counterparty",
-            "docs/features/CARI_MIGRATION_ARTIFACT_CONTRACT_v1.md",
+            "docs/features/WRONG_CONTRACT.md",
             ExpectedProject,
             ExpectedStartupProject,
             "WrongDbContext",
@@ -88,6 +90,7 @@ public sealed class CounterpartyMigrationArtifactContractTests
 
         var errors = ValidateContractDefinition(unsafeContract);
 
+        Assert.Contains(errors, error => error.Contains("contract_source", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(errors, error => error.Contains("context", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(errors, error => error.Contains("configuration", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(errors, error => error.Contains("output", StringComparison.OrdinalIgnoreCase));
@@ -95,6 +98,46 @@ public sealed class CounterpartyMigrationArtifactContractTests
         Assert.Contains(errors, error => error.Contains("no_build", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(errors, error => error.Contains("migration_ids", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(errors, error => error.Contains("excluded_sidecar_tables", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Contract_validation_rejects_duplicate_array_values()
+    {
+        var duplicateContract = new MigrationArtifactContract(
+            1,
+            "CHATGPT-CARI",
+            "Counterparty",
+            ExpectedContractSource,
+            ExpectedProject,
+            ExpectedStartupProject,
+            nameof(CounterpartyDbContext),
+            "Release",
+            ExpectedOutput,
+            Idempotent: true,
+            NoBuild: true,
+            [
+                "20260828123500_InitialCounterparty",
+                "20260828150000_AddCounterpartyWriteSupport",
+                "20260828150000_AddCounterpartyWriteSupport",
+            ],
+            [
+                "audit.AuditEvents",
+                "idempotency.CommandExecutions",
+                "audit.AuditEvents",
+            ]);
+
+        var errors = ValidateContractDefinition(duplicateContract);
+
+        Assert.Contains(
+            errors,
+            error => error.Contains(
+                "migration_ids contains duplicate values",
+                StringComparison.Ordinal));
+        Assert.Contains(
+            errors,
+            error => error.Contains(
+                "excluded_sidecar_tables contains duplicate values",
+                StringComparison.Ordinal));
     }
 
     private static MigrationArtifactContract ReadContract(string repositoryRoot)
@@ -153,6 +196,14 @@ public sealed class CounterpartyMigrationArtifactContractTests
             errors.Add("Unexpected owner/module identity.");
         }
 
+        if (!string.Equals(
+                contract.ContractSource,
+                ExpectedContractSource,
+                StringComparison.Ordinal))
+        {
+            errors.Add($"Unexpected contract_source: {contract.ContractSource}.");
+        }
+
         if (!string.Equals(contract.Project, ExpectedProject, StringComparison.Ordinal))
         {
             errors.Add($"Unexpected project: {contract.Project}.");
@@ -198,31 +249,56 @@ public sealed class CounterpartyMigrationArtifactContractTests
             errors.Add("no_build must be true.");
         }
 
-        var expectedMigrations = new HashSet<string>(StringComparer.Ordinal)
-        {
-            "20260828123500_InitialCounterparty",
-            "20260828150000_AddCounterpartyWriteSupport",
-        };
-        if (!contract.MigrationIds.ToHashSet(StringComparer.Ordinal)
-            .SetEquals(expectedMigrations))
-        {
-            errors.Add(
-                "migration_ids must match the exact current Counterparty migration set.");
-        }
+        ValidateExactUniqueSet(
+            contract.MigrationIds,
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                "20260828123500_InitialCounterparty",
+                "20260828150000_AddCounterpartyWriteSupport",
+            },
+            "migration_ids",
+            errors);
 
-        var expectedSidecars = new HashSet<string>(StringComparer.Ordinal)
-        {
-            "audit.AuditEvents",
-            "idempotency.CommandExecutions",
-        };
-        if (!contract.ExcludedSidecarTables.ToHashSet(StringComparer.Ordinal)
-            .SetEquals(expectedSidecars))
-        {
-            errors.Add(
-                "excluded_sidecar_tables must contain exact Audit/Idempotency sidecars.");
-        }
+        ValidateExactUniqueSet(
+            contract.ExcludedSidecarTables,
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                "audit.AuditEvents",
+                "idempotency.CommandExecutions",
+            },
+            "excluded_sidecar_tables",
+            errors);
 
         return errors;
+    }
+
+    private static void ValidateExactUniqueSet(
+        IReadOnlyList<string>? actual,
+        IReadOnlySet<string> expected,
+        string fieldName,
+        ICollection<string> errors)
+    {
+        if (actual is null)
+        {
+            errors.Add($"{fieldName} must be a non-null array.");
+            return;
+        }
+
+        if (actual.Any(string.IsNullOrWhiteSpace))
+        {
+            errors.Add($"{fieldName} contains a blank value.");
+        }
+
+        var distinct = actual.ToHashSet(StringComparer.Ordinal);
+        if (distinct.Count != actual.Count)
+        {
+            errors.Add($"{fieldName} contains duplicate values.");
+        }
+
+        if (!distinct.SetEquals(expected))
+        {
+            errors.Add($"{fieldName} must match the exact reviewed set.");
+        }
     }
 
     private static void FindDuplicateProperties(
