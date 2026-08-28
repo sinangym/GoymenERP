@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "owner": "CHATGPT-CARI",
+  "module": "Counterparty",
+  "contract_source": "docs/features/CARI_MIGRATION_ARTIFACT_CONTRACT_v1.md",
+  "project": "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/GoymenERP.Modules.Counterparty.Infrastructure.csproj",
+  "startup_project": "src/backend/GoymenERP.Api/GoymenERP.Api.csproj",
+  "context": "CounterpartyDbContext",
+  "configuration": "Release",
+  "output": "artifacts/counterparty-migration.sql",
+  "idempotent": true,
+  "no_build": true,
+  "migration_ids": [
+    "20260828123500_InitialCounterparty",
+    "20260828150000_AddCounterpartyWriteSupport"
+  ],
+  "excluded_sidecar_tables": [
+    "audit.AuditEvents",
+    "idempotency.CommandExecutions"
+  ]
+}
