@@ -10,6 +10,12 @@ public interface ICounterpartyCommandService
         CounterpartyCommandMetadata metadata,
         CancellationToken cancellationToken);
 
+    Task<CounterpartyCommandExecution> CreateCompanyAccountAsync(
+        Guid partyId,
+        CreateCompanyPartyAccount command,
+        CounterpartyCommandMetadata metadata,
+        CancellationToken cancellationToken);
+
     Task<CounterpartyCommandExecution> SetCompanyAccountActiveStateAsync(
         Guid partyId,
         SetCompanyPartyAccountActiveState command,
@@ -21,6 +27,9 @@ public sealed record CreateCounterparty(
     PartyKind Kind,
     string LegalName,
     string? TradeName,
+    PartyRole Roles);
+
+public sealed record CreateCompanyPartyAccount(
     PartyRole Roles);
 
 public sealed record SetCompanyPartyAccountActiveState(
@@ -45,6 +54,7 @@ public enum CounterpartyCommandResult
     NotFound = 3,
     VersionConflict = 4,
     IdempotencyConflict = 5,
+    AlreadyLinked = 6,
 }
 
 public sealed record CounterpartyVersionConflict(
