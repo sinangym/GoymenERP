@@ -61,25 +61,51 @@ public sealed class CompanyPartyAccount
 
     public void SetRoles(PartyRole roles)
     {
-        Roles = RequireRoles(roles);
+        var validated = RequireRoles(roles);
+        if (Roles == validated)
+        {
+            return;
+        }
+
+        Roles = validated;
+        Touch(DateTimeOffset.UtcNow);
     }
 
     public void SetExternalIntegrationCode(string? externalIntegrationCode)
     {
-        ExternalIntegrationCode = NormalizeOptionalText(
+        var normalized = NormalizeOptionalText(
             externalIntegrationCode,
             nameof(externalIntegrationCode),
             128);
+        if (string.Equals(ExternalIntegrationCode, normalized, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        ExternalIntegrationCode = normalized;
+        Touch(DateTimeOffset.UtcNow);
     }
 
     public void Deactivate()
     {
+        if (!IsActive)
+        {
+            return;
+        }
+
         IsActive = false;
+        Touch(DateTimeOffset.UtcNow);
     }
 
     public void Reactivate()
     {
+        if (IsActive)
+        {
+            return;
+        }
+
         IsActive = true;
+        Touch(DateTimeOffset.UtcNow);
     }
 
     internal void Touch(DateTimeOffset utcNow)
