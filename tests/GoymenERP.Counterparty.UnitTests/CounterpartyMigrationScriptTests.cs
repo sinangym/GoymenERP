@@ -9,7 +9,7 @@ namespace GoymenERP.Counterparty.UnitTests;
 public sealed class CounterpartyMigrationScriptTests
 {
     [Fact]
-    public void InitialMigration_GeneratesIdempotentSqlWithoutDeferredSensitiveColumns()
+    public void Migrations_GenerateIdempotentSqlWithOwnedWriteSupportOnly()
     {
         var options = new DbContextOptionsBuilder<CounterpartyDbContext>()
             .UseSqlServer(
@@ -22,10 +22,18 @@ public sealed class CounterpartyMigrationScriptTests
             options: MigrationsSqlGenerationOptions.Idempotent);
 
         Assert.Contains("20260828123500_InitialCounterparty", script, StringComparison.Ordinal);
+        Assert.Contains("20260828150000_AddCounterpartyWriteSupport", script, StringComparison.Ordinal);
         Assert.Contains("[counterparty].[Parties]", script, StringComparison.Ordinal);
         Assert.Contains("[counterparty].[CompanyPartyAccounts]", script, StringComparison.Ordinal);
+        Assert.Contains("[counterparty].[PartyCodeSequence]", script, StringComparison.Ordinal);
         Assert.Contains("CK_Parties_Code_Format", script, StringComparison.Ordinal);
         Assert.Contains("FK_CompanyPartyAccounts_Companies_CompanyId", script, StringComparison.Ordinal);
+
+        Assert.DoesNotContain("CREATE TABLE [audit].[AuditEvents]", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(
+            "CREATE TABLE [idempotency].[CommandExecutions]",
+            script,
+            StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("VKN", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("TCKN", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("MERSIS", script, StringComparison.OrdinalIgnoreCase);

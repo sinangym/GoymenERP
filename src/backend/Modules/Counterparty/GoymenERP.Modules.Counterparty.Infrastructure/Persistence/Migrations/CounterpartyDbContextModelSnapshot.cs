@@ -21,6 +21,151 @@ partial class CounterpartyDbContextModelSnapshot : ModelSnapshot
 
         SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+        modelBuilder.HasSequence<long>("PartyCodeSequence", "counterparty")
+            .StartsAt(1L)
+            .IncrementsBy(1);
+
+        modelBuilder.Entity("GoymenERP.Modules.Audit.Domain.Events.AuditEvent", b =>
+        {
+            b.Property<Guid>("Id")
+                .ValueGeneratedOnAdd()
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("ActorId")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<string>("ActorType")
+                .IsRequired()
+                .HasMaxLength(32)
+                .HasColumnType("nvarchar(32)");
+
+            b.Property<string>("AfterJson")
+                .IsRequired()
+                .HasColumnType("nvarchar(max)");
+
+            b.Property<string>("AiContextJson")
+                .HasColumnType("nvarchar(max)");
+
+            b.Property<string>("AiInvolvement")
+                .IsRequired()
+                .HasMaxLength(32)
+                .HasColumnType("nvarchar(32)");
+
+            b.Property<string>("ApprovalContextJson")
+                .HasColumnType("nvarchar(max)");
+
+            b.Property<string>("BeforeJson")
+                .IsRequired()
+                .HasColumnType("nvarchar(max)");
+
+            b.Property<string>("CausationId")
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)")
+                .UseCollation("Latin1_General_100_BIN2");
+
+            b.Property<string>("ClientIpAddress")
+                .HasMaxLength(64)
+                .HasColumnType("nvarchar(64)");
+
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("CorrelationId")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)")
+                .UseCollation("Latin1_General_100_BIN2");
+
+            b.Property<string>("EntityId")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<string>("EntityType")
+                .IsRequired()
+                .HasMaxLength(160)
+                .HasColumnType("nvarchar(160)");
+
+            b.Property<long?>("EntityVersionAfter")
+                .HasColumnType("bigint");
+
+            b.Property<long?>("EntityVersionBefore")
+                .HasColumnType("bigint");
+
+            b.Property<string>("EventType")
+                .IsRequired()
+                .HasMaxLength(160)
+                .HasColumnType("nvarchar(160)");
+
+            b.Property<string>("IdempotencyKeyHash")
+                .IsRequired()
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<string>("IntegrityHash")
+                .IsRequired()
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<DateTimeOffset>("OccurredAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("Operation")
+                .IsRequired()
+                .HasMaxLength(64)
+                .HasColumnType("nvarchar(64)");
+
+            b.Property<string>("Outcome")
+                .IsRequired()
+                .HasMaxLength(32)
+                .HasColumnType("nvarchar(32)");
+
+            b.Property<string>("PermissionCode")
+                .IsRequired()
+                .HasMaxLength(160)
+                .HasColumnType("nvarchar(160)");
+
+            b.Property<string>("Reason")
+                .IsRequired()
+                .HasMaxLength(1000)
+                .HasColumnType("nvarchar(1000)");
+
+            b.Property<string>("RoleCodesJson")
+                .IsRequired()
+                .HasMaxLength(2000)
+                .HasColumnType("nvarchar(2000)");
+
+            b.Property<int>("SchemaVersion")
+                .HasColumnType("int");
+
+            b.Property<string>("SourceChannel")
+                .IsRequired()
+                .HasMaxLength(32)
+                .HasColumnType("nvarchar(32)");
+
+            b.Property<string>("UserAgent")
+                .HasMaxLength(512)
+                .HasColumnType("nvarchar(512)");
+
+            b.HasKey("Id");
+
+            b.HasIndex("CompanyId", "CorrelationId");
+
+            b.HasIndex("CompanyId", "OccurredAtUtc", "Id")
+                .IsDescending(false, true, true);
+
+            b.HasIndex("CompanyId", "EntityType", "EntityId", "OccurredAtUtc");
+
+            b.ToTable("AuditEvents", "audit", t =>
+            {
+                t.ExcludeFromMigrations();
+            });
+        });
+
         modelBuilder.Entity("GoymenERP.Modules.Counterparty.Domain.Accounts.CompanyPartyAccount", b =>
         {
             b.Property<Guid>("Id")
@@ -146,6 +291,93 @@ partial class CounterpartyDbContextModelSnapshot : ModelSnapshot
                 t.HasCheckConstraint(
                     "CK_Parties_Version",
                     "[Version] >= 1");
+            });
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Idempotency.Domain.Executions.CommandExecution", b =>
+        {
+            b.Property<Guid>("Id")
+                .ValueGeneratedOnAdd()
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("ActorId")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<string>("CommandName")
+                .IsRequired()
+                .HasMaxLength(160)
+                .HasColumnType("nvarchar(160)");
+
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<DateTimeOffset>("CompletedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<int>("HttpStatusCode")
+                .HasColumnType("int");
+
+            b.Property<string>("IdempotencyKeyHash")
+                .IsRequired()
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<string>("OriginalCorrelationId")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<string>("Outcome")
+                .IsRequired()
+                .HasMaxLength(64)
+                .HasColumnType("nvarchar(64)");
+
+            b.Property<string>("RequestHash")
+                .IsRequired()
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<string>("ResponseJson")
+                .IsRequired()
+                .HasColumnType("nvarchar(max)");
+
+            b.Property<int>("SchemaVersion")
+                .HasColumnType("int");
+
+            b.HasKey("Id");
+
+            b.HasIndex("CompanyId", "CommandName", "IdempotencyKeyHash")
+                .IsUnique();
+
+            b.HasIndex("CompanyId", "CompletedAtUtc", "Id");
+
+            b.ToTable("CommandExecutions", "idempotency", t =>
+            {
+                t.ExcludeFromMigrations();
+
+                t.HasCheckConstraint(
+                    "CK_CommandExecutions_CompanyId_NotEmpty",
+                    "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                t.HasCheckConstraint(
+                    "CK_CommandExecutions_Hash_Lengths",
+                    "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+
+                t.HasCheckConstraint(
+                    "CK_CommandExecutions_HttpStatusCode_Valid",
+                    "[HttpStatusCode] BETWEEN 100 AND 599");
+
+                t.HasCheckConstraint(
+                    "CK_CommandExecutions_ResponseJson_Valid",
+                    "ISJSON([ResponseJson]) = 1");
+
+                t.HasCheckConstraint(
+                    "CK_CommandExecutions_SchemaVersion_Positive",
+                    "[SchemaVersion] > 0");
             });
         });
 

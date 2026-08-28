@@ -37,7 +37,10 @@ builder.Services.AddOrganizationModule(
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
 builder.Services.AddIdentityModule(builder.Configuration);
-builder.Services.AddCounterpartyModule(builder.Configuration);
+builder.Services.AddCounterpartyModule(
+    builder.Configuration,
+    (services, options) => options.AddInterceptors(
+        services.GetRequiredService<AuditSaveChangesInterceptor>()));
 builder.Services.AddErpAuthentication(builder.Configuration, builder.Environment);
 
 var allowedOrigins = builder.Configuration
