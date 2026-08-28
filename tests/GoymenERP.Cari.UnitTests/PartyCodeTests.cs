@@ -1,6 +1,6 @@
 using GoymenERP.Modules.Counterparty.Domain.Parties;
 
-namespace GoymenERP.Cari.UnitTests;
+namespace GoymenERP.Counterparty.UnitTests;
 
 public sealed class PartyCodeTests
 {
