@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\BuildingBlocks\GoymenERP.BuildingBlocks\GoymenERP.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\..\Audit\GoymenERP.Modules.Audit.Infrastructure\GoymenERP.Modules.Audit.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Idempotency\GoymenERP.Modules.Idempotency.Infrastructure\GoymenERP.Modules.Idempotency.Infrastructure.csproj" />
+    <ProjectReference Include="..\GoymenERP.Modules.Counterparty.Domain\GoymenERP.Modules.Counterparty.Domain.csproj" />
+    <ProjectReference Include="..\GoymenERP.Modules.Counterparty.Application\GoymenERP.Modules.Counterparty.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.8" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.8" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>
