@@ -13,7 +13,7 @@ public sealed record CompanyPartyAccountView(
 
 public sealed record PartyCoreView(
     Guid Id,
-    string CariCode,
+    string Code,
     PartyKind Kind,
     string LegalName,
     string? TradeName,
