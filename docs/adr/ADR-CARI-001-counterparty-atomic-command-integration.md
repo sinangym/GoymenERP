@@ -1,7 +1,7 @@
 # ADR-CARI-001 — Cari Kritik Command Atomikliği İçin Platform Sidecar Entegrasyonu
 
 - Tarih: 2026-08-28
-- Durum: **Önerildi / manuel mimari review gerekli**
+- Durum: **Kabul edildi — manuel mimari review 2026-08-28**
 - Kapsam: `CARI-CORE-1B` public write dilimi
 - Taban: `main@538175c2d2367d9ba7f0489acec37b72cc03e85e`
 - Bağlı kararlar: `CARI-DEC-001…004`, `ADR-009`, `ADR-011`, `DEC-CAR-001…003`, `DEC-GOV-002/003`
