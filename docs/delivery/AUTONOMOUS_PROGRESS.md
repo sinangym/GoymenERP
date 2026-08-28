@@ -590,3 +590,78 @@ OPEN DECISIONS: CARI-PERM-001 A/B/C/D ve exact upgrade politikası; PR #31 human
 MAIN SHA: fc4c806ec61cf97e7177136f78f3f9d64cfb4d13
 ACTIVE PRS: #48, #45, #44, #41, #38(superseded), #37, #36, #35, #34, #32, #31, #30, #29, #28, #26, #25, #24, #19..#10 ve #2
 ```
+
+## 2026-08-29 02:43 +03:00 — Döngü 15
+
+- Canlı GitHub gerçeği yeniden hesaplandı. Permission decision contract taşıyıcı PR #51
+  ile `main`e alınmış ve güncel taban
+  `2db4df1fb3fd836d9743e172b24380f2e95d247b` olmuştur. Bu merge yalnız A/B/C/D karar
+  sözleşmesini yayımlar; Issue #43 hâlâ açıktır ve kullanıcı seçimi, exact rol paketi,
+  fresh/existing-install permission reconciliation, SoD, revoke ve inactive-role
+  politikası kesinleşmeden PR #36 merge edilemez.
+- Shared bootstrap/security PR #31 yeni `main` ile yeniden non-destructive sync edilmiş
+  exact head `55ea0c8c70e3d637a30c7368400fa90a86ca2895` üzerindedir. Current-base delta hâlâ
+  yalnız özgün beş güvenlik/bootstrap dosyasıdır; yerel suite `48 pass + 1 NTFS
+  capability skip`, CI `33220517310` ve UI golden `33220517190` tamamen yeşildir.
+  Bağımsız delta review P0/P1/P2 bulmamış ve exact HANDOFF-ACCEPTED bırakmıştır. PR
+  Draft/CLEAN olarak insan security merge kapısında kalır; otomatik merge edilmemiştir.
+- Cari API security contract PR #44, önceki iki P1'in giderildiği exact head
+  `eb05ce63b43992ed7e16db3d6d7a06ee6d619b65` üzerinde tekrar incelenmiştir. Required
+  JSON alanları constructor enforcement ile fail-closed, eksik on iki alan mutation
+  testleriyle; blank/whitespace auth policy metadata ise açık ret senaryolarıyla
+  korunmaktadır. CI `33220234345` ve UI golden `33220234349` yeşil, P0/P1 kalmamış ve
+  HANDOFF-ACCEPTED kaydedilmiştir. ChatGPT-owned Draft'a yazılmamıştır.
+- Migration artifact carrier PR #52 halen open/Ready'dir fakat recorded base'i
+  `fc4c806` olup güncel main ve PR #31 security kapısından önce kalır. PR #31'i tekrar
+  stale etmemesi için sequencing hold korunmuştur; eski merge-ref CI kanıtıyla merge
+  önerilmemiştir.
+- PR #34 current-main audit incelemesinde Organization `AuditEvent` yazma guard'ı P1;
+  Counterparty sidecar'da query filter + write guard P1 olarak ayrılmıştır. Cari-owned
+  açık Issue #53'e production sınırı ve gerçek SQL kabul matrisi bırakılmış; Codex Cari
+  kaynağına yazmamıştır. PR #32 current-main incelemesinde Organization parser'ın
+  virgüllü `Idempotency-Key` değerini kabul ettiği ve Counterparty parser'ın repeated/
+  comma ambiguity taşıdığı doğrulanmıştır. Cari production P1'i Issue #54'e ayrılmıştır.
+- PR #30 exact head `a8ae5500a52b8e3e1fd798bb6acd3d3d438b5453` salt-okunur current-main
+  incelemesinde correlation/causation middleware için P0/P1 bulunmamıştır. Fail-closed
+  cardinality/karakter/uzunluk ve middleware sırası doğrudur; metadata auth, tenant,
+  idempotency veya forensic-origin otoritesi değildir. Eski CI current-main kanıtı
+  değildir. Güncel Counterparty write endpoint'leri üzerinde doğrudan zero-effect gerçek
+  SQL composition matrisi P2 kabul hardening'i olarak kaydedilmiştir.
+- PR #24 structural manifest DAG tooling'i current main ile non-destructive sync edilip
+  exact head `59c5d2a305b334cb028b8cfda6c0b4255ff890fa` olarak push edilmiştir. Delta yalnız
+  validator + 18 adversarial test dosyasıdır; 18/18 test, validator, compileall ve
+  diff-check yerelde; CI `33221111263` ile UI golden `33221111226` uzakta tamamen
+  yeşildir. Mevcut workflow bu Python suite'i çağırmadığından PR yalnız tooling temelidir,
+  aktif fail-closed CI gate'i değildir. `.github/**` entegrasyonu PR #31 sonrasına ve ayrı
+  insan review'una bırakılmıştır.
+- PR #26 SQL metadata inventory exact-head/current-main incelemesinde üç P1 ile Draft
+  tutulmuştur: Python validator suite'i CI tarafından çalıştırılmıyor; çıktının gerçek
+  hedef ERP veritabanında üretildiği server-derived DB identity/match kanıtı yok; kanonik
+  ERP-000I manifest truth-state'i PR #12 readiness önerisiyle çelişiyor. Provider,
+  topology, collation, ranking veya threshold tahmin edilmemiş; production metadata
+  collection çalıştırılmamıştır.
+- PR #25 ve PR #35 production OIDC treni salt-okunur incelenmiştir. PR #25'te gerçek
+  Program host-startup ve DevelopmentBootstrap yokluk kabulü P2; PR #35'te
+  `https://@evil.example` ayıracı ile port/IDN/IPv6 pozitifleri P2 hardening olarak
+  kaydedilmiştir. İki PR da PR #31 sonrasında current-main sync, fresh CI ve human
+  security review bekler. PR #29, PR #31 + PR #44 contract main'e alınmadan ve iki-policy
+  endpoint modeli çözülmeden yazılmamıştır.
+- Yerel Codex worktree envanteri yeniden taranmıştır: üretim ve Draft PR dalları temiz ve
+  origin ile `0/0`; push edilmemiş geliştirme bulunmamıştır. Upstream taşımayan üç
+  `codex/review-*` worktree yalnız ephemeral salt-okunur review ref'idir ve duplicate
+  geliştirme PR'ına dönüştürülmemiştir. GitHub private-repo planı branch protection ve
+  ruleset API'lerini yine `403` ile reddettiğinden insan-review zorunluluğu teknik branch
+  kuralı değil süreç kapısı olarak korunmaktadır.
+- ERP-000F/M implementation kapıları, PR #2'nin yedi blocker'ı ve O → N → L → J/K
+  readiness sırası değişmemiştir. Kritik CI/security/migration/Cari PR'ları otomatik merge
+  edilmemiştir; ChatGPT-owned branch ve Counterparty production dosyalarına yazılmamıştır.
+
+```text
+DONE: PR #24 current-main sync + exact CI; PR #30/#26/#25/#35 read-only reviews; PR #44 remediated HANDOFF; Issues #53/#54 handoff
+IN REVIEW: PR #31 human security merge; PR #24 tooling human review; PR #44 human contract merge; PR #36 user permission decision; PR #37 progress
+BLOCKED: PR #52 sequencing; PR #34 AuditEvent guard; PR #41 PR31+PR34+Issue53; PR #32 comma-key; PR #29 PR31+PR44; PR #26 üç P1; ERP-000F/M; PR #2
+SAFE NEXT: human PR #31 merge; ardından serialized #25/#35/#34/#41/#30/#32/#24 current-main turları; ChatGPT-CARI Issues #53/#54 düzeltmeleri
+OPEN DECISIONS: Issue #43 CARI-PERM-001; PR #31 human merge; ERP-000I truth-state/ADR-007/OPEN-015; ERP-000F/M karar paketleri; GitHub planı/branch protection
+MAIN SHA: 2db4df1fb3fd836d9743e172b24380f2e95d247b
+ACTIVE PRS: #52, #45, #44, #41, #37, #36, #35, #34, #32, #31, #30, #29, #28, #26, #25, #24, #19..#10 ve #2
+```
