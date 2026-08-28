@@ -18,9 +18,6 @@ public sealed class CounterpartyDbContext(
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
 
-        modelBuilder.HasSequence<long>("PartyCodeSequence", "counterparty")
-            .StartsAt(1)
-            .IncrementsBy(1);
         ConfigureParty(modelBuilder);
         ConfigureCompanyPartyAccount(modelBuilder);
         ConfigureOrganizationCompanyReference(modelBuilder);
