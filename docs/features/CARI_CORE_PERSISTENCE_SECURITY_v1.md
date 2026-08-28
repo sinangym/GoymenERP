@@ -191,7 +191,11 @@ zorunluluklarını backend'de uygular.
 
 ## 10. Kabul kanıtı
 
-İlk persistence/API PR'ı en az şunları gerçek SQL/HTTP testinde kanıtlamalıdır:
+Aşağıdaki 12 madde `CARI-CORE-1B` write-capable persistence/API diliminin **tamamlanma kabulüdür**. Teslimat, birbirinden bağımsız ve manuel review edilen PR'lara bölünebilir.
+
+Yalnız schema + read-only foundation açan ve public write endpoint'i eklemeyen ara PR en az 1–4, 11–12 ve §11 migration kanıtlarını sağlamalıdır. Böyle bir foundation PR `CARI-CORE-1B DONE` veya production write acceptance olarak işaretlenemez. 5–10 maddeleri public write dilimi merge edilmeden ve `CARI-CORE-1B` tamamlanmış sayılmadan önce zorunlu kalır; ertelenmiş olmak bu acceptance'ları kaldırmaz veya zayıflatmaz.
+
+`CARI-CORE-1B` tamamlanmadan önce gerçek SQL/HTTP testleri şunları kanıtlamalıdır:
 
 1. aynı Party iki şirkete bağlanabilir, Party tek kalır,
 2. yalnız A yetkili kullanıcı B ilişkisinin varlığını göremez,
@@ -216,4 +220,4 @@ zorunluluklarını backend'de uygular.
 
 ## 12. Sonuç
 
-`CARI-CORE-1B` için tenant-safe persistence modeli teknik olarak hazırlanmıştır. İlk gerçek SQL/API dilimi, yalnız Party + CompanyPartyAccount core alanlarını ve create/read/company-account local write'larını içerebilir. Hassas kimlik/banka, Party-level kritik edit, maker-checker approval, bakiye/risk/open-item ve cross-module merge sonraki kontrollü dilimlerde kalır.
+`CARI-CORE-1B` için tenant-safe persistence modeli teknik olarak hazırlanmıştır. Teslimat schema + read-only foundation ile başlayabilir; bu ara dilim write acceptance'ı tamamladığını iddia edemez. Write-capable dilim yalnız Party + CompanyPartyAccount core alanlarını ve create/read/company-account local write'larını açabilir ve §10'daki kalan acceptance'ları tamamlamalıdır. Hassas kimlik/banka, Party-level kritik edit, maker-checker approval, bakiye/risk/open-item ve cross-module merge sonraki kontrollü dilimlerde kalır.
