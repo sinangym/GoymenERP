@@ -1,4 +1,7 @@
+using System.Net;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
@@ -15,6 +18,8 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
 {
     private const string ContractPath =
         "src/backend/Modules/Counterparty/COUNTERPARTY_API_ENDPOINTS.json";
+    private const string ExpectedContractSource =
+        "docs/features/CARI_API_SECURITY_METADATA_CONTRACT_v1.md";
     private const string ExpectedOwner = "CHATGPT-CARI";
     private const string ExpectedModule = "Counterparty";
     private const string ExpectedTag = "Counterparty";
@@ -40,6 +45,36 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
     }
 
     [Fact]
+    public async Task Optional_company_context_filter_is_observable_and_fail_closed()
+    {
+        using var noHeaderClient = factory.CreateClientFor(TestUsers.CompanyA);
+        using var noHeaderResponse = await noHeaderClient.GetAsync(CounterpartyRoutePrefix);
+        Assert.Equal(HttpStatusCode.OK, noHeaderResponse.StatusCode);
+
+        using var authorizedClient = factory.CreateClientFor(TestUsers.CompanyA);
+        authorizedClient.DefaultRequestHeaders.Add(
+            CompanyContextMiddleware.CompanyHeaderName,
+            TestCompanyIds.CompanyA.ToString());
+        using var authorizedResponse = await authorizedClient.GetAsync(CounterpartyRoutePrefix);
+        Assert.Equal(HttpStatusCode.OK, authorizedResponse.StatusCode);
+
+        using var invalidClient = factory.CreateClientFor(TestUsers.CompanyA);
+        invalidClient.DefaultRequestHeaders.TryAddWithoutValidation(
+            CompanyContextMiddleware.CompanyHeaderName,
+            "not-a-guid");
+        using var invalidResponse = await invalidClient.GetAsync(CounterpartyRoutePrefix);
+        Assert.Equal(HttpStatusCode.BadRequest, invalidResponse.StatusCode);
+
+        using var unauthorizedClient = factory.CreateClientFor(TestUsers.CompanyA);
+        unauthorizedClient.DefaultRequestHeaders.Add(
+            CompanyContextMiddleware.CompanyHeaderName,
+            TestCompanyIds.CompanyB.ToString());
+        using var unauthorizedResponse = await unauthorizedClient.GetAsync(
+            CounterpartyRoutePrefix);
+        Assert.Equal(HttpStatusCode.Forbidden, unauthorizedResponse.StatusCode);
+    }
+
+    [Fact]
     public void Contract_drift_detection_rejects_missing_extra_and_security_downgrade()
     {
         var manifest = new EndpointManifest(
@@ -47,7 +82,7 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
             ExpectedOwner,
             ExpectedModule,
             ExpectedTag,
-            "docs/features/CARI_API_SECURITY_METADATA_CONTRACT_v1.md",
+            ExpectedContractSource,
             [
                 new EndpointEntry(
                     HttpMethods.Get,
@@ -76,13 +111,11 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
 
         Assert.Empty(ValidateRuntime(manifest, safeRuntime));
 
-        Assert.Contains(
+        AssertContainsViolation(
             ValidateRuntime(manifest, safeRuntime.Skip(1).ToArray()),
-            error => error.Contains(
-                "Missing contracted Counterparty endpoint",
-                StringComparison.Ordinal));
+            "Missing contracted Counterparty endpoint");
 
-        Assert.Contains(
+        AssertContainsViolation(
             ValidateRuntime(
                 manifest,
                 safeRuntime.Append(CreatePermissionWrite(
@@ -90,33 +123,146 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
                         $"{CounterpartyRoutePrefix}/{{partyId:guid}}",
                         "counterparty.parties.delete"))
                     .ToArray()),
-            error => error.Contains(
-                "Unexpected runtime Counterparty endpoint",
-                StringComparison.Ordinal));
+            "Unexpected runtime Counterparty endpoint");
 
-        Assert.Contains(
+        AssertContainsViolation(
             ValidateRuntime(
                 manifest,
                 safeRuntime.Select(endpoint => endpoint.Key.Method == HttpMethods.Get
                         ? endpoint with { AllowsAnonymous = true }
                         : endpoint)
                     .ToArray()),
-            error => error.Contains("AllowAnonymous", StringComparison.Ordinal));
+            "AllowAnonymous");
 
-        Assert.Contains(
+        AssertContainsViolation(
             ValidateRuntime(
                 manifest,
                 safeRuntime.Select(endpoint => endpoint.Key.Method == HttpMethods.Post
                         ? endpoint with { RequiresCompanyContext = false }
                         : endpoint)
                     .ToArray()),
-            error => error.Contains("RequiresCompanyContext", StringComparison.Ordinal));
+            "RequiresCompanyContext");
+
+        AssertContainsViolation(
+            ValidateRuntime(
+                manifest,
+                safeRuntime.Select(endpoint => endpoint.Key.Method == HttpMethods.Get
+                        ? endpoint with
+                        {
+                            Authorization = endpoint.Authorization
+                                .Append(new AuthorizationMetadata(" ", null, null))
+                                .ToArray(),
+                        }
+                        : endpoint)
+                    .ToArray()),
+            "blank authorization policy");
+
+        AssertContainsViolation(
+            ValidateRuntime(
+                manifest,
+                safeRuntime.Select(endpoint => endpoint.Key.Method == HttpMethods.Post
+                        ? endpoint with
+                        {
+                            Authorization = endpoint.Authorization
+                                .Append(new AuthorizationMetadata("\t", null, null))
+                                .ToArray(),
+                        }
+                        : endpoint)
+                    .ToArray()),
+            "blank authorization policy");
+    }
+
+    [Theory]
+    [InlineData("schema_version")]
+    [InlineData("owner")]
+    [InlineData("module")]
+    [InlineData("tag")]
+    [InlineData("contract_source")]
+    [InlineData("endpoints")]
+    public void Missing_required_root_property_is_rejected(string propertyName)
+    {
+        var document = ReadMutableManifestDocument();
+        Assert.True(document.Remove(propertyName));
+
+        Assert.Throws<JsonException>(() => DeserializeManifest(ToUtf8(document)));
+    }
+
+    [Theory]
+    [InlineData("method")]
+    [InlineData("route")]
+    [InlineData("authorization_mode")]
+    [InlineData("permission")]
+    [InlineData("requires_company_context")]
+    [InlineData("optional_company_context")]
+    public void Missing_required_endpoint_property_is_rejected(string propertyName)
+    {
+        var document = ReadMutableManifestDocument();
+        var endpoint = Assert.IsType<JsonObject>(
+            Assert.IsType<JsonArray>(document["endpoints"])[0]);
+        Assert.True(endpoint.Remove(propertyName));
+
+        Assert.Throws<JsonException>(() => DeserializeManifest(ToUtf8(document)));
+    }
+
+    [Fact]
+    public void Unknown_and_duplicate_json_properties_are_rejected()
+    {
+        var unknown = ReadMutableManifestDocument();
+        unknown["unexpected"] = true;
+        Assert.Throws<JsonException>(() => DeserializeManifest(ToUtf8(unknown)));
+
+        var original = File.ReadAllText(
+            ToFullPath(FindRepositoryRoot(), ContractPath));
+        var marker = "\"owner\": \"CHATGPT-CARI\",";
+        Assert.Contains(marker, original, StringComparison.Ordinal);
+        var duplicate = original.Replace(
+            marker,
+            marker + "\n  \"owner\": \"DUPLICATE\"," ,
+            StringComparison.Ordinal);
+        Assert.Throws<InvalidOperationException>(() =>
+            DeserializeManifest(Encoding.UTF8.GetBytes(duplicate)));
+    }
+
+    [Fact]
+    public void Manifest_definition_rejects_noncanonical_method_route_and_source()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var manifest = ReadManifest(repositoryRoot);
+
+        var lowerMethod = MutateEndpoint(
+            manifest,
+            0,
+            endpoint => endpoint with { Method = "get" });
+        AssertContainsViolation(
+            ValidateManifest(repositoryRoot, lowerMethod),
+            "canonical uppercase");
+
+        var nonCanonicalRoute = MutateEndpoint(
+            manifest,
+            0,
+            endpoint => endpoint with { Route = "api/v1/counterparties/" });
+        AssertContainsViolation(
+            ValidateManifest(repositoryRoot, nonCanonicalRoute),
+            "canonical route");
+
+        AssertContainsViolation(
+            ValidateManifest(
+                repositoryRoot,
+                manifest with
+                {
+                    ContractSource = "docs/features/WRONG_CONTRACT.md",
+                }),
+            "contract_source");
     }
 
     private static EndpointManifest ReadManifest(string repositoryRoot)
     {
-        var path = ToFullPath(repositoryRoot, ContractPath);
-        var bytes = File.ReadAllBytes(path);
+        return DeserializeManifest(
+            File.ReadAllBytes(ToFullPath(repositoryRoot, ContractPath)));
+    }
+
+    private static EndpointManifest DeserializeManifest(byte[] bytes)
+    {
         using var document = JsonDocument.Parse(bytes, new JsonDocumentOptions
         {
             AllowTrailingCommas = false,
@@ -134,9 +280,21 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
         return JsonSerializer.Deserialize<EndpointManifest>(bytes, new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = false,
+            RespectRequiredConstructorParameters = true,
             UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
         }) ?? throw new InvalidOperationException(
             "Counterparty API endpoint contract is empty.");
+    }
+
+    private static JsonObject ReadMutableManifestDocument()
+    {
+        return Assert.IsType<JsonObject>(JsonNode.Parse(File.ReadAllText(
+            ToFullPath(FindRepositoryRoot(), ContractPath))));
+    }
+
+    private static byte[] ToUtf8(JsonNode document)
+    {
+        return Encoding.UTF8.GetBytes(document.ToJsonString());
     }
 
     private static IReadOnlyList<string> ValidateManifest(
@@ -165,7 +323,21 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
             errors.Add($"Unexpected tag: {manifest.Tag}.");
         }
 
+        if (!string.Equals(
+                manifest.ContractSource,
+                ExpectedContractSource,
+                StringComparison.Ordinal))
+        {
+            errors.Add($"Unexpected contract_source: {manifest.ContractSource}.");
+        }
+
         ValidateRepositoryFile(repositoryRoot, manifest.ContractSource, errors);
+
+        if (manifest.Endpoints is null)
+        {
+            errors.Add("endpoints must be a non-null array.");
+            return errors;
+        }
 
         if (manifest.Endpoints.Count != 4)
         {
@@ -175,9 +347,29 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
         }
 
         var keys = new HashSet<EndpointKey>(EndpointKeyComparer.Instance);
-        foreach (var endpoint in manifest.Endpoints)
+        for (var index = 0; index < manifest.Endpoints.Count; index++)
         {
-            var key = CreateKey(endpoint.Method, endpoint.Route);
+            var endpoint = manifest.Endpoints[index];
+            if (endpoint is null)
+            {
+                errors.Add($"Endpoint contract at index {index} is null.");
+                continue;
+            }
+
+            var normalizedMethod = NormalizeMethod(endpoint.Method);
+            if (!string.Equals(endpoint.Method, normalizedMethod, StringComparison.Ordinal))
+            {
+                errors.Add(
+                    $"Endpoint method must use canonical uppercase form: {endpoint.Method}.");
+            }
+
+            var normalizedRoute = NormalizeRoute(endpoint.Route);
+            if (!string.Equals(endpoint.Route, normalizedRoute, StringComparison.Ordinal))
+            {
+                errors.Add($"Endpoint must use canonical route form: {endpoint.Route}.");
+            }
+
+            var key = new EndpointKey(normalizedMethod, normalizedRoute);
             if (!keys.Add(key))
             {
                 errors.Add($"Duplicate endpoint contract: {key}.");
@@ -248,9 +440,21 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
         IReadOnlyCollection<RuntimeEndpoint> runtimeEndpoints)
     {
         var errors = new List<string>();
+        if (manifest.Endpoints is null)
+        {
+            errors.Add("Contract endpoints are unavailable.");
+            return errors;
+        }
+
         var expected = new Dictionary<EndpointKey, EndpointEntry>(EndpointKeyComparer.Instance);
         foreach (var endpoint in manifest.Endpoints)
         {
+            if (endpoint is null)
+            {
+                errors.Add("Contract contains a null endpoint entry.");
+                continue;
+            }
+
             var key = CreateKey(endpoint.Method, endpoint.Route);
             if (!expected.TryAdd(key, endpoint))
             {
@@ -279,7 +483,7 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
                 continue;
             }
 
-            ValidateRuntimeEndpoint(manifest.Tag, contract, runtime, errors);
+            ValidateRuntimeEndpoint(manifest.Tag ?? string.Empty, contract, runtime, errors);
         }
 
         foreach (var key in expected.Keys.Except(actual.Keys, EndpointKeyComparer.Instance))
@@ -314,6 +518,13 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
         if (runtime.Authorization.Any(metadata => metadata.AuthenticationSchemes is not null))
         {
             errors.Add($"{runtime.Key}: endpoint authentication scheme override is forbidden.");
+        }
+
+        if (runtime.Authorization.Any(metadata =>
+                metadata.Policy is not null
+                && string.IsNullOrWhiteSpace(metadata.Policy)))
+        {
+            errors.Add($"{runtime.Key}: blank authorization policy metadata is forbidden.");
         }
 
         if (runtime.Tags.Count != 1
@@ -428,6 +639,30 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
             [ExpectedTag]);
     }
 
+    private static EndpointManifest MutateEndpoint(
+        EndpointManifest manifest,
+        int index,
+        Func<EndpointEntry, EndpointEntry> mutation)
+    {
+        Assert.NotNull(manifest.Endpoints);
+        var endpoints = manifest.Endpoints!
+            .Select((endpoint, currentIndex) =>
+                currentIndex == index
+                    ? mutation(Assert.IsType<EndpointEntry>(endpoint))
+                    : endpoint)
+            .ToArray();
+        return manifest with { Endpoints = endpoints };
+    }
+
+    private static void AssertContainsViolation(
+        IEnumerable<string> errors,
+        string expectedText)
+    {
+        Assert.Contains(
+            errors,
+            error => error.Contains(expectedText, StringComparison.Ordinal));
+    }
+
     private static void FindDuplicateProperties(
         JsonElement element,
         string location,
@@ -462,7 +697,7 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
 
     private static void ValidateRepositoryFile(
         string repositoryRoot,
-        string repositoryPath,
+        string? repositoryPath,
         ICollection<string> errors)
     {
         if (string.IsNullOrWhiteSpace(repositoryPath) || ContainsWildcard(repositoryPath))
@@ -497,19 +732,19 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
                    StringComparison.Ordinal);
     }
 
-    private static bool ContainsWildcard(string value)
+    private static bool ContainsWildcard(string? value)
     {
-        return value.Contains('*') || value.Contains('?');
+        return value?.Contains('*') == true || value?.Contains('?') == true;
     }
 
-    private static EndpointKey CreateKey(string method, string route)
+    private static EndpointKey CreateKey(string? method, string? route)
     {
         return new EndpointKey(NormalizeMethod(method), NormalizeRoute(route));
     }
 
-    private static string NormalizeMethod(string method)
+    private static string NormalizeMethod(string? method)
     {
-        return method.Trim().ToUpperInvariant();
+        return method?.Trim().ToUpperInvariant() ?? string.Empty;
     }
 
     private static string NormalizeRoute(string? route)
@@ -589,17 +824,18 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
 
     private sealed record EndpointManifest(
         [property: JsonPropertyName("schema_version")] int SchemaVersion,
-        [property: JsonPropertyName("owner")] string Owner,
-        [property: JsonPropertyName("module")] string Module,
-        [property: JsonPropertyName("tag")] string Tag,
-        [property: JsonPropertyName("contract_source")] string ContractSource,
-        [property: JsonPropertyName("endpoints")] IReadOnlyList<EndpointEntry> Endpoints);
+        [property: JsonPropertyName("owner")] string? Owner,
+        [property: JsonPropertyName("module")] string? Module,
+        [property: JsonPropertyName("tag")] string? Tag,
+        [property: JsonPropertyName("contract_source")] string? ContractSource,
+        [property: JsonPropertyName("endpoints")]
+        IReadOnlyList<EndpointEntry?>? Endpoints);
 
     private sealed record EndpointEntry(
-        [property: JsonPropertyName("method")] string Method,
-        [property: JsonPropertyName("route")] string Route,
-        [property: JsonPropertyName("authorization_mode")] string AuthorizationMode,
-        [property: JsonPropertyName("permission")] string Permission,
+        [property: JsonPropertyName("method")] string? Method,
+        [property: JsonPropertyName("route")] string? Route,
+        [property: JsonPropertyName("authorization_mode")] string? AuthorizationMode,
+        [property: JsonPropertyName("permission")] string? Permission,
         [property: JsonPropertyName("requires_company_context")] bool RequiresCompanyContext,
         [property: JsonPropertyName("optional_company_context")] bool OptionalCompanyContext);
 }
