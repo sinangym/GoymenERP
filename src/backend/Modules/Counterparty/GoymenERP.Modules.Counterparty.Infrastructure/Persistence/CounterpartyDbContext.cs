@@ -31,6 +31,8 @@ public sealed class CounterpartyDbContext(
         ConfigureOrganizationCompanyReference(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.ConfigureCommandExecution(excludeFromMigrations: true);
+        modelBuilder.Entity<CommandExecution>()
+            .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     public override int SaveChanges()
