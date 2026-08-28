@@ -393,14 +393,19 @@ ACTIVE PRS: #19..#8 Draft; #2 Draft
   `ERP-000M-SQL-POC-CONTRACT` nedeniyle `NO-GO / BLOCKED` durumundadır.
 - PR #15 merge edilmeden ERP-000O/N/L/J/K implementation veya ortak manifest
   senkronizasyonu başlatılmayacaktır. PR #2'nin yedi blocker'ı aynen korunur.
-- Yerel JSON/DAG, diff, self-review ve tam CI kanıtları tamamlandıktan sonra PR #15 kanıt
-  yorumunda güncellenecektir.
+- Yerel JSON/DAG, exact dependency/blocker, non-M satır değişmezliği, `git diff --check`
+  ve UI katalog golden doğrulamaları başarılıdır; bağımsız self-review P0/P1 bulmamıştır.
+- Head `6ba6c9f7354f0a5b615687fdca5e666fd9118f32` için standart CI
+  `33144770111` backend, frontend, gerçek SQL Server relational acceptance ve container
+  build işlerinde; UI katalog golden workflow `33144770154` ise validator testleri ve
+  katalog doğrulamasında tamamen yeşildir. Progress-only son commit sonrasında aynı
+  workflow'lar yeniden doğrulanacak ve PR #15 kanıt yorumuna kaydedilecektir.
 
 ```text
-DONE: PR #8/#9 merge; PR #15 main sync; iki human-review blocker'ı düzeltildi
+DONE: PR #8/#9 merge; PR #15 main sync; iki blocker kapalı; CI 33144770111 + UI 33144770154 yeşil
 IN REVIEW: ERP-000M readiness Draft PR #15
 BLOCKED: ERP-000M/O/N/L/J/K implementation; ERP-000F implementation; PR #2 (yedi blocker)
-SAFE NEXT: PR #15 DAG/diff/self-review/tam CI; ardından insan review'u
+SAFE NEXT: progress-only son head CI doğrulaması; ardından PR #15 insan review'u
 OPEN DECISIONS: ADR-003/010; OPEN-014/015/017; ERP-000M-SQL-POC-CONTRACT; ERP-000F ADR-006 + OPEN-022/023/024/025
 MAIN SHA: 81283e582de00fc291b848a25f1a15ff45fc4657
 ACTIVE PRS: #19..#10 Draft; #15 aktif human review; #2 Draft/blocked
