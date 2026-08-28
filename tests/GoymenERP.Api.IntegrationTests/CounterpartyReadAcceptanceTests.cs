@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
@@ -85,24 +86,39 @@ public sealed class CounterpartyReadAcceptanceTests(GoymenErpApiFactory factory)
     private async Task PrepareScenarioAsync()
     {
         _ = factory.Services;
-        await using var scope = factory.Services.CreateAsyncScope();
+        await GrantReadPermissionAsync();
 
+        await using (var checkScope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = checkScope.ServiceProvider.GetRequiredService<CounterpartyDbContext>();
+            if (await dbContext.Parties.AnyAsync(party => party.Id == SharedPartyId))
+            {
+                return;
+            }
+        }
+
+        await SeedCompanyAAsync();
+        await SeedCompanyBAsync();
+    }
+
+    private async Task GrantReadPermissionAsync()
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
         var identityDbContext = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
         var operatorRole = await identityDbContext.Roles
             .Include(role => role.Permissions)
             .SingleAsync(role => role.Code == "ORGANIZATION_OPERATOR");
         operatorRole.AddPermission(ErpPermissions.CounterpartyPartiesRead);
         await identityDbContext.SaveChangesAsync();
+    }
 
-        var counterpartyDbContext = scope.ServiceProvider
-            .GetRequiredService<CounterpartyDbContext>();
-        if (await counterpartyDbContext.Parties.AnyAsync(
-                party => party.Id == SharedPartyId))
-        {
-            return;
-        }
+    private async Task SeedCompanyAAsync()
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(TestCompanyIds.CompanyA);
+        var dbContext = scope.ServiceProvider.GetRequiredService<CounterpartyDbContext>();
 
-        counterpartyDbContext.Parties.AddRange(
+        dbContext.Parties.AddRange(
             new Party(
                 SharedPartyId,
                 PartyCode.Parse("CAR-000001"),
@@ -112,35 +128,48 @@ public sealed class CounterpartyReadAcceptanceTests(GoymenErpApiFactory factory)
                 CompanyAOnlyPartyId,
                 PartyCode.Parse("CAR-000002"),
                 PartyKind.LegalEntity,
-                "Yalnız A Cari A.Ş."),
-            new Party(
-                CompanyBOnlyPartyId,
-                PartyCode.Parse("CAR-000003"),
-                PartyKind.LegalEntity,
-                "Yalnız B Cari A.Ş."));
+                "Yalnız A Cari A.Ş."));
 
-        counterpartyDbContext.CompanyPartyAccounts.AddRange(
+        dbContext.CompanyPartyAccounts.AddRange(
             new CompanyPartyAccount(
                 Guid.Parse("52000000-0000-0000-0000-000000000001"),
                 TestCompanyIds.CompanyA,
                 SharedPartyId,
                 PartyRole.Customer),
             new CompanyPartyAccount(
+                Guid.Parse("52000000-0000-0000-0000-000000000003"),
+                TestCompanyIds.CompanyA,
+                CompanyAOnlyPartyId,
+                PartyRole.Customer));
+
+        await dbContext.SaveChangesAsync();
+    }
+
+    private async Task SeedCompanyBAsync()
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(TestCompanyIds.CompanyB);
+        var dbContext = scope.ServiceProvider.GetRequiredService<CounterpartyDbContext>();
+
+        dbContext.Parties.Add(
+            new Party(
+                CompanyBOnlyPartyId,
+                PartyCode.Parse("CAR-000003"),
+                PartyKind.LegalEntity,
+                "Yalnız B Cari A.Ş."));
+
+        dbContext.CompanyPartyAccounts.AddRange(
+            new CompanyPartyAccount(
                 Guid.Parse("52000000-0000-0000-0000-000000000002"),
                 TestCompanyIds.CompanyB,
                 SharedPartyId,
                 PartyRole.Supplier),
-            new CompanyPartyAccount(
-                Guid.Parse("52000000-0000-0000-0000-000000000003"),
-                TestCompanyIds.CompanyA,
-                CompanyAOnlyPartyId,
-                PartyRole.Customer),
             new CompanyPartyAccount(
                 Guid.Parse("52000000-0000-0000-0000-000000000004"),
                 TestCompanyIds.CompanyB,
                 CompanyBOnlyPartyId,
                 PartyRole.Supplier));
 
-        await counterpartyDbContext.SaveChangesAsync();
+        await dbContext.SaveChangesAsync();
     }
 }
