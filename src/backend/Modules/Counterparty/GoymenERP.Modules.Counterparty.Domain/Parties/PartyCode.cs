@@ -51,7 +51,15 @@ public readonly record struct PartyCode
                 nameof(value));
         }
 
-        return new PartyCode(normalized);
+        var canonical = FromSequence(sequence);
+        if (!string.Equals(normalized, canonical.Value, StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "Cari kodu tek kanonik CAR-000001 biçiminde olmalıdır.",
+                nameof(value));
+        }
+
+        return canonical;
     }
 
     public override string ToString() => Value;
