@@ -112,7 +112,7 @@ public sealed class CounterpartySqlServerRelationalAcceptanceTests
         SqlServerRelationalApiFactory factory,
         Guid partyId)
     {
-        using var groupClient = factory.CreateClientFor(TestUsers.GroupAdmin);
+        using var groupClient = CreateGroupClient(factory, TestUsers.GroupAdmin);
 
         using var groupResponse = await groupClient.GetAsync("/api/v1/counterparties");
         Assert.Equal(HttpStatusCode.OK, groupResponse.StatusCode);
@@ -151,6 +151,17 @@ public sealed class CounterpartySqlServerRelationalAcceptanceTests
         using var conflictingJson = JsonDocument.Parse(
             await conflictingFilter.Content.ReadAsStringAsync());
         Assert.Empty(conflictingJson.RootElement.EnumerateArray());
+    }
+
+    private static HttpClient CreateGroupClient(
+        SqlServerRelationalApiFactory factory,
+        string userId)
+    {
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Development-User", userId);
+        client.DefaultRequestHeaders.Add("X-Correlation-Id", Guid.NewGuid().ToString("N"));
+        client.DefaultRequestHeaders.Add("Idempotency-Key", Guid.NewGuid().ToString("N"));
+        return client;
     }
 
     private static Task InsertPartyAsync(
