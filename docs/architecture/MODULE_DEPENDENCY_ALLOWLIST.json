@@ -12,6 +12,18 @@
       "target": "src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/GoymenERP.Modules.Idempotency.Infrastructure.csproj",
       "adr": "docs/adr/ADR-011-idempotency-and-concurrency.md",
       "reason": "Command result, audit insert and Organization business update share one EF SaveChanges and SQL transaction."
+    },
+    {
+      "source": "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/GoymenERP.Modules.Counterparty.Infrastructure.csproj",
+      "target": "src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj",
+      "adr": "docs/adr/ADR-CARI-001-counterparty-atomic-command-integration.md",
+      "reason": "Counterparty business write and audit insert share one EF SaveChanges and SQL transaction."
+    },
+    {
+      "source": "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/GoymenERP.Modules.Counterparty.Infrastructure.csproj",
+      "target": "src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/GoymenERP.Modules.Idempotency.Infrastructure.csproj",
+      "adr": "docs/adr/ADR-CARI-001-counterparty-atomic-command-integration.md",
+      "reason": "Counterparty business write, audit insert and command result share one EF SaveChanges and SQL transaction."
     }
   ]
 }
