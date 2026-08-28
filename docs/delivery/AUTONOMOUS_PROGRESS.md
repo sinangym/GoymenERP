@@ -515,3 +515,78 @@ OPEN DECISIONS: counterparty.accounts.create rol/yeni kurulum/upgrade matrisi; C
 MAIN SHA: a3b58b9266ea192dd029889ac60abfe8b2ec194e
 ACTIVE PRS: #41, #38, #37, #36, #35, #34, #32, #31, #30, #29, #28, #26, #25, #24, #19..#10 ve #2
 ```
+
+## 2026-08-29 02:18 +03:00 — Döngü 14
+
+- Kullanıcının ChatGPT-CARI ve CODEX-PLATFORM için tanımladığı iki-yazar/tek-Gerçek-
+  Kaynak modeli tamamen okundu ve canlı GitHub ile yeniden hesaplandı. Sohbette PR
+  numaraları ve merge durumu yer yer stale olduğu için yalnız exact SHA, PR diff'i,
+  merge-ref CI ve kalıcı HANDOFF kayıtları esas alındı. ChatGPT-owned dallara ve
+  Counterparty production kaynaklarına Codex tarafından yazılmadı.
+- No-op optimistic-concurrency hotfix'inin exact reviewed head'i
+  `69f6d0aa6f046b055a71443db14c54e374c2347d`, Draft geçiş sınırlaması nedeniyle
+  taşıyıcı PR #49 ile byte-for-byte main'e alındı. Yeni commit
+  `75c5a964cc387eaa9e954955fa8db6c147c3815f` ve main-push CI tamamen yeşildi. Açık
+  kalan özgün PR #38'e superseded kaydı bırakıldı; ikinci kez merge edilmemelidir.
+- Cari-owned API→Counterparty entrypoint sözleşmesi PR #42 exact head
+  `e9dd23fc612ab5f67b9b2950293065dc60abb17d` üzerinde bağımsız incelendi; P0/P1
+  bulunmadı. Exact iki edge ve registration entrypoint'leri PR #41'e
+  `PR41-EDGE-INVENTORY` olarak yazıldı. Sözleşme taşıyıcı PR #50 ile main'e alındı;
+  güncel main `fc4c806ec61cf97e7177136f78f3f9d64cfb4d13` oldu. PR #41 artık declaration
+  yönünden hazır olsa da PR #31 ve PR #34 merge/current-main kapıları nedeniyle
+  `Draft / DO NOT MERGE` kalır; wildcard veya test gevşetmesi yapılmadı.
+- Shared .NET bootstrap/security PR #31 önce `75c5a964` main'ine, PR #50 merge'inden
+  sonra tekrar `fc4c806` main'ine non-destructive merge ile senkronize edildi. Güncel
+  exact head `0846e8c27ee546e47bd93ed52ff77b5b02409b4b` olup current-base diff hâlâ yalnız
+  özgün beş dosyadır. Yerel bootstrap suite `48 pass + 1 NTFS capability skip`,
+  Counterparty entrypoint contract `3/3`; CI `33219734731` ve UI golden
+  `33219734658` tamamen yeşildir. Bağımsız delta review P0/P1/P2 bulmadı ve exact
+  `HANDOFF-ACCEPTED` bırakıldı. `.github/**`, NuGet ve Docker güvenlik yüzeyi olduğu
+  için PR Draft/human security merge kapısında bırakıldı.
+- Cari migration-artifact contract PR #45 önce gerçek `dotnet-ef --idempotent
+  --no-build` komutuyla doğrulandı; 6.210 bayt SQL yalnız Counterparty history,
+  `Parties` ve `CompanyPartyAccounts` nesnelerini üretti, Audit/Idempotency sidecar
+  tablolarını üretmedi. P2 hardening sonrası exact head
+  `f4d38851c3b4531a5f75fabfb5cd9c75c57f7430`, duplicate/blank/null listeleri ve
+  kanonik contract path drift'ini fail-closed reddeder. CI `33219498922`, UI golden
+  `33219498774` yeşil; P0/P1 yok ve HANDOFF-ACCEPTED kaydedildi.
+- Cari API security contract PR #44 exact head
+  `a05c59e69241b7626f1215a47cde988a3818c7e5` üzerinde iki P1 ile
+  `REQUEST_CHANGES` aldı: eksik required JSON alanı varsayılan bool ile geçebiliyor ve
+  blank/whitespace authorization policy metadata discovery sırasında görünmez
+  olabiliyor. ChatGPT-CARI bu head'i düzeltmeden generic PR #29 manifesti tüketmez.
+- Permission decision PR #48'in ilk head'inde üç P1 bulundu ve ChatGPT-CARI tarafından
+  giderildi. Yeni exact head `f1c60825f9dacb6e8becfd88b8c4a8f3146178ad`,
+  canonical Issue #43 ile A/B/C/D seçeneklerini, invisible-Party terminal idempotency
+  semantiğini ve main/pending-PR truth ayrımını doğru taşır. CI `33219044111`, UI
+  golden `33219044069` yeşil ve HANDOFF-ACCEPTED verildi; fakat bu kullanıcı seçimi
+  değildir. Exact rol, fresh-install, existing-install reconciliation, grant source,
+  SoD, revoke ve inactive-role politikası onaylanmadan rol/grant/merge yoktur.
+- PR #36, main `75c5a964` ile non-destructive sync edilerek exact head
+  `3e8127545c54c46e0ba95eee426eb5b13aad4cde` oldu. Dokuz dosyalık Cari scope'u ve
+  hotfix davranışı korunmuş; CI `33219259687` ve UI golden `33219259679` yeşildir.
+  Sync kabul edildi fakat feature, Issue #43 kararı ve existing-install/unauthorized
+  role/wrong-scope acceptance tamamlanmadan `DO NOT MERGE` kalır.
+- PR #29 salt-okunur recheck'te güncel dört Counterparty endpoint'ini eski modelle
+  reddettiği, dinamik GET'lerin broad authenticated-only istisna sayılamayacağı ve
+  pending PR #36 route'unun iki permission politikasını mevcut tek-permission modelinin
+  temsil etmediği doğrulandı. PR #44 düzelip main'e girmeden ve PR #31 kapanmadan sync
+  yapılmadı. Issue #40 çift yönlü handoff merkezi yeni SHA, review ve merge sırasıyla
+  güncellendi. Hiçbir kritik platform/CI/security PR'ı Codex tarafından merge edilmedi.
+- PR #34 salt-okunur current-main incelemesinde AuditEvent query filtresi doğru, fakat
+  AuditEvent yazmaları için active CompanyContext eşleşme guard'ı eksik bulundu. Aynı
+  yazma boşluğu ve ek olarak AuditEvent query-filter eksikliği current-main
+  CounterpartyDbContext'te doğrulandı. Organization düzeltmesi PR #34 sahibinde, Cari
+  düzeltmesi ChatGPT-CARI sahipliğinde tutuldu; Counterparty bulgusu acceptance
+  matrisiyle Issue #53 olarak GitHub'a kaydedildi. PR #31 merge edilmeden PR #34'e veya
+  PR #41'e implementation yazılmadı.
+
+```text
+DONE: PR #49 hotfix merge; PR #50 entrypoint-contract merge; PR #42/#45/#48 exact-head review; PR #41 edge inventory; PR #31 current-main sync + review
+IN REVIEW: PR #31 human security merge; PR #45 human contract merge; PR #48 user decision; PR #36 permission implementation; PR #37 progress record
+BLOCKED: PR #44 iki P1; PR #29 PR44+PR31; PR #34 AuditEvent write guard; PR #41 PR31+PR34; PR #36 Issue43; Issue #53 Counterparty audit sidecar; ERP-000F/M; PR #2
+SAFE NEXT: PR #31 human merge; ardından PR #34 current-main sync + AuditEvent guard; sonra PR #41 exact contract integration; ChatGPT-CARI PR #44 ve Issue #53 remediation
+OPEN DECISIONS: CARI-PERM-001 A/B/C/D ve exact upgrade politikası; PR #31 human security merge; ERP-000F/M open ADR/kararları
+MAIN SHA: fc4c806ec61cf97e7177136f78f3f9d64cfb4d13
+ACTIVE PRS: #48, #45, #44, #41, #38(superseded), #37, #36, #35, #34, #32, #31, #30, #29, #28, #26, #25, #24, #19..#10 ve #2
+```
