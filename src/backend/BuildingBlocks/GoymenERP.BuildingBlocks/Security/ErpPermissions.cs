@@ -15,6 +15,9 @@ public static class ErpPermissions
     public const string IdentityRolesManage = "identity.roles.manage";
     public const string IdentityAuditRead = "identity.audit.read";
 
+    public const string CounterpartyPartiesRead = "counterparty.parties.read";
+    public const string CounterpartyPartiesCreate = "counterparty.parties.create";
+
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(
         [
             OrganizationContextRead,
@@ -27,6 +30,8 @@ public static class ErpPermissions
             IdentityAccessApprove,
             IdentityRolesManage,
             IdentityAuditRead,
+            CounterpartyPartiesRead,
+            CounterpartyPartiesCreate,
         ],
         StringComparer.Ordinal);
 
@@ -41,6 +46,8 @@ public static class ErpPermissions
     public static IReadOnlySet<string> CompanyWideOnly { get; } = new HashSet<string>(
         [
             IdentityAuditRead,
+            CounterpartyPartiesRead,
+            CounterpartyPartiesCreate,
         ],
         StringComparer.Ordinal);
 
