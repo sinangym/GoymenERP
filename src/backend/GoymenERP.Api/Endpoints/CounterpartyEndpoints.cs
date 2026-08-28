@@ -1,3 +1,4 @@
+using GoymenERP.Api.Multitenancy;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
