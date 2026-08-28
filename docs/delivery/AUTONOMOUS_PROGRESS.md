@@ -463,3 +463,55 @@ OPEN DECISIONS: PR #29 Cari guard ownership; ERP-000F ADR-006 + OPEN-022..025; E
 MAIN SHA: a3b58b9266ea192dd029889ac60abfe8b2ec194e
 ACTIVE PRS: #35, #34, #32, #31, #30, #29, #28, #26, #25, #24, #19..#10 ve #2
 ```
+
+## 2026-08-29 00:55 +03:00 — Döngü 13
+
+- Ortak gerçek kaynak olarak canlı GitHub yeniden okundu. `main` değişmedi ve
+  `a3b58b9266ea192dd029889ac60abfe8b2ec194e` olarak doğrulandı. Issue #40 içindeki
+  ChatGPT-CARI → CODEX-PLATFORM sahiplik ve exact-SHA handoff sözleşmesi kabul edildi;
+  ChatGPT-owned `parallel/chatgpt/**`, `hotfix/chatgpt/**` dallarına ve Counterparty
+  production kaynaklarına yazılmadı.
+- PR #38, exact head `69f6d0aa6f046b055a71443db14c54e374c2347d` üzerinde bağımsız salt-okunur
+  incelendi. No-op status komutunun iş `Version` değeriyle SQL Server `rowversion`
+  yarışına katıldığı; iki farklı key yarışında tek `204`, tek kalıcı `409`, tek
+  `NoChange` audit ve deterministik conflict replay ürettiği doğrulandı. P0/P1
+  bulunmadı; sonuç PR'a `HANDOFF-ACCEPTED` olarak kaydedildi. Bu review merge değildir;
+  PR #38 Draft ve insan merge kapısındadır.
+- PR #36 head `9515ef5353904e371d686a1d8939e246291616fd` ve bütün uzak kontrolleri yeşildir.
+  Eski SQL-kırmızı ve çoklu/virgüllü `Idempotency-Key` bulguları güncel head'de
+  kapanmıştır. `counterparty.accounts.create` izninin gerçek rol matrisi, yeni kurulum
+  varsayılanı ve mevcut kurulum idempotent upgrade davranışı kullanıcı kararı olarak
+  açık kaldığı için PR #36 hâlâ `DO NOT MERGE` durumundadır.
+- Yerel Codex envanterinde 30 worktree temiz, stash boş ve uzaktaki 28 `codex/*`
+  branch'in remote SHA/PR kaydı tam bulundu. Push edilmemiş tek bağımsız geliştirme
+  `codex/platform-tenant-query-filter-guard` idi; exact head `b96e29a` ile Draft PR #41
+  olarak GitHub'a taşındı. Eski/sentetik dört review ref'i bağımsız iş olmadığı için
+  duplicate PR'a çevrilmedi.
+- PR #41'in branch-only Release architecture testi `146/146` geçti. Uzak PR merge
+  koşusu `33213428978`, güncel main'deki API composition root'un Counterparty
+  Application/Infrastructure referanslarını eski guard'ın sahiplik ihlali sayması
+  nedeniyle bir architecture testiyle fail-closed kırıldı (`151/152`). Test/gate
+  gevşetilmedi. Exact composition-root allowlist veya Cari-owned makine-okunur
+  entrypoint sözleşmesi belirlenmeden branch güncellenmeyecek; PR #41
+  `Draft / UNSTABLE / DO NOT MERGE` kaldı.
+- PR #31 için exact head `ea61d500da4ed92cb023643c610515a4a8e8df88`, beş dosyalık scope ve yeşil
+  CI kanıtı `HANDOFF-V1` olarak PR'a eklendi. Shared CI/security değişikliği olduğu için
+  otomatik merge edilmedi.
+- Main branch protection ve repository ruleset durumu canlı API ile sorgulandı. Private
+  repository'nin mevcut GitHub planı iki API'yi de `403` ile reddediyor; bu nedenle
+  zorunlu approval/status-check politikası teknik olarak kurulmadı ve insan-review
+  kuralı süreç yönetişimi olarak kalıyor. Plan yükseltme veya public repo kararı
+  varsayılmadı.
+- Issue #40'a CODEX-PLATFORM → ChatGPT-CARI karşı handoff indeksi, PR #38 kabul kaydı,
+  PR #31 handoff'u, PR #41 ve açık entegrasyon blockerları exact bağlantılarla eklendi.
+  Hiçbir kritik PR merge edilmedi; ERP-000F/M ve PR #2 kapıları değiştirilmedi.
+
+```text
+DONE: PR #38 exact-head HANDOFF-ACCEPTED; PR #31 HANDOFF-V1; yerel iş envanteri; tenant guard Draft PR #41; Issue #40 çift yönlü handoff
+IN REVIEW: PR #38 human merge; PR #31 human security review; PR #36 rol/upgrade kararı; PR #37 ilerleme kaydı
+BLOCKED: PR #41 composition-root/Cari entrypoint sözleşmesi + PR #31/#34; PR #36 permission upgrade matrisi; PR #29 route ownership; ERP-000F/M; PR #2
+SAFE NEXT: insan PR #38 merge kararı ve yeni-main CI; ardından PR #36 sync; PR #31 human review; PR #41 sözleşme kararı sonrası refresh
+OPEN DECISIONS: counterparty.accounts.create rol/yeni kurulum/upgrade matrisi; Counterparty canonical entrypoint guard sahipliği; GitHub planı/branch protection
+MAIN SHA: a3b58b9266ea192dd029889ac60abfe8b2ec194e
+ACTIVE PRS: #41, #38, #37, #36, #35, #34, #32, #31, #30, #29, #28, #26, #25, #24, #19..#10 ve #2
+```
