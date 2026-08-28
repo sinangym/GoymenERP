@@ -410,3 +410,56 @@ OPEN DECISIONS: ADR-003/010; OPEN-014/015/017; ERP-000M-SQL-POC-CONTRACT; ERP-00
 MAIN SHA: 81283e582de00fc291b848a25f1a15ff45fc4657
 ACTIVE PRS: #19..#10 Draft; #15 aktif human review; #2 Draft/blocked
 ```
+
+## 2026-08-28 17:35 +03:00 — Döngü 12
+
+- Bu döngüde canlı GitHub gerçeği birkaç kez yeniden hesaplandı. Güncel `main`, Cari
+  PR #33 merge'i sonrasında `a3b58b9266ea192dd029889ac60abfe8b2ec194e` commit'idir.
+  Yerel ana worktree de eski `9f08ff1` tabanından güvenli `ff-only` ile güncel `main`e
+  taşındı.
+- Platform güvenliği için yeni Draft PR'lar açıldı: PR #32 ham `Idempotency-Key` çoklu
+  header sınırı, PR #34 `OrganizationDbContext` içindeki atomik `AuditEvent` sorgu
+  filtresi ve PR #35 production OIDC metadata HTTPS/URI bütünlüğü. Üçünde de çok turlu
+  bağımsız review P0/P1 bırakmadı; backend, frontend, gerçek SQL Server, container ve UI
+  golden kontrolleri son doğrulanan head'lerde yeşildi. PR #34/35 yalnız özgün üç/iki
+  dosyalık deltayı, PR #32 yalnız özgün iki dosyalık deltayı taşır.
+- Mevcut Draft PR #24, #25, #26, #28, #30 ve #31 güncel Cari read-slice tabanı
+  `538175c` üzerinde non-destructive merge ile yeniden doğrulandı; özgün patch/blob
+  içerikleri korundu ve tüm uzak kontroller yeşil oldu. PR #33 daha sonra `main`i yeniden
+  ilerlettiği için bunların kritik merge anında tekrar current-main sync ve CI kanıtı
+  üretmesi gerekir. İlk sıradaki PR #31 ikinci kez senkronize edildi; head `ea61d500`, CI
+  `33181630747` ve UI golden `33181630731` güncel `a3b58b9` tabanında tamamen yeşildir.
+- Yedi platform PR'ının 21 ikili merge-tree kombinasyonu conflict-free bulundu. Güvenli
+  insan squash-merge sırası `#31 → #25 → #35 → #34 → #30 → #32 → #24` olarak
+  doğrulandı. Her kritik merge sonrasında bir sonraki PR yeni `main` ile sync edilmeli ve
+  yeni CI kapıları altında yeniden yeşil olmadan merge edilmemelidir.
+- Non-Cari tenant bypass/compiled-input guard'ı yerelde `b96e29a` commit'inde Windows ve
+  Linux Docker üzerinde `152/152` geçti; fakat unmerged PR #31 bootstrap kapısına ve PR
+  #34 sonrasındaki exact `OrganizationDbContext` fingerprint'ine bağımlıdır. Bu nedenle
+  branch push/PR yapılmadı. Identity manual-predicate consumer guard tasarımı da aynı
+  platform guard'ı merge edilene kadar implementation'a alınmadı.
+- Paralel Cari hattına yalnız salt-okunur bakıldı. PR #33'teki şirketler arası
+  idempotency ve terminal NotFound replay açıkları son head'de kapandı; yedi gerçek SQL
+  testi yeşil oldu. Buna rağmen istenen aktiflik zaten mevcutken SQL UPDATE üretmeyen
+  `NoChange` yolu optimistic `Version/RowVersion` kontrolünü commit'e taşımıyor. Bu P1,
+  PR #33 ile `main`e girmiştir. Counterparty idempotent migration SQL artifact'i de
+  protected CI workflow çıktısı olarak hâlâ yoktur. Aktif Cari sahiplik dalı
+  `parallel/chatgpt/cari-core-1c-company-link` olup Codex bu dala ve Cari kaynaklarına
+  hiçbir commit, push, yorum veya değişiklik yapmamıştır.
+- PR #29 güncel Cari endpointleri nedeniyle exact endpoint envanterinde kırılır ve Cari
+  guard ownership kararı çözülmemiştir; `DO NOT MERGE` kalır. Geniş
+  `/counterparties/*` istisnası üretilmemiştir. PR #19 human review kapısında; korunan
+  O → N → L → J/K sırası ve shared-manifest sessiz çözmeme kuralı değişmemiştir.
+- ERP-000F implementation ADR-006 + OPEN-022/023/024/025; ERP-000M implementation
+  ADR-003/010 + OPEN-014/015/017 + SQL PoC contract nedeniyle kapalıdır. PR #2'nin yedi
+  blocker'ı korunmuştur. Hiçbir kritik PR otomatik merge edilmemiştir.
+
+```text
+DONE: PR #27/#33 Cari human merge; PR #24/#25/#26/#28/#30/#31 current-main revalidation; yeni Draft #32/#34/#35
+IN REVIEW: #24, #25, #26, #28, #30, #31, #32, #34, #35 ve ERP-000O #19
+BLOCKED: PR #29 stale endpoint/Cari ownership; tenant guard PR31+#34; Cari NoChange concurrency P1; ERP-000F/M; PR #2
+SAFE NEXT: PR #31 human merge; ardından #25'i yeni main ile sync/CI ve sıralı human merge; Cari sahibinde NoChange yarış düzeltmesi
+OPEN DECISIONS: PR #29 Cari guard ownership; ERP-000F ADR-006 + OPEN-022..025; ERP-000M ADR-003/010 + OPEN-014/015/017
+MAIN SHA: a3b58b9266ea192dd029889ac60abfe8b2ec194e
+ACTIVE PRS: #35, #34, #32, #31, #30, #29, #28, #26, #25, #24, #19..#10 ve #2
+```
