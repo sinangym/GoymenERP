@@ -60,11 +60,67 @@ public sealed class CounterpartyModuleEntrypointContractTests
             StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void Json_contract_rejects_duplicate_and_unknown_properties()
+    {
+        const string duplicateOwner = """
+            {
+              "schema_version": 1,
+              "owner": "CHATGPT-CARI",
+              "owner": "OTHER",
+              "module": "Counterparty",
+              "excluded_source_prefix": "src/backend/Modules/Counterparty/",
+              "contract_source": "docs/features/CARI_MODULE_ENTRYPOINT_CONTRACT_v1.md",
+              "composition_root_edges": []
+            }
+            """;
+        Assert.Throws<InvalidOperationException>(() =>
+            DeserializeStrict(System.Text.Encoding.UTF8.GetBytes(duplicateOwner)));
+
+        const string unknownProperty = """
+            {
+              "schema_version": 1,
+              "owner": "CHATGPT-CARI",
+              "module": "Counterparty",
+              "excluded_source_prefix": "src/backend/Modules/Counterparty/",
+              "contract_source": "docs/features/CARI_MODULE_ENTRYPOINT_CONTRACT_v1.md",
+              "composition_root_edges": [],
+              "unexpected": true
+            }
+            """;
+        Assert.Throws<JsonException>(() =>
+            DeserializeStrict(System.Text.Encoding.UTF8.GetBytes(unknownProperty)));
+    }
+
     private static EntrypointContract ReadContract(string repositoryRoot)
     {
         var path = ToFullPath(repositoryRoot, ContractPath);
-        var json = File.ReadAllText(path);
-        return JsonSerializer.Deserialize<EntrypointContract>(json)
+        return DeserializeStrict(File.ReadAllBytes(path));
+    }
+
+    private static EntrypointContract DeserializeStrict(byte[] bytes)
+    {
+        using var document = JsonDocument.Parse(bytes, new JsonDocumentOptions
+        {
+            AllowTrailingCommas = false,
+            CommentHandling = JsonCommentHandling.Disallow,
+            MaxDepth = 32,
+        });
+
+        var duplicateErrors = new List<string>();
+        FindDuplicateProperties(document.RootElement, "$", duplicateErrors);
+        if (duplicateErrors.Count > 0)
+        {
+            throw new InvalidOperationException(string.Join("\n", duplicateErrors));
+        }
+
+        return JsonSerializer.Deserialize<EntrypointContract>(
+                   bytes,
+                   new JsonSerializerOptions
+                   {
+                       PropertyNameCaseInsensitive = false,
+                       UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+                   })
                ?? throw new InvalidOperationException(
                    "Counterparty module entrypoint contract is empty.");
     }
@@ -170,7 +226,7 @@ public sealed class CounterpartyModuleEntrypointContractTests
         {
             errors.Add(
                 "Composition-root layers must be exactly Application and Infrastructure; "
-                + $"found: {string.Join(", ", seenLayers.Order())}.");
+                + $"found: {string.Join(", ", seenLayers.OrderBy(value => value, StringComparer.Ordinal))}.");
         }
 
         return errors;
@@ -266,6 +322,38 @@ public sealed class CounterpartyModuleEntrypointContractTests
                 StringComparison.Ordinal),
             _ => false
         };
+    }
+
+    private static void FindDuplicateProperties(
+        JsonElement element,
+        string location,
+        ICollection<string> errors)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var property in element.EnumerateObject())
+            {
+                if (!names.Add(property.Name))
+                {
+                    errors.Add($"Duplicate JSON property at {location}: {property.Name}.");
+                }
+
+                FindDuplicateProperties(
+                    property.Value,
+                    $"{location}.{property.Name}",
+                    errors);
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            var index = 0;
+            foreach (var item in element.EnumerateArray())
+            {
+                FindDuplicateProperties(item, $"{location}[{index}]", errors);
+                index++;
+            }
+        }
     }
 
     private static bool ContainsWildcard(string path)
