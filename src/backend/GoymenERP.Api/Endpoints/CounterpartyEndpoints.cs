@@ -1,4 +1,8 @@
+using GoymenERP.Api.Multitenancy;
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.Endpoints;
 
@@ -9,6 +13,7 @@ public static class CounterpartyEndpoints
     {
         var group = endpoints.MapGroup("/api/v1/counterparties")
             .RequireAuthorization()
+            .AddEndpointFilter(ResolveOptionalCompanyContextAsync)
             .WithTags("Counterparty");
 
         group.MapGet("/", async (
@@ -38,6 +43,43 @@ public static class CounterpartyEndpoints
         });
 
         return endpoints;
+    }
+
+    private static async ValueTask<object?> ResolveOptionalCompanyContextAsync(
+        EndpointFilterInvocationContext invocationContext,
+        EndpointFilterDelegate next)
+    {
+        var httpContext = invocationContext.HttpContext;
+        if (!httpContext.Request.Headers.TryGetValue(
+                CompanyContextMiddleware.CompanyHeaderName,
+                out var headerValue))
+        {
+            return await next(invocationContext);
+        }
+
+        if (!Guid.TryParse(headerValue.ToString(), out var companyId)
+            || companyId == Guid.Empty)
+        {
+            return Results.Problem(
+                title: "Geçersiz şirket seçimi.",
+                detail: "X-Company-Id geçerli ve boş olmayan bir şirket kimliği olmalıdır.",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var currentUser = httpContext.RequestServices.GetRequiredService<ICurrentUser>();
+        if (!currentUser.CanAccessCompany(companyId))
+        {
+            return Results.Problem(
+                title: "Erişim reddedildi.",
+                detail: "Seçili şirket için erişim yetkiniz bulunmuyor.",
+                statusCode: StatusCodes.Status403Forbidden);
+        }
+
+        httpContext.RequestServices
+            .GetRequiredService<ICompanyContext>()
+            .Set(companyId);
+
+        return await next(invocationContext);
     }
 
     private static IResult NotFound()
