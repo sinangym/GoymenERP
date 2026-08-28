@@ -2,7 +2,7 @@ using GoymenERP.Modules.Counterparty.Application.Views;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
 
-namespace GoymenERP.Cari.UnitTests;
+namespace GoymenERP.Counterparty.UnitTests;
 
 public sealed class PartyCoreViewComposerTests
 {
@@ -32,7 +32,7 @@ public sealed class PartyCoreViewComposerTests
 
         Assert.NotNull(result);
         Assert.Equal(partyId, result!.Id);
-        Assert.Equal("CAR-000001", result.CariCode);
+        Assert.Equal("CAR-000001", result.Code);
         Assert.Equal(2, result.CompanyAccounts.Count);
         Assert.Contains(result.CompanyAccounts, item => item.CompanyId == companyA);
         Assert.Contains(result.CompanyAccounts, item => item.CompanyId == companyB);
