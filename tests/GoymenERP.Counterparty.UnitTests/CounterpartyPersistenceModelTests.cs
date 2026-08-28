@@ -67,12 +67,13 @@ public sealed class CounterpartyPersistenceModelTests
     }
 
     [Fact]
-    public void Migration_IsDiscoverable()
+    public void Migration_IsDiscoverableAndSnapshotMatchesRuntimeModel()
     {
         using var dbContext = CreateContext();
         Assert.Contains(
             "20260828123500_InitialCounterparty",
             dbContext.Database.GetMigrations());
+        Assert.False(dbContext.Database.HasPendingModelChanges());
     }
 
     [Fact]
