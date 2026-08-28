@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "owner": "CHATGPT-CARI",
+  "module": "Counterparty",
+  "tag": "Counterparty",
+  "contract_source": "docs/features/CARI_API_SECURITY_METADATA_CONTRACT_v1.md",
+  "endpoints": [
+    {
+      "method": "GET",
+      "route": "/api/v1/counterparties",
+      "authorization_mode": "dynamic_authorized_company_set",
+      "permission": "counterparty.parties.read",
+      "requires_company_context": false,
+      "optional_company_context": true
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/counterparties/{partyId:guid}",
+      "authorization_mode": "dynamic_authorized_company_set",
+      "permission": "counterparty.parties.read",
+      "requires_company_context": false,
+      "optional_company_context": true
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/counterparties",
+      "authorization_mode": "endpoint_permission",
+      "permission": "counterparty.parties.create",
+      "requires_company_context": true,
+      "optional_company_context": false
+    },
+    {
+      "method": "PUT",
+      "route": "/api/v1/counterparties/{partyId:guid}/company-account/active-state",
+      "authorization_mode": "endpoint_permission",
+      "permission": "counterparty.accounts.status.update",
+      "requires_company_context": true,
+      "optional_company_context": false
+    }
+  ]
+}
