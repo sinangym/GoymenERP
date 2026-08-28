@@ -20,6 +20,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: .NET bootstrap integrity preflight
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B -m unittest discover -s tests/dotnet_bootstrap_integrity -p "test_*.py" -v
+
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
         with:
@@ -27,58 +32,79 @@ jobs:
 
       - name: Restore tools and packages
         run: |
-          dotnet tool restore
-          dotnet restore GoymenERP.slnx
+          dotnet tool restore --tool-manifest dotnet-tools.json --configfile NuGet.Config
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet restore GoymenERP.slnx -noAutoResponse --configfile NuGet.Config
 
       - name: Build
-        run: dotnet build GoymenERP.slnx --configuration Release --no-restore
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet build GoymenERP.slnx -noAutoResponse --configuration Release --no-restore
 
       - name: Test
-        run: dotnet test GoymenERP.slnx --configuration Release --no-build --logger "console;verbosity=normal"
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet test GoymenERP.slnx -noAutoResponse --configuration Release --no-build --logger "console;verbosity=normal"
 
       - name: Architecture dependency guard
-        run: >-
-          dotnet test tests/GoymenERP.ArchitectureTests/GoymenERP.ArchitectureTests.csproj
-          --configuration Release
-          --no-build
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet test tests/GoymenERP.ArchitectureTests/GoymenERP.ArchitectureTests.csproj \
+          -noAutoResponse \
+          --configuration Release \
+          --no-build \
           --logger "console;verbosity=normal"
 
       - name: Check vulnerable dependencies
-        run: dotnet list GoymenERP.slnx package --vulnerable --include-transitive
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet list GoymenERP.slnx package --vulnerable --include-transitive --no-restore --configfile NuGet.Config
 
       - name: Generate idempotent SQL migration script
-        run: >-
-          dotnet tool run dotnet-ef migrations script
-          --idempotent
-          --project src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/GoymenERP.Modules.Organization.Infrastructure.csproj
-          --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet tool run dotnet-ef migrations script \
+          --idempotent \
+          --no-build \
+          --configuration Release \
+          --project src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/GoymenERP.Modules.Organization.Infrastructure.csproj \
+          --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj \
           --output artifacts/organization-migration.sql
 
       - name: Generate identity idempotent SQL migration script
-        run: >-
-          dotnet tool run dotnet-ef migrations script
-          --idempotent
-          --project src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/GoymenERP.Modules.Identity.Infrastructure.csproj
-          --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj
-          --context IdentityDbContext
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet tool run dotnet-ef migrations script \
+          --idempotent \
+          --no-build \
+          --configuration Release \
+          --project src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/GoymenERP.Modules.Identity.Infrastructure.csproj \
+          --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj \
+          --context IdentityDbContext \
           --output artifacts/identity-migration.sql
 
       - name: Generate audit idempotent SQL migration script
-        run: >-
-          dotnet tool run dotnet-ef migrations script
-          --idempotent
-          --project src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj
-          --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj
-          --context AuditDbContext
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet tool run dotnet-ef migrations script \
+          --idempotent \
+          --no-build \
+          --configuration Release \
+          --project src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj \
+          --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj \
+          --context AuditDbContext \
           --output artifacts/audit-migration.sql
 
       - name: Generate idempotency idempotent SQL migration script
-        run: >-
-          dotnet tool run dotnet-ef migrations script
-          --idempotent
-          --project src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/GoymenERP.Modules.Idempotency.Infrastructure.csproj
-          --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj
-          --context CommandExecutionDbContext
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet tool run dotnet-ef migrations script \
+          --idempotent \
+          --no-build \
+          --configuration Release \
+          --project src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/GoymenERP.Modules.Idempotency.Infrastructure.csproj \
+          --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj \
+          --context CommandExecutionDbContext \
           --output artifacts/idempotency-migration.sql
 
   frontend:
@@ -127,16 +153,31 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: .NET bootstrap integrity preflight
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B -m unittest discover -s tests/dotnet_bootstrap_integrity -p "test_*.py" -v
+
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
 
+      - name: Restore relational test packages
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet restore tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj \
+          -noAutoResponse \
+          --configfile NuGet.Config
+
       - name: Run relational acceptance test
-        run: >-
-          dotnet test tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj
-          --configuration Release
-          --filter "FullyQualifiedName~SqlServerRelationalAcceptanceTests"
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet test tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj \
+          -noAutoResponse \
+          --configuration Release \
+          --no-restore \
+          --filter "FullyQualifiedName~SqlServerRelationalAcceptanceTests" \
           --logger "console;verbosity=normal"
 
   containers:
