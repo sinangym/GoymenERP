@@ -2,8 +2,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\BuildingBlocks\GoymenERP.BuildingBlocks\GoymenERP.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\..\Audit\GoymenERP.Modules.Audit.Application\GoymenERP.Modules.Audit.Application.csproj" />
+    <ProjectReference Include="..\..\Audit\GoymenERP.Modules.Audit.Infrastructure\GoymenERP.Modules.Audit.Infrastructure.csproj" />
     <ProjectReference Include="..\GoymenERP.Modules.Counterparty.Application\GoymenERP.Modules.Counterparty.Application.csproj" />
     <ProjectReference Include="..\GoymenERP.Modules.Counterparty.Domain\GoymenERP.Modules.Counterparty.Domain.csproj" />
+    <ProjectReference Include="..\..\Idempotency\GoymenERP.Modules.Idempotency.Domain\GoymenERP.Modules.Idempotency.Domain.csproj" />
+    <ProjectReference Include="..\..\Idempotency\GoymenERP.Modules.Idempotency.Infrastructure\GoymenERP.Modules.Idempotency.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>
