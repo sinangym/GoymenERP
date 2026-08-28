@@ -132,10 +132,16 @@ public sealed class CounterpartyDbContext(
                 continue;
             }
 
-            if (entry.State is EntityState.Modified or EntityState.Deleted)
+            if (entry.State == EntityState.Deleted)
             {
                 throw new InvalidOperationException(
-                    "Grup seviyesindeki Party kaydı bu dilimde doğrudan değiştirilemez veya silinemez.");
+                    "Grup seviyesindeki Party kaydı fiziksel olarak silinemez.");
+            }
+
+            if (entry.State == EntityState.Modified)
+            {
+                throw new InvalidOperationException(
+                    "Grup seviyesindeki Party kaydı bu dilimde doğrudan değiştirilemez.");
             }
 
             if (!companyContext.IsResolved)
