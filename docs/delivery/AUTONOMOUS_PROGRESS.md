@@ -213,3 +213,43 @@ OPEN DECISIONS: OPEN-020; OPEN-021; OPEN-022..OPEN-029
 MAIN SHA: 9f08ff16447eca89682d0a084e2341b9c2b433c2
 ACTIVE PRS: #11 Draft; #10 Draft; #9 Draft; #8 Draft; #2 Draft
 ```
+
+## 2026-08-28 04:18 +03:00 — Döngü 7
+
+- ERP-000I Global Arama için yalnız dokümantasyon kapsamlı Draft PR #12 açıldı. Head
+  `f14b8b9f2231a2ad1a4e3519e705bc1b9444ec7f` ve CI run `33132155587`; backend,
+  frontend, gerçek SQL Server relational acceptance ve container build işlerinin tamamı
+  başarılı oldu. Bağımsız son incelemede P0/P1 bulunmadı.
+- PR #12, ERP-000I'yi `blocked` tutar; ADR-007'nin fiziksel sözleşmesi, mevcut `OPEN-015`
+  performans kararı ve task-local `ERP-000I-SEARCH-CONTRACT` çözülmeden arama motoru,
+  indeks, migration veya uygulama kodu başlatılmaz. SQL Server PoC yönü, tenant/RBAC/ABAC
+  önce-filtreleme, Türkçe Unicode golden corpus, projection/SoT, keyset cursor ve gerçek SQL
+  kabul sınırları karar verilmeden uygulanmayacak şekilde kaydedildi.
+- ERP-000H Türkçe PDF ve adlandırma için yalnız dokümantasyon kapsamlı Draft PR #13
+  açıldı. Head `4dd27c4a763335d69289470607bc33adae84929d` ve CI run `33132194421`;
+  dört CI işi tamamen başarılı oldu. İki P1 dokümantasyon doğruluğu düzeltildikten sonra
+  bağımsız son incelemede P0/P1 bulunmadı.
+- PR #13, ERP-000H'yi `blocked` tutar; mevcut `OPEN-019` ve task-local
+  `ERP-000H-DECISION-PACK` çözülmeden renderer, font, template veya üretim kodu
+  başlatılmaz. Unicode/NFC, Türkçe görünen ad–opaque object key ayrımı,
+  `Content-Disposition`, gömülü font, sürümleme, yetki/audit/idempotency ve gerçek renderer
+  golden test sınırları karara bağlanmak üzere tarif edildi.
+- İki PR da yalnız kendi feature readiness belgesi ile ilgili tek manifest satırını değiştirir.
+  Ortak manifest nedeniyle zorunlu birleştirme sırası PR #10 → PR #11 → PR #12 → PR #13
+  olarak kaydedildi. Her merge sonrasında güncel `main` senkronizasyonu ve insan review'u
+  gerekir; E/F/G/H/I gerçeği sessiz conflict çözümüyle kaybedilemez.
+- ERP-000J AI Gateway için bağımsız readiness kapısı hazırlanmaya başlandı. Sağlayıcı,
+  model, paket, anahtar, endpoint veya iş kuralı seçilmedi; resmi OpenAI API'leri yalnız aday
+  adapter girdisi olarak ele alınıyor. Uygulama kodu başlatılmadı.
+- Draft PR #2'nin yedi blocker'ı korunmuştur. PR #8/#9 kontrol yüzeyi oldukları için Draft ve
+  manuel review'da kalır; hiçbir kritik PR otomatik merge edilmedi.
+
+```text
+DONE: ERP-000I Draft #12 CI 33132155587; ERP-000H Draft #13 CI 33132194421
+IN REVIEW: ERP-000H #13; ERP-000I #12; ERP-000G #11; ERP-000F #10; governance #8; UI validator #9
+BLOCKED: ERP-000F/G/H/I implementation; PR #2 (yedi blocker)
+SAFE NEXT: ERP-000J provider-agnostic AI Gateway readiness kapısı; Draft PR manuel review'ları
+OPEN DECISIONS: OPEN-015; OPEN-019..OPEN-029; task-local F/G/H/I karar paketleri
+MAIN SHA: 9f08ff16447eca89682d0a084e2341b9c2b433c2
+ACTIVE PRS: #13 Draft; #12 Draft; #11 Draft; #10 Draft; #9 Draft; #8 Draft; #2 Draft
+```
