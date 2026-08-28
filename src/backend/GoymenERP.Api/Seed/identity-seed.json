@@ -102,6 +102,8 @@
           "organization.work-centers.read",
           "organization.locations.status.update",
           "counterparty.parties.read",
+          "counterparty.parties.create",
+          "counterparty.accounts.status.update",
           "identity.profile.read",
           "identity.access.request",
           "identity.access.approve",
