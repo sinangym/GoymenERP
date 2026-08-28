@@ -42,10 +42,10 @@ internal sealed class CounterpartyReadService(
         var parties = await dbContext.Parties
             .AsNoTracking()
             .Where(party => partyIds.Contains(party.Id))
-            .OrderBy(party => party.Code)
             .ToListAsync(cancellationToken);
 
         return parties
+            .OrderBy(party => party.Code.Value, StringComparer.Ordinal)
             .Select(party => PartyCoreViewComposer.ComposeAuthorized(
                 party,
                 accounts,
