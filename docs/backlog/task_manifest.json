@@ -48,7 +48,7 @@
     {
       "id": "ERP-000E",
       "title": "Idempotency ve concurrency",
-      "status": "in_review",
+      "status": "done",
       "depends_on": [
         "ERP-000D"
       ],
