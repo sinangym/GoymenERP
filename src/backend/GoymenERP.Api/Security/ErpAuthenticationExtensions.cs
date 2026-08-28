@@ -58,6 +58,7 @@ public static class ErpAuthenticationExtensions
             if (!environment.IsDevelopment() && !environment.IsEnvironment("Testing"))
             {
                 if (!Uri.TryCreate(authority, UriKind.Absolute, out var authorityUri)
+                    || !authorityUri.IsWellFormedOriginalString()
                     || !string.Equals(
                         authorityUri.Scheme,
                         Uri.UriSchemeHttps,

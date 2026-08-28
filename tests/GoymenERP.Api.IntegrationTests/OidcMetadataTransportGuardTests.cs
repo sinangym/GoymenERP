@@ -20,6 +20,8 @@ public sealed class OidcMetadataTransportGuardTests
     [InlineData("Production", "https://trusted.example:443@evil.example")]
     [InlineData("Staging", "https://identity.example.test#fragment")]
     [InlineData("QualityAssurance", "https://identity.example.test?x=http://evil")]
+    [InlineData("Production", "https:\\\\identity.example.test")]
+    [InlineData("Staging", "https:/\\identity.example.test")]
     public void NonDevelopmentOidc_RejectsAuthorityThatIsNotAbsoluteHttps(
         string environmentName,
         string authority)
