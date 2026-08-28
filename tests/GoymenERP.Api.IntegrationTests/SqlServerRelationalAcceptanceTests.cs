@@ -509,6 +509,46 @@ public sealed class SqlServerRelationalAcceptanceTests
                 "Audit şirket izolasyonu ilişkisel testi"));
         Assert.Equal(HttpStatusCode.NoContent, companyBWrite.StatusCode);
 
+        await using (var organizationCompanyAScope = factory.Services.CreateAsyncScope())
+        {
+            organizationCompanyAScope.ServiceProvider
+                .GetRequiredService<ICompanyContext>()
+                .Set(TestCompanyIds.CompanyA);
+            var organizationDbContext = organizationCompanyAScope.ServiceProvider
+                .GetRequiredService<OrganizationDbContext>();
+            var visibleAuditEvents = await organizationDbContext.Set<AuditEvent>()
+                .AsNoTracking()
+                .Where(x =>
+                    x.CorrelationId == correlationId
+                    || x.CorrelationId == companyBCorrelationId)
+                .Select(x => new { x.CompanyId, x.CorrelationId })
+                .ToListAsync();
+
+            var visibleAuditEvent = Assert.Single(visibleAuditEvents);
+            Assert.Equal(TestCompanyIds.CompanyA, visibleAuditEvent.CompanyId);
+            Assert.Equal(correlationId, visibleAuditEvent.CorrelationId);
+        }
+
+        await using (var organizationCompanyBScope = factory.Services.CreateAsyncScope())
+        {
+            organizationCompanyBScope.ServiceProvider
+                .GetRequiredService<ICompanyContext>()
+                .Set(TestCompanyIds.CompanyB);
+            var organizationDbContext = organizationCompanyBScope.ServiceProvider
+                .GetRequiredService<OrganizationDbContext>();
+            var visibleAuditEvents = await organizationDbContext.Set<AuditEvent>()
+                .AsNoTracking()
+                .Where(x =>
+                    x.CorrelationId == correlationId
+                    || x.CorrelationId == companyBCorrelationId)
+                .Select(x => new { x.CompanyId, x.CorrelationId })
+                .ToListAsync();
+
+            var visibleAuditEvent = Assert.Single(visibleAuditEvents);
+            Assert.Equal(TestCompanyIds.CompanyB, visibleAuditEvent.CompanyId);
+            Assert.Equal(companyBCorrelationId, visibleAuditEvent.CorrelationId);
+        }
+
         using var adminAClient = factory.CreateClientFor(
             TestUsers.GroupAdmin,
             TestCompanyIds.CompanyA);

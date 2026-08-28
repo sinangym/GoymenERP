@@ -1,12 +1,13 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.Modules.Audit.Domain.Events;
+using GoymenERP.Modules.Audit.Infrastructure.Persistence;
+using GoymenERP.Modules.Idempotency.Domain.Executions;
+using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Domain.Common;
 using GoymenERP.Modules.Organization.Domain.Companies;
 using GoymenERP.Modules.Organization.Domain.Locations;
 using GoymenERP.Modules.Organization.Domain.Sites;
 using GoymenERP.Modules.Organization.Domain.WorkCenters;
-using GoymenERP.Modules.Audit.Infrastructure.Persistence;
-using GoymenERP.Modules.Idempotency.Domain.Executions;
-using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Organization.Infrastructure.Persistence;
@@ -36,6 +37,8 @@ public sealed class OrganizationDbContext(
         ConfigureLocation(modelBuilder);
         ConfigureWorkCenter(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
+        modelBuilder.Entity<AuditEvent>()
+            .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
         modelBuilder.ConfigureCommandExecution(excludeFromMigrations: true);
         modelBuilder.Entity<CommandExecution>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
