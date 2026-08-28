@@ -63,4 +63,36 @@ public sealed class CompanyPartyAccountTests
 
         Assert.Equal("MIKRO-320-001", account.ExternalIntegrationCode);
     }
+
+    [Fact]
+    public void No_op_reactivate_advances_version_for_optimistic_concurrency()
+    {
+        var account = new CompanyPartyAccount(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            PartyRole.Customer);
+
+        account.Reactivate();
+
+        Assert.True(account.IsActive);
+        Assert.Equal(2L, account.Version);
+    }
+
+    [Fact]
+    public void No_op_deactivate_advances_version_for_optimistic_concurrency()
+    {
+        var account = new CompanyPartyAccount(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            PartyRole.Customer);
+        account.Deactivate();
+        Assert.Equal(2L, account.Version);
+
+        account.Deactivate();
+
+        Assert.False(account.IsActive);
+        Assert.Equal(3L, account.Version);
+    }
 }
