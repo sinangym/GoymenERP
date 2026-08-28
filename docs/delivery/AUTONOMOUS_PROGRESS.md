@@ -179,3 +179,37 @@ OPEN DECISIONS: OPEN-020; OPEN-021; OPEN-022; OPEN-023; OPEN-024; OPEN-025
 MAIN SHA: 9f08ff16447eca89682d0a084e2341b9c2b433c2
 ACTIVE PRS: #10 Draft; #9 Draft; #8 Draft; #2 Draft
 ```
+
+## 2026-08-28 03:59 +03:00 — Döngü 6
+
+- ERP-000G Belge Kasası readiness incelemesi implementation için `NO-GO`, yalnız
+  spec/ADR/acceptance hazırlığı için `GO` verdi. Güncel `main`den ayrılan
+  `codex/erp-000g-spec-gate` dalında yalnız dokümantasyon kapsamlı Draft PR #11 açıldı.
+- PR #11 head `3814c974b616410bdd433ede822d5fe771a00436` ve CI run `33131243784`;
+  backend build/test/migration ve architecture guard, frontend lint/test/build, gerçek SQL
+  Server relational acceptance ve container build işlerinin tamamı başarılı oldu.
+- PR #11; ADR-005'i `Öneri` durumuna getirir, ERP-000G'yi `blocked` yapar,
+  `OPEN-026`…`OPEN-029` karar kapılarını ve `ERP-000G-AC-001`…`025` arasında 25 task-local
+  taslak kabul senaryosunu tanımlar. Kanıt alanları bilinçli olarak boştur; package/provider,
+  migration, bucket/container, scanner/worker, signed URL veya pilot belge kodu yoktur.
+- Üç bağımsız self-review; tenant-safe dedup/existence-oracle, quarantine/malware,
+  permission–ABAC, signed access, DB–object-store crash/reconciliation, gerçek SQL/S3
+  kabulü ve acceptance şema tutarlılığında kalan P0/P1 bulmadı.
+- PR #10 ile PR #11 dört ortak karar dosyasını değiştirir. PR #10 önce merge edilmeden PR
+  #11 merge edilemez; sonrasında güncel `main` senkronizasyonu ve E/F/G gerçeğini birlikte
+  koruyan insan review'u zorunludur. Conflict veya semantik fark sessizce çözülmez.
+- ERP-000H Türkçe PDF/adlandırma ve ERP-000I Global Arama için yalnız yeni, bağımsız
+  readiness belgeleri ayrı dallarda hazırlanıyor. Bu çalışmalar shared registry değiştirmez,
+  yeni kanonik OPEN/AT kimliği tahmin etmez ve implementation başlatmaz.
+- Draft PR #2'nin yedi blocker'ı korunmuştur. PR #8/#9 kontrol yüzeyi oldukları için Draft ve
+  manuel review'da kalmaya devam eder.
+
+```text
+DONE: ERP-000G spec/readiness Draft PR #11, CI 33131243784, üç temiz self-review
+IN REVIEW: ERP-000G Draft #11; ERP-000F Draft #10; governance Draft #8; UI validator Draft #9
+BLOCKED: ERP-000G implementation (ADR-005 + OPEN-026..029); ERP-000F implementation; PR #2
+SAFE NEXT: ERP-000H/ERP-000I conflict-safe readiness belgeleri; Draft PR manuel review'ları
+OPEN DECISIONS: OPEN-020; OPEN-021; OPEN-022..OPEN-029
+MAIN SHA: 9f08ff16447eca89682d0a084e2341b9c2b433c2
+ACTIVE PRS: #11 Draft; #10 Draft; #9 Draft; #8 Draft; #2 Draft
+```
