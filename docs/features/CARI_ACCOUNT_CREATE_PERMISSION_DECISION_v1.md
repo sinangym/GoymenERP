@@ -1,221 +1,258 @@
-# Göymen ERP — Cari Hesabı Oluşturma Yetkisi Karar Paketi v1
+# Göymen ERP — Cari Hesabı Oluşturma Yetkisi Karar Paketi v1.1
 
 - **Durum:** TASLAK / KULLANICI KARARI GEREKLİ
 - **Teknik alan:** `Counterparty` (kullanıcı alanı: Cari)
 - **Karar kimliği:** `CARI-PERM-001`
+- **Kanonik karar kaydı:** Issue #43
 - **İlgili permission:** `counterparty.accounts.create`
 - **İlgili geliştirme:** PR #36 — mevcut grup Party kaydını başka Göymen şirketine bağlama
-- **Bağımlı güvenlik düzeltmesi:** PR #38 — no-op optimistic concurrency hotfix
-- **Sahip:** `ChatGPT-CARI`
+- **Bağımlı güvenlik düzeltmesi:** PR #49 ile `main`e alınan no-op optimistic-concurrency hotfix
+- **Sahip:** `CHATGPT-CARI`
 - **Bağımsız inceleme:** `CODEX-PLATFORM`
-- **Merge kapısı:** İnsan review + açık kullanıcı kararı
+- **Merge kapısı:** Açık kullanıcı kararı + exact-head CI + bağımsız review
 
-> Bu belge hiçbir role yetki vermez, seed veya migration değiştirmez ve PR #36'yı tamamlanmış saymaz. Amaç, açık işletme politikasını tahmin etmeden bağlayıcı karar ve teknik kabul kapısını tanımlamaktır.
+> Bu belge hiçbir role yetki vermez, Identity seed/migration değiştirmez ve PR #36'yı tamamlanmış saymaz. Amaç, açık işletme politikasını tahmin etmeden bağlayıcı karar seçeneklerini ve teknik kabul kapısını tanımlamaktır.
 
-## 1. Sorun
+## 1. Canlı GitHub truth-state ayrımı
 
-PR #36, grup seviyesinde zaten var olan tek `Party` kaydını yeni Party veya yeni CariCode üretmeden, aktif başka bir Göymen hukuki şirketinde ayrı `CompanyPartyAccount` ile ilişkilendirir.
+### 1.1 Güncel `main`
+
+PR #49 sonrasında güncel `main`:
+
+- no-op account active-state optimistic-concurrency düzeltmesini içerir;
+- `counterparty.accounts.create` permission sabitini içermez;
+- mevcut Party'yi ikinci Göymen şirketine bağlayan public endpoint'i içermez;
+- bu permission için fresh-install grant veya existing-install upgrade davranışı içermez.
+
+### 1.2 Yalnız PR #36 dalında bulunan pending davranış
+
+PR #36 dalı:
+
+- `counterparty.accounts.create` permission sabitini ekler;
+- permission'ı development seed içindeki `SYSTEM_ADMINISTRATOR` rolüne ekler;
+- `POST /api/v1/counterparties/{partyId}/company-account` endpoint'ini ekler;
+- existing Party → yeni şirket hesabı link command'ini ve gerçek SQL acceptance testlerini taşır.
+
+Bu pending branch davranışı `main`de varmış gibi raporlanamaz. PR #36 yeni `main` ile senkronize edilip yeniden doğrulanmadan eski CI/review kanıtı kullanılamaz.
+
+### 1.3 Mevcut Identity seeder gerçeği
+
+`IdentityDataSeeder`, veritabanında role ID zaten varsa rolü tamamen atlar. Bu nedenle yalnız seed JSON'a yeni permission eklemek:
+
+- fresh database rol oluşturma yolunda etkili olabilir;
+- existing installation içindeki mevcut role yeni permission reconcile etmez;
+- production upgrade kanıtı değildir;
+- hangi iş rollerinin yetki alacağını belirlemez.
+
+## 2. Risk ve amaç
+
+PR #36, grup seviyesinde zaten var olan tek `Party` kaydını yeni Party/CariCode üretmeden aktif başka bir Göymen hukuki şirketinde ayrı `CompanyPartyAccount` ile ilişkilendirir.
 
 Bu işlem:
 
-- şirketler arası görünürlüğü etkiler,
-- yeni bir şirket-yerel cari hesap oluşturur,
-- ileride finans, sipariş, stok ve risk süreçlerinin bağlanacağı bir master-data ilişkisi üretir,
-- yanlış yetkilendirilirse kullanıcının başka bir şirket adına cari hesap açmasına yol açabilir.
+- şirketler arası görünürlüğü etkiler;
+- yeni şirket-yerel cari hesap oluşturur;
+- ileride finans, sipariş, stok ve risk süreçlerinin bağlanacağı master-data ilişkisi üretir;
+- yanlış yetkilendirilirse başka şirket adına cari hesabı açma riskine yol açar.
 
-Teknik permission tanımlı olsa da hangi gerçek Göymen rollerinin bu permission'ı alacağı ve mevcut kurulumların permission'ı nasıl kazanacağı bağlayıcı kullanıcı kararı olmadan genişletilemez.
+Teknik permission ve endpoint pending branch'te bulunabilse de rol/grant/upgrade politikası kullanıcı kararı olmadan genişletilemez.
 
-## 2. Değişmez güvenlik sözleşmesi
+## 3. Değişmez güvenlik sözleşmesi
 
-Karar hangi seçenek olursa olsun aşağıdakiler değişmez:
+Karar hangi seçenek olursa olsun:
 
-1. Varsayılan davranış **default-deny / fail-closed** olur.
+1. Varsayılan davranış `default-deny / fail-closed` olur.
 2. Hedef şirket yalnız çözülmüş aktif `CompanyContext` olur; body, query veya route ile `CompanyId` override edilemez.
 3. Kullanıcı hedef şirkette `counterparty.accounts.create` permission'ına sahip olmalıdır.
-4. Kullanıcı Party'yi en az bir mevcut yetkili şirket hesabı üzerinden görebilmeli ve ayrıca `counterparty.parties.read` denetimini geçmelidir.
-5. Tahmin edilen `PartyId` ile yetkisiz keşif, existence oracle veya link oluşturma mümkün olmamalıdır.
+4. Kullanıcı Party'yi en az bir mevcut yetkili şirket hesabı üzerinden görebilmeli ve `counterparty.parties.read` denetimini geçmelidir.
+5. Tahmin edilen `PartyId` yetkisiz keşif veya existence oracle oluşturmamalıdır.
 6. `(CompanyId, PartyId)` benzersizliği SQL katmanında korunur.
-7. Permission grant'i ile cari hesabı oluşturma komutu ayrı audit olaylarıdır; biri diğerinin yerine geçmez.
-8. Permission verilmemiş kullanıcıda business kaydı, audit business olayı veya idempotency execution kaydı oluşmamalıdır.
-9. Existing-installation upgrade tekrar çalıştırıldığında duplicate grant üretmemelidir.
-10. Kaynaklarda olmayan rol adı, eşik veya görev ayrılığı politikası tahmin edilmez.
+7. Permission grant/revoke ile company-account create ayrı audit olaylarıdır.
+8. Authorization aşamasında reddedilen istekte business, audit-business ve idempotency etkisi `0` olur.
+9. Authorization'ı geçmiş fakat görünmeyen Party için terminal `NotFound` sonucu durable idempotency kaydı olarak tutulabilir; business ve audit-business etkisi yine `0` olur.
+10. Existing-install upgrade tekrar çalıştırıldığında duplicate grant üretmez.
+11. Kaynaklarda olmayan rol, eşik veya görev ayrılığı politikası tahmin edilmez.
+12. Yeni role otomatik kullanıcı ataması yapılmaz; assignment ayrı yetkili işlemdir.
 
-## 3. Karar verilmesi gereken alanlar
+## 4. Doğrulanmış mevcut teknik roller
 
-Kullanıcı kararı aşağıdaki alanların tamamını açıkça belirlemelidir:
+Repository'nin mevcut canonical role kodları:
 
-| Alan | Gerekli karar |
-|---|---|
-| İzin alacak roller | Repository'deki exact rol kodları |
-| Yeni kurulum | Hangi roller permission ile seed edilir |
-| Mevcut kurulum | İdempotent upgrade/grant davranışı |
-| Grant kaynağı | Seed/migration, admin yetki yönetimi veya kontrollü birleşim |
-| Görev ayrılığı | Doğrudan create, gelecekte approval veya request modeli |
-| Geri alma | Yanlış grant için güvenli revoke/forward-fix yaklaşımı |
-| Audit | Grant/revoke reason ve actor kanıtı |
-| Etkin tarih | Kararın hangi sürümden itibaren geçerli olduğu |
+- `ORGANIZATION_READER`
+- `ORGANIZATION_OPERATOR`
+- `SYSTEM_ADMINISTRATOR`
+- `SECURITY_ADMINISTRATOR`
+- `SECURITY_APPROVER`
 
-## 4. Güvenli seçenekler
+Bu listede `COUNTERPARTY_ACCOUNT_OPERATOR` henüz yoktur. Böyle bir rol yalnız aşağıdaki ayrı seçenek açıkça kabul edilirse deterministik olarak oluşturulabilir.
 
-### Seçenek A — En dar ilk sürüm
+## 5. Karar seçenekleri
 
-- Yalnız repository'deki sistem yöneticisi rolü permission alır.
-- Yeni ve mevcut kurulumlarda aynı exact role idempotent grant uygulanır.
+### Seçenek A — En dar mevcut rol modeli
+
+- Exact role: `SYSTEM_ADMINISTRATOR`.
+- Fresh install ve existing install için aynı role idempotent grant uygulanır.
 - Diğer bütün roller default-deny kalır.
-- Operasyonel roller daha sonra açık kullanıcı kararı veya yetki yönetimi üzerinden eklenir.
+- Operasyonel delegasyon daha sonra açık yetki yönetimi kararıyla yapılır.
 
-**Avantajlar**
+**Avantaj:** en düşük privilege-escalation riski.  
+**Dezavantaj:** operasyonel kullanıcılar yöneticiye bağımlı kalabilir.
 
-- En düşük privilege-escalation riski.
-- Maker-checker henüz yokken cross-company master-data oluşturma dar tutulur.
-- PR #36'nın teknik kabulü iş rolü tahmini yapılmadan tamamlanabilir.
+### Seçenek B — Kontrollü mevcut roller
 
-**Dezavantajlar**
+- `SYSTEM_ADMINISTRATOR` yanında kullanıcı tarafından tek tek onaylanacak mevcut exact role kodları permission alır.
+- `EXACT ROLE CODES` boş bırakılamaz.
+- Rol adından veya departman isminden otomatik grant türetilmez.
 
-- Günlük işlem için sistem yöneticisine operasyonel bağımlılık doğurabilir.
-- Yetki yönetimi ekranı gelene kadar delegasyon sınırlı olur.
+**Avantaj:** günlük operasyon hızlanabilir.  
+**Dezavantaj:** yanlış/geniş rol seçimi cross-company erişim riskini büyütür.
 
-### Seçenek B — Kontrollü operasyon rolleri
+### Seçenek C — Request / approval modeli
 
-- Sistem yöneticisine ek olarak kullanıcı tarafından açıkça seçilecek mevcut rol kodları permission alır.
-- Exact rol listesi repository'den çıkarılır ve karar kaydında tek tek onaylanır.
-- Yeni ve mevcut kurulum upgrade'i yalnız bu listedeki rollere uygulanır.
+- Doğrudan create permission dar yönetici rolünde kalır.
+- Operasyonel kullanıcı ayrı request açar; başka yetkili kullanıcı onaylar.
+- Maker kendi talebini onaylayamaz.
+- Bu seçenek PR #36 kapsamını aşar ve ayrı approval feature'ı gerektirir.
 
-**Avantajlar**
+**Avantaj:** görev ayrılığı en güçlü modeldir.  
+**Dezavantaj:** ek domain, queue ve lifecycle gerektirir.
 
-- Günlük operasyon daha hızlı yürür.
-- Mevcut görev dağılımına göre yetki devri yapılabilir.
+### Seçenek D — Ayrı özel Cari hesap operatörü rolü
 
-**Dezavantajlar**
+- Yeni deterministic system role: `COUNTERPARTY_ACCOUNT_OPERATOR`.
+- Önerilen görünen ad: `Cari Hesap Yönetimi`.
+- Exact permission paketi ayrıca kullanıcı tarafından kabul edilmelidir. Aday minimum paket:
+  - `counterparty.parties.read`
+  - `counterparty.accounts.create`
+  - `counterparty.accounts.status.update`
+- `counterparty.parties.create` otomatik olarak bu pakete eklenmez.
+- Fresh install'da rol oluşturulur fakat hiçbir kullanıcıya otomatik atanmaz.
+- Existing install'da rol yoksa deterministic ID/code ile oluşturulur; varsa ID/code bütünlüğü fail-closed doğrulanır ve yalnız eksik canonical permission'lar idempotent eklenir.
+- Custom permission/grant ve mevcut assignment'lar silinmez.
 
-- Hatalı veya geniş rol seçimi kalıcı cross-company erişim riski yaratır.
-- Rol kapsamları değişirse permission drift'i ayrıca yönetilmelidir.
+**Avantaj:** sistem yöneticiliği vermeden dar operasyonel delegasyon sağlar.  
+**Dezavantaj:** yeni sistem rolünün yaşam döngüsü ve upgrade sözleşmesi gerekir.
 
-### Seçenek C — Request / approval temelli model
+## 6. ChatGPT-CARI risk önerisi
 
-- Doğrudan permission ilk aşamada yalnız sistem yöneticisinde kalır.
-- Operasyonel kullanıcılar ayrı bir request oluşturur; yetkili başka kullanıcı onaylar.
-- Değişikliği yapan kendi talebini onaylayamaz.
+En düşük ilk-sürüm riski için **Seçenek A** önerilir. Ayrı delegasyon ihtiyacı başlangıçtan kesin ise **Seçenek D**, geniş mevcut rollere otomatik grant veren Seçenek B'den daha güvenli ayrıştırma sağlar.
 
-**Avantajlar**
+Bu öneri kullanıcı kararı değildir. Açık kabul olmadan:
 
-- Hedef maker-checker ve görev ayrılığı modeline en yakın yaklaşımdır.
-- Kritik cross-company ilişki için açık onay izi oluşur.
+- Issue #43 kapatılmaz;
+- hiçbir role yeni grant uygulanmaz;
+- yeni rol oluşturulmaz;
+- PR #36 Ready/merge yapılmaz.
 
-**Dezavantajlar**
-
-- PR #36 kapsamını aşar.
-- Approval domain'i, queue, timeout/reject/cancel ve audit acceptance'ı gerektirir.
-- Ayrı feature/PR olarak geliştirilmelidir.
-
-## 5. ChatGPT-CARI önerisi
-
-İlk sürümde maker-checker uygulanmadığı ve işlem cross-company master-data ilişkisi oluşturduğu için **Seçenek A** en güvenli başlangıç önerisidir.
-
-Bu yalnız teknik risk önerisidir. Kullanıcı açıkça onaylamadan:
-
-- karar `CLOSED` sayılmaz,
-- başka role permission verilmez,
-- PR #36 Draft durumundan çıkarılmaz,
-- mevcut kurulumlara upgrade uygulanmaz.
-
-## 6. Bağlayıcı karar şablonu
+## 7. Bağlayıcı karar şablonu
 
 ```text
-DECISION: CARI-PERM-001
-STATUS: APPROVED
-APPROVED OPTION: A | B | C
+DECISION-ACCEPTED: CARI-PERM-001
+APPROVED OPTION: A | B | C | D
 EXACT ROLE CODES:
+NEW ROLE CODE / DETERMINISTIC ID (yalnız D):
+CANONICAL PERMISSION BUNDLE (yalnız D):
 NEW INSTALL DEFAULT:
 EXISTING INSTALL UPGRADE:
+AUTOMATIC USER ASSIGNMENT: NONE | <explicit policy>
 GRANT SOURCE:
 APPROVAL / SoD NOTE:
+INACTIVE ROLE POLICY:
 REVOKE / FORWARD-FIX NOTE:
 EFFECTIVE VERSION / DATE:
 APPROVED BY:
 ```
 
-Karar seçeneği B ise `EXACT ROLE CODES` alanı boş bırakılamaz. Görünen Türkçe rol adı değil repository'deki teknik rol kodu yazılmalıdır.
+## 8. Existing-install upgrade sözleşmesi
 
-## 7. Existing-installation upgrade sözleşmesi
+Kabul edilen karara göre upgrade:
 
-Karar sonrası uygulanacak upgrade aşağıdaki özelliklere sahip olmalıdır:
+1. Tekrar çalıştırılabilir ve idempotent olmalıdır.
+2. Eşzamanlı iki upgrade duplicate `RolePermission` üretememelidir.
+3. Mevcut custom permission/grant ve assignment'ları silmemelidir.
+4. Seçili olmayan role permission eklememelidir.
+5. Mevcut role için expected ID/code uyuşmazlığında sessiz merge yerine fail-closed hata üretmelidir.
+6. Seçenek A/B'de beklenen mevcut role yoksa yeni benzer rol uydurmamalıdır.
+7. Seçenek D'de yeni rol yalnız kabul edilen deterministic ID/code ile oluşturulmalıdır.
+8. Yeni role otomatik kullanıcı assignment'ı yapmamalıdır; kullanıcı kararı aksi yönde açıkça yazılmadıkça default `NONE` olur.
+9. Pasif rol davranışı karar şablonunda açıkça belirlenmelidir.
+10. Partial failure transaction veya açık forward-fix planıyla yönetilmelidir.
+11. Upgrade sürümü ve actor/system identity audit edilebilir olmalıdır.
+12. Rollback yerine revoke gerekiyorsa ayrı, gerekçeli ve auditli işlem olmalıdır.
 
-1. Tekrar çalıştırılabilir ve idempotent olmalı.
-2. Mevcut grant'i silip yeniden üretmemeli.
-3. Seçili olmayan role permission eklememeli.
-4. Pasif/archived role davranışı açıkça test edilmeli.
-5. Rol yoksa sessizce yeni rol üretmemeli; fail-closed veya açık migration error üretmeli.
-6. Partial failure durumunda transaction/forward-fix davranışı belgelenmeli.
-7. Upgrade sürümü ve uygulayan actor/system identity audit edilebilmeli.
-8. Rollback yerine revoke gerekiyorsa ayrı ve izlenebilir değişiklik olmalı.
-
-## 8. Teknik kabul matrisi
+## 9. Teknik kabul matrisi
 
 | Kimlik | Senaryo | Beklenen sonuç |
 |---|---|---|
-| CARI-PERM-AC-001 | Permission olmayan kullanıcı company-account link çağırır | `403`; business/audit/idempotency etkisi `0` |
-| CARI-PERM-AC-002 | Permission olan kullanıcı görünür Party'yi aktif hedef şirkete bağlar | `201`; tek account + tek audit + terminal idempotency sonucu |
-| CARI-PERM-AC-003 | Permission var, Party görünürlüğü yok | Non-disclosing `404`; etki `0` |
-| CARI-PERM-AC-004 | Body/query/route ile başka CompanyId gönderme denemesi | Override kabul edilmez; aktif CompanyContext dışına çıkılmaz |
-| CARI-PERM-AC-005 | Aynı upgrade iki kez çalışır | Duplicate role-permission kaydı yok |
-| CARI-PERM-AC-006 | Seçili olmayan rol upgrade öncesi/sonrası | Permission kazanmaz |
-| CARI-PERM-AC-007 | Same-key replay | İlk terminal sonuç original correlation kanıtıyla replay edilir |
-| CARI-PERM-AC-008 | Same-key farklı payload/actor | `409` mismatch; ek etki yok |
-| CARI-PERM-AC-009 | Different-key eşzamanlı duplicate link | Tam bir `201`, tam bir terminal `409 AlreadyLinked` |
-| CARI-PERM-AC-010 | Audit insert reddi | Business + audit + command result atomik rollback |
-| CARI-PERM-AC-011 | Idempotency insert reddi | Business + audit + command result atomik rollback |
-| CARI-PERM-AC-012 | Yeni permission grant/revoke | Ayrı güvenlik/audit izi; cari create audit'ine karışmaz |
-| CARI-PERM-AC-013 | Eksik/çoklu/comma-joined Idempotency-Key | `400`; etki `0` |
-| CARI-PERM-AC-014 | PR #38 sonrası stale expected version | Terminal `409 VersionConflict` |
+| CARI-PERM-AC-001 | Permission olmayan kullanıcı link çağırır | `403`; business=`0`, audit-business=`0`, idempotency=`0` |
+| CARI-PERM-AC-002 | Permission olan kullanıcı görünür Party'yi aktif hedef şirkete bağlar | `201`; tek account + tek audit + tek terminal idempotency sonucu |
+| CARI-PERM-AC-003 | Permission var, Party görünürlüğü yok | Non-disclosing `404`; business=`0`, audit-business=`0`, terminal `NotFound` idempotency=`1`; aynı key replay aynı sonucu döndürür |
+| CARI-PERM-AC-004 | Body/query/route ile başka CompanyId denemesi | Override kabul edilmez; aktif CompanyContext dışına çıkılmaz |
+| CARI-PERM-AC-005 | Aynı upgrade iki kez çalışır | Duplicate role-permission yok |
+| CARI-PERM-AC-006 | İki upgrade eşzamanlı çalışır | Tek canonical grant/rol; duplicate yok |
+| CARI-PERM-AC-007 | Seçili olmayan rol upgrade öncesi/sonrası | Permission kazanmaz |
+| CARI-PERM-AC-008 | Existing custom permission ve assignment | Korunur; sessiz silme/yeniden yazma yok |
+| CARI-PERM-AC-009 | Role ID/code uyuşmazlığı | Fail-closed; sessiz merge yok |
+| CARI-PERM-AC-010 | Seçenek D fresh install | Deterministic rol oluşur; otomatik user assignment yok |
+| CARI-PERM-AC-011 | Same-key link replay | İlk terminal sonuç original correlation kanıtıyla replay edilir |
+| CARI-PERM-AC-012 | Same-key farklı payload/actor | `409` mismatch; ek business/audit etkisi yok |
+| CARI-PERM-AC-013 | Different-key eşzamanlı duplicate link | Tam bir `201`, tam bir terminal `409 AlreadyLinked`; tek account/audit-business etkisi |
+| CARI-PERM-AC-014 | Audit insert reddi | Business + audit + command result atomik rollback |
+| CARI-PERM-AC-015 | Idempotency insert reddi | Business + audit + command result atomik rollback |
+| CARI-PERM-AC-016 | Yeni permission grant/revoke | Ayrı security/audit izi; link audit'ine karışmaz |
+| CARI-PERM-AC-017 | Eksik/çoklu/comma-joined Idempotency-Key | `400`; business/audit/idempotency etkisi `0` |
+| CARI-PERM-AC-018 | Yanlış Company scope taşıyan yetkili rol | `403`; business/audit/idempotency etkisi `0` |
+| CARI-PERM-AC-019 | Pasif role grant/upgrade | Kullanıcı kararındaki inactive-role politikasına exact uyum |
 
-Gerçek concurrency, unique constraint ve rollback senaryoları gerçek SQL Server üzerinde kanıtlanmalıdır. InMemory/mock kanıtı yeterli değildir.
+No-op account active-state concurrency, PR #49 ile ayrı command ailesinde düzeltilmiştir. Bu davranış link permission acceptance'ı değildir; tam regresyon suite içinde korunur fakat link command'e `ExpectedVersion` uydurulmaz.
 
-## 9. Kod ve sahiplik sınırı
+Gerçek concurrency, unique constraint, upgrade ve rollback senaryoları gerçek SQL Server üzerinde kanıtlanmalıdır. InMemory/mock tek başına yeterli değildir.
 
-### ChatGPT-CARI
+## 10. Sahiplik sınırı
 
-- Permission'ın Cari command üzerinde zorunlu tutulması
-- Cari endpoint/application acceptance testleri
-- Cari karar ve handoff belgeleri
-- PR #36'nın current-main revalidation'ı
+### CHATGPT-CARI
 
-### CODEX-PLATFORM
+- İş kararı seçenekleri ve Cari permission contract'ı
+- Link endpoint/application/gerçek SQL acceptance
+- PR #36 current-main revalidation
+- Cari handoff ve exact-head review kapıları
 
-Yalnız kabul edilen karar generic Identity seed/upgrade mekanizması gerektirirse:
+### CODEX-PLATFORM / Identity owner
 
-- Identity tarafındaki idempotent role-permission upgrade altyapısı
-- Generic migration/seed guard'ları
-- Platform security acceptance ve CI entegrasyonu
+Yalnız kabul edilen karar generic Identity role-permission reconciliation gerektirirse:
 
-### İnsan / kullanıcı
+- Identity idempotent role/permission upgrade altyapısı
+- role ID/code fail-closed guard'ları
+- generic migration/seed güvenliği ve platform acceptance
 
-- Seçenek ve exact rol kodlarının onayı
+### Kullanıcı / insan review
+
+- Seçenek, exact rol kodları ve yeni rol paketinin kabulü
 - Kritik permission değişikliğinin merge kararı
 
-## 10. Merge kapısı
+## 11. PR #36 merge kapısı
 
-PR #36 aşağıdakilerin tamamı olmadan merge edilmez:
+- [x] No-op concurrency hotfix PR #49 ile `main`e alındı
+- [ ] PR #36 yeni `main` ile non-destructive sync edildi
+- [ ] PR #36 exact yeni head standard CI + UI golden yeşil
+- [ ] `CARI-PERM-001` kullanıcı tarafından kabul edildi
+- [ ] Exact rol/permission/upgrade implementasyonu ayrı review edildi
+- [ ] Fresh ve existing-install gerçek SQL acceptance geçti
+- [ ] Yetkisiz/wrong-scope rol fail-closed acceptance geçti
+- [ ] Same-key/different-key/replay/rollback/visibility/header testleri geçti
+- [ ] CODEX-PLATFORM exact-head bağımsız review bıraktı
+- [ ] İnsan Cari/security review tamamlandı
 
-- [ ] PR #38 `main`e alınmış ve PR #36 yeni main ile senkronize edilmiş
-- [ ] `CARI-PERM-001` kullanıcı tarafından onaylanmış
-- [ ] Exact rol kodları doğrulanmış
-- [ ] Yeni kurulum ve existing-install upgrade testleri geçmiş
-- [ ] Yetkisiz rol fail-closed acceptance geçmiş
-- [ ] Same-key/different-key/replay/rollback/visibility testleri gerçek SQL'de geçmiş
-- [ ] Standard CI ve UI golden exact head üzerinde yeşil
-- [ ] Codex exact-head bağımsız review bırakmış
-- [ ] İnsan Cari/security review tamamlanmış
-
-## 11. HANDOFF-V1
+## 12. HANDOFF-V1
 
 ```text
-OWNER: ChatGPT-CARI
+OWNER: CHATGPT-CARI
 TASK: CARI-PERM-001
+CANONICAL DECISION: Issue #43
 WRITE SCOPE: docs/features/CARI_ACCOUNT_CREATE_PERMISSION_DECISION_v1.md
 READ-ONLY BOUNDARIES: .github/**, Identity production code, Codex branches
-COMPLETED: decision options, recommendation, upgrade contract, acceptance matrix
-OPEN DECISION: user option + exact role codes
-NEXT SAFE ACTION: repository role inventory and user decision
-DO NOT: grant permission, mark PR #36 ready, reuse stale CI
+COMPLETED: truth-state split, A/B/C/D options, upgrade contract, corrected acceptance matrix
+OPEN DECISION: user option + exact roles/new-role package
+NEXT SAFE ACTION: CODEX exact-head re-review + user decision
+DO NOT: grant permission, create role, mark PR #36 ready, reuse stale CI
 ```
