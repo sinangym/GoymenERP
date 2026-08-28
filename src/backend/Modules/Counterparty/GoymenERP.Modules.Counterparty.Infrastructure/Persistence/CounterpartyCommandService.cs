@@ -151,27 +151,19 @@ internal sealed class CounterpartyCommandService(
             command.IsActive,
             command.ExpectedVersion,
             command.Reason.Trim()));
-        var account = await dbContext.CompanyPartyAccounts
-            .SingleOrDefaultAsync(
-                x => x.CompanyId == metadata.CompanyId && x.PartyId == partyId,
-                cancellationToken);
         var existingExecution = await FindCommandExecutionAsync(
             SetAccountActiveStateCommandName,
             idempotencyKeyHash,
             cancellationToken);
         if (existingExecution is not null)
         {
-            if (account is null)
-            {
-                return new CounterpartyCommandExecution(
-                    Responses.NotFound(),
-                    false,
-                    metadata.CorrelationId);
-            }
-
             return ResolveExistingExecution(existingExecution, requestHash, metadata);
         }
 
+        var account = await dbContext.CompanyPartyAccounts
+            .SingleOrDefaultAsync(
+                x => x.CompanyId == metadata.CompanyId && x.PartyId == partyId,
+                cancellationToken);
         if (account is null)
         {
             return await CompleteCommandAsync(
