@@ -1,48 +1,61 @@
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
+using GoymenERP.Modules.Idempotency.Domain.Executions;
+using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 
-public sealed class CounterpartyDbContext(DbContextOptions<CounterpartyDbContext> options)
+public sealed class CounterpartyDbContext(
+    DbContextOptions<CounterpartyDbContext> options,
+    ICompanyContext companyContext)
     : DbContext(options)
 {
     public DbSet<Party> Parties => Set<Party>();
 
     public DbSet<CompanyPartyAccount> CompanyPartyAccounts => Set<CompanyPartyAccount>();
 
+    public DbSet<CommandExecution> CommandExecutions => Set<CommandExecution>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
 
+        modelBuilder.HasSequence<long>("PartyCodeSequence", "counterparty")
+            .StartsAt(1)
+            .IncrementsBy(1);
         ConfigureParty(modelBuilder);
         ConfigureCompanyPartyAccount(modelBuilder);
         ConfigureOrganizationCompanyReference(modelBuilder);
+        modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
+        modelBuilder.ConfigureCommandExecution(excludeFromMigrations: true);
+        modelBuilder.Entity<CommandExecution>()
+            .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     public override int SaveChanges()
     {
-        RejectPhysicalDeletes();
-        return base.SaveChanges();
+        return SaveChanges(acceptAllChangesOnSuccess: true);
     }
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
-        RejectPhysicalDeletes();
+        ApplyWriteGuards();
         return base.SaveChanges(acceptAllChangesOnSuccess);
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        RejectPhysicalDeletes();
-        return base.SaveChangesAsync(cancellationToken);
+        return SaveChangesAsync(acceptAllChangesOnSuccess: true, cancellationToken);
     }
 
     public override Task<int> SaveChangesAsync(
         bool acceptAllChangesOnSuccess,
         CancellationToken cancellationToken = default)
     {
-        RejectPhysicalDeletes();
+        ApplyWriteGuards();
         return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
     }
 
@@ -122,14 +135,79 @@ public sealed class CounterpartyDbContext(DbContextOptions<CounterpartyDbContext
         entity.HasKey(x => x.Id);
     }
 
-    private void RejectPhysicalDeletes()
+    private void ApplyWriteGuards()
     {
-        if (ChangeTracker.Entries<Party>().Any(entry => entry.State == EntityState.Deleted)
-            || ChangeTracker.Entries<CompanyPartyAccount>()
-                .Any(entry => entry.State == EntityState.Deleted))
+        foreach (var entry in ChangeTracker.Entries<Party>())
         {
-            throw new InvalidOperationException(
-                "Cari çekirdek kayıtları fiziksel olarak silinemez; pasif/ters işlem akışı kullanılmalıdır.");
+            if (entry.State == EntityState.Unchanged)
+            {
+                continue;
+            }
+
+            if (entry.State is EntityState.Modified or EntityState.Deleted)
+            {
+                throw new InvalidOperationException(
+                    "Grup seviyesindeki Party kaydı bu dilimde doğrudan değiştirilemez veya silinemez.");
+            }
+
+            if (!companyContext.IsResolved)
+            {
+                throw new InvalidOperationException(
+                    "Yeni cari oluşturmak için aktif şirket bağlamı zorunludur.");
+            }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<CompanyPartyAccount>())
+        {
+            if (entry.State == EntityState.Unchanged)
+            {
+                continue;
+            }
+
+            if (entry.State == EntityState.Deleted)
+            {
+                throw new InvalidOperationException(
+                    "Cari hesap fiziksel olarak silinemez; pasif/ters işlem akışı kullanılmalıdır.");
+            }
+
+            if (entry.Entity.CompanyId == Guid.Empty)
+            {
+                throw new InvalidOperationException("Cari hesap CompanyId olmadan yazılamaz.");
+            }
+
+            if (entry.State == EntityState.Modified
+                && entry.Property(x => x.CompanyId).IsModified)
+            {
+                throw new InvalidOperationException("Cari hesabın CompanyId değeri değiştirilemez.");
+            }
+
+            if (!companyContext.IsResolved
+                || entry.Entity.CompanyId != companyContext.CompanyId)
+            {
+                throw new InvalidOperationException(
+                    "Cari hesap yazması aktif şirket bağlamıyla eşleşmelidir.");
+            }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<CommandExecution>())
+        {
+            if (entry.State == EntityState.Unchanged)
+            {
+                continue;
+            }
+
+            if (entry.State is EntityState.Modified or EntityState.Deleted)
+            {
+                throw new InvalidOperationException(
+                    "Idempotency kayıtları değiştirilemez veya silinemez.");
+            }
+
+            if (!companyContext.IsResolved
+                || entry.Entity.CompanyId != companyContext.CompanyId)
+            {
+                throw new InvalidOperationException(
+                    "Idempotency kaydı aktif şirket bağlamıyla eşleşmelidir.");
+            }
         }
     }
 
