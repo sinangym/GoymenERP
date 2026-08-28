@@ -81,12 +81,21 @@
     {
       "id": "ERP-000H",
       "title": "Türkçe PDF ve adlandırma PoC",
-      "status": "ready",
+      "status": "blocked",
       "depends_on": [
-        "ERP-000A"
+        "ERP-000A",
+        "ERP-000B",
+        "ERP-000C",
+        "ERP-000D",
+        "ERP-000E",
+        "ERP-000G"
       ],
-      "scope": "Unicode dosya adı, gömülü font stratejisi, sözleşme PDF örneği.",
-      "acceptance": "Türkçe karakter golden testi geçer.",
+      "scope": "Turkish Unicode PDF, embedded-font and license proof, safe visible naming/Content-Disposition, opaque storage identity and real renderer golden evidence.",
+      "acceptance": "OPEN-019 and ERP-000H-DECISION-PACK close; AT-066 produces real renderer, embedded font, naming, security and accessibility evidence against the accepted ERP-000G contract.",
+      "blocked_by": [
+        "OPEN-019",
+        "ERP-000H-DECISION-PACK"
+      ],
       "priority": "P0"
     },
     {
