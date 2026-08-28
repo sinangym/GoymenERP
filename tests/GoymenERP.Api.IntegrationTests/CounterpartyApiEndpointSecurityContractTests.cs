@@ -31,7 +31,7 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
         var runtimeEndpoints = endpointDataSource.Endpoints
             .OfType<RouteEndpoint>()
             .Select(ToRuntimeEndpoint)
-            .Where(endpoint => IsCounterpartyRoute(endpoint.Route))
+            .Where(endpoint => IsCounterpartyRoute(endpoint.Key.Route))
             .ToArray();
 
         errors.AddRange(ValidateRuntime(manifest, runtimeEndpoints));
@@ -42,7 +42,7 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
     [Fact]
     public void Contract_drift_detection_rejects_missing_extra_and_security_downgrade()
     {
-        var safeManifest = new EndpointManifest(
+        var manifest = new EndpointManifest(
             1,
             ExpectedOwner,
             ExpectedModule,
@@ -67,54 +67,55 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
 
         var safeRuntime = new[]
         {
-            RuntimeEndpoint.DynamicRead(HttpMethods.Get, CounterpartyRoutePrefix),
-            RuntimeEndpoint.PermissionWrite(
+            CreateDynamicRead(HttpMethods.Get, CounterpartyRoutePrefix),
+            CreatePermissionWrite(
                 HttpMethods.Post,
                 CounterpartyRoutePrefix,
                 ErpPermissions.CounterpartyPartiesCreate),
         };
 
-        Assert.Empty(ValidateRuntime(safeManifest, safeRuntime));
+        Assert.Empty(ValidateRuntime(manifest, safeRuntime));
 
-        var missing = safeRuntime.Skip(1).ToArray();
         Assert.Contains(
-            ValidateRuntime(safeManifest, missing),
-            error => error.Contains("Missing contracted Counterparty endpoint", StringComparison.Ordinal));
+            ValidateRuntime(manifest, safeRuntime.Skip(1).ToArray()),
+            error => error.Contains(
+                "Missing contracted Counterparty endpoint",
+                StringComparison.Ordinal));
 
-        var extra = safeRuntime.Append(
-            RuntimeEndpoint.PermissionWrite(
-                HttpMethods.Delete,
-                $"{CounterpartyRoutePrefix}/{{partyId:guid}}",
-                "counterparty.parties.delete"))
-            .ToArray();
         Assert.Contains(
-            ValidateRuntime(safeManifest, extra),
-            error => error.Contains("Unexpected runtime Counterparty endpoint", StringComparison.Ordinal));
+            ValidateRuntime(
+                manifest,
+                safeRuntime.Append(CreatePermissionWrite(
+                        HttpMethods.Delete,
+                        $"{CounterpartyRoutePrefix}/{{partyId:guid}}",
+                        "counterparty.parties.delete"))
+                    .ToArray()),
+            error => error.Contains(
+                "Unexpected runtime Counterparty endpoint",
+                StringComparison.Ordinal));
 
-        var anonymous = safeRuntime
-            .Select(endpoint => endpoint.Key.Method == HttpMethods.Get
-                ? endpoint with { AllowsAnonymous = true }
-                : endpoint)
-            .ToArray();
         Assert.Contains(
-            ValidateRuntime(safeManifest, anonymous),
+            ValidateRuntime(
+                manifest,
+                safeRuntime.Select(endpoint => endpoint.Key.Method == HttpMethods.Get
+                        ? endpoint with { AllowsAnonymous = true }
+                        : endpoint)
+                    .ToArray()),
             error => error.Contains("AllowAnonymous", StringComparison.Ordinal));
 
-        var missingCompanyContext = safeRuntime
-            .Select(endpoint => endpoint.Key.Method == HttpMethods.Post
-                ? endpoint with { RequiresCompanyContext = false }
-                : endpoint)
-            .ToArray();
         Assert.Contains(
-            ValidateRuntime(safeManifest, missingCompanyContext),
+            ValidateRuntime(
+                manifest,
+                safeRuntime.Select(endpoint => endpoint.Key.Method == HttpMethods.Post
+                        ? endpoint with { RequiresCompanyContext = false }
+                        : endpoint)
+                    .ToArray()),
             error => error.Contains("RequiresCompanyContext", StringComparison.Ordinal));
     }
 
     private static EndpointManifest ReadManifest(string repositoryRoot)
     {
-        var path = Path.GetFullPath(Path.Combine(
-            repositoryRoot,
-            ContractPath.Replace('/', Path.DirectorySeparatorChar)));
+        var path = ToFullPath(repositoryRoot, ContractPath);
         var bytes = File.ReadAllBytes(path);
         using var document = JsonDocument.Parse(bytes, new JsonDocumentOptions
         {
@@ -122,6 +123,7 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
             CommentHandling = JsonCommentHandling.Disallow,
             MaxDepth = 32,
         });
+
         var duplicateErrors = new List<string>();
         FindDuplicateProperties(document.RootElement, "$", duplicateErrors);
         if (duplicateErrors.Count > 0)
@@ -129,14 +131,12 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
             throw new InvalidOperationException(string.Join("\n", duplicateErrors));
         }
 
-        var options = new JsonSerializerOptions
+        return JsonSerializer.Deserialize<EndpointManifest>(bytes, new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = false,
             UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
-        };
-        return JsonSerializer.Deserialize<EndpointManifest>(bytes, options)
-               ?? throw new InvalidOperationException(
-                   "Counterparty API endpoint contract is empty.");
+        }) ?? throw new InvalidOperationException(
+            "Counterparty API endpoint contract is empty.");
     }
 
     private static IReadOnlyList<string> ValidateManifest(
@@ -144,6 +144,7 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
         EndpointManifest manifest)
     {
         var errors = new List<string>();
+
         if (manifest.SchemaVersion != 1)
         {
             errors.Add($"Unsupported schema_version: {manifest.SchemaVersion}.");
@@ -173,10 +174,10 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
                 + $"entries; found {manifest.Endpoints.Count}.");
         }
 
-        var keys = new HashSet<EndpointKey>();
+        var keys = new HashSet<EndpointKey>(EndpointKeyComparer.Instance);
         foreach (var endpoint in manifest.Endpoints)
         {
-            var key = Key(endpoint.Method, endpoint.Route);
+            var key = CreateKey(endpoint.Method, endpoint.Route);
             if (!keys.Add(key))
             {
                 errors.Add($"Duplicate endpoint contract: {key}.");
@@ -192,45 +193,54 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
                 errors.Add($"Route is outside Counterparty ownership: {key.Route}.");
             }
 
-            if (!ErpPermissions.IsKnown(endpoint.Permission))
+            if (string.IsNullOrWhiteSpace(endpoint.Permission)
+                || !ErpPermissions.IsKnown(endpoint.Permission))
             {
                 errors.Add($"Unknown permission: {endpoint.Permission}.");
             }
 
-            switch (endpoint.AuthorizationMode)
-            {
-                case "endpoint_permission":
-                    if (!endpoint.RequiresCompanyContext || endpoint.OptionalCompanyContext)
-                    {
-                        errors.Add(
-                            $"{key}: endpoint_permission requires mandatory, non-optional CompanyContext.");
-                    }
-                    break;
-                case "dynamic_authorized_company_set":
-                    if (endpoint.RequiresCompanyContext || !endpoint.OptionalCompanyContext)
-                    {
-                        errors.Add(
-                            $"{key}: dynamic_authorized_company_set requires optional CompanyContext.");
-                    }
-
-                    if (!string.Equals(
-                            endpoint.Permission,
-                            ErpPermissions.CounterpartyPartiesRead,
-                            StringComparison.Ordinal))
-                    {
-                        errors.Add(
-                            $"{key}: dynamic read permission must be exactly "
-                            + $"'{ErpPermissions.CounterpartyPartiesRead}'.");
-                    }
-                    break;
-                default:
-                    errors.Add(
-                        $"{key}: unsupported authorization_mode '{endpoint.AuthorizationMode}'.");
-                    break;
-            }
+            ValidateAuthorizationMode(endpoint, key, errors);
         }
 
         return errors;
+    }
+
+    private static void ValidateAuthorizationMode(
+        EndpointEntry endpoint,
+        EndpointKey key,
+        ICollection<string> errors)
+    {
+        switch (endpoint.AuthorizationMode)
+        {
+            case "endpoint_permission":
+                if (!endpoint.RequiresCompanyContext || endpoint.OptionalCompanyContext)
+                {
+                    errors.Add(
+                        $"{key}: endpoint_permission requires mandatory, non-optional CompanyContext.");
+                }
+                break;
+            case "dynamic_authorized_company_set":
+                if (endpoint.RequiresCompanyContext || !endpoint.OptionalCompanyContext)
+                {
+                    errors.Add(
+                        $"{key}: dynamic_authorized_company_set requires optional CompanyContext.");
+                }
+
+                if (!string.Equals(
+                        endpoint.Permission,
+                        ErpPermissions.CounterpartyPartiesRead,
+                        StringComparison.Ordinal))
+                {
+                    errors.Add(
+                        $"{key}: dynamic read permission must be exactly "
+                        + $"'{ErpPermissions.CounterpartyPartiesRead}'.");
+                }
+                break;
+            default:
+                errors.Add(
+                    $"{key}: unsupported authorization_mode '{endpoint.AuthorizationMode}'.");
+                break;
+        }
     }
 
     private static IReadOnlyList<string> ValidateRuntime(
@@ -238,11 +248,17 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
         IReadOnlyCollection<RuntimeEndpoint> runtimeEndpoints)
     {
         var errors = new List<string>();
-        var expected = manifest.Endpoints.ToDictionary(
-            endpoint => Key(endpoint.Method, endpoint.Route),
-            EndpointKeyComparer.Instance);
-        var actual = new Dictionary<EndpointKey, RuntimeEndpoint>(EndpointKeyComparer.Instance);
+        var expected = new Dictionary<EndpointKey, EndpointEntry>(EndpointKeyComparer.Instance);
+        foreach (var endpoint in manifest.Endpoints)
+        {
+            var key = CreateKey(endpoint.Method, endpoint.Route);
+            if (!expected.TryAdd(key, endpoint))
+            {
+                errors.Add($"Duplicate contracted Counterparty endpoint: {key}.");
+            }
+        }
 
+        var actual = new Dictionary<EndpointKey, RuntimeEndpoint>(EndpointKeyComparer.Instance);
         if (runtimeEndpoints.Count == 0)
         {
             errors.Add("No runtime Counterparty endpoints were discovered.");
@@ -363,22 +379,12 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
             .Distinct(StringComparer.Ordinal)
             .ToArray();
         var route = NormalizeRoute(endpoint.RoutePattern.RawText);
-        if (methods.Length != 1)
-        {
-            return new RuntimeEndpoint(
-                new EndpointKey(string.Join("+", methods), route),
-                endpoint.DisplayName ?? "<unnamed>",
-                [],
-                AllowsAnonymous: endpoint.Metadata.OfType<IAllowAnonymous>().Any(),
-                RequiresCompanyContext: endpoint.Metadata
-                    .OfType<RequiresCompanyContextAttribute>()
-                    .Any(),
-                Tags: []);
-        }
+        var key = methods.Length == 1
+            ? CreateKey(methods[0], route)
+            : new EndpointKey($"<invalid:{string.Join('+', methods)}>", route);
 
         return new RuntimeEndpoint(
-            Key(methods[0], route),
-            endpoint.DisplayName ?? "<unnamed>",
+            key,
             endpoint.Metadata
                 .OfType<IAuthorizeData>()
                 .Select(metadata => new AuthorizationMetadata(
@@ -394,6 +400,32 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(tag => tag, StringComparer.Ordinal)
                 .ToArray());
+    }
+
+    private static RuntimeEndpoint CreateDynamicRead(string method, string route)
+    {
+        return new RuntimeEndpoint(
+            CreateKey(method, route),
+            [new AuthorizationMetadata(null, null, null)],
+            AllowsAnonymous: false,
+            RequiresCompanyContext: false,
+            [ExpectedTag]);
+    }
+
+    private static RuntimeEndpoint CreatePermissionWrite(
+        string method,
+        string route,
+        string permission)
+    {
+        return new RuntimeEndpoint(
+            CreateKey(method, route),
+            [
+                new AuthorizationMetadata(null, null, null),
+                new AuthorizationMetadata(permission, null, null),
+            ],
+            AllowsAnonymous: false,
+            RequiresCompanyContext: true,
+            [ExpectedTag]);
     }
 
     private static void FindDuplicateProperties(
@@ -439,9 +471,7 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
             return;
         }
 
-        var fullPath = Path.GetFullPath(Path.Combine(
-            repositoryRoot,
-            repositoryPath.Replace('/', Path.DirectorySeparatorChar)));
+        var fullPath = ToFullPath(repositoryRoot, repositoryPath);
         var relative = Path.GetRelativePath(repositoryRoot, fullPath);
         if (Path.IsPathRooted(relative)
             || relative == ".."
@@ -450,6 +480,13 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
         {
             errors.Add($"contract_source is missing or outside the repository: {repositoryPath}.");
         }
+    }
+
+    private static string ToFullPath(string repositoryRoot, string repositoryPath)
+    {
+        return Path.GetFullPath(Path.Combine(
+            repositoryRoot,
+            repositoryPath.Replace('/', Path.DirectorySeparatorChar)));
     }
 
     private static bool IsCounterpartyRoute(string route)
@@ -465,7 +502,7 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
         return value.Contains('*') || value.Contains('?');
     }
 
-    private static EndpointKey Key(string method, string route)
+    private static EndpointKey CreateKey(string method, string route)
     {
         return new EndpointKey(NormalizeMethod(method), NormalizeRoute(route));
     }
@@ -545,40 +582,10 @@ public sealed class CounterpartyApiEndpointSecurityContractTests(GoymenErpApiFac
 
     private sealed record RuntimeEndpoint(
         EndpointKey Key,
-        string DisplayName,
         IReadOnlyList<AuthorizationMetadata> Authorization,
         bool AllowsAnonymous,
         bool RequiresCompanyContext,
-        IReadOnlyList<string> Tags)
-    {
-        public static RuntimeEndpoint DynamicRead(string method, string route)
-        {
-            return new RuntimeEndpoint(
-                Key(method, route),
-                $"{method} {route}",
-                [new AuthorizationMetadata(null, null, null)],
-                AllowsAnonymous: false,
-                RequiresCompanyContext: false,
-                [ExpectedTag]);
-        }
-
-        public static RuntimeEndpoint PermissionWrite(
-            string method,
-            string route,
-            string permission)
-        {
-            return new RuntimeEndpoint(
-                Key(method, route),
-                $"{method} {route}",
-                [
-                    new AuthorizationMetadata(null, null, null),
-                    new AuthorizationMetadata(permission, null, null),
-                ],
-                AllowsAnonymous: false,
-                RequiresCompanyContext: true,
-                [ExpectedTag]);
-        }
-    }
+        IReadOnlyList<string> Tags);
 
     private sealed record EndpointManifest(
         [property: JsonPropertyName("schema_version")] int SchemaVersion,
