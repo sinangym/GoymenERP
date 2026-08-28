@@ -1,3 +1,4 @@
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Application.Views;
@@ -8,6 +9,7 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 internal sealed class CounterpartyReadService(
     CounterpartyDbContext dbContext,
     ICurrentUser currentUser,
+    ICompanyContext companyContext,
     IErpAuthorizationService authorizationService)
     : ICounterpartyReadService
 {
@@ -101,16 +103,29 @@ internal sealed class CounterpartyReadService(
         Guid? requestedCompanyId,
         CancellationToken cancellationToken)
     {
-        IEnumerable<Guid> candidates = currentUser.AllowedCompanyIds;
-        if (requestedCompanyId.HasValue)
+        Guid? effectiveCompanyId = requestedCompanyId;
+
+        if (companyContext.IsResolved)
         {
-            if (requestedCompanyId.Value == Guid.Empty
-                || !currentUser.CanAccessCompany(requestedCompanyId.Value))
+            if (requestedCompanyId.HasValue
+                && requestedCompanyId.Value != companyContext.CompanyId)
             {
                 return [];
             }
 
-            candidates = [requestedCompanyId.Value];
+            effectiveCompanyId = companyContext.CompanyId;
+        }
+
+        IEnumerable<Guid> candidates = currentUser.AllowedCompanyIds;
+        if (effectiveCompanyId.HasValue)
+        {
+            if (effectiveCompanyId.Value == Guid.Empty
+                || !currentUser.CanAccessCompany(effectiveCompanyId.Value))
+            {
+                return [];
+            }
+
+            candidates = [effectiveCompanyId.Value];
         }
 
         var result = new HashSet<Guid>();
