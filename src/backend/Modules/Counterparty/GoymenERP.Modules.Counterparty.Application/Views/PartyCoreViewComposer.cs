@@ -37,7 +37,7 @@ public static class PartyCoreViewComposer
 
         return new PartyCoreView(
             party.Id,
-            party.CariCode.Value,
+            party.Code.Value,
             party.Kind,
             party.LegalName,
             party.TradeName,
