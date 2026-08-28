@@ -24,3 +24,15 @@ Bu maddeler repository ve platform iskeletini başlatmaya engel değildir. Ancak
 | OPEN-019 | PDF font ailesi ve marka/antet dosyaları | Türkçe Unicode/gömülü font kabul testi zorunlu; dosya pakete eklenmez. | PDF UAT öncesi |
 | OPEN-020 | Bulut AI sağlayıcısı, sözleşme, KVKK aktarım politikası ve izinli veri sınıfları | Yerel-first, default-deny bulut politikası. | Bulut AI production çağrısı öncesi |
 | OPEN-021 | Idempotency replay saklama süresi, partition ve yetkili imha politikası | ERP-000E kayıtları silinmez; ham anahtar tutulmaz. Temizleme işi production'da açılmaz. | Production yük/retention kapısı öncesi |
+| OPEN-026 | Şirketler arası fiziksel blob dedup kapsamı; encryption/key sınırı; reference ownership, son referans silme, şirket export/restore ve hash existence-oracle politikası | Mantıksal belge/version/link her zaman CompanyId kapsamlıdır; hash bilen kullanıcı blob varlığı veya erişim kazanamaz. Otomatik fiziksel silme ve cross-company dedup production'da kapalıdır. | ERP-000G schema, upload/finalize veya dedup kodu başlamadan |
+| OPEN-027 | Upload MIME/extension/size/archive sınırları; malware scanner, quarantine, timeout/outage/rescan ve rejected içerik politikası | Bütün upload'lar erişilemez quarantine staging'de kalır; clean sonucu olmadan download/link/iş belgesi onayı yoktur. Limit veya scanner davranışı sabit kodlanmaz. | ERP-000G upload API, scanner adapter veya production bucket açılmadan |
+| OPEN-028 | Signed access/export/share izinleri; TTL, tek/çok kullanım, revoke, filename/content-disposition ve hassas veri indirme politikası | Public bucket/kalıcı URL yoktur. Yalnız backend'in o anda yeniden yetkilendirdiği kısa ömürlü erişim tasarlanır; varsayılan paylaşım kapalıdır. | ERP-000G download/export/share endpoint'i veya UI eylemi açılmadan |
+| OPEN-029 | İlk pilot belge türü ve owner modül; document/version/link metadata, zorunlu sınıflama, permission–ABAC, business/security lifecycle ve DB–object-store commit/reconciliation sözleşmesi | Generic sözleşme ve sentetik fixture tasarlanabilir; gerçek belge türü/iş etkisi, otomatik finalize ve modül link'i oluşturulmaz. Async tasarım seçilirse ERP-000F bağımlılığı ayrıca açılır. | ERP-000G implementation branch'i, migration veya ilk pilot belge kodu başlamadan |
+
+`OPEN-022`…`OPEN-025` kimlikleri ERP-000F için Draft PR #10'da ayrılmıştır. Bu dal
+kimlikleri yeniden kullanmaz. PR #10 ile bu dal şu dört ortak dosyayı değiştirir:
+`docs/architecture/ADR_REGISTER.md`, `docs/backlog/task_manifest.json`,
+`docs/decisions/ACIK_KARARLAR.md` ve `docs/features/ERP-000_PLATFORM_TASKS.md`.
+PR #10 merge edilmeden bu dal merge edilmez; sonrasında güncel `main` ile senkronizasyon
+ve insan review'u zorunludur. Senkronizasyonda ERP-000E/ERP-000F ile ERP-000G gerçeği
+birlikte korunur; conflict veya semantik fark sessizce çözülmez.

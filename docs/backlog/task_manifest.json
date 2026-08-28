@@ -70,12 +70,23 @@
     {
       "id": "ERP-000G",
       "title": "Belge kasası çekirdeği",
-      "status": "ready",
+      "status": "blocked",
       "depends_on": [
-        "ERP-000A"
+        "ERP-000A",
+        "ERP-000B",
+        "ERP-000C",
+        "ERP-000D",
+        "ERP-000E"
       ],
-      "scope": "Blob/document/version/link metadata, hash dedup, access policy.",
-      "acceptance": "Aynı blob çok bağlam; yetki sızıntısı yok; sürüm auditli.",
+      "scope": "Şirket kapsamlı document/version/link metadata, fiziksel blob bütünlüğü, tenant-safe dedup, quarantine/malware, signed access ve restore sınırı.",
+      "acceptance": "ADR-005 ve OPEN-026..029 insan review'uyla kapanır; ERP-000G task-local kabul planı gerçek SQL Server ve S3-compatible contract testleriyle kanıtlanır.",
+      "blocked_by": [
+        "ADR-005",
+        "OPEN-026",
+        "OPEN-027",
+        "OPEN-028",
+        "OPEN-029"
+      ],
       "priority": "P0"
     },
     {
