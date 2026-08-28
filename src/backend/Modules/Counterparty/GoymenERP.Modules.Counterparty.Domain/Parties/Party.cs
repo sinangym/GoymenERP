@@ -14,7 +14,7 @@ public sealed class Party
         string? tradeName = null)
     {
         Id = RequireId(id, nameof(id));
-        CariCode = cariCode;
+        CariCode = PartyCode.Parse(cariCode.Value);
         Kind = RequireKnownKind(kind);
         LegalName = RequireText(legalName, nameof(legalName), 250);
         TradeName = NormalizeOptionalText(tradeName, nameof(tradeName), 200);
@@ -46,11 +46,6 @@ public sealed class Party
     public void SetTradeName(string? tradeName)
     {
         TradeName = NormalizeOptionalText(tradeName, nameof(tradeName), 200);
-    }
-
-    public void ApplyApprovedLegalName(string legalName)
-    {
-        LegalName = RequireText(legalName, nameof(legalName), 250);
     }
 
     public void Deactivate()
