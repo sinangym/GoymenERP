@@ -33,6 +33,29 @@ public sealed class PartyTests
     }
 
     [Fact]
+    public void Sensitive_legal_name_has_no_public_mutation_before_approval_wiring()
+    {
+        var property = typeof(Party).GetProperty(nameof(Party.LegalName));
+
+        Assert.NotNull(property);
+        Assert.False(property!.SetMethod?.IsPublic ?? false);
+        Assert.DoesNotContain(
+            typeof(Party).GetMethods(),
+            method => method.Name.Contains("LegalName", StringComparison.Ordinal)
+                      && method.Name != $"get_{nameof(Party.LegalName)}");
+    }
+
+    [Fact]
+    public void Default_party_code_cannot_create_a_party()
+    {
+        Assert.ThrowsAny<ArgumentException>(() => new Party(
+            Guid.NewGuid(),
+            default,
+            PartyKind.LegalEntity,
+            "Geçersiz Cari"));
+    }
+
+    [Fact]
     public void Deactivate_and_reactivate_preserve_identity()
     {
         var id = Guid.NewGuid();
@@ -48,19 +71,5 @@ public sealed class PartyTests
         Assert.True(party.IsActive);
         Assert.Equal(id, party.Id);
         Assert.Equal(code, party.CariCode);
-    }
-
-    [Fact]
-    public void Approved_legal_name_change_is_explicitly_named()
-    {
-        var party = new Party(
-            Guid.NewGuid(),
-            PartyCode.FromSequence(10),
-            PartyKind.LegalEntity,
-            "Eski Unvan");
-
-        party.ApplyApprovedLegalName("Yeni Unvan");
-
-        Assert.Equal("Yeni Unvan", party.LegalName);
     }
 }
