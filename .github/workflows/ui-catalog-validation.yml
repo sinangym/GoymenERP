@@ -1,0 +1,36 @@
+name: UI catalog golden validation
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-catalog-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-ui-catalog:
+    name: UI catalog structure, references and hashes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Run validator negative tests
+        run: >-
+          python -m unittest discover
+          --start-directory tests/ui_catalog_validator
+          --pattern "test_*.py"
+          --verbose
+
+      - name: Validate UI catalog golden state
+        run: python tools/validate_ui_catalog.py

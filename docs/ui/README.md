@@ -88,3 +88,46 @@ Bu varlıklar “Şirket İçi Kullanım” içeriği taşıdığı için repo p
 - Ekran kartındaki kanonik eşleme değişikliği review gerektirir.
 - Eksik görsel ancak mevcut kararlarla oluşturulup kullanıcı onayı aldıktan sonra `LOCKED_VISUAL` olabilir.
 - Kodlama PR’ı, referans dosyasını üretim davranışı sanmamalıdır; acceptance ve güvenlik kapıları ayrıca geçilir.
+
+## Otomatik golden doğrulama
+
+Katalog bütünlüğü yalnız Python standard library kullanan aşağıdaki komutla yerelde
+doğrulanır:
+
+```powershell
+python tools/validate_ui_catalog.py
+```
+
+Windows'ta `python` PATH'te değilse komutlarda `python` yerine `py -3` kullanılır;
+örneğin `py -3 tools/validate_ui_catalog.py`.
+
+Negatif fixture testleri ayrıca çalıştırılabilir:
+
+```powershell
+python -m unittest discover --start-directory tests/ui_catalog_validator --pattern "test_*.py" --verbose
+```
+
+Doğrulayıcı; 72 kaynak kayıt, 159 kanonik ekran, 72/72 ekran kartı, 77
+`ORIGINAL_ASSET`, 5 referans prototip ve 19 `SELECTED_SOURCE` golden sayılarını denetler.
+`record_id` ve kart yollarının benzersizliğini; katalog ile kart frontmatter alanlarının
+eşitliğini; kanonik ekran ve conditional workspace referanslarını; yalnız
+`SOURCE_RECONCILIATION.md` içindeki exact `## 8. Karara bağlanan altı uzlaştırma`
+bölümünün özet tablosunda bulunan `UI-MAP-001…006` karar setini; kanonik
+`reference_records` ters eşlemesini ve manifestteki bütün dosyaların yol, byte boyutu ve
+SHA-256 değerlerini doğrular. Katalogdaki her `primary_reference` mevcut ve
+manifestlenmiş; `docs/ui/sources` altındaki bütün dosyalar `SELECTED_SOURCE` olarak
+birebir kayıtlı olmalıdır. Manifest yolları exact lexical repo yollarıdır; symlink kabul
+edilmez. Üç artifact sınıfı yalnız kendi kökünde bulunabilir: `ORIGINAL_ASSET` için
+`docs/ui/assets/original/`, `REFERENCE_PROTOTYPE` için `docs/ui/prototypes/` ve
+`SELECTED_SOURCE` için `docs/ui/sources/`. Ekran kartları yalnız `docs/ui/screens/`
+altında, `primary_reference` dosyaları ise bu üç izinli varlık kökünden birinde olabilir.
+
+`SOURCE_MANIFEST.csv` bu golden doğrulamanın bilinçli dış sınırıdır: dış kaynak
+konteynerlerinin alım/envanter kaydını tutar, repo içine seçilip taşınmış 101 dosyanın
+birebir manifesti değildir. Bu dosyadaki `source_container_sha256`, kaynak origin
+konteynerinin hash'idir; repo dosyasının byte/hash bütünlüğü için kanıt sayılmaz. Repo
+dosyası kanıtı yalnız `ASSET_MANIFEST.csv` içindeki `bytes` ve `sha256` alanlarıdır.
+
+Bu kontrol yalnız `docs/ui` referans paketinin yapısal ve kriptografik bütünlüğünü
+kanıtlar. Production UI davranışı, yetki, CompanyId izolasyonu, hesap/formül, audit,
+responsive, erişilebilirlik veya kullanıcı kabulü yerine geçmez.
