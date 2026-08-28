@@ -1,9 +1,9 @@
-# Cari / Counterparty API Güvenlik Metadata Sözleşmesi v1.0
+# Cari / Counterparty API Güvenlik Metadata Sözleşmesi v1.1
 
 - Tarih: 2026-08-29
 - Görev: `CARI-API-ROUTE-CONTRACT`
 - Sahip: `CHATGPT-CARI`
-- Taban: `main@a3b58b9266ea192dd029889ac60abfe8b2ec194e`
+- Son doğrulanan ana dal: `main@fc4c806ec61cf97e7177136f78f3f9d64cfb4d13`
 - Durum: **Mevcut main route sözleşmesi GO / generic platform guard entegrasyonu CODEX-PLATFORM işi**
 - Makine-okunur kaynak: `src/backend/Modules/Counterparty/COUNTERPARTY_API_ENDPOINTS.json`
 
@@ -22,7 +22,9 @@ Exact dört endpoint vardır:
 3. `POST /api/v1/counterparties`
 4. `PUT /api/v1/counterparties/{partyId:guid}/company-account/active-state`
 
-Tümü exact `Counterparty` tag'i ve authentication metadata'sı taşır. `AllowAnonymous`, role string veya endpoint-specific authentication scheme kabul edilmez.
+Tümü exact `Counterparty` tag'i ve authentication metadata'sı taşır. `AllowAnonymous`, role string, endpoint-specific authentication scheme veya null olmayan boş/whitespace authorization policy kabul edilmez.
+
+Method değerleri exact uppercase, route değerleri exact leading-slash ve trailing-slash içermeyen kanonik biçimde olmalıdır. Normalizasyon yalnız runtime karşılaştırma yardımcısıdır; manifestteki non-canonical yazımı sessizce kabul etmek için kullanılamaz.
 
 ## 3. İki farklı authorization modeli
 
@@ -41,29 +43,57 @@ Cari liste ve detay okumaları, kullanıcının bir veya birden fazla yetkili ş
 
 `AllowedCompanyIds + counterparty.parties.read → CompanyPartyAccounts → Party`
 
-Bu model genel bir "authenticated-only" istisnası değildir. Yalnız bu iki exact route ve exact `counterparty.parties.read` contract'ı için kabul edilmiştir. Generic guard:
+Bu model genel bir `authenticated-only` istisnası değildir. Yalnız bu iki exact route ve exact `counterparty.parties.read` contract'ı için kabul edilmiştir. Generic guard:
 
 - bu iki route'u wildcard/global exemption yapamaz,
 - permission kontrolünün UI veya client'a bırakıldığını varsayamaz,
-- yeni bir dinamik route'u sözleşme güncellenmeden kabul edemez.
+- yeni bir dinamik route'u sözleşme güncellenmeden kabul edemez,
+- blank policy metadata'yı authentication metadata'sı yokmuş gibi filtreleyemez.
 
 ## 4. CompanyContext semantiği
 
-- GET route'larında CompanyContext opsiyoneldir. Header varsa backend yetkili şirket kümesine karşı doğrular; yoksa yalnız yetkili şirketlerin read-only grup görünümü oluşturulabilir.
+- GET route'larında CompanyContext opsiyoneldir.
+- Header yoksa yalnız kullanıcının permission taşıdığı yetkili şirketlerin read-only grup görünümü oluşturulabilir.
+- Geçerli ve yetkili `X-Company-Id` varsa görünüm o aktif şirketle sınırlandırılır.
+- Geçersiz header `400`, kullanıcının erişemediği şirket header'ı `403` üretir.
+- Bu davranış yalnız manifest boolean'larıyla varsayılmaz; gerçek HTTP acceptance ile ölçülür.
 - POST ve PUT route'larında CompanyContext zorunludur.
 - `requires_company_context=true` ve `optional_company_context=true` aynı endpointte birlikte olamaz.
-- Yetkisiz veya geçersiz CompanyId fail-closed davranır; route sözleşmesi veri görünürlüğü acceptance testlerinin yerine geçmez.
+- Route sözleşmesi veri görünürlüğü ve service-level permission acceptance testlerinin yerine geçmez.
 
-## 5. Sahiplik ve generic guard tüketimi
+## 5. Strict JSON ve fail-closed parser
+
+Makine-okunur contract:
+
+- trailing comma ve comment kabul etmez,
+- duplicate property kabul etmez,
+- unknown property kabul etmez,
+- bütün root ve endpoint constructor alanlarını zorunlu sayar,
+- eksik bool alanını CLR varsayılanıyla sessizce tamamlamaz,
+- null endpoint veya null endpoint dizisini kabul etmez,
+- exact kanonik `contract_source` yolunu doğrular.
+
+Zorunlu endpoint alanları:
+
+- `method`
+- `route`
+- `authorization_mode`
+- `permission`
+- `requires_company_context`
+- `optional_company_context`
+
+Her birinin silinmesi adversarial mutation testiyle fail-closed doğrulanır.
+
+## 6. Sahiplik ve generic guard tüketimi
 
 - `CHATGPT-CARI`: route listesi, permission anlamı, dinamik read modeli ve Counterparty acceptance sahibidir.
 - `CODEX-PLATFORM`: generic endpoint metadata guard sahibidir.
 - Platform guard bu JSON'u exact input olarak okuyabilir; Cari route/permission üretmez veya değiştirmez.
 - Manifestte olmayan runtime Counterparty endpoint fail-closed reddedilir.
 - Manifestte kalıp runtime'da bulunmayan stale endpoint fail-closed reddedilir.
-- Method, route casing, route constraint, tag, CompanyContext veya permission drift fail-closed reddedilir.
+- Method, route casing/constraint, tag, CompanyContext, permission veya authorization metadata drift fail-closed reddedilir.
 
-## 6. PR #29 entegrasyon sırası
+## 7. PR #29 entegrasyon sırası
 
 1. Bu Cari-owned contract bağımsız PR ile exact CI ve Codex review'dan geçer.
 2. Merge edildiğinde PR #29 current main ile senkronize edilir.
@@ -71,7 +101,7 @@ Bu model genel bir "authenticated-only" istisnası değildir. Yalnız bu iki exa
 4. `dynamic_authorized_company_set` yalnız manifestteki exact iki GET route için özel, fail-closed doğrulanır.
 5. Yeni main runtime endpoint inventory üzerinde full integration test ve CI yeniden çalışır.
 
-## 7. Gelecek route değişikliği
+## 8. Gelecek route değişikliği
 
 PR #36 merge edilirse aşağıdaki route ancak o yeni main üzerinde ayrı contract revision ile eklenebilir:
 
@@ -79,22 +109,25 @@ PR #36 merge edilirse aşağıdaki route ancak o yeni main üzerinde ayrı contr
 
 Eski contract/CI/review bu yeni route için kullanılamaz. Permission kararı Issue #43 kapanmadan route sözleşmesi production kabulü sayılmaz.
 
-## 8. Kabul kriterleri
+## 9. Kabul kriterleri
 
-- JSON `schema_version=1`, owner/module/tag exact.
-- Exact dört endpoint ve benzersiz `(method, normalized route)` anahtarı.
-- Wildcard, duplicate, unknown property, boş permission ve bilinmeyen permission reddi.
+- JSON `schema_version=1`, owner/module/tag/contract_source exact.
+- Bütün zorunlu root ve endpoint alanları missing-field mutation testleriyle korunur.
+- Exact dört endpoint ve benzersiz `(canonical method, canonical route)` anahtarı.
+- Wildcard, duplicate property, unknown property, null/blank alan, boş permission ve bilinmeyen permission reddi.
 - Runtime Counterparty endpoint seti manifestle birebir.
 - Endpoint permission modelinde exact tek non-empty permission policy.
 - Dynamic read modelinde non-empty endpoint permission policy yok; authentication zorunlu, declared read permission known, CompanyContext opsiyonel.
+- Null olmayan blank/whitespace policy metadata iki modelde de reddedilir.
+- Optional CompanyContext filter gerçek HTTP ile absent/valid/invalid/unauthorized senaryolarında kanıtlanır.
 - `AllowAnonymous`, role string ve authentication scheme yok.
 - Tag exact `Counterparty`.
 - Production endpoint, permission, schema ve migration değişmez.
 
-## 9. Kapsam dışı
+## 10. Kapsam dışı
 
 - Read-service iç güvenlik testlerinin yerine geçmek
 - PR #36 permission/upgrade kararı
-- PR #41 project-reference contract'ı
+- PR #41 project-reference generic guard implementasyonu
 - Counterparty migration SQL artifact CI
 - Başka modüllerin route sözleşmesini Cari tarafından belirlemek
