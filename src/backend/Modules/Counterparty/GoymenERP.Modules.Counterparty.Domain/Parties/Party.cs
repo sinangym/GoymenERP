@@ -43,21 +43,6 @@ public sealed class Party
 
     public DateTimeOffset UpdatedAtUtc { get; private set; }
 
-    public void SetTradeName(string? tradeName)
-    {
-        TradeName = NormalizeOptionalText(tradeName, nameof(tradeName), 200);
-    }
-
-    public void Deactivate()
-    {
-        IsActive = false;
-    }
-
-    public void Reactivate()
-    {
-        IsActive = true;
-    }
-
     internal void Touch(DateTimeOffset utcNow)
     {
         UpdatedAtUtc = utcNow;
