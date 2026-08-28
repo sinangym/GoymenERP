@@ -26,7 +26,8 @@ public sealed class PartyCodeTests
     [InlineData("CAR-12")]
     [InlineData("SUP-000001")]
     [InlineData("CAR-00A001")]
-    public void Invalid_codes_are_rejected(string value)
+    [InlineData("CAR-0000001")]
+    public void Invalid_or_noncanonical_codes_are_rejected(string value)
     {
         Assert.ThrowsAny<ArgumentException>(() => PartyCode.Parse(value));
     }
