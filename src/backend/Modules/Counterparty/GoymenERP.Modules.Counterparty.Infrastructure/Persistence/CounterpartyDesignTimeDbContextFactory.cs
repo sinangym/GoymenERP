@@ -8,11 +8,9 @@ public sealed class CounterpartyDesignTimeDbContextFactory
 {
     public CounterpartyDbContext CreateDbContext(string[] args)
     {
-        var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")
-            ?? "Server=localhost,1433;Database=GoymenERP;User Id=sa;Password=Your_password123;TrustServerCertificate=True";
         var options = new DbContextOptionsBuilder<CounterpartyDbContext>()
             .UseSqlServer(
-                connectionString,
+                "Server=(localdb)\\mssqllocaldb;Database=GoymenErpDesign;Trusted_Connection=True;",
                 sql => sql.MigrationsHistoryTable(
                     "__EFMigrationsHistory",
                     "counterparty"))
