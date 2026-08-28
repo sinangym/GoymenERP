@@ -1,3 +1,4 @@
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
@@ -116,6 +117,16 @@ public sealed class CounterpartyPersistenceModelTests
             .UseSqlServer(
                 "Server=(localdb)\\mssqllocaldb;Database=GoymenErpCounterpartyTests;Trusted_Connection=True;")
             .Options;
-        return new CounterpartyDbContext(options);
+        return new CounterpartyDbContext(options, new UnresolvedCompanyContext());
+    }
+
+    private sealed class UnresolvedCompanyContext : ICompanyContext
+    {
+        public bool IsResolved => false;
+
+        public Guid CompanyId => Guid.Empty;
+
+        public void Set(Guid companyId) =>
+            throw new InvalidOperationException("Persistence model testi company context çözmez.");
     }
 }
