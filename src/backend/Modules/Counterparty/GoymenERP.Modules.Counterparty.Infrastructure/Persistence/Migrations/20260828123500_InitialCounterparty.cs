@@ -19,7 +19,7 @@ public sealed class InitialCounterparty : Migration
             columns: table => new
             {
                 Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                Code = table.Column<string>(type: "nvarchar(10)", maxLength: 10, nullable: false),
+                Code = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
                 Kind = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
                 LegalName = table.Column<string>(type: "nvarchar(250)", maxLength: 250, nullable: false),
                 TradeName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true),
@@ -34,7 +34,7 @@ public sealed class InitialCounterparty : Migration
                 table.PrimaryKey("PK_Parties", x => x.Id);
                 table.CheckConstraint(
                     "CK_Parties_Code_Format",
-                    "[Code] LIKE N'CAR-[0-9][0-9][0-9][0-9][0-9][0-9]'");
+                    "[Code] LIKE N'CAR-%' AND ((LEN([Code]) = 10 AND TRY_CONVERT(bigint, SUBSTRING([Code], 5, 28)) BETWEEN 1 AND 999999) OR (LEN([Code]) > 10 AND SUBSTRING([Code], 5, 1) <> N'0' AND TRY_CONVERT(bigint, SUBSTRING([Code], 5, 28)) >= 1000000))");
                 table.CheckConstraint(
                     "CK_Parties_Kind",
                     "[Kind] IN (N'LegalEntity', N'NaturalPerson')");
