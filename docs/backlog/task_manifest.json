@@ -136,12 +136,24 @@
     {
       "id": "ERP-000M",
       "title": "SQL Server PoC ve migrations",
-      "status": "ready",
+      "status": "blocked",
       "depends_on": [
-        "ERP-000A"
+        "ERP-000A",
+        "ERP-000B",
+        "ERP-000C",
+        "ERP-000D",
+        "ERP-000E"
       ],
-      "scope": "EF Core setup, dev container/env, migrations, constraints/indexes.",
-      "acceptance": "Concurrency/search/audit/restore testleri.",
+      "scope": "SQL Server provider suitability, Turkish search primitives, CompanyId and permission-safe relational behavior, multi-DbContext migration ownership/order/rollback, concurrency/audit load and DB-only restore evidence.",
+      "acceptance": "All depends_on tasks are accepted and merged; physical ADR-003, physical ADR-010, OPEN-014/OPEN-015/OPEN-017 and ERP-000M-SQL-POC-CONTRACT gates close; repeatable real SQL Server evidence is reviewed without claiming global-search or DB-plus-object-store acceptance.",
+      "blocked_by": [
+        "ADR-003",
+        "ADR-010",
+        "OPEN-014",
+        "OPEN-015",
+        "OPEN-017",
+        "ERP-000M-SQL-POC-CONTRACT"
+      ],
       "priority": "P0"
     },
     {
