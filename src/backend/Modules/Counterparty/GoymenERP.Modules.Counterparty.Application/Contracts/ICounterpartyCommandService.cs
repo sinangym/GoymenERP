@@ -10,15 +10,18 @@ public interface ICounterpartyCommandService
         CounterpartyCommandMetadata metadata,
         CancellationToken cancellationToken);
 
-    Task<CounterpartyCommandExecution> CreateCompanyAccountAsync(
-        Guid partyId,
-        CreateCompanyPartyAccount command,
-        CounterpartyCommandMetadata metadata,
-        CancellationToken cancellationToken);
-
     Task<CounterpartyCommandExecution> SetCompanyAccountActiveStateAsync(
         Guid partyId,
         SetCompanyPartyAccountActiveState command,
+        CounterpartyCommandMetadata metadata,
+        CancellationToken cancellationToken);
+}
+
+public interface ICounterpartyCompanyAccountLinkService
+{
+    Task<CounterpartyCommandExecution> CreateCompanyAccountAsync(
+        Guid partyId,
+        CreateCompanyPartyAccount command,
         CounterpartyCommandMetadata metadata,
         CancellationToken cancellationToken);
 }
