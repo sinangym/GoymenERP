@@ -49,13 +49,24 @@ public sealed class CounterpartyDbContext(DbContextOptions<CounterpartyDbContext
     private static void ConfigureParty(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<Party>();
-        entity.ToTable("Parties", "counterparty");
+        entity.ToTable("Parties", "counterparty", table =>
+        {
+            table.HasCheckConstraint(
+                "CK_Parties_Code_Format",
+                "[Code] LIKE N'CAR-%' AND ((LEN([Code]) = 10 AND TRY_CONVERT(bigint, SUBSTRING([Code], 5, 28)) BETWEEN 1 AND 999999) OR (LEN([Code]) > 10 AND SUBSTRING([Code], 5, 1) <> N'0' AND TRY_CONVERT(bigint, SUBSTRING([Code], 5, 28)) >= 1000000))");
+            table.HasCheckConstraint(
+                "CK_Parties_Kind",
+                "[Kind] IN (N'LegalEntity', N'NaturalPerson')");
+            table.HasCheckConstraint(
+                "CK_Parties_Version",
+                "[Version] >= 1");
+        });
         entity.HasKey(x => x.Id);
         entity.Property(x => x.Code)
             .HasConversion(
                 value => value.Value,
                 value => PartyCode.Parse(value))
-            .HasMaxLength(10)
+            .HasMaxLength(32)
             .IsRequired();
         entity.Property(x => x.Kind)
             .HasConversion<string>()
@@ -72,7 +83,15 @@ public sealed class CounterpartyDbContext(DbContextOptions<CounterpartyDbContext
     private static void ConfigureCompanyPartyAccount(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<CompanyPartyAccount>();
-        entity.ToTable("CompanyPartyAccounts", "counterparty");
+        entity.ToTable("CompanyPartyAccounts", "counterparty", table =>
+        {
+            table.HasCheckConstraint(
+                "CK_CompanyPartyAccounts_Roles",
+                "[Roles] BETWEEN 1 AND 15");
+            table.HasCheckConstraint(
+                "CK_CompanyPartyAccounts_Version",
+                "[Version] >= 1");
+        });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
         entity.Property(x => x.Roles)
