@@ -373,3 +373,35 @@ OPEN DECISIONS: OPEN-013/014/015/017/018/019/020/022..029; task-local F/G/H/I/J/
 MAIN SHA: 9f08ff16447eca89682d0a084e2341b9c2b433c2
 ACTIVE PRS: #19..#8 Draft; #2 Draft
 ```
+
+## 2026-08-28 08:24 +03:00 — Döngü 11
+
+- Governance PR #8 ve UI katalog golden-validator PR #9 insan review'u sonrasında `main`e
+  merge edilmiştir. Bu döngünün doğrulanmış tabanı
+  `81283e582de00fc291b848a25f1a15ff45fc4657` commit'idir.
+- ERP-000M readiness Draft PR #15 dalı güncel `main` ile conflict olmadan senkronize
+  edildi. Human review'daki iki dokümantasyon blocker'ı dışında task manifesti, açık karar,
+  dependency veya production davranışı değiştirilmedi.
+- ERP-000M belgesindeki eski “F/G/H/I/J önce merge edilmeli” şartı kaldırıldı. Kabul
+  edilmiş shared-manifest sırası `M → O → N → L`, ardından bağımsız `J/K` olarak
+  kaydedildi.
+- ERP-000E'nin hâlâ `in_review` olduğunu söyleyen stale readiness anlatımı kaldırıldı;
+  ERP-000E'nin kabul edilip `main`e merge edildiği gerçeği kaydedildi. Güncel manifestteki
+  başka task satırları bu PR kapsamında sessizce truth-sync edilmedi.
+- PR #15, manifest ve kritik readiness sözleşmesine dokunduğu için Draft/manual review
+  kapısında kalır. ERP-000M implementation hâlâ ADR-003/010, OPEN-014/015/017 ve
+  `ERP-000M-SQL-POC-CONTRACT` nedeniyle `NO-GO / BLOCKED` durumundadır.
+- PR #15 merge edilmeden ERP-000O/N/L/J/K implementation veya ortak manifest
+  senkronizasyonu başlatılmayacaktır. PR #2'nin yedi blocker'ı aynen korunur.
+- Yerel JSON/DAG, diff, self-review ve tam CI kanıtları tamamlandıktan sonra PR #15 kanıt
+  yorumunda güncellenecektir.
+
+```text
+DONE: PR #8/#9 merge; PR #15 main sync; iki human-review blocker'ı düzeltildi
+IN REVIEW: ERP-000M readiness Draft PR #15
+BLOCKED: ERP-000M/O/N/L/J/K implementation; ERP-000F implementation; PR #2 (yedi blocker)
+SAFE NEXT: PR #15 DAG/diff/self-review/tam CI; ardından insan review'u
+OPEN DECISIONS: ADR-003/010; OPEN-014/015/017; ERP-000M-SQL-POC-CONTRACT; ERP-000F ADR-006 + OPEN-022/023/024/025
+MAIN SHA: 81283e582de00fc291b848a25f1a15ff45fc4657
+ACTIVE PRS: #19..#10 Draft; #15 aktif human review; #2 Draft/blocked
+```

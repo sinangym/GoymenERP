@@ -1,7 +1,7 @@
 # ERP-000M — SQL Server PoC ve Migration Hazırlık Kapısı
 
 - Tarih: 2026-08-28
-- İncelenen taban: `main` / `9f08ff16447eca89682d0a084e2341b9c2b433c2`
+- İncelenen taban: `main` / `81283e582de00fc291b848a25f1a15ff45fc4657`
 - Görev: `ERP-000M — SQL Server PoC ve migrations`
 - Kapsam: yalnız readiness analizi, karar kapısı, ölçüm ve kabul planı
 - Uygulama durumu: **NO-GO / BLOCKED**
@@ -601,15 +601,15 @@ doğrulandığında kaldırılabilir:
 ## 22. Shared manifest ve merge/sync kapısı
 
 Bu dal `docs/backlog/task_manifest.json` içinde yalnız ERP-000M satırını değiştirir.
-İncelenen taban snapshot'ında ERP-000E hâlâ `in_review`, sonraki platform görevleri ise
-eski `ready` durumundadır; bu dal başka satırların GitHub merge gerçeğini sessizce
-düzeltmez.
+ERP-000E kabul edilmiş ve `main`e merge edilmiştir. Bu dal, güncel `main` ile
+senkronizasyon sırasında başka task satırlarının durum, dependency veya blocker alanlarını
+sessizce değiştirmez; gerekiyorsa ayrı truth-sync review'u açılır.
 
-Aynı manifesti değiştiren ERP-000F/G/H/I/J readiness veya truth-sync PR'ları önce kendi
-ilan edilmiş sıralarında merge edilmelidir. ERP-000M dalı daha sonra güncel `main` ile
-senkronize edilir ve A/B/C/D/E/F/G/H/I/J/M durum, dependency ve blocker gerçeğinin
-birlikte korunduğu insan review'uyla doğrulanır. Paralel ERP-000L/N readiness PR'ları
-varsa onların satırları da sync sırasında korunur; önerilen dependency yönü M → N → L'dir.
+Shared manifest için kabul edilmiş readiness sırası `ERP-000M → ERP-000O → ERP-000N →
+ERP-000L`, ardından bağımsız `ERP-000J` ve `ERP-000K` dallarıdır. ERP-000F/G/H/I/J
+readiness PR'larının ERP-000M'den önce merge edilmesi bir önkoşul değildir. Her adım,
+öncülü `main`e merge edildikten sonra güncel `main` ile yeniden senkronize edilir ve insan
+review'uyla doğrulanır.
 
 Conflict, silinen blocker, değişen dependency veya statü farkı otomatik/sezgisel çözülmez.
 ERP-000L, M'nin ürettiği sinyalleri production telemetry'ye bağlayan sonraki tüketicidir;
