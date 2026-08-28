@@ -51,10 +51,14 @@ public static class CounterpartyModuleExtensions
         if (dbContext.Database.IsRelational())
         {
             await dbContext.Database.MigrateAsync(cancellationToken);
+            return;
         }
-        else
+
+        await dbContext.Database.EnsureCreatedAsync(cancellationToken);
+        if (!await dbContext.PartyCodeCounters.AnyAsync(cancellationToken))
         {
-            await dbContext.Database.EnsureCreatedAsync(cancellationToken);
+            dbContext.PartyCodeCounters.Add(PartyCodeCounter.CreateInitial());
+            await dbContext.SaveChangesAsync(cancellationToken);
         }
     }
 }
