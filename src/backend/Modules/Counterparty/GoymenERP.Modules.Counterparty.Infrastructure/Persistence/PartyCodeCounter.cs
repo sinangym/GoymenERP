@@ -14,6 +14,8 @@ internal sealed class PartyCodeCounter
 
     public byte[] RowVersion { get; private set; } = [];
 
+    public static PartyCodeCounter CreateInitial() => new();
+
     public long Next()
     {
         checked
