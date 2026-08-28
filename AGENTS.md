@@ -9,6 +9,14 @@
 
 Çelişkide daha yeni kullanıcı kararı geçerlidir. Açık işletme politikasını tahmin ederek kilitleme; yapılandırılabilir bırak ve `OPEN-*` kimliğiyle işaretle.
 
+## Çalışma orkestrasyonu
+
+Her yeni çalışma döngüsünde `docs/governance/CODEX_OTONOM_PROJE_ORKESTRATORU_v1.md`
+varsa okunur ve görev/branch/PR/doğrulama akışında uygulanır. Bu protokol yukarıdaki kaynak
+önceliğini veya iş kurallarını değiştirmez ve kendi başına dış yazma ya da merge yetkisi
+vermez. `AGENTS.md`, governance, CI veya merge politikası değişiklikleri otomatik merge
+edilemez; insan review kapısında kalır.
+
 ## Mimari değişmezler
 
 - Modüler monolit; modül sınırları kod, şema ve servis sözleşmesinde korunur.
