@@ -334,3 +334,42 @@ OPEN DECISIONS: OPEN-013/014/015/017/018/019/020/022..029; task-local F/G/H/I/J/
 MAIN SHA: 9f08ff16447eca89682d0a084e2341b9c2b433c2
 ACTIVE PRS: #18..#8 Draft; #2 Draft
 ```
+
+## 2026-08-28 05:17 +03:00 — Döngü 10
+
+- ERP-000O CI/CD ve Teslimat Güvencesi için yalnız dokümantasyon kapsamlı Draft PR #19
+  açıldı. Güncel head `2f450667da0ca22c27131e881c6ca13e29dce50a`, CI run
+  `33135251673`; backend, frontend, gerçek SQL Server relational acceptance ve container
+  build işlerinin tamamı başarılı oldu.
+- PR #19, ERP-000O'yu `blocked` yapar; exact bağımlılıklar A/B/C/D/E/M, blocker'lar
+  fiziksel ADR-010, OPEN-014 ve task-local `ERP-000O-DELIVERY-CONTRACT`tır. Workflow,
+  Docker, source, test, infra, secret, environment veya repository setting değişmedi;
+  production deployment/activation açılmadı.
+- İlk bağımsız review'un bulduğu tek P1 kapatıldı: mutable `ubuntu-latest` runner substrate
+  artık runner/executor kimliği, image/OS/tool envanteri, trust/isolation, ephemeral/cache,
+  update/reproducibility ve drift halinde fail-closed kabulüyle delivery trust zincirine
+  dahildir. İki final re-review P0/P1 bulmadı.
+- Mevcut CI gerçek ve korunması gereken bir test omurgasıdır; fakat teknik branch/ruleset
+  enforcement, kalıcı immutable artifact, migration/config manifesti, SBOM/provenance,
+  signing/attestation trust, pinned supply chain, same-digest staging promotion ve gerçek
+  rollback/forward-fix kanıtları yoktur. Bunlar tahmin edilmedi veya uygulanmadı.
+- Birleşik hedef manifest grafiği `M → O → N → L` olarak döngüsüz doğrulandı; J ve K, L
+  sonrasında ayrı kalır. Bu zincir paralel Draft PR'lar sıralı merge/sync edilmeden mevcut
+  `main`de kurulmuş sayılmaz. Shared manifest conflict'i sessiz çözülmez.
+- Draft PR #2'nin yedi blocker'ı korunmuştur. PR #8/#9 kontrol yüzeyi, #10–#19 readiness
+  ve/veya kritik alanlara bağlı oldukları için Draft/manual review'da kalır; otomatik merge
+  yapılmadı.
+- Platform manifestindeki A–O işleri için güvenli readiness envanteri tamamlandı. Bundan
+  sonraki implementation ilerlemesi fiziksel ADR'ler, OPEN kararları, shared-manifest PR
+  sırası ve insan review/merge kararına bağlıdır; iş kuralı veya production davranışı
+  tahmin edilerek ilerlenmeyecektir.
+
+```text
+DONE: ERP-000O Draft #19, CI 33135251673, runner P1 kapalı, iki temiz final review
+IN REVIEW: #19..#8 Draft
+BLOCKED: ERP-000F/G/H/I/J/K/L/M/N/O implementation; PR #2 (yedi blocker)
+SAFE NEXT: insan review'u; shared-manifest merge sırası; ADR/OPEN karar paketlerinin kapanışı
+OPEN DECISIONS: OPEN-013/014/015/017/018/019/020/022..029; task-local F/G/H/I/J/K/L/M/N/O sözleşmeleri
+MAIN SHA: 9f08ff16447eca89682d0a084e2341b9c2b433c2
+ACTIVE PRS: #19..#8 Draft; #2 Draft
+```
