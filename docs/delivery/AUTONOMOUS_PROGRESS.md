@@ -253,3 +253,38 @@ OPEN DECISIONS: OPEN-015; OPEN-019..OPEN-029; task-local F/G/H/I karar paketleri
 MAIN SHA: 9f08ff16447eca89682d0a084e2341b9c2b433c2
 ACTIVE PRS: #13 Draft; #12 Draft; #11 Draft; #10 Draft; #9 Draft; #8 Draft; #2 Draft
 ```
+
+## 2026-08-28 04:39 +03:00 — Döngü 8
+
+- ERP-000J AI Gateway için yalnız dokümantasyon kapsamlı Draft PR #14 açıldı. Head
+  `9d84bba5af581a35f33f6733878780f242db87a2` ve CI run `33133290195`; backend,
+  frontend, gerçek SQL Server relational acceptance ve container build işlerinin tamamı
+  başarılı oldu.
+- PR #14, ERP-000J'yi `blocked` yapar; A/B/C/D/E/L bağımlılıklarını ve fiziksel ADR-008,
+  mevcut `OPEN-020` ile task-local `ERP-000J-AI-CONTRACT` kapılarını görünür kılar.
+  Provider, model, paket, prompt, endpoint, secret, tool kodu veya migration eklenmedi.
+- İlk iki bağımsız incelemede bulunan dokuz P1 kapatıldı: bağımlılık/coding gate; business
+  audit–durable security event–transient telemetry ayrımı; raw tenant kimliği/cardinality;
+  client-side unsafe render; SSRF/DNS rebinding; türetilmiş veri sınıfı; provider
+  kimlikleri; schema-valid fakat yetkisiz payload; READ/DRAFT/SIMULATE yan-etkisizliği ve
+  duplicate/parallel/mixed write çağrıları. İki son incelemede P0/P1 kalmadı.
+- OpenAI Responses/function tools ve Agents SDK yalnız provider adapter/orkestrasyon için
+  güncel teknik aday olarak kaydedildi; ERP authority, CompanyContext, permission, iş
+  kuralı veya onay kaynağı değildir. OPEN-020 kapanmadan bulut çağrısı default-deny kalır.
+- Ortak manifest için sıra PR #10 → #11 → #12 → #13 → #14'tür. ERP-000L readiness
+  manifest değişikliği açıldığında J dalı ayrıca güncel `main` ile senkronize edilip insan
+  review'undan geçecektir; sessiz conflict çözümü yoktur.
+- ERP-000L Gözlemlenebilirlik, ERP-000M SQL Server PoC ve ERP-000N Backup/Restore için
+  bağımsız fail-closed readiness çalışmaları ayrı worktree'lerde başlatıldı. Üçünde de
+  production kodu veya altyapı değişikliği yapılmıyor.
+- Draft PR #2'nin yedi blocker'ı korunmuştur. Hiçbir kritik PR otomatik merge edilmedi.
+
+```text
+DONE: ERP-000J readiness Draft #14, CI 33133290195, iki temiz final review
+IN REVIEW: ERP-000J #14; ERP-000H #13; ERP-000I #12; ERP-000G #11; ERP-000F #10; #8/#9
+BLOCKED: ERP-000F/G/H/I/J implementation; PR #2 (yedi blocker)
+SAFE NEXT: ERP-000L/M/N conflict-safe readiness belgeleri; Draft PR manuel review'ları
+OPEN DECISIONS: OPEN-014/015/017/019/020/022..029; task-local F/G/H/I/J karar paketleri
+MAIN SHA: 9f08ff16447eca89682d0a084e2341b9c2b433c2
+ACTIVE PRS: #14 Draft; #13 Draft; #12 Draft; #11 Draft; #10 Draft; #9 Draft; #8 Draft; #2 Draft
+```
