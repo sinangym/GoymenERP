@@ -53,7 +53,7 @@ public sealed class CounterpartyDbContext(DbContextOptions<CounterpartyDbContext
         {
             table.HasCheckConstraint(
                 "CK_Parties_Code_Format",
-                "[Code] LIKE N'CAR-%' AND ((LEN([Code]) = 10 AND TRY_CONVERT(bigint, SUBSTRING([Code], 5, 28)) BETWEEN 1 AND 999999) OR (LEN([Code]) > 10 AND SUBSTRING([Code], 5, 1) <> N'0' AND TRY_CONVERT(bigint, SUBSTRING([Code], 5, 28)) >= 1000000))");
+                "LEFT([Code], 4) COLLATE Latin1_General_100_BIN2 = N'CAR-' AND SUBSTRING([Code], 5, 28) COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9]%' AND TRY_CONVERT(bigint, SUBSTRING([Code], 5, 28)) IS NOT NULL AND ((LEN([Code]) = 10 AND TRY_CONVERT(bigint, SUBSTRING([Code], 5, 28)) BETWEEN 1 AND 999999) OR (LEN([Code]) > 10 AND SUBSTRING([Code], 5, 1) <> N'0' AND TRY_CONVERT(bigint, SUBSTRING([Code], 5, 28)) >= 1000000))");
             table.HasCheckConstraint(
                 "CK_Parties_Kind",
                 "[Kind] IN (N'LegalEntity', N'NaturalPerson')");
