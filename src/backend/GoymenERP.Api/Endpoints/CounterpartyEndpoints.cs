@@ -1,7 +1,9 @@
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
+using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.Endpoints;
@@ -42,6 +44,83 @@ public static class CounterpartyEndpoints
                 : Results.Ok(party);
         });
 
+        group.MapPost("/", async (
+                CreateCounterparty command,
+                ICounterpartyCommandService service,
+                ICurrentUser currentUser,
+                ICompanyContext companyContext,
+                ICorrelationContext correlationContext,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+        {
+            if (!IsValidCreate(command, out var validationDetail))
+            {
+                return Results.Problem(
+                    title: "Cari bilgisi geçersiz.",
+                    detail: validationDetail,
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (!TryReadCommandMetadata(
+                    httpContext,
+                    currentUser,
+                    companyContext,
+                    correlationContext,
+                    out var metadata))
+            {
+                return InvalidCommandMetadata();
+            }
+
+            var execution = await service.CreateAsync(
+                command,
+                metadata,
+                cancellationToken);
+            ApplyReplayHeaders(httpContext, execution);
+            return ToHttpResult(execution.Response);
+        }).RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.CounterpartyPartiesCreate);
+
+        group.MapPut("/{partyId:guid}/company-account/active-state", async (
+                Guid partyId,
+                SetCompanyPartyAccountActiveState command,
+                ICounterpartyCommandService service,
+                ICurrentUser currentUser,
+                ICompanyContext companyContext,
+                ICorrelationContext correlationContext,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+        {
+            if (partyId == Guid.Empty
+                || command.ExpectedVersion <= 0
+                || string.IsNullOrWhiteSpace(command.Reason)
+                || command.Reason.Trim().Length > 1000)
+            {
+                return Results.Problem(
+                    title: "Cari durum değişikliği geçersiz.",
+                    detail: "Geçerli cari kimliği, sıfırdan büyük beklenen sürüm ve 1-1000 karakter gerekçe zorunludur.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (!TryReadCommandMetadata(
+                    httpContext,
+                    currentUser,
+                    companyContext,
+                    correlationContext,
+                    out var metadata))
+            {
+                return InvalidCommandMetadata();
+            }
+
+            var execution = await service.SetCompanyAccountActiveStateAsync(
+                partyId,
+                command,
+                metadata,
+                cancellationToken);
+            ApplyReplayHeaders(httpContext, execution);
+            return ToHttpResult(execution.Response);
+        }).RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.CounterpartyAccountsStatusUpdate);
+
         return endpoints;
     }
 
@@ -80,6 +159,122 @@ public static class CounterpartyEndpoints
             .Set(companyId);
 
         return await next(invocationContext);
+    }
+
+    private static bool IsValidCreate(
+        CreateCounterparty command,
+        out string validationDetail)
+    {
+        const PartyRole knownRoles =
+            PartyRole.Customer | PartyRole.Supplier | PartyRole.Tolling | PartyRole.Service;
+        if (!Enum.IsDefined(command.Kind))
+        {
+            validationDetail = "Geçerli bir taraf türü seçin.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(command.LegalName)
+            || command.LegalName.Trim().Length > 250)
+        {
+            validationDetail = "Hukuki ad 1-250 karakter arasında olmalıdır.";
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(command.TradeName)
+            && command.TradeName.Trim().Length > 200)
+        {
+            validationDetail = "Ticari ad 200 karakterden uzun olamaz.";
+            return false;
+        }
+
+        if (command.Roles == PartyRole.None || (command.Roles & ~knownRoles) != 0)
+        {
+            validationDetail = "Cari en az bir bilinen ticari rol taşımalıdır.";
+            return false;
+        }
+
+        validationDetail = string.Empty;
+        return true;
+    }
+
+    private static bool TryReadCommandMetadata(
+        HttpContext httpContext,
+        ICurrentUser currentUser,
+        ICompanyContext companyContext,
+        ICorrelationContext correlationContext,
+        out CounterpartyCommandMetadata metadata)
+    {
+        const int maximumMetadataLength = 128;
+        var idempotencyKey = httpContext.Request.Headers["Idempotency-Key"].ToString().Trim();
+        if (string.IsNullOrWhiteSpace(idempotencyKey)
+            || idempotencyKey.Length > maximumMetadataLength
+            || !companyContext.IsResolved
+            || !correlationContext.IsResolved
+            || string.IsNullOrWhiteSpace(currentUser.UserId))
+        {
+            metadata = null!;
+            return false;
+        }
+
+        metadata = new CounterpartyCommandMetadata(
+            companyContext.CompanyId,
+            currentUser.UserId,
+            correlationContext.CorrelationId,
+            correlationContext.CausationId,
+            correlationContext.SourceChannel,
+            correlationContext.ClientIpAddress,
+            correlationContext.UserAgent,
+            idempotencyKey);
+        return true;
+    }
+
+    private static void ApplyReplayHeaders(
+        HttpContext httpContext,
+        CounterpartyCommandExecution execution)
+    {
+        if (!execution.IsReplay)
+        {
+            return;
+        }
+
+        httpContext.Response.Headers["Idempotency-Replayed"] = "true";
+        httpContext.Response.Headers["Idempotency-Original-Correlation-Id"] =
+            execution.OriginalCorrelationId;
+    }
+
+    private static IResult ToHttpResult(CounterpartyCommandResponse response)
+    {
+        if (response.StatusCode == StatusCodes.Status201Created
+            && response.Resource is not null)
+        {
+            return Results.Created(
+                $"/api/v1/counterparties/{response.Resource.Id}",
+                response.Resource);
+        }
+
+        if (response.StatusCode == StatusCodes.Status204NoContent)
+        {
+            return Results.NoContent();
+        }
+
+        return Results.Problem(
+            title: response.Title,
+            detail: response.Detail,
+            statusCode: response.StatusCode,
+            extensions: response.Conflict is null
+                ? null
+                : new Dictionary<string, object?>
+                {
+                    ["conflict"] = response.Conflict,
+                });
+    }
+
+    private static IResult InvalidCommandMetadata()
+    {
+        return Results.Problem(
+            title: "Command bilgisi eksik.",
+            detail: "İşlem için geçerli Idempotency-Key ve correlation bilgisi gerekir.",
+            statusCode: StatusCodes.Status400BadRequest);
     }
 
     private static IResult NotFound()
