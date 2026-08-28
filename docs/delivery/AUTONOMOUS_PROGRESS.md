@@ -288,3 +288,49 @@ OPEN DECISIONS: OPEN-014/015/017/019/020/022..029; task-local F/G/H/I/J karar pa
 MAIN SHA: 9f08ff16447eca89682d0a084e2341b9c2b433c2
 ACTIVE PRS: #14 Draft; #13 Draft; #12 Draft; #11 Draft; #10 Draft; #9 Draft; #8 Draft; #2 Draft
 ```
+
+## 2026-08-28 05:05 +03:00 — Döngü 9
+
+- ERP-000M SQL Server PoC readiness için yalnız dokümantasyon kapsamlı Draft PR #15
+  açıldı. Head `400fb5f15ef939077b9fd41842bd8c153b5326fc`, CI run `33133842115`;
+  backend, frontend, gerçek SQL Server relational acceptance ve container build işlerinin
+  tamamı başarılı oldu. Implementation, ADR-003/010, OPEN-014/015/017 ve task-local
+  `ERP-000M-SQL-POC-CONTRACT` kapanmadan `NO-GO / BLOCKED` kalır.
+- ERP-000N Backup/Restore readiness Draft PR #16 olarak açıldı. Head
+  `b408f0ea2a0f079bb2a9507be13ada2544392f7d`, CI run `33134315599` dört işte
+  tamamen yeşildir. İki bağımsız final review P0/P1 bulmadı. Manifest güven kökü,
+  anti-replay/downgrade, out-of-band recovery kanıtı, inert/default-deny kimlik aktarımı,
+  backup-wide retention ve ERP-000D olay-başına `IntegrityHash` gerçeği doğrulandı.
+  Implementation ADR-003/005/010, OPEN-014/015/017/018 ve
+  `ERP-000N-RECOVERY-CONTRACT` nedeniyle blokludur.
+- ERP-000L Gözlemlenebilirlik readiness Draft PR #17 olarak açıldı. Head
+  `47e2732c043e121d51861f5fcc9c18ce6bf64631`, CI run `33134372310` dört işte
+  tamamen yeşildir. İki bağımsız final review P0/P1 bulmadı. Business audit, durable
+  security-event ve lossy diagnostic telemetry ayrımı; tenant/KVKK redaction,
+  low-cardinality, operator default-deny, health probe ve SLO/runbook kapıları korundu.
+  Implementation OPEN-014/015/017 ve `ERP-000L-DECISION-PACK` nedeniyle blokludur.
+- ERP-000K Ortak React Kabuğu readiness Draft PR #18 olarak açıldı. Head
+  `4f9a91c0a33acf910aee84dabc6dea8794eccf80`, CI run `33134544768` dört işte
+  tamamen yeşildir. D-01/GLOBAL-SHELL `CANDIDATE_EXACT / DESIGNED_NOT_LOCKED` kaldı;
+  route/permission, CompanyContext yarışları, responsive/erişilebilirlik ve mock
+  arama/AI/bildirim üretmeme sınırları doğrulandı. React/CSS/router/package/test/CI kodu
+  yazılmadı; implementation A/B/C/D/E/L/O ve `ERP-000K-SHELL-CONTRACT` ile blokludur.
+- Birleşik readiness grafiği döngüsüzdür. Kesin altyapı sırası `M → N → L`; K ve J, L
+  sonrasında ayrı dallardır. Ortak manifest conflict'leri hiçbir dalda sessiz çözülmez.
+- ERP-000O CI/CD delivery read-only audit'i docs-only readiness için `GO`, CI/deployment
+  implementation için `NO-GO` verdi. Branch/ruleset teknik enforcement, kalıcı artifact,
+  SBOM/provenance, sabitlenmiş supply chain, per-DbContext migration promotion ve gerçek
+  rollback/forward-fix kanıtları eksiktir. Güvenli yön `M → O → N → L` olarak ayrı
+  readiness dalında belgelenmektedir; production deployment açılmadı.
+- Draft PR #2'nin yedi blocker'ı korunmuştur. PR #8/#9 kontrol yüzeyi oldukları için Draft
+  ve manuel review'da kalır. Hiçbir PR otomatik merge edilmedi.
+
+```text
+DONE: ERP-000M #15, ERP-000N #16, ERP-000L #17, ERP-000K #18 Draft ve yeşil CI
+IN REVIEW: #18, #17, #16, #15, #14, #13, #12, #11, #10, #9, #8
+BLOCKED: ERP-000F/G/H/I/J/K/L/M/N implementation; PR #2 (yedi blocker)
+SAFE NEXT: ERP-000O docs-only delivery readiness; Draft PR manuel review'ları
+OPEN DECISIONS: OPEN-013/014/015/017/018/019/020/022..029; task-local F/G/H/I/J/K/L/M/N sözleşmeleri
+MAIN SHA: 9f08ff16447eca89682d0a084e2341b9c2b433c2
+ACTIVE PRS: #18..#8 Draft; #2 Draft
+```
