@@ -1,5 +1,6 @@
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Domain.Events;
+using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Domain.Assignments;
@@ -53,6 +54,12 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
             services.AddDbContext<OrganizationDbContext>((serviceProvider, options) =>
                 options.UseInMemoryDatabase(_databaseName)
                     .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
+
+            services.RemoveAll<DbContextOptions<CounterpartyDbContext>>();
+            services.RemoveAll<IDbContextOptionsConfiguration<CounterpartyDbContext>>();
+            services.AddDbContext<CounterpartyDbContext>(options =>
+                options.UseInMemoryDatabase($"{_databaseName}-counterparty"));
+
             services.RemoveAll<DbContextOptions<IdentityDbContext>>();
             services.RemoveAll<IDbContextOptionsConfiguration<IdentityDbContext>>();
             services.AddDbContext<IdentityDbContext>(options =>
