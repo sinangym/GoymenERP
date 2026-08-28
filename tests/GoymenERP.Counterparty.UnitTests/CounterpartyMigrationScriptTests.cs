@@ -1,3 +1,4 @@
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -14,7 +15,7 @@ public sealed class CounterpartyMigrationScriptTests
             .UseSqlServer(
                 "Server=(localdb)\\mssqllocaldb;Database=GoymenErpCounterpartyScript;Trusted_Connection=True;")
             .Options;
-        using var dbContext = new CounterpartyDbContext(options);
+        using var dbContext = new CounterpartyDbContext(options, new UnresolvedCompanyContext());
         var migrator = dbContext.GetService<IMigrator>();
 
         var script = migrator.GenerateScript(
@@ -29,5 +30,15 @@ public sealed class CounterpartyMigrationScriptTests
         Assert.DoesNotContain("TCKN", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("MERSIS", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("IBAN", script, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private sealed class UnresolvedCompanyContext : ICompanyContext
+    {
+        public bool IsResolved => false;
+
+        public Guid CompanyId => Guid.Empty;
+
+        public void Set(Guid companyId) =>
+            throw new InvalidOperationException("Migration script testi company context çözmez.");
     }
 }
