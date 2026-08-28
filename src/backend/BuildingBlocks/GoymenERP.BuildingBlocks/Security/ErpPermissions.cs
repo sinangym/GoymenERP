@@ -10,6 +10,8 @@ public static class ErpPermissions
         "organization.locations.status.update";
 
     public const string CounterpartyPartiesRead = "counterparty.parties.read";
+    public const string CounterpartyPartiesCreate = "counterparty.parties.create";
+    public const string CounterpartyAccountsUpdate = "counterparty.accounts.update";
 
     public const string IdentityProfileRead = "identity.profile.read";
     public const string IdentityAccessRequest = "identity.access.request";
@@ -25,6 +27,8 @@ public static class ErpPermissions
             OrganizationWorkCentersRead,
             OrganizationLocationsStatusUpdate,
             CounterpartyPartiesRead,
+            CounterpartyPartiesCreate,
+            CounterpartyAccountsUpdate,
             IdentityProfileRead,
             IdentityAccessRequest,
             IdentityAccessApprove,
@@ -44,6 +48,8 @@ public static class ErpPermissions
     public static IReadOnlySet<string> CompanyWideOnly { get; } = new HashSet<string>(
         [
             CounterpartyPartiesRead,
+            CounterpartyPartiesCreate,
+            CounterpartyAccountsUpdate,
             IdentityAuditRead,
         ],
         StringComparer.Ordinal);
