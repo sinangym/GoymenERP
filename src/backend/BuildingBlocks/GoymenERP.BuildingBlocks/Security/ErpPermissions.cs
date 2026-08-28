@@ -43,6 +43,7 @@ public static class ErpPermissions
 
     public static IReadOnlySet<string> CompanyWideOnly { get; } = new HashSet<string>(
         [
+            CounterpartyPartiesRead,
             IdentityAuditRead,
         ],
         StringComparer.Ordinal);
