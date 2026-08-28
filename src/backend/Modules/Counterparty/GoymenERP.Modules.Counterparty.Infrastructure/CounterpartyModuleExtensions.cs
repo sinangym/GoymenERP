@@ -1,3 +1,4 @@
+using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -27,13 +28,19 @@ public static class CounterpartyModuleExtensions
                 "SQL Server bağlantı dizesi DB_CONNECTION_STRING secret/env değeriyle tanımlanmalıdır.");
         }
 
-        services.AddDbContext<CounterpartyDbContext>(options =>
+        services.AddDbContext<CounterpartyDbContext>((serviceProvider, options) =>
+        {
             options.UseSqlServer(
                 connectionString,
                 sql => sql.MigrationsHistoryTable(
                     "__EFMigrationsHistory",
-                    "counterparty")));
+                    "counterparty"));
+            options.AddInterceptors(
+                serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>());
+        });
+        services.AddScoped<IPartyCodeAllocator, SqlPartyCodeAllocator>();
         services.AddScoped<ICounterpartyReadService, CounterpartyReadService>();
+        services.AddScoped<ICounterpartyCommandService, CounterpartyCommandService>();
 
         return services;
     }
