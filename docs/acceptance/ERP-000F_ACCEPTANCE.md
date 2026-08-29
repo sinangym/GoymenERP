@@ -123,7 +123,9 @@ durumları.
 etiketi, user/header claim'i veya admin impersonation yetki sağlamaz. Identity kaynağı
 unavailable ise yeni dış etki yoktur.
 
-**Kanıt:** Identity/Application security contract + audit/telemetry assertion.
+**Kanıt:** Identity/Application security contract + gerçek SQL'de persisted principal/grant
+lifecycle (provision/activate/deactivate/revoke) + revoke/revalidation race +
+audit/telemetry assertion.
 
 ## ERP-000F-AC-007 — Trusted company discovery ve revocation yarışı
 
@@ -162,8 +164,12 @@ lease sonrası yeni token oluşur. Eski owner renew/finalize/failure yazamaz.
 
 **Then:** Transport duplicate görebilir; ERP-controlled consumer aynı MessageId için tek
 business effect/audit/downstream outbox üretir. Exactly-once transport iddiası yapılmaz.
+Bu crash/redelivery güvenliği yalnız hedefte aynı MessageId için dedup/status veya
+güvenilir reconciliation contract'ı kanıtlanmışsa geçerlidir. Bu kanıt yoksa kayıt
+`ERP-000F-AC-010` uncertain-send sınırına girer ve kör retry yapılmaz.
 
-**Kanıt:** Crash injection + gerçek SQL inbox/effect counts.
+**Kanıt:** Crash injection + gerçek SQL inbox/effect counts + AC-010
+dedup/status/reconciliation önkoşulu.
 
 ## ERP-000F-AC-010 — Uncertain-send ve kör retry yasağı
 
@@ -176,7 +182,8 @@ edilmediği bilinmez.
 manual confirmation contract'ından biri kanıtlanmadan yeni dış etki çağrısı yapılmaz.
 Kayıt silinmez; güvenli uncertain/reconciliation kanıtı ve telemetry taşır.
 
-**Kanıt:** Transport fake + send count = 1 until accepted reconciliation path.
+**Kanıt:** Gerçek SQL persisted uncertain/reconciliation state + crash/restart + kontrollü
+transport send-count/no-blind-retry assertion.
 **Açık expected:** Exact state/permission `OPEN-024/025` kapanınca eklenir.
 
 ## ERP-000F-AC-011 — Concurrent inbox dedup
@@ -295,11 +302,11 @@ emission/consumer/effect contract'ını çalıştırır.
 | AC-003 | — | Zorunlu | — | Zorunlu | Safe error |
 | AC-004 | Golden | Zorunlu | — | Integrity | — |
 | AC-005 | Zorunlu | Zorunlu | — | Zorunlu | Trace |
-| AC-006 | Identity | Gerekirse | Revoke | Zorunlu | Telemetry |
+| AC-006 | Identity | Zorunlu | Revoke/revalidation | Zorunlu | Telemetry |
 | AC-007 | Organization | Zorunlu | Zorunlu | Zorunlu | Architecture |
 | AC-008 | Claim/CAS | Zorunlu | Zorunlu | CompanyId | Lease metric |
 | AC-009 | Delivery | Zorunlu | Zorunlu | Effect count | Duplicate metric |
-| AC-010 | Adapter | Gerekirse | Timeout/crash | Manual gate | Uncertain metric |
+| AC-010 | Adapter | Zorunlu | Timeout/crash/restart | Manual gate | Uncertain metric |
 | AC-011 | Dedup | Zorunlu | Zorunlu | Integrity | Duplicate metric |
 | AC-012 | Handler | Zorunlu | Failure injection | Audit | — |
 | AC-013 | Negative | Zorunlu | — | Fail-closed | Incident metric |

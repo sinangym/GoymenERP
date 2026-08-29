@@ -751,6 +751,13 @@ ACTIVE PRS: #14 Draft; #2 Draft/blocked; identity production gates #62/#63 open;
 - Merkezi `ACCEPTANCE_MATRIX.csv` ve PR #2 sahipliği değiştirilmemiştir. Ayrıntılı gelecek
   kabul planı task-local `ERP-000F-AC-001..018` kimlikleriyle `DRAFT / UNIMPLEMENTED`
   durumundadır; open kapılar kapanmadan feature/test substrate kodu yazılmaz.
+- `a31eeb9af41859cf83691bef5f49602a12820e36` exact-head incelemesindeki P1 kanıt
+  boşlukları kapatılmıştır: AC-006 workload principal/grant lifecycle ve revoke/revalidation
+  yarışı ile AC-010 persisted uncertain/reconciliation + crash/restart + send-count kanıtı
+  için gerçek SQL zorunludur. AC-009 crash/redelivery sonucu da yalnız hedef MessageId
+  dedup/status/reconciliation kanıtı altında geçerlidir; aksi durum açıkça AC-010
+  no-blind-retry sınırına yönlenir. Acceptance senaryolarının kendisi hâlâ
+  `DRAFT / UNIMPLEMENTED` ve implementation kapısı kapalıdır.
 - Yerel task-manifest validator 15 task/55 edge için ve negatif testleri 21/21; UI golden
   validator 72 kaynak/159 ekran için ve negatif testleri 24/24; bootstrap integrity 48
   başarılı/1 Windows capability skip ile geçmiştir. Custom parity kontrolü 18 benzersiz
@@ -768,10 +775,10 @@ ACTIVE PRS: #14 Draft; #2 Draft/blocked; identity production gates #62/#63 open;
   dosyaları, `docs/ui` ve ChatGPT-owned Cari alanları değiştirilmemiştir.
 
 ```text
-DONE: ERP-000F current-main clean readiness rebuild; F-only manifest truth; physical ADR/contract; OPEN-022..025; task-local AC-001..018; local structural/UI/bootstrap/frontend partial validation
+DONE: ERP-000F current-main clean readiness rebuild; F-only manifest truth; physical ADR/contract; OPEN-022..025; task-local AC-001..018; exact-review P1 evidence-matrix closure; local structural/UI/bootstrap/frontend partial validation
 IN REVIEW: local codex/erp-000f-readiness-current-main commit; push/PR yok; fresh exact-head CI/UI ve bağımsız security/architecture review bekleniyor
 BLOCKED: ERP-000F/M/O/N/L/J/K implementation; real transport/pilot; production activation; PR #2; Identity production gates; Cari-owned gates
-SAFE NEXT: commit exact six-file diff; ayrı yetkili adımda PR #10'u clean exact head ile güncelle; fresh standard CI/UI/real-SQL/container; independent exact-SHA review
+SAFE NEXT: commit exact two-file review-closure delta; ayrı yetkili adımda PR #10'u clean exact head ile güncelle; fresh standard CI/UI/real-SQL/container; independent exact-SHA review
 OPEN DECISIONS: OPEN-022/023/024/025; physical detailed ADR-006 acceptance; transaction/migration edge; workload identity; canonicalization recipe; OPEN-016 real adapter
 MAIN SHA: 83197c50f515db959638fadd7cc11ad6eb7a4fc8
 ACTIVE PRS: #10 historical Draft/read-only until authorized update; #2 Draft/blocked; Cari-owned PRs read-only
