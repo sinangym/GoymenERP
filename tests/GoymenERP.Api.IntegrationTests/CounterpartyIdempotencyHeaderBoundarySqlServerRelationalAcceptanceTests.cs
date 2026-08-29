@@ -186,6 +186,10 @@ public sealed class CounterpartyIdempotencyHeaderBoundarySqlServerRelationalAcce
         string correlationId,
         params string[] idempotencyHeaderValues)
     {
+        // SqlServerRelationalApiFactory.CreateClientFor adds a valid default key.
+        // Remove it so each boundary case controls the exact raw header set.
+        client.DefaultRequestHeaders.Remove("Idempotency-Key");
+
         using var request = new HttpRequestMessage(method, requestUri)
         {
             Content = JsonContent.Create(command),
