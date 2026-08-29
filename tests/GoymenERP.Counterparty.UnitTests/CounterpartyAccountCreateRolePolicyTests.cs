@@ -12,11 +12,21 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
     private const string ContractSourcePath =
         "docs/features/CARI_ACCOUNT_CREATE_ROLE_POLICY_v1.md";
     private const string ExpectedDecisionSource =
-        "https://github.com/sinangym/GoymenERP/issues/43#issuecomment-5458976040";
+        "https://github.com/sinangym/GoymenERP/issues/43#issuecomment-5461669614";
+    private const string PendingAccountCreatePermission =
+        "counterparty.accounts.create";
+
     private static readonly Guid SystemAdministratorId =
         Guid.Parse("30000000-0000-0000-0000-000000000003");
     private static readonly Guid CounterpartyAccountOperatorId =
         Guid.Parse("30000000-0000-0000-0000-000000000006");
+
+    private static readonly string[] ExpectedOperatorPermissions =
+    [
+        ErpPermissions.CounterpartyPartiesRead,
+        PendingAccountCreatePermission,
+        ErpPermissions.CounterpartyAccountsStatusUpdate,
+    ];
 
     [Fact]
     public void Accepted_policy_matches_exact_role_and_reconciliation_contract()
@@ -29,7 +39,7 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
     }
 
     [Fact]
-    public void Strict_json_rejects_duplicate_and_unknown_properties()
+    public void Strict_json_rejects_duplicate_unknown_missing_and_noncanonical_json()
     {
         const string duplicateOwner = """
             {
@@ -82,18 +92,60 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
             """;
         Assert.Throws<JsonException>(() =>
             DeserializeStrict(Encoding.UTF8.GetBytes(unknownProperty)));
+
+        const string missingPermissionCode = """
+            {
+              "schema_version": 1,
+              "owner": "CHATGPT-CARI",
+              "module": "Counterparty",
+              "decision_id": "CARI-PERM-001",
+              "decision_source": "source",
+              "contract_source": "contract",
+              "roles": [],
+              "default_denied_role_codes": [],
+              "automatic_user_assignments": [],
+              "existing_install_reconciliation": {
+                "add_missing_roles": true,
+                "add_missing_permissions": true,
+                "preserve_custom_permissions": true,
+                "preserve_existing_assignments": true,
+                "reject_id_code_collisions": true,
+                "transactional": true
+              }
+            }
+            """;
+        Assert.Throws<JsonException>(() =>
+            DeserializeStrict(Encoding.UTF8.GetBytes(missingPermissionCode)));
+
+        const string commented = """
+            {
+              // comments are forbidden
+              "schema_version": 1
+            }
+            """;
+        Assert.Throws<JsonException>(() =>
+            DeserializeStrict(Encoding.UTF8.GetBytes(commented)));
+
+        const string trailingComma = """
+            {
+              "schema_version": 1,
+            }
+            """;
+        Assert.Throws<JsonException>(() =>
+            DeserializeStrict(Encoding.UTF8.GetBytes(trailingComma)));
     }
 
     [Fact]
-    public void Validation_rejects_role_bundle_assignment_and_identity_drift()
+    public void Validation_rejects_role_bundle_assignment_identity_and_unknown_permission_drift()
     {
         var repositoryRoot = FindRepositoryRoot();
         var accepted = ReadContract(repositoryRoot);
         Assert.Empty(ValidateContract(repositoryRoot, accepted));
 
-        var operatorRole = accepted.Roles.Single(role =>
+        var roles = Assert.IsAssignableFrom<IReadOnlyList<RolePolicyEntry>>(accepted.Roles);
+        var operatorRole = roles.Single(role =>
             role.Code == "COUNTERPARTY_ACCOUNT_OPERATOR");
-        var systemAdministrator = accepted.Roles.Single(role =>
+        var systemAdministrator = roles.Single(role =>
             role.Code == "SYSTEM_ADMINISTRATOR");
 
         var missingPermission = accepted with
@@ -106,7 +158,7 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
                     PermissionsToEnsure =
                     [
                         ErpPermissions.CounterpartyPartiesRead,
-                        ErpPermissions.CounterpartyAccountsCreate,
+                        PendingAccountCreatePermission,
                     ],
                 },
             ],
@@ -114,6 +166,26 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
         Assert.Contains(
             ValidateContract(repositoryRoot, missingPermission),
             error => error.Contains("operator permission bundle", StringComparison.Ordinal));
+
+        var unknownPermission = accepted with
+        {
+            Roles =
+            [
+                systemAdministrator,
+                operatorRole with
+                {
+                    PermissionsToEnsure =
+                    [
+                        ErpPermissions.CounterpartyPartiesRead,
+                        PendingAccountCreatePermission,
+                        "counterparty.accounts.unknown",
+                    ],
+                },
+            ],
+        };
+        Assert.Contains(
+            ValidateContract(repositoryRoot, unknownPermission),
+            error => error.Contains("blank or unknown permission", StringComparison.Ordinal));
 
         var automaticAssignment = accepted with
         {
@@ -182,6 +254,7 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
                    new JsonSerializerOptions
                    {
                        PropertyNameCaseInsensitive = false,
+                       RespectRequiredConstructorParameters = true,
                        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
                    })
                ?? throw new InvalidOperationException(
@@ -210,28 +283,29 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
             errors);
         RequireEqual(
             contract.PermissionCode,
-            ErpPermissions.CounterpartyAccountsCreate,
+            PendingAccountCreatePermission,
             "permission_code",
             errors);
         ValidateRepositoryFile(repositoryRoot, contract.ContractSource, errors);
 
-        if (contract.Roles.Count != 2)
+        var roles = contract.Roles ?? [];
+        if (roles.Count != 2)
         {
-            errors.Add($"Policy must contain exactly two roles; found {contract.Roles.Count}.");
+            errors.Add($"Policy must contain exactly two roles; found {roles.Count}.");
         }
 
-        if (contract.Roles.Select(role => role.Id).Distinct().Count() != contract.Roles.Count)
+        if (roles.Select(role => role.Id).Distinct().Count() != roles.Count)
         {
             errors.Add("Authorized role IDs must be unique.");
         }
 
-        if (contract.Roles.Select(role => role.Code)
-            .Distinct(StringComparer.Ordinal).Count() != contract.Roles.Count)
+        if (roles.Select(role => role.Code)
+            .Distinct(StringComparer.Ordinal).Count() != roles.Count)
         {
             errors.Add("Authorized role codes must be unique.");
         }
 
-        var systemAdministrator = contract.Roles.SingleOrDefault(role =>
+        var systemAdministrator = roles.SingleOrDefault(role =>
             role.Code == "SYSTEM_ADMINISTRATOR");
         if (systemAdministrator is null)
         {
@@ -244,12 +318,12 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
                 SystemAdministratorId,
                 "Sistem Yöneticisi",
                 createIfMissing: false,
-                [ErpPermissions.CounterpartyAccountsCreate],
+                [PendingAccountCreatePermission],
                 "system administrator",
                 errors);
         }
 
-        var accountOperator = contract.Roles.SingleOrDefault(role =>
+        var accountOperator = roles.SingleOrDefault(role =>
             role.Code == "COUNTERPARTY_ACCOUNT_OPERATOR");
         if (accountOperator is null)
         {
@@ -262,15 +336,11 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
                 CounterpartyAccountOperatorId,
                 "Cari Hesap Yönetimi",
                 createIfMissing: true,
-                [
-                    ErpPermissions.CounterpartyPartiesRead,
-                    ErpPermissions.CounterpartyAccountsCreate,
-                    ErpPermissions.CounterpartyAccountsStatusUpdate,
-                ],
+                ExpectedOperatorPermissions,
                 "operator",
                 errors);
 
-            if (accountOperator.PermissionsToEnsure.Contains(
+            if ((accountOperator.PermissionsToEnsure ?? []).Contains(
                     ErpPermissions.CounterpartyPartiesCreate,
                     StringComparer.Ordinal))
             {
@@ -279,7 +349,7 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
             }
         }
 
-        foreach (var role in contract.Roles)
+        foreach (var role in roles)
         {
             if (role.Id == Guid.Empty
                 || string.IsNullOrWhiteSpace(role.Code)
@@ -289,16 +359,16 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
                 errors.Add($"Role identity is invalid: {role.Code}.");
             }
 
-            if (role.PermissionsToEnsure.Count == 0
-                || role.PermissionsToEnsure.Any(permission =>
+            var permissions = role.PermissionsToEnsure ?? [];
+            if (permissions.Count == 0
+                || permissions.Any(permission =>
                     string.IsNullOrWhiteSpace(permission)
-                    || !ErpPermissions.IsKnown(permission)))
+                    || !IsKnownOrAcceptedPendingPermission(permission)))
             {
                 errors.Add($"Role contains blank or unknown permission: {role.Code}.");
             }
 
-            if (role.PermissionsToEnsure.Distinct(StringComparer.Ordinal).Count()
-                != role.PermissionsToEnsure.Count)
+            if (permissions.Distinct(StringComparer.Ordinal).Count() != permissions.Count)
             {
                 errors.Add($"Role contains duplicate permissions: {role.Code}.");
             }
@@ -311,22 +381,22 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
             "SECURITY_ADMINISTRATOR",
             "SECURITY_APPROVER",
         };
-        if (!contract.DefaultDeniedRoleCodes.SequenceEqual(
-                expectedDenied,
-                StringComparer.Ordinal)
-            || contract.DefaultDeniedRoleCodes.Distinct(StringComparer.Ordinal).Count()
-            != contract.DefaultDeniedRoleCodes.Count)
+        var denied = contract.DefaultDeniedRoleCodes ?? [];
+        if (!denied.SequenceEqual(expectedDenied, StringComparer.Ordinal)
+            || denied.Distinct(StringComparer.Ordinal).Count() != denied.Count)
         {
             errors.Add("The exact default-denied roles are not preserved.");
         }
 
-        if (contract.AutomaticUserAssignments.Count != 0)
+        if (contract.AutomaticUserAssignments is null
+            || contract.AutomaticUserAssignments.Count != 0)
         {
             errors.Add("The policy must not create any automatic user assignment.");
         }
 
         var reconciliation = contract.ExistingInstallReconciliation;
-        if (!reconciliation.AddMissingRoles
+        if (reconciliation is null
+            || !reconciliation.AddMissingRoles
             || !reconciliation.AddMissingPermissions
             || !reconciliation.PreserveCustomPermissions
             || !reconciliation.PreserveExistingAssignments
@@ -338,6 +408,15 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
         }
 
         return errors;
+    }
+
+    private static bool IsKnownOrAcceptedPendingPermission(string permission)
+    {
+        return string.Equals(
+                   permission,
+                   PendingAccountCreatePermission,
+                   StringComparison.Ordinal)
+               || ErpPermissions.IsKnown(permission);
     }
 
     private static void ValidateRole(
@@ -364,7 +443,7 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
             errors.Add($"Unexpected {label} role lifecycle flags.");
         }
 
-        if (!role.PermissionsToEnsure.SequenceEqual(
+        if (!(role.PermissionsToEnsure ?? []).SequenceEqual(
                 expectedPermissions,
                 StringComparer.Ordinal))
         {
@@ -418,7 +497,7 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
 
     private static void ValidateRepositoryFile(
         string repositoryRoot,
-        string repositoryPath,
+        string? repositoryPath,
         ICollection<string> errors)
     {
         var normalized = NormalizePath(repositoryPath);
@@ -450,9 +529,9 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
             repositoryPath.Replace('/', Path.DirectorySeparatorChar)));
     }
 
-    private static string NormalizePath(string path)
+    private static string NormalizePath(string? path)
     {
-        return path.Replace('\\', '/').Trim();
+        return (path ?? string.Empty).Replace('\\', '/').Trim();
     }
 
     private static string FindRepositoryRoot()
@@ -474,28 +553,28 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
 
     private sealed record RolePolicyContract(
         [property: JsonPropertyName("schema_version")] int SchemaVersion,
-        [property: JsonPropertyName("owner")] string Owner,
-        [property: JsonPropertyName("module")] string Module,
-        [property: JsonPropertyName("decision_id")] string DecisionId,
-        [property: JsonPropertyName("decision_source")] string DecisionSource,
-        [property: JsonPropertyName("contract_source")] string ContractSource,
-        [property: JsonPropertyName("permission_code")] string PermissionCode,
-        [property: JsonPropertyName("roles")] IReadOnlyList<RolePolicyEntry> Roles,
+        [property: JsonPropertyName("owner")] string? Owner,
+        [property: JsonPropertyName("module")] string? Module,
+        [property: JsonPropertyName("decision_id")] string? DecisionId,
+        [property: JsonPropertyName("decision_source")] string? DecisionSource,
+        [property: JsonPropertyName("contract_source")] string? ContractSource,
+        [property: JsonPropertyName("permission_code")] string? PermissionCode,
+        [property: JsonPropertyName("roles")] IReadOnlyList<RolePolicyEntry>? Roles,
         [property: JsonPropertyName("default_denied_role_codes")]
-        IReadOnlyList<string> DefaultDeniedRoleCodes,
+        IReadOnlyList<string>? DefaultDeniedRoleCodes,
         [property: JsonPropertyName("automatic_user_assignments")]
-        IReadOnlyList<AutomaticAssignment> AutomaticUserAssignments,
+        IReadOnlyList<AutomaticAssignment>? AutomaticUserAssignments,
         [property: JsonPropertyName("existing_install_reconciliation")]
-        ReconciliationPolicy ExistingInstallReconciliation);
+        ReconciliationPolicy? ExistingInstallReconciliation);
 
     private sealed record RolePolicyEntry(
         [property: JsonPropertyName("id")] Guid Id,
-        [property: JsonPropertyName("code")] string Code,
-        [property: JsonPropertyName("name")] string Name,
+        [property: JsonPropertyName("code")] string? Code,
+        [property: JsonPropertyName("name")] string? Name,
         [property: JsonPropertyName("is_system")] bool IsSystem,
         [property: JsonPropertyName("create_if_missing")] bool CreateIfMissing,
         [property: JsonPropertyName("permissions_to_ensure")]
-        IReadOnlyList<string> PermissionsToEnsure);
+        IReadOnlyList<string>? PermissionsToEnsure);
 
     private sealed record AutomaticAssignment(
         [property: JsonPropertyName("user_id")] Guid UserId,
