@@ -114,12 +114,21 @@
     {
       "id": "ERP-000K",
       "title": "Ortak React kabuğu",
-      "status": "ready",
+      "status": "blocked",
       "depends_on": [
-        "ERP-000A"
+        "ERP-000A",
+        "ERP-000B",
+        "ERP-000C",
+        "ERP-000D",
+        "ERP-000E",
+        "ERP-000L",
+        "ERP-000O"
       ],
-      "scope": "Lacivert nav, top bar, company switcher, list/workspace/drawer patterns.",
-      "acceptance": "Responsive ve klavye smoke testleri.",
+      "scope": "Permission-aware ve CompanyContext-safe ortak React kabuğu; koyu lacivert navigasyon, global toolbar, breadcrumb, ortak list/360/form/workspace/drawer/modal durumları, responsive ve erişilebilir etkileşim; arama, AI, bildirim ve domain feature'ları için mock üretmeyen server-capability-gated mount noktaları.",
+      "acceptance": "Bütün depends_on görevleri kabul edilip main'e alınır; fiziksel ERP-000K-SHELL-CONTRACT D-01/GLOBAL-SHELL deltası, server-backed capability ve route/feature-mount sözleşmesi, tek şirket ile açık yetkili çok-şirket okuma ayrımı, CompanyContext dirty-state/pending/cache/stale-response sınırı, session/error/redaction, responsive/accessibility ve frontend test kapılarını kapatır; AT-001/003/005/006/008 ile task-local tenant, keyboard, focus, mobile ve route-security senaryoları geçer. Arama, AI, bildirim ve Cari mount yalnız kendi kabul edilmiş owner contract'larıyla etkinleşir.",
+      "blocked_by": [
+        "ERP-000K-SHELL-CONTRACT"
+      ],
       "priority": "P0"
     },
     {

@@ -614,3 +614,53 @@ OPEN DECISIONS: OPEN-014/015/017; ERP-000L-DECISION-PACK; provider/sink/topology
 MAIN SHA: 9d884b789bc20442686567e50de243feb6496d42
 ACTIVE PRS: #17 Draft; #2 Draft/blocked; identity production gates #62/#63 open; Cari owned PRs read-only
 ```
+
+## 2026-08-29 21:35 +03:00 — Döngü 17
+
+- ERP-000L readiness PR #17 delege review ve insan merge kapısı sonrasında squash merge
+  edilmiştir. Bu döngünün eski commit taşımayan temiz rebuild tabanı
+  `6aa4a46a964ed2dae427e83026bb449449bd09df` commit'idir. Merge sonrası standart CI
+  `33267944609` ve UI golden `33267944641` tamamen yeşildir; bunlar ERP-000K exact-head
+  kabul kanıtı olarak yeniden kullanılmaz.
+- ERP-000K readiness eski PR commitleri rebase/cherry-pick edilmeden ayrı clean worktree'de
+  yeniden üretilmiştir. Manifest root metadata'sı ile ERP-000K dışındaki on dört task
+  current-main ile exact kalmış; yalnız K satırı `blocked`, direct bağımlılıkları
+  A/B/C/D/E/L/O ve blocker'ı fiziksel `ERP-000K-SHELL-CONTRACT` yapılmıştır. Birleşik DAG
+  15 task/44 dependency edge ve döngüsüzdür. ERP-000E=`done`, ERP-000M/O/N/L=`blocked`
+  gerçeği korunmuştur.
+- `docs/features/ERP-000K_SHELL_CONTRACT_v1.md` repository içindeki tek fiziksel readiness
+  ve contract artifact'idir. Readiness `ACCEPTABLE`; contract `OPEN`; implementation ve
+  production activation `NO-GO / BLOCKED` kalır. D-01 yalnız yapısal referans ve açık
+  deltadır; exact katalog alanları `CANDIDATE_EXACT`, `DESIGNED_NOT_LOCKED` ve
+  `PROTOTYPE_REFERENCE` olarak korunmuştur.
+- Contract; server-backed capability, route/feature-mount ownership, tek şirket ile açık
+  yetkili çok-şirket okuma ayrımı, CompanyContext dirty/pending/cache/stale-response
+  fence'i, dönem kontrolünün feature-gated kalması, 401/403/non-disclosing 404/409,
+  session/error/correlation redaction, ortak UI durumları, `1600 px` altı sağ drawer ve
+  erişilebilirlik sınırlarını bağlar. Paket/provider/topoloji, business route, rol,
+  eşik/formül veya production davranışı seçmez.
+- PR #77/#79 veya accepted successor'ları yalnız Cari feature-mount coordination
+  kapılarıdır; manifest bağımlılığı değildir. Cari docs/code, `docs/ui`, workflow,
+  package, source ve test dosyaları değiştirilmemiştir.
+- Yerel task-manifest validator 15 task/44 edge için, negatif testleri 21/21; UI katalog
+  validator negatif testleri 24/24 ve golden doğrulama 72 kaynak/159 ekran için geçmiştir.
+  Bootstrap integrity 49 test/1 Windows capability skip; Release build 0 uyarı/0 hata;
+  .NET çözüm testleri 365 başarılı/14 gerçek-SQL environment skip; architecture guard
+  177/177; frontend lint, 2/2 test ve build başarılıdır. NuGet/npm vulnerability
+  taramaları bulgusuz, dört mevcut CI DbContext migration scripti dolu, compose config ve
+  API/Web container build başarılıdır. Exact K/non-K parity, progress prefix, üç-dosya
+  allowlist ve `git diff --check` temizdir.
+- Eski PR #18 head'i `4f9a91c0a33acf910aee84dabc6dea8794eccf80` ve CI
+  `33134544768` yalnız tarihsel kanıttır. Current head fresh standard CI, gerçek SQL
+  Server, UI golden ve bağımsız exact-SHA review'dan geçmeden merge-ready değildir. PR
+  Draft/human-review kapısında kalır ve hiçbir implementation başlatmaz.
+
+```text
+DONE: PR #17 merge; PR #18 clean current-main rebuild; K-only manifest delta; fiziksel shell contract; local full validation
+IN REVIEW: ERP-000K readiness Draft PR #18; fresh exact-head CI/UI ve bağımsız review bekleniyor
+BLOCKED: ERP-000K/L/M/N/O/F implementation; Cari mount; production activation; PR #2; Identity #62/#63
+SAFE NEXT: force-with-lease exact PR head; fresh CI/UI golden; bağımsız exact-SHA review; insan review'u
+OPEN DECISIONS: ERP-000K-SHELL-CONTRACT alt kapıları; capability/route/mount contract'ları; package/tool review; owner feature gates
+MAIN SHA: 6aa4a46a964ed2dae427e83026bb449449bd09df
+ACTIVE PRS: #18 Draft; #2 Draft/blocked; identity production gates #62/#63 open; Cari-owned PR #77/#79 read-only gates
+```
