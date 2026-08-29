@@ -776,10 +776,10 @@ ACTIVE PRS: #14 Draft; #2 Draft/blocked; identity production gates #62/#63 open;
 
 ```text
 DONE: ERP-000F current-main clean readiness rebuild; F-only manifest truth; physical ADR/contract; OPEN-022..025; task-local AC-001..018; exact-review P1 evidence-matrix closure; local structural/UI/bootstrap/frontend partial validation
-IN REVIEW: PR #10 Draft; review-closure commit push sonrası fresh exact-head CI/UI ve independent review bekleniyor
+IN REVIEW: PR #10 Draft current-main readiness delivery; remote exact head, fresh exact-head CI/UI ve independent security/architecture review merge öncesi doğrulanmalıdır
 BLOCKED: ERP-000F/M/O/N/L/J/K implementation; real transport/pilot; production activation; PR #2; Identity production gates; Cari-owned gates
-SAFE NEXT: review-closure commit'ini PR #10 branch'ine push et; fresh exact-head standard CI/UI/real-SQL/container çalıştır; independent exact-SHA review
+SAFE NEXT: remote exact-head eşitliğini doğrula; fresh standard CI/UI/real-SQL/container + independent exact-SHA review; sonra delegated gate
 OPEN DECISIONS: OPEN-022/023/024/025; physical detailed ADR-006 acceptance; transaction/migration edge; workload identity; canonicalization recipe; OPEN-016 real adapter
 MAIN SHA: 83197c50f515db959638fadd7cc11ad6eb7a4fc8
-ACTIVE PRS: #10 Draft/current-main clean rebuild; closure push pending; #2 blocked; Cari read-only
+ACTIVE PRS: #10 Draft/current-main readiness; #2 Draft/blocked; Cari-owned PRs read-only
 ```
