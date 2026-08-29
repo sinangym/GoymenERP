@@ -434,14 +434,15 @@ ACTIVE PRS: #19..#10 Draft; #15 aktif human review; #2 Draft/blocked
   Production runner Issue #62, global security-change evidence ise Issue #63 olarak ayrı
   kritik ve human-reviewed takip kapısına alınmıştır.
 - PR #36 ve PR #60 ChatGPT-owned kalmış, bu dal tarafından değiştirilmemiştir. Identity
-  dalı Draft PR ve exact-head uzak CI kanıtı oluşmadan merge-ready sayılmayacaktır.
+  çekirdeği ilk head `01458a4a6925522474cb28a5e01049a3a6980944` ile Draft PR #64 olarak
+  açılmıştır; exact-head uzak CI kanıtı oluşmadan merge-ready sayılmayacaktır.
 
 ```text
 DONE: PR #61 merge; main CI 33248227577 + UI 33248227552; inert Option-A core; yerel full/real-SQL testler
-IN REVIEW: codex/identity-option-a-permission-reconciliation-v1; Draft PR ve exact-head CI bekleniyor
+IN REVIEW: Identity Option-A reconciliation Draft PR #64; exact-head CI ve güvenlik review bekleniyor
 BLOCKED: production reconciliation activation (#62); global security evidence (#63); PR #36 current-main kabul zinciri
-SAFE NEXT: Draft PR; exact-head CI; ChatGPT-CARI + insan Identity/security review
+SAFE NEXT: PR #64 exact-head CI; ChatGPT-CARI + insan Identity/security review
 OPEN DECISIONS: production runner/invocation; global security evidence modeli ve lifecycle
 MAIN SHA: fed32839a9e0b4258efa5980fddc2846aaf85c49
-ACTIVE PRS: #36 Draft/ChatGPT-owned; #60 Draft/ChatGPT-owned; Identity PR henüz açılmadı
+ACTIVE PRS: #64 Draft/Codex-owned; #36 Draft/ChatGPT-owned; #60 Draft/ChatGPT-owned
 ```
