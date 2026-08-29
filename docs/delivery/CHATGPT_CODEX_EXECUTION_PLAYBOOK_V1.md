@@ -1,4 +1,4 @@
-# ChatGPT–Codex Göymen ERP Yürütme Playbook'u v1.2
+# ChatGPT–Codex Göymen ERP Yürütme Playbook'u v1.3
 
 ## 1. Her döngünün zorunlu başlangıcı
 
@@ -94,61 +94,67 @@ security_merge_gate: HUMAN
 - Generic reconciliation, auth ve RBAC/ABAC contract'ı Codex platform alanıdır.
 - Tek bir `contract_owner` alanı iki sahiplik alanını birleştiremez.
 
-## 5. Normatif Dalga 0
+## 5. Normatif Dalga 0 ve canlı durum
 
 ```text
 PR #64 MERGED
-→ PR #68
-→ PR #31
+→ PR #68 MERGED
+→ PR #31 HUMAN MERGE GATE
 → Issue #53
 → PR #36
 → W1
 ```
 
-- #68, eski ve kapatılmış #60'ın güncel-main taşımasıdır.
-- #31, #68 merge olduktan sonra current main ile senkronize edilir.
-- #53, #31 ile sertleştirilmiş CI üzerinde geliştirilir.
-- #36, #53 sonrasında duplicate header/permission kodu taşımadan temizlenir.
-- W1 bütün Dalga 0 çıkışları kapanmadan başlamaz.
+- #64, Option A Identity reconciliation çekirdeğidir ve main'dedir.
+- #68, eski #60'ın current-main taşımasıdır ve `main@5a4f56bc1e05ca1ce7f030f4c9c253f46e104e9f` ile merge edilmiştir.
+- #68 new-main CI ve UI golden yeşildir.
+- #31 exact head `4c5854881d9d8ee8256e98e686065629925ec504`, current-main, Draft/CLEAN/MERGEABLE, full CI yeşil ve ChatGPT security review kabul edilmiştir; insan shared-CI/security merge kararı bekler.
+- #53, #31 merge ve new-main CI tamamlanana kadar `start_blocked_by=[PR-31]` durumundadır.
+- #36, #53 tamamlanana kadar başlamaz; sonrasında duplicate header/permission parçaları taşımadan current-main üzerinde temizlenir.
+- W1 bütün Dalga 0 başlangıç engelleri ve tamamlanma kapıları kapanmadan başlamaz.
 
 ## 6. ChatGPT aktif sıra
 
-1. PR #65 plan ve truth remediation
-2. PR #68 current-main Idempotency-Key hotfix
-3. PR #31 salt-okunur iş etkisi review
-4. Issue #53 Counterparty AuditEvent tenant/write guard
-5. PR #36 Cari Core 1C finalizasyonu
-6. W1 gate açılırsa CARI-UI-01
-7. PRD-01
-8. SAL-01
+1. PR #65 canlı gerçek ve gate-semantik remediation
+2. PR #31 exact-head shared-CI/security review — tamamlandı
+3. PR #31 insan merge ve new-main CI sonrasında Issue #53
+4. Issue #53 merge sonrasında PR #36
+5. W1 başlangıç engelleri kapanırsa CARI-UI-01
+6. PRD-01
+7. SAL-01
 
 ## 7. Codex aktif sıra
 
-1. PR #65 yeni exact-head re-review
-2. PR #68 exact-head read-only review
-3. PR #31 current-main sync ve full CI
+1. PR #31 insan shared-CI/security merge kapısı
+2. PR #31 merge sonrası new-main CI ve handoff
+3. PR #65 yeni exact-head read-only re-review
 4. Issue #53 PR'ını read-only review
 5. PR #36 final head review
-6. W0 kapanınca ERP-000K execution gate kontrolü
-7. Gate açılmışsa PLT-01 common shell
+6. W0 ve ERP-000K başlangıç engelleri kapanınca PLT-01 common shell
 
-## 8. Readiness ve execution ayrımı
+## 8. DoR, execution ve gate semantiği
 
-Her workstream iki ayrı statü taşır:
+Her wave, workstream ve aktif kayıt aşağıdaki alanları ayrı taşır:
 
 ```text
 dor_status
 execution_status
+start_blocked_by
+completion_gates
 ```
 
-- DoR hazır olabilir ama dependency/blocker açıksa execution blocked kalır.
+- `dor_status`, analiz ve sözleşme hazırlığını gösterir; execution izni değildir.
+- `start_blocked_by`, işe başlanmasını yasaklayan çözülmemiş önkoşullardır.
+- `completion_gates`, çalışma sürerken açık kalabilir; fakat accepted/merged/released durumuna geçişi engeller.
+- `start_blocked_by=[]` olan iş `in_progress` olabilir.
+- Açık `completion_gates` bulunan `in_progress` iş henüz kabul veya merge edilmiş sayılmaz.
+- Eski belirsiz `blocked_by` alanı yasaktır.
 - Canonical `task_manifest.json` statüsünü machine overlay değiştiremez.
-- Accepted veya merged ancak exact-head CI ve karşı review ile kaydedilir.
 - Released ayrıca migration, activation, recovery ve operasyon kanıtı gerektirir.
 
 ## 9. Kanonik platform gate kaynakları
 
-| Workstream | Canonical task | Readiness kaynağı | Ana blocker |
+| Workstream | Canonical task | Readiness kaynağı | Başlangıç engelleri |
 |---|---|---|---|
 | OUT-01 | ERP-000F | PR #10 | ADR-006, OPEN-022…025 |
 | DOC-01 | ERP-000G | PR #11 | ADR-005, OPEN-026…029 |
@@ -158,14 +164,14 @@ execution_status
 | PLT-01 | ERP-000K | PR #18 | W0, shell contract, PR #18 dependencies |
 | OBS-01 | ERP-000L | PR #17 | M, N ve kayıtlı OPEN/decision pack |
 | DB-01 | ERP-000M | main readiness | ADR-003/010, OPEN-014/015/017, SQL PoC contract |
-| REC-01 | ERP-000N | PR #16 | M ve recovery blocker'ları |
+| REC-01 | ERP-000N | PR #16 | M ve recovery başlangıç engelleri |
 | DEL-01 | ERP-000O | PR #19 | M, ADR-010, OPEN-014, delivery contract |
 
-Bu gate'ler kapanmadan ilgili workstream executable değildir.
+Bu `start_blocked_by` kayıtları kapanmadan ilgili workstream başlamaz. CI, karşı review, UAT ve insan merge gibi doğrulamalar ayrıca `completion_gates` olarak tutulur.
 
 ## 10. Raporlama gate'i
 
-`RPT-01`, PR #2'nin yedi blocker'ı kapanmadan başlayamaz:
+`RPT-01`, PR #2'nin yedi başlangıç engeli kapanmadan başlayamaz:
 
 1. Current-main content ve semantic conflicts
 2. Mevcut acceptance kanıtlarının korunması
@@ -175,7 +181,7 @@ Bu gate'ler kapanmadan ilgili workstream executable değildir.
 6. ERP-RPT-001/RPT-003 acceptance döngüsünün çözülmesi
 7. R-06/R-07 UI katalog veya açık backlog uzlaştırması
 
-Ek olarak current CI ve UI validator yeşil olmalıdır.
+Current CI, UI validator ve insan review ise RPT-01 kabul/merge tamamlanma kapılarıdır.
 
 ## 11. Event delivery karar ağacı
 
@@ -185,7 +191,7 @@ Etki aynı transaction içinde mi?
     Hayır → durable delivery gerekli mi?
         Hayır → transient veya yeniden hesaplanabilir olduğu açıkça belirtilir.
         Evet → ERP-000F minimumu kabul edildi mi?
-            Hayır → execution blocked.
+            Hayır → execution başlamaz.
             Evet → outbox/inbox, retry, dedup, poison ve redrive.
 ```
 
@@ -230,7 +236,8 @@ HEAD
 USER OUTCOME
 CANONICAL TASK IDS
 READINESS SOURCES
-BLOCKED BY
+START BLOCKED BY
+COMPLETION GATES
 DOR STATUS
 EXECUTION STATUS
 EVENT DELIVERY MODE
@@ -299,30 +306,34 @@ Formül:
 
 Codex yeni exact head üzerinde şunları doğrular:
 
-1. Bütün dosyalarda `#64 → #68 → #31 → #53 → #36 → W1` sırası
+1. Bütün dosyalarda `#64 merged → #68 merged → #31 human merge gate → #53 → #36 → W1` sırası
 2. Overlay'in canonical task graph'ı supersede etmemesi
-3. `canonical_task_ids`, `blocked_by`, `dor_status`, `execution_status`, `event_delivery_mode`
-4. Identity iş politikası ve platform contract sahiplik ayrımı
-5. PR #10/#11/#13/#18/#19 readiness gate eşlemesi
-6. PR #2 raporlama blocker'ları
-7. `AGENTS.md`, orkestratör ve `task_manifest.json` zorunlu başlangıç kaynakları
-8. Karar Sicili önceliği ve StokERP donor sınırı
-9. JSON parse, benzersiz ID, resolved dependency ve acyclic graph
-10. `git diff --check` temizliği
-11. Full CI ve UI golden
+3. `canonical_task_ids`, `start_blocked_by`, `completion_gates`, `dor_status`, `execution_status`, `event_delivery_mode`
+4. `blocked_by` alanının bulunmaması
+5. Identity iş politikası ve platform contract sahiplik ayrımı
+6. D2 registry kimliklerinin Karar Sicili kaynaklarıyla çözülmesi
+7. PR #10/#11/#13/#18/#19 readiness gate eşlemesi
+8. PR #2 raporlama başlangıç engelleri
+9. `AGENTS.md`, orkestratör ve `task_manifest.json` zorunlu başlangıç kaynakları
+10. Karar Sicili önceliği ve StokERP donor sınırı
+11. JSON parse, benzersiz ID, çözülmüş gate referansı ve acyclic graph
+12. `git diff --check` temizliği
+13. Full CI ve UI golden
 
 Yeni commit eski review'u geçersiz yapar.
 
-## 16. Bloke olunca çalışma
+## 16. Başlangıç engeli veya tamamlanma kapısı açıldığında
 
 Ajan:
 
-1. Blocker'ı exact kaynakla GitHub'a yazar.
-2. Sahiplik dışına çıkmaz.
-3. Aynı dosyada ikinci writer açmaz.
-4. Kendi alanındaki sonraki bağımsız göreve geçer.
-5. D2 gerekiyorsa tek karar paketi hazırlar.
-6. Çalışmayı yalnız “bekliyorum” diyerek durdurmaz.
+1. Gate'i exact kaynakla GitHub'a yazar.
+2. Bunun `start_blocked_by` mı yoksa `completion_gate` mi olduğunu açıkça sınıflandırır.
+3. Sahiplik dışına çıkmaz.
+4. Aynı dosyada ikinci writer açmaz.
+5. Başlangıç engeli varsa kendi alanındaki sonraki bağımsız göreve geçer.
+6. Yalnız tamamlanma kapısı açıksa güvenli geliştirmeyi sürdürebilir; kabul/merge iddiasında bulunmaz.
+7. D2 gerekiyorsa tek karar paketi hazırlar.
+8. Çalışmayı yalnız “bekliyorum” diyerek durdurmaz.
 
 ## 17. Merge
 
@@ -344,6 +355,7 @@ Merge öncesi:
 - Gerçek SQL
 - Karşı review
 - P0/P1 sıfır
+- Bütün completion gate'lerin kapalı olması
 
 Merge sonrası:
 
@@ -357,7 +369,8 @@ Merge sonrası:
 ```text
 Açık insan kararı gerektirmeyen bütün güvenli teknik adımları art arda tamamla.
 Yalnız D2 ürün kararları, kritik merge kapıları ve production activation için dur.
-Bir iş bloke olursa sahiplik sınırına uyan sonraki bağımsız işi başlat.
+Bir iş start_blocked_by nedeniyle başlayamıyorsa sahiplik sınırına uyan sonraki bağımsız işi başlat.
+Yalnız completion_gates açıksa güvenli geliştirmeyi sürdür fakat işi accepted/merged sayma.
 Her bulguyu GitHub'a exact SHA ve kanıtla yaz.
 Sohbet özetini source-of-truth sayma.
 Auto-merge yapma.
