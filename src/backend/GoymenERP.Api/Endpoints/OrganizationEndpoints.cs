@@ -8,6 +8,10 @@ namespace GoymenERP.Api.Endpoints;
 
 public static class OrganizationEndpoints
 {
+    private const string IdempotencyHeaderName = "Idempotency-Key";
+
+    private const int MaximumIdempotencyKeyLength = 128;
+
     public static IEndpointRouteBuilder MapOrganizationEndpoints(
         this IEndpointRouteBuilder endpoints)
     {
@@ -149,11 +153,7 @@ public static class OrganizationEndpoints
         ICorrelationContext correlationContext,
         out CommandMetadata metadata)
     {
-        const int maximumMetadataLength = 128;
-        var idempotencyKey = httpContext.Request.Headers["Idempotency-Key"].ToString().Trim();
-
-        if (string.IsNullOrWhiteSpace(idempotencyKey)
-            || idempotencyKey.Length > maximumMetadataLength
+        if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var idempotencyKey)
             || !correlationContext.IsResolved
             || string.IsNullOrWhiteSpace(currentUser.UserId))
         {
@@ -171,5 +171,30 @@ public static class OrganizationEndpoints
             correlationContext.UserAgent,
             idempotencyKey);
         return true;
+    }
+
+    private static bool TryReadIdempotencyKey(
+        IHeaderDictionary headers,
+        out string idempotencyKey)
+    {
+        if (!headers.TryGetValue(IdempotencyHeaderName, out var values)
+            || values.Count != 1
+            || values[0] is not { } rawValue
+            || !TryCanonicalizeIdempotencyKey(rawValue, out idempotencyKey))
+        {
+            idempotencyKey = string.Empty;
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryCanonicalizeIdempotencyKey(
+        string rawValue,
+        out string canonicalValue)
+    {
+        canonicalValue = rawValue.Trim();
+        return canonicalValue.Length is > 0 and <= MaximumIdempotencyKeyLength
+            && !canonicalValue.Contains(',', StringComparison.Ordinal);
     }
 }
