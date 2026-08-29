@@ -464,9 +464,11 @@ ACTIVE PRS: #64 Draft/Codex-owned; #36 Draft/ChatGPT-owned; #60 Draft/ChatGPT-ow
 - Production runner/invocation Issue `#62`, global immutable security evidence Issue
   `#63` olarak açık ve ayrı insan kapılarıdır; PR `#64` bunları kapatmaz veya production
   aktivasyonu yetkilendirmez.
-- PR `#65` ChatGPT-BUSINESS sahipliğinde ve eski head
-  `b826eb7d57346c80513f7b44d2b873b4f673430c` üzerinde Draft/REQUEST_CHANGES
-  durumundadır. PR `#60` ChatGPT-CARI sahipliğinde eski head
+- PR `#65` için bu döngüye taşınan son incelenmiş/REQUEST_CHANGES head
+  `b826eb7d57346c80513f7b44d2b873b4f673430c` idi; bu SHA aktif head iddiası değildir.
+  Döngü yazılırken ChatGPT-BUSINESS hattında daha yeni remediation commitleri oluşmuş,
+  fakat bunlar için yeni exact-head review henüz tamamlanmamıştı. PR `#60` ChatGPT-CARI
+  sahipliğinde eski head
   `3f7eb0e974346fb04846f382bff7ca2891d7e678` üzerindedir ve güncel `main`in iki
   commit gerisinde olduğundan fresh sync, CI ve HANDOFF bekler.
 - `CARI-PERM-001 / Option A` ürün kararının `KARAR_SICILI.md/.csv` içine aktarılması
@@ -475,7 +477,7 @@ ACTIVE PRS: #64 Draft/Codex-owned; #36 Draft/ChatGPT-owned; #60 Draft/ChatGPT-ow
 
 ```text
 DONE: PR #64 merge; main 7e832d2; new-main CI 33251655476 + UI golden 33251655426 yeşil
-IN REVIEW: PR #65 ChatGPT-BUSINESS düzeltme head'i; PR #60 ChatGPT-CARI current-main sync head'i bekleniyor
+IN REVIEW: PR #65 için yeni remediation exact-head review; PR #60 ChatGPT-CARI current-main sync head'i bekleniyor
 BLOCKED: production reconciliation activation (#62); global security evidence (#63); W0 sıralı kapıları
 SAFE NEXT: PR #60 yeni exact head salt-okunur review; PR #65 düzeltilmiş exact head salt-okunur review
 OPEN DECISIONS: production runner/invocation; global security evidence modeli ve lifecycle
