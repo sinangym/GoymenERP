@@ -1,4 +1,4 @@
-# Göymen ERP Uçtan Uca Paylaşımlı Uygulama Planı v1.2
+# Göymen ERP Uçtan Uca Paylaşımlı Uygulama Planı v1.3
 
 ## Belge kimliği
 
@@ -7,7 +7,7 @@
 - İş politikası ve modül sahibi: `CHATGPT-BUSINESS`
 - Platform sözleşmesi ve altyapı sahibi: `CODEX-PLATFORM`
 - İlk plan tabanı: `main@fed32839a9e0b4258efa5980fddc2846aaf85c49`
-- Son doğrulanan main: `main@7e832d2b98a07428d46ead54a9d136b24c62203a`
+- Son doğrulanan main: `main@5a4f56bc1e05ca1ce7f030f4c9c253f46e104e9f`
 - Durum: Draft teslimat overlay'i; production davranışı veya kanonik görev statüsü değiştirmez
 
 ## 1. Bağlayıcı kaynaklar ve çalışma protokolü
@@ -38,15 +38,19 @@ En son açık ürün sahibi kararı
 
 StokERP kendi başına production formülü, veri modeli veya ekran davranışı yetkilendiremez. Bir donör kuralı ancak kabul edilmiş karar veya contract'a taşınıp golden testle korununca Göymen ERP kuralı olur.
 
-## 2. Planın konumu: overlay, supersede değil
+## 2. Planın konumu ve durum semantiği
 
 Bu plan `docs/backlog/task_manifest.json` üzerindeki `ERP-000A…ERP-000O` görevlerini değiştirmez.
 
 - Kanonik görev statüsü yalnız kendi bağlayıcı karar ve kabul akışıyla değişir.
 - Bu plan teslimat sırası, dikey dilim, sahiplik, WIP ve karşı review tanımlar.
 - `dor_status`, işin analiz ve sözleşme açısından hazırlanma düzeyidir.
-- `execution_status`, gerçek geliştirme ve merge iznidir.
-- `dor_status=ready` olan bir iş, dependency veya blocker açıksa `execution_status=blocked` kalır.
+- `execution_status`, gerçek geliştirme yaşam döngüsüdür.
+- `start_blocked_by`, işi başlatmayı yasaklayan çözülmemiş önkoşullardır.
+- `completion_gates`, geliştirme sürerken açık kalabilir; fakat `accepted`, `merged`, `uat_accepted` veya `released` durumuna geçişi engeller.
+- `dor_status=ready`, tek başına execution izni değildir.
+- `start_blocked_by` boş olan iş `in_progress` olabilir; açık `completion_gates` nedeniyle henüz kabul veya merge edilemez.
+- Eski ve anlamı belirsiz `blocked_by` alanı machine overlay'de yasaktır.
 - Bu belge veya machine overlay hiçbir görevi sessizce `done`, `accepted` veya `released` yapamaz.
 
 ## 3. Ana teslimat modeli
@@ -158,7 +162,7 @@ ERP-000F minimumu aşağıdakilerden önce zorunludur:
 - durable notification
 - retry, poison veya redrive gerektiren iş
 
-ERP-000F minimum blocker'ları:
+ERP-000F minimum başlangıç engelleri:
 
 ```text
 PR #10
@@ -174,9 +178,9 @@ OPEN-025
 Tek normatif sıra:
 
 ```text
-PR #64
-→ PR #68, eski PR #60'ın current-main taşıması
-→ PR #31
+PR #64 MERGED
+→ PR #68 MERGED
+→ PR #31 HUMAN MERGE GATE
 → Issue #53
 → PR #36
 → W1
@@ -184,73 +188,71 @@ PR #64
 
 Güncel durum:
 
-| Sıra | Kayıt | Sahip | Durum | Çıkış kapısı |
-|---:|---|---|---|---|
-| 1 | PR #64 | Codex | Merged | `main@7e832d2…` ve new-main CI |
-| 2 | PR #68 | ChatGPT | In review | Fresh CI, real SQL, Codex review, insan security merge |
-| 3 | PR #31 | Codex | Queued | #68 sonrası current-main sync, full CI, insan security merge |
-| 4 | Issue #53 | ChatGPT | Queued | #31 sonrası küçük production PR, real SQL, Codex review |
-| 5 | PR #36 | ChatGPT | Blocked | #53 sonrası clean sync, tüm Cari Core acceptance |
-| 6 | W1 | Ortak | Blocked | #36 merge, main green, açık Counterparty P0/P1 yok |
+| Sıra | Kayıt | Sahip | Execution | Başlangıç engeli | Tamamlanma kapısı |
+|---:|---|---|---|---|---|
+| 1 | PR #64 | Codex | Merged | Yok | Kapalı; `main@7e832d2…` |
+| 2 | PR #68 | ChatGPT | Merged | Yok | Kapalı; `main@5a4f56b…`, new-main CI yeşil |
+| 3 | PR #31 | Codex | In review | Yok | Exact head `4c585488…`; full CI ve ChatGPT review yeşil; insan shared-CI/security merge kararı |
+| 4 | Issue #53 | ChatGPT | Blocked | PR #31 merge ve new-main CI | Real SQL, Codex review, insan security merge |
+| 5 | PR #36 | ChatGPT | Blocked | Issue #53 merge ve new-main CI | Clean current-main sync, bütün Cari Core acceptance, Codex review, insan merge |
+| 6 | W1 | Ortak | Blocked | PR #36 ve W1 kanonik platform gate'leri | Uçtan uca W1 çıkışı ve UAT |
 
-Dalga 0 tamamlanmadan W1 production geliştirmesi başlamaz.
+Dalga 0'ın kendi execution durumu `in_progress`tir: PR #64 ve PR #68 tamamlanmıştır; PR #31, Issue #53 ve PR #36 ise Dalga 0'ın kalan tamamlanma kapılarıdır.
 
 ## 8. Kanonik platform gate eşlemesi
 
 ### ERP-000F: Outbox ve Inbox
 
 - Readiness kaynağı: PR #10
-- Blocker'lar: ADR-006, OPEN-022…025
-- Execution: blocker'lar kapanmadan blocked
+- Başlangıç engelleri: ADR-006, OPEN-022…025
+- Bu engeller kapanmadan durable async implementation başlamaz.
 
 ### ERP-000G: Belge Kasası
 
 - Readiness kaynağı: PR #11
-- Blocker'lar: ADR-005, OPEN-026…029
-- Execution: blocker'lar kapanmadan blocked
+- Başlangıç engelleri: ADR-005, OPEN-026…029
+- Bu engeller kapanmadan DOC-01 implementation başlamaz.
 
 ### ERP-000H: Türkçe PDF ve adlandırma
 
 - Readiness kaynağı: PR #13
-- Blocker'lar: kabul edilmiş ERP-000G, OPEN-019, ERP-000H-DECISION-PACK
-- Execution: blocker'lar kapanmadan blocked
+- Başlangıç engelleri: kabul edilmiş ERP-000G, OPEN-019, ERP-000H-DECISION-PACK
 
 ### ERP-000I: Global Arama
 
 - Readiness kaynağı: PR #12
-- Blocker'lar: ADR-007, OPEN-015, ERP-000I-SEARCH-CONTRACT, ERP-000M ve ERP-000L
-- Async index seçilirse ERP-000F de zorunlu
+- Başlangıç engelleri: ADR-007, OPEN-015, ERP-000I-SEARCH-CONTRACT, ERP-000M ve ERP-000L
+- Async index seçilirse ERP-000F de zorunludur.
 
 ### ERP-000J: AI Gateway
 
 - Readiness kaynağı: PR #14
-- Blocker'lar: ADR-008, OPEN-020, ERP-000J-AI-CONTRACT, uygun ERP-000L sınırı
+- Başlangıç engelleri: ADR-008, OPEN-020, ERP-000J-AI-CONTRACT, uygun ERP-000L sınırı
 
 ### ERP-000K: Ortak React kabuğu
 
 - Readiness kaynağı: PR #18
-- Blocker'lar: W0, ERP-000K-SHELL-CONTRACT ve PR #18'deki A/B/C/D/E/L/O dependency gerçeği
-- Execution: bu gate'ler kapanmadan blocked
+- Başlangıç engelleri: W0, ERP-000K-SHELL-CONTRACT ve PR #18'deki A/B/C/D/E/L/O dependency gerçeği
 
 ### ERP-000M: SQL Server PoC
 
-- Blocker'lar: ADR-003, ADR-010, OPEN-014, OPEN-015, OPEN-017, ERP-000M-SQL-POC-CONTRACT
+- Başlangıç engelleri: ADR-003, ADR-010, OPEN-014, OPEN-015, OPEN-017, ERP-000M-SQL-POC-CONTRACT
 
 ### ERP-000O: CI/CD ve delivery
 
 - Readiness kaynağı: PR #19
-- Blocker'lar: ERP-000M, ADR-010, OPEN-014, ERP-000O-DELIVERY-CONTRACT
-- Production activation için ayrıca ilgili N/L ve insan kapıları korunur
+- Başlangıç engelleri: ERP-000M, ADR-010, OPEN-014, ERP-000O-DELIVERY-CONTRACT
+- Production activation için ayrıca ilgili N/L ve insan kapıları korunur.
 
 ### ERP-000N ve ERP-000L
 
 - Recovery readiness: PR #16
 - Observability readiness: PR #17
-- Kanonik dependency ve blocker'lar kendi readiness kayıtlarından okunur
+- Kanonik başlangıç engelleri ve tamamlanma kapıları kendi readiness kayıtlarından okunur.
 
 ## 9. Raporlama gate'i ve PR #2
 
-`RPT-01` production implementation'ı PR #2'deki yedi blocker kapanmadan başlayamaz:
+`RPT-01` production implementation'ı PR #2'deki yedi başlangıç engeli kapanmadan başlayamaz:
 
 1. PR #2 current main ile content ve semantic conflictlerini çözmeli.
 2. Mevcut acceptance kanıtlarını geriye götürmemeli; AT-071…078 current matrise append edilmeli.
@@ -260,7 +262,7 @@ Dalga 0 tamamlanmadan W1 production geliştirmesi başlamaz.
 6. ERP-RPT-001 ile ERP-RPT-003 acceptance sahipliği ve AT-077 döngüsü çözülmeli.
 7. R-06 ve R-07, UI kataloğu/validator veya açık backlog statüsüyle uzlaştırılmalı.
 
-Bunlara ek olarak current CI ve UI validator kanıtı gerekir.
+Current CI, UI validator ve insan review ise RPT-01 kabul/merge tamamlanma kapılarıdır.
 
 ## 10. Dalga 1: ortak kabuk, Cari UI, Ürün ve minimum belge
 
@@ -270,7 +272,7 @@ Bunlara ek olarak current CI ve UI validator kanıtı gerekir.
 - Platform contract owner: Codex
 - UX ve iş akışı contract owner: ChatGPT
 - İlk sonuç: login, yetkili şirket seçimi, dashboard, Çalışma Merkezi, güvenli route shell
-- Execution: W0 ve ERP-000K gate'leri kapanmadan blocked
+- Başlangıç: W0 ve ERP-000K gate'leri kapanmadan başlamaz.
 
 ### CARI-UI-01
 
@@ -296,7 +298,7 @@ Bunlara ek olarak current CI ve UI validator kanıtı gerekir.
 - Kanonik tasks: ERP-000G ve ERP-000H
 - Teknik contract owner: Codex
 - Belge türü ve bağlantı politikası owner: ChatGPT
-- Execution: PR #11 ve #13 blocker'ları kapanmadan blocked
+- Başlangıç: PR #11 ve #13 başlangıç engelleri kapanmadan başlamaz.
 
 W1 çıkışı:
 
@@ -419,7 +421,7 @@ Muhasebe:
 - Dönem kilidi
 - Vergi ve resmi muhasebe entegrasyon sınırı
 
-Para ve muhasebe D2 kararları ve insan merge kapısı gerektirir.
+`D2-FINANCE-POLICIES` ve `D2-ACCOUNTING-TAX` başlangıç engelleri machine registry'de kaynak karar kimlikleriyle tanımlıdır. Para ve muhasebe değişiklikleri ayrıca insan merge kapısı gerektirir.
 
 ## 16. Dalga 7: Rapor, Arama, AI ve operasyon
 
@@ -435,7 +437,7 @@ ChatGPT işleri:
 - Yönetim özeti
 - Belge ve iletişim şablonları
 
-Her platform işi kendi kanonik readiness ve blocker kaydını kapatır. Bu plan statüyü kendi başına değiştirmez.
+Her platform işi kendi kanonik readiness ve başlangıç engellerini kapatır. Bu plan statüyü kendi başına değiştirmez.
 
 ## 17. Dalga 8: Migrasyon, UAT ve cutover
 
@@ -451,7 +453,7 @@ Sıra:
 8. Açık kalem, banka/kasa, çek/senet, kredi ve teminat
 9. Tarihsel belge ve rapor
 
-En az iki prova, final delta, rollback ve rol bazlı UAT zorunludur. Uzun süreli çift yazma yoktur.
+En az iki prova, final delta, rollback ve rol bazlı UAT zorunludur. Bunlar geliştirme başlangıç engeli değil, cutover kabulünün tamamlanma kapılarıdır. Uzun süreli çift yazma yoktur.
 
 ## 18. Dalga 9: ertelenmiş genişleme
 
@@ -476,7 +478,8 @@ Bir dilim başlamadan:
 - Source-of-truth modülü
 - Karar Sicili ve Master referansları
 - Canonical task IDs ve readiness kaynakları
-- Açık blocker ve D2 kararlar
+- `start_blocked_by` ve `completion_gates`
+- Açık D2 kararlar
 - Veri modeli ve durum geçişleri
 - Miktar, para, birim, kur, formül ve yuvarlama
 - Permission, CompanyContext, approval ve SoD
@@ -498,6 +501,7 @@ Bir dilim başlamadan:
 - P0/P1 yoktur.
 - Exact-head karşı review vardır.
 - Migration ve rollback etkisi kaydedilmiştir.
+- Bütün `completion_gates` kapanmıştır.
 - Gerekli D2 kararlar kabul edilmiştir.
 - Async iddia varsa ERP-000F minimumu kabul edilmiştir.
 
@@ -515,7 +519,8 @@ HEAD
 USER OUTCOME
 CANONICAL TASK IDS
 READINESS SOURCES
-BLOCKED BY
+START BLOCKED BY
+COMPLETION GATES
 DOR STATUS
 EXECUTION STATUS
 EVENT DELIVERY MODE
@@ -548,20 +553,18 @@ Auto-merge yoktur.
 
 ChatGPT:
 
-1. PR #65 supplemental P1 düzeltmeleri
-2. PR #68 current-main hotfix
-3. PR #31 read-only iş etkisi incelemesi
-4. Issue #53
-5. PR #36
-6. W1 gate açılırsa Cari UI ve Product Core
+1. PR #65 canlı gerçek ve blocker-semantik remediation
+2. PR #31 exact-head shared-CI/security review — tamamlandı
+3. PR #31 insan merge ve new-main CI sonrasında Issue #53
+4. Issue #53 merge sonrasında PR #36
+5. W1 gate açılırsa Cari UI ve Product Core
 
 Codex:
 
-1. PR #65 yeni exact head re-review
-2. PR #68 exact-head review
-3. PR #31 current-main sync ve full CI
-4. Issue #53 ve PR #36 read-only review
-5. W0 ve ERP-000K gate açılınca common shell
+1. PR #31 insan shared-CI/security merge kapısı ve merge sonrası new-main CI
+2. PR #65 yeni exact-head read-only re-review
+3. Issue #53 ve PR #36 read-only review
+4. W0 ve ERP-000K başlangıç engelleri kapanınca common shell
 
 ## 23. Nihai başarı
 
