@@ -59,12 +59,25 @@
     {
       "id": "ERP-000F",
       "title": "Outbox/inbox",
-      "status": "ready",
+      "status": "blocked",
       "depends_on": [
-        "ERP-000E"
+        "ERP-000A",
+        "ERP-000B",
+        "ERP-000C",
+        "ERP-000D",
+        "ERP-000E",
+        "ERP-000M",
+        "ERP-000O"
       ],
-      "scope": "Transactional outbox, consumer inbox/dedup, retry/backoff.",
-      "acceptance": "DB commit ile mesaj kaybı/kopyası test edilir.",
+      "scope": "Transport-agnostic transactional outbox; at-least-once dispatcher; CompanyId-scoped inbox/dedup; server-authoritative causation; revocable workload identity; uncertain-send için kör retry yapmayan güven sınırı.",
+      "acceptance": "Bütün depends_on görevleri kabul edilip main'e alınır; fiziksel ayrıntılı ADR-006 ve OPEN-022/023/024/025 kapanır; task-local ERP-000F-AC-001..018 senaryoları aynı fiziksel SQL transaction, gerçek SQL Server race/constraint, tenant izolasyonu, workload revocation, causation, crash/duplicate/unknown-send, migration ve telemetry kanıtlarıyla geçer. OPEN-016 kapanmadan gerçek transport adapter production'a açılmaz.",
+      "blocked_by": [
+        "ADR-006",
+        "OPEN-022",
+        "OPEN-023",
+        "OPEN-024",
+        "OPEN-025"
+      ],
       "priority": "P0"
     },
     {

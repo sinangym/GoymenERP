@@ -723,3 +723,56 @@ OPEN DECISIONS: physical ADR-008; OPEN-020; ERP-000J-AI-CONTRACT; capability/per
 MAIN SHA: d5bcd5b30ee79885cf64b3c4c638ddeb91426d20
 ACTIVE PRS: #14 Draft; #2 Draft/blocked; identity production gates #62/#63 open; Cari-owned PR #77/#79/#65 read-only gates
 ```
+
+## 2026-08-30 — Döngü 19
+
+- ERP-000J readiness merge'i sonrasındaki doğrulanmış
+  `main@83197c50f515db959638fadd7cc11ad6eb7a4fc8` tabanından, eski PR #10 commit'i rebase,
+  cherry-pick veya kopya truth olarak taşınmadan temiz ERP-000F readiness rebuild'i
+  hazırlanmıştır. Eski PR #10 yalnız read-only analiz kaynağıdır.
+- Manifestte yalnız ERP-000F satırı değişmiştir: durum `blocked`, direct bağımlılıklar
+  `A/B/C/D/E/M/O`, blocker'lar `ADR-006` ve `OPEN-022..025`tir. Manifest root metadata ve
+  F dışındaki on dört task current-main ile exact kalmıştır; birleşik DAG 15 task/55 edge
+  ve döngüsüzdür.
+- ADR kayıt listesindeki yüksek seviye ADR-006 `Kabul` yönü sessizce düşürülmemiştir.
+  Fiziksel `ADR-006-transactional-outbox-inbox.md`, bu kabul edilmiş yön ile exact-SHA
+  review bekleyen ayrıntılı contract'ı ayırır. Implementation, migration, worker, fixture,
+  adapter ve pilot event `NO-GO / BLOCKED` kalır.
+- Contract; server-authoritative root/downstream causation, aynı fiziksel SQL transaction
+  seam'i, revocable workload principal, trusted tenant discovery, revalidation/revocation
+  yarışı, trusted server UTC + injectable test clock, uncertain-send/no-blind-retry,
+  source authentication öncesi tenant quarantine/audit yasağı ve 1:N/N:1 audit referansı
+  sınırlarını açıkça bağlar. Genel durable security-event kanalı kabul edilmiş gibi
+  gösterilmez; doğrulanmamış inbound source için yalnız payloadsız/redacted telemetry
+  mümkündür.
+- `OPEN-022..025` kanonik olarak `ACIK_KARARLAR.md` içine eklenmiştir. Retention, ordering,
+  workload/dispatcher policy ve pilot event seçilmemiştir. Provider, package, transport,
+  topoloji, event, pilot, eşik, süre, retry veya retention değeri uydurulmamıştır.
+- Merkezi `ACCEPTANCE_MATRIX.csv` ve PR #2 sahipliği değiştirilmemiştir. Ayrıntılı gelecek
+  kabul planı task-local `ERP-000F-AC-001..018` kimlikleriyle `DRAFT / UNIMPLEMENTED`
+  durumundadır; open kapılar kapanmadan feature/test substrate kodu yazılmaz.
+- Yerel task-manifest validator 15 task/55 edge için ve negatif testleri 21/21; UI golden
+  validator 72 kaynak/159 ekran için ve negatif testleri 24/24; bootstrap integrity 48
+  başarılı/1 Windows capability skip ile geçmiştir. Custom parity kontrolü 18 benzersiz
+  task-local acceptance, dört benzersiz OPEN, F-only manifest delta, root/non-F exact parity
+  ve beklenmeyen dosya bulunmadığını doğrulamıştır; `git diff --check` temizdir.
+- Frontend `npm ci` 56 package kurmuş, `npm audit` 0 vulnerability, lint ve Vitest 2/2
+  başarılıdır. Production frontend build uzun sessiz çalışmadan sonra güvenli biçimde
+  durdurulmuş ve başarı sayılmamıştır. Backend tool/package restore tamamlanmış, Release
+  build bazı projeleri üretirken uzun sessiz çalışmadan sonra güvenli biçimde durdurulmuş;
+  tam build, .NET test, vulnerability, migration script, gerçek SQL ve container kanıtı bu
+  local turda tamamlanmış sayılmaz. Fresh exact-head GitHub standard CI + gerçek SQL +
+  container ve UI golden merge kapısıdır; eski-base veya post-main CI yeniden kullanılamaz.
+- Değişiklik yalnız altı planlı docs dosyasıyla sınırlıdır. Source, test, migration,
+  workflow, package, Docker, infra, global acceptance matrisi, ADR register, ERP-000E truth
+  dosyaları, `docs/ui` ve ChatGPT-owned Cari alanları değiştirilmemiştir.
+
+```text
+DONE: ERP-000F current-main clean readiness rebuild; F-only manifest truth; physical ADR/contract; OPEN-022..025; task-local AC-001..018; local structural/UI/bootstrap/frontend partial validation
+IN REVIEW: local codex/erp-000f-readiness-current-main commit; push/PR yok; fresh exact-head CI/UI ve bağımsız security/architecture review bekleniyor
+BLOCKED: ERP-000F/M/O/N/L/J/K implementation; real transport/pilot; production activation; PR #2; Identity production gates; Cari-owned gates
+SAFE NEXT: commit exact six-file diff; ayrı yetkili adımda PR #10'u clean exact head ile güncelle; fresh standard CI/UI/real-SQL/container; independent exact-SHA review
+OPEN DECISIONS: OPEN-022/023/024/025; physical detailed ADR-006 acceptance; transaction/migration edge; workload identity; canonicalization recipe; OPEN-016 real adapter
+MAIN SHA: 83197c50f515db959638fadd7cc11ad6eb7a4fc8
+ACTIVE PRS: #10 historical Draft/read-only until authorized update; #2 Draft/blocked; Cari-owned PRs read-only
+```
