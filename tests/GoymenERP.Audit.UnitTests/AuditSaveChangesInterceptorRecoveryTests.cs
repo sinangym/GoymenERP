@@ -11,16 +11,16 @@ namespace GoymenERP.Audit.UnitTests;
 public sealed class AuditSaveChangesInterceptorRecoveryTests
 {
     [Fact]
-    public async Task MismatchedCollectorDraft_IsClearedAndSameScopeRetryPersistsOnce()
+    public async Task TrackedAddedTenantMismatch_IsRejectedBeforePersistence()
     {
+        var companyA = Guid.NewGuid();
         var companyContext = new CompanyContext();
-        companyContext.Set(CompanyA);
+        companyContext.Set(companyA);
         var collector = new AuditEventCollector();
-        var interceptor = new AuditSaveChangesInterceptor(collector, companyContext);
-        await using var dbContext = CreateContext(interceptor);
-        var probe = new ProbeEntity(Guid.NewGuid(), "mismatch-retry");
-        dbContext.Probes.Add(probe);
-        collector.Enqueue(CreateDraft(CompanyB, "audit-mismatch"));
+        await using var dbContext = CreateProbeContext(companyContext, collector);
+        var auditEvent = AuditEventFactory.Create(
+            CreateDraft(Guid.NewGuid(), "tracked-added-mismatch"));
+        dbContext.AuditEvents.Add(auditEvent);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => dbContext.SaveChangesAsync());
@@ -28,28 +28,19 @@ public sealed class AuditSaveChangesInterceptorRecoveryTests
         Assert.Equal(
             "Audit kaydı aktif şirket bağlamıyla eşleşmelidir.",
             exception.Message);
-        Assert.Empty(dbContext.ChangeTracker.Entries<AuditEvent>());
-        Assert.Equal(EntityState.Added, dbContext.Entry(probe).State);
-
-        collector.Enqueue(CreateDraft(CompanyA, "audit-retry"));
-        await dbContext.SaveChangesAsync();
-
-        Assert.Equal(1, await dbContext.Probes.CountAsync());
-        var persistedAudit = Assert.Single(await dbContext.AuditEvents.ToListAsync());
-        Assert.Equal(CompanyA, persistedAudit.CompanyId);
-        Assert.Equal("audit-retry", persistedAudit.CorrelationId);
+        Assert.Equal(EntityState.Added, dbContext.Entry(auditEvent).State);
+        Assert.Empty(await dbContext.AuditEvents.AsNoTracking().ToListAsync());
     }
 
     [Fact]
-    public async Task UnresolvedContext_IsClearedAndRetryAfterResolutionPersistsOnce()
+    public async Task TrackedAddedWithoutResolvedCompany_IsRejectedBeforePersistence()
     {
         var companyContext = new CompanyContext();
         var collector = new AuditEventCollector();
-        var interceptor = new AuditSaveChangesInterceptor(collector, companyContext);
-        await using var dbContext = CreateContext(interceptor);
-        var probe = new ProbeEntity(Guid.NewGuid(), "unresolved-retry");
-        dbContext.Probes.Add(probe);
-        collector.Enqueue(CreateDraft(CompanyA, "audit-unresolved"));
+        await using var dbContext = CreateProbeContext(companyContext, collector);
+        var auditEvent = AuditEventFactory.Create(
+            CreateDraft(Guid.NewGuid(), "tracked-added-unresolved"));
+        dbContext.AuditEvents.Add(auditEvent);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => dbContext.SaveChangesAsync());
@@ -57,59 +48,56 @@ public sealed class AuditSaveChangesInterceptorRecoveryTests
         Assert.Equal(
             "Audit kaydı yazmak için aktif şirket bağlamı zorunludur.",
             exception.Message);
-        Assert.Empty(dbContext.ChangeTracker.Entries<AuditEvent>());
-        Assert.Equal(EntityState.Added, dbContext.Entry(probe).State);
-
-        companyContext.Set(CompanyA);
-        collector.Enqueue(CreateDraft(CompanyA, "audit-resolved-retry"));
-        await dbContext.SaveChangesAsync();
-
-        Assert.Equal(1, await dbContext.Probes.CountAsync());
-        var persistedAudit = Assert.Single(await dbContext.AuditEvents.ToListAsync());
-        Assert.Equal("audit-resolved-retry", persistedAudit.CorrelationId);
+        Assert.Equal(EntityState.Added, dbContext.Entry(auditEvent).State);
+        Assert.Empty(await dbContext.AuditEvents.AsNoTracking().ToListAsync());
     }
 
     [Fact]
-    public async Task FactoryFailure_DetachesPartiallyAttachedEventsAndPreservesBusinessRetry()
+    public async Task TrackedModifiedAndDeletedAuditEvents_AreRejected()
     {
+        var companyId = Guid.NewGuid();
         var companyContext = new CompanyContext();
-        companyContext.Set(CompanyA);
+        companyContext.Set(companyId);
         var collector = new AuditEventCollector();
-        var interceptor = new AuditSaveChangesInterceptor(collector, companyContext);
-        await using var dbContext = CreateContext(interceptor);
-        var probe = new ProbeEntity(Guid.NewGuid(), "factory-retry");
+        await using var dbContext = CreateProbeContext(companyContext, collector);
+        var auditEvent = AuditEventFactory.Create(
+            CreateDraft(companyId, "tracked-immutable"));
+        dbContext.AuditEvents.Add(auditEvent);
+        await dbContext.SaveChangesAsync();
+
+        var reason = dbContext.Entry(auditEvent).Property(nameof(AuditEvent.Reason));
+        reason.CurrentValue = "Değiştirilemez audit nedeni";
+        reason.IsModified = true;
+
+        var modifiedException = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => dbContext.SaveChangesAsync());
+
+        Assert.Equal(
+            "Audit kayıtları değiştirilemez veya silinemez.",
+            modifiedException.Message);
+
+        dbContext.Entry(auditEvent).State = EntityState.Unchanged;
+        dbContext.Remove(auditEvent);
+
+        var deletedException = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => dbContext.SaveChangesAsync());
+
+        Assert.Equal(
+            "Audit kayıtları değiştirilemez veya silinemez.",
+            deletedException.Message);
+    }
+
+    [Fact]
+    public async Task CollectorTenantMismatch_CleansAuditStateAndAllowsSameScopeRetry()
+    {
+        var companyA = Guid.NewGuid();
+        var companyContext = new CompanyContext();
+        companyContext.Set(companyA);
+        var collector = new AuditEventCollector();
+        await using var dbContext = CreateProbeContext(companyContext, collector);
+        var probe = new ProbeEntity(Guid.NewGuid(), "tenant-mismatch");
         dbContext.Probes.Add(probe);
-        collector.Enqueue(CreateDraft(CompanyA, "audit-valid-before-failure"));
-        collector.Enqueue(
-            CreateDraft(CompanyA, "audit-invalid-json") with
-            {
-                BeforeJson = "not-json",
-            });
-
-        await Assert.ThrowsAsync<ArgumentException>(() => dbContext.SaveChangesAsync());
-
-        Assert.Empty(dbContext.ChangeTracker.Entries<AuditEvent>());
-        Assert.Equal(EntityState.Added, dbContext.Entry(probe).State);
-
-        collector.Enqueue(CreateDraft(CompanyA, "audit-after-factory-retry"));
-        await dbContext.SaveChangesAsync();
-
-        Assert.Equal(1, await dbContext.Probes.CountAsync());
-        var persistedAudit = Assert.Single(await dbContext.AuditEvents.ToListAsync());
-        Assert.Equal("audit-after-factory-retry", persistedAudit.CorrelationId);
-    }
-
-    [Fact]
-    public async Task DirectAddedAuditEvent_WithMismatchedCompany_IsRejectedBeforeWrite()
-    {
-        var companyContext = new CompanyContext();
-        companyContext.Set(CompanyA);
-        var collector = new AuditEventCollector();
-        var interceptor = new AuditSaveChangesInterceptor(collector, companyContext);
-        await using var dbContext = CreateContext(interceptor);
-        var mismatched = AuditEventFactory.Create(
-            CreateDraft(CompanyB, "audit-direct-mismatch"));
-        dbContext.AuditEvents.Add(mismatched);
+        collector.Enqueue(CreateDraft(Guid.NewGuid(), "mismatch"));
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => dbContext.SaveChangesAsync());
@@ -117,36 +105,116 @@ public sealed class AuditSaveChangesInterceptorRecoveryTests
         Assert.Equal(
             "Audit kaydı aktif şirket bağlamıyla eşleşmelidir.",
             exception.Message);
-        Assert.Equal(EntityState.Added, dbContext.Entry(mismatched).State);
-        Assert.Empty(await dbContext.AuditEvents.AsNoTracking().ToListAsync());
+        Assert.Empty(collector.Pending);
+        Assert.Empty(dbContext.ChangeTracker.Entries<AuditEvent>());
+        Assert.Equal(EntityState.Added, dbContext.Entry(probe).State);
+
+        collector.Enqueue(CreateDraft(companyA, "valid-retry"));
+        await dbContext.SaveChangesAsync();
+
+        Assert.Empty(collector.Pending);
+        Assert.Equal(EntityState.Unchanged, dbContext.Entry(probe).State);
+        Assert.Single(await dbContext.AuditEvents.ToListAsync());
+        Assert.Single(await dbContext.Probes.ToListAsync());
     }
 
-    private static ProbeDbContext CreateContext(AuditSaveChangesInterceptor interceptor)
+    [Fact]
+    public void CollectorTenantMismatch_SynchronousSaveAlsoCleansAuditState()
     {
-        var options = new DbContextOptionsBuilder<ProbeDbContext>()
-            .UseInMemoryDatabase($"audit-interceptor-recovery-{Guid.NewGuid():N}")
-            .AddInterceptors(interceptor)
-            .Options;
-        return new ProbeDbContext(options);
+        var companyA = Guid.NewGuid();
+        var companyContext = new CompanyContext();
+        companyContext.Set(companyA);
+        var collector = new AuditEventCollector();
+        using var dbContext = CreateProbeContext(companyContext, collector);
+        collector.Enqueue(CreateDraft(Guid.NewGuid(), "sync-mismatch"));
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => dbContext.SaveChanges());
+
+        Assert.Equal(
+            "Audit kaydı aktif şirket bağlamıyla eşleşmelidir.",
+            exception.Message);
+        Assert.Empty(collector.Pending);
+        Assert.Empty(dbContext.ChangeTracker.Entries<AuditEvent>());
     }
 
-    private static AuditEventDraft CreateDraft(Guid companyId, string correlationId)
+    [Fact]
+    public async Task UnresolvedCompany_CleansAuditStateAndAllowsSameScopeRetry()
+    {
+        var companyId = Guid.NewGuid();
+        var companyContext = new CompanyContext();
+        var collector = new AuditEventCollector();
+        await using var dbContext = CreateProbeContext(companyContext, collector);
+        var probe = new ProbeEntity(Guid.NewGuid(), "unresolved-company");
+        dbContext.Probes.Add(probe);
+        collector.Enqueue(CreateDraft(companyId, "unresolved"));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => dbContext.SaveChangesAsync());
+
+        Assert.Equal(
+            "Audit kaydı yazmak için aktif şirket bağlamı zorunludur.",
+            exception.Message);
+        Assert.Empty(collector.Pending);
+        Assert.Empty(dbContext.ChangeTracker.Entries<AuditEvent>());
+        Assert.Equal(EntityState.Added, dbContext.Entry(probe).State);
+
+        companyContext.Set(companyId);
+        collector.Enqueue(CreateDraft(companyId, "resolved-retry"));
+        await dbContext.SaveChangesAsync();
+
+        Assert.Empty(collector.Pending);
+        Assert.Single(await dbContext.AuditEvents.ToListAsync());
+        Assert.Single(await dbContext.Probes.ToListAsync());
+    }
+
+    [Fact]
+    public async Task BatchFactoryFailure_AttachesNoEventsAndAllowsRetry()
+    {
+        var companyId = Guid.NewGuid();
+        var companyContext = new CompanyContext();
+        companyContext.Set(companyId);
+        var collector = new AuditEventCollector();
+        await using var dbContext = CreateProbeContext(companyContext, collector);
+        var probe = new ProbeEntity(Guid.NewGuid(), "partial-factory-failure");
+        dbContext.Probes.Add(probe);
+        collector.Enqueue(CreateDraft(companyId, "valid-before-failure"));
+        collector.Enqueue(CreateDraft(companyId, "invalid-json", beforeJson: "not-json"));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => dbContext.SaveChangesAsync());
+
+        Assert.Empty(collector.Pending);
+        Assert.Empty(dbContext.ChangeTracker.Entries<AuditEvent>());
+        Assert.Equal(EntityState.Added, dbContext.Entry(probe).State);
+
+        collector.Enqueue(CreateDraft(companyId, "valid-after-failure"));
+        await dbContext.SaveChangesAsync();
+
+        var auditEvent = Assert.Single(await dbContext.AuditEvents.ToListAsync());
+        Assert.Equal("valid-after-failure", auditEvent.CorrelationId);
+        Assert.Single(await dbContext.Probes.ToListAsync());
+    }
+
+    private static AuditEventDraft CreateDraft(
+        Guid companyId,
+        string correlationId,
+        string beforeJson = "{}")
     {
         return new AuditEventDraft(
             companyId,
-            "audit.interceptor-recovery.probe.v1",
-            "AuditInterceptorRecoveryProbe",
-            Guid.NewGuid().ToString("N"),
-            "Probe",
+            "test.event.v1",
+            "Test.Entity",
+            Guid.NewGuid().ToString("D"),
+            "Create",
             null,
-            null,
+            1,
             AuditActorTypes.System,
-            "audit-interceptor-recovery-test",
-            "audit.events.read",
-            ["SYSTEM_ADMINISTRATOR"],
+            "audit-lifecycle-test",
+            "test.permission",
+            ["TEST_ROLE"],
+            beforeJson,
             "{}",
-            "{}",
-            "Audit interceptor recovery unit acceptance",
+            "Audit lifecycle birim testi",
             null,
             AuditAiInvolvement.None,
             null,
@@ -155,26 +223,37 @@ public sealed class AuditSaveChangesInterceptorRecoveryTests
             null,
             correlationId,
             null,
-            $"idem-{correlationId}");
+            $"idempotency-{correlationId}");
     }
 
-    private static readonly Guid CompanyA = Guid.Parse(
-        "10000000-0000-0000-0000-000000000001");
+    private static AuditProbeDbContext CreateProbeContext(
+        ICompanyContext companyContext,
+        AuditEventCollector collector)
+    {
+        var interceptor = new AuditSaveChangesInterceptor(collector, companyContext);
+        var options = new DbContextOptionsBuilder<AuditProbeDbContext>()
+            .UseInMemoryDatabase($"audit-lifecycle-{Guid.NewGuid():N}")
+            .AddInterceptors(interceptor)
+            .Options;
+        return new AuditProbeDbContext(options);
+    }
 
-    private static readonly Guid CompanyB = Guid.Parse(
-        "10000000-0000-0000-0000-000000000002");
-
-    private sealed class ProbeDbContext(DbContextOptions<ProbeDbContext> options)
+    private sealed class AuditProbeDbContext(
+        DbContextOptions<AuditProbeDbContext> options)
         : DbContext(options)
     {
-        public DbSet<ProbeEntity> Probes => Set<ProbeEntity>();
-
         public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+
+        public DbSet<ProbeEntity> Probes => Set<ProbeEntity>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.Entity<ProbeEntity>().HasKey(x => x.Id);
-            modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
+            modelBuilder.ConfigureAuditEvent(excludeFromMigrations: false);
+            modelBuilder.Entity<ProbeEntity>(entity =>
+            {
+                entity.HasKey(x => x.Id);
+                entity.Property(x => x.Name).HasMaxLength(100).IsRequired();
+            });
         }
     }
 
