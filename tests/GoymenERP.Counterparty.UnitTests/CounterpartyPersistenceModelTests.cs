@@ -26,7 +26,7 @@ public sealed class CounterpartyPersistenceModelTests
         Assert.Equal("CompanyPartyAccounts", accountEntity.GetTableName());
         Assert.Equal("audit", auditEntity!.GetSchema());
         Assert.Equal("AuditEvents", auditEntity.GetTableName());
-        Assert.NotNull(auditEntity.GetQueryFilter());
+        Assert.NotEmpty(auditEntity.GetDeclaredQueryFilters());
 
         Assert.Contains(
             partyEntity.GetIndexes(),
