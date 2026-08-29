@@ -566,3 +566,51 @@ OPEN DECISIONS: physical ADR-003/005/010; OPEN-014/015/017/018; ERP-000N-RECOVER
 MAIN SHA: 434b83ce49f02a2034c23c75690b791c38425874
 ACTIVE PRS: #16 Draft; #2 Draft/blocked; identity production gates #62/#63 open
 ```
+
+## 2026-08-29 21:11 +03:00 — Döngü 16
+
+- ERP-000N readiness PR #16 delege exact-SHA review sonrasında squash merge edilmiştir.
+  Bu döngünün doğrulanmış temiz tabanı
+  `9d884b789bc20442686567e50de243feb6496d42` commit'idir. Merge sonrası standart CI
+  `33267250706` backend, frontend, gerçek SQL Server ve container işlerinde; UI golden
+  `33267250672` kendi kontrolünde tamamen yeşildir. Bu baseline kanıtı ERP-000L
+  exact-head kabul kanıtı olarak yeniden kullanılmaz.
+- ERP-000L readiness eski branch commit/conflictleri taşınmadan güncel `main`den ayrı
+  clean worktree/branch üzerinde yeniden üretilmiştir. Manifest root metadata'sı ile
+  ERP-000L dışındaki on dört task objesi current-main ile exact kalmış; yalnız L satırı
+  `blocked`, direct bağımlılıkları A/B/C/D/E/F/M/N ve blocker'ları OPEN-014/015/017 ile
+  task-local `ERP-000L-DECISION-PACK` yapılmıştır.
+- ERP-000E=`done`, ERP-000M/O/N=`blocked` gerçekleri korunmuştur. N'nin direct
+  A/B/C/D/E/F/G/M/O bağımlılıklarıyla birleşik DAG 15 task / 38 edge ve döngüsüzdür;
+  readiness yönü `M → O → N → L`, ardından bağımsız `J/K` olarak kalır. Readiness
+  merge'leri ilgili implementation veya production kabulü değildir.
+- Current source envanterinde correlation middleware invalid raw header'ları persistent
+  etkiden önce reddeder; bare anonymous `/health/live` dışında dependency/startup/
+  readiness probe yoktur; merkezî metric/trace pipeline yoktur. Structured logging'de
+  Organization için bir, Counterparty için iki çağrı raw CompanyId, actor ve resource ID
+  taşır. Bunlar redaction/PII-retention boşluğu olarak kaydedilmiş, production kodu bu
+  docs-only dalda değiştirilmemiştir.
+- ERP-000D company-scoped transactional business audit'i korunur. Reddedilen/yetkisiz
+  denemeler için kabul edilmiş genel durable security-event channel yoktur; Issue #63
+  yalnız Identity/control-plane evidence için DRAFT/NO-GO'dur ve L'nin genel kanal
+  sözleşmesi sayılmaz. SY-07 referansı `DECISION_ONLY_REFERENCE_MISSING` kalır.
+- Yerel task-manifest validator 15 task/38 edge için ve 21/21 negatif testte geçmiştir.
+  Release build 0 uyarı/0 hata; .NET 365 başarılı/14 gerçek-SQL environment skip;
+  bootstrap integrity 49 test/1 Windows capability skip; UI validator 24/24 ve 72 kaynak/
+  159 ekran golden; frontend lint, 2/2 test ve build; NuGet/npm vulnerability taramaları
+  bulgusuzdur. Root/non-L parity, current-source inventory, exact üç-dosya allowlist,
+  progress prefix ve `git diff --check` kontrolleri temizdir.
+- Paket/provider/collector/sink/exporter, topoloji, metric label, PII/retention, sampling,
+  SLO, threshold, alarm sahibi, secret, CI/deployment veya production activation kararı
+  üretilmemiştir. ERP-000L/F/M/O/N implementation, PR #2, Identity #62/#63 ve Cari
+  sahiplik/acceptance kapıları kapalı kalır.
+
+```text
+DONE: PR #16 merge; PR #17 clean current-main rebuild; L-only manifest delta; local full validation
+IN REVIEW: ERP-000L readiness Draft PR #17; fresh exact-head CI/UI ve bağımsız review bekleniyor
+BLOCKED: ERP-000L/F/M/O/N implementation; production activation; PR #2; Identity #62/#63; Cari gates
+SAFE NEXT: exact-head CI/UI golden; bağımsız exact-SHA review; delege human gate
+OPEN DECISIONS: OPEN-014/015/017; ERP-000L-DECISION-PACK; provider/sink/topology/PII-retention/SLO/alert/threshold contracts
+MAIN SHA: 9d884b789bc20442686567e50de243feb6496d42
+ACTIVE PRS: #17 Draft; #2 Draft/blocked; identity production gates #62/#63 open; Cari owned PRs read-only
+```
