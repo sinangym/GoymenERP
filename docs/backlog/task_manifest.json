@@ -125,12 +125,25 @@
     {
       "id": "ERP-000L",
       "title": "Gözlemlenebilirlik",
-      "status": "ready",
+      "status": "blocked",
       "depends_on": [
-        "ERP-000A"
+        "ERP-000A",
+        "ERP-000B",
+        "ERP-000C",
+        "ERP-000D",
+        "ERP-000E",
+        "ERP-000F",
+        "ERP-000M",
+        "ERP-000N"
       ],
-      "scope": "Structured logs, metrics, traces, health checks, correlation.",
-      "acceptance": "Hata ve yavaş sorgu tanılanabilir.",
+      "scope": "Provider- and sink-agnostic logs, metrics, traces, health probes, correlation, durable security-event boundary, SLO/alert ownership and runbooks.",
+      "acceptance": "All depends_on tasks are accepted and merged; OPEN-014/OPEN-015/OPEN-017 and ERP-000L-DECISION-PACK close; task-local scenarios prove redaction, operator authorization, bounded cardinality, probe semantics and real API/SQL/queue/backup evidence.",
+      "blocked_by": [
+        "OPEN-014",
+        "OPEN-015",
+        "OPEN-017",
+        "ERP-000L-DECISION-PACK"
+      ],
       "priority": "P0"
     },
     {
