@@ -410,3 +410,38 @@ OPEN DECISIONS: ADR-003/010; OPEN-014/015/017; ERP-000M-SQL-POC-CONTRACT; ERP-00
 MAIN SHA: 81283e582de00fc291b848a25f1a15ff45fc4657
 ACTIVE PRS: #19..#10 Draft; #15 aktif human review; #2 Draft/blocked
 ```
+
+## 2026-08-29 14:05 +03:00 — Döngü 12
+
+- Cari-owned Option A sözleşmesi PR #61 insan onayı sonrasında squash merge edilmiştir.
+  Contract head `781de1a71d10d83d4b4b5bd1e3c82eac0e61df2c`, merge commit ve bu çalışmanın
+  doğrulanmış tabanı `fed32839a9e0b4258efa5980fddc2846aaf85c49` olmuştur.
+- Yeni `main` için standart CI `33248227577` ve UI golden `33248227552` tamamen
+  başarılıdır.
+- Issue #57 comment `5461864590` ile exact implementation-start kaydı bırakılmıştır:
+  yalnız `SYSTEM_ADMINISTRATOR`, diğer roller default-deny, otomatik assignment yoktur.
+  Issue body içindeki eski operator-role metni uygulama kaynağı değildir.
+- `codex/identity-option-a-permission-reconciliation-v1` dalında generic ve inert
+  Identity permission reconciliation çekirdeği; fresh seed hizalaması; exact ID/code
+  guard'ı; transaction, tekrar, concurrency ve rollback güvenliği uygulanmıştır.
+- `counterparty.accounts.create` bilinen ve company-wide permission olarak kaydedilmiş,
+  yalnız kanonik `SYSTEM_ADMINISTRATOR` fresh seed'ine eklenmiştir. Yeni rol, assignment,
+  migration/schema, Counterparty endpoint veya PR #36/#60 değişikliği yapılmamıştır.
+- Yerel Release solution build 0 warning/0 error; bütün solution testleri başarılı;
+  gerçek SQL Server relational acceptance `10/10`; vulnerable NuGet dependency taraması
+  bulgusuz ve `git diff --check` temizdir. Bağımsız exact-diff review P0/P1 bulmamıştır.
+- Reconciler DI'a kayıtlı fakat production startup/deployment tarafından çağrılmamaktadır.
+  Production runner Issue #62, global security-change evidence ise Issue #63 olarak ayrı
+  kritik ve human-reviewed takip kapısına alınmıştır.
+- PR #36 ve PR #60 ChatGPT-owned kalmış, bu dal tarafından değiştirilmemiştir. Identity
+  dalı Draft PR ve exact-head uzak CI kanıtı oluşmadan merge-ready sayılmayacaktır.
+
+```text
+DONE: PR #61 merge; main CI 33248227577 + UI 33248227552; inert Option-A core; yerel full/real-SQL testler
+IN REVIEW: codex/identity-option-a-permission-reconciliation-v1; Draft PR ve exact-head CI bekleniyor
+BLOCKED: production reconciliation activation (#62); global security evidence (#63); PR #36 current-main kabul zinciri
+SAFE NEXT: Draft PR; exact-head CI; ChatGPT-CARI + insan Identity/security review
+OPEN DECISIONS: production runner/invocation; global security evidence modeli ve lifecycle
+MAIN SHA: fed32839a9e0b4258efa5980fddc2846aaf85c49
+ACTIVE PRS: #36 Draft/ChatGPT-owned; #60 Draft/ChatGPT-owned; Identity PR henüz açılmadı
+```
