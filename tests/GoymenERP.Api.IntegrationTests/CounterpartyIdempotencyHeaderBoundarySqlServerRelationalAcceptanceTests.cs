@@ -10,8 +10,23 @@ namespace GoymenERP.Api.IntegrationTests;
 
 public sealed class CounterpartyIdempotencyHeaderBoundarySqlServerRelationalAcceptanceTests
 {
-    [SqlServerFact]
-    public async Task InvalidIdempotencyHeaders_AreRejectedBeforeCreateOrStatusPersistence()
+    public static IEnumerable<object[]> InvalidHeaderCases()
+    {
+        yield return ["missing", Array.Empty<string>()];
+        yield return ["empty", new[] { string.Empty }];
+        yield return ["whitespace", new[] { "   " }];
+        yield return ["over-limit", new[] { new string('x', 129) }];
+        yield return ["multiple-distinct", new[] { "first-key", "second-key" }];
+        yield return ["multiple-duplicate", new[] { "duplicate-key", "duplicate-key" }];
+        yield return ["comma-joined", new[] { "first-key,second-key" }];
+        yield return ["comma-space-joined", new[] { "first-key, second-key" }];
+    }
+
+    [CounterpartySqlServerTheory]
+    [MemberData(nameof(InvalidHeaderCases))]
+    public async Task InvalidIdempotencyHeader_IsRejectedBeforeCreateOrStatusPersistence(
+        string caseName,
+        string[] idempotencyHeaderValues)
     {
         var baseConnectionString = Environment.GetEnvironmentVariable(
             SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
@@ -26,19 +41,17 @@ public sealed class CounterpartyIdempotencyHeaderBoundarySqlServerRelationalAcce
             using var setupClient = factory.CreateClientFor(
                 TestUsers.GroupAdmin,
                 TestCompanyIds.CompanyA);
-            var setupKey = $"cari-header-setup-{Guid.NewGuid():N}";
-            var setupCorrelation = $"cari-header-setup-correlation-{Guid.NewGuid():N}";
             using var setupResponse = await SendAsync(
                 setupClient,
                 HttpMethod.Post,
                 "/api/v1/counterparties",
                 new CreateCounterparty(
                     PartyKind.LegalEntity,
-                    "SQL Idempotency Header Sınır Cari A.Ş.",
+                    $"SQL Header Sınır Setup {caseName} Cari A.Ş.",
                     null,
                     PartyRole.Customer),
-                setupCorrelation,
-                setupKey);
+                $"cari-header-setup-correlation-{caseName}-{Guid.NewGuid():N}",
+                $"cari-header-setup-key-{caseName}-{Guid.NewGuid():N}");
             Assert.Equal(HttpStatusCode.Created, setupResponse.StatusCode);
             using var setupJson = JsonDocument.Parse(
                 await setupResponse.Content.ReadAsStringAsync());
@@ -50,54 +63,44 @@ public sealed class CounterpartyIdempotencyHeaderBoundarySqlServerRelationalAcce
             Assert.Equal(1L, baseline.AccountVersion);
             Assert.True(baseline.IsActive);
 
-            var invalidHeaders = new[]
-            {
-                HeaderCase.Missing("missing"),
-                HeaderCase.WithValues("empty", string.Empty),
-                HeaderCase.WithValues("whitespace", "   "),
-                HeaderCase.WithValues("over-limit", new string('x', 129)),
-                HeaderCase.WithValues("multiple-distinct", "first-key", "second-key"),
-                HeaderCase.WithValues("multiple-duplicate", "duplicate-key", "duplicate-key"),
-                HeaderCase.WithValues("comma-joined", "first-key,second-key"),
-                HeaderCase.WithValues("comma-space-joined", "first-key, second-key"),
-            };
+            using var createClient = factory.CreateClientFor(
+                TestUsers.GroupAdmin,
+                TestCompanyIds.CompanyA);
+            using var createResponse = await SendAsync(
+                createClient,
+                HttpMethod.Post,
+                "/api/v1/counterparties",
+                new CreateCounterparty(
+                    PartyKind.LegalEntity,
+                    $"SQL Geçersiz Header {caseName} Cari A.Ş.",
+                    null,
+                    PartyRole.Supplier),
+                $"cari-header-create-{caseName}-{Guid.NewGuid():N}",
+                idempotencyHeaderValues);
+            Assert.Equal(HttpStatusCode.BadRequest, createResponse.StatusCode);
+            Assert.False(createResponse.Headers.Contains("Idempotency-Replayed"));
+            Assert.False(createResponse.Headers.Contains(
+                "Idempotency-Original-Correlation-Id"));
 
-            foreach (var headerCase in invalidHeaders)
-            {
-                using var createClient = factory.CreateClientFor(
-                    TestUsers.GroupAdmin,
-                    TestCompanyIds.CompanyA);
-                using var createResponse = await SendAsync(
-                    createClient,
-                    HttpMethod.Post,
-                    "/api/v1/counterparties",
-                    new CreateCounterparty(
-                        PartyKind.LegalEntity,
-                        $"SQL Geçersiz Header {headerCase.Name} Cari A.Ş.",
-                        null,
-                        PartyRole.Supplier),
-                    $"cari-header-create-{headerCase.Name}-{Guid.NewGuid():N}",
-                    headerCase.Values);
-                Assert.Equal(HttpStatusCode.BadRequest, createResponse.StatusCode);
+            using var statusClient = factory.CreateClientFor(
+                TestUsers.GroupAdmin,
+                TestCompanyIds.CompanyA);
+            using var statusResponse = await SendAsync(
+                statusClient,
+                HttpMethod.Put,
+                $"/api/v1/counterparties/{partyId}/company-account/active-state",
+                new SetCompanyPartyAccountActiveState(
+                    false,
+                    baseline.AccountVersion,
+                    "Geçersiz idempotency header sınır doğrulaması"),
+                $"cari-header-status-{caseName}-{Guid.NewGuid():N}",
+                idempotencyHeaderValues);
+            Assert.Equal(HttpStatusCode.BadRequest, statusResponse.StatusCode);
+            Assert.False(statusResponse.Headers.Contains("Idempotency-Replayed"));
+            Assert.False(statusResponse.Headers.Contains(
+                "Idempotency-Original-Correlation-Id"));
 
-                using var statusClient = factory.CreateClientFor(
-                    TestUsers.GroupAdmin,
-                    TestCompanyIds.CompanyA);
-                using var statusResponse = await SendAsync(
-                    statusClient,
-                    HttpMethod.Put,
-                    $"/api/v1/counterparties/{partyId}/company-account/active-state",
-                    new SetCompanyPartyAccountActiveState(
-                        false,
-                        baseline.AccountVersion,
-                        "Geçersiz idempotency header sınır doğrulaması"),
-                    $"cari-header-status-{headerCase.Name}-{Guid.NewGuid():N}",
-                    headerCase.Values);
-                Assert.Equal(HttpStatusCode.BadRequest, statusResponse.StatusCode);
-            }
-
-            var afterInvalidRequests = await ReadSnapshotAsync(connection, partyId);
-            Assert.Equal(baseline, afterInvalidRequests);
+            Assert.Equal(baseline, await ReadSnapshotAsync(connection, partyId));
         }
         finally
         {
@@ -107,7 +110,7 @@ public sealed class CounterpartyIdempotencyHeaderBoundarySqlServerRelationalAcce
     }
 
     [SqlServerFact]
-    public async Task PaddedSingleIdempotencyKey_IsTrimmedAndReplaysWithoutNewEffects()
+    public async Task ExactMaximumLengthPaddedKey_IsAcceptedAndTrimmedReplayAddsNoEffects()
     {
         var baseConnectionString = Environment.GetEnvironmentVariable(
             SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
@@ -119,11 +122,11 @@ public sealed class CounterpartyIdempotencyHeaderBoundarySqlServerRelationalAcce
             using var healthResponse = await healthClient.GetAsync("/health/live");
             Assert.Equal(HttpStatusCode.OK, healthResponse.StatusCode);
 
-            var canonicalKey = $"cari-padded-key-{Guid.NewGuid():N}";
-            var originalCorrelation = $"cari-padded-original-{Guid.NewGuid():N}";
+            var canonicalKey = new string('k', 128);
+            var originalCorrelation = $"cari-max-key-original-{Guid.NewGuid():N}";
             var command = new CreateCounterparty(
                 PartyKind.LegalEntity,
-                "SQL Padded Idempotency Cari A.Ş.",
+                "SQL 128 Karakter Idempotency Cari A.Ş.",
                 null,
                 PartyRole.Customer);
 
@@ -138,6 +141,7 @@ public sealed class CounterpartyIdempotencyHeaderBoundarySqlServerRelationalAcce
                 originalCorrelation,
                 $"  {canonicalKey}  ");
             Assert.Equal(HttpStatusCode.Created, firstResponse.StatusCode);
+            Assert.False(firstResponse.Headers.Contains("Idempotency-Replayed"));
             using var firstJson = JsonDocument.Parse(
                 await firstResponse.Content.ReadAsStringAsync());
             var partyId = firstJson.RootElement.GetProperty("id").GetGuid();
@@ -154,7 +158,7 @@ public sealed class CounterpartyIdempotencyHeaderBoundarySqlServerRelationalAcce
                 HttpMethod.Post,
                 "/api/v1/counterparties",
                 command,
-                $"cari-padded-replay-{Guid.NewGuid():N}",
+                $"cari-max-key-replay-{Guid.NewGuid():N}",
                 canonicalKey);
             Assert.Equal(HttpStatusCode.Created, replayResponse.StatusCode);
             Assert.Equal(
@@ -168,8 +172,7 @@ public sealed class CounterpartyIdempotencyHeaderBoundarySqlServerRelationalAcce
                 await replayResponse.Content.ReadAsStringAsync());
             Assert.Equal(partyId, replayJson.RootElement.GetProperty("id").GetGuid());
 
-            var afterReplay = await ReadSnapshotAsync(connection, partyId);
-            Assert.Equal(baseline, afterReplay);
+            Assert.Equal(baseline, await ReadSnapshotAsync(connection, partyId));
         }
         finally
         {
@@ -186,8 +189,6 @@ public sealed class CounterpartyIdempotencyHeaderBoundarySqlServerRelationalAcce
         string correlationId,
         params string[] idempotencyHeaderValues)
     {
-        // SqlServerRelationalApiFactory.CreateClientFor adds a valid default key.
-        // Remove it so each boundary case controls the exact raw header set.
         client.DefaultRequestHeaders.Remove("Idempotency-Key");
 
         using var request = new HttpRequestMessage(method, requestUri)
@@ -209,36 +210,29 @@ public sealed class CounterpartyIdempotencyHeaderBoundarySqlServerRelationalAcce
         SqlConnection connection,
         Guid partyId)
     {
-        var partyCount = await ScalarAsync<int>(
-            connection,
-            "SELECT COUNT(*) FROM [counterparty].[Parties];");
-        var accountCount = await ScalarAsync<int>(
-            connection,
-            "SELECT COUNT(*) FROM [counterparty].[CompanyPartyAccounts];");
-        var auditCount = await ScalarAsync<int>(
-            connection,
-            "SELECT COUNT(*) FROM [audit].[AuditEvents];");
-        var executionCount = await ScalarAsync<int>(
-            connection,
-            "SELECT COUNT(*) FROM [idempotency].[CommandExecutions];");
-        var accountVersion = await ScalarAsync<long>(
-            connection,
-            "SELECT [Version] FROM [counterparty].[CompanyPartyAccounts] WHERE [CompanyId] = @CompanyId AND [PartyId] = @PartyId;",
-            new SqlParameter("@CompanyId", TestCompanyIds.CompanyA),
-            new SqlParameter("@PartyId", partyId));
-        var isActive = await ScalarAsync<bool>(
-            connection,
-            "SELECT CONVERT(bit, [IsActive]) FROM [counterparty].[CompanyPartyAccounts] WHERE [CompanyId] = @CompanyId AND [PartyId] = @PartyId;",
-            new SqlParameter("@CompanyId", TestCompanyIds.CompanyA),
-            new SqlParameter("@PartyId", partyId));
-
         return new PersistenceSnapshot(
-            partyCount,
-            accountCount,
-            auditCount,
-            executionCount,
-            accountVersion,
-            isActive);
+            await ScalarAsync<int>(
+                connection,
+                "SELECT COUNT(*) FROM [counterparty].[Parties];"),
+            await ScalarAsync<int>(
+                connection,
+                "SELECT COUNT(*) FROM [counterparty].[CompanyPartyAccounts];"),
+            await ScalarAsync<int>(
+                connection,
+                "SELECT COUNT(*) FROM [audit].[AuditEvents];"),
+            await ScalarAsync<int>(
+                connection,
+                "SELECT COUNT(*) FROM [idempotency].[CommandExecutions];"),
+            await ScalarAsync<long>(
+                connection,
+                "SELECT [Version] FROM [counterparty].[CompanyPartyAccounts] WHERE [CompanyId] = @CompanyId AND [PartyId] = @PartyId;",
+                new SqlParameter("@CompanyId", TestCompanyIds.CompanyA),
+                new SqlParameter("@PartyId", partyId)),
+            await ScalarAsync<bool>(
+                connection,
+                "SELECT CONVERT(bit, [IsActive]) FROM [counterparty].[CompanyPartyAccounts] WHERE [CompanyId] = @CompanyId AND [PartyId] = @PartyId;",
+                new SqlParameter("@CompanyId", TestCompanyIds.CompanyA),
+                new SqlParameter("@PartyId", partyId)));
     }
 
     private static async Task<T> ScalarAsync<T>(
@@ -274,14 +268,6 @@ public sealed class CounterpartyIdempotencyHeaderBoundarySqlServerRelationalAcce
         await command.ExecuteNonQueryAsync();
     }
 
-    private sealed record HeaderCase(string Name, string[] Values)
-    {
-        public static HeaderCase Missing(string name) => new(name, []);
-
-        public static HeaderCase WithValues(string name, params string[] values) =>
-            new(name, values);
-    }
-
     private sealed record PersistenceSnapshot(
         int PartyCount,
         int AccountCount,
@@ -289,4 +275,16 @@ public sealed class CounterpartyIdempotencyHeaderBoundarySqlServerRelationalAcce
         int ExecutionCount,
         long AccountVersion,
         bool IsActive);
+}
+
+public sealed class CounterpartySqlServerTheoryAttribute : TheoryAttribute
+{
+    public CounterpartySqlServerTheoryAttribute()
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(
+                SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)))
+        {
+            Skip = $"{SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable} tanımlı değil.";
+        }
+    }
 }
