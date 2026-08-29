@@ -524,3 +524,45 @@ OPEN DECISIONS: physical ADR-010; OPEN-014; ERP-000O-DELIVERY-CONTRACT; ERP-000M
 MAIN SHA: c1d28cc44e775cfea3a528cfd755cbe85b5ee290
 ACTIVE PRS: #19 Draft; #2 Draft/blocked; identity production gates #62/#63 open
 ```
+
+## 2026-08-29 20:47 +03:00 — Döngü 15
+
+- ERP-000O readiness PR #19 insan review'u sonrasında squash merge edilmiştir. Bu
+  döngünün doğrulanmış temiz tabanı
+  `434b83ce49f02a2034c23c75690b791c38425874` commit'idir. Merge sonrası standart CI
+  `33266146969` ve UI golden `33266146965` tamamen yeşildir; bu baseline kanıtı
+  ERP-000N exact-head CI veya backup/restore kabulü yerine kullanılmaz.
+- ERP-000N readiness eski branch conflictleri taşınmadan güncel `main`den ayrı temiz
+  worktree/branch üzerinde yeniden üretilmiştir. Manifest kök metadata'sı ile ERP-000N
+  dışındaki on dört task objesi güncel tabanla aynı kalmış; yalnız ERP-000N `blocked`,
+  exact bağımlılıkları A/B/C/D/E/F/G/M/O ve blocker'ları fiziksel ADR-003/005/010,
+  OPEN-014/015/017/018 ile task-local `ERP-000N-RECOVERY-CONTRACT` yapılmıştır.
+- ERP-000E=`done`, ERP-000M=`blocked` ve ERP-000O=`blocked` gerçekleri korunmuştur.
+  Bu branch'in current DAG'ı 31 edge ile yalnız `M → O → N` dependency prefix'ini
+  kurar; ERP-000L satırı A-only current-main gerçeğiyle değişmeden kalır. Hedef
+  readiness/acceptance sırası `M → O → N → L`, ardından bağımsız `J/K`dır; `N → L`
+  edge'i sonraki ERP-000L current-main PR'ında kurulacaktır. PR #19'un merge edilmiş
+  olması ERP-000O implementation veya acceptance kapısını açmaz.
+- Güncel repo kanıtında fiziksel ADR-003/005/010 dosyaları, gerçek S3-compatible object
+  store/adapter, backup veya restore scripti, izole DB+object restore drill fixture'ı ve
+  zorunlu backup/restore CI işi yoktur. Task-manifest validator PR #24 ile `main`dedir ve
+  bu dalda kullanılmıştır; mevcut workflow'lara bağlı required gate olduğu iddia edilmez.
+- Yerel task-manifest validator 15 task/31 edge için geçti; 21/21 validator negatif
+  testi, 49 bootstrap integrity testi (1 platform skip), 24/24 UI katalog negatif testi
+  ve 72 kaynak/159 ekran golden doğrulaması başarılıdır. Release build 0 uyarı/0 hata;
+  .NET testleri 365 başarılı/14 SQL ortamı olmadığı için atlandı; frontend testleri 2/2,
+  lint/build ve NuGet/npm vulnerability taramaları bulgusuzdur.
+- Workflow, source, test, Docker, infra, Cari, provider, topoloji, storage, RPO/RTO,
+  threshold veya production activation değiştirilmemiştir. ERP-000N implementation ve
+  AT-070 kanıtı `NO-GO / BLOCKED`; Draft PR exact-head CI/UI golden ve bağımsız review
+  kapısında kalır. PR #2 ile ERP-000M/F ve Identity production #62/#63 kapıları açılmaz.
+
+```text
+DONE: PR #19 merge; PR #16 clean current-main rebuild; N-only manifest delta; local full validation
+IN REVIEW: ERP-000N readiness Draft PR #16; fresh exact-head CI/UI ve bağımsız review bekleniyor
+BLOCKED: ERP-000N/M/O/F implementation; AT-070; production activation; PR #2 (yedi blocker)
+SAFE NEXT: exact-head CI/UI golden; artifact/run kanıtı; bağımsız exact-SHA review; insan review'u
+OPEN DECISIONS: physical ADR-003/005/010; OPEN-014/015/017/018; ERP-000N-RECOVERY-CONTRACT; ERP-000M/O/F kapıları
+MAIN SHA: 434b83ce49f02a2034c23c75690b791c38425874
+ACTIVE PRS: #16 Draft; #2 Draft/blocked; identity production gates #62/#63 open
+```
