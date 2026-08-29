@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
@@ -14,13 +15,18 @@ public sealed class CounterpartyPersistenceModelTests
         using var dbContext = CreateContext();
         var partyEntity = dbContext.Model.FindEntityType(typeof(Party));
         var accountEntity = dbContext.Model.FindEntityType(typeof(CompanyPartyAccount));
+        var auditEntity = dbContext.Model.FindEntityType(typeof(AuditEvent));
 
         Assert.NotNull(partyEntity);
         Assert.NotNull(accountEntity);
+        Assert.NotNull(auditEntity);
         Assert.Equal("counterparty", partyEntity!.GetSchema());
         Assert.Equal("Parties", partyEntity.GetTableName());
         Assert.Equal("counterparty", accountEntity!.GetSchema());
         Assert.Equal("CompanyPartyAccounts", accountEntity.GetTableName());
+        Assert.Equal("audit", auditEntity!.GetSchema());
+        Assert.Equal("AuditEvents", auditEntity.GetTableName());
+        Assert.NotEmpty(auditEntity.GetDeclaredQueryFilters());
 
         Assert.Contains(
             partyEntity.GetIndexes(),
