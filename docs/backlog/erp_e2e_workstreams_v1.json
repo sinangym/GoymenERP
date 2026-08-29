@@ -1,0 +1,494 @@
+{
+  "schema_version": 1,
+  "plan_id": "GOYMEN-ERP-E2E-V1",
+  "owner": "Sinan Göymen",
+  "baseline_main": "fed32839a9e0b4258efa5980fddc2846aaf85c49",
+  "authority": [
+    "latest explicit product-owner decision",
+    "docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md",
+    "accepted contracts on main",
+    "exact PR SHA, diff and CI",
+    "UI reference catalog",
+    "StokERP donor knowledge"
+  ],
+  "delivery_mode": "vertical_slice",
+  "status_values": [
+    "not_started",
+    "ready",
+    "in_progress",
+    "blocked",
+    "in_review",
+    "accepted",
+    "merged",
+    "uat_accepted",
+    "released"
+  ],
+  "progress_levels": {
+    "0": "not started",
+    "1": "definition of ready complete",
+    "2": "database, domain and API working",
+    "3": "React UI and primary integration working",
+    "4": "real SQL, E2E, CI and cross-review green",
+    "5": "merged to main and UAT accepted"
+  },
+  "wip_policy": {
+    "single_writer_per_aggregate": true,
+    "single_writer_for_shared_files": true,
+    "max_primary_production_prs_per_agent": 1,
+    "max_hotfix_or_remediation_prs_per_agent": 1,
+    "stale_review_on_head_change": true,
+    "stale_ci_on_head_change": true,
+    "docs_only_pr_requires_decision_or_shared_contract": true
+  },
+  "decision_classes": {
+    "D0": "reversible technical or UX detail; agents decide and record",
+    "D1": "reversible product default; agents implement and inform",
+    "D2": "money, stock, accounting, legal, role, approval, retention, cutover or production topology; product-owner decision required"
+  },
+  "agents": {
+    "CHATGPT-BUSINESS": {
+      "primary_scope": [
+        "business domain and state machines",
+        "module data ownership",
+        "Counterparty",
+        "Product and Service",
+        "Sales",
+        "Purchasing",
+        "Business Purchases",
+        "Inventory and Allocation",
+        "Production and Traceability",
+        "Logistics and Weighbridge",
+        "Finance and Treasury",
+        "Accounting",
+        "report semantics",
+        "module React workspaces",
+        "business acceptance and migration mapping"
+      ],
+      "review_scope": [
+        "Identity and authorization business compatibility",
+        "shared UI contract",
+        "document and AI business boundaries",
+        "platform PR impact on ERP workflows"
+      ]
+    },
+    "CODEX-PLATFORM": {
+      "primary_scope": [
+        "Identity and authentication",
+        "common React shell and design system",
+        "generic approval and task engine",
+        "document vault infrastructure and PDF runtime",
+        "outbox, inbox and workers",
+        "search infrastructure",
+        "AI gateway and policy enforcement",
+        "observability",
+        "CI/CD, migration artifacts and deployment",
+        "backup and restore",
+        "generic integration and system administration tooling"
+      ],
+      "review_scope": [
+        "real SQL and migrations",
+        "concurrency and idempotency",
+        "security and tenant isolation",
+        "performance and architecture",
+        "ChatGPT-owned module PRs"
+      ]
+    }
+  },
+  "active_queue": [
+    {
+      "order": 1,
+      "item": "PR-64",
+      "owner": "CODEX-PLATFORM",
+      "status": "in_review",
+      "purpose": "Option A Identity permission reconciliation core",
+      "next_gate": "exact-head CI, ChatGPT review and human Identity/security merge"
+    },
+    {
+      "order": 2,
+      "item": "PR-60",
+      "owner": "CHATGPT-BUSINESS",
+      "status": "in_progress",
+      "purpose": "Counterparty Idempotency-Key cardinality hotfix",
+      "next_gate": "sync to current main, fresh CI, Codex re-review and human merge"
+    },
+    {
+      "order": 3,
+      "item": "PR-31",
+      "owner": "CODEX-PLATFORM",
+      "status": "blocked",
+      "purpose": "stable fail-closed .NET bootstrap and CI baseline",
+      "next_gate": "sync after PR-64 and PR-60, fresh full CI and human security merge"
+    },
+    {
+      "order": 4,
+      "item": "ISSUE-53",
+      "owner": "CHATGPT-BUSINESS",
+      "status": "ready",
+      "purpose": "Counterparty AuditEvent tenant query and write guard",
+      "next_gate": "small production PR, real SQL and Codex review"
+    },
+    {
+      "order": 5,
+      "item": "PR-36",
+      "owner": "CHATGPT-BUSINESS",
+      "status": "blocked",
+      "purpose": "link an existing Party to another company account",
+      "next_gate": "clean current-main sync after PR-64, PR-60, PR-31 and ISSUE-53"
+    }
+  ],
+  "waves": [
+    {
+      "id": "W0",
+      "name": "Stabilization and Cari Core 1C closure",
+      "status": "in_progress",
+      "exit_criteria": [
+        "PR-64 merged",
+        "PR-60 merged",
+        "PR-31 merged",
+        "ISSUE-53 fix merged",
+        "PR-36 merged",
+        "main green",
+        "no open P0/P1 Counterparty isolation defect"
+      ]
+    },
+    {
+      "id": "W1",
+      "name": "Common shell, work center, Counterparty UI and Product master",
+      "status": "ready",
+      "exit_criteria": [
+        "authenticated user selects an authorized company",
+        "role dashboard and work center render",
+        "Counterparty 360 works",
+        "Product and Service master works",
+        "a document is stored once and linked to Counterparty or Product",
+        "real SQL and browser E2E green"
+      ]
+    },
+    {
+      "id": "W2",
+      "name": "Sales and Purchasing orders",
+      "status": "not_started",
+      "exit_criteria": [
+        "approved and revisioned Sales Order works",
+        "approved Purchase Order works",
+        "price, discount, margin and risk preview works",
+        "approved purchase remaining appears as future supply",
+        "orders do not create physical stock movement"
+      ]
+    },
+    {
+      "id": "W3",
+      "name": "Inventory, Allocation, Goods Receipt and Transfers",
+      "status": "not_started",
+      "exit_criteria": [
+        "goods receipt creates physical stock and labels",
+        "free physical stock equation is correct",
+        "allocation is atomic and not a stock movement",
+        "future supply cannot be shipped",
+        "count, block and transfer flows work"
+      ]
+    },
+    {
+      "id": "W4",
+      "name": "Production, Traceability and Quality",
+      "status": "not_started",
+      "exit_criteria": [
+        "slitting and winding works",
+        "cold rolling works",
+        "tube and profile works",
+        "painting works",
+        "cut-to-length works",
+        "mass balance and genealogy work",
+        "actual output creates stock labels"
+      ]
+    },
+    {
+      "id": "W5",
+      "name": "Logistics, Weighbridge, Shipment and Commercial Documents",
+      "status": "not_started",
+      "exit_criteria": [
+        "load instruction works",
+        "actual loading and weighbridge work",
+        "shipment updates physical stock",
+        "dispatch note and invoice-ready grouping work",
+        "partial and multi-order shipment works"
+      ]
+    },
+    {
+      "id": "W6",
+      "name": "Finance, Treasury and Accounting",
+      "status": "not_started",
+      "exit_criteria": [
+        "open items work",
+        "financial source and allocation work without duplicate money movement",
+        "bank and cash reconciliation works",
+        "payment instruments and payment management work",
+        "13-week cash, credit, limit and collateral work",
+        "accounting vouchers, trial balance and period controls work",
+        "order-to-cash and procure-to-pay close end to end"
+      ]
+    },
+    {
+      "id": "W7",
+      "name": "Reports, Search, AI, Documents and Operational Hardening",
+      "status": "not_started",
+      "exit_criteria": [
+        "semantic report center works",
+        "authorized global search works",
+        "AI read and draft tools cannot exceed user authority",
+        "document OCR and version comparison work",
+        "observability and recovery evidence exist",
+        "release and rollback artifacts are reproducible"
+      ]
+    },
+    {
+      "id": "W8",
+      "name": "Migration, UAT and Cutover",
+      "status": "not_started",
+      "exit_criteria": [
+        "all migration rehearsals reconcile",
+        "role-based UAT is accepted",
+        "cutover and rollback rehearsal pass",
+        "opening stock, orders, open items and documents reconcile",
+        "single source-of-truth date is approved"
+      ]
+    },
+    {
+      "id": "W9",
+      "name": "Enterprise expansion modules",
+      "status": "not_started",
+      "exit_criteria": [
+        "HR and payroll scope delivered or integrated",
+        "maintenance delivered or integrated",
+        "advanced quality and CAPA delivered",
+        "fixed assets delivered or integrated",
+        "CRM delivered",
+        "project and cost delivered",
+        "contract, legal and compliance delivered",
+        "OHS delivered or integrated"
+      ]
+    }
+  ],
+  "workstreams": [
+    {
+      "id": "PLT-01",
+      "name": "Common React Shell and Work Center",
+      "wave": "W1",
+      "primary_writer": "CODEX-PLATFORM",
+      "contract_owner": "CHATGPT-BUSINESS",
+      "reviewer": "CHATGPT-BUSINESS",
+      "dependencies": ["W0"],
+      "first_slice": "login, company selection, dashboard, work center and safe route shell",
+      "status": "ready"
+    },
+    {
+      "id": "SYS-01",
+      "name": "Identity, Authorization and System Administration",
+      "wave": "W0",
+      "primary_writer": "CODEX-PLATFORM",
+      "contract_owner": "CHATGPT-BUSINESS",
+      "reviewer": "CHATGPT-BUSINESS",
+      "dependencies": [],
+      "first_slice": "Option A permission reconciliation core",
+      "status": "in_progress"
+    },
+    {
+      "id": "CARI-01",
+      "name": "Counterparty and Counterparty 360",
+      "wave": "W0",
+      "primary_writer": "CHATGPT-BUSINESS",
+      "contract_owner": "CHATGPT-BUSINESS",
+      "reviewer": "CODEX-PLATFORM",
+      "dependencies": ["SYS-01"],
+      "first_slice": "link existing Party to another authorized company account",
+      "status": "in_progress"
+    },
+    {
+      "id": "PRD-01",
+      "name": "Product, Service, Units, Packages and Pricing",
+      "wave": "W1",
+      "primary_writer": "CHATGPT-BUSINESS",
+      "contract_owner": "CHATGPT-BUSINESS",
+      "reviewer": "CODEX-PLATFORM",
+      "dependencies": ["PLT-01", "CARI-01"],
+      "first_slice": "create a product with units, package standard and default price",
+      "status": "ready"
+    },
+    {
+      "id": "DOC-01",
+      "name": "Document Vault, PDF and Communication",
+      "wave": "W1",
+      "primary_writer": "CODEX-PLATFORM",
+      "contract_owner": "CHATGPT-BUSINESS",
+      "reviewer": "CHATGPT-BUSINESS",
+      "dependencies": ["PLT-01", "SYS-01"],
+      "first_slice": "upload one file and link it to Counterparty or Product without duplication",
+      "status": "ready"
+    },
+    {
+      "id": "SAL-01",
+      "name": "Sales",
+      "wave": "W2",
+      "primary_writer": "CHATGPT-BUSINESS",
+      "contract_owner": "CHATGPT-BUSINESS",
+      "reviewer": "CODEX-PLATFORM",
+      "dependencies": ["CARI-01", "PRD-01", "PLT-01"],
+      "first_slice": "create, approve and revise a Sales Order",
+      "status": "not_started"
+    },
+    {
+      "id": "PUR-01",
+      "name": "Purchasing",
+      "wave": "W2",
+      "primary_writer": "CHATGPT-BUSINESS",
+      "contract_owner": "CHATGPT-BUSINESS",
+      "reviewer": "CODEX-PLATFORM",
+      "dependencies": ["CARI-01", "PRD-01", "PLT-01"],
+      "first_slice": "create and approve a Purchase Order with line delivery dates",
+      "status": "not_started"
+    },
+    {
+      "id": "OPR-01",
+      "name": "Business Purchases",
+      "wave": "W2",
+      "primary_writer": "CHATGPT-BUSINESS",
+      "contract_owner": "CHATGPT-BUSINESS",
+      "reviewer": "CODEX-PLATFORM",
+      "dependencies": ["PUR-01", "PLT-01"],
+      "first_slice": "request and approve a non-commercial operating purchase",
+      "status": "not_started"
+    },
+    {
+      "id": "INV-01",
+      "name": "Inventory and Material Position",
+      "wave": "W3",
+      "primary_writer": "CHATGPT-BUSINESS",
+      "contract_owner": "CHATGPT-BUSINESS",
+      "reviewer": "CODEX-PLATFORM",
+      "dependencies": ["PRD-01", "PUR-01"],
+      "first_slice": "receive an approved purchase line into physical labeled stock",
+      "status": "not_started"
+    },
+    {
+      "id": "ALC-01",
+      "name": "Allocation",
+      "wave": "W3",
+      "primary_writer": "CHATGPT-BUSINESS",
+      "contract_owner": "CHATGPT-BUSINESS",
+      "reviewer": "CODEX-PLATFORM",
+      "dependencies": ["INV-01", "SAL-01"],
+      "first_slice": "allocate one Sales Order line to one physical label atomically",
+      "status": "not_started"
+    },
+    {
+      "id": "MFG-01",
+      "name": "Production and Traceability",
+      "wave": "W4",
+      "primary_writer": "CHATGPT-BUSINESS",
+      "contract_owner": "CHATGPT-BUSINESS",
+      "reviewer": "CODEX-PLATFORM",
+      "dependencies": ["INV-01", "ALC-01", "PRD-01"],
+      "first_slice": "slitting and winding plan to actual output with genealogy",
+      "status": "not_started"
+    },
+    {
+      "id": "LOG-01",
+      "name": "Logistics, Loading and Weighbridge",
+      "wave": "W5",
+      "primary_writer": "CHATGPT-BUSINESS",
+      "contract_owner": "CHATGPT-BUSINESS",
+      "reviewer": "CODEX-PLATFORM",
+      "dependencies": ["SAL-01", "INV-01", "ALC-01"],
+      "first_slice": "Sales Order to load instruction, actual loading and weighbridge",
+      "status": "not_started"
+    },
+    {
+      "id": "FIN-01",
+      "name": "Finance and Treasury",
+      "wave": "W6",
+      "primary_writer": "CHATGPT-BUSINESS",
+      "contract_owner": "CHATGPT-BUSINESS",
+      "reviewer": "CODEX-PLATFORM",
+      "dependencies": ["SAL-01", "PUR-01", "LOG-01", "CARI-01"],
+      "first_slice": "record a bank receipt and allocate it to one or more open items",
+      "status": "not_started"
+    },
+    {
+      "id": "ACC-01",
+      "name": "Accounting",
+      "wave": "W6",
+      "primary_writer": "CHATGPT-BUSINESS",
+      "contract_owner": "CHATGPT-BUSINESS",
+      "reviewer": "CODEX-PLATFORM",
+      "dependencies": ["FIN-01", "SAL-01", "PUR-01"],
+      "first_slice": "derive a reviewable accounting voucher from an accepted business document",
+      "status": "not_started"
+    },
+    {
+      "id": "RPT-01",
+      "name": "Reporting",
+      "wave": "W7",
+      "primary_writer": "CHATGPT-BUSINESS",
+      "contract_owner": "CHATGPT-BUSINESS",
+      "reviewer": "CODEX-PLATFORM",
+      "dependencies": ["SAL-01", "PUR-01", "INV-01", "MFG-01", "FIN-01"],
+      "first_slice": "run an authorized semantic Sales Order report with export metadata",
+      "status": "not_started"
+    },
+    {
+      "id": "SRCH-01",
+      "name": "Global Search",
+      "wave": "W7",
+      "primary_writer": "CODEX-PLATFORM",
+      "contract_owner": "CHATGPT-BUSINESS",
+      "reviewer": "CHATGPT-BUSINESS",
+      "dependencies": ["PLT-01", "CARI-01", "PRD-01", "SAL-01"],
+      "first_slice": "authorized exact search by Counterparty, Product and document number",
+      "status": "not_started"
+    },
+    {
+      "id": "AI-01",
+      "name": "AI Gateway and AI Center",
+      "wave": "W7",
+      "primary_writer": "CODEX-PLATFORM",
+      "contract_owner": "CHATGPT-BUSINESS",
+      "reviewer": "CHATGPT-BUSINESS",
+      "dependencies": ["SYS-01", "PLT-01", "CARI-01", "PRD-01", "SAL-01"],
+      "first_slice": "read-only page assistant and draft action with strict tool policy",
+      "status": "not_started"
+    },
+    {
+      "id": "OPS-01",
+      "name": "Observability, CI/CD, Backup and Recovery",
+      "wave": "W7",
+      "primary_writer": "CODEX-PLATFORM",
+      "contract_owner": "CODEX-PLATFORM",
+      "reviewer": "CHATGPT-BUSINESS",
+      "dependencies": ["W0"],
+      "first_slice": "stable protected CI and diagnosable first business vertical",
+      "status": "in_progress"
+    },
+    {
+      "id": "MIG-01",
+      "name": "Migration, UAT and Cutover",
+      "wave": "W8",
+      "primary_writer": "CHATGPT-BUSINESS",
+      "contract_owner": "CHATGPT-BUSINESS",
+      "reviewer": "CODEX-PLATFORM",
+      "dependencies": ["W1", "W2", "W3", "W4", "W5", "W6", "W7"],
+      "first_slice": "migrate and reconcile Counterparty and Product seed data",
+      "status": "not_started"
+    },
+    {
+      "id": "EXT-01",
+      "name": "Enterprise Expansion",
+      "wave": "W9",
+      "primary_writer": "CHATGPT-BUSINESS",
+      "contract_owner": "CHATGPT-BUSINESS",
+      "reviewer": "CODEX-PLATFORM",
+      "dependencies": ["W8"],
+      "first_slice": "decide build-versus-integrate for HR, maintenance, quality, assets, CRM, project cost, legal and OHS",
+      "status": "not_started"
+    }
+  ]
+}
