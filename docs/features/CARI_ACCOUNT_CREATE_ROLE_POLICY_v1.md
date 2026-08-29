@@ -1,7 +1,8 @@
 # Cari Hesap Oluşturma Yetki Politikası v1
 
 - Karar: `CARI-PERM-001`
-- Kanonik karar kaydı: Issue #43, `DECISION-ACCEPTED` yorumu
+- Kanonik ürün sahibi kararı: Issue #43, `PRODUCT-OWNER CONFIRMATION — 2026-08-29`
+- Exact karar kaydı: `issuecomment-5461669614`
 - Owner: `CHATGPT-CARI`
 - Generic Identity uygulama sahibi: `CODEX-PLATFORM / Identity`
 - Durum: **Kabul edilmiş iş politikası / production reconciliation henüz ayrı PR bekliyor**
@@ -15,11 +16,18 @@ kilitlemek.
 
 Bu belge ve yanındaki JSON sözleşmesi kendi başına:
 
+- `ErpPermissions` production registry'sini değiştirmez,
 - Identity seed veya veritabanını değiştirmez,
 - kullanıcıya rol atamaz,
 - PR #36 endpointini `main`e getirmez,
 - maker-checker akışı oluşturmaz,
 - geniş satış/finans/muhasebe/sevkiyat rollerine grant vermez.
+
+`counterparty.accounts.create` ürün sahibi tarafından kabul edilmiş pending permission
+kodudur. Production permission sabiti ve endpoint davranışı PR #36/final implementation
+hattında; existing-install reconciliation ise Issue #57 kapsamındaki CODEX-PLATFORM/Identity
+hattında uygulanır. Bu contract PR'ı henüz `main`de bulunmayan production sabitine derleme
+zamanında bağlanmaz.
 
 ## 2. Kabul edilmiş rol modeli
 
@@ -67,7 +75,9 @@ Generic Identity implementation aşağıdaki davranışları sağlamalıdır:
 6. Yeni operator rolüne otomatik user assignment eklenmez.
 7. Bütün reconciliation tek transaction içinde tamamlanır.
 8. Concurrent veya tekrar çalıştırma duplicate role/permission üretmez.
-9. Unknown permission `ErpPermissions.IsKnown` sınırını geçemez.
+9. Contract'taki exact pending `counterparty.accounts.create` dışında kalan her permission,
+   mevcut `ErpPermissions.IsKnown` registry sınırını geçmelidir. Production uygulama
+   tamamlandığında pending kod da registry'de exact olarak bulunmalıdır.
 10. Hata durumunda yarım role/permission upgrade kalmaz.
 
 ## 5. Company scope ve kullanım
@@ -90,6 +100,8 @@ Rol tanımının bulunması tek başına kullanıcıya erişim vermez. Kullanıc
 - Operator paketi `counterparty.parties.create` içermez.
 - Automatic assignment listesi boştur.
 - Default-deny role listesi exact ve duplicate-free'dir.
+- Pending permission exception yalnız exact `counterparty.accounts.create` için geçerlidir;
+  başka bilinmeyen permission fail-closed reddedilir.
 
 ### Generic Identity reconciliation
 
@@ -107,6 +119,8 @@ Rol tanımının bulunması tek başına kullanıcıya erişim vermez. Kullanıc
 - Görünmeyen Party: non-disclosing terminal `404` ve güvenli same-key replay.
 - Same-key replay/mismatch, different-key duplicate race ve atomik rollback gerçek SQL ile
   doğrulanır.
+- Link request kullanıcı gerekçesi taşır; normalize edilmiş `1–1000` karakter gerekçe audit
+  olayına aynen yazılır, invalid gerekçe bütün etkiler `0` olacak şekilde reddedilir.
 
 ## 7. Sahiplik ve sıra
 
