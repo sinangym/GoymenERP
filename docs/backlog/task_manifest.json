@@ -159,12 +159,30 @@
     {
       "id": "ERP-000N",
       "title": "Backup/restore runbook",
-      "status": "ready",
+      "status": "blocked",
       "depends_on": [
-        "ERP-000A"
+        "ERP-000A",
+        "ERP-000B",
+        "ERP-000C",
+        "ERP-000D",
+        "ERP-000E",
+        "ERP-000F",
+        "ERP-000G",
+        "ERP-000M",
+        "ERP-000O"
       ],
-      "scope": "DB + object store backup, restore and checksum script.",
-      "acceptance": "Gerçek prova başarılı ve dokümante.",
+      "scope": "Encrypted off-site SQL Server PITR and S3-compatible object-version backup sets; key/secret recovery; isolated restore; DB-object-audit-idempotency-outbox/inbox reconciliation; company export/restore and observed disaster drills.",
+      "acceptance": "All depends_on tasks are accepted and merged; physical ADR-003/005/010, OPEN-014/OPEN-015/OPEN-017/OPEN-018 and ERP-000N-RECOVERY-CONTRACT close; AT-070 passes in an isolated real SQL Server plus S3-compatible restore drill with checksum, tenant security, reconciliation and approved RPO/RTO evidence.",
+      "blocked_by": [
+        "ADR-003",
+        "ADR-005",
+        "ADR-010",
+        "OPEN-014",
+        "OPEN-015",
+        "OPEN-017",
+        "OPEN-018",
+        "ERP-000N-RECOVERY-CONTRACT"
+      ],
       "priority": "P0"
     },
     {
