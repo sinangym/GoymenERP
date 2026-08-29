@@ -103,12 +103,22 @@
     {
       "id": "ERP-000J",
       "title": "AI gateway iskeleti",
-      "status": "ready",
+      "status": "blocked",
       "depends_on": [
-        "ERP-000A"
+        "ERP-000A",
+        "ERP-000B",
+        "ERP-000C",
+        "ERP-000D",
+        "ERP-000E",
+        "ERP-000L"
       ],
-      "scope": "Tool registry, policy check, audit envelope, no direct DB.",
-      "acceptance": "AI yetki aşamaz; write tool onaysız uygulanmaz.",
+      "scope": "Provider-agnostic, CompanyContext-safe ve default-deny AI Gateway; sürümlü allowlist tool registry, veri sınıflandırma/minimizasyon, prompt/tool güven sınırı, deterministik preview ve insan onaylı idempotent domain command, audit/security-event/telemetry ayrımı; AI doğrudan DB veya ham SQL kullanmaz.",
+      "acceptance": "Bütün depends_on görevleri kabul edilip main'e alınır; fiziksel ADR-008, OPEN-020 ve ERP-000J-AI-CONTRACT kapanır; server-backed AI capability ve permission/ABAC, tool schema ile argüman yeniden doğrulama, preview-approval-reauth binding, idempotency/concurrency/audit/correlation, attachment/OCR, retention/deletion, outage/degradation ve eval/red-team kapıları gerçek SQL negatif kabul kanıtlarıyla geçer; AT-059/060/068 kanıtlanır. Model çıktısı yetki, onay, formül veya iş doğrusu değildir.",
+      "blocked_by": [
+        "ADR-008",
+        "OPEN-020",
+        "ERP-000J-AI-CONTRACT"
+      ],
       "priority": "P0"
     },
     {

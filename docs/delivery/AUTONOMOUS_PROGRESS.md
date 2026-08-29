@@ -664,3 +664,62 @@ OPEN DECISIONS: ERP-000K-SHELL-CONTRACT alt kapıları; capability/route/mount c
 MAIN SHA: 6aa4a46a964ed2dae427e83026bb449449bd09df
 ACTIVE PRS: #18 Draft; #2 Draft/blocked; identity production gates #62/#63 open; Cari-owned PR #77/#79 read-only gates
 ```
+
+## 2026-08-29 23:30 +03:00 — Döngü 18
+
+- ERP-000K readiness PR #18 insan/delege review kapısından sonra squash merge edilmiştir.
+  Bu döngünün eski commit, rebase veya cherry-pick taşımayan temiz ERP-000J rebuild tabanı
+  `d5bcd5b30ee79885cf64b3c4c638ddeb91426d20` commit'idir. Merge sonrası standart CI
+  `33269705664` ve UI golden `33269705658` tamamen yeşildir; bu baseline kanıtı ERP-000J
+  exact-head kabulü olarak yeniden kullanılmaz.
+- ERP-000J manifest satırı dışındaki on dört task ile manifest kök metadata'sı current-main
+  ile exact kalmıştır. Yalnız J `blocked`, direct bağımlılıkları A/B/C/D/E/L ve blocker'ları
+  `ADR-008`, `OPEN-020`, `ERP-000J-AI-CONTRACT` yapılmıştır. ERP-000E=`done`;
+  ERP-000M/O/N/L/K=`blocked` gerçekleri korunmuş, birleşik DAG 15 task/49 dependency edge
+  ve döngüsüz olarak doğrulanmıştır.
+- `docs/features/ERP-000J_AI_GATEWAY_CONTRACT_v1.md` tek fiziksel readiness ve contract
+  artifact'idir. Readiness `ACCEPTABLE`, contract `OPEN`, implementation `BLOCKED` ve
+  production `NO-GO` kalır. Fiziksel ADR-008 mevcut değildir; OPEN-020 açıktır ve
+  AT-059/060/068 Draft durumundadır.
+- Contract; exact `Genel / Şirket içi / Gizli / Çok gizli` veri sınıflarını, mevcut
+  karara göre `Çok gizli` verinin cloud modele gönderilmemesini, server-backed capability
+  ve yeniden yetkilendirmeyi, veri minimizasyonunu, sürümlü prompt/tool allowlist'ini,
+  argüman yeniden doğrulamayı ve preview → insan onayı → güncel permission/CompanyContext
+  → gerekiyorsa reauth → idempotent domain command → transactional audit akışını bağlar.
+  AI Gateway doğrudan DB/ham SQL/idempotency tablosu yazmaz; model çıktısı yetki, onay,
+  formül veya iş doğrusu değildir.
+- Audit alanlarının tek başına gateway olmadığı ve reddedilen/yetkisiz girişimler için
+  kabul edilmiş genel durable security-event channel bulunmadığı açıkça korunmuştur.
+  Mevcut auth'ta AI-specific permission/role veya generic approval/reauth owner
+  uydurulmamıştır. ERP-000K shell contract'ı exact path/version extension gate'i olarak
+  referans alınmış, J manifestine K bağımlılığı eklenmemiştir.
+- OpenAI resmi teknik dokümanları 2026-08-29 tarihinde doğrulanmıştır: Responses API
+  function tools/tool_choice ve strict schema mekanizmaları desteklenir; Structured
+  Outputs schema uyumu ERP authorization/business correctness değildir. Refusal,
+  incomplete ve timeout ayrı ele alınır. API verisi varsayılan olarak model eğitimi için
+  kullanılmaz; açık opt-in/data-sharing ayrı karardır. `store=true`, `store=false`, ZDR,
+  background, conversations/files/MCP/prompt cache/hosted tools saklama sınırları yalnız
+  güncel teknik aday notlarıdır; provider/model/package/SDK veya production kararı değildir.
+- Yerel task-manifest validator 15 task/49 edge için ve 21/21 negatif testte; bootstrap
+  integrity 48 başarılı/1 Windows capability skip; UI validator 24/24 ve 72 kaynak/159
+  ekran golden doğrulamasında geçmiştir. Release build 0 uyarı/0 hata; .NET çözüm testleri
+  365 başarılı/14 gerçek-SQL environment skip ve ayrıca architecture guard 177/177;
+  frontend npm audit/lint, 2/2 test ve production build başarılıdır. Compose config exact
+  yerel env ile geçmiştir; Web container image üretilmiş, API container build'i Windows
+  Docker restore aşamasındaki uzun hareketsizlikte süre sınırıyla durdurulmuştur. Yerel
+  NuGet vulnerability ve dört migration scripti bu turda kesin sonuç üretmediğinden başarı
+  sayılmamış; fresh exact-head GitHub backend/container required job'ları merge kapısıdır.
+- Source, workflow, package, test, migration, Docker, infra, Cari veya `docs/ui` dosyası
+  değiştirilmemiştir. PR #2'nin yedi blocker'ı, ERP-000F/M/O/N/L/K implementation,
+  Identity #62/#63 ve Cari PR #77/#79/#65 kapıları korunur. PR #14 Draft, fresh CI/UI
+  golden, bağımsız exact-SHA review ve insan review kapısında kalır; merge edilmez.
+
+```text
+DONE: PR #18 merge; PR #14 clean current-main rebuild; J-only manifest delta; fiziksel AI Gateway contract; local validation
+IN REVIEW: ERP-000J readiness Draft PR #14; fresh exact-head CI/UI ve bağımsız review bekleniyor
+BLOCKED: ERP-000J/F/M/O/N/L/K implementation; production activation; PR #2; Identity #62/#63; Cari gates
+SAFE NEXT: force-with-lease exact PR head; fresh standard CI/UI golden; bağımsız exact-SHA review; insan review'u
+OPEN DECISIONS: physical ADR-008; OPEN-020; ERP-000J-AI-CONTRACT; capability/permission; approval/reauth owner; durable security-event; provider retention
+MAIN SHA: d5bcd5b30ee79885cf64b3c4c638ddeb91426d20
+ACTIVE PRS: #14 Draft; #2 Draft/blocked; identity production gates #62/#63 open; Cari-owned PR #77/#79/#65 read-only gates
+```
