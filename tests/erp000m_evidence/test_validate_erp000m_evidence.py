@@ -1,25 +1,40 @@
 from __future__ import annotations
 
+import hashlib
+import io
 import json
+import os
 import re
 import shutil
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 
 MODULE_DIRECTORY = Path(__file__).resolve().parent
 if str(MODULE_DIRECTORY) not in sys.path:
     sys.path.insert(0, str(MODULE_DIRECTORY))
 
+import validate_erp000m_evidence as validator_module  # noqa: E402
 from validate_erp000m_evidence import (  # noqa: E402
     DOCS_RELATIVE_ROOT,
     EVIDENCE_TEMPLATE,
+    ENVIRONMENT_SELF_HASH_SPEC,
     ENVIRONMENT_TEMPLATE,
+    MANIFEST_SELF_HASH_SPEC,
     README_TEMPLATE,
+    SELF_HASH_SPECS,
+    SelfHashSpec,
+    WORKLOAD_SELF_HASH_SPEC,
     WORKLOAD_TEMPLATE,
+    compute_self_hash_sha256,
+    main,
+    validate_persisted_hash_pack,
+    validate_persisted_self_hash,
     validate_repository,
 )
 
@@ -40,6 +55,586 @@ class Erp000mEvidenceTemplateValidatorTests(unittest.TestCase):
 
     def test_repository_templates_are_valid(self) -> None:
         self.assertEqual([], validate_repository(self.root))
+
+    def test_filled_pack_hashes_recompute_from_persisted_markdown_and_json(self) -> None:
+        environment, workload, manifest, expected_hashes = self._prepare_filled_pack()
+
+        self.assertEqual(
+            [],
+            validate_persisted_hash_pack(environment, workload, manifest),
+        )
+        for path, spec in zip(
+            (environment, workload, manifest),
+            SELF_HASH_SPECS,
+        ):
+            with self.subTest(artifact=spec.artifact_name):
+                computation, errors = compute_self_hash_sha256(path, spec)
+                self.assertEqual([], errors)
+                self.assertIsNotNone(computation)
+                assert computation is not None
+                self.assertEqual(
+                    expected_hashes[spec.artifact_name],
+                    computation.computed_sha256,
+                )
+                self.assertEqual(
+                    computation.computed_sha256,
+                    computation.stored_value,
+                )
+
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            exit_code = main(
+                [
+                    "--verify-filled-pack",
+                    str(environment),
+                    str(workload),
+                    str(manifest),
+                ]
+            )
+        self.assertEqual(0, exit_code)
+        self.assertIn(
+            "Captured ERP-000M evidence bytes and hash links are valid",
+            stdout.getvalue(),
+        )
+        self.assertIn(
+            "Revalidate before every consumption boundary",
+            stdout.getvalue(),
+        )
+
+    def test_filled_pack_uses_one_captured_snapshot_per_artifact(self) -> None:
+        environment, workload, manifest, _ = self._prepare_filled_pack()
+        original_capture = validator_module._capture_exact_utf8
+        original_open = validator_module._open_capture_descriptor
+        capture_counts: dict[Path, int] = {}
+        open_counts: dict[Path, int] = {}
+
+        def capture_once(path: Path) -> Any:
+            canonical_path = Path(path)
+            capture_counts[canonical_path] = capture_counts.get(canonical_path, 0) + 1
+            if capture_counts[canonical_path] > 1:
+                raise AssertionError(f"second artifact snapshot attempted: {path}")
+            return original_capture(path)
+
+        def open_once(path: Path) -> int:
+            canonical_path = Path(path)
+            open_counts[canonical_path] = open_counts.get(canonical_path, 0) + 1
+            if open_counts[canonical_path] > 1:
+                raise AssertionError(f"second artifact descriptor attempted: {path}")
+            return original_open(path)
+
+        with mock.patch.object(
+            validator_module,
+            "_capture_exact_utf8",
+            side_effect=capture_once,
+        ), mock.patch.object(
+            validator_module,
+            "_open_capture_descriptor",
+            side_effect=open_once,
+        ), mock.patch.object(
+            Path,
+            "read_text",
+            side_effect=AssertionError("mixed snapshot path read attempted"),
+        ):
+            errors = validate_persisted_hash_pack(environment, workload, manifest)
+
+        self.assertEqual([], errors)
+        self.assertEqual(
+            {environment: 1, workload: 1, manifest: 1},
+            capture_counts,
+        )
+        self.assertEqual(
+            {environment: 1, workload: 1, manifest: 1},
+            open_counts,
+        )
+
+    def test_filled_mode_rejects_non_regular_artifact_before_open(self) -> None:
+        directory = self.root / "not-a-regular-artifact"
+        directory.mkdir()
+
+        errors = validate_persisted_self_hash(directory, WORKLOAD_SELF_HASH_SPEC)
+
+        self.assertTrue(any("must be a regular file" in error for error in errors))
+
+    def test_filled_mode_rejects_symbolic_link_or_reparse_point(self) -> None:
+        target = self.root / WORKLOAD_TEMPLATE
+        link = self.root / "workload-link.json"
+        try:
+            os.symlink(target, link)
+        except (NotImplementedError, OSError) as exc:
+            self.skipTest(f"platform cannot create a symbolic link: {exc}")
+
+        errors = validate_persisted_self_hash(link, WORKLOAD_SELF_HASH_SPEC)
+
+        self.assertTrue(
+            any("symbolic link or reparse point is forbidden" in error for error in errors)
+        )
+
+    def test_filled_mode_rejects_directory_symlink_or_junction_ancestor(self) -> None:
+        real_directory = self.root / "real-artifact-directory"
+        real_directory.mkdir()
+        artifact_name = "workload.json"
+        shutil.copy2(
+            self.root / WORKLOAD_TEMPLATE,
+            real_directory / artifact_name,
+        )
+        linked_directory = self.root / "linked-artifact-directory"
+        try:
+            os.symlink(
+                real_directory,
+                linked_directory,
+                target_is_directory=True,
+            )
+        except (NotImplementedError, OSError) as exc:
+            self.skipTest(
+                f"platform cannot create a directory symbolic link or junction: {exc}"
+            )
+
+        errors = validate_persisted_self_hash(
+            linked_directory / artifact_name,
+            WORKLOAD_SELF_HASH_SPEC,
+        )
+
+        self.assertTrue(
+            any(
+                "ancestor symbolic link or reparse point is forbidden" in error
+                for error in errors
+            )
+        )
+
+    @unittest.skipUnless(
+        os.name == "nt",
+        "NTFS alternate data stream enforcement is Windows-specific",
+    )
+    def test_filled_mode_rejects_ntfs_alternate_data_stream(self) -> None:
+        _, workload, _, _ = self._prepare_filled_pack()
+        carrier = self.root / "carrier.txt"
+        carrier.write_text("carrier", encoding="utf-8")
+        stream = Path(f"{carrier}:workload.json")
+        try:
+            stream.write_bytes(workload.read_bytes())
+        except OSError as exc:
+            self.skipTest(f"filesystem does not support NTFS alternate streams: {exc}")
+
+        errors = validate_persisted_self_hash(stream, WORKLOAD_SELF_HASH_SPEC)
+
+        self.assertTrue(
+            any("alternate data streams or named-stream" in error for error in errors)
+        )
+
+    @unittest.skipUnless(
+        os.name == "nt",
+        "Windows share-mode enforcement is platform-specific",
+    )
+    def test_windows_capture_handle_denies_write_and_delete_until_read_finishes(
+        self,
+    ) -> None:
+        _, workload, _, _ = self._prepare_filled_pack()
+        original_read = validator_module.os.read
+        attempted = False
+        write_blocked = False
+        delete_blocked = False
+
+        def read_with_concurrent_mutation_attempt(
+            descriptor: int,
+            byte_count: int,
+        ) -> bytes:
+            nonlocal attempted, write_blocked, delete_blocked
+            if not attempted:
+                attempted = True
+                try:
+                    with workload.open("r+b"):
+                        pass
+                except OSError:
+                    write_blocked = True
+                try:
+                    workload.unlink()
+                except OSError:
+                    delete_blocked = True
+            return original_read(descriptor, byte_count)
+
+        with mock.patch.object(
+            validator_module.os,
+            "read",
+            side_effect=read_with_concurrent_mutation_attempt,
+        ):
+            errors = validate_persisted_self_hash(
+                workload,
+                WORKLOAD_SELF_HASH_SPEC,
+            )
+
+        self.assertTrue(attempted)
+        self.assertTrue(write_blocked, "Windows capture allowed a concurrent writer")
+        self.assertTrue(delete_blocked, "Windows capture allowed a concurrent delete")
+        self.assertEqual([], errors)
+
+    def test_default_template_mode_still_rejects_concrete_self_hashes(self) -> None:
+        cases = (
+            (ENVIRONMENT_TEMPLATE, ENVIRONMENT_SELF_HASH_SPEC),
+            (WORKLOAD_TEMPLATE, WORKLOAD_SELF_HASH_SPEC),
+            (EVIDENCE_TEMPLATE, MANIFEST_SELF_HASH_SPEC),
+        )
+        for relative_path, spec in cases:
+            with self.subTest(artifact=spec.artifact_name):
+                self._restore_templates()
+                path = self.root / relative_path
+                self._replace_self_hash_value(
+                    path,
+                    spec,
+                    spec.sentinel,
+                    "A" * 64,
+                )
+
+                errors = validate_repository(self.root)
+                self.assertTrue(
+                    any(
+                        "expected exact placeholder" in error
+                        or "canonical environment hash drift" in error
+                        for error in errors
+                    )
+                )
+
+    def test_non_hash_byte_mutation_is_detected_for_every_artifact(self) -> None:
+        mutations = (
+            (ENVIRONMENT_SELF_HASH_SPEC, ENVIRONMENT_TEMPLATE),
+            (WORKLOAD_SELF_HASH_SPEC, WORKLOAD_TEMPLATE),
+            (MANIFEST_SELF_HASH_SPEC, EVIDENCE_TEMPLATE),
+        )
+        for spec, relative_path in mutations:
+            with self.subTest(artifact=spec.artifact_name):
+                self._restore_templates()
+                self._prepare_filled_pack()
+                path = self.root / relative_path
+                path.write_bytes(path.read_bytes() + b"\n")
+
+                self.assertTrue(
+                    any(
+                        "persisted self-hash mismatch" in error
+                        for error in validate_persisted_self_hash(path, spec)
+                    )
+                )
+
+    def test_stored_hash_mutation_is_detected(self) -> None:
+        environment, _, _, expected_hashes = self._prepare_filled_pack()
+        original = expected_hashes[ENVIRONMENT_SELF_HASH_SPEC.artifact_name]
+        replacement = "0" * 64
+        self._replace_self_hash_value(
+            environment,
+            ENVIRONMENT_SELF_HASH_SPEC,
+            original,
+            replacement,
+        )
+
+        self.assertTrue(
+            any(
+                "persisted self-hash mismatch" in error
+                for error in validate_persisted_self_hash(
+                    environment,
+                    ENVIRONMENT_SELF_HASH_SPEC,
+                )
+            )
+        )
+
+    def test_unsealed_lowercase_short_and_non_hex_hashes_are_rejected(self) -> None:
+        cases = (
+            (
+                "unsealed",
+                WORKLOAD_SELF_HASH_SPEC.sentinel,
+                "is unsealed",
+            ),
+            ("lowercase", "a" * 64, "64 uppercase hexadecimal"),
+            ("short", "A" * 63, "64 uppercase hexadecimal"),
+            ("non-hex", "G" * 64, "64 uppercase hexadecimal"),
+        )
+        for name, value, expected_error in cases:
+            with self.subTest(case=name):
+                self._restore_templates()
+                path = self.root / WORKLOAD_TEMPLATE
+                if value != WORKLOAD_SELF_HASH_SPEC.sentinel:
+                    self._replace_self_hash_value(
+                        path,
+                        WORKLOAD_SELF_HASH_SPEC,
+                        WORKLOAD_SELF_HASH_SPEC.sentinel,
+                        value,
+                    )
+
+                self.assertTrue(
+                    any(
+                        expected_error in error
+                        for error in validate_persisted_self_hash(
+                            path,
+                            WORKLOAD_SELF_HASH_SPEC,
+                        )
+                    )
+                )
+
+    def test_missing_and_duplicate_self_hash_fields_fail_closed(self) -> None:
+        mutations = (
+            (
+                "missing-json",
+                WORKLOAD_TEMPLATE,
+                '    "workload_profile_hash_sha256": '
+                '"__REQUIRED_INPUT__:WORKLOAD_PROFILE_HASH_SHA256__",\n',
+                "",
+                WORKLOAD_SELF_HASH_SPEC,
+                "must contain a string",
+            ),
+            (
+                "duplicate-json",
+                WORKLOAD_TEMPLATE,
+                '    "workload_profile_hash_sha256": '
+                '"__REQUIRED_INPUT__:WORKLOAD_PROFILE_HASH_SHA256__",\n',
+                '    "workload_profile_hash_sha256": '
+                '"__REQUIRED_INPUT__:WORKLOAD_PROFILE_HASH_SHA256__",\n'
+                '    "workload_profile_hash_sha256": '
+                '"__REQUIRED_INPUT__:WORKLOAD_PROFILE_HASH_SHA256__",\n',
+                WORKLOAD_SELF_HASH_SPEC,
+                "duplicate key",
+            ),
+            (
+                "missing-markdown",
+                ENVIRONMENT_TEMPLATE,
+                "| inventory_hash_sha256 | "
+                "__REQUIRED_INPUT__:ENVIRONMENT_INVENTORY_HASH_SHA256__ | "
+                "__REQUIRED_INPUT__:ENVIRONMENT_INVENTORY_HASH_EVIDENCE_REF__ |\n",
+                "",
+                ENVIRONMENT_SELF_HASH_SPEC,
+                "missing canonical self-hash row",
+            ),
+        )
+        for name, relative_path, original, replacement, spec, expected_error in mutations:
+            with self.subTest(case=name):
+                self._restore_templates()
+                path = self.root / relative_path
+                raw = path.read_text(encoding="utf-8")
+                self.assertIn(original, raw)
+                path.write_text(
+                    raw.replace(original, replacement, 1),
+                    encoding="utf-8",
+                )
+
+                self.assertTrue(
+                    any(
+                        expected_error in error
+                        for error in validate_persisted_self_hash(path, spec)
+                    )
+                )
+
+    def test_escaped_json_self_hash_value_is_rejected(self) -> None:
+        path = self.root / WORKLOAD_TEMPLATE
+        raw = path.read_text(encoding="utf-8")
+        escaped = WORKLOAD_SELF_HASH_SPEC.sentinel.replace(
+            "WORKLOAD",
+            "\\u0057ORKLOAD",
+            1,
+        )
+        self.assertNotEqual(WORKLOAD_SELF_HASH_SPEC.sentinel, escaped)
+        path.write_text(
+            raw.replace(WORKLOAD_SELF_HASH_SPEC.sentinel, escaped, 1),
+            encoding="utf-8",
+        )
+
+        self.assertTrue(
+            any(
+                "literal canonical self-hash field" in error
+                for error in validate_persisted_self_hash(
+                    path,
+                    WORKLOAD_SELF_HASH_SPEC,
+                )
+            )
+        )
+
+    def test_escaped_nested_self_hash_key_is_rejected_as_global_duplicate(self) -> None:
+        path = self.root / WORKLOAD_TEMPLATE
+        raw = path.read_text(encoding="utf-8")
+        anchor = '    "owner": "__REQUIRED_INPUT__:OWNER__",\n'
+        escaped_key = "workload_profile_hash_sha\\u0032\\u0035\\u0036"
+        injected = (
+            anchor
+            + f'    "{escaped_key}": "__REQUIRED_INPUT__:UNRELATED__",\n'
+        )
+        self.assertIn(anchor, raw)
+        path.write_text(raw.replace(anchor, injected, 1), encoding="utf-8")
+
+        self.assertTrue(
+            any(
+                "must appear exactly once globally" in error
+                for error in validate_persisted_self_hash(
+                    path,
+                    WORKLOAD_SELF_HASH_SPEC,
+                )
+            )
+        )
+
+    def test_deep_json_recursion_fails_closed_without_escaping_validator(self) -> None:
+        path = self.root / WORKLOAD_TEMPLATE
+        depth = 1500
+        path.write_text(
+            '{"nested":' * depth + "0" + "}" * depth,
+            encoding="utf-8",
+        )
+
+        errors = validate_persisted_self_hash(path, WORKLOAD_SELF_HASH_SPEC)
+
+        self.assertTrue(errors)
+        self.assertTrue(
+            any("self-hash field" in error for error in errors),
+            "deep JSON must be rejected without recursive-walker failure",
+        )
+
+        with mock.patch.object(
+            validator_module.json,
+            "loads",
+            side_effect=RecursionError("adversarial JSON nesting"),
+        ):
+            recursion_errors = validate_persisted_self_hash(
+                path,
+                WORKLOAD_SELF_HASH_SPEC,
+            )
+        self.assertTrue(
+            any("strict JSON parse failed" in error for error in recursion_errors)
+        )
+
+    def test_only_canonical_json_slot_is_neutralized(self) -> None:
+        path = self.root / WORKLOAD_TEMPLATE
+        raw = path.read_text(encoding="utf-8").replace(
+            "__REQUIRED_INPUT__:OWNER__",
+            WORKLOAD_SELF_HASH_SPEC.sentinel,
+            1,
+        )
+        path.write_text(raw, encoding="utf-8")
+
+        expected = hashlib.sha256(path.read_bytes()).hexdigest().upper()
+        computation, errors = compute_self_hash_sha256(
+            path,
+            WORKLOAD_SELF_HASH_SPEC,
+        )
+
+        self.assertEqual([], errors)
+        self.assertIsNotNone(computation)
+        assert computation is not None
+        self.assertEqual(expected, computation.computed_sha256)
+        self._replace_self_hash_value(
+            path,
+            WORKLOAD_SELF_HASH_SPEC,
+            WORKLOAD_SELF_HASH_SPEC.sentinel,
+            expected,
+        )
+        self.assertEqual(
+            [],
+            validate_persisted_self_hash(path, WORKLOAD_SELF_HASH_SPEC),
+        )
+
+    def test_json_format_markdown_eol_and_utf8_bom_mutations_are_rejected(self) -> None:
+        environment, workload, _, _ = self._prepare_filled_pack()
+        workload_payload = json.loads(workload.read_text(encoding="utf-8"))
+        workload.write_text(
+            json.dumps(
+                workload_payload,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+        self.assertTrue(
+            any(
+                "persisted self-hash mismatch" in error
+                for error in validate_persisted_self_hash(
+                    workload,
+                    WORKLOAD_SELF_HASH_SPEC,
+                )
+            )
+        )
+
+        environment_bytes = environment.read_bytes()
+        if b"\r\n" in environment_bytes:
+            environment.write_bytes(environment_bytes.replace(b"\r\n", b"\n"))
+        else:
+            environment.write_bytes(environment_bytes.replace(b"\n", b"\r\n"))
+        self.assertTrue(
+            any(
+                "persisted self-hash mismatch" in error
+                for error in validate_persisted_self_hash(
+                    environment,
+                    ENVIRONMENT_SELF_HASH_SPEC,
+                )
+            )
+        )
+
+        self._restore_templates()
+        workload = self.root / WORKLOAD_TEMPLATE
+        workload.write_bytes(b"\xef\xbb\xbf" + workload.read_bytes())
+        self.assertTrue(
+            any(
+                "UTF-8 BOM is forbidden" in error
+                for error in validate_persisted_self_hash(
+                    workload,
+                    WORKLOAD_SELF_HASH_SPEC,
+                )
+            )
+        )
+
+    def test_resealed_manifest_with_wrong_source_hash_fails_cross_hash_check(self) -> None:
+        environment, workload, manifest, expected_hashes = self._prepare_filled_pack()
+        manifest_hash = expected_hashes[MANIFEST_SELF_HASH_SPEC.artifact_name]
+        environment_hash = expected_hashes[ENVIRONMENT_SELF_HASH_SPEC.artifact_name]
+        wrong_environment_hash = "0" * 64
+        self._replace_self_hash_value(
+            manifest,
+            MANIFEST_SELF_HASH_SPEC,
+            manifest_hash,
+            MANIFEST_SELF_HASH_SPEC.sentinel,
+        )
+        raw = manifest.read_bytes()
+        self.assertIn(environment_hash.encode("ascii"), raw)
+        manifest.write_bytes(
+            raw.replace(
+                environment_hash.encode("ascii"),
+                wrong_environment_hash.encode("ascii"),
+                1,
+            )
+        )
+        self._seal_with_independent_preimage(manifest, MANIFEST_SELF_HASH_SPEC)
+
+        self.assertEqual(
+            [],
+            validate_persisted_self_hash(manifest, MANIFEST_SELF_HASH_SPEC),
+        )
+        errors = validate_persisted_hash_pack(environment, workload, manifest)
+
+        self.assertTrue(
+            any("environment.inventory_hash_sha256" in error for error in errors)
+        )
+
+    def test_non_ascii_manifest_cross_hash_fails_shape_check_without_exception(self) -> None:
+        environment, workload, manifest, expected_hashes = self._prepare_filled_pack()
+        manifest_hash = expected_hashes[MANIFEST_SELF_HASH_SPEC.artifact_name]
+        workload_hash = expected_hashes[WORKLOAD_SELF_HASH_SPEC.artifact_name]
+        self._replace_self_hash_value(
+            manifest,
+            MANIFEST_SELF_HASH_SPEC,
+            manifest_hash,
+            MANIFEST_SELF_HASH_SPEC.sentinel,
+        )
+        raw = manifest.read_bytes()
+        self.assertEqual(1, raw.count(workload_hash.encode("ascii")))
+        manifest.write_bytes(
+            raw.replace(
+                workload_hash.encode("ascii"),
+                ("Ğ" * 64).encode("utf-8"),
+                1,
+            )
+        )
+        self._seal_with_independent_preimage(manifest, MANIFEST_SELF_HASH_SPEC)
+
+        errors = validate_persisted_hash_pack(environment, workload, manifest)
+
+        self.assertTrue(
+            any(
+                "workload.profile_hash_sha256 must contain 64 uppercase hexadecimal"
+                in error
+                for error in errors
+            )
+        )
 
     def test_duplicate_json_key_is_rejected(self) -> None:
         path = self.root / WORKLOAD_TEMPLATE
@@ -480,6 +1075,93 @@ class Erp000mEvidenceTemplateValidatorTests(unittest.TestCase):
             any(expected in error for error in errors),
             f"Expected an error containing {expected!r}, got: {errors!r}",
         )
+
+    def _prepare_filled_pack(
+        self,
+    ) -> tuple[Path, Path, Path, dict[str, str]]:
+        environment = self.root / ENVIRONMENT_TEMPLATE
+        workload = self.root / WORKLOAD_TEMPLATE
+        manifest = self.root / EVIDENCE_TEMPLATE
+        for path in (environment, workload, manifest):
+            raw = path.read_text(encoding="utf-8")
+            self.assertIn("__REQUIRED_INPUT__:OWNER__", raw)
+            path.write_text(
+                raw.replace("__REQUIRED_INPUT__:OWNER__", "fixture-owner", 1),
+                encoding="utf-8",
+            )
+
+        environment_hash = self._seal_with_independent_preimage(
+            environment,
+            ENVIRONMENT_SELF_HASH_SPEC,
+        )
+        workload_hash = self._seal_with_independent_preimage(
+            workload,
+            WORKLOAD_SELF_HASH_SPEC,
+        )
+
+        manifest_raw = manifest.read_bytes()
+        self.assertEqual(
+            1,
+            manifest_raw.count(ENVIRONMENT_SELF_HASH_SPEC.sentinel.encode("ascii")),
+        )
+        self.assertEqual(
+            1,
+            manifest_raw.count(WORKLOAD_SELF_HASH_SPEC.sentinel.encode("ascii")),
+        )
+        manifest.write_bytes(
+            manifest_raw.replace(
+                ENVIRONMENT_SELF_HASH_SPEC.sentinel.encode("ascii"),
+                environment_hash.encode("ascii"),
+                1,
+            ).replace(
+                WORKLOAD_SELF_HASH_SPEC.sentinel.encode("ascii"),
+                workload_hash.encode("ascii"),
+                1,
+            )
+        )
+        manifest_hash = self._seal_with_independent_preimage(
+            manifest,
+            MANIFEST_SELF_HASH_SPEC,
+        )
+        return (
+            environment,
+            workload,
+            manifest,
+            {
+                ENVIRONMENT_SELF_HASH_SPEC.artifact_name: environment_hash,
+                WORKLOAD_SELF_HASH_SPEC.artifact_name: workload_hash,
+                MANIFEST_SELF_HASH_SPEC.artifact_name: manifest_hash,
+            },
+        )
+
+    def _seal_with_independent_preimage(self, path: Path, spec: SelfHashSpec) -> str:
+        computation, errors = compute_self_hash_sha256(path, spec)
+        self.assertEqual([], errors)
+        self.assertIsNotNone(computation)
+        assert computation is not None
+        self.assertEqual(spec.sentinel, computation.stored_value)
+
+        expected = hashlib.sha256(path.read_bytes()).hexdigest().upper()
+        self.assertEqual(expected, computation.computed_sha256)
+        self._replace_self_hash_value(path, spec, spec.sentinel, expected)
+        return expected
+
+    def _replace_self_hash_value(
+        self,
+        path: Path,
+        spec: SelfHashSpec,
+        old_value: str,
+        new_value: str,
+    ) -> None:
+        raw = path.read_bytes()
+        if spec.json_path is None:
+            old = f"| {spec.field_name} | {old_value} |".encode("utf-8")
+            new = f"| {spec.field_name} | {new_value} |".encode("utf-8")
+        else:
+            old = f'"{spec.field_name}": "{old_value}"'.encode("utf-8")
+            new = f'"{spec.field_name}": "{new_value}"'.encode("utf-8")
+        self.assertEqual(1, raw.count(old))
+        path.write_bytes(raw.replace(old, new, 1))
 
     def _restore_templates(self) -> None:
         destination = self.root / DOCS_RELATIVE_ROOT

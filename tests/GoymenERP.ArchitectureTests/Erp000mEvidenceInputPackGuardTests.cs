@@ -10,7 +10,7 @@ public sealed class Erp000mEvidenceInputPackGuardTests
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["docs/evidence/erp-000m/README.md"] =
-                "71BD6A6211C5029EE39E0E41F43C769C706765E9149616FBAA535E01A927D0F5",
+                "253484D5CF85393DE16BFD3B6F81BE947F7FECA9EB70187F07DF29F850BE6190",
             ["docs/evidence/erp-000m/ENVIRONMENT_INVENTORY_TEMPLATE.md"] =
                 "31972E106E1F3C9A0912AA2A33F2311A5EE2377D477657BECF735B77D4FBCC23",
             ["docs/evidence/erp-000m/WORKLOAD_PROFILE_TEMPLATE.json"] =
@@ -18,9 +18,9 @@ public sealed class Erp000mEvidenceInputPackGuardTests
             ["docs/evidence/erp-000m/EVIDENCE_MANIFEST_TEMPLATE.json"] =
                 "B04A191FF137512071ACE705056059A2314DC2F71072DF8BDFB671042290E97E",
             ["tests/erp000m_evidence/validate_erp000m_evidence.py"] =
-                "890A86DC88B650BB7B07B7BCB737543A0FD9D930A073D4F356EC8BD3211C6555",
+                "0B3DEA99E0642A3E6E72425DC884E9DB87DAA8545015001C17838880A26E31B4",
             ["tests/erp000m_evidence/test_validate_erp000m_evidence.py"] =
-                "A2E84330AA4D553EDEB37533443C2768A1DAECA51945C082DBAA0ECE9679413F"
+                "BE376175CA2B21DF7C7C314732F4DB532CD0E217BCFE0DC40CFECFB29A248F5A"
         };
 
     [Fact]

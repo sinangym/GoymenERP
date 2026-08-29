@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
 import json
+import os
 import re
+import stat
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -27,12 +31,13 @@ README_REQUIRED_LINES = (
     "- Implementation state: `NO-GO / BLOCKED`",
     "- Decision closure: `NONE`",
     "- Artifact purpose: `DECISION-NEUTRAL INPUT TEMPLATE`",
-    "Bu doğrulama yalnız boş ve karar-nötr şablon bütünlüğünü kanıtlar. Doldurulmuş",
-    "kanıtın doğruluğu, ortam parity'si, test sonucu veya herhangi bir kabul kapısının",
-    "kapanması anlamına gelmez.",
+    "Varsayılan doğrulama yalnız boş ve karar-nötr şablon bütünlüğünü kanıtlar. Doldurulmuş",
+    "paket modu da yalnız byte bütünlüğünü ve hash bağlarını kanıtlar. Kanıtın işsel",
+    "doğruluğu, ortam parity'si, test sonucu veya herhangi bir kabul kapısının kapanması",
+    "anlamına gelmez.",
 )
 README_CANONICAL_SHA256 = (
-    "71BD6A6211C5029EE39E0E41F43C769C706765E9149616FBAA535E01A927D0F5"
+    "253484D5CF85393DE16BFD3B6F81BE947F7FECA9EB70187F07DF29F850BE6190"
 )
 ENVIRONMENT_CANONICAL_SHA256 = (
     "31972E106E1F3C9A0912AA2A33F2311A5EE2377D477657BECF735B77D4FBCC23"
@@ -40,6 +45,59 @@ ENVIRONMENT_CANONICAL_SHA256 = (
 
 PLACEHOLDER_PATTERN = re.compile(
     r"^__REQUIRED_INPUT__:[A-Z0-9_-]+(?::[A-Z0-9_-]+)*__$"
+)
+SELF_HASH_HEX_PATTERN = re.compile(r"^[0-9A-F]{64}$")
+
+
+@dataclass(frozen=True)
+class SelfHashSpec:
+    artifact_name: str
+    template_id: str | None
+    json_path: tuple[str, ...] | None
+    field_name: str
+    sentinel: str
+    markdown_marker: str | None = None
+
+
+@dataclass(frozen=True)
+class SelfHashComputation:
+    stored_value: str
+    computed_sha256: str
+
+
+@dataclass(frozen=True)
+class CapturedArtifact:
+    path: Path
+    raw_bytes: bytes
+    text: str
+
+
+ENVIRONMENT_SELF_HASH_SPEC = SelfHashSpec(
+    artifact_name="environment inventory",
+    template_id=None,
+    json_path=None,
+    field_name="inventory_hash_sha256",
+    sentinel="__REQUIRED_INPUT__:ENVIRONMENT_INVENTORY_HASH_SHA256__",
+    markdown_marker="<!-- ERP000M_ENVIRONMENT_INVENTORY_TEMPLATE_V1 -->",
+)
+WORKLOAD_SELF_HASH_SPEC = SelfHashSpec(
+    artifact_name="workload profile",
+    template_id="ERP-000M-WORKLOAD-PROFILE-TEMPLATE-V1",
+    json_path=("evidence", "workload_profile_hash_sha256"),
+    field_name="workload_profile_hash_sha256",
+    sentinel="__REQUIRED_INPUT__:WORKLOAD_PROFILE_HASH_SHA256__",
+)
+MANIFEST_SELF_HASH_SPEC = SelfHashSpec(
+    artifact_name="evidence manifest",
+    template_id="ERP-000M-EVIDENCE-MANIFEST-TEMPLATE-V1",
+    json_path=("reproducibility", "manifest_hash_sha256"),
+    field_name="manifest_hash_sha256",
+    sentinel="__REQUIRED_INPUT__:MANIFEST_HASH_SHA256__",
+)
+SELF_HASH_SPECS = (
+    ENVIRONMENT_SELF_HASH_SPEC,
+    WORKLOAD_SELF_HASH_SPEC,
+    MANIFEST_SELF_HASH_SPEC,
 )
 
 SENSITIVE_KEY_PATTERN = re.compile(
@@ -958,6 +1016,600 @@ def _get_nested(value: Any, path: tuple[Any, ...]) -> Any | None:
     return value
 
 
+def _is_reparse_point(file_stat: os.stat_result) -> bool:
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    file_attributes = getattr(file_stat, "st_file_attributes", 0)
+    return bool(file_attributes & reparse_flag)
+
+
+def _file_identity(file_stat: os.stat_result) -> tuple[int, int]:
+    return file_stat.st_dev, file_stat.st_ino
+
+
+def _stable_file_signature(file_stat: os.stat_result) -> tuple[int, int]:
+    return (
+        file_stat.st_size,
+        file_stat.st_mtime_ns,
+    )
+
+
+def _validate_windows_plain_file_path(artifact_path: Path) -> list[str]:
+    if os.name != "nt":
+        return []
+
+    lexical_path = os.fspath(artifact_path)
+    suffix_after_anchor = lexical_path[len(artifact_path.anchor) :]
+    if ":" in suffix_after_anchor:
+        return [
+            f"{artifact_path}: Windows alternate data streams or named-stream "
+            "paths are forbidden for filled artifacts"
+        ]
+    return []
+
+
+def _ancestor_paths(artifact_path: Path) -> tuple[Path, ...]:
+    ancestors: list[Path] = []
+    current = artifact_path.parent
+    while True:
+        ancestors.append(current)
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    ancestors.reverse()
+    return tuple(ancestors)
+
+
+def _inspect_ancestor_chain(
+    artifact_path: Path,
+    stage: str,
+) -> tuple[dict[Path, tuple[int, int]] | None, list[str]]:
+    identities: dict[Path, tuple[int, int]] = {}
+    for ancestor in _ancestor_paths(artifact_path):
+        try:
+            ancestor_stat = os.lstat(ancestor)
+        except OSError as exc:
+            return None, [
+                f"{artifact_path}: cannot inspect ancestor {ancestor} without "
+                f"following links ({stage}): {exc}"
+            ]
+        if stat.S_ISLNK(ancestor_stat.st_mode) or _is_reparse_point(ancestor_stat):
+            return None, [
+                f"{artifact_path}: ancestor symbolic link or reparse point is "
+                f"forbidden: {ancestor} ({stage})"
+            ]
+        if not stat.S_ISDIR(ancestor_stat.st_mode):
+            return None, [
+                f"{artifact_path}: ancestor path component must be a directory: "
+                f"{ancestor} ({stage})"
+            ]
+        if ancestor_stat.st_ino == 0:
+            return None, [
+                f"{artifact_path}: stable ancestor identity is unavailable: "
+                f"{ancestor} ({stage})"
+            ]
+        identities[ancestor] = _file_identity(ancestor_stat)
+    return identities, []
+
+
+def _validate_no_follow_regular_stat(
+    path: Path,
+    file_stat: os.stat_result,
+    stage: str,
+) -> list[str]:
+    if stat.S_ISLNK(file_stat.st_mode) or _is_reparse_point(file_stat):
+        return [
+            f"{path}: symbolic link or reparse point is forbidden for a filled "
+            f"artifact ({stage})"
+        ]
+    if not stat.S_ISREG(file_stat.st_mode):
+        return [
+            f"{path}: filled artifact must be a regular file ({stage})"
+        ]
+    if file_stat.st_ino == 0:
+        return [
+            f"{path}: stable no-follow file identity is unavailable ({stage})"
+        ]
+    return []
+
+
+def _open_windows_read_locked_descriptor(artifact_path: Path) -> int:
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    generic_read = 0x80000000
+    file_share_read = 0x00000001
+    open_existing = 3
+    file_attribute_normal = 0x00000080
+    file_flag_open_reparse_point = 0x00200000
+    invalid_handle_value = ctypes.c_void_p(-1).value
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_file = kernel32.CreateFileW
+    create_file.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    )
+    create_file.restype = wintypes.HANDLE
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = (wintypes.HANDLE,)
+    close_handle.restype = wintypes.BOOL
+
+    handle = create_file(
+        str(artifact_path),
+        generic_read,
+        file_share_read,
+        None,
+        open_existing,
+        file_attribute_normal | file_flag_open_reparse_point,
+        None,
+    )
+    if handle == invalid_handle_value:
+        error_code = ctypes.get_last_error()
+        raise OSError(
+            error_code,
+            ctypes.FormatError(error_code),
+            str(artifact_path),
+        )
+    try:
+        return msvcrt.open_osfhandle(
+            handle,
+            os.O_RDONLY | getattr(os, "O_BINARY", 0),
+        )
+    except (OSError, ValueError):
+        close_handle(handle)
+        raise
+
+
+def _open_capture_descriptor(artifact_path: Path) -> int:
+    if os.name == "nt":
+        return _open_windows_read_locked_descriptor(artifact_path)
+
+    flags = os.O_RDONLY
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    flags |= getattr(os, "O_NONBLOCK", 0)
+    return os.open(artifact_path, flags)
+
+
+def _capture_exact_utf8(path: Path) -> tuple[CapturedArtifact | None, list[str]]:
+    artifact_path = Path(os.path.abspath(os.fspath(path)))
+    path_errors = _validate_windows_plain_file_path(artifact_path)
+    if path_errors:
+        return None, path_errors
+    before_ancestor_identities, errors = _inspect_ancestor_chain(
+        artifact_path,
+        "before open",
+    )
+    if errors:
+        return None, errors
+    assert before_ancestor_identities is not None
+    try:
+        before_path_stat = os.lstat(artifact_path)
+    except OSError as exc:
+        return None, [
+            f"{artifact_path}: cannot inspect persisted artifact without following "
+            f"links: {exc}"
+        ]
+    errors = _validate_no_follow_regular_stat(
+        artifact_path,
+        before_path_stat,
+        "before open",
+    )
+    if errors:
+        return None, errors
+
+    descriptor: int | None = None
+    try:
+        descriptor = _open_capture_descriptor(artifact_path)
+        before_read_stat = os.fstat(descriptor)
+        errors.extend(
+            _validate_no_follow_regular_stat(
+                artifact_path,
+                before_read_stat,
+                "opened descriptor",
+            )
+        )
+        if errors:
+            return None, errors
+        if _file_identity(before_path_stat) != _file_identity(before_read_stat):
+            return None, [
+                f"{artifact_path}: artifact identity changed between no-follow "
+                "inspection and open"
+            ]
+
+        chunks: list[bytes] = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        raw_bytes = b"".join(chunks)
+        after_read_stat = os.fstat(descriptor)
+        errors.extend(
+            _validate_no_follow_regular_stat(
+                artifact_path,
+                after_read_stat,
+                "after descriptor read",
+            )
+        )
+        try:
+            after_path_stat = os.lstat(artifact_path)
+        except OSError as exc:
+            errors.append(
+                f"{artifact_path}: cannot re-inspect persisted artifact without "
+                f"following links after read: {exc}"
+            )
+            return None, errors
+        errors.extend(
+            _validate_no_follow_regular_stat(
+                artifact_path,
+                after_path_stat,
+                "after read",
+            )
+        )
+        if errors:
+            return None, errors
+
+        after_ancestor_identities, ancestor_errors = _inspect_ancestor_chain(
+            artifact_path,
+            "after read",
+        )
+        errors.extend(ancestor_errors)
+        if errors:
+            return None, errors
+        if after_ancestor_identities != before_ancestor_identities:
+            return None, [
+                f"{artifact_path}: ancestor identity changed while artifact bytes "
+                "were captured"
+            ]
+
+        identities = {
+            _file_identity(before_path_stat),
+            _file_identity(before_read_stat),
+            _file_identity(after_read_stat),
+            _file_identity(after_path_stat),
+        }
+        if len(identities) != 1:
+            return None, [
+                f"{artifact_path}: artifact identity changed while bytes were read"
+            ]
+        signatures = {
+            _stable_file_signature(before_path_stat),
+            _stable_file_signature(before_read_stat),
+            _stable_file_signature(after_read_stat),
+            _stable_file_signature(after_path_stat),
+        }
+        if len(signatures) != 1 or len(raw_bytes) != after_read_stat.st_size:
+            return None, [
+                f"{artifact_path}: artifact metadata or size changed while bytes "
+                "were read"
+            ]
+
+        if raw_bytes.startswith(b"\xef\xbb\xbf"):
+            return None, [
+                f"{artifact_path}: UTF-8 BOM is forbidden by "
+                "ERP000M-SELF-SHA256-V1"
+            ]
+        try:
+            text = raw_bytes.decode("utf-8", errors="strict")
+        except UnicodeError as exc:
+            return None, [
+                f"{artifact_path}: persisted artifact must be strict UTF-8: {exc}"
+            ]
+        return CapturedArtifact(artifact_path, raw_bytes, text), []
+    except OSError as exc:
+        return None, [
+            f"{artifact_path}: cannot read persisted artifact through a no-follow "
+            f"descriptor: {exc}"
+        ]
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def _parse_strict_json_text(raw: str, path: Path) -> tuple[Any | None, list[str]]:
+    try:
+        parsed = json.loads(
+            raw,
+            object_pairs_hook=_reject_duplicate_keys,
+            parse_constant=_reject_non_finite,
+        )
+    except (json.JSONDecodeError, DuplicateKeyError, ValueError, RecursionError) as exc:
+        return None, [f"{path}: strict JSON parse failed: {exc}"]
+    return parsed, []
+
+
+def _find_json_key_paths(
+    value: Any,
+    field_name: str,
+    path: tuple[str, ...] = (),
+) -> list[tuple[str, ...]]:
+    matches: list[tuple[str, ...]] = []
+    pending: list[tuple[Any, tuple[str, ...]]] = [(value, path)]
+    while pending:
+        current, current_path = pending.pop()
+        children: list[tuple[Any, tuple[str, ...]]] = []
+        if isinstance(current, dict):
+            for key, child in current.items():
+                child_path = (*current_path, key)
+                if key == field_name:
+                    matches.append(child_path)
+                children.append((child, child_path))
+        elif isinstance(current, list):
+            for index, child in enumerate(current):
+                children.append((child, (*current_path, f"[{index}]")))
+        pending.extend(reversed(children))
+    return matches
+
+
+def _locate_json_self_hash_slot(
+    raw: str,
+    path: Path,
+    spec: SelfHashSpec,
+) -> tuple[tuple[int, int, str] | None, list[str]]:
+    assert spec.template_id is not None
+    assert spec.json_path is not None
+
+    parsed, errors = _parse_strict_json_text(raw, path)
+    if errors:
+        return None, errors
+    if not isinstance(parsed, dict):
+        return None, [f"{path}: persisted {spec.artifact_name} must be a JSON object"]
+    if parsed.get("template_id") != spec.template_id:
+        errors.append(
+            f"{path}: expected template_id {spec.template_id!r} for "
+            f"{spec.artifact_name}"
+        )
+
+    field_paths = _find_json_key_paths(parsed, spec.field_name)
+    if field_paths != [spec.json_path]:
+        display_paths = ["/" + "/".join(field_path) for field_path in field_paths]
+        errors.append(
+            f"{path}: self-hash field {spec.field_name!r} must appear exactly once "
+            f"globally at /{'/'.join(spec.json_path)}; got {display_paths!r}"
+        )
+
+    structured_value = _get_nested(parsed, spec.json_path)
+    if not isinstance(structured_value, str):
+        errors.append(
+            f"{path}: canonical self-hash path {'/'.join(spec.json_path)!r} "
+            "must contain a string"
+        )
+
+    field_pattern = re.compile(
+        rf'(?P<prefix>"{re.escape(spec.field_name)}"[ \t\r\n]*:[ \t\r\n]*")'
+        rf'(?P<value>[^"\\\r\n]*)(?P<suffix>")'
+    )
+    matches = list(field_pattern.finditer(raw))
+    if len(matches) != 1:
+        errors.append(
+            f"{path}: expected exactly one literal canonical self-hash field "
+            f"{spec.field_name!r}, got {len(matches)}"
+        )
+        return None, errors
+
+    match = matches[0]
+    raw_value = match.group("value")
+    if structured_value != raw_value:
+        errors.append(
+            f"{path}: canonical self-hash field must use an unescaped literal value"
+        )
+    if errors:
+        return None, errors
+    return (match.start("value"), match.end("value"), raw_value), []
+
+
+def _locate_markdown_self_hash_slot(
+    raw: str,
+    path: Path,
+    spec: SelfHashSpec,
+) -> tuple[tuple[int, int, str] | None, list[str]]:
+    assert spec.markdown_marker is not None
+
+    errors: list[str] = []
+    if not (
+        raw.startswith(spec.markdown_marker + "\n")
+        or raw.startswith(spec.markdown_marker + "\r\n")
+    ):
+        errors.append(
+            f"{path}: missing {spec.artifact_name} identity marker for "
+            "ERP000M-SELF-SHA256-V1"
+        )
+
+    rows, row_errors = _parse_environment_rows(raw, path)
+    errors.extend(row_errors)
+    structured_row = rows.get(spec.field_name)
+    if structured_row is None:
+        errors.append(
+            f"{path}: missing canonical self-hash row {spec.field_name!r}"
+        )
+
+    row_pattern = re.compile(
+        rf"(?m)^(?P<prefix>\| {re.escape(spec.field_name)} \| )"
+        r"(?P<value>[^|\r\n]+?)(?P<suffix> \| [^|\r\n]+ \|)(?P<cr>\r?)$"
+    )
+    matches = list(row_pattern.finditer(raw))
+    if len(matches) != 1:
+        errors.append(
+            f"{path}: expected exactly one literal canonical self-hash row "
+            f"{spec.field_name!r}, got {len(matches)}"
+        )
+        return None, errors
+
+    match = matches[0]
+    raw_value = match.group("value")
+    if structured_row is not None and structured_row[0] != raw_value:
+        errors.append(
+            f"{path}: canonical Markdown self-hash row value is ambiguous"
+        )
+    if errors:
+        return None, errors
+    return (match.start("value"), match.end("value"), raw_value), []
+
+
+def _compute_captured_self_hash_sha256(
+    captured: CapturedArtifact,
+    spec: SelfHashSpec,
+) -> tuple[SelfHashComputation | None, list[str]]:
+    if spec.json_path is None:
+        slot, slot_errors = _locate_markdown_self_hash_slot(
+            captured.text,
+            captured.path,
+            spec,
+        )
+    else:
+        slot, slot_errors = _locate_json_self_hash_slot(
+            captured.text,
+            captured.path,
+            spec,
+        )
+    if slot_errors:
+        return None, slot_errors
+    assert slot is not None
+
+    start, end, stored_value = slot
+    if stored_value != spec.sentinel and not SELF_HASH_HEX_PATTERN.fullmatch(
+        stored_value
+    ):
+        return None, [
+            f"{captured.path}: {spec.field_name} must be the canonical sentinel or "
+            "64 uppercase hexadecimal characters"
+        ]
+
+    canonical_preimage = (
+        captured.text[:start] + spec.sentinel + captured.text[end:]
+    ).encode("utf-8")
+    computed_sha256 = hashlib.sha256(canonical_preimage).hexdigest().upper()
+    return SelfHashComputation(stored_value, computed_sha256), []
+
+
+def compute_self_hash_sha256(
+    path: Path,
+    spec: SelfHashSpec,
+) -> tuple[SelfHashComputation | None, list[str]]:
+    captured, errors = _capture_exact_utf8(path)
+    if errors:
+        return None, errors
+    assert captured is not None
+    return _compute_captured_self_hash_sha256(captured, spec)
+
+
+def _validate_captured_self_hash(
+    captured: CapturedArtifact,
+    spec: SelfHashSpec,
+) -> tuple[SelfHashComputation | None, list[str]]:
+    computation, errors = _compute_captured_self_hash_sha256(captured, spec)
+    if errors:
+        return computation, errors
+    assert computation is not None
+
+    if computation.stored_value == spec.sentinel:
+        errors.append(
+            f"{captured.path}: {spec.field_name} is unsealed; persisted evidence must contain "
+            "its computed SHA-256"
+        )
+    elif not hmac.compare_digest(
+        computation.stored_value,
+        computation.computed_sha256,
+    ):
+        errors.append(
+            f"{captured.path}: persisted self-hash mismatch; stored "
+            f"{computation.stored_value}, recomputed {computation.computed_sha256}"
+        )
+    return computation, errors
+
+
+def _validate_persisted_self_hash(
+    path: Path,
+    spec: SelfHashSpec,
+) -> tuple[SelfHashComputation | None, list[str]]:
+    captured, errors = _capture_exact_utf8(path)
+    if errors:
+        return None, errors
+    assert captured is not None
+    return _validate_captured_self_hash(captured, spec)
+
+
+def validate_persisted_self_hash(path: Path, spec: SelfHashSpec) -> list[str]:
+    _, errors = _validate_persisted_self_hash(path, spec)
+    return errors
+
+
+def validate_persisted_hash_pack(
+    environment_path: Path,
+    workload_path: Path,
+    manifest_path: Path,
+) -> list[str]:
+    paths_and_specs = (
+        (environment_path, ENVIRONMENT_SELF_HASH_SPEC),
+        (workload_path, WORKLOAD_SELF_HASH_SPEC),
+        (manifest_path, MANIFEST_SELF_HASH_SPEC),
+    )
+    computations: dict[str, SelfHashComputation] = {}
+    captures: dict[str, CapturedArtifact] = {}
+    errors: list[str] = []
+    for artifact_path, spec in paths_and_specs:
+        captured, capture_errors = _capture_exact_utf8(artifact_path)
+        errors.extend(capture_errors)
+        if captured is None:
+            continue
+        captures[spec.artifact_name] = captured
+        computation, artifact_errors = _validate_captured_self_hash(captured, spec)
+        errors.extend(artifact_errors)
+        if computation is not None:
+            computations[spec.artifact_name] = computation
+
+    manifest_capture = captures.get("evidence manifest")
+    if manifest_capture is None:
+        return errors
+    manifest, manifest_errors = _parse_strict_json_text(
+        manifest_capture.text,
+        manifest_capture.path,
+    )
+    errors.extend(manifest_errors)
+    if not isinstance(manifest, dict):
+        return errors
+
+    cross_hashes = (
+        (
+            "environment.inventory_hash_sha256",
+            _get_nested(manifest, ("environment", "inventory_hash_sha256")),
+            computations.get("environment inventory"),
+        ),
+        (
+            "workload.profile_hash_sha256",
+            _get_nested(manifest, ("workload", "profile_hash_sha256")),
+            computations.get("workload profile"),
+        ),
+    )
+    for field_path, manifest_value, source_computation in cross_hashes:
+        if source_computation is None:
+            continue
+        if not isinstance(manifest_value, str) or not SELF_HASH_HEX_PATTERN.fullmatch(
+            manifest_value
+        ):
+            errors.append(
+                f"{manifest_capture.path}: {field_path} must contain 64 uppercase "
+                "hexadecimal characters"
+            )
+        elif not hmac.compare_digest(
+            manifest_value,
+            source_computation.computed_sha256,
+        ):
+            errors.append(
+                f"{manifest_capture.path}: {field_path} must equal recomputed source artifact "
+                f"SHA-256 {source_computation.computed_sha256}"
+            )
+    return errors
+
+
 def _validate_cross_template_invariants(root: Path) -> list[str]:
     environment_rows = _read_environment_rows_for_invariants(root / ENVIRONMENT_TEMPLATE)
     workload, workload_errors = _load_strict_json(root / WORKLOAD_TEMPLATE)
@@ -1237,15 +1889,33 @@ def main(argv: list[str] | None = None) -> int:
         default=Path(__file__).resolve().parents[2],
         help="Repository root containing docs/evidence/erp-000m.",
     )
+    parser.add_argument(
+        "--verify-filled-pack",
+        nargs=3,
+        type=Path,
+        metavar=("ENVIRONMENT_MD", "WORKLOAD_JSON", "MANIFEST_JSON"),
+        help=(
+            "Verify ERP000M-SELF-SHA256-V1 for an external filled environment, "
+            "workload and evidence-manifest artifact pack. Files are never modified."
+        ),
+    )
     args = parser.parse_args(argv)
 
-    errors = validate_repository(args.repo_root)
+    if args.verify_filled_pack is None:
+        errors = validate_repository(args.repo_root)
+        success_message = "ERP-000M evidence input templates are valid."
+    else:
+        errors = validate_persisted_hash_pack(*args.verify_filled_pack)
+        success_message = (
+            "Captured ERP-000M evidence bytes and hash links are valid. "
+            "Revalidate before every consumption boundary."
+        )
     if errors:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
 
-    print("ERP-000M evidence input templates are valid.")
+    print(success_message)
     return 0
 
 
