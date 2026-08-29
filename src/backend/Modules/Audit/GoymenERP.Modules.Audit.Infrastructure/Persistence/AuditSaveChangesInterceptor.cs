@@ -81,57 +81,54 @@ public sealed class AuditSaveChangesInterceptor(
 
         try
         {
-            ValidateTrackedEvents(dbContext);
-
-            if (_eventsAttached || collector.Pending.Count == 0)
-            {
-                return;
-            }
-
-            foreach (var draft in collector.Pending)
-            {
-                ValidateCompanyId(draft.CompanyId);
-            }
-
-            foreach (var draft in collector.Pending)
-            {
-                var auditEvent = AuditEventFactory.Create(draft);
-                dbContext.Set<AuditEvent>().Add(auditEvent);
-                _attachedEvents.Add(auditEvent);
-            }
-
-            _eventsAttached = true;
+            PrepareCore(dbContext);
         }
         catch
         {
-            // A later factory/validation failure happens before EF can reliably invoke
-            // SaveChangesFailed. Restore only interceptor-owned state and keep the
-            // caller's non-audit tracked changes available for an explicit retry.
             Reset(detachEvents: true, dbContext);
             throw;
         }
     }
 
-    private void ValidateTrackedEvents(DbContext dbContext)
+    private void PrepareCore(DbContext dbContext)
     {
-        foreach (var entry in dbContext.ChangeTracker.Entries<AuditEvent>())
+        var auditEntries = dbContext.ChangeTracker
+            .Entries<AuditEvent>()
+            .ToList();
+
+        var invalidEntry = auditEntries
+            .FirstOrDefault(x => x.State is EntityState.Modified or EntityState.Deleted);
+        if (invalidEntry is not null)
         {
-            if (entry.State is EntityState.Unchanged or EntityState.Detached)
-            {
-                continue;
-            }
-
-            if (entry.State is EntityState.Modified or EntityState.Deleted)
-            {
-                throw new InvalidOperationException(
-                    "Audit kayıtları değiştirilemez veya silinemez.");
-            }
-
-            ValidateCompanyId(entry.Entity.CompanyId);
+            throw new InvalidOperationException(
+                "Audit kayıtları değiştirilemez veya silinemez.");
         }
+
+        foreach (var entry in auditEntries.Where(x => x.State == EntityState.Added))
+        {
+            ValidateCompany(entry.Entity.CompanyId);
+        }
+
+        if (_eventsAttached || collector.Pending.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var draft in collector.Pending)
+        {
+            ValidateCompany(draft.CompanyId);
+        }
+
+        var auditEvents = collector.Pending
+            .Select(AuditEventFactory.Create)
+            .ToList();
+        _attachedEvents.AddRange(auditEvents);
+        dbContext.Set<AuditEvent>().AddRange(auditEvents);
+
+        _eventsAttached = true;
     }
 
-    private void ValidateCompanyId(Guid companyId)
+    private void ValidateCompany(Guid companyId)
     {
         if (companyId == Guid.Empty)
         {
