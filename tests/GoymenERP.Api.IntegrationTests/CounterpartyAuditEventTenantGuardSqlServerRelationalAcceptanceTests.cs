@@ -2,7 +2,10 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Audit.Domain.Events;
+using GoymenERP.Modules.Counterparty.Domain.Accounts;
+using GoymenERP.Modules.Counterparty.Domain.Parties;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
+using GoymenERP.Modules.Idempotency.Domain.Executions;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,7 +15,7 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed class CounterpartyAuditEventTenantGuardSqlServerRelationalAcceptanceTests
 {
     [SqlServerFact]
-    public async Task AuditSidecar_IsTenantFilteredAndLateCollectorWritesAreGuarded()
+    public async Task AuditSidecar_IsTenantFilteredAndAllWritePathsFailClosed()
     {
         var baseConnectionString = Environment.GetEnvironmentVariable(
             SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
@@ -41,49 +44,12 @@ public sealed class CounterpartyAuditEventTenantGuardSqlServerRelationalAcceptan
                 companyACorrelation,
                 companyBCorrelation);
             await AssertUnresolvedQueryFailsClosedAsync(factory);
+            await AssertDirectAddedMismatchRejectedAsync(factory);
+            await AssertUnresolvedWriteRejectedAsync(factory);
+            await AssertModifiedAndDeletedRejectedAsync(factory, companyACorrelation);
+            await AssertAtomicRollbackAndSameScopeRetryAsync(factory);
+            await AssertEmptyCompanyRejectedAtDomainBoundaryAsync(factory);
 
-            var beforeMismatch = await ReadCountsAsync(factory.DatabaseConnectionString);
-            var mismatchedCorrelation = $"cari-audit-mismatch-{Guid.NewGuid():N}";
-            var mismatchException = await Assert.ThrowsAsync<InvalidOperationException>(
-                () => SaveCollectorEventAsync(
-                    factory,
-                    TestCompanyIds.CompanyA,
-                    CreateDraft(TestCompanyIds.CompanyB, mismatchedCorrelation)));
-
-            Assert.Equal(
-                "Audit kaydı aktif şirket bağlamıyla eşleşmelidir.",
-                mismatchException.Message);
-            Assert.Equal(
-                beforeMismatch,
-                await ReadCountsAsync(factory.DatabaseConnectionString));
-            Assert.Equal(
-                0,
-                await CountAuditEventsAsync(
-                    factory.DatabaseConnectionString,
-                    mismatchedCorrelation));
-
-            var beforeEmptyCompany = await ReadCountsAsync(factory.DatabaseConnectionString);
-            var emptyCompanyCorrelation = $"cari-audit-empty-{Guid.NewGuid():N}";
-            var emptyCompanyException = await Assert.ThrowsAsync<ArgumentException>(
-                () => SaveCollectorEventAsync(
-                    factory,
-                    TestCompanyIds.CompanyA,
-                    CreateDraft(Guid.Empty, emptyCompanyCorrelation)));
-
-            Assert.Contains(
-                nameof(AuditEvent.CompanyId),
-                emptyCompanyException.ToString(),
-                StringComparison.Ordinal);
-            Assert.Equal(
-                beforeEmptyCompany,
-                await ReadCountsAsync(factory.DatabaseConnectionString));
-            Assert.Equal(
-                0,
-                await CountAuditEventsAsync(
-                    factory.DatabaseConnectionString,
-                    emptyCompanyCorrelation));
-
-            await AssertAppendOnlyGuardAsync(factory, companyACorrelation);
             Assert.Equal(
                 2,
                 await CountAuditEventsAsync(
@@ -174,24 +140,220 @@ public sealed class CounterpartyAuditEventTenantGuardSqlServerRelationalAcceptan
         Assert.Equal("Şirket bağlamı henüz belirlenmedi.", exception.Message);
     }
 
-    private static async Task AssertAppendOnlyGuardAsync(
-        SqlServerRelationalApiFactory factory,
-        string correlationId)
+    private static async Task AssertDirectAddedMismatchRejectedAsync(
+        SqlServerRelationalApiFactory factory)
     {
+        var correlationId = $"cari-audit-direct-mismatch-{Guid.NewGuid():N}";
+        var before = await ReadCountsAsync(factory.DatabaseConnectionString);
+
         await using var scope = factory.Services.CreateAsyncScope();
         var companyContext = scope.ServiceProvider.GetRequiredService<ICompanyContext>();
         companyContext.Set(TestCompanyIds.CompanyA);
         var dbContext = scope.ServiceProvider.GetRequiredService<CounterpartyDbContext>();
-        var auditEvent = await dbContext.Set<AuditEvent>()
-            .SingleAsync(x => x.CorrelationId == correlationId);
-        dbContext.Remove(auditEvent);
+        dbContext.Set<AuditEvent>().Add(
+            CreateAuditEvent(TestCompanyIds.CompanyB, correlationId));
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => dbContext.SaveChangesAsync());
 
-        Assert.Equal("Audit kayıtları değiştirilemez veya silinemez.", exception.Message);
+        Assert.Equal(
+            "Audit kaydı aktif şirket bağlamıyla eşleşmelidir.",
+            exception.Message);
+        Assert.Equal(before, await ReadCountsAsync(factory.DatabaseConnectionString));
+        Assert.Equal(
+            0,
+            await CountAuditEventsAsync(factory.DatabaseConnectionString, correlationId));
+    }
+
+    private static async Task AssertUnresolvedWriteRejectedAsync(
+        SqlServerRelationalApiFactory factory)
+    {
+        var correlationId = $"cari-audit-unresolved-write-{Guid.NewGuid():N}";
+        var before = await ReadCountsAsync(factory.DatabaseConnectionString);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<CounterpartyDbContext>();
+        dbContext.Set<AuditEvent>().Add(
+            CreateAuditEvent(TestCompanyIds.CompanyA, correlationId));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => dbContext.SaveChangesAsync());
+
+        Assert.Equal(
+            "Audit kaydı yazmak için aktif şirket bağlamı zorunludur.",
+            exception.Message);
+        Assert.Equal(before, await ReadCountsAsync(factory.DatabaseConnectionString));
+        Assert.Equal(
+            0,
+            await CountAuditEventsAsync(factory.DatabaseConnectionString, correlationId));
+    }
+
+    private static async Task AssertModifiedAndDeletedRejectedAsync(
+        SqlServerRelationalApiFactory factory,
+        string correlationId)
+    {
+        var before = await ReadCountsAsync(factory.DatabaseConnectionString);
+
+        await using (var modifiedScope = factory.Services.CreateAsyncScope())
+        {
+            var companyContext = modifiedScope.ServiceProvider
+                .GetRequiredService<ICompanyContext>();
+            companyContext.Set(TestCompanyIds.CompanyA);
+            var dbContext = modifiedScope.ServiceProvider
+                .GetRequiredService<CounterpartyDbContext>();
+            var auditEvent = await dbContext.Set<AuditEvent>()
+                .SingleAsync(x => x.CorrelationId == correlationId);
+            var reason = dbContext.Entry(auditEvent).Property(nameof(AuditEvent.Reason));
+            reason.CurrentValue = "Değiştirilemez audit nedeni";
+            reason.IsModified = true;
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => dbContext.SaveChangesAsync());
+
+            Assert.Equal(
+                "Audit kayıtları değiştirilemez veya silinemez.",
+                exception.Message);
+        }
+
+        Assert.Equal(before, await ReadCountsAsync(factory.DatabaseConnectionString));
+
+        await using (var deletedScope = factory.Services.CreateAsyncScope())
+        {
+            var companyContext = deletedScope.ServiceProvider
+                .GetRequiredService<ICompanyContext>();
+            companyContext.Set(TestCompanyIds.CompanyA);
+            var dbContext = deletedScope.ServiceProvider
+                .GetRequiredService<CounterpartyDbContext>();
+            var auditEvent = await dbContext.Set<AuditEvent>()
+                .SingleAsync(x => x.CorrelationId == correlationId);
+            dbContext.Remove(auditEvent);
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => dbContext.SaveChangesAsync());
+
+            Assert.Equal(
+                "Audit kayıtları değiştirilemez veya silinemez.",
+                exception.Message);
+        }
+
+        Assert.Equal(before, await ReadCountsAsync(factory.DatabaseConnectionString));
         Assert.Equal(
             1,
+            await CountAuditEventsAsync(factory.DatabaseConnectionString, correlationId));
+    }
+
+    private static async Task AssertAtomicRollbackAndSameScopeRetryAsync(
+        SqlServerRelationalApiFactory factory)
+    {
+        var invalidCorrelation = $"cari-audit-atomic-invalid-{Guid.NewGuid():N}";
+        var validCorrelation = $"cari-audit-atomic-valid-{Guid.NewGuid():N}";
+        var before = await ReadCountsAsync(factory.DatabaseConnectionString);
+        var partyId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        var commandExecutionId = Guid.NewGuid();
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var companyContext = scope.ServiceProvider.GetRequiredService<ICompanyContext>();
+        companyContext.Set(TestCompanyIds.CompanyA);
+        var collector = scope.ServiceProvider.GetRequiredService<IAuditEventCollector>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<CounterpartyDbContext>();
+
+        dbContext.Parties.Add(
+            new Party(
+                partyId,
+                PartyCode.Parse("CAR-900001"),
+                PartyKind.LegalEntity,
+                "Audit Tenant Guard Atomik Test Cari"));
+        dbContext.CompanyPartyAccounts.Add(
+            new CompanyPartyAccount(
+                accountId,
+                TestCompanyIds.CompanyA,
+                partyId,
+                PartyRole.Customer));
+        dbContext.Set<CommandExecution>().Add(
+            CommandExecution.Complete(
+                new CommandExecutionData(
+                    commandExecutionId,
+                    TestCompanyIds.CompanyA,
+                    "counterparty.audit-tenant-guard.atomic.v1",
+                    new string('A', 64),
+                    new string('B', 64),
+                    "counterparty-audit-tenant-guard-test",
+                    "Succeeded",
+                    201,
+                    "{}",
+                    validCorrelation,
+                    DateTimeOffset.UtcNow,
+                    1)));
+        collector.Enqueue(CreateDraft(TestCompanyIds.CompanyB, invalidCorrelation));
+
+        var mismatchException = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => dbContext.SaveChangesAsync());
+
+        Assert.Equal(
+            "Audit kaydı aktif şirket bağlamıyla eşleşmelidir.",
+            mismatchException.Message);
+        Assert.Equal(before, await ReadCountsAsync(factory.DatabaseConnectionString));
+        Assert.Equal(
+            0,
+            await CountAuditEventsAsync(
+                factory.DatabaseConnectionString,
+                invalidCorrelation,
+                validCorrelation));
+        Assert.Empty(dbContext.ChangeTracker.Entries<AuditEvent>());
+        Assert.Equal(EntityState.Added, dbContext.Entry(dbContext.Parties.Local.Single()).State);
+        Assert.Equal(
+            EntityState.Added,
+            dbContext.Entry(dbContext.CompanyPartyAccounts.Local.Single()).State);
+        Assert.Equal(
+            EntityState.Added,
+            dbContext.Entry(dbContext.Set<CommandExecution>().Local.Single()).State);
+
+        collector.Enqueue(CreateDraft(TestCompanyIds.CompanyA, validCorrelation));
+        await dbContext.SaveChangesAsync();
+
+        var afterRetry = await ReadCountsAsync(factory.DatabaseConnectionString);
+        Assert.Equal(before.Parties + 1, afterRetry.Parties);
+        Assert.Equal(before.CompanyPartyAccounts + 1, afterRetry.CompanyPartyAccounts);
+        Assert.Equal(before.AuditEvents + 1, afterRetry.AuditEvents);
+        Assert.Equal(before.CommandExecutions + 1, afterRetry.CommandExecutions);
+        Assert.Equal(
+            0,
+            await CountAuditEventsAsync(factory.DatabaseConnectionString, invalidCorrelation));
+        Assert.Equal(
+            1,
+            await CountAuditEventsAsync(factory.DatabaseConnectionString, validCorrelation));
+        Assert.Equal(
+            1,
+            await ScalarAsync<int>(
+                factory.DatabaseConnectionString,
+                $"SELECT COUNT(*) FROM [counterparty].[Parties] WHERE [Id] = '{partyId}';"));
+        Assert.Equal(
+            1,
+            await ScalarAsync<int>(
+                factory.DatabaseConnectionString,
+                $"SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [Id] = '{commandExecutionId}';"));
+    }
+
+    private static async Task AssertEmptyCompanyRejectedAtDomainBoundaryAsync(
+        SqlServerRelationalApiFactory factory)
+    {
+        var before = await ReadCountsAsync(factory.DatabaseConnectionString);
+        var correlationId = $"cari-audit-empty-{Guid.NewGuid():N}";
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => SaveCollectorEventAsync(
+                factory,
+                TestCompanyIds.CompanyA,
+                CreateDraft(Guid.Empty, correlationId)));
+
+        Assert.Contains(
+            nameof(AuditEvent.CompanyId),
+            exception.ToString(),
+            StringComparison.Ordinal);
+        Assert.Equal(before, await ReadCountsAsync(factory.DatabaseConnectionString));
+        Assert.Equal(
+            0,
             await CountAuditEventsAsync(factory.DatabaseConnectionString, correlationId));
     }
 
@@ -223,6 +385,41 @@ public sealed class CounterpartyAuditEventTenantGuardSqlServerRelationalAcceptan
             $"idem-{correlationId}");
     }
 
+    private static AuditEvent CreateAuditEvent(Guid companyId, string correlationId)
+    {
+        var envelope = new AuditEventEnvelope(
+            Guid.NewGuid(),
+            companyId,
+            DateTimeOffset.UtcNow,
+            "counterparty.audit-tenant-guard.direct.v1",
+            "CounterpartyAuditTenantGuardProbe",
+            Guid.NewGuid().ToString("N"),
+            "Probe",
+            null,
+            null,
+            AuditActorTypes.System,
+            "counterparty-audit-tenant-guard-test",
+            "counterparty.parties.read",
+            "[\"SYSTEM_ADMINISTRATOR\"]",
+            "{}",
+            "{}",
+            "Counterparty direct AuditEvent tenant guard gerçek SQL kabul testi",
+            null,
+            AuditAiInvolvement.None,
+            null,
+            SourceChannels.System,
+            null,
+            null,
+            correlationId,
+            null,
+            new string('C', 64),
+            AuditOutcomes.Succeeded,
+            1);
+
+        return AuditEvent.Create(
+            new AuditEventData(envelope, AuditEventIntegrity.Compute(envelope)));
+    }
+
     private static async Task<DatabaseCounts> ReadCountsAsync(string connectionString)
     {
         return new DatabaseCounts(
@@ -247,17 +444,19 @@ public sealed class CounterpartyAuditEventTenantGuardSqlServerRelationalAcceptan
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText = """
+        var parameterNames = correlationIds
+            .Select((_, index) => $"@CorrelationId{index}")
+            .ToArray();
+        command.CommandText = $"""
             SELECT COUNT(*)
             FROM [audit].[AuditEvents]
-            WHERE [CorrelationId] IN (@CorrelationId0, @CorrelationId1);
+            WHERE [CorrelationId] IN ({string.Join(", ", parameterNames)});
             """;
-        command.Parameters.AddWithValue(
-            "@CorrelationId0",
-            correlationIds[0]);
-        command.Parameters.AddWithValue(
-            "@CorrelationId1",
-            correlationIds.Length > 1 ? correlationIds[1] : correlationIds[0]);
+        for (var index = 0; index < correlationIds.Length; index++)
+        {
+            command.Parameters.AddWithValue(parameterNames[index], correlationIds[index]);
+        }
+
         return Assert.IsType<int>(await command.ExecuteScalarAsync());
     }
 
