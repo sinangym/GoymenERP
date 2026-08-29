@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "owner": "CHATGPT-CARI",
+  "module": "Counterparty",
+  "decision_id": "CARI-PERM-001",
+  "decision_source": "https://github.com/sinangym/GoymenERP/issues/43#issuecomment-5458976040",
+  "contract_source": "docs/features/CARI_ACCOUNT_CREATE_ROLE_POLICY_v1.md",
+  "permission_code": "counterparty.accounts.create",
+  "roles": [
+    {
+      "id": "30000000-0000-0000-0000-000000000003",
+      "code": "SYSTEM_ADMINISTRATOR",
+      "name": "Sistem Yöneticisi",
+      "is_system": true,
+      "create_if_missing": false,
+      "permissions_to_ensure": [
+        "counterparty.accounts.create"
+      ]
+    },
+    {
+      "id": "30000000-0000-0000-0000-000000000006",
+      "code": "COUNTERPARTY_ACCOUNT_OPERATOR",
+      "name": "Cari Hesap Yönetimi",
+      "is_system": true,
+      "create_if_missing": true,
+      "permissions_to_ensure": [
+        "counterparty.parties.read",
+        "counterparty.accounts.create",
+        "counterparty.accounts.status.update"
+      ]
+    }
+  ],
+  "default_denied_role_codes": [
+    "ORGANIZATION_READER",
+    "ORGANIZATION_OPERATOR",
+    "SECURITY_ADMINISTRATOR",
+    "SECURITY_APPROVER"
+  ],
+  "automatic_user_assignments": [],
+  "existing_install_reconciliation": {
+    "add_missing_roles": true,
+    "add_missing_permissions": true,
+    "preserve_custom_permissions": true,
+    "preserve_existing_assignments": true,
+    "reject_id_code_collisions": true,
+    "transactional": true
+  }
+}
