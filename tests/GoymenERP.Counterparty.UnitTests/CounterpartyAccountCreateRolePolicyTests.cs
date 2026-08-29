@@ -11,26 +11,22 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
         "src/backend/Modules/Counterparty/COUNTERPARTY_ACCOUNT_CREATE_ROLE_POLICY.json";
     private const string ContractSourcePath =
         "docs/features/CARI_ACCOUNT_CREATE_ROLE_POLICY_v1.md";
-    private const string ExpectedDecisionSource =
+    private const string DecisionSource =
         "https://github.com/sinangym/GoymenERP/issues/43#issuecomment-5461694092";
-    private const string PendingAccountCreatePermission =
-        "counterparty.accounts.create";
-
-    private static readonly Guid SystemAdministratorId =
+    private const string AccountCreatePermission = "counterparty.accounts.create";
+    private static readonly Guid AdministratorId =
         Guid.Parse("30000000-0000-0000-0000-000000000003");
 
     [Fact]
-    public void Accepted_option_a_matches_exact_role_and_reconciliation_contract()
+    public void Accepted_option_a_matches_exact_contract()
     {
-        var repositoryRoot = FindRepositoryRoot();
-        var contract = ReadContract(repositoryRoot);
-        var errors = ValidateContract(repositoryRoot, contract);
-
+        var root = FindRepositoryRoot();
+        var errors = Validate(root, ReadContract(root));
         Assert.True(errors.Count == 0, string.Join("\n\n", errors));
     }
 
     [Fact]
-    public void Strict_json_rejects_duplicate_unknown_missing_and_noncanonical_json()
+    public void Strict_json_rejects_ambiguity_and_missing_required_fields()
     {
         const string duplicateOwner = """
             {
@@ -55,8 +51,7 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
               }
             }
             """;
-        Assert.Throws<InvalidOperationException>(() =>
-            DeserializeStrict(Encoding.UTF8.GetBytes(duplicateOwner)));
+        Assert.Throws<InvalidOperationException>(() => Parse(duplicateOwner));
 
         const string unknownProperty = """
             {
@@ -81,8 +76,7 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
               "unexpected": true
             }
             """;
-        Assert.Throws<JsonException>(() =>
-            DeserializeStrict(Encoding.UTF8.GetBytes(unknownProperty)));
+        Assert.Throws<JsonException>(() => Parse(unknownProperty));
 
         const string missingPermissionCode = """
             {
@@ -105,148 +99,104 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
               }
             }
             """;
-        Assert.Throws<JsonException>(() =>
-            DeserializeStrict(Encoding.UTF8.GetBytes(missingPermissionCode)));
+        Assert.Throws<JsonException>(() => Parse(missingPermissionCode));
 
-        const string commented = """
-            {
-              // comments are forbidden
-              "schema_version": 1
-            }
-            """;
-        Assert.Throws<JsonException>(() =>
-            DeserializeStrict(Encoding.UTF8.GetBytes(commented)));
-
-        const string trailingComma = """
-            {
-              "schema_version": 1,
-            }
-            """;
-        Assert.Throws<JsonException>(() =>
-            DeserializeStrict(Encoding.UTF8.GetBytes(trailingComma)));
+        Assert.ThrowsAny<JsonException>(() => Parse("{ // forbidden\n\"schema_version\": 1 }"));
+        Assert.ThrowsAny<JsonException>(() => Parse("{ \"schema_version\": 1, }"));
     }
 
     [Fact]
-    public void Validation_rejects_role_grant_assignment_identity_and_reconciliation_drift()
+    public void Validation_rejects_role_grant_assignment_and_reconciliation_drift()
     {
-        var repositoryRoot = FindRepositoryRoot();
-        var accepted = ReadContract(repositoryRoot);
-        Assert.Empty(ValidateContract(repositoryRoot, accepted));
-        var administrator = Assert.Single(accepted.Roles!);
+        var root = FindRepositoryRoot();
+        var accepted = ReadContract(root);
+        Assert.Empty(Validate(root, accepted));
+        var admin = Assert.Single(accepted.Roles!);
 
         var missingPermission = accepted with
         {
-            Roles = [administrator with { PermissionsToEnsure = [] }],
+            Roles = [admin with { PermissionsToEnsure = [] }],
         };
-        Assert.Contains(
-            ValidateContract(repositoryRoot, missingPermission),
-            error => error.Contains(
-                "system administrator permission bundle",
-                StringComparison.Ordinal));
+        AssertError(root, missingPermission, "permission bundle");
 
-        var extraOperatorRole = accepted with
+        var extraRole = accepted with
         {
             Roles =
             [
-                administrator,
-                new RolePolicyEntry(
+                admin,
+                new RoleEntry(
                     Guid.Parse("30000000-0000-0000-0000-000000000006"),
                     "COUNTERPARTY_ACCOUNT_OPERATOR",
                     "Cari Hesap Yönetimi",
                     true,
                     true,
-                    [PendingAccountCreatePermission]),
+                    [AccountCreatePermission]),
             ],
         };
-        Assert.Contains(
-            ValidateContract(repositoryRoot, extraOperatorRole),
-            error => error.Contains("exactly one authorized role", StringComparison.Ordinal));
+        AssertError(root, extraRole, "exactly one authorized role");
 
         var unknownPermission = accepted with
         {
             Roles =
             [
-                administrator with
+                admin with
                 {
                     PermissionsToEnsure =
-                    [
-                        PendingAccountCreatePermission,
-                        "counterparty.accounts.unknown",
-                    ],
+                    [AccountCreatePermission, "counterparty.accounts.unknown"],
                 },
             ],
         };
-        Assert.Contains(
-            ValidateContract(repositoryRoot, unknownPermission),
-            error => error.Contains("blank or unknown permission", StringComparison.Ordinal));
+        AssertError(root, unknownPermission, "unknown permission");
 
         var duplicatePermission = accepted with
         {
             Roles =
             [
-                administrator with
+                admin with
                 {
                     PermissionsToEnsure =
-                    [
-                        PendingAccountCreatePermission,
-                        PendingAccountCreatePermission,
-                    ],
+                    [AccountCreatePermission, AccountCreatePermission],
                 },
             ],
         };
-        Assert.Contains(
-            ValidateContract(repositoryRoot, duplicatePermission),
-            error => error.Contains("duplicate permissions", StringComparison.Ordinal));
+        AssertError(root, duplicatePermission, "duplicate permissions");
 
         var automaticAssignment = accepted with
         {
             AutomaticUserAssignments =
-            [
-                new AutomaticAssignment(
-                    Guid.NewGuid(),
-                    SystemAdministratorId,
-                    Guid.NewGuid()),
-            ],
+            [new AutomaticAssignment(Guid.NewGuid(), AdministratorId, Guid.NewGuid())],
         };
-        Assert.Contains(
-            ValidateContract(repositoryRoot, automaticAssignment),
-            error => error.Contains("automatic user assignment", StringComparison.Ordinal));
+        AssertError(root, automaticAssignment, "automatic user assignment");
 
-        var createMissingAdmin = accepted with
+        var createMissingRole = accepted with
         {
-            Roles = [administrator with { CreateIfMissing = true }],
-            ExistingInstallReconciliation =
-                accepted.ExistingInstallReconciliation! with { AddMissingRoles = true },
+            Roles = [admin with { CreateIfMissing = true }],
+            Reconciliation = accepted.Reconciliation! with { AddMissingRoles = true },
         };
-        var createErrors = ValidateContract(repositoryRoot, createMissingAdmin);
-        Assert.Contains(
-            createErrors,
-            error => error.Contains("role lifecycle flags", StringComparison.Ordinal));
-        Assert.Contains(
-            createErrors,
-            error => error.Contains("must not create missing roles", StringComparison.Ordinal));
+        AssertError(root, createMissingRole, "must not create missing roles");
 
         var broadGrant = accepted with
         {
             DefaultDeniedRoleCodes =
-            [
-                "ORGANIZATION_READER",
-                "SECURITY_ADMINISTRATOR",
-                "SECURITY_APPROVER",
-            ],
+            ["ORGANIZATION_READER", "SECURITY_ADMINISTRATOR", "SECURITY_APPROVER"],
         };
-        Assert.Contains(
-            ValidateContract(repositoryRoot, broadGrant),
-            error => error.Contains("default-denied roles", StringComparison.Ordinal));
+        AssertError(root, broadGrant, "default-denied roles");
     }
 
-    private static RolePolicyContract ReadContract(string repositoryRoot)
+    private static void AssertError(string root, PolicyContract contract, string text)
     {
-        var path = ToFullPath(repositoryRoot, ContractPath);
-        return DeserializeStrict(File.ReadAllBytes(path));
+        Assert.Contains(
+            Validate(root, contract),
+            error => error.Contains(text, StringComparison.Ordinal));
     }
 
-    private static RolePolicyContract DeserializeStrict(byte[] bytes)
+    private static PolicyContract ReadContract(string root) =>
+        DeserializeStrict(File.ReadAllBytes(ToFullPath(root, ContractPath)));
+
+    private static PolicyContract Parse(string json) =>
+        DeserializeStrict(Encoding.UTF8.GetBytes(json));
+
+    private static PolicyContract DeserializeStrict(byte[] bytes)
     {
         using var document = JsonDocument.Parse(bytes, new JsonDocumentOptions
         {
@@ -254,91 +204,71 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
             CommentHandling = JsonCommentHandling.Disallow,
             MaxDepth = 32,
         });
-
-        var duplicateErrors = new List<string>();
-        FindDuplicateProperties(document.RootElement, "$", duplicateErrors);
-        if (duplicateErrors.Count > 0)
+        var duplicates = new List<string>();
+        FindDuplicates(document.RootElement, "$", duplicates);
+        if (duplicates.Count > 0)
         {
-            throw new InvalidOperationException(string.Join("\n", duplicateErrors));
+            throw new InvalidOperationException(string.Join("\n", duplicates));
         }
 
-        return JsonSerializer.Deserialize<RolePolicyContract>(
-                   bytes,
-                   new JsonSerializerOptions
-                   {
-                       PropertyNameCaseInsensitive = false,
-                       RespectRequiredConstructorParameters = true,
-                       UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
-                   })
-               ?? throw new InvalidOperationException(
-                   "Counterparty account-create role policy is empty.");
+        return JsonSerializer.Deserialize<PolicyContract>(bytes, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = false,
+            RespectRequiredConstructorParameters = true,
+            UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+        }) ?? throw new InvalidOperationException("Role policy is empty.");
     }
 
-    private static IReadOnlyList<string> ValidateContract(
-        string repositoryRoot,
-        RolePolicyContract contract)
+    private static IReadOnlyList<string> Validate(string root, PolicyContract contract)
     {
         var errors = new List<string>();
-
-        RequireEqual(contract.SchemaVersion, 1, "schema_version", errors);
-        RequireEqual(contract.Owner, "CHATGPT-CARI", "owner", errors);
-        RequireEqual(contract.Module, "Counterparty", "module", errors);
-        RequireEqual(contract.DecisionId, "CARI-PERM-001", "decision_id", errors);
-        RequireEqual(
-            contract.DecisionSource,
-            ExpectedDecisionSource,
-            "decision_source",
-            errors);
-        RequireEqual(
-            NormalizePath(contract.ContractSource),
-            ContractSourcePath,
-            "contract_source",
-            errors);
-        RequireEqual(
-            contract.PermissionCode,
-            PendingAccountCreatePermission,
-            "permission_code",
-            errors);
-        ValidateRepositoryFile(repositoryRoot, contract.ContractSource, errors);
+        Equal(contract.SchemaVersion, 1, "schema_version", errors);
+        Equal(contract.Owner, "CHATGPT-CARI", "owner", errors);
+        Equal(contract.Module, "Counterparty", "module", errors);
+        Equal(contract.DecisionId, "CARI-PERM-001", "decision_id", errors);
+        Equal(contract.DecisionSource, DecisionSource, "decision_source", errors);
+        Equal(Normalize(contract.ContractSource), ContractSourcePath, "contract_source", errors);
+        Equal(contract.PermissionCode, AccountCreatePermission, "permission_code", errors);
+        ValidateSource(root, contract.ContractSource, errors);
 
         var roles = contract.Roles ?? [];
         if (roles.Count != 1)
         {
-            errors.Add(
-                $"Option A must contain exactly one authorized role; found {roles.Count}.");
+            errors.Add($"Option A must contain exactly one authorized role; found {roles.Count}.");
         }
-
         if (roles.Select(role => role.Id).Distinct().Count() != roles.Count)
         {
             errors.Add("Authorized role IDs must be unique.");
         }
-
-        if (roles.Select(role => role.Code)
-            .Distinct(StringComparer.Ordinal).Count() != roles.Count)
+        if (roles.Select(role => role.Code).Distinct(StringComparer.Ordinal).Count() != roles.Count)
         {
             errors.Add("Authorized role codes must be unique.");
         }
 
-        var administrator = roles.SingleOrDefault(role =>
-            role.Code == "SYSTEM_ADMINISTRATOR");
-        if (administrator is null)
+        var admin = roles.SingleOrDefault(role => role.Code == "SYSTEM_ADMINISTRATOR");
+        if (admin is null)
         {
             errors.Add("SYSTEM_ADMINISTRATOR role is missing.");
         }
         else
         {
-            ValidateRole(
-                administrator,
-                SystemAdministratorId,
-                "Sistem Yöneticisi",
-                createIfMissing: false,
-                [PendingAccountCreatePermission],
-                "system administrator",
-                errors);
+            if (admin.Id != AdministratorId
+                || !string.Equals(admin.Name, "Sistem Yöneticisi", StringComparison.Ordinal)
+                || !admin.IsSystem
+                || admin.CreateIfMissing)
+            {
+                errors.Add("Unexpected system administrator identity or lifecycle flags.");
+            }
+            if (!(admin.PermissionsToEnsure ?? []).SequenceEqual(
+                    [AccountCreatePermission], StringComparer.Ordinal))
+            {
+                errors.Add("Unexpected system administrator permission bundle.");
+            }
         }
 
         foreach (var role in roles)
         {
+            var permissions = role.PermissionsToEnsure ?? [];
             if (role.Id == Guid.Empty
                 || string.IsNullOrWhiteSpace(role.Code)
                 || string.IsNullOrWhiteSpace(role.Name)
@@ -346,16 +276,14 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
             {
                 errors.Add($"Role identity is invalid: {role.Code}.");
             }
-
-            var permissions = role.PermissionsToEnsure ?? [];
             if (permissions.Count == 0
                 || permissions.Any(permission =>
                     string.IsNullOrWhiteSpace(permission)
-                    || !IsKnownOrAcceptedPendingPermission(permission)))
+                    || !(string.Equals(permission, AccountCreatePermission, StringComparison.Ordinal)
+                         || ErpPermissions.IsKnown(permission))))
             {
                 errors.Add($"Role contains blank or unknown permission: {role.Code}.");
             }
-
             if (permissions.Distinct(StringComparer.Ordinal).Count() != permissions.Count)
             {
                 errors.Add($"Role contains duplicate permissions: {role.Code}.");
@@ -375,96 +303,35 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
         {
             errors.Add("The exact default-denied roles are not preserved.");
         }
-
         if (contract.AutomaticUserAssignments is null
             || contract.AutomaticUserAssignments.Count != 0)
         {
             errors.Add("The policy must not create any automatic user assignment.");
         }
 
-        var reconciliation = contract.ExistingInstallReconciliation;
-        if (reconciliation is null)
+        if (contract.Reconciliation is null)
         {
             errors.Add("Existing-install reconciliation policy is missing.");
         }
         else
         {
-            if (reconciliation.AddMissingRoles)
+            if (contract.Reconciliation.AddMissingRoles)
             {
                 errors.Add("Option A reconciliation must not create missing roles.");
             }
-
-            if (!reconciliation.AddMissingPermissions
-                || !reconciliation.PreserveCustomPermissions
-                || !reconciliation.PreserveExistingAssignments
-                || !reconciliation.RejectIdCodeCollisions
-                || !reconciliation.Transactional)
+            if (!contract.Reconciliation.AddMissingPermissions
+                || !contract.Reconciliation.PreserveCustomPermissions
+                || !contract.Reconciliation.PreserveExistingAssignments
+                || !contract.Reconciliation.RejectIdCodeCollisions
+                || !contract.Reconciliation.Transactional)
             {
-                errors.Add(
-                    "Existing-install reconciliation must keep all accepted fail-closed invariants enabled.");
+                errors.Add("Existing-install fail-closed invariants are incomplete.");
             }
         }
-
         return errors;
     }
 
-    private static bool IsKnownOrAcceptedPendingPermission(string permission)
-    {
-        return string.Equals(
-                   permission,
-                   PendingAccountCreatePermission,
-                   StringComparison.Ordinal)
-               || ErpPermissions.IsKnown(permission);
-    }
-
-    private static void ValidateRole(
-        RolePolicyEntry role,
-        Guid expectedId,
-        string expectedName,
-        bool createIfMissing,
-        IReadOnlyList<string> expectedPermissions,
-        string label,
-        ICollection<string> errors)
-    {
-        if (role.Id != expectedId)
-        {
-            errors.Add($"Unexpected {label} role ID: {role.Id}.");
-        }
-
-        if (!string.Equals(role.Name, expectedName, StringComparison.Ordinal))
-        {
-            errors.Add($"Unexpected {label} role name: {role.Name}.");
-        }
-
-        if (!role.IsSystem || role.CreateIfMissing != createIfMissing)
-        {
-            errors.Add($"Unexpected {label} role lifecycle flags.");
-        }
-
-        if (!(role.PermissionsToEnsure ?? []).SequenceEqual(
-                expectedPermissions,
-                StringComparer.Ordinal))
-        {
-            errors.Add($"Unexpected {label} permission bundle.");
-        }
-    }
-
-    private static void RequireEqual<T>(
-        T actual,
-        T expected,
-        string field,
-        ICollection<string> errors)
-    {
-        if (!EqualityComparer<T>.Default.Equals(actual, expected))
-        {
-            errors.Add($"Unexpected {field}: {actual}.");
-        }
-    }
-
-    private static void FindDuplicateProperties(
-        JsonElement element,
-        string location,
-        ICollection<string> errors)
+    private static void FindDuplicates(JsonElement element, string path, ICollection<string> errors)
     {
         if (element.ValueKind == JsonValueKind.Object)
         {
@@ -473,13 +340,9 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
             {
                 if (!names.Add(property.Name))
                 {
-                    errors.Add($"Duplicate JSON property at {location}: {property.Name}.");
+                    errors.Add($"Duplicate JSON property at {path}: {property.Name}.");
                 }
-
-                FindDuplicateProperties(
-                    property.Value,
-                    $"{location}.{property.Name}",
-                    errors);
+                FindDuplicates(property.Value, $"{path}.{property.Name}", errors);
             }
         }
         else if (element.ValueKind == JsonValueKind.Array)
@@ -487,69 +350,61 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
             var index = 0;
             foreach (var item in element.EnumerateArray())
             {
-                FindDuplicateProperties(item, $"{location}[{index}]", errors);
-                index++;
+                FindDuplicates(item, $"{path}[{index++}]", errors);
             }
         }
     }
 
-    private static void ValidateRepositoryFile(
-        string repositoryRoot,
-        string? repositoryPath,
-        ICollection<string> errors)
+    private static void ValidateSource(string root, string? path, ICollection<string> errors)
     {
-        var normalized = NormalizePath(repositoryPath);
+        var normalized = Normalize(path);
         if (string.IsNullOrWhiteSpace(normalized)
             || normalized.Contains('*')
             || normalized.Contains('?'))
         {
-            errors.Add($"Invalid contract source path: {repositoryPath}.");
+            errors.Add($"Invalid contract source path: {path}.");
             return;
         }
-
-        var fullPath = ToFullPath(repositoryRoot, normalized);
-        var relativePath = Path.GetRelativePath(repositoryRoot, fullPath);
-        if (Path.IsPathRooted(relativePath)
-            || relativePath == ".."
-            || relativePath.StartsWith(
-                $"..{Path.DirectorySeparatorChar}",
-                StringComparison.Ordinal)
+        var fullPath = ToFullPath(root, normalized);
+        var relative = Path.GetRelativePath(root, fullPath);
+        if (Path.IsPathRooted(relative)
+            || relative == ".."
+            || relative.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
             || !File.Exists(fullPath))
         {
             errors.Add($"Contract source is missing or outside repository: {normalized}.");
         }
     }
 
-    private static string ToFullPath(string repositoryRoot, string repositoryPath)
+    private static void Equal<T>(T actual, T expected, string field, ICollection<string> errors)
     {
-        return Path.GetFullPath(Path.Combine(
-            repositoryRoot,
-            repositoryPath.Replace('/', Path.DirectorySeparatorChar)));
+        if (!EqualityComparer<T>.Default.Equals(actual, expected))
+        {
+            errors.Add($"Unexpected {field}: {actual}.");
+        }
     }
 
-    private static string NormalizePath(string? path)
-    {
-        return (path ?? string.Empty).Replace('\\', '/').Trim();
-    }
+    private static string ToFullPath(string root, string path) =>
+        Path.GetFullPath(Path.Combine(root, path.Replace('/', Path.DirectorySeparatorChar)));
+
+    private static string Normalize(string? path) =>
+        (path ?? string.Empty).Replace('\\', '/').Trim();
 
     private static string FindRepositoryRoot()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null)
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
+             directory is not null;
+             directory = directory.Parent)
         {
             if (File.Exists(Path.Combine(directory.FullName, "GoymenERP.slnx")))
             {
                 return directory.FullName;
             }
-
-            directory = directory.Parent;
         }
-
-        throw new DirectoryNotFoundException(
-            "Göymen ERP repository root was not found.");
+        throw new DirectoryNotFoundException("Göymen ERP repository root was not found.");
     }
 
-    private sealed record RolePolicyContract(
+    private sealed record PolicyContract(
         [property: JsonPropertyName("schema_version")] int SchemaVersion,
         [property: JsonPropertyName("owner")] string? Owner,
         [property: JsonPropertyName("module")] string? Module,
@@ -557,15 +412,15 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
         [property: JsonPropertyName("decision_source")] string? DecisionSource,
         [property: JsonPropertyName("contract_source")] string? ContractSource,
         [property: JsonPropertyName("permission_code")] string? PermissionCode,
-        [property: JsonPropertyName("roles")] IReadOnlyList<RolePolicyEntry>? Roles,
+        [property: JsonPropertyName("roles")] IReadOnlyList<RoleEntry>? Roles,
         [property: JsonPropertyName("default_denied_role_codes")]
         IReadOnlyList<string>? DefaultDeniedRoleCodes,
         [property: JsonPropertyName("automatic_user_assignments")]
         IReadOnlyList<AutomaticAssignment>? AutomaticUserAssignments,
         [property: JsonPropertyName("existing_install_reconciliation")]
-        ReconciliationPolicy? ExistingInstallReconciliation);
+        Reconciliation? Reconciliation);
 
-    private sealed record RolePolicyEntry(
+    private sealed record RoleEntry(
         [property: JsonPropertyName("id")] Guid Id,
         [property: JsonPropertyName("code")] string? Code,
         [property: JsonPropertyName("name")] string? Name,
@@ -579,7 +434,7 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
         [property: JsonPropertyName("role_id")] Guid RoleId,
         [property: JsonPropertyName("company_id")] Guid CompanyId);
 
-    private sealed record ReconciliationPolicy(
+    private sealed record Reconciliation(
         [property: JsonPropertyName("add_missing_roles")] bool AddMissingRoles,
         [property: JsonPropertyName("add_missing_permissions")] bool AddMissingPermissions,
         [property: JsonPropertyName("preserve_custom_permissions")]
