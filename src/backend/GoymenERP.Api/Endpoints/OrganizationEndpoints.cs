@@ -194,6 +194,7 @@ public static class OrganizationEndpoints
         out string canonicalValue)
     {
         canonicalValue = rawValue.Trim();
-        return canonicalValue.Length is > 0 and <= MaximumIdempotencyKeyLength;
+        return canonicalValue.Length is > 0 and <= MaximumIdempotencyKeyLength
+            && !canonicalValue.Contains(',', StringComparison.Ordinal);
     }
 }

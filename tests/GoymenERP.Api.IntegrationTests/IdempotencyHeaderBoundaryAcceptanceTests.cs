@@ -17,6 +17,8 @@ public sealed class IdempotencyHeaderBoundaryAcceptanceTests(GoymenErpApiFactory
         new[] { "   " },
         new[] { new string('a', 129) },
         new[] { $" {new string('b', 129)} " },
+        new[] { "idempotency-a,idempotency-b" },
+        new[] { "idempotency-a, idempotency-b" },
         new[]
         {
             $"idempotency-a-{Guid.NewGuid():N}",
@@ -27,7 +29,6 @@ public sealed class IdempotencyHeaderBoundaryAcceptanceTests(GoymenErpApiFactory
     public static TheoryData<string> ExistingOpaqueSingleValues => new()
     {
         "idempotency+/=~!opaque",
-        "idempotency-a,idempotency-b",
         "idempotency-\u007f-control",
         "idempotency-ğ-unicode",
         "idempotency with internal space",
