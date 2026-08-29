@@ -12,24 +12,15 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
     private const string ContractSourcePath =
         "docs/features/CARI_ACCOUNT_CREATE_ROLE_POLICY_v1.md";
     private const string ExpectedDecisionSource =
-        "https://github.com/sinangym/GoymenERP/issues/43#issuecomment-5461669614";
+        "https://github.com/sinangym/GoymenERP/issues/43#issuecomment-5461694092";
     private const string PendingAccountCreatePermission =
         "counterparty.accounts.create";
 
     private static readonly Guid SystemAdministratorId =
         Guid.Parse("30000000-0000-0000-0000-000000000003");
-    private static readonly Guid CounterpartyAccountOperatorId =
-        Guid.Parse("30000000-0000-0000-0000-000000000006");
-
-    private static readonly string[] ExpectedOperatorPermissions =
-    [
-        ErpPermissions.CounterpartyPartiesRead,
-        PendingAccountCreatePermission,
-        ErpPermissions.CounterpartyAccountsStatusUpdate,
-    ];
 
     [Fact]
-    public void Accepted_policy_matches_exact_role_and_reconciliation_contract()
+    public void Accepted_option_a_matches_exact_role_and_reconciliation_contract()
     {
         var repositoryRoot = FindRepositoryRoot();
         var contract = ReadContract(repositoryRoot);
@@ -55,7 +46,7 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
               "default_denied_role_codes": [],
               "automatic_user_assignments": [],
               "existing_install_reconciliation": {
-                "add_missing_roles": true,
+                "add_missing_roles": false,
                 "add_missing_permissions": true,
                 "preserve_custom_permissions": true,
                 "preserve_existing_assignments": true,
@@ -80,7 +71,7 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
               "default_denied_role_codes": [],
               "automatic_user_assignments": [],
               "existing_install_reconciliation": {
-                "add_missing_roles": true,
+                "add_missing_roles": false,
                 "add_missing_permissions": true,
                 "preserve_custom_permissions": true,
                 "preserve_existing_assignments": true,
@@ -105,7 +96,7 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
               "default_denied_role_codes": [],
               "automatic_user_assignments": [],
               "existing_install_reconciliation": {
-                "add_missing_roles": true,
+                "add_missing_roles": false,
                 "add_missing_permissions": true,
                 "preserve_custom_permissions": true,
                 "preserve_existing_assignments": true,
@@ -136,47 +127,49 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
     }
 
     [Fact]
-    public void Validation_rejects_role_bundle_assignment_identity_and_unknown_permission_drift()
+    public void Validation_rejects_role_grant_assignment_identity_and_reconciliation_drift()
     {
         var repositoryRoot = FindRepositoryRoot();
         var accepted = ReadContract(repositoryRoot);
         Assert.Empty(ValidateContract(repositoryRoot, accepted));
-
-        var roles = Assert.IsAssignableFrom<IReadOnlyList<RolePolicyEntry>>(accepted.Roles);
-        var operatorRole = roles.Single(role =>
-            role.Code == "COUNTERPARTY_ACCOUNT_OPERATOR");
-        var systemAdministrator = roles.Single(role =>
-            role.Code == "SYSTEM_ADMINISTRATOR");
+        var administrator = Assert.Single(accepted.Roles!);
 
         var missingPermission = accepted with
         {
-            Roles =
-            [
-                systemAdministrator,
-                operatorRole with
-                {
-                    PermissionsToEnsure =
-                    [
-                        ErpPermissions.CounterpartyPartiesRead,
-                        PendingAccountCreatePermission,
-                    ],
-                },
-            ],
+            Roles = [administrator with { PermissionsToEnsure = [] }],
         };
         Assert.Contains(
             ValidateContract(repositoryRoot, missingPermission),
-            error => error.Contains("operator permission bundle", StringComparison.Ordinal));
+            error => error.Contains(
+                "system administrator permission bundle",
+                StringComparison.Ordinal));
+
+        var extraOperatorRole = accepted with
+        {
+            Roles =
+            [
+                administrator,
+                new RolePolicyEntry(
+                    Guid.Parse("30000000-0000-0000-0000-000000000006"),
+                    "COUNTERPARTY_ACCOUNT_OPERATOR",
+                    "Cari Hesap Yönetimi",
+                    true,
+                    true,
+                    [PendingAccountCreatePermission]),
+            ],
+        };
+        Assert.Contains(
+            ValidateContract(repositoryRoot, extraOperatorRole),
+            error => error.Contains("exactly one authorized role", StringComparison.Ordinal));
 
         var unknownPermission = accepted with
         {
             Roles =
             [
-                systemAdministrator,
-                operatorRole with
+                administrator with
                 {
                     PermissionsToEnsure =
                     [
-                        ErpPermissions.CounterpartyPartiesRead,
                         PendingAccountCreatePermission,
                         "counterparty.accounts.unknown",
                     ],
@@ -187,13 +180,31 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
             ValidateContract(repositoryRoot, unknownPermission),
             error => error.Contains("blank or unknown permission", StringComparison.Ordinal));
 
+        var duplicatePermission = accepted with
+        {
+            Roles =
+            [
+                administrator with
+                {
+                    PermissionsToEnsure =
+                    [
+                        PendingAccountCreatePermission,
+                        PendingAccountCreatePermission,
+                    ],
+                },
+            ],
+        };
+        Assert.Contains(
+            ValidateContract(repositoryRoot, duplicatePermission),
+            error => error.Contains("duplicate permissions", StringComparison.Ordinal));
+
         var automaticAssignment = accepted with
         {
             AutomaticUserAssignments =
             [
                 new AutomaticAssignment(
                     Guid.NewGuid(),
-                    CounterpartyAccountOperatorId,
+                    SystemAdministratorId,
                     Guid.NewGuid()),
             ],
         };
@@ -201,17 +212,19 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
             ValidateContract(repositoryRoot, automaticAssignment),
             error => error.Contains("automatic user assignment", StringComparison.Ordinal));
 
-        var duplicateId = accepted with
+        var createMissingAdmin = accepted with
         {
-            Roles =
-            [
-                systemAdministrator,
-                operatorRole with { Id = SystemAdministratorId },
-            ],
+            Roles = [administrator with { CreateIfMissing = true }],
+            ExistingInstallReconciliation =
+                accepted.ExistingInstallReconciliation! with { AddMissingRoles = true },
         };
+        var createErrors = ValidateContract(repositoryRoot, createMissingAdmin);
         Assert.Contains(
-            ValidateContract(repositoryRoot, duplicateId),
-            error => error.Contains("role IDs must be unique", StringComparison.Ordinal));
+            createErrors,
+            error => error.Contains("role lifecycle flags", StringComparison.Ordinal));
+        Assert.Contains(
+            createErrors,
+            error => error.Contains("must not create missing roles", StringComparison.Ordinal));
 
         var broadGrant = accepted with
         {
@@ -289,9 +302,10 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
         ValidateRepositoryFile(repositoryRoot, contract.ContractSource, errors);
 
         var roles = contract.Roles ?? [];
-        if (roles.Count != 2)
+        if (roles.Count != 1)
         {
-            errors.Add($"Policy must contain exactly two roles; found {roles.Count}.");
+            errors.Add(
+                $"Option A must contain exactly one authorized role; found {roles.Count}.");
         }
 
         if (roles.Select(role => role.Id).Distinct().Count() != roles.Count)
@@ -305,48 +319,22 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
             errors.Add("Authorized role codes must be unique.");
         }
 
-        var systemAdministrator = roles.SingleOrDefault(role =>
+        var administrator = roles.SingleOrDefault(role =>
             role.Code == "SYSTEM_ADMINISTRATOR");
-        if (systemAdministrator is null)
+        if (administrator is null)
         {
             errors.Add("SYSTEM_ADMINISTRATOR role is missing.");
         }
         else
         {
             ValidateRole(
-                systemAdministrator,
+                administrator,
                 SystemAdministratorId,
                 "Sistem Yöneticisi",
                 createIfMissing: false,
                 [PendingAccountCreatePermission],
                 "system administrator",
                 errors);
-        }
-
-        var accountOperator = roles.SingleOrDefault(role =>
-            role.Code == "COUNTERPARTY_ACCOUNT_OPERATOR");
-        if (accountOperator is null)
-        {
-            errors.Add("COUNTERPARTY_ACCOUNT_OPERATOR role is missing.");
-        }
-        else
-        {
-            ValidateRole(
-                accountOperator,
-                CounterpartyAccountOperatorId,
-                "Cari Hesap Yönetimi",
-                createIfMissing: true,
-                ExpectedOperatorPermissions,
-                "operator",
-                errors);
-
-            if ((accountOperator.PermissionsToEnsure ?? []).Contains(
-                    ErpPermissions.CounterpartyPartiesCreate,
-                    StringComparer.Ordinal))
-            {
-                errors.Add(
-                    "The operator role must not receive counterparty.parties.create implicitly.");
-            }
         }
 
         foreach (var role in roles)
@@ -395,16 +383,26 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
         }
 
         var reconciliation = contract.ExistingInstallReconciliation;
-        if (reconciliation is null
-            || !reconciliation.AddMissingRoles
-            || !reconciliation.AddMissingPermissions
-            || !reconciliation.PreserveCustomPermissions
-            || !reconciliation.PreserveExistingAssignments
-            || !reconciliation.RejectIdCodeCollisions
-            || !reconciliation.Transactional)
+        if (reconciliation is null)
         {
-            errors.Add(
-                "Existing-install reconciliation must keep all accepted fail-closed invariants enabled.");
+            errors.Add("Existing-install reconciliation policy is missing.");
+        }
+        else
+        {
+            if (reconciliation.AddMissingRoles)
+            {
+                errors.Add("Option A reconciliation must not create missing roles.");
+            }
+
+            if (!reconciliation.AddMissingPermissions
+                || !reconciliation.PreserveCustomPermissions
+                || !reconciliation.PreserveExistingAssignments
+                || !reconciliation.RejectIdCodeCollisions
+                || !reconciliation.Transactional)
+            {
+                errors.Add(
+                    "Existing-install reconciliation must keep all accepted fail-closed invariants enabled.");
+            }
         }
 
         return errors;
