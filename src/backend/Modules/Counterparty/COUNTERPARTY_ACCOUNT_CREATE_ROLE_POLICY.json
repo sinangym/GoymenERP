@@ -3,7 +3,7 @@
   "owner": "CHATGPT-CARI",
   "module": "Counterparty",
   "decision_id": "CARI-PERM-001",
-  "decision_source": "https://github.com/sinangym/GoymenERP/issues/43#issuecomment-5458976040",
+  "decision_source": "https://github.com/sinangym/GoymenERP/issues/43#issuecomment-5461669614",
   "contract_source": "docs/features/CARI_ACCOUNT_CREATE_ROLE_POLICY_v1.md",
   "permission_code": "counterparty.accounts.create",
   "roles": [
