@@ -113,6 +113,17 @@
         ]
       },
       {
+        "Id": "30000000-0000-0000-0000-000000000006",
+        "Code": "COUNTERPARTY_ACCOUNT_OPERATOR",
+        "Name": "Cari Hesap Yönetimi",
+        "IsSystem": true,
+        "Permissions": [
+          "counterparty.parties.read",
+          "counterparty.accounts.create",
+          "counterparty.accounts.status.update"
+        ]
+      },
+      {
         "Id": "30000000-0000-0000-0000-000000000004",
         "Code": "SECURITY_ADMINISTRATOR",
         "Name": "Yetki Yöneticisi",
