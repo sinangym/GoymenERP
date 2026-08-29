@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
@@ -30,6 +31,8 @@ public sealed class CounterpartyDbContext(
         ConfigureCompanyPartyAccount(modelBuilder);
         ConfigureOrganizationCompanyReference(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
+        modelBuilder.Entity<AuditEvent>()
+            .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
         modelBuilder.ConfigureCommandExecution(excludeFromMigrations: true);
         modelBuilder.Entity<CommandExecution>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -137,6 +140,8 @@ public sealed class CounterpartyDbContext(
 
     private void ApplyWriteGuards()
     {
+        CounterpartyAuditEventTenantGuard.Validate(this, companyContext);
+
         foreach (var entry in ChangeTracker.Entries<Party>())
         {
             if (entry.State == EntityState.Unchanged)
