@@ -164,8 +164,18 @@ Bu PR yalnız Identity grant ve uzlaştırma çekirdeğini sağlar. Counterparty
 - `git diff --check`: temiz.
 - Bağımsız exact-diff self-review: P0/P1 yok.
 
-Uzak exact-head CI kanıtı Draft PR açıldıktan sonra HANDOFF-V1 kaydına eklenir; eski
-branch veya eski SHA üzerindeki yeşil run yeniden kullanılmaz.
+2026-08-29 uzak exact-head ve merge kanıtı:
+
+- PR `#64` exact head `b395da940a9928c515132cb550608dbb7a037aad` için standart CI
+  `33249484752` ve UI golden `33249484747` başarılıdır.
+- ChatGPT-CARI exact-head salt-okunur incelemesi P0/P1 bulmadan `HANDOFF-ACCEPTED`
+  sonucuyla tamamlanmıştır.
+- Açık insan Identity/security onayı sonrasında expected-head korumasıyla squash merge
+  yapılmıştır; merge commit `7e832d2b98a07428d46ead54a9d136b24c62203a` olmuştur.
+- Merge sonrası aynı `main` SHA için standart CI `33251655476` ve UI golden
+  `33251655426` tamamen başarılıdır.
+
+Eski branch veya eski SHA üzerindeki yeşil run yeni head için yeniden kullanılamaz.
 
 ## 11. Migration ve geri dönüş
 
@@ -199,10 +209,10 @@ Bu kararlar kapanmadan:
 - [x] Unit, full solution ve gerçek SQL Server testleri yerelde geçer.
 - [x] Migration/schema ve sahiplik taşması yoktur.
 - [x] Production runner ve global evidence ayrı issue'larda görünürdür.
-- [ ] Draft PR exact head için standart CI ve UI golden yeşildir.
-- [ ] ChatGPT-CARI exact-head read-only Identity/security review tamamlanır.
-- [ ] İnsan Identity/security merge kararı verilir; auto-merge yapılmaz.
-- [ ] Merge sonrası new-main CI yeşildir.
+- [x] Draft PR exact head için standart CI ve UI golden yeşildir.
+- [x] ChatGPT-CARI exact-head read-only Identity/security review tamamlanır.
+- [x] İnsan Identity/security merge kararı verilir; auto-merge yapılmaz.
+- [x] Merge sonrası new-main CI yeşildir.
 
 Production activation ve global security evidence bu çekirdeğin merge edilmesinden sonra
 da Issue `#62` ve `#63` kapanana kadar bloklu kalır.
