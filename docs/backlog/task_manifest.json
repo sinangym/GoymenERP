@@ -170,12 +170,22 @@
     {
       "id": "ERP-000O",
       "title": "CI/CD ve kalite kapıları",
-      "status": "ready",
+      "status": "blocked",
       "depends_on": [
-        "ERP-000A"
+        "ERP-000A",
+        "ERP-000B",
+        "ERP-000C",
+        "ERP-000D",
+        "ERP-000E",
+        "ERP-000M"
       ],
-      "scope": "Build, unit, integration, lint, security scan, artifact manifest.",
-      "acceptance": "Başarısız kapı merge/yayın engeller.",
+      "scope": "Provider-agnostic fail-closed PR/main quality enforcement; trusted runner/executor substrate; build-once immutable application, migration, configuration and rollback evidence; SBOM/provenance/signing trust and environment approval boundaries. Production deployment remains disabled.",
+      "acceptance": "All depends_on tasks are accepted and merged; physical ADR-010, OPEN-014 and ERP-000O-DELIVERY-CONTRACT close; protected-main required checks, untrusted-PR secret isolation, verified runner substrate, pinned supply chain, real-SQL migration evidence and immutable uploaded artifact/provenance/rollback proof pass. Production activation remains fail-closed until OPEN-013/015/017, ERP-000N/ERP-000L and human approval close.",
+      "blocked_by": [
+        "ADR-010",
+        "OPEN-014",
+        "ERP-000O-DELIVERY-CONTRACT"
+      ],
       "priority": "P0"
     }
   ]
