@@ -1,748 +1,518 @@
-# ChatGPT–Codex Paylaşımlı Yürütme El Kitabı v1.0
+# ChatGPT–Codex Göymen ERP Yürütme Playbook'u v1.1
 
-**Bağlı plan:** `GOYMEN_ERP_END_TO_END_EXECUTION_PLAN_V1.md`  
-**Makine-okunur plan:** `docs/backlog/erp_e2e_workstreams_v1.json`  
-**Başlangıç main:** `fed32839a9e0b4258efa5980fddc2846aaf85c49`
-
----
-
-## 1. Ortak çalışma modeli
-
-ChatGPT ve Codex iki ayrı üretim ajanıdır; birbirlerinin kopyası değildir.
-
-- GitHub ortak hafızadır.
-- Her iş exact `main` SHA ile başlar.
-- Her aggregate/shared yüzeyde tek writer vardır.
-- Diğer ajan read-only reviewer'dır.
-- Yeni commit, eski CI ve review kanıtını geçersiz kılar.
-- İşin amacı doküman üretmek değil, çalışan kullanıcı sonucu oluşturmaktır.
-- Bilinen ekran/iş kararları tekrar analiz edilmez.
-- Yalnız para, stok, muhasebe, hukuk, yetki, tolerans, saklama ve cutover gibi D2 konular kullanıcı kararı bekler.
-- Her modül dikey dilimler halinde tamamlanır.
+**Amaç:** Göymen ERP'yi iki ajanla hızlı, çakışmasız ve doğrulanabilir biçimde tamamlamak.  
+**Kanonik plan:** `docs/delivery/GOYMEN_ERP_END_TO_END_EXECUTION_PLAN_V1.md`  
+**Machine overlay:** `docs/backlog/erp_e2e_workstreams_v1.json`  
+**Kanonik görev grafiği:** `docs/backlog/task_manifest.json`  
+**Karar sırası:** son ürün sahibi kararı → `KARAR_SICILI.md` → Master v3 → eski prototip/StokERP referansı  
+**Son doğrulanan main:** `7e832d2b98a07428d46ead54a9d136b24c62203a`
 
 ---
 
-# BÖLÜM A — CHATGPT-BUSINESS PLANI
+## 1. Değişmez çalışma ilkeleri
 
-## A1. Rol
+1. GitHub exact SHA/diff/CI ortak gerçektir.
+2. E2E plan task graph'ı supersede etmez; overlay'dir.
+3. Aynı aggregate/shared dosyada tek writer.
+4. Reviewer diğer ajanın branch'ine yazmaz.
+5. Head değişirse review ve CI stale.
+6. P0/P1 merge engeller; P2/P3 ayrı issue'ya taşınır.
+7. Bilinen karar yeniden analiz edilmez.
+8. D2 karar olmadan para/stok/muhasebe/rol/topoloji üretilmez.
+9. Outbox kabul edilmeden async durability iddia edilmez.
+10. UI + API + DB + security + real SQL + E2E olmadan modül done değildir.
+11. Auto-merge yoktur.
+12. Bir iş bloke olursa ajan kendi sahiplik alanındaki sonraki bağımsız işi seçer.
 
-ChatGPT-BUSINESS aşağıdaki rollerin birleşimidir:
+---
 
-- iş analisti;
-- domain tasarımcısı;
-- modül backend geliştiricisi;
-- modül React geliştiricisi;
-- formül ve kabul testi sahibi;
-- UX/ekran referansı eşleyicisi;
-- veri migrasyon eşleme sahibi;
-- Codex platform PR'larının iş doğruluğu reviewer'ı.
+## 2. Her oturumun başlangıç algoritması
 
-Kullanıcı ürün sahibidir. ChatGPT kullanıcı adına geri döndürülemez D2 kararı vermez.
-
-## A2. Yazma sahipliği
-
-ChatGPT'nin ana production yazma alanları:
+Her ajan:
 
 ```text
-src/backend/Modules/Counterparty/**
-src/backend/Modules/Product/**
-src/backend/Modules/Sales/**
-src/backend/Modules/Purchasing/**
-src/backend/Modules/BusinessPurchases/**
-src/backend/Modules/Inventory/**
-src/backend/Modules/Allocation/**
-src/backend/Modules/Manufacturing/**
-src/backend/Modules/Logistics/**
-src/backend/Modules/Finance/**
-src/backend/Modules/Accounting/**
-İlgili module-owned frontend route/workspace/component dosyaları
-İlgili module-owned tests/docs/contracts
+1. fetch/prune
+2. current main SHA
+3. kendi açık PR'ları
+4. karşı ajanın review bekleyen PR'ları
+5. Issue #66 ve machine overlay
+6. kanonik task IDs ve blocker'lar
+7. aynı dosya/aggregate üzerinde başka writer var mı?
+8. exact güvenli sonraki iş
 ```
 
-ChatGPT aşağıdaki alanlara ancak açık tek-writer devriyle yazar:
+kaydı çıkarır.
+
+Zorunlu durum özeti:
 
 ```text
-.github/**
-Identity generic seeder/reconciler
-shared design-system core
-shared worker/outbox/search/AI gateway
-shared deployment/backup tooling
-```
-
-## A3. İlk aktif görevler
-
-### A3.1 PR #60
-
-1. `main` ve PR head canlı okunur.
-2. PR #61 merge commit'iyle non-destructive sync yapılır.
-3. Diff'in yalnız parser + acceptance kapsamı olduğu doğrulanır.
-4. Real SQL boundary testleri çalıştırılır.
-5. Full CI ve UI golden tamamlanır.
-6. Codex exact-head re-review istenir.
-7. P0/P1 yoksa insan security merge kapısına sunulur.
-8. Merge sonrası Issue #54/#56 kapanış gerçeği güncellenir.
-
-### A3.2 Issue #53
-
-Ayrı branch:
-
-```text
-hotfix/chatgpt/cari-audit-event-tenant-guard-v1
-```
-
-Teslimat:
-
-- AuditEvent global query filter;
-- active CompanyContext write guard;
-- interceptor sonrası eklenen audit için guard;
-- A/B gerçek SQL görünürlük testi;
-- wrong-company audit insert rollback;
-- append-only ve sidecar migration ownership koruması.
-
-### A3.3 PR #64 review
-
-ChatGPT şunları doğrular:
-
-- kanonik kaynak `main`deki Option A contractıdır;
-- yalnız SYSTEM_ADMINISTRATOR;
-- missing admin rolü oluşturulmaz;
-- diğer roller ve assignment'lar değişmez;
-- custom permission korunur;
-- transaction/concurrency/collision gerçek SQL kanıtı;
-- production runner iddiası yok;
-- #62/#63 ayrı kalır;
-- schema/migration değişikliği yok veya gerekçesi açık;
-- PR #36/ChatGPT branch'ine write yok.
-
-Sonuç exact SHA ile PR #64'e yazılır.
-
-### A3.4 PR #31 review
-
-#64 ve #60 sonrası current-main head üzerinde:
-
-- exact beş dosya;
-- ilk `dotnet` öncesi preflight;
-- tool/restore/build/test/EF/container sınırları;
-- NuGet ve response-file koruması;
-- Counterparty/iş modülü davranışının değişmemesi;
-- full CI ve container evidence
-
-incelenir.
-
-### A3.5 PR #36 finalizasyonu
-
-#64, #60, #31 ve #53 main'e girdikten sonra:
-
-1. current main iki-parent/non-destructive sync;
-2. operator role kalıntılarının kaldırılması;
-3. duplicate header hunklarının kaldırılması;
-4. reason alanının kullanıcı açısından opsiyonel tutulması;
-5. permission registry ve admin seed davranışının main'den devralınması;
-6. Party visibility'nin yetkili mevcut account üzerinden doğrulanması;
-7. route, docs ve tests Option A ile uyumlu hale getirilmesi;
-8. gerçek SQL full acceptance;
-9. Codex exact-head review;
-10. insan merge kapısı.
-
-## A4. Dalga bazlı ChatGPT planı
-
-### W1 — Cari UI ve Ürün/Hizmet
-
-ChatGPT paralel olmayan iki ardışık ana dilim açar:
-
-#### Dilim CARI-UI-001
-
-Kullanıcı sonucu:
-
-> Yetkili kullanıcı Cari listesinden kaydı açar, grup kimliği ve şirket hesaplarını Cari 360'ta görür.
-
-Kapsam:
-
-- route ve permission;
-- list filters/search;
-- Cari 360 özet ve şirket hesapları;
-- create/status/link aksiyonları;
-- documents tab placeholder yerine gerçek Document Vault linki;
-- loading/empty/error/403/404/conflict;
-- Playwright ve visual test.
-
-#### Dilim PRD-CORE-001
-
-Kullanıcı sonucu:
-
-> Yetkili kullanıcı yeni ürün oluşturur; stok, alış, satış ve paket birimlerini tanımlar.
-
-Kapsam:
-
-- Product aggregate;
-- taxonomy ve attribute set;
-- immutable user code;
-- unit conversions;
-- package standard v1;
-- product list/detail/form;
-- SQL constraints ve audit.
-
-#### Dilim PRD-PRICE-001
-
-- liste fiyatı;
-- currency/unit/validity;
-- cari/ürün kapsamı;
-- minimum fiyat ve iskonto contractı;
-- preview ve approval connection.
-
-### W2 — Satış ve Satın Alma
-
-#### SAL-ORDER-001
-
-- draft sales order;
-- customer and product selection;
-- quantity/unit/price/currency;
-- line and header delivery date;
-- snapshot semantics;
-- list/detail/create UI.
-
-#### SAL-APPROVAL-001
-
-- price/discount/margin/risk preview;
-- approval/revision;
-- change diff;
-- immutable previous revision;
-- cancellation impact list.
-
-#### PUR-ORDER-001
-
-- supplier purchase order;
-- line delivery segments;
-- ready/in-transit information;
-- approval/revision;
-- purchase remaining calculation;
-- future supply projection event.
-
-#### OPR-PURCHASE-001
-
-- non-commercial operating purchase request;
-- category, cost center and approval;
-- no pollution of commercial Product catalog.
-
-### W3 — Stok ve Tahsis
-
-#### INV-LEDGER-001
-
-- StockEvent aggregate;
-- opening and goods-receipt event;
-- position projection;
-- ownership/responsibility/location/trade context;
-- physical stock screen.
-
-#### INV-LABEL-001
-
-- label/lot/heat/coil/MTC;
-- split/merge events;
-- print preview;
-- immutable old label history.
-
-#### ALC-SALES-001
-
-- Sales Order demand;
-- physical label source;
-- atomic allocation;
-- partial/release/cancel;
-- over-allocation race.
-
-#### INV-GR-001
-
-- purchase order to goods receipt;
-- accepted/rejected/net quantity;
-- future supply to physical transformation;
-- supplier and document links.
-
-#### INV-COUNT-TRANSFER-001
-
-- count and approval;
-- quality/legal/system block;
-- two-leg transfer;
-- external processing ownership preservation.
-
-### W4 — Üretim
-
-Ortak altyapıdan sonra her motor ayrı PR trenidir:
-
-1. `MFG-SLIT-WIND-001`.
-2. `MFG-COLD-ROLL-001`.
-3. `MFG-TUBE-PROFILE-001`.
-4. `MFG-PAINT-001`.
-5. `MFG-CUT-TO-LENGTH-001`.
-6. `MFG-QUEUE-001`.
-7. `MFG-REALIZATION-001`.
-8. `MFG-GENEALOGY-001`.
-
-Her motor:
-
-- DoR;
-- formül ID/sürüm;
-- calculator API;
-- preview hash;
-- plan DB/API/UI;
-- actual realization;
-- mass balance;
-- stock/genealogy effects;
-- real SQL/golden/E2E
-
-taşır.
-
-### W5 — Lojistik
-
-1. Load instruction.
-2. Vehicle/driver/stops.
-3. Actual label loading.
-4. Weighbridge.
-5. Shipment/partial shipment.
-6. Dispatch note.
-7. Invoice-ready grouping.
-8. Purchase goods receipt/return alignment.
-
-### W6 — Finans ve Muhasebe
-
-#### FIN-OPENITEM-001
-
-- invoice/open-item model;
-- aging;
-- original currency/local equivalent;
-- no automatic customer/supplier netting.
-
-#### FIN-SOURCE-DISTRIBUTION-001
-
-- bank/cash/dekont financial source;
-- many-to-many allocation;
-- partial/multiple closure;
-- no duplicate movement.
-
-#### FIN-BANK-RECON-001
-
-- bank statement import;
-- 1:1, 1:n, n:1, n:n matching;
-- unmatched lines;
-- reversal.
-
-#### FIN-INSTRUMENTS-001
-
-- check/note;
-- POS gross/net/commission;
-- DBS collateral versus real receipt;
-- company card and advance.
-
-#### FIN-TREASURY-001
-
-- payment package;
-- 13-week cash;
-- credit facility/drawdown;
-- limit/collateral/covenant;
-- budget.
-
-#### ACC-CORE-001
-
-- chart of accounts;
-- voucher/voucher line;
-- operation-to-voucher draft;
-- trial balance;
-- period lock;
-- external accounting reconciliation.
-
-### W7–W8
-
-- semantic report definitions;
-- AI tool business contracts;
-- migration mappings;
-- UAT scripts;
-- cutover reconciliation;
-- user training data and help content.
-
-## A5. ChatGPT her PR öncesi kontrol listesi
-
-```text
-[ ] current main SHA recorded
-[ ] no existing PR implements the same slice
-[ ] source-of-truth module identified
-[ ] user outcome is one sentence
-[ ] D2 decisions closed or exact blocker recorded
-[ ] data, state, formula and unit rules defined
-[ ] CompanyContext and permissions defined
-[ ] audit/idempotency/concurrency decided
-[ ] UI reference and states defined
-[ ] real SQL acceptance cases defined
-[ ] Codex read-only boundary declared
-```
-
-## A6. ChatGPT review kontrol listesi
-
-Codex PR'ı incelenirken:
-
-```text
-[ ] accepted business contract is not reinterpreted
-[ ] no new role, permission, status or formula is invented
-[ ] no company/data-scope leak
-[ ] generic platform code does not own module semantics
-[ ] no silent startup/production activation
-[ ] negative and real SQL evidence is meaningful
-[ ] diff is within declared scope
-[ ] current-head CI is fresh
+DONE
+IN REVIEW
+BLOCKED
+SAFE NEXT
+CURRENT MAIN SHA
+ACTIVE WRITE SCOPE
+REVIEWED HEADS
+CI EVIDENCE
 ```
 
 ---
 
-# BÖLÜM B — CODEX-PLATFORM PLANI
+## 3. Normatif Dalga 0
 
-## B1. Rol
-
-Codex aşağıdaki alanların ana teknik yürütücüsüdür:
-
-- platform architecture;
-- Identity/auth/security;
-- shared frontend shell/design system;
-- generic workflow/approval/task;
-- documents, workers, search and AI infrastructure;
-- CI/CD, observability, migration, backup/recovery;
-- SQL/concurrency/security reviewer.
-
-Codex, modül iş anlamını ChatGPT contractı veya `main`deki accepted source olmadan üretmez.
-
-## B2. Yazma sahipliği
-
-Codex ana production alanları:
+Tek sıra:
 
 ```text
-src/backend/Modules/Identity/**
-src/backend/BuildingBlocks/**
-src/backend/GoymenERP.Api/Security/**
-shared frontend shell/design-system/router/cache/test harness
-Document/Audit platform infrastructure where assigned
-Worker/Outbox/Inbox/Search/AI/Observability modules
-.github/**
-tools/**
-infra/**
-deployment/backup/recovery tooling
-platform architecture tests
+PR #64 → PR #60 → PR #31 → Issue #53 → PR #36 → W1
 ```
 
-Codex aşağıdaki alanlara production write yapmaz:
+Güncel:
+
+- PR #64 merged as `main@7e832d2…`.
+- PR #60 ChatGPT tarafından current-main tabanında yeniden taşınacak.
+- PR #31 PR #60 sonrasında Codex tarafından sync edilecek.
+- Issue #53 PR #31 sonrasında ChatGPT tarafından kapatılacak.
+- PR #36 en son temizlenecek ve full acceptance çalışacak.
+- W1 ancak bu zincir tamamlanınca açılacak.
+
+### 3.1 Neden bu sıra?
+
+- PR #60 canlı Counterparty HTTP sınırındaki P1'i küçük ve bağımsız kapatır.
+- PR #31 sonraki production PR'ların geçeceği ortak CI güvenlik tabanıdır.
+- Issue #53 yeni CI tabanında Counterparty audit izolasyonunu kapatır.
+- PR #36 önceki düzeltmeleri duplicate etmeden en son current-main üzerinde tamamlanır.
+- W1, eksik Cari Core veya açık tenant P1 üzerinde başlamaz.
+
+---
+
+## 4. ChatGPT çalışma planı
+
+### 4.1 Yakın sıra
 
 ```text
-ChatGPT-owned active business module branch
-Counterparty/Product/Sales/Purchasing/Inventory/Manufacturing/Finance business semantics
-formül/tolerans/business status without accepted contract
-parallel/chatgpt/**
-hotfix/chatgpt/**
+A. PR #65 P1 düzeltmeleri
+B. PR #60 current-main transport
+C. PR #31 read-only iş etkisi incelemesi
+D. Issue #53 production fix
+E. PR #36 finalizasyon
+F. CARI-UI-01
+G. PRD-01
+H. SAL-01
 ```
 
-## B3. İlk aktif görevler
+### 4.2 ChatGPT branch açmadan önce
 
-### B3.1 PR #64
+Kontrol listesi:
 
-- full exact-head CI tamamlanır;
-- all changed files and diff reviewed;
-- no operator role/new assignment;
-- real SQL fresh/existing/no-op/concurrent/collision/rollback evidence;
-- PR body and Issue #57 handoff current head ile güncellenir;
-- ChatGPT review istenir;
-- insan merge onayı olmadan merge edilmez.
+- current main exact SHA;
+- aynı işi yapan PR/branch;
+- karar sicili ID'leri;
+- Master bölümü;
+- source-of-truth modülü;
+- canonical task IDs;
+- D2 karar;
+- event delivery mode;
+- migration sahibi;
+- UI referansı;
+- gerçek SQL kabulü;
+- Codex read-only sınırı.
 
-### B3.2 PR #60 re-review
+### 4.3 ChatGPT'nin yazacağı alanlar
 
-ChatGPT current-main sync yaptıktan sonra:
+- Counterparty;
+- Product/Service;
+- Sales/Purchasing;
+- Inventory/Allocation;
+- Production/Traceability;
+- Logistics/Weighbridge;
+- Finance/Treasury/Accounting;
+- business reports;
+- module UI;
+- formulas/golden tests;
+- migration mapping/UAT.
 
-- only two-file scope;
-- parser exact-one + trim + 1..128 + comma reject;
-- missing case wire-real;
-- invalid cases zero effect;
-- exact-128 replay;
-- current-main full CI
+### 4.4 ChatGPT'nin yazmayacağı alanlar
 
-incelenir.
+Codex aktif writer iken:
 
-### B3.3 PR #31
+- Identity core;
+- `.github/**`;
+- ortak shell;
+- generic approval/task engine;
+- outbox/inbox framework;
+- search infra;
+- AI gateway;
+- observability/deploy/recovery tooling.
 
-#64 ve #60 sonrasında:
+---
 
-- new main sync;
-- unchanged five-file security delta;
-- isolated preflight;
-- restore/build/test/EF/container order;
-- current module count and migrations;
-- full CI and container;
-- ChatGPT review;
-- human security merge.
+## 5. Codex çalışma planı
 
-### B3.4 React shell
-
-Branch:
+### 5.1 Yakın sıra
 
 ```text
-codex/ui-common-shell-v1
+A. PR #65 yeni head read-only re-review
+B. PR #60 yeni head read-only review
+C. PR #31 current-main sync/full CI
+D. ChatGPT Issue #53 PR'ını review
+E. ChatGPT PR #36 final head review
+F. W0 kapanınca PLT-01 gate kontrolü
+G. Gate açılmışsa common shell
 ```
 
-Dilimler:
+### 5.2 Codex'in yazacağı alanlar
 
-1. design tokens and base layout;
-2. nav/topbar/company switcher;
-3. router/permission/feature registry;
-4. grid/form/workspace/drawer primitives;
-5. query cache and company-switch invalidation;
-6. 401/403/404/error boundary;
-7. responsive and accessibility harness;
-8. Playwright/visual infrastructure.
+- Identity/auth;
+- common shell/design system;
+- generic approval/task engine;
+- Document Vault technical core/PDF runtime;
+- outbox/inbox/workers;
+- search;
+- AI gateway;
+- observability;
+- CI/CD/migration artifacts;
+- deployment;
+- backup/restore;
+- generic tooling.
 
-ChatGPT, ekran anatomisi ve master report uyumunu review eder.
+### 5.3 Codex'in yazmayacağı alanlar
 
-### B3.5 Minimal Document Vault
+ChatGPT aktif writer iken:
 
-Branch treni:
+- Counterparty business code;
+- Product/Sales/Purchasing business semantics;
+- Inventory/Production/Finance formulas;
+- module-specific UI business behavior;
+- ChatGPT branches.
 
-- `codex/document-vault-core-v1`;
-- `codex/pdf-turkish-filename-v1`;
-- `codex/document-link-ui-v1`.
+---
 
-Minimum:
+## 6. PR #65 re-review talimatı
 
-- blob/object technical ID;
-- hash dedup without existence leak;
+Codex yeni exact head için şunları doğrular:
+
+### P1-1
+
+Bütün repository truth dosyalarında:
+
+```text
+#64 → #60 → #31 → #53 → #36 → W1
+```
+
+### P1-2
+
+Machine plan:
+
+- `canonical_task_ids`;
+- `blocked_by`;
+- `dor_status`;
+- `execution_status`;
+- `overlay_rule`;
+- `event_delivery_mode`
+
+alanlarını taşır.
+
+Dependency veya blocker açık iş `execution_status=ready` olamaz.
+
+ERP-000F öncesi yalnız senkron transaction/application-contract yolu kullanılabilir. İlk gerçek async event/projection/worker öncesi F minimumu zorunludur.
+
+### P1-3
+
+Karar sırası:
+
+```text
+latest product-owner decision
+→ docs/decisions/KARAR_SICILI.md
+→ Master v3
+→ old prototype/StokERP donor/reference
+```
+
+StokERP kabul edilmiş contract ve golden test olmadan production davranışı yetkilendiremez.
+
+### Review sonucu
+
+```text
+HANDOFF-ACCEPTED
+```
+
+veya somut source/diff/CI kanıtıyla:
+
+```text
+REQUEST_CHANGES
+```
+
+P2/P3 ayrı issue olur.
+
+---
+
+## 7. Dikey dilim sözleşmesi
+
+Her production PR'da:
+
+```text
+SLICE-CONTRACT
+User outcome:
+Canonical decisions:
+Canonical task IDs:
+Source-of-truth module:
+Data model:
+State transitions:
+Money/quantity/unit/formula:
+Permission/CompanyContext:
+Approval/SoD:
+Audit/reversal:
+Idempotency/concurrency:
+Event delivery mode:
+UI states:
+SQL acceptance:
+E2E:
+Out of scope:
+```
+
+---
+
+## 8. Handoff
+
+```text
+HANDOFF-V1
+
+OWNER:
+WORKSTREAM:
+SLICE:
+BASE:
+HEAD:
+USER OUTCOME:
+CANONICAL TASK IDS:
+BLOCKED BY:
+DOR STATUS:
+EXECUTION STATUS:
+EVENT DELIVERY MODE:
+WRITE SCOPE:
+READ-ONLY BOUNDARIES:
+BUSINESS INVARIANTS:
+TEST EVIDENCE:
+OPEN P0/P1:
+OPEN D2:
+NEXT SAFE ACTION:
+DO NOT:
+```
+
+Karşı review:
+
+```text
+HANDOFF-ACCEPTED
+Reviewed-Head:
+Reviewer:
+Result:
+Evidence:
+P0:
+P1:
+P2 follow-ups:
+```
+
+---
+
+## 9. Test kapıları
+
+### Her business write
+
+- authorized success;
+- unauthorized 403;
+- cross-company non-disclosure;
+- same-key replay;
+- payload mismatch;
+- different-key race;
+- stale version;
+- audit failure rollback;
+- idempotency failure rollback;
+- real SQL.
+
+### UI
+
+- loading;
+- empty;
+- error;
+- forbidden;
+- not-found;
+- conflict;
+- responsive;
+- keyboard;
+- visual regression.
+
+### Formül
+
 - version;
-- metadata;
-- company/permission;
-- multi-record links;
-- signed/read access abstraction;
-- malware/quarantine contract;
-- Turkish filename and embedded font golden.
+- input snapshot;
+- unit/rounding;
+- golden data;
+- tolerance boundary;
+- invalid inputs;
+- no stale preview.
 
-### B3.6 Approval/task engine
+### Finans/stok
 
-- generic request/step/decision;
-- amount/currency/risk/tolerance policy inputs;
-- no hard-coded Sales or Finance semantics;
-- delegation, timeout and escalation;
-- immutable preview/hash;
-- audit and separation-of-duties hooks;
-- work center projection.
+- double-counting yok;
+- negative/over-allocation yok;
+- reversal;
+- period lock;
+- SoD;
+- migration reconciliation.
 
-## B4. Dalga bazlı Codex planı
+---
+
+## 10. Event delivery karar ağacı
+
+```text
+Etki aynı transaction içinde mi?
+    Evet → senkron application contract olabilir.
+    Hayır → durable delivery gerekiyor mu?
+        Hayır → açıkça transient/yeniden hesaplanabilir.
+        Evet → ERP-000F minimumu kabul edildi mi?
+            Hayır → execution blocked.
+            Evet → outbox/inbox + retry + dedup + poison/redrive.
+```
+
+Notification, OCR, AI worker, external delivery ve async search projection bu ağaca tabidir.
+
+---
+
+## 11. Platform task mapping
+
+| Workstream | Canonical task |
+|---|---|
+| Outbox/Inbox | ERP-000F |
+| Document Vault | ERP-000G |
+| Turkish PDF | ERP-000H |
+| Search | ERP-000I |
+| AI Gateway | ERP-000J |
+| Common Shell | ERP-000K |
+| Observability | ERP-000L |
+| SQL Server PoC | ERP-000M |
+| Backup/Restore | ERP-000N |
+| CI/CD/Delivery | ERP-000O |
+
+Machine overlay açık blocker'ları ayrıca taşır.
+
+---
+
+## 12. Dalga bazlı paralellik
 
 ### W1
 
-- common shell;
-- task center skeleton;
-- document vault minimum;
-- PDF runtime;
-- UI test harness;
-- feature flags;
-- safe config and route metadata.
+- Codex: PLT-01, yalnız execution gate açıldıysa.
+- ChatGPT: CARI-UI-01, ardından PRD-01.
+- Codex: DOC-01 yalnız G/H blocker'ları kapandıysa.
+- Karşılıklı review.
 
 ### W2
 
-- approval/revision/task infrastructure;
-- number-series technical service;
-- PDF template pipeline;
-- notification event base;
-- shared diff/preview component.
+- ChatGPT: SAL-01 ve PUR-01 aynı dosya yüzeyine girmeden kontrollü sıra.
+- Codex: APP-01 generic approval/task.
+- Outbox minimumu ayrı; ilk dilimler senkron.
+- OPR-01 PUR-01 sonrası.
 
 ### W3
 
-- concurrency/locking performance review;
-- label/barcode infrastructure;
-- projection rebuild harness;
-- allocation stress tests;
-- optional outbox minimum if async projection is selected.
+- ChatGPT: INV-01 → ALC-01.
+- Codex: barcode/offline/generic import tooling gerektiği ölçüde.
+- Gerçek SQL allocation race zorunlu.
 
 ### W4
 
-- generic versioned calculator runtime;
-- work calendar and scheduling engine;
-- realtime production queue;
-- print/label runtime;
-- benchmark and deterministic test seam.
+- ChatGPT: üretim motorları ve formula.
+- Codex: generic calculator/scheduler/realtime/print tooling.
+- Bir motor bitmeden sonraki aynı aggregate'a geçilmez.
 
 ### W5
 
-- realtime loading updates;
-- device/scale adapter contract without vendor guess;
-- safe print/export;
-- shipment and document integration review.
+- ChatGPT: loading/weighbridge/shipment/doc readiness.
+- Codex: device/integration generic adapters.
+- Dış etki async ise ERP-000F.
 
 ### W6
 
-- bank file import framework;
-- generic matching engine;
-- scheduler and job locks;
-- payment file/export security;
-- finance concurrency/load tests;
-- accounting integration adapter base.
+- ChatGPT: finance/treasury/accounting.
+- Codex: generic bank import/payment file tooling.
+- Para etkisi D2 ve insan merge kapısı.
 
 ### W7
 
-- outbox/inbox production implementation;
-- search projections and index;
-- AI gateway/tool registry;
-- OCR/document processing workers;
-- observability/SLO;
-- backup/restore;
-- release artifacts, SBOM/provenance and deployment promotion.
+- Codex: F/I/J/L/M/N/O.
+- ChatGPT: report semantics, AI business tools, templates.
+- Her platform görevi kendi canonical blocker'larını kapatır.
 
 ### W8
 
-- migration runner;
-- deterministic batch reports;
-- reconciliation tooling;
-- cutover automation;
-- backup/restore and rollback rehearsal tooling.
+- ChatGPT: mapping/reconciliation/UAT.
+- Codex: migration runner/release/backup/rollback.
+- En az iki rehearsal.
 
-## B5. Codex her PR öncesi kontrol listesi
+---
+
+## 13. Bloke olunca çalışma
+
+Ajan:
+
+1. blocker'ı GitHub'a exact kaynakla yazar;
+2. sahiplik dışına çıkmaz;
+3. aynı dosyada başka iş açmaz;
+4. kendi alanındaki bağımsız sıradaki göreve geçer;
+5. D2 gerekiyorsa tek karar paketi oluşturur;
+6. “bekliyorum” diyerek çalışma döngüsünü durdurmaz.
+
+---
+
+## 14. Merge
+
+İnsan onayı zorunlu:
+
+- Identity/permission;
+- shared CI;
+- destructive schema;
+- stock/money/accounting policy;
+- production activation;
+- backup/recovery;
+- cutover.
+
+Merge öncesi:
+
+- exact head;
+- expected-head protection;
+- full CI;
+- real SQL;
+- karşı review;
+- P0/P1=0.
+
+Merge sonrası:
+
+- current main SHA;
+- new-main CI;
+- dependent branch stale işareti;
+- Issue #66 güncellemesi.
+
+---
+
+## 15. Otonom yürütme talimatı
 
 ```text
-[ ] live main fetched
-[ ] accepted module contract exists
-[ ] exact writer boundary declared
-[ ] no ChatGPT-owned active branch touched
-[ ] no business decision invented
-[ ] real SQL/performance/security risks identified
-[ ] production activation explicitly in or out of scope
-[ ] rollback/forward-fix behavior declared
-[ ] ChatGPT review target defined
-```
-
-## B6. Codex review kontrol listesi
-
-ChatGPT modül PR'ı incelenirken:
-
-```text
-[ ] DB constraints enforce critical invariants
-[ ] CompanyId and permission are server derived
-[ ] no enumeration/existence oracle
-[ ] audit/idempotency transaction is atomic
-[ ] same-key/different-key/stale-version behavior is deterministic
-[ ] real SQL is used for relational behavior
-[ ] migrations and model snapshot agree
-[ ] API and UI cannot bypass domain service
-[ ] performance and query shape are bounded
-[ ] no wildcard guard exception or test skip
-[ ] exact-head CI is fresh
+Açık insan kararı gerektirmeyen bütün güvenli teknik adımları art arda tamamla.
+Yalnız D2 ürün kararları, kritik merge kapıları ve production activation için dur.
+Bir iş bloke olursa sahiplik sınırına uyan sonraki bağımsız işi başlat.
+Her bulguyu GitHub'a exact SHA ve kanıtla yaz.
+Sohbet özetini source-of-truth sayma.
+Auto-merge yapma.
 ```
 
 ---
 
-# BÖLÜM C — ORTAK İŞ DÖNGÜSÜ
+## 16. İlk çıkış hedefi
 
-## C1. Her yeni dilimin başlangıcı
+W0 tamamlandığında:
 
-1. `git fetch --all --prune`.
-2. Current `main` SHA kaydı.
-3. Aynı sonucu yapan açık PR/issue taraması.
-4. Master report, latest decision ve accepted contract okuması.
-5. `SLICE-CONTRACT` oluşturma.
-6. Writer/reviewer/readonly boundaries.
-7. Branch açma.
+- Cari Core 1C güvenli;
+- stable CI;
+- açık Counterparty P0/P1 yok;
+- W1 task gate'leri net;
+- ortak shell/Cari UI/Product çalışmalarına çakışmasız başlanabilir.
 
-## C2. SLICE-CONTRACT
-
-```text
-SLICE-CONTRACT-V1
-ID:
-WORKSTREAM:
-USER OUTCOME:
-SOURCE OF TRUTH:
-IN SCOPE:
-OUT OF SCOPE:
-DATA/STATE:
-FORMULA/UNIT/CURRENCY:
-PERMISSION/SCOPE:
-AUDIT/REVERSAL:
-IDEMPOTENCY/CONCURRENCY:
-UI REFERENCE/STATES:
-ACCEPTANCE:
-D2 DECISIONS:
-WRITER:
-REVIEWER:
-```
-
-## C3. PR treninde dosya paylaşımı
-
-Tek kullanıcı sonucu gerekirse ardışık PR'lara ayrılır:
-
-```text
-A. domain + migration
-B. API + security + real SQL
-C. React workspace + E2E
-D. integration/projection + UAT
-```
-
-Ancak A merge edildiğinde feature flag kapalı kalır; C/D tamamlanmadan modül tamamlandı denmez.
-
-## C4. Cross-review
-
-- Yazar self-review yapar.
-- Diğer ajan exact head'i canlı diff ve CI ile inceler.
-- Bulgu ilgili PR'a yazılır.
-- Düzeltmeyi branch sahibi yapar.
-- Yeni head için review yenilenir.
-
-## C5. Kullanıcıya sunulacak çıktı
-
-Her kabul edilmiş dilim sonunda kullanıcıya:
-
-- ne çalışıyor;
-- hangi ekranlar;
-- hangi iş zinciri;
-- hangi testler;
-- açık D2 karar;
-- sonraki dikey dilim
-
-tek özet halinde verilir.
-
----
-
-# BÖLÜM D — CODEX'E VERİLECEK KANONİK TALİMAT
-
-```text
-GöymenERP için GitHub tabanlı paylaşımlı yürütme planını uygula.
-
-Önce canlı repository gerçeğini yeniden oku:
-- current main
-- docs/delivery/GOYMEN_ERP_END_TO_END_EXECUTION_PLAN_V1.md
-- docs/delivery/CHATGPT_CODEX_EXECUTION_PLAYBOOK_V1.md
-- docs/backlog/erp_e2e_workstreams_v1.json
-- Issue #40
-- kendi aktif PR/issue'ların
-
-Kurallar:
-1. Sohbet özeti yerine exact SHA, diff, CI ve main contractlarını kaynak kabul et.
-2. Aynı aggregate/shared dosyada tek writer kuralını koru.
-3. ChatGPT-owned parallel/chatgpt/* ve hotfix/chatgpt/* branch'lerine write yapma.
-4. İş anlamını, rolü, formülü, statüyü veya para/stok etkisini kabul edilmiş source olmadan üretme.
-5. Her iş bir kullanıcı sonucu taşıyan vertical slice olmalı.
-6. P0/P1 dışındaki hardening'i ayrı issue'ya taşı; ana iş akışını gereksiz durdurma.
-7. UI, API, DB, security, real SQL ve E2E birlikte tamamlanmadan modülü done sayma.
-8. Her PR HANDOFF-V1 ve exact-head CI taşımalı.
-9. Yeni commit eski review/CI'yı stale yapar.
-10. Auto-merge yapma; kritik Identity/CI/schema/production işlerinde insan merge kapısını koru.
-
-Aktif öncelik:
-- PR #64'ü exact-head CI ve handoff ile bitir.
-- ChatGPT PR #60'ı current main'e sync ettikten sonra read-only re-review yap.
-- #64/#60 sonrası PR #31'i current main'e sync edip güvenli merge kapısına getir.
-- Sonra W1 ortak React shell/design system/test harness işine başla.
-- ChatGPT'nin CARI-UI-001 ve PRD-CORE-001 dilimleriyle contract bazlı paralel ilerle.
-
-Her bulguyu yalnız sohbet içinde bırakma; ilgili PR/issue'ya exact SHA ile yaz.
-```
-
----
-
-# BÖLÜM E — KULLANICI KARAR YÜKÜNÜ AZALTMA
-
-Kullanıcıya yalnız D2 paketleri sunulur. Her D2 paketinde önerilen varsayılan bulunur. Aynı konu tekrar sorulmaz. Karar verildiğinde:
-
-1. kanonik issue/decision kaydı;
-2. module contract;
-3. implementation;
-4. real-SQL/UAT acceptance
-
-zinciri tamamlanır.
-
-Rutin teknik seçimler ajanlar tarafından yapılır ve PR'da görünür bırakılır.
+Bu playbook planın overlay konumunu, kanonik task graph'ı ve ürün karar sırasını değiştirmez.
