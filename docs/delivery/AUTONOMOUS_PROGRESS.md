@@ -665,3 +665,70 @@ OPEN DECISIONS: Issue #43 CARI-PERM-001; PR #31 human merge; ERP-000I truth-stat
 MAIN SHA: 2db4df1fb3fd836d9743e172b24380f2e95d247b
 ACTIVE PRS: #52, #45, #44, #41, #37, #36, #35, #34, #32, #31, #30, #29, #28, #26, #25, #24, #19..#10 ve #2
 ```
+
+## 2026-08-29 03:46 +03:00 — Döngü 16
+
+- Kullanıcının iki bağımsız geliştirici hattı, tek GitHub gerçeği ve exact-SHA
+  HANDOFF-V1 konuşması bütünüyle okundu. Canlı `main`
+  `2db4df1fb3fd836d9743e172b24380f2e95d247b` olarak yeniden doğrulandı.
+  ChatGPT-owned `parallel/chatgpt/**`, `hotfix/chatgpt/**`, `merge/chatgpt/**`
+  dallarına ve Counterparty production kaynaklarına Codex tarafından yazılmadı.
+- PR #28 ERP-000M karar-nötr kanıt girdi paketi güncel main ile non-destructive
+  senkronize edildi. Self-referential hash alanları için exact-byte
+  `ERP000M-SELF-SHA256-V1`, tek descriptor/tek snapshot, kanonik JSON slotu,
+  manifest cross-hash, strict UTF-8/no-BOM ve uppercase SHA-256 sözleşmesi
+  uygulandı. Üç bağımsız adversarial inceleme sırasında bulunan mixed-snapshot
+  TOCTOU, final/ancestor reparse, Windows concurrent write/delete, handle lifecycle,
+  derin JSON recursion, Unicode hash-shape ve NTFS ADS bulgularının tamamı kapatıldı.
+  Exact head `e9ab7af8f145adf011467f56014566202f781852`; yerelde Python `53/53`,
+  ArchitectureTests `12/12`, format ve diff-check; uzakta CI `33224274905` ile UI
+  golden `33224274908` tamamen yeşildir. PR Draft/human review kapısında bırakıldı;
+  ERP-000M ADR/OPEN/SQL-PoC kararlarını kapatmaz ve kanıt imzası/authenticity iddiası
+  üretmez.
+- ChatGPT-CARI PR #36 head'i review sonrasında
+  `e23a5f241ab60a59ad24eb0f717d9e2f493bb93b` olarak değişti. Exact CI
+  `33222548109` backend ve gerçek SQL işlerinde kırmızıdır; container skipped.
+  Altı P1 `REQUEST_CHANGES` kaydedildi: Issue #43'ün genel otonomi talimatından rol
+  kararı türetilerek geçersiz kapatılması, existing-install Identity reconciliation
+  eksikliği, kırmızı CI, Issue #53 AuditEvent tenant guard açığı, hard-coded audit
+  reason ve Issue #54 header hotfix'inin feature içine sıkışması. Issue #43 state'i
+  Codex tarafından değiştirilmedi; ürün sahibi exact rol/permission/upgrade kararını
+  vermeden PR #36 merge edilmemelidir.
+- Platform PR'ları current-main exact salt-okunur tarandı. PR #25 gerçek production
+  HTTPS fail-closed davranışı için #35'e bağımlı; PR #29 canlı dört Counterparty
+  route'u nedeniyle eski sabit envanterle deterministik kırılır; PR #32 virgülle
+  birleştirilmiş `Idempotency-Key` değerini hâlâ geçerli sayar; PR #34 AuditEvent
+  query filter'ı doğru olsa da doğrudan ve interceptor-sonrası write guard eksiktir;
+  PR #35 exact mantıkta P0/P1 taşımamakla birlikte current-main CI ve P2 URI
+  hardening bekler; PR #41 beklenen şekilde exact API→Counterparty edge'lerinde
+  fail-closed kırmızı kalır. Bulgular ilgili PR'lara exact head ile yazıldı; hiçbir
+  test/guard gevşetilmedi.
+- ChatGPT-owned contractlar yeniden incelendi. PR #44 current main'deki dört exact
+  Counterparty route/permission/CompanyContext sözleşmesini doğru taşır ve PR #36'nın
+  henüz var olmayan beşinci route'unu erken ilan etmez; PR #31 sonrası sync/fresh CI
+  bekler. PR #45 ve Ready PR #52 aynı exact head
+  `f4d38851c3b4531a5f75fabfb5cd9c75c57f7430` ve byte-identical üç dosyanın iki
+  taşıyıcısıdır; ikisi birden merge edilmemelidir. Sözleşme aktif migration artifact
+  CI gate'i değildir; seçilen tek carrier ve PR #31 sonrasında ayrı CODEX-PLATFORM
+  `.github/**` entegrasyonu gerekir.
+- Readiness/spec kuyruğunda PR #12 ERP-000I stale global merge order ve current-main
+  CI; PR #19 ERP-000O eksik Counterparty migration script işi; PR #13 ERP-000H stale
+  order/current-main CI ve G-owned transport kararlarına açık referans; PR #10
+  ERP-000F root causation ile worker/system identity/active-company discovery
+  sözleşmeleri nedeniyle Draft/blocklu bırakıldı. İş kuralı veya altyapı topolojisi
+  tahmin edilmedi.
+- Issue #40'ta ilan edilen `hotfix/chatgpt/cari-idempotency-header-cardinality`,
+  `parallel/chatgpt/cari-tenant-model-guard-v1` ve
+  `parallel/chatgpt/cari-account-create-role-policy-v1` dalları canlı remote/PR
+  envanterinde hâlâ fiziksel olarak bulunamadı. Push + Draft PR olmadan sohbet
+  iddiaları geliştirme kanıtı kabul edilmedi.
+
+```text
+DONE: PR #28 exact current-main implementation + 3 adversarial review + green CI; PR #25/#29/#32/#34/#35/#41 reviews; PR #44/#45/#52 contract reviews; PR #36 new-head review
+IN REVIEW: PR #28 human review; PR #31 human security merge; PR #44/#52 post-PR31 sync; PR #37 progress record
+BLOCKED: PR #36 invalid permission provenance + six P1; PR #41 PR31+#34+Issue53; PR #32 comma-key; PR #29 PR31+PR44; ERP-000F/M; PR #2
+SAFE NEXT: human PR #31 and PR #28 review; explicit Issue #43 role/upgrade decision; ChatGPT-CARI Issues #53/#54 remediation; then serialized current-main platform train
+OPEN DECISIONS: Issue #43 exact role/fresh-install/existing-install/SoD/revoke policy; PR #31 human security merge; ERP-000F/M ADR/OPEN packages; GitHub plan/branch protection
+MAIN SHA: 2db4df1fb3fd836d9743e172b24380f2e95d247b
+ACTIVE PRS: #52, #45, #44, #41, #37, #36, #35, #34, #32, #31, #30, #29, #28, #26, #25, #24, #19..#10 ve #2
+```
