@@ -28,6 +28,7 @@ public static class CounterpartyModuleExtensions
                 "SQL Server bağlantı dizesi DB_CONNECTION_STRING secret/env değeriyle tanımlanmalıdır.");
         }
 
+        services.AddScoped<CounterpartyAuditEventTenantGuardInterceptor>();
         services.AddDbContext<CounterpartyDbContext>((serviceProvider, options) =>
         {
             options.UseSqlServer(
@@ -35,7 +36,13 @@ public static class CounterpartyModuleExtensions
                 sql => sql.MigrationsHistoryTable(
                     "__EFMigrationsHistory",
                     "counterparty"));
+
+            // The caller registers the shared AuditSaveChangesInterceptor first.
+            // The Counterparty-owned guard must run after it so collector events
+            // attached during SavingChanges are validated before persistence.
             configureDbContext?.Invoke(serviceProvider, options);
+            options.AddInterceptors(
+                serviceProvider.GetRequiredService<CounterpartyAuditEventTenantGuardInterceptor>());
         });
         services.AddScoped<ICounterpartyReadService, CounterpartyReadService>();
         services.AddScoped<ICounterpartyCommandService, CounterpartyCommandService>();
