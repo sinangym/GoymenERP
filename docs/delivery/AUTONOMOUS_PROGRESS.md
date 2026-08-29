@@ -446,3 +446,39 @@ OPEN DECISIONS: production runner/invocation; global security evidence modeli ve
 MAIN SHA: fed32839a9e0b4258efa5980fddc2846aaf85c49
 ACTIVE PRS: #64 Draft/Codex-owned; #36 Draft/ChatGPT-owned; #60 Draft/ChatGPT-owned
 ```
+
+## 2026-08-29 15:11 +03:00 — Döngü 13
+
+- Kullanıcının açık Identity/security merge onayı sonrasında PR `#64` exact head
+  `b395da940a9928c515132cb550608dbb7a037aad` değişmeden doğrulanmış ve
+  expected-head korumasıyla squash merge edilmiştir. Merge commit ve bu döngünün
+  doğrulanmış `main` tabanı `7e832d2b98a07428d46ead54a9d136b24c62203a` olmuştur.
+- Exact head için standart CI `33249484752`, UI golden `33249484747` ve ChatGPT-CARI
+  salt-okunur `HANDOFF-ACCEPTED` kanıtı merge öncesinde doğrulanmıştır. Merge sonrası
+  standart CI `33251655476` backend/migration, frontend, gerçek SQL Server relational
+  acceptance ve container işlerinde; UI golden `33251655426` ise katalog kontrolünde
+  tamamen başarılıdır.
+- Merge yalnız inert/generic Option A uzlaştırma çekirdeğini ana dala almıştır.
+  Production reconciliation çalıştırılmamış, yeni rol veya otomatik assignment
+  oluşturulmamış ve `SYSTEM_ADMINISTRATOR` dışındaki roller default-deny kalmıştır.
+- Production runner/invocation Issue `#62`, global immutable security evidence Issue
+  `#63` olarak açık ve ayrı insan kapılarıdır; PR `#64` bunları kapatmaz veya production
+  aktivasyonu yetkilendirmez.
+- PR `#65` ChatGPT-BUSINESS sahipliğinde ve eski head
+  `b826eb7d57346c80513f7b44d2b873b4f673430c` üzerinde Draft/REQUEST_CHANGES
+  durumundadır. PR `#60` ChatGPT-CARI sahipliğinde eski head
+  `3f7eb0e974346fb04846f382bff7ca2891d7e678` üzerindedir ve güncel `main`in iki
+  commit gerisinde olduğundan fresh sync, CI ve HANDOFF bekler.
+- `CARI-PERM-001 / Option A` ürün kararının `KARAR_SICILI.md/.csv` içine aktarılması
+  Cari karar yazma sahipliğindedir; bu CODEX truth-sync dalı karar siciline veya
+  ChatGPT-owned branch'lere yazmaz.
+
+```text
+DONE: PR #64 merge; main 7e832d2; new-main CI 33251655476 + UI golden 33251655426 yeşil
+IN REVIEW: PR #65 ChatGPT-BUSINESS düzeltme head'i; PR #60 ChatGPT-CARI current-main sync head'i bekleniyor
+BLOCKED: production reconciliation activation (#62); global security evidence (#63); W0 sıralı kapıları
+SAFE NEXT: PR #60 yeni exact head salt-okunur review; PR #65 düzeltilmiş exact head salt-okunur review
+OPEN DECISIONS: production runner/invocation; global security evidence modeli ve lifecycle
+MAIN SHA: 7e832d2b98a07428d46ead54a9d136b24c62203a
+ACTIVE PRS: #65 Draft/ChatGPT-BUSINESS; #60/#36 Draft/ChatGPT-CARI; post-merge truth-sync Codex-owned
+```
