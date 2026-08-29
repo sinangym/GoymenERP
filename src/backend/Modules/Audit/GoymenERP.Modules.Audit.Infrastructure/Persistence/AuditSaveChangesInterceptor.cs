@@ -1,3 +1,4 @@
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
@@ -5,7 +6,9 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace GoymenERP.Modules.Audit.Infrastructure.Persistence;
 
-public sealed class AuditSaveChangesInterceptor(AuditEventCollector collector)
+public sealed class AuditSaveChangesInterceptor(
+    AuditEventCollector collector,
+    ICompanyContext companyContext)
     : SaveChangesInterceptor
 {
     private readonly List<AuditEvent> _attachedEvents = [];
@@ -76,28 +79,77 @@ public sealed class AuditSaveChangesInterceptor(AuditEventCollector collector)
             return;
         }
 
-        var invalidEntry = dbContext.ChangeTracker
-            .Entries<AuditEvent>()
-            .FirstOrDefault(x => x.State is EntityState.Modified or EntityState.Deleted);
-        if (invalidEntry is not null)
+        try
+        {
+            ValidateTrackedEvents(dbContext);
+
+            if (_eventsAttached || collector.Pending.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var draft in collector.Pending)
+            {
+                ValidateCompanyId(draft.CompanyId);
+            }
+
+            foreach (var draft in collector.Pending)
+            {
+                var auditEvent = AuditEventFactory.Create(draft);
+                dbContext.Set<AuditEvent>().Add(auditEvent);
+                _attachedEvents.Add(auditEvent);
+            }
+
+            _eventsAttached = true;
+        }
+        catch
+        {
+            // A later factory/validation failure happens before EF can reliably invoke
+            // SaveChangesFailed. Restore only interceptor-owned state and keep the
+            // caller's non-audit tracked changes available for an explicit retry.
+            Reset(detachEvents: true, dbContext);
+            throw;
+        }
+    }
+
+    private void ValidateTrackedEvents(DbContext dbContext)
+    {
+        foreach (var entry in dbContext.ChangeTracker.Entries<AuditEvent>())
+        {
+            if (entry.State is EntityState.Unchanged or EntityState.Detached)
+            {
+                continue;
+            }
+
+            if (entry.State is EntityState.Modified or EntityState.Deleted)
+            {
+                throw new InvalidOperationException(
+                    "Audit kayıtları değiştirilemez veya silinemez.");
+            }
+
+            ValidateCompanyId(entry.Entity.CompanyId);
+        }
+    }
+
+    private void ValidateCompanyId(Guid companyId)
+    {
+        if (companyId == Guid.Empty)
         {
             throw new InvalidOperationException(
-                "Audit kayıtları değiştirilemez veya silinemez.");
+                "Audit kaydı CompanyId olmadan yazılamaz.");
         }
 
-        if (_eventsAttached || collector.Pending.Count == 0)
+        if (!companyContext.IsResolved)
         {
-            return;
+            throw new InvalidOperationException(
+                "Audit kaydı yazmak için aktif şirket bağlamı zorunludur.");
         }
 
-        foreach (var draft in collector.Pending)
+        if (companyId != companyContext.CompanyId)
         {
-            var auditEvent = AuditEventFactory.Create(draft);
-            dbContext.Set<AuditEvent>().Add(auditEvent);
-            _attachedEvents.Add(auditEvent);
+            throw new InvalidOperationException(
+                "Audit kaydı aktif şirket bağlamıyla eşleşmelidir.");
         }
-
-        _eventsAttached = true;
     }
 
     private void Reset(bool detachEvents, DbContext? dbContext)
