@@ -205,9 +205,17 @@ public static class CounterpartyEndpoints
         out CounterpartyCommandMetadata metadata)
     {
         const int maximumMetadataLength = 128;
-        var idempotencyKey = httpContext.Request.Headers["Idempotency-Key"].ToString().Trim();
+        var idempotencyHeaderValues = httpContext.Request.Headers["Idempotency-Key"];
+        if (idempotencyHeaderValues.Count != 1)
+        {
+            metadata = null!;
+            return false;
+        }
+
+        var idempotencyKey = idempotencyHeaderValues[0]?.Trim();
         if (string.IsNullOrWhiteSpace(idempotencyKey)
             || idempotencyKey.Length > maximumMetadataLength
+            || idempotencyKey.Contains(',', StringComparison.Ordinal)
             || !companyContext.IsResolved
             || !correlationContext.IsResolved
             || string.IsNullOrWhiteSpace(currentUser.UserId))
@@ -273,7 +281,7 @@ public static class CounterpartyEndpoints
     {
         return Results.Problem(
             title: "Command bilgisi eksik.",
-            detail: "İşlem için geçerli Idempotency-Key ve correlation bilgisi gerekir.",
+            detail: "İşlem için tekil, geçerli Idempotency-Key ve correlation bilgisi gerekir.",
             statusCode: StatusCodes.Status400BadRequest);
     }
 

@@ -103,6 +103,7 @@
           "organization.locations.status.update",
           "counterparty.parties.read",
           "counterparty.parties.create",
+          "counterparty.accounts.create",
           "counterparty.accounts.status.update",
           "identity.profile.read",
           "identity.access.request",
