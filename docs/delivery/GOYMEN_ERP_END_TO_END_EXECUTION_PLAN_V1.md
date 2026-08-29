@@ -1,108 +1,181 @@
-# Göymen ERP Uçtan Uca Paylaşımlı Uygulama Planı v1.1
+# Göymen ERP Uçtan Uca Paylaşımlı Uygulama Planı v1.2
 
-**Belge türü:** Uygulama, teslimat ve iki ajanlı yürütme sözleşmesi  
-**Ürün sahibi ve nihai kabul sahibi:** Sinan Göymen  
-**İş/UX/modül yürütme sahibi:** `CHATGPT-BUSINESS`  
-**Platform/altyapı yürütme sahibi:** `CODEX-PLATFORM`  
-**İlk plan tabanı:** `main@fed32839a9e0b4258efa5980fddc2846aaf85c49`  
-**Son doğrulanan main:** `main@7e832d2b98a07428d46ead54a9d136b24c62203a`  
-**Durum:** Draft yürütme katmanı; production veya kanonik görev durumunu tek başına değiştirmez  
-**Kanonik task graph:** `docs/backlog/task_manifest.json`  
-**Kanonik karar sicili:** `docs/decisions/KARAR_SICILI.md`  
-**Ana hedef sözleşmesi:** `docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md`
+## Belge kimliği
 
----
+- Belge türü: Uygulama ve teslimat yürütme sözleşmesi
+- Ürün sahibi ve nihai kabul sahibi: Sinan Göymen
+- İş politikası ve modül sahibi: `CHATGPT-BUSINESS`
+- Platform sözleşmesi ve altyapı sahibi: `CODEX-PLATFORM`
+- İlk plan tabanı: `main@fed32839a9e0b4258efa5980fddc2846aaf85c49`
+- Son doğrulanan main: `main@7e832d2b98a07428d46ead54a9d136b24c62203a`
+- Durum: Draft teslimat overlay'i; production davranışı veya kanonik görev statüsü değiştirmez
 
-## 1. Amaç
+## 1. Bağlayıcı kaynaklar ve çalışma protokolü
 
-Bu plan, Göymen ERP'nin büyük ölçüde belirlenmiş iş kurallarını ve ekran kataloğunu yeniden analiz döngüsüne sokmadan, her modülü **uçtan uca çalışan dikey dilimler** halinde tamamlamak için hazırlanmıştır.
+Her yeni ChatGPT veya Codex çalışma döngüsünde aşağıdaki kaynaklar okunur:
 
-Ana hedefler:
+1. `AGENTS.md`
+2. `docs/governance/CODEX_OTONOM_PROJE_ORKESTRATORU_v1.md`
+3. `docs/decisions/KARAR_SICILI.md`
+4. `docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md`
+5. `docs/backlog/task_manifest.json`
+6. İlgili ADR, feature spec, acceptance, formula ve UI kartları
+7. Bu plan ve `docs/backlog/erp_e2e_workstreams_v1.json`
+8. Canlı GitHub main, PR diff, exact SHA ve CI
 
-1. Cari, ürün, satış, satın alma, stok, tahsis, üretim, lojistik, finans, muhasebe, belge, rapor, arama ve AI modüllerini tek veri gerçekliği üzerinde tamamlamak.
-2. ChatGPT ile Codex'in aynı aggregate, migration, shared CI veya ortak UI yüzeyine paralel yazmasını engellemek.
-3. Her dilimi veri modeli, gerçek SQL, API, yetki, audit, idempotency, concurrency, React UI, browser E2E ve kullanıcı kabulüyle birlikte bitirmek.
-4. P0/P1 dışındaki sertleştirme işlerini ana üretim hattını gereksiz bloke etmeyecek ayrı takip kayıtlarına taşımak.
-5. Sohbet özetleri yerine GitHub exact SHA, diff, CI ve kabul edilmiş kararları ortak gerçek kaynak yapmak.
-6. Çalışan kullanıcı sonucunu dokümantasyon hacminden daha önemli hale getirmek.
-7. Kanonik platform görevlerini atlamadan, platform-first bekleyişine geri dönmeden iş modüllerini hızla ilerletmek.
+`AGENTS.md` ile orkestratör görev seçimi, branch, PR, test ve merge disiplinini belirler. İş kuralı veya kullanıcı kararı üretmez.
 
----
+### 1.1 Karar önceliği
 
-## 2. Planın hukuki ve teknik konumu: overlay, supersede değil
-
-Bu plan bir **teslimat overlay'idir**.
-
-- `docs/backlog/task_manifest.json` içindeki `ERP-000A…ERP-000O` görevlerini iptal etmez.
-- Bir kanonik görevin `ready` olması, o görevin production implementation'ına otomatik başlanabileceği anlamına gelmez.
-- Bir kanonik görevin `blocked` olması, blocker kapanmadan bu planın onu `ready` veya `in_progress` ilan etmesine izin vermez.
-- Bu plan yalnız iş modüllerini ve platform görevlerini aynı dikey dilim takviminde ilişkilendirir.
-- Kanonik görev durumu yalnız kendi karar/acceptance süreciyle ve `main` üzerindeki bağlayıcı dosyalarla değişir.
-- Bu planın `dor_status` alanı analiz ve sözleşme hazırlığını; `execution_status` alanı ise gerçek kodlamaya başlanabilirliği gösterir.
-- `dor_status=ready` olup `execution_status=blocked` olması geçerli ve beklenen bir durumdur.
-
-### 2.1 Overlay değişmezi
+`KARAR_SICILI.md` içindeki sıra aynen korunur:
 
 ```text
-E2E planı
-    ↓ teslimat sırası, sahiplik, WIP ve dikey dilim tanımlar
-ERP-000 task graph
-    ↓ bağlayıcı platform dependency ve blocker gerçeğini korur
-Karar Sicili + Master v3
-    ↓ iş ve ürün davranışını belirler
-Exact PR SHA/diff/CI
-    ↓ uygulamanın gerçekten ne yaptığını kanıtlar
+En son açık ürün sahibi kararı
+→ docs/decisions/KARAR_SICILI.md
+→ docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md
+→ eski prototip ve StokERP yalnız donör/referans
 ```
 
-Bu katmanlardan hiçbiri diğerini sessizce geçersiz kılamaz.
+StokERP kendi başına production formülü, veri modeli veya ekran davranışı yetkilendiremez. Bir donör kuralı ancak kabul edilmiş karar veya contract'a taşınıp golden testle korununca Göymen ERP kuralı olur.
 
----
+## 2. Planın konumu: overlay, supersede değil
 
-## 3. Kaynak ve karar önceliği
+Bu plan `docs/backlog/task_manifest.json` üzerindeki `ERP-000A…ERP-000O` görevlerini değiştirmez.
 
-Çelişkide `docs/decisions/KARAR_SICILI.md` içindeki sıra aynen uygulanır:
+- Kanonik görev statüsü yalnız kendi bağlayıcı karar ve kabul akışıyla değişir.
+- Bu plan teslimat sırası, dikey dilim, sahiplik, WIP ve karşı review tanımlar.
+- `dor_status`, işin analiz ve sözleşme açısından hazırlanma düzeyidir.
+- `execution_status`, gerçek geliştirme ve merge iznidir.
+- `dor_status=ready` olan bir iş, dependency veya blocker açıksa `execution_status=blocked` kalır.
+- Bu belge veya machine overlay hiçbir görevi sessizce `done`, `accepted` veya `released` yapamaz.
 
-1. **Kullanıcının/ürün sahibinin en son açık kararı.**
-2. **`docs/decisions/KARAR_SICILI.md`.**
-3. **`docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md`.**
-4. **Eski prototipler ve StokERP yalnız donör/referans materyalidir.**
+## 3. Ana teslimat modeli
 
-Bu karar sırasını değiştirmeden aşağıdaki uygulama kanıtları kullanılır:
-
-- `main` üzerindeki kabul edilmiş contract, ADR, feature spec ve acceptance dosyaları;
-- exact PR SHA, diff ve CI;
-- UI referans kataloğu ve kilitli ekran görselleri.
-
-### 3.1 StokERP sınırı
-
-StokERP:
-
-- production iş kuralını tek başına yetkilendiremez;
-- yalnız donör bilgi, formül adayı, migrasyon ve mutabakat kaynağıdır;
-- bir davranış ancak kabul edilmiş karar/contract'a taşınıp golden testle doğrulanınca Göymen ERP üretim kuralı olur;
-- eski ekranların birebir kopyalanması için kaynak değildir.
-
-Sohbet özeti hiçbir zaman karar sicili, `main` veya exact PR gerçeğinin önüne geçmez.
-
----
-
-## 4. Canlı başlangıç ve Dalga 0 normatif sırası
-
-Son doğrulanan `main`:
+Her dilim tek kullanıcı sonucunu baştan sona tamamlar:
 
 ```text
-7e832d2b98a07428d46ead54a9d136b24c62203a
+Kullanıcı sonucu
+→ veri modeli, constraint ve migration
+→ domain kuralı
+→ command/query/API
+→ CompanyContext, permission ve approval
+→ audit, idempotency ve concurrency
+→ React liste, detay veya workspace
+→ gerçek SQL acceptance
+→ browser E2E ve erişilebilirlik smoke
+→ exact-head karşı review
+→ insan kapısı gerekiyorsa onay
+→ merge
 ```
 
-Bu commit ile PR #64 — Option A Identity permission reconciliation core — `main`e alınmıştır.
+Yalnız backend, yalnız UI veya yalnız doküman tamamlanmış modül değildir.
 
-### 4.1 Tek normatif sıra
+## 4. Sahiplik modeli
 
-Bütün plan, playbook, machine-readable manifest ve Issue #66 için tek sıra:
+### 4.1 CHATGPT-BUSINESS
+
+Birincil yazma alanları:
+
+- Cari ve Counterparty iş davranışı
+- Ürün ve Hizmet
+- Satış
+- Satın Alma
+- İşletme Alımları
+- Stok ve Tahsis
+- Üretim, formüller ve izlenebilirlik
+- Lojistik ve Kantar
+- Finans, Hazine ve Muhasebe
+- Rapor semantiği
+- Modüle özgü React ekranları
+- Golden test, migration mapping ve UAT
+
+### 4.2 CODEX-PLATFORM
+
+Birincil yazma alanları:
+
+- Identity, authentication ve generic authorization
+- Ortak React shell ve design system
+- Generic approval ve task engine
+- Belge kasası teknik çekirdeği ve PDF runtime
+- Outbox, inbox ve worker altyapısı
+- Search altyapısı
+- AI gateway ve tool policy enforcement
+- Observability
+- CI/CD, migration artifact ve deployment
+- Backup ve restore
+- Generic integration ve system administration tooling
+
+### 4.3 Identity sahipliği açık ayrımı
+
+Identity için tek bir genel `contract_owner` alanı kullanılmaz.
+
+- İş politikası sahibi: `CHATGPT-BUSINESS`
+- Örnek: `CARI-PERM-001`, hangi rolün hangi iş iznini alacağı
+- Platform sözleşmesi sahibi: `CODEX-PLATFORM`
+- Örnek: generic reconciliation, auth, RBAC/ABAC, transaction ve deployment contract'ı
+- Production writer: `CODEX-PLATFORM`
+- İş politikası reviewer'ı: `CHATGPT-BUSINESS`
+- Platform güvenlik reviewer'ı: exact-head karşı review ve insan security kapısı
+
+Bu ayrım hiçbir tarafa diğerinin Identity contract alanına yazma yetkisi vermez.
+
+## 5. WIP ve kalite politikası
+
+Her ajan aynı anda en fazla:
+
+- 1 ana production PR
+- 1 hotfix veya remediation PR
+
+taşır.
+
+Aynı aggregate, migration, shared CI, ortak shell veya machine-readable contract üzerinde tek writer vardır.
+
+Hata seviyeleri:
+
+- P0: veri kaybı, yanlış para veya stok, tenant sızıntısı, kritik hukuki veya muhasebe hatası
+- P1: ana akışı veya kritik güvenlik ve doğruluğu bozan hata
+- P2: sertleştirme, performans, tanılama veya ikincil UX
+- P3: kozmetik veya gelecek optimizasyonu
+
+P0 ve P1 merge engeller. P2 ve P3 ayrı issue'ya taşınır; kabul ölçütünü doğrudan bozmadıkça ana hattı durdurmaz.
+
+## 6. Olay teslim modeli ve ERP-000F sınırı
+
+ERP-000F kabul edilmeden durable async davranış varmış gibi geliştirme yapılmaz.
+
+İzin verilen erken modeller:
+
+1. Aynı DB transaction'ında senkron modüler monolit application contract
+2. Salt-okunur ve yeniden hesaplanabilir senkron query/composition
+3. Durable garanti iddia etmeyen açık feature-flag davranışı
+
+ERP-000F minimumu aşağıdakilerden önce zorunludur:
+
+- transaction dışı cross-module async event
+- kalıcı projection veya index pipeline
+- e-posta veya harici sistem worker'ı
+- OCR veya background AI
+- durable notification
+- retry, poison veya redrive gerektiren iş
+
+ERP-000F minimum blocker'ları:
+
+```text
+PR #10
+ADR-006
+OPEN-022
+OPEN-023
+OPEN-024
+OPEN-025
+```
+
+## 7. Dalga 0: stabilizasyon ve Cari Core 1C
+
+Tek normatif sıra:
 
 ```text
 PR #64
-→ PR #60
+→ PR #68, eski PR #60'ın current-main taşıması
 → PR #31
 → Issue #53
 → PR #36
@@ -111,414 +184,170 @@ PR #64
 
 Güncel durum:
 
-| Sıra | Kayıt | Owner | Durum | Sonraki kapı |
+| Sıra | Kayıt | Sahip | Durum | Çıkış kapısı |
 |---:|---|---|---|---|
-| 1 | PR #64 | CODEX-PLATFORM | **MERGED** | Yeni-main CI gerçeği korunur |
-| 2 | PR #60 | CHATGPT-BUSINESS | **IN PROGRESS** | `main@7e832d2…` tabanında temiz yeniden taşıma/sync, fresh CI, Codex re-review |
-| 3 | PR #31 | CODEX-PLATFORM | **QUEUED** | PR #60 sonrası current-main sync, full CI, insan security merge |
-| 4 | Issue #53 | CHATGPT-BUSINESS | **QUEUED** | PR #31 sonrası küçük Counterparty production PR, gerçek SQL, Codex review |
-| 5 | PR #36 | CHATGPT-BUSINESS | **BLOCKED** | #60/#31/#53 sonrası temizleme, current-main sync ve final acceptance |
-| 6 | W1 | Ortak | **BLOCKED** | PR #36 merge, main green, açık Counterparty P0/P1 yok |
+| 1 | PR #64 | Codex | Merged | `main@7e832d2…` ve new-main CI |
+| 2 | PR #68 | ChatGPT | In review | Fresh CI, real SQL, Codex review, insan security merge |
+| 3 | PR #31 | Codex | Queued | #68 sonrası current-main sync, full CI, insan security merge |
+| 4 | Issue #53 | ChatGPT | Queued | #31 sonrası küçük production PR, real SQL, Codex review |
+| 5 | PR #36 | ChatGPT | Blocked | #53 sonrası clean sync, tüm Cari Core acceptance |
+| 6 | W1 | Ortak | Blocked | #36 merge, main green, açık Counterparty P0/P1 yok |
 
-Issue #62 ve #63; production reconciliation runner ile global security evidence için ayrı kritik aktivasyon kapılarıdır. Bunlar PR #64 çekirdeğinin `main`e alınmasını engellemez; ancak gerçek production upgrade çalıştırılmadan önce kapanır.
+Dalga 0 tamamlanmadan W1 production geliştirmesi başlamaz.
 
----
+## 8. Kanonik platform gate eşlemesi
 
-## 5. Durum modeli
+### ERP-000F: Outbox ve Inbox
 
-### 5.1 DoR durumu
+- Readiness kaynağı: PR #10
+- Blocker'lar: ADR-006, OPEN-022…025
+- Execution: blocker'lar kapanmadan blocked
 
-`dor_status` yalnız işin tanım ve kabul bakımından hazırlanma seviyesini gösterir:
+### ERP-000G: Belge Kasası
 
-- `not_assessed`: kaynaklar taranmadı.
-- `partial`: bazı karar, ekran veya acceptance eksik.
-- `ready`: kullanıcı sonucu, kapsam, veri sahibi, izinler ve minimum kabul örneği belirli.
-- `decision_blocked`: D2 karar eksik.
+- Readiness kaynağı: PR #11
+- Blocker'lar: ADR-005, OPEN-026…029
+- Execution: blocker'lar kapanmadan blocked
 
-### 5.2 Execution durumu
+### ERP-000H: Türkçe PDF ve adlandırma
 
-`execution_status` gerçek kodlama/merge durumudur:
+- Readiness kaynağı: PR #13
+- Blocker'lar: kabul edilmiş ERP-000G, OPEN-019, ERP-000H-DECISION-PACK
+- Execution: blocker'lar kapanmadan blocked
 
-- `not_started`
-- `queued`
-- `in_progress`
-- `blocked`
-- `in_review`
-- `accepted`
-- `merged`
-- `uat_accepted`
-- `released`
+### ERP-000I: Global Arama
 
-### 5.3 Zorunlu ilişki
+- Readiness kaynağı: PR #12
+- Blocker'lar: ADR-007, OPEN-015, ERP-000I-SEARCH-CONTRACT, ERP-000M ve ERP-000L
+- Async index seçilirse ERP-000F de zorunlu
 
-- Dependency veya bağlayıcı blocker açıksa `execution_status=blocked` ya da `queued` olur.
-- `dor_status=ready`, dependency'yi geçersiz kılmaz.
-- Yalnız exact-head CI ve karşı review ile `accepted` olunur.
-- `merged`, kullanıcı kabulü veya production aktivasyonu anlamına gelmez.
-- `released`, migration/cutover/rollback ve operasyon kanıtı gerektirir.
+### ERP-000J: AI Gateway
 
----
+- Readiness kaynağı: PR #14
+- Blocker'lar: ADR-008, OPEN-020, ERP-000J-AI-CONTRACT, uygun ERP-000L sınırı
 
-## 6. Olay ve modüller arası etki politikası
+### ERP-000K: Ortak React kabuğu
 
-ERP-000F kabul edilmeden outbox varmış gibi davranılmaz.
+- Readiness kaynağı: PR #18
+- Blocker'lar: W0, ERP-000K-SHELL-CONTRACT ve PR #18'deki A/B/C/D/E/L/O dependency gerçeği
+- Execution: bu gate'ler kapanmadan blocked
 
-### 6.1 ERP-000F minimumu öncesi izin verilen yaklaşım
+### ERP-000M: SQL Server PoC
 
-İlk dikey dilimler yalnız şu modellerden birini kullanabilir:
+- Blocker'lar: ADR-003, ADR-010, OPEN-014, OPEN-015, OPEN-017, ERP-000M-SQL-POC-CONTRACT
 
-1. Aynı DB transaction'ında atomik, modüler monolit içi senkron application contract.
-2. Salt-okunur, yeniden hesaplanabilir senkron query/composition.
-3. Açıkça feature-flag altında ve durable async garantisi iddia etmeyen geçici kullanıcı arayüzü.
+### ERP-000O: CI/CD ve delivery
 
-Yasaklar:
+- Readiness kaynağı: PR #19
+- Blocker'lar: ERP-000M, ADR-010, OPEN-014, ERP-000O-DELIVERY-CONTRACT
+- Production activation için ayrıca ilgili N/L ve insan kapıları korunur
 
-- kaybolmaz/asla çift işlemez asenkron event iddiası;
-- kalıcı projection güncellemesini güvenilir saymak;
-- retry/poison/redrive olmadan external side effect;
-- notification veya entegrasyonu business commit ile atomikmiş gibi sunmak.
+### ERP-000N ve ERP-000L
 
-### 6.2 ERP-000F minimumunu zorunlu yapan ilk durumlar
+- Recovery readiness: PR #16
+- Observability readiness: PR #17
+- Kanonik dependency ve blocker'lar kendi readiness kayıtlarından okunur
 
-Aşağıdakilerden ilki başlamadan önce ERP-000F'in kabul edilmiş minimum dilimi `main`de olmalıdır:
+## 9. Raporlama gate'i ve PR #2
 
-- transaction dışına çıkan cross-module async event;
-- yeniden kurulabilir ama kalıcı projection/index pipeline;
-- e-posta/harici entegrasyon worker'ı;
-- OCR/AI background processing;
-- durable notification;
-- external system delivery;
-- retry/backoff/poison/redrive gerektiren iş.
+`RPT-01` production implementation'ı PR #2'deki yedi blocker kapanmadan başlayamaz:
 
-Minimum ERP-000F blocker'ları:
+1. PR #2 current main ile content ve semantic conflictlerini çözmeli.
+2. Mevcut acceptance kanıtlarını geriye götürmemeli; AT-071…078 current matrise append edilmeli.
+3. Kanonik task manifest statüleri korunmalı.
+4. Yeni rapor kararları Karar Sicili, Master veya bağlayıcı discovery zincirine alınmalı.
+5. ADR-008, OPEN-020, veri sınıflandırması, KVKK ve default-deny ile bağlanmalı.
+6. ERP-RPT-001 ile ERP-RPT-003 acceptance sahipliği ve AT-077 döngüsü çözülmeli.
+7. R-06 ve R-07, UI kataloğu/validator veya açık backlog statüsüyle uzlaştırılmalı.
 
-```text
-ADR-006
-OPEN-022
-OPEN-023
-OPEN-024
-OPEN-025
-```
+Bunlara ek olarak current CI ve UI validator kanıtı gerekir.
 
-Bu blocker'lar kapanmadan ilgili workstream `execution_status=blocked` kalır.
+## 10. Dalga 1: ortak kabuk, Cari UI, Ürün ve minimum belge
 
----
+### PLT-01
 
-## 7. Teslimat modeli
+- Kanonik task: ERP-000K
+- Platform contract owner: Codex
+- UX ve iş akışı contract owner: ChatGPT
+- İlk sonuç: login, yetkili şirket seçimi, dashboard, Çalışma Merkezi, güvenli route shell
+- Execution: W0 ve ERP-000K gate'leri kapanmadan blocked
 
-Her iş paketi aşağıdaki zincirin tamamını hedefler:
+### CARI-UI-01
 
-```text
-Kullanıcı sonucu
-→ veri modeli / constraint / migration
-→ domain kuralı
-→ command/query/API
-→ CompanyContext / permission / approval
-→ audit / idempotency / concurrency
-→ React liste / workspace / form
-→ gerçek SQL acceptance
-→ browser E2E
-→ UAT örneği
-→ exact-head review
-→ merge
-```
+- Cari listesi
+- Grup ve şirket görünümü
+- Cari 360
+- Şirket hesapları
+- Adres, kişi ve iletişim ilk dilimi
+- Loading, empty, 403, non-disclosing 404 ve conflict
 
-Yalnız backend, yalnız UI veya yalnız dokümantasyon tamamlanmış modül sayılmaz.
+### PRD-01
 
-### 7.1 Tek dilim, tek kullanıcı sonucu
-
-Örnek:
-
-- Yetkili kullanıcı yeni cari oluşturur ve Cari 360'ı açar.
-- Kullanıcı ürün kartını birim, paket ve varsayılan fiyatla kaydeder.
-- Onaylı alış siparişi stok ekranında fiziksel olmayan gelecek arz olarak görünür.
-- Satış siparişi fiziksel etikete atomik tahsis edilir.
-- Dilme planı fiilî tüketim/çıktı ve soy ağacı oluşturur.
-- Banka girişi açık kalemlere dağıtılır; ikinci para hareketi oluşmaz.
-
-### 7.2 WIP
-
-Her ajan aynı anda en fazla:
-
-- 1 ana production PR;
-- 1 hotfix/remediation PR
-
-taşır.
-
-Aynı aggregate, migration, shared CI, ortak React shell veya machine-readable contract üzerinde tek writer vardır.
-
----
-
-## 8. Karar sınıfları
-
-### D0 — Ajan kararı
-
-Geri döndürülebilir ve para/stok/hukuk etkisi olmayan ayrıntılar:
-
-- sınıf/dosya düzeni;
-- test helper;
-- loading skeleton;
-- breakpoint;
-- tablo kolon sırası;
-- iç refactor;
-- non-sensitive log alanı;
-- feature flag adı.
-
-### D1 — Uygula ve bildir
-
-- varsayılan filtre/sıralama;
-- geri döndürülebilir ekran yerleşimi;
-- ikinci derece rapor kırılımı;
-- alan yardım metni.
-
-### D2 — Ürün sahibi kararı
-
-- para, stok, muhasebe veya vergi etkisi;
-- fiyat, iskonto, risk, limit ve tolerans;
-- rol, yetki, görev ayrılığı ve ikinci onay;
-- belge saklama/KVKK/dışa aktarım;
-- üretim kütle dengesi ve kalite sınıfları;
-- production provider/topoloji/RPO/RTO;
-- migration, açılış bakiyesi ve cutover tarihi.
-
-D2 paketi:
-
-```text
-Sorun
-Kanonik kaynak
-Seçenekler
-Öneri
-İş etkisi
-Teknik etkisi
-Güvenli fallback veya bloke edilen akış
-```
-
----
-
-## 9. Görev paylaşımı
-
-### 9.1 CHATGPT-BUSINESS
-
-Birincil writer:
-
-- Cari/Counterparty;
-- Ürün & Hizmet;
-- Satış;
-- Satın Alma;
-- İşletme Alımları;
-- Stok ve Tahsis;
-- Üretim ve izlenebilirlik;
-- Lojistik ve kantar;
-- Finans, hazine ve muhasebe;
-- rapor semantiği;
-- modül React ekranları;
-- formül/golden test;
-- migrasyon eşleme ve UAT.
-
-Reviewer:
-
-- Identity ve authorization iş uyumu;
-- ortak shell iş akışları;
-- belge/AI iş sınırı;
-- platform değişikliklerinin ERP süreç etkisi.
-
-### 9.2 CODEX-PLATFORM
-
-Birincil writer:
-
-- Identity/auth/RBAC/ABAC;
-- ortak React shell ve design system;
-- generic approval/task engine;
-- belge kasası teknik altyapısı ve PDF runtime;
-- outbox/inbox/worker;
-- search altyapısı;
-- AI gateway/tool policy;
-- observability;
-- CI/CD, migration artifact ve deployment;
-- backup/restore;
-- generic import/export ve system administration tooling.
-
-Reviewer:
-
-- gerçek SQL/migration;
-- concurrency/idempotency;
-- tenant isolation/security;
-- architecture/performance;
-- ChatGPT-owned modül PR'ları.
-
----
-
-## 10. Dalga 0 — Stabilizasyon ve Cari Core 1C
-
-### Amaç
-
-Yeni modül geliştirmelerinin üzerinde çalışacağı stabil, fail-closed ve güncel `main` oluşturmak.
-
-### Teslimatlar
-
-1. PR #64 — merged.
-2. PR #60 — yeni main'e taşınmış `Idempotency-Key` boundary hotfix.
-3. PR #31 — current-main CI/bootstrap security baseline.
-4. Issue #53 — Counterparty AuditEvent tenant query filter ve write guard.
-5. PR #36 — mevcut Party'yi başka yetkili şirkete bağlama.
-
-### Çıkış
-
-- Bütün CI ve gerçek SQL yeşil.
-- Counterparty şirket izolasyonu için açık P0/P1 yok.
-- Yalnız `SYSTEM_ADMINISTRATOR` `counterparty.accounts.create` alıyor.
-- PR #36 görünmeyen Party için non-disclosing 404, yetkisiz rol için 403 ve sıfır yan etki üretiyor.
-- Same-key replay, different-key duplicate race, rollback ve audit atomikliği kanıtlı.
-- W1 başlamadan main tekrar doğrulanmış.
-
----
-
-## 11. Dalga 1 — Ortak kabuk, Çalışma Merkezi, Cari UI, Ürün ve minimum belge
-
-### 11.1 PLT-01 — Ortak React kabuğu
-
-Kanonik görev: `ERP-000K`.
-
-Başlangıç blocker'ları:
-
-```text
-W0
-ERP-000K-SHELL-CONTRACT
-ERP-000L kabul/uygun minimum gözlemlenebilirlik sınırı
-ERP-000O kabul/uygun minimum teslimat sınırı
-```
-
-İlk kullanıcı sonucu:
-
-```text
-Giriş
-→ yetkili şirket seçimi
-→ rol bazlı ana sayfa
-→ Çalışma Merkezi
-→ güvenli route shell
-```
-
-### 11.2 CARI-UI-01 — Cari 360
-
-- Cari listesi;
-- grup/şirket görünümü;
-- Cari 360 özet;
-- şirket hesapları;
-- rol/durum;
-- adres/kişi/iletişim ilk dilimi;
-- loading/empty/403/non-disclosing 404/conflict.
-
-### 11.3 PRD-01 — Ürün & Hizmet
-
-- tek ürün kartı;
-- satın alınabilir/satılabilir/girdi/çıktı rolleri;
-- dinamik ürün özellikleri;
-- stok/alış/satış/fiyat/paket birimleri;
-- sürümlü paket standardı;
-- teorik profil ağırlığı önceliği;
-- temel fiyat listesi;
-- taslak kartın kesin işlemde kullanılmaması.
-
-### 11.4 DOC-01 — Minimum belge
-
-Kanonik görevler: `ERP-000G`, `ERP-000H`.
-
-Blocker'lar:
-
-```text
-ADR-005
-OPEN-026
-OPEN-027
-OPEN-028
-OPEN-029
-OPEN-019
-ERP-000H-DECISION-PACK
-```
-
-İlk dilim yalnız kabul edilmiş minimumdan sonra:
-
-```text
-dosyayı bir kez sakla
-→ hash/mükerrer kontrolü
-→ Cari veya Ürüne referansla
-→ sürüm ve yetkiyi koru
-→ Türkçe görünen dosya adı
-```
-
-### W1 çıkış
+- Tek ürün kartı
+- Alınabilir, satılabilir, girdi ve çıktı rolleri
+- Dinamik özellikler
+- Stok, alış, satış, fiyat ve paket birimleri
+- Sürümlü paket standardı
+- Teorik ağırlık önceliği
+- Temel fiyat listesi
+
+### DOC-01
+
+- Kanonik tasks: ERP-000G ve ERP-000H
+- Teknik contract owner: Codex
+- Belge türü ve bağlantı politikası owner: ChatGPT
+- Execution: PR #11 ve #13 blocker'ları kapanmadan blocked
+
+W1 çıkışı:
 
 ```text
 Giriş → Şirket → Cari 360 → Ürün kartı → Belge bağlantısı
 ```
 
-gerçek SQL ve browser E2E ile çalışır.
+Gerçek SQL ve browser E2E ile çalışır.
 
----
+## 11. Dalga 2: Satış, Satın Alma ve İşletme Alımları
 
-## 12. Dalga 2 — Satış, Satın Alma ve İşletme Alımları
+### SAL-01
 
-### 12.1 Satış
+- Talep ve teklif
+- Satış siparişi
+- Fiyat, iskonto, marj ve risk
+- Termin dilimleri
+- Revizyon ve onay
+- Sipariş 360
+- İptal etki listesi
 
-- talep/teklif;
-- satış siparişi;
-- fiyat/iskonto/marj/risk;
-- termin dilimleri;
-- revizyon;
-- onay;
-- Sipariş 360;
-- iptal etki listesi.
+### PUR-01
 
-### 12.2 Satın Alma
+- Satın alma talebi ve siparişi
+- Satır terminleri
+- Hazır ve yolda bilgisi
+- Fiyat ve para birimi
+- Onay ve revizyon
+- Fiziksel olmayan gelecek arz görünümü
 
-- talep;
-- sipariş;
-- satır terminleri;
-- hazır/yolda;
-- para ve fiyat;
-- revizyon/onay;
-- alış kalan;
-- stokta fiziksel olmayan gelecek arz görünümü.
+### OPR-01
 
-### 12.3 İşletme Alımları
+- Sarf, bakım, yedek parça ve genel alım
+- Maliyet merkezi
+- Talep ve onay
 
-- sarf;
-- bakım;
-- yedek parça;
-- genel alım;
-- maliyet merkezi;
-- talep/onay.
+İlk dilimler senkron application contract kullanır. Notification veya durable projection ERP-000F olmadan açılmaz.
 
-### 12.4 Olay teslim modeli
+## 12. Dalga 3: Stok ve Tahsis
 
-İlk satış/satın alma dilimi:
+Ana kapsam:
 
-- aynı transaction veya senkron application contract;
-- asenkron durable event iddiası yok;
-- gelecek arz görünümü senkron source query olabilir;
-- notification, external delivery veya durable projection ERP-000F minimumu olmadan açılmaz.
-
-### W2 çıkış
-
-Onaylı satış ve satın alma siparişleri çalışır; sipariş fiziksel stok hareketi yaratmaz.
-
----
-
-## 13. Dalga 3 — Stok, Tahsis, Mal Kabul, Sayım ve Transfer
-
-Ana nesneler:
-
-- `StockEvent`;
-- `StockPosition`;
-- depo/lokasyon;
-- mülkiyet;
-- sorumluluk;
-- fiziksel konum;
-- ticari bağ;
-- etiket/lot/heat/coil/MTC;
-- blokaj;
-- tahsis;
-- sayım;
-- transfer/dış fason.
+- StockEvent ve StockPosition
+- Depo ve lokasyon
+- Mülkiyet, sorumluluk, fiziksel konum ve ticari bağ
+- Etiket, lot, heat, coil ve MTC
+- Mal kabul
+- Blokaj
+- Sayım
+- Transfer ve dış fason
+- Merkezi tahsis
 
 İlk zincir:
 
@@ -531,356 +360,148 @@ Onaylı alış siparişi
 → satış siparişine tahsis
 ```
 
-Kritik testler:
+Tahsis stok hareketi değildir ve gerçek SQL üzerinde atomik aşırı tahsis testi zorunludur.
 
-- aşırı tahsis yok;
-- tahsis stok hareketi değil;
-- gelecek arz sevk edilemez;
-- fiziksel kabul olmadan stok artmaz;
-- yanlış sahiplik/şirket sızıntısı yok;
-- negatif stok yok;
-- sayım yapan ve onaylayan ayrılabilir;
-- transfer iki bacaklı ve kısmi olabilir.
-
----
-
-## 14. Dalga 4 — Üretim, izlenebilirlik ve kalite
+## 13. Dalga 4: Üretim ve izlenebilirlik
 
 Sıra:
 
-1. Dilme ve bobin sarım.
-2. Soğuk hadde.
-3. Boru/profil.
-4. Boyama.
-5. Boy kesme.
-6. Üretim kuyruğu.
-7. Gerçekleştirme.
-8. Etiket ve soy ağacı.
-9. Kalite/kütle dengesi.
+1. Dilme ve bobin sarım
+2. Soğuk hadde
+3. Boru ve profil
+4. Boyama
+5. Boy kesme
+6. Üretim kuyruğu
+7. Gerçekleştirme
+8. Etiket ve soy ağacı
+9. Kalite ve kütle dengesi
 
-Formül aileleri:
+Formül aileleri: CUT, SLT, WND, TUB, PNT, CR ve BAL.
 
-```text
-CUT
-SLT
-WND
-TUB
-PNT
-CR
-BAL
-```
+Her preview deterministic backend calculator, formula version, input snapshot ve preview hash taşır.
 
-Her preview:
-
-- deterministik backend calculator;
-- debounce ile güncel;
-- kaydetme değil;
-- formula/version/input snapshot/preview hash;
-- eksik girdi durumunda son sonucu güncelmiş gibi göstermeme.
-
-Çıkış:
-
-```text
-Hammadde etiketi
-→ girdi tahsisi
-→ plan
-→ kuyruk
-→ fiilî tüketim
-→ çıktı/fire/ikinci kalite/WIP
-→ yeni etiketler
-→ soy ağacı
-```
-
----
-
-## 15. Dalga 5 — Lojistik, yükleme, kantar ve ticari belgeler
-
-- yükleme talimatı;
-- yükleme tutma;
-- araç/sürücü/durak;
-- fiilî etiket yükleme;
-- kantar;
-- tolerans;
-- sevkiyat;
-- kısmi/çoklu sipariş;
-- irsaliye;
-- faturaya hazır;
-- iade/düzeltme;
-- transit transfer/kabul.
-
-Zincir:
+## 14. Dalga 5: Lojistik ve ticari belge
 
 ```text
 Sevke açık sipariş
 → yükleme talimatı
-→ fiilî yük
+→ fiilî etiket yükleme
 → kantar
 → sevkiyat
 → irsaliye
 → faturaya hazır
 ```
 
----
+Kapsam; kısmi sevk, çoklu sipariş, araç/sürücü, transfer, iade ve düzeltmeyi içerir.
 
-## 16. Dalga 6 — Finans, hazine ve muhasebe
+## 15. Dalga 6: Finans, Hazine ve Muhasebe
 
-### Finans
+Finans:
 
-- açık kalem;
-- tahsilat/ödeme;
-- banka/kasa/dekont;
-- finansal kaynak;
-- çoktan çoğa dağıtım;
-- kısmi/çoklu kapama;
-- ters kayıt.
+- Açık kalem
+- Tahsilat ve ödeme
+- Banka, kasa ve dekont
+- Finansal kaynak ve çoktan çoğa dağıtım
+- Kısmi ve çoklu kapama
+- Ters kayıt
 
-### Araçlar
+Hazine:
 
-- çek/senet;
-- POS ve komisyon;
-- DBS;
-- şirket kartı;
-- avans;
-- mahsup.
+- Çek, senet, POS, DBS ve şirket kartı
+- 13 haftalık nakit
+- Kredi, limit, teminat ve covenant
 
-### Banka
+Muhasebe:
 
-- hareket içe aktarma;
-- 1:1, 1:n, n:1, n:n mutabakat;
-- eşleşmemiş hareket.
+- Hesap planı
+- Fiş ve fiş satırı
+- Mizan
+- Dönem kilidi
+- Vergi ve resmi muhasebe entegrasyon sınırı
 
-### Hazine
+Para ve muhasebe D2 kararları ve insan merge kapısı gerektirir.
 
-- 13 haftalık nakit;
-- nakit bütçesi;
-- kredi imkânı/kullanımı;
-- limit;
-- teminat;
-- covenant;
-- kur/vade riski.
+## 16. Dalga 7: Rapor, Arama, AI ve operasyon
 
-### Muhasebe
+Codex platform işleri:
 
-- hesap planı;
-- fiş/fiş satırı;
-- operasyon belgesinden incelemeli fiş taslağı;
-- mizan;
-- dönem kilidi;
-- vergi/e-belge entegrasyon sınırı;
-- resmî muhasebe sistemi mutabakatı.
+- ERP-000F/G/H/I/J/L/M/N/O
+- Search, AI gateway, OCR, observability, release, recovery
 
-Çıkış:
+ChatGPT işleri:
 
-```text
-Siparişten nakde
-Satın almadan ödemeye
-```
+- Rapor semantiği
+- AI tool iş contract'ları
+- Yönetim özeti
+- Belge ve iletişim şablonları
 
-uçtan uca kapanır.
+Her platform işi kendi kanonik readiness ve blocker kaydını kapatır. Bu plan statüyü kendi başına değiştirmez.
 
----
+## 17. Dalga 8: Migrasyon, UAT ve cutover
 
-## 17. Dalga 7 — Rapor, arama, AI, belge olgunlaştırma ve operasyon
+Sıra:
 
-### 17.1 ERP-000F — Outbox/Inbox
+1. Şirket, kullanıcı, rol ve parametre
+2. Cari, adres ve kişi
+3. Ürün, birim, paket ve fiyat
+4. Depo, etiket/lot ve açılış stokları
+5. Açık satış ve satın alma siparişleri
+6. Aktif tahsis ve üretim planları
+7. Açık sevkiyat, kabul ve fatura
+8. Açık kalem, banka/kasa, çek/senet, kredi ve teminat
+9. Tarihsel belge ve rapor
 
-Blocker'lar:
+En az iki prova, final delta, rollback ve rol bazlı UAT zorunludur. Uzun süreli çift yazma yoktur.
 
-```text
-ADR-006
-OPEN-022
-OPEN-023
-OPEN-024
-OPEN-025
-```
+## 18. Dalga 9: ertelenmiş genişleme
 
-### 17.2 ERP-000I — Global arama
+Karar Sicili `DEC-GOV-007` gereği ilk çekirdek sonrasına bırakılır:
 
-Kanonik görev: `ERP-000I`.
+- İK ve Bordro
+- Bakım
+- İleri Kalite ve CAPA
+- Sabit Kıymet
+- CRM
+- Proje ve Maliyet
+- Hukuk, Uyum ve Sözleşme
+- İSG
 
-Blocker'lar:
+Her alan için ERP içi geliştirme veya entegrasyon kararı alınır.
 
-```text
-ADR-007
-OPEN-015
-ERP-000I-SEARCH-CONTRACT
-ERP-000M kabulü
-ERP-000L uygun gözlemlenebilirlik
-ERP-000F (async projection seçilirse)
-```
-
-### 17.3 ERP-000J — AI gateway
-
-Blocker'lar:
-
-```text
-ADR-008
-OPEN-020
-ERP-000J-AI-CONTRACT
-ERP-000L uygun telemetry/security evidence
-```
-
-### 17.4 ERP-000L/N/O/M
-
-- `ERP-000M`: SQL Server PoC ve migration ownership.
-- `ERP-000O`: delivery/release/promotion/rollback.
-- `ERP-000N`: backup/restore.
-- `ERP-000L`: observability.
-
-Normatif dependency sırası ilgili kabul edilmiş task graph/ADR ile doğrulanır; bu plan kendi başına statü değiştirmez.
-
-### 17.5 Rapor ve AI iş semantiği
-
-ChatGPT:
-
-- semantik rapor tanımları;
-- rapor veri tarihi/kur/filtre/sürüm;
-- AI tool iş şemaları;
-- yönetim özeti;
-- belge/iletişim şablonları.
-
-Codex:
-
-- report runtime/tooling;
-- authorized search;
-- AI gateway/policy;
-- OCR/worker;
-- observability;
-- release/recovery.
-
----
-
-## 18. Dalga 8 — Migrasyon, UAT ve cutover
-
-Taşıma sırası:
-
-1. Şirket, kullanıcı, rol ve parametre.
-2. Cari, adres ve kişi.
-3. Ürün, birim, paket ve fiyat.
-4. Depo, etiket/lot ve açılış stokları.
-5. Açık satış/satın alma siparişleri.
-6. Aktif tahsis ve üretim planları.
-7. Açık sevkiyat/kabul/fatura.
-8. Açık kalem, banka/kasa, çek/senet, kredi/teminat.
-9. Tarihsel belge/rapor.
-
-Kabul:
-
-- satır sayısı;
-- kg/adet/metre/tutar;
-- açılış bakiyesi;
-- açık sipariş;
-- etiket örneği;
-- golden formül;
-- şirket/rol izolasyonu;
-- en az iki cutover provası;
-- rollback;
-- rol bazlı UAT.
-
-Uzun süreli çift yazma yoktur.
-
----
-
-## 19. Dalga 9 — Ertelenmiş genişleme modülleri
-
-Kanonik karar siciline göre çekirdek sonrasına bırakılır:
-
-- İK/Bordro;
-- Bakım/CMMS;
-- ileri kalite/CAPA;
-- sabit kıymet;
-- CRM;
-- proje/maliyet;
-- sözleşme/hukuk/uyum;
-- İSG.
-
-Her biri önce:
-
-```text
-ERP içi modül mü?
-Harici sistem entegrasyonu mu?
-```
-
-kararını alır.
-
----
-
-## 20. Definition of Ready
+## 19. Definition of Ready
 
 Bir dilim başlamadan:
 
-- kullanıcı sonucu;
-- kapsam dışı;
-- source-of-truth modülü;
-- ana kayıt/ilişki;
-- durum geçişi;
-- miktar/tutar/birim/kur/formül;
-- permission/CompanyContext;
-- approval/görev ayrılığı;
-- audit/ters işlem;
-- idempotency/concurrency;
-- ekran referansı;
-- loading/empty/error/conflict/403/404;
-- minimum acceptance;
-- canonical task IDs;
-- açık blocker ve D2 kararlar;
-- event delivery mode
+- Kullanıcı sonucu ve kapsam dışı
+- Source-of-truth modülü
+- Karar Sicili ve Master referansları
+- Canonical task IDs ve readiness kaynakları
+- Açık blocker ve D2 kararlar
+- Veri modeli ve durum geçişleri
+- Miktar, para, birim, kur, formül ve yuvarlama
+- Permission, CompanyContext, approval ve SoD
+- Audit, ters işlem, idempotency ve concurrency
+- Event delivery mode
+- UI referansı ve bütün ekran durumları
+- Minimum gerçek SQL ve UAT örneği
 
-yazılıdır.
+## 20. Definition of Done
 
----
-
-## 21. Definition of Done
-
-- Uçtan uca kullanıcı sonucu çalışır.
-- Gerçek SQL ana/negatif senaryolar geçer.
-- Şirket/rol/veri kapsamı sızıntısı yok.
-- Aynı komut ikinci etki üretmez.
-- Yarışlar deterministik sonuç verir.
-- Audit tam ve append-only.
-- UI bütün durumları kapsar.
+- Kullanıcı sonucu uçtan uca çalışır.
+- Gerçek SQL ana ve negatif senaryolar geçer.
+- Tenant, rol ve veri kapsamı sızıntısı yoktur.
+- Aynı komut ikinci iş etkisi üretmez.
+- Concurrency sonucu deterministiktir.
+- Audit eksiksiz ve append-only'dir.
+- UI loading, empty, error, forbidden, not-found ve conflict durumlarını kapsar.
 - Browser E2E ve erişilebilirlik smoke geçer.
-- P0/P1 yok.
-- Exact-head karşı review var.
-- Migration/rollback etkisi kaydedilmiş.
-- Gerekli D2 kararları kabul edilmiş.
-- Async iddia varsa ERP-000F minimumu kabul edilmiş.
+- P0/P1 yoktur.
+- Exact-head karşı review vardır.
+- Migration ve rollback etkisi kaydedilmiştir.
+- Gerekli D2 kararlar kabul edilmiştir.
+- Async iddia varsa ERP-000F minimumu kabul edilmiştir.
 
----
-
-## 22. Test matrisi
-
-Riskine göre:
-
-1. Domain/state-machine.
-2. Formula golden.
-3. EF model/migration drift.
-4. SQL FK/unique/check/rowversion.
-5. Transaction rollback.
-6. Same-key/different-key concurrency.
-7. Company/role/scope.
-8. Audit/integrity.
-9. API/contract/error codes.
-10. React component.
-11. Playwright E2E.
-12. Visual regression.
-13. Keyboard/accessibility.
-14. Performance/load.
-15. Migration reconciliation.
-16. Backup/restore.
-17. AI data-leak/tool authorization.
-
----
-
-## 23. Branch, PR ve review
-
-Branch:
-
-```text
-parallel/chatgpt/<module>-<slice>
-hotfix/chatgpt/<module>-<issue>
-codex/<platform>-<slice>
-```
+## 21. Handoff ve review
 
 Her PR:
 
@@ -893,11 +514,15 @@ BASE
 HEAD
 USER OUTCOME
 CANONICAL TASK IDS
+READINESS SOURCES
 BLOCKED BY
+DOR STATUS
+EXECUTION STATUS
 EVENT DELIVERY MODE
+BUSINESS POLICY OWNER
+PLATFORM CONTRACT OWNER
 WRITE SCOPE
 READ-ONLY BOUNDARIES
-BUSINESS INVARIANTS
 TEST EVIDENCE
 OPEN P0/P1
 OPEN D2
@@ -905,74 +530,51 @@ NEXT SAFE ACTION
 DO NOT
 ```
 
-Review exact SHA'ya bağlıdır. Head değişirse eski review ve CI geçersiz olur.
+Head değişirse review ve CI stale olur.
 
-İnsan merge kararı zorunlu alanlar:
+İnsan merge kapısı zorunlu alanlar:
 
-- Identity/rol/yetki;
-- shared CI;
-- destructive schema;
-- para/stok/muhasebe politikası;
-- production activation;
-- recovery;
-- cutover.
+- Identity, rol ve permission
+- Shared CI
+- Destructive schema ve migration
+- Para, stok ve muhasebe politikası
+- Production activation
+- Backup ve recovery
+- Cutover
 
 Auto-merge yoktur.
 
----
+## 22. İlk aktif sıra
 
-## 24. İlk aktif görevler
+ChatGPT:
 
-### ChatGPT
+1. PR #65 supplemental P1 düzeltmeleri
+2. PR #68 current-main hotfix
+3. PR #31 read-only iş etkisi incelemesi
+4. Issue #53
+5. PR #36
+6. W1 gate açılırsa Cari UI ve Product Core
 
-1. PR #65 P1 plan/truth düzeltmeleri.
-2. PR #60'ı `main@7e832d2…` tabanında yeniden taşıma ve test.
-3. PR #31 current-main farkını read-only inceleme.
-4. Issue #53 production fix.
-5. PR #36 final temizleme.
-6. W1 için Cari UI ve Ürün Core.
+Codex:
 
-### Codex
+1. PR #65 yeni exact head re-review
+2. PR #68 exact-head review
+3. PR #31 current-main sync ve full CI
+4. Issue #53 ve PR #36 read-only review
+5. W0 ve ERP-000K gate açılınca common shell
 
-1. PR #65 yeni exact head re-review.
-2. PR #60 yeni exact head re-review.
-3. PR #31 current-main sync/full CI.
-4. W0 kapanınca PLT-01 için kanonik blocker/contract kontrolü.
-5. Ortak shell ancak W0 ve ERP-000K execution gate açılınca.
-6. ERP-000F/G/H/I/J/L/M/N/O blocker'larını tahmin etmeden kendi kanonik süreçleriyle kapatma.
-
----
-
-## 25. Hızlandırma ölçütleri
-
-Haftalık ölçülen değerler:
-
-- merge edilen kullanıcı sonucu;
-- median PR yaşı;
-- stale branch sayısı;
-- first-pass CI oranı;
-- P0/P1 kapanma süresi;
-- gerçek SQL ve E2E kapsama oranı;
-- karar bekleme süresi;
-- açık WIP;
-- modül bazlı UAT seviyesi.
-
-Kod satırı ve doküman sayısı başarı ölçütü değildir.
-
----
-
-## 26. Nihai başarı
+## 23. Nihai başarı
 
 Göymen ERP tamamlanmış sayılır, eğer:
 
-- ortak kabuk ve rol bazlı çalışma merkezi kullanılabiliyorsa;
-- aynı olay modüller arasında kopyalanmıyorsa;
-- siparişten tahsilata ve hammaddeden sevkiyata iz tamamsa;
-- stok, para ve muhasebe deterministik ve mutabık ise;
-- AI yetki/onay/formül motorunu aşamıyorsa;
-- belge bir kez saklanıp çok bağlama referanslanıyorsa;
-- gerçek SQL, E2E, performans, migration ve restore kanıtları varsa;
-- tek gecelik cutover provası ve rollback başarılıysa;
-- açık P0/P1 yoksa.
+- Ortak kabuk ve çalışma merkezi kullanılıyorsa
+- Aynı olay modüller arasında kopyalanmıyorsa
+- Siparişten tahsilata ve hammaddeden sevkiyata iz tamamsa
+- Stok, para ve muhasebe deterministik ve mutabıksa
+- AI yetki, onay ve formül motorunu aşamıyorsa
+- Belge bir kez saklanıp çok bağlama referanslanıyorsa
+- Gerçek SQL, E2E, performans, migration ve restore kanıtları varsa
+- Tek gecelik cutover ve rollback provası başarılıysa
+- Açık P0/P1 ve production blocker kalmadıysa
 
-Bu belge hedef davranışı yeniden tanımlamaz; kanonik kararların hızlı, güvenli ve izlenebilir şekilde çalışan ürüne dönüşmesini yönetir.
+Bu plan hedef iş davranışını yeniden tanımlamaz; bağlayıcı kararların hızlı, güvenli ve izlenebilir biçimde çalışan ürüne dönüşmesini yönetir.
