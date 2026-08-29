@@ -484,3 +484,43 @@ OPEN DECISIONS: production runner/invocation; global security evidence modeli ve
 MAIN SHA: 7e832d2b98a07428d46ead54a9d136b24c62203a
 ACTIVE PRS: #65 Draft/ChatGPT-BUSINESS; #60/#36 Draft/ChatGPT-CARI; post-merge truth-sync Codex-owned
 ```
+
+## 2026-08-29 20:22 +03:00 — Döngü 14
+
+- Yapısal task-manifest validator tooling PR #24 insan review'u sonrasında `main`e squash
+  merge edilmiştir. Bu döngünün temiz yeniden kurulum tabanı
+  `c1d28cc44e775cfea3a528cfd755cbe85b5ee290` commit'idir. Validator tooling foundation
+  olarak kullanılabilir; mevcut GitHub workflow'larına bağlı aktif bir CI kapısı değildir.
+- ERP-000O readiness Draft PR #19 güncel `main` üzerine yeniden kurulmuştur. Manifest kök
+  metadata'sı ile ERP-000O dışındaki 14 task güncel tabanla aynen korunmuş; yalnız
+  ERP-000O satırı `blocked`, exact bağımlılıkları A/B/C/D/E/M ve blocker'ları fiziksel
+  ADR-010, OPEN-014 ve task-local `ERP-000O-DELIVERY-CONTRACT` olacak şekilde bırakılmıştır.
+- Güncel çözümde Audit, Counterparty, Idempotency, Identity ve Organization olmak üzere
+  beş design-time migration DbContext'i vardır. Standart CI yalnız Organization, Identity,
+  Audit ve Idempotency için dört SQL migration scripti üretir; Counterparty scripti yoktur.
+  Yeşil CI bütün migration'ların delivery kapsamına alındığı anlamına gelmez.
+- Güncel `main` için standart CI `33265386298`, UI katalog golden validation
+  `33265386300` başarılıdır. Standart CI artifact API sonucu `total_count = 0` olduğundan
+  immutable release artifact boşluğu kapanmış sayılmamıştır.
+- Yerel doğrulamada task-manifest validator 15 task/23 edge için geçti; validator negatif
+  testleri 21/21, .NET testleri 365 başarılı/14 SQL ortamı olmadığı için atlandı, frontend
+  testleri 2/2 ve UI katalog negatif testleri 24/24 başarılıdır. Release build 0 uyarı/0
+  hata; NuGet ve npm güvenlik açığı taramaları bulgusuz; progress prefix ve exact üç-dosya
+  allowlist kontrolleri temizdir.
+- PR #69 ile .NET bootstrap integrity preflight ve PR #83 ile exact tenant-bypass source
+  inventory guard mevcut CI omurgasını güçlendirmiştir. Bunlar branch/ruleset enforcement,
+  bütün migration'ların discovery/promotion kanıtı veya production delivery zinciri yerine
+  geçmez.
+- Workflow, source, test, Docker, infra, Cari, provider, topoloji, threshold veya
+  production activation değiştirilmemiştir. PR #19 Draft ve insan review kapısında kalır;
+  ERP-000M/O/F implementation ve PR #2'nin yedi blocker'ı açılmaz.
+
+```text
+DONE: PR #24 merge; PR #19 clean current-main rebuild; O-only manifest delta; 5-vs-4 migration gap kaydı
+IN REVIEW: ERP-000O readiness Draft PR #19; fresh exact-head CI ve bağımsız review bekleniyor
+BLOCKED: ERP-000O/M/F implementation; production activation; PR #2 (yedi blocker)
+SAFE NEXT: exact-head CI/UI golden; artifact API; bağımsız exact-SHA review; insan review'u
+OPEN DECISIONS: physical ADR-010; OPEN-014; ERP-000O-DELIVERY-CONTRACT; ERP-000M/F kapı kararları; OPEN-013/015/017 production activation
+MAIN SHA: c1d28cc44e775cfea3a528cfd755cbe85b5ee290
+ACTIVE PRS: #19 Draft; #2 Draft/blocked; identity production gates #62/#63 open
+```
