@@ -1,3 +1,4 @@
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
@@ -5,7 +6,9 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace GoymenERP.Modules.Audit.Infrastructure.Persistence;
 
-public sealed class AuditSaveChangesInterceptor(AuditEventCollector collector)
+public sealed class AuditSaveChangesInterceptor(
+    AuditEventCollector collector,
+    ICompanyContext companyContext)
     : SaveChangesInterceptor
 {
     private readonly List<AuditEvent> _attachedEvents = [];
@@ -76,13 +79,34 @@ public sealed class AuditSaveChangesInterceptor(AuditEventCollector collector)
             return;
         }
 
-        var invalidEntry = dbContext.ChangeTracker
+        try
+        {
+            PrepareCore(dbContext);
+        }
+        catch
+        {
+            Reset(detachEvents: true, dbContext);
+            throw;
+        }
+    }
+
+    private void PrepareCore(DbContext dbContext)
+    {
+        var auditEntries = dbContext.ChangeTracker
             .Entries<AuditEvent>()
+            .ToList();
+
+        var invalidEntry = auditEntries
             .FirstOrDefault(x => x.State is EntityState.Modified or EntityState.Deleted);
         if (invalidEntry is not null)
         {
             throw new InvalidOperationException(
                 "Audit kayıtları değiştirilemez veya silinemez.");
+        }
+
+        foreach (var entry in auditEntries.Where(x => x.State == EntityState.Added))
+        {
+            ValidateCompany(entry.Entity.CompanyId);
         }
 
         if (_eventsAttached || collector.Pending.Count == 0)
@@ -92,12 +116,37 @@ public sealed class AuditSaveChangesInterceptor(AuditEventCollector collector)
 
         foreach (var draft in collector.Pending)
         {
-            var auditEvent = AuditEventFactory.Create(draft);
-            dbContext.Set<AuditEvent>().Add(auditEvent);
-            _attachedEvents.Add(auditEvent);
+            ValidateCompany(draft.CompanyId);
         }
 
+        var auditEvents = collector.Pending
+            .Select(AuditEventFactory.Create)
+            .ToList();
+        _attachedEvents.AddRange(auditEvents);
+        dbContext.Set<AuditEvent>().AddRange(auditEvents);
+
         _eventsAttached = true;
+    }
+
+    private void ValidateCompany(Guid companyId)
+    {
+        if (companyId == Guid.Empty)
+        {
+            throw new InvalidOperationException(
+                "Audit kaydı CompanyId olmadan yazılamaz.");
+        }
+
+        if (!companyContext.IsResolved)
+        {
+            throw new InvalidOperationException(
+                "Audit kaydı yazmak için aktif şirket bağlamı zorunludur.");
+        }
+
+        if (companyId != companyContext.CompanyId)
+        {
+            throw new InvalidOperationException(
+                "Audit kaydı aktif şirket bağlamıyla eşleşmelidir.");
+        }
     }
 
     private void Reset(bool detachEvents, DbContext? dbContext)
