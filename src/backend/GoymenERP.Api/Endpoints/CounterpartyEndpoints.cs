@@ -307,12 +307,38 @@ public static class CounterpartyEndpoints
             return Results.NoContent();
         }
 
+        var problemCode = CounterpartyProblemCodesV1.RequiredForProblem(response.Result);
+        if (!HasValidTerminalProblemShape(response))
+        {
+            throw new InvalidOperationException(
+                "Cari terminal sonucu HTTP durumuyla veya conflict zarfıyla eşleşmiyor.");
+        }
+
         return CounterpartyProblem(
             response.StatusCode,
-            CounterpartyProblemCodesV1.RequiredForProblem(response.Result),
+            problemCode,
             response.Title,
             response.Detail,
             response.Conflict);
+    }
+
+    private static bool HasValidTerminalProblemShape(
+        CounterpartyCommandResponse response)
+    {
+        return response.Result switch
+        {
+            CounterpartyCommandResult.NotFound =>
+                response.StatusCode == StatusCodes.Status404NotFound
+                && response.Conflict is null,
+            CounterpartyCommandResult.VersionConflict =>
+                response.StatusCode == StatusCodes.Status409Conflict
+                && response.Conflict is not null,
+            CounterpartyCommandResult.IdempotencyConflict
+                or CounterpartyCommandResult.AlreadyLinked =>
+                response.StatusCode == StatusCodes.Status409Conflict
+                && response.Conflict is null,
+            _ => false,
+        };
     }
 
     private static IResult ValidationProblem(string title, string detail)
