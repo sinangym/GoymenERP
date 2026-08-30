@@ -723,3 +723,39 @@ OPEN DECISIONS: physical ADR-008; OPEN-020; ERP-000J-AI-CONTRACT; capability/per
 MAIN SHA: d5bcd5b30ee79885cf64b3c4c638ddeb91426d20
 ACTIVE PRS: #14 Draft; #2 Draft/blocked; identity production gates #62/#63 open; Cari-owned PR #77/#79/#65 read-only gates
 ```
+
+## 2026-08-31 — Döngü v2.0-2 (CLAUDE-FRONTEND şeridi)
+
+- Main: `e9c48605260e52a2905609dc377e14e9dbb68582`
+- Şerit: `claude`
+- Dilim: `W0-SHELL` mimari ön koşulu — CompanyContext/async fence/stale-response tasarımı (`ERP-000K` §13)
+- Branch/PR: `claude/w0-shell-companycontext-fence-analysis` / Draft
+
+### Yapılan
+
+- `docs/delivery/CRITICAL_ANALYSIS/shell-companycontext-fence-2026-08-31.md`: `ERP-000K` §13'ün
+  10 zorunluluğu mekanizmaya eşlendi. Çekirdek: monotonik `contextEpoch` fence + `key={ctxKey}`
+  React ağaç sınırı + TanStack Query `queryKey[0]=ctxKey` namespace + write-registry (unknown-outcome
+  write ERP-000E replay köprüsü). Şirket değişim state machine (GUARD→TEARDOWN→REAUTH→MOUNT).
+  4 alternatif elendi (yalnız AbortController / manuel temizlik / clear() / URL-context).
+- Codex'ten 4 sözleşme girdisi tanımlandı: `/identity/me` capability şekli (`policyRevision` +
+  per-company capability), stale-capability sinyali, route reauth (mevcut), grup-okuma OpenAPI beyanı.
+- 7 browser E2E senaryosu (`ERP-000K` §18.2 S1/S2/S6-S10) `SHELL-PILOT-01` kabul kapısı olarak.
+
+### Kritik nokta protokolü (§6 Adım 4)
+
+Mimari çatal, güvenli varsayılan yok → çift-ajan analiz. Codex review'u bekliyor
+(CompanyContext + `/identity/me` semantic owner). `policyRevision` backend'de yokken
+`SHELL-PILOT-01` bootstrap sabiti + `ASSUMPTION` köprüsü.
+
+```text
+DÖNGÜ: 2026-08-31 | ŞERİT: claude
+MAIN SHA: e9c48605260e52a2905609dc377e14e9dbb68582
+DİLİM: W0-SHELL (CompanyContext fence mimarisi)
+DAVRANIŞ DEĞİŞİKLİĞİ: hayır: mimari analiz döngüsü (NOT) — Codex review + SHELL-PILOT-01'de kod
+KATMAN: K3
+MERGE: yok — Draft, Codex adversarial review bekliyor
+DECISION_PACK AÇIK: 0 ASSUMPTION + 21 OPEN
+KRİTİK ANALİZ: shell-companycontext-fence → Codex review bekliyor; frontend-packages (döngü v2.0-1) → PR #118 Codex review bekliyor
+SONRAKİ: iki analiz Codex onayı → ADR + SHELL-PILOT-01 foundation PR (ilk davranış döngüsü)
+```
