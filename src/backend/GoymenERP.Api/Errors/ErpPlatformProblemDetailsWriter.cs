@@ -9,9 +9,7 @@ internal sealed class ErpPlatformProblemDetailsWriter(
 {
     public bool CanWrite(ProblemDetailsContext context)
     {
-        var statusCode = context.ProblemDetails.Status
-            ?? context.HttpContext.Response.StatusCode;
-        return ErpProblemDetailsExtensions.IsPlatformStatus(statusCode);
+        return ErpProblemDetailsExtensions.IsPlatformProblem(context);
     }
 
     public ValueTask WriteAsync(ProblemDetailsContext context)

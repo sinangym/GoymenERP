@@ -1,3 +1,4 @@
+using GoymenERP.Api.Errors;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 
@@ -22,14 +23,12 @@ public sealed class CompanyContextMiddleware(RequestDelegate next)
         }
 
         if (!httpContext.Request.Headers.TryGetValue(CompanyHeaderName, out var headerValue)
-            || !Guid.TryParse(headerValue.ToString(), out var companyId)
+            || headerValue.Count != 1
+            || !Guid.TryParse(headerValue[0], out var companyId)
             || companyId == Guid.Empty)
         {
-            await Results.Problem(
-                    title: "Şirket seçimi gerekli.",
-                    detail: "İşleme devam etmek için geçerli bir şirket seçin.",
-                    statusCode: StatusCodes.Status400BadRequest)
-                .ExecuteAsync(httpContext);
+            await ErpRequestMetadataProblem
+                .WriteCompanyContextInvalidAsync(httpContext);
             return;
         }
 
