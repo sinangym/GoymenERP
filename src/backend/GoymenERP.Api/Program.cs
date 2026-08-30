@@ -1,4 +1,5 @@
 using GoymenERP.Api.Endpoints;
+using GoymenERP.Api.Errors;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.Observability;
 using GoymenERP.Api.Security;
@@ -24,7 +25,7 @@ builder.Configuration.AddJsonFile(
     optional: false,
     reloadOnChange: false);
 
-builder.Services.AddProblemDetails();
+builder.Services.AddErpProblemDetails();
 builder.Services.AddHealthChecks();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICompanyContext, CompanyContext>();
