@@ -17,8 +17,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/"
         + "IdentityModuleExtensions.cs";
 
-    // Pinning the reviewed project bytes makes any linked Compile item, source generator or
-    // default-item override an explicit security review event instead of a source-walk bypass.
+    // Pinning the reviewed project bytes, while separately validating every automatic MSBuild
+    // ancestor, makes compiled-input drift an explicit security review event instead of a
+    // source-walk bypass.
     private static readonly IReadOnlyDictionary<string, string> ReviewedCounterpartyProjectHashes =
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -186,6 +187,89 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         Assert.NotEmpty(ValidateReviewedCounterpartyProjectInventory(driftedProject));
     }
 
+    [Fact]
+    public void CounterpartyAutomaticMsBuildInputsAreFailClosed()
+    {
+        var repositoryRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"goymen-identity-guard-msbuild-{Guid.NewGuid():N}");
+
+        try
+        {
+            var projectDirectory = Path.Combine(
+                repositoryRoot,
+                "src",
+                "backend",
+                "Modules",
+                "Counterparty",
+                "Synthetic");
+            Directory.CreateDirectory(projectDirectory);
+            var projectPath = Path.Combine(projectDirectory, "Synthetic.csproj");
+            File.WriteAllText(projectPath, "<Project Sdk=\"Microsoft.NET.Sdk\" />");
+            File.WriteAllText(
+                projectPath + ".user",
+                "<Project><Import Project=\"Injected.targets\" /></Project>");
+            File.WriteAllText(
+                Path.Combine(projectDirectory, "Directory.Build.targets"),
+                "<Project><Target Name=\"InjectCompile\" /></Project>");
+            File.WriteAllText(
+                Path.Combine(projectDirectory, "Directory.Packages.props"),
+                "<Project><ItemGroup><PackageReference Include=\"Generator\" /></ItemGroup></Project>");
+            File.WriteAllText(
+                Path.Combine(projectDirectory, "Directory.Build.props"),
+                "<Project><ItemGroup><Compile Include=\"Linked.cs\" /></ItemGroup></Project>");
+
+            var errors = ValidateCounterpartyAutomaticBuildInputs(
+                repositoryRoot,
+                [NormalizeRepositoryPath(Path.GetRelativePath(repositoryRoot, projectPath))]);
+
+            Assert.Contains(errors, error => error.Contains(
+                "Synthetic.csproj.user",
+                StringComparison.Ordinal));
+            Assert.Contains(errors, error => error.Contains(
+                "Directory.Build.targets",
+                StringComparison.Ordinal));
+            Assert.Contains(errors, error => error.Contains(
+                "Directory.Packages.props",
+                StringComparison.Ordinal));
+            Assert.Contains(errors, error => error.Contains(
+                "Compile:",
+                StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (Directory.Exists(repositoryRoot))
+            {
+                Directory.Delete(repositoryRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void ReviewedReconcilerSourcesCannotBeRenamedOrLoseTheirRequiredShape()
+    {
+        var probes = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [IdentityReconciliationContractPath] =
+                "public interface IRolePermissionSync { Task<Result> RunAsync(); }",
+            [IdentityReconciliationImplementationPath] =
+                "internal sealed class RolePermissionSync : IRolePermissionSync "
+                + "{ public Task<Result> RunAsync() => default!; }",
+            [IdentityModuleCompositionRootPath] =
+                "services.AddScoped<IRolePermissionSync, RolePermissionSync>();"
+        };
+
+        foreach (var (path, replacement) in probes)
+        {
+            var sources = CreateReviewedIdentityReconcilerFixture();
+            sources[path] = replacement;
+
+            Assert.Contains(
+                ValidateIdentityReconcilerInvocationBoundary(sources),
+                error => error.Contains(path, StringComparison.Ordinal));
+        }
+    }
+
     private static IReadOnlyList<string> ValidateIdentityReconcilerInvocationBoundary(
         IReadOnlyDictionary<string, string> sources)
     {
@@ -199,16 +283,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         foreach (var (path, source) in normalizedSources)
         {
             var typeReferences = IdentityReconcilerTypeRegex.Matches(source);
-            if (typeReferences.Count == 0)
-            {
-                continue;
-            }
-
             if (!ReviewedIdentityReconcilerSources.TryGetValue(path, out var expectation))
             {
-                errors.Add(
-                    $"Unreviewed production Identity reconciler reference: {path}:"
-                    + GetLineNumber(source, typeReferences[0].Index));
+                if (typeReferences.Count > 0)
+                {
+                    errors.Add(
+                        $"Unreviewed production Identity reconciler reference: {path}:"
+                        + GetLineNumber(source, typeReferences[0].Index));
+                }
+
                 continue;
             }
 
@@ -285,6 +368,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             throw new InvalidOperationException(string.Join(Environment.NewLine, projectErrors));
         }
 
+        var automaticBuildErrors = ValidateCounterpartyAutomaticBuildInputs(
+            repositoryRoot,
+            projectHashes.Keys);
+        if (automaticBuildErrors.Count > 0)
+        {
+            throw new InvalidOperationException(
+                string.Join(Environment.NewLine, automaticBuildErrors));
+        }
+
         var counterpartySources = counterpartyFiles
             .Where(path => string.Equals(
                 Path.GetExtension(path),
@@ -350,6 +442,40 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             }
         }
 
+        return errors;
+    }
+
+    private static IReadOnlyList<string> ValidateCounterpartyAutomaticBuildInputs(
+        string repositoryRoot,
+        IEnumerable<string> repositoryProjectPaths)
+    {
+        var errors = new List<string>();
+        var automaticDefinitionPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var repositoryProjectPath in repositoryProjectPaths.Order(StringComparer.Ordinal))
+        {
+            var projectPath = Path.GetFullPath(Path.Combine(
+                repositoryRoot,
+                repositoryProjectPath.Replace('/', Path.DirectorySeparatorChar)));
+            if (!IsUnderDirectory(repositoryRoot, projectPath) || !File.Exists(projectPath))
+            {
+                errors.Add(
+                    "Counterparty project is missing or outside the repository while collecting "
+                    + $"automatic MSBuild inputs: {repositoryProjectPath}");
+                continue;
+            }
+
+            CollectAutomaticBuildDefinitionPaths(
+                repositoryRoot,
+                projectPath,
+                automaticDefinitionPaths,
+                errors);
+        }
+
+        ValidateAutomaticBuildDefinitions(
+            repositoryRoot,
+            automaticDefinitionPaths,
+            errors);
         return errors;
     }
 
