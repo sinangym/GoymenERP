@@ -101,5 +101,7 @@ into different client contracts.
 - full API integration and architecture regressions pass;
 - fresh runner-backed CI, exact-head independent review and human security merge approval.
 
-Issue `#87` remains an external acceptance blocker while GitHub Actions jobs terminate with
-zero runner steps. Local evidence cannot replace that gate.
+Runner-backed GitHub Actions execution is restored. Issue `#87` continues to track
+branch-protection and independent-review enforcement. Every new exact head still requires
+actual runner-backed backend, frontend, real-SQL, container and UI-golden success; older or
+zero-step runs cannot be reused as acceptance evidence.
