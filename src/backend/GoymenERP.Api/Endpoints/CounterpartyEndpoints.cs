@@ -80,6 +80,45 @@ public static class CounterpartyEndpoints
         }).RequireCompanyContext()
             .RequireAuthorization(ErpPermissions.CounterpartyPartiesCreate);
 
+        group.MapPost("/{partyId:guid}/company-account", async (
+                Guid partyId,
+                CreateCompanyPartyAccount command,
+                ICounterpartyCompanyAccountLinkService service,
+                ICurrentUser currentUser,
+                ICompanyContext companyContext,
+                ICorrelationContext correlationContext,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+        {
+            if (partyId == Guid.Empty || !IsValidRoles(command.Roles))
+            {
+                return Results.Problem(
+                    title: "Cari şirket ilişkisi geçersiz.",
+                    detail: "Geçerli cari kimliği ve en az bir bilinen ticari rol zorunludur.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (!TryReadCommandMetadata(
+                    httpContext,
+                    currentUser,
+                    companyContext,
+                    correlationContext,
+                    out var metadata))
+            {
+                return InvalidCommandMetadata();
+            }
+
+            var execution = await service.CreateCompanyAccountAsync(
+                partyId,
+                command,
+                metadata,
+                cancellationToken);
+            ApplyReplayHeaders(httpContext, execution);
+            return ToHttpResult(execution.Response);
+        }).RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.CounterpartyAccountsCreate)
+            .RequireAuthorization(ErpPermissions.CounterpartyPartiesRead);
+
         group.MapPut("/{partyId:guid}/company-account/active-state", async (
                 Guid partyId,
                 SetCompanyPartyAccountActiveState command,
@@ -165,8 +204,6 @@ public static class CounterpartyEndpoints
         CreateCounterparty command,
         out string validationDetail)
     {
-        const PartyRole knownRoles =
-            PartyRole.Customer | PartyRole.Supplier | PartyRole.Tolling | PartyRole.Service;
         if (!Enum.IsDefined(command.Kind))
         {
             validationDetail = "Geçerli bir taraf türü seçin.";
@@ -187,7 +224,7 @@ public static class CounterpartyEndpoints
             return false;
         }
 
-        if (command.Roles == PartyRole.None || (command.Roles & ~knownRoles) != 0)
+        if (!IsValidRoles(command.Roles))
         {
             validationDetail = "Cari en az bir bilinen ticari rol taşımalıdır.";
             return false;
@@ -195,6 +232,13 @@ public static class CounterpartyEndpoints
 
         validationDetail = string.Empty;
         return true;
+    }
+
+    private static bool IsValidRoles(PartyRole roles)
+    {
+        const PartyRole knownRoles =
+            PartyRole.Customer | PartyRole.Supplier | PartyRole.Tolling | PartyRole.Service;
+        return roles != PartyRole.None && (roles & ~knownRoles) == 0;
     }
 
     private static bool TryReadCommandMetadata(
@@ -265,16 +309,23 @@ public static class CounterpartyEndpoints
             return Results.NoContent();
         }
 
+        var extensions = new Dictionary<string, object?>();
+        var problemCode = CounterpartyProblemCodesV1.For(response.Result);
+        if (problemCode is not null)
+        {
+            extensions["code"] = problemCode;
+        }
+
+        if (response.Conflict is not null)
+        {
+            extensions["conflict"] = response.Conflict;
+        }
+
         return Results.Problem(
             title: response.Title,
             detail: response.Detail,
             statusCode: response.StatusCode,
-            extensions: response.Conflict is null
-                ? null
-                : new Dictionary<string, object?>
-                {
-                    ["conflict"] = response.Conflict,
-                });
+            extensions: extensions.Count == 0 ? null : extensions);
     }
 
     private static IResult InvalidCommandMetadata()
