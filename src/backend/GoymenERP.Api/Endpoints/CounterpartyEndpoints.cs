@@ -292,7 +292,8 @@ public static class CounterpartyEndpoints
 
     private static IResult ToHttpResult(CounterpartyCommandResponse response)
     {
-        if (response.StatusCode == StatusCodes.Status201Created
+        if (response.Result == CounterpartyCommandResult.Created
+            && response.StatusCode == StatusCodes.Status201Created
             && response.Resource is not null)
         {
             return Results.Created(
@@ -300,7 +301,8 @@ public static class CounterpartyEndpoints
                 response.Resource);
         }
 
-        if (response.StatusCode == StatusCodes.Status204NoContent)
+        if (response.Result == CounterpartyCommandResult.Succeeded
+            && response.StatusCode == StatusCodes.Status204NoContent)
         {
             return Results.NoContent();
         }
