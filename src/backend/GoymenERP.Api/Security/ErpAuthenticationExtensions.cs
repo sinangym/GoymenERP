@@ -77,6 +77,7 @@ public static class ErpAuthenticationExtensions
                     options.Authority = authority;
                     options.Audience = settings.Oidc.Audience;
                     options.RequireHttpsMetadata = settings.Oidc.RequireHttpsMetadata;
+                    options.IncludeErrorDetails = false;
                     options.MapInboundClaims = false;
                     options.TokenValidationParameters = new TokenValidationParameters
                     {
