@@ -27,6 +27,51 @@ public sealed class CounterpartyWriteSqlServerRelationalAcceptanceTests
             await using var connection = new SqlConnection(factory.DatabaseConnectionString);
             await connection.OpenAsync();
 
+            var emptyBaseline = await ReadEffectCountsAsync(connection);
+            Assert.Equal(new PersistenceCounts(0, 0, 0, 0), emptyBaseline);
+
+            using (var invalidCreateClient = factory.CreateClientFor(
+                       TestUsers.GroupAdmin,
+                       TestCompanyIds.CompanyA))
+            {
+                SetRequestIdentity(
+                    invalidCreateClient,
+                    $"cari-validation-{Guid.NewGuid():N}",
+                    $"cari-validation-corr-{Guid.NewGuid():N}");
+                using var invalidCreate = await invalidCreateClient.PostAsJsonAsync(
+                    "/api/v1/counterparties",
+                    new CreateCounterparty(
+                        PartyKind.LegalEntity,
+                        "   ",
+                        null,
+                        PartyRole.Customer));
+                await AssertProblemCodeAsync(
+                    invalidCreate,
+                    HttpStatusCode.BadRequest,
+                    CounterpartyProblemCodesV1.ValidationFailed);
+            }
+
+            using (var invalidOptionalCompanyClient = factory.CreateClient())
+            {
+                invalidOptionalCompanyClient.DefaultRequestHeaders.Add(
+                    "X-Development-User",
+                    TestUsers.GroupAdmin);
+                invalidOptionalCompanyClient.DefaultRequestHeaders.Add(
+                    "X-Correlation-Id",
+                    $"cari-optional-company-corr-{Guid.NewGuid():N}");
+                invalidOptionalCompanyClient.DefaultRequestHeaders.Add(
+                    "X-Company-Id",
+                    "not-a-company-guid");
+                using var invalidCompany = await invalidOptionalCompanyClient.GetAsync(
+                    "/api/v1/counterparties");
+                await AssertProblemCodeAsync(
+                    invalidCompany,
+                    HttpStatusCode.BadRequest,
+                    CounterpartyProblemCodesV1.ValidationFailed);
+            }
+
+            Assert.Equal(emptyBaseline, await ReadEffectCountsAsync(connection));
+
             var createKey = $"cari-create-{Guid.NewGuid():N}";
             var createCorrelation = $"cari-create-first-{Guid.NewGuid():N}";
             using var createClient = factory.CreateClientFor(
@@ -49,6 +94,20 @@ public sealed class CounterpartyWriteSqlServerRelationalAcceptanceTests
             var partyId = firstCreateJson.RootElement.GetProperty("id").GetGuid();
             var partyCode = firstCreateJson.RootElement.GetProperty("code").GetString();
             Assert.False(string.IsNullOrWhiteSpace(partyCode));
+
+            var afterCreate = await ReadEffectCountsAsync(connection);
+            var directMissingPartyId = Guid.NewGuid();
+            using var directMissing = await createClient.GetAsync(
+                $"/api/v1/counterparties/{directMissingPartyId:D}");
+            var directMissingBody = await AssertProblemCodeAsync(
+                directMissing,
+                HttpStatusCode.NotFound,
+                CounterpartyProblemCodesV1.NotFound);
+            Assert.DoesNotContain(
+                directMissingPartyId.ToString("D"),
+                directMissingBody,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(afterCreate, await ReadEffectCountsAsync(connection));
 
             var replayCorrelation = $"cari-create-replay-{Guid.NewGuid():N}";
             SetRequestIdentity(createClient, createKey, replayCorrelation);
@@ -77,7 +136,10 @@ public sealed class CounterpartyWriteSqlServerRelationalAcceptanceTests
             using var mismatchCreate = await createClient.PostAsJsonAsync(
                 "/api/v1/counterparties",
                 createCommand with { LegalName = "Farklı Payload A.Ş." });
-            Assert.Equal(HttpStatusCode.Conflict, mismatchCreate.StatusCode);
+            await AssertProblemCodeAsync(
+                mismatchCreate,
+                HttpStatusCode.Conflict,
+                CounterpartyProblemCodesV1.IdempotencyConflict);
             Assert.False(mismatchCreate.Headers.Contains("Idempotency-Replayed"));
 
             Assert.Equal(
@@ -129,7 +191,11 @@ public sealed class CounterpartyWriteSqlServerRelationalAcceptanceTests
             using var firstStale = await createClient.PutAsJsonAsync(
                 $"/api/v1/counterparties/{partyId}/company-account/active-state",
                 staleCommand);
-            Assert.Equal(HttpStatusCode.Conflict, firstStale.StatusCode);
+            await AssertConflictProblemAsync(
+                firstStale,
+                CounterpartyProblemCodesV1.VersionConflict,
+                expectedVersion: 1,
+                currentVersion: 2);
             Assert.False(firstStale.Headers.Contains("Idempotency-Replayed"));
 
             var staleReplayCorrelation = $"cari-status-stale-replay-{Guid.NewGuid():N}";
@@ -137,7 +203,11 @@ public sealed class CounterpartyWriteSqlServerRelationalAcceptanceTests
             using var staleReplay = await createClient.PutAsJsonAsync(
                 $"/api/v1/counterparties/{partyId}/company-account/active-state",
                 staleCommand);
-            Assert.Equal(HttpStatusCode.Conflict, staleReplay.StatusCode);
+            await AssertConflictProblemAsync(
+                staleReplay,
+                CounterpartyProblemCodesV1.VersionConflict,
+                expectedVersion: 1,
+                currentVersion: 2);
             Assert.Equal(
                 "true",
                 Assert.Single(staleReplay.Headers.GetValues("Idempotency-Replayed")));
@@ -157,7 +227,14 @@ public sealed class CounterpartyWriteSqlServerRelationalAcceptanceTests
             using var firstNotFound = await createClient.PutAsJsonAsync(
                 $"/api/v1/counterparties/{missingPartyId}/company-account/active-state",
                 notFoundCommand);
-            Assert.Equal(HttpStatusCode.NotFound, firstNotFound.StatusCode);
+            var firstNotFoundBody = await AssertProblemCodeAsync(
+                firstNotFound,
+                HttpStatusCode.NotFound,
+                CounterpartyProblemCodesV1.NotFound);
+            Assert.DoesNotContain(
+                missingPartyId.ToString("D"),
+                firstNotFoundBody,
+                StringComparison.OrdinalIgnoreCase);
             Assert.False(firstNotFound.Headers.Contains("Idempotency-Replayed"));
 
             var notFoundReplayCorrelation = $"cari-status-not-found-replay-{Guid.NewGuid():N}";
@@ -165,7 +242,14 @@ public sealed class CounterpartyWriteSqlServerRelationalAcceptanceTests
             using var replayNotFound = await createClient.PutAsJsonAsync(
                 $"/api/v1/counterparties/{missingPartyId}/company-account/active-state",
                 notFoundCommand);
-            Assert.Equal(HttpStatusCode.NotFound, replayNotFound.StatusCode);
+            var replayNotFoundBody = await AssertProblemCodeAsync(
+                replayNotFound,
+                HttpStatusCode.NotFound,
+                CounterpartyProblemCodesV1.NotFound);
+            Assert.DoesNotContain(
+                missingPartyId.ToString("D"),
+                replayNotFoundBody,
+                StringComparison.OrdinalIgnoreCase);
             Assert.Equal(
                 "true",
                 Assert.Single(replayNotFound.Headers.GetValues("Idempotency-Replayed")));
@@ -200,6 +284,46 @@ public sealed class CounterpartyWriteSqlServerRelationalAcceptanceTests
         client.DefaultRequestHeaders.Add("X-Correlation-Id", correlationId);
     }
 
+    private static async Task<string> AssertProblemCodeAsync(
+        HttpResponseMessage response,
+        HttpStatusCode expectedStatus,
+        string expectedCode)
+    {
+        Assert.Equal(expectedStatus, response.StatusCode);
+        Assert.Equal(
+            "application/problem+json",
+            response.Content.Headers.ContentType?.MediaType);
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+        Assert.False(string.IsNullOrWhiteSpace(
+            document.RootElement.GetProperty("type").GetString()));
+        Assert.Equal(expectedCode, document.RootElement.GetProperty("code").GetString());
+        Assert.Equal(
+            (int)expectedStatus,
+            document.RootElement.GetProperty("status").GetInt32());
+        Assert.False(string.IsNullOrWhiteSpace(
+            document.RootElement.GetProperty("title").GetString()));
+        Assert.False(string.IsNullOrWhiteSpace(
+            document.RootElement.GetProperty("detail").GetString()));
+        return body;
+    }
+
+    private static async Task AssertConflictProblemAsync(
+        HttpResponseMessage response,
+        string expectedCode,
+        long expectedVersion,
+        long currentVersion)
+    {
+        var body = await AssertProblemCodeAsync(
+            response,
+            HttpStatusCode.Conflict,
+            expectedCode);
+        using var document = JsonDocument.Parse(body);
+        var conflict = document.RootElement.GetProperty("conflict");
+        Assert.Equal(expectedVersion, conflict.GetProperty("expectedVersion").GetInt64());
+        Assert.Equal(currentVersion, conflict.GetProperty("currentVersion").GetInt64());
+    }
+
     private static async Task<T> ScalarAsync<T>(
         SqlConnection connection,
         string commandText,
@@ -210,6 +334,20 @@ public sealed class CounterpartyWriteSqlServerRelationalAcceptanceTests
         command.Parameters.AddRange(parameters);
         var value = await command.ExecuteScalarAsync();
         return Assert.IsType<T>(value);
+    }
+
+    private static async Task<PersistenceCounts> ReadEffectCountsAsync(
+        SqlConnection connection)
+    {
+        return new PersistenceCounts(
+            await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM [counterparty].[Parties];"),
+            await ScalarAsync<int>(
+                connection,
+                "SELECT COUNT(*) FROM [counterparty].[CompanyPartyAccounts];"),
+            await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM [audit].[AuditEvents];"),
+            await ScalarAsync<int>(
+                connection,
+                "SELECT COUNT(*) FROM [idempotency].[CommandExecutions];"));
     }
 
     private static async Task DropDatabaseAsync(
@@ -232,4 +370,10 @@ public sealed class CounterpartyWriteSqlServerRelationalAcceptanceTests
             """;
         await command.ExecuteNonQueryAsync();
     }
+
+    private sealed record PersistenceCounts(
+        int PartyCount,
+        int AccountCount,
+        int AuditCount,
+        int ExecutionCount);
 }

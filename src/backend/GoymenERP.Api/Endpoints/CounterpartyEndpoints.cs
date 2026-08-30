@@ -55,10 +55,9 @@ public static class CounterpartyEndpoints
         {
             if (!IsValidCreate(command, out var validationDetail))
             {
-                return Results.Problem(
-                    title: "Cari bilgisi geçersiz.",
-                    detail: validationDetail,
-                    statusCode: StatusCodes.Status400BadRequest);
+                return ValidationProblem(
+                    "Cari bilgisi geçersiz.",
+                    validationDetail);
             }
 
             if (!TryReadCommandMetadata(
@@ -92,10 +91,9 @@ public static class CounterpartyEndpoints
         {
             if (partyId == Guid.Empty || !IsValidRoles(command.Roles))
             {
-                return Results.Problem(
-                    title: "Cari şirket ilişkisi geçersiz.",
-                    detail: "Geçerli cari kimliği ve en az bir bilinen ticari rol zorunludur.",
-                    statusCode: StatusCodes.Status400BadRequest);
+                return ValidationProblem(
+                    "Cari şirket ilişkisi geçersiz.",
+                    "Geçerli cari kimliği ve en az bir bilinen ticari rol zorunludur.");
             }
 
             if (!TryReadCommandMetadata(
@@ -134,10 +132,9 @@ public static class CounterpartyEndpoints
                 || string.IsNullOrWhiteSpace(command.Reason)
                 || command.Reason.Trim().Length > 1000)
             {
-                return Results.Problem(
-                    title: "Cari durum değişikliği geçersiz.",
-                    detail: "Geçerli cari kimliği, sıfırdan büyük beklenen sürüm ve 1-1000 karakter gerekçe zorunludur.",
-                    statusCode: StatusCodes.Status400BadRequest);
+                return ValidationProblem(
+                    "Cari durum değişikliği geçersiz.",
+                    "Geçerli cari kimliği, sıfırdan büyük beklenen sürüm ve 1-1000 karakter gerekçe zorunludur.");
             }
 
             if (!TryReadCommandMetadata(
@@ -178,10 +175,9 @@ public static class CounterpartyEndpoints
         if (!Guid.TryParse(headerValue.ToString(), out var companyId)
             || companyId == Guid.Empty)
         {
-            return Results.Problem(
-                title: "Geçersiz şirket seçimi.",
-                detail: "X-Company-Id geçerli ve boş olmayan bir şirket kimliği olmalıdır.",
-                statusCode: StatusCodes.Status400BadRequest);
+            return ValidationProblem(
+                "Geçersiz şirket seçimi.",
+                "X-Company-Id geçerli ve boş olmayan bir şirket kimliği olmalıdır.");
         }
 
         var currentUser = httpContext.RequestServices.GetRequiredService<ICurrentUser>();
@@ -309,38 +305,61 @@ public static class CounterpartyEndpoints
             return Results.NoContent();
         }
 
-        var extensions = new Dictionary<string, object?>();
-        var problemCode = CounterpartyProblemCodesV1.For(response.Result);
-        if (problemCode is not null)
-        {
-            extensions["code"] = problemCode;
-        }
+        return CounterpartyProblem(
+            response.StatusCode,
+            CounterpartyProblemCodesV1.RequiredForProblem(response.Result),
+            response.Title,
+            response.Detail,
+            response.Conflict);
+    }
 
-        if (response.Conflict is not null)
-        {
-            extensions["conflict"] = response.Conflict;
-        }
-
-        return Results.Problem(
-            title: response.Title,
-            detail: response.Detail,
-            statusCode: response.StatusCode,
-            extensions: extensions.Count == 0 ? null : extensions);
+    private static IResult ValidationProblem(string title, string detail)
+    {
+        return CounterpartyProblem(
+            StatusCodes.Status400BadRequest,
+            CounterpartyProblemCodesV1.ValidationFailed,
+            title,
+            detail);
     }
 
     private static IResult InvalidCommandMetadata()
     {
-        return Results.Problem(
-            title: "Command bilgisi eksik.",
-            detail: "İşlem için tekil, geçerli Idempotency-Key ve correlation bilgisi gerekir.",
-            statusCode: StatusCodes.Status400BadRequest);
+        return CounterpartyProblem(
+            StatusCodes.Status400BadRequest,
+            CounterpartyProblemCodesV1.CommandMetadataInvalid,
+            "Command bilgisi eksik.",
+            "İşlem için tekil, geçerli Idempotency-Key ve correlation bilgisi gerekir.");
     }
 
     private static IResult NotFound()
     {
+        return CounterpartyProblem(
+            StatusCodes.Status404NotFound,
+            CounterpartyProblemCodesV1.NotFound,
+            "Kayıt bulunamadı.",
+            "İstenen cari kayıt bulunamadı veya yetkili şirket kapsamınızda kullanılamıyor.");
+    }
+
+    private static IResult CounterpartyProblem(
+        int statusCode,
+        string code,
+        string? title,
+        string? detail,
+        CounterpartyVersionConflict? conflict = null)
+    {
+        var extensions = new Dictionary<string, object?>
+        {
+            ["code"] = code,
+        };
+        if (conflict is not null)
+        {
+            extensions["conflict"] = conflict;
+        }
+
         return Results.Problem(
-            title: "Kayıt bulunamadı.",
-            detail: "İstenen cari kayıt bulunamadı veya yetkili şirket kapsamınızda kullanılamıyor.",
-            statusCode: StatusCodes.Status404NotFound);
+            title: title,
+            detail: detail,
+            statusCode: statusCode,
+            extensions: extensions);
     }
 }
