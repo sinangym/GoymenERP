@@ -5,8 +5,10 @@
 - Taban: `main@83197c50f515db959638fadd7cc11ad6eb7a4fc8`
 - Sözleşme sahibi: `CODEX-PLATFORM`
 - Ürün kararı sahibi: Product Owner / ChatGPT-BUSINESS
-- Tüketilen karar: Issue #98 `PRD-SCOPE-001`, seçenek A, `KILITLI`
-- Tüketilen yetki kararı: Issue #99 `PRD-PERM-001`, seçenek A, `KILITLI`
+- Tüketilen karar: Issue #98 `PRD-SCOPE-001`, seçenek A, `KILITLI` — exact owner
+  kararı: `issuecomment-5469061415`
+- Tüketilen yetki kararı: Issue #99 `PRD-PERM-001`, seçenek A, `KILITLI` — exact
+  owner kararı: `issuecomment-5469937658`
 - İlgili epic: Issue #100 `PRD-CORE-001`
 
 ## 1. Amaç
@@ -59,8 +61,8 @@ Bu doküman aşağıdakileri yapmaz:
 
 | Kaynak | Bu taslağın tükettiği sınır |
 |---|---|
-| Issue #98 | Tek group-shared Product UUID/kod/kart; company ayrımı fiziksel/ticari kayıtta başlar; global inactive iki şirkette yeni kullanımı kapatır; export aynı UUID'yi korur. |
-| Issue #99 | İlk pilotta Product/Service master read ve write yalnız mevcut `SYSTEM_ADMINISTRATOR`; diğer roller default-deny; yeni rol/assignment/AI yetkisi yok; generic maker-checker MVP'yi bloklamaz; exact permission string'leri ayrı versioned manifest ve naming/security review ister. |
+| Issue #98 exact owner kararı [`issuecomment-5469061415`](https://github.com/sinangym/GoymenERP/issues/98#issuecomment-5469061415) | Tek group-shared Product UUID/kod/kart; company ayrımı fiziksel/ticari kayıtta başlar; global inactive iki şirkette yeni kullanımı kapatır; export aynı UUID'yi korur. |
+| Issue #99 exact owner kararı [`issuecomment-5469937658`](https://github.com/sinangym/GoymenERP/issues/99#issuecomment-5469937658) | İlk pilotta Product/Service master read ve write yalnız mevcut `SYSTEM_ADMINISTRATOR`; diğer roller default-deny; yeni rol/assignment/AI yetkisi yok; generic maker-checker MVP'yi bloklamaz; exact permission string'leri ayrı versioned manifest ve naming/security review ister. |
 | Issue #100 | Product epic'i schema/migration öncesi açık platform shared-master sözleşmesi ister. |
 | `ADR-002` | Tenant kayıtlarında request-scoped CompanyContext, CompanyId query/write guard, non-disclosure ve server-side group read. |
 | `ADR-004` | Dış kimlik yalnız authentication'dır; ERP permission ve scope yerel Identity kaynağından gelir; default-deny. |
@@ -72,6 +74,9 @@ Bu doküman aşağıdakileri yapmaz:
 
 Çelişkide ürünün iş anlamını Product Owner kararı, platform güvenlik uygulamasını kabul
 edilmiş ADR'ler belirler. Bu iki katmandan biri diğerini sessizce yeniden yorumlayamaz.
+Issue yorumlarının kronolojik sırası karar üstünlüğü üretmez; yukarıda sabitlenen exact
+Product Owner kararları normatiftir. Sonraki veya eski coordination/review yorumları bu
+kararları `OPEN` durumuna döndüremez.
 
 Issue #98 ve #99 bugün GitHub'da `CLOSED / KILITLI` olmakla birlikte exact karar metinleri
 henüz repository karar siciline alınmamıştır. Issue #100 gövdesi de eski company-policy,
@@ -190,6 +195,12 @@ Issue #99'un kilitli pilot matrisi uygulanır:
   kararla sessizce grant edilmez;
 - exact permission string'leri Product-owned versioned manifest ve platform
   naming/security review olmadan registry/seed/reconciliation'a dönüşmez.
+
+Bu listedeki package-standard prepare/manage/approve eylemleri yalnız ilk pilot grantee
+semantiğini belirler. Company/plant-scoped paket standardı ve tesis istisnası global Product
+grant'ine katlanmaz: kendi accepted exact permission/capability'si, server-resolved
+`CompanyContext`, ABAC ve `CompanyId` guard'ı ayrıca geçmelidir. Global Product yetkisi
+başka şirketin paket kaydını okuma, değiştirme veya varlığını çıkarma yetkisi üretmez.
 
 Fresh install yalnız exact administrator role kabul edilmiş Product permission bundle'ını
 alabilir; existing install yalnız eksik kabul edilmiş izinleri exact ID/code eşleşmesine
@@ -448,12 +459,14 @@ yeniden kullanılamaz. Her non-user write yolu:
 taşır. Migration veri backfill'i business activation veya otomatik user assignment
 üretemez.
 
-System-write capability yalnız Infrastructure içinde oluşturulabilen, dışarıdan
-forge edilemeyen ve scope sonunda fail-closed dispose edilen bir nesne olmalıdır. HTTP,
+System-write authority yalnız trusted infrastructure sınırından doğmalı, dışarıdan forge
+edilememeli, dar allowlist ve bounded lifetime sonrasında fail-closed kapanmalıdır. HTTP,
 JWT/claim, AI tool, request header, environment/config flag veya public factory bu
-capability'yi üretemez. Capability `IgnoreQueryFilters`, authorization, audit,
-idempotency veya concurrency bypass'ı vermez. Canonical olmayan invocation, scope
-taşması ve dispose sonrası kullanım negatif architecture/runtime testleriyle reddedilir.
+authority'yi üretemez. Authority `IgnoreQueryFilters`, authorization, audit, idempotency
+veya concurrency bypass'ı vermez. Bunun disposable capability object, scoped dispatcher
+token'ı veya başka bir mekanizma olarak uygulanması bu taslakta seçilmez. Canonical olmayan
+invocation, scope taşması ve authority expiry/closure sonrası kullanım negatif
+architecture/runtime testleriyle reddedilir.
 
 ## 15. Transactional event ve downstream tüketim
 
@@ -578,7 +591,7 @@ Aşağıdaki etiketler bu dokümana özeldir; kanonik global `AT-*` kaydı deği
 | Import same UUID collision | Kabul edilmiş fingerprint/collision politikası olmadan fail-closed; re-key/overwrite yok. |
 | Same UUID/different content, same code/different UUID, alias, newer target veya farklı group collision | Her sınıf explicit policy olmadan fail-closed; sessiz merge/overwrite/UUID değişimi yok. |
 | System/migration invocation | Explicit system scope dışındaki normal bypass reddedilir; user assignment/activation yok. |
-| HTTP/JWT/AI/config ile system capability üretme veya dispose sonrası kullanma | Infrastructure boundary fail-closed reddeder; auth/audit/idempotency/query guard atlanmaz. |
+| HTTP/JWT/AI/config ile system authority üretme veya expiry/closure sonrası kullanma | Trusted infrastructure boundary fail-closed reddeder; auth/audit/idempotency/query guard atlanmaz. |
 | AI draft veya tool çağrısı | Preview/onay/permission/audit zinciri olmadan write etkisi `0`. |
 | Forged actor/role/approval/AI/source/correlation provenance | Client alanları audit zarfına güvenilir kaynak olarak girmez; canonical persisted hash server-authoritative değerlerle doğrulanır. |
 
