@@ -1,6 +1,6 @@
 # CARI-UI-001 — Cari Kartlar ve Cari 360 İlk Uçtan Uca Dilim
 
-- Sürüm: `1.2`
+- Sürüm: `1.3`
 - Tarih: `2026-08-30`
 - İş sahibi: `CHATGPT-BUSINESS/CARI`
 - Ortak kabuk, route registry, query/cache ve server-capability sahibi: `CODEX-PLATFORM`
@@ -27,7 +27,7 @@ ile sınırlıdır.
 
 `C-04…C-12` C-03 sekmelerine dönüştürülmez. Bakiye, açık kalem, risk, limit, adres, kişi, banka, vergi, sicil, belge, sipariş, stok, tahsis ve takip görevi için owner backend gerçeği olmadan mock, sıfır veya sahte KPI gösterilmez.
 
-Bağlayıcı kaynaklar `KARAR_SICILI`, Master v3, kanonik ekran kataloğu, Cari route kaynakları, UI tasarım sistemi, ERP-000K shell sözleşmesi, canlı Counterparty contract’ları ve PR #77’dir. Prototip iş kuralı veya permission kaynağı değildir.
+Bağlayıcı kaynaklar `KARAR_SICILI`, Master v3, kanonik ekran kataloğu, Cari route kaynakları, UI tasarım sistemi, ERP-000K shell sözleşmesi, canlı Counterparty contract’ları, PR #77 ve Issues #93/#94/#95 owner kararlarıdır. Prototip iş kuralı veya permission kaynağı değildir.
 
 ## 2. Tek-writer ve sahiplik
 
@@ -72,7 +72,7 @@ Task-local bağımlılık sözleşmesi:
 | Owner | `CODEX-PLATFORM/ORGANIZATION` |
 | Mevcut transport | `GET /api/v1/organization/companies` |
 | Context | Kimliği doğrulanmış actor’ın yetkili şirket seti; `X-Company-Id` yok |
-| Önerilen response version | `organization.company-summary.v1` |
+| Response version | `organization.company-summary.v1` |
 | Alanlar | `id`, `code`, `legalName`, `isPlaceholder` |
 | Join | `CompanyPartyAccount.companyId == CompanySummary.id` |
 
@@ -127,57 +127,67 @@ Party alanları:
 
 `externalIntegrationCode`, dedicated read permission ve redaction owner kabul edilene kadar UI mapping’ine alınmaz. Global Party aktifliği ile şirket hesabı aktifliği ayrıdır. Cari kodu salt okunurdur.
 
-## 7. `CARI-READ-PAGE-001`
+## 7. `CARI-READ-PAGE-001` — accepted observable contract
 
-Owner: `CHATGPT-BUSINESS/CARI`; takip: Issue `#94`.
+Owner: `CHATGPT-BUSINESS/CARI`; takip: Issue `#94`; owner decision: `issuecomment-5470043284`.
 
-### Bağlayıcı semantik
+### Limits/defaults
 
-- server-side ve sonlu/bounded sayfalama,
-- deterministik benzersiz tie-breaker,
-- single-company `X-Company-Id` modu,
-- yalnız açık owner contract ile server-resolved authorized-multi-company-read modu,
-- browser fan-out veya client-side şirket union yasağı,
-- opaque/authenticated cursor’ın actor/session/context/query/sort/contract revision’a bağlanması,
-- malformed/tampered/expired/scope-mismatch cursor’da fail-closed ve partial data olmaması,
-- authorization/context/filter sonrası distinct Party count; yetkisiz grup toplamı yok,
-- Türkçe arama semantiğinin gerçek SQL acceptance ile kanıtlanması.
+- `q`: opsiyonel, Unicode dış whitespace trim + NFC, en çok **200**; boşsa omitted.
+- `pageSize`: **50 default**, **200 maximum**, minimum 1.
+- `roleMatch=any`, `partyState=active`, `accountState=all`, `sort=code`, `direction=asc`, `includeCount=false` varsayılandır.
+- Cursor azami yaşı **30 dakika**; session/policy/permission/yetkili-company-set revision değişimi daha erken invalid eder.
 
-### Açık ve provisional sayılar
+### Arama/sıralama
 
-Aşağıdaki değerler Issue #94 kabul edilene kadar **ürün kararı değildir**:
+- code/legalName/tradeName contains.
+- Türkçe case-insensitive ve accent-sensitive: `i=İ`, `ı=I`, `i!=I`, `İ!=ı`; accent folding yok.
+- Exact SQL collation bu sözleşme tarafından seçilmez; gerçek SQL gözlenebilir sonuç kabul kaynağıdır.
+- Her sort immutable PartyId unique tie-breaker taşır.
+- Keyset/cursor paging zorunludur; offset paging ve bütün listeyi browser’a yükleme yasaktır.
 
-- `q` azami 200,
-- liste varsayılan 50 / azami 200,
-- invalid veya expired cursor için aday `400 + invalid_cursor`.
+### Context/cursor/count
 
-Issue #94 bu sayıları ve exact gözlenebilir hata sonucunu değiştirebilir; CARI-UI-001 yeniden açılmış sayılmaz. Production UI exact kabul edilmiş #94 contract’ını tüketir.
+- `X-Company-Id` varsa yalnız exact yetkili seçili şirket.
+- Header yoksa yalnız bu route için server-resolved explicit authorized-multi-company-read.
+- Browser fan-out/client union yasaktır.
+- Cursor contract version, normalize query/filter/sort, actor/session, context modu, selected CompanyId veya authorized-company-set revision ve expiry’ye bağlıdır.
+- malformed/tampered/expired/mismatch: `400/code=invalid_cursor`, partial data yok.
+- `includeCount=true`, authorization/context/filter sonrasındaki exact distinct Party sayısıdır; hidden group toplamı yok.
+- Uzun ömürlü global DB snapshot garantisi yoktur; concurrent business değişikliklerinde deterministic keyset continuation ve fail-closed scope binding korunur.
 
-Önerilen arama alanları code/legalName/tradeName; trim + NFC; Türkçe I/İ/ı/i case davranışı ve accent-sensitive sonuçlar gerçek SQL’de kilitlenir. Rol filtresi tek context-eligible hesap üzerinde any/all çalışır.
+Minimum response: `items`, `nextCursor`, `hasMore`; count istenirse `totalCount`, `countScope`.
 
-Minimum response: `items`, `nextCursor`, `hasMore`; count istenirse `totalCount` ve `countScope`.
+## 8. `CARI-LINK-CANDIDATE-001` — accepted observable contract
 
-## 8. `CARI-LINK-CANDIDATE-001`
-
-Owner: `CHATGPT-BUSINESS/CARI`; takip: Issue `#95`.
+Owner: `CHATGPT-BUSINESS/CARI`; takip: Issue `#95`; owner decision: `issuecomment-5470044664`.
 
 ```http
 GET /api/v1/counterparties/company-account-link-candidates
 X-Company-Id: <server tarafından doğrulanan hedef şirket>
 ```
 
-Bağlayıcı kurallar:
+### Eligibility/security
 
-- hedef şirket body/query/route ile override edilemez,
-- hedefte `counterparty.accounts.create` ve `counterparty.parties.read` company-wide gerekir,
-- Party global aktif olmalıdır,
-- en az bir izinli source account üzerinden actor’a görünmelidir,
-- hedefe zaten bağlı kayıt listelenmez,
-- yalnız actor’ın görebildiği source account özetleri döner,
-- eski context PartyId yalnız hint’tir; fresh candidate response olmadan authority değildir,
-- browser fan-out/client union yoktur.
+- target yalnız resolved CompanyContext; body/query/route override yok,
+- hedefte `counterparty.accounts.create` + `counterparty.parties.read` company-wide,
+- Party global aktif,
+- en az bir izinli source account üzerinden görünür,
+- hedefe zaten bağlı değil,
+- yalnız actor-visible source account özetleri,
+- source account pasifliği tek başına onboarding engeli değil ve otomatik reactivation yok,
+- browser fan-out/client union yok.
 
-Varsayılan 25 / azami 100 page size ve Issue #94 q/cursor tekrar kullanımı **provisional** değerlerdir; Issue #95 kabul edilene kadar bağlayıcı değildir.
+### Paging/disclosure
+
+- Issue #94 normalizasyon, Turkish search ve authenticated cursor semantics yeniden kullanılır.
+- `pageSize`: **25 default**, **100 maximum**, minimum 1.
+- Cursor azami yaşı **30 dakika**; target company/actor/session/policy/query mismatch daha erken invalid eder.
+- invalid cursor: `400/code=invalid_cursor`, partial candidate yok.
+- Dönen alanlar yalnız Party `id/code/kind/legalName/tradeName/isActive` ve actor-visible source account `id/companyId/roles/isActive/version`.
+- externalIntegrationCode, banka/vergi/sicil, bakiye, risk, hidden account ve foreign count/timing yok.
+
+Önceki context PartyId yalnız hint’tir; fresh candidate response içinde yeniden görünmeden authority değildir. POST bütün şartları yeniden doğrular; aradaki inactive/link yarışı accepted `not_found` veya `already_linked` ile fail-closed olur.
 
 ## 9. Idempotency ve replay
 
@@ -201,16 +211,21 @@ Replay duplicate business effect, navigation veya toast üretmez.
 
 ## 10. Hata sahipliği
 
-### Cari domain — owner `CHATGPT-BUSINESS/CARI`, Issue #93
+### Cari domain — accepted contract, partial implementation
 
-PR #77 ile fiziksel olarak uygulanan v1 kodları:
+Owner: Issue #93; owner decision: `issuecomment-5470041578`.
 
-| Code | HTTP |
-|---|---:|
-| `already_linked` | 409 |
-| `idempotency_conflict` | 409 |
+| Code | HTTP | Durum |
+|---|---:|---|
+| `validation_failed` | 400 | accepted; producer/test queued |
+| `command_metadata_invalid` | 400 | accepted; producer/test queued |
+| `invalid_cursor` | 400 | accepted; #94/#95 implementation queued |
+| `not_found` | 404 | accepted; producer normalization queued |
+| `already_linked` | 409 | PR #77’de fiziksel/real-SQL |
+| `version_conflict` | 409 | accepted; producer normalization queued |
+| `idempotency_conflict` | 409 | PR #77’de fiziksel/real-SQL |
 
-`validation_failed`, `command_metadata_invalid`, `invalid_cursor`, `not_found` ve `version_conflict` Issue #93’te owner contract kabul edilene kadar adaydır; UI bunları binding kabul etmez.
+`not_found` missing/foreign/hidden/global-inactive ayrımını sızdırmaz. `version_conflict` güvenli accepted `conflict` extension’ını korur. UI branching yalnız code ile yapılır; locale metni parse edilmez.
 
 ### Shared platform — owner `CODEX-PLATFORM`, Issue #96 / PR #97
 
@@ -221,9 +236,7 @@ PR #77 ile fiziksel olarak uygulanan v1 kodları:
 | `internal_error` | 500 |
 | `service_unavailable` | 503 |
 
-Cari bu kodları sahiplenmez, yeniden tanımlamaz veya kopya registry üretmez; yalnız kabul edilmiş platform sözleşmesini tüketir. Unknown code Türkçe title/detail üzerinden sınıflandırılmaz, güvenli generic unexpected-error state’e gider.
-
-ProblemDetails plain text render edilir; `innerHTML` yoktur.
+Cari bu kodları sahiplenmez, yeniden tanımlamaz veya kopya registry üretmez; yalnız kabul edilmiş platform sözleşmesini tüketir. Unknown code güvenli generic unexpected-error state’e gider. ProblemDetails plain text render edilir; `innerHTML` yoktur.
 
 ## 11. UI state ve retry
 
@@ -268,9 +281,9 @@ Her biri ayrı kanonik route/workspace olarak korunur: Cari Hesap Takibi, Açık
 2. PR #102 veya successor generic mount contract kabulü.
 3. ERP-000K feature mount, route registry, query/cache ve CompanyContext runtime fence.
 4. Server-backed capability provider.
-5. Issue #93 Cari domain error contract.
-6. Issue #94 read/page contract ve implementation.
-7. Issue #95 candidate contract ve implementation.
+5. Issue #93 accepted contract’ın kalan error producer/test implementasyonu.
+6. Issue #94 accepted read/page contract implementasyonu.
+7. Issue #95 accepted candidate contract implementasyonu.
 8. `ORGANIZATION-COMPANY-DIRECTORY-V1` owner projection/version kabulü.
 9. Frontend single-writer handoff.
 
