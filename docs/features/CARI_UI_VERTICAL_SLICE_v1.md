@@ -1,35 +1,51 @@
 # CARI-UI-001 — Cari Kartlar ve Cari 360 İlk Uçtan Uca Dilim
 
-- Sürüm: `1.3`
+- Sürüm: `1.4`
 - Tarih: `2026-08-30`
 - İş sahibi: `CHATGPT-BUSINESS/CARI`
-- Ortak kabuk, route registry, query/cache ve server-capability sahibi: `CODEX-PLATFORM`
+- Ortak shell/capability/route/query-cache sahibi: `CODEX-PLATFORM`
 - Organization şirket dizini sahibi: `CODEX-PLATFORM/ORGANIZATION`
-- İncelenen `main`: `83197c50f515db959638fadd7cc11ad6eb7a4fc8`
-- Kanonik ilk ekranlar: `C-01`, `C-03`, `C-02` create alt kümesi
-- Yardımcı işlem workspace’i: `CARI-LINK-WORKSPACE-001`
-- Takip: Issue `#78`
-- Contract durumu: **REVIEW_PENDING**
+- İncelenen ana dal: `main@f13d26b1a59089f25c5d44f6679d3928e876079c`
+- Contract durumu: **ACCEPTED**
 - Implementation: **BLOCKED**
 - Production activation: **NO-GO**
 - Event delivery: `synchronous_transaction`
+- Takip: Issue `#78`
 
-## 1. Sonuç ve kapsam
+## 1. Amaç ve kullanıcı sonucu
 
-Bu sözleşme ilk görünür Cari dikey dilimini tanımlar; production kodunu başlatmaz. İlk dilim:
+Bu sözleşme ilk görünür Cari dikey diliminin iş ve güvenlik sınırını tanımlar. Tek başına production UI açmaz.
+
+İlk dilim:
 
 1. `C-01 Cari Kartlar`,
-2. `C-02 Yeni Cari` ekranının mevcut backend’in desteklediği create alt kümesi,
+2. `C-02 Yeni Cari` ekranının mevcut backend tarafından desteklenen create alt kümesi,
 3. `C-03 Cari 360` çekirdek özeti,
-4. mevcut aktif Party’yi başka şirkete bağlayan `CARI-LINK-WORKSPACE-001`
+4. `CARI-LINK-WORKSPACE-001` ile mevcut global aktif Party’yi başka Göymen şirketine bağlama
 
 ile sınırlıdır.
 
-`C-04…C-12` C-03 sekmelerine dönüştürülmez. Bakiye, açık kalem, risk, limit, adres, kişi, banka, vergi, sicil, belge, sipariş, stok, tahsis ve takip görevi için owner backend gerçeği olmadan mock, sıfır veya sahte KPI gösterilmez.
+`C-04…C-12` ayrı kanonik ekran/workspace olarak korunur. Bakiye, açık kalem, risk, limit, adres, kişi, banka, vergi, sicil, belge, sipariş, stok, tahsis, CRM ve AI sonucu owner backend gerçeği olmadan mock, sıfır veya sahte KPI olarak gösterilmez.
 
-Bağlayıcı kaynaklar `KARAR_SICILI`, Master v3, kanonik ekran kataloğu, Cari route kaynakları, UI tasarım sistemi, ERP-000K shell sözleşmesi, canlı Counterparty contract’ları, PR #77 ve Issues #93/#94/#95 owner kararlarıdır. Prototip iş kuralı veya permission kaynağı değildir.
+## 2. Current-main doğrusu
 
-## 2. Tek-writer ve sahiplik
+Aşağıdaki backend/platform ön koşulları ana dala alınmıştır:
+
+- PR `#106` / kaynak PR `#77`: global aktif Party’yi hedef şirkete bağlayan company-account link dilimi;
+- PR `#107` / kaynak PR `#97`: shared `401/403/500/503` ProblemDetails sözleşmesi;
+- ana dal CI `33326894439` ve UI golden `33326894409`: runner-backed **SUCCESS**.
+
+Company-link davranışı:
+
+- hedef şirket yalnız server-resolved aktif `CompanyContext`;
+- yalnız global `Party.IsActive=true`;
+- pasif fakat izinli kaynak company-account kimlik/görünürlük kanıtı olabilir, yeniden aktifleştirilmez;
+- `already_linked` ve `idempotency_conflict` stable Cari-owned code;
+- same/different-key yarışları, replay, wrong-scope, CompanyId override, rollback ve audit/idempotency cardinality gerçek SQL ile kanıtlıdır.
+
+Bu mevcut backend davranışı UI yetkisi veya görünürlüğü üretmez; capability, route ve browser kabul kapıları ayrıca geçer.
+
+## 3. Sahiplik ve tek-yazar sınırı
 
 ### `CODEX-PLATFORM`
 
@@ -39,32 +55,29 @@ Bağlayıcı kaynaklar `KARAR_SICILI`, Master v3, kanonik ekran kataloğu, Cari 
 - shared query/cache ve CompanyContext generation fence,
 - global navigasyon, tokenlar, global CSS ve ortak bileşenler,
 - Playwright, visual ve accessibility harness,
-- platform-owned `401/403/500/503` ProblemDetails sözleşmesi.
+- platform-owned `401/403/500/503` hata zarfı.
 
 ### `CODEX-PLATFORM/ORGANIZATION`
 
-- yetkili şirket dizini ve görüntüleme projection’ı,
-- şirket kimliği → şirket kodu/hukuki ad eşlemesi,
-- projection sürümü ve actor/session yetkilendirme kapsamı.
+- yetkili şirket dizini,
+- şirket kimliği → şirket kodu/hukuki ad projection’ı,
+- projection sürümü, authorization ve cache invalidation sözleşmesi.
 
 ### `CHATGPT-BUSINESS/CARI`
 
 - Cari feature route declaration’ları,
-- Cari API istemcisi ve güvenli response mapping,
+- Cari API istemcisi ve response mapping,
 - C-01, C-02 create alt kümesi, C-03 ve link workspace,
-- Cari’ye özel filtre, form, state ve fixture’lar,
-- `CARI-READ-PAGE-001`,
-- `CARI-LINK-CANDIDATE-001`,
-- Cari domain `400/404/409` hata anlamları,
+- Cari filtre/form/state/fixture’ları,
+- Issues `#93`, `#94`, `#95` production uygulamaları,
+- Cari domain `400/404/409` anlamları,
 - Cari component, gerçek SQL ve browser kabulü.
 
 Shell handoff tamamlanana kadar ChatGPT-Cari `App.tsx`, global CSS/router/query/capability client ve ortak navigasyonda read-only’dir.
 
-## 3. Organization şirket görüntüleme projection’ı
+## 4. Organization şirket görüntüleme projection’ı
 
-Cari UI şirket adını/kodunu sabit ID tablosundan veya ham UUID’den üretmez.
-
-Task-local bağımlılık sözleşmesi:
+Cari UI ham UUID’yi şirket etiketi yapmaz ve sabit şirket adı uydurmaz.
 
 | Alan | Değer |
 |---|---|
@@ -72,38 +85,28 @@ Task-local bağımlılık sözleşmesi:
 | Owner | `CODEX-PLATFORM/ORGANIZATION` |
 | Mevcut transport | `GET /api/v1/organization/companies` |
 | Context | Kimliği doğrulanmış actor’ın yetkili şirket seti; `X-Company-Id` yok |
-| Response version | `organization.company-summary.v1` |
+| Response version adayı | `organization.company-summary.v1` |
 | Alanlar | `id`, `code`, `legalName`, `isPlaceholder` |
 | Join | `CompanyPartyAccount.companyId == CompanySummary.id` |
 
-Mevcut endpoint fiziksel kaynak olarak kullanılabilir; ancak owner projection sürümü ve cache/authorization davranışı kabul edilmeden bu sözleşme tamamlanmış sayılmaz.
+Cache yalnız actor/session/yetkili-company-seti revision’ına bağlı private process-memory snapshot olabilir. Login/logout, kullanıcı veya yetkili şirket seti değişimi, policy revision, malformed response ve kesin authorization kaybında temizlenir. Seçili şirket değişimi bütün company-scoped Cari sorgularını generation fence ile geçersizleştirir.
 
-Cache yalnız aynı actor/session/yetkili-şirket-seti revision’ına bağlı private process-memory snapshot olabilir. Login/logout, kullanıcı değişimi, yetkili şirket seti veya policy revision değişimi, malformed response ve kesin authorization kaybında temizlenir. Seçili şirket değişimi bütün company-scoped Cari query’lerini generation fence ile geçersizleştirir; actor-scoped yetkili şirket dizini ise seçili şirkete göre yeniden adlandırılmaz.
+Projection yoksa şirket adı uydurulmaz, ham UUID gösterilmez ve link hedefi seçilemez.
 
-Projection yoksa veya geçici olarak kullanılamıyorsa:
-
-- ham CompanyId kullanıcı etiketi olarak gösterilmez,
-- şirket adı uydurulmaz,
-- link hedefi seçilemez,
-- yabancı şirket varlığı sızdırmayan generic unavailable state gösterilir,
-- taze authorization/projection gelmeden işleme devam edilmez.
-
-## 4. Route registry metadata
+## 5. Route registry metadata
 
 Static route’lar parameter route’tan önce çözülür.
 
-| Route ID | Screen | Path | Öncelik | Context | Breadcrumb | Güvenli dönüş |
-|---|---|---|---|---|---|---|
-| `cari.list` | `C-01` | `/cari` | static | single veya explicit authorized multi-company read | Cari | dashboard |
-| `cari.create` | `C-02:create-subset` | `/cari/yeni` | static-before-parameter | single-company | Cari → Yeni Cari | `cari.list` |
-| `cari.company-link` | task-local workspace | `/cari/sirkete-bagla` | static-before-parameter | single-target-company | Cari → Şirkete Bağla | `cari.list` |
-| `cari.detail` | `C-03` | `/cari/:partyId` | bütün Cari static route’larından sonra | single veya explicit authorized multi-company read | Cari → yalnız yetkili güncel Party etiketi | `cari.list` |
+| Route ID | Screen | Path | Context | Güvenli dönüş |
+|---|---|---|---|---|
+| `cari.list` | `C-01` | `/cari` | single veya explicit authorized multi-company read | `dashboard` |
+| `cari.create` | `C-02:create-subset` | `/cari/yeni` | single-company | `cari.list` |
+| `cari.company-link` | `CARI-LINK-WORKSPACE-001` | `/cari/sirkete-bagla` | single-target-company | `cari.list` |
+| `cari.detail` | `C-03` | `/cari/:partyId` | single veya explicit authorized multi-company read | `cari.list` |
 
-Deep-link ve refresh her seferinde taze capability ve backend authorization ister. Eski context Party etiketi breadcrumb, title, recent veya favorite içinde taşınmaz. Raw return URL kabul edilmez; yalnız accepted internal route identity kullanılır.
+Deep-link, refresh, back/forward ve yeni sekme her seferinde taze capability ve backend authorization ister. Raw return URL kabul edilmez; yalnız accepted internal route identity kullanılır. Eski context Party etiketi title, breadcrumb, recent veya favorite içinde taşınmaz.
 
-Feature cache namespace en az actor, session, context modu, company/yetkili-set revision, route parametreleri, normalize query ve contract version’a bağlıdır. Exact key formatı ERP-000K implementation kararıdır.
-
-## 5. Capability matrisi
+## 6. Capability matrisi
 
 | Capability | API | Permission | Scope |
 |---|---|---|---|
@@ -111,94 +114,65 @@ Feature cache namespace en az actor, session, context modu, company/yetkili-set 
 | `cari.parties.detail` | `GET /api/v1/counterparties/{partyId}` | `counterparty.parties.read` | şirket veya explicit authorized multi-company read |
 | `cari.parties.create` | `POST /api/v1/counterparties` | `counterparty.parties.create` | company-wide single-company |
 | `cari.accounts.status.update` | `PUT .../company-account/active-state` | `counterparty.accounts.status.update` | company-wide single-company |
-| `cari.accounts.link` | `POST .../{partyId}/company-account` | `counterparty.accounts.create` **ve** `counterparty.parties.read` | ikisi de hedef şirkette company-wide |
+| `cari.accounts.link` | `POST .../{partyId}/company-account` | `counterparty.accounts.create` + `counterparty.parties.read` | ikisi de hedef şirkette company-wide |
 
 UI capability’yi rol adından, JWT’den, localStorage’dan, route isminden veya `/identity/me` cevabından türetmez. Unknown, malformed veya stale capability fail-closed olur. Kontrol görünürlüğü authorization değildir; backend her çağrıda yeniden yetkilendirir.
 
-## 6. Read model ve redaction
+## 7. Read model ve redaction
 
-Party alanları:
+Party alanları: `id`, `code`, `kind`, `legalName`, `tradeName`, `isActive`, `version`.
 
-- `id`, `code`, `kind`, `legalName`, `tradeName`, `isActive`, `version`.
-
-Şirket hesabı alanları:
-
-- `id`, `companyId`, `roles`, `isActive`, `version`.
+Şirket hesabı alanları: `id`, `companyId`, `roles`, `isActive`, `version`.
 
 `externalIntegrationCode`, dedicated read permission ve redaction owner kabul edilene kadar UI mapping’ine alınmaz. Global Party aktifliği ile şirket hesabı aktifliği ayrıdır. Cari kodu salt okunurdur.
 
-## 7. `CARI-READ-PAGE-001` — accepted observable contract
+## 8. `CARI-READ-PAGE-001` — accepted observable contract
 
-Owner: `CHATGPT-BUSINESS/CARI`; takip: Issue `#94`; owner decision: `issuecomment-5470043284`.
+Owner: Issue `#94`, karar: `issuecomment-5470043284`.
 
-### Limits/defaults
+- `q`: opsiyonel, Unicode dış whitespace trim + NFC, en çok `200`;
+- `pageSize`: default `50`, maximum `200`, minimum `1`;
+- varsayılanlar: `roleMatch=any`, `partyState=active`, `accountState=all`, `sort=code`, `direction=asc`, `includeCount=false`;
+- cursor azami yaşı `30 dakika`; session/policy/permission/yetkili-company-seti revision değişimi daha erken invalid eder;
+- arama code/legalName/tradeName contains;
+- Türkçe case-insensitive ve accent-sensitive; accent folding yok;
+- her sort `PartyId` unique tie-breaker taşır;
+- keyset/authenticated opaque cursor zorunlu; offset paging ve browser’a tüm listeyi yükleme yasaktır;
+- browser fan-out/client union yasaktır;
+- invalid/tampered/expired/scope-mismatch cursor: `400/code=invalid_cursor`, partial data yok;
+- `includeCount=true` yalnız authorization/context/filter sonrası distinct Party sayısını döndürür.
 
-- `q`: opsiyonel, Unicode dış whitespace trim + NFC, en çok **200**; boşsa omitted.
-- `pageSize`: **50 default**, **200 maximum**, minimum 1.
-- `roleMatch=any`, `partyState=active`, `accountState=all`, `sort=code`, `direction=asc`, `includeCount=false` varsayılandır.
-- Cursor azami yaşı **30 dakika**; session/policy/permission/yetkili-company-set revision değişimi daha erken invalid eder.
+## 9. `CARI-LINK-CANDIDATE-001` — accepted observable contract
 
-### Arama/sıralama
-
-- code/legalName/tradeName contains.
-- Türkçe case-insensitive ve accent-sensitive: `i=İ`, `ı=I`, `i!=I`, `İ!=ı`; accent folding yok.
-- Exact SQL collation bu sözleşme tarafından seçilmez; gerçek SQL gözlenebilir sonuç kabul kaynağıdır.
-- Her sort immutable PartyId unique tie-breaker taşır.
-- Keyset/cursor paging zorunludur; offset paging ve bütün listeyi browser’a yükleme yasaktır.
-
-### Context/cursor/count
-
-- `X-Company-Id` varsa yalnız exact yetkili seçili şirket.
-- Header yoksa yalnız bu route için server-resolved explicit authorized-multi-company-read.
-- Browser fan-out/client union yasaktır.
-- Cursor contract version, normalize query/filter/sort, actor/session, context modu, selected CompanyId veya authorized-company-set revision ve expiry’ye bağlıdır.
-- malformed/tampered/expired/mismatch: `400/code=invalid_cursor`, partial data yok.
-- `includeCount=true`, authorization/context/filter sonrasındaki exact distinct Party sayısıdır; hidden group toplamı yok.
-- Uzun ömürlü global DB snapshot garantisi yoktur; concurrent business değişikliklerinde deterministic keyset continuation ve fail-closed scope binding korunur.
-
-Minimum response: `items`, `nextCursor`, `hasMore`; count istenirse `totalCount`, `countScope`.
-
-## 8. `CARI-LINK-CANDIDATE-001` — accepted observable contract
-
-Owner: `CHATGPT-BUSINESS/CARI`; takip: Issue `#95`; owner decision: `issuecomment-5470044664`.
+Owner: Issue `#95`, karar: `issuecomment-5470044664`.
 
 ```http
 GET /api/v1/counterparties/company-account-link-candidates
 X-Company-Id: <server tarafından doğrulanan hedef şirket>
 ```
 
-### Eligibility/security
+- hedefte company-wide `counterparty.accounts.create` + `counterparty.parties.read`;
+- Party global aktif;
+- en az bir actor-authorized source account üzerinden görünür;
+- hedefe zaten bağlı değil;
+- yalnız actor-visible source account özetleri;
+- source account pasifliği tek başına onboarding engeli değil;
+- page default `25`, maximum `100`, minimum `1`;
+- Issue #94 arama/cursor semantiği yeniden kullanılır;
+- invalid cursor: `400/code=invalid_cursor`, partial candidate yok;
+- PartyId hint fresh candidate response olmadan authority değildir;
+- POST bütün şartları yeniden doğrular.
 
-- target yalnız resolved CompanyContext; body/query/route override yok,
-- hedefte `counterparty.accounts.create` + `counterparty.parties.read` company-wide,
-- Party global aktif,
-- en az bir izinli source account üzerinden görünür,
-- hedefe zaten bağlı değil,
-- yalnız actor-visible source account özetleri,
-- source account pasifliği tek başına onboarding engeli değil ve otomatik reactivation yok,
-- browser fan-out/client union yok.
-
-### Paging/disclosure
-
-- Issue #94 normalizasyon, Turkish search ve authenticated cursor semantics yeniden kullanılır.
-- `pageSize`: **25 default**, **100 maximum**, minimum 1.
-- Cursor azami yaşı **30 dakika**; target company/actor/session/policy/query mismatch daha erken invalid eder.
-- invalid cursor: `400/code=invalid_cursor`, partial candidate yok.
-- Dönen alanlar yalnız Party `id/code/kind/legalName/tradeName/isActive` ve actor-visible source account `id/companyId/roles/isActive/version`.
-- externalIntegrationCode, banka/vergi/sicil, bakiye, risk, hidden account ve foreign count/timing yok.
-
-Önceki context PartyId yalnız hint’tir; fresh candidate response içinde yeniden görünmeden authority değildir. POST bütün şartları yeniden doğrular; aradaki inactive/link yarışı accepted `not_found` veya `already_linked` ile fail-closed olur.
-
-## 9. Idempotency ve replay
+## 10. Idempotency ve replay
 
 Yeni Party create, account active-state update ve company-link tekil `Idempotency-Key` ister:
 
 - tek field-value,
 - Trim,
-- 1–128 karakter,
+- `1..128` karakter,
 - missing/empty/multiple/comma-joined/oversized fail-closed.
 
-Her kullanıcı-onaylı logical submit tek key kullanır. Timeout veya sonucu bilinmeyen write yalnız aynı payload ve aynı key ile kontrollü retry edilir. Sonuç bilinmezken otomatik yeni key veya company switch ile write fence aşılmaz.
+Her kullanıcı-onaylı logical submit tek key kullanır. Timeout/unknown result yalnız aynı payload ve aynı key ile kontrollü retry edilir. Yeni key veya company switch pending sonucu aşamaz.
 
 Replay header’ları:
 
@@ -209,25 +183,23 @@ Idempotency-Original-Correlation-Id: <ilk correlation>
 
 Replay duplicate business effect, navigation veya toast üretmez.
 
-## 10. Hata sahipliği
+## 11. Hata sahipliği
 
-### Cari domain — accepted contract, partial implementation
+### Cari domain — Issue `#93`
 
-Owner: Issue #93; owner decision: `issuecomment-5470041578`.
-
-| Code | HTTP | Durum |
+| Code | HTTP | Main durumu |
 |---|---:|---|
-| `validation_failed` | 400 | accepted; producer/test queued |
-| `command_metadata_invalid` | 400 | accepted; producer/test queued |
-| `invalid_cursor` | 400 | accepted; #94/#95 implementation queued |
-| `not_found` | 404 | accepted; producer normalization queued |
-| `already_linked` | 409 | PR #77’de fiziksel/real-SQL |
-| `version_conflict` | 409 | accepted; producer normalization queued |
-| `idempotency_conflict` | 409 | PR #77’de fiziksel/real-SQL |
+| `validation_failed` | 400 | producer/test pending |
+| `command_metadata_invalid` | 400 | producer/test pending |
+| `invalid_cursor` | 400 | Issues #94/#95 ile pending |
+| `not_found` | 404 | normalization pending |
+| `already_linked` | 409 | PR #106 ile main’de |
+| `version_conflict` | 409 | normalization pending |
+| `idempotency_conflict` | 409 | PR #106 ile main’de |
 
-`not_found` missing/foreign/hidden/global-inactive ayrımını sızdırmaz. `version_conflict` güvenli accepted `conflict` extension’ını korur. UI branching yalnız code ile yapılır; locale metni parse edilmez.
+`not_found` missing/foreign/hidden/global-inactive ayrımını sızdırmaz. UI branching yalnız `code` üzerinden yapılır; localized metin parse edilmez.
 
-### Shared platform — owner `CODEX-PLATFORM`, Issue #96 / PR #97
+### Shared platform — PR `#107` ile main’de
 
 | Code | HTTP |
 |---|---:|
@@ -236,70 +208,38 @@ Owner: Issue #93; owner decision: `issuecomment-5470041578`.
 | `internal_error` | 500 |
 | `service_unavailable` | 503 |
 
-Cari bu kodları sahiplenmez, yeniden tanımlamaz veya kopya registry üretmez; yalnız kabul edilmiş platform sözleşmesini tüketir. Unknown code güvenli generic unexpected-error state’e gider. ProblemDetails plain text render edilir; `innerHTML` yoktur.
+Cari bunları yeniden tanımlamaz. Unknown/malformed code veri sızdırmayan generic unexpected-error state’e gider. ProblemDetails plain text render edilir; `innerHTML` yoktur.
 
-## 11. UI state ve retry
+## 12. UI state, ekran ve erişilebilirlik
 
 Loading, no-data, filter-empty, partial/stale, 401, 403, non-disclosing 404, domain 409, replay, timeout/unknown write, 500, 502/503/504, malformed, offline ve stale-company response ayrı state’lerdir.
 
-Read geçici hatalarda kontrollü retry sunabilir. Write sonucu bilinmiyorsa yalnız aynı payload/key kullanılabilir. Replay duplicate business effect, navigation veya toast üretmez.
+- `C-01`: server arama/filtre, yoğun liste, masaüstü drawer/mobil tam detay; para/risk/mock KPI yok.
+- `C-02`: Party türü, hukuki ad, opsiyonel ticari ad, roller ve shell’den salt okunur aktif şirket.
+- `C-03`: Cari kimliği/ad/tür, global Party durumu ve yalnız yetkili şirket hesapları.
+- `C-04…C-12`: ayrı kanonik route/workspace; owner kapısı olmadan boş sekme yok.
 
-## 12. Ekranlar
+Kabul; klavye görevleri, görünür focus/skip-link, semantic sort + `aria-sort`, validation summary focus, drawer/modal focus yönetimi, live-region, %200 zoom, %400 reflow, reduced motion, rengin tek sinyal olmaması ve mobil parity’yi kapsar.
 
-### C-01
+## 13. Tamamlanan ve açık kapılar
 
-Başlık ve capability-gated aksiyonlar, company/context göstergesi, server arama/filtre, yoğun liste ve masaüstü drawer/mobil tam detay. Kolonlar yalnız Cari kodu, adlar, tür, görünür roller/hesap sayısı, Party ve seçili hesap durumudur. Para/risk/mock KPI yoktur.
+Tamamlanan:
 
-### C-02 create alt kümesi
+- [x] PR #106 company-link backend merge.
+- [x] PR #107 shared platform error merge.
+- [x] Main runner-backed CI + real SQL + container + UI golden green.
+- [x] Issues #93/#94/#95 observable iş sözleşmeleri kabul edildi.
 
-Party türü, hukuki ad, opsiyonel ticari ad, roller ve shell’den salt okunur aktif şirket. VKN/TCKN/MERSİS/IBAN/banka/adres/kişi yoktur.
+Açık ve UI implementation’ı bloke edenler:
 
-### C-03 çekirdek 360
+1. PR #102 veya successor generic mount contract’ın current-main kabulü.
+2. ERP-000K runtime feature mount, route registry, query/cache ve CompanyContext fence.
+3. Server-backed capability provider.
+4. Issue #93 kalan producer/test implementasyonu.
+5. Issue #94 cursor-paged read API implementasyonu.
+6. Issue #95 target-company candidate API implementasyonu.
+7. `ORGANIZATION-COMPANY-DIRECTORY-V1` owner projection/version kabulü.
+8. Frontend single-writer handoff.
+9. Playwright/visual/accessibility ve açık UAT kabulü.
 
-Cari kimliği/ad/tür, global Party durumu ve yalnız yetkili şirket hesapları. Şirket adı/kodu Organization projection’dan gelir. C-04…C-12 owner kapıları kapanmadan boş sekme/mock kart yoktur.
-
-### C-04…C-12
-
-Her biri ayrı kanonik route/workspace olarak korunur: Cari Hesap Takibi, Açık Kalemler, Adres/Kişi/İletişim, Banka/Vergi/Sicil, Risk/Limit/Vade, Mutabakat, Belgeler/Sözleşmeler, Mükerrer/Birleştirme ve İlişki/Takip Görevleri.
-
-## 13. Accessibility ve responsive acceptance
-
-- Klavye ile liste/detail/create/link/status görevleri,
-- görünür focus ve skip-link,
-- semantic sort header + `aria-sort`,
-- validation summary focus,
-- modal/drawer focus trap, Escape ve invoker’a dönüş,
-- spam üretmeyen live region,
-- %200 zoom ve %400 reflow,
-- reduced motion,
-- rengin tek sinyal olmaması,
-- mobil eylem/label parity.
-
-## 14. Başlama kapıları
-
-1. PR #77 merge + green new-main CI.
-2. PR #102 veya successor generic mount contract kabulü.
-3. ERP-000K feature mount, route registry, query/cache ve CompanyContext runtime fence.
-4. Server-backed capability provider.
-5. Issue #93 accepted contract’ın kalan error producer/test implementasyonu.
-6. Issue #94 accepted read/page contract implementasyonu.
-7. Issue #95 accepted candidate contract implementasyonu.
-8. `ORGANIZATION-COMPANY-DIRECTORY-V1` owner projection/version kabulü.
-9. Frontend single-writer handoff.
-
-## 15. Completion gates
-
-- C-01 single ve authorized multi-company read,
-- C-02 create,
-- C-03 core 360,
-- link workspace,
-- permission/CompanyContext fail-closed,
-- real SQL ve API contract acceptance,
-- Playwright/visual/accessibility,
-- responsive task completion,
-- service/malformed/unknown-write states,
-- runner-backed full CI/container/UI golden,
-- exact-head cross review,
-- insan/UAT kabulü.
-
-Bu dilim tamamlandığında dahi C-04…C-12 ile finansal, risk, iletişim, belge ve CRM alanları tamamlanmış sayılmaz.
+Bu contract’ın merge edilmesi UI’yı veya production activation’ı açmaz. İlk görünür Cari dilimi ancak bütün açık kapılar, gerçek SQL ve browser acceptance ile tamamlanır.
