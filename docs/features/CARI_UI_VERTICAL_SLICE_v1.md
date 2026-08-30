@@ -1,11 +1,11 @@
 # CARI-UI-001 — Cari Kartlar ve Cari 360 İlk Uçtan Uca Dilim
 
-- Sürüm: `1.4`
+- Sürüm: `1.5`
 - Tarih: `2026-08-30`
 - İş sahibi: `CHATGPT-BUSINESS/CARI`
 - Ortak shell/capability/route/query-cache sahibi: `CODEX-PLATFORM`
 - Organization şirket dizini sahibi: `CODEX-PLATFORM/ORGANIZATION`
-- İncelenen ana dal: `main@f13d26b1a59089f25c5d44f6679d3928e876079c`
+- İncelenen ana dal: `main@8795bceb9838572f101238162d926f586d452ec8`
 - Contract durumu: **ACCEPTED**
 - Implementation: **BLOCKED**
 - Production activation: **NO-GO**
@@ -14,7 +14,7 @@
 
 ## 1. Amaç ve kullanıcı sonucu
 
-Bu sözleşme ilk görünür Cari dikey diliminin iş ve güvenlik sınırını tanımlar. Tek başına production UI açmaz.
+Bu sözleşme ilk görünür Cari dikey diliminin iş, güvenlik, route, paging, hata ve erişilebilirlik sınırını tanımlar. Tek başına production UI açmaz.
 
 İlk dilim:
 
@@ -29,11 +29,13 @@ ile sınırlıdır.
 
 ## 2. Current-main doğrusu
 
-Aşağıdaki backend/platform ön koşulları ana dala alınmıştır:
+Aşağıdaki contract/feature dilimleri ana dala alınmıştır:
 
 - PR `#106` / kaynak PR `#77`: global aktif Party’yi hedef şirkete bağlayan company-account link dilimi;
 - PR `#107` / kaynak PR `#97`: shared `401/403/500/503` ProblemDetails sözleşmesi;
-- ana dal CI `33326894439` ve UI golden `33326894409`: runner-backed **SUCCESS**.
+- PR `#108` / kaynak PR `#102`: capability, route registry ve feature-mount contract bundle’ı.
+
+PR #108 yalnız generic contract yayınlar. ERP-000K runtime, server-backed capability provider, router/query-cache implementation ve production activation hâlâ yoktur.
 
 Company-link davranışı:
 
@@ -73,7 +75,7 @@ Bu mevcut backend davranışı UI yetkisi veya görünürlüğü üretmez; capab
 - Cari domain `400/404/409` anlamları,
 - Cari component, gerçek SQL ve browser kabulü.
 
-Shell handoff tamamlanana kadar ChatGPT-Cari `App.tsx`, global CSS/router/query/capability client ve ortak navigasyonda read-only’dir.
+Shell runtime handoff tamamlanana kadar ChatGPT-Cari `App.tsx`, global CSS/router/query/capability client ve ortak navigasyonda read-only’dir.
 
 ## 4. Organization şirket görüntüleme projection’ı
 
@@ -227,19 +229,18 @@ Tamamlanan:
 
 - [x] PR #106 company-link backend merge.
 - [x] PR #107 shared platform error merge.
-- [x] Main runner-backed CI + real SQL + container + UI golden green.
+- [x] PR #108 generic capability/route/mount contract bundle merge.
 - [x] Issues #93/#94/#95 observable iş sözleşmeleri kabul edildi.
 
 Açık ve UI implementation’ı bloke edenler:
 
-1. PR #102 veya successor generic mount contract’ın current-main kabulü.
-2. ERP-000K runtime feature mount, route registry, query/cache ve CompanyContext fence.
-3. Server-backed capability provider.
-4. Issue #93 kalan producer/test implementasyonu.
-5. Issue #94 cursor-paged read API implementasyonu.
-6. Issue #95 target-company candidate API implementasyonu.
-7. `ORGANIZATION-COMPANY-DIRECTORY-V1` owner projection/version kabulü.
-8. Frontend single-writer handoff.
-9. Playwright/visual/accessibility ve açık UAT kabulü.
+1. ERP-000K runtime feature mount, route registry, query/cache ve CompanyContext fence.
+2. Server-backed capability provider.
+3. Issue #93 kalan producer/test implementasyonu.
+4. Issue #94 cursor-paged read API implementasyonu.
+5. Issue #95 target-company candidate API implementasyonu.
+6. `ORGANIZATION-COMPANY-DIRECTORY-V1` owner projection/version kabulü.
+7. Frontend single-writer handoff.
+8. Playwright/visual/accessibility ve açık UAT kabulü.
 
 Bu contract’ın merge edilmesi UI’yı veya production activation’ı açmaz. İlk görünür Cari dilimi ancak bütün açık kapılar, gerçek SQL ve browser acceptance ile tamamlanır.
