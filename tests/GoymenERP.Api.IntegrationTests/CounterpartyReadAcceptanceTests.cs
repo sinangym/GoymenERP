@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
@@ -49,7 +50,18 @@ public sealed class CounterpartyReadAcceptanceTests(GoymenErpApiFactory factory)
 
         using var hiddenDetailResponse = await client.GetAsync(
             $"/api/v1/counterparties/{CompanyBOnlyPartyId}");
-        Assert.Equal(HttpStatusCode.NotFound, hiddenDetailResponse.StatusCode);
+        var hiddenBody = await AssertProblemCodeAsync(
+            hiddenDetailResponse,
+            HttpStatusCode.NotFound,
+            CounterpartyProblemCodesV1.NotFound);
+        Assert.DoesNotContain(
+            CompanyBOnlyPartyId.ToString("D"),
+            hiddenBody,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(
+            TestCompanyIds.CompanyB.ToString("D"),
+            hiddenBody,
+            StringComparison.OrdinalIgnoreCase);
 
         using var unauthorizedCompanyFilter = await client.GetAsync(
             $"/api/v1/counterparties?companyId={TestCompanyIds.CompanyB}");
@@ -81,6 +93,43 @@ public sealed class CounterpartyReadAcceptanceTests(GoymenErpApiFactory factory)
         Assert.Equal(2, companyIds.Count);
         Assert.Contains(TestCompanyIds.CompanyA, companyIds);
         Assert.Contains(TestCompanyIds.CompanyB, companyIds);
+    }
+
+    [Fact]
+    public async Task OptionalRead_MalformedCompanyContext_UsesValidationFailedCode()
+    {
+        await PrepareScenarioAsync();
+        using var client = factory.CreateClientFor(TestUsers.GroupAdmin);
+        client.DefaultRequestHeaders.Add("X-Company-Id", "not-a-company-guid");
+
+        using var response = await client.GetAsync("/api/v1/counterparties");
+
+        await AssertProblemCodeAsync(
+            response,
+            HttpStatusCode.BadRequest,
+            CounterpartyProblemCodesV1.ValidationFailed);
+    }
+
+    private static async Task<string> AssertProblemCodeAsync(
+        HttpResponseMessage response,
+        HttpStatusCode expectedStatus,
+        string expectedCode)
+    {
+        Assert.Equal(expectedStatus, response.StatusCode);
+        Assert.Equal(
+            "application/problem+json",
+            response.Content.Headers.ContentType?.MediaType);
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+        Assert.Equal(expectedCode, document.RootElement.GetProperty("code").GetString());
+        Assert.Equal(
+            (int)expectedStatus,
+            document.RootElement.GetProperty("status").GetInt32());
+        Assert.False(string.IsNullOrWhiteSpace(
+            document.RootElement.GetProperty("title").GetString()));
+        Assert.False(string.IsNullOrWhiteSpace(
+            document.RootElement.GetProperty("detail").GetString()));
+        return body;
     }
 
     private async Task PrepareScenarioAsync()

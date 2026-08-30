@@ -77,7 +77,10 @@ public sealed class CounterpartyIdempotencyHeaderBoundarySqlServerRelationalAcce
                     PartyRole.Supplier),
                 $"cari-header-create-{caseName}-{Guid.NewGuid():N}",
                 idempotencyHeaderValues);
-            Assert.Equal(HttpStatusCode.BadRequest, createResponse.StatusCode);
+            await AssertProblemCodeAsync(
+                createResponse,
+                HttpStatusCode.BadRequest,
+                CounterpartyProblemCodesV1.CommandMetadataInvalid);
             Assert.False(createResponse.Headers.Contains("Idempotency-Replayed"));
             Assert.False(createResponse.Headers.Contains(
                 "Idempotency-Original-Correlation-Id"));
@@ -95,7 +98,10 @@ public sealed class CounterpartyIdempotencyHeaderBoundarySqlServerRelationalAcce
                     "Geçersiz idempotency header sınır doğrulaması"),
                 $"cari-header-status-{caseName}-{Guid.NewGuid():N}",
                 idempotencyHeaderValues);
-            Assert.Equal(HttpStatusCode.BadRequest, statusResponse.StatusCode);
+            await AssertProblemCodeAsync(
+                statusResponse,
+                HttpStatusCode.BadRequest,
+                CounterpartyProblemCodesV1.CommandMetadataInvalid);
             Assert.False(statusResponse.Headers.Contains("Idempotency-Replayed"));
             Assert.False(statusResponse.Headers.Contains(
                 "Idempotency-Original-Correlation-Id"));
@@ -204,6 +210,30 @@ public sealed class CounterpartyIdempotencyHeaderBoundarySqlServerRelationalAcce
         }
 
         return await client.SendAsync(request);
+    }
+
+    private static async Task AssertProblemCodeAsync(
+        HttpResponseMessage response,
+        HttpStatusCode expectedStatus,
+        string expectedCode)
+    {
+        Assert.Equal(expectedStatus, response.StatusCode);
+        Assert.Equal(
+            "application/problem+json",
+            response.Content.Headers.ContentType?.MediaType);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.False(string.IsNullOrWhiteSpace(
+            document.RootElement.GetProperty("type").GetString()));
+        Assert.False(string.IsNullOrWhiteSpace(
+            document.RootElement.GetProperty("title").GetString()));
+        Assert.Equal(
+            (int)expectedStatus,
+            document.RootElement.GetProperty("status").GetInt32());
+        Assert.False(string.IsNullOrWhiteSpace(
+            document.RootElement.GetProperty("detail").GetString()));
+        Assert.Equal(
+            expectedCode,
+            document.RootElement.GetProperty("code").GetString());
     }
 
     private static async Task<PersistenceSnapshot> ReadSnapshotAsync(

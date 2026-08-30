@@ -215,7 +215,8 @@ public sealed class PlatformRequestMetadataProblemCodesSqlServerRelationalAccept
             using (var counterpartyResponse = await SendCounterpartyWriteAsync(
                        factory,
                        counterpartyKey,
-                       counterpartyCorrelation))
+                       [TestCompanyIds.CompanyA.ToString()],
+                       [counterpartyCorrelation]))
             {
                 var generatedCorrelationId = await AssertProblemAsync(
                     counterpartyResponse,
@@ -234,6 +235,40 @@ public sealed class PlatformRequestMetadataProblemCodesSqlServerRelationalAccept
                     baselineTotalExecutionCount,
                     counterpartyKey,
                     generatedCorrelationId);
+            }
+
+            var invalidCounterpartyCompanyValues = new string[]?[]
+            {
+                null,
+                ["not-a-company-guid"],
+            };
+            foreach (var companyValues in invalidCounterpartyCompanyValues)
+            {
+                var invalidCompanyKey =
+                    $"platform-counterparty-company-{Guid.NewGuid():N}";
+                var invalidCompanyCorrelation =
+                    $"platform-counterparty-company-corr-{Guid.NewGuid():N}";
+                using var response = await SendCounterpartyWriteAsync(
+                    factory,
+                    invalidCompanyKey,
+                    companyValues,
+                    [invalidCompanyCorrelation]);
+                var responseCorrelation = await AssertProblemAsync(
+                    response,
+                    ErpProblemCodes.CompanyContextInvalid,
+                    companyValues ?? []);
+                Assert.Equal(invalidCompanyCorrelation, responseCorrelation);
+                Assert.Equal(
+                    baselinePartyCount,
+                    await CountCounterpartiesAsync(connection));
+                await AssertNoEffectsAsync(
+                    connection,
+                    before,
+                    baselineAuditCount,
+                    baselineTotalAuditCount,
+                    baselineTotalExecutionCount,
+                    invalidCompanyKey,
+                    invalidCompanyCorrelation);
             }
 
             var successKey = reusableIdempotencyKey;
@@ -375,7 +410,8 @@ public sealed class PlatformRequestMetadataProblemCodesSqlServerRelationalAccept
     private static async Task<HttpResponseMessage> SendCounterpartyWriteAsync(
         SqlServerRelationalApiFactory factory,
         string idempotencyKey,
-        string correlationId)
+        string[]? companyValues,
+        string[]? correlationValues)
     {
         using var client = factory.CreateClient();
         using var request = new HttpRequestMessage(
@@ -388,14 +424,22 @@ public sealed class PlatformRequestMetadataProblemCodesSqlServerRelationalAccept
             "X-Development-User",
             TestUsers.GroupAdmin));
         Assert.True(request.Headers.TryAddWithoutValidation(
-            "X-Company-Id",
-            TestCompanyIds.CompanyA.ToString()));
-        Assert.True(request.Headers.TryAddWithoutValidation(
             "Idempotency-Key",
             idempotencyKey));
-        Assert.True(request.Headers.TryAddWithoutValidation(
-            CorrelationContextMiddleware.CorrelationHeaderName,
-            correlationId));
+        if (companyValues is not null)
+        {
+            Assert.True(request.Headers.TryAddWithoutValidation(
+                "X-Company-Id",
+                companyValues));
+        }
+
+        if (correlationValues is not null)
+        {
+            Assert.True(request.Headers.TryAddWithoutValidation(
+                CorrelationContextMiddleware.CorrelationHeaderName,
+                correlationValues));
+        }
+
         return await client.SendAsync(request);
     }
 
