@@ -62,17 +62,30 @@ public enum CounterpartyCommandResult
 
 public static class CounterpartyProblemCodesV1
 {
+    public const string ValidationFailed = "validation_failed";
+
+    public const string CommandMetadataInvalid = "command_metadata_invalid";
+
+    public const string InvalidCursor = "invalid_cursor";
+
+    public const string NotFound = "not_found";
+
     public const string AlreadyLinked = "already_linked";
+
+    public const string VersionConflict = "version_conflict";
 
     public const string IdempotencyConflict = "idempotency_conflict";
 
-    public static string? For(CounterpartyCommandResult result)
+    public static string RequiredForProblem(CounterpartyCommandResult result)
     {
         return result switch
         {
+            CounterpartyCommandResult.NotFound => NotFound,
+            CounterpartyCommandResult.VersionConflict => VersionConflict,
             CounterpartyCommandResult.AlreadyLinked => AlreadyLinked,
             CounterpartyCommandResult.IdempotencyConflict => IdempotencyConflict,
-            _ => null,
+            _ => throw new InvalidOperationException(
+                $"Cari terminal sonucu stable ProblemDetails koduyla eşleşmiyor: {result}."),
         };
     }
 }
