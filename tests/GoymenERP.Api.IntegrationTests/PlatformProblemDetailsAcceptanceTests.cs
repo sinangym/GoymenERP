@@ -1,14 +1,17 @@
 using System.Net;
 using System.Collections.Concurrent;
+using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using GoymenERP.Api.Errors;
 using GoymenERP.BuildingBlocks.Observability;
+using GoymenERP.Modules.Organization.Application.Contracts;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -21,6 +24,7 @@ public sealed class PlatformProblemDetailsAcceptanceTests(
     public async Task AnonymousProtectedRequest_ReturnsStableAuthenticationProblem()
     {
         using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Accept.ParseAdd("text/plain");
 
         using var response = await client.GetAsync("/api/v1/organization/companies");
 
@@ -38,6 +42,7 @@ public sealed class PlatformProblemDetailsAcceptanceTests(
     public async Task AuthenticatedIdentityWithoutErpProvisioning_ReturnsStableForbiddenProblem()
     {
         using var client = factory.CreateClientFor(TestUsers.Unprovisioned);
+        client.DefaultRequestHeaders.Accept.ParseAdd("application/xml");
         var correlationId = Assert.Single(
             client.DefaultRequestHeaders.GetValues("X-Correlation-Id"));
 
@@ -103,6 +108,7 @@ public sealed class PlatformProblemDetailsAcceptanceTests(
         {
             RequestServices = scope.ServiceProvider,
         };
+        httpContext.Request.Headers.Accept = "text/plain";
         httpContext.Response.StatusCode = statusCode;
         httpContext.Response.Body = new MemoryStream();
 
@@ -153,6 +159,7 @@ public sealed class PlatformProblemDetailsAcceptanceTests(
                 logging.AddProvider(new CollectingLoggerProvider(logEntries)));
         });
         using var client = exceptionFactory.CreateClient();
+        client.DefaultRequestHeaders.Accept.ParseAdd("text/plain");
         client.DefaultRequestHeaders.Add(
             "X-Development-User",
             TestUsers.CompanyA);
@@ -176,6 +183,74 @@ public sealed class PlatformProblemDetailsAcceptanceTests(
         Assert.Contains(logEntries, entry => entry.Contains(
             ErpProblemCodes.InternalError,
             StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task UnhealthyLiveCheck_ReturnsRedactedStableServiceUnavailableProblem()
+    {
+        const string secret = "dependency=secret-health-check";
+        var correlationId = Guid.NewGuid().ToString("N");
+        using var unhealthyFactory = factory.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services =>
+                services.AddHealthChecks().AddCheck(
+                    "platform-unhealthy-acceptance",
+                    () => HealthCheckResult.Unhealthy(secret))));
+        using var client = unhealthyFactory.CreateClient();
+        client.DefaultRequestHeaders.Accept.ParseAdd("text/plain");
+        client.DefaultRequestHeaders.Add("X-Correlation-Id", correlationId);
+
+        using var response = await client.GetAsync("/health/live");
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        var body = await AssertPlatformProblemAsync(
+            response,
+            ErpProblemCodes.ServiceUnavailable,
+            correlationId);
+        Assert.DoesNotContain(secret, body, StringComparison.Ordinal);
+        Assert.DoesNotContain("platform-unhealthy-acceptance", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task OrganizationModuleStatuses_PreserveTheirOwnProblemDetailsContract()
+    {
+        using var missingCompanyClient = factory.CreateClientFor(TestUsers.CompanyA);
+        using var badRequest = await missingCompanyClient.GetAsync(
+            "/api/v1/organization/sites");
+        await AssertModuleProblemWithoutPlatformCodeAsync(
+            badRequest,
+            HttpStatusCode.BadRequest);
+
+        using var selectedCompanyClient = factory.CreateClientFor(
+            TestUsers.CompanyA,
+            TestCompanyIds.CompanyA);
+        using var notFound = await selectedCompanyClient.GetAsync(
+            $"/api/v1/organization/locations/{Guid.NewGuid()}");
+        await AssertModuleProblemWithoutPlatformCodeAsync(
+            notFound,
+            HttpStatusCode.NotFound);
+
+        var location = await factory.GetLocationIgnoringFiltersAsync(
+            TestCompanyIds.CompanyA,
+            "EXT-BASTUG");
+        using var conflictClient = factory.CreateClientFor(
+            TestUsers.CompanyA,
+            TestCompanyIds.CompanyA);
+        using var conflict = await conflictClient.PutAsJsonAsync(
+            $"/api/v1/organization/locations/{location.Id}/active-state",
+            new SetLocationActiveState(
+                !location.IsActive,
+                location.Version + 1,
+                "Platform hata sözleşmesi modül koruma testi"));
+        var conflictProblem = await AssertModuleProblemWithoutPlatformCodeAsync(
+            conflict,
+            HttpStatusCode.Conflict);
+        var conflictDetails = conflictProblem.GetProperty("conflict");
+        Assert.Equal(
+            location.Version + 1,
+            conflictDetails.GetProperty("expectedVersion").GetInt64());
+        Assert.Equal(
+            location.Version,
+            conflictDetails.GetProperty("currentVersion").GetInt64());
     }
 
     [Fact]
@@ -230,6 +305,20 @@ public sealed class PlatformProblemDetailsAcceptanceTests(
             expectedCorrelationId,
             root.GetProperty("correlationId").GetString());
         return body;
+    }
+
+    private static async Task<JsonElement> AssertModuleProblemWithoutPlatformCodeAsync(
+        HttpResponseMessage response,
+        HttpStatusCode expectedStatus)
+    {
+        Assert.Equal(expectedStatus, response.StatusCode);
+        Assert.Equal(
+            "application/problem+json",
+            response.Content.Headers.ContentType?.MediaType);
+        var stream = await response.Content.ReadAsStreamAsync();
+        using var document = await JsonDocument.ParseAsync(stream);
+        Assert.False(document.RootElement.TryGetProperty("code", out _));
+        return document.RootElement.Clone();
     }
 
     private sealed class UnhandledExceptionStartupFilter : IStartupFilter

@@ -10,7 +10,8 @@
 
 The API must expose shared authentication, authorization and platform-failure outcomes
 without requiring clients to parse localized `title` or `detail` text. Public error bodies
-use `application/problem+json` and a stable top-level `code` extension.
+use `application/problem+json` and a stable top-level `code` extension. Platform-owned
+responses remain JSON even when the request `Accept` header does not advertise JSON.
 
 This contract owns only platform outcomes. Domain modules continue to own their validation,
 not-found and conflict discriminators. In particular, Counterparty `400`, `404` and `409`
@@ -23,7 +24,7 @@ codes remain in the ChatGPT-CARI single-writer boundary tracked by Issue `#93`.
 | 401 | `authentication_required` | Authentication is missing, expired or unusable. |
 | 403 | `forbidden` | Authentication exists but the operation is not authorized. |
 | 500 | `internal_error` | An unexpected platform failure was safely redacted. |
-| 503 | `service_unavailable` | A required service is temporarily unavailable. |
+| 503 | `service_unavailable` | The `/health/live` health result is unhealthy. |
 
 The `code` values are presentation contracts, not authorization evidence. A client cannot
 gain permission, CompanyContext or record visibility by sending or replaying one of them.
@@ -55,20 +56,27 @@ Platform-owned responses use fixed safe Turkish titles and details. They do not 
 - CompanyId, foreign record identifier or existence information;
 - file path, secret, environment value or internal endpoint.
 
-The unhandled-exception handler does not pass the exception object, message or stack to the
-logger. It records only the stable platform error code and the already-established safe
-correlation scope. A telemetry sink cannot be treated as a reason to export the raw
-exception.
+For an unhandled exception caught before the response starts, the application-owned handler
+does not pass the exception object, message or stack to its own logger. It records only the
+stable platform error code and the already-established safe correlation scope.
 
-Unhandled `500` and shared `503` results discard pre-existing public extensions before the
-stable code and safe correlation are applied. The same implementation also normalizes
+If a response has already started, ASP.NET cannot replace it with this contract. The host may
+abort the connection, rethrow the exception and emit framework/host telemetry. That telemetry
+path is outside this v1 public-response and application-owned-log redaction guarantee and must
+not be represented as a universally redacted sink.
+
+Pre-response-start unhandled `500` and `/health/live` unhealthy `503` results discard
+pre-existing public extensions before the stable code and safe correlation are applied. The
+same implementation also normalizes
 shared `401` and `403` results, so middleware and authorization-policy failures do not drift
 into different client contracts.
 
 ## 5. Ownership boundary
 
 - The ASP.NET API composition root registers the platform ProblemDetails customizer and
-  authorization middleware result handler.
+  an `Accept`-independent platform writer plus the authorization middleware result handler.
+- The `503` contract is bound to the real `/health/live` unhealthy path; it is not a generic
+  promise for arbitrary dependency failures that have no explicit producer.
 - Domain modules do not reference authentication/session implementation details.
 - Statuses outside `401`, `403`, `500` and `503` are not assigned a platform code by this
   contract.
@@ -77,12 +85,16 @@ into different client contracts.
 
 ## 6. Acceptance gate
 
-- anonymous protected request returns `401/authentication_required`;
-- authenticated but unauthorized request returns `403/forbidden`;
+- hostile-`Accept` anonymous protected request returns `401/authentication_required`;
+- an invalid production JWT challenge does not expose token-validation error details;
+- hostile-`Accept` authenticated but unauthorized request returns `403/forbidden`;
 - CompanyContext access denial uses the same safe `403` envelope;
-- injected sensitive `500/503` input is absent from the serialized response;
+- hostile-`Accept` pre-response-start exception returns redacted `500/internal_error`;
+- an unhealthy `/health/live` check returns redacted `503/service_unavailable` without health
+  description, exception, data or dependency identity;
 - safe server correlation is returned consistently;
-- module-owned `409` receives no platform code;
+- real module-owned `400`, `404` and `409` responses receive no platform code and retain their
+  module-owned fields;
 - full API integration and architecture regressions pass;
 - fresh runner-backed CI, exact-head independent review and human security merge approval.
 

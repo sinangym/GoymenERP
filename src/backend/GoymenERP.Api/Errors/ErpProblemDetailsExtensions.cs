@@ -10,12 +10,21 @@ public static class ErpProblemDetailsExtensions
         this IServiceCollection services)
     {
         services.AddExceptionHandler<ErpUnhandledExceptionHandler>();
+        services.AddSingleton<IProblemDetailsWriter, ErpPlatformProblemDetailsWriter>();
         services.AddProblemDetails(options =>
             options.CustomizeProblemDetails = CustomizeProblemDetails);
         services.AddSingleton<IAuthorizationMiddlewareResultHandler,
             ErpAuthorizationMiddlewareResultHandler>();
 
         return services;
+    }
+
+    internal static bool IsPlatformStatus(int statusCode)
+    {
+        return statusCode is StatusCodes.Status401Unauthorized
+            or StatusCodes.Status403Forbidden
+            or StatusCodes.Status500InternalServerError
+            or StatusCodes.Status503ServiceUnavailable;
     }
 
     internal static void CustomizeProblemDetails(ProblemDetailsContext context)

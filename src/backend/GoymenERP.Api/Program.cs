@@ -12,6 +12,7 @@ using GoymenERP.Modules.Counterparty.Infrastructure;
 using GoymenERP.Modules.Idempotency.Infrastructure;
 using GoymenERP.Modules.Organization.Infrastructure;
 using GoymenERP.Modules.Identity.Infrastructure;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -62,7 +63,10 @@ app.UseAuthentication();
 app.UseMiddleware<CompanyContextMiddleware>();
 app.UseAuthorization();
 
-app.MapHealthChecks("/health/live").AllowAnonymous();
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    ResponseWriter = ErpHealthCheckResponseWriter.WriteAsync,
+}).AllowAnonymous();
 app.MapOrganizationEndpoints();
 app.MapIdentityEndpoints();
 app.MapAuditEndpoints();

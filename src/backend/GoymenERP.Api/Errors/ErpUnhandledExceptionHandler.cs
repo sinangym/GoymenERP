@@ -23,7 +23,7 @@ public sealed class ErpUnhandledExceptionHandler(
             ErpProblemCodes.InternalError);
 
         httpContext.Response.StatusCode = StatusCodes.Status500InternalServerError;
-        return await problemDetailsService.TryWriteAsync(new ProblemDetailsContext
+        await problemDetailsService.WriteAsync(new ProblemDetailsContext
         {
             HttpContext = httpContext,
             ProblemDetails = new ProblemDetails
@@ -31,5 +31,6 @@ public sealed class ErpUnhandledExceptionHandler(
                 Status = StatusCodes.Status500InternalServerError,
             },
         });
+        return true;
     }
 }

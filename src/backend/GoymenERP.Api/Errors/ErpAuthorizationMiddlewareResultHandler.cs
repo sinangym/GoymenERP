@@ -40,7 +40,7 @@ public sealed class ErpAuthorizationMiddlewareResultHandler(
         }
 
         context.Response.StatusCode = statusCode;
-        await problemDetailsService.TryWriteAsync(new ProblemDetailsContext
+        await problemDetailsService.WriteAsync(new ProblemDetailsContext
         {
             HttpContext = context,
             ProblemDetails = new ProblemDetails
