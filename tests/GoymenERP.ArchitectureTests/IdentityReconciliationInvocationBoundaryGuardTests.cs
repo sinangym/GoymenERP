@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 
 namespace GoymenERP.ArchitectureTests;
@@ -15,6 +16,22 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string IdentityModuleCompositionRootPath =
         "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/"
         + "IdentityModuleExtensions.cs";
+
+    // Pinning the reviewed project bytes makes any linked Compile item, source generator or
+    // default-item override an explicit security review event instead of a source-walk bypass.
+    private static readonly IReadOnlyDictionary<string, string> ReviewedCounterpartyProjectHashes =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Application/"
+             + "GoymenERP.Modules.Counterparty.Application.csproj"] =
+                "C75295E1EB46CA324EB884D55D3CD837A63028E76BE30EAF3507FF9EDDFEAD86",
+            ["src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Domain/"
+             + "GoymenERP.Modules.Counterparty.Domain.csproj"] =
+                "2C82DAE7A6492E5DC0D99B6B5A5D1C89A4702B892F71757981E46302949D6115",
+            ["src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/"
+             + "GoymenERP.Modules.Counterparty.Infrastructure.csproj"] =
+                "BC7347E47FDF53DFD2646E439B045E8A0F317C689BA39AF14C6C2E3B7B3CC266"
+        };
 
     private static readonly Regex IdentityReconcilerTypeRegex = new(
         @"(?<![\p{L}\p{N}_])(?:ISystemRolePermissionReconciler|SystemRolePermissionReconciler)(?![\p{L}\p{N}_])",
@@ -113,10 +130,66 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             error => error.Contains("UnicodeEvasion.cs", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void GuardRejectsCounterpartyReflectionAndDynamicInvocationWithoutLiteralTypeTokens()
+    {
+        var sources = CreateReviewedIdentityReconcilerFixture();
+        sources.Add(
+            "src/backend/Modules/Counterparty/ReflectionProbe.cs",
+            "var type = Type.GetType(\"GoymenERP.Identity.ISystemRolePermissionReconciler\"); "
+            + "var service = provider.GetRequiredService(type!); "
+            + "type!.GetMethod(\"ReconcileAsync\")!.Invoke(service, [default]);");
+
+        var errors = ValidateIdentityReconcilerInvocationBoundary(sources);
+
+        Assert.Contains(
+            errors,
+            error => error.Contains("Type.GetType", StringComparison.Ordinal)
+                     || error.Contains("GetMethod", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void CounterpartyInventoryExcludesOnlySdkBuildOutputs()
+    {
+        Assert.True(IsIdentityGuardExcludedProductionPath(
+            "src/backend/Modules/Counterparty/App/bin/Release/Generated.cs"));
+        Assert.True(IsIdentityGuardExcludedProductionPath(
+            "src/backend/Modules/Counterparty/App/obj/Release/Generated.cs"));
+        Assert.False(IsIdentityGuardExcludedProductionPath(
+            "src/backend/Modules/Counterparty/App/generated/ReconciliationStartup.cs"));
+        Assert.False(IsIdentityGuardExcludedProductionPath(
+            "src/backend/Modules/Counterparty/App/tests/ReconciliationProbe.cs"));
+    }
+
+    [Fact]
+    public void CounterpartyProjectInventoryRejectsMissingUnexpectedAndHashDriftedProjects()
+    {
+        var reviewedProjects = ReviewedCounterpartyProjectHashes.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value,
+            StringComparer.Ordinal);
+        Assert.Empty(ValidateReviewedCounterpartyProjectInventory(reviewedProjects));
+
+        var missingProject = new Dictionary<string, string>(reviewedProjects, StringComparer.Ordinal);
+        missingProject.Remove(missingProject.Keys.Order(StringComparer.Ordinal).First());
+        Assert.NotEmpty(ValidateReviewedCounterpartyProjectInventory(missingProject));
+
+        var unexpectedProject = new Dictionary<string, string>(reviewedProjects, StringComparer.Ordinal)
+        {
+            ["src/backend/Modules/Counterparty/Unreviewed/Unreviewed.csproj"] =
+                new string('A', 64)
+        };
+        Assert.NotEmpty(ValidateReviewedCounterpartyProjectInventory(unexpectedProject));
+
+        var driftedProject = new Dictionary<string, string>(reviewedProjects, StringComparer.Ordinal);
+        driftedProject[driftedProject.Keys.Order(StringComparer.Ordinal).First()] = new string('B', 64);
+        Assert.NotEmpty(ValidateReviewedCounterpartyProjectInventory(driftedProject));
+    }
+
     private static IReadOnlyList<string> ValidateIdentityReconcilerInvocationBoundary(
         IReadOnlyDictionary<string, string> sources)
     {
-        var errors = new List<string>();
+        var errors = ValidateNoForbiddenBypassCapabilities(sources).ToList();
         var normalizedSources = sources.ToDictionary(
             pair => NormalizeRepositoryPath(pair.Key),
             pair => NormalizeExecutableIdentifiers(
@@ -193,10 +266,30 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 + ExcludedCounterpartyPrefix);
         }
 
-        var counterpartySources = Directory.EnumerateFiles(
-                counterpartyRoot,
-                "*.cs",
-                SearchOption.AllDirectories)
+        var counterpartyFiles = EnumerateCounterpartyFilesFailClosed(
+                repositoryRoot,
+                counterpartyRoot)
+            .ToArray();
+        var projectHashes = counterpartyFiles
+            .Where(path => string.Equals(
+                Path.GetExtension(path),
+                ".csproj",
+                StringComparison.Ordinal))
+            .ToDictionary(
+                path => NormalizeRepositoryPath(Path.GetRelativePath(repositoryRoot, path)),
+                path => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))),
+                StringComparer.Ordinal);
+        var projectErrors = ValidateReviewedCounterpartyProjectInventory(projectHashes);
+        if (projectErrors.Count > 0)
+        {
+            throw new InvalidOperationException(string.Join(Environment.NewLine, projectErrors));
+        }
+
+        var counterpartySources = counterpartyFiles
+            .Where(path => string.Equals(
+                Path.GetExtension(path),
+                ".cs",
+                StringComparison.OrdinalIgnoreCase))
             .Select(path => new
             {
                 FullPath = path,
@@ -208,6 +301,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
         foreach (var source in counterpartySources)
         {
+            if (!string.Equals(
+                    Path.GetExtension(source.FullPath),
+                    ".cs",
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "Identity reconciliation guard found a non-canonical Counterparty C# "
+                    + $"extension: {source.RepositoryPath}");
+            }
+
             if (!sources.TryAdd(source.RepositoryPath, File.ReadAllText(source.FullPath)))
             {
                 throw new InvalidOperationException(
@@ -219,16 +322,90 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         return sources;
     }
 
+    private static IReadOnlyList<string> ValidateReviewedCounterpartyProjectInventory(
+        IReadOnlyDictionary<string, string> projectHashes)
+    {
+        var errors = new List<string>();
+        foreach (var (path, expectedHash) in ReviewedCounterpartyProjectHashes)
+        {
+            if (!projectHashes.TryGetValue(path, out var actualHash))
+            {
+                errors.Add($"Reviewed Counterparty project is missing: {path}");
+                continue;
+            }
+
+            if (!string.Equals(actualHash, expectedHash, StringComparison.Ordinal))
+            {
+                errors.Add(
+                    $"Reviewed Counterparty project hash drifted: {path}. "
+                    + $"Expected {expectedHash}, found {actualHash}.");
+            }
+        }
+
+        foreach (var path in projectHashes.Keys)
+        {
+            if (!ReviewedCounterpartyProjectHashes.ContainsKey(path))
+            {
+                errors.Add($"Unreviewed Counterparty project can change compiled inputs: {path}");
+            }
+        }
+
+        return errors;
+    }
+
+    private static IEnumerable<string> EnumerateCounterpartyFilesFailClosed(
+        string repositoryRoot,
+        string counterpartyRoot)
+    {
+        var pending = new Stack<string>();
+        pending.Push(counterpartyRoot);
+
+        while (pending.Count > 0)
+        {
+            var directory = pending.Pop();
+            var directoryPath = NormalizeRepositoryPath(
+                Path.GetRelativePath(repositoryRoot, directory));
+            if (!string.Equals(directory, counterpartyRoot, StringComparison.OrdinalIgnoreCase)
+                && IsIdentityGuardExcludedProductionPath(directoryPath))
+            {
+                continue;
+            }
+
+            if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new InvalidOperationException(
+                    "Identity reconciliation guard refuses a Counterparty reparse directory: "
+                    + directoryPath);
+            }
+
+            foreach (var file in Directory.EnumerateFiles(directory, "*", SearchOption.TopDirectoryOnly))
+            {
+                var repositoryPath = NormalizeRepositoryPath(
+                    Path.GetRelativePath(repositoryRoot, file));
+                if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0)
+                {
+                    throw new InvalidOperationException(
+                        "Identity reconciliation guard refuses a Counterparty reparse file: "
+                        + repositoryPath);
+                }
+
+                yield return file;
+            }
+
+            foreach (var child in Directory.EnumerateDirectories(
+                         directory,
+                         "*",
+                         SearchOption.TopDirectoryOnly)
+                     .OrderBy(path => path, StringComparer.Ordinal))
+            {
+                pending.Push(child);
+            }
+        }
+    }
+
     private static bool IsIdentityGuardExcludedProductionPath(string repositoryPath)
     {
-        var segments = repositoryPath.Split(
-            '/',
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return segments.Any(segment =>
-            segment.Equals("bin", StringComparison.OrdinalIgnoreCase)
-            || segment.Equals("obj", StringComparison.OrdinalIgnoreCase)
-            || segment.Equals("generated", StringComparison.OrdinalIgnoreCase)
-            || segment.Equals("tests", StringComparison.OrdinalIgnoreCase));
+        return IsBuildOutput(repositoryPath);
     }
 
     private static Dictionary<string, string> CreateReviewedIdentityReconcilerFixture() =>
