@@ -808,3 +808,47 @@ DECISION_PACK AÇIK: 0 ASSUMPTION + 21 OPEN (capability snapshot fail-closed dav
 KRİTİK ANALİZ: shell-companycontext-fence REV.1 → Codex review; frontend-packages → Codex supply-chain review (Issue #122)
 SONRAKİ: Codex review beklerken bağımsız — shared UI state matrisi (ERP-000K §12) veya Issue #120 company-directory frontend tüketim tasarımı
 ```
+
+## 2026-08-31 — Döngü v2.0-4 (CLAUDE-FRONTEND şeridi)
+
+- Main: `382d9b5`; branch bu head'e merge edildi
+- Dilim: `W0-SHELL` fence mimarisi REV.2 (ChatGPT+Codex ikinci BLOCKER yanıtı)
+- Branch/PR: `claude/w0-shell-companycontext-fence-analysis` / PR #119 Draft
+
+### Yapılan — REV.2 (P1-REV1-1..4 + hardening)
+
+- **REV1-2**: Doküman ikiye ayrıldı. **Bölüm A** = package-bağımsız güvenlik değişmezleri (INV-DIRTY/
+  PENDING/WRITE/FENCE/NS/REAUTH/NEUTRAL/OVERLAY/SESSION/REVOKE) — `SHELL-PILOT-01` kabul kriteri.
+  **Bölüm B** = aday implementation eşlemesi, açıkça NON-NORMATİF, #118/#122 paket kapısına bağlı.
+  TanStack Query/Zustand/Playwright artık "aday", "zorunlu" değil.
+- **REV1-3**: ERP-000E sekme-kapanışı. Uydurma payload-hash backend lookup KALDIRILDI. Oturum-içi
+  switch → in-memory anahtar + reauth sonrası anahtar-tabanlı replay. Sekme kapanışı/reload →
+  otomatik kurtarma iddiası YOK; explicit unknown-outcome/manuel mutabakat durumu; yeni anahtarla
+  kör resend YASAK. `payloadHash` = bütünlük metadata, lookup yetkisi değil.
+- **REV1-4**: capability cache key = `capabilityGeneration` + local session/actor binding (yalnız
+  opak global `snapshotId` değil — global benzersizlik sözleşmeli değil). Grup modu somut
+  server-owned owner route declaration olmadan DEVRE DIŞI.
+- **REV1-1**: PR #119 body REV.2 ile senkronlanacak (bu commit sonrası).
+- Router loader ≠ backend auth; `removeQueries`+`AbortController` ≠ fence (generation gerekir);
+  Zod ≠ ikinci OpenAPI gerçeği — Bölüm B'de açıkça yazıldı.
+
+### Koordinasyon gözlemi
+
+- Codex PR #125 (`codex/autonomous-delivery-v2-safety-correction`): v2.0 planına fail-close
+  düzeltmesi + `tools/validate_delivery_backlog.py` (848 satır) + test (829) + AGENTS.md +
+  ci.yml. Governance K3 — Sinan veya çift-ajan kapısı.
+- Codex Issue #124 `W0-SHELL-001` = SHELL-PILOT-01 spec'i; #119 exact head "implementation
+  girdisi değil, 4 P1" diyor → REV.2 bunu çözüyor.
+- Codex `codex/openapi-contract-drift-v1` branch'i (Issue #122 W0-CICD).
+
+```text
+DÖNGÜ: 2026-08-31 | ŞERİT: claude
+MAIN SHA: 382d9b5
+DİLİM: W0-SHELL (fence mimarisi REV.2 — package-bağımsız)
+DAVRANIŞ DEĞİŞİKLİĞİ: hayır: ikinci BLOCKER yanıt döngüsü (NOT)
+KATMAN: K3
+MERGE: yok — Draft; REV.2 fresh Codex + ChatGPT re-review bekliyor
+DECISION_PACK AÇIK: 0 ASSUMPTION + 21 OPEN
+KRİTİK ANALİZ: shell-companycontext-fence REV.2 → fresh review; frontend-packages → 5×P1, minimum staged stack revizyonu sırada
+SONRAKİ: #118 REV (minimum staged stack + external iddiaları kanıtla/kaldır) VEYA Codex review beklerken shared UI state matrisi
+```
