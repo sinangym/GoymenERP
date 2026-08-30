@@ -1,12 +1,13 @@
 {
-  "contractVersion": "1.3",
+  "contractVersion": "1.4",
   "sliceId": "CARI-UI-001",
   "title": "Cari Kartlar ve Cari 360 ilk uçtan uca dilim",
-  "contractStatus": "review_pending",
+  "contractStatus": "accepted",
   "implementationReadiness": "blocked",
   "productionActivation": "no_go",
   "eventDeliveryMode": "synchronous_transaction",
-  "reviewedMainSha": "83197c50f515db959638fadd7cc11ad6eb7a4fc8",
+  "reviewedMainSha": "f13d26b1a59089f25c5d44f6679d3928e876079c",
+  "tracking": "Issue-78",
   "sourceStatus": "DESIGNED_NOT_LOCKED",
   "visualStatus": "PROTOTYPE_REFERENCE",
   "authorityReferences": [
@@ -20,20 +21,25 @@
     "docs/ui/screens/cari/CARI-ROUTE-09.md",
     "docs/ui/UI_DESIGN_SYSTEM.md",
     "docs/features/ERP-000K_SHELL_CONTRACT_v1.md",
-    "PR-77",
+    "PR-106-source-PR-77",
+    "PR-107-source-PR-97",
     "Issue-93-comment-5470041578",
     "Issue-94-comment-5470043284",
     "Issue-95-comment-5470044664",
-    "Issue-96",
-    "PR-97",
     "PR-102"
   ],
+  "currentMainEvidence": {
+    "companyLinkMerge": "PR-106",
+    "platformErrorMerge": "PR-107",
+    "ciRun": 33326894439,
+    "uiGoldenRun": 33326894409,
+    "runnerBackedGreen": true
+  },
   "owners": {
     "businessAndCariFeature": "CHATGPT-BUSINESS/CARI",
     "commonShellRouteRegistryQueryCacheAndCapability": "CODEX-PLATFORM",
     "organizationCompanyDirectory": "CODEX-PLATFORM/ORGANIZATION",
     "platformSharedErrors": "CODEX-PLATFORM",
-    "crossReviewer": "CODEX-PLATFORM",
     "singleWriterRequired": true
   },
   "shellContract": {
@@ -46,16 +52,17 @@
     "physicalArtifactPresentOnMain": true,
     "featureMountRuntimeAvailable": false,
     "serverBackedCapabilityProviderAvailable": false,
-    "draftGenericMountContract": "PR-102"
+    "draftGenericMountContract": "PR-102",
+    "currentMainAcceptanceRequired": true
   },
   "organizationDisplayProjection": {
     "contractId": "ORGANIZATION-COMPANY-DIRECTORY-V1",
-    "status": "existing-transport-provisional-projection-contract-required",
+    "status": "owner-version-acceptance-required",
     "owner": "CODEX-PLATFORM/ORGANIZATION",
     "method": "GET",
     "path": "/api/v1/organization/companies",
     "contextClass": "authenticated-actor-authorized-company-set; no X-Company-Id",
-    "responseVersion": "organization.company-summary.v1",
+    "responseVersionCandidate": "organization.company-summary.v1",
     "fields": [
       "id",
       "code",
@@ -63,7 +70,6 @@
       "isPlaceholder"
     ],
     "joinRule": "CompanyPartyAccount.companyId equals CompanySummary.id",
-    "dataMinimization": "only companies authorized to the current actor/session",
     "cache": {
       "storage": "private in-memory only until ERP-000K accepts an equivalent secure cache",
       "namespaceInputs": [
@@ -79,15 +85,14 @@
         "malformed response",
         "definitive authorization failure"
       ],
-      "companySwitchRule": "selected-company switch generation-fences all company-scoped Cari queries; the authorized company directory itself is actor-scoped"
+      "companySwitchRule": "generation-fence all company-scoped Cari queries"
     },
     "missingOrUnavailable": {
       "rawCompanyIdAsDisplayLabel": false,
       "inventedCompanyName": false,
       "linkTargetSelectionEnabled": false,
-      "behavior": "generic unavailable state without foreign-company disclosure; retry only after fresh authorization"
-    },
-    "completionGate": "Organization owner accepts/version-locks the projection and ERP-000K consumes it"
+      "behavior": "generic unavailable state without foreign-company disclosure"
+    }
   },
   "primaryRoutes": [
     {
@@ -95,108 +100,139 @@
       "screenId": "C-01",
       "path": "/cari",
       "canonicalPriority": "static",
-      "pageType": "list-with-quick-detail",
       "contextClass": "single-company-or-explicit-authorized-multi-company-read",
       "viewCapability": "cari.parties.list",
-      "cacheNamespaceInputs": [
-        "actor",
-        "session",
-        "context-mode",
-        "company-or-authorized-set-revision",
-        "normalized-query",
-        "contract-version"
-      ],
-      "breadcrumb": [
-        "Cari"
-      ],
-      "safeReturnRouteId": "dashboard",
-      "deepLinkAndRefresh": "fresh capability and backend authorization required"
+      "safeReturnRouteId": "dashboard"
     },
     {
       "routeId": "cari.create",
       "screenId": "C-02:create-subset",
       "path": "/cari/yeni",
       "canonicalPriority": "static-before-parameter",
-      "pageType": "guided-create-form",
       "contextClass": "single-company",
       "viewCapability": "cari.parties.create",
-      "cacheNamespaceInputs": [
-        "actor",
-        "session",
-        "selected-company",
-        "logical-attempt"
-      ],
-      "breadcrumb": [
-        "Cari",
-        "Yeni Cari"
-      ],
-      "safeReturnRouteId": "cari.list",
-      "deepLinkAndRefresh": "fresh capability; dirty-form and pending-write fence"
+      "safeReturnRouteId": "cari.list"
     },
     {
       "routeId": "cari.company-link",
       "screenId": "CARI-LINK-WORKSPACE-001",
-      "canonicalRelation": "C-02 company-account action workspace",
       "path": "/cari/sirkete-bagla",
       "canonicalPriority": "static-before-parameter",
-      "pageType": "guided-action-workspace",
       "contextClass": "single-target-company",
       "viewCapability": "cari.accounts.link",
-      "cacheNamespaceInputs": [
-        "actor",
-        "session",
-        "target-company",
-        "candidate-query",
-        "contract-version"
-      ],
-      "breadcrumb": [
-        "Cari",
-        "Şirkete Bağla"
-      ],
-      "safeReturnRouteId": "cari.list",
-      "deepLinkAndRefresh": "target company and candidate are revalidated; Party hint is never authority"
+      "safeReturnRouteId": "cari.list"
     },
     {
       "routeId": "cari.detail",
       "screenId": "C-03",
       "path": "/cari/:partyId",
       "canonicalPriority": "parameter-after-all-cari-static-routes",
-      "pageType": "360-core-summary",
       "contextClass": "single-company-or-explicit-authorized-multi-company-read",
       "viewCapability": "cari.parties.detail",
-      "cacheNamespaceInputs": [
-        "actor",
-        "session",
-        "context-mode",
-        "company-or-authorized-set-revision",
-        "partyId",
-        "contract-version"
-      ],
-      "breadcrumb": [
-        "Cari",
-        "authorized-current-party-label"
-      ],
-      "safeReturnRouteId": "cari.list",
-      "deepLinkAndRefresh": "fresh capability and non-disclosing backend detail read required"
+      "safeReturnRouteId": "cari.list"
     }
   ],
   "futureCanonicalScreens": [
-    {"screenId":"C-04","name":"Cari Hesap Takibi","relationType":"separate-canonical-route-or-workspace","ownerStatus":"integration-owner-open"},
-    {"screenId":"C-05","name":"Açık Kalemler","relationType":"separate-canonical-route-or-workspace","ownerStatus":"finance-owner-open"},
-    {"screenId":"C-06","name":"Adres / Kişi / İletişim","relationType":"separate-canonical-route-or-workspace","ownerStatus":"implementation-owner-open"},
-    {"screenId":"C-07","name":"Banka / Vergi / Sicil","relationType":"separate-canonical-route-or-workspace","ownerStatus":"sensitive-data-owner-open"},
-    {"screenId":"C-08","name":"Risk / Limit / Vade","relationType":"separate-canonical-route-or-workspace","ownerStatus":"risk-owner-open"},
-    {"screenId":"C-09","name":"Mutabakat","relationType":"separate-canonical-route-or-workspace","ownerStatus":"reconciliation-owner-open"},
-    {"screenId":"C-10","name":"Belgeler / Sözleşmeler","relationType":"separate-canonical-route-or-workspace","ownerStatus":"document-vault-owner-open"},
-    {"screenId":"C-11","name":"Mükerrer ve Birleştirme","relationType":"separate-canonical-route-or-workspace","ownerStatus":"implementation-owner-open"},
-    {"screenId":"C-12","name":"İlişki / Takip Görevleri","relationType":"separate-canonical-workspace","ownerStatus":"task-crm-owner-open"}
+    {
+      "screenId": "C-04",
+      "name": "Cari Hesap Takibi",
+      "relationType": "separate-canonical-route-or-workspace"
+    },
+    {
+      "screenId": "C-05",
+      "name": "Açık Kalemler",
+      "relationType": "separate-canonical-route-or-workspace"
+    },
+    {
+      "screenId": "C-06",
+      "name": "Adres / Kişi / İletişim",
+      "relationType": "separate-canonical-route-or-workspace"
+    },
+    {
+      "screenId": "C-07",
+      "name": "Banka / Vergi / Sicil",
+      "relationType": "separate-canonical-route-or-workspace"
+    },
+    {
+      "screenId": "C-08",
+      "name": "Risk / Limit / Vade",
+      "relationType": "separate-canonical-route-or-workspace"
+    },
+    {
+      "screenId": "C-09",
+      "name": "Mutabakat",
+      "relationType": "separate-canonical-route-or-workspace"
+    },
+    {
+      "screenId": "C-10",
+      "name": "Belgeler / Sözleşmeler",
+      "relationType": "separate-canonical-route-or-workspace"
+    },
+    {
+      "screenId": "C-11",
+      "name": "Mükerrer ve Birleştirme",
+      "relationType": "separate-canonical-route-or-workspace"
+    },
+    {
+      "screenId": "C-12",
+      "name": "İlişki / Takip Görevleri",
+      "relationType": "separate-canonical-workspace"
+    }
   ],
   "capabilityMatrix": [
-    {"capabilityId":"cari.parties.list","method":"GET","path":"/api/v1/counterparties","requiredPermissions":["counterparty.parties.read"],"scope":"company-or-explicit-authorized-multi-company-read"},
-    {"capabilityId":"cari.parties.detail","method":"GET","path":"/api/v1/counterparties/{partyId}","requiredPermissions":["counterparty.parties.read"],"scope":"company-or-explicit-authorized-multi-company-read"},
-    {"capabilityId":"cari.parties.create","method":"POST","path":"/api/v1/counterparties","requiredPermissions":["counterparty.parties.create"],"scope":"company-wide-single-company","idempotencyRequired":true},
-    {"capabilityId":"cari.accounts.status.update","method":"PUT","path":"/api/v1/counterparties/{partyId}/company-account/active-state","requiredPermissions":["counterparty.accounts.status.update"],"scope":"company-wide-single-company","idempotencyRequired":true,"optimisticConcurrencyRequired":true,"reasonRequired":true},
-    {"capabilityId":"cari.accounts.link","method":"POST","path":"/api/v1/counterparties/{partyId}/company-account","requiredPermissions":["counterparty.accounts.create","counterparty.parties.read"],"scope":"both-company-wide-on-target-company","idempotencyRequired":true,"reasonRequired":false,"availabilityGate":"PR-77 merged and new-main green"}
+    {
+      "capabilityId": "cari.parties.list",
+      "method": "GET",
+      "path": "/api/v1/counterparties",
+      "requiredPermissions": [
+        "counterparty.parties.read"
+      ],
+      "scope": "company-or-explicit-authorized-multi-company-read"
+    },
+    {
+      "capabilityId": "cari.parties.detail",
+      "method": "GET",
+      "path": "/api/v1/counterparties/{partyId}",
+      "requiredPermissions": [
+        "counterparty.parties.read"
+      ],
+      "scope": "company-or-explicit-authorized-multi-company-read"
+    },
+    {
+      "capabilityId": "cari.parties.create",
+      "method": "POST",
+      "path": "/api/v1/counterparties",
+      "requiredPermissions": [
+        "counterparty.parties.create"
+      ],
+      "scope": "company-wide-single-company",
+      "idempotencyRequired": true
+    },
+    {
+      "capabilityId": "cari.accounts.status.update",
+      "method": "PUT",
+      "path": "/api/v1/counterparties/{partyId}/company-account/active-state",
+      "requiredPermissions": [
+        "counterparty.accounts.status.update"
+      ],
+      "scope": "company-wide-single-company",
+      "idempotencyRequired": true,
+      "optimisticConcurrencyRequired": true,
+      "reasonRequired": true
+    },
+    {
+      "capabilityId": "cari.accounts.link",
+      "method": "POST",
+      "path": "/api/v1/counterparties/{partyId}/company-account",
+      "requiredPermissions": [
+        "counterparty.accounts.create",
+        "counterparty.parties.read"
+      ],
+      "scope": "both-company-wide-on-target-company",
+      "idempotencyRequired": true,
+      "reasonRequired": false,
+      "backendStatus": "available-on-main-via-PR-106"
+    }
   ],
   "capabilityRules": {
     "serverIsAuthoritative": true,
@@ -205,8 +241,22 @@
     "backendEndpointReauthorizationRequired": true
   },
   "readModel": {
-    "partyFields": ["id","code","kind","legalName","tradeName","isActive","version"],
-    "companyAccountFields": ["id","companyId","roles","isActive","version"],
+    "partyFields": [
+      "id",
+      "code",
+      "kind",
+      "legalName",
+      "tradeName",
+      "isActive",
+      "version"
+    ],
+    "companyAccountFields": [
+      "id",
+      "companyId",
+      "roles",
+      "isActive",
+      "version"
+    ],
     "companyDisplayJoin": "ORGANIZATION-COMPANY-DIRECTORY-V1",
     "externalIntegrationCodeMapped": false,
     "partyAndCompanyAccountActiveStateAreDistinct": true,
@@ -224,10 +274,22 @@
     },
     "query": {
       "qMaximumLength": 200,
-      "qFields": ["code","legalName","tradeName"],
-      "normalization": ["outer Unicode whitespace trim","Unicode NFC"],
+      "qFields": [
+        "code",
+        "legalName",
+        "tradeName"
+      ],
+      "normalization": [
+        "outer Unicode whitespace trim",
+        "Unicode NFC"
+      ],
       "turkishSearch": "case-insensitive Turkish I/İ/ı/i; accent-sensitive; no accent folding; real SQL behavior authoritative",
-      "roleValues": ["Customer","Supplier","Tolling","Service"],
+      "roleValues": [
+        "Customer",
+        "Supplier",
+        "Tolling",
+        "Service"
+      ],
       "roleMatchDefault": "any",
       "partyStateDefault": "active",
       "accountStateDefault": "all",
@@ -240,18 +302,28 @@
     "paging": {
       "strategy": "keyset authenticated opaque cursor",
       "cursorMaximumAgeMinutes": 30,
-      "cursorBindings": ["contract-version","normalized-query-and-filters","sort-and-direction","actor","session","context-mode","selected-company-or-authorized-set-revision","expiry"],
-      "invalidCursor": {"status":400,"code":"invalid_cursor","partialData":false},
+      "cursorBindings": [
+        "contract-version",
+        "normalized-query-and-filters",
+        "sort-and-direction",
+        "actor",
+        "session",
+        "context-mode",
+        "selected-company-or-authorized-set-revision",
+        "expiry"
+      ],
+      "invalidCursor": {
+        "status": 400,
+        "code": "invalid_cursor",
+        "partialData": false
+      },
       "uniqueTieBreaker": "PartyId",
-      "longLivedDatabaseSnapshotGuaranteed": false,
-      "concurrentChangeRule": "deterministic keyset continuation and fail-closed scope binding"
+      "browserFanOutForbidden": true
     },
     "count": {
-      "whenRequested": "exact distinct Party count after authorization, context and filters for that request",
+      "whenRequested": "exact distinct Party count after authorization, context and filters",
       "hiddenGroupTotalExposed": false
-    },
-    "responseMinimum": ["items","nextCursor","hasMore"],
-    "optionalCountFields": ["totalCount","countScope"]
+    }
   },
   "linkCandidateContract": {
     "contractId": "CARI-LINK-CANDIDATE-001",
@@ -262,62 +334,218 @@
     "method": "GET",
     "path": "/api/v1/counterparties/company-account-link-candidates",
     "targetCompanySource": "single server-resolved X-Company-Id only",
-    "requiredTargetPermissions": ["counterparty.accounts.create","counterparty.parties.read"],
-    "candidateRules": ["global Party active","visible through at least one actor-authorized source account","not already linked to target","only actor-visible source account summaries","inactive source account does not block and is not automatically reactivated","Party hint never authority","browser fan-out forbidden"],
+    "requiredTargetPermissions": [
+      "counterparty.accounts.create",
+      "counterparty.parties.read"
+    ],
+    "candidateRules": [
+      "global Party active",
+      "visible through at least one actor-authorized source account",
+      "not already linked to target",
+      "only actor-visible source account summaries",
+      "inactive source account does not block and is not automatically reactivated",
+      "Party hint never authority",
+      "browser fan-out forbidden"
+    ],
     "pageSizeDefault": 25,
     "pageSizeMaximum": 100,
     "cursorMaximumAgeMinutes": 30,
     "searchAndCursorContract": "reuse accepted Issue-94",
-    "invalidCursor": {"status":400,"code":"invalid_cursor","partialData":false},
-    "responseFields": ["id","code","kind","legalName","tradeName","isActive","visibleSourceAccounts.id","visibleSourceAccounts.companyId","visibleSourceAccounts.roles","visibleSourceAccounts.isActive","visibleSourceAccounts.version"],
-    "forbiddenDisclosure": ["externalIntegrationCode","bank-tax-registry","balance","risk","hidden-source-account","foreign-count-or-timing"],
+    "invalidCursor": {
+      "status": 400,
+      "code": "invalid_cursor",
+      "partialData": false
+    },
     "postReauthorizationRequired": true
   },
   "writeTransportContract": {
-    "idempotencyKey": {"fieldCount":1,"trim":true,"length":"1-128","commaJoinedRejected":true},
-    "logicalAttempt": ["one key per user-confirmed logical submit","unknown result retry uses exact payload and same key","new key forbidden while prior outcome unknown","company switch cannot bypass pending/unknown write fence"],
-    "replayHeaders": ["Idempotency-Replayed","Idempotency-Original-Correlation-Id"]
+    "idempotencyKey": {
+      "fieldCount": 1,
+      "trim": true,
+      "length": "1-128",
+      "commaJoinedRejected": true
+    },
+    "logicalAttempt": [
+      "one key per user-confirmed logical submit",
+      "unknown result retry uses exact payload and same key",
+      "new key forbidden while prior outcome unknown",
+      "company switch cannot bypass pending or unknown write fence"
+    ],
+    "replayHeaders": [
+      "Idempotency-Replayed",
+      "Idempotency-Original-Correlation-Id"
+    ]
   },
   "errorOwnership": {
     "cariDomain": {
       "owner": "CHATGPT-BUSINESS/CARI",
       "tracking": "Issue-93",
-      "ownerDecisionComment": 5470041578,
       "status": "ACCEPTED_PARTIAL_IMPLEMENTATION",
       "codes": {
-        "validation_failed": {"statuses":[400],"implementation":"queued"},
-        "command_metadata_invalid": {"statuses":[400],"implementation":"queued"},
-        "invalid_cursor": {"statuses":[400],"implementation":"queued-with-Issue-94-and-95"},
-        "not_found": {"statuses":[404],"implementation":"normalization-queued","nonDisclosing":true},
-        "already_linked": {"statuses":[409],"implementation":"PR-77-real-sql"},
-        "version_conflict": {"statuses":[409],"implementation":"normalization-queued","safeConflictExtensionPreserved":true},
-        "idempotency_conflict": {"statuses":[409],"implementation":"PR-77-real-sql"}
+        "validation_failed": {
+          "statuses": [
+            400
+          ],
+          "implementation": "pending"
+        },
+        "command_metadata_invalid": {
+          "statuses": [
+            400
+          ],
+          "implementation": "pending"
+        },
+        "invalid_cursor": {
+          "statuses": [
+            400
+          ],
+          "implementation": "pending-with-Issue-94-and-95"
+        },
+        "not_found": {
+          "statuses": [
+            404
+          ],
+          "implementation": "normalization-pending",
+          "nonDisclosing": true
+        },
+        "already_linked": {
+          "statuses": [
+            409
+          ],
+          "implementation": "main-via-PR-106"
+        },
+        "version_conflict": {
+          "statuses": [
+            409
+          ],
+          "implementation": "normalization-pending",
+          "safeConflictExtensionPreserved": true
+        },
+        "idempotency_conflict": {
+          "statuses": [
+            409
+          ],
+          "implementation": "main-via-PR-106"
+        }
       },
       "localizedTextMayDriveLogic": false
     },
     "platformShared": {
       "owner": "CODEX-PLATFORM",
-      "tracking": "Issue-96/PR-97",
-      "status": "reviewed-not-yet-merged",
-      "codes": {"authentication_required":[401],"forbidden":[403],"internal_error":[500],"service_unavailable":[503]},
+      "tracking": "Issue-96/PR-107",
+      "status": "MERGED_ON_MAIN",
+      "codes": {
+        "authentication_required": [
+          401
+        ],
+        "forbidden": [
+          403
+        ],
+        "internal_error": [
+          500
+        ],
+        "service_unavailable": [
+          503
+        ]
+      },
       "cariMayRedefineOrDuplicate": false
     },
     "unknownCode": "generic safe unexpected-error state; no localized-text classification",
     "rendering": "plain text only; never innerHTML"
   },
-  "uiStateRules": ["loading, no-data, filter-empty, partial/stale, 401, 403, non-disclosing 404, domain 409, replay, timeout/unknown write, 500, 502/503/504, malformed, offline and stale-company response remain distinct","read retries only for transient failures","unknown write retry uses same payload/key only","replay cannot duplicate navigation, toast or business effect"],
-  "noMockTruth": ["balance","open-items","risk","credit-limit","maturity","addresses","contacts","bank-tax-registry","documents","orders","stock","allocations","tasks-crm","ai-actions","group-totals"],
-  "accessibilityAcceptance": ["keyboard-only list/detail/create/link/status tasks","visible focus and skip link","semantic sortable headers and aria-sort","validation summary focus and field links","drawer/modal focus trap, Escape and focus return","non-spam live regions","200 percent zoom and 400 percent reflow","reduced motion","color not sole signal","mobile parity"],
-  "startBlockedBy": [
-    {"id":"PR-77","condition":"merged-and-new-main-green"},
-    {"id":"PR-102-or-successor","condition":"accepted generic shell mount contract"},
-    {"id":"ERP-000K-SHELL-RUNTIME","condition":"feature mount, route registry, query/cache and CompanyContext fences implemented"},
-    {"id":"SERVER-BACKED-CAPABILITY","condition":"implemented and accepted"},
-    {"id":"Issue-93","condition":"accepted contract remaining producers/tests implemented"},
-    {"id":"Issue-94","condition":"accepted read/page contract implemented"},
-    {"id":"Issue-95","condition":"accepted candidate contract implemented"},
-    {"id":"ORGANIZATION-COMPANY-DIRECTORY-V1","condition":"owner projection accepted/versioned"},
-    {"id":"FRONTEND-SINGLE-WRITER","condition":"explicit handoff"}
+  "uiStateRules": [
+    "loading, no-data, filter-empty, partial/stale, 401, 403, non-disclosing 404, domain 409, replay, timeout/unknown write, 500, 502/503/504, malformed, offline and stale-company response remain distinct",
+    "read retries only for transient failures",
+    "unknown write retry uses same payload and same key only",
+    "replay cannot duplicate navigation, toast or business effect"
   ],
-  "completionGates": ["C-01 single and authorized multi-company read","C-02 create subset","C-03 core 360","company-link workspace","real SQL and API contract acceptance","Playwright, visual and accessibility","responsive task completion","service/malformed/unknown-write states","runner-backed full CI, container and UI golden","exact-head cross review","human/UAT acceptance"]
+  "noMockTruth": [
+    "balance",
+    "open-items",
+    "risk",
+    "credit-limit",
+    "maturity",
+    "addresses",
+    "contacts",
+    "bank-tax-registry",
+    "documents",
+    "orders",
+    "stock",
+    "allocations",
+    "tasks-crm",
+    "ai-actions",
+    "group-totals"
+  ],
+  "accessibilityAcceptance": [
+    "keyboard-only list/detail/create/link/status tasks",
+    "visible focus and skip link",
+    "semantic sortable headers and aria-sort",
+    "validation summary focus and field links",
+    "drawer/modal focus trap, Escape and focus return",
+    "non-spam live regions",
+    "200 percent zoom and 400 percent reflow",
+    "reduced motion",
+    "color not sole signal",
+    "mobile parity"
+  ],
+  "completedPrerequisites": [
+    {
+      "id": "PR-106",
+      "condition": "company-link backend merged and new-main green"
+    },
+    {
+      "id": "PR-107",
+      "condition": "shared platform error contract merged and new-main green"
+    },
+    {
+      "id": "Issue-93-94-95-contracts",
+      "condition": "observable owner decisions accepted"
+    }
+  ],
+  "startBlockedBy": [
+    {
+      "id": "PR-102-or-successor",
+      "condition": "current-main accepted generic shell mount contract"
+    },
+    {
+      "id": "ERP-000K-SHELL-RUNTIME",
+      "condition": "feature mount, route registry, query/cache and CompanyContext fences implemented"
+    },
+    {
+      "id": "SERVER-BACKED-CAPABILITY",
+      "condition": "implemented and accepted"
+    },
+    {
+      "id": "Issue-93",
+      "condition": "remaining Cari error producers and tests implemented"
+    },
+    {
+      "id": "Issue-94",
+      "condition": "accepted cursor-paged read contract implemented"
+    },
+    {
+      "id": "Issue-95",
+      "condition": "accepted target-company candidate contract implemented"
+    },
+    {
+      "id": "ORGANIZATION-COMPANY-DIRECTORY-V1",
+      "condition": "owner projection accepted and versioned"
+    },
+    {
+      "id": "FRONTEND-SINGLE-WRITER",
+      "condition": "explicit handoff"
+    }
+  ],
+  "completionGates": [
+    "C-01 single and authorized multi-company read",
+    "C-02 create subset",
+    "C-03 core 360",
+    "company-link workspace",
+    "real SQL and API contract acceptance",
+    "Playwright, visual and accessibility",
+    "responsive task completion",
+    "service/malformed/unknown-write states",
+    "runner-backed full CI, container and UI golden",
+    "exact-head cross review",
+    "human/UAT acceptance"
+  ]
 }
