@@ -63,7 +63,7 @@ Bu doküman aşağıdakileri yapmaz:
 |---|---|
 | Issue #98 exact owner kararı [`issuecomment-5469061415`](https://github.com/sinangym/GoymenERP/issues/98#issuecomment-5469061415) | Tek group-shared Product UUID/kod/kart; company ayrımı fiziksel/ticari kayıtta başlar; global inactive iki şirkette yeni kullanımı kapatır; export aynı UUID'yi korur. |
 | Issue #99 exact owner kararı [`issuecomment-5469937658`](https://github.com/sinangym/GoymenERP/issues/99#issuecomment-5469937658) | İlk pilotta Product/Service master read ve write yalnız mevcut `SYSTEM_ADMINISTRATOR`; diğer roller default-deny; yeni rol/assignment/AI yetkisi yok; generic maker-checker MVP'yi bloklamaz; exact permission string'leri ayrı versioned manifest ve naming/security review ister. |
-| Issue #100 | Product epic'i schema/migration öncesi açık platform shared-master sözleşmesi ister. |
+| Issue #100 v2 (`PRD-CORE-001`) | #98/#99 kararlarını tüketir; eski `PRD-COMPANY-001` yerine `PRD-GROUP-SHARED-001` kullanır; PR #77'yi bütün epic için start blocker değil, merge-train/current-main ve UI-shell koordinasyon sınırı olarak tutar; schema/migration öncesi açık platform shared-master sözleşmesi ister. |
 | `ADR-002` | Tenant kayıtlarında request-scoped CompanyContext, CompanyId query/write guard, non-disclosure ve server-side group read. |
 | `ADR-004` | Dış kimlik yalnız authentication'dır; ERP permission ve scope yerel Identity kaynağından gelir; default-deny. |
 | `ADR-009` | Append-only canonical audit zarfı, atomiklik, correlation ve şirket kapsamlı okuma. |
@@ -79,11 +79,12 @@ Product Owner kararları normatiftir. Sonraki veya eski coordination/review yoru
 kararları `OPEN` durumuna döndüremez.
 
 Issue #98 ve #99 bugün GitHub'da `CLOSED / KILITLI` olmakla birlikte exact karar metinleri
-henüz repository karar siciline alınmamıştır. Issue #100 gövdesi de eski company-policy,
-company-inactive, açık #98/#99 kapıları ve geniş PR #77 kapısını taşımaktadır. Bu taslak
-#98/#99 owner yorumlarını kaynak kabul eder; repo karar kaydı ve Issue #100 truth-sync'i
-Product Owner/ChatGPT-BUSINESS sahipliğinde tamamlanmadan executable delivery planı veya
-schema başlangıç izni üretmez.
+henüz repository karar siciline alınmamıştır. Issue #100 v2 owner truth-sync'i tamamlanmış;
+#98/#99 kararlarını, `PRD-GROUP-SHARED-001` sınırını ve PR #77'nin dar koordinasyon
+ilişkisini doğru taşımaktadır. Bu taslak #98/#99 owner yorumlarını ve Issue #100 v2'yi
+kaynak kabul eder. Issue #100'ün güncel olması tek başına executable delivery planı,
+schema başlangıç izni veya açık teknik kapıların kabulü değildir; #98/#99 repo karar
+kaydı ve aşağıdaki platform sözleşmeleri kapanmadan implementation `NO-GO` kalır.
 
 ## 5. Terimler
 
@@ -166,6 +167,10 @@ Platform uygulaması aşağıdaki semantiği değiştiremez:
 10. Fiyat, paket standardı, vergi/muhasebe ve fiziksel stok kayıtları kendi şirket/tesis sahipliğini
    korur; global Product satırında tenant verisine dönüşmez.
 11. Şirket veri paketi global Productı aynı UUID/kod ile referanslar; yeni UUID üretmez.
+12. Issue #100 v2'deki `PRD-GROUP-SHARED-001`, eski company-specific Product policy
+    yaklaşımının yerine geçer. PR #77 Product domain contract/golden hazırlığının start
+    blocker'ı değildir; yalnız ortak merge-train/current-main ve UI-shell entegrasyon
+    sırasını etkiler. Bu dar ilişki Cari branch veya dosyalarında yazma yetkisi üretmez.
 
 ## 8. Kimlik ve yetkilendirme sınırı
 
@@ -606,21 +611,19 @@ Bu taslak aşağıdaki kararları görünür tutar ve kapatmaz:
 1. Issue #98/#99 owner kararlarının repo karar siciline exact ve izlenebilir biçimde alınması.
 2. Product-owned versioned permission manifest'i, exact permission string'leri ve platform
    naming/security review'u; Product Price yetki sözleşmesi ayrı kalır.
-3. Issue #100 epic gövdesindeki stale company-policy/#98/#99/#77 kapılarının owner tarafından
-   truth-sync edilmesi.
-4. Group authorization scope'un Identity modelinde nasıl temsil edileceği.
-5. Global Product mutation için originating CompanyContext ve varsa platform system scope
+3. Group authorization scope'un Identity modelinde nasıl temsil edileceği.
+4. Global Product mutation için originating CompanyContext ve varsa platform system scope
    sözleşmesinin exact biçimi.
-6. Group-shared master persistence owner'ı, schema/DbContext ve migration sırası.
-7. Audit zarfında global subject scope ile originating company ayrımı ve audit read modeli.
-8. ADR-011 için global command idempotency scope ve replay semantiği.
-9. Product code prefix/sequence/alias lifecycle ve collision kuralları.
-10. Portable-reference fingerprint, import collision ve provenance formatı.
-11. Global lifecycle event audience/version ve ERP-000F consumer sözleşmesi.
-12. Product inactive olurken in-flight sipariş/üretim/stok işlemlerinin exact davranışı.
-13. Service identity, code, company scope ve lifecycle kararı.
-14. U-01…U-10 unresolved/candidate UI eşlemeleri.
-15. Production activation, provider/topology, retention ve performans eşikleri.
+5. Group-shared master persistence owner'ı, schema/DbContext ve migration sırası.
+6. Audit zarfında global subject scope ile originating company ayrımı ve audit read modeli.
+7. ADR-011 için global command idempotency scope ve replay semantiği.
+8. Product code prefix/sequence/alias lifecycle ve collision kuralları.
+9. Portable-reference fingerprint, import collision ve provenance formatı.
+10. Global lifecycle event audience/version ve ERP-000F consumer sözleşmesi.
+11. Product inactive olurken in-flight sipariş/üretim/stok işlemlerinin exact davranışı.
+12. Service identity, code, company scope ve lifecycle kararı.
+13. U-01…U-10 unresolved/candidate UI eşlemeleri.
+14. Production activation, provider/topology, retention ve performans eşikleri.
 
 ## 22. Bağımlılık ve implementation kapıları
 
@@ -628,7 +631,7 @@ Bu taslak aşağıdaki kararları görünür tutar ve kapatmaz:
 |---|---|---|
 | Issue #98 `PRD-SCOPE-001` | `KILITLI / CLOSED` | Ürün semantiği tüketildi; yeniden açılmaz. |
 | Issue #98/#99 repository decision record | `OPEN / OWNER TRUTH-SYNC` | Exact owner kararları repo siciline alınmadan executable plan/schema yok. |
-| Issue #100 epic truth-sync | `OPEN / OWNER TRUTH-SYNC` | Eski company-policy, #98/#99 ve geniş #77 kapıları düzeltilmeden epic uygulama kaynağı değildir. |
+| Issue #100 v2 epic truth-sync | `COMPLETED / CONSUMED` | `PRD-GROUP-SHARED-001` ve dar PR #77 koordinasyon ilişkisi bu taslakta korunur; completion implementation GO değildir. |
 | Issue #99 `PRD-PERM-001` | `KILITLI / CLOSED` | Option A pilot grantee/default-deny/maker-checker semantiği tüketildi; exact strings/manifest hâlâ kapıdır. |
 | Product permission manifest + naming/security review | `OPEN` | Seed/reconciliation/API authorization implementation bloklu. |
 | Group-shared persistence ADR | `OPEN` | Product schema/migration bloklu. |
@@ -664,7 +667,7 @@ Bu doküman ancak aşağıdaki incelemelerden sonra bağlayıcı ADR/acceptance 
 dönüştürülebilir:
 
 1. Product Owner, Issue #98/#99 semantiğini repository karar siciline exact ve izlenebilir
-   biçimde taşır; Issue #100 gövdesini aynı gerçekle truth-sync eder.
+   biçimde taşır. Issue #100 v2 owner truth-sync'i tamamlanmış ve bu taslakta tüketilmiştir.
 2. Product Owner, Issue #98/#99 semantiğinin bu sözleşmede eksiksiz ve yeniden yorumlanmadan
    taşındığını doğrular.
 3. Security reviewer, default-deny, non-disclosure, group scope ve system-write sınırını
