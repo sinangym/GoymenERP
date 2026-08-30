@@ -2,7 +2,7 @@
 
 - Durum: `DRAFT / IMPLEMENTATION-NEUTRAL / HUMAN SECURITY + IDENTITY + PRODUCT REVIEW REQUIRED`
 - Production durumu: `IMPLEMENTATION BLOCKED / NO-GO`
-- Taban: `main@f13d26b1a59089f25c5d44f6679d3928e876079c`
+- Taban: `main@8795bceb9838572f101238162d926f586d452ec8`
 - Sözleşme sahibi: `CODEX-PLATFORM`
 - Ürün kararı sahibi: Product Owner / ChatGPT-BUSINESS
 - Önkoşul: merged PR #103 group-shared master boundary
@@ -30,7 +30,7 @@ Merge edilmesi Product API/runtime geliştirmesini ya da production aktivasyonun
 
 ## 2. Current-main gerçekliği
 
-`main@f13d26b1a59089f25c5d44f6679d3928e876079c` üzerinde:
+`main@8795bceb9838572f101238162d926f586d452ec8` üzerinde:
 
 1. `AccessScopeType` yalnız `Company`, `Site`, `Location`, `WorkCenter` değerlerini taşır.
 2. Her `RoleAssignment` boş olmayan bir `CompanyId` taşır.
@@ -55,6 +55,11 @@ Merge edilmesi Product API/runtime geliştirmesini ya da production aktivasyonun
     `403 forbidden`, redacted `500 internal_error` ve unhealthy `/health/live`
     `503 service_unavailable` kodlarını sahiplenir. Correlation diagnostiktir; authorization
     kanıtı değildir. Module-owned `400/404/409` gövdeleri korunur.
+14. Transport PR #108 merge edilmiştir; taşıdığı capability/route/feature-mount contract
+    bundle'ı ise `DRAFT / OPEN / HUMAN REVIEW REQUIRED` kalır. Bu DRAFT'tan yalnız
+    server-backed UI availability/navigation'ın permission, grantee, group eligibility,
+    CompanyContext veya backend authorization kanıtı olmadığı non-authority sınırı
+    tüketilir. ERP-000K runtime implementation hâlâ `BLOCKED`, production `NO-GO`dur.
 
 Bu mevcut davranış company-scoped işlemler için korunmalıdır. Group authorization eklemek
 amacıyla current-main güvenlik değişmezleri gevşetilemez.
@@ -103,6 +108,7 @@ Bu DRAFT:
 | Merged PR #103 | Group-shared master, company child, selected-company, global audit/idempotency ve portability güven sınırı. |
 | Merged PR #106 | Cari company-account link'i target CompanyContext, iki company-wide permission, company-keyed audit/idempotency ve Cari-owned `409` kodlarıyla company-scoped kalır; Product group authority değildir. |
 | Merged PR #107 | Shared platform `401/403/500/503`, safe correlation ve redaction sözleşmesidir; module-owned `400/404/409` alanlarını ve authorization kararını sahiplenmez. |
+| Merged transport PR #108 içindeki DRAFT/OPEN contract bundle | Yalnız capability/route/mount availability'sinin action permission, group eligibility veya backend authorization üretmediği non-authority sınırı tüketilir; bundle insan review'u ister, ERP-000K runtime ve production kapalıdır. |
 | `ADR-002` | Company-scoped kayıtlarda zorunlu CompanyContext, query/write guard ve non-disclosure. |
 | `ADR-004` | OIDC authentication ile yerel ERP RBAC+ABAC ayrımı; dış claim yetki değildir; default-deny. |
 | `ADR-009` | Canonical append-only audit, server-authoritative provenance ve atomiklik. |
@@ -209,6 +215,11 @@ Bir Product group action ancak bütün zorunlu girdiler aynı anda geçerliyse a
 
 Herhangi bir girdi eksik, unknown, çelişkili, stale veya birden fazla anlam taşıyorsa karar
 deny olur. Partial success veya “en geniş kapsamı seç” davranışı yoktur.
+
+Product route'unun görünür veya mount edilmiş olması ve `view` capability alınması bu
+girdilerden hiçbirini üretmez. Loader/action ve her owner API çağrısı güncel server-side
+permission, accepted grantee, authoritative eligibility ve revision'ı; company child
+isteniyorsa ayrıca CompanyContext ve ABAC kapsamını yeniden doğrular.
 
 Kararın server-side kanıtı en az actor, action, subject sınıfı, grantee/eligibility kaynağı,
 etkili revision, varsa originating/selected company ve karar zamanını semantik olarak
@@ -447,6 +458,8 @@ değildir.
 
 - AI model çıktısı action permission veya group eligibility değildir.
 - AI tool registry, accepted server capability olmadan Product tool'u gösteremez/çağıramaz.
+- Görünür AI/tool capability yalnız availability'dir; Product read/write, approve, export
+  veya execution authority üretmez ve owner API reauthorization'ını atlayamaz.
 - Preview/onay bağlamı commit-time reauthorization yerine geçmez.
 - Integration identity, service account veya background worker explicit accepted actor ve
   group authorization contract olmadan global Product access alamaz.
@@ -465,6 +478,8 @@ değildir.
 | Aktif local actor + accepted server-owned exact grantee binding + known action + authoritative group eligibility + current revision + kabul edilmiş diğer önkoşullar | Yalnız istenen group-safe Product eylemi izinli olur; company child, Price, Package veya Stock yetkisi türemez. |
 | Unauthenticated, unmapped veya inactive local user | Group Product etkisi ve görünürlüğü `0`. |
 | Unauthorized Product yolu platform `401/403` envelope'ına düşer | CompanyId, permission, eligibility veya Product existence detayı sızmaz; public `code` authority üretmez. |
+| Product menü/route/mount görünür veya `view` capability allowed | Read/write/create/update/approve/export/AI yetkisi türemez; her action owner API'de yeniden authorize edilir. |
+| Capability unknown, stale, unregistered veya revoke edilmiş | Route/action fail-closed kapanır; menu/title/count/error/timing, eski cache/response veya command replay sızıntısı olmaz. |
 | Forged OIDC role/group/company/permission claim | Local Identity dışında authority oluşmaz. |
 | Unknown Product permission | Fail-closed; role code veya UI fallback yok. |
 | Server-owned grantee/role binding inactive veya süresi dolmuş | Group Product etkisi ve görünürlüğü `0`; eski cache/session kararı kullanılmaz. |
@@ -526,8 +541,10 @@ Bu DRAFT aşağıdakileri görünür tutar ve kapatmaz:
 11. Revoke → re-grant sonrasında eski idempotency key'in policy/security revision'a
     bağlanması ve replay sonucu.
 12. Cache technology, invalidation topology, TTL ve performance targetları.
-13. Product-specific stable route/domain-error/capability adları; merged shared platform
-    `401/403/500/503` sözleşmesini yeniden açmaz veya Cari-owned kodları kopyalamaz.
+13. Product owner declaration path/version, stable route/domain-error/capability adları,
+    view/action/extension ayrımı ve bunların action permission + group eligibility kararına
+    exact bağlantısı; merged shared platform `401/403/500/503` sözleşmesini yeniden açmaz
+    veya Cari-owned kodları kopyalamaz.
 14. Authorization security event, metric ve alert politikası.
 15. Migration/backfill/rollback veya forward-fix planı.
 16. Future group/company membership değişikliğinin mevcut Product erişimine etkisi.
@@ -542,6 +559,7 @@ Bu DRAFT aşağıdakileri görünür tutar ve kapatmaz:
 | PR #103 group-shared master contract | `MERGED` | Bu scope sözleşmesinin güvenlik tabanı. |
 | PR #106 Cari company-account link | `MERGED / CONSUMED` | Company-scoped Cari akışı Product group eligibility yerine kullanılamaz. |
 | PR #107 shared platform ProblemDetails | `MERGED / CONSUMED` | Shared non-disclosing `401/403/500/503` hazır; Product-specific domain contract açık. |
+| PR #108 capability/route/mount transport | `TRANSPORT MERGED / CONTAINED CONTRACT DRAFT+OPEN / NON-AUTHORITY BOUNDARY CONSUMED` | Draft boundary repodadır; owner declaration/runtime kararları açık, ERP-000K runtime `BLOCKED`, production `NO-GO`. |
 | Issue #98/#99 repository decision record | `OPEN / OWNER TRUTH-SYNC` | Runtime permission/schema işi bloklu. |
 | Issue #99 grantee semantiği | `KILITLI / CONSUMED` | System Administrator-only pilot yeniden açılmaz; exact carrier açık. |
 | Product permission manifest + naming/security review | `OPEN` | Permission registry/seed/reconciliation bloklu. |
@@ -586,12 +604,15 @@ Bu sözleşme implementation girdisine ancak aşağıdakilerle dönüşebilir:
 7. Data/migration owner persistence/backfill/rollback planını gerçek SQL kabulüyle bağlar.
 8. Merged PR #107 shared platform non-disclosing error contract'ını sağlar; Product owner
    Product-specific stable route/domain-error/capability contract'ını ayrıca kabul eder.
-9. Task-local adversarial matris kanonik acceptance planına insan review'uyla bağlanır.
-10. Exact-head standard CI, real SQL, container ve UI golden gerçek runner adımlarıyla geçer.
-11. Product Owner/Product review; #98/#99 ürün gerçeğini, Service/Price kapsam dışını, Cari
+9. Product owner + Security, Product UI exposure öncesinde owner declaration path/version,
+   view/action/extension capability ayrımı ve her loader/action/API çağrısındaki backend
+   permission + grantee + eligibility reauthorization kapısını kabul eder.
+10. Task-local adversarial matris kanonik acceptance planına insan review'uyla bağlanır.
+11. Exact-head standard CI, real SQL, container ve UI golden gerçek runner adımlarıyla geçer.
+12. Product Owner/Product review; #98/#99 ürün gerçeğini, Service/Price kapsam dışını, Cari
     sahiplik sınırını ve historical PR #77 / merged PR #106 ilişkisinin doğru temsil
     edildiğini doğrular.
-12. Kritik sözleşme exact-head üzerinde ayrı Security, Identity ve Product insan review
+13. Kritik sözleşme exact-head üzerinde ayrı Security, Identity ve Product insan review
     kapılarında kabul edilir.
 
 Bu kapılar tamamlanana kadar:
@@ -602,6 +623,7 @@ GROUP ELIGIBILITY MODEL: OPEN
 PERMISSION MANIFEST: OPEN
 IDENTITY SCHEMA/MIGRATION: BLOCKED
 PRODUCT SCHEMA/API: BLOCKED
+PRODUCT ROUTE/CAPABILITY/MOUNT: BLOCKED
 PRODUCTION READ/WRITE: NO-GO
 PRODUCTION RECONCILIATION: NO-GO
 ```
