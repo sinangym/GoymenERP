@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using GoymenERP.Api.Errors;
+using GoymenERP.Api.Observability;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using Microsoft.AspNetCore.Builder;
@@ -20,6 +21,40 @@ public sealed class PlatformProblemDetailsAcceptanceTests(
     GoymenErpApiFactory factory)
     : IClassFixture<GoymenErpApiFactory>
 {
+    public static TheoryData<string[]?> InvalidCompanyContextHeaderValues => new()
+    {
+        (string[]?)null,
+        new[] { string.Empty },
+        new[] { "   " },
+        new[] { "not-a-company-guid" },
+        new[] { Guid.Empty.ToString() },
+        new[] { $"{TestCompanyIds.CompanyA},{TestCompanyIds.CompanyB}" },
+        new[] { TestCompanyIds.CompanyA.ToString(), TestCompanyIds.CompanyB.ToString() },
+    };
+
+    [Fact]
+    public void RequestMetadataProblemCodes_AreUniqueLowerSnakeCaseConstants()
+    {
+        var codes = new[]
+        {
+            ErpProblemCodes.CompanyContextInvalid,
+            ErpProblemCodes.CorrelationMetadataInvalid,
+        };
+
+        Assert.Equal(codes.Length, codes.Distinct(StringComparer.Ordinal).Count());
+        Assert.All(codes, code =>
+        {
+            Assert.NotEmpty(code);
+            Assert.DoesNotContain("__", code, StringComparison.Ordinal);
+            Assert.All(code, character => Assert.True(
+                char.IsAsciiLetterLower(character)
+                || char.IsAsciiDigit(character)
+                || character == '_'));
+            Assert.True(char.IsAsciiLetterLower(code[0]));
+            Assert.True(char.IsAsciiLetterLower(code[^1]) || char.IsAsciiDigit(code[^1]));
+        });
+    }
+
     [Fact]
     public async Task AnonymousProtectedRequest_ReturnsStableAuthenticationProblem()
     {
@@ -78,6 +113,153 @@ public sealed class PlatformProblemDetailsAcceptanceTests(
             TestCompanyIds.CompanyB.ToString(),
             body,
             StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task MalformedCorrelation_IsUniformAcrossPublicUnknownAndProtectedRoutes()
+    {
+        const string hostileCorrelation = "unsafe/correlation";
+        var requests = new[]
+        {
+            (Path: "/health/live", User: (string?)null),
+            (Path: "/_acceptance/unknown-route", User: (string?)null),
+            (Path: "/api/v1/organization/locations", User: TestUsers.Unprovisioned),
+        };
+        RequestMetadataProblem? expected = null;
+
+        foreach (var request in requests)
+        {
+            using var client = factory.CreateClient();
+            if (request.User is not null)
+            {
+                client.DefaultRequestHeaders.Add("X-Development-User", request.User);
+            }
+
+            client.DefaultRequestHeaders.Accept.ParseAdd("text/plain");
+
+            Assert.True(client.DefaultRequestHeaders.TryAddWithoutValidation(
+                CorrelationContextMiddleware.CorrelationHeaderName,
+                hostileCorrelation));
+
+            using var response = await client.GetAsync(request.Path);
+            var problem = await AssertRequestMetadataProblemAsync(
+                response,
+                ErpProblemCodes.CorrelationMetadataInvalid,
+                hostileCorrelation,
+                request.Path,
+                TestUsers.Unprovisioned);
+
+            expected ??= problem;
+            Assert.Equal(expected.Status, problem.Status);
+            Assert.Equal(expected.Type, problem.Type);
+            Assert.Equal(expected.Title, problem.Title);
+            Assert.Equal(expected.Detail, problem.Detail);
+            Assert.Equal(expected.Code, problem.Code);
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidCompanyContextHeaderValues))]
+    public async Task InvalidRequiredCompanyContext_UsesStablePlatformProblem(
+        string[]? headerValues)
+    {
+        using var client = factory.CreateClientFor(TestUsers.CompanyA);
+        client.DefaultRequestHeaders.Accept.ParseAdd("application/xml");
+        var expectedCorrelationId = Assert.Single(
+            client.DefaultRequestHeaders.GetValues(
+                CorrelationContextMiddleware.CorrelationHeaderName));
+        if (headerValues is not null)
+        {
+            Assert.True(client.DefaultRequestHeaders.TryAddWithoutValidation(
+                "X-Company-Id",
+                headerValues));
+        }
+
+        using var response = await client.GetAsync("/api/v1/organization/locations");
+        var problem = await AssertRequestMetadataProblemAsync(
+            response,
+            ErpProblemCodes.CompanyContextInvalid,
+            headerValues?.SelectMany(value => new[] { value }).ToArray() ?? []);
+
+        Assert.Equal(expectedCorrelationId, problem.CorrelationId);
+    }
+
+    [Fact]
+    public async Task CompanyContextProblem_PreservesAuthenticationUnknownAndOptionalRoutePrecedence()
+    {
+        using var anonymousClient = factory.CreateClient();
+        anonymousClient.DefaultRequestHeaders.Add("X-Company-Id", "not-a-company-guid");
+        using var anonymousResponse = await anonymousClient.GetAsync(
+            "/api/v1/organization/locations");
+        var anonymousCorrelationId = Assert.Single(
+            anonymousResponse.Headers.GetValues(
+                CorrelationContextMiddleware.CorrelationHeaderName));
+        await AssertPlatformProblemAsync(
+            anonymousResponse,
+            ErpProblemCodes.AuthenticationRequired,
+            anonymousCorrelationId);
+
+        using var unknownClient = factory.CreateClientFor(TestUsers.GroupAdmin);
+        unknownClient.DefaultRequestHeaders.Add("X-Company-Id", "not-a-company-guid");
+        using var unknownResponse = await unknownClient.GetAsync(
+            "/_acceptance/unknown-company-context-route");
+        Assert.Equal(HttpStatusCode.NotFound, unknownResponse.StatusCode);
+        Assert.DoesNotContain(
+            ErpProblemCodes.CompanyContextInvalid,
+            await unknownResponse.Content.ReadAsStringAsync(),
+            StringComparison.Ordinal);
+
+        using var optionalClient = factory.CreateClientFor(TestUsers.GroupAdmin);
+        optionalClient.DefaultRequestHeaders.Add("X-Company-Id", "not-a-company-guid");
+        using var optionalResponse = await optionalClient.GetAsync(
+            "/api/v1/organization/companies");
+        Assert.Equal(HttpStatusCode.OK, optionalResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task InvalidRequiredCompanyContext_PrecedesEndpointPermissionWithoutDisclosure()
+    {
+        var location = await factory.GetLocationIgnoringFiltersAsync(
+            TestCompanyIds.CompanyA,
+            "OSM-H3");
+        var command = new SetLocationActiveState(
+            !location.IsActive,
+            location.Version,
+            "Şirket bağlamı ve yetki önceliği kabul testi");
+
+        using var invalidClient = factory.CreateClientFor(TestUsers.CompanyAViewer);
+        invalidClient.DefaultRequestHeaders.Add("X-Company-Id", "not-a-company-guid");
+        using var invalidResponse = await invalidClient.PutAsJsonAsync(
+            $"/api/v1/organization/locations/{location.Id}/active-state",
+            command);
+        var invalidProblem = await AssertRequestMetadataProblemAsync(
+            invalidResponse,
+            ErpProblemCodes.CompanyContextInvalid,
+            "not-a-company-guid",
+            "permission",
+            "role");
+        Assert.Equal(
+            Assert.Single(invalidClient.DefaultRequestHeaders.GetValues("X-Correlation-Id")),
+            invalidProblem.CorrelationId);
+
+        using var validClient = factory.CreateClientFor(
+            TestUsers.CompanyAViewer,
+            TestCompanyIds.CompanyA);
+        var validCorrelationId = Assert.Single(
+            validClient.DefaultRequestHeaders.GetValues("X-Correlation-Id"));
+        using var validResponse = await validClient.PutAsJsonAsync(
+            $"/api/v1/organization/locations/{location.Id}/active-state",
+            command);
+        await AssertPlatformProblemAsync(
+            validResponse,
+            ErpProblemCodes.Forbidden,
+            validCorrelationId);
+
+        Assert.Equal(
+            location,
+            await factory.GetLocationIgnoringFiltersAsync(
+                TestCompanyIds.CompanyA,
+                "OSM-H3"));
     }
 
     [Theory]
@@ -313,6 +495,136 @@ public sealed class PlatformProblemDetailsAcceptanceTests(
             document.RootElement.GetProperty("title").GetString());
     }
 
+    [Fact]
+    public async Task ModuleOwnedBadRequestCode_IsNotCanonicalizedAsPlatformMetadataProblem()
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var problemDetailsService = scope.ServiceProvider
+            .GetRequiredService<IProblemDetailsService>();
+        var httpContext = new DefaultHttpContext
+        {
+            RequestServices = scope.ServiceProvider,
+        };
+        httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+        httpContext.Response.Body = new MemoryStream();
+
+        var written = await problemDetailsService.TryWriteAsync(
+            new ProblemDetailsContext
+            {
+                HttpContext = httpContext,
+                ProblemDetails = new ProblemDetails
+                {
+                    Status = StatusCodes.Status400BadRequest,
+                    Title = "Modül doğrulama sonucu",
+                    Extensions =
+                    {
+                        ["code"] = "validation_failed",
+                    },
+                },
+            });
+
+        Assert.True(written);
+        httpContext.Response.Body.Position = 0;
+        using var document = await JsonDocument.ParseAsync(httpContext.Response.Body);
+        Assert.Equal(
+            "validation_failed",
+            document.RootElement.GetProperty("code").GetString());
+        Assert.Equal(
+            "Modül doğrulama sonucu",
+            document.RootElement.GetProperty("title").GetString());
+    }
+
+    [Theory]
+    [InlineData("company_context_", "invalid")]
+    [InlineData("correlation_metadata_", "invalid")]
+    public async Task ReservedCodeWithoutPlatformProducerMarker_IsRemovedFailClosed(
+        string prefix,
+        string suffix)
+    {
+        var reservedCode = string.Concat(prefix, suffix);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var problemDetailsService = scope.ServiceProvider
+            .GetRequiredService<IProblemDetailsService>();
+        var httpContext = new DefaultHttpContext
+        {
+            RequestServices = scope.ServiceProvider,
+        };
+        httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+        httpContext.Response.Body = new MemoryStream();
+
+        var written = await problemDetailsService.TryWriteAsync(
+            new ProblemDetailsContext
+            {
+                HttpContext = httpContext,
+                ProblemDetails = new ProblemDetails
+                {
+                    Status = StatusCodes.Status400BadRequest,
+                    Title = "Modül tarafından üretilen sonuç",
+                    Extensions =
+                    {
+                        ["code"] = reservedCode,
+                    },
+                },
+            });
+
+        Assert.True(written);
+        httpContext.Response.Body.Position = 0;
+        using var document = await JsonDocument.ParseAsync(httpContext.Response.Body);
+        Assert.False(document.RootElement.TryGetProperty("code", out _));
+        Assert.Equal(
+            "Modül tarafından üretilen sonuç",
+            document.RootElement.GetProperty("title").GetString());
+        Assert.False(document.RootElement.TryGetProperty("correlationId", out _));
+    }
+
+    private static async Task<RequestMetadataProblem> AssertRequestMetadataProblemAsync(
+        HttpResponseMessage response,
+        string expectedCode,
+        params string[] forbiddenFragments)
+    {
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(
+            "application/problem+json",
+            response.Content.Headers.ContentType?.MediaType);
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+        var root = document.RootElement;
+        var correlationId = root.GetProperty("correlationId").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(correlationId));
+        Assert.Equal(
+            correlationId,
+            Assert.Single(response.Headers.GetValues(
+                CorrelationContextMiddleware.CorrelationHeaderName)));
+        Assert.Equal(expectedCode, root.GetProperty("code").GetString());
+        Assert.False(root.TryGetProperty("instance", out _));
+        Assert.Equal(
+            new[]
+            {
+                "code",
+                "correlationId",
+                "detail",
+                "status",
+                "title",
+                "type",
+            },
+            root.EnumerateObject()
+                .Select(property => property.Name)
+                .Order(StringComparer.Ordinal));
+        foreach (var fragment in forbiddenFragments.Where(
+                     value => !string.IsNullOrEmpty(value)))
+        {
+            Assert.DoesNotContain(fragment, body, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return new RequestMetadataProblem(
+            root.GetProperty("status").GetInt32(),
+            root.GetProperty("type").GetString(),
+            root.GetProperty("title").GetString(),
+            root.GetProperty("detail").GetString(),
+            root.GetProperty("code").GetString(),
+            correlationId);
+    }
+
     private static async Task<string> AssertPlatformProblemAsync(
         HttpResponseMessage response,
         string expectedCode,
@@ -427,6 +739,14 @@ public sealed class PlatformProblemDetailsAcceptanceTests(
         string FormattedMessage,
         Exception? Exception,
         IReadOnlyDictionary<string, object?> State);
+
+    private sealed record RequestMetadataProblem(
+        int Status,
+        string? Type,
+        string? Title,
+        string? Detail,
+        string? Code,
+        string? CorrelationId);
 
     private sealed class EmptyScope : IDisposable
     {
