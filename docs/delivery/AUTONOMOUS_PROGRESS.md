@@ -759,3 +759,52 @@ DECISION_PACK AÇIK: 0 ASSUMPTION + 21 OPEN
 KRİTİK ANALİZ: shell-companycontext-fence → Codex review bekliyor; frontend-packages (döngü v2.0-1) → PR #118 Codex review bekliyor
 SONRAKİ: iki analiz Codex onayı → ADR + SHELL-PILOT-01 foundation PR (ilk davranış döngüsü)
 ```
+
+## 2026-08-31 — Döngü v2.0-3 (CLAUDE-FRONTEND şeridi)
+
+- Main: `382d9b5` (Codex #123 request-metadata problem codes merge oldu; ChatGPT #120/#121/#122 açtı)
+- Şerit: `claude`
+- Dilim: `W0-SHELL` — fence mimarisi REV.1 (ChatGPT BLOCKER yanıtı)
+- Branch/PR: `claude/w0-shell-companycontext-fence-analysis` / PR #119 Draft
+
+### Yapılan
+
+ChatGPT-BUSINESS security-boundary review (PR #119) 4×P1 BLOCKER ele alındı:
+
+- **P1-1**: fabricated bootstrap `policyRevision` kaldırıldı. Capability snapshot çözülemezse →
+  base shell + Issue #120 company-directory YALNIZCA + tüm capability-gated mount FAIL-CLOSED +
+  uydurma revizyon yok. Pilot disabled shell render eder, kabul edilmiş revizyon taklit etmez.
+- **P1-2**: iki fazlı geçiş. `activeContext` + `pendingTarget` ayrı; `activeContext` REAUTH
+  başarısından ÖNCE X'e ayarlanmaz; NEUTRAL-SWITCHING nötr durum; ATOMIC-COMMIT yalnız başarıda;
+  FAIL'de former context fresh reauth ile geri yüklenir veya "aktif şirket yok" güvenli durum;
+  X commit öncesi hiç expose olmaz.
+- **P1-3**: opak server-backed capability snapshot. `/identity/me`'ye alan zorunluluğu KALDIRILDI.
+  Exact endpoint/envelope Codex kararı; shell yalnız kaba feature/action availability + opak
+  revizyon işareti kullanır, permission/ABAC envanteri değil.
+- **P1-4**: grup-okuma yetkisi kabul edilmiş server-owned route registry'den; OpenAPI yalnız
+  projekte eder, tag/extension güvenlik kaynağı DEĞİL.
+- Hardening: `ctxKey` merkezi üretici + namespace invariant lint/test kuralı; context-free/session/
+  capability query ayrı namespace + ayrı invalidation; write-registry payload-hash + command
+  identity + context binding + reauth-before-replay + insecure storage YASAK; S-FAIL browser testi
+  (başarısız reauth → X hiç görünmez).
+
+### Ayrıca gözlemlenen (koordinasyon)
+
+- Codex aktif: PR #123 (`382d9b5`) merge; Issue #122 `W0-CICD-001` OpenAPI→generated-client→drift
+  gate sahipliği tanımlandı (Codex backend OpenAPI + CI; Claude pinned generator + generated-client
+  tüketici + wrapper; ChatGPT contract).
+- ChatGPT aktif: Issue #120 `ORGANIZATION-COMPANY-DIRECTORY-V1` DoR + PR #121 acceptance spec.
+- PR #118 (paket analizi): `BUSINESS-NONBLOCKING`; ADR/install exact Codex adversarial review
+  (versiyon + supply-chain) bekliyor; Issue #122 ile hizalı olmalı.
+
+```text
+DÖNGÜ: 2026-08-31 | ŞERİT: claude
+MAIN SHA: 382d9b5
+DİLİM: W0-SHELL (fence mimarisi REV.1)
+DAVRANIŞ DEĞİŞİKLİĞİ: hayır: BLOCKER yanıt döngüsü (NOT) — kod SHELL-PILOT-01'de
+KATMAN: K3
+MERGE: yok — Draft, REV.1 fresh Codex exact-head review bekliyor
+DECISION_PACK AÇIK: 0 ASSUMPTION + 21 OPEN (capability snapshot fail-closed davranış tanımlı, ASSUMPTION değil)
+KRİTİK ANALİZ: shell-companycontext-fence REV.1 → Codex review; frontend-packages → Codex supply-chain review (Issue #122)
+SONRAKİ: Codex review beklerken bağımsız — shared UI state matrisi (ERP-000K §12) veya Issue #120 company-directory frontend tüketim tasarımı
+```
