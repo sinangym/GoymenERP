@@ -309,16 +309,23 @@ public static class CounterpartyEndpoints
             return Results.NoContent();
         }
 
+        var extensions = new Dictionary<string, object?>();
+        var problemCode = CounterpartyProblemCodesV1.For(response.Result);
+        if (problemCode is not null)
+        {
+            extensions["code"] = problemCode;
+        }
+
+        if (response.Conflict is not null)
+        {
+            extensions["conflict"] = response.Conflict;
+        }
+
         return Results.Problem(
             title: response.Title,
             detail: response.Detail,
             statusCode: response.StatusCode,
-            extensions: response.Conflict is null
-                ? null
-                : new Dictionary<string, object?>
-                {
-                    ["conflict"] = response.Conflict,
-                });
+            extensions: extensions.Count == 0 ? null : extensions);
     }
 
     private static IResult InvalidCommandMetadata()

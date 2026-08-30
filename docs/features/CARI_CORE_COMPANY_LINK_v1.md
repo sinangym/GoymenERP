@@ -1,6 +1,6 @@
-# Cari Core — Mevcut Party'yi Yeni Göymen Şirketine Bağlama v1.2
+# Cari Core — Mevcut Party'yi Yeni Göymen Şirketine Bağlama v1.3
 
-- Tarih: 2026-08-30
+- Tarih: `2026-08-30`
 - Kapsam: `CARI-CORE-1C` / `CARI-AC-002`
 - Current-main tabanı: `83197c50f515db959638fadd7cc11ad6eb7a4fc8`; kanonik temiz yeniden yapım: PR #77
 - Kaynak kararlar: `CARI-DEC-001`, `CARI-DEC-003`, `DEC-CAR-003`, `ADR-CARI-001`, `ADR-011`, `CARI-PERM-001=A`, `AT-013`
@@ -42,7 +42,7 @@ Command ayrıca:
 
 Party görünürlüğü yalnız `currentUser.AllowedCompanyIds` içindeki ve `counterparty.parties.read` izni bulunan şirket ilişkilerinden kanıtlanır. Bilinen veya tahmin edilen PartyId yetkisiz varlık keşfi sağlamaz; görünmeyen, olmayan veya global olarak pasif kayıt `404` döner.
 
-Kaynak `CompanyPartyAccount.IsActive` değeri bu dilimde çapraz-şirket kimlik kanıtı için yeni bir engel değildir. Şirket hesaplarının yaşam döngüsü hukuki şirket bazında bağımsızdır; bu konuda ayrıca kabul edilmiş bir ürün kararı olmadan kaynak hesap pasifliği üzerinden grup seviyesinde yasak üretilmez.
+Kaynak `CompanyPartyAccount.IsActive` değeri bu dilimde çapraz-şirket kimlik kanıtı için yeni bir engel değildir. Şirket hesaplarının yaşam döngüsü hukuki şirket bazında bağımsızdır; global Party aktif kaldığı sürece izinli fakat pasif bir kaynak şirket hesabı kimlik/görünürlük kanıtı olabilir. Kaynak hesap pasifliği hedef şirkette yeni hesap açılmasını kendiliğinden yasaklamaz ve kaynak hesap yeniden aktifleştirilmez.
 
 ## 4. Veri değişmezleri
 
@@ -55,12 +55,14 @@ Kaynak `CompanyPartyAccount.IsActive` değeri bu dilimde çapraz-şirket kimlik 
 - `ExternalIntegrationCode` public input değildir ve `null` başlar.
 - VKN/TCKN/MERSİS/IBAN/banka ve Party ad alanları değişmez.
 
-## 5. Sonuç sözleşmesi
+## 5. Sonuç ve makine kodu sözleşmesi
 
 - Yeni ilişki: `201 Created`, aynı PartyId/CariCode ve hedef şirket hesabı.
-- Hedef ilişki mevcut: terminal `409 AlreadyLinked`; ikinci hesap/audit olayı yok.
+- Hedef ilişki mevcut: terminal `409 AlreadyLinked`; ikinci hesap/audit olayı yok; ProblemDetails `code = already_linked`.
 - Party görünmüyor, yok veya global olarak pasif: non-disclosing terminal `404 NotFound`.
-- Aynı key farklı actor/payload: `409 IdempotencyConflict`.
+- Aynı key farklı actor/payload: `409 IdempotencyConflict`; ProblemDetails `code = idempotency_conflict`.
+
+`already_linked` ve `idempotency_conflict`, locale bağımsız ve kararlı `CounterpartyProblemCodesV1` sözleşmesidir. İstemci Türkçe `title` veya `detail` metnini parse etmez. Yeni sürüm veya yeni kod ancak ayrı owner-sözleşmesiyle eklenir; mevcut kodların anlamı sessizce değiştirilmez.
 
 ## 6. Idempotency ve yarış
 
@@ -69,8 +71,9 @@ Kaynak `CompanyPartyAccount.IsActive` değeri bu dilimde çapraz-şirket kimlik 
 - Aynı key + actor + payload ilk kalıcı sonucu ve ilk correlation kimliğini replay eder.
 - `NotFound` ve `AlreadyLinked` sonuçları kalıcı terminal command sonuçlarıdır.
 - Global pasif Party için ilk `NotFound` sonucu tek `CommandExecution` olarak kalıcılaşır; replay yeni account/audit üretmeden aynı `404` ve ilk correlation kimliğini döndürür.
+- `AlreadyLinked` ilk sonucu ve replay'i aynı `already_linked` makine kodunu taşır.
 - Same-key paralel yarış tek business/audit/command etkisi bırakır.
-- Different-key aynı hedef yarışı bir `201` ve bir `409 AlreadyLinked` bırakır; çift hesap veya `500` kabul edilmez.
+- Different-key aynı hedef yarışı bir `201` ve `409/code=already_linked` bırakır; çift hesap veya `500` kabul edilmez.
 
 ## 7. Audit ve atomiklik
 
@@ -93,13 +96,15 @@ Counterparty'nin Audit sidecar query filter/write guard'ı PR #75 tarafından sa
 3. Default-deny kullanıcı hedef şirkette link kuramaz ve sıfır etki bırakır.
 4. Party'yi hiçbir izinli mevcut ilişkiden göremeyen target admin `404` alır.
 5. Global `Party.IsActive=false`, kaynak şirket hesabı aktif kalsa bile hedef şirkette `404` üretir; hedef account/audit `0`, tek terminal `NotFound` execution oluşur ve aynı-key replay ilk correlation ile döner.
-6. Same-key replay, farklı payload/actor conflict ve terminal NotFound/AlreadyLinked replay doğrulanır.
-7. Same-key yarış tek account/command/audit bırakır.
-8. Different-key yarış `201 + 409`, iki terminal execution ve tek account/audit bırakır.
-9. Audit veya idempotency insert hata enjeksiyonunda yalnız yeni hedef link tamamen rollback olur; kaynak ilişki korunur.
-10. Missing/multiple/comma-joined `Idempotency-Key` ve bilinmeyen roller `400` ile sıfır etki bırakır.
-11. Şirket kimliği body/query/route girdisiyle aktif `CompanyContext` dışına override edilemez.
-12. Yetkisi olan fakat hedef şirket kapsamı olmayan actor `403` alır ve account/audit/idempotency etkisi bırakmaz.
+6. Same-key replay, farklı payload/actor `409/code=idempotency_conflict` ve terminal NotFound/AlreadyLinked replay doğrulanır.
+7. İlk ve replay edilen AlreadyLinked cevapları `code=already_linked` taşır; replay ilk correlation kimliğini korur.
+8. Same-key yarış tek account/command/audit bırakır.
+9. Different-key yarış `201 + 409/code=already_linked`, iki terminal execution ve tek account/audit bırakır.
+10. Global aktif Party'nin izinli kaynak şirket hesabı pasif olsa dahi hedef şirkette bağlantı kurulabilir; kaynak hesap pasif kalır, hedef hesap aktif ve tekil oluşur.
+11. Audit veya idempotency insert hata enjeksiyonunda yalnız yeni hedef link tamamen rollback olur; kaynak ilişki korunur.
+12. Missing/multiple/comma-joined `Idempotency-Key` ve bilinmeyen roller `400` ile sıfır etki bırakır.
+13. Şirket kimliği body/query/route girdisiyle aktif `CompanyContext` dışına override edilemez.
+14. Yetkisi olan fakat hedef şirket kapsamı olmayan actor `403` alır ve account/audit/idempotency etkisi bırakmaz.
 
 ## 9. Kapsam dışı
 

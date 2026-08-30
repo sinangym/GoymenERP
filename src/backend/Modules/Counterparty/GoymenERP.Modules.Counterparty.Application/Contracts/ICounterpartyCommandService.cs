@@ -60,6 +60,23 @@ public enum CounterpartyCommandResult
     AlreadyLinked = 6,
 }
 
+public static class CounterpartyProblemCodesV1
+{
+    public const string AlreadyLinked = "already_linked";
+
+    public const string IdempotencyConflict = "idempotency_conflict";
+
+    public static string? For(CounterpartyCommandResult result)
+    {
+        return result switch
+        {
+            CounterpartyCommandResult.AlreadyLinked => AlreadyLinked,
+            CounterpartyCommandResult.IdempotencyConflict => IdempotencyConflict,
+            _ => null,
+        };
+    }
+}
+
 public sealed record CounterpartyVersionConflict(
     long ExpectedVersion,
     long CurrentVersion);
