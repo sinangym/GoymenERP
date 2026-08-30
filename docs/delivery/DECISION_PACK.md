@@ -2,13 +2,19 @@
 
 `docs/governance/GOYMEN_ERP_OTONOM_TESLIM_PLANI_v2.md` bölüm 7 ve 18 uyarınca.
 
-Ajanlar otonom çalışırken karara bağlanmamış her noktayı buraya **append** eder. Sinan, Dalga 5
-sonunda tek oturumda çözer. Bu dosya append-only'dir; girişler silinmez, `ÇÖZÜLDÜ:` ön ekiyle kapatılır.
+Bu dosyanın tek yazarı `CHATGPT-BUSINESS` derleyicisidir. Codex ve Claude aday girdiyi
+Issue #66'ya `DECISION-PACK-CANDIDATE` olarak yazar; aynı dosyada paralel append yapmaz.
+Derleyici duplicate `OPEN-*`, stable ID ve revision kontrolünden sonra ayrı PR hazırlar.
+
+Dosya append-only'dir; girişler silinmez. Kapanan kayıt `ÇÖZÜLDÜ` durumu alır;
+düzeltme yeni revision ve `SUPERSEDES` alanıyla yapılır. Bu dosya karar sicilinin yerine
+geçmez ve açık işletme politikasını kendiliğinden kabul etmez.
 
 ## Format
 
 ```text
 ### ASSUMPTION-NNN  |  OPEN-XXX blocker  |  P0-BLOCKER
+- Revision / status / supersedes:
 - Alan:
 - Nokta:
 - Uygulanan varsayım:
@@ -17,7 +23,8 @@ sonunda tek oturumda çözer. Bu dosya append-only'dir; girişler silinmez, `Ç�
 - Yanlışsa etki:
 - Sinan'dan gereken:
 - Bekleyen dilim:     (BACKLOG id | "yok — flag açılınca canlı")
-- Kayıt eden:         (codex | claude | chatgpt) — <tarih> — <PR#>
+- Aday kaynağı:        (codex | claude | chatgpt) — <tarih> — <PR#>
+- Kaynak aday:         (Issue #66 comment URL)
 ```
 
 ## Bilinen OPEN-* kilitleri (Faz 0 karar sicilinden — ajanlar buraya dilim bağlar)
@@ -33,7 +40,7 @@ sonunda tek oturumda çözer. Bu dosya append-only'dir; girişler silinmez, `Ç�
 | OPEN-007 | Formül sahibi + yoğunluk/hız/kerf/kaplama/yuvarlama/tolerans | formula registry + golden şablon | ilgili formül production öncesi |
 | OPEN-008 | Stok değerleme / üretim maliyet yöntemi | lot fiilî maliyeti ham veri; değerleme ertelendi | maliyet/muhasebe modülü UAT öncesi |
 | OPEN-009 | Finansal onay tutar/rol/para eşikleri | dinamik politika motoru + boş şablon | finans yazma UAT öncesi |
-| OPEN-010 | DBS/teminat haircut oranları + kullanılabilirlik | tür/banka/vade yapısı; oran 0 veya manuel onaylı | risk motoru canlı öncesi |
+| OPEN-010 | DBS/teminat haircut oranları + kullanılabilirlik | tür/banka/vade yapısı; oran 0 yalnız test verisi, production risk/teminat etkisi flag kapalı | risk motoru canlı öncesi |
 | OPEN-011 | Minimum nakit tamponu + 13 haftalık plan kaynak önceliği | ayarlardan şirket bazlı | 13 haftalık plan UAT öncesi |
 | OPEN-012 | Kur kaynağı alma saati / tatil / manuel istisna | önceki iş günü TCMB satış | fatura/kur motoru UAT öncesi |
 | OPEN-013 | SSO sağlayıcısı / MFA / dış erişim politikası | OIDC soyutlaması + yerel admin bootstrap | production kimlik kapısı öncesi |
@@ -48,7 +55,7 @@ sonunda tek oturumda çözer. Bu dosya append-only'dir; girişler silinmez, `Ç�
 
 ## ASSUMPTION kayıtları
 
-_(ajanlar buraya ekler)_
+_(yalnız CHATGPT-BUSINESS derleyicisi, doğrulanmış Issue #66 adaylarını buraya ekler)_
 
 ## P0 blocker kayıtları
 

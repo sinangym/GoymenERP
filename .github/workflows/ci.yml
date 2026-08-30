@@ -30,6 +30,13 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Delivery backlog integrity preflight
+        run: |
+          python3 -I -S -B tools/validate_task_manifest.py
+          python3 -I -S -B -m unittest discover -s tests/task_manifest_validator -p "test_*.py" -v
+          python3 -I -S -B tools/validate_delivery_backlog.py
+          python3 -I -S -B -m unittest discover -s tests/delivery_backlog_validator -p "test_*.py" -v
+
       - name: Restore tools and packages
         run: |
           dotnet tool restore --tool-manifest dotnet-tools.json --configfile NuGet.Config
