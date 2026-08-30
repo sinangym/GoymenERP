@@ -17,10 +17,22 @@ public interface ICounterpartyCommandService
         CancellationToken cancellationToken);
 }
 
+public interface ICounterpartyCompanyAccountLinkService
+{
+    Task<CounterpartyCommandExecution> CreateCompanyAccountAsync(
+        Guid partyId,
+        CreateCompanyPartyAccount command,
+        CounterpartyCommandMetadata metadata,
+        CancellationToken cancellationToken);
+}
+
 public sealed record CreateCounterparty(
     PartyKind Kind,
     string LegalName,
     string? TradeName,
+    PartyRole Roles);
+
+public sealed record CreateCompanyPartyAccount(
     PartyRole Roles);
 
 public sealed record SetCompanyPartyAccountActiveState(
@@ -45,6 +57,24 @@ public enum CounterpartyCommandResult
     NotFound = 3,
     VersionConflict = 4,
     IdempotencyConflict = 5,
+    AlreadyLinked = 6,
+}
+
+public static class CounterpartyProblemCodesV1
+{
+    public const string AlreadyLinked = "already_linked";
+
+    public const string IdempotencyConflict = "idempotency_conflict";
+
+    public static string? For(CounterpartyCommandResult result)
+    {
+        return result switch
+        {
+            CounterpartyCommandResult.AlreadyLinked => AlreadyLinked,
+            CounterpartyCommandResult.IdempotencyConflict => IdempotencyConflict,
+            _ => null,
+        };
+    }
 }
 
 public sealed record CounterpartyVersionConflict(
