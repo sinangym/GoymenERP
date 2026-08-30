@@ -1,0 +1,266 @@
+{
+  "contractId": "ORGANIZATION-COMPANY-DIRECTORY-V1",
+  "version": "1.0",
+  "status": "review_pending",
+  "riskClass": "K3",
+  "reviewedBaseSha": "e9c48605260e52a2905609dc377e14e9dbb68582",
+  "trackingIssue": 120,
+  "owners": {
+    "semanticOwner": "CODEX-PLATFORM/ORGANIZATION",
+    "businessAcceptanceOwner": "CHATGPT-BUSINESS",
+    "backendWriter": "CODEX-BACKEND/PLATFORM",
+    "frontendConsumer": "CLAUDE-FRONTEND"
+  },
+  "implementationStatus": "partial_existing_runtime",
+  "productionActivation": "no_go",
+  "sources": [
+    "AGENTS.md",
+    "docs/governance/GOYMEN_ERP_OTONOM_TESLIM_PLANI_v2.md",
+    "docs/features/CARI_UI_VERTICAL_SLICE_v1.md",
+    "docs/features/ERP-000K_SHELL_CONTRACT_v1.md",
+    "docs/decisions/ACIK_KARARLAR.md#OPEN-001",
+    "src/backend/GoymenERP.Api/Endpoints/OrganizationEndpoints.cs",
+    "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Application/Contracts/IOrganizationService.cs",
+    "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Application/Contracts/OrganizationModels.cs",
+    "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationService.cs"
+  ],
+  "http": {
+    "method": "GET",
+    "route": "/api/v1/organization/companies",
+    "authenticationRequired": true,
+    "permissionSymbol": "ErpPermissions.OrganizationRead",
+    "companyContextHeaderRequired": false,
+    "acceptedResponseMediaType": "application/json",
+    "item": {
+      "id": "uuid",
+      "code": "string",
+      "legalName": "string",
+      "isPlaceholder": "boolean"
+    }
+  },
+  "currentRuntime": {
+    "serviceMethod": "IOrganizationService.GetAuthorizedCompaniesAsync",
+    "activeCompaniesOnly": true,
+    "actorAuthorizedScopeOnly": true,
+    "deterministicOrdering": {
+      "field": "code",
+      "direction": "ascending",
+      "meaning": "compatibility_only_not_business_priority"
+    },
+    "frontendContractCurrentlyHandWritten": true,
+    "targetFrontendContractSource": "generated_openapi_client"
+  },
+  "authorizationInvariants": [
+    "only-current-server-authorized-active-companies-are-returned",
+    "header-body-query-route-jwt-local-storage-cannot-expand-directory",
+    "absence-of-company-context-header-does-not-create-group-authority",
+    "directory-membership-does-not-authorize-business-endpoints",
+    "business-endpoints-reauthorize-permission-and-company-context",
+    "inactive-company-is-not-returned",
+    "no-company-scope-returns-safe-empty-list-without-foreign-cardinality",
+    "company-party-account-join-uses-company-summary-id-only",
+    "projection-failure-does-not-enable-link-target-or-raw-uuid-label",
+    "placeholder-does-not-claim-verified-legal-identity"
+  ],
+  "forbiddenAuthoritySources": [
+    "x-company-id-for-directory-expansion",
+    "request-body",
+    "query",
+    "route",
+    "jwt-role-or-company-text",
+    "local-storage",
+    "client-side-company-union",
+    "cached-previous-session-directory"
+  ],
+  "placeholderPolicy": {
+    "source": "OPEN-001",
+    "isPlaceholderMeansVerifiedLegalData": false,
+    "mayDisplayVerificationPendingState": true,
+    "mayInventLegalNameVatNumberOrCompanyCode": false,
+    "productionCompanyMasterAcceptedByThisContract": false
+  },
+  "clientSafety": {
+    "rawUuidMayBeUserFacingFallback": false,
+    "fixedCompanyNameMayBeInvented": false,
+    "partialMalformedPayloadMayRender": false,
+    "localizedProblemTitleOrDetailMayDriveBranching": false,
+    "localStorageIsInitialPreferenceOnly": true,
+    "storedSelectionMustExistInFreshDirectory": true,
+    "persistentOrCrossSessionCacheAllowedWithoutTrustedRevision": false
+  },
+  "companyContextFence": {
+    "privateActorSessionBoundState": true,
+    "invalidateOn": [
+      "login",
+      "logout",
+      "actor-or-session-change",
+      "definitive-authorization-loss",
+      "malformed-response",
+      "server-backed-policy-or-company-set-revision-change"
+    ],
+    "companySwitchCreatesNewGeneration": true,
+    "oldGenerationMayWriteNewCompanyState": false,
+    "oldGenerationMayPopulateNewCompanyCache": false,
+    "exactCacheProviderSelectedHere": false,
+    "exactRevisionEnvelopeSelectedHere": false
+  },
+  "sharedErrors": [
+    {
+      "status": 401,
+      "code": "authentication_required"
+    },
+    {
+      "status": 403,
+      "code": "forbidden"
+    },
+    {
+      "status": 500,
+      "code": "internal_error"
+    },
+    {
+      "status": 503,
+      "code": "service_unavailable"
+    }
+  ],
+  "newProblemCodeIntroduced": false,
+  "frontendStates": [
+    "initial-loading",
+    "empty-no-authorized-company",
+    "authentication-required",
+    "forbidden",
+    "internal-or-service-unavailable",
+    "offline-or-network-failure",
+    "malformed-response",
+    "stale-company-response"
+  ],
+  "malformedResponseConditions": [
+    "root-is-not-array",
+    "missing-or-invalid-company-uuid",
+    "duplicate-company-id",
+    "missing-required-field",
+    "wrong-required-field-type",
+    "unsafe-or-invalid-display-text-contract"
+  ],
+  "acceptanceScenarios": [
+    {
+      "id": "ORG-DIR-AC-001",
+      "actor": "authorized-only-for-active-company-a",
+      "expected": "only-a"
+    },
+    {
+      "id": "ORG-DIR-AC-002",
+      "actor": "authorized-only-for-active-company-b",
+      "expected": "only-b"
+    },
+    {
+      "id": "ORG-DIR-AC-003",
+      "actor": "authorized-for-active-a-and-b",
+      "expected": "a-and-b-in-deterministic-code-order"
+    },
+    {
+      "id": "ORG-DIR-AC-004",
+      "actor": "authorized-only-for-inactive-b",
+      "expected": "empty-list"
+    },
+    {
+      "id": "ORG-DIR-AC-005",
+      "actor": "no-company-scope-with-endpoint-permission",
+      "expected": "empty-list-with-zero-foreign-cardinality-leak"
+    },
+    {
+      "id": "ORG-DIR-AC-006",
+      "actor": "missing-organization-read-permission",
+      "expected": "403-forbidden"
+    },
+    {
+      "id": "ORG-DIR-AC-007",
+      "actor": "anonymous",
+      "expected": "401-authentication-required"
+    },
+    {
+      "id": "ORG-DIR-AC-008",
+      "actor": "authorized-for-a-with-foreign-company-input",
+      "expected": "directory-not-expanded-b-not-disclosed"
+    },
+    {
+      "id": "ORG-DIR-AC-009",
+      "actor": "frontend-receives-duplicate-or-invalid-id-payload",
+      "expected": "safe-malformed-state-no-partial-render"
+    },
+    {
+      "id": "ORG-DIR-AC-010",
+      "actor": "stored-company-is-no-longer-authorized",
+      "expected": "stored-preference-cleared-safe-no-company-or-valid-selection"
+    },
+    {
+      "id": "ORG-DIR-AC-011",
+      "actor": "company-a-response-arrives-after-company-b-selection",
+      "expected": "a-response-cannot-write-b-state-or-cache"
+    },
+    {
+      "id": "ORG-DIR-AC-012",
+      "actor": "placeholder-company",
+      "expected": "verification-pending-state-without-official-data-claim"
+    }
+  ],
+  "acceptanceGlobalInvariant": "zero-foreign-id-code-legal-name-count-permission-inventory-leak",
+  "codexDeliverables": [
+    "versioned-openapi-contract-for-existing-endpoint",
+    "exact-route-method-response-auth-permission-and-no-company-header-contract-tests",
+    "real-sql-http-a-b-no-scope-inactive-company-matrix",
+    "request-input-directory-expansion-negative-tests",
+    "permission-and-actor-change-server-reauthorization-tests",
+    "deterministic-openapi-export-and-contract-drift-input"
+  ],
+  "claudeDeliverables": [
+    "replace-handwritten-company-summary-with-generated-client",
+    "all-required-safe-ui-states",
+    "malformed-and-duplicate-id-fail-closed-validation",
+    "placeholder-verification-pending-presentation",
+    "no-raw-uuid-or-invented-company-name",
+    "stored-selection-revalidation",
+    "company-switch-stale-response-browser-race-tests",
+    "keyboard-focus-screen-reader-zoom-and-mobile-acceptance"
+  ],
+  "chatgptDeliverables": [
+    "markdown-json-parity",
+    "golden-actor-company-matrix",
+    "source-and-business-review-of-exact-codex-and-claude-heads",
+    "open-001-placeholder-boundary-review"
+  ],
+  "definitionOfReady": {
+    "satisfied": [
+      "existing-route-and-response-exist",
+      "merged-cari-join-and-no-raw-uuid-contract",
+      "open-001-placeholder-boundary-known",
+      "backend-and-frontend-single-writer-responsibilities-defined"
+    ],
+    "mergeGates": [
+      "openapi-export-and-generated-client-drift-path",
+      "codex-backend-test-plan-linked",
+      "claude-browser-test-plan-linked",
+      "separate-exact-current-main-implementation-prs"
+    ]
+  },
+  "definitionOfDone": [
+    "runner-backed-backend-frontend-real-sql-container-ui-golden-green",
+    "contract-drift-green",
+    "red-to-green-backend-and-browser-acceptance",
+    "zero-open-p0-p1",
+    "exact-head-codex-and-claude-cross-reviews",
+    "chatgpt-source-business-handoff-accepted",
+    "expected-head-squash-merge",
+    "fresh-new-main-ci-green"
+  ],
+  "deliberateExclusions": [
+    "new-company-master-data",
+    "verified-vat-number-or-legal-name",
+    "new-permission-or-role",
+    "schema-or-migration",
+    "cache-library-or-provider-selection",
+    "revision-endpoint-envelope-selection",
+    "erp-000k-done-claim",
+    "cari-production-readiness-claim",
+    "production-activation"
+  ]
+}
