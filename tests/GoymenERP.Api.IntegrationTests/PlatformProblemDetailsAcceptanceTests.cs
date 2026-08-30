@@ -149,7 +149,7 @@ public sealed class PlatformProblemDetailsAcceptanceTests(
     public async Task UnhandledExceptionPipeline_ReturnsRedactedStableProblem()
     {
         var correlationId = Guid.NewGuid().ToString("N");
-        var logEntries = new ConcurrentQueue<string>();
+        var logEntries = new ConcurrentQueue<CollectedLogEntry>();
         using var exceptionFactory = factory.WithWebHostBuilder(builder =>
         {
             builder.ConfigureServices(services =>
@@ -177,12 +177,24 @@ public sealed class PlatformProblemDetailsAcceptanceTests(
             UnhandledExceptionStartupFilter.Secret,
             body,
             StringComparison.Ordinal);
-        Assert.DoesNotContain(logEntries, entry => entry.Contains(
-            UnhandledExceptionStartupFilter.Secret,
-            StringComparison.Ordinal));
-        Assert.Contains(logEntries, entry => entry.Contains(
+        Assert.DoesNotContain(logEntries, entry =>
+            entry.FormattedMessage.Contains(
+                UnhandledExceptionStartupFilter.Secret,
+                StringComparison.Ordinal)
+            || entry.Exception?.ToString().Contains(
+                UnhandledExceptionStartupFilter.Secret,
+                StringComparison.Ordinal) == true
+            || entry.State.Values.Any(value => value?.ToString()?.Contains(
+                UnhandledExceptionStartupFilter.Secret,
+                StringComparison.Ordinal) == true));
+        var handlerLog = Assert.Single(logEntries, entry =>
+            entry.CategoryName == typeof(ErpUnhandledExceptionHandler).FullName);
+        Assert.Equal(LogLevel.Error, handlerLog.LogLevel);
+        Assert.Null(handlerLog.Exception);
+        Assert.Equal(
             ErpProblemCodes.InternalError,
-            StringComparison.Ordinal));
+            handlerLog.State["ErrorCode"]);
+        Assert.Equal(correlationId, handlerLog.State["CorrelationId"]);
     }
 
     [Fact]
@@ -213,25 +225,40 @@ public sealed class PlatformProblemDetailsAcceptanceTests(
     [Fact]
     public async Task OrganizationModuleStatuses_PreserveTheirOwnProblemDetailsContract()
     {
-        using var missingCompanyClient = factory.CreateClientFor(TestUsers.CompanyA);
-        using var badRequest = await missingCompanyClient.GetAsync(
-            "/api/v1/organization/sites");
-        await AssertModuleProblemWithoutPlatformCodeAsync(
-            badRequest,
-            HttpStatusCode.BadRequest);
-
-        using var selectedCompanyClient = factory.CreateClientFor(
-            TestUsers.CompanyA,
-            TestCompanyIds.CompanyA);
-        using var notFound = await selectedCompanyClient.GetAsync(
-            $"/api/v1/organization/locations/{Guid.NewGuid()}");
-        await AssertModuleProblemWithoutPlatformCodeAsync(
-            notFound,
-            HttpStatusCode.NotFound);
-
         var location = await factory.GetLocationIgnoringFiltersAsync(
             TestCompanyIds.CompanyA,
             "EXT-BASTUG");
+        using var selectedCompanyClient = factory.CreateClientFor(
+            TestUsers.CompanyA,
+            TestCompanyIds.CompanyA);
+        using var badRequest = await selectedCompanyClient.PutAsJsonAsync(
+            $"/api/v1/organization/locations/{location.Id}/active-state",
+            new SetLocationActiveState(
+                !location.IsActive,
+                location.Version,
+                string.Empty));
+        var badRequestProblem = await AssertModuleProblemWithoutPlatformCodeAsync(
+            badRequest,
+            HttpStatusCode.BadRequest);
+        Assert.Equal(
+            "Gerekçe gerekli.",
+            badRequestProblem.GetProperty("title").GetString());
+        Assert.Equal(
+            "Kritik değişiklik için 1-1000 karakter arasında bir gerekçe girin.",
+            badRequestProblem.GetProperty("detail").GetString());
+
+        using var notFound = await selectedCompanyClient.GetAsync(
+            $"/api/v1/organization/locations/{Guid.NewGuid()}");
+        var notFoundProblem = await AssertModuleProblemWithoutPlatformCodeAsync(
+            notFound,
+            HttpStatusCode.NotFound);
+        Assert.Equal(
+            "Kayıt bulunamadı.",
+            notFoundProblem.GetProperty("title").GetString());
+        Assert.Equal(
+            "İstenen kayıt bulunamadı veya bu bağlamda kullanılamıyor.",
+            notFoundProblem.GetProperty("detail").GetString());
+
         using var conflictClient = factory.CreateClientFor(
             TestUsers.CompanyA,
             TestCompanyIds.CompanyA);
@@ -348,7 +375,7 @@ public sealed class PlatformProblemDetailsAcceptanceTests(
     }
 
     private sealed class CollectingLoggerProvider(
-        ConcurrentQueue<string> entries) : ILoggerProvider
+        ConcurrentQueue<CollectedLogEntry> entries) : ILoggerProvider
     {
         public ILogger CreateLogger(string categoryName)
         {
@@ -361,7 +388,7 @@ public sealed class PlatformProblemDetailsAcceptanceTests(
     }
 
     private sealed class CollectingLogger(
-        ConcurrentQueue<string> entries,
+        ConcurrentQueue<CollectedLogEntry> entries,
         string categoryName) : ILogger
     {
         public IDisposable BeginScope<TState>(TState state)
@@ -382,10 +409,24 @@ public sealed class PlatformProblemDetailsAcceptanceTests(
             Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
-            entries.Enqueue(
-                $"{categoryName}|{formatter(state, exception)}|{exception}");
+            var structuredState = state is IEnumerable<KeyValuePair<string, object?>> values
+                ? values.ToDictionary(pair => pair.Key, pair => pair.Value)
+                : new Dictionary<string, object?>();
+            entries.Enqueue(new CollectedLogEntry(
+                categoryName,
+                logLevel,
+                formatter(state, exception),
+                exception,
+                structuredState));
         }
     }
+
+    private sealed record CollectedLogEntry(
+        string CategoryName,
+        LogLevel LogLevel,
+        string FormattedMessage,
+        Exception? Exception,
+        IReadOnlyDictionary<string, object?> State);
 
     private sealed class EmptyScope : IDisposable
     {

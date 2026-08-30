@@ -58,7 +58,9 @@ Platform-owned responses use fixed safe Turkish titles and details. They do not 
 
 For an unhandled exception caught before the response starts, the application-owned handler
 does not pass the exception object, message or stack to its own logger. It records only the
-stable platform error code and the already-established safe correlation scope.
+stable platform error code and, when the request correlation boundary has resolved it, the
+same safe correlation identifier returned to the client as a structured log field. It does
+not invent a correlation identifier when that boundary is unresolved.
 
 If a response has already started, ASP.NET cannot replace it with this contract. The host may
 abort the connection, rethrow the exception and emit framework/host telemetry. That telemetry
@@ -92,7 +94,8 @@ into different client contracts.
 - hostile-`Accept` pre-response-start exception returns redacted `500/internal_error`;
 - an unhealthy `/health/live` check returns redacted `503/service_unavailable` without health
   description, exception, data or dependency identity;
-- safe server correlation is returned consistently;
+- safe server correlation is returned consistently and a pre-response-start `500` application
+  log carries that exact value as a structured field;
 - real module-owned `400`, `404` and `409` responses receive no platform code and retain their
   module-owned fields;
 - full API integration and architecture regressions pass;

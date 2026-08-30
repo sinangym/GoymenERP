@@ -1,3 +1,4 @@
+using GoymenERP.BuildingBlocks.Observability;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 
@@ -18,9 +19,21 @@ public sealed class ErpUnhandledExceptionHandler(
             return false;
         }
 
-        logger.LogError(
-            "Unhandled request failure was redacted. Code={ErrorCode}",
-            ErpProblemCodes.InternalError);
+        var correlationContext = httpContext.RequestServices
+            .GetService<ICorrelationContext>();
+        if (correlationContext?.IsResolved == true)
+        {
+            logger.LogError(
+                "Unhandled request failure was redacted. Code={ErrorCode} CorrelationId={CorrelationId}",
+                ErpProblemCodes.InternalError,
+                correlationContext.CorrelationId);
+        }
+        else
+        {
+            logger.LogError(
+                "Unhandled request failure was redacted. Code={ErrorCode}",
+                ErpProblemCodes.InternalError);
+        }
 
         httpContext.Response.StatusCode = StatusCodes.Status500InternalServerError;
         await problemDetailsService.WriteAsync(new ProblemDetailsContext
