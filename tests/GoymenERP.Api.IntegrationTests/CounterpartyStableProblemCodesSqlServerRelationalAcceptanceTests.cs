@@ -41,23 +41,29 @@ public sealed class CounterpartyStableProblemCodesSqlServerRelationalAcceptanceT
                     "   ",
                     null,
                     PartyRole.Customer));
-            await AssertProblemAsync(
-                invalidCreate,
-                HttpStatusCode.BadRequest,
-                CounterpartyProblemCodesV1.ValidationFailed);
+            using (await AssertProblemAsync(
+                       invalidCreate,
+                       HttpStatusCode.BadRequest,
+                       CounterpartyProblemCodesV1.ValidationFailed))
+            {
+            }
             Assert.Equal(baseline, await ReadCountsAsync(connection));
 
-            using var invalidCompanyClient = factory.CreateClientFor(TestUsers.GroupAdmin);
+            using var invalidCompanyClient = factory.CreateClientFor(
+                TestUsers.GroupAdmin,
+                TestCompanyIds.CompanyA);
             invalidCompanyClient.DefaultRequestHeaders.Remove("X-Company-Id");
             invalidCompanyClient.DefaultRequestHeaders.TryAddWithoutValidation(
                 "X-Company-Id",
                 "not-a-company-guid");
             using var invalidCompany = await invalidCompanyClient.GetAsync(
                 "/api/v1/counterparties");
-            await AssertProblemAsync(
-                invalidCompany,
-                HttpStatusCode.BadRequest,
-                CounterpartyProblemCodesV1.ValidationFailed);
+            using (await AssertProblemAsync(
+                       invalidCompany,
+                       HttpStatusCode.BadRequest,
+                       CounterpartyProblemCodesV1.ValidationFailed))
+            {
+            }
             Assert.Equal(baseline, await ReadCountsAsync(connection));
 
             using var missingKeyClient = factory.CreateClientFor(
@@ -73,10 +79,12 @@ public sealed class CounterpartyStableProblemCodesSqlServerRelationalAcceptanceT
                     "SQL Eksik Command Metadata Cari A.Ş.",
                     null,
                     PartyRole.Customer));
-            await AssertProblemAsync(
-                missingKey,
-                HttpStatusCode.BadRequest,
-                CounterpartyProblemCodesV1.CommandMetadataInvalid);
+            using (await AssertProblemAsync(
+                       missingKey,
+                       HttpStatusCode.BadRequest,
+                       CounterpartyProblemCodesV1.CommandMetadataInvalid))
+            {
+            }
             Assert.Equal(baseline, await ReadCountsAsync(connection));
 
             using var ambiguousKeyClient = factory.CreateClientFor(
@@ -93,10 +101,12 @@ public sealed class CounterpartyStableProblemCodesSqlServerRelationalAcceptanceT
                     "SQL Belirsiz Command Metadata Cari A.Ş.",
                     null,
                     PartyRole.Supplier));
-            await AssertProblemAsync(
-                ambiguousKey,
-                HttpStatusCode.BadRequest,
-                CounterpartyProblemCodesV1.CommandMetadataInvalid);
+            using (await AssertProblemAsync(
+                       ambiguousKey,
+                       HttpStatusCode.BadRequest,
+                       CounterpartyProblemCodesV1.CommandMetadataInvalid))
+            {
+            }
             Assert.Equal(baseline, await ReadCountsAsync(connection));
 
             using var commandClient = factory.CreateClientFor(
@@ -125,10 +135,12 @@ public sealed class CounterpartyStableProblemCodesSqlServerRelationalAcceptanceT
 
             using var directMissing = await commandClient.GetAsync(
                 $"/api/v1/counterparties/{Guid.NewGuid():D}");
-            await AssertProblemAsync(
-                directMissing,
-                HttpStatusCode.NotFound,
-                CounterpartyProblemCodesV1.NotFound);
+            using (await AssertProblemAsync(
+                       directMissing,
+                       HttpStatusCode.NotFound,
+                       CounterpartyProblemCodesV1.NotFound))
+            {
+            }
             Assert.Equal(afterCreate, await ReadCountsAsync(connection));
 
             var deactivateKey = $"cari-code-deactivate-{Guid.NewGuid():N}";
@@ -208,11 +220,14 @@ public sealed class CounterpartyStableProblemCodesSqlServerRelationalAcceptanceT
             using var notFound = await commandClient.PutAsJsonAsync(
                 $"/api/v1/counterparties/{missingPartyId}/company-account/active-state",
                 missingCommand);
-            await AssertProblemAsync(
-                notFound,
-                HttpStatusCode.NotFound,
-                CounterpartyProblemCodesV1.NotFound);
-            var notFoundBody = await notFound.Content.ReadAsStringAsync();
+            string notFoundBody;
+            using (var notFoundJson = await AssertProblemAsync(
+                       notFound,
+                       HttpStatusCode.NotFound,
+                       CounterpartyProblemCodesV1.NotFound))
+            {
+                notFoundBody = notFoundJson.RootElement.GetRawText();
+            }
             Assert.DoesNotContain(
                 missingPartyId.ToString("D"),
                 notFoundBody,
@@ -229,10 +244,12 @@ public sealed class CounterpartyStableProblemCodesSqlServerRelationalAcceptanceT
             using var notFoundReplay = await commandClient.PutAsJsonAsync(
                 $"/api/v1/counterparties/{missingPartyId}/company-account/active-state",
                 missingCommand);
-            await AssertProblemAsync(
-                notFoundReplay,
-                HttpStatusCode.NotFound,
-                CounterpartyProblemCodesV1.NotFound);
+            using (await AssertProblemAsync(
+                       notFoundReplay,
+                       HttpStatusCode.NotFound,
+                       CounterpartyProblemCodesV1.NotFound))
+            {
+            }
             AssertReplayHeaders(notFoundReplay, notFoundCorrelation);
             Assert.Equal(afterNotFound, await ReadCountsAsync(connection));
         }
