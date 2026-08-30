@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
+using GoymenERP.Api.Errors;
 using GoymenERP.Api.Observability;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
@@ -65,6 +67,18 @@ public sealed class CorrelationBoundaryAcceptanceTests(GoymenErpApiFactory facto
         },
     };
 
+    public static IEnumerable<object[]> ApplicationReachableControlIdentifierValues()
+    {
+        yield return new object[] { CorrelationContextMiddleware.CorrelationHeaderName, "\r" };
+        yield return new object[] { CorrelationContextMiddleware.CorrelationHeaderName, "\n" };
+        yield return new object[] { CorrelationContextMiddleware.CorrelationHeaderName, "\r\n" };
+        yield return new object[] { CorrelationContextMiddleware.CorrelationHeaderName, "\0" };
+        yield return new object[] { CorrelationContextMiddleware.CausationHeaderName, "\r" };
+        yield return new object[] { CorrelationContextMiddleware.CausationHeaderName, "\n" };
+        yield return new object[] { CorrelationContextMiddleware.CausationHeaderName, "\r\n" };
+        yield return new object[] { CorrelationContextMiddleware.CausationHeaderName, "\0" };
+    }
+
     [Fact]
     public async Task MissingCorrelation_GeneratesSafeServerIdentifier()
     {
@@ -82,12 +96,33 @@ public sealed class CorrelationBoundaryAcceptanceTests(GoymenErpApiFactory facto
             character => Assert.True(char.IsAsciiHexDigit(character)));
     }
 
+    [Fact]
+    public async Task SingleCharacterSafeIdentifiers_AreAccepted()
+    {
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(
+            CorrelationContextMiddleware.CorrelationHeaderName,
+            "A");
+        client.DefaultRequestHeaders.Add(
+            CorrelationContextMiddleware.CausationHeaderName,
+            "B");
+
+        using var response = await client.GetAsync("/health/live");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(
+            "A",
+            Assert.Single(response.Headers.GetValues(
+                CorrelationContextMiddleware.CorrelationHeaderName)));
+    }
+
     [Theory]
     [InlineData(CorrelationContextMiddleware.CorrelationHeaderName)]
     [InlineData(CorrelationContextMiddleware.CausationHeaderName)]
     public async Task PresentEmptyIdentifier_IsRejectedAtMiddlewareBoundary(
         string headerName)
     {
+        await using var scope = factory.Services.CreateAsyncScope();
         var nextCalled = false;
         var middleware = new CorrelationContextMiddleware(
             _ =>
@@ -98,11 +133,12 @@ public sealed class CorrelationBoundaryAcceptanceTests(GoymenErpApiFactory facto
             NullLogger<CorrelationContextMiddleware>.Instance);
         var httpContext = new DefaultHttpContext
         {
-            RequestServices = factory.Services,
+            RequestServices = scope.ServiceProvider,
         };
         httpContext.Response.Body = new MemoryStream();
         httpContext.Request.Headers[headerName] = string.Empty;
-        var correlationContext = new CorrelationContext();
+        var correlationContext = scope.ServiceProvider
+            .GetRequiredService<ICorrelationContext>();
         Assert.True(httpContext.Request.Headers.TryGetValue(headerName, out var values));
         Assert.Single(values);
         Assert.Equal(string.Empty, values[0]);
@@ -111,7 +147,75 @@ public sealed class CorrelationBoundaryAcceptanceTests(GoymenErpApiFactory facto
 
         Assert.Equal(StatusCodes.Status400BadRequest, httpContext.Response.StatusCode);
         Assert.False(nextCalled);
-        Assert.False(correlationContext.IsResolved);
+        Assert.True(correlationContext.IsResolved);
+        Assert.Null(correlationContext.CausationId);
+        var generatedCorrelationId = Assert.Single(
+            httpContext.Response.Headers[
+                CorrelationContextMiddleware.CorrelationHeaderName]);
+        Assert.True(Guid.TryParseExact(generatedCorrelationId, "N", out _));
+        Assert.Equal(generatedCorrelationId, correlationContext.CorrelationId);
+        httpContext.Response.Body.Position = 0;
+        using var document = await JsonDocument.ParseAsync(httpContext.Response.Body);
+        Assert.Equal(
+            ErpProblemCodes.CorrelationMetadataInvalid,
+            document.RootElement.GetProperty("code").GetString());
+        Assert.Equal(
+            generatedCorrelationId,
+            document.RootElement.GetProperty("correlationId").GetString());
+    }
+
+    [Theory]
+    [MemberData(nameof(ApplicationReachableControlIdentifierValues))]
+    public async Task ApplicationReachableControlIdentifier_IsRejectedAtMiddlewareBoundary(
+        string headerName,
+        string invalidValue)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var nextCalled = false;
+        var middleware = new CorrelationContextMiddleware(
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            },
+            NullLogger<CorrelationContextMiddleware>.Instance);
+        var httpContext = new DefaultHttpContext
+        {
+            RequestServices = scope.ServiceProvider,
+        };
+        httpContext.Response.Body = new MemoryStream();
+        httpContext.Request.Headers[headerName] = invalidValue;
+        if (headerName == CorrelationContextMiddleware.CausationHeaderName)
+        {
+            httpContext.Request.Headers[
+                CorrelationContextMiddleware.CorrelationHeaderName] =
+                    $"safe-correlation-{Guid.NewGuid():N}";
+        }
+
+        var correlationContext = scope.ServiceProvider
+            .GetRequiredService<ICorrelationContext>();
+        await middleware.InvokeAsync(httpContext, correlationContext);
+
+        Assert.False(nextCalled);
+        Assert.Equal(StatusCodes.Status400BadRequest, httpContext.Response.StatusCode);
+        Assert.True(correlationContext.IsResolved);
+        Assert.Null(correlationContext.CausationId);
+        var generatedCorrelationId = Assert.Single(
+            httpContext.Response.Headers[
+                CorrelationContextMiddleware.CorrelationHeaderName]);
+        Assert.True(Guid.TryParseExact(generatedCorrelationId, "N", out _));
+        httpContext.Response.Body.Position = 0;
+        using var document = await JsonDocument.ParseAsync(httpContext.Response.Body);
+        Assert.Equal(
+            ErpProblemCodes.CorrelationMetadataInvalid,
+            document.RootElement.GetProperty("code").GetString());
+        Assert.Equal(
+            generatedCorrelationId,
+            document.RootElement.GetProperty("correlationId").GetString());
+        Assert.DoesNotContain(
+            invalidValue,
+            document.RootElement.GetRawText(),
+            StringComparison.Ordinal);
     }
 
     [Fact]
