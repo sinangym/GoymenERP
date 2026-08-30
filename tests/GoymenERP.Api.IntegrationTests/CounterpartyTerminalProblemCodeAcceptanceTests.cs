@@ -2,6 +2,7 @@ using System.Reflection;
 using GoymenERP.Api.Endpoints;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
+using Microsoft.AspNetCore.Http;
 
 namespace GoymenERP.Api.IntegrationTests;
 
