@@ -75,6 +75,7 @@ daraltır; bu olumlu sınır mutable action/runner kimliklerini sabitlemez.
 | Repository SDK politikası | `10.0.300`; `rollForward=latestFeature`; `allowPrerelease=false` | Policy repository-sabit, resolved SDK mutable | Repository owner + Microsoft .NET | Exact 10.0.300 yazılı olsa da `latestFeature` daha yeni feature band'e roll-forward edebilir; resolved SDK kanıtı yok. |
 | EF CLI tool manifesti | `dotnet-ef=10.0.8`; `rollForward=false` | Direct sürüm repository-sabit; artifact doğrulanmamış | Repository owner + NuGet publisher | Root manifest validator ile byte/hash kilitli; `.nupkg` checksum/signature/provenance ve tool SBOM'u repository'de yok. |
 | Frontend workflow runtime | `node-version: 24` | Mutable major kanal | Node.js upstream + setup action | Exact patch/binary digest ve rollback kimliği yok. |
+| Frontend package manager | Node 24 dağıtımı/image'ı ile gelen `npm`; exact CLI sürümü kaydedilmiyor | Bilinmeyen resolved sürüm | Node.js/npm upstream + setup action veya image publisher | `packageManager`, `devEngines.packageManager`, `engines`, `.npm-version`, `.nvmrc` ve `.node-version` yok; npm sürümü Node patch/image tag ile değişebilir ve release zarfında kaydedilmez. |
 | UI validator runtime | Python `3.13` | Mutable patch kanal | Python upstream + setup action | Exact patch/binary digest yok. |
 
 `tools/validate_dotnet_bootstrap_integrity.py`, `global.json` semantiğini exact policy olarak;
@@ -208,7 +209,8 @@ uygulanıyor sayılmaz.
 - SDK/runtime download ve container base image digest'leri kayıtlı değildir.
 - NuGet transitive lock, package checksum/signature policy ve package SBOM yoktur.
 - npm lock vardır; fakat publisher provenance, lifecycle-script, SBOM/license ve advisory
-  snapshot/exception sözleşmesi yoktur.
+  snapshot/exception sözleşmesi yoktur; lock'u tüketen exact npm CLI/package-manager
+  sürümü de repository policy'si veya release zarfıyla sabitlenmez.
 - Container image digest, scan, SBOM, provenance, signing ve registry retention kanıtı yoktur.
 - Dependency update botu/politikası, CODEOWNERS ve supply-chain exception yaşam döngüsü
   yoktur.
