@@ -9,6 +9,7 @@ public static class ErpProblemDetailsExtensions
     public static IServiceCollection AddErpProblemDetails(
         this IServiceCollection services)
     {
+        services.AddExceptionHandler<ErpUnhandledExceptionHandler>();
         services.AddProblemDetails(options =>
             options.CustomizeProblemDetails = CustomizeProblemDetails);
         services.AddSingleton<IAuthorizationMiddlewareResultHandler,

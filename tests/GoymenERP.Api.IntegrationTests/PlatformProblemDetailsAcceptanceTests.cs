@@ -1,11 +1,15 @@
 using System.Net;
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using GoymenERP.Api.Errors;
 using GoymenERP.BuildingBlocks.Observability;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -136,6 +140,45 @@ public sealed class PlatformProblemDetailsAcceptanceTests(
     }
 
     [Fact]
+    public async Task UnhandledExceptionPipeline_ReturnsRedactedStableProblem()
+    {
+        var correlationId = Guid.NewGuid().ToString("N");
+        var logEntries = new ConcurrentQueue<string>();
+        using var exceptionFactory = factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+                services.AddSingleton<IStartupFilter,
+                    UnhandledExceptionStartupFilter>());
+            builder.ConfigureLogging(logging =>
+                logging.AddProvider(new CollectingLoggerProvider(logEntries)));
+        });
+        using var client = exceptionFactory.CreateClient();
+        client.DefaultRequestHeaders.Add(
+            "X-Development-User",
+            TestUsers.CompanyA);
+        client.DefaultRequestHeaders.Add("X-Correlation-Id", correlationId);
+
+        using var response = await client.GetAsync(
+            UnhandledExceptionStartupFilter.Path);
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var body = await AssertPlatformProblemAsync(
+            response,
+            ErpProblemCodes.InternalError,
+            correlationId);
+        Assert.DoesNotContain(
+            UnhandledExceptionStartupFilter.Secret,
+            body,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(logEntries, entry => entry.Contains(
+            UnhandledExceptionStartupFilter.Secret,
+            StringComparison.Ordinal));
+        Assert.Contains(logEntries, entry => entry.Contains(
+            ErpProblemCodes.InternalError,
+            StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task ModuleOwnedStatus_IsNotAssignedAPlatformCode()
     {
         await using var scope = factory.Services.CreateAsyncScope();
@@ -187,5 +230,80 @@ public sealed class PlatformProblemDetailsAcceptanceTests(
             expectedCorrelationId,
             root.GetProperty("correlationId").GetString());
         return body;
+    }
+
+    private sealed class UnhandledExceptionStartupFilter : IStartupFilter
+    {
+        public const string Path = "/_acceptance/platform-error/unhandled";
+
+        public const string Secret =
+            "Server=secret;Password=exception-must-not-leak";
+
+        public Action<IApplicationBuilder> Configure(
+            Action<IApplicationBuilder> next)
+        {
+            return application =>
+            {
+                next(application);
+                application.Use(async (httpContext, nextMiddleware) =>
+                {
+                    if (httpContext.Request.Path == Path)
+                    {
+                        throw new InvalidOperationException(Secret);
+                    }
+
+                    await nextMiddleware();
+                });
+            };
+        }
+    }
+
+    private sealed class CollectingLoggerProvider(
+        ConcurrentQueue<string> entries) : ILoggerProvider
+    {
+        public ILogger CreateLogger(string categoryName)
+        {
+            return new CollectingLogger(entries, categoryName);
+        }
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class CollectingLogger(
+        ConcurrentQueue<string> entries,
+        string categoryName) : ILogger
+    {
+        public IDisposable BeginScope<TState>(TState state)
+            where TState : notnull
+        {
+            return EmptyScope.Instance;
+        }
+
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            entries.Enqueue(
+                $"{categoryName}|{formatter(state, exception)}|{exception}");
+        }
+    }
+
+    private sealed class EmptyScope : IDisposable
+    {
+        public static EmptyScope Instance { get; } = new();
+
+        public void Dispose()
+        {
+        }
     }
 }

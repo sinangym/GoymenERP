@@ -55,6 +55,11 @@ Platform-owned responses use fixed safe Turkish titles and details. They do not 
 - CompanyId, foreign record identifier or existence information;
 - file path, secret, environment value or internal endpoint.
 
+The unhandled-exception handler does not pass the exception object, message or stack to the
+logger. It records only the stable platform error code and the already-established safe
+correlation scope. A telemetry sink cannot be treated as a reason to export the raw
+exception.
+
 Unhandled `500` and shared `503` results discard pre-existing public extensions before the
 stable code and safe correlation are applied. The same implementation also normalizes
 shared `401` and `403` results, so middleware and authorization-policy failures do not drift
