@@ -1,4 +1,5 @@
 using GoymenERP.Api.Endpoints;
+using GoymenERP.Api.Errors;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.Observability;
 using GoymenERP.Api.Security;
@@ -11,6 +12,7 @@ using GoymenERP.Modules.Counterparty.Infrastructure;
 using GoymenERP.Modules.Idempotency.Infrastructure;
 using GoymenERP.Modules.Organization.Infrastructure;
 using GoymenERP.Modules.Identity.Infrastructure;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -24,7 +26,7 @@ builder.Configuration.AddJsonFile(
     optional: false,
     reloadOnChange: false);
 
-builder.Services.AddProblemDetails();
+builder.Services.AddErpProblemDetails();
 builder.Services.AddHealthChecks();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICompanyContext, CompanyContext>();
@@ -61,7 +63,10 @@ app.UseAuthentication();
 app.UseMiddleware<CompanyContextMiddleware>();
 app.UseAuthorization();
 
-app.MapHealthChecks("/health/live").AllowAnonymous();
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    ResponseWriter = ErpHealthCheckResponseWriter.WriteAsync,
+}).AllowAnonymous();
 app.MapOrganizationEndpoints();
 app.MapIdentityEndpoints();
 app.MapAuditEndpoints();

@@ -39,6 +39,7 @@ public static class CounterpartyModuleExtensions
         });
         services.AddScoped<ICounterpartyReadService, CounterpartyReadService>();
         services.AddScoped<ICounterpartyCommandService, CounterpartyCommandService>();
+        services.AddScoped<ICounterpartyCompanyAccountLinkService, CounterpartyCompanyAccountLinkService>();
 
         return services;
     }
