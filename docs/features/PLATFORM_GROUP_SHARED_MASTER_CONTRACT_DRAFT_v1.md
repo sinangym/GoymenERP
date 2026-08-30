@@ -1,12 +1,12 @@
 # Platform Group-Shared Master Contract — DRAFT v1
 
-- Durum: `DRAFT / DECISION-NEUTRAL / HUMAN ARCHITECTURE + SECURITY REVIEW REQUIRED`
+- Durum: `DRAFT / IMPLEMENTATION-NEUTRAL / HUMAN ARCHITECTURE + SECURITY REVIEW REQUIRED`
 - Production durumu: `IMPLEMENTATION BLOCKED / NO-GO`
 - Taban: `main@83197c50f515db959638fadd7cc11ad6eb7a4fc8`
 - Sözleşme sahibi: `CODEX-PLATFORM`
 - Ürün kararı sahibi: Product Owner / ChatGPT-BUSINESS
 - Tüketilen karar: Issue #98 `PRD-SCOPE-001`, seçenek A, `KILITLI`
-- Açık ürün kapısı: Issue #99 `PRD-PERM-001`
+- Tüketilen yetki kararı: Issue #99 `PRD-PERM-001`, seçenek A, `KILITLI`
 - İlgili epic: Issue #100 `PRD-CORE-001`
 
 ## 1. Amaç
@@ -20,9 +20,9 @@ Mevcut platformun ana güvenlik değişmezi farklıdır: tenant kayıtları zoru
 `CompanyId`, immutable request-scoped `CompanyContext`, EF global query filter, write
 guard ve bileşik foreign key ile korunur. Grup görünümü bu sınırı kaldırmaz.
 
-Bu doküman, kilitli ürün kararını mevcut tenant güvenliğini sessizce delmeden
+Bu doküman, kilitli ürün ve pilot yetki kararlarını mevcut tenant güvenliğini sessizce delmeden
 uygulanabilir hale getirmek için gereken **platform sınırlarını** tarif eder. Bir Product
-şeması, permission matrisi, migration, endpoint, router veya deployment seçmez.
+şeması, exact permission string/manifest'i, migration, endpoint, router veya deployment seçmez.
 
 ## 2. Kapsam
 
@@ -45,8 +45,8 @@ Bu doküman aşağıdakileri yapmaz:
 - `CompanyId` alanını nullable yapmaz;
 - mevcut `TenantEntity` sınıfına istisna eklemez;
 - keyfî bir şirketi Product sahibi ilan etmez;
-- permission veya rol kodu üretmez ve grant/assignment yapmaz;
-- maker-checker veya onay eşiği seçmez;
+- permission string/manifest'i veya yeni rol kodu üretmez ve grant/assignment yapmaz;
+- generic maker-checker/approval engine kurmaz veya onay eşiği seçmez;
 - kod ön eki, sıra üreticisi veya alias migration'ı seçmez;
 - API route, JSON alanı, hata kodu, cache ürünü veya paket seçmez;
 - event adı, topic, broker, retry veya retention politikası seçmez;
@@ -60,7 +60,7 @@ Bu doküman aşağıdakileri yapmaz:
 | Kaynak | Bu taslağın tükettiği sınır |
 |---|---|
 | Issue #98 | Tek group-shared Product UUID/kod/kart; company ayrımı fiziksel/ticari kayıtta başlar; global inactive iki şirkette yeni kullanımı kapatır; export aynı UUID'yi korur. |
-| Issue #99 | Permission, rol, activation ve maker-checker matrisi henüz açıktır; burada tahmin edilemez. |
+| Issue #99 | İlk pilotta Product/Service master read ve write yalnız mevcut `SYSTEM_ADMINISTRATOR`; diğer roller default-deny; yeni rol/assignment/AI yetkisi yok; generic maker-checker MVP'yi bloklamaz; exact permission string'leri ayrı versioned manifest ve naming/security review ister. |
 | Issue #100 | Product epic'i schema/migration öncesi açık platform shared-master sözleşmesi ister. |
 | `ADR-002` | Tenant kayıtlarında request-scoped CompanyContext, CompanyId query/write guard, non-disclosure ve server-side group read. |
 | `ADR-004` | Dış kimlik yalnız authentication'dır; ERP permission ve scope yerel Identity kaynağından gelir; default-deny. |
@@ -73,10 +73,10 @@ Bu doküman aşağıdakileri yapmaz:
 Çelişkide ürünün iş anlamını Product Owner kararı, platform güvenlik uygulamasını kabul
 edilmiş ADR'ler belirler. Bu iki katmandan biri diğerini sessizce yeniden yorumlayamaz.
 
-Issue #98 bugün GitHub'da `CLOSED / KILITLI` olmakla birlikte exact karar metni henüz
-repository karar siciline alınmamıştır. Issue #100 gövdesi de eski company-policy,
-company-inactive, açık #98 checkbox'ı ve geniş PR #77 kapısını taşımaktadır. Bu taslak
-#98'in owner yorumunu kaynak kabul eder; repo karar kaydı ve Issue #100 truth-sync'i
+Issue #98 ve #99 bugün GitHub'da `CLOSED / KILITLI` olmakla birlikte exact karar metinleri
+henüz repository karar siciline alınmamıştır. Issue #100 gövdesi de eski company-policy,
+company-inactive, açık #98/#99 kapıları ve geniş PR #77 kapısını taşımaktadır. Bu taslak
+#98/#99 owner yorumlarını kaynak kabul eder; repo karar kaydı ve Issue #100 truth-sync'i
 Product Owner/ChatGPT-BUSINESS sahipliğinde tamamlanmadan executable delivery planı veya
 schema başlangıç izni üretmez.
 
@@ -104,8 +104,9 @@ nasıl bağlanacağı henüz açık karardır ve kabul edilene kadar production 
 ### 5.4 Group authorization scope
 
 Group-shared masterı okuma veya değiştirme yetkisinin server tarafında çözülen kapsamıdır.
-Birden fazla Company assignment'ının istemcide birleştirilmesi değildir. Exact permission,
-rol ve onay matrisi Issue #99'da açıktır. Group scope ayrıca server-owned, default-deny
+Birden fazla Company assignment'ının istemcide birleştirilmesi değildir. Pilot grantee ve
+maker-checker semantiği Issue #99'da kilitlidir; exact permission string/manifest'i ve
+group scope temsili açıktır. Group scope ayrıca server-owned, default-deny
 bir authorization scope kaynağına bağlı olmalıdır; company assignment veya permission
 tek başına group eligibility üretmez. Bu kaynağın ayrı membership kaydı, global
 role/scope veya başka bir Identity modeli olması açık karardır.
@@ -170,13 +171,31 @@ vermez. Kullanıcı önce `ADR-004` uyarınca aktif yerel ERP user olarak provis
 
 ### 8.2 Default-deny
 
-Group-shared master eylemleri Issue #99'da kabul edilecek permission + scope matrisiyle
-explicit authorize edilmelidir. Ayrı permission mı, ortak permission altında farklı scope
-mu kullanılacağı bu taslakta seçilmez. Açık matris en az read, draft create/edit,
-activate/deactivate, code/alias administration, unit/conversion, package standard,
-technical template, bulk-import prepare/apply ve ayrı fiyat eylemlerini kapsar. Issue #99
-kapanmadan mevcut Organization, Security, Cari, Satış, Stok veya başka role bu yetkiler
-sessizce eklenemez.
+Issue #99'un kilitli pilot matrisi uygulanır:
+
+- Product/Service master read/list/detail ve bütün ilk-pilot write eylemleri yalnız mevcut
+  exact `SYSTEM_ADMINISTRATOR` rolüne verilir;
+- draft create/edit, activate/deactivate/reactivate, visible-code exception/alias,
+  unit/conversion, technical-template, package-standard prepare/manage/approve ve
+  bulk-import prepare/validate/apply bu sınırdadır;
+- diğer mevcut, custom ve gelecekteki roller default-deny kalır;
+- yeni `PRODUCT_MASTER_*` rolü veya otomatik user-role assignment üretilmez;
+- AI ayrı read/write/activation yetkisi kazanmaz;
+- manual visible-code exception/alias administration, daha sonra business rol kataloğu
+  genişlese dahi yalnız exact `SYSTEM_ADMINISTRATOR` yetkisinde kalır;
+- herhangi bir operasyon business user'ına Product write verilmeden önce Option-B tarzı
+  editor/approver ayrımı ve görev ayrılığı (SoD) ayrı Product Owner kararıyla zorunlu
+  olarak kabul edilir;
+- price read/manage/simulate/approve ayrı gelecekteki Product Price sözleşmesidir ve bu
+  kararla sessizce grant edilmez;
+- exact permission string'leri Product-owned versioned manifest ve platform
+  naming/security review olmadan registry/seed/reconciliation'a dönüşmez.
+
+Fresh install yalnız exact administrator role kabul edilmiş Product permission bundle'ını
+alabilir; existing install yalnız eksik kabul edilmiş izinleri exact ID/code eşleşmesine
+add-only, idempotent, duplicate-safe ve fail-closed reconciliation ile ekleyebilir. Eksik
+administrator veya ID/code collision reddedilir; custom permission ve assignment korunur.
+Production invocation/evidence Issue #62/#63 kapılarından geçmeden çalıştırılmaz.
 
 Unknown permission, eksik scope, pasif user, süresi geçmiş assignment, eksik local user
 veya çözülemeyen group scope sıfır erişim üretir.
@@ -203,8 +222,8 @@ matrisi ve lifecycle bu taslakta seçilmez.
 
 - Tek şirket görünümünde selected CompanyContext, kullanıcının request bağlamını ve
   company-scoped child kayıt görünürlüğünü sınırlar.
-- Group görünümü magic CompanyId değildir; dedicated server-side read model ve Issue #99
-  ile group scope sözleşmesinde kabul edilmiş permission + scope kararı gerektirir.
+- Group görünümü magic CompanyId değildir; dedicated server-side read model, Issue #99
+  Option A ve kabul edilmiş group scope sözleşmesi gerektirir.
 - Bir şirkete atanmış olmak tek başına global Product write veya group read yetkisi vermez.
 - İki şirkete ayrı ayrı atanmış olmak da istemcinin iki sonucu birleştirerek group access
   üretmesine izin vermez.
@@ -297,8 +316,9 @@ Global Product write için en az şu sıra korunur:
 
 1. local actor ve session doğrulama;
 2. kabul edilmiş global authorization/audit/idempotency context doğrulama;
-3. Issue #99 ile kabul edilmiş action permission/scope;
-4. gerekliyse maker-checker/approval ve reauthorization;
+3. Issue #99 Option A ile kabul edilmiş action permission/scope;
+4. güncel reauthorization ve tanımlıysa impact preview; generic maker-checker ancak ayrı
+   sonraki ürün kararıyla;
 5. canonical request ve idempotency scope;
 6. expected version / optimistic concurrency;
 7. domain invariant ve downstream impact validation;
@@ -307,8 +327,14 @@ Global Product write için en az şu sıra korunur:
 10. güvenli response ve correlation kanıtı.
 
 Global `Inactive` iki şirketin yeni seçimini kapattığı için etkisi company-local bir durum
-değişikliğinden daha geniştir. Activation/deactivation permission ve approval matrisi
-Issue #99 kapanmadan uygulanamaz. AI veya frontend bu durumu doğrudan değiştiremez.
+değişikliğinden daha geniştir. İlk pilotta activation/deactivation/reactivation yalnız
+`SYSTEM_ADMINISTRATOR`, mandatory audit, optimistic concurrency ve tanımlıysa impact
+preview ile çalışır; generic ikinci Product approver MVP önkoşulu değildir. AI veya
+frontend bu durumu doğrudan değiştiremez.
+
+Pilot sonrasında operational business writer açılması, editor/approver ayrımı ve SoD
+kararı kabul edilmeden yapılamaz. Manual visible-code exception/alias administration bu
+genişlemede dahi `SYSTEM_ADMINISTRATOR` dışına taşınamaz.
 
 ## 12. Audit ve correlation
 
@@ -564,10 +590,10 @@ katmanlarını içerir. In-memory provider tenant/FK/concurrency kanıtı olarak
 
 Bu taslak aşağıdaki kararları görünür tutar ve kapatmaz:
 
-1. Issue #99 exact Product permission, rol, maker-checker, seed ve existing-install
-   reconciliation matrisi.
-2. Issue #98 owner kararının repo karar siciline exact ve izlenebilir biçimde alınması.
-3. Issue #100 epic gövdesindeki stale company-policy/#98/#77 kapılarının owner tarafından
+1. Issue #98/#99 owner kararlarının repo karar siciline exact ve izlenebilir biçimde alınması.
+2. Product-owned versioned permission manifest'i, exact permission string'leri ve platform
+   naming/security review'u; Product Price yetki sözleşmesi ayrı kalır.
+3. Issue #100 epic gövdesindeki stale company-policy/#98/#99/#77 kapılarının owner tarafından
    truth-sync edilmesi.
 4. Group authorization scope'un Identity modelinde nasıl temsil edileceği.
 5. Global Product mutation için originating CompanyContext ve varsa platform system scope
@@ -588,9 +614,10 @@ Bu taslak aşağıdaki kararları görünür tutar ve kapatmaz:
 | Kapı | Durum | Bu sözleşmedeki sonuç |
 |---|---|---|
 | Issue #98 `PRD-SCOPE-001` | `KILITLI / CLOSED` | Ürün semantiği tüketildi; yeniden açılmaz. |
-| Issue #98 repository decision record | `OPEN / OWNER TRUTH-SYNC` | Exact owner kararı repo siciline alınmadan executable plan/schema yok. |
-| Issue #100 epic truth-sync | `OPEN / OWNER TRUTH-SYNC` | Eski company-policy, #98 ve geniş #77 kapıları düzeltilmeden epic uygulama kaynağı değildir. |
-| Issue #99 `PRD-PERM-001` | `OPEN` | Permission/activation/approval production write'ı bloklar. |
+| Issue #98/#99 repository decision record | `OPEN / OWNER TRUTH-SYNC` | Exact owner kararları repo siciline alınmadan executable plan/schema yok. |
+| Issue #100 epic truth-sync | `OPEN / OWNER TRUTH-SYNC` | Eski company-policy, #98/#99 ve geniş #77 kapıları düzeltilmeden epic uygulama kaynağı değildir. |
+| Issue #99 `PRD-PERM-001` | `KILITLI / CLOSED` | Option A pilot grantee/default-deny/maker-checker semantiği tüketildi; exact strings/manifest hâlâ kapıdır. |
+| Product permission manifest + naming/security review | `OPEN` | Seed/reconciliation/API authorization implementation bloklu. |
 | Group-shared persistence ADR | `OPEN` | Product schema/migration bloklu. |
 | Audit global-subject extension | `OPEN` | Product mutation bloklu. |
 | Global idempotency scope | `OPEN` | Product mutation bloklu. |
@@ -603,7 +630,8 @@ Bu taslak aşağıdaki kararları görünür tutar ve kapatmaz:
 
 ## 23. Yasak kısa yollar
 
-- #99 kapanmadan yalnız System Admin dahil herhangi bir role Product grant vermek;
+- accepted versioned permission manifest/naming review ve group scope sözleşmesi olmadan
+  `SYSTEM_ADMINISTRATOR` dahil herhangi bir role physical grant/reconciliation yazmak;
 - CompanyId'yi nullable/global flag ile sessizce geçmek;
 - Productı bir şirketin tenant satırı yapıp diğer şirkete paylaşmak;
 - şirket başına Product kopyası üretmek;
@@ -622,13 +650,14 @@ Bu taslak aşağıdaki kararları görünür tutar ve kapatmaz:
 Bu doküman ancak aşağıdaki incelemelerden sonra bağlayıcı ADR/acceptance girdisine
 dönüştürülebilir:
 
-1. Product Owner, Issue #98 semantiğini repository karar siciline exact ve izlenebilir
+1. Product Owner, Issue #98/#99 semantiğini repository karar siciline exact ve izlenebilir
    biçimde taşır; Issue #100 gövdesini aynı gerçekle truth-sync eder.
-2. Product Owner, Issue #98 semantiğinin bu sözleşmede eksiksiz ve yeniden yorumlanmadan
+2. Product Owner, Issue #98/#99 semantiğinin bu sözleşmede eksiksiz ve yeniden yorumlanmadan
    taşındığını doğrular.
 3. Security reviewer, default-deny, non-disclosure, group scope ve system-write sınırını
    kabul eder.
-4. Identity owner, Issue #99 ve group scope modelini kapatır.
+4. Identity/Product owners, exact versioned permission manifest/naming review ve group
+   scope modelini kabul eder; Issue #62/#63 invocation/evidence kapılarını korur.
 5. Audit/Idempotency owners, global subject/command scope extension'larını kabul eder.
 6. Data/migration owner persistence ve portable-reference modelini gerçek SQL/restore
    acceptance ile bağlar.
@@ -643,7 +672,8 @@ Bu kapılar tamamlanana kadar sonuç:
 ```text
 CONTRACT: DRAFT
 PRODUCT DECISION #98: CONSUMED / LOCKED
-PRODUCT PERMISSION #99: OPEN
+PRODUCT PERMISSION #99: CONSUMED / LOCKED
+EXACT PERMISSION MANIFEST/NAMING: OPEN
 SCHEMA/MIGRATION: BLOCKED
 PRODUCTION WRITE: NO-GO
 PRODUCTION READ/ROUTE: NO-GO
