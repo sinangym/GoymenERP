@@ -3,7 +3,7 @@
 - Durum: `DRAFT / OPEN / HUMAN REVIEW REQUIRED`
 - Implementation: `BLOCKED`
 - Production activation: `NO-GO`
-- İncelenen taban: `main@83197c50f515db959638fadd7cc11ad6eb7a4fc8`
+- İncelenen taban: `main@871101455dc2ba343d1c94982bfe9d1fa547411b`
 - Takip: GitHub Issue `#88`
 - Eski kaynak: kapalı ve merge edilmemiş Draft PR `#2`, exact head
   `50f408d35b41ea310cd7ec281de7189f01fbdc53`
@@ -274,7 +274,9 @@ Implementation başlamadan en az şu kararlar sahipli kayda bağlanmalıdır:
 - task manifest, bootstrap ve UI validator paketleri geçmeli;
 - `git diff --check`, standard CI ve UI golden çalışmalı;
 - exact-head bağımsız review ile açık P0/P1 bulunmamalı;
-- Issue #87 nedeniyle runner başlamadan biten zero-step iş kabul sayılmamalı;
+- Issue #87 içindeki payment/spending-limit kaynaklı zero-step alt kapısı tarihsel olarak
+  kapanmıştır; kabul için exact-head runner-backed gerçek adımlar zorunludur ve geçmiş
+  zero-step denemeler kanıt sayılmamalıdır;
 - Draft/human review kapısı korunmalı ve auto-merge yapılmamalı.
 
 Bu kapılar readiness belgesini incelenebilir yapar; RPT implementation veya production
