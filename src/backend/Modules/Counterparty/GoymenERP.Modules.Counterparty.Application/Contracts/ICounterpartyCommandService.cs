@@ -62,7 +62,17 @@ public enum CounterpartyCommandResult
 
 public static class CounterpartyProblemCodesV1
 {
+    public const string ValidationFailed = "validation_failed";
+
+    public const string CommandMetadataInvalid = "command_metadata_invalid";
+
+    public const string InvalidCursor = "invalid_cursor";
+
+    public const string NotFound = "not_found";
+
     public const string AlreadyLinked = "already_linked";
+
+    public const string VersionConflict = "version_conflict";
 
     public const string IdempotencyConflict = "idempotency_conflict";
 
@@ -70,8 +80,10 @@ public static class CounterpartyProblemCodesV1
     {
         return result switch
         {
-            CounterpartyCommandResult.AlreadyLinked => AlreadyLinked,
+            CounterpartyCommandResult.NotFound => NotFound,
+            CounterpartyCommandResult.VersionConflict => VersionConflict,
             CounterpartyCommandResult.IdempotencyConflict => IdempotencyConflict,
+            CounterpartyCommandResult.AlreadyLinked => AlreadyLinked,
             _ => null,
         };
     }
