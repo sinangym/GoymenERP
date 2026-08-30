@@ -852,3 +852,38 @@ DECISION_PACK AÇIK: 0 ASSUMPTION + 21 OPEN
 KRİTİK ANALİZ: shell-companycontext-fence REV.2 → fresh review; frontend-packages → 5×P1, minimum staged stack revizyonu sırada
 SONRAKİ: #118 REV (minimum staged stack + external iddiaları kanıtla/kaldır) VEYA Codex review beklerken shared UI state matrisi
 ```
+
+## 2026-08-31 — Döngü v2.0-5 (CLAUDE-FRONTEND şeridi)
+
+- Main: `b5450a3` (v2.1 fail-close PR #125 merge oldu — lane self-merge KALDIRILDI, coordinator merge kapısı; ajan-ayrık CRITICAL_ANALYSIS yapısı; delivery-backlog validator)
+- Dilim: `W0-SHELL` fence mimarisi REV.3
+- Branch/PR: `claude/w0-shell-companycontext-fence-analysis` / PR #119 Draft
+
+### Yapılan — REV.3 (CODEX-ORCHESTRATOR BLOCKER)
+
+- **3-1 (gerçek hata düzeltildi)**: request fence artık **transition/logout/revoke BAŞLANGICINDA** artar
+  (`SET-PENDING`), başarılı commit'i beklemez. İki ayrı sayaç: `requestFenceGeneration` (fence,
+  transition başında + FAIL'de bir kez daha) vs `committedContextRevision` (yalnız başarılı
+  ATOMIC-COMMIT, contextKey binding'i). Rev.2'deki "tek sayaç, commit'te artar" hatası: eski-A
+  response'u switch pending iken "hâlâ A" görüp commit edebiliyordu; başarısız switch'te fence hiç
+  kurulmuyordu. Düzeltildi.
+- **3-2**: dosya v2.1 ajan-ayrık yola taşındı: `docs/delivery/CRITICAL_ANALYSIS/shell-companycontext-fence/claude.md`.
+- **3-3**: branch `b5450a3` head'ine merge edildi.
+
+### v2.1 kural değişikliği (PR #125)
+
+- Lane ajanı kendi PR'ini MERGE ETMEZ — bölüm 10 kapıları geçince ayrı coordinator merge eder.
+- `docs/delivery/CRITICAL_ANALYSIS/<konu>/<ajan>.md` ajan-ayrık yapı.
+- `tools/validate_delivery_backlog.py` (848) DAG/karar/acceptance eşleme fail-close validator.
+
+```text
+DÖNGÜ: 2026-08-31 | ŞERİT: claude
+MAIN SHA: b5450a3
+DİLİM: W0-SHELL (fence mimarisi REV.3)
+DAVRANIŞ DEĞİŞİKLİĞİ: hayır: BLOCKER yanıt döngüsü (NOT) — gerçek fence-timing hatası düzeltildi
+KATMAN: K3
+MERGE: yok — Draft; lane self-merge kapalı (v2.1); fresh CI + 2× exact-head K3 review bekliyor
+DECISION_PACK AÇIK: 0 ASSUMPTION + 21 OPEN
+KRİTİK ANALİZ: shell-companycontext-fence/claude.md REV.3 → fresh review; frontend-packages 5×P1 → sıradaki (ajan-ayrık taşı + minimum staged stack)
+SONRAKİ: #118 restructure (frontend-packages/claude.md + minimum staged stack)
+```

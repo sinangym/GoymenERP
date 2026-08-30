@@ -4,10 +4,11 @@
 - Protokol: `GOYMEN_ERP_OTONOM_TESLIM_PLANI_v2.md` §6 Adım 4 (mimari çatal) + §9
 - Üst sözleşme: `ERP-000K_SHELL_CONTRACT_v1.md` §8, §9, §13, §18.2
 - Bağlı: Issue #120 (`ORGANIZATION-COMPANY-DIRECTORY-V1`), Issue #122 (`W0-CICD-001`), Issue #124 (`W0-SHELL-001`)
-- İncelenen main: `382d9b5` (branch bu head'e merge edildi)
+- İncelenen main: `b5450a3` (v2.1 fail-close; branch bu head'e merge edildi)
 - Analizi yapan: `CLAUDE-FRONTEND`
-- Durum: **REV.2 — ChatGPT+Codex BLOCKER (P1-REV1-1..4 + hardening) ele alındı; fresh exact-head CODEX-PLATFORM + ChatGPT re-review bekliyor**
-- Karar sınıfı: `SHELL-PILOT-01` (Issue #124) implementation'ını bağlayan **package-bağımsız güvenlik sözleşmesi**; kod eklemez, paket seçmez, endpoint/alan seçmez.
+- Dosya: `docs/delivery/CRITICAL_ANALYSIS/shell-companycontext-fence/claude.md` (v2.1 ajan-ayrık yapı; Codex ayrı `codex.md` yazar)
+- Durum: **REV.3 — CODEX-ORCHESTRATOR BLOCKER (fence-başlangıç + ajan-ayrık dosya + main senkron) ele alındı; fresh exact-head CODEX + ChatGPT re-review bekliyor**
+- Karar sınıfı: `SHELL-PILOT-01` (Issue #124) implementation'ını bağlayan **package-bağımsız güvenlik sözleşmesi**; kod eklemez, paket seçmez, endpoint/alan seçmez. Lane yazarı merge etmez (v2.1 §1).
 
 ---
 
@@ -17,7 +18,8 @@
 |---|---|
 | 0 | İlk analiz (head `676abb9`) |
 | 1 | ChatGPT 4×P1: fabricated revision kaldırıldı, iki fazlı geçiş, opak snapshot, route registry |
-| 2 | ChatGPT+Codex BLOCKER: **(REV1-1)** PR body REV.1 ile senkronlandı. **(REV1-2)** güvenlik değişmezi package-bağımsız yeniden yazıldı; TanStack Query / spesifik API yalnız §B'de "aday eşleme, #118/#122 kapısına bağlı". **(REV1-3)** ERP-000E tab-close: uydurma payload-hash backend lookup kaldırıldı; sekme kapanışı → explicit unknown-outcome/manuel mutabakat durumu, yeni anahtarla kör resend yasak. **(REV1-4)** capability cache key = local session/actor generation + context binding (yalnız opak snapshotId değil). Grup modu somut owner route declaration olmadan devre dışı. Package-bağımsız browser kabulü Playwright/TanStack "zorunlu" denmeden önce yazıldı. Branch `382d9b5`'e senkron. |
+| 2 | ChatGPT+Codex BLOCKER: **(REV1-1)** PR body REV.1 ile senkronlandı. **(REV1-2)** güvenlik değişmezi package-bağımsız yeniden yazıldı; TanStack Query / spesifik API yalnız §B'de "aday eşleme, #118/#122 kapısına bağlı". **(REV1-3)** ERP-000E tab-close: uydurma payload-hash backend lookup kaldırıldı; sekme kapanışı → explicit unknown-outcome/manuel mutabakat durumu, yeni anahtarla kör resend yasak. **(REV1-4)** capability cache key = local session/actor generation + context binding (yalnız opak snapshotId değil). Grup modu somut owner route declaration olmadan devre dışı. |
+| 3 | CODEX-ORCHESTRATOR BLOCKER: **(3-1)** **request fence, transition/logout/revoke BAŞLANGICINDA artar** — başarılı commit'i beklemez; başarısız switch'te bile fence kurulur. Ayrı kavram: `requestFenceGeneration` (fence) vs `committedContextRevision` (namespace binding). **(3-2)** dosya v2.1 ajan-ayrık yola taşındı (`.../shell-companycontext-fence/claude.md`); Codex ayrı dosya yazar; flat/shared-progress K3 kapısı olamaz. **(3-3)** branch `b5450a3` (v2.1) head'ine senkron. |
 
 ---
 
@@ -39,8 +41,8 @@
 |---|---|---|
 | 13.1 | Dirty form/workspace/onay preview sessizce taşınmaz | **INV-DIRTY**: açık `dirtyScopes` varken switch kullanıcı kararına kadar `activeContext`'i değiştiremez |
 | 13.2 | Kullanıcı karar vermeden context commit edilmez | **INV-PENDING**: aday `pendingTarget` ayrı tutulur; `activeContext` yalnız §A.3 ATOMIC-COMMIT'te değişir |
-| 13.3 | Pending write sonucu bilinmiyorsa switch duplicate write tetiklemez | **INV-WRITE**: aktif write'lar transition-generation'a bağlı; unknown-outcome write silinmez ve yeni anahtarla yeniden gönderilmez (§A.5) |
-| 13.4 | Eski şirket request'i iptal + geç response atılır | **INV-FENCE**: her request başlatıldığı `transitionGeneration`'ı taşır; dönüşte generation güncel değilse response state/cache'e **yazılmaz** — iptal kaçırılsa bile |
+| 13.3 | Pending write sonucu bilinmiyorsa switch duplicate write tetiklemez | **INV-WRITE**: aktif write'lar `requestFenceGeneration`'a bağlı; unknown-outcome write silinmez ve yeni anahtarla yeniden gönderilmez (§A.5) |
+| 13.4 | Eski şirket request'i iptal + geç response atılır | **INV-FENCE**: her request başlatıldığı `requestFenceGeneration`'ı taşır; **fence transition BAŞLANGICINDA artar**; dönüşte generation güncel değilse response state/cache'e **yazılmaz** — iptal kaçırılsa ve switch başarısız olsa bile |
 | 13.5 | Query/cache/optimistic/total/suggestion contextler arası paylaşılmaz | **INV-NS**: her context-bağlı cache girişi context-owned namespace anahtarı taşır; anahtarın merkezi üreticiden geldiğini denetleyen invariant testi vardır (§A.4) |
 | 13.6 | Yeni context server reauth olmadan route/data açılmaz | **INV-REAUTH**: `pendingTarget` için server reauthorization başarısız olana kadar hiçbir hedef verisi/route'u/kimliği açılmaz veya görünmez |
 | 13.7 | Eski şirket verisi skeleton/animation/error/history'de görünmez | **INV-NEUTRAL**: transition sırasında ne eski ne yeni context verisi/adı görünür; nötr "değiştiriliyor" durumu |
@@ -48,12 +50,27 @@
 | 13.9 | Logout/kullanıcı değişiminde hassas view/form state yeni session'a taşınmaz | **INV-SESSION**: kullanıcı/session değişimi tüm context-bağlı ağacı ve in-memory state'i sıfırlar; hassas veri insecure storage'a hiç yazılmaz |
 | 13.10 | Permission daraltması açık page/favorite/recent/background refresh'i yeniden doğrular | **INV-REVOKE**: capability generation değişimi context-bağlı ağacı yeniden bağlar + aktif route server reauth |
 
-### A.2 Transition generation fence (INV-FENCE)
+### A.2 İki ayrı sayaç — request fence vs committed revision
 
-- Shell, monotonik artan bir `transitionGeneration` sayacı tutar. Şu **başarılı** olaylarda `++`: şirket switch commit, grup-okuma commit, login/logout/kullanıcı değişimi, capability generation değişimi. **Başarısız switch artırmaz.**
-- Her giden request başlatıldığı generation'ı yakalar (istemci-içi kapanış, header değil).
-- Response/settle anında: `capturedGeneration !== currentGeneration` → sonuç state'e ve cache'e **yazılmaz**. Bu değişmez, transport iptalinin (abort) kaçırıldığı durumda da (ör. body okuma sırasında switch) eski veriyi keser.
-- Bu bir kütüphane özelliği değildir; herhangi bir data-fetch katmanının üstüne yazılabilen bir kurgudur.
+**(REV.3 — CODEX-ORCHESTRATOR 3-1 düzeltmesi: fence, başarılı commit'i beklemez.)**
+
+Shell **iki** monotonik sayaç tutar; kavramsal olarak ayrıdır:
+
+**1. `requestFenceGeneration` (INV-FENCE)**
+
+- Şu olayların **BAŞLANGICINDA** `++` — sonucu beklemez: şirket switch başlatma (SET-PENDING), grup-okuma geçişi başlatma, logout/kullanıcı değişimi başlatma, capability revoke/daraltma sinyali, ve switch **FAIL** durumunda former context'i geri yüklerken bir kez daha.
+- Her giden request başlatıldığı `requestFenceGeneration`'ı yakalar (istemci-içi kapanış, header değil).
+- Response/settle anında: `capturedFence !== currentFence` → sonuç state'e ve cache'e **yazılmaz**, mutation UI etkisi (toast/navigation) üretmez.
+- Sonuç: switch **başladığı an** tüm eski-context in-flight request'leri fence'lenir. Switch başarısız olsa bile fence kurulmuştur; eski A response'u "hâlâ A aktif" görüp commit edemez.
+- Bu bir kütüphane özelliği değildir; herhangi bir data-fetch/mutation katmanının üstüne yazılabilen bir kurgudur.
+
+**2. `committedContextRevision`**
+
+- Yalnız **başarılı** ATOMIC-COMMIT'te `++` (şirket switch commit, grup-okuma commit, login).
+- `contextKey` / cache namespace binding'inin parçasıdır (§A.4). Cache girişleri yalnız gerçekten bağlı bir context'e ait olur.
+- Başarısız switch bunu artırmaz; former context'in cache namespace'i değişmez, veri kaybolmaz.
+
+İki sayaç neden ayrı: fence "hangi request'ler artık geçersiz" sorusunu **transition başında** yanıtlar (güvenlik); committed revision "cache hangi doğrulanmış context'e ait" sorusunu **commit'te** yanıtlar (bütünlük). Tek sayaç kullanılırsa ya fence geç kurulur (rev.2 hatası) ya da cache yarım-context'e bağlanır.
 
 ### A.3 İki fazlı geçiş (INV-PENDING / INV-REAUTH / INV-NEUTRAL)
 
@@ -67,25 +84,28 @@ GUARD ── dirtyScopes ≠ ∅ ──▶ CONFIRM (kal / vazgeç / güvenli-kay
  │ dirtyScopes = ∅
  ▼
 SET-PENDING     pending = X ; active HÂLÂ A (commit yok)
+ │  ►► requestFenceGeneration++  ◄◄ (fence BURADA kurulur — sonucu beklemez)
  │  overlay'leri kapat, focus main ; giden request'leri iptal et
  ▼
-NEUTRAL         active = <no-active-safe> ; A verisi fence'lendi ; X verisi YOK
+NEUTRAL         active = <no-active-safe> ; A in-flight request'leri artık fence'li ; X verisi YOK
  │  UI: nötr "şirket değiştiriliyor"; ne A ne X verisi/adı/route'u
  ▼
 REAUTH          server, pending = X için yeniden yetkilendirir + capability generation çözer
  │  başarısız (401/403/stale/malformed) ──▶ FAIL
  │  başarılı
  ▼
-ATOMIC-COMMIT   tek işlemde: active = X ; transitionGeneration++ ; capabilityGeneration = yeni ;
- │              context namespace anahtarı yeniden hesaplanır ; eski context-owned cache girişleri temizlenir
+ATOMIC-COMMIT   tek işlemde: active = X ; committedContextRevision++ ; capabilityGeneration = yeni ;
+ │              contextKey yeniden hesaplanır ; eski context-owned cache girişleri temizlenir
+ │              (requestFenceGeneration SET-PENDING'de zaten artmıştı)
  ▼
-MOUNT           context-bağlı ağaç yeni anahtarla yeniden bağlanır ; aktif route loader server reauth ile yeniden çalışır
+MOUNT           context-bağlı ağaç yeni contextKey ile yeniden bağlanır ; aktif route loader server reauth ile yeniden çalışır
  │              route X'te yetkisiz → non-disclosing yönlendirme (§10.2)
  ▼
 IDLE (active = X)
 
 FAIL:
- → former context A'yı FRESH reauthorize edip geri yükle (A capability yeniden çözülür)
+ → requestFenceGeneration++ (bir kez daha — X-denemesi in-flight response'ları da fence'le)
+ → former context A'yı FRESH reauthorize edip geri yükle (A capability yeniden çözülür ; committedContextRevision değişmez)
    VEYA explicit "aktif şirket yok" güvenli durumda kal
  → X'in adı/ID'si/state'i commit öncesi hiç expose edilmez
 ```
@@ -94,7 +114,7 @@ Grup-okuma: aynı akış; `pending = { mode: 'group' }`. **Grup modu, somut bir 
 
 ### A.4 Context-owned namespace (INV-NS) + ayrı yaşam döngüleri
 
-- **Context-bağlı** cache girişleri (liste, 360, count, suggestion, optimistic state) merkezi bir `contextKey` üreticisinden gelen anahtar taşır. `contextKey` kaba bileşenleri: `userId` (session/actor generation), `companyScopeMode`, `companyId` veya grup, `capabilityGeneration`.
+- **Context-bağlı** cache girişleri (liste, 360, count, suggestion, optimistic state) merkezi bir `contextKey` üreticisinden gelen anahtar taşır. `contextKey` kaba bileşenleri: `userId` (session/actor generation), `companyScopeMode`, `companyId` veya grup, `capabilityGeneration`, `committedContextRevision`. **`requestFenceGeneration` contextKey'e girmez** — o request-yaşam-döngüsü fence'idir, cache binding'i değil.
 - **Invariant testi:** repo lint/test kuralı, context-bağlı fetch/cache çağrılarının anahtarının merkezi üreticiden geldiğini denetler. Ham string prefix'e güvenilmez; kural bozan PR CI'da kırmızı.
 - **Ayrı yaşam döngüleri (açık sahiplik):**
   - **session/actor** state → login/logout ile sıfırlanır; context switch'ten etkilenmez.
@@ -106,7 +126,7 @@ Grup-okuma: aynı akış; `pending = { mode: 'group' }`. **Grup modu, somut bir 
 
 **(REV.2 — uydurma backend lookup kaldırıldı)**
 
-- Her write başında in-memory registry: `{ commandIdentity, payloadHash, contextBinding: {generation, companyId, userId}, idempotencyKey, status: 'pending' }`.
+- Her write başında in-memory registry: `{ commandIdentity, payloadHash, contextBinding: {requestFenceGeneration, committedContextRevision, companyId, userId}, idempotencyKey, status: 'pending' }`.
 - `idempotencyKey` **insecure browser storage'a (localStorage/sessionStorage) yazılmaz** — yalnız in-memory.
 - `payloadHash` yalnız **bütünlük/binding metadata**'sıdır; sonuç sorgulama yetkisi değildir.
 - **Oturum-içi şirket switch'i:** anahtar in-memory korunur; kullanıcı eski context'e döndüğünde **önce fresh reauthorization**, sonra ERP-000E'nin **anahtar-tabanlı** replay sözleşmesiyle (aynı `idempotencyKey`) sonuç çözülür ve reauth'tan sonra gösterilir.
@@ -124,8 +144,8 @@ Aşağıdaki eşleme **yalnızca** PR #118 paket kapısı ve Issue #122 generate
 
 | Değişmez | Olası eşleme (aday) |
 |---|---|
-| INV-FENCE | herhangi bir fetch katmanı + generation kapanışı; TanStack Query kullanılırsa `meta.generation` + `onSettled` guard |
-| INV-NS | `contextKey` merkezi üretici; TanStack Query kullanılırsa `queryKey[0] = contextKey`, switch'te scoped `removeQueries` |
+| INV-FENCE | herhangi bir fetch/mutation katmanı + `requestFenceGeneration` kapanışı; TanStack Query kullanılırsa `meta.fenceGeneration` + `onSettled`/`onSuccess` guard |
+| INV-NS | `contextKey` merkezi üretici (`committedContextRevision` dahil); TanStack Query kullanılırsa `queryKey[0] = contextKey`, switch'te scoped `removeQueries` |
 | INV-PENDING / A.3 | shell store reducer (Zustand veya context/reducer — paket kararı değil); `key={contextKey}` ile ağaç remount |
 | INV-OVERLAY | overlay-registry; React Aria veya başka headless — paket kararı değil |
 | A.5 replay | ERP-000E anahtar-tabanlı sözleşme; ek endpoint YOK |
@@ -163,18 +183,20 @@ Package-bağımsız kabul; browser E2E aracı #118/#122 kapandığında seçilir
 
 ---
 
-## E. Fresh review isteği (CODEX-PLATFORM + ChatGPT re-review)
+## E. Fresh review isteği (CODEX + ChatGPT re-review)
 
 ```text
-REVIEWED HEAD: <REV.2 PR head SHA>   BASE: 382d9b5
+REVIEWED HEAD: <REV.3 PR head SHA>   BASE: b5450a3 (v2.1)
 KATMAN: K3 — doğru | yanlış
-SOURCE: ERP-000K §8/§9/§13/§18.2, OTONOM_TESLIM_PLANI §6/§9, Issue #120/#122/#124, AT-005/AT-008
-REV1-1 (PR body REV.2 ile senkron): kabul | <sapma>
+SOURCE: ERP-000K §8/§9/§13/§18.2, OTONOM_TESLIM_PLANI v2.1 §6/§9, Issue #120/#122/#124, AT-005/AT-008
+3-1 (requestFenceGeneration transition BAŞLANGICINDA artar; committedContextRevision ayrı): kabul | <açık>
+3-2 (ajan-ayrık dosya .../shell-companycontext-fence/claude.md): kabul | <sapma>
+3-3 (branch b5450a3 head'ine senkron; fresh CI): kabul | <sapma>
 REV1-2 (güvenlik değişmezi package-bağımsız; Bölüm B non-normatif): sınır doğru | <ihlal>
-REV1-3 (ERP-000E sekme-kapanışı: otomatik kurtarma yok, explicit manuel mutabakat): kabul | <bulgu>
-REV1-4 (capability key = session/actor generation + context binding; grup modu owner-route'suz devre dışı): kabul | <bulgu>
+REV1-3 (ERP-000E sekme-kapanışı: otomatik kurtarma yok): kabul | <bulgu>
+REV1-4 (capability key + grup modu owner-route'suz devre dışı): kabul | <bulgu>
 INV-FENCE / INV-NS / A.3 / A.5: değişmezler §13'ü karşılıyor | <açık madde>
 KARAR: HANDOFF-ACCEPTED | BLOCKER
 ```
 
-Yakınsarsa: Bölüm A `SHELL-PILOT-01` (Issue #124) kabul kriteri olur. Bölüm B, #118/#122 kapandığında revize edilir. Foundation implementation bu head'den değil, review yakınsamasından sonra başlar.
+Yakınsarsa: Bölüm A `SHELL-PILOT-01` (Issue #124) kabul kriteri olur. Bölüm B, #118/#122 kapandığında revize edilir. Foundation implementation bu head'den değil, iki exact-head K3 review yakınsamasından sonra başlar (v2.1 §1 — lane yazarı merge etmez).
