@@ -2,7 +2,7 @@
 
 - Durum: `DRAFT / IMPLEMENTATION-NEUTRAL / HUMAN SECURITY + IDENTITY + PRODUCT REVIEW REQUIRED`
 - Production durumu: `IMPLEMENTATION BLOCKED / NO-GO`
-- Taban: `main@8795bceb9838572f101238162d926f586d452ec8`
+- Taban: `main@871101455dc2ba343d1c94982bfe9d1fa547411b`
 - Sözleşme sahibi: `CODEX-PLATFORM`
 - Ürün kararı sahibi: Product Owner / ChatGPT-BUSINESS
 - Önkoşul: merged PR #103 group-shared master boundary
@@ -30,7 +30,7 @@ Merge edilmesi Product API/runtime geliştirmesini ya da production aktivasyonun
 
 ## 2. Current-main gerçekliği
 
-`main@8795bceb9838572f101238162d926f586d452ec8` üzerinde:
+`main@871101455dc2ba343d1c94982bfe9d1fa547411b` üzerinde:
 
 1. `AccessScopeType` yalnız `Company`, `Site`, `Location`, `WorkCenter` değerlerini taşır.
 2. Her `RoleAssignment` boş olmayan bir `CompanyId` taşır.
@@ -60,6 +60,9 @@ Merge edilmesi Product API/runtime geliştirmesini ya da production aktivasyonun
     server-backed UI availability/navigation'ın permission, grantee, group eligibility,
     CompanyContext veya backend authorization kanıtı olmadığı non-authority sınırı
     tüketilir. ERP-000K runtime implementation hâlâ `BLOCKED`, production `NO-GO`dur.
+15. Merged PR #109 iki Cari-owned UI contract belgesini repoya ekler; Product route,
+    permission, group eligibility veya group authorization kaynağı değildir. Post-merge
+    Cari contract doğruluk düzeltmeleri Issue #110'da kendi owner hattında açık kalır.
 
 Bu mevcut davranış company-scoped işlemler için korunmalıdır. Group authorization eklemek
 amacıyla current-main güvenlik değişmezleri gevşetilemez.
