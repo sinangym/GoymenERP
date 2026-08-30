@@ -716,6 +716,21 @@ class WorkflowOrderingTests(unittest.TestCase):
         self.assertIsNotNone(match, f"Missing workflow step: {step_name}")
         return match.group(1)
 
+    def run_commands(self, step_body: str) -> list[str]:
+        lines = step_body.splitlines()
+        self.assertIn("        run: |", lines, "Expected a literal run block.")
+        run_index = lines.index("        run: |")
+        commands: list[str] = []
+        for line in lines[run_index + 1 :]:
+            if not line.strip():
+                continue
+            self.assertTrue(
+                line.startswith("          "),
+                f"Unexpected content outside the run block: {line!r}",
+            )
+            commands.append(line.strip())
+        return commands
+
     def test_backend_and_relational_run_preflight_immediately_after_checkout(self) -> None:
         checkout_step = "      - uses: actions/checkout@v7"
         preflight_step = "      - name: .NET bootstrap integrity preflight"
@@ -800,6 +815,23 @@ class WorkflowOrderingTests(unittest.TestCase):
         self.assertIn("--no-restore", vulnerable_step)
         self.assertIn("--configfile NuGet.Config", vulnerable_step)
 
+    def test_tool_restore_is_immediately_preflighted_with_locked_inputs(self) -> None:
+        backend = self.job_body("backend")
+        restore_step = self.step_body(backend, "Restore tools and packages")
+        commands = self.run_commands(restore_step)
+        validator_command = (
+            "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py"
+        )
+        tool_restore_command = (
+            "dotnet tool restore --tool-manifest dotnet-tools.json "
+            "--configfile NuGet.Config"
+        )
+
+        self.assertEqual(commands.count(tool_restore_command), 1)
+        tool_restore_index = commands.index(tool_restore_command)
+        self.assertGreater(tool_restore_index, 0)
+        self.assertEqual(commands[tool_restore_index - 1], validator_command)
+
     def test_unsupported_dotnet_boundaries_repeat_preflight_fail_closed(self) -> None:
         backend = self.job_body("backend")
         validator_command = (
@@ -836,7 +868,6 @@ class WorkflowOrderingTests(unittest.TestCase):
             "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py"
         )
         backend_boundaries = {
-            "Restore tools and packages": "dotnet restore GoymenERP.slnx",
             "Build": "dotnet build GoymenERP.slnx",
             "Test": "dotnet test GoymenERP.slnx",
             "Architecture dependency guard": (
@@ -850,6 +881,25 @@ class WorkflowOrderingTests(unittest.TestCase):
                 step = self.step_body(backend, step_name)
                 self.assertEqual(step.count(validator_command), 1)
                 self.assertLess(step.index(validator_command), step.index(command))
+
+        restore_commands = self.run_commands(
+            self.step_body(backend, "Restore tools and packages")
+        )
+        restore_boundaries = (
+            "dotnet tool restore --tool-manifest dotnet-tools.json "
+            "--configfile NuGet.Config",
+            "dotnet restore GoymenERP.slnx -noAutoResponse "
+            "--configfile NuGet.Config",
+        )
+        self.assertEqual(restore_commands.count(validator_command), 2)
+        for command in restore_boundaries:
+            with self.subTest(step="Restore tools and packages", command=command):
+                self.assertEqual(restore_commands.count(command), 1)
+                command_index = restore_commands.index(command)
+                self.assertGreater(command_index, 0)
+                self.assertEqual(
+                    restore_commands[command_index - 1], validator_command
+                )
 
         relational_step = self.step_body(relational, "Run relational acceptance test")
         relational_restore_step = self.step_body(
@@ -870,12 +920,39 @@ class WorkflowOrderingTests(unittest.TestCase):
             relational_step.index(relational_command),
         )
 
-    def test_container_dotnet_surface_depends_on_both_preflight_jobs(self) -> None:
+    def test_container_runner_preflights_its_checkout_before_repo_execution(self) -> None:
         body = self.job_body("containers")
         needs_block = re.search(r"(?ms)^    needs:\n(.*?)(?=^    [A-Za-z0-9_-]+:)", body)
         self.assertIsNotNone(needs_block, "Container job must have an explicit needs gate.")
         dependencies = set(re.findall(r"^      - ([A-Za-z0-9_-]+)$", needs_block.group(1), re.M))
-        self.assertTrue({"backend", "relational"}.issubset(dependencies))
+        self.assertEqual(dependencies, {"backend", "frontend", "relational"})
+
+        checkout_step = "      - uses: actions/checkout@v7"
+        preflight_step = (
+            "      - name: Container runner .NET bootstrap integrity preflight"
+        )
+        compose_step = "      - name: Validate compose model"
+        build_step = "      - name: Build application images"
+        validator_command = (
+            "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py"
+        )
+
+        self.assertEqual(body.count(checkout_step), 1)
+        self.assertEqual(body.count(preflight_step), 1)
+        self.assertRegex(
+            body,
+            re.escape(checkout_step) + r"\n\n" + re.escape(preflight_step),
+        )
+        self.assertLess(body.index(preflight_step), body.index(compose_step))
+        self.assertLess(body.index(compose_step), body.index(build_step))
+        self.assertEqual(
+            self.run_commands(
+                self.step_body(
+                    body, "Container runner .NET bootstrap integrity preflight"
+                )
+            ),
+            [validator_command],
+        )
 
     def test_backend_container_disables_auto_response_for_build_commands(self) -> None:
         dockerfile = (
