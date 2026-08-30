@@ -17,6 +17,28 @@ varsa okunur ve görev/branch/PR/doğrulama akışında uygulanır. Bu protokol 
 vermez. `AGENTS.md`, governance, CI veya merge politikası değişiklikleri otomatik merge
 edilemez; insan review kapısında kalır.
 
+`docs/governance/GOYMEN_ERP_OTONOM_TESLIM_PLANI_v2.md` merge edilmişse ayrıca okunur.
+31 Ağustos 2026 tarihli kullanıcı kararı, geliştirme PR'ları için aşağıdaki dar ve geri
+alınabilir standing merge yetkisini verir:
+
+- Şerit yazarı kendi PR'ını merge etmez; merge'i ayrı `CODEX-ORCHESTRATOR` koordinatörü
+  expected-head ile yapar.
+- K1/K2 implementation PR'ı ancak fresh zorunlu kontroller, exact-head bağımsız review,
+  yeni davranış testi ve açık P0/P1 olmaması halinde coordinator tarafından squash merge
+  edilebilir.
+- K3 implementation PR'ı ancak kilitli kararları uygularsa, açık işletme politikasını
+  seçmiyorsa, iki bağımsız exact-head review ve ilgili gerçek SQL/browser/failure kanıtı
+  varsa coordinator tarafından merge edilebilir.
+- Bu yetki `OPEN-*` kapatma, yeni rol/formül/eşik/para/stok/üretim politikası seçme,
+  karar/master/task durumunu sessiz değiştirme, secret/deployment veya production
+  aktivasyonu yetkisi değildir.
+- `.github/**` içinde yalnız build/test/contract/security kalite kapısı değişikliği aynı
+  K3 kanıtıyla merge edilebilir. Deployment, environment, secret ve production yüzeyi
+  her zaman somut kullanıcı kararı ister.
+
+GitHub teknik koruması kullanılamıyorsa lane self-merge kapalı kalır; coordinator aynı
+kapıları prosedürel olarak doğrular ve kanıtı GitHub'a yazmadan merge yapmaz.
+
 ## Mimari değişmezler
 
 - Modüler monolit; modül sınırları kod, şema ve servis sözleşmesinde korunur.
