@@ -27,13 +27,40 @@ public static class ErpProblemDetailsExtensions
             or StatusCodes.Status503ServiceUnavailable;
     }
 
+    internal static bool IsPlatformProblem(ProblemDetailsContext context)
+    {
+        var statusCode = context.ProblemDetails.Status
+            ?? context.HttpContext.Response.StatusCode;
+        return IsPlatformStatus(statusCode)
+            || statusCode == StatusCodes.Status400BadRequest
+            && TryGetRequestMetadataCode(context, out _);
+    }
+
     internal static void CustomizeProblemDetails(ProblemDetailsContext context)
     {
         var statusCode = context.ProblemDetails.Status
             ?? context.HttpContext.Response.StatusCode;
 
+        if (statusCode == StatusCodes.Status400BadRequest
+            && TryGetReservedRequestMetadataCode(
+                context.ProblemDetails,
+                out _)
+            && !TryGetRequestMetadataCode(context, out _))
+        {
+            context.ProblemDetails.Extensions.Remove("code");
+            return;
+        }
+
         switch (statusCode)
         {
+            case StatusCodes.Status400BadRequest
+                when TryGetRequestMetadataCode(
+                    context,
+                    out var requestMetadataCode):
+                SetSafeRequestMetadataProblem(
+                    context.ProblemDetails,
+                    requestMetadataCode);
+                break;
             case StatusCodes.Status401Unauthorized:
                 SetSafePlatformProblem(
                     context.ProblemDetails,
@@ -81,6 +108,71 @@ public static class ErpProblemDetailsExtensions
             context.ProblemDetails.Extensions["correlationId"] =
                 correlationContext.CorrelationId;
         }
+    }
+
+    private static bool TryGetRequestMetadataCode(
+        ProblemDetailsContext context,
+        out string code)
+    {
+        if (ErpRequestMetadataProblem.TryGetOwnedCode(
+                context.HttpContext,
+                context.ProblemDetails,
+                out var candidate)
+            && IsReservedRequestMetadataCode(candidate))
+        {
+            code = candidate;
+            return true;
+        }
+
+        code = string.Empty;
+        return false;
+    }
+
+    private static bool TryGetReservedRequestMetadataCode(
+        ProblemDetails problemDetails,
+        out string code)
+    {
+        if (problemDetails.Extensions.TryGetValue("code", out var value)
+            && value is string candidate
+            && IsReservedRequestMetadataCode(candidate))
+        {
+            code = candidate;
+            return true;
+        }
+
+        code = string.Empty;
+        return false;
+    }
+
+    private static bool IsReservedRequestMetadataCode(string code)
+    {
+        return code is ErpProblemCodes.CompanyContextInvalid
+            or ErpProblemCodes.CorrelationMetadataInvalid;
+    }
+
+    private static void SetSafeRequestMetadataProblem(
+        ProblemDetails problemDetails,
+        string code)
+    {
+        var (title, detail) = code switch
+        {
+            ErpProblemCodes.CompanyContextInvalid => (
+                "Şirket seçimi gerekli.",
+                "İşleme devam etmek için geçerli bir şirket seçin."),
+            ErpProblemCodes.CorrelationMetadataInvalid => (
+                "Korelasyon bilgisi geçersiz.",
+                "Korelasyon ve neden kimlikleri en fazla 128 güvenli karakter içermelidir."),
+            _ => throw new InvalidOperationException(
+                "Bilinmeyen platform istek metadata hata kodu."),
+        };
+
+        SetSafePlatformProblem(
+            problemDetails,
+            StatusCodes.Status400BadRequest,
+            code,
+            title,
+            detail,
+            "https://www.rfc-editor.org/rfc/rfc9110#section-15.5.1");
     }
 
     private static void SetSafePlatformProblem(

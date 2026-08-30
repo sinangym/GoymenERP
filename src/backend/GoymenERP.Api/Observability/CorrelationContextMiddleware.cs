@@ -1,3 +1,4 @@
+using GoymenERP.Api.Errors;
 using GoymenERP.BuildingBlocks.Observability;
 
 namespace GoymenERP.Api.Observability;
@@ -25,16 +26,43 @@ public sealed class CorrelationContextMiddleware(
                 CausationHeaderName,
                 out var causationId))
         {
-            await Results.Problem(
-                    title: "Korelasyon bilgisi geçersiz.",
-                    detail: "Korelasyon ve neden kimlikleri en fazla 128 güvenli karakter içermelidir.",
-                    statusCode: StatusCodes.Status400BadRequest)
-                .ExecuteAsync(httpContext);
+            var rejectedRequestCorrelationId = Guid.NewGuid().ToString("N");
+            ResolveContext(
+                httpContext,
+                correlationContext,
+                rejectedRequestCorrelationId,
+                causationId: null);
+            httpContext.Response.Headers[CorrelationHeaderName] =
+                rejectedRequestCorrelationId;
+
+            using (logger.BeginScope(CreateLoggingScope(correlationContext)))
+            {
+                logger.LogWarning(
+                    "Request metadata was rejected at the correlation boundary. ErrorCode={ErrorCode}",
+                    ErpProblemCodes.CorrelationMetadataInvalid);
+                await ErpRequestMetadataProblem
+                    .WriteCorrelationMetadataInvalidAsync(httpContext);
+            }
+
             return;
         }
 
         correlationId ??= Guid.NewGuid().ToString("N");
+        ResolveContext(httpContext, correlationContext, correlationId, causationId);
+        httpContext.Response.Headers[CorrelationHeaderName] = correlationId;
 
+        using (logger.BeginScope(CreateLoggingScope(correlationContext)))
+        {
+            await next(httpContext);
+        }
+    }
+
+    private static void ResolveContext(
+        HttpContext httpContext,
+        ICorrelationContext correlationContext,
+        string correlationId,
+        string? causationId)
+    {
         var userAgent = httpContext.Request.Headers.UserAgent.ToString().Trim();
         if (userAgent.Length > 512)
         {
@@ -47,17 +75,17 @@ public sealed class CorrelationContextMiddleware(
             SourceChannels.Web,
             httpContext.Connection.RemoteIpAddress?.ToString(),
             string.IsNullOrWhiteSpace(userAgent) ? null : userAgent);
-        httpContext.Response.Headers[CorrelationHeaderName] = correlationId;
+    }
 
-        using (logger.BeginScope(new Dictionary<string, object?>
+    private static Dictionary<string, object?> CreateLoggingScope(
+        ICorrelationContext correlationContext)
+    {
+        return new Dictionary<string, object?>
         {
-            ["CorrelationId"] = correlationId,
+            ["CorrelationId"] = correlationContext.CorrelationId,
             ["CausationId"] = correlationContext.CausationId,
             ["SourceChannel"] = correlationContext.SourceChannel,
-        }))
-        {
-            await next(httpContext);
-        }
+        };
     }
 
     private static bool TryReadIdentifierHeader(
