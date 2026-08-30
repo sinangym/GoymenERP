@@ -54,11 +54,27 @@ public static class ErpAuthenticationExtensions
                     "OIDC/JWT için Authentication:Oidc:Authority ve Audience zorunludur.");
             }
 
+            var authority = settings.Oidc.Authority.Trim();
+            if (!environment.IsDevelopment() && !environment.IsEnvironment("Testing"))
+            {
+                if (!IsSafeHttpsAuthority(authority))
+                {
+                    throw new InvalidOperationException(
+                        "OIDC/JWT Authority, Development ve Testing dışındaki ortamlarda kullanıcı bilgisi, sorgu veya parça içermeyen mutlak ve iyi biçimlendirilmiş bir HTTPS adresi olmalıdır.");
+                }
+
+                if (!settings.Oidc.RequireHttpsMetadata)
+                {
+                    throw new InvalidOperationException(
+                        "OIDC/JWT için RequireHttpsMetadata, Development ve Testing dışındaki ortamlarda true olmalıdır.");
+                }
+            }
+
             services
                 .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 .AddJwtBearer(options =>
                 {
-                    options.Authority = settings.Oidc.Authority;
+                    options.Authority = authority;
                     options.Audience = settings.Oidc.Audience;
                     options.RequireHttpsMetadata = settings.Oidc.RequireHttpsMetadata;
                     options.MapInboundClaims = false;
@@ -100,5 +116,38 @@ public static class ErpAuthenticationExtensions
         });
 
         return services;
+    }
+
+    private static bool IsSafeHttpsAuthority(string authority)
+    {
+        if (!Uri.TryCreate(authority, UriKind.Absolute, out var authorityUri)
+            || !authorityUri.IsWellFormedOriginalString()
+            || !string.Equals(
+                authorityUri.Scheme,
+                Uri.UriSchemeHttps,
+                StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(authorityUri.Host)
+            || !string.IsNullOrEmpty(authorityUri.UserInfo)
+            || !string.IsNullOrEmpty(authorityUri.Query)
+            || !string.IsNullOrEmpty(authorityUri.Fragment))
+        {
+            return false;
+        }
+
+        var authoritySeparatorIndex = authority.IndexOf("://", StringComparison.Ordinal);
+        if (authoritySeparatorIndex < 0)
+        {
+            return false;
+        }
+
+        var authorityComponentStart = authoritySeparatorIndex + 3;
+        var authorityComponentEnd = authority.IndexOfAny(
+            ['/', '?', '#'],
+            authorityComponentStart);
+        var authorityComponentLength = authorityComponentEnd < 0
+            ? authority.Length - authorityComponentStart
+            : authorityComponentEnd - authorityComponentStart;
+
+        return !authority.AsSpan(authorityComponentStart, authorityComponentLength).Contains('@');
     }
 }

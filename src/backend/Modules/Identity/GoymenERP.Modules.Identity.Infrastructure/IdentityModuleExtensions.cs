@@ -39,6 +39,7 @@ public static class IdentityModuleExtensions
         services.AddScoped<IExternalIdentityResolver, ExternalIdentityResolver>();
         services.AddScoped<IErpAuthorizationService, ErpAuthorizationService>();
         services.AddScoped<IIdentityProfileService, IdentityProfileService>();
+        services.AddScoped<ISystemRolePermissionReconciler, SystemRolePermissionReconciler>();
         services.AddScoped<IdentityDataSeeder>();
 
         return services;

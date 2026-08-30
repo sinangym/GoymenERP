@@ -16,19 +16,14 @@ public sealed class CorrelationContextMiddleware(
         HttpContext httpContext,
         ICorrelationContext correlationContext)
     {
-        var correlationId = httpContext.Request.Headers[CorrelationHeaderName]
-            .ToString()
-            .Trim();
-        if (string.IsNullOrWhiteSpace(correlationId))
-        {
-            correlationId = Guid.NewGuid().ToString("N");
-        }
-
-        var causationId = httpContext.Request.Headers[CausationHeaderName]
-            .ToString()
-            .Trim();
-        if (!IsValidIdentifier(correlationId)
-            || (!string.IsNullOrWhiteSpace(causationId) && !IsValidIdentifier(causationId)))
+        if (!TryReadIdentifierHeader(
+                httpContext.Request.Headers,
+                CorrelationHeaderName,
+                out var correlationId)
+            || !TryReadIdentifierHeader(
+                httpContext.Request.Headers,
+                CausationHeaderName,
+                out var causationId))
         {
             await Results.Problem(
                     title: "Korelasyon bilgisi geçersiz.",
@@ -38,6 +33,8 @@ public sealed class CorrelationContextMiddleware(
             return;
         }
 
+        correlationId ??= Guid.NewGuid().ToString("N");
+
         var userAgent = httpContext.Request.Headers.UserAgent.ToString().Trim();
         if (userAgent.Length > 512)
         {
@@ -46,7 +43,7 @@ public sealed class CorrelationContextMiddleware(
 
         correlationContext.Set(
             correlationId,
-            string.IsNullOrWhiteSpace(causationId) ? null : causationId,
+            causationId,
             SourceChannels.Web,
             httpContext.Connection.RemoteIpAddress?.ToString(),
             string.IsNullOrWhiteSpace(userAgent) ? null : userAgent);
@@ -61,6 +58,27 @@ public sealed class CorrelationContextMiddleware(
         {
             await next(httpContext);
         }
+    }
+
+    private static bool TryReadIdentifierHeader(
+        IHeaderDictionary headers,
+        string headerName,
+        out string? identifier)
+    {
+        if (!headers.TryGetValue(headerName, out var values))
+        {
+            identifier = null;
+            return true;
+        }
+
+        if (values.Count != 1)
+        {
+            identifier = null;
+            return false;
+        }
+
+        identifier = values[0];
+        return identifier is not null && IsValidIdentifier(identifier);
     }
 
     private static bool IsValidIdentifier(string value)

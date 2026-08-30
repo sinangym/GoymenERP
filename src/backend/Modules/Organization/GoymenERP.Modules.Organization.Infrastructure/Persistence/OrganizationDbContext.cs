@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Organization.Domain.Common;
 using GoymenERP.Modules.Organization.Domain.Companies;
 using GoymenERP.Modules.Organization.Domain.Locations;
@@ -36,6 +37,8 @@ public sealed class OrganizationDbContext(
         ConfigureLocation(modelBuilder);
         ConfigureWorkCenter(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
+        modelBuilder.Entity<AuditEvent>()
+            .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
         modelBuilder.ConfigureCommandExecution(excludeFromMigrations: true);
         modelBuilder.Entity<CommandExecution>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -132,6 +135,8 @@ public sealed class OrganizationDbContext(
 
     private void ApplyTenantWriteGuards()
     {
+        OrganizationAuditEventTenantGuard.Validate(this, companyContext);
+
         var now = DateTimeOffset.UtcNow;
 
         foreach (var entry in ChangeTracker.Entries<TenantEntity>())

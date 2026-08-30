@@ -103,34 +103,66 @@
     {
       "id": "ERP-000J",
       "title": "AI gateway iskeleti",
-      "status": "ready",
+      "status": "blocked",
       "depends_on": [
-        "ERP-000A"
+        "ERP-000A",
+        "ERP-000B",
+        "ERP-000C",
+        "ERP-000D",
+        "ERP-000E",
+        "ERP-000L"
       ],
-      "scope": "Tool registry, policy check, audit envelope, no direct DB.",
-      "acceptance": "AI yetki aşamaz; write tool onaysız uygulanmaz.",
+      "scope": "Provider-agnostic, CompanyContext-safe ve default-deny AI Gateway; sürümlü allowlist tool registry, veri sınıflandırma/minimizasyon, prompt/tool güven sınırı, deterministik preview ve insan onaylı idempotent domain command, audit/security-event/telemetry ayrımı; AI doğrudan DB veya ham SQL kullanmaz.",
+      "acceptance": "Bütün depends_on görevleri kabul edilip main'e alınır; fiziksel ADR-008, OPEN-020 ve ERP-000J-AI-CONTRACT kapanır; server-backed AI capability ve permission/ABAC, tool schema ile argüman yeniden doğrulama, preview-approval-reauth binding, idempotency/concurrency/audit/correlation, attachment/OCR, retention/deletion, outage/degradation ve eval/red-team kapıları gerçek SQL negatif kabul kanıtlarıyla geçer; AT-059/060/068 kanıtlanır. Model çıktısı yetki, onay, formül veya iş doğrusu değildir.",
+      "blocked_by": [
+        "ADR-008",
+        "OPEN-020",
+        "ERP-000J-AI-CONTRACT"
+      ],
       "priority": "P0"
     },
     {
       "id": "ERP-000K",
       "title": "Ortak React kabuğu",
-      "status": "ready",
+      "status": "blocked",
       "depends_on": [
-        "ERP-000A"
+        "ERP-000A",
+        "ERP-000B",
+        "ERP-000C",
+        "ERP-000D",
+        "ERP-000E",
+        "ERP-000L",
+        "ERP-000O"
       ],
-      "scope": "Lacivert nav, top bar, company switcher, list/workspace/drawer patterns.",
-      "acceptance": "Responsive ve klavye smoke testleri.",
+      "scope": "Permission-aware ve CompanyContext-safe ortak React kabuğu; koyu lacivert navigasyon, global toolbar, breadcrumb, ortak list/360/form/workspace/drawer/modal durumları, responsive ve erişilebilir etkileşim; arama, AI, bildirim ve domain feature'ları için mock üretmeyen server-capability-gated mount noktaları.",
+      "acceptance": "Bütün depends_on görevleri kabul edilip main'e alınır; fiziksel ERP-000K-SHELL-CONTRACT D-01/GLOBAL-SHELL deltası, server-backed capability ve route/feature-mount sözleşmesi, tek şirket ile açık yetkili çok-şirket okuma ayrımı, CompanyContext dirty-state/pending/cache/stale-response sınırı, session/error/redaction, responsive/accessibility ve frontend test kapılarını kapatır; AT-001/003/005/006/008 ile task-local tenant, keyboard, focus, mobile ve route-security senaryoları geçer. Arama, AI, bildirim ve Cari mount yalnız kendi kabul edilmiş owner contract'larıyla etkinleşir.",
+      "blocked_by": [
+        "ERP-000K-SHELL-CONTRACT"
+      ],
       "priority": "P0"
     },
     {
       "id": "ERP-000L",
       "title": "Gözlemlenebilirlik",
-      "status": "ready",
+      "status": "blocked",
       "depends_on": [
-        "ERP-000A"
+        "ERP-000A",
+        "ERP-000B",
+        "ERP-000C",
+        "ERP-000D",
+        "ERP-000E",
+        "ERP-000F",
+        "ERP-000M",
+        "ERP-000N"
       ],
-      "scope": "Structured logs, metrics, traces, health checks, correlation.",
-      "acceptance": "Hata ve yavaş sorgu tanılanabilir.",
+      "scope": "Provider- and sink-agnostic logs, metrics, traces, health probes, correlation, durable security-event boundary, SLO/alert ownership and runbooks.",
+      "acceptance": "All depends_on tasks are accepted and merged; OPEN-014/OPEN-015/OPEN-017 and ERP-000L-DECISION-PACK close; task-local scenarios prove redaction, operator authorization, bounded cardinality, probe semantics and real API/SQL/queue/backup evidence.",
+      "blocked_by": [
+        "OPEN-014",
+        "OPEN-015",
+        "OPEN-017",
+        "ERP-000L-DECISION-PACK"
+      ],
       "priority": "P0"
     },
     {
@@ -159,23 +191,51 @@
     {
       "id": "ERP-000N",
       "title": "Backup/restore runbook",
-      "status": "ready",
+      "status": "blocked",
       "depends_on": [
-        "ERP-000A"
+        "ERP-000A",
+        "ERP-000B",
+        "ERP-000C",
+        "ERP-000D",
+        "ERP-000E",
+        "ERP-000F",
+        "ERP-000G",
+        "ERP-000M",
+        "ERP-000O"
       ],
-      "scope": "DB + object store backup, restore and checksum script.",
-      "acceptance": "Gerçek prova başarılı ve dokümante.",
+      "scope": "Encrypted off-site SQL Server PITR and S3-compatible object-version backup sets; key/secret recovery; isolated restore; DB-object-audit-idempotency-outbox/inbox reconciliation; company export/restore and observed disaster drills.",
+      "acceptance": "All depends_on tasks are accepted and merged; physical ADR-003/005/010, OPEN-014/OPEN-015/OPEN-017/OPEN-018 and ERP-000N-RECOVERY-CONTRACT close; AT-070 passes in an isolated real SQL Server plus S3-compatible restore drill with checksum, tenant security, reconciliation and approved RPO/RTO evidence.",
+      "blocked_by": [
+        "ADR-003",
+        "ADR-005",
+        "ADR-010",
+        "OPEN-014",
+        "OPEN-015",
+        "OPEN-017",
+        "OPEN-018",
+        "ERP-000N-RECOVERY-CONTRACT"
+      ],
       "priority": "P0"
     },
     {
       "id": "ERP-000O",
       "title": "CI/CD ve kalite kapıları",
-      "status": "ready",
+      "status": "blocked",
       "depends_on": [
-        "ERP-000A"
+        "ERP-000A",
+        "ERP-000B",
+        "ERP-000C",
+        "ERP-000D",
+        "ERP-000E",
+        "ERP-000M"
       ],
-      "scope": "Build, unit, integration, lint, security scan, artifact manifest.",
-      "acceptance": "Başarısız kapı merge/yayın engeller.",
+      "scope": "Provider-agnostic fail-closed PR/main quality enforcement; trusted runner/executor substrate; build-once immutable application, migration, configuration and rollback evidence; SBOM/provenance/signing trust and environment approval boundaries. Production deployment remains disabled.",
+      "acceptance": "All depends_on tasks are accepted and merged; physical ADR-010, OPEN-014 and ERP-000O-DELIVERY-CONTRACT close; protected-main required checks, untrusted-PR secret isolation, verified runner substrate, pinned supply chain, real-SQL migration evidence and immutable uploaded artifact/provenance/rollback proof pass. Production activation remains fail-closed until OPEN-013/015/017, ERP-000N/ERP-000L and human approval close.",
+      "blocked_by": [
+        "ADR-010",
+        "OPEN-014",
+        "ERP-000O-DELIVERY-CONTRACT"
+      ],
       "priority": "P0"
     }
   ]

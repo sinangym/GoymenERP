@@ -410,3 +410,316 @@ OPEN DECISIONS: ADR-003/010; OPEN-014/015/017; ERP-000M-SQL-POC-CONTRACT; ERP-00
 MAIN SHA: 81283e582de00fc291b848a25f1a15ff45fc4657
 ACTIVE PRS: #19..#10 Draft; #15 aktif human review; #2 Draft/blocked
 ```
+
+## 2026-08-29 14:05 +03:00 — Döngü 12
+
+- Cari-owned Option A sözleşmesi PR #61 insan onayı sonrasında squash merge edilmiştir.
+  Contract head `781de1a71d10d83d4b4b5bd1e3c82eac0e61df2c`, merge commit ve bu çalışmanın
+  doğrulanmış tabanı `fed32839a9e0b4258efa5980fddc2846aaf85c49` olmuştur.
+- Yeni `main` için standart CI `33248227577` ve UI golden `33248227552` tamamen
+  başarılıdır.
+- Issue #57 comment `5461864590` ile exact implementation-start kaydı bırakılmıştır:
+  yalnız `SYSTEM_ADMINISTRATOR`, diğer roller default-deny, otomatik assignment yoktur.
+  Issue body içindeki eski operator-role metni uygulama kaynağı değildir.
+- `codex/identity-option-a-permission-reconciliation-v1` dalında generic ve inert
+  Identity permission reconciliation çekirdeği; fresh seed hizalaması; exact ID/code
+  guard'ı; transaction, tekrar, concurrency ve rollback güvenliği uygulanmıştır.
+- `counterparty.accounts.create` bilinen ve company-wide permission olarak kaydedilmiş,
+  yalnız kanonik `SYSTEM_ADMINISTRATOR` fresh seed'ine eklenmiştir. Yeni rol, assignment,
+  migration/schema, Counterparty endpoint veya PR #36/#60 değişikliği yapılmamıştır.
+- Yerel Release solution build 0 warning/0 error; bütün solution testleri başarılı;
+  gerçek SQL Server relational acceptance `10/10`; vulnerable NuGet dependency taraması
+  bulgusuz ve `git diff --check` temizdir. Bağımsız exact-diff review P0/P1 bulmamıştır.
+- Reconciler DI'a kayıtlı fakat production startup/deployment tarafından çağrılmamaktadır.
+  Production runner Issue #62, global security-change evidence ise Issue #63 olarak ayrı
+  kritik ve human-reviewed takip kapısına alınmıştır.
+- PR #36 ve PR #60 ChatGPT-owned kalmış, bu dal tarafından değiştirilmemiştir. Identity
+  çekirdeği ilk head `01458a4a6925522474cb28a5e01049a3a6980944` ile Draft PR #64 olarak
+  açılmıştır; exact-head uzak CI kanıtı oluşmadan merge-ready sayılmayacaktır.
+
+```text
+DONE: PR #61 merge; main CI 33248227577 + UI 33248227552; inert Option-A core; yerel full/real-SQL testler
+IN REVIEW: Identity Option-A reconciliation Draft PR #64; exact-head CI ve güvenlik review bekleniyor
+BLOCKED: production reconciliation activation (#62); global security evidence (#63); PR #36 current-main kabul zinciri
+SAFE NEXT: PR #64 exact-head CI; ChatGPT-CARI + insan Identity/security review
+OPEN DECISIONS: production runner/invocation; global security evidence modeli ve lifecycle
+MAIN SHA: fed32839a9e0b4258efa5980fddc2846aaf85c49
+ACTIVE PRS: #64 Draft/Codex-owned; #36 Draft/ChatGPT-owned; #60 Draft/ChatGPT-owned
+```
+
+## 2026-08-29 15:11 +03:00 — Döngü 13
+
+- Kullanıcının açık Identity/security merge onayı sonrasında PR `#64` exact head
+  `b395da940a9928c515132cb550608dbb7a037aad` değişmeden doğrulanmış ve
+  expected-head korumasıyla squash merge edilmiştir. Merge commit ve bu döngünün
+  doğrulanmış `main` tabanı `7e832d2b98a07428d46ead54a9d136b24c62203a` olmuştur.
+- Exact head için standart CI `33249484752`, UI golden `33249484747` ve ChatGPT-CARI
+  salt-okunur `HANDOFF-ACCEPTED` kanıtı merge öncesinde doğrulanmıştır. Merge sonrası
+  standart CI `33251655476` backend/migration, frontend, gerçek SQL Server relational
+  acceptance ve container işlerinde; UI golden `33251655426` ise katalog kontrolünde
+  tamamen başarılıdır.
+- Merge yalnız inert/generic Option A uzlaştırma çekirdeğini ana dala almıştır.
+  Production reconciliation çalıştırılmamış, yeni rol veya otomatik assignment
+  oluşturulmamış ve `SYSTEM_ADMINISTRATOR` dışındaki roller default-deny kalmıştır.
+- Production runner/invocation Issue `#62`, global immutable security evidence Issue
+  `#63` olarak açık ve ayrı insan kapılarıdır; PR `#64` bunları kapatmaz veya production
+  aktivasyonu yetkilendirmez.
+- PR `#65` için bu döngüye taşınan son incelenmiş/REQUEST_CHANGES head
+  `b826eb7d57346c80513f7b44d2b873b4f673430c` idi; bu SHA aktif head iddiası değildir.
+  Döngü yazılırken ChatGPT-BUSINESS hattında daha yeni remediation commitleri oluşmuş,
+  fakat bunlar için yeni exact-head review henüz tamamlanmamıştı. PR `#60` ChatGPT-CARI
+  sahipliğinde eski head
+  `3f7eb0e974346fb04846f382bff7ca2891d7e678` üzerindedir ve güncel `main`in iki
+  commit gerisinde olduğundan fresh sync, CI ve HANDOFF bekler.
+- `CARI-PERM-001 / Option A` ürün kararının `KARAR_SICILI.md/.csv` içine aktarılması
+  Cari karar yazma sahipliğindedir; bu CODEX truth-sync dalı karar siciline veya
+  ChatGPT-owned branch'lere yazmaz.
+
+```text
+DONE: PR #64 merge; main 7e832d2; new-main CI 33251655476 + UI golden 33251655426 yeşil
+IN REVIEW: PR #65 için yeni remediation exact-head review; PR #60 ChatGPT-CARI current-main sync head'i bekleniyor
+BLOCKED: production reconciliation activation (#62); global security evidence (#63); W0 sıralı kapıları
+SAFE NEXT: PR #60 yeni exact head salt-okunur review; PR #65 düzeltilmiş exact head salt-okunur review
+OPEN DECISIONS: production runner/invocation; global security evidence modeli ve lifecycle
+MAIN SHA: 7e832d2b98a07428d46ead54a9d136b24c62203a
+ACTIVE PRS: #65 Draft/ChatGPT-BUSINESS; #60/#36 Draft/ChatGPT-CARI; post-merge truth-sync Codex-owned
+```
+
+## 2026-08-29 20:22 +03:00 — Döngü 14
+
+- Yapısal task-manifest validator tooling PR #24 insan review'u sonrasında `main`e squash
+  merge edilmiştir. Bu döngünün temiz yeniden kurulum tabanı
+  `c1d28cc44e775cfea3a528cfd755cbe85b5ee290` commit'idir. Validator tooling foundation
+  olarak kullanılabilir; mevcut GitHub workflow'larına bağlı aktif bir CI kapısı değildir.
+- ERP-000O readiness Draft PR #19 güncel `main` üzerine yeniden kurulmuştur. Manifest kök
+  metadata'sı ile ERP-000O dışındaki 14 task güncel tabanla aynen korunmuş; yalnız
+  ERP-000O satırı `blocked`, exact bağımlılıkları A/B/C/D/E/M ve blocker'ları fiziksel
+  ADR-010, OPEN-014 ve task-local `ERP-000O-DELIVERY-CONTRACT` olacak şekilde bırakılmıştır.
+- Güncel çözümde Audit, Counterparty, Idempotency, Identity ve Organization olmak üzere
+  beş design-time migration DbContext'i vardır. Standart CI yalnız Organization, Identity,
+  Audit ve Idempotency için dört SQL migration scripti üretir; Counterparty scripti yoktur.
+  Yeşil CI bütün migration'ların delivery kapsamına alındığı anlamına gelmez.
+- Güncel `main` için standart CI `33265386298`, UI katalog golden validation
+  `33265386300` başarılıdır. Standart CI artifact API sonucu `total_count = 0` olduğundan
+  immutable release artifact boşluğu kapanmış sayılmamıştır.
+- Yerel doğrulamada task-manifest validator 15 task/23 edge için geçti; validator negatif
+  testleri 21/21, .NET testleri 365 başarılı/14 SQL ortamı olmadığı için atlandı, frontend
+  testleri 2/2 ve UI katalog negatif testleri 24/24 başarılıdır. Release build 0 uyarı/0
+  hata; NuGet ve npm güvenlik açığı taramaları bulgusuz; progress prefix ve exact üç-dosya
+  allowlist kontrolleri temizdir.
+- PR #69 ile .NET bootstrap integrity preflight ve PR #83 ile exact tenant-bypass source
+  inventory guard mevcut CI omurgasını güçlendirmiştir. Bunlar branch/ruleset enforcement,
+  bütün migration'ların discovery/promotion kanıtı veya production delivery zinciri yerine
+  geçmez.
+- Workflow, source, test, Docker, infra, Cari, provider, topoloji, threshold veya
+  production activation değiştirilmemiştir. PR #19 Draft ve insan review kapısında kalır;
+  ERP-000M/O/F implementation ve PR #2'nin yedi blocker'ı açılmaz.
+
+```text
+DONE: PR #24 merge; PR #19 clean current-main rebuild; O-only manifest delta; 5-vs-4 migration gap kaydı
+IN REVIEW: ERP-000O readiness Draft PR #19; fresh exact-head CI ve bağımsız review bekleniyor
+BLOCKED: ERP-000O/M/F implementation; production activation; PR #2 (yedi blocker)
+SAFE NEXT: exact-head CI/UI golden; artifact API; bağımsız exact-SHA review; insan review'u
+OPEN DECISIONS: physical ADR-010; OPEN-014; ERP-000O-DELIVERY-CONTRACT; ERP-000M/F kapı kararları; OPEN-013/015/017 production activation
+MAIN SHA: c1d28cc44e775cfea3a528cfd755cbe85b5ee290
+ACTIVE PRS: #19 Draft; #2 Draft/blocked; identity production gates #62/#63 open
+```
+
+## 2026-08-29 20:47 +03:00 — Döngü 15
+
+- ERP-000O readiness PR #19 insan review'u sonrasında squash merge edilmiştir. Bu
+  döngünün doğrulanmış temiz tabanı
+  `434b83ce49f02a2034c23c75690b791c38425874` commit'idir. Merge sonrası standart CI
+  `33266146969` ve UI golden `33266146965` tamamen yeşildir; bu baseline kanıtı
+  ERP-000N exact-head CI veya backup/restore kabulü yerine kullanılmaz.
+- ERP-000N readiness eski branch conflictleri taşınmadan güncel `main`den ayrı temiz
+  worktree/branch üzerinde yeniden üretilmiştir. Manifest kök metadata'sı ile ERP-000N
+  dışındaki on dört task objesi güncel tabanla aynı kalmış; yalnız ERP-000N `blocked`,
+  exact bağımlılıkları A/B/C/D/E/F/G/M/O ve blocker'ları fiziksel ADR-003/005/010,
+  OPEN-014/015/017/018 ile task-local `ERP-000N-RECOVERY-CONTRACT` yapılmıştır.
+- ERP-000E=`done`, ERP-000M=`blocked` ve ERP-000O=`blocked` gerçekleri korunmuştur.
+  Bu branch'in current DAG'ı 31 edge ile yalnız `M → O → N` dependency prefix'ini
+  kurar; ERP-000L satırı A-only current-main gerçeğiyle değişmeden kalır. Hedef
+  readiness/acceptance sırası `M → O → N → L`, ardından bağımsız `J/K`dır; `N → L`
+  edge'i sonraki ERP-000L current-main PR'ında kurulacaktır. PR #19'un merge edilmiş
+  olması ERP-000O implementation veya acceptance kapısını açmaz.
+- Güncel repo kanıtında fiziksel ADR-003/005/010 dosyaları, gerçek S3-compatible object
+  store/adapter, backup veya restore scripti, izole DB+object restore drill fixture'ı ve
+  zorunlu backup/restore CI işi yoktur. Task-manifest validator PR #24 ile `main`dedir ve
+  bu dalda kullanılmıştır; mevcut workflow'lara bağlı required gate olduğu iddia edilmez.
+- Yerel task-manifest validator 15 task/31 edge için geçti; 21/21 validator negatif
+  testi, 49 bootstrap integrity testi (1 platform skip), 24/24 UI katalog negatif testi
+  ve 72 kaynak/159 ekran golden doğrulaması başarılıdır. Release build 0 uyarı/0 hata;
+  .NET testleri 365 başarılı/14 SQL ortamı olmadığı için atlandı; frontend testleri 2/2,
+  lint/build ve NuGet/npm vulnerability taramaları bulgusuzdur.
+- Workflow, source, test, Docker, infra, Cari, provider, topoloji, storage, RPO/RTO,
+  threshold veya production activation değiştirilmemiştir. ERP-000N implementation ve
+  AT-070 kanıtı `NO-GO / BLOCKED`; Draft PR exact-head CI/UI golden ve bağımsız review
+  kapısında kalır. PR #2 ile ERP-000M/F ve Identity production #62/#63 kapıları açılmaz.
+
+```text
+DONE: PR #19 merge; PR #16 clean current-main rebuild; N-only manifest delta; local full validation
+IN REVIEW: ERP-000N readiness Draft PR #16; fresh exact-head CI/UI ve bağımsız review bekleniyor
+BLOCKED: ERP-000N/M/O/F implementation; AT-070; production activation; PR #2 (yedi blocker)
+SAFE NEXT: exact-head CI/UI golden; artifact/run kanıtı; bağımsız exact-SHA review; insan review'u
+OPEN DECISIONS: physical ADR-003/005/010; OPEN-014/015/017/018; ERP-000N-RECOVERY-CONTRACT; ERP-000M/O/F kapıları
+MAIN SHA: 434b83ce49f02a2034c23c75690b791c38425874
+ACTIVE PRS: #16 Draft; #2 Draft/blocked; identity production gates #62/#63 open
+```
+
+## 2026-08-29 21:11 +03:00 — Döngü 16
+
+- ERP-000N readiness PR #16 delege exact-SHA review sonrasında squash merge edilmiştir.
+  Bu döngünün doğrulanmış temiz tabanı
+  `9d884b789bc20442686567e50de243feb6496d42` commit'idir. Merge sonrası standart CI
+  `33267250706` backend, frontend, gerçek SQL Server ve container işlerinde; UI golden
+  `33267250672` kendi kontrolünde tamamen yeşildir. Bu baseline kanıtı ERP-000L
+  exact-head kabul kanıtı olarak yeniden kullanılmaz.
+- ERP-000L readiness eski branch commit/conflictleri taşınmadan güncel `main`den ayrı
+  clean worktree/branch üzerinde yeniden üretilmiştir. Manifest root metadata'sı ile
+  ERP-000L dışındaki on dört task objesi current-main ile exact kalmış; yalnız L satırı
+  `blocked`, direct bağımlılıkları A/B/C/D/E/F/M/N ve blocker'ları OPEN-014/015/017 ile
+  task-local `ERP-000L-DECISION-PACK` yapılmıştır.
+- ERP-000E=`done`, ERP-000M/O/N=`blocked` gerçekleri korunmuştur. N'nin direct
+  A/B/C/D/E/F/G/M/O bağımlılıklarıyla birleşik DAG 15 task / 38 edge ve döngüsüzdür;
+  readiness yönü `M → O → N → L`, ardından bağımsız `J/K` olarak kalır. Readiness
+  merge'leri ilgili implementation veya production kabulü değildir.
+- Current source envanterinde correlation middleware invalid raw header'ları persistent
+  etkiden önce reddeder; bare anonymous `/health/live` dışında dependency/startup/
+  readiness probe yoktur; merkezî metric/trace pipeline yoktur. Structured logging'de
+  Organization için bir, Counterparty için iki çağrı raw CompanyId, actor ve resource ID
+  taşır. Bunlar redaction/PII-retention boşluğu olarak kaydedilmiş, production kodu bu
+  docs-only dalda değiştirilmemiştir.
+- ERP-000D company-scoped transactional business audit'i korunur. Reddedilen/yetkisiz
+  denemeler için kabul edilmiş genel durable security-event channel yoktur; Issue #63
+  yalnız Identity/control-plane evidence için DRAFT/NO-GO'dur ve L'nin genel kanal
+  sözleşmesi sayılmaz. SY-07 referansı `DECISION_ONLY_REFERENCE_MISSING` kalır.
+- Yerel task-manifest validator 15 task/38 edge için ve 21/21 negatif testte geçmiştir.
+  Release build 0 uyarı/0 hata; .NET 365 başarılı/14 gerçek-SQL environment skip;
+  bootstrap integrity 49 test/1 Windows capability skip; UI validator 24/24 ve 72 kaynak/
+  159 ekran golden; frontend lint, 2/2 test ve build; NuGet/npm vulnerability taramaları
+  bulgusuzdur. Root/non-L parity, current-source inventory, exact üç-dosya allowlist,
+  progress prefix ve `git diff --check` kontrolleri temizdir.
+- Paket/provider/collector/sink/exporter, topoloji, metric label, PII/retention, sampling,
+  SLO, threshold, alarm sahibi, secret, CI/deployment veya production activation kararı
+  üretilmemiştir. ERP-000L/F/M/O/N implementation, PR #2, Identity #62/#63 ve Cari
+  sahiplik/acceptance kapıları kapalı kalır.
+
+```text
+DONE: PR #16 merge; PR #17 clean current-main rebuild; L-only manifest delta; local full validation
+IN REVIEW: ERP-000L readiness Draft PR #17; fresh exact-head CI/UI ve bağımsız review bekleniyor
+BLOCKED: ERP-000L/F/M/O/N implementation; production activation; PR #2; Identity #62/#63; Cari gates
+SAFE NEXT: exact-head CI/UI golden; bağımsız exact-SHA review; delege human gate
+OPEN DECISIONS: OPEN-014/015/017; ERP-000L-DECISION-PACK; provider/sink/topology/PII-retention/SLO/alert/threshold contracts
+MAIN SHA: 9d884b789bc20442686567e50de243feb6496d42
+ACTIVE PRS: #17 Draft; #2 Draft/blocked; identity production gates #62/#63 open; Cari owned PRs read-only
+```
+
+## 2026-08-29 21:35 +03:00 — Döngü 17
+
+- ERP-000L readiness PR #17 delege review ve insan merge kapısı sonrasında squash merge
+  edilmiştir. Bu döngünün eski commit taşımayan temiz rebuild tabanı
+  `6aa4a46a964ed2dae427e83026bb449449bd09df` commit'idir. Merge sonrası standart CI
+  `33267944609` ve UI golden `33267944641` tamamen yeşildir; bunlar ERP-000K exact-head
+  kabul kanıtı olarak yeniden kullanılmaz.
+- ERP-000K readiness eski PR commitleri rebase/cherry-pick edilmeden ayrı clean worktree'de
+  yeniden üretilmiştir. Manifest root metadata'sı ile ERP-000K dışındaki on dört task
+  current-main ile exact kalmış; yalnız K satırı `blocked`, direct bağımlılıkları
+  A/B/C/D/E/L/O ve blocker'ı fiziksel `ERP-000K-SHELL-CONTRACT` yapılmıştır. Birleşik DAG
+  15 task/44 dependency edge ve döngüsüzdür. ERP-000E=`done`, ERP-000M/O/N/L=`blocked`
+  gerçeği korunmuştur.
+- `docs/features/ERP-000K_SHELL_CONTRACT_v1.md` repository içindeki tek fiziksel readiness
+  ve contract artifact'idir. Readiness `ACCEPTABLE`; contract `OPEN`; implementation ve
+  production activation `NO-GO / BLOCKED` kalır. D-01 yalnız yapısal referans ve açık
+  deltadır; exact katalog alanları `CANDIDATE_EXACT`, `DESIGNED_NOT_LOCKED` ve
+  `PROTOTYPE_REFERENCE` olarak korunmuştur.
+- Contract; server-backed capability, route/feature-mount ownership, tek şirket ile açık
+  yetkili çok-şirket okuma ayrımı, CompanyContext dirty/pending/cache/stale-response
+  fence'i, dönem kontrolünün feature-gated kalması, 401/403/non-disclosing 404/409,
+  session/error/correlation redaction, ortak UI durumları, `1600 px` altı sağ drawer ve
+  erişilebilirlik sınırlarını bağlar. Paket/provider/topoloji, business route, rol,
+  eşik/formül veya production davranışı seçmez.
+- PR #77/#79 veya accepted successor'ları yalnız Cari feature-mount coordination
+  kapılarıdır; manifest bağımlılığı değildir. Cari docs/code, `docs/ui`, workflow,
+  package, source ve test dosyaları değiştirilmemiştir.
+- Yerel task-manifest validator 15 task/44 edge için, negatif testleri 21/21; UI katalog
+  validator negatif testleri 24/24 ve golden doğrulama 72 kaynak/159 ekran için geçmiştir.
+  Bootstrap integrity 49 test/1 Windows capability skip; Release build 0 uyarı/0 hata;
+  .NET çözüm testleri 365 başarılı/14 gerçek-SQL environment skip; architecture guard
+  177/177; frontend lint, 2/2 test ve build başarılıdır. NuGet/npm vulnerability
+  taramaları bulgusuz, dört mevcut CI DbContext migration scripti dolu, compose config ve
+  API/Web container build başarılıdır. Exact K/non-K parity, progress prefix, üç-dosya
+  allowlist ve `git diff --check` temizdir.
+- Eski PR #18 head'i `4f9a91c0a33acf910aee84dabc6dea8794eccf80` ve CI
+  `33134544768` yalnız tarihsel kanıttır. Current head fresh standard CI, gerçek SQL
+  Server, UI golden ve bağımsız exact-SHA review'dan geçmeden merge-ready değildir. PR
+  Draft/human-review kapısında kalır ve hiçbir implementation başlatmaz.
+
+```text
+DONE: PR #17 merge; PR #18 clean current-main rebuild; K-only manifest delta; fiziksel shell contract; local full validation
+IN REVIEW: ERP-000K readiness Draft PR #18; fresh exact-head CI/UI ve bağımsız review bekleniyor
+BLOCKED: ERP-000K/L/M/N/O/F implementation; Cari mount; production activation; PR #2; Identity #62/#63
+SAFE NEXT: force-with-lease exact PR head; fresh CI/UI golden; bağımsız exact-SHA review; insan review'u
+OPEN DECISIONS: ERP-000K-SHELL-CONTRACT alt kapıları; capability/route/mount contract'ları; package/tool review; owner feature gates
+MAIN SHA: 6aa4a46a964ed2dae427e83026bb449449bd09df
+ACTIVE PRS: #18 Draft; #2 Draft/blocked; identity production gates #62/#63 open; Cari-owned PR #77/#79 read-only gates
+```
+
+## 2026-08-29 23:30 +03:00 — Döngü 18
+
+- ERP-000K readiness PR #18 insan/delege review kapısından sonra squash merge edilmiştir.
+  Bu döngünün eski commit, rebase veya cherry-pick taşımayan temiz ERP-000J rebuild tabanı
+  `d5bcd5b30ee79885cf64b3c4c638ddeb91426d20` commit'idir. Merge sonrası standart CI
+  `33269705664` ve UI golden `33269705658` tamamen yeşildir; bu baseline kanıtı ERP-000J
+  exact-head kabulü olarak yeniden kullanılmaz.
+- ERP-000J manifest satırı dışındaki on dört task ile manifest kök metadata'sı current-main
+  ile exact kalmıştır. Yalnız J `blocked`, direct bağımlılıkları A/B/C/D/E/L ve blocker'ları
+  `ADR-008`, `OPEN-020`, `ERP-000J-AI-CONTRACT` yapılmıştır. ERP-000E=`done`;
+  ERP-000M/O/N/L/K=`blocked` gerçekleri korunmuş, birleşik DAG 15 task/49 dependency edge
+  ve döngüsüz olarak doğrulanmıştır.
+- `docs/features/ERP-000J_AI_GATEWAY_CONTRACT_v1.md` tek fiziksel readiness ve contract
+  artifact'idir. Readiness `ACCEPTABLE`, contract `OPEN`, implementation `BLOCKED` ve
+  production `NO-GO` kalır. Fiziksel ADR-008 mevcut değildir; OPEN-020 açıktır ve
+  AT-059/060/068 Draft durumundadır.
+- Contract; exact `Genel / Şirket içi / Gizli / Çok gizli` veri sınıflarını, mevcut
+  karara göre `Çok gizli` verinin cloud modele gönderilmemesini, server-backed capability
+  ve yeniden yetkilendirmeyi, veri minimizasyonunu, sürümlü prompt/tool allowlist'ini,
+  argüman yeniden doğrulamayı ve preview → insan onayı → güncel permission/CompanyContext
+  → gerekiyorsa reauth → idempotent domain command → transactional audit akışını bağlar.
+  AI Gateway doğrudan DB/ham SQL/idempotency tablosu yazmaz; model çıktısı yetki, onay,
+  formül veya iş doğrusu değildir.
+- Audit alanlarının tek başına gateway olmadığı ve reddedilen/yetkisiz girişimler için
+  kabul edilmiş genel durable security-event channel bulunmadığı açıkça korunmuştur.
+  Mevcut auth'ta AI-specific permission/role veya generic approval/reauth owner
+  uydurulmamıştır. ERP-000K shell contract'ı exact path/version extension gate'i olarak
+  referans alınmış, J manifestine K bağımlılığı eklenmemiştir.
+- OpenAI resmi teknik dokümanları 2026-08-29 tarihinde doğrulanmıştır: Responses API
+  function tools/tool_choice ve strict schema mekanizmaları desteklenir; Structured
+  Outputs schema uyumu ERP authorization/business correctness değildir. Refusal,
+  incomplete ve timeout ayrı ele alınır. API verisi varsayılan olarak model eğitimi için
+  kullanılmaz; açık opt-in/data-sharing ayrı karardır. `store=true`, `store=false`, ZDR,
+  background, conversations/files/MCP/prompt cache/hosted tools saklama sınırları yalnız
+  güncel teknik aday notlarıdır; provider/model/package/SDK veya production kararı değildir.
+- Yerel task-manifest validator 15 task/49 edge için ve 21/21 negatif testte; bootstrap
+  integrity 48 başarılı/1 Windows capability skip; UI validator 24/24 ve 72 kaynak/159
+  ekran golden doğrulamasında geçmiştir. Release build 0 uyarı/0 hata; .NET çözüm testleri
+  365 başarılı/14 gerçek-SQL environment skip ve ayrıca architecture guard 177/177;
+  frontend npm audit/lint, 2/2 test ve production build başarılıdır. Compose config exact
+  yerel env ile geçmiştir; Web container image üretilmiş, API container build'i Windows
+  Docker restore aşamasındaki uzun hareketsizlikte süre sınırıyla durdurulmuştur. Yerel
+  NuGet vulnerability ve dört migration scripti bu turda kesin sonuç üretmediğinden başarı
+  sayılmamış; fresh exact-head GitHub backend/container required job'ları merge kapısıdır.
+- Source, workflow, package, test, migration, Docker, infra, Cari veya `docs/ui` dosyası
+  değiştirilmemiştir. PR #2'nin yedi blocker'ı, ERP-000F/M/O/N/L/K implementation,
+  Identity #62/#63 ve Cari PR #77/#79/#65 kapıları korunur. PR #14 Draft, fresh CI/UI
+  golden, bağımsız exact-SHA review ve insan review kapısında kalır; merge edilmez.
+
+```text
+DONE: PR #18 merge; PR #14 clean current-main rebuild; J-only manifest delta; fiziksel AI Gateway contract; local validation
+IN REVIEW: ERP-000J readiness Draft PR #14; fresh exact-head CI/UI ve bağımsız review bekleniyor
+BLOCKED: ERP-000J/F/M/O/N/L/K implementation; production activation; PR #2; Identity #62/#63; Cari gates
+SAFE NEXT: force-with-lease exact PR head; fresh standard CI/UI golden; bağımsız exact-SHA review; insan review'u
+OPEN DECISIONS: physical ADR-008; OPEN-020; ERP-000J-AI-CONTRACT; capability/permission; approval/reauth owner; durable security-event; provider retention
+MAIN SHA: d5bcd5b30ee79885cf64b3c4c638ddeb91426d20
+ACTIVE PRS: #14 Draft; #2 Draft/blocked; identity production gates #62/#63 open; Cari-owned PR #77/#79/#65 read-only gates
+```

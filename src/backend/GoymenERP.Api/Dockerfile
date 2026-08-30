@@ -2,8 +2,9 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /source
 
 COPY . .
-RUN dotnet restore GoymenERP.slnx
+RUN dotnet restore GoymenERP.slnx -noAutoResponse --configfile NuGet.Config
 RUN dotnet publish src/backend/GoymenERP.Api/GoymenERP.Api.csproj \
+    -noAutoResponse \
     --configuration Release \
     --no-restore \
     --output /app/publish \
