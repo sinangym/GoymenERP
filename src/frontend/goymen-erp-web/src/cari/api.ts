@@ -85,10 +85,11 @@ export async function fetchCounterparties(
       headers,
       signal,
     })
-  } catch (error) {
+  } catch {
     if (signal?.aborted) return { type: 'fence-stale' }
     if (!navigator.onLine) return { type: 'offline' }
-    throw error
+    // Online, but nothing came back — a different fact from a bad response body.
+    return { type: 'network-error' }
   }
 
   let body: unknown = null

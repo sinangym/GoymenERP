@@ -36,9 +36,19 @@ export type RemoteViewState<T> =
   | { readonly kind: 'conflict'; readonly safeDiff?: unknown }
   /** No network. Retry must not resurrect stale context. */
   | { readonly kind: 'offline' }
+  /**
+   * The request never completed: no response arrived at all. The browser deliberately
+   * hides WHY a fetch failed (CORS, DNS, refused connection, TLS all surface as the
+   * same opaque error), so we cannot narrow it further — but we can say truthfully
+   * that nothing came back, which is a different fact from a bad response body.
+   */
+  | { readonly kind: 'network-error' }
   /** 500 / 503 — service temporarily unavailable (incl. capability fail-closed 503). */
   | { readonly kind: 'service-unavailable' }
-  /** Response body did not match the expected contract. Fail closed. */
+  /**
+   * A response ARRIVED and its body did not match the contract. Fail closed.
+   * Never used for a request that produced no response — see `network-error`.
+   */
   | { readonly kind: 'malformed-response' }
   /** The fence rejected a late response from a superseded context. Carries NO data. */
   | { readonly kind: 'stale-rejected' }
@@ -54,6 +64,8 @@ export type ViewOutcome<T> =
   | { readonly type: 'no-authorized-company' }
   | { readonly type: 'fence-stale' }
   | { readonly type: 'offline' }
+  /** The fetch itself failed; no response was received. */
+  | { readonly type: 'network-error' }
   /** `body` carries the ProblemDetails payload so callers can read its stable `code`. */
   | { readonly type: 'http'; readonly status: number; readonly body?: unknown }
   | { readonly type: 'malformed' }
@@ -70,6 +82,8 @@ export function classifyOutcome<T>(outcome: ViewOutcome<T>): RemoteViewState<T |
       return { kind: 'stale-rejected' }
     case 'offline':
       return { kind: 'offline' }
+    case 'network-error':
+      return { kind: 'network-error' }
     case 'malformed':
       return { kind: 'malformed-response' }
     case 'http': {

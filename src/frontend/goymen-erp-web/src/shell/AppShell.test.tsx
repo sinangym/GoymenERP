@@ -164,6 +164,36 @@ describe('SHELL-PILOT-01 bootstrap', () => {
     expect(await screen.findByText(/Beklenmeyen yanıt/i)).toBeTruthy()
   })
 
+  /**
+   * Found running the merged shell against the REAL API. The fetch itself failed
+   * (CORS, in that case) and the shell reported "Sunucu yanıtı beklenen biçimde
+   * değil" — blaming the server's response body for a request that never produced
+   * one. It cost me a debugging round, and it would cost anyone else the same.
+   *
+   * The browser deliberately hides WHY a fetch failed, so we cannot narrow it to
+   * CORS vs DNS vs refused. What we can distinguish, and must, is "no response
+   * arrived" from "a response arrived and was wrong".
+   */
+  it('a request that never completes is a network error, NOT a malformed response', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new TypeError('Failed to fetch'))),
+    )
+    renderShell()
+
+    expect(await screen.findByText(/Sunucuya ulaşılamadı/i)).toBeTruthy()
+    expect(screen.queryByText(/Beklenmeyen yanıt/i)).toBeNull()
+    // ...and it is retryable, like the other transport states.
+    expect(screen.getByRole('button', { name: /Tekrar dene/i })).toBeTruthy()
+  })
+
+  it('still calls a bad BODY malformed — the two states stay distinct', async () => {
+    installFetch({ identity: () => json({ userId: 42 }) })
+    renderShell()
+    expect(await screen.findByText(/Beklenmeyen yanıt/i)).toBeTruthy()
+    expect(screen.queryByText(/Sunucuya ulaşılamadı/i)).toBeNull()
+  })
+
   it('Codex #139 P1-3: a 401 during bootstrap clears the business cache too', async () => {
     installFetch({ capabilities: () => json({ title: 'unauth' }, 401) })
     const queryClient = new QueryClient({

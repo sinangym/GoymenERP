@@ -678,3 +678,38 @@ describe('C-01 reflow structure (browser UAT finding)', () => {
     expect(screen.getAllByRole('row').length).toBeGreaterThan(1)
   })
 })
+
+describe('C-01 transport failure (ChatGPT #155 P1)', () => {
+  /**
+   * The shell test covers `/identity/me`. This one covers `src/cari/api.ts`, which the
+   * same change touches — ChatGPT's review was right that mutating the cari branch
+   * alone would have left every test green. The two clients classify independently,
+   * so they need independent proof.
+   */
+  it('a counterparty request that never completes is a network error, not malformed', async () => {
+    // identity / directory / capability all succeed, so the shell reaches C-01 and
+    // ONLY the business read fails at the transport layer.
+    installFetch()
+    const shellFetch = globalThis.fetch as typeof fetch
+    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('/counterparties')) return Promise.reject(new TypeError('Failed to fetch'))
+      return shellFetch(input, init)
+    })
+
+    renderAt('/cari')
+
+    expect(await findStateBlock('network-error')).toBeTruthy()
+    expect(queryStateBlock('malformed-response')).toBeNull()
+    // the screen itself is still mounted; only the read failed
+    expect(screen.getByRole('heading', { name: 'Cari Kartlar' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Tekrar dene/i })).toBeTruthy()
+  })
+
+  it('a malformed counterparty BODY is still malformed — the two stay distinct', async () => {
+    installFetch({ counterparties: () => json({ items: 'not-an-array' }) })
+    renderAt('/cari')
+    expect(await findStateBlock('malformed-response')).toBeTruthy()
+    expect(queryStateBlock('network-error')).toBeNull()
+  })
+})

@@ -26,6 +26,10 @@ const MESSAGES: Record<string, { title: string; detail: string }> = {
     detail: 'Kayıt başka bir işlemle değişti; farkı gözden geçirin.',
   },
   offline: { title: 'Bağlantı yok', detail: 'İnternet bağlantısı geldiğinde tekrar deneyin.' },
+  'network-error': {
+    title: 'Sunucuya ulaşılamadı',
+    detail: 'İstek tamamlanamadı ve yanıt alınamadı. Tekrar deneyin.',
+  },
   'service-unavailable': {
     title: 'Servis geçici olarak kullanılamıyor',
     detail: 'Kısa süre sonra tekrar deneyin.',
@@ -41,7 +45,12 @@ const MESSAGES: Record<string, { title: string; detail: string }> = {
   ready: { title: 'Hazır', detail: '' },
 }
 
-const RETRYABLE = new Set(['offline', 'service-unavailable', 'malformed-response'])
+const RETRYABLE = new Set([
+  'offline',
+  'network-error',
+  'service-unavailable',
+  'malformed-response',
+])
 
 export function StateBlock({
   state,
