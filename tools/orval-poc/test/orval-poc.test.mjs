@@ -2,16 +2,18 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lookup } from "node:dns";
-import { readFile, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, readFile, mkdtemp, rm } from "node:fs/promises";
 import { get as httpGet } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { ModuleKind, ScriptTarget, transpileModule } from "typescript";
 
 import {
   PocError,
   REQUIRED_ADOPTION_BLOCKERS,
+  applyProtectedHeaderGuard,
   assertProductionAdoptionAllowed,
   buildOrvalOptions,
   buildRiskReport,
@@ -41,6 +43,19 @@ const clone = (value) => structuredClone(value);
 
 const loadContract = async () =>
   JSON.parse(await readFile(CONTRACT_PATH, "utf8"));
+
+const importGeneratedSource = async (source) => {
+  const javaScript = transpileModule(source, {
+    compilerOptions: {
+      module: ModuleKind.ESNext,
+      target: ScriptTarget.ES2023,
+    },
+  }).outputText;
+  const digest = createHash("sha256").update(javaScript).digest("hex");
+  return import(
+    `data:text/javascript;base64,${Buffer.from(javaScript).toString("base64")}#${digest}`
+  );
+};
 
 const typeBlock = (source, name) => {
   const match = new RegExp(
@@ -395,6 +410,7 @@ test("risk report keeps request-header semantics and blocks production adoption"
     headers: true,
     includeHttpResponseReturnType: true,
     pathParametersUrlEncoded: true,
+    protectedRequestOptionHeaders: "reject",
     requestInitOverrides: true,
     runtimeValidation: false,
     useBigInt: false,
@@ -416,10 +432,11 @@ test("risk report keeps request-header semantics and blocks production adoption"
       (blocker) => blocker.code === "FULL_OPENAPI_SEMANTIC_VALIDATION_REQUIRED",
     ),
   );
-  assert.ok(
+  assert.equal(
     report.blockers.some(
       (blocker) => blocker.code === "PROTECTED_HEADER_OVERRIDE_GUARD_REQUIRED",
     ),
+    false,
   );
 
   const context = report.operations.find(
@@ -481,6 +498,78 @@ test("programmatic Orval profile disables discovery and executable extensions", 
     runtimeValidation: false,
     useRuntimeFetcher: false,
   });
+});
+
+test("AST-validated sanitizer turns the raw header override red path green", async () => {
+  const canonical = await loadContract();
+  const rawRoot = await mkdtemp(path.join(tmpdir(), "goymen-orval-raw-red-"));
+  try {
+    const generatedRoot = path.join(rawRoot, "generated");
+    await mkdir(generatedRoot);
+    const target = path.join(generatedRoot, "client.ts");
+    const { generate } = await import("orval");
+    await generate(buildOrvalOptions(canonical, target), TOOL_ROOT, {
+      throwOnError: true,
+      failOnWarnings: true,
+    });
+    const rawSource = await readFile(target, "utf8");
+    const rawInspection = inspectGeneratedTransport(rawSource, canonical);
+    assert.equal(rawInspection.requestInitHeadersOverrideTypedHeaders, true);
+    assert.equal(rawInspection.requestInitProtectedHeadersRejected, false);
+
+    const guardedSource = applyProtectedHeaderGuard(rawSource, canonical);
+    const guardedInspection = inspectGeneratedTransport(
+      guardedSource,
+      canonical,
+    );
+    assert.equal(
+      guardedInspection.requestInitHeadersOverrideTypedHeaders,
+      false,
+    );
+    assert.equal(guardedInspection.requestInitProtectedHeadersRejected, true);
+    assert.equal(guardedInspection.protectedHeaderGuardCount, 16);
+    assert.equal(guardedInspection.typedHeaderGuardCount, 16);
+
+    const driftedSource = rawSource.replace(
+      "...headers, ...getHeaders(options?.headers)",
+      "...({ ...headers }), ...getHeaders(options?.headers)",
+    );
+    assert.notEqual(driftedSource, rawSource);
+    assert.throws(
+      () => applyProtectedHeaderGuard(driftedSource, canonical),
+      /fetch-header initializer drifted/u,
+    );
+  } finally {
+    await rm(rawRoot, { recursive: true, force: true });
+  }
+});
+
+test("requestOptions=false remains a compile-failing Orval regression", async () => {
+  const canonical = await loadContract();
+  const rawRoot = await mkdtemp(
+    path.join(tmpdir(), "goymen-orval-no-request-options-"),
+  );
+  try {
+    const generatedRoot = path.join(rawRoot, "generated");
+    await mkdir(generatedRoot);
+    const target = path.join(generatedRoot, "client.ts");
+    const options = buildOrvalOptions(canonical, target);
+    options.output.override.requestOptions = false;
+    const { generate } = await import("orval");
+    await generate(options, TOOL_ROOT, {
+      throwOnError: true,
+      failOnWarnings: true,
+    });
+    const source = await readFile(target, "utf8");
+    assert.equal(source.includes("options?: RequestInit"), false);
+    assert.equal(source.split("getHeaders(options?.headers)").length - 1, 16);
+    await assert.rejects(
+      compileGeneratedOutput(rawRoot),
+      /strict TypeScript compilation/u,
+    );
+  } finally {
+    await rm(rawRoot, { recursive: true, force: true });
+  }
 });
 
 test("canonical generation is deterministic, sensitive-free and strict-TypeScript clean", async () => {
@@ -550,19 +639,33 @@ test("canonical generation is deterministic, sensitive-free and strict-TypeScrip
     ]);
     assert.equal(
       transportInspection.requestInitHeadersOverrideTypedHeaders,
-      true,
+      false,
+    );
+    assert.equal(transportInspection.requestInitHeaderMergeCount, 16);
+    assert.equal(transportInspection.protectedHeaderGuardCount, 16);
+    assert.equal(transportInspection.typedHeaderGuardCount, 16);
+    assert.equal(transportInspection.requestInitProtectedHeadersRejected, true);
+    assert.doesNotThrow(() =>
+      assertProductionAdoptionAllowed({
+        manifestAdoption: {
+          status: "GO",
+          blockers: [],
+        },
+        riskReport: { adoption: "GO", blockers: [] },
+        transportInspection,
+      }),
     );
     assert.throws(
       () =>
         assertProductionAdoptionAllowed({
-          manifestAdoption: {
-            status: "GO",
-            blockers: [],
-          },
+          manifestAdoption: { status: "GO", blockers: [] },
           riskReport: { adoption: "GO", blockers: [] },
-          transportInspection,
+          transportInspection: {
+            requestInitHeadersOverrideTypedHeaders: true,
+            requestInitProtectedHeadersRejected: false,
+          },
         }),
-      /RequestInit can override protected ERP headers/u,
+      /protected RequestInit headers are not rejected/u,
     );
     assert.throws(
       () =>
@@ -574,6 +677,7 @@ test("canonical generation is deterministic, sensitive-free and strict-TypeScrip
           riskReport: { adoption: "GO", blockers: [] },
           transportInspection: {
             requestInitHeadersOverrideTypedHeaders: false,
+            requestInitProtectedHeadersRejected: true,
           },
         }),
       /fail-closed profile has unresolved blockers/u,
@@ -583,6 +687,135 @@ test("canonical generation is deterministic, sensitive-free and strict-TypeScrip
       rm(firstRoot, { recursive: true, force: true }),
       rm(secondRoot, { recursive: true, force: true }),
     ]);
+  }
+});
+
+test("generated transport rejects contract-controlled RequestInit headers at runtime", async () => {
+  const canonical = await loadContract();
+  const runRoot = await mkdtemp(
+    path.join(tmpdir(), "goymen-orval-runtime-guard-"),
+  );
+  const originalFetch = globalThis.fetch;
+  try {
+    const generatedRoot = await generateOnce(canonical, runRoot);
+    const source = await readFile(
+      path.join(generatedRoot, "client.ts"),
+      "utf8",
+    );
+    const generated = await importGeneratedSource(source);
+    const calls = [];
+    globalThis.fetch = async (url, init) => {
+      calls.push({ url, init });
+      return new Response("{}", {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+
+    const typedHeaders = {
+      "X-Company-Id": "11111111-1111-1111-1111-111111111111",
+      "X-Correlation-Id": "correlation-safe",
+    };
+    const protectedInputs = [
+      { headers: { "x-company-id": "override" } },
+      { headers: new Headers({ "IDEMPOTENCY-KEY": "override" }) },
+      { headers: [["x-correlation-id", "override"]] },
+      { headers: { "X-Causation-Id": "override" } },
+      { headers: { Accept: "text/plain" } },
+      { headers: { "Content-Type": "text/plain" } },
+      { headers: { "X-Client-Trace": ["not", "a", "string"] } },
+    ];
+    for (const options of protectedInputs) {
+      await assert.rejects(
+        generated.getOrganizationContextV1(typedHeaders, options),
+        /Protected request headers must use generated typed parameters/u,
+      );
+    }
+    await assert.rejects(
+      generated.getOrganizationContextV1(undefined, {}),
+      /Generated typed request headers do not match the OpenAPI contract/u,
+    );
+    await assert.rejects(
+      generated.getOrganizationContextV1(
+        {
+          "X-Company-Id": "11111111-1111-1111-1111-111111111111",
+          "x-company-id": "override",
+        },
+        {},
+      ),
+      /Generated typed request headers do not match the OpenAPI contract/u,
+    );
+    await assert.rejects(
+      generated.getOrganizationContextV1(
+        {
+          "X-Company-Id": "11111111-1111-1111-1111-111111111111",
+          "X-Unknown": "override",
+        },
+        {},
+      ),
+      /Generated typed request headers do not match the OpenAPI contract/u,
+    );
+    await assert.rejects(
+      generated.getOrganizationContextV1(
+        new Headers({ "X-Company-Id": "override" }),
+        {},
+      ),
+      /Generated typed request headers do not match the OpenAPI contract/u,
+    );
+    assert.equal(calls.length, 0);
+
+    const controller = new AbortController();
+    await generated.getOrganizationContextV1(typedHeaders, {
+      headers: { "X-Client-Trace": "allowed" },
+      signal: controller.signal,
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].init.signal, controller.signal);
+    const actualHeaders = new Headers(calls[0].init.headers);
+    assert.equal(
+      actualHeaders.get("X-Company-Id"),
+      "11111111-1111-1111-1111-111111111111",
+    );
+    assert.equal(actualHeaders.get("X-Correlation-Id"), "correlation-safe");
+    assert.equal(actualHeaders.get("X-Client-Trace"), "allowed");
+
+    await generated.getCounterpartiesV1(undefined, undefined, {
+      headers: { "X-Client-Trace": "optional-company-allowed" },
+    });
+    assert.equal(calls.length, 2);
+    const optionalCompanyHeaders = new Headers(calls[1].init.headers);
+    assert.equal(optionalCompanyHeaders.has("X-Company-Id"), false);
+
+    await generated.createCounterpartyV1(
+      {},
+      {
+        "X-Company-Id": "11111111-1111-1111-1111-111111111111",
+        "Idempotency-Key": "idempotency-safe",
+      },
+      {
+        method: "DELETE",
+        body: "attacker-body",
+        headers: { "X-Client-Trace": "create-allowed" },
+      },
+    );
+    assert.equal(calls.length, 3);
+    assert.equal(calls[2].init.method, "POST");
+    assert.equal(calls[2].init.body, "{}");
+    const createHeaders = new Headers(calls[2].init.headers);
+    assert.equal(createHeaders.get("Content-Type"), "application/json");
+    assert.equal(createHeaders.get("Idempotency-Key"), "idempotency-safe");
+
+    assert.throws(
+      () => applyProtectedHeaderGuard(source, canonical),
+      /precondition failed closed/u,
+    );
+    assert.throws(
+      () => applyProtectedHeaderGuard("generator drift", canonical),
+      /precondition failed closed/u,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(runRoot, { recursive: true, force: true });
   }
 });
 

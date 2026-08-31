@@ -26,8 +26,7 @@
       "OS_CHILD_PROCESS_SANDBOX_REQUIRED",
       "CROSS_OS_DETERMINISM_REQUIRED",
       "REACT19_VITE8_BROWSER_SMOKE_REQUIRED",
-      "MANUAL_DIFF_AND_MUTATION_CI_REQUIRED",
-      "PROTECTED_HEADER_OVERRIDE_GUARD_REQUIRED"
+      "MANUAL_DIFF_AND_MUTATION_CI_REQUIRED"
     ],
     "blockerDetails": {
       "INT64_WIRE_PRECISION_POLICY_REQUIRED": "Twelve int64 wire fields currently generate as JavaScript number; the approved string or bigint boundary is unresolved.",
@@ -42,8 +41,7 @@
       "OS_CHILD_PROCESS_SANDBOX_REQUIRED": "The preload deny-lists child-process APIs and brokers only the reviewed absolute Node/TypeScript invocation, but an OS policy does not prevent native or bypass child execution.",
       "CROSS_OS_DETERMINISM_REQUIRED": "Two clean local Windows generations are byte-identical; an independent Linux generation and cross-OS byte comparison are missing.",
       "REACT19_VITE8_BROWSER_SMOKE_REQUIRED": "Strict TypeScript compilation passes, but React 19, Vite 8 build and real-browser consumption have not run.",
-      "MANUAL_DIFF_AND_MUTATION_CI_REQUIRED": "Local manual-diff and requiredness/int64 mutation probes pass, but equivalent mandatory CI jobs are not installed.",
-      "PROTECTED_HEADER_OVERRIDE_GUARD_REQUIRED": "Current Orval fetch output lets RequestInit headers override typed X-Company-Id, Idempotency-Key, X-Correlation-Id and X-Causation-Id values; the executable adoption gate therefore rejects the generated client."
+      "MANUAL_DIFF_AND_MUTATION_CI_REQUIRED": "Local manual-diff and requiredness/int64 mutation probes pass, but equivalent mandatory CI jobs are not installed."
     }
   }
 }

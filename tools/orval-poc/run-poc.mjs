@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 const TOOL_ROOT = path.dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = path.resolve(TOOL_ROOT, "..", "..");
@@ -48,8 +49,14 @@ export const REQUIRED_ADOPTION_BLOCKERS = Object.freeze([
   "CROSS_OS_DETERMINISM_REQUIRED",
   "REACT19_VITE8_BROWSER_SMOKE_REQUIRED",
   "MANUAL_DIFF_AND_MUTATION_CI_REQUIRED",
-  "PROTECTED_HEADER_OVERRIDE_GUARD_REQUIRED",
 ]);
+const PROTECTED_HEADER_GUARD_MARKER =
+  "Protected request headers must use generated typed parameters.";
+const TYPED_HEADER_GUARD_MARKER =
+  "Generated typed request headers do not match the OpenAPI contract.";
+const TYPED_HEADER_GUARD_FUNCTION = "goymenValidateTypedRequestHeaders";
+const GUARDED_REQUEST_HEADERS_HELPER_SIGNATURE =
+  "const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string> => {";
 const MAX_FILE_BYTES = 16 * 1024 * 1024;
 const MAX_TREE_BYTES = 64 * 1024 * 1024;
 const HTTP_METHODS = new Set([
@@ -540,6 +547,7 @@ export const buildRiskReport = (document) => {
       headers: true,
       includeHttpResponseReturnType: true,
       pathParametersUrlEncoded: true,
+      protectedRequestOptionHeaders: "reject",
       requestInitOverrides: true,
       runtimeValidation: false,
       useBigInt: false,
@@ -559,11 +567,6 @@ export const buildRiskReport = (document) => {
         code: "FULL_OPENAPI_SEMANTIC_VALIDATION_REQUIRED",
         detail:
           "The PoC preflight enforces a generator-specific schema subset; complete OpenAPI 3.1 and JSON Schema semantic validation remains required before adoption.",
-      },
-      {
-        code: "PROTECTED_HEADER_OVERRIDE_GUARD_REQUIRED",
-        detail:
-          "Orval fetch output merges RequestInit headers after typed ERP headers, so X-Company-Id, Idempotency-Key, X-Correlation-Id and X-Causation-Id can be replaced until an executable transport guard is adopted.",
       },
     ],
     operations,
@@ -611,6 +614,261 @@ const PROTECTED_HEADERS = [
   "X-Causation-Id",
 ];
 
+const RAW_REQUEST_HEADERS_HELPER = [
+  "const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {",
+  "    if (!h) return {};",
+  "    if (h instanceof Headers) return Object.fromEntries(h.entries());",
+  "    if (Array.isArray(h)) return Object.fromEntries(h);",
+  "    return h;",
+  "  };",
+].join("\n");
+
+const protectedRequestOptionHeaderNames = (document) => {
+  const names = new Set(["accept", "content-type"]);
+  for (const { operation, pathItem } of operationEntries(document)) {
+    for (const parameter of mergedParameters(document, pathItem, operation)) {
+      if (parameter.in === "header") {
+        names.add(parameter.name.toLowerCase());
+      }
+    }
+  }
+  return [...names].sort((left, right) => left.localeCompare(right));
+};
+
+const operationFunctionName = (operationId) =>
+  `${operationId[0].toLowerCase()}${operationId.slice(1)}`;
+
+const typedHeaderRuntimeGuard = [
+  `const ${TYPED_HEADER_GUARD_FUNCTION} = (`,
+  "  value: NonNullable<RequestInit['headers']> | undefined,",
+  "  allowed: readonly string[],",
+  "  required: readonly string[],",
+  "): Record<string, string> => {",
+  "  if (value instanceof Headers || Array.isArray(value)) {",
+  `    throw new TypeError("${TYPED_HEADER_GUARD_MARKER}");`,
+  "  }",
+  "  const entries = Object.entries(value ?? {});",
+  "  const canonicalByLowerName = new Map(",
+  "    allowed.map((name) => [name.toLowerCase(), name]),",
+  "  );",
+  "  const seen = new Set<string>();",
+  "  const normalized: Record<string, string> = {};",
+  "  for (const [name, headerValue] of entries) {",
+  "    const lowerName = name.toLowerCase();",
+  "    const canonicalName = canonicalByLowerName.get(lowerName);",
+  "    if (",
+  "      canonicalName === undefined ||",
+  "      canonicalName !== name ||",
+  "      seen.has(lowerName) ||",
+  '      typeof headerValue !== "string"',
+  "    ) {",
+  `      throw new TypeError("${TYPED_HEADER_GUARD_MARKER}");`,
+  "    }",
+  "    seen.add(lowerName);",
+  "    normalized[canonicalName] = headerValue;",
+  "  }",
+  "  if (required.some((name) => !seen.has(name.toLowerCase()))) {",
+  `    throw new TypeError("${TYPED_HEADER_GUARD_MARKER}");`,
+  "  }",
+  "  return normalized;",
+  "};",
+  "",
+].join("\n");
+
+export const applyProtectedHeaderGuard = (source, document) => {
+  const contractOperations = operationEntries(document);
+  const expectedOperations = new Map(
+    contractOperations.map(({ operation, pathItem }) => {
+      const declaredHeaders = mergedParameters(document, pathItem, operation)
+        .filter((parameter) => parameter.in === "header")
+        .map((parameter) => ({
+          name: parameter.name,
+          required: parameter.required === true,
+        }))
+        .sort((left, right) => left.name.localeCompare(right.name));
+      return [
+        operationFunctionName(operation.operationId),
+        {
+          allowed: declaredHeaders.map((header) => header.name),
+          required: declaredHeaders
+            .filter((header) => header.required)
+            .map((header) => header.name),
+        },
+      ];
+    }),
+  );
+  const sourceFile = ts.createSourceFile(
+    "client.ts",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const parseDiagnostics = sourceFile.parseDiagnostics ?? [];
+  const expectedHelperCount = expectedOperations.size;
+  if (
+    expectedHelperCount === 0 ||
+    expectedOperations.size !== contractOperations.length ||
+    parseDiagnostics.length > 0 ||
+    source.includes(PROTECTED_HEADER_GUARD_MARKER) ||
+    source.includes(TYPED_HEADER_GUARD_MARKER) ||
+    source.includes(TYPED_HEADER_GUARD_FUNCTION)
+  ) {
+    throw new PocError(
+      "Generated protected-header guard precondition failed closed.",
+    );
+  }
+
+  const protectedNames = JSON.stringify(
+    protectedRequestOptionHeaderNames(document),
+  );
+  const guardedHelper = [
+    GUARDED_REQUEST_HEADERS_HELPER_SIGNATURE,
+    "    if (!h) return {};",
+    "    const normalized: Record<string, string> =",
+    "      h instanceof Headers",
+    "        ? Object.fromEntries(h.entries())",
+    "        : Array.isArray(h)",
+    "          ? Object.fromEntries(h)",
+    "          : h;",
+    '    if (Object.values(normalized).some((value) => typeof value !== "string")) {',
+    `      throw new TypeError("${PROTECTED_HEADER_GUARD_MARKER}");`,
+    "    }",
+    "    for (const name of Object.keys(normalized)) {",
+    `      if (${protectedNames}.includes(name.toLowerCase())) {`,
+    `        throw new TypeError("${PROTECTED_HEADER_GUARD_MARKER}");`,
+    "      }",
+    "    }",
+    "    return normalized;",
+    "  };",
+  ].join("\n");
+  const replacements = [];
+  const foundOperations = new Set();
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      if (!ts.isIdentifier(declaration.name)) continue;
+      const metadata = expectedOperations.get(declaration.name.text);
+      if (metadata === undefined) continue;
+      if (
+        foundOperations.has(declaration.name.text) ||
+        !declaration.initializer ||
+        !ts.isArrowFunction(declaration.initializer) ||
+        !ts.isBlock(declaration.initializer.body)
+      ) {
+        throw new PocError(
+          "Generated operation shape failed the protected-header guard.",
+        );
+      }
+
+      const helperStatements = declaration.initializer.body.statements.filter(
+        (candidate) =>
+          ts.isVariableStatement(candidate) &&
+          candidate.declarationList.declarations.some(
+            (helperDeclaration) =>
+              ts.isIdentifier(helperDeclaration.name) &&
+              helperDeclaration.name.text === "getHeaders",
+          ),
+      );
+      if (
+        helperStatements.length !== 1 ||
+        helperStatements[0].getText(sourceFile) !== RAW_REQUEST_HEADERS_HELPER
+      ) {
+        throw new PocError(
+          "Generated request-header helper drifted from the reviewed shape.",
+        );
+      }
+
+      const headerInitializers = [];
+      let fetchCallCount = 0;
+      let headerObjectInitializerCount = 0;
+      const visit = (node) => {
+        if (
+          ts.isCallExpression(node) &&
+          ts.isIdentifier(node.expression) &&
+          node.expression.text === "fetch"
+        ) {
+          fetchCallCount += 1;
+        }
+        if (
+          ts.isPropertyAssignment(node) &&
+          ts.isIdentifier(node.name) &&
+          node.name.text === "headers" &&
+          ts.isObjectLiteralExpression(node.initializer)
+        ) {
+          headerObjectInitializerCount += 1;
+          const typedSpreads = node.initializer.properties.filter(
+            (property) =>
+              ts.isSpreadAssignment(property) &&
+              ts.isIdentifier(property.expression) &&
+              property.expression.text === "headers",
+          );
+          const genericSpreads = node.initializer.properties.filter(
+            (property) =>
+              ts.isSpreadAssignment(property) &&
+              property.getText(sourceFile) ===
+                "...getHeaders(options?.headers)",
+          );
+          if (typedSpreads.length === 1 && genericSpreads.length === 1) {
+            headerInitializers.push({ typedSpread: typedSpreads[0] });
+          }
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(declaration.initializer.body);
+      if (
+        fetchCallCount !== 1 ||
+        headerObjectInitializerCount !== 1 ||
+        headerInitializers.length !== 1
+      ) {
+        throw new PocError(
+          "Generated fetch-header initializer drifted from the reviewed shape.",
+        );
+      }
+
+      const typedSpread = headerInitializers[0].typedSpread;
+      replacements.push({
+        start: helperStatements[0].getStart(sourceFile),
+        end: helperStatements[0].getEnd(),
+        text: guardedHelper,
+      });
+      replacements.push({
+        start: typedSpread.getStart(sourceFile),
+        end: typedSpread.getEnd(),
+        text: `...${TYPED_HEADER_GUARD_FUNCTION}(headers, ${JSON.stringify(metadata.allowed)}, ${JSON.stringify(metadata.required)})`,
+      });
+      foundOperations.add(declaration.name.text);
+    }
+  }
+  if (
+    foundOperations.size !== expectedOperations.size ||
+    [...expectedOperations.keys()].some((name) => !foundOperations.has(name))
+  ) {
+    throw new PocError(
+      "Generated operation coverage failed the protected-header guard.",
+    );
+  }
+
+  replacements.sort((left, right) => right.start - left.start);
+  let guardedSource = source;
+  for (const replacement of replacements) {
+    guardedSource = `${guardedSource.slice(0, replacement.start)}${replacement.text}${guardedSource.slice(replacement.end)}`;
+  }
+  guardedSource = `${typedHeaderRuntimeGuard}${guardedSource}`;
+  const guardCount =
+    guardedSource.split(GUARDED_REQUEST_HEADERS_HELPER_SIGNATURE).length - 1;
+  const typedGuardCallCount =
+    guardedSource.split(`...${TYPED_HEADER_GUARD_FUNCTION}(`).length - 1;
+  if (
+    guardedSource.includes(RAW_REQUEST_HEADERS_HELPER) ||
+    guardCount !== expectedHelperCount ||
+    typedGuardCallCount !== expectedHelperCount
+  ) {
+    throw new PocError("Generated protected-header guard failed closed.");
+  }
+  return guardedSource;
+};
+
 export const inspectGeneratedTransport = (source, document) => {
   const encodedPathParameterCount = (
     source.match(/encodeURIComponent\(String\([A-Za-z_$][\w$]*\)\)/gu) ?? []
@@ -637,10 +895,18 @@ export const inspectGeneratedTransport = (source, document) => {
   const protectedHeadersPresent = PROTECTED_HEADERS.filter((name) =>
     source.includes(`'${name}'`),
   );
+  const requestInitHeaderMergeCount =
+    source.split("...getHeaders(options?.headers)").length - 1;
+  const protectedHeaderGuardCount =
+    source.split(GUARDED_REQUEST_HEADERS_HELPER_SIGNATURE).length - 1;
+  const typedHeaderGuardCount =
+    source.split(`...${TYPED_HEADER_GUARD_FUNCTION}(`).length - 1;
+  const requestInitProtectedHeadersRejected =
+    requestInitHeaderMergeCount > 0 &&
+    protectedHeaderGuardCount === requestInitHeaderMergeCount &&
+    typedHeaderGuardCount === requestInitHeaderMergeCount;
   const requestInitHeadersOverrideTypedHeaders =
-    /headers:\s*\{\s*\.\.\.headers,\s*\.\.\.getHeaders\(options\?\.headers\),?\s*\}/su.test(
-      source,
-    );
+    requestInitHeaderMergeCount > 0 && !requestInitProtectedHeadersRejected;
 
   return {
     encodedPathParameterCount,
@@ -651,9 +917,13 @@ export const inspectGeneratedTransport = (source, document) => {
         : encodedPathParameterCount >= expectedEncodedPathParameterCount &&
           rawPathParameterInterpolations.length === 0,
     protectedHeadersPresent,
+    protectedHeaderGuardCount,
     queryParametersUseUrlSearchParams: /new URLSearchParams\(\)/u.test(source),
     rawPathParameterInterpolations,
+    requestInitHeaderMergeCount,
     requestInitHeadersOverrideTypedHeaders,
+    requestInitProtectedHeadersRejected,
+    typedHeaderGuardCount,
   };
 };
 
@@ -662,9 +932,12 @@ export const assertProductionAdoptionAllowed = ({
   riskReport,
   transportInspection,
 }) => {
-  if (transportInspection.requestInitHeadersOverrideTypedHeaders) {
+  if (
+    transportInspection.requestInitHeadersOverrideTypedHeaders ||
+    transportInspection.requestInitProtectedHeadersRejected !== true
+  ) {
     throw new PocError(
-      "Generated client is not adoptable: RequestInit can override protected ERP headers.",
+      "Generated client is not adoptable: protected RequestInit headers are not rejected.",
     );
   }
   if (
@@ -726,6 +999,12 @@ export const generateOnce = async (document, outputRoot) => {
   ) {
     throw new PocError("Orval wrote outside the expected generated directory.");
   }
+  const generatedSource = await readFile(target, "utf8");
+  const guardedSource = applyProtectedHeaderGuard(generatedSource, document);
+  if (Buffer.byteLength(guardedSource, "utf8") > MAX_FILE_BYTES) {
+    throw new PocError("Guarded generated output exceeds the file limit.");
+  }
+  await writeFile(target, guardedSource, { encoding: "utf8", flag: "w" });
   return generatedRoot;
 };
 
