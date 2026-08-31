@@ -54,7 +54,8 @@ export type ViewOutcome<T> =
   | { readonly type: 'no-authorized-company' }
   | { readonly type: 'fence-stale' }
   | { readonly type: 'offline' }
-  | { readonly type: 'http'; readonly status: number }
+  /** `body` carries the ProblemDetails payload so callers can read its stable `code`. */
+  | { readonly type: 'http'; readonly status: number; readonly body?: unknown }
   | { readonly type: 'malformed' }
   | { readonly type: 'ok'; readonly data: readonly T[]; readonly filterActive: boolean }
   | { readonly type: 'ok-single'; readonly data: T }

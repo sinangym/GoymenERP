@@ -58,7 +58,11 @@ function directoryOf(outcome: ViewOutcome<CompanySummary> | undefined): readonly
 
 /** How a capability fetch should be handled by the caller. */
 type CapabilityResolution =
-  | { readonly kind: 'ready'; readonly generation: string }
+  | {
+      readonly kind: 'ready'
+      readonly generation: string
+      readonly capabilities: readonly string[]
+    }
   | { readonly kind: 'session-invalid' } // 401
   | { readonly kind: 'denied' } // 403 / 404
   | { readonly kind: 'unavailable' } // 5xx / offline / malformed — retryable, never commits
@@ -67,7 +71,11 @@ function resolveCapability(outcome: ViewOutcome<ShellCapabilitySnapshot>): Capab
   const state = classifyOutcome(outcome)
   switch (state.kind) {
     case 'ready':
-      return { kind: 'ready', generation: capabilityGenerationOf(outcome) ?? '' }
+      return {
+        kind: 'ready',
+        generation: capabilityGenerationOf(outcome) ?? '',
+        capabilities: outcome.type === 'ok-single' ? outcome.data.capabilities : [],
+      }
     case 'unauthenticated':
       return { kind: 'session-invalid' }
     case 'forbidden':
@@ -204,6 +212,7 @@ export function useShellOrchestrator(): ShellOrchestration {
           scopeMode: 'single',
           companyId: company.id,
           capabilityGeneration: resolution.generation,
+          capabilities: resolution.capabilities,
         }
         // Fenced to the epoch this request was STARTED under; the reducer drops it
         // if a SESSION_RESET landed in between (Codex #139 P1-2).
@@ -266,6 +275,7 @@ export function useShellOrchestrator(): ShellOrchestration {
             scopeMode: switchScopeMode,
             companyId: switchCompanyId,
             capabilityGeneration: resolution.generation,
+            capabilities: resolution.capabilities,
           },
         })
       })
