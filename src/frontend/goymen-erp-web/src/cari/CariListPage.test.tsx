@@ -174,7 +174,7 @@ describe('C-01 list rendering', () => {
     expect(listCall?.companyId).toBe(A_ID)
   })
 
-  it('AT-010: one account with combined flags shows both roles, from the ACTIVE company only', async () => {
+  it('AT-010: a single account carries combined role flags (one row, both roles)', async () => {
     installFetch({
       counterparties: () =>
         json(
@@ -189,6 +189,33 @@ describe('C-01 list rendering', () => {
                     isActive: true,
                     version: 1,
                   },
+                ],
+              }),
+            ],
+          }),
+        ),
+    })
+    renderAt('/cari')
+    const row = await screen.findByRole('row', { name: /C-0001/ })
+    expect(within(row).getByText('Müşteri, Tedarikçi')).toBeTruthy()
+  })
+
+  it('JIT §3.5: a foreign company account rejects the WHOLE page, it is not filtered away', async () => {
+    installFetch({
+      counterparties: () =>
+        json(
+          page({
+            items: [
+              party({
+                companyAccounts: [
+                  {
+                    id: ACC_1,
+                    companyId: A_ID,
+                    roles: PARTY_ROLE_FLAG.Customer,
+                    isActive: true,
+                    version: 1,
+                  },
+                  // company B is NOT the active context — its presence is a leak
                   {
                     id: ACC_2,
                     companyId: B_ID,
@@ -203,10 +230,17 @@ describe('C-01 list rendering', () => {
         ),
     })
     renderAt('/cari')
-    const row = await screen.findByRole('row', { name: /C-0001/ })
-    expect(within(row).getByText('Müşteri, Tedarikçi')).toBeTruthy()
-    // the other company's role is never unioned in (DEC-CAR-002)
-    expect(within(row).queryByText(/Hizmet/)).toBeNull()
+    expect(await findStateBlock('malformed-response')).toBeTruthy()
+    // silently rendering only company A's part would hide that foreign data arrived
+    expect(screen.queryByText('C-0001')).toBeNull()
+  })
+
+  it('JIT §3.5: a party with no account for the active company rejects the page', async () => {
+    installFetch({
+      counterparties: () => json(page({ items: [party({ companyAccounts: [] })] })),
+    })
+    renderAt('/cari')
+    expect(await findStateBlock('malformed-response')).toBeTruthy()
   })
 
   it('shows the global party state and this company account state as separate facts', async () => {

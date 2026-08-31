@@ -90,6 +90,12 @@ function isSafeIntish(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value)
 }
 
+/**
+ * The only count scope the C-01 slice accepts (JIT spec §3.6). A count must never be
+ * read as "all parties" — it is always filtered, authorized and visible-only.
+ */
+export const COUNT_SCOPE_FILTERED_AUTHORIZED = 'filtered-authorized-visible-parties'
+
 /** `totalCount` arrives as int64, string or null; normalise to a display string. */
 function decodeTotalCount(value: unknown): { ok: true; value: string | null } | { ok: false } {
   if (value === null || value === undefined) return { ok: true, value: null }
@@ -122,7 +128,20 @@ function decodeAccount(raw: unknown): CounterpartyListAccount | null {
   }
 }
 
-function decodeItem(raw: unknown): CounterpartyListItem | null {
+/**
+ * How the page must bind to the caller's company context (JIT spec §3.5).
+ *
+ * `single` is the C-01 slice: every Party must expose EXACTLY ONE account and it must
+ * be the active company's. Zero accounts, a foreign company's account or a duplicate
+ * for the selected company means the server returned something the shell must not
+ * render — the whole page is rejected rather than filtered down, because a filtered
+ * view would silently hide the fact that foreign data arrived.
+ */
+export type CounterpartyBinding =
+  | { readonly mode: 'single'; readonly activeCompanyId: string }
+  | { readonly mode: 'group' }
+
+function decodeItem(raw: unknown, binding: CounterpartyBinding): CounterpartyListItem | null {
   if (typeof raw !== 'object' || raw === null) return null
   const i = raw as Record<string, unknown>
   if (!isBoundUuid(i.id)) return null
@@ -147,6 +166,13 @@ function decodeItem(raw: unknown): CounterpartyListItem | null {
     accounts.push(account)
   }
 
+  if (binding.mode === 'single') {
+    // Exactly one account, and it is the active company's. A foreign account here is a
+    // leak, not a row to filter out.
+    if (accounts.length !== 1) return null
+    if (accounts[0].companyId !== binding.activeCompanyId) return null
+  }
+
   return {
     id: i.id,
     code: i.code,
@@ -164,16 +190,28 @@ function decodeItem(raw: unknown): CounterpartyListItem | null {
  * that to the `malformed-response` view state (fail-closed). Partial pages are never
  * returned: one bad row rejects the whole page rather than silently hiding a record.
  */
-export function decodeCounterpartyPage(raw: unknown): CounterpartyPage | null {
+export function decodeCounterpartyPage(
+  raw: unknown,
+  binding: CounterpartyBinding,
+): CounterpartyPage | null {
   if (typeof raw !== 'object' || raw === null) return null
   const p = raw as Record<string, unknown>
   if (!Array.isArray(p.items)) return null
   if (typeof p.hasMore !== 'boolean') return null
   if (p.nextCursor !== null && !isNonEmptyString(p.nextCursor, 4096)) return null
-  if (p.countScope !== null && typeof p.countScope !== 'string') return null
 
   const total = decodeTotalCount(p.totalCount)
   if (!total.ok) return null
+
+  // JIT spec §3.6: count and scope travel together or not at all. A count without a
+  // scope could be read as "all parties"; a scope without a count, or an unknown scope,
+  // means we do not know what the number means.
+  const scope = p.countScope
+  if (total.value === null) {
+    if (scope !== null && scope !== undefined) return null
+  } else {
+    if (scope !== COUNT_SCOPE_FILTERED_AUTHORIZED) return null
+  }
 
   // hasMore <-> nextCursor must agree; an inconsistent pair means we cannot page safely.
   if (p.hasMore && p.nextCursor === null) return null
@@ -182,7 +220,7 @@ export function decodeCounterpartyPage(raw: unknown): CounterpartyPage | null {
   const items: CounterpartyListItem[] = []
   const seenIds = new Set<string>()
   for (const rawItem of p.items) {
-    const item = decodeItem(rawItem)
+    const item = decodeItem(rawItem, binding)
     if (item === null) return null
     if (seenIds.has(item.id)) return null
     seenIds.add(item.id)
@@ -194,7 +232,7 @@ export function decodeCounterpartyPage(raw: unknown): CounterpartyPage | null {
     nextCursor: (p.nextCursor as string | null) ?? null,
     hasMore: p.hasMore,
     totalCount: total.value,
-    countScope: (p.countScope as string | null) ?? null,
+    countScope: total.value === null ? null : COUNT_SCOPE_FILTERED_AUTHORIZED,
   }
 }
 

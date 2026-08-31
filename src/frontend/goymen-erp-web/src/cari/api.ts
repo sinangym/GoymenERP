@@ -94,7 +94,14 @@ export async function fetchCounterparties(
   // Exact 200 only — the whole 2xx range is not success (same rule as the shell client).
   if (response.status !== 200) return { type: 'http', status: response.status, body }
 
-  const page = decodeCounterpartyPage(body)
+  // The decoder binds the page to the caller's company context: in single mode a
+  // foreign or missing account rejects the whole page (JIT spec §3.5).
+  const page = decodeCounterpartyPage(
+    body,
+    scope.mode === 'single' && scope.companyId !== null
+      ? { mode: 'single', activeCompanyId: scope.companyId }
+      : { mode: 'group' },
+  )
   if (page === null) return { type: 'malformed' }
   return { type: 'ok-single', data: page }
 }

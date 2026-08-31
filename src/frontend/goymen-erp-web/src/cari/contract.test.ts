@@ -3,7 +3,9 @@ import {
   decodeCounterpartyPage,
   problemCodeOf,
   rolesFromFlags,
+  COUNT_SCOPE_FILTERED_AUTHORIZED,
   PARTY_KIND,
+  type CounterpartyBinding,
 } from './contract'
 
 const COMPANY_A = 'aaaaaaaa-0000-0000-0000-000000000001'
@@ -11,6 +13,10 @@ const COMPANY_B = 'bbbbbbbb-0000-0000-0000-000000000002'
 const PARTY_1 = '11111111-1111-1111-1111-111111111111'
 const ACCOUNT_1 = 'cccccccc-1111-1111-1111-111111111111'
 const ACCOUNT_2 = 'dddddddd-2222-2222-2222-222222222222'
+
+/** The C-01 slice always decodes bound to the active single company (JIT spec §3.5). */
+const SINGLE_A: CounterpartyBinding = { mode: 'single', activeCompanyId: COMPANY_A }
+const GROUP: CounterpartyBinding = { mode: 'group' }
 
 function account(over: Record<string, unknown> = {}) {
   return { id: ACCOUNT_1, companyId: COMPANY_A, roles: 1, isActive: true, version: 1, ...over }
@@ -43,7 +49,7 @@ describe('rolesFromFlags — PartyRole is a bit flag, not a row per role', () =>
   it('decomposes combined flags in declaration order', () => {
     expect(rolesFromFlags(1)).toEqual(['Customer'])
     expect(rolesFromFlags(2)).toEqual(['Supplier'])
-    // One account carrying BOTH customer and supplier (Codex #145 review)
+    // One account carrying BOTH customer and supplier (Codex #145 review, JIT §3.x)
     expect(rolesFromFlags(1 | 2)).toEqual(['Customer', 'Supplier'])
     expect(rolesFromFlags(15)).toEqual(['Customer', 'Supplier', 'Tolling', 'Service'])
   })
@@ -51,7 +57,7 @@ describe('rolesFromFlags — PartyRole is a bit flag, not a row per role', () =>
 
 describe('decodeCounterpartyPage — happy path', () => {
   it('accepts a well-formed page', () => {
-    const decoded = decodeCounterpartyPage(page())
+    const decoded = decodeCounterpartyPage(page(), SINGLE_A)
     expect(decoded).not.toBeNull()
     expect(decoded!.items).toHaveLength(1)
     expect(decoded!.items[0].companyAccounts[0].roles).toBe(1)
@@ -59,85 +65,158 @@ describe('decodeCounterpartyPage — happy path', () => {
 
   it('keeps an out-of-JS-range totalCount verbatim as a string', () => {
     const huge = '9007199254740993' // Number.MAX_SAFE_INTEGER + 2
-    const decoded = decodeCounterpartyPage(page({ totalCount: huge }))
+    const decoded = decodeCounterpartyPage(
+      page({ totalCount: huge, countScope: COUNT_SCOPE_FILTERED_AUTHORIZED }),
+      SINGLE_A,
+    )
     expect(decoded!.totalCount).toBe(huge)
   })
 
   it('normalises a numeric totalCount to a string without arithmetic', () => {
-    expect(decodeCounterpartyPage(page({ totalCount: 42 }))!.totalCount).toBe('42')
+    const decoded = decodeCounterpartyPage(
+      page({ totalCount: 42, countScope: COUNT_SCOPE_FILTERED_AUTHORIZED }),
+      SINGLE_A,
+    )
+    expect(decoded!.totalCount).toBe('42')
   })
 
   it('accepts hasMore=true paired with a cursor', () => {
-    const decoded = decodeCounterpartyPage(page({ hasMore: true, nextCursor: 'abc' }))
+    const decoded = decodeCounterpartyPage(page({ hasMore: true, nextCursor: 'abc' }), SINGLE_A)
     expect(decoded!.hasMore).toBe(true)
     expect(decoded!.nextCursor).toBe('abc')
   })
 })
 
+describe('decodeCounterpartyPage — company binding (JIT §3.5)', () => {
+  it('single mode: a foreign company account rejects the WHOLE page', () => {
+    const twoCompanies = item({
+      companyAccounts: [account(), account({ id: ACCOUNT_2, companyId: COMPANY_B, roles: 2 })],
+    })
+    // Filtering the foreign row away would hide the fact that foreign data arrived.
+    expect(decodeCounterpartyPage(page({ items: [twoCompanies] }), SINGLE_A)).toBeNull()
+  })
+
+  it('single mode: zero accounts rejects the page', () => {
+    expect(
+      decodeCounterpartyPage(page({ items: [item({ companyAccounts: [] })] }), SINGLE_A),
+    ).toBeNull()
+  })
+
+  it('single mode: an account for another company only rejects the page', () => {
+    const otherOnly = item({ companyAccounts: [account({ companyId: COMPANY_B })] })
+    expect(decodeCounterpartyPage(page({ items: [otherOnly] }), SINGLE_A)).toBeNull()
+  })
+
+  it('group mode: one account per distinct company is allowed', () => {
+    const twoCompanies = item({
+      companyAccounts: [account(), account({ id: ACCOUNT_2, companyId: COMPANY_B, roles: 2 })],
+    })
+    const decoded = decodeCounterpartyPage(page({ items: [twoCompanies] }), GROUP)
+    expect(decoded!.items[0].companyAccounts).toHaveLength(2)
+  })
+
+  it('rejects two accounts for the same company in either mode', () => {
+    const dup = item({
+      companyAccounts: [account(), account({ id: ACCOUNT_2, companyId: COMPANY_A })],
+    })
+    expect(decodeCounterpartyPage(page({ items: [dup] }), SINGLE_A)).toBeNull()
+    expect(decodeCounterpartyPage(page({ items: [dup] }), GROUP)).toBeNull()
+  })
+})
+
+describe('decodeCounterpartyPage — count scope (JIT §3.6)', () => {
+  it('count and scope must travel together', () => {
+    // a count without a scope could be read as "all parties"
+    expect(
+      decodeCounterpartyPage(page({ totalCount: 5, countScope: null }), SINGLE_A),
+    ).toBeNull()
+    // a scope without a count
+    expect(
+      decodeCounterpartyPage(
+        page({ totalCount: null, countScope: COUNT_SCOPE_FILTERED_AUTHORIZED }),
+        SINGLE_A,
+      ),
+    ).toBeNull()
+  })
+
+  it('rejects an unknown scope — we would not know what the number means', () => {
+    expect(
+      decodeCounterpartyPage(page({ totalCount: 5, countScope: 'all-parties' }), SINGLE_A),
+    ).toBeNull()
+  })
+
+  it('accepts the one paired shape', () => {
+    const decoded = decodeCounterpartyPage(
+      page({ totalCount: 5, countScope: COUNT_SCOPE_FILTERED_AUTHORIZED }),
+      SINGLE_A,
+    )
+    expect(decoded!.totalCount).toBe('5')
+    expect(decoded!.countScope).toBe(COUNT_SCOPE_FILTERED_AUTHORIZED)
+  })
+})
+
 describe('decodeCounterpartyPage — fails closed', () => {
   it('rejects an inconsistent hasMore / nextCursor pair', () => {
-    expect(decodeCounterpartyPage(page({ hasMore: true, nextCursor: null }))).toBeNull()
-    expect(decodeCounterpartyPage(page({ hasMore: false, nextCursor: 'abc' }))).toBeNull()
+    expect(decodeCounterpartyPage(page({ hasMore: true, nextCursor: null }), SINGLE_A)).toBeNull()
+    expect(decodeCounterpartyPage(page({ hasMore: false, nextCursor: 'abc' }), SINGLE_A)).toBeNull()
   })
 
   it('rejects an out-of-range PartyKind', () => {
-    expect(decodeCounterpartyPage(page({ items: [item({ kind: 3 })] }))).toBeNull()
-    expect(decodeCounterpartyPage(page({ items: [item({ kind: 0 })] }))).toBeNull()
+    expect(decodeCounterpartyPage(page({ items: [item({ kind: 3 })] }), SINGLE_A)).toBeNull()
+    expect(decodeCounterpartyPage(page({ items: [item({ kind: 0 })] }), SINGLE_A)).toBeNull()
   })
 
   it('rejects PartyRole flags outside 1..15 or with unknown bits', () => {
     for (const roles of [0, 16, 32, -1, 1.5]) {
       expect(
-        decodeCounterpartyPage(page({ items: [item({ companyAccounts: [account({ roles })] })] })),
+        decodeCounterpartyPage(
+          page({ items: [item({ companyAccounts: [account({ roles })] })] }),
+          SINGLE_A,
+        ),
       ).toBeNull()
     }
   })
 
   it('rejects a nil or malformed UUID', () => {
     expect(
-      decodeCounterpartyPage(page({ items: [item({ id: '00000000-0000-0000-0000-000000000000' })] })),
+      decodeCounterpartyPage(
+        page({ items: [item({ id: '00000000-0000-0000-0000-000000000000' })] }),
+        SINGLE_A,
+      ),
     ).toBeNull()
-    expect(decodeCounterpartyPage(page({ items: [item({ id: 'not-a-uuid' })] }))).toBeNull()
+    expect(decodeCounterpartyPage(page({ items: [item({ id: 'not-a-uuid' })] }), SINGLE_A)).toBeNull()
   })
 
   it('rejects duplicate party ids in one page', () => {
-    expect(decodeCounterpartyPage(page({ items: [item(), item()] }))).toBeNull()
-  })
-
-  it('rejects two accounts for the same company on one party', () => {
-    const twoSameCompany = item({
-      companyAccounts: [account(), account({ id: ACCOUNT_2, companyId: COMPANY_A })],
-    })
-    expect(decodeCounterpartyPage(page({ items: [twoSameCompany] }))).toBeNull()
-  })
-
-  it('accepts one account per distinct company', () => {
-    const twoCompanies = item({
-      companyAccounts: [account(), account({ id: ACCOUNT_2, companyId: COMPANY_B, roles: 2 })],
-    })
-    const decoded = decodeCounterpartyPage(page({ items: [twoCompanies] }))
-    expect(decoded!.items[0].companyAccounts).toHaveLength(2)
+    expect(decodeCounterpartyPage(page({ items: [item(), item()] }), SINGLE_A)).toBeNull()
   })
 
   it('rejects an empty code or legalName', () => {
-    expect(decodeCounterpartyPage(page({ items: [item({ code: '   ' })] }))).toBeNull()
-    expect(decodeCounterpartyPage(page({ items: [item({ legalName: '' })] }))).toBeNull()
+    expect(decodeCounterpartyPage(page({ items: [item({ code: '   ' })] }), SINGLE_A)).toBeNull()
+    expect(decodeCounterpartyPage(page({ items: [item({ legalName: '' })] }), SINGLE_A)).toBeNull()
   })
 
   it('rejects a negative or non-numeric totalCount', () => {
-    expect(decodeCounterpartyPage(page({ totalCount: -1 }))).toBeNull()
-    expect(decodeCounterpartyPage(page({ totalCount: 'abc' }))).toBeNull()
-    expect(decodeCounterpartyPage(page({ totalCount: 1.5 }))).toBeNull()
+    for (const totalCount of [-1, 'abc', 1.5]) {
+      expect(
+        decodeCounterpartyPage(
+          page({ totalCount, countScope: COUNT_SCOPE_FILTERED_AUTHORIZED }),
+          SINGLE_A,
+        ),
+      ).toBeNull()
+    }
   })
 
   it('rejects the whole page when a single row is bad (no partial page)', () => {
-    expect(decodeCounterpartyPage(page({ items: [item(), item({ id: 'bad', code: 'X' })] }))).toBeNull()
+    expect(
+      decodeCounterpartyPage(page({ items: [item(), item({ id: 'bad', code: 'X' })] }), SINGLE_A),
+    ).toBeNull()
   })
 
   it('rejects non-objects and a missing items array', () => {
-    expect(decodeCounterpartyPage(null)).toBeNull()
-    expect(decodeCounterpartyPage('nope')).toBeNull()
-    expect(decodeCounterpartyPage({ hasMore: false })).toBeNull()
+    expect(decodeCounterpartyPage(null, SINGLE_A)).toBeNull()
+    expect(decodeCounterpartyPage('nope', SINGLE_A)).toBeNull()
+    expect(decodeCounterpartyPage({ hasMore: false }, SINGLE_A)).toBeNull()
   })
 })
 
