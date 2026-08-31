@@ -290,13 +290,18 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
             using var companyBClient = factory.CreateClientFor(
                 TestUsers.GroupAdmin,
                 TestCompanyIds.CompanyB);
+            using var companyCClient = factory.CreateClientFor(
+                TestUsers.GroupAdmin,
+                TestCompanyIds.CompanyC);
 
             var initialGroup = await ReadSnapshotAsync(groupClient);
             var initialCompanyA = await ReadSnapshotAsync(companyAClient);
             var initialCompanyB = await ReadSnapshotAsync(companyBClient);
+            var initialCompanyC = await ReadSnapshotAsync(companyCClient);
             Assert.Equal([GroupReadTestProvider.CapabilityId], initialGroup.Capabilities);
             Assert.Equal([GroupReadTestProvider.CapabilityId], initialCompanyA.Capabilities);
             Assert.Equal([GroupReadTestProvider.CapabilityId], initialCompanyB.Capabilities);
+            Assert.Equal([GroupReadTestProvider.CapabilityId], initialCompanyC.Capabilities);
             Assert.NotEqual(initialGroup.Generation, initialCompanyA.Generation);
 
             await using var connection = new SqlConnection(factory.DatabaseConnectionString);
@@ -337,6 +342,7 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
             var companyARevokedGroup = await ReadSnapshotAsync(groupClient);
             var companyARevoked = await ReadSnapshotAsync(companyAClient);
             var companyBStillGranted = await ReadSnapshotAsync(companyBClient);
+            var companyCStillGranted = await ReadSnapshotAsync(companyCClient);
             Assert.Equal(
                 [GroupReadTestProvider.CapabilityId],
                 companyARevokedGroup.Capabilities);
@@ -344,14 +350,32 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
             Assert.Equal(
                 [GroupReadTestProvider.CapabilityId],
                 companyBStillGranted.Capabilities);
+            Assert.Equal(
+                [GroupReadTestProvider.CapabilityId],
+                companyCStillGranted.Capabilities);
             Assert.NotEqual(initialGroup.Generation, companyARevokedGroup.Generation);
 
             Assert.Equal(
                 1,
                 await DowngradeGroupAssignmentAsync(connection, TestCompanyIds.CompanyB));
+            var companyBRevokedGroup = await ReadSnapshotAsync(groupClient);
+            var companyBRevoked = await ReadSnapshotAsync(companyBClient);
+            var companyCAfterBRevocation = await ReadSnapshotAsync(companyCClient);
+            Assert.Equal(
+                [GroupReadTestProvider.CapabilityId],
+                companyBRevokedGroup.Capabilities);
+            Assert.Empty(companyBRevoked.Capabilities);
+            Assert.Equal(
+                [GroupReadTestProvider.CapabilityId],
+                companyCAfterBRevocation.Capabilities);
+            Assert.NotEqual(companyARevokedGroup.Generation, companyBRevokedGroup.Generation);
+
+            Assert.Equal(
+                1,
+                await DowngradeGroupAssignmentAsync(connection, TestCompanyIds.CompanyC));
             var fullyRevokedGroup = await ReadSnapshotAsync(groupClient);
             Assert.Empty(fullyRevokedGroup.Capabilities);
-            Assert.NotEqual(companyARevokedGroup.Generation, fullyRevokedGroup.Generation);
+            Assert.NotEqual(companyBRevokedGroup.Generation, fullyRevokedGroup.Generation);
             Assert.DoesNotContain(
                 ErpPermissions.CounterpartyPartiesRead,
                 fullyRevokedGroup.RawJson,
@@ -362,6 +386,10 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
                 StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain(
                 TestCompanyIds.CompanyB.ToString("D"),
+                fullyRevokedGroup.RawJson,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(
+                TestCompanyIds.CompanyC.ToString("D"),
                 fullyRevokedGroup.RawJson,
                 StringComparison.OrdinalIgnoreCase);
         }
