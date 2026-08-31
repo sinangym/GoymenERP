@@ -1,36 +1,66 @@
 import { describe, expect, it } from 'vitest'
-import { createRequestFence } from './contextFence'
+import { createFenceView, isResponseStale } from './contextFence'
+import {
+  initialShellState,
+  shellReducer,
+  type ShellEvent,
+  type ShellState,
+} from './shellState'
+import { fixtureContext } from './fixtures'
 
-describe('request-generation fence', () => {
-  it('a response captured before a bump is stale', () => {
-    const fence = createRequestFence()
-    const captured = fence.capture()
-    fence.bump()
-    expect(fence.isStale(captured)).toBe(true)
+function run(state: ShellState, ...events: ShellEvent[]): ShellState {
+  return events.reduce(shellReducer, state)
+}
+
+describe('isResponseStale (pure)', () => {
+  it('is stale once the generation has moved', () => {
+    expect(isResponseStale(3, 3)).toBe(false)
+    expect(isResponseStale(3, 4)).toBe(true)
+  })
+})
+
+describe('FenceView bound to the single authoritative generation (reducer)', () => {
+  it('a response captured before a reducer-driven switch is stale after it', () => {
+    let state = run(initialShellState, {
+      type: 'SESSION_READY',
+      context: fixtureContext('company-a'),
+    })
+    const view = createFenceView(() => state.requestFenceGeneration)
+
+    const captured = view.capture() // request issued against company A
+    state = run(state, { type: 'REQUEST_SWITCH', target: { scopeMode: 'single', companyId: 'company-b' } })
+
+    // Even if AbortController is missed, the A response is fenced by the reducer's bump.
+    expect(view.isStale(captured)).toBe(true)
   })
 
-  it('a response captured after the last bump is fresh', () => {
-    const fence = createRequestFence()
-    fence.bump()
-    const captured = fence.capture()
-    expect(fence.isStale(captured)).toBe(false)
-  })
+  it('rapid A→B→A with out-of-order responses: only the last attempt commits', () => {
+    let state = run(initialShellState, { type: 'SESSION_READY', context: fixtureContext('company-a') })
+    const view = createFenceView(() => state.requestFenceGeneration)
 
-  it('stays stale across multiple bumps (failed switch then restore)', () => {
-    const fence = createRequestFence()
-    const captured = fence.capture()
-    fence.bump() // switch start
-    fence.bump() // switch failed, restore former context
-    expect(fence.isStale(captured)).toBe(true)
-  })
+    // → B
+    state = run(state, { type: 'REQUEST_SWITCH', target: { scopeMode: 'single', companyId: 'company-b' } })
+    const bAttempt = state.requestFenceGeneration
+    const bRequest = view.capture()
 
-  it('out-of-order: an old-company response arriving late is rejected', () => {
-    const fence = createRequestFence()
-    const oldRequest = fence.capture() // request issued against company A
-    fence.bump() // user switches to B
-    const newRequest = fence.capture() // request issued against company B
-    // B response settles first, then the slow A response arrives:
-    expect(fence.isStale(newRequest)).toBe(false)
-    expect(fence.isStale(oldRequest)).toBe(true)
+    // → A again, before B's reauth resolves
+    state = run(state, { type: 'REAUTH_OK', forGeneration: bAttempt, context: fixtureContext('company-b') })
+    state = run(state, { type: 'REQUEST_SWITCH', target: { scopeMode: 'single', companyId: 'company-a' } })
+    const aAttempt = state.requestFenceGeneration
+    const aRequest = view.capture()
+    state = run(state, { type: 'REAUTH_OK', forGeneration: aAttempt, context: fixtureContext('company-a') })
+
+    // The slow B-attempt response arrives last — it is stale and must not paint.
+    expect(view.isStale(bRequest)).toBe(true)
+    expect(view.isStale(aRequest)).toBe(false)
+    expect(state.activeContext?.companyId).toBe('company-a')
+
+    // A stale B REAUTH_OK arriving now is a no-op (wrong generation).
+    const afterStaleReauth = run(state, {
+      type: 'REAUTH_OK',
+      forGeneration: bAttempt,
+      context: fixtureContext('company-b'),
+    })
+    expect(afterStaleReauth).toBe(state)
   })
 })

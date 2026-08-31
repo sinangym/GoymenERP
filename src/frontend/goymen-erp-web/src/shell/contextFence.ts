@@ -2,40 +2,45 @@
  * Request-generation fence for CompanyContext transitions.
  *
  * Design source: docs/delivery/CRITICAL_ANALYSIS/shell-companycontext-fence/claude.md §A.2
- * (CODEX-ORCHESTRATOR review: the fence advances at the START of a transition, not
- *  after a successful commit; committed-context revision is a separate concept.)
  *
- * INV-FENCE (ERP-000K_SHELL_CONTRACT §13.4): every outbound request captures the
- * fence value at start. On settle, if the captured value != the current value the
- * result is discarded — it is never written to state or cache, and a mutation
- * produces no UI effect. This holds even when transport cancellation (AbortController)
- * is missed and even when the transition later fails.
+ * REV.2 (Codex #133 review P1-3): there is exactly ONE authoritative generation
+ * counter — `ShellState.requestFenceGeneration` in ./shellState.ts. This module has
+ * NO independent mutable counter; it is a pure staleness check plus a read-only
+ * "view" that a transport layer holds. A request captures the current generation at
+ * start; on settle it is stale if the generation has advanced.
  *
- * This is a package-independent primitive: it sits above any fetch/mutation layer.
+ * INV-FENCE (ERP-000K_SHELL_CONTRACT §13.4): a stale result is never written to
+ * state or cache and a mutation produces no UI effect — even when transport
+ * cancellation (AbortController) is missed and even when the transition later fails.
  */
 
 export type FenceGeneration = number
 
-export interface RequestFence {
-  /** Current generation. A response whose captured generation differs is stale. */
-  current(): FenceGeneration
-  /** Advance the fence. Called at the START of switch / logout / capability revoke. */
-  bump(): FenceGeneration
+/** Pure check: a response captured at `captured` is stale once `current` has moved. */
+export function isResponseStale(
+  captured: FenceGeneration,
+  current: FenceGeneration,
+): boolean {
+  return captured !== current
+}
+
+/**
+ * Read-only fence view backed by the single authoritative generation source
+ * (`() => shellStore.getState().requestFenceGeneration`). Held by the transport /
+ * query layer. It cannot advance the generation — only the reducer does that.
+ */
+export interface FenceView {
   /** Capture the current generation for an in-flight request. */
   capture(): FenceGeneration
   /** True when a response captured at `captured` must be rejected. */
   isStale(captured: FenceGeneration): boolean
 }
 
-export function createRequestFence(initial: FenceGeneration = 0): RequestFence {
-  let generation = initial
+export function createFenceView(
+  readGeneration: () => FenceGeneration,
+): FenceView {
   return {
-    current: () => generation,
-    bump: () => {
-      generation += 1
-      return generation
-    },
-    capture: () => generation,
-    isStale: (captured) => captured !== generation,
+    capture: () => readGeneration(),
+    isStale: (captured) => isResponseStale(captured, readGeneration()),
   }
 }

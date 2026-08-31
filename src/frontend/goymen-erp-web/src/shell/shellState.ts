@@ -3,17 +3,17 @@
  *
  * Design source: docs/delivery/CRITICAL_ANALYSIS/shell-companycontext-fence/claude.md
  *   §A.1  INV-* invariants
- *   §A.2  two counters: requestFenceGeneration (fence) vs committedContextRevision (binding)
+ *   §A.2  requestFenceGeneration is the SINGLE authoritative counter; it also serves
+ *         as the identity of the current transition attempt (Codex #133 P1-3/P1-1)
  *   §A.3  two-phase transition: activeContext + pendingTarget; activeContext only
  *         changes on a successful ATOMIC-COMMIT
  *
- * Scope of this module: the deterministic reducer only. No React, no fetch, no
- * router, no npm package beyond what is already in package.json. Server-backed
- * capability/company-directory shapes are consumed via fixtures until the
- * generated client from SHELL-PILOT-01A / Issue #122 lands (see ./fixtures.ts).
+ * Scope: the deterministic reducer only. No React, no fetch, no router, no npm
+ * package beyond package.json. Server-backed capability/company-directory shapes
+ * are consumed via fixtures until the generated client (Issue #122) lands.
  *
- * NOT in scope here: mock KPIs/balances/routes (forbidden), business rules,
- * permission/ABAC inventory (the shell only sees coarse feature availability).
+ * NOT in scope: mock KPIs/balances/routes, business rules, permission/ABAC
+ * inventory (the shell only sees a coarse, opaque capability generation marker).
  */
 
 /** A verified, server-reauthorized single-company or authorized group-read context. */
@@ -24,8 +24,8 @@ export interface CompanyContext {
   readonly companyId: string | null
   /**
    * Opaque server-backed capability generation marker. `null` => unresolved =>
-   * fail-closed: base shell + company directory only, no capability-gated mounts.
-   * The shell never interprets its contents, only whether it changed.
+   * fail-closed. The shell only compares equality, never parses it, and never
+   * treats it as an incrementing counter or an authorization proof.
    */
   readonly capabilityGeneration: string | null
 }
@@ -47,7 +47,17 @@ export interface ShellState {
   readonly activeContext: CompanyContext | null
   /** Candidate, not yet verified. Set during confirming-switch / switching. */
   readonly pendingTarget: SwitchTarget | null
-  /** INV-FENCE: advances at the START of switch / logout / capability revoke. */
+  /**
+   * Snapshot of the verified context taken when a transition begins. REAUTH_FAIL
+   * restores from THIS, never from a caller-supplied event payload (Codex #133 P1-1).
+   */
+  readonly verifiedFormerContext: CompanyContext | null
+  /**
+   * The SINGLE authoritative request-generation counter AND the identity of the
+   * current transition attempt. Advances at: transition start, REAUTH_FAIL,
+   * CAPABILITY_REVOKED, SESSION_RESET. REAUTH_OK / REAUTH_FAIL are ignored unless
+   * their `forGeneration` equals this exact value.
+   */
   readonly requestFenceGeneration: number
   /** Binding for contextKey / company-scoped cache. Advances only on ATOMIC-COMMIT. */
   readonly committedContextRevision: number
@@ -60,8 +70,8 @@ export type ShellEvent =
   | { type: 'REQUEST_SWITCH'; target: SwitchTarget }
   | { type: 'CONFIRM_SWITCH_DISCARD' }
   | { type: 'CONFIRM_SWITCH_STAY' }
-  | { type: 'REAUTH_OK'; context: CompanyContext }
-  | { type: 'REAUTH_FAIL'; restored: CompanyContext | null }
+  | { type: 'REAUTH_OK'; forGeneration: number; context: CompanyContext }
+  | { type: 'REAUTH_FAIL'; forGeneration: number; restoredCapabilityGeneration: string | null }
   | { type: 'CAPABILITY_REVOKED' }
   | { type: 'SESSION_RESET' }
   | { type: 'DIRTY_SET'; scope: string }
@@ -71,39 +81,45 @@ export const initialShellState: ShellState = {
   phase: 'no-active-company',
   activeContext: null,
   pendingTarget: null,
+  verifiedFormerContext: null,
   requestFenceGeneration: 0,
   committedContextRevision: 0,
   dirtyScopes: [],
 }
 
-/** Begin a transition: fence up, drop the active context into the neutral state. */
+/** Begin a transition: fence + attempt id up, snapshot the former context, go neutral. */
 function beginSwitching(state: ShellState, target: SwitchTarget): ShellState {
   return {
     ...state,
     phase: 'switching',
     activeContext: null,
     pendingTarget: target,
+    verifiedFormerContext: state.activeContext,
     requestFenceGeneration: state.requestFenceGeneration + 1,
   }
+}
+
+function targetMatches(context: CompanyContext, target: SwitchTarget): boolean {
+  return context.scopeMode === target.scopeMode && context.companyId === target.companyId
 }
 
 export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
   switch (event.type) {
     case 'SESSION_READY': {
-      // Login / first bound context. ATOMIC-COMMIT of the initial context.
+      // Login only. Never an unconditional commit from an arbitrary phase (Codex #133 P1-1).
+      if (state.phase !== 'no-active-company') return state
       return {
         ...state,
         phase: 'idle',
         activeContext: event.context,
         pendingTarget: null,
+        verifiedFormerContext: null,
         committedContextRevision: state.committedContextRevision + 1,
       }
     }
 
     case 'REQUEST_SWITCH': {
-      if (state.phase !== 'idle' && state.phase !== 'no-active-company') {
-        return state
-      }
+      if (state.phase !== 'idle' && state.phase !== 'no-active-company') return state
       if (state.dirtyScopes.length > 0) {
         return { ...state, phase: 'confirming-switch', pendingTarget: event.target }
       }
@@ -111,9 +127,7 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
     }
 
     case 'CONFIRM_SWITCH_DISCARD': {
-      if (state.phase !== 'confirming-switch' || state.pendingTarget === null) {
-        return state
-      }
+      if (state.phase !== 'confirming-switch' || state.pendingTarget === null) return state
       return beginSwitching({ ...state, dirtyScopes: [] }, state.pendingTarget)
     }
 
@@ -123,27 +137,48 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
     }
 
     case 'REAUTH_OK': {
-      if (state.phase !== 'switching') return state
-      // ATOMIC-COMMIT. Fence already advanced at beginSwitching.
+      if (state.phase !== 'switching' || state.pendingTarget === null) return state
+      // Must be the response to THIS exact transition attempt (Codex #133 P1-1/P1-3).
+      if (event.forGeneration !== state.requestFenceGeneration) return state
+      // The verified context must match the pending target and keep the same actor.
+      const sameActor =
+        state.verifiedFormerContext === null ||
+        state.verifiedFormerContext.userId === event.context.userId
+      if (!targetMatches(event.context, state.pendingTarget) || !sameActor) {
+        // Mismatch / injection → fail closed, do not expose the supplied context.
+        return {
+          ...state,
+          phase: 'no-active-company',
+          activeContext: null,
+          pendingTarget: null,
+          verifiedFormerContext: null,
+          requestFenceGeneration: state.requestFenceGeneration + 1,
+        }
+      }
       return {
         ...state,
         phase: 'idle',
         activeContext: event.context,
         pendingTarget: null,
+        verifiedFormerContext: null,
         committedContextRevision: state.committedContextRevision + 1,
       }
     }
 
     case 'REAUTH_FAIL': {
       if (state.phase !== 'switching') return state
-      // Advance the fence again so in-flight target-attempt responses are fenced too.
+      if (event.forGeneration !== state.requestFenceGeneration) return state
       const fenced = state.requestFenceGeneration + 1
-      if (event.restored !== null) {
+      const former = state.verifiedFormerContext
+      if (former !== null) {
+        // Restore the SNAPSHOT taken at transition start, only refreshing the
+        // opaque capability generation the server just re-issued.
         return {
           ...state,
           phase: 'idle',
-          activeContext: event.restored,
+          activeContext: { ...former, capabilityGeneration: event.restoredCapabilityGeneration },
           pendingTarget: null,
+          verifiedFormerContext: null,
           requestFenceGeneration: fenced,
         }
       }
@@ -152,13 +187,13 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
         phase: 'no-active-company',
         activeContext: null,
         pendingTarget: null,
+        verifiedFormerContext: null,
         requestFenceGeneration: fenced,
       }
     }
 
     case 'CAPABILITY_REVOKED': {
-      // Fail-closed: fence up, capability marker cleared. Active company identity is
-      // kept but every capability-gated mount must fail closed until re-resolved.
+      // Fail-closed: fence up, capability marker cleared, company identity kept.
       if (state.activeContext === null) {
         return { ...state, requestFenceGeneration: state.requestFenceGeneration + 1 }
       }
@@ -170,7 +205,6 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
     }
 
     case 'SESSION_RESET': {
-      // Logout / user change. Everything context-bound is dropped.
       return {
         ...initialShellState,
         requestFenceGeneration: state.requestFenceGeneration + 1,
@@ -185,10 +219,7 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
 
     case 'DIRTY_CLEAR': {
       if (!state.dirtyScopes.includes(event.scope)) return state
-      return {
-        ...state,
-        dirtyScopes: state.dirtyScopes.filter((scope) => scope !== event.scope),
-      }
+      return { ...state, dirtyScopes: state.dirtyScopes.filter((s) => s !== event.scope) }
     }
 
     default:
@@ -197,12 +228,21 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
 }
 
 /**
- * INV-NS: the context-owned cache namespace key. Includes committedContextRevision,
- * NOT requestFenceGeneration (that is the request-lifecycle fence, not a cache binding).
- * Returns null when there is no bound context — callers must not issue company-scoped
- * reads in that state.
+ * INV-NS: the context-owned cache namespace key, as a STRUCTURAL tuple — not a
+ * delimiter-joined string (Codex #133 P1-2: `|`-join collides
+ * ("u|single","c") vs ("u","single|c")). Includes committedContextRevision, NOT
+ * requestFenceGeneration. Returns null when there is no bound context — callers
+ * must not issue company-scoped reads in that state.
  */
-export function contextKey(state: ShellState): string | null {
+export type ContextKey = readonly [
+  userId: string,
+  scopeMode: 'single' | 'group',
+  companyId: string,
+  capabilityGeneration: string,
+  committedContextRevision: string,
+]
+
+export function contextKey(state: ShellState): ContextKey | null {
   const ctx = state.activeContext
   if (ctx === null || state.phase !== 'idle') return null
   return [
@@ -211,7 +251,12 @@ export function contextKey(state: ShellState): string | null {
     ctx.companyId ?? 'group',
     ctx.capabilityGeneration ?? 'no-capability',
     String(state.committedContextRevision),
-  ].join('|')
+  ]
+}
+
+/** Canonical, collision-free string form of a ContextKey (JSON of a string array). */
+export function contextKeyString(key: ContextKey): string {
+  return JSON.stringify(key)
 }
 
 /** True when capability-gated feature mounts must be closed (fail-closed). */
