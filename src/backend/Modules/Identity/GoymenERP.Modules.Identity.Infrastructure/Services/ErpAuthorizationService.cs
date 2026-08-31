@@ -9,11 +9,14 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Services;
 
 internal sealed class ErpAuthorizationService(
     IdentityDbContext dbContext,
-    ICurrentUser currentUser)
+    ICurrentUser currentUser,
+    IAuthorizationSnapshotReadObserver? snapshotReadObserver = null)
     : IErpAuthorizationService
 {
     private readonly Dictionary<(Guid UserId, Guid CompanyId, string Permission), PermissionScope>
         _requestCache = [];
+    private IReadOnlyList<AuthorizationSnapshotProjection>? _snapshotRows;
+    private Guid? _snapshotRowsUserId;
 
     public async Task<AuthorizationSnapshot> GetAuthorizationSnapshotAsync(
         Guid companyId,
@@ -47,16 +50,37 @@ internal sealed class ErpAuthorizationService(
                 []);
         }
 
-        var now = DateTimeOffset.UtcNow;
-        var rows = await ReadSnapshotRowsAsync(
-            userId,
-            now,
-            cancellationToken);
+        var rows = await GetRequestSnapshotRowsAsync(userId, cancellationToken);
         return BuildSnapshot(
             userId,
             companyId,
             requestedPermissions,
             rows);
+    }
+
+    private async Task<IReadOnlyList<AuthorizationSnapshotProjection>>
+        GetRequestSnapshotRowsAsync(
+            Guid userId,
+            CancellationToken cancellationToken)
+    {
+        if (_snapshotRows is not null)
+        {
+            if (_snapshotRowsUserId != userId)
+            {
+                throw new InvalidOperationException(
+                    "Request-scoped authorization snapshot farklı aktörler arasında kullanılamaz.");
+            }
+
+            return _snapshotRows;
+        }
+
+        snapshotReadObserver?.ObserveDatabaseRead();
+        _snapshotRows = await ReadSnapshotRowsAsync(
+            userId,
+            DateTimeOffset.UtcNow,
+            cancellationToken);
+        _snapshotRowsUserId = userId;
+        return _snapshotRows;
     }
 
     public async Task<bool> HasPermissionAsync(

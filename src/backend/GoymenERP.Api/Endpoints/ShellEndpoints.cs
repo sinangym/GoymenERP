@@ -1,4 +1,5 @@
 using GoymenERP.Api.Multitenancy;
+using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.Shell;
 using Microsoft.Net.Http.Headers;
 
@@ -35,7 +36,11 @@ public static class ShellEndpoints
                 }
             })
             .RequireCompanyContext()
-            .WithName("GetShellCapabilitiesV1");
+            .WithName("GetShellCapabilitiesV1")
+            .Produces<ShellCapabilitySnapshot>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
 
         return endpoints;
     }

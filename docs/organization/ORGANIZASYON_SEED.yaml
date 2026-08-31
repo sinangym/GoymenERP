@@ -1,43 +1,59 @@
-version: 1
-status: draft_with_locked_locations
+version: 2
+status: companies_from_sinan_2026-08-31
+source: docs/decisions/SINAN_KARARLARI_2026-08-31.md §1
 organization_group:
   code: GOYMEN
   name: Göymen Grubu
 legal_entities:
-  - code: TBD-GOY-01
-    legal_name: KULLANICI_TARAFINDAN_DOLDURULACAK
-    tax_number: TBD
+  - code: GDC
+    legal_name: Göymen Demir Çelik İnş. San. ve Tic. Ltd. Şti.
+    tax_number: "4100046586"
+    tax_number_status: real
     active: true
-  - code: TBD-GOY-02
-    legal_name: KULLANICI_TARAFINDAN_DOLDURULACAK
-    tax_number: TBD
+  - code: GSP
+    legal_name: Göymen Sac Profil San. ve Tic. Ltd. Şti.
+    tax_number: "4101507252"
+    tax_number_status: real
     active: true
+  - code: GIN
+    legal_name: Göymen İnşaat
+    tax_number: "1111111111"
+    tax_number_status: placeholder   # OPEN-001-GIN: tam unvan + gerçek VKN eksik
+    invoice_capable: false           # feature-flag: resmî belge üretimine kapalı
+    active: true
+# Runtime CRUD: şirket ekleme/düzenleme Ayarlar/Organizasyon masterından yapılır
+# (DEC-SET-001). Bu seed yalnız başlangıç verisidir.
+# OPEN-002 (Sinan 2026-08-31): Göymen lokasyonları = Göymen'in kendi deposu
+# (operating_company başlangıçta GDC, Ayarlar'dan düzeltilebilir). Harici depolar =
+# tedarikçi depoları; işleten = ilgili tedarikçi, Göymen malı emanet/dış-fasondadır.
 sites:
   - code: SITE-OSM
     name: Göymen Osmaniye Yerleşkesi
     type: internal
+    operating_company: GDC
   - code: SITE-GAZ
     name: Göymen Gaziantep Depo Yerleşkesi
     type: internal
+    operating_company: GDC
   - code: SITE-EXT
     name: Harici Depolar
     type: external_group
 locations:
-  - { code: OSM-H0, name: Göymen Osmaniye Depo Hol-0, site: SITE-OSM, external: false }
-  - { code: OSM-H1, name: Göymen Osmaniye Depo Hol-1, site: SITE-OSM, external: false }
-  - { code: OSM-H2, name: Göymen Osmaniye Depo Hol-2, site: SITE-OSM, external: false }
-  - { code: OSM-H3, name: Göymen Osmaniye Depo Hol-3, site: SITE-OSM, external: false }
-  - { code: OSM-H4, name: Göymen Osmaniye Depo Hol-4, site: SITE-OSM, external: false }
-  - { code: OSM-H5, name: Göymen Osmaniye Depo Hol-5, site: SITE-OSM, external: false }
-  - { code: OSM-H6, name: Göymen Osmaniye Depo Hol-6, site: SITE-OSM, external: false }
-  - { code: OSM-H7, name: Göymen Osmaniye Depo Hol-7, site: SITE-OSM, external: false }
-  - { code: GAZ-DEP, name: Göymen Gaziantep Depo, site: SITE-GAZ, external: false }
-  - { code: EXT-BASTUG, name: Baştuğ Depo, site: SITE-EXT, external: true }
-  - { code: EXT-SELIMOGLU, name: Selimoğlu Depo, site: SITE-EXT, external: true }
-  - { code: EXT-ALYA, name: Alya Depo, site: SITE-EXT, external: true }
-  - { code: EXT-SADILER, name: Şadiler Depo, site: SITE-EXT, external: true }
-  - { code: EXT-TOSCELIK, name: Tosçelik Depo, site: SITE-EXT, external: true }
-  - { code: EXT-DOGRULUK, name: Doğruluk Depo, site: SITE-EXT, external: true }
+  - { code: OSM-H0, name: Göymen Osmaniye Depo Hol-0, site: SITE-OSM, external: false, operating_company: GDC }
+  - { code: OSM-H1, name: Göymen Osmaniye Depo Hol-1, site: SITE-OSM, external: false, operating_company: GDC }
+  - { code: OSM-H2, name: Göymen Osmaniye Depo Hol-2, site: SITE-OSM, external: false, operating_company: GDC }
+  - { code: OSM-H3, name: Göymen Osmaniye Depo Hol-3, site: SITE-OSM, external: false, operating_company: GDC }
+  - { code: OSM-H4, name: Göymen Osmaniye Depo Hol-4, site: SITE-OSM, external: false, operating_company: GDC }
+  - { code: OSM-H5, name: Göymen Osmaniye Depo Hol-5, site: SITE-OSM, external: false, operating_company: GDC }
+  - { code: OSM-H6, name: Göymen Osmaniye Depo Hol-6, site: SITE-OSM, external: false, operating_company: GDC }
+  - { code: OSM-H7, name: Göymen Osmaniye Depo Hol-7, site: SITE-OSM, external: false, operating_company: GDC }
+  - { code: GAZ-DEP, name: Göymen Gaziantep Depo, site: SITE-GAZ, external: false, operating_company: GDC }
+  - { code: EXT-BASTUG, name: Baştuğ Depo, site: SITE-EXT, external: true, operator: "Baştuğ (tedarikçi)" }
+  - { code: EXT-SELIMOGLU, name: Selimoğlu Depo, site: SITE-EXT, external: true, operator: "Selimoğlu (tedarikçi)" }
+  - { code: EXT-ALYA, name: Alya Depo, site: SITE-EXT, external: true, operator: "Alya (tedarikçi)" }
+  - { code: EXT-SADILER, name: Şadiler Depo, site: SITE-EXT, external: true, operator: "Şadiler (tedarikçi)" }
+  - { code: EXT-TOSCELIK, name: Tosçelik Depo, site: SITE-EXT, external: true, operator: "Tosçelik (tedarikçi)" }
+  - { code: EXT-DOGRULUK, name: Doğruluk Depo, site: SITE-EXT, external: true, operator: "Doğruluk (tedarikçi)" }
 work_centers:
   - { code: WC-PAINT, name: Boya Hattı, location: OSM-H0 }
   - { code: WC-TUBE, name: Boru & Profil Hattı, location: OSM-H1 }

@@ -118,7 +118,10 @@ public sealed class CounterpartySqlServerRelationalAcceptanceTests
         Assert.Equal(HttpStatusCode.OK, groupResponse.StatusCode);
         using var groupJson = JsonDocument.Parse(
             await groupResponse.Content.ReadAsStringAsync());
-        var groupParties = groupJson.RootElement.EnumerateArray().ToArray();
+        var groupParties = groupJson.RootElement
+            .GetProperty("items")
+            .EnumerateArray()
+            .ToArray();
         Assert.Single(groupParties);
         Assert.Equal(partyId, groupParties[0].GetProperty("id").GetGuid());
         var groupAccounts = groupParties[0]
@@ -134,7 +137,10 @@ public sealed class CounterpartySqlServerRelationalAcceptanceTests
         Assert.Equal(HttpStatusCode.OK, companyResponse.StatusCode);
         using var companyJson = JsonDocument.Parse(
             await companyResponse.Content.ReadAsStringAsync());
-        var companyParties = companyJson.RootElement.EnumerateArray().ToArray();
+        var companyParties = companyJson.RootElement
+            .GetProperty("items")
+            .EnumerateArray()
+            .ToArray();
         Assert.Single(companyParties);
         var companyAccounts = companyParties[0]
             .GetProperty("companyAccounts")
@@ -147,10 +153,12 @@ public sealed class CounterpartySqlServerRelationalAcceptanceTests
 
         using var conflictingFilter = await companyClient.GetAsync(
             $"/api/v1/counterparties?companyId={TestCompanyIds.CompanyB}");
-        Assert.Equal(HttpStatusCode.OK, conflictingFilter.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, conflictingFilter.StatusCode);
         using var conflictingJson = JsonDocument.Parse(
             await conflictingFilter.Content.ReadAsStringAsync());
-        Assert.Empty(conflictingJson.RootElement.EnumerateArray());
+        Assert.Equal(
+            "validation_failed",
+            conflictingJson.RootElement.GetProperty("code").GetString());
     }
 
     private static HttpClient CreateGroupClient(

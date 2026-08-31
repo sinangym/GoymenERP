@@ -2,8 +2,8 @@ namespace GoymenERP.Modules.Counterparty.Application.Contracts;
 
 public interface ICounterpartyReadService
 {
-    Task<IReadOnlyList<PartyCoreView>> GetAuthorizedPartiesAsync(
-        Guid? companyId,
+    Task<CounterpartyPageExecution> GetAuthorizedPageAsync(
+        CounterpartyReadRequest request,
         CancellationToken cancellationToken = default);
 
     Task<PartyCoreView?> GetAuthorizedPartyAsync(
