@@ -3285,8 +3285,7 @@
           {
             "name": "X-Company-Id",
             "in": "header",
-            "description": "Selected company identifier for this company-scoped request.",
-            "required": true,
+            "description": "Optional selected company identifier for an authorized company view.",
             "schema": {
               "type": "string",
               "format": "uuid",

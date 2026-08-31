@@ -47,7 +47,7 @@ public sealed class ShellCapabilityRegistryTests
         Assert.Equal(
             [ErpPermissions.CounterpartyPartiesRead],
             registration.Declaration.RequiredPermissions);
-        Assert.True(registration.Declaration.ImplementationAvailable);
+        Assert.False(registration.Declaration.ImplementationAvailable);
     }
 
     [Fact]

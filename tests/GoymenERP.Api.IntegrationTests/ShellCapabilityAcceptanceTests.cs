@@ -1,9 +1,13 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using GoymenERP.Api.Shell;
+using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -31,26 +35,43 @@ public sealed class ShellCapabilityAcceptanceTests(
     }
 
     [Fact]
-    public async Task MissingMalformedAndForeignCompanyContext_FailClosed()
+    public async Task HeaderlessGroupContext_IsAcceptedAndDistinctFromSelectedCompany()
     {
-        using var missing = factory.CreateClientFor(TestUsers.CompanyA);
+        using var group = factory.CreateClientFor(TestUsers.GroupAdmin);
+        using var selected = factory.CreateClientFor(
+            TestUsers.GroupAdmin,
+            TestCompanyIds.CompanyA);
+
+        using var groupResponse = await group.GetAsync("/api/v1/shell/capabilities");
+        using var selectedResponse = await selected.GetAsync("/api/v1/shell/capabilities");
+
+        Assert.Equal(HttpStatusCode.OK, groupResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, selectedResponse.StatusCode);
+        var groupSnapshot = await groupResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var selectedSnapshot = await selectedResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Empty(groupSnapshot.GetProperty("capabilities").EnumerateArray());
+        Assert.Empty(selectedSnapshot.GetProperty("capabilities").EnumerateArray());
+        Assert.NotEqual(
+            groupSnapshot.GetProperty("generation").GetString(),
+            selectedSnapshot.GetProperty("generation").GetString());
+    }
+
+    [Fact]
+    public async Task MalformedAndForeignCompanyContext_FailClosed()
+    {
         using var malformed = factory.CreateClientFor(TestUsers.CompanyA);
         malformed.DefaultRequestHeaders.Add("X-Company-Id", "not-a-company");
         using var foreign = factory.CreateClientFor(
             TestUsers.CompanyA,
             TestCompanyIds.CompanyB);
 
-        using var missingResponse = await missing.GetAsync(
-            "/api/v1/shell/capabilities");
         using var malformedResponse = await malformed.GetAsync(
             "/api/v1/shell/capabilities");
         using var foreignResponse = await foreign.GetAsync(
             "/api/v1/shell/capabilities");
 
-        Assert.Equal(HttpStatusCode.BadRequest, missingResponse.StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, malformedResponse.StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, foreignResponse.StatusCode);
-        await AssertProblemCodeAsync(missingResponse, "company_context_invalid");
         await AssertProblemCodeAsync(malformedResponse, "company_context_invalid");
     }
 
@@ -87,7 +108,7 @@ public sealed class ShellCapabilityAcceptanceTests(
     }
 
     [Fact]
-    public async Task AuthorizedSystemAdministrator_GetsOnlyTheAcceptedCounterpartyListCapability()
+    public async Task StagedCounterpartyCapability_IsNotPublishedBeforeItsUiMount()
     {
         using var client = factory.CreateClientFor(
             TestUsers.GroupAdmin,
@@ -99,9 +120,42 @@ public sealed class ShellCapabilityAcceptanceTests(
         Assert.Contains("no-store", response.Headers.CacheControl!.ToString());
         Assert.True(response.Headers.CacheControl.Private);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Empty(document.RootElement.GetProperty("capabilities").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task HeaderlessGroupContext_ExcludesSingleCompanyOnlyDeclarations()
+    {
+        var provider = new SingleCompanyOnlyTestProvider();
+        var revision = ShellCapabilityRegistry.ComputeCandidateRevision([provider]);
+        await using var isolatedFactory = factory.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<ShellCapabilityAuthorityCatalog>();
+                services.RemoveAll<IShellCapabilityProvider>();
+                services.AddSingleton(new ShellCapabilityAuthorityCatalog([revision]));
+                services.AddSingleton<IShellCapabilityProvider>(provider);
+            }));
+        using var groupClient = isolatedFactory.CreateClient();
+        groupClient.DefaultRequestHeaders.Add("X-Development-User", TestUsers.GroupAdmin);
+        using var selectedClient = isolatedFactory.CreateClient();
+        selectedClient.DefaultRequestHeaders.Add("X-Development-User", TestUsers.GroupAdmin);
+        selectedClient.DefaultRequestHeaders.Add(
+            "X-Company-Id",
+            TestCompanyIds.CompanyA.ToString("D"));
+
+        using var groupResponse = await groupClient.GetAsync("/api/v1/shell/capabilities");
+        using var selectedResponse = await selectedClient.GetAsync(
+            "/api/v1/shell/capabilities");
+
+        groupResponse.EnsureSuccessStatusCode();
+        selectedResponse.EnsureSuccessStatusCode();
+        var groupSnapshot = await groupResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var selectedSnapshot = await selectedResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Empty(groupSnapshot.GetProperty("capabilities").EnumerateArray());
         Assert.Equal(
-            ["cari.parties.list"],
-            document.RootElement.GetProperty("capabilities")
+            [SingleCompanyOnlyTestProvider.CapabilityId],
+            selectedSnapshot.GetProperty("capabilities")
                 .EnumerateArray()
                 .Select(item => item.GetString()!)
                 .ToArray());
@@ -119,15 +173,18 @@ public sealed class ShellCapabilityAcceptanceTests(
         using var otherActorClient = factory.CreateClientFor(
             TestUsers.CompanyA,
             TestCompanyIds.CompanyA);
+        using var groupClient = factory.CreateClientFor(TestUsers.GroupAdmin);
 
         var first = await ReadGenerationAsync(companyAClient);
         var repeated = await ReadGenerationAsync(companyAClient);
         var otherCompany = await ReadGenerationAsync(companyBClient);
         var otherActor = await ReadGenerationAsync(otherActorClient);
+        var group = await ReadGenerationAsync(groupClient);
 
         Assert.Equal(first, repeated);
         Assert.NotEqual(first, otherCompany);
         Assert.NotEqual(first, otherActor);
+        Assert.NotEqual(first, group);
     }
 
     [Fact]
@@ -205,5 +262,27 @@ public sealed class ShellCapabilityAcceptanceTests(
     {
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal(expectedCode, document.RootElement.GetProperty("code").GetString());
+    }
+
+    private sealed class SingleCompanyOnlyTestProvider : IShellCapabilityProvider
+    {
+        public const string CapabilityId = "test.single-company";
+
+        public string Owner => "TEST-SHELL";
+
+        public string ContractVersion => "1.0";
+
+        public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
+        [
+            new ShellCapabilityDeclaration(
+                CapabilityId,
+                "TEST-SINGLE",
+                "/test-single",
+                "TEST-SCREEN",
+                ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [ErpPermissions.CounterpartyPartiesRead],
+                ImplementationAvailable: true),
+        ];
     }
 }

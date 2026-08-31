@@ -18,8 +18,14 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
     private static readonly Guid CompanyAUserId = Guid.Parse(
         "20000000-0000-0000-0000-000000000001");
 
+    private static readonly Guid GroupAdministratorUserId = Guid.Parse(
+        "20000000-0000-0000-0000-000000000003");
+
     private static readonly Guid OrganizationOperatorRoleId = Guid.Parse(
         "30000000-0000-0000-0000-000000000002");
+
+    private static readonly Guid OrganizationReaderRoleId = Guid.Parse(
+        "30000000-0000-0000-0000-000000000001");
 
     private static readonly Guid SystemAdministratorRoleId = Guid.Parse(
         "30000000-0000-0000-0000-000000000003");
@@ -190,7 +196,7 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
-    public async Task CounterpartyListCapability_TracksCompanyWidePermissionRevocation()
+    public async Task StagedCounterpartyCapability_RemainsHiddenAndTracksPermissionRevision()
     {
         var baseConnectionString = Environment.GetEnvironmentVariable(
             SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
@@ -213,7 +219,7 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
 
             var granted = await ReadSnapshotAsync(administratorClient);
             var denied = await ReadSnapshotAsync(operatorClient);
-            Assert.Equal(["cari.parties.list"], granted.Capabilities);
+            Assert.DoesNotContain("cari.parties.list", granted.Capabilities);
             Assert.DoesNotContain("cari.parties.list", denied.Capabilities);
 
             await using var connection = new SqlConnection(factory.DatabaseConnectionString);
@@ -238,6 +244,126 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
                 ErpPermissions.CounterpartyPartiesRead,
                 revoked.RawJson,
                 StringComparison.Ordinal);
+        }
+        finally
+        {
+            await factory.DisposeAsync();
+            await DropDatabaseAsync(baseConnectionString, factory.DatabaseName);
+        }
+    }
+
+    [SqlServerFact]
+    public async Task HeaderlessGroupCapability_UsesPerCompanyPermissionsAndTracksRevocation()
+    {
+        var baseConnectionString = Environment.GetEnvironmentVariable(
+            SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
+        var provider = new GroupReadTestProvider();
+        var authorityRevision = ShellCapabilityRegistry.ComputeCandidateRevision([provider]);
+        var factory = new SqlServerRelationalApiFactory(
+            baseConnectionString,
+            services =>
+            {
+                services.RemoveAll<ShellCapabilityAuthorityCatalog>();
+                services.RemoveAll<IShellCapabilityProvider>();
+                services.AddSingleton(new ShellCapabilityAuthorityCatalog([authorityRevision]));
+                services.AddSingleton<IShellCapabilityProvider>(provider);
+            });
+
+        try
+        {
+            using (var healthClient = factory.CreateClient())
+            using (var healthResponse = await healthClient.GetAsync("/health/live"))
+            {
+                Assert.Equal(HttpStatusCode.OK, healthResponse.StatusCode);
+            }
+
+            using var groupClient = factory.CreateClient();
+            groupClient.DefaultRequestHeaders.Add(
+                "X-Development-User",
+                TestUsers.GroupAdmin);
+            groupClient.DefaultRequestHeaders.Add(
+                "X-Correlation-Id",
+                Guid.NewGuid().ToString("N"));
+            using var companyAClient = factory.CreateClientFor(
+                TestUsers.GroupAdmin,
+                TestCompanyIds.CompanyA);
+            using var companyBClient = factory.CreateClientFor(
+                TestUsers.GroupAdmin,
+                TestCompanyIds.CompanyB);
+
+            var initialGroup = await ReadSnapshotAsync(groupClient);
+            var initialCompanyA = await ReadSnapshotAsync(companyAClient);
+            var initialCompanyB = await ReadSnapshotAsync(companyBClient);
+            Assert.Equal([GroupReadTestProvider.CapabilityId], initialGroup.Capabilities);
+            Assert.Equal([GroupReadTestProvider.CapabilityId], initialCompanyA.Capabilities);
+            Assert.Equal([GroupReadTestProvider.CapabilityId], initialCompanyB.Capabilities);
+            Assert.NotEqual(initialGroup.Generation, initialCompanyA.Generation);
+
+            await using var connection = new SqlConnection(factory.DatabaseConnectionString);
+            await connection.OpenAsync();
+            Assert.Equal(
+                1,
+                await ExecuteNonQueryAsync(
+                    connection,
+                    """
+                    INSERT INTO [identity].[RolePermissions] ([RoleId], [PermissionCode])
+                    VALUES (@RoleId, @PermissionCode);
+                    """,
+                    new SqlParameter("@RoleId", OrganizationReaderRoleId),
+                    new SqlParameter(
+                        "@PermissionCode",
+                        ErpPermissions.CounterpartyPartiesRead)));
+            using (var narrowGroupClient = factory.CreateClient())
+            using (var narrowSelectedClient = factory.CreateClientFor(
+                       TestUsers.CompanyAViewer,
+                       TestCompanyIds.CompanyA))
+            {
+                narrowGroupClient.DefaultRequestHeaders.Add(
+                    "X-Development-User",
+                    TestUsers.CompanyAViewer);
+                narrowGroupClient.DefaultRequestHeaders.Add(
+                    "X-Correlation-Id",
+                    Guid.NewGuid().ToString("N"));
+                var narrowGroup = await ReadSnapshotAsync(narrowGroupClient);
+                var narrowSelected = await ReadSnapshotAsync(narrowSelectedClient);
+                Assert.Empty(narrowGroup.Capabilities);
+                Assert.Empty(narrowSelected.Capabilities);
+            }
+
+            Assert.Equal(
+                1,
+                await DowngradeGroupAssignmentAsync(connection, TestCompanyIds.CompanyA));
+
+            var companyARevokedGroup = await ReadSnapshotAsync(groupClient);
+            var companyARevoked = await ReadSnapshotAsync(companyAClient);
+            var companyBStillGranted = await ReadSnapshotAsync(companyBClient);
+            Assert.Equal(
+                [GroupReadTestProvider.CapabilityId],
+                companyARevokedGroup.Capabilities);
+            Assert.Empty(companyARevoked.Capabilities);
+            Assert.Equal(
+                [GroupReadTestProvider.CapabilityId],
+                companyBStillGranted.Capabilities);
+            Assert.NotEqual(initialGroup.Generation, companyARevokedGroup.Generation);
+
+            Assert.Equal(
+                1,
+                await DowngradeGroupAssignmentAsync(connection, TestCompanyIds.CompanyB));
+            var fullyRevokedGroup = await ReadSnapshotAsync(groupClient);
+            Assert.Empty(fullyRevokedGroup.Capabilities);
+            Assert.NotEqual(companyARevokedGroup.Generation, fullyRevokedGroup.Generation);
+            Assert.DoesNotContain(
+                ErpPermissions.CounterpartyPartiesRead,
+                fullyRevokedGroup.RawJson,
+                StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                TestCompanyIds.CompanyA.ToString("D"),
+                fullyRevokedGroup.RawJson,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(
+                TestCompanyIds.CompanyB.ToString("D"),
+                fullyRevokedGroup.RawJson,
+                StringComparison.OrdinalIgnoreCase);
         }
         finally
         {
@@ -513,6 +639,26 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
         return await command.ExecuteNonQueryAsync();
     }
 
+    private static Task<int> DowngradeGroupAssignmentAsync(
+        SqlConnection connection,
+        Guid companyId)
+    {
+        return ExecuteNonQueryAsync(
+            connection,
+            """
+            UPDATE [identity].[RoleAssignments]
+            SET [RoleId] = @OperatorRoleId,
+                [Version] = [Version] + 1
+            WHERE [UserId] = @UserId
+              AND [CompanyId] = @CompanyId
+              AND [RoleId] = @AdministratorRoleId;
+            """,
+            new SqlParameter("@OperatorRoleId", OrganizationOperatorRoleId),
+            new SqlParameter("@UserId", GroupAdministratorUserId),
+            new SqlParameter("@CompanyId", companyId),
+            new SqlParameter("@AdministratorRoleId", SystemAdministratorRoleId));
+    }
+
     private static async Task DropDatabaseAsync(
         string baseConnectionString,
         string databaseName)
@@ -654,6 +800,28 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
                     ErpPermissions.OrganizationLocationsRead,
                     ErpPermissions.OrganizationLocationsStatusUpdate,
                 ],
+                ImplementationAvailable: true),
+        ];
+    }
+
+    private sealed class GroupReadTestProvider : IShellCapabilityProvider
+    {
+        public const string CapabilityId = "test.group-read";
+
+        public string Owner => "TEST-GROUP-READ";
+
+        public string ContractVersion => "1.0";
+
+        public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
+        [
+            new ShellCapabilityDeclaration(
+                CapabilityId,
+                "test.group-read",
+                "/test/group-read",
+                "TEST-GROUP-READ-01",
+                ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [ErpPermissions.CounterpartyPartiesRead],
                 ImplementationAvailable: true),
         ];
     }

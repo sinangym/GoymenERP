@@ -11,7 +11,7 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
         "docs/features/CARI_UI_VERTICAL_SLICE_v1.json";
 
     [Fact]
-    public void ListDeclaration_MatchesTheAcceptedRepositoryOwnerSource()
+    public void StagedListDeclaration_MatchesTheAcceptedRepositoryOwnerSource()
     {
         using var document = JsonDocument.Parse(File.ReadAllText(
             Path.Combine(FindRepositoryRoot(), ContractPath)));
@@ -58,7 +58,13 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
         Assert.Equal(
             ShellCapabilityScopeRequirement.CompanyWide,
             declaration.ScopeRequirement);
-        Assert.True(declaration.ImplementationAvailable);
+        Assert.Equal(
+            "blocked",
+            root.GetProperty("implementationReadiness").GetString());
+        Assert.Equal(
+            "no_go",
+            root.GetProperty("productionActivation").GetString());
+        Assert.False(declaration.ImplementationAvailable);
     }
 
     private static string FindRepositoryRoot()

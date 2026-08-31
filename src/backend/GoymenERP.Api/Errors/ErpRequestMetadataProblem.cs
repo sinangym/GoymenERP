@@ -8,12 +8,18 @@ internal static class ErpRequestMetadataProblem
 
     public static Task WriteCompanyContextInvalidAsync(HttpContext httpContext)
     {
-        return WriteAsync(httpContext, ErpProblemCodes.CompanyContextInvalid);
+        return CompanyContextInvalid().ExecuteAsync(httpContext);
+    }
+
+    public static IResult CompanyContextInvalid()
+    {
+        return new RequestMetadataProblemResult(ErpProblemCodes.CompanyContextInvalid);
     }
 
     public static Task WriteCorrelationMetadataInvalidAsync(HttpContext httpContext)
     {
-        return WriteAsync(httpContext, ErpProblemCodes.CorrelationMetadataInvalid);
+        return new RequestMetadataProblemResult(ErpProblemCodes.CorrelationMetadataInvalid)
+            .ExecuteAsync(httpContext);
     }
 
     private static Task WriteAsync(HttpContext httpContext, string code)
@@ -25,6 +31,14 @@ internal static class ErpRequestMetadataProblem
             {
                 ["code"] = code,
             }).ExecuteAsync(httpContext);
+    }
+
+    private sealed class RequestMetadataProblemResult(string code) : IResult
+    {
+        public Task ExecuteAsync(HttpContext httpContext)
+        {
+            return WriteAsync(httpContext, code);
+        }
     }
 
     internal static bool TryGetOwnedCode(

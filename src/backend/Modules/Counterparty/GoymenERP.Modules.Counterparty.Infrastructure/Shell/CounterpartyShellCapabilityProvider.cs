@@ -26,6 +26,6 @@ public sealed class CounterpartyShellCapabilityProvider : IShellCapabilityProvid
             ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
             ShellCapabilityScopeRequirement.CompanyWide,
             [ErpPermissions.CounterpartyPartiesRead],
-            ImplementationAvailable: true),
+            ImplementationAvailable: false),
     ];
 }
