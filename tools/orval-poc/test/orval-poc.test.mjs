@@ -265,7 +265,7 @@ test("canonical preflight is local-only and fail-closed", async () => {
   const canonicalBytes = await readFile(CONTRACT_PATH);
   assert.equal(
     createHash("sha256").update(canonicalBytes).digest("hex"),
-    "d17648f612ef3abfcb6321afee80f54ad19aca885c5e8b63e849fb27f2f64ff8",
+    "94c170470c8399284aa8bd905912e343c3a5f1bc9085f1f7da30a28821f17b6a",
   );
   const canonical = await loadContract();
   assert.equal(validateContractDocument(canonical), canonical);
