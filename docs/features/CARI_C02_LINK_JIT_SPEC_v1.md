@@ -197,15 +197,23 @@ discard onayı verilmeden
 
 Kullanıcı `Kal` derse aktif şirket ve form korunur. `Değişiklikleri bırak` derse form/idempotency attempt temizlenir, yeni şirket reauthorization tamamlandıktan sonra boş form açılır.
 
-### 4.3 Submit ve unknown outcome
+### 4.3 Logical attempt, anahtar üretimi ve unknown outcome
 
-- Client-side validation geçmeden key üretilmez ve request gönderilmez.
-- Kullanıcı submit ettiğinde bir logical attempt için tek key üretilir ve yalnız bellekte tutulur; raw key localStorage/sessionStorage’a yazılmaz.
-- Request pending iken ikinci submit engellenir.
-- Timeout/network unknown outcome’da form ve submitted payload snapshot korunur.
-- `Aynı işlemi yeniden dene`, **aynı key + byte-semantik olarak aynı payload + aynı company context** kullanır.
-- Kullanıcı payload’ı değiştirirse eski key kullanılamaz; açıkça yeni attempt başlatılır.
-- Refresh/logout/company-switch unknown attempt’i otomatik yeniden göndermez.
+`Idempotency-Key` üreticisi frontend form controller’ıdır; backend anahtarı doğrular, request fingerprint’iyle bağlar ve dayanıklı sonucu saklar.
+
+- Route/form mount edildiğinde, kullanıcı alan düzenlediğinde veya client-side validation geçmeyen bir tıklamada key üretilmez.
+- İlk **client-valid ve kullanıcı tarafından onaylanmış** submit, o anda immutable bir submitted snapshot oluşturur: actor/session binding, aktif CompanyContext kimliği/generation’ı, operation kimliği, link akışında PartyId ve normalize payload.
+- Bu snapshot için kriptografik olarak rastgele **tam bir key** üretilir ve yalnız bellekte tutulur. Bu, “her submit tıklamasında yeni key” değildir.
+- Pending request, çift tıklama, timeout, bağlantı kopması veya sonucu bilinmeyen retry aynı snapshot + aynı actor/company + **aynı key** kullanır. Retry düğmesi yeni key üretmez.
+- Key bütün React component ömrüne veya değişebilir “form oturumuna” kör biçimde bağlı değildir. Kullanıcı payload’ı, PartyId’yi, actor/session’ı ya da CompanyContext’i değiştirirse önceki snapshot artık farklı bir business attempt’tir.
+- Kesin `validation_failed` sonucu sonrası kullanıcı alanı değiştirip yeniden gönderirse yeni submitted snapshot + yeni key oluşur; eski key farklı payload ile kullanılmaz.
+- Timeout/unknown outcome sırasında submitted snapshot dondurulur. Kullanıcı ya aynı attempt’i aynı key ile yeniden dener ya da onu açıkça terk edip değiştirilmiş payload için yeni attempt başlatır; UI sessizce key döndürmez veya otomatik yeni request göndermez.
+- `idempotency_conflict` alındığında UI yeni key üretip kör retry yapmaz; conflict kullanıcıya güvenli biçimde gösterilir.
+- Success veya durable replay aynı logical attempt’i tamamlar. Tek business kaynağına bir kez navigation/toast yapılır ve tamamlanmış key tekrar kullanılmaz.
+- Logout, actor/session değişimi, şirket değişimi veya formun açıkça discard edilmesi in-memory attempt’i geçersiz kılar; eski attempt yeni context altında otomatik gönderilmez.
+- Raw key localStorage/sessionStorage, URL, log veya telemetry’ye yazılmaz.
+
+Bu kural **form oturumunda bir logical attempt için bir key** demektir; submit/retry tıklaması başına key üretmek mükerrer Cari riski yaratır, değişmiş payload’ı aynı key ile göndermek ise idempotency conflict üretir.
 
 ### 4.4 Replay
 
