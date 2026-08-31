@@ -5,6 +5,7 @@ using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -54,7 +55,12 @@ public sealed class ShellCapabilityAcceptanceTests(
         var groupSnapshot = await groupResponse.Content.ReadFromJsonAsync<JsonElement>();
         var selectedSnapshot = await selectedResponse.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Empty(groupSnapshot.GetProperty("capabilities").EnumerateArray());
-        Assert.Empty(selectedSnapshot.GetProperty("capabilities").EnumerateArray());
+        Assert.Equal(
+            [CounterpartyShellCapabilityProvider.ListCapabilityId],
+            selectedSnapshot.GetProperty("capabilities")
+                .EnumerateArray()
+                .Select(item => item.GetString()!)
+                .ToArray());
         Assert.NotEqual(
             groupSnapshot.GetProperty("generation").GetString(),
             selectedSnapshot.GetProperty("generation").GetString());
@@ -155,18 +161,46 @@ public sealed class ShellCapabilityAcceptanceTests(
     }
 
     [Fact]
-    public async Task StagedCounterpartyCapability_IsNotPublishedBeforeItsUiMount()
+    public async Task CounterpartyCapability_IsPublishedOnlyForAnAuthorizedSelectedCompany()
     {
-        using var client = factory.CreateClientFor(
+        using var authorizedClient = factory.CreateClientFor(
             TestUsers.GroupAdmin,
             TestCompanyIds.CompanyA);
+        using var unauthorizedClient = factory.CreateClientFor(
+            TestUsers.CompanyA,
+            TestCompanyIds.CompanyA);
+        using var groupClient = factory.CreateClientFor(TestUsers.GroupAdmin);
 
-        using var response = await client.GetAsync("/api/v1/shell/capabilities");
+        using var authorizedResponse = await authorizedClient.GetAsync(
+            "/api/v1/shell/capabilities");
+        using var unauthorizedResponse = await unauthorizedClient.GetAsync(
+            "/api/v1/shell/capabilities");
+        using var groupResponse = await groupClient.GetAsync(
+            "/api/v1/shell/capabilities");
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        AssertPrivateNoStore(response);
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.Empty(document.RootElement.GetProperty("capabilities").EnumerateArray());
+        Assert.Equal(HttpStatusCode.OK, authorizedResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, unauthorizedResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, groupResponse.StatusCode);
+        AssertPrivateNoStore(authorizedResponse);
+        AssertPrivateNoStore(unauthorizedResponse);
+        AssertPrivateNoStore(groupResponse);
+
+        using var authorizedDocument = JsonDocument.Parse(
+            await authorizedResponse.Content.ReadAsStringAsync());
+        using var unauthorizedDocument = JsonDocument.Parse(
+            await unauthorizedResponse.Content.ReadAsStringAsync());
+        using var groupDocument = JsonDocument.Parse(
+            await groupResponse.Content.ReadAsStringAsync());
+
+        Assert.Equal(
+            [CounterpartyShellCapabilityProvider.ListCapabilityId],
+            authorizedDocument.RootElement.GetProperty("capabilities")
+                .EnumerateArray()
+                .Select(item => item.GetString()!)
+                .ToArray());
+        Assert.Empty(
+            unauthorizedDocument.RootElement.GetProperty("capabilities").EnumerateArray());
+        Assert.Empty(groupDocument.RootElement.GetProperty("capabilities").EnumerateArray());
     }
 
     [Fact]

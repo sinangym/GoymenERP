@@ -10,6 +10,7 @@ using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Application.Views;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
+using GoymenERP.Modules.Organization.Application.Contracts;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
@@ -19,6 +20,7 @@ internal sealed class CounterpartyReadService(
     ICurrentUser currentUser,
     ICompanyContext companyContext,
     IErpAuthorizationService authorizationService,
+    IOrganizationService organizationService,
     ICounterpartyCursorCodec cursorCodec,
     ICounterpartyReadSqlObserver sqlObserver,
     TimeProvider timeProvider)
@@ -562,11 +564,8 @@ internal sealed class CounterpartyReadService(
     private async Task<PageAuthorization?> ResolvePageAuthorizationAsync(
         CancellationToken cancellationToken)
     {
-        var allowedCompanyIds = currentUser.AllowedCompanyIds
-            .Where(companyId => companyId != Guid.Empty)
-            .Distinct()
-            .Order()
-            .ToArray();
+        var allowedCompanyIds = await ResolveActiveAuthorizedCompanyIdsAsync(
+            cancellationToken);
         if (allowedCompanyIds.Length == 0)
         {
             return null;
@@ -576,7 +575,8 @@ internal sealed class CounterpartyReadService(
             ? companyContext.CompanyId
             : (Guid?)null;
         if (selectedCompanyId is not null
-            && !currentUser.CanAccessCompany(selectedCompanyId.Value))
+            && (!currentUser.CanAccessCompany(selectedCompanyId.Value)
+                || !allowedCompanyIds.Contains(selectedCompanyId.Value)))
         {
             return null;
         }
@@ -632,11 +632,14 @@ internal sealed class CounterpartyReadService(
             effectiveCompanyId = companyContext.CompanyId;
         }
 
-        IEnumerable<Guid> candidates = currentUser.AllowedCompanyIds;
+        var activeAuthorizedCompanyIds = await ResolveActiveAuthorizedCompanyIdsAsync(
+            cancellationToken);
+        IEnumerable<Guid> candidates = activeAuthorizedCompanyIds;
         if (effectiveCompanyId.HasValue)
         {
             if (effectiveCompanyId.Value == Guid.Empty
-                || !currentUser.CanAccessCompany(effectiveCompanyId.Value))
+                || !currentUser.CanAccessCompany(effectiveCompanyId.Value)
+                || !activeAuthorizedCompanyIds.Contains(effectiveCompanyId.Value))
             {
                 return [];
             }
@@ -658,6 +661,20 @@ internal sealed class CounterpartyReadService(
         }
 
         return result;
+    }
+
+    private async Task<Guid[]> ResolveActiveAuthorizedCompanyIdsAsync(
+        CancellationToken cancellationToken)
+    {
+        var activeAuthorizedCompanies = await organizationService
+            .GetAuthorizedCompaniesAsync(cancellationToken);
+        return activeAuthorizedCompanies
+            .Select(company => company.Id)
+            .Where(companyId => companyId != Guid.Empty)
+            .Where(currentUser.CanAccessCompany)
+            .Distinct()
+            .Order()
+            .ToArray();
     }
 
     private string CreateNextCursor(
