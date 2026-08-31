@@ -36,6 +36,7 @@ internal sealed class OrganizationService(
             .AsNoTracking()
             .Where(x => x.IsActive && allowedCompanyIds.Contains(x.Id))
             .OrderBy(x => x.Code)
+            .ThenBy(x => x.Id)
             .Select(x => new CompanySummary(x.Id, x.Code, x.LegalName, x.IsPlaceholder))
             .ToListAsync(cancellationToken);
     }

@@ -81,11 +81,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Identity/"
                  + "GoymenERP.Modules.Identity.Infrastructure/IdentityModuleExtensions.cs"] =
                     new(
-                        "8c9a68406e8ba425b54be634fd15e90a872a550e7533f24268fadda016ab9cc9",
+                        "c28fbfc9721747f23c29a10f16beb6ba0591f938ea62443a25a682f211222606",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
-                            ["MigrateAsync"] = 1
+                            ["MigrateAsync"] = 1,
+                            ["SqlQueryRaw"] = 1
                         }),
                 [ReviewedIdentityReconcilerPath] =
                     new(
@@ -173,6 +174,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["Microsoft.AspNetCore.Authentication.JwtBearer"] = "10.0.8",
             ["Microsoft.EntityFrameworkCore.Design"] = "10.0.8",
             ["Microsoft.EntityFrameworkCore.SqlServer"] = "10.0.8",
+            ["Microsoft.Extensions.Hosting.Abstractions"] = "10.0.8",
             ["Microsoft.Extensions.Options.ConfigurationExtensions"] = "10.0.8"
         };
 

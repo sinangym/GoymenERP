@@ -20,9 +20,11 @@ public static class OrganizationEndpoints
             .WithTags("Organization");
 
         group.MapGet("/companies", async (
+            HttpContext httpContext,
             IOrganizationService service,
             CancellationToken cancellationToken) =>
         {
+            httpContext.Response.Headers.CacheControl = "private, no-store";
             var companies = await service.GetAuthorizedCompaniesAsync(cancellationToken);
             return Results.Ok(companies);
         });

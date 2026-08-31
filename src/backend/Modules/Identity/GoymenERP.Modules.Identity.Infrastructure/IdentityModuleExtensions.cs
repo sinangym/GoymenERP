@@ -6,6 +6,7 @@ using GoymenERP.Modules.Identity.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace GoymenERP.Modules.Identity.Infrastructure;
 
@@ -41,6 +42,7 @@ public static class IdentityModuleExtensions
         services.AddScoped<IIdentityProfileService, IdentityProfileService>();
         services.AddScoped<ISystemRolePermissionReconciler, SystemRolePermissionReconciler>();
         services.AddScoped<IdentityDataSeeder>();
+        services.AddHostedService<AuthorizationSnapshotDatabaseReadinessService>();
 
         return services;
     }
@@ -64,4 +66,35 @@ public static class IdentityModuleExtensions
         var seeder = scope.ServiceProvider.GetRequiredService<IdentityDataSeeder>();
         await seeder.SeedAsync(cancellationToken);
     }
+}
+
+internal sealed class AuthorizationSnapshotDatabaseReadinessService(
+    IServiceScopeFactory scopeFactory)
+    : IHostedService
+{
+    public async Task StartAsync(CancellationToken cancellationToken)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+        if (!dbContext.Database.IsRelational())
+        {
+            return;
+        }
+
+        var isReadCommittedSnapshotOn = await dbContext.Database
+            .SqlQueryRaw<int>(
+                """
+                SELECT CONVERT(int, [is_read_committed_snapshot_on]) AS [Value]
+                FROM [sys].[databases]
+                WHERE [database_id] = DB_ID()
+                """)
+            .SingleAsync(cancellationToken);
+        if (isReadCommittedSnapshotOn != 1)
+        {
+            throw new InvalidOperationException(
+                "Identity authorization snapshot requires SQL Server READ_COMMITTED_SNAPSHOT ON.");
+        }
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
