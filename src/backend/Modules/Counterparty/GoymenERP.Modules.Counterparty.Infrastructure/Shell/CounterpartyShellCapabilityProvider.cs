@@ -23,9 +23,9 @@ public sealed class CounterpartyShellCapabilityProvider : IShellCapabilityProvid
             ListRouteId,
             ListRoutePath,
             ListScreenId,
-            ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+            ShellCapabilityContextRequirement.SingleCompany,
             ShellCapabilityScopeRequirement.CompanyWide,
             [ErpPermissions.CounterpartyPartiesRead],
-            ImplementationAvailable: false),
+            ImplementationAvailable: true),
     ];
 }

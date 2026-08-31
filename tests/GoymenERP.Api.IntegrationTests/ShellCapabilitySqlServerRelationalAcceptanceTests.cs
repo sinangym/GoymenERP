@@ -6,6 +6,7 @@ using System.Text.Json;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
@@ -196,7 +197,7 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
-    public async Task StagedCounterpartyCapability_RemainsHiddenAndTracksPermissionRevision()
+    public async Task CounterpartyCapability_RequiresSelectedCompanyAndTracksPermissionRevocation()
     {
         var baseConnectionString = Environment.GetEnvironmentVariable(
             SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
@@ -216,14 +217,109 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
             using var operatorClient = factory.CreateClientFor(
                 TestUsers.CompanyA,
                 TestCompanyIds.CompanyA);
+            using var groupClient = factory.CreateClient();
+            groupClient.DefaultRequestHeaders.Add(
+                "X-Development-User",
+                TestUsers.GroupAdmin);
+            groupClient.DefaultRequestHeaders.Add(
+                "X-Correlation-Id",
+                Guid.NewGuid().ToString("N"));
 
             var granted = await ReadSnapshotAsync(administratorClient);
             var denied = await ReadSnapshotAsync(operatorClient);
-            Assert.DoesNotContain("cari.parties.list", granted.Capabilities);
-            Assert.DoesNotContain("cari.parties.list", denied.Capabilities);
+            var group = await ReadSnapshotAsync(groupClient);
+            Assert.Equal(
+                [CounterpartyShellCapabilityProvider.ListCapabilityId],
+                granted.Capabilities);
+            Assert.Empty(denied.Capabilities);
+            Assert.Empty(group.Capabilities);
+            Assert.DoesNotContain(
+                TestCompanyIds.CompanyA.ToString("D"),
+                group.RawJson,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(
+                TestCompanyIds.CompanyB.ToString("D"),
+                group.RawJson,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(
+                TestCompanyIds.CompanyC.ToString("D"),
+                group.RawJson,
+                StringComparison.OrdinalIgnoreCase);
 
             await using var connection = new SqlConnection(factory.DatabaseConnectionString);
             await connection.OpenAsync();
+            var deactivatedOtherCompanies = await ExecuteNonQueryAsync(
+                connection,
+                """
+                UPDATE [organization].[Companies]
+                SET [IsActive] = 0
+                WHERE [Id] IN (@CompanyB, @CompanyC)
+                  AND [IsActive] = 1;
+                """,
+                new SqlParameter("@CompanyB", TestCompanyIds.CompanyB),
+                new SqlParameter("@CompanyC", TestCompanyIds.CompanyC));
+            Assert.Equal(2, deactivatedOtherCompanies);
+
+            var oneActiveCompanyGroup = await ReadSnapshotAsync(groupClient);
+            Assert.Empty(oneActiveCompanyGroup.Capabilities);
+
+            var reactivatedOtherCompanies = await ExecuteNonQueryAsync(
+                connection,
+                """
+                UPDATE [organization].[Companies]
+                SET [IsActive] = 1
+                WHERE [Id] IN (@CompanyB, @CompanyC)
+                  AND [IsActive] = 0;
+                """,
+                new SqlParameter("@CompanyB", TestCompanyIds.CompanyB),
+                new SqlParameter("@CompanyC", TestCompanyIds.CompanyC));
+            Assert.Equal(2, reactivatedOtherCompanies);
+
+            var deactivated = await ExecuteNonQueryAsync(
+                connection,
+                """
+                UPDATE [organization].[Companies]
+                SET [IsActive] = 0
+                WHERE [Id] = @CompanyId
+                  AND [IsActive] = 1;
+                """,
+                new SqlParameter("@CompanyId", TestCompanyIds.CompanyA));
+            Assert.Equal(1, deactivated);
+
+            using (var inactiveCompanyRead = await administratorClient.GetAsync(
+                       "/api/v1/counterparties"))
+            {
+                var inactiveBody = await inactiveCompanyRead.Content.ReadAsStringAsync();
+                Assert.True(
+                    inactiveCompanyRead.StatusCode == HttpStatusCode.Forbidden,
+                    $"Expected 403 for an inactive selected company, got "
+                    + $"{(int)inactiveCompanyRead.StatusCode}: {inactiveBody}");
+                Assert.DoesNotContain(
+                    TestCompanyIds.CompanyA.ToString("D"),
+                    inactiveBody,
+                    StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain(
+                    CounterpartyShellCapabilityProvider.ListCapabilityId,
+                    inactiveBody,
+                    StringComparison.Ordinal);
+            }
+
+            var reactivated = await ExecuteNonQueryAsync(
+                connection,
+                """
+                UPDATE [organization].[Companies]
+                SET [IsActive] = 1
+                WHERE [Id] = @CompanyId
+                  AND [IsActive] = 0;
+                """,
+                new SqlParameter("@CompanyId", TestCompanyIds.CompanyA));
+            Assert.Equal(1, reactivated);
+
+            var restored = await ReadSnapshotAsync(administratorClient);
+            Assert.Equal(
+                [CounterpartyShellCapabilityProvider.ListCapabilityId],
+                restored.Capabilities);
+
             var deleted = await ExecuteNonQueryAsync(
                 connection,
                 """
@@ -238,8 +334,10 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
             Assert.Equal(1, deleted);
 
             var revoked = await ReadSnapshotAsync(administratorClient);
-            Assert.DoesNotContain("cari.parties.list", revoked.Capabilities);
-            Assert.NotEqual(granted.Generation, revoked.Generation);
+            Assert.DoesNotContain(
+                CounterpartyShellCapabilityProvider.ListCapabilityId,
+                revoked.Capabilities);
+            Assert.NotEqual(restored.Generation, revoked.Generation);
             Assert.DoesNotContain(
                 ErpPermissions.CounterpartyPartiesRead,
                 revoked.RawJson,

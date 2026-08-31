@@ -39,7 +39,7 @@ public sealed class ShellCapabilityRegistryTests
             CounterpartyShellCapabilityProvider.ListScreenId,
             registration.Declaration.ScreenId);
         Assert.Equal(
-            ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+            ShellCapabilityContextRequirement.SingleCompany,
             registration.Declaration.ContextRequirement);
         Assert.Equal(
             ShellCapabilityScopeRequirement.CompanyWide,
@@ -47,7 +47,27 @@ public sealed class ShellCapabilityRegistryTests
         Assert.Equal(
             [ErpPermissions.CounterpartyPartiesRead],
             registration.Declaration.RequiredPermissions);
-        Assert.False(registration.Declaration.ImplementationAvailable);
+        Assert.True(registration.Declaration.ImplementationAvailable);
+    }
+
+    [Fact]
+    public void ActivatedCounterpartyListProvider_RejectsTheDormantAuthorityRevision()
+    {
+        var provider = new CounterpartyShellCapabilityProvider();
+        const string dormantRevision =
+            "sha256:9c81yHZWnEbbLpGro1FE2AAFw_QU1KqJolLq5kSVFZ4";
+
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            new ShellCapabilityRegistry(
+                [provider],
+                new ShellCapabilityAuthorityCatalog([dormantRevision])));
+
+        Assert.Equal(
+            "Shell capability provider seti kabul edilmiş owner kaynağıyla eşleşmiyor.",
+            error.Message);
+        Assert.Equal(
+            ShellCapabilityRegistryAuthorities.CounterpartyListV15,
+            ShellCapabilityRegistry.ComputeCandidateRevision([provider]));
     }
 
     [Fact]
