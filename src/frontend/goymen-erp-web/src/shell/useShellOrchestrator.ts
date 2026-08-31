@@ -119,13 +119,19 @@ export function useShellOrchestrator(): ShellOrchestration {
   const [switchFailure, setSwitchFailure] = useState(false)
   const [sessionInvalid, setSessionInvalid] = useState(false)
 
+  // A dead session must stop talking to the server. Without `enabled`, the P1-3
+  // `clear()` below would evict these queries while their observers are still
+  // mounted, and they would immediately refetch under the very session that just
+  // returned 401 — a quiet request loop behind an "Oturum sonlandı" screen.
   const identityQuery = useQuery({
     queryKey: ['shell', 'identity'],
     queryFn: ({ signal }) => fetchIdentity(signal),
+    enabled: !sessionInvalid,
   })
   const directoryQuery = useQuery({
     queryKey: ['shell', 'directory'],
     queryFn: ({ signal }) => fetchCompanyDirectory(signal),
+    enabled: !sessionInvalid,
   })
 
   const identityState = (
