@@ -5,7 +5,7 @@ using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Net.Http.Headers;
+using Microsoft.Extensions.Primitives;
 
 namespace GoymenERP.Api.Endpoints;
 
@@ -16,6 +16,7 @@ public static class ShellEndpoints
     {
         var group = endpoints.MapGroup("/api/v1/shell")
             .RequireAuthorization()
+            .WithMetadata(ShellCapabilityPrivateNoStoreMetadata.Instance)
             .AddEndpointFilter(ResolveOptionalCompanyContextAsync)
             .WithTags("Shell");
 
@@ -23,9 +24,8 @@ public static class ShellEndpoints
                 ShellCapabilityService service,
                 HttpContext httpContext,
                 ILogger<ShellCapabilityService> logger,
-                CancellationToken cancellationToken) =>
+            CancellationToken cancellationToken) =>
             {
-                SetPrivateNoStore(httpContext.Response.Headers);
                 try
                 {
                     return Results.Ok(
@@ -62,9 +62,7 @@ public static class ShellEndpoints
             return await next(invocationContext);
         }
 
-        if (headerValue.Count != 1
-            || !Guid.TryParse(headerValue[0], out var companyId)
-            || companyId == Guid.Empty)
+        if (!TryParseSelectedCompanyId(headerValue, out var companyId))
         {
             return ErpRequestMetadataProblem.CompanyContextInvalid();
         }
@@ -82,9 +80,13 @@ public static class ShellEndpoints
         return await next(invocationContext);
     }
 
-    private static void SetPrivateNoStore(IHeaderDictionary headers)
+    internal static bool TryParseSelectedCompanyId(
+        StringValues headerValue,
+        out Guid companyId)
     {
-        headers[HeaderNames.CacheControl] = "private, no-store";
-        headers[HeaderNames.Pragma] = "no-cache";
+        companyId = Guid.Empty;
+        return headerValue.Count == 1
+            && Guid.TryParse(headerValue[0], out companyId)
+            && companyId != Guid.Empty;
     }
 }

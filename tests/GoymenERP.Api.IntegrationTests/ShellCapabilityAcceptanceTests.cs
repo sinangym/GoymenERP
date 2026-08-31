@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
@@ -8,6 +9,7 @@ using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Primitives;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -32,6 +34,8 @@ public sealed class ShellCapabilityAcceptanceTests(
 
         Assert.Equal(HttpStatusCode.Unauthorized, anonymousResponse.StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, unprovisionedResponse.StatusCode);
+        AssertPrivateNoStore(anonymousResponse);
+        AssertPrivateNoStore(unprovisionedResponse);
     }
 
     [Fact]
@@ -72,7 +76,31 @@ public sealed class ShellCapabilityAcceptanceTests(
 
         Assert.Equal(HttpStatusCode.BadRequest, malformedResponse.StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, foreignResponse.StatusCode);
+        AssertPrivateNoStore(malformedResponse);
+        AssertPrivateNoStore(foreignResponse);
         await AssertProblemCodeAsync(malformedResponse, "company_context_invalid");
+    }
+
+    [Fact]
+    public void EmptyWhitespaceCommaAndMultipleCompanyHeaders_FailCanonicalParsing()
+    {
+        Assert.False(ShellEndpoints.TryParseSelectedCompanyId(
+            new StringValues(string.Empty),
+            out _));
+        Assert.False(ShellEndpoints.TryParseSelectedCompanyId(
+            new StringValues("   "),
+            out _));
+        Assert.False(ShellEndpoints.TryParseSelectedCompanyId(
+            new StringValues(
+                $"{TestCompanyIds.CompanyA:D},{TestCompanyIds.CompanyB:D}"),
+            out _));
+        Assert.False(ShellEndpoints.TryParseSelectedCompanyId(
+            new StringValues(
+            [
+                TestCompanyIds.CompanyA.ToString("D"),
+                TestCompanyIds.CompanyB.ToString("D"),
+            ]),
+            out _));
     }
 
     [Fact]
@@ -85,9 +113,7 @@ public sealed class ShellCapabilityAcceptanceTests(
         using var response = await client.GetAsync("/api/v1/shell/capabilities");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Contains("no-store", response.Headers.CacheControl!.ToString());
-        Assert.True(response.Headers.CacheControl.Private);
-        Assert.Equal("no-cache", Assert.Single(response.Headers.Pragma).Name);
+        AssertPrivateNoStore(response);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var root = document.RootElement;
         Assert.Equal(3, root.EnumerateObject().Count());
@@ -117,8 +143,7 @@ public sealed class ShellCapabilityAcceptanceTests(
         using var response = await client.GetAsync("/api/v1/shell/capabilities");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Contains("no-store", response.Headers.CacheControl!.ToString());
-        Assert.True(response.Headers.CacheControl.Private);
+        AssertPrivateNoStore(response);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Empty(document.RootElement.GetProperty("capabilities").EnumerateArray());
     }
@@ -234,6 +259,7 @@ public sealed class ShellCapabilityAcceptanceTests(
         var body = await response.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        AssertPrivateNoStore(response);
         Assert.DoesNotContain(
             TestCompanyIds.CompanyB.ToString("D"),
             body,
@@ -262,6 +288,16 @@ public sealed class ShellCapabilityAcceptanceTests(
     {
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal(expectedCode, document.RootElement.GetProperty("code").GetString());
+    }
+
+    private static void AssertPrivateNoStore(HttpResponseMessage response)
+    {
+        Assert.Contains("no-store", response.Headers.CacheControl!.ToString());
+        Assert.True(response.Headers.CacheControl.Private);
+        Assert.Equal("no-cache", Assert.Single(response.Headers.Pragma).Name);
+        Assert.Null(response.Headers.ETag);
+        Assert.Null(response.Content.Headers.LastModified);
+        Assert.Null(response.Content.Headers.Expires);
     }
 
     private sealed class SingleCompanyOnlyTestProvider : IShellCapabilityProvider

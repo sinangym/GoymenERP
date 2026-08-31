@@ -102,6 +102,7 @@ _ = app.Services.GetRequiredService<ShellCapabilityRegistry>().Revision;
 
 app.UseExceptionHandler();
 app.UseMiddleware<CorrelationContextMiddleware>();
+app.UseMiddleware<ShellCapabilityTransportMiddleware>();
 app.UseCors();
 app.UseAuthentication();
 app.UseMiddleware<CompanyContextMiddleware>();
