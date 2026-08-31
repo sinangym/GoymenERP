@@ -1,8 +1,12 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.BuildingBlocks.Shell;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -130,12 +134,155 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
                 await ScalarAsync<int>(
                     connection,
                     "SELECT COUNT(*) FROM [idempotency].[CommandExecutions];"));
+
+            var deactivated = await ExecuteNonQueryAsync(
+                connection,
+                "UPDATE [organization].[Companies] SET [IsActive] = 0 WHERE [Id] = @CompanyId;",
+                new SqlParameter("@CompanyId", TestCompanyIds.CompanyB));
+            Assert.Equal(1, deactivated);
+
+            using var inactiveCompanyResponse = await companyBClient.GetAsync(
+                "/api/v1/shell/capabilities");
+            var inactiveCompanyBody = await inactiveCompanyResponse.Content.ReadAsStringAsync();
+            Assert.Equal(
+                HttpStatusCode.ServiceUnavailable,
+                inactiveCompanyResponse.StatusCode);
+            Assert.DoesNotContain(
+                TestCompanyIds.CompanyB.ToString("D"),
+                inactiveCompanyBody,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("TBD-GOY-02", inactiveCompanyBody, StringComparison.Ordinal);
         }
         finally
         {
             await factory.DisposeAsync();
             await DropDatabaseAsync(baseConnectionString, factory.DatabaseName);
         }
+    }
+
+    [SqlServerFact]
+    public async Task AuthorizationSnapshot_NeverPublishesSyntheticMultiPermissionGrant()
+    {
+        var baseConnectionString = Environment.GetEnvironmentVariable(
+            SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
+        var provider = new MultiPermissionTestProvider();
+        var authorityRevision = ShellCapabilityRegistry.ComputeCandidateRevision([provider]);
+        var factory = new SqlServerRelationalApiFactory(
+            baseConnectionString,
+            services =>
+            {
+                services.RemoveAll<ShellCapabilityAuthorityCatalog>();
+                services.AddSingleton(new ShellCapabilityAuthorityCatalog([authorityRevision]));
+                services.AddSingleton<IShellCapabilityProvider>(provider);
+            });
+
+        try
+        {
+            using (var healthClient = factory.CreateClient())
+            using (var healthResponse = await healthClient.GetAsync("/health/live"))
+            {
+                Assert.Equal(HttpStatusCode.OK, healthResponse.StatusCode);
+            }
+
+            await using var setupConnection = new SqlConnection(
+                factory.DatabaseConnectionString);
+            await setupConnection.OpenAsync();
+            await SetPermissionPairAsync(
+                setupConnection,
+                includeFirst: true,
+                includeSecond: false);
+
+            using var client = factory.CreateClientFor(
+                TestUsers.CompanyA,
+                TestCompanyIds.CompanyA);
+            var initial = await ReadSnapshotAsync(client);
+            Assert.DoesNotContain(MultiPermissionTestProvider.CapabilityId, initial.Capabilities);
+
+            await SetPermissionPairAsync(
+                setupConnection,
+                includeFirst: true,
+                includeSecond: true);
+            var granted = await ReadSnapshotAsync(client);
+            Assert.Contains(MultiPermissionTestProvider.CapabilityId, granted.Capabilities);
+
+            await SetPermissionPairAsync(
+                setupConnection,
+                includeFirst: true,
+                includeSecond: false);
+            var revoked = await ReadSnapshotAsync(client);
+            Assert.DoesNotContain(MultiPermissionTestProvider.CapabilityId, revoked.Capabilities);
+            Assert.NotEqual(granted.Generation, revoked.Generation);
+
+            var writer = Task.Run(async () =>
+            {
+                await using var writerConnection = new SqlConnection(
+                    factory.DatabaseConnectionString);
+                await writerConnection.OpenAsync();
+                for (var iteration = 0; iteration < 20; iteration++)
+                {
+                    await SetPermissionPairAsync(
+                        writerConnection,
+                        includeFirst: iteration % 2 == 0,
+                        includeSecond: iteration % 2 != 0);
+                }
+            });
+            var readers = Enumerable.Range(0, 2).Select(async _ =>
+            {
+                using var readerClient = factory.CreateClientFor(
+                    TestUsers.CompanyA,
+                    TestCompanyIds.CompanyA);
+                for (var iteration = 0; iteration < 20; iteration++)
+                {
+                    var snapshot = await ReadSnapshotAsync(readerClient);
+                    Assert.DoesNotContain(
+                        MultiPermissionTestProvider.CapabilityId,
+                        snapshot.Capabilities);
+                }
+            });
+
+            await Task.WhenAll(readers.Append(writer));
+        }
+        finally
+        {
+            await factory.DisposeAsync();
+            await DropDatabaseAsync(baseConnectionString, factory.DatabaseName);
+        }
+    }
+
+    private static async Task SetPermissionPairAsync(
+        SqlConnection connection,
+        bool includeFirst,
+        bool includeSecond)
+    {
+        await using var transaction = await connection.BeginTransactionAsync();
+        await using var command = connection.CreateCommand();
+        command.Transaction = (SqlTransaction)transaction;
+        command.CommandText =
+            """
+            DELETE FROM [identity].[RolePermissions]
+            WHERE [RoleId] = @RoleId
+              AND [PermissionCode] IN (@FirstPermission, @SecondPermission);
+
+            IF @IncludeFirst = 1
+                INSERT INTO [identity].[RolePermissions] ([RoleId], [PermissionCode])
+                VALUES (@RoleId, @FirstPermission);
+
+            IF @IncludeSecond = 1
+                INSERT INTO [identity].[RolePermissions] ([RoleId], [PermissionCode])
+                VALUES (@RoleId, @SecondPermission);
+            """;
+        command.Parameters.AddRange(
+        [
+            new SqlParameter("@RoleId", OrganizationOperatorRoleId),
+            new SqlParameter("@FirstPermission", ErpPermissions.OrganizationLocationsRead),
+            new SqlParameter(
+                "@SecondPermission",
+                ErpPermissions.OrganizationLocationsStatusUpdate),
+            new SqlParameter("@IncludeFirst", includeFirst),
+            new SqlParameter("@IncludeSecond", includeSecond),
+        ]);
+        await command.ExecuteNonQueryAsync();
+        await transaction.CommitAsync();
     }
 
     private static async Task<CapabilitySnapshotProbe> ReadSnapshotAsync(HttpClient client)
@@ -218,4 +365,29 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
         string Generation,
         IReadOnlyList<string> Capabilities,
         string RawJson);
+
+    private sealed class MultiPermissionTestProvider : IShellCapabilityProvider
+    {
+        public const string CapabilityId = "test.multi-permission.read";
+
+        public string Owner => "TEST-OWNER";
+
+        public string ContractVersion => "TEST-OWNER-CONTRACT-V1";
+
+        public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
+        [
+            new ShellCapabilityDeclaration(
+                CapabilityId,
+                "TEST-MULTI-PERMISSION-ROUTE",
+                "/test/multi-permission",
+                "TEST-MULTI-PERMISSION-01",
+                ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [
+                    ErpPermissions.OrganizationLocationsRead,
+                    ErpPermissions.OrganizationLocationsStatusUpdate,
+                ],
+                ImplementationAvailable: true),
+        ];
+    }
 }

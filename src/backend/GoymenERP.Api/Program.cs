@@ -34,6 +34,7 @@ builder.Services.AddScoped<ICompanyContext, CompanyContext>();
 builder.Services.AddScoped<ICorrelationContext, CorrelationContext>();
 builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
 builder.Services.AddSingleton<ShellCapabilityGenerationProtector>();
+builder.Services.AddSingleton(new ShellCapabilityAuthorityCatalog([]));
 builder.Services.AddSingleton<ShellCapabilityRegistry>();
 builder.Services.AddScoped<IActorSessionBindingResolver, ActorSessionBindingResolver>();
 builder.Services.AddScoped<ShellCapabilityService>();

@@ -2,6 +2,7 @@ using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.Modules.Organization.Application.Contracts;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -42,6 +43,25 @@ public sealed class ShellCapabilityRegistryTests
     }
 
     [Fact]
+    public void DuplicateRouteOrScreenIdentity_RejectsTheWholeRegistry()
+    {
+        var first = Provider(
+            "OWNER-A",
+            Declaration("owner.a.read", "OWNER-A-ROUTE", "/owner/a", "OWNER-A-01"));
+        var duplicateRoute = Provider(
+            "OWNER-B",
+            Declaration("owner.b.read", "OWNER-A-ROUTE", "/owner/b", "OWNER-B-01"));
+        var duplicateScreen = Provider(
+            "OWNER-B",
+            Declaration("owner.b.read", "OWNER-B-ROUTE", "/owner/b", "OWNER-A-01"));
+
+        Assert.Throws<InvalidOperationException>(() =>
+            new ShellCapabilityRegistry([first, duplicateRoute]));
+        Assert.Throws<InvalidOperationException>(() =>
+            new ShellCapabilityRegistry([first, duplicateScreen]));
+    }
+
+    [Fact]
     public void DifferentRouteParameterNames_CollideAfterCanonicalization()
     {
         var first = Provider(
@@ -61,6 +81,85 @@ public sealed class ShellCapabilityRegistryTests
 
         Assert.Throws<InvalidOperationException>(() =>
             new ShellCapabilityRegistry([first, second]));
+    }
+
+    [Theory]
+    [InlineData("/cari/new", "/cari/{id}")]
+    [InlineData("/cari/{id}", "/cari/new")]
+    [InlineData("/a/{id}/details", "/a/active/{section}")]
+    public void StaticAndParameterRouteOverlaps_RejectTheWholeRegistry(
+        string firstPath,
+        string secondPath)
+    {
+        var first = Provider(
+            "OWNER-A",
+            Declaration("owner.a.read", "OWNER-A-ROUTE", firstPath, "OWNER-A-01"));
+        var second = Provider(
+            "OWNER-B",
+            Declaration("owner.b.read", "OWNER-B-ROUTE", secondPath, "OWNER-B-01"));
+
+        Assert.Throws<InvalidOperationException>(() =>
+            new ShellCapabilityRegistry([first, second]));
+    }
+
+    [Fact]
+    public void DistinctRoutesAndDifferentSegmentCounts_DoNotCollide()
+    {
+        var providers = new[]
+        {
+            Provider(
+                "OWNER-A",
+                Declaration("owner.a.read", "OWNER-A-ROUTE", "/a/new", "OWNER-A-01")),
+            Provider(
+                "OWNER-B",
+                Declaration("owner.b.read", "OWNER-B-ROUTE", "/a/edit", "OWNER-B-01")),
+            Provider(
+                "OWNER-C",
+                Declaration(
+                    "owner.c.read",
+                    "OWNER-C-ROUTE",
+                    "/a/{id}/details",
+                    "OWNER-C-01")),
+        };
+
+        var registry = AuthorizedRegistry(providers);
+
+        Assert.Equal(3, registry.Registrations.Count);
+    }
+
+    [Fact]
+    public void NonEmptyProviderSet_RequiresExactPlatformAuthorityRevision()
+    {
+        var providers = new[]
+        {
+            Provider(
+                "OWNER-A",
+                Declaration("owner.a.read", "OWNER-A-ROUTE", "/owner/a", "OWNER-A-01")),
+        };
+
+        Assert.Throws<InvalidOperationException>(() =>
+            new ShellCapabilityRegistry(providers));
+
+        var acceptedRevision = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
+        var accepted = new ShellCapabilityRegistry(
+            providers,
+            new ShellCapabilityAuthorityCatalog([acceptedRevision]));
+        Assert.Single(accepted.Registrations);
+
+        var changedProviders = new[]
+        {
+            Provider(
+                "OWNER-A",
+                Declaration(
+                    "owner.a.read",
+                    "OWNER-A-ROUTE",
+                    "/owner/changed",
+                    "OWNER-A-01")),
+        };
+        Assert.Throws<InvalidOperationException>(() =>
+            new ShellCapabilityRegistry(
+                changedProviders,
+                new ShellCapabilityAuthorityCatalog([acceptedRevision])));
     }
 
     [Fact]
@@ -93,11 +192,65 @@ public sealed class ShellCapabilityRegistryTests
     }
 
     [Fact]
+    public void MalformedRouteContractContextScopeAndDuplicatePermission_AreRejected()
+    {
+        var invalidRoute = Declaration(
+            "owner.a.read",
+            "OWNER-A-ROUTE",
+            "/owner//a",
+            "OWNER-A-01");
+        var invalidContext = Declaration(
+            "owner.a.read",
+            "OWNER-A-ROUTE",
+            "/owner/a",
+            "OWNER-A-01") with
+        {
+            ContextRequirement = (ShellCapabilityContextRequirement)999,
+        };
+        var invalidScope = Declaration(
+            "owner.a.read",
+            "OWNER-A-ROUTE",
+            "/owner/a",
+            "OWNER-A-01") with
+        {
+            ScopeRequirement = (ShellCapabilityScopeRequirement)999,
+        };
+        var duplicatePermission = Declaration(
+            "owner.a.read",
+            "OWNER-A-ROUTE",
+            "/owner/a",
+            "OWNER-A-01",
+            requiredPermissions:
+            [
+                ErpPermissions.OrganizationContextRead,
+                ErpPermissions.OrganizationContextRead,
+            ]);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            new ShellCapabilityRegistry([Provider("OWNER-A", invalidRoute)]));
+        Assert.Throws<InvalidOperationException>(() =>
+            new ShellCapabilityRegistry([Provider(
+                "OWNER-A",
+                "bad contract",
+                Declaration(
+                    "owner.a.read",
+                    "OWNER-A-ROUTE",
+                    "/owner/a",
+                    "OWNER-A-01"))]));
+        Assert.Throws<InvalidOperationException>(() =>
+            new ShellCapabilityRegistry([Provider("OWNER-A", invalidContext)]));
+        Assert.Throws<InvalidOperationException>(() =>
+            new ShellCapabilityRegistry([Provider("OWNER-A", invalidScope)]));
+        Assert.Throws<InvalidOperationException>(() =>
+            new ShellCapabilityRegistry([Provider("OWNER-A", duplicatePermission)]));
+    }
+
+    [Fact]
     public async Task Resolver_RequiresEveryPermissionAndNeverEscalatesNarrowScope()
     {
         var companyId = Guid.NewGuid();
         var userId = Guid.NewGuid();
-        var registry = new ShellCapabilityRegistry([
+        var registry = AuthorizedRegistry([
             Provider(
                 "OWNER-A",
                 Declaration(
@@ -129,7 +282,8 @@ public sealed class ShellCapabilityRegistryTests
             protector,
             new FakeCurrentUser(userId, companyId),
             companyContext,
-            new FakeAuthorizationService(scope));
+            new FakeAuthorizationService(scope, companyId),
+            new FakeOrganizationService(companyId));
 
         var snapshot = await service.GetSnapshotAsync();
 
@@ -186,6 +340,38 @@ public sealed class ShellCapabilityRegistryTests
         Assert.NotEqual(first.Generation, differentCompany.Generation);
     }
 
+    [Fact]
+    public async Task Snapshot_RejectsStaleIdentityAccessOrInactiveOrganizationCompany()
+    {
+        var userId = Guid.NewGuid();
+        var companyId = Guid.NewGuid();
+        var companyContext = new CompanyContext();
+        companyContext.Set(companyId);
+        using var protector = new ShellCapabilityGenerationProtector();
+
+        var staleIdentity = new ShellCapabilityService(
+            new ShellCapabilityRegistry([]),
+            new FakeSessionBindingResolver("trusted-test-session"),
+            protector,
+            new FakeCurrentUser(userId, companyId),
+            companyContext,
+            new FakeAuthorizationService(PermissionScope.Denied),
+            new FakeOrganizationService(companyId));
+        var inactiveOrganization = new ShellCapabilityService(
+            new ShellCapabilityRegistry([]),
+            new FakeSessionBindingResolver("trusted-test-session"),
+            protector,
+            new FakeCurrentUser(userId, companyId),
+            companyContext,
+            new FakeAuthorizationService(PermissionScope.Denied, companyId),
+            new FakeOrganizationService());
+
+        await Assert.ThrowsAsync<ShellCapabilityUnavailableException>(
+            async () => await staleIdentity.GetSnapshotAsync());
+        await Assert.ThrowsAsync<ShellCapabilityUnavailableException>(
+            async () => await inactiveOrganization.GetSnapshotAsync());
+    }
+
     private static async Task<ShellCapabilitySnapshot> SnapshotAsync(
         ShellCapabilityRegistry registry,
         ShellCapabilityGenerationProtector protector,
@@ -203,8 +389,18 @@ public sealed class ShellCapabilityRegistryTests
             protector,
             new FakeCurrentUser(userId, allowedCompanyIds),
             companyContext,
-            new FakeAuthorizationService(scope));
+            new FakeAuthorizationService(scope, allowedCompanyIds),
+            new FakeOrganizationService(allowedCompanyIds));
         return await service.GetSnapshotAsync();
+    }
+
+    private static ShellCapabilityRegistry AuthorizedRegistry(
+        IReadOnlyCollection<IShellCapabilityProvider> providers)
+    {
+        var revision = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
+        return new ShellCapabilityRegistry(
+            providers,
+            new ShellCapabilityAuthorityCatalog([revision]));
     }
 
     private static ShellCapabilityDeclaration Declaration(
@@ -231,7 +427,15 @@ public sealed class ShellCapabilityRegistryTests
         string owner,
         params ShellCapabilityDeclaration[] declarations)
     {
-        return new FakeCapabilityProvider(owner, declarations);
+        return Provider(owner, "OWNER-CONTRACT-V1", declarations);
+    }
+
+    private static IShellCapabilityProvider Provider(
+        string owner,
+        string contractVersion,
+        params ShellCapabilityDeclaration[] declarations)
+    {
+        return new FakeCapabilityProvider(owner, contractVersion, declarations);
     }
 
     private static PermissionScope CompanyWideScope()
@@ -247,12 +451,13 @@ public sealed class ShellCapabilityRegistryTests
 
     private sealed class FakeCapabilityProvider(
         string owner,
+        string contractVersion,
         IReadOnlyCollection<ShellCapabilityDeclaration> declarations)
         : IShellCapabilityProvider
     {
         public string Owner => owner;
 
-        public string ContractVersion => "OWNER-CONTRACT-V1";
+        public string ContractVersion => contractVersion;
 
         public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
             declarations;
@@ -265,20 +470,75 @@ public sealed class ShellCapabilityRegistryTests
             Task.FromResult<string?>(binding);
     }
 
-    private sealed class FakeAuthorizationService(PermissionScope scope)
+    private sealed class FakeAuthorizationService(
+        PermissionScope scope,
+        params Guid[] allowedCompanyIds)
         : IErpAuthorizationService
     {
+        public Task<AuthorizationSnapshot> GetAuthorizationSnapshotAsync(
+            Guid companyId,
+            IReadOnlyCollection<string> permissions,
+            CancellationToken cancellationToken = default)
+        {
+            var scopes = permissions.ToDictionary(
+                permission => permission,
+                _ => scope,
+                StringComparer.Ordinal);
+            return Task.FromResult(new AuthorizationSnapshot(
+                $"fake:{scope.IsGranted}:{scope.IsCompanyWide}",
+                allowedCompanyIds.ToHashSet(),
+                scopes));
+        }
+
         public Task<bool> HasPermissionAsync(
             string permission,
             Guid companyId,
             CancellationToken cancellationToken = default) =>
-            Task.FromResult(scope.IsGranted);
+            throw new InvalidOperationException("Shell bulk snapshot kullanmalıdır.");
 
         public Task<PermissionScope> GetPermissionScopeAsync(
             string permission,
             Guid companyId,
             CancellationToken cancellationToken = default) =>
-            Task.FromResult(scope);
+            throw new InvalidOperationException("Shell bulk snapshot kullanmalıdır.");
+    }
+
+    private sealed class FakeOrganizationService(params Guid[] activeCompanyIds)
+        : IOrganizationService
+    {
+        public Task<IReadOnlyList<CompanySummary>> GetAuthorizedCompaniesAsync(
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<CompanySummary>>(activeCompanyIds
+                .Select(id => new CompanySummary(
+                    id,
+                    $"TEST-{id:N}",
+                    $"Test Company {id:N}",
+                    false))
+                .ToArray());
+
+        public Task<IReadOnlyList<SiteSummary>> GetSitesAsync(
+            CancellationToken cancellationToken) => throw NotUsed();
+
+        public Task<PageResult<LocationSummary>> GetLocationsAsync(
+            int page,
+            int pageSize,
+            CancellationToken cancellationToken) => throw NotUsed();
+
+        public Task<LocationSummary?> GetLocationAsync(
+            Guid id,
+            CancellationToken cancellationToken) => throw NotUsed();
+
+        public Task<IReadOnlyList<WorkCenterSummary>> GetWorkCentersAsync(
+            CancellationToken cancellationToken) => throw NotUsed();
+
+        public Task<CommandExecutionResult> SetLocationActiveStateAsync(
+            Guid id,
+            SetLocationActiveState command,
+            CommandMetadata metadata,
+            CancellationToken cancellationToken) => throw NotUsed();
+
+        private static InvalidOperationException NotUsed() =>
+            new("Shell testinde bu Organization işlemi kullanılmamalıdır.");
     }
 
     private sealed class FakeCurrentUser(Guid userId, params Guid[] companyIds)

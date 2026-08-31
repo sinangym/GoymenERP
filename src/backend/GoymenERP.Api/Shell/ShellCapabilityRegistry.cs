@@ -13,9 +13,41 @@ public sealed partial class ShellCapabilityRegistry
     private readonly IReadOnlyList<ShellCapabilityRegistration> _registrations;
 
     public ShellCapabilityRegistry(IEnumerable<IShellCapabilityProvider> providers)
+        : this(providers, new ShellCapabilityAuthorityCatalog([]))
+    {
+    }
+
+    public ShellCapabilityRegistry(
+        IEnumerable<IShellCapabilityProvider> providers,
+        ShellCapabilityAuthorityCatalog authorityCatalog)
     {
         ArgumentNullException.ThrowIfNull(providers);
+        ArgumentNullException.ThrowIfNull(authorityCatalog);
 
+        _registrations = BuildValidatedRegistrations(providers);
+        Revision = ComputeRevision(_registrations);
+        if (_registrations.Count > 0 && !authorityCatalog.Accepts(Revision))
+        {
+            throw new InvalidOperationException(
+                "Shell capability provider seti kabul edilmiş owner kaynağıyla eşleşmiyor.");
+        }
+    }
+
+    public IReadOnlyList<ShellCapabilityRegistration> Registrations => _registrations;
+
+    public string Revision { get; }
+
+    internal static string ComputeCandidateRevision(
+        IEnumerable<IShellCapabilityProvider> providers)
+    {
+        var registrations = BuildValidatedRegistrations(providers);
+        return ComputeRevision(registrations);
+    }
+
+    private static IReadOnlyList<ShellCapabilityRegistration> BuildValidatedRegistrations(
+        IEnumerable<IShellCapabilityProvider> providers)
+    {
+        ArgumentNullException.ThrowIfNull(providers);
         var providerArray = providers.ToArray();
         var ownerNames = providerArray
             .Select(provider => provider is null
@@ -31,7 +63,6 @@ public sealed partial class ShellCapabilityRegistry
         var registrations = providerArray
             .SelectMany(BuildProviderRegistrations)
             .ToArray();
-
         ValidateUnique(
             registrations,
             registration => registration.Declaration.CapabilityId,
@@ -40,26 +71,15 @@ public sealed partial class ShellCapabilityRegistry
             registrations,
             registration => registration.Declaration.RouteId,
             "route kimliği");
-        ValidateUnique(
-            registrations,
-            registration => CanonicalizeRoutePath(
-                registration.Declaration.RoutePath),
-            "route yolu",
-            StringComparer.OrdinalIgnoreCase);
+        ValidateRoutePaths(registrations);
         ValidateUnique(
             registrations,
             registration => registration.Declaration.ScreenId,
             "ekran kimliği");
-
-        _registrations = Array.AsReadOnly(registrations
+        return Array.AsReadOnly(registrations
             .OrderBy(x => x.Declaration.CapabilityId, StringComparer.Ordinal)
             .ToArray());
-        Revision = ComputeRevision(_registrations);
     }
-
-    public IReadOnlyList<ShellCapabilityRegistration> Registrations => _registrations;
-
-    public string Revision { get; }
 
     private static IEnumerable<ShellCapabilityRegistration> BuildProviderRegistrations(
         IShellCapabilityProvider provider)
@@ -202,6 +222,55 @@ public sealed partial class ShellCapabilityRegistry
         }
     }
 
+    private static void ValidateRoutePaths(
+        IReadOnlyList<ShellCapabilityRegistration> registrations)
+    {
+        for (var leftIndex = 0; leftIndex < registrations.Count; leftIndex++)
+        {
+            for (var rightIndex = leftIndex + 1;
+                 rightIndex < registrations.Count;
+                 rightIndex++)
+            {
+                if (RoutesOverlap(
+                        registrations[leftIndex].Declaration.RoutePath,
+                        registrations[rightIndex].Declaration.RoutePath))
+                {
+                    throw new InvalidOperationException(
+                        "Shell registry çakışan route yolu içeriyor.");
+                }
+            }
+        }
+    }
+
+    private static bool RoutesOverlap(string leftPath, string rightPath)
+    {
+        var leftSegments = leftPath.Split('/', StringSplitOptions.None).Skip(1).ToArray();
+        var rightSegments = rightPath.Split('/', StringSplitOptions.None).Skip(1).ToArray();
+        if (leftSegments.Length != rightSegments.Length)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < leftSegments.Length; index++)
+        {
+            var leftIsParameter = ParameterRouteSegmentPattern().IsMatch(
+                leftSegments[index]);
+            var rightIsParameter = ParameterRouteSegmentPattern().IsMatch(
+                rightSegments[index]);
+            if (!leftIsParameter
+                && !rightIsParameter
+                && !string.Equals(
+                    leftSegments[index],
+                    rightSegments[index],
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private static string ComputeRevision(
         IReadOnlyCollection<ShellCapabilityRegistration> registrations)
     {
@@ -257,16 +326,6 @@ public sealed partial class ShellCapabilityRegistry
             .Skip(1)
             .All(segment => LiteralRouteSegmentPattern().IsMatch(segment)
                 || ParameterRouteSegmentPattern().IsMatch(segment));
-    }
-
-    private static string CanonicalizeRoutePath(string routePath)
-    {
-        return string.Join(
-            '/',
-            routePath.Split('/', StringSplitOptions.None)
-                .Select(segment => ParameterRouteSegmentPattern().IsMatch(segment)
-                    ? "{}"
-                    : segment));
     }
 
     [GeneratedRegex("^[A-Z][A-Z0-9-]{1,63}$", RegexOptions.CultureInvariant)]

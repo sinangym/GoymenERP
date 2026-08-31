@@ -2,6 +2,7 @@ using System.Globalization;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.Modules.Organization.Application.Contracts;
 
 namespace GoymenERP.Api.Shell;
 
@@ -11,15 +12,15 @@ public sealed class ShellCapabilityService(
     ShellCapabilityGenerationProtector protector,
     ICurrentUser currentUser,
     ICompanyContext companyContext,
-    IErpAuthorizationService authorizationService)
+    IErpAuthorizationService authorizationService,
+    IOrganizationService organizationService)
 {
     public async Task<ShellCapabilitySnapshot> GetSnapshotAsync(
         CancellationToken cancellationToken = default)
     {
         if (!companyContext.IsResolved
             || companyContext.CompanyId == Guid.Empty
-            || !Guid.TryParse(currentUser.UserId, out var userId)
-            || !currentUser.CanAccessCompany(companyContext.CompanyId))
+            || !Guid.TryParse(currentUser.UserId, out var userId))
         {
             throw new ShellCapabilityUnavailableException();
         }
@@ -30,14 +31,23 @@ public sealed class ShellCapabilityService(
             throw new ShellCapabilityUnavailableException();
         }
 
-        var scopes = new Dictionary<string, PermissionScope>(StringComparer.Ordinal);
-        foreach (var permission in ErpPermissions.All.OrderBy(x => x, StringComparer.Ordinal))
+        var authorizationSnapshot = await authorizationService.GetAuthorizationSnapshotAsync(
+            companyContext.CompanyId,
+            ErpPermissions.All.ToArray(),
+            cancellationToken);
+        var authorizedCompanies = await organizationService.GetAuthorizedCompaniesAsync(
+            cancellationToken);
+        var activeAuthorizedCompanyIds = authorizedCompanies
+            .Select(company => company.Id)
+            .Where(authorizationSnapshot.AllowedCompanyIds.Contains)
+            .ToHashSet();
+        if (!currentUser.CanAccessCompany(companyContext.CompanyId)
+            || !activeAuthorizedCompanyIds.Contains(companyContext.CompanyId))
         {
-            scopes[permission] = await authorizationService.GetPermissionScopeAsync(
-                permission,
-                companyContext.CompanyId,
-                cancellationToken);
+            throw new ShellCapabilityUnavailableException();
         }
+
+        var scopes = authorizationSnapshot.PermissionScopes;
 
         var capabilities = registry.Registrations
             .Where(registration => registration.Declaration.ImplementationAvailable)
@@ -50,11 +60,12 @@ public sealed class ShellCapabilityService(
         {
             ShellCapabilityRegistry.ContractVersion,
             registry.Revision,
+            authorizationSnapshot.Revision,
             userId.ToString("D", CultureInfo.InvariantCulture),
             sessionBinding,
             companyContext.CompanyId.ToString("D", CultureInfo.InvariantCulture),
         };
-        generationComponents.AddRange(currentUser.AllowedCompanyIds
+        generationComponents.AddRange(activeAuthorizedCompanyIds
             .OrderBy(id => id)
             .Select(id => $"company:{id:D}"));
         foreach (var (permission, scope) in scopes.OrderBy(

@@ -1,6 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using GoymenERP.Modules.Organization.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -124,6 +127,44 @@ public sealed class ShellCapabilityAcceptanceTests(
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Empty(await factory.GetAuditEventsIgnoringFiltersAsync(correlationId));
         Assert.Empty(await factory.GetCommandExecutionsAsync(idempotencyKey));
+    }
+
+    [Fact]
+    public async Task InactiveSelectedCompany_FailsClosedWithoutCompanyInventory()
+    {
+        await using var isolatedFactory = new GoymenErpApiFactory();
+        using (var healthClient = isolatedFactory.CreateClient())
+        using (var healthResponse = await healthClient.GetAsync("/health/live"))
+        {
+            Assert.Equal(HttpStatusCode.OK, healthResponse.StatusCode);
+        }
+
+        await using (var scope = isolatedFactory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<OrganizationDbContext>();
+            var company = await dbContext.Companies
+                .IgnoreQueryFilters()
+                .SingleAsync(item => item.Id == TestCompanyIds.CompanyB);
+            dbContext.Entry(company).Property(item => item.IsActive).CurrentValue = false;
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var client = isolatedFactory.CreateClientFor(
+            TestUsers.CompanyB,
+            TestCompanyIds.CompanyB);
+        using var response = await client.GetAsync("/api/v1/shell/capabilities");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.DoesNotContain(
+            TestCompanyIds.CompanyB.ToString("D"),
+            body,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("TBD-GOY-02", body, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Göymen Grup Şirket 2",
+            body,
+            StringComparison.Ordinal);
     }
 
     private static async Task<string> ReadGenerationAsync(HttpClient client)

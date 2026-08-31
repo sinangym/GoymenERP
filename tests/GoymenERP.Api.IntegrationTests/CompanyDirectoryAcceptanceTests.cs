@@ -14,6 +14,13 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed class CompanyDirectoryAcceptanceTests(GoymenErpApiFactory factory)
     : IClassFixture<GoymenErpApiFactory>
 {
+    private const string CompanyACode = "TBD-GOY-01";
+    private const string CompanyALegalName = "Göymen Grup Şirket 1 (Teyit Bekliyor)";
+    private const string CompanyBCode = "TBD-GOY-02";
+    private const string CompanyBLegalName = "Göymen Grup Şirket 2 (Teyit Bekliyor)";
+    private const string ForgedCompanyCode = "FORGED-FOREIGN-CODE";
+    private const string ForgedCompanyLegalName = "FORGED-FOREIGN-LEGAL-NAME";
+
     private static readonly Guid NoAssignmentUserId = Guid.Parse(
         "20000000-0000-0000-0000-000000000099");
 
@@ -59,11 +66,13 @@ public sealed class CompanyDirectoryAcceptanceTests(GoymenErpApiFactory factory)
         var companyB = Assert.Single(await ReadCompaniesAsync(companyBResponse));
         var groupCompanies = await ReadCompaniesAsync(groupResponse);
 
-        Assert.Equal(TestCompanyIds.CompanyA, companyA.Id);
-        Assert.Equal(TestCompanyIds.CompanyB, companyB.Id);
+        AssertCompanyA(companyA);
+        AssertCompanyB(companyB);
         Assert.Equal(
             new[] { TestCompanyIds.CompanyA, TestCompanyIds.CompanyB },
             groupCompanies.Select(x => x.Id));
+        AssertCompanyA(groupCompanies[0]);
+        AssertCompanyB(groupCompanies[1]);
         Assert.Equal(
             groupCompanies.Select(x => x.Code).OrderBy(x => x, StringComparer.Ordinal),
             groupCompanies.Select(x => x.Code));
@@ -88,12 +97,19 @@ public sealed class CompanyDirectoryAcceptanceTests(GoymenErpApiFactory factory)
         await SetCompanyActiveAsync(TestCompanyIds.CompanyB, isActive: false);
         try
         {
-            using var client = factory.CreateClientFor(TestUsers.GroupAdmin);
-            using var response = await client.GetAsync("/api/v1/organization/companies");
+            using var groupClient = factory.CreateClientFor(TestUsers.GroupAdmin);
+            using var companyBClient = factory.CreateClientFor(TestUsers.CompanyB);
+            using var groupResponse = await groupClient.GetAsync(
+                "/api/v1/organization/companies");
+            using var companyBResponse = await companyBClient.GetAsync(
+                "/api/v1/organization/companies");
 
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            var company = Assert.Single(await ReadCompaniesAsync(response));
-            Assert.Equal(TestCompanyIds.CompanyA, company.Id);
+            Assert.Equal(HttpStatusCode.OK, groupResponse.StatusCode);
+            Assert.Equal(HttpStatusCode.OK, companyBResponse.StatusCode);
+            AssertPrivateNoStore(groupResponse);
+            AssertPrivateNoStore(companyBResponse);
+            AssertCompanyA(Assert.Single(await ReadCompaniesAsync(groupResponse)));
+            Assert.Empty(await ReadCompaniesAsync(companyBResponse));
         }
         finally
         {
@@ -112,19 +128,19 @@ public sealed class CompanyDirectoryAcceptanceTests(GoymenErpApiFactory factory)
         client.DefaultRequestHeaders.Remove("Idempotency-Key");
         client.DefaultRequestHeaders.Add("Idempotency-Key", idempotencyKey);
         client.DefaultRequestHeaders.Add("X-Allowed-Company-Ids", TestCompanyIds.CompanyB.ToString());
+        client.DefaultRequestHeaders.Add("X-Company-Code", ForgedCompanyCode);
+        client.DefaultRequestHeaders.Add("X-Company-Legal-Name", ForgedCompanyLegalName);
 
         using var response = await client.GetAsync(
-            $"/api/v1/organization/companies?companyId={TestCompanyIds.CompanyB}");
+            $"/api/v1/organization/companies?companyId={TestCompanyIds.CompanyB}"
+            + $"&companyCode={ForgedCompanyCode}&legalName={ForgedCompanyLegalName}");
         var body = await response.Content.ReadAsStringAsync();
         var company = Assert.Single(Assert.IsType<List<CompanySummary>>(
             await response.Content.ReadFromJsonAsync<List<CompanySummary>>()));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(TestCompanyIds.CompanyA, company.Id);
-        Assert.DoesNotContain(
-            TestCompanyIds.CompanyB.ToString(),
-            body,
-            StringComparison.OrdinalIgnoreCase);
+        AssertCompanyA(company);
+        AssertNoForeignOrForgedMetadata(body);
         Assert.Empty(await factory.GetAuditEventsIgnoringFiltersAsync(correlationId));
         Assert.Empty(await factory.GetCommandExecutionsAsync(idempotencyKey));
 
@@ -136,14 +152,9 @@ public sealed class CompanyDirectoryAcceptanceTests(GoymenErpApiFactory factory)
         var foreignContextBody = await foreignContextResponse.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, foreignContextResponse.StatusCode);
-        Assert.Equal(
-            TestCompanyIds.CompanyA,
-            Assert.Single(Assert.IsType<List<CompanySummary>>(
-                await foreignContextResponse.Content.ReadFromJsonAsync<List<CompanySummary>>())).Id);
-        Assert.DoesNotContain(
-            TestCompanyIds.CompanyB.ToString(),
-            foreignContextBody,
-            StringComparison.OrdinalIgnoreCase);
+        AssertCompanyA(Assert.Single(Assert.IsType<List<CompanySummary>>(
+            await foreignContextResponse.Content.ReadFromJsonAsync<List<CompanySummary>>())));
+        AssertNoForeignOrForgedMetadata(foreignContextBody);
     }
 
     private async Task EnsureNoAssignmentUserAsync()
@@ -201,5 +212,50 @@ public sealed class CompanyDirectoryAcceptanceTests(GoymenErpApiFactory factory)
         Assert.NotNull(response.Headers.CacheControl);
         Assert.True(response.Headers.CacheControl.Private);
         Assert.True(response.Headers.CacheControl.NoStore);
+    }
+
+    private static void AssertCompanyA(CompanySummary company)
+    {
+        AssertCompany(
+            company,
+            TestCompanyIds.CompanyA,
+            CompanyACode,
+            CompanyALegalName,
+            isPlaceholder: true);
+    }
+
+    private static void AssertCompanyB(CompanySummary company)
+    {
+        AssertCompany(
+            company,
+            TestCompanyIds.CompanyB,
+            CompanyBCode,
+            CompanyBLegalName,
+            isPlaceholder: true);
+    }
+
+    private static void AssertCompany(
+        CompanySummary company,
+        Guid id,
+        string code,
+        string legalName,
+        bool isPlaceholder)
+    {
+        Assert.Equal(id, company.Id);
+        Assert.Equal(code, company.Code);
+        Assert.Equal(legalName, company.LegalName);
+        Assert.Equal(isPlaceholder, company.IsPlaceholder);
+    }
+
+    private static void AssertNoForeignOrForgedMetadata(string body)
+    {
+        Assert.DoesNotContain(
+            TestCompanyIds.CompanyB.ToString(),
+            body,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(CompanyBCode, body, StringComparison.Ordinal);
+        Assert.DoesNotContain(CompanyBLegalName, body, StringComparison.Ordinal);
+        Assert.DoesNotContain(ForgedCompanyCode, body, StringComparison.Ordinal);
+        Assert.DoesNotContain(ForgedCompanyLegalName, body, StringComparison.Ordinal);
     }
 }
