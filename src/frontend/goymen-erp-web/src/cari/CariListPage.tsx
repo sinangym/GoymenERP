@@ -156,9 +156,25 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
   ) as RemoteViewState<CounterpartyPage>
 
   const page = state.kind === 'ready' ? state.data : null
+
+  /**
+   * While `keepPreviousData` is showing, `page` is the page we ALREADY have, not the
+   * one `cursor` asked for (ChatGPT #147 P1). `loaded` holds that same validated page,
+   * so appending it would produce every row twice — and the duplicate guard below
+   * would then report the server as malformed for a fault entirely of our own making.
+   *
+   * A stale continuation therefore contributes nothing: we keep exactly the rows we
+   * validated and let the button show that more is on the way.
+   */
+  const awaitingContinuation = cursor !== undefined && query.isPlaceholderData
+
   // Accumulate across cursor pages; a filter/sort change resets via resetPaging().
   const accumulated =
-    page === null ? loaded : cursor === undefined ? page.items : [...loaded, ...page.items]
+    page === null || awaitingContinuation
+      ? loaded
+      : cursor === undefined
+        ? page.items
+        : [...loaded, ...page.items]
 
   /**
    * A PartyId that repeats across cursor pages means the continuation is broken —
@@ -356,7 +372,10 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
         />
       ) : (
         <>
-          <table className={styles.table}>
+          {/* The rows below are the last VALIDATED set. While a refetch is in flight
+              (filter change, or a continuation page) that is a fact the user is
+              entitled to, not a detail to hide behind unchanged-looking content. */}
+          <table className={styles.table} aria-busy={query.isFetching}>
             <caption className={styles.caption}>
               {/* The scope is VALIDATED, not displayed: `filtered-authorized-visible-parties`
                   is a machine token, and printing it tells the user nothing. */}

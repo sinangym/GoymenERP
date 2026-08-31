@@ -587,3 +587,61 @@ describe('C-01 group mode is not claimed (Codex/ChatGPT #147 P1-3)', () => {
     expect((screen.getByLabelText('Şirket hesabı durumu') as HTMLSelectElement).value).toBe('all')
   })
 })
+
+describe('C-01 deferred continuation (ChatGPT #147 P1)', () => {
+  /** Page 2 answers only when released, so the in-flight window is observable. */
+  function installDeferredSecondPage(secondPage: unknown) {
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    installFetch({
+      counterparties: (url) =>
+        url.includes('cursor=next-1')
+          ? (gate.then(() => json(secondPage)) as unknown as Response)
+          : json(page({ hasMore: true, nextCursor: 'next-1' })),
+    })
+    return { release: () => release() }
+  }
+
+  it('keeps page 1 visible instead of reporting the server as malformed', async () => {
+    const { release } = installDeferredSecondPage(
+      page({ items: [party({ id: PARTY_2, code: 'C-0002' })] }),
+    )
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
+
+    // `keepPreviousData` hands back page 1 while page 2 is in flight. Appending it to
+    // the page 1 we already accumulated produced every row twice, and the duplicate
+    // guard then blamed the server for our own double-count.
+    await waitFor(() => expect(screen.getByRole('button', { name: /Yükleniyor/i })).toBeTruthy())
+    expect(queryStateBlock('malformed-response')).toBeNull()
+    expect(screen.getAllByRole('row', { name: /C-0001/ })).toHaveLength(1)
+    expect(screen.getByRole('button', { name: /Yükleniyor/i })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('table').getAttribute('aria-busy')).toBe('true')
+
+    release()
+    await waitFor(() => expect(screen.getByRole('row', { name: /C-0002/ })).toBeTruthy())
+    // appended exactly once
+    expect(screen.getAllByRole('row', { name: /C-0001/ })).toHaveLength(1)
+    expect(screen.getAllByRole('row', { name: /C-0002/ })).toHaveLength(1)
+    expect(queryStateBlock('malformed-response')).toBeNull()
+  })
+
+  it('still fails closed when page 2 GENUINELY repeats a PartyId', async () => {
+    // Same deferred timing, but this time the server really does send C-0001 again.
+    const { release } = installDeferredSecondPage(page({ items: [party()] }))
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+    await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /Yükleniyor/i })).toBeTruthy())
+    expect(queryStateBlock('malformed-response')).toBeNull()
+
+    release()
+    // A broken continuation must not be de-duplicated into a quietly incomplete list.
+    expect(await findStateBlock('malformed-response')).toBeTruthy()
+    expect(screen.queryByRole('table')).toBeNull()
+  })
+})
