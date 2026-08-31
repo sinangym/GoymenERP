@@ -713,3 +713,125 @@ describe('C-01 transport failure (ChatGPT #155 P1)', () => {
     expect(queryStateBlock('network-error')).toBeNull()
   })
 })
+
+describe('C-01 continuation failure (B-C01-008)', () => {
+  /** Page 1 succeeds; only the cursor request fails with the given status. */
+  function installFailingSecondPage(status: number) {
+    installFetch({
+      counterparties: (url) =>
+        url.includes('cursor=next-1')
+          ? json({ code: 'service_unavailable', title: 'Servis yok', status }, status)
+          : json(page({ hasMore: true, nextCursor: 'next-1' })),
+    })
+  }
+
+  it.each([500, 503])(
+    'a %i on the SECOND page keeps the first page visible instead of blanking the list',
+    async (status) => {
+      installFailingSecondPage(status)
+      renderAt('/cari')
+      await screen.findByRole('row', { name: /C-0001/ })
+
+      await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
+
+      // The user asked for MORE. "More" failed. What they already had is still
+      // valid — throwing it away punishes them for asking.
+      await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy())
+      expect(screen.getByRole('row', { name: /C-0001/ })).toBeTruthy()
+      expect(queryStateBlock('service-unavailable')).toBeNull()
+      // retry is offered at the CONTINUATION level, not as a whole-list reload
+      expect(screen.getByRole('button', { name: /Tekrar dene/i })).toBeTruthy()
+    },
+  )
+
+  it('a first-page failure still replaces the whole view — there is nothing to keep', async () => {
+    installFetch({
+      counterparties: () => json({ code: 'service_unavailable', title: 'x', status: 503 }, 503),
+    })
+    renderAt('/cari')
+    expect(await findStateBlock('service-unavailable')).toBeTruthy()
+    expect(screen.queryByRole('table')).toBeNull()
+  })
+
+  it('retrying a failed continuation appends the page exactly once', async () => {
+    let attempt = 0
+    installFetch({
+      counterparties: (url) => {
+        if (!url.includes('cursor=next-1')) return json(page({ hasMore: true, nextCursor: 'next-1' }))
+        attempt += 1
+        return attempt === 1
+          ? json({ code: 'service_unavailable', title: 'x', status: 503 }, 503)
+          : json(page({ items: [party({ id: PARTY_2, code: 'C-0002' })] }))
+      },
+    })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+    await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy())
+
+    await userEvent.click(screen.getByRole('button', { name: /Tekrar dene/i }))
+    await waitFor(() => expect(screen.getByRole('row', { name: /C-0002/ })).toBeTruthy())
+    expect(screen.getAllByRole('row', { name: /C-0001/ })).toHaveLength(1)
+    expect(screen.getAllByRole('row', { name: /C-0002/ })).toHaveLength(1)
+  })
+})
+
+describe('C-01 continuation failure — what must NOT be masked (Q8=A kapsam dışı)', () => {
+  function installSecondPage(status: number, code: string) {
+    installFetch({
+      counterparties: (url) =>
+        url.includes('cursor=next-1')
+          ? json({ code, title: 'x', status }, status)
+          : json(page({ hasMore: true, nextCursor: 'next-1' })),
+    })
+  }
+
+  async function loadThenPage2(status: number, code: string) {
+    installSecondPage(status, code)
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+    await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
+  }
+
+  it('a 401 on the second page ends the session — rows are NOT preserved', async () => {
+    await loadThenPage2(401, 'authentication_required')
+    // Losing the session is not a paging hiccup. Keeping rows visible would show
+    // data from a session the server has already rejected.
+    expect(await findStateBlock('unauthenticated')).toBeTruthy()
+    expect(screen.queryByRole('table')).toBeNull()
+    expect(screen.queryByText('C-0001')).toBeNull()
+  })
+
+  it('a 403 on the second page fails closed — rows are NOT preserved', async () => {
+    await loadThenPage2(403, 'forbidden')
+    // Authorization was revoked mid-session; continuing to show the list would
+    // keep rendering records the actor is no longer entitled to.
+    expect(await findStateBlock('forbidden')).toBeTruthy()
+    expect(screen.queryByRole('table')).toBeNull()
+    expect(screen.queryByText('C-0001')).toBeNull()
+  })
+
+  it('a malformed second page is NOT hidden behind "rows preserved"', async () => {
+    installFetch({
+      counterparties: (url) =>
+        url.includes('cursor=next-1')
+          ? json({ items: 'not-an-array' })
+          : json(page({ hasMore: true, nextCursor: 'next-1' })),
+    })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+    await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
+
+    // A contract violation must surface as one. "Keep the rows we have" is a
+    // courtesy for transport failures, not a place to bury a broken server.
+    expect(await findStateBlock('malformed-response')).toBeTruthy()
+    expect(screen.queryByRole('table')).toBeNull()
+  })
+
+  it('the continuation notice is announced, not just drawn', async () => {
+    await loadThenPage2(503, 'service_unavailable')
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('Daha fazla kayıt yüklenemedi')
+    expect(alert.textContent).toContain('mevcut kayıtlar korunuyor')
+  })
+})
