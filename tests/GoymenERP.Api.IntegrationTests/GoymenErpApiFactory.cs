@@ -44,6 +44,8 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
                 ["BootstrapIdentity:Users:4:DisplayName"] = "ERP Kaydı Olmayan Kullanıcı",
                 ["BootstrapIdentity:Users:5:UserId"] = TestUsers.SiteAuditReader,
                 ["BootstrapIdentity:Users:5:DisplayName"] = "Dar Kapsam Audit Test Kullanıcısı",
+                ["BootstrapIdentity:Users:6:UserId"] = TestUsers.NoAssignment,
+                ["BootstrapIdentity:Users:6:DisplayName"] = "Atamasız ERP Test Kullanıcısı",
             });
         });
 
@@ -181,6 +183,8 @@ public static class TestUsers
     public const string Unprovisioned = "unprovisioned-user";
 
     public const string SiteAuditReader = "site-audit-reader";
+
+    public const string NoAssignment = "no-assignment-user";
 }
 
 public sealed record LocationSnapshot(Guid Id, bool IsActive, long Version);

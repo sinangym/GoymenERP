@@ -3,6 +3,7 @@ using GoymenERP.Api.Errors;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.Observability;
 using GoymenERP.Api.Security;
+using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
@@ -32,6 +33,10 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICompanyContext, CompanyContext>();
 builder.Services.AddScoped<ICorrelationContext, CorrelationContext>();
 builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
+builder.Services.AddSingleton<ShellCapabilityGenerationProtector>();
+builder.Services.AddSingleton<ShellCapabilityRegistry>();
+builder.Services.AddScoped<IActorSessionBindingResolver, ActorSessionBindingResolver>();
+builder.Services.AddScoped<ShellCapabilityService>();
 builder.Services.AddAuditModule(builder.Configuration);
 builder.Services.AddIdempotencyModule(builder.Configuration);
 builder.Services.AddOrganizationModule(
@@ -56,6 +61,8 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+_ = app.Services.GetRequiredService<ShellCapabilityRegistry>().Revision;
+
 app.UseExceptionHandler();
 app.UseMiddleware<CorrelationContextMiddleware>();
 app.UseCors();
@@ -71,6 +78,7 @@ app.MapOrganizationEndpoints();
 app.MapIdentityEndpoints();
 app.MapAuditEndpoints();
 app.MapCounterpartyEndpoints();
+app.MapShellEndpoints();
 
 if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
 {

@@ -1094,6 +1094,10 @@ internal sealed class SqlServerRelationalApiFactory : WebApplicationFactory<Prog
                 ["BootstrapIdentity:Users:3:DisplayName"] = "Grup SQL Test Yöneticisi",
                 ["BootstrapIdentity:Users:4:UserId"] = TestUsers.SiteAuditReader,
                 ["BootstrapIdentity:Users:4:DisplayName"] = "Dar Kapsam Audit SQL Test Kullanıcısı",
+                ["BootstrapIdentity:Users:5:UserId"] = TestUsers.Unprovisioned,
+                ["BootstrapIdentity:Users:5:DisplayName"] = "ERP Kaydı Olmayan SQL Test Kullanıcısı",
+                ["BootstrapIdentity:Users:6:UserId"] = TestUsers.NoAssignment,
+                ["BootstrapIdentity:Users:6:DisplayName"] = "Atamasız ERP SQL Test Kullanıcısı",
             });
         });
     }
