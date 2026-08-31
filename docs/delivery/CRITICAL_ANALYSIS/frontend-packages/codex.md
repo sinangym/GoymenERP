@@ -318,7 +318,8 @@ artefaktını yeniden üretmek zorundadır.
   <https://github.com/TanStack/query/blob/main/LICENSE>
 - TanStack Router exact published metadata/repo:
   <https://registry.npmjs.org/@tanstack/react-router/1.170.32>,
-  <https://github.com/TanStack/router>
+  <https://github.com/TanStack/router/releases/tag/%40tanstack%2Freact-router%401.170.32>,
+  <https://github.com/TanStack/router/blob/%40tanstack/react-router%401.170.32/packages/react-router/package.json>
 - openapi-typescript package/release/TS6 issue/2026 roadmap:
   <https://github.com/openapi-ts/openapi-typescript/blob/openapi-typescript%407.13.0/packages/openapi-typescript/package.json>,
   <https://github.com/openapi-ts/openapi-typescript/releases/tag/openapi-typescript%407.13.0>,
@@ -333,7 +334,8 @@ artefaktını yeniden üretmek zorundadır.
   <https://github.com/orval-labs/orval/security/advisories/GHSA-cxq5-97v7-87j8>
 - Hey API exact published metadata/package/issues:
   <https://registry.npmjs.org/@hey-api/openapi-ts/0.99.0>,
-  <https://github.com/hey-api/openapi-ts>,
-  <https://github.com/hey-api/openapi-ts/issues/4252>,
+  <https://github.com/hey-api/hey-api/releases/tag/%40hey-api%2Fopenapi-ts%400.99.0>,
+  <https://github.com/hey-api/hey-api/blob/%40hey-api/openapi-ts%400.99.0/packages/openapi-ts/package.json>,
+  <https://github.com/hey-api/hey-api/issues/4252>,
   <https://github.com/advisories/GHSA-52cp-r559-cp3m>,
   <https://github.com/advisories/GHSA-5p4m-2wfm-xmqj>
