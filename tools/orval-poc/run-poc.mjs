@@ -55,6 +55,9 @@ const PROTECTED_HEADER_GUARD_MARKER =
 const TYPED_HEADER_GUARD_MARKER =
   "Generated typed request headers do not match the OpenAPI contract.";
 const TYPED_HEADER_GUARD_FUNCTION = "goymenValidateTypedRequestHeaders";
+const REQUEST_OPTIONS_GUARD_MARKER =
+  "Generic request options cannot set the generated method or body.";
+const REQUEST_OPTIONS_GUARD_FUNCTION = "goymenValidateRequestOptions";
 const GUARDED_REQUEST_HEADERS_HELPER_SIGNATURE =
   "const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string> => {";
 const MAX_FILE_BYTES = 16 * 1024 * 1024;
@@ -675,10 +678,30 @@ const typedHeaderRuntimeGuard = [
   "",
 ].join("\n");
 
+const requestOptionsRuntimeGuard = [
+  `const ${REQUEST_OPTIONS_GUARD_FUNCTION} = (`,
+  "  value: RequestInit | undefined,",
+  "): RequestInit => {",
+  "  if (value === undefined) return {};",
+  "  const entries = Object.entries(value);",
+  "  if (",
+  "    entries.some(",
+  '      ([name]) => name === "method" || name === "body",',
+  "    )",
+  "  ) {",
+  `    throw new TypeError("${REQUEST_OPTIONS_GUARD_MARKER}");`,
+  "  }",
+  "  return Object.fromEntries(",
+  '    entries.filter(([name]) => name !== "headers"),',
+  "  ) as RequestInit;",
+  "};",
+  "",
+].join("\n");
+
 export const applyProtectedHeaderGuard = (source, document) => {
   const contractOperations = operationEntries(document);
   const expectedOperations = new Map(
-    contractOperations.map(({ operation, pathItem }) => {
+    contractOperations.map(({ method, operation, pathItem }) => {
       const declaredHeaders = mergedParameters(document, pathItem, operation)
         .filter((parameter) => parameter.in === "header")
         .map((parameter) => ({
@@ -690,6 +713,8 @@ export const applyProtectedHeaderGuard = (source, document) => {
         operationFunctionName(operation.operationId),
         {
           allowed: declaredHeaders.map((header) => header.name),
+          hasRequestBody: operation.requestBody !== undefined,
+          method: method.toUpperCase(),
           required: declaredHeaders
             .filter((header) => header.required)
             .map((header) => header.name),
@@ -712,7 +737,9 @@ export const applyProtectedHeaderGuard = (source, document) => {
     parseDiagnostics.length > 0 ||
     source.includes(PROTECTED_HEADER_GUARD_MARKER) ||
     source.includes(TYPED_HEADER_GUARD_MARKER) ||
-    source.includes(TYPED_HEADER_GUARD_FUNCTION)
+    source.includes(TYPED_HEADER_GUARD_FUNCTION) ||
+    source.includes(REQUEST_OPTIONS_GUARD_MARKER) ||
+    source.includes(REQUEST_OPTIONS_GUARD_FUNCTION)
   ) {
     throw new PocError(
       "Generated protected-header guard precondition failed closed.",
@@ -730,7 +757,7 @@ export const applyProtectedHeaderGuard = (source, document) => {
     "        ? Object.fromEntries(h.entries())",
     "        : Array.isArray(h)",
     "          ? Object.fromEntries(h)",
-    "          : h;",
+    "          : Object.fromEntries(Object.entries(h));",
     '    if (Object.values(normalized).some((value) => typeof value !== "string")) {',
     `      throw new TypeError("${PROTECTED_HEADER_GUARD_MARKER}");`,
     "    }",
@@ -779,16 +806,18 @@ export const applyProtectedHeaderGuard = (source, document) => {
         );
       }
 
-      const headerInitializers = [];
-      let fetchCallCount = 0;
-      let headerObjectInitializerCount = 0;
+      const fetchCalls = [];
+      const headerObjectInitializers = [];
+      const methodInitializers = [];
+      const bodyInitializers = [];
+      const optionsSpreads = [];
       const visit = (node) => {
         if (
           ts.isCallExpression(node) &&
           ts.isIdentifier(node.expression) &&
           node.expression.text === "fetch"
         ) {
-          fetchCallCount += 1;
+          fetchCalls.push(node);
         }
         if (
           ts.isPropertyAssignment(node) &&
@@ -796,37 +825,110 @@ export const applyProtectedHeaderGuard = (source, document) => {
           node.name.text === "headers" &&
           ts.isObjectLiteralExpression(node.initializer)
         ) {
-          headerObjectInitializerCount += 1;
-          const typedSpreads = node.initializer.properties.filter(
-            (property) =>
-              ts.isSpreadAssignment(property) &&
-              ts.isIdentifier(property.expression) &&
-              property.expression.text === "headers",
-          );
-          const genericSpreads = node.initializer.properties.filter(
-            (property) =>
-              ts.isSpreadAssignment(property) &&
-              property.getText(sourceFile) ===
-                "...getHeaders(options?.headers)",
-          );
-          if (typedSpreads.length === 1 && genericSpreads.length === 1) {
-            headerInitializers.push({ typedSpread: typedSpreads[0] });
-          }
+          headerObjectInitializers.push(node);
+        }
+        if (
+          ts.isPropertyAssignment(node) &&
+          ts.isIdentifier(node.name) &&
+          node.name.text === "method"
+        ) {
+          methodInitializers.push(node);
+        }
+        if (
+          ts.isPropertyAssignment(node) &&
+          ts.isIdentifier(node.name) &&
+          node.name.text === "body"
+        ) {
+          bodyInitializers.push(node);
+        }
+        if (
+          ts.isSpreadAssignment(node) &&
+          ts.isIdentifier(node.expression) &&
+          node.expression.text === "options"
+        ) {
+          optionsSpreads.push(node);
         }
         ts.forEachChild(node, visit);
       };
       visit(declaration.initializer.body);
+      const fetchCall = fetchCalls[0];
       if (
-        fetchCallCount !== 1 ||
-        headerObjectInitializerCount !== 1 ||
-        headerInitializers.length !== 1
+        fetchCalls.length !== 1 ||
+        fetchCall.arguments.length !== 2 ||
+        !ts.isObjectLiteralExpression(fetchCall.arguments[1])
       ) {
+        throw new PocError(
+          "Generated fetch initializer drifted from the reviewed shape.",
+        );
+      }
+
+      const fetchInitializer = fetchCall.arguments[1];
+      const directHeaderInitializers = fetchInitializer.properties.filter(
+        (property) =>
+          ts.isPropertyAssignment(property) &&
+          ts.isIdentifier(property.name) &&
+          property.name.text === "headers" &&
+          ts.isObjectLiteralExpression(property.initializer),
+      );
+      const directMethodInitializers = fetchInitializer.properties.filter(
+        (property) =>
+          ts.isPropertyAssignment(property) &&
+          ts.isIdentifier(property.name) &&
+          property.name.text === "method",
+      );
+      const directBodyInitializers = fetchInitializer.properties.filter(
+        (property) =>
+          ts.isPropertyAssignment(property) &&
+          ts.isIdentifier(property.name) &&
+          property.name.text === "body",
+      );
+      const directOptionsSpreads = fetchInitializer.properties.filter(
+        (property) =>
+          ts.isSpreadAssignment(property) &&
+          ts.isIdentifier(property.expression) &&
+          property.expression.text === "options",
+      );
+      if (
+        headerObjectInitializers.length !== 1 ||
+        directHeaderInitializers.length !== 1 ||
+        headerObjectInitializers[0] !== directHeaderInitializers[0] ||
+        optionsSpreads.length !== 1 ||
+        directOptionsSpreads.length !== 1 ||
+        optionsSpreads[0] !== directOptionsSpreads[0] ||
+        methodInitializers.length !== 1 ||
+        directMethodInitializers.length !== 1 ||
+        methodInitializers[0] !== directMethodInitializers[0] ||
+        !ts.isStringLiteral(directMethodInitializers[0].initializer) ||
+        directMethodInitializers[0].initializer.text !== metadata.method ||
+        bodyInitializers.length !== (metadata.hasRequestBody ? 1 : 0) ||
+        directBodyInitializers.length !== (metadata.hasRequestBody ? 1 : 0) ||
+        (metadata.hasRequestBody &&
+          bodyInitializers[0] !== directBodyInitializers[0])
+      ) {
+        throw new PocError(
+          "Generated fetch contract initializer drifted from the reviewed shape.",
+        );
+      }
+
+      const headerInitializer = directHeaderInitializers[0].initializer;
+      const typedSpreads = headerInitializer.properties.filter(
+        (property) =>
+          ts.isSpreadAssignment(property) &&
+          ts.isIdentifier(property.expression) &&
+          property.expression.text === "headers",
+      );
+      const genericSpreads = headerInitializer.properties.filter(
+        (property) =>
+          ts.isSpreadAssignment(property) &&
+          property.getText(sourceFile) === "...getHeaders(options?.headers)",
+      );
+      if (typedSpreads.length !== 1 || genericSpreads.length !== 1) {
         throw new PocError(
           "Generated fetch-header initializer drifted from the reviewed shape.",
         );
       }
 
-      const typedSpread = headerInitializers[0].typedSpread;
+      const typedSpread = typedSpreads[0];
       replacements.push({
         start: helperStatements[0].getStart(sourceFile),
         end: helperStatements[0].getEnd(),
@@ -836,6 +938,11 @@ export const applyProtectedHeaderGuard = (source, document) => {
         start: typedSpread.getStart(sourceFile),
         end: typedSpread.getEnd(),
         text: `...${TYPED_HEADER_GUARD_FUNCTION}(headers, ${JSON.stringify(metadata.allowed)}, ${JSON.stringify(metadata.required)})`,
+      });
+      replacements.push({
+        start: directOptionsSpreads[0].getStart(sourceFile),
+        end: directOptionsSpreads[0].getEnd(),
+        text: `...${REQUEST_OPTIONS_GUARD_FUNCTION}(options)`,
       });
       foundOperations.add(declaration.name.text);
     }
@@ -854,15 +961,19 @@ export const applyProtectedHeaderGuard = (source, document) => {
   for (const replacement of replacements) {
     guardedSource = `${guardedSource.slice(0, replacement.start)}${replacement.text}${guardedSource.slice(replacement.end)}`;
   }
-  guardedSource = `${typedHeaderRuntimeGuard}${guardedSource}`;
+  guardedSource = `${requestOptionsRuntimeGuard}${typedHeaderRuntimeGuard}${guardedSource}`;
   const guardCount =
     guardedSource.split(GUARDED_REQUEST_HEADERS_HELPER_SIGNATURE).length - 1;
   const typedGuardCallCount =
     guardedSource.split(`...${TYPED_HEADER_GUARD_FUNCTION}(`).length - 1;
+  const requestOptionsGuardCallCount =
+    guardedSource.split(`...${REQUEST_OPTIONS_GUARD_FUNCTION}(options)`)
+      .length - 1;
   if (
     guardedSource.includes(RAW_REQUEST_HEADERS_HELPER) ||
     guardCount !== expectedHelperCount ||
-    typedGuardCallCount !== expectedHelperCount
+    typedGuardCallCount !== expectedHelperCount ||
+    requestOptionsGuardCallCount !== expectedHelperCount
   ) {
     throw new PocError("Generated protected-header guard failed closed.");
   }
@@ -901,6 +1012,8 @@ export const inspectGeneratedTransport = (source, document) => {
     source.split(GUARDED_REQUEST_HEADERS_HELPER_SIGNATURE).length - 1;
   const typedHeaderGuardCount =
     source.split(`...${TYPED_HEADER_GUARD_FUNCTION}(`).length - 1;
+  const requestOptionsGuardCount =
+    source.split(`...${REQUEST_OPTIONS_GUARD_FUNCTION}(options)`).length - 1;
   const requestInitProtectedHeadersRejected =
     requestInitHeaderMergeCount > 0 &&
     protectedHeaderGuardCount === requestInitHeaderMergeCount &&
@@ -923,6 +1036,10 @@ export const inspectGeneratedTransport = (source, document) => {
     requestInitHeaderMergeCount,
     requestInitHeadersOverrideTypedHeaders,
     requestInitProtectedHeadersRejected,
+    requestInitMethodBodyRejected:
+      requestOptionsGuardCount > 0 &&
+      requestOptionsGuardCount === requestInitHeaderMergeCount,
+    requestOptionsGuardCount,
     typedHeaderGuardCount,
   };
 };
@@ -938,6 +1055,11 @@ export const assertProductionAdoptionAllowed = ({
   ) {
     throw new PocError(
       "Generated client is not adoptable: protected RequestInit headers are not rejected.",
+    );
+  }
+  if (transportInspection.requestInitMethodBodyRejected !== true) {
+    throw new PocError(
+      "Generated client is not adoptable: generic RequestInit method or body is not rejected.",
     );
   }
   if (

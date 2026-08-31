@@ -528,6 +528,8 @@ test("AST-validated sanitizer turns the raw header override red path green", asy
     );
     assert.equal(guardedInspection.requestInitProtectedHeadersRejected, true);
     assert.equal(guardedInspection.protectedHeaderGuardCount, 16);
+    assert.equal(guardedInspection.requestInitMethodBodyRejected, true);
+    assert.equal(guardedInspection.requestOptionsGuardCount, 16);
     assert.equal(guardedInspection.typedHeaderGuardCount, 16);
 
     const driftedSource = rawSource.replace(
@@ -538,6 +540,31 @@ test("AST-validated sanitizer turns the raw header override red path green", asy
     assert.throws(
       () => applyProtectedHeaderGuard(driftedSource, canonical),
       /fetch-header initializer drifted/u,
+    );
+
+    const livenessFetch = `const res = await fetch(getGetLivenessV1Url(),
+  {
+    ...options,
+    method: 'GET',
+    headers: { ...headers, ...getHeaders(options?.headers) }
+
+  }
+)`;
+    const decoyLivenessFetch = `if (false) {
+  ({ headers: { ...headers, ...getHeaders(options?.headers) } });
+}
+const res = await fetch(getGetLivenessV1Url(),
+  {
+    ...options,
+    method: 'GET',
+
+  }
+)`;
+    const decoySource = rawSource.replace(livenessFetch, decoyLivenessFetch);
+    assert.notEqual(decoySource, rawSource);
+    assert.throws(
+      () => applyProtectedHeaderGuard(decoySource, canonical),
+      /fetch contract initializer drifted/u,
     );
   } finally {
     await rm(rawRoot, { recursive: true, force: true });
@@ -643,6 +670,8 @@ test("canonical generation is deterministic, sensitive-free and strict-TypeScrip
     );
     assert.equal(transportInspection.requestInitHeaderMergeCount, 16);
     assert.equal(transportInspection.protectedHeaderGuardCount, 16);
+    assert.equal(transportInspection.requestInitMethodBodyRejected, true);
+    assert.equal(transportInspection.requestOptionsGuardCount, 16);
     assert.equal(transportInspection.typedHeaderGuardCount, 16);
     assert.equal(transportInspection.requestInitProtectedHeadersRejected, true);
     assert.doesNotThrow(() =>
@@ -662,10 +691,24 @@ test("canonical generation is deterministic, sensitive-free and strict-TypeScrip
           riskReport: { adoption: "GO", blockers: [] },
           transportInspection: {
             requestInitHeadersOverrideTypedHeaders: true,
+            requestInitMethodBodyRejected: true,
             requestInitProtectedHeadersRejected: false,
           },
         }),
       /protected RequestInit headers are not rejected/u,
+    );
+    assert.throws(
+      () =>
+        assertProductionAdoptionAllowed({
+          manifestAdoption: { status: "GO", blockers: [] },
+          riskReport: { adoption: "GO", blockers: [] },
+          transportInspection: {
+            requestInitHeadersOverrideTypedHeaders: false,
+            requestInitMethodBodyRejected: false,
+            requestInitProtectedHeadersRejected: true,
+          },
+        }),
+      /generic RequestInit method or body is not rejected/u,
     );
     assert.throws(
       () =>
@@ -677,6 +720,7 @@ test("canonical generation is deterministic, sensitive-free and strict-TypeScrip
           riskReport: { adoption: "GO", blockers: [] },
           transportInspection: {
             requestInitHeadersOverrideTypedHeaders: false,
+            requestInitMethodBodyRejected: true,
             requestInitProtectedHeadersRejected: true,
           },
         }),
@@ -762,6 +806,18 @@ test("generated transport rejects contract-controlled RequestInit headers at run
       ),
       /Generated typed request headers do not match the OpenAPI contract/u,
     );
+    await assert.rejects(
+      generated.getOrganizationContextV1(typedHeaders, {
+        body: "attacker-body",
+      }),
+      /Generic request options cannot set the generated method or body/u,
+    );
+    await assert.rejects(
+      generated.getOrganizationContextV1(typedHeaders, {
+        method: "DELETE",
+      }),
+      /Generic request options cannot set the generated method or body/u,
+    );
     assert.equal(calls.length, 0);
 
     const controller = new AbortController();
@@ -779,12 +835,54 @@ test("generated transport rejects contract-controlled RequestInit headers at run
     assert.equal(actualHeaders.get("X-Correlation-Id"), "correlation-safe");
     assert.equal(actualHeaders.get("X-Client-Trace"), "allowed");
 
+    let proxyOwnKeysCount = 0;
+    const statefulHeaders = new Proxy(
+      {
+        "X-Client-Trace": "proxy-safe",
+        "X-Company-Id": "attacker-company",
+      },
+      {
+        ownKeys() {
+          proxyOwnKeysCount += 1;
+          return proxyOwnKeysCount <= 2 ? ["X-Client-Trace"] : ["X-Company-Id"];
+        },
+      },
+    );
+    await generated.getOrganizationContextV1(typedHeaders, {
+      headers: statefulHeaders,
+    });
+    assert.equal(proxyOwnKeysCount, 1);
+    assert.equal(calls.length, 2);
+    const statefulProxyHeaders = new Headers(calls[1].init.headers);
+    assert.equal(
+      statefulProxyHeaders.get("X-Company-Id"),
+      "11111111-1111-1111-1111-111111111111",
+    );
+    assert.equal(statefulProxyHeaders.get("X-Client-Trace"), "proxy-safe");
+
     await generated.getCounterpartiesV1(undefined, undefined, {
       headers: { "X-Client-Trace": "optional-company-allowed" },
     });
-    assert.equal(calls.length, 2);
-    const optionalCompanyHeaders = new Headers(calls[1].init.headers);
+    assert.equal(calls.length, 3);
+    const optionalCompanyHeaders = new Headers(calls[2].init.headers);
     assert.equal(optionalCompanyHeaders.has("X-Company-Id"), false);
+
+    await assert.rejects(
+      generated.createCounterpartyV1(
+        {},
+        {
+          "X-Company-Id": "11111111-1111-1111-1111-111111111111",
+          "Idempotency-Key": "idempotency-safe",
+        },
+        {
+          method: "DELETE",
+          body: "attacker-body",
+          headers: { "X-Client-Trace": "create-allowed" },
+        },
+      ),
+      /Generic request options cannot set the generated method or body/u,
+    );
+    assert.equal(calls.length, 3);
 
     await generated.createCounterpartyV1(
       {},
@@ -793,15 +891,13 @@ test("generated transport rejects contract-controlled RequestInit headers at run
         "Idempotency-Key": "idempotency-safe",
       },
       {
-        method: "DELETE",
-        body: "attacker-body",
         headers: { "X-Client-Trace": "create-allowed" },
       },
     );
-    assert.equal(calls.length, 3);
-    assert.equal(calls[2].init.method, "POST");
-    assert.equal(calls[2].init.body, "{}");
-    const createHeaders = new Headers(calls[2].init.headers);
+    assert.equal(calls.length, 4);
+    assert.equal(calls[3].init.method, "POST");
+    assert.equal(calls[3].init.body, "{}");
+    const createHeaders = new Headers(calls[3].init.headers);
     assert.equal(createHeaders.get("Content-Type"), "application/json");
     assert.equal(createHeaders.get("Idempotency-Key"), "idempotency-safe");
 
