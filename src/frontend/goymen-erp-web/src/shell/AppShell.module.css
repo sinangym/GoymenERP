@@ -61,7 +61,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  /* Wraps instead of pushing the page wider: a long legal name must never cost the
+     user a horizontal page scroll (ERP-000K §15, WCAG 1.4.10 Reflow). */
+  flex-wrap: wrap;
+  gap: 8px 16px;
   padding: 12px 20px;
   background: #fff;
   border-bottom: 1px solid var(--shell-border);
@@ -71,6 +74,10 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  /* A flex item's default `min-width: auto` refuses to shrink below its content, so
+     the select sized itself to the longest company name and overflowed the viewport. */
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .companyPickerLabel {
@@ -84,6 +91,10 @@
   border-radius: 4px;
   background: #fff;
   font: inherit;
+  min-width: 0;
+  max-width: 100%;
+  /* The full legal name stays available in the open dropdown and to assistive tech. */
+  text-overflow: ellipsis;
 }
 
 .user {
