@@ -1,0 +1,25 @@
+.block {
+  border: 1px solid #d5dbe6;
+  border-radius: 6px;
+  background: #fff;
+  padding: 20px;
+  max-width: 520px;
+}
+
+.block[data-state='forbidden'],
+.block[data-state='malformed-response'],
+.block[data-state='service-unavailable'] {
+  border-color: #e0b4b4;
+}
+
+.title {
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+
+.detail {
+  margin: 0;
+  color: #55607a;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
