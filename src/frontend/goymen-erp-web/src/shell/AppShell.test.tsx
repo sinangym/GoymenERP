@@ -305,12 +305,25 @@ describe('SHELL-PILOT-01 company switch', () => {
 
     // The superseded B response lands now. It must not commit company B for actor B.
     releaseB()
-    await new Promise((r) => setTimeout(r, 30))
+
+    // The rendered active company is the source of truth: actor B bootstraps to the
+    // last COMMITTED company (A), never the stale in-flight B attempt. The superseded
+    // attempt must not have leaked into the stored preference either.
+    await waitFor(() => expect(screen.getByText('Göymen A')).toBeTruthy())
     expect(screen.getByText('Kullanıcı B')).toBeTruthy()
-    // The rendered active company is the source of truth: actor B bootstrapped to its
-    // own preferred company (A), never the stale in-flight B attempt.
-    expect(await screen.findByText('Göymen A')).toBeTruthy()
     expect(screen.queryByText('Göymen B')).toBeNull()
+    expect(window.localStorage.getItem('goymen-company-id')).toBe(A_ID)
+  })
+
+  it('the stored company preference tracks the committed company', async () => {
+    installFetch({})
+    renderShell()
+    await screen.findByText('Ortak kabuk hazır')
+    expect(window.localStorage.getItem('goymen-company-id')).toBe(A_ID)
+
+    await userEvent.selectOptions(screen.getByRole('combobox'), B_ID)
+    await waitFor(() => expect(screen.getByText('Göymen B')).toBeTruthy())
+    expect(window.localStorage.getItem('goymen-company-id')).toBe(B_ID)
   })
 
   it('ERP-000K §13.7: with no bound context the picker shows no stale company', async () => {

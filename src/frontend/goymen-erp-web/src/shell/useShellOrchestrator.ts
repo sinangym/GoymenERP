@@ -189,7 +189,6 @@ export function useShellOrchestrator(): ShellOrchestration {
           companyId: company.id,
           capabilityGeneration: resolution.generation,
         }
-        writeCompanyPreference(company.id)
         dispatch({ type: 'SESSION_READY', context })
       })
       .catch(() => {
@@ -228,7 +227,6 @@ export function useShellOrchestrator(): ShellOrchestration {
           return
         }
         setSwitchFailure(false)
-        writeCompanyPreference(switchCompanyId)
         dispatch({
           type: 'REAUTH_OK',
           forGeneration: attemptGeneration,
@@ -246,6 +244,20 @@ export function useShellOrchestrator(): ShellOrchestration {
       })
     return () => controller.abort()
   }, [switchCompanyId, switchScopeMode, attemptGeneration, identityId, dispatch])
+
+  /**
+   * The company preference mirrors the COMMITTED context, never an attempted target.
+   *
+   * It used to be written inside the switch effect just before dispatching REAUTH_OK.
+   * The reducer's fence correctly rejected a superseded REAUTH_OK, but the preference
+   * had already been written — so the next bootstrap silently opened a company the user
+   * never successfully switched to, with no successful reauthorization behind it.
+   * Deriving it from `activeContext` makes that class of leak unrepresentable.
+   */
+  const committedCompanyId = state.phase === 'idle' ? (state.activeContext?.companyId ?? null) : null
+  useEffect(() => {
+    if (committedCompanyId !== null) writeCompanyPreference(committedCompanyId)
+  }, [committedCompanyId])
 
   const retry = useCallback(() => {
     setBootstrapFailure(false)
