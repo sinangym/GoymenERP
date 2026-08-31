@@ -1,0 +1,100 @@
+/**
+ * Counterparty (Cari) transport. HANDOFF: replaced by the generated client (Issue #122);
+ * the runtime decoding in ./contract.ts survives that move.
+ *
+ * Mirrors merged `GetCounterpartiesV1` (PR #141).
+ */
+
+import { decodeCounterpartyPage, type CounterpartyPage } from './contract'
+import type { ViewOutcome } from '../shell/uiState'
+
+const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
+const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
+const DEV_IDENTITY_ENABLED =
+  import.meta.env.DEV || import.meta.env.VITE_BOOTSTRAP_IDENTITY_ENABLED === 'true'
+
+export type PartyStateFilter = 'active' | 'inactive' | 'all'
+export type SortField = 'code' | 'legalName' | 'updatedAt'
+export type SortDirection = 'asc' | 'desc'
+export type RoleMatch = 'any' | 'all'
+export type KindFilter = 'LegalEntity' | 'NaturalPerson'
+export type RoleFilter = 'Customer' | 'Supplier' | 'Tolling' | 'Service'
+
+export interface CounterpartyQuery {
+  readonly q?: string
+  readonly kind?: KindFilter
+  readonly role?: readonly RoleFilter[]
+  readonly roleMatch?: RoleMatch
+  readonly partyState?: PartyStateFilter
+  readonly sort?: SortField
+  readonly direction?: SortDirection
+  readonly pageSize?: number
+  readonly cursor?: string
+}
+
+/**
+ * `X-Company-Id` is sent only in single-company mode. The accepted capability declares
+ * `SingleOrAuthorizedMultiCompanyRead` (Codex PR #149), so group mode deliberately omits
+ * the header and lets the server resolve the authorized company set — the client never
+ * unions companies itself (ERP-000K §9.2).
+ */
+export interface CounterpartyScope {
+  readonly mode: 'single' | 'group'
+  readonly companyId: string | null
+}
+
+export function buildCounterpartyQuery(query: CounterpartyQuery): string {
+  const params = new URLSearchParams()
+  if (query.q !== undefined && query.q.trim().length > 0) params.set('q', query.q.trim())
+  if (query.kind !== undefined) params.set('kind', query.kind)
+  // `role` is repeatable — never comma-joined into a single value.
+  for (const role of query.role ?? []) params.append('role', role)
+  if (query.roleMatch !== undefined) params.set('roleMatch', query.roleMatch)
+  if (query.partyState !== undefined) params.set('partyState', query.partyState)
+  if (query.sort !== undefined) params.set('sort', query.sort)
+  if (query.direction !== undefined) params.set('direction', query.direction)
+  if (query.pageSize !== undefined) params.set('pageSize', String(query.pageSize))
+  if (query.cursor !== undefined) params.set('cursor', query.cursor)
+  const serialized = params.toString()
+  return serialized.length > 0 ? `?${serialized}` : ''
+}
+
+export async function fetchCounterparties(
+  scope: CounterpartyScope,
+  query: CounterpartyQuery,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<CounterpartyPage>> {
+  const headers: Record<string, string> = DEV_IDENTITY_ENABLED
+    ? { 'X-Development-User': DEV_USER }
+    : {}
+  if (scope.mode === 'single') {
+    if (scope.companyId === null) return { type: 'malformed' }
+    headers['X-Company-Id'] = scope.companyId
+  }
+
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE}/counterparties${buildCounterpartyQuery(query)}`, {
+      headers,
+      signal,
+    })
+  } catch (error) {
+    if (signal?.aborted) return { type: 'fence-stale' }
+    if (!navigator.onLine) return { type: 'offline' }
+    throw error
+  }
+
+  let body: unknown = null
+  try {
+    body = await response.json()
+  } catch {
+    body = null
+  }
+
+  // Exact 200 only — the whole 2xx range is not success (same rule as the shell client).
+  if (response.status !== 200) return { type: 'http', status: response.status, body }
+
+  const page = decodeCounterpartyPage(body)
+  if (page === null) return { type: 'malformed' }
+  return { type: 'ok-single', data: page }
+}

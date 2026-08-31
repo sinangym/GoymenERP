@@ -135,3 +135,34 @@
   font: inherit;
   cursor: pointer;
 }
+
+.navList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.navLink,
+.navLinkActive {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 4px;
+  color: var(--shell-navy-text);
+  text-decoration: none;
+  font-size: 0.92rem;
+}
+.navLink:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.navLinkActive {
+  background: rgba(255, 255, 255, 0.16);
+  font-weight: 600;
+}
+.navLink:focus-visible,
+.navLinkActive:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
