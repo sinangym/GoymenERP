@@ -187,12 +187,55 @@ jobs:
           --filter "FullyQualifiedName~SqlServerRelationalAcceptanceTests" \
           --logger "console;verbosity=normal"
 
+  contract-drift:
+    name: OpenAPI contract drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: .NET bootstrap and drift validator preflight
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B -m unittest discover -s tests/dotnet_bootstrap_integrity -p "test_*.py" -v
+          python3 -I -S -B -m unittest discover -s tests/openapi_contract_drift -p "test_*.py" -v
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore OpenAPI contract test packages
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet restore tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj \
+          -noAutoResponse \
+          --configfile NuGet.Config
+
+      - name: Generate and verify deterministic OpenAPI contract
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet test tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj \
+          -noAutoResponse \
+          --configuration Release \
+          --no-restore \
+          --filter "FullyQualifiedName~OpenApiContractGenerationTests" \
+          --logger "console;verbosity=normal"
+
+      - name: Compare generated OpenAPI with canonical baseline
+        run: |
+          python3 -I -S -B tools/validate_openapi_contract.py \
+          --baseline contracts/openapi/goymen-erp-v1.json \
+          --generated artifacts/openapi.json
+
   containers:
     name: Container build
     needs:
       - backend
       - frontend
       - relational
+      - contract-drift
     runs-on: ubuntu-latest
     env:
       MSSQL_SA_PASSWORD: Local_Only_Strong_Password_123!
