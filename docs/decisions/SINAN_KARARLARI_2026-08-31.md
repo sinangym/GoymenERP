@@ -109,3 +109,97 @@ Bloke etmeyen, dalga geldiğinde sahibiyle kesinleşecek:
 - `OPEN-007` değerleri — formül registry yapısı kararlı; kesin sayılar validasyon bekliyor
 - `OPEN-008`, `OPEN-011` — ertelendi (maliyet, nakit planı)
 - `OPEN-014/015/016/017/018/019/020/021` — geçici değerler kabul (v3 §9.3), production kapılarında
+
+## 8. 2026-09-01 — Yetkili uzlaştırma düzeltmesi
+
+Bu bölüm, §7'deki aşağıdaki toplu ifadeyi **SUPERSEDE eder**:
+
+```text
+OPEN-014/015/016/017/018/019/020/021 — geçici değerler kabul
+```
+
+Bu ifade Hızlı Teslim v3 §9.3'teki soruyu, verilmiş kullanıcı cevabı gibi yorumladığı için fazla geniştir. Doğru durum; aşağıdaki 2026-09-01 karar turu ve `docs/decisions/ACIK_KARARLAR.md` uzlaştırma tablosudur. Kapanmış alt bölüm yeniden sorulmaz; saha, runtime veya production kanıtı gerektiren alt bölüm açık kalır.
+
+## 9. 2026-09-01 — `DECISION-ROUND-2026-09-01-v1` cevapları
+
+### Q1 — GIN ve VKN benzersizliği: `A`
+
+- `GIN` gerçek tam unvanı ve gerçek VKN'si henüz bilinmiyor.
+- `GIN` bu değerler gelene kadar `IsPlaceholder=true`, `InvoiceCapable=false`, `Vkn=NULL` olarak kalır.
+- Eski `1111111111` değeri gerçek VKN değildir; migration ile kaldırılır.
+- Gerçek, `NULL` olmayan VKN aktif ve pasif bütün şirketlerde grup çapında benzersizdir.
+- SQL Server'da bu kural düz unique index ile değil, `WHERE Vkn IS NOT NULL` filtered unique index ile uygulanır; birden fazla placeholder şirket mümkündür.
+- Resmî fatura/e-belge, gerçek unvan ve VKN girilmeden GIN için fail-closed kalır.
+
+### Q2 — Veri hacmi/performance: kısmi gerçek veri + ölçülebilir varsayım
+
+- Beklenen yıllık ciro yaklaşık `5.000.000.000 TL`.
+- Ortalama ürün fiyatı yaklaşık `30.000 TL/ton`.
+- Planlama çıpası yaklaşık `166.667 ton/yıl`dır (`5 milyar / 30 bin`).
+- Faaliyet toptan/ağır malzeme ağırlıklıdır.
+- Ortalama sipariş tonajı, cari/müşteri sayısı, eşzamanlı kullanıcı, yoğun saat ve belge/OCR hacmi henüz bilinmiyor.
+- Gerçek veri gelene kadar yalnız performans testinde kullanılmak üzere `10–25 ton/sipariş` teknik varsayımıyla yaklaşık `6.700–16.700 sipariş/yıl` sentetik aralığı kullanılır; bu kullanıcı gerçeği veya production SLO değildir.
+- Production kapasite/SLO, migrasyon provası ve gerçek yük ölçümüyle yeniden kilitlenir.
+
+### Q3 — Entegrasyon: ilk sürümde yok; ileri sıra kabul edildi
+
+- İlk sürüm canlı dış entegrasyon olmadan çalışır.
+- İleri öncelik: `e-fatura/e-arşiv` → `Mikro muhasebe mutabakatı/kullanıcı onaylı fiş taslağı` → `banka hareketleri`.
+- Erişim seçenekleri, ilgili sağlayıcının gerçek imkânına göre adapter üzerinden dosya aktarımı, salt-okunur DB, manuel Excel/CSV veya yerel AI/OCR ile belgeyi taslağa çevirme olabilir.
+- AI/OCR doğrudan kesin kayıt veya resmî fiş yazmaz; kullanıcı doğrulaması gerekir.
+- Harici sisteme serbest/doğrudan DB yazımı yapılmaz.
+- Sağlayıcı, credential, sandbox ve kesin teknik yöntem ayrı entegrasyon işi başlayınca seçilir.
+
+### Q4 — RPO/RTO: `A`
+
+- Başlangıç production hedefi `RPO=15 dakika`, `RTO=4 saat` olarak kabul edildi.
+- Ana çalışma on-prem/hibrid; tesis dışı şifreli yedek zorunludur.
+- Production kabulü gerçek restore tatbikatı ile DB/belge checksum mutabakatı ister.
+- Hedefler gerçek veri ve yoğunluk ölçüldüğünde yeniden değerlendirilebilir; restore kanıtı olmadan production açılmaz.
+
+### Q5 — Yıllık dönem mimarisi ile retention birbirinden ayrıldı
+
+**Yıllık dönem/data kararı:**
+
+- Operasyonel veriler yıllık dönemler hâlinde yönetilebilir.
+- Yeni döneme yalnız açık işlem/kalemler kaynak kimliği korunarak carry-forward/snapshot bağıyla aktarılır.
+- Geçmiş kesinleşmiş olaylar ikinci iş olayı olarak kopyalanmaz; kapalı dönemde değişmez kalır.
+- Yetkili kullanıcı birden fazla yılı aynı anda seçerek rapor ve AI analizi çalıştırabilir; bu görünüm türetilmiş okuma/analitik katmandır, dönemler arası sessiz netleme değildir.
+- Amaç aktif çalışma setini kontrollü tutmak; geçmişi erişilemez veya fiziksel olarak silmek değildir.
+
+**Retention/legal hold kararı:**
+
+- Gerçek veri silme/purge yalnız en yüksek yetki, legal-hold kontrolü, ikinci onay ve eksiksiz audit ile mümkündür.
+- Otomatik fiziksel purge varsayılan olarak kapalıdır.
+- Belge/audit/idempotency türü bazlı yasal saklama süreleri, legal hold koyma/kaldırma yetkileri ve ülke/şirket istisnaları hâlâ açık production kararıdır.
+
+### Q6 — PDF/antet: `A` + şirket bazlı gerçek asset
+
+- Her şirketin ayrı logo ve anteti vardır.
+- Şablonlar şirket bazlı, versiyonlu ve auditlidir.
+- Açık lisanslı gömülü `Noto Sans` teknik fallback olarak kabul edildi.
+- Gerçek logo/antet dosyaları kullanıcı tarafından ayrıca sağlanacaktır; verilmeden kurumsal belge UAT tamamlanmaz.
+- Şablon yayımlama/değiştirme yetkili kullanıcı onayı ister; exact permission/rol matrisi ilgili Ayarlar/Belge diliminde kararlaştırılır.
+
+### Q7 — AI: yerel-first, sürekli erişilebilir temel UX
+
+- ERP verisi kullanıcı tarafında/on-prem kalır.
+- AI ve yerel OCR, kolay kullanımın temel ve sürekli erişilebilir bir parçası olarak tasarlanır; ertelenebilir süs özelliği değildir.
+- Buna rağmen AI yetki, onay, formül veya kesin iş doğrusu değildir; `DEC-AI-001` korunur ve AI kesintisi deterministik normal ERP akışlarını bloke etmez.
+- Yerel model/OCR ve GPU kapasitesi gerçek sunucu envanteriyle PoC'de doğrulanır.
+- Bulut AI, sağlayıcı/sözleşme/KVKK/veri sınıfı ve ayrı aktivasyon kararı olmadan default-deny kapalı kalır.
+
+### Q8 — C-01 continuation: `A`
+
+- İlk sayfa doğrulanmışsa ikinci sayfa `offline`, `network-error`, HTTP `500` veya `503` olduğunda doğrulanmış satırlar görünür kalır.
+- Hata yalnız continuation alanında gösterilir ve açık kullanıcı `Tekrar Dene` eylemi sunulur.
+- Otomatik yeniden gönderim yapılmaz.
+- Retry aynı actor/session, CompanyContext/generation, query/filter/sort ve cursor snapshot'ını kullanır; context değişirse eski retry/yanıt stale-rejected olur.
+- Hatalı sayfadan yeni satır eklenmez; başarılı retry aynı sayfayı yalnız bir kez append eder.
+- `401`, `403`, tenant-binding ihlali veya malformed response bu korumanın arkasına saklanmaz; fail-closed davranış sürer.
+
+## 10. Sicil ve uygulama etkisi
+
+Bu karar turu aşağıdaki sicil kayıtlarını üretir: `DEC-ORG-005`, `DEC-CAR-004`, `DEC-SET-001`, `DEC-PERF-001`, `DEC-INT-001`, `DEC-DATA-001`, `DEC-DOC-010`, `DEC-AI-009`.
+
+Karar kaydı kendi başına migration, production aktivasyonu, bulut veri aktarımı, purge veya entegrasyon credential yetkisi değildir. Bu etkiler ilgili K3 implementation ve UAT kapılarında ayrı uygulanır.
