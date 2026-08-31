@@ -68,6 +68,7 @@ describe('decodeCounterpartyPage — happy path', () => {
     const decoded = decodeCounterpartyPage(
       page({ totalCount: huge, countScope: COUNT_SCOPE_FILTERED_AUTHORIZED }),
       SINGLE_A,
+      true,
     )
     expect(decoded!.totalCount).toBe(huge)
   })
@@ -76,6 +77,7 @@ describe('decodeCounterpartyPage — happy path', () => {
     const decoded = decodeCounterpartyPage(
       page({ totalCount: 42, countScope: COUNT_SCOPE_FILTERED_AUTHORIZED }),
       SINGLE_A,
+      true,
     )
     expect(decoded!.totalCount).toBe('42')
   })
@@ -128,20 +130,21 @@ describe('decodeCounterpartyPage — count scope (JIT §3.6)', () => {
   it('count and scope must travel together', () => {
     // a count without a scope could be read as "all parties"
     expect(
-      decodeCounterpartyPage(page({ totalCount: 5, countScope: null }), SINGLE_A),
+      decodeCounterpartyPage(page({ totalCount: 5, countScope: null }), SINGLE_A, true),
     ).toBeNull()
     // a scope without a count
     expect(
       decodeCounterpartyPage(
         page({ totalCount: null, countScope: COUNT_SCOPE_FILTERED_AUTHORIZED }),
         SINGLE_A,
+        true,
       ),
     ).toBeNull()
   })
 
   it('rejects an unknown scope — we would not know what the number means', () => {
     expect(
-      decodeCounterpartyPage(page({ totalCount: 5, countScope: 'all-parties' }), SINGLE_A),
+      decodeCounterpartyPage(page({ totalCount: 5, countScope: 'all-parties' }), SINGLE_A, true),
     ).toBeNull()
   })
 
@@ -149,9 +152,31 @@ describe('decodeCounterpartyPage — count scope (JIT §3.6)', () => {
     const decoded = decodeCounterpartyPage(
       page({ totalCount: 5, countScope: COUNT_SCOPE_FILTERED_AUTHORIZED }),
       SINGLE_A,
+      true,
     )
     expect(decoded!.totalCount).toBe('5')
     expect(decoded!.countScope).toBe(COUNT_SCOPE_FILTERED_AUTHORIZED)
+  })
+
+  // Codex/ChatGPT #147 P1-1: both fields are REQUIRED by the contract. An absent
+  // property is drift, not an implicit null.
+  it('rejects a page missing either count property, and one missing both', () => {
+    const { totalCount: _t, ...noTotal } = page()
+    const { countScope: _s, ...noScope } = page()
+    const { totalCount: _t2, countScope: _s2, ...neither } = page()
+    expect(decodeCounterpartyPage(noTotal, SINGLE_A)).toBeNull()
+    expect(decodeCounterpartyPage(noScope, SINGLE_A)).toBeNull()
+    expect(decodeCounterpartyPage(neither, SINGLE_A)).toBeNull()
+    // present-and-null is the valid no-count shape
+    expect(decodeCounterpartyPage(page(), SINGLE_A)).not.toBeNull()
+  })
+
+  it('rejects a count we never asked for (includeCount=false)', () => {
+    // The server volunteering a number means it counted something we did not specify,
+    // so there is no label we could honestly put on it.
+    const withCount = page({ totalCount: 5, countScope: COUNT_SCOPE_FILTERED_AUTHORIZED })
+    expect(decodeCounterpartyPage(withCount, SINGLE_A, false)).toBeNull()
+    expect(decodeCounterpartyPage(withCount, SINGLE_A, true)).not.toBeNull()
   })
 })
 
@@ -202,6 +227,7 @@ describe('decodeCounterpartyPage — fails closed', () => {
         decodeCounterpartyPage(
           page({ totalCount, countScope: COUNT_SCOPE_FILTERED_AUTHORIZED }),
           SINGLE_A,
+          true,
         ),
       ).toBeNull()
     }

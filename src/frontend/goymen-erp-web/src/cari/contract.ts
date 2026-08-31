@@ -96,9 +96,12 @@ function isSafeIntish(value: unknown): value is number {
  */
 export const COUNT_SCOPE_FILTERED_AUTHORIZED = 'filtered-authorized-visible-parties'
 
-/** `totalCount` arrives as int64, string or null; normalise to a display string. */
+/**
+ * `totalCount` arrives as int64, string or null; normalise to a display string.
+ * `undefined` is NOT null here — the property is required, so its absence is drift.
+ */
 function decodeTotalCount(value: unknown): { ok: true; value: string | null } | { ok: false } {
-  if (value === null || value === undefined) return { ok: true, value: null }
+  if (value === null) return { ok: true, value: null }
   if (typeof value === 'number') {
     return Number.isSafeInteger(value) && value >= 0
       ? { ok: true, value: String(value) }
@@ -193,12 +196,19 @@ function decodeItem(raw: unknown, binding: CounterpartyBinding): CounterpartyLis
 export function decodeCounterpartyPage(
   raw: unknown,
   binding: CounterpartyBinding,
+  /** Whether the request carried `includeCount=true`. Binds the response to the ask. */
+  countRequested = false,
 ): CounterpartyPage | null {
   if (typeof raw !== 'object' || raw === null) return null
   const p = raw as Record<string, unknown>
   if (!Array.isArray(p.items)) return null
   if (typeof p.hasMore !== 'boolean') return null
   if (p.nextCursor !== null && !isNonEmptyString(p.nextCursor, 4096)) return null
+
+  // Both count fields are REQUIRED by the contract. An absent property is contract
+  // drift, not an implicit null — normalising it away would silently accept a server
+  // that stopped sending them (Codex/ChatGPT #147 P1-1).
+  if (!Object.hasOwn(p, 'totalCount') || !Object.hasOwn(p, 'countScope')) return null
 
   const total = decodeTotalCount(p.totalCount)
   if (!total.ok) return null
@@ -208,10 +218,15 @@ export function decodeCounterpartyPage(
   // means we do not know what the number means.
   const scope = p.countScope
   if (total.value === null) {
-    if (scope !== null && scope !== undefined) return null
+    if (scope !== null) return null
   } else {
     if (scope !== COUNT_SCOPE_FILTERED_AUTHORIZED) return null
   }
+
+  // ...and it must answer the question we asked. `includeCount=false` means the server
+  // must not volunteer a number; one that arrives anyway counted something we never
+  // specified, so we cannot label it.
+  if (!countRequested && total.value !== null) return null
 
   // hasMore <-> nextCursor must agree; an inconsistent pair means we cannot page safely.
   if (p.hasMore && p.nextCursor === null) return null

@@ -13,10 +13,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import {
   fetchCounterparties,
+  type AccountStateFilter,
   type CounterpartyScope,
   type KindFilter,
   type PartyStateFilter,
   type RoleFilter,
+  type RoleMatch,
   type SortDirection,
   type SortField,
 } from './api'
@@ -55,37 +57,77 @@ const ROLE_OPTIONS: readonly RoleFilter[] = ['Customer', 'Supplier', 'Tolling', 
  * the filter (AT-013).
  */
 const DEFAULT_PARTY_STATE: PartyStateFilter = 'active'
+/** Contract default. The company-account state is filtered independently of the Party. */
+const DEFAULT_ACCOUNT_STATE: AccountStateFilter = 'all'
 const DEFAULT_PAGE_SIZE = 50
 
+/**
+ * The context fence for this screen (Codex/ChatGPT #147 P1-2).
+ *
+ * The list is REMOUNTED whenever the context namespace changes — a different actor,
+ * company, capability generation or committed revision. That destroys both the
+ * component's accumulated rows/cursor and the query observer, so nothing from company
+ * A can survive into company B. Doing this with a `key` rather than a reset effect
+ * makes the bridge structurally unrepresentable instead of merely repaired: there is
+ * no render in which the old rows and the new context coexist.
+ */
 export function CariListPage() {
+  const shell = useShellState()
+  const key = contextKey(shell)
+  const namespace = key === null ? null : contextKeyString(key)
+  return <CariList key={namespace ?? 'no-context'} namespace={namespace} />
+}
+
+function CariList({ namespace }: { readonly namespace: string | null }) {
   const shell = useShellState()
   const [q, setQ] = useState('')
   const [kind, setKind] = useState<KindFilter | ''>('')
   const [roles, setRoles] = useState<readonly RoleFilter[]>([])
+  const [roleMatch, setRoleMatch] = useState<RoleMatch>('any')
   const [partyState, setPartyState] = useState<PartyStateFilter>(DEFAULT_PARTY_STATE)
+  const [accountState, setAccountState] = useState<AccountStateFilter>(DEFAULT_ACCOUNT_STATE)
   const [sort, setSort] = useState<SortField>('code')
   const [direction, setDirection] = useState<SortDirection>('asc')
   const [cursor, setCursor] = useState<string | undefined>(undefined)
   const [loaded, setLoaded] = useState<readonly CounterpartyListItem[]>([])
 
   const activeCompanyId = shell.activeContext?.companyId ?? null
+  const scopeMode = shell.activeContext?.scopeMode ?? 'single'
   const scope: CounterpartyScope = useMemo(
-    () => ({ mode: shell.activeContext?.scopeMode ?? 'single', companyId: activeCompanyId }),
-    [shell.activeContext?.scopeMode, activeCompanyId],
+    () => ({ mode: scopeMode, companyId: activeCompanyId }),
+    [scopeMode, activeCompanyId],
   )
 
-  const key = contextKey(shell)
-  const filterActive = q.trim().length > 0 || kind !== '' || roles.length > 0 || partyState !== 'active'
+  /**
+   * C-01A is the accepted deliverable: ONE selected company. Group mode has no
+   * accepted per-company representation yet (Codex/ChatGPT #147 P1-3), and rendering
+   * it through the single-company columns would print `—` for roles and account state
+   * — silently omitting the facts that differ per company. Fail closed instead of
+   * showing an incomplete truth.
+   */
+  const singleCompanyContext = scopeMode === 'single' && activeCompanyId !== null
+
+  const filterActive =
+    q.trim().length > 0 ||
+    kind !== '' ||
+    roles.length > 0 ||
+    partyState !== DEFAULT_PARTY_STATE ||
+    accountState !== DEFAULT_ACCOUNT_STATE
 
   const query = useQuery({
     // INV-NS: the company context owns the cache namespace, so a company switch can
     // never surface another company's page.
     queryKey: [
-      key === null ? 'no-context' : contextKeyString(key),
+      namespace ?? 'no-context',
       'counterparties',
-      { q, kind, roles, partyState, sort, direction, cursor },
+      { q, kind, roles, roleMatch, partyState, accountState, sort, direction, cursor },
     ],
-    enabled: key !== null,
+    enabled: namespace !== null && singleCompanyContext,
+    /**
+     * Safe ONLY because <CariListPage> remounts this component on a namespace change:
+     * the observer that holds the previous data is destroyed with it, so "previous"
+     * can only ever mean a different filter or sort inside the SAME company.
+     */
     placeholderData: keepPreviousData,
     queryFn: ({ signal }) =>
       fetchCounterparties(
@@ -94,8 +136,9 @@ export function CariListPage() {
           q,
           kind: kind === '' ? undefined : kind,
           role: roles.length > 0 ? roles : undefined,
-          roleMatch: roles.length > 0 ? 'any' : undefined,
+          roleMatch: roles.length > 1 ? roleMatch : undefined,
           partyState,
+          accountState,
           sort,
           direction,
           pageSize: DEFAULT_PAGE_SIZE,
@@ -114,7 +157,16 @@ export function CariListPage() {
 
   const page = state.kind === 'ready' ? state.data : null
   // Accumulate across cursor pages; a filter/sort change resets via resetPaging().
-  const items = page === null ? loaded : cursor === undefined ? page.items : [...loaded, ...page.items]
+  const accumulated =
+    page === null ? loaded : cursor === undefined ? page.items : [...loaded, ...page.items]
+
+  /**
+   * A PartyId that repeats across cursor pages means the continuation is broken —
+   * client-side de-duplication would paper over a server contract violation and show a
+   * page that is quietly missing records. Reject instead (Codex/ChatGPT #147 P2).
+   */
+  const crossPageDuplicate = new Set(accumulated.map((item) => item.id)).size !== accumulated.length
+  const items = crossPageDuplicate ? [] : accumulated
 
   function resetPaging() {
     setCursor(undefined)
@@ -155,21 +207,43 @@ export function CariListPage() {
   // the query key back and forth forever (bad cursor -> page 1 -> valid -> bad cursor).
   // The ref makes recovery happen at most once per rejected cursor.
   const recoveredCursor = useRef<string | null>(null)
+  const [cursorRecovered, setCursorRecovered] = useState(false)
   // oxlint-disable-next-line react/set-state-in-effect -- see the note above
   useEffect(() => {
     if (isInvalidCursor && cursor !== undefined && recoveredCursor.current !== cursor) {
       recoveredCursor.current = cursor
       setCursor(undefined)
       setLoaded([])
+      // The list silently jumping back to page 1 is a change the user must be told
+      // about, not a repair to hide (Codex/ChatGPT #147 P2).
+      setCursorRecovered(true)
     }
   }, [isInvalidCursor, cursor])
 
   const ariaSort = (field: SortField): 'ascending' | 'descending' | 'none' =>
     sort !== field ? 'none' : direction === 'asc' ? 'ascending' : 'descending'
 
+  // C-01A only. Deliberately before any data render: no request is issued and no row
+  // is drawn in a context this screen cannot represent honestly.
+  if (!singleCompanyContext) {
+    return (
+      <section aria-labelledby="cari-list-heading" className={styles.page}>
+        <h1 id="cari-list-heading">Cari Kartlar</h1>
+        <StateBlock
+          state={{ kind: 'no-authorized-company' }}
+          subject="cari listesi için tek şirket bağlamı"
+        />
+      </section>
+    )
+  }
+
   return (
     <section aria-labelledby="cari-list-heading" className={styles.page}>
       <h1 id="cari-list-heading">Cari Kartlar</h1>
+
+      <div role="status" aria-live="polite" className={styles.announce}>
+        {cursorRecovered ? 'Liste güncellendi; ilk sayfaya dönüldü.' : ''}
+      </div>
 
       <div className={styles.filters} role="search">
         <label className={styles.field}>
@@ -214,8 +288,29 @@ export function CariListPage() {
           ))}
         </fieldset>
 
+        {/* Only meaningful with 2+ roles — with one role `any` and `all` are the same
+            query, so offering the choice would imply a distinction that does not exist. */}
+        {roles.length > 1 ? (
+          <label className={styles.field}>
+            <span>Rol eşleşmesi</span>
+            <select
+              value={roleMatch}
+              onChange={(event) => {
+                setRoleMatch(event.target.value as RoleMatch)
+                resetPaging()
+              }}
+            >
+              <option value="any">Herhangi biri</option>
+              <option value="all">Hepsi birden</option>
+            </select>
+          </label>
+        ) : null}
+
+        {/* Two INDEPENDENT facts, two filters. A Party can be globally active while its
+            account in the selected company is passive, and the reverse never happens —
+            collapsing them into one control would hide that (DEC-CAR-002). */}
         <label className={styles.field}>
-          <span>Durum</span>
+          <span>Taraf durumu</span>
           <select
             value={partyState}
             onChange={(event) => {
@@ -228,10 +323,32 @@ export function CariListPage() {
             <option value="all">Hepsi</option>
           </select>
         </label>
+
+        <label className={styles.field}>
+          <span>Şirket hesabı durumu</span>
+          <select
+            value={accountState}
+            onChange={(event) => {
+              setAccountState(event.target.value as AccountStateFilter)
+              resetPaging()
+            }}
+          >
+            <option value="all">Hepsi</option>
+            <option value="active">Aktif</option>
+            <option value="inactive">Pasif</option>
+          </select>
+        </label>
       </div>
 
-      {state.kind !== 'ready' ? (
-        <StateBlock state={state} subject="cari listesi" onRetry={() => void query.refetch()} />
+      {state.kind !== 'ready' || crossPageDuplicate ? (
+        <StateBlock
+          state={crossPageDuplicate ? { kind: 'malformed-response' } : state}
+          subject="cari listesi"
+          onRetry={() => {
+            resetPaging()
+            void query.refetch()
+          }}
+        />
       ) : items.length === 0 ? (
         <StateBlock
           state={{ kind: filterActive ? 'empty-filtered' : 'empty-no-data' }}
@@ -241,8 +358,10 @@ export function CariListPage() {
         <>
           <table className={styles.table}>
             <caption className={styles.caption}>
-              {page?.totalCount !== null && page?.totalCount !== undefined
-                ? `${page.totalCount} kayıt${page.countScope ? ` (${page.countScope})` : ''}`
+              {/* The scope is VALIDATED, not displayed: `filtered-authorized-visible-parties`
+                  is a machine token, and printing it tells the user nothing. */}
+              {page?.totalCount != null
+                ? `${page.totalCount} kayıt`
                 : `${items.length} kayıt yüklendi`}
             </caption>
             <thead>
@@ -259,17 +378,17 @@ export function CariListPage() {
                 </th>
                 <th scope="col">Tür</th>
                 <th scope="col">Bu şirketteki roller</th>
-                <th scope="col">Durum</th>
+                <th scope="col">Taraf durumu</th>
+                <th scope="col">Şirket hesabı durumu</th>
               </tr>
             </thead>
             <tbody>
               {items.map((item) => {
                 // DEC-CAR-002: the account of the ACTIVE company only. One account holds
-                // combined role flags; roles are never unioned across companies.
-                const account =
-                  activeCompanyId === null
-                    ? undefined
-                    : item.companyAccounts.find((a) => a.companyId === activeCompanyId)
+                // combined role flags; roles are never unioned across companies. The
+                // decoder already guarantees this account exists and belongs to the
+                // active company in single mode, so there is no "—" case left.
+                const account = item.companyAccounts[0]
                 return (
                   <tr key={item.id} data-inactive={!item.isActive ? 'true' : undefined}>
                     <td>{item.code}</td>
@@ -281,19 +400,18 @@ export function CariListPage() {
                     </td>
                     <td>{KIND_LABEL[item.kind]}</td>
                     <td>
-                      {account === undefined
-                        ? '—'
-                        : rolesFromFlags(account.roles)
-                            .map((role) => ROLE_LABEL[role])
-                            .join(', ')}
+                      {rolesFromFlags(account.roles)
+                        .map((role) => ROLE_LABEL[role])
+                        .join(', ')}
                     </td>
-                    <td>
-                      {/* AT-013 + DEC-CAR-002: the global party state and this company's
-                          account state are separate facts and are shown separately. */}
-                      <span>{item.isActive ? 'Cari aktif' : 'Cari pasif'}</span>
-                      {account !== undefined && !account.isActive ? (
-                        <span className={styles.accountInactive}>şirket hesabı pasif</span>
-                      ) : null}
+                    {/* AT-013 + DEC-CAR-002: two separate facts, both stated explicitly.
+                        Showing only the passive one would leave "active" as an absence,
+                        which reads the same as "unknown". */}
+                    <td data-party-state={item.isActive ? 'active' : 'inactive'}>
+                      {item.isActive ? 'Aktif' : 'Pasif'}
+                    </td>
+                    <td data-account-state={account.isActive ? 'active' : 'inactive'}>
+                      {account.isActive ? 'Aktif' : 'Pasif'}
                     </td>
                   </tr>
                 )

@@ -64,6 +64,8 @@ function page(over: Record<string, unknown> = {}) {
 interface Config {
   capabilities?: readonly string[]
   counterparties?: (url: string, companyId: string | null) => Response
+  /** Awaited before the capability call for this company answers — pins a switch in flight. */
+  holdCapabilityFor?: { companyId: string; gate: Promise<void> }
 }
 
 function installFetch(config: Config = {}) {
@@ -75,12 +77,14 @@ function installFetch(config: Config = {}) {
     calls.push({ url, companyId })
     if (url.includes('/identity/me')) return json(IDENTITY)
     if (url.includes('/organization/companies')) return json(DIRECTORY)
-    if (url.includes('/shell/capabilities'))
+    if (url.includes('/shell/capabilities')) {
+      if (config.holdCapabilityFor?.companyId === companyId) await config.holdCapabilityFor.gate
       return json({
         contractVersion: SHELL_CAPABILITY_CONTRACT_VERSION,
-        generation: 'gen-1',
+        generation: companyId === B_ID ? 'gen-b' : 'gen-1',
         capabilities: config.capabilities ?? [CAPABILITY.cariPartiesList],
       })
+    }
     if (url.includes('/counterparties'))
       return (config.counterparties ?? (() => json(page())))(url, companyId)
     throw new Error(`unexpected fetch: ${url}`)
@@ -267,8 +271,23 @@ describe('C-01 list rendering', () => {
     })
     renderAt('/cari')
     const row = await screen.findByRole('row', { name: /C-0001/ })
-    expect(within(row).getByText('Cari aktif')).toBeTruthy()
-    expect(within(row).getByText(/şirket hesabı pasif/i)).toBeTruthy()
+    // Both facts are stated explicitly. Codex/ChatGPT #147 P1-4: "active" must not be
+    // an absence — an absent label reads the same as "unknown".
+    const partyCell = row.querySelector('[data-party-state]')
+    const accountCell = row.querySelector('[data-account-state]')
+    expect(partyCell?.getAttribute('data-party-state')).toBe('active')
+    expect(partyCell?.textContent).toBe('Aktif')
+    expect(accountCell?.getAttribute('data-account-state')).toBe('inactive')
+    expect(accountCell?.textContent).toBe('Pasif')
+  })
+
+  it('states an ACTIVE company account explicitly too, not by omission', async () => {
+    installFetch()
+    renderAt('/cari')
+    const row = await screen.findByRole('row', { name: /C-0001/ })
+    const accountCell = row.querySelector('[data-account-state]')
+    expect(accountCell?.getAttribute('data-account-state')).toBe('active')
+    expect(accountCell?.textContent).toBe('Aktif')
   })
 
   it('shows no balance / risk / limit column (DEC-CAR-002, AT-011, mockTruthForbidden)', async () => {
@@ -362,5 +381,209 @@ describe('C-01 paging', () => {
     await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
     // recovers to page 1 rather than showing a broken/empty state
     await waitFor(() => expect(screen.getByRole('row', { name: /C-0001/ })).toBeTruthy())
+  })
+})
+
+describe('C-01 context fence (Codex/ChatGPT #147 P1-2)', () => {
+  it('the screen is unmounted for the whole time the shell has no bound context', async () => {
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    installFetch({ holdCapabilityFor: { companyId: B_ID, gate } })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Şirket' }), B_ID)
+
+    // The switch is pinned in flight. This is the window the review was about: the
+    // shell holds no verified context, so the business screen must not exist at all —
+    // not merely be showing a spinner over company A's rows.
+    await waitFor(() => expect(screen.getByText(/değiştiriliyor/i)).toBeTruthy())
+    expect(screen.queryByRole('heading', { name: 'Cari Kartlar' })).toBeNull()
+    expect(screen.queryByText('C-0001')).toBeNull()
+    expect(screen.queryByText(/Alfa Metal/)).toBeNull()
+
+    release()
+    // ...and it comes back once B is verified, mounted fresh under B's context.
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Cari Kartlar' })).toBeTruthy(),
+    )
+    expect((screen.getByRole('combobox', { name: 'Şirket' }) as HTMLSelectElement).value).toBe(
+      B_ID,
+    )
+  })
+
+  it('a company switch never leaves company A rows on screen under company B', async () => {
+    let releaseB: () => void = () => {}
+    const gateB = new Promise<void>((resolve) => {
+      releaseB = resolve
+    })
+    installFetch({
+      counterparties: (_url, companyId) =>
+        companyId === A_ID
+          ? json(page())
+          : (async () => {
+              // B's rows arrive LATE — the window in which A's rows could linger.
+              await gateB
+              return json(
+                page({
+                  items: [
+                    party({
+                      id: PARTY_2,
+                      code: 'C-0002',
+                      legalName: 'Beta Sac A.Ş.',
+                      companyAccounts: [
+                        {
+                          id: ACC_2,
+                          companyId: B_ID,
+                          roles: PARTY_ROLE_FLAG.Supplier,
+                          isActive: true,
+                          version: 1,
+                        },
+                      ],
+                    }),
+                  ],
+                }),
+              )
+            })() as unknown as Response,
+    })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Şirket' }), B_ID)
+
+    // B's context is committed while B's list is still in flight. Company A's code,
+    // title and roles must all be gone — not merely stale-but-visible.
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('combobox', { name: 'Şirket' }) as HTMLSelectElement).value,
+      ).toBe(B_ID),
+    )
+    expect(screen.queryByText('C-0001')).toBeNull()
+    expect(screen.queryByText(/Alfa Metal/)).toBeNull()
+    expect(screen.queryByRole('row', { name: /C-0001/ })).toBeNull()
+
+    releaseB()
+    await waitFor(() => expect(screen.getByRole('row', { name: /C-0002/ })).toBeTruthy())
+    expect(screen.queryByText('C-0001')).toBeNull()
+  })
+
+  it('accumulated cursor pages do not survive a company switch', async () => {
+    installFetch({
+      counterparties: (url, companyId) => {
+        if (companyId === B_ID) return json(page({ items: [] }))
+        return url.includes('cursor=next-1')
+          ? json(page({ items: [party({ id: PARTY_2, code: 'C-0002' })] }))
+          : json(page({ hasMore: true, nextCursor: 'next-1' }))
+      },
+    })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+    await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
+    await waitFor(() => expect(screen.getByRole('row', { name: /C-0002/ })).toBeTruthy())
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Şirket' }), B_ID)
+
+    // B legitimately has no counterparties; neither accumulated A page may remain.
+    await findStateBlock('empty-no-data')
+    expect(screen.queryByText('C-0001')).toBeNull()
+    expect(screen.queryByText('C-0002')).toBeNull()
+  })
+})
+
+describe('C-01 filter contract (Codex/ChatGPT #147 P1-4)', () => {
+  it('sends accountState independently of partyState', async () => {
+    const { calls } = installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    await userEvent.selectOptions(screen.getByLabelText('Şirket hesabı durumu'), 'inactive')
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (c) =>
+            c.url.includes('/counterparties') &&
+            c.url.includes('accountState=inactive') &&
+            // the global Party filter is untouched by the account filter
+            c.url.includes('partyState=active'),
+        ),
+      ).toBe(true),
+    )
+  })
+
+  it('offers roleMatch only with 2+ roles, and sends the chosen mode', async () => {
+    const { calls } = installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    // One role: `any` and `all` are the same query, so no control is offered.
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Müşteri' }))
+    expect(screen.queryByLabelText('Rol eşleşmesi')).toBeNull()
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Tedarikçi' }))
+    await userEvent.selectOptions(screen.getByLabelText('Rol eşleşmesi'), 'all')
+
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (c) =>
+            c.url.includes('role=Customer') &&
+            c.url.includes('role=Supplier') &&
+            c.url.includes('roleMatch=all'),
+        ),
+      ).toBe(true),
+    )
+  })
+
+  it('never asks for a count it will not label, so no raw scope token can reach the UI', async () => {
+    const { calls } = installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+    // includeCount defaults to false; the decoder rejects a count we did not request.
+    expect(calls.every((c) => !c.url.includes('includeCount=true'))).toBe(true)
+    expect(screen.queryByText(/filtered-authorized-visible-parties/)).toBeNull()
+  })
+})
+
+describe('C-01 group mode is not claimed (Codex/ChatGPT #147 P1-3)', () => {
+  it('does not render rows or issue a request without a single-company context', async () => {
+    const { calls } = installFetch({
+      counterparties: () => json(page()),
+    })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+    const before = calls.filter((c) => c.url.includes('/counterparties')).length
+    expect(before).toBeGreaterThan(0)
+
+    // While the switch is in flight the shell holds no bound context. The list must
+    // show no rows and must not query — it cannot represent that state honestly.
+    expect(screen.queryByText(/—/)).toBeNull()
+  })
+
+  it('is remounted on a context change, so no local state carries over', async () => {
+    installFetch({
+      counterparties: (_url, companyId) =>
+        companyId === B_ID ? json(page({ items: [] })) : json(page()),
+    })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    // Filters, sort and paging are component state. They were chosen for company A.
+    await userEvent.type(screen.getByRole('searchbox'), 'alfa')
+    await userEvent.selectOptions(screen.getByLabelText('Şirket hesabı durumu'), 'inactive')
+    expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('alfa')
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Şirket' }), B_ID)
+    await waitFor(() =>
+      expect((screen.getByRole('combobox', { name: 'Şirket' }) as HTMLSelectElement).value).toBe(
+        B_ID,
+      ),
+    )
+
+    // Carrying A's search term into B would silently filter B's list by a term the
+    // user never chose for B — and the screen would look like B simply has no records.
+    expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText('Şirket hesabı durumu') as HTMLSelectElement).value).toBe('all')
   })
 })

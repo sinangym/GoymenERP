@@ -14,6 +14,8 @@ const DEV_IDENTITY_ENABLED =
   import.meta.env.DEV || import.meta.env.VITE_BOOTSTRAP_IDENTITY_ENABLED === 'true'
 
 export type PartyStateFilter = 'active' | 'inactive' | 'all'
+/** Visible company-account state. A DIFFERENT fact from `partyState` (Codex #147 P1-4). */
+export type AccountStateFilter = 'active' | 'inactive' | 'all'
 export type SortField = 'code' | 'legalName' | 'updatedAt'
 export type SortDirection = 'asc' | 'desc'
 export type RoleMatch = 'any' | 'all'
@@ -26,10 +28,13 @@ export interface CounterpartyQuery {
   readonly role?: readonly RoleFilter[]
   readonly roleMatch?: RoleMatch
   readonly partyState?: PartyStateFilter
+  readonly accountState?: AccountStateFilter
   readonly sort?: SortField
   readonly direction?: SortDirection
   readonly pageSize?: number
   readonly cursor?: string
+  /** Contract default is false. The decoder binds the response to what we asked for. */
+  readonly includeCount?: boolean
 }
 
 /**
@@ -51,6 +56,8 @@ export function buildCounterpartyQuery(query: CounterpartyQuery): string {
   for (const role of query.role ?? []) params.append('role', role)
   if (query.roleMatch !== undefined) params.set('roleMatch', query.roleMatch)
   if (query.partyState !== undefined) params.set('partyState', query.partyState)
+  if (query.accountState !== undefined) params.set('accountState', query.accountState)
+  if (query.includeCount !== undefined) params.set('includeCount', String(query.includeCount))
   if (query.sort !== undefined) params.set('sort', query.sort)
   if (query.direction !== undefined) params.set('direction', query.direction)
   if (query.pageSize !== undefined) params.set('pageSize', String(query.pageSize))
@@ -95,12 +102,15 @@ export async function fetchCounterparties(
   if (response.status !== 200) return { type: 'http', status: response.status, body }
 
   // The decoder binds the page to the caller's company context: in single mode a
-  // foreign or missing account rejects the whole page (JIT spec §3.5).
+  // foreign or missing account rejects the whole page (JIT spec §3.5). It is also
+  // bound to what we ASKED for: a count we did not request is not a count we can
+  // interpret (Codex #147 P1-4).
   const page = decodeCounterpartyPage(
     body,
     scope.mode === 'single' && scope.companyId !== null
       ? { mode: 'single', activeCompanyId: scope.companyId }
       : { mode: 'group' },
+    query.includeCount === true,
   )
   if (page === null) return { type: 'malformed' }
   return { type: 'ok-single', data: page }

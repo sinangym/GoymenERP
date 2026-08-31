@@ -108,10 +108,25 @@
   font-size: 0.82rem;
   color: #7b8499;
 }
-.accountInactive {
-  display: block;
-  font-size: 0.8rem;
+/* Passive cells carry a visible cue as well as their text — colour is never the only
+   signal (ERP-000K §15). */
+td[data-party-state='inactive'],
+td[data-account-state='inactive'] {
   color: #a3592f;
+  font-weight: 600;
+}
+
+/* Announcement region: read by assistive tech, not a visual banner. */
+.announce {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .more {
