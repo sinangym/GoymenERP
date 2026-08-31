@@ -539,7 +539,7 @@ test("AST-validated sanitizer turns the raw header override red path green", asy
     assert.notEqual(driftedSource, rawSource);
     assert.throws(
       () => applyProtectedHeaderGuard(driftedSource, canonical),
-      /fetch-header initializer drifted/u,
+      /fetch-header property inventory drifted/u,
     );
 
     const livenessFetch = `const res = await fetch(getGetLivenessV1Url(),
@@ -565,6 +565,29 @@ const res = await fetch(getGetLivenessV1Url(),
     assert.throws(
       () => applyProtectedHeaderGuard(decoySource, canonical),
       /fetch contract initializer drifted/u,
+    );
+
+    const shadowedSource = rawSource.replace(
+      livenessFetch,
+      `{
+  const getHeaders = (value?: NonNullable<RequestInit['headers']>) => value ?? {};
+  ${livenessFetch}
+}`,
+    );
+    assert.notEqual(shadowedSource, rawSource);
+    assert.throws(
+      () => applyProtectedHeaderGuard(shadowedSource, canonical),
+      /fetch lexical binding drifted/u,
+    );
+
+    const appendedHeaderSource = rawSource.replace(
+      "headers: { ...headers, ...getHeaders(options?.headers) }",
+      "headers: { ...headers, ...getHeaders(options?.headers), ...({ 'X-Correlation-Id': 'override' }) }",
+    );
+    assert.notEqual(appendedHeaderSource, rawSource);
+    assert.throws(
+      () => applyProtectedHeaderGuard(appendedHeaderSource, canonical),
+      /fetch-header property inventory drifted/u,
     );
   } finally {
     await rm(rawRoot, { recursive: true, force: true });

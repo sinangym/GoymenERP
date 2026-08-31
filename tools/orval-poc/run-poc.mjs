@@ -702,6 +702,22 @@ export const applyProtectedHeaderGuard = (source, document) => {
   const contractOperations = operationEntries(document);
   const expectedOperations = new Map(
     contractOperations.map(({ method, operation, pathItem }) => {
+      let requestContentType;
+      if (operation.requestBody !== undefined) {
+        const requestBody = operation.requestBody.$ref
+          ? resolveLocalReference(document, operation.requestBody.$ref)
+          : operation.requestBody;
+        const contentTypes = Object.keys(requestBody?.content ?? {});
+        if (
+          contentTypes.length !== 1 ||
+          contentTypes[0] !== "application/json"
+        ) {
+          throw new PocError(
+            "Generated request-body content type is outside the reviewed profile.",
+          );
+        }
+        requestContentType = contentTypes[0];
+      }
       const declaredHeaders = mergedParameters(document, pathItem, operation)
         .filter((parameter) => parameter.in === "header")
         .map((parameter) => ({
@@ -713,6 +729,7 @@ export const applyProtectedHeaderGuard = (source, document) => {
         operationFunctionName(operation.operationId),
         {
           allowed: declaredHeaders.map((header) => header.name),
+          contentType: requestContentType,
           hasRequestBody: operation.requestBody !== undefined,
           method: method.toUpperCase(),
           required: declaredHeaders
@@ -807,11 +824,19 @@ export const applyProtectedHeaderGuard = (source, document) => {
       }
 
       const fetchCalls = [];
+      const getHeadersDeclarations = [];
       const headerObjectInitializers = [];
       const methodInitializers = [];
       const bodyInitializers = [];
       const optionsSpreads = [];
       const visit = (node) => {
+        if (
+          ts.isVariableDeclaration(node) &&
+          ts.isIdentifier(node.name) &&
+          node.name.text === "getHeaders"
+        ) {
+          getHeadersDeclarations.push(node);
+        }
         if (
           ts.isCallExpression(node) &&
           ts.isIdentifier(node.expression) &&
@@ -859,6 +884,36 @@ export const applyProtectedHeaderGuard = (source, document) => {
       ) {
         throw new PocError(
           "Generated fetch initializer drifted from the reviewed shape.",
+        );
+      }
+
+      const fetchAwait = fetchCall.parent;
+      const fetchDeclaration = fetchAwait?.parent;
+      const fetchDeclarationList = fetchDeclaration?.parent;
+      const fetchStatement = fetchDeclarationList?.parent;
+      const reviewedHelperDeclarations =
+        helperStatements[0].declarationList.declarations.filter(
+          (helperDeclaration) =>
+            ts.isIdentifier(helperDeclaration.name) &&
+            helperDeclaration.name.text === "getHeaders",
+        );
+      if (
+        !ts.isAwaitExpression(fetchAwait) ||
+        !ts.isVariableDeclaration(fetchDeclaration) ||
+        fetchDeclaration.initializer !== fetchAwait ||
+        !ts.isIdentifier(fetchDeclaration.name) ||
+        fetchDeclaration.name.text !== "res" ||
+        !ts.isVariableDeclarationList(fetchDeclarationList) ||
+        fetchDeclarationList.declarations.length !== 1 ||
+        (fetchDeclarationList.flags & ts.NodeFlags.Const) === 0 ||
+        !ts.isVariableStatement(fetchStatement) ||
+        fetchStatement.parent !== declaration.initializer.body ||
+        reviewedHelperDeclarations.length !== 1 ||
+        getHeadersDeclarations.length !== 1 ||
+        getHeadersDeclarations[0] !== reviewedHelperDeclarations[0]
+      ) {
+        throw new PocError(
+          "Generated fetch lexical binding drifted from the reviewed shape.",
         );
       }
 
@@ -911,24 +966,38 @@ export const applyProtectedHeaderGuard = (source, document) => {
       }
 
       const headerInitializer = directHeaderInitializers[0].initializer;
-      const typedSpreads = headerInitializer.properties.filter(
-        (property) =>
-          ts.isSpreadAssignment(property) &&
-          ts.isIdentifier(property.expression) &&
-          property.expression.text === "headers",
-      );
-      const genericSpreads = headerInitializer.properties.filter(
-        (property) =>
-          ts.isSpreadAssignment(property) &&
-          property.getText(sourceFile) === "...getHeaders(options?.headers)",
-      );
-      if (typedSpreads.length !== 1 || genericSpreads.length !== 1) {
+      const expectedPropertyCount = metadata.contentType === undefined ? 2 : 3;
+      const contentTypeProperty =
+        metadata.contentType === undefined
+          ? undefined
+          : headerInitializer.properties[0];
+      const typedSpread =
+        headerInitializer.properties[
+          metadata.contentType === undefined ? 0 : 1
+        ];
+      const genericSpread =
+        headerInitializer.properties[
+          metadata.contentType === undefined ? 1 : 2
+        ];
+      if (
+        headerInitializer.properties.length !== expectedPropertyCount ||
+        (metadata.contentType !== undefined &&
+          (!ts.isPropertyAssignment(contentTypeProperty) ||
+            !ts.isStringLiteral(contentTypeProperty.name) ||
+            contentTypeProperty.name.text !== "Content-Type" ||
+            !ts.isStringLiteral(contentTypeProperty.initializer) ||
+            contentTypeProperty.initializer.text !== metadata.contentType)) ||
+        !ts.isSpreadAssignment(typedSpread) ||
+        !ts.isIdentifier(typedSpread.expression) ||
+        typedSpread.expression.text !== "headers" ||
+        !ts.isSpreadAssignment(genericSpread) ||
+        genericSpread.getText(sourceFile) !== "...getHeaders(options?.headers)"
+      ) {
         throw new PocError(
-          "Generated fetch-header initializer drifted from the reviewed shape.",
+          "Generated fetch-header property inventory drifted from the reviewed shape.",
         );
       }
 
-      const typedSpread = typedSpreads[0];
       replacements.push({
         start: helperStatements[0].getStart(sourceFile),
         end: helperStatements[0].getEnd(),
