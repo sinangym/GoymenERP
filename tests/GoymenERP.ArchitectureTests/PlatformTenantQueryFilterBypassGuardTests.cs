@@ -23,6 +23,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "docs/features/CARI_MODULE_ENTRYPOINT_CONTRACT_v1.md";
     private const string ApiProjectPath =
         "src/backend/GoymenERP.Api/GoymenERP.Api.csproj";
+    private const string OpenApiGenerationModePath =
+        "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/OpenApi/"
+        + "OpenApiDocumentGenerationMode.cs";
+    private const string OpenApiStartupPath =
+        "src/backend/GoymenERP.Api/Program.cs";
+    private const string ReviewedOpenApiStartupFingerprint =
+        "badcb3c543e61a7387524803992826878dc16208dd5cc9cc8004b915169eb0c8";
+    private const string ReviewedOpenApiGenerationModeFingerprint =
+        "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
         "src/backend/Modules/Identity/"
         + "GoymenERP.Modules.Identity.Infrastructure/Seeding/"
@@ -81,7 +90,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Identity/"
                  + "GoymenERP.Modules.Identity.Infrastructure/IdentityModuleExtensions.cs"] =
                     new(
-                        "c28fbfc9721747f23c29a10f16beb6ba0591f938ea62443a25a682f211222606",
+                        "375cb42ab89112a4ac4d92487c6a46fde0327de033145583fd78b06c9eff5d69",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -172,10 +181,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["Microsoft.AspNetCore.Authentication.JwtBearer"] = "10.0.8",
+            ["Microsoft.AspNetCore.OpenApi"] = "10.0.8",
             ["Microsoft.EntityFrameworkCore.Design"] = "10.0.8",
             ["Microsoft.EntityFrameworkCore.SqlServer"] = "10.0.8",
+            ["Microsoft.Extensions.ApiDescription.Server"] = "10.0.11",
             ["Microsoft.Extensions.Hosting.Abstractions"] = "10.0.8",
-            ["Microsoft.Extensions.Options.ConfigurationExtensions"] = "10.0.8"
+            ["Microsoft.Extensions.Options.ConfigurationExtensions"] = "10.0.8",
+            ["Microsoft.OpenApi"] = "[2.7.5]"
         };
 
     private static readonly HashSet<string> ForbiddenGeneratedSourceItems =
@@ -208,6 +220,24 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             "ImplicitUsings",
             "Nullable",
             "TargetFramework"
+        };
+
+    private static readonly IReadOnlyDictionary<string, string> ReviewedApiOpenApiProperties =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["OpenApiGenerateDocuments"] = "true",
+            ["OpenApiGenerateDocumentsOnBuild"] = "true",
+            ["OpenApiDocumentsDirectory"] = "../../../artifacts",
+            ["OpenApiGenerateDocumentsOptions"] =
+                "--document-name v1 --file-name openapi"
+        };
+
+    private static readonly HashSet<string> RequiredApiOpenApiPackages =
+        new(StringComparer.Ordinal)
+        {
+            "Microsoft.AspNetCore.OpenApi",
+            "Microsoft.Extensions.ApiDescription.Server",
+            "Microsoft.OpenApi"
         };
 
     private static readonly HashSet<string> ReviewedProjectItems =
@@ -247,6 +277,61 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         errors.AddRange(ValidateReviewedPlatformContextConstructions(inventory.Sources));
 
         Assert.True(errors.Count == 0, string.Join("\n\n", errors));
+    }
+
+    [Fact]
+    public void OpenApi_build_generation_startup_matches_the_exact_network_isolation_surface()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var sources = Directory.EnumerateFiles(
+                Path.Combine(repositoryRoot, BackendRootPath),
+                "*.cs",
+                SearchOption.AllDirectories)
+            .Select(path => new
+            {
+                Path = NormalizeRepositoryPath(Path.GetRelativePath(repositoryRoot, path)),
+                Source = File.ReadAllText(path),
+            })
+            .Where(file => !IsBuildOutput(file.Path))
+            .ToDictionary(file => file.Path, file => file.Source, StringComparer.Ordinal);
+
+        var errors = ValidateOpenApiBuildTimeNetworkIsolation(sources);
+
+        Assert.True(errors.Count == 0, string.Join("\n\n", errors));
+    }
+
+    [Fact]
+    public void Removing_an_OpenApi_build_generation_gate_is_rejected()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var programSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            OpenApiStartupPath.Replace('/', Path.DirectorySeparatorChar)));
+        var identityPath = ReviewedRuntimeDatabaseBypassSources.Keys.Single(path =>
+            path.EndsWith("IdentityModuleExtensions.cs", StringComparison.Ordinal));
+        var identitySource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            identityPath.Replace('/', Path.DirectorySeparatorChar)));
+        var sources = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [OpenApiStartupPath] = programSource.Replace(
+                "if (!isOpenApiDocumentGeneration",
+                "if (isOpenApiDocumentGeneration",
+                StringComparison.Ordinal),
+            [identityPath] = identitySource.Replace(
+                "if (!OpenApiDocumentGenerationMode.IsActive)",
+                "if (OpenApiDocumentGenerationMode.IsActive)",
+                StringComparison.Ordinal),
+        };
+
+        var errors = ValidateOpenApiBuildTimeNetworkIsolation(sources);
+
+        Assert.Contains(errors, error => error.Contains(
+            "startup fingerprint",
+            StringComparison.Ordinal));
+        Assert.Contains(errors, error => error.Contains(
+            "hosted-service gate",
+            StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1029,6 +1114,59 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             StringComparison.Ordinal));
         Assert.Contains(unsafeDefinition.Errors, error => error.Contains(
             "Target",
+            StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("OpenApiDocumentsDirectory", "../../../artifacts/openapi")]
+    [InlineData(
+        "OpenApiGenerateDocumentsOptions",
+        "--document-name goymen-erp-v1 --file-name openapi")]
+    public void Api_OpenApi_canonical_artifact_path_and_name_are_exactly_guarded(
+        string propertyName,
+        string unsafeValue)
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var document = XDocument.Load(Path.Combine(
+            repositoryRoot,
+            ApiProjectPath.Replace('/', Path.DirectorySeparatorChar)));
+        document.Descendants()
+            .Single(element => element.Name.LocalName == propertyName)
+            .Value = unsafeValue;
+
+        var analysis = AnalyzeProjectDefinition(document, ApiProjectPath);
+
+        Assert.Contains(analysis.Errors, error => error.Contains(
+            $"API OpenAPI property {propertyName}",
+            StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Api_OpenApi_build_tool_and_security_pin_versions_are_exactly_guarded()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var document = XDocument.Load(Path.Combine(
+            repositoryRoot,
+            ApiProjectPath.Replace('/', Path.DirectorySeparatorChar)));
+        document.Descendants()
+            .Single(element =>
+                element.Name.LocalName == "PackageReference"
+                && element.Attribute("Include")?.Value
+                    == "Microsoft.Extensions.ApiDescription.Server")
+            .SetAttributeValue("Version", "10.0.8");
+        document.Descendants()
+            .Single(element =>
+                element.Name.LocalName == "PackageReference"
+                && element.Attribute("Include")?.Value == "Microsoft.OpenApi")
+            .SetAttributeValue("Version", "2.7.5");
+
+        var analysis = AnalyzeProjectDefinition(document, ApiProjectPath);
+
+        Assert.Contains(analysis.Errors, error => error.Contains(
+            "Microsoft.Extensions.ApiDescription.Server",
+            StringComparison.Ordinal));
+        Assert.Contains(analysis.Errors, error => error.Contains(
+            "Microsoft.OpenApi",
             StringComparison.Ordinal));
     }
 
@@ -2446,10 +2584,23 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     property.Name.LocalName,
                     repositoryProjectPath,
                     errors);
-                if (!ReviewedProjectProperties.Contains(property.Name.LocalName))
+                var propertyName = property.Name.LocalName;
+                var isReviewedOpenApiProperty = string.Equals(
+                        repositoryProjectPath,
+                        ApiProjectPath,
+                        StringComparison.Ordinal)
+                    && ReviewedApiOpenApiProperties.TryGetValue(
+                        propertyName,
+                        out var reviewedOpenApiValue)
+                    && string.Equals(
+                        property.Value.Trim(),
+                        reviewedOpenApiValue,
+                        StringComparison.Ordinal);
+                if (!ReviewedProjectProperties.Contains(propertyName)
+                    && !isReviewedOpenApiProperty)
                 {
                     errors.Add(
-                        $"Unreviewed project property {property.Name.LocalName} can alter "
+                        $"Unreviewed project property {propertyName} can alter "
                         + $"compilation: {repositoryProjectPath}");
                 }
                 if (HasMsBuildIndirection(property.Value))
@@ -2457,6 +2608,29 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     errors.Add(
                         $"Project property {property.Name.LocalName} contains MSBuild "
                         + $"indirection: {repositoryProjectPath}");
+                }
+            }
+        }
+
+        if (string.Equals(repositoryProjectPath, ApiProjectPath, StringComparison.Ordinal))
+        {
+            foreach (var (propertyName, reviewedValue) in ReviewedApiOpenApiProperties)
+            {
+                var matches = root.Descendants()
+                    .Where(element => string.Equals(
+                        element.Name.LocalName,
+                        propertyName,
+                        StringComparison.Ordinal))
+                    .ToArray();
+                if (matches.Length != 1
+                    || !string.Equals(
+                        matches[0].Value.Trim(),
+                        reviewedValue,
+                        StringComparison.Ordinal))
+                {
+                    errors.Add(
+                        $"API OpenAPI property {propertyName} must occur exactly once with "
+                        + $"the reviewed value '{reviewedValue}': {repositoryProjectPath}");
                 }
             }
         }
@@ -2511,6 +2685,28 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                      .Where(element => element.Name.LocalName == "PackageReference"))
         {
             ValidatePackageReference(packageReference, repositoryProjectPath, errors);
+        }
+
+
+        if (string.Equals(repositoryProjectPath, ApiProjectPath, StringComparison.Ordinal))
+        {
+            var apiPackageNames = root.Descendants()
+                .Where(element => element.Name.LocalName == "PackageReference")
+                .Select(element => element.Attribute("Include")?.Value.Trim())
+                .Where(name => name is not null)
+                .ToArray();
+            foreach (var packageName in RequiredApiOpenApiPackages)
+            {
+                if (apiPackageNames.Count(name => string.Equals(
+                        name,
+                        packageName,
+                        StringComparison.Ordinal)) != 1)
+                {
+                    errors.Add(
+                        $"API must reference exact OpenAPI package {packageName} once: "
+                        + repositoryProjectPath);
+                }
+            }
         }
 
         foreach (var projectReference in root.Descendants()
@@ -2593,6 +2789,30 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             errors.Add(
                 "Conditional or generator-shaped PackageReference is forbidden without review: "
                 + repositoryProjectPath);
+        }
+
+        if (string.Equals(
+                include,
+                "Microsoft.Extensions.ApiDescription.Server",
+                StringComparison.Ordinal))
+        {
+            var includeAssets = packageReference.Elements()
+                .SingleOrDefault(element => element.Name.LocalName == "IncludeAssets")
+                ?.Value.Trim();
+            var privateAssets = packageReference.Elements()
+                .SingleOrDefault(element => element.Name.LocalName == "PrivateAssets")
+                ?.Value.Trim();
+            if (!string.Equals(
+                    includeAssets,
+                    "runtime; build; native; contentfiles; analyzers",
+                    StringComparison.Ordinal)
+                || !string.Equals(privateAssets, "all", StringComparison.Ordinal))
+            {
+                errors.Add(
+                    "Microsoft.Extensions.ApiDescription.Server must remain a private, "
+                    + "exact build-time dependency with its reviewed IncludeAssets set: "
+                    + repositoryProjectPath);
+            }
         }
 
         var allowedMetadata = new HashSet<string>(StringComparer.Ordinal)
@@ -3131,6 +3351,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
         foreach (var (path, source) in sources)
         {
+            var normalizedPath = NormalizeRepositoryPath(path);
             foreach (Match directive in ConditionalCompilationDirectiveRegex().Matches(source))
             {
                 errors.Add(
@@ -3138,6 +3359,29 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     + $"source inventory because disabled text can hide reviewed code: "
                     + $"{NormalizeRepositoryPath(path)}:"
                     + GetLineNumber(source, directive.Index));
+            }
+
+            if (string.Equals(
+                    normalizedPath,
+                    OpenApiGenerationModePath,
+                    StringComparison.Ordinal))
+            {
+                var fingerprint = ComputeReviewedSourceFingerprint(source);
+                if (!string.Equals(
+                        fingerprint,
+                        ReviewedOpenApiGenerationModeFingerprint,
+                        StringComparison.Ordinal))
+                {
+                    errors.Add(
+                        "OpenAPI build-time entry-assembly detection left its exact reviewed "
+                        + "source fingerprint. Expected "
+                        + $"{ReviewedOpenApiGenerationModeFingerprint}, found {fingerprint}: "
+                        + normalizedPath);
+                }
+                else
+                {
+                    continue;
+                }
             }
 
             var searchableSource = NormalizeExecutableIdentifiers(
@@ -3613,6 +3857,118 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             .TrimEnd('\n') + "\n";
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalized)))
             .ToLowerInvariant();
+    }
+
+    private static IReadOnlyList<string> ValidateOpenApiBuildTimeNetworkIsolation(
+        IReadOnlyDictionary<string, string> sources)
+    {
+        var errors = new List<string>();
+        if (!sources.TryGetValue(OpenApiStartupPath, out var programSource))
+        {
+            errors.Add($"OpenAPI startup source is missing: {OpenApiStartupPath}");
+            return errors;
+        }
+
+        var identityPath = ReviewedRuntimeDatabaseBypassSources.Keys.Single(path =>
+            path.EndsWith("IdentityModuleExtensions.cs", StringComparison.Ordinal));
+        if (!sources.TryGetValue(identityPath, out var identitySource))
+        {
+            errors.Add($"OpenAPI hosted-service source is missing: {identityPath}");
+            return errors;
+        }
+
+        var startupFingerprint = ComputeReviewedSourceFingerprint(programSource);
+        if (!string.Equals(
+                startupFingerprint,
+                ReviewedOpenApiStartupFingerprint,
+                StringComparison.Ordinal))
+        {
+            errors.Add(
+                "OpenAPI startup fingerprint does not match the reviewed network-isolated "
+                + $"composition. Expected {ReviewedOpenApiStartupFingerprint}, found "
+                + $"{startupFingerprint}: {OpenApiStartupPath}");
+        }
+
+        var reviewedIdentity = ReviewedRuntimeDatabaseBypassSources[identityPath];
+        var identityFingerprint = ComputeReviewedSourceFingerprint(identitySource);
+        if (!string.Equals(
+                identityFingerprint,
+                reviewedIdentity.ReviewedFingerprint,
+                StringComparison.Ordinal))
+        {
+            errors.Add(
+                "OpenAPI hosted-service gate fingerprint does not match the reviewed "
+                + $"composition. Expected {reviewedIdentity.ReviewedFingerprint}, found "
+                + $"{identityFingerprint}: {identityPath}");
+        }
+
+        if (!identitySource.Contains(
+                "if (!OpenApiDocumentGenerationMode.IsActive)",
+                StringComparison.Ordinal))
+        {
+            errors.Add(
+                "OpenAPI hosted-service gate must remain fail-closed under the exact "
+                + "GetDocument.Insider entry assembly signal.");
+        }
+
+        var hostedServiceRegistrations = sources
+            .Where(source => source.Value.Contains("AddHostedService<", StringComparison.Ordinal))
+            .Select(source => source.Key)
+            .ToArray();
+        if (hostedServiceRegistrations.Length != 1
+            || !string.Equals(
+                hostedServiceRegistrations[0],
+                identityPath,
+                StringComparison.Ordinal))
+        {
+            errors.Add(
+                "OpenAPI build-time composition must have exactly one reviewed custom "
+                + "hosted-service registration, guarded in IdentityModuleExtensions: "
+                + string.Join(", ", hostedServiceRegistrations));
+        }
+
+        const string initializerGuard =
+            "if (!isOpenApiDocumentGeneration\n"
+            + "    && (app.Environment.IsDevelopment() || app.Environment.IsEnvironment(\"Testing\")))";
+        var normalizedProgram = programSource.Replace("\r\n", "\n", StringComparison.Ordinal);
+        var guardIndex = normalizedProgram.IndexOf(initializerGuard, StringComparison.Ordinal);
+        var runIndex = normalizedProgram.IndexOf("await app.RunAsync();", StringComparison.Ordinal);
+        if (guardIndex < 0 || runIndex <= guardIndex)
+        {
+            errors.Add(
+                "OpenAPI module-initializer gate must precede application RunAsync under "
+                + "the exact entry-assembly signal.");
+        }
+
+        foreach (var initializer in new[]
+                 {
+                     "InitializeOrganizationModuleAsync",
+                     "InitializeIdentityModuleAsync",
+                     "InitializeAuditModuleAsync",
+                     "InitializeIdempotencyModuleAsync",
+                     "InitializeCounterpartyModuleAsync",
+                 })
+        {
+            var occurrences = Regex.Matches(
+                normalizedProgram,
+                Regex.Escape(initializer),
+                RegexOptions.CultureInvariant);
+            if (occurrences.Count != 1
+                || occurrences[0].Index <= guardIndex
+                || occurrences[0].Index >= runIndex)
+            {
+                errors.Add(
+                    $"OpenAPI build-time initializer {initializer} must occur exactly once "
+                    + "inside the reviewed guarded startup block.");
+            }
+        }
+
+        if (sources.Any(source => source.Value.Contains("MapOpenApi", StringComparison.Ordinal)))
+        {
+            errors.Add("Runtime MapOpenApi exposure is forbidden in the reviewed backend surface.");
+        }
+
+        return errors;
     }
 
     private static string MaskCommentsAndNonInterpolatedLiterals(string source)

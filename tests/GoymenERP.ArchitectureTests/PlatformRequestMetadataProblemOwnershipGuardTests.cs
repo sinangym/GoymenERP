@@ -12,6 +12,8 @@ public sealed class PlatformRequestMetadataProblemOwnershipGuardTests
         "src/backend/GoymenERP.Api/Observability/CorrelationContextMiddleware.cs";
     private const string CompanyMiddlewarePath =
         "src/backend/GoymenERP.Api/Multitenancy/CompanyContextMiddleware.cs";
+    private const string OpenApiContractPath =
+        "src/backend/GoymenERP.Api/OpenApi/ErpOpenApiContract.cs";
 
     [Theory]
     [InlineData("\"company_context_invalid\"")]
@@ -28,12 +30,14 @@ public sealed class PlatformRequestMetadataProblemOwnershipGuardTests
     [InlineData(
         "ErpProblemCodes.CompanyContextInvalid",
         ProblemExtensionsPath,
-        RequestMetadataProblemPath)]
+        RequestMetadataProblemPath,
+        OpenApiContractPath)]
     [InlineData(
         "ErpProblemCodes.CorrelationMetadataInvalid",
         ProblemExtensionsPath,
         RequestMetadataProblemPath,
-        CorrelationMiddlewarePath)]
+        CorrelationMiddlewarePath,
+        OpenApiContractPath)]
     public void ReservedProblemCodeReferences_MatchExactPlatformAllowlist(
         string reference,
         params string[] expectedPaths)

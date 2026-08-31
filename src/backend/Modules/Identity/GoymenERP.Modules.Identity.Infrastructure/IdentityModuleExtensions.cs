@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.BuildingBlocks.OpenApi;
 using GoymenERP.Modules.Identity.Application.Contracts;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Seeding;
@@ -42,7 +43,10 @@ public static class IdentityModuleExtensions
         services.AddScoped<IIdentityProfileService, IdentityProfileService>();
         services.AddScoped<ISystemRolePermissionReconciler, SystemRolePermissionReconciler>();
         services.AddScoped<IdentityDataSeeder>();
-        services.AddHostedService<AuthorizationSnapshotDatabaseReadinessService>();
+        if (!OpenApiDocumentGenerationMode.IsActive)
+        {
+            services.AddHostedService<AuthorizationSnapshotDatabaseReadinessService>();
+        }
 
         return services;
     }

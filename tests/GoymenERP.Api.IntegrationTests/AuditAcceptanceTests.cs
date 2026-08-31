@@ -130,6 +130,12 @@ public sealed class AuditAcceptanceTests(GoymenErpApiFactory factory)
         var invalidCursor = await adminClient.GetAsync(
             "/api/v1/audit/events?cursor=gecersiz-cursor");
         Assert.Equal(HttpStatusCode.BadRequest, invalidCursor.StatusCode);
+        Assert.Equal(
+            "application/problem+json",
+            invalidCursor.Content.Headers.ContentType?.MediaType);
+        using var invalidCursorProblem = JsonDocument.Parse(
+            await invalidCursor.Content.ReadAsStringAsync());
+        Assert.False(invalidCursorProblem.RootElement.TryGetProperty("code", out _));
     }
 
     [Fact]
