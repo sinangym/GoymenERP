@@ -5,7 +5,9 @@ import {
   contextKeyString,
   initialShellState,
   needsBootstrap,
+  contextActorMismatch,
   shellReducer,
+  type CompanyContext,
   type ShellEvent,
   type ShellState,
 } from './shellState'
@@ -15,10 +17,16 @@ function run(state: ShellState, ...events: ShellEvent[]): ShellState {
   return events.reduce(shellReducer, state)
 }
 
-const ready = run(initialShellState, {
-  type: 'SESSION_READY',
-  context: fixtureContext('fixture-company-a'),
-})
+/** SESSION_READY fenced to the state's OWN epoch — i.e. the normal, non-stale case. */
+function sessionReady(state: ShellState, context: CompanyContext): ShellState {
+  return run(state, {
+    type: 'SESSION_READY',
+    forSessionEpoch: state.sessionEpoch,
+    context,
+  })
+}
+
+const ready = sessionReady(initialShellState, fixtureContext('fixture-company-a'))
 
 /** Drive a full successful switch and return the committed state. */
 function switchTo(state: ShellState, companyId: string, cap: string | null = 'gen-x'): ShellState {
@@ -44,11 +52,28 @@ describe('initial + login', () => {
     expect(ready.phase).toBe('idle')
     expect(ready.committedContextRevision).toBe(1)
     // A second SESSION_READY from `idle` is ignored (no unconditional commit).
-    const injected = run(ready, {
-      type: 'SESSION_READY',
-      context: fixtureContext('evil-company', 'evil-gen'),
-    })
+    const injected = sessionReady(ready, fixtureContext('evil-company', 'evil-gen'))
     expect(injected).toBe(ready)
+  })
+
+  it('Codex #139 P1-2: a SESSION_READY from a previous session epoch never commits', () => {
+    // Capability request starts under epoch 0, actor changes (SESSION_RESET -> epoch 1),
+    // then the OLD response lands. It carries a real, server-verified context — for the
+    // actor who just left.
+    const staleEpoch = initialShellState.sessionEpoch
+    const afterReset = run(ready, { type: 'SESSION_RESET' })
+    expect(afterReset.sessionEpoch).not.toBe(staleEpoch)
+
+    const late = run(afterReset, {
+      type: 'SESSION_READY',
+      forSessionEpoch: staleEpoch,
+      context: fixtureContext('fixture-company-a'),
+    })
+    expect(late).toBe(afterReset)
+    expect(late.activeContext).toBeNull()
+    expect(late.phase).toBe('no-active-company')
+    // and the new session is still allowed to bootstrap
+    expect(needsBootstrap(late)).toBe(true)
   })
 })
 
@@ -212,19 +237,13 @@ describe('session + capability', () => {
   })
 
   it('Codex #139 P1-1: actor B actually reaches a committed context after the reset', () => {
-    const actorB = run(
-      ready,
-      { type: 'SESSION_RESET' },
-      {
-        type: 'SESSION_READY',
-        context: {
-          userId: 'actor-b',
-          scopeMode: 'single',
-          companyId: 'fixture-company-b',
-          capabilityGeneration: 'gen-b',
-        },
-      },
-    )
+    const reset = run(ready, { type: 'SESSION_RESET' })
+    const actorB = sessionReady(reset, {
+      userId: 'actor-b',
+      scopeMode: 'single',
+      companyId: 'fixture-company-b',
+      capabilityGeneration: 'gen-b',
+    })
     expect(actorB.phase).toBe('idle')
     expect(actorB.activeContext?.userId).toBe('actor-b')
     expect(actorB.activeContext?.companyId).toBe('fixture-company-b')
@@ -243,6 +262,33 @@ describe('session + capability', () => {
   })
 })
 
+describe('contextActorMismatch — Codex #139 P1-1 synchronous gate', () => {
+  it('flags a bound context that belongs to another actor', () => {
+    expect(contextActorMismatch(ready, 'fixture-user')).toBe(false)
+    expect(contextActorMismatch(ready, 'actor-b')).toBe(true)
+  })
+
+  it('says nothing while identity is unresolved — other gates own that state', () => {
+    expect(contextActorMismatch(ready, null)).toBe(false)
+    expect(contextActorMismatch(initialShellState, 'actor-b')).toBe(false)
+  })
+
+  it('also covers the context REAUTH_FAIL would restore', () => {
+    // mid-switch: activeContext is null, but verifiedFormerContext is armed to come back.
+    const switching = run(ready, {
+      type: 'REQUEST_SWITCH',
+      target: { scopeMode: 'single', companyId: 'fixture-company-b' },
+    })
+    expect(switching.activeContext).toBeNull()
+    expect(switching.verifiedFormerContext?.userId).toBe('fixture-user')
+    expect(contextActorMismatch(switching, 'actor-b')).toBe(true)
+  })
+
+  it('clears once the reset has dropped the old context', () => {
+    expect(contextActorMismatch(run(ready, { type: 'SESSION_RESET' }), 'actor-b')).toBe(false)
+  })
+})
+
 describe('contextKey (INV-NS) — Codex #133 P1-2', () => {
   it('is a structural tuple, not a delimiter-joined string', () => {
     const key = contextKey(ready)
@@ -251,13 +297,11 @@ describe('contextKey (INV-NS) — Codex #133 P1-2', () => {
   })
 
   it('does NOT collide on delimiter-ambiguous field values', () => {
-    const a = run(initialShellState, {
-      type: 'SESSION_READY',
-      context: { userId: 'u|single', scopeMode: 'single', companyId: 'c', capabilityGeneration: 'g' },
+    const a = sessionReady(initialShellState, {
+      userId: 'u|single', scopeMode: 'single', companyId: 'c', capabilityGeneration: 'g',
     })
-    const b = run(initialShellState, {
-      type: 'SESSION_READY',
-      context: { userId: 'u', scopeMode: 'single', companyId: 'single|c', capabilityGeneration: 'g' },
+    const b = sessionReady(initialShellState, {
+      userId: 'u', scopeMode: 'single', companyId: 'single|c', capabilityGeneration: 'g',
     })
     const ka = contextKey(a)
     const kb = contextKey(b)

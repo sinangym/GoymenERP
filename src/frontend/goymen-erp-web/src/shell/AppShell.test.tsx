@@ -6,6 +6,8 @@ import { RouterProvider, createMemoryRouter } from 'react-router'
 import { ShellProvider } from './ShellProvider'
 import { shellRoutes } from './router'
 import { SHELL_CAPABILITY_CONTRACT_VERSION } from './api'
+import { useShellOrchestrator } from './useShellOrchestrator'
+import { useShellState } from './shellContext'
 
 const A_ID = 'aaaaaaaa-0000-0000-0000-000000000001'
 const B_ID = 'bbbbbbbb-0000-0000-0000-000000000002'
@@ -69,6 +71,28 @@ function renderShell() {
     </ShellProvider>,
   )
   return queryClient
+}
+
+interface RenderFrame {
+  readonly actor: string | null
+  readonly ctxActor: string | null
+  readonly mismatch: boolean
+}
+
+/**
+ * Records EVERY render, not just the final DOM. The actor-change hole lives in a single
+ * intermediate frame; a post-hoc `screen` query runs after all effects have flushed and
+ * can never observe it. Owns the orchestrator effects (it is the only caller here).
+ */
+function ActorProbe({ log }: { readonly log: RenderFrame[] }) {
+  const { identity, actorMismatch } = useShellOrchestrator()
+  const state = useShellState()
+  log.push({
+    actor: identity?.userId ?? null,
+    ctxActor: state.activeContext?.userId ?? null,
+    mismatch: actorMismatch,
+  })
+  return null
 }
 
 beforeEach(() => {
@@ -139,6 +163,27 @@ describe('SHELL-PILOT-01 bootstrap', () => {
     renderShell()
     expect(await screen.findByText(/Beklenmeyen yanıt/i)).toBeTruthy()
   })
+
+  it('Codex #139 P1-3: a 401 during bootstrap clears the business cache too', async () => {
+    installFetch({ capabilities: () => json({ title: 'unauth' }, 401) })
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    })
+    // A business read cached under the dying session — nothing the shell hook knows about.
+    queryClient.setQueryData(['cari', 'counterparties'], { items: [{ code: 'C-0001' }] })
+    const router = createMemoryRouter(shellRoutes, { initialEntries: ['/'] })
+    render(
+      <ShellProvider queryClient={queryClient}>
+        <RouterProvider router={router} />
+      </ShellProvider>,
+    )
+
+    expect(await screen.findByText(/Oturum sonlandı/i)).toBeTruthy()
+    // The session is dead; a read taken under it must not survive for the next actor.
+    await waitFor(() => {
+      expect(queryClient.getQueryData(['cari', 'counterparties'])).toBeUndefined()
+    })
+  })
 })
 
 describe('SHELL-PILOT-01 P1-1: actor change clears the old context', () => {
@@ -177,6 +222,40 @@ describe('SHELL-PILOT-01 P1-1: actor change clears the old context', () => {
     expect(await screen.findByText('Kullanıcı B')).toBeTruthy()
     expect(await screen.findByText('Ortak kabuk hazır')).toBeTruthy()
     expect((screen.getByRole('combobox') as HTMLSelectElement).value).toBe(A_ID)
+  })
+
+  it('Codex #139 P1-1: no render pairs the new actor with the old context unfenced', async () => {
+    let currentUser = USER_A
+    installFetch({ identity: () => json(identity(currentUser)) })
+    const log: RenderFrame[] = []
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    })
+    render(
+      <ShellProvider queryClient={queryClient}>
+        <ActorProbe log={log} />
+      </ShellProvider>,
+    )
+    await waitFor(() => expect(log.some((f) => f.ctxActor === USER_A)).toBe(true))
+
+    currentUser = USER_B
+    await queryClient.refetchQueries({ queryKey: ['shell', 'identity'] })
+    await waitFor(() =>
+      expect(log.some((f) => f.actor === USER_B && f.ctxActor === USER_B)).toBe(true),
+    )
+
+    // The dangerous frame must actually have happened — otherwise this test proves
+    // nothing and would stay green even with the gate deleted.
+    expect(log.some((f) => f.actor !== null && f.ctxActor !== null && f.actor !== f.ctxActor)).toBe(
+      true,
+    )
+
+    // ...and every such frame must be flagged, so the shell can fail closed inside it
+    // rather than one paint later, when the reset effect finally runs.
+    const unfenced = log.filter(
+      (f) => f.actor !== null && f.ctxActor !== null && f.actor !== f.ctxActor && !f.mismatch,
+    )
+    expect(unfenced).toEqual([])
   })
 })
 

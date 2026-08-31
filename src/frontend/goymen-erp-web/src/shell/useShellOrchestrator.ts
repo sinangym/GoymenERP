@@ -28,7 +28,7 @@ import {
 } from './api'
 import { classifyOutcome, type RemoteViewState, type ViewOutcome } from './uiState'
 import { useShellDispatch, useShellState } from './shellContext'
-import { needsBootstrap, type CompanyContext } from './shellState'
+import { contextActorMismatch, needsBootstrap, type CompanyContext } from './shellState'
 
 const COMPANY_PREFERENCE_KEY = 'goymen-company-id'
 
@@ -100,6 +100,12 @@ export interface ShellOrchestration {
   readonly switchFailure: boolean
   /** A 401 was seen — the session is dead. Terminal until re-login (no login flow yet). */
   readonly sessionInvalid: boolean
+  /**
+   * The bound context belongs to another actor than the authenticated one. Computed
+   * during render (Codex #139 P1-1) so the caller can fail closed in the SAME frame
+   * the new identity arrives, instead of one paint later.
+   */
+  readonly actorMismatch: boolean
   readonly retry: () => void
 }
 
@@ -159,6 +165,7 @@ export function useShellOrchestrator(): ShellOrchestration {
   // Codex #139 P1-1: keyed on sessionEpoch, so a new actor after SESSION_RESET
   // bootstraps even though committedContextRevision stays monotonic.
   const neverBootstrapped = needsBootstrap(state)
+  const sessionEpoch = state.sessionEpoch
 
   useEffect(() => {
     if (sessionInvalid || !neverBootstrapped || identityId === null || !directoryReady) return
@@ -175,6 +182,9 @@ export function useShellOrchestrator(): ShellOrchestration {
         if (resolution.kind === 'session-invalid') {
           setBootstrapFailure(false)
           setSessionInvalid(true)
+          // Codex #139 P1-3: the session is dead, so every cached read taken under it
+          // is dead too — including business caches this hook never named.
+          queryClient.clear()
           return
         }
         if (resolution.kind !== 'ready') {
@@ -189,14 +199,25 @@ export function useShellOrchestrator(): ShellOrchestration {
           companyId: company.id,
           capabilityGeneration: resolution.generation,
         }
-        dispatch({ type: 'SESSION_READY', context })
+        // Fenced to the epoch this request was STARTED under; the reducer drops it
+        // if a SESSION_RESET landed in between (Codex #139 P1-2).
+        dispatch({ type: 'SESSION_READY', forSessionEpoch: sessionEpoch, context })
       })
       .catch(() => {
         if (controller.signal.aborted) return
         setBootstrapFailure(true)
       })
     return () => controller.abort()
-  }, [sessionInvalid, neverBootstrapped, identityId, directoryReady, directoryQuery.data, dispatch])
+  }, [
+    sessionInvalid,
+    neverBootstrapped,
+    identityId,
+    directoryReady,
+    directoryQuery.data,
+    sessionEpoch,
+    dispatch,
+    queryClient,
+  ])
 
   // --- switch ------------------------------------------------------------
   const switchCompanyId =
@@ -220,6 +241,10 @@ export function useShellOrchestrator(): ShellOrchestration {
           setSwitchFailure(false)
           setSessionInvalid(true)
           dispatch({ type: 'SESSION_RESET' })
+          // Codex #139 P1-3: SESSION_RESET drops the shell context but left every
+          // company-scoped business query sitting in the cache, ready to be served
+          // to whoever authenticates next in this tab.
+          queryClient.clear()
           return
         }
         if (resolution.kind !== 'ready') {
@@ -243,7 +268,7 @@ export function useShellOrchestrator(): ShellOrchestration {
         fail()
       })
     return () => controller.abort()
-  }, [switchCompanyId, switchScopeMode, attemptGeneration, identityId, dispatch])
+  }, [switchCompanyId, switchScopeMode, attemptGeneration, identityId, dispatch, queryClient])
 
   /**
    * The company preference mirrors the COMMITTED context, never an attempted target.
@@ -275,6 +300,7 @@ export function useShellOrchestrator(): ShellOrchestration {
     bootstrapFailure: bootstrapFailure && state.phase === 'no-active-company',
     switchFailure: switchFailure && state.phase === 'idle',
     sessionInvalid,
+    actorMismatch: contextActorMismatch(state, identityId),
     retry,
   }
 }

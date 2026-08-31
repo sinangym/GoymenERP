@@ -27,12 +27,21 @@ export function AppShell() {
     bootstrapFailure,
     switchFailure,
     sessionInvalid,
+    actorMismatch,
     retry,
   } = useShellOrchestrator()
 
   // 401 anywhere — session is dead. Terminal (no login flow yet).
   if (sessionInvalid || identityState.kind === 'unauthenticated') {
     return <StateBlock state={{ kind: 'unauthenticated' }} subject="oturum" />
+  }
+
+  // Codex #139 P1-1: the authenticated actor no longer matches the bound context.
+  // This is a SYNCHRONOUS gate on purpose — the reset runs in an effect, which is one
+  // paint too late, and that paint would have shown the new user the previous user's
+  // company, nav and capabilities. Nothing context-bound may render below this line.
+  if (actorMismatch) {
+    return <StateBlock state={{ kind: 'initial-loading' }} subject="oturum" />
   }
 
   // Directory / identity problems block the whole shell — fail closed.

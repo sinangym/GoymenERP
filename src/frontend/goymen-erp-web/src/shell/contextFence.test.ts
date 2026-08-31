@@ -23,6 +23,7 @@ describe('FenceView bound to the single authoritative generation (reducer)', () 
   it('a response captured before a reducer-driven switch is stale after it', () => {
     let state = run(initialShellState, {
       type: 'SESSION_READY',
+      forSessionEpoch: 0,
       context: fixtureContext('company-a'),
     })
     const view = createFenceView(() => state.requestFenceGeneration)
@@ -35,7 +36,7 @@ describe('FenceView bound to the single authoritative generation (reducer)', () 
   })
 
   it('rapid A→B→A with out-of-order responses: only the last attempt commits', () => {
-    let state = run(initialShellState, { type: 'SESSION_READY', context: fixtureContext('company-a') })
+    let state = run(initialShellState, { type: 'SESSION_READY', forSessionEpoch: 0, context: fixtureContext('company-a') })
     const view = createFenceView(() => state.requestFenceGeneration)
 
     // → B

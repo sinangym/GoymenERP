@@ -79,7 +79,13 @@ export interface ShellState {
 }
 
 export type ShellEvent =
-  | { type: 'SESSION_READY'; context: CompanyContext }
+  /**
+   * `forSessionEpoch` is the fence. Codex #139 P1-2: SESSION_READY was the only commit
+   * with no attempt identity — a capability response that resolved after a
+   * SESSION_RESET could commit the OLD actor's context into the NEW session.
+   * REAUTH_OK/REAUTH_FAIL already carry `forGeneration`; this closes the last hole.
+   */
+  | { type: 'SESSION_READY'; forSessionEpoch: number; context: CompanyContext }
   | { type: 'REQUEST_SWITCH'; target: SwitchTarget }
   | { type: 'CONFIRM_SWITCH_DISCARD' }
   | { type: 'CONFIRM_SWITCH_STAY' }
@@ -134,6 +140,9 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
     case 'SESSION_READY': {
       // Login only. Never an unconditional commit from an arbitrary phase (Codex #133 P1-1).
       if (state.phase !== 'no-active-company') return state
+      // ...and only for THIS session. A response in flight across a SESSION_RESET is
+      // stale by definition: it was authorized for an actor who is no longer here.
+      if (event.forSessionEpoch !== state.sessionEpoch) return state
       return {
         ...state,
         phase: 'idle',
@@ -289,6 +298,27 @@ export function contextKey(state: ShellState): ContextKey | null {
 /** Canonical, collision-free string form of a ContextKey (JSON of a string array). */
 export function contextKeyString(key: ContextKey): string {
   return JSON.stringify(key)
+}
+
+/**
+ * True when the bound context belongs to a DIFFERENT actor than the one the server
+ * currently authenticates.
+ *
+ * Codex #139 P1-1: the actor change was only noticed in a passive `useEffect`, so
+ * React could commit one paint where the new user's name sat above the previous
+ * user's company, nav and capabilities. An effect is a repair, not a fence. This is
+ * evaluated DURING render so the shell fails closed in that same frame; the effect
+ * that dispatches SESSION_RESET then cleans up behind it.
+ *
+ * `verifiedFormerContext` is included because REAUTH_FAIL restores from it.
+ */
+export function contextActorMismatch(
+  state: ShellState,
+  authenticatedUserId: string | null,
+): boolean {
+  if (authenticatedUserId === null) return false // identity unresolved — other gates own that
+  const bound = state.activeContext ?? state.verifiedFormerContext
+  return bound !== null && bound.userId !== authenticatedUserId
 }
 
 /** True when capability-gated feature mounts must be closed (fail-closed). */
