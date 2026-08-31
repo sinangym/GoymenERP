@@ -1059,9 +1059,13 @@ public sealed class SqlServerFactAttribute : FactAttribute
 internal sealed class SqlServerRelationalApiFactory : WebApplicationFactory<Program>
 {
     private readonly string _databaseConnectionString;
+    private readonly Action<IServiceCollection>? _configureServices;
 
-    public SqlServerRelationalApiFactory(string baseConnectionString)
+    public SqlServerRelationalApiFactory(
+        string baseConnectionString,
+        Action<IServiceCollection>? configureServices = null)
     {
+        _configureServices = configureServices;
         DatabaseName = $"goymen_erp_ci_{Guid.NewGuid():N}";
         var builder = new SqlConnectionStringBuilder(baseConnectionString)
         {
@@ -1094,8 +1098,16 @@ internal sealed class SqlServerRelationalApiFactory : WebApplicationFactory<Prog
                 ["BootstrapIdentity:Users:3:DisplayName"] = "Grup SQL Test Yöneticisi",
                 ["BootstrapIdentity:Users:4:UserId"] = TestUsers.SiteAuditReader,
                 ["BootstrapIdentity:Users:4:DisplayName"] = "Dar Kapsam Audit SQL Test Kullanıcısı",
+                ["BootstrapIdentity:Users:5:UserId"] = TestUsers.Unprovisioned,
+                ["BootstrapIdentity:Users:5:DisplayName"] = "ERP Kaydı Olmayan SQL Test Kullanıcısı",
+                ["BootstrapIdentity:Users:6:UserId"] = TestUsers.NoAssignment,
+                ["BootstrapIdentity:Users:6:DisplayName"] = "Atamasız ERP SQL Test Kullanıcısı",
             });
         });
+        if (_configureServices is not null)
+        {
+            builder.ConfigureServices(_configureServices);
+        }
     }
 
     public HttpClient CreateClientFor(string userId, Guid selectedCompanyId)
