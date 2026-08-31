@@ -129,10 +129,13 @@ export async function fetchIdentity(
   let result: RawResult
   try {
     result = await rawRequest('/identity/me', {}, signal)
-  } catch (error) {
+  } catch {
     if (signal?.aborted) return { type: 'fence-stale' }
     if (!navigator.onLine) return { type: 'offline' }
-    throw error
+    // Online, but nothing came back. Rethrowing made TanStack leave `data` undefined,
+    // which the caller then read as a MALFORMED RESPONSE — blaming the server's body
+    // for a request that never produced one. Found running against the real API.
+    return { type: 'network-error' }
   }
   if (!result.isOk200) return { type: 'http', status: result.status }
   if (!isIdentitySummary(result.body)) return { type: 'malformed' }
@@ -146,10 +149,13 @@ export async function fetchCompanyDirectory(
   let result: RawResult
   try {
     result = await rawRequest('/organization/companies', {}, signal)
-  } catch (error) {
+  } catch {
     if (signal?.aborted) return { type: 'fence-stale' }
     if (!navigator.onLine) return { type: 'offline' }
-    throw error
+    // Online, but nothing came back. Rethrowing made TanStack leave `data` undefined,
+    // which the caller then read as a MALFORMED RESPONSE — blaming the server's body
+    // for a request that never produced one. Found running against the real API.
+    return { type: 'network-error' }
   }
   if (!result.isOk200) return { type: 'http', status: result.status }
   if (!isCompanySummaryArray(result.body)) return { type: 'malformed' }
@@ -164,10 +170,13 @@ export async function fetchShellCapabilities(
   let result: RawResult
   try {
     result = await rawRequest('/shell/capabilities', { 'X-Company-Id': companyId }, signal)
-  } catch (error) {
+  } catch {
     if (signal?.aborted) return { type: 'fence-stale' }
     if (!navigator.onLine) return { type: 'offline' }
-    throw error
+    // Online, but nothing came back. Rethrowing made TanStack leave `data` undefined,
+    // which the caller then read as a MALFORMED RESPONSE — blaming the server's body
+    // for a request that never produced one. Found running against the real API.
+    return { type: 'network-error' }
   }
   if (!result.isOk200) return { type: 'http', status: result.status }
   if (!isCapabilitySnapshot(result.body)) return { type: 'malformed' }
