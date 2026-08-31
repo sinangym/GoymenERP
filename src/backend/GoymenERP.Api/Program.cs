@@ -79,7 +79,11 @@ builder.Services.AddIdentityModule(builder.Configuration);
 builder.Services.AddCounterpartyModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
-        services.GetRequiredService<AuditSaveChangesInterceptor>()));
+        services.GetRequiredService<AuditSaveChangesInterceptor>()),
+    allowEphemeralCursorKey:
+        builder.Environment.IsDevelopment()
+        || builder.Environment.IsEnvironment("Testing")
+        || isOpenApiDocumentGeneration);
 builder.Services.AddErpAuthentication(builder.Configuration, builder.Environment);
 
 var allowedOrigins = builder.Configuration

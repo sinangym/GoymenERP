@@ -7,6 +7,7 @@ using GoymenERP.Modules.Identity.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
 namespace GoymenERP.Modules.Identity.Infrastructure;
@@ -40,6 +41,8 @@ public static class IdentityModuleExtensions
                 sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", "identity")));
         services.AddScoped<IExternalIdentityResolver, ExternalIdentityResolver>();
         services.AddScoped<IErpAuthorizationService, ErpAuthorizationService>();
+        services.TryAddSingleton<IAuthorizationSnapshotReadObserver,
+            NullAuthorizationSnapshotReadObserver>();
         services.AddScoped<IIdentityProfileService, IdentityProfileService>();
         services.AddScoped<ISystemRolePermissionReconciler, SystemRolePermissionReconciler>();
         services.AddScoped<IdentityDataSeeder>();

@@ -3,6 +3,7 @@ using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Modules.Counterparty.Infrastructure;
 
@@ -11,7 +12,8 @@ public static class CounterpartyModuleExtensions
     public static IServiceCollection AddCounterpartyModule(
         this IServiceCollection services,
         IConfiguration configuration,
-        Action<IServiceProvider, DbContextOptionsBuilder>? configureDbContext = null)
+        Action<IServiceProvider, DbContextOptionsBuilder>? configureDbContext = null,
+        bool allowEphemeralCursorKey = false)
     {
         var provider = configuration["DB_PROVIDER"] ?? "SqlServer";
         if (!string.Equals(provider, "SqlServer", StringComparison.OrdinalIgnoreCase))
@@ -38,6 +40,12 @@ public static class CounterpartyModuleExtensions
             configureDbContext?.Invoke(serviceProvider, options);
         });
         services.AddScoped<ICounterpartyReadService, CounterpartyReadService>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<ICounterpartyReadSqlObserver, NullCounterpartyReadSqlObserver>();
+        services.AddSingleton(new CounterpartyCursorRuntimeOptions(
+            allowEphemeralCursorKey,
+            configuration["Counterparty:CursorSigningKey"]));
+        services.AddSingleton<ICounterpartyCursorCodec, CounterpartyCursorCodec>();
         services.AddScoped<ICounterpartyCommandService, CounterpartyCommandService>();
         services.AddScoped<ICounterpartyCompanyAccountLinkService, CounterpartyCompanyAccountLinkService>();
 

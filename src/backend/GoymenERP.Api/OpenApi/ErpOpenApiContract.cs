@@ -168,6 +168,8 @@ public static class ErpOpenApiContract
 
                 if (context.JsonTypeInfo.Type == typeof(CompanyPartyAccountView)
                     || context.JsonTypeInfo.Type == typeof(PartyCoreView)
+                    || context.JsonTypeInfo.Type == typeof(CounterpartyListAccount)
+                    || context.JsonTypeInfo.Type == typeof(CounterpartyListItem)
                     || context.JsonTypeInfo.Type == typeof(LocationSummary))
                 {
                     SetIntegerProperty(schema, "version", nullable: false);
@@ -470,6 +472,14 @@ public static class ErpOpenApiContract
                 canonicalMaximumLength: 128);
         }
 
+        if (string.Equals(
+                operation.OperationId,
+                "GetCounterpartiesV1",
+                StringComparison.Ordinal))
+        {
+            AddCounterpartyReadPageParameters(operation);
+        }
+
         if (string.Equals(operation.OperationId, "GetAuditEventsV1", StringComparison.Ordinal))
         {
             SetNormalizedIntegerParameter(
@@ -671,6 +681,130 @@ public static class ErpOpenApiContract
             Required = required,
             Description = description,
             Schema = schema,
+        });
+    }
+
+    private static void AddCounterpartyReadPageParameters(OpenApiOperation operation)
+    {
+        AddQueryParameter(
+            operation,
+            "q",
+            new OpenApiSchema
+            {
+                Type = JsonSchemaType.String,
+                MinLength = 0,
+                MaxLength = 200,
+            },
+            "Code, legalName or tradeName contains search; Unicode trim + NFC, Turkish CI/AS.");
+        AddQueryParameter(
+            operation,
+            "kind",
+            StringChoiceSchema("^(LegalEntity|NaturalPerson)$"),
+            "Optional Party kind.");
+        AddQueryParameter(
+            operation,
+            "role",
+            new OpenApiSchema
+            {
+                Type = JsonSchemaType.Array,
+                Items = StringChoiceSchema("^(Customer|Supplier|Tolling|Service)$"),
+            },
+            "Repeatable Party role filter; one visible account must satisfy roleMatch.",
+            explode: true);
+        AddQueryParameter(
+            operation,
+            "roleMatch",
+            StringChoiceSchema("^(any|all)$"),
+            "Role matching mode; default any.");
+        AddQueryParameter(
+            operation,
+            "partyState",
+            StringChoiceSchema("^(active|inactive|all)$"),
+            "Global Party state; default active.");
+        AddQueryParameter(
+            operation,
+            "accountState",
+            StringChoiceSchema("^(active|inactive|all)$"),
+            "Visible company-account state; default all.");
+        AddQueryParameter(
+            operation,
+            "sort",
+            StringChoiceSchema("^(code|legalName|updatedAt)$"),
+            "Keyset sort; default code.");
+        AddQueryParameter(
+            operation,
+            "direction",
+            StringChoiceSchema("^(asc|desc)$"),
+            "Sort direction; default asc.");
+        AddQueryParameter(
+            operation,
+            "pageSize",
+            new OpenApiSchema
+            {
+                Type = JsonSchemaType.Integer,
+                Minimum = "1",
+                Maximum = "200",
+            },
+            "Page size; default 50.");
+        AddQueryParameter(
+            operation,
+            "cursor",
+            new OpenApiSchema
+            {
+                Type = JsonSchemaType.String,
+                MinLength = 1,
+            },
+            "Opaque authenticated cursor bound to actor, session, scope and normalized query.");
+        AddQueryParameter(
+            operation,
+            "includeCount",
+            new OpenApiSchema { Type = JsonSchemaType.Boolean },
+            "Return exact filtered authorized distinct Party count; default false.");
+
+        var querySchema = GetConcreteParameterSchema(
+            operation,
+            ParameterLocation.Query,
+            "q");
+        SetSchemaExtension(
+            querySchema,
+            CanonicalizationExtensionName,
+            JsonValue.Create("unicode-trim+nfc")!);
+    }
+
+    private static OpenApiSchema StringChoiceSchema(string pattern)
+    {
+        return new OpenApiSchema
+        {
+            Type = JsonSchemaType.String,
+            Pattern = pattern,
+        };
+    }
+
+    private static void AddQueryParameter(
+        OpenApiOperation operation,
+        string name,
+        OpenApiSchema schema,
+        string description,
+        bool explode = false)
+    {
+        operation.Parameters ??= [];
+        if (operation.Parameters.Any(parameter =>
+                parameter.In == ParameterLocation.Query
+                && string.Equals(parameter.Name, name, StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException(
+                $"OpenAPI query parameter '{name}' is already declared.");
+        }
+
+        operation.Parameters.Add(new OpenApiParameter
+        {
+            Name = name,
+            In = ParameterLocation.Query,
+            Required = false,
+            Description = description,
+            Schema = schema,
+            Style = ParameterStyle.Form,
+            Explode = explode,
         });
     }
 
