@@ -22,6 +22,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource
+      Include="..\e2e-fixtures\C01-E2E-GOLDEN-V1.json"
+      LogicalName="GoymenERP.Api.IntegrationTests.Fixtures.C01-E2E-GOLDEN-V1.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\backend\GoymenERP.Api\GoymenERP.Api.csproj" />
     <ProjectReference Include="..\..\src\backend\Modules\Audit\GoymenERP.Modules.Audit.Infrastructure\GoymenERP.Modules.Audit.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\backend\Modules\Counterparty\GoymenERP.Modules.Counterparty.Infrastructure\GoymenERP.Modules.Counterparty.Infrastructure.csproj" />
