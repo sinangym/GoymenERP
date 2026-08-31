@@ -580,6 +580,31 @@ const res = await fetch(getGetLivenessV1Url(),
       /fetch lexical binding drifted/u,
     );
 
+    const fetchShadowedSource = rawSource.replace(
+      livenessFetch,
+      `const fetch = globalThis.fetch;
+${livenessFetch}`,
+    );
+    assert.notEqual(fetchShadowedSource, rawSource);
+    assert.throws(
+      () => applyProtectedHeaderGuard(fetchShadowedSource, canonical),
+      /fetch lexical binding drifted/u,
+    );
+
+    const trailingRequestInitSpreadSource = rawSource.replace(
+      livenessFetch,
+      livenessFetch.replace(
+        "headers: { ...headers, ...getHeaders(options?.headers) }",
+        "headers: { ...headers, ...getHeaders(options?.headers) },\n    ...({ headers: { 'X-Company-Id': 'override' } })",
+      ),
+    );
+    assert.notEqual(trailingRequestInitSpreadSource, rawSource);
+    assert.throws(
+      () =>
+        applyProtectedHeaderGuard(trailingRequestInitSpreadSource, canonical),
+      /fetch contract initializer drifted/u,
+    );
+
     const appendedHeaderSource = rawSource.replace(
       "headers: { ...headers, ...getHeaders(options?.headers) }",
       "headers: { ...headers, ...getHeaders(options?.headers), ...({ 'X-Correlation-Id': 'override' }) }",

@@ -763,6 +763,46 @@ export const applyProtectedHeaderGuard = (source, document) => {
     );
   }
 
+  const bindingNameContains = (name, expected) => {
+    if (ts.isIdentifier(name)) return name.text === expected;
+    if (ts.isObjectBindingPattern(name) || ts.isArrayBindingPattern(name)) {
+      return name.elements.some(
+        (element) =>
+          ts.isBindingElement(element) &&
+          bindingNameContains(element.name, expected),
+      );
+    }
+    return false;
+  };
+  const fetchBindings = [];
+  const collectFetchBindings = (node) => {
+    let bindingName;
+    if (
+      ts.isVariableDeclaration(node) ||
+      ts.isParameter(node) ||
+      ts.isFunctionDeclaration(node) ||
+      ts.isFunctionExpression(node) ||
+      ts.isClassDeclaration(node) ||
+      ts.isClassExpression(node) ||
+      ts.isImportClause(node) ||
+      ts.isImportSpecifier(node) ||
+      ts.isNamespaceImport(node) ||
+      ts.isImportEqualsDeclaration(node)
+    ) {
+      bindingName = node.name;
+    }
+    if (bindingName && bindingNameContains(bindingName, "fetch")) {
+      fetchBindings.push(node);
+    }
+    ts.forEachChild(node, collectFetchBindings);
+  };
+  collectFetchBindings(sourceFile);
+  if (fetchBindings.length !== 0) {
+    throw new PocError(
+      "Generated fetch lexical binding drifted from the reviewed shape.",
+    );
+  }
+
   const protectedNames = JSON.stringify(
     protectedRequestOptionHeaderNames(document),
   );
@@ -943,7 +983,17 @@ export const applyProtectedHeaderGuard = (source, document) => {
           ts.isIdentifier(property.expression) &&
           property.expression.text === "options",
       );
+      const reviewedFetchProperties = new Set([
+        ...directHeaderInitializers,
+        ...directMethodInitializers,
+        ...directBodyInitializers,
+        ...directOptionsSpreads,
+      ]);
       if (
+        reviewedFetchProperties.size !== fetchInitializer.properties.length ||
+        fetchInitializer.properties.some(
+          (property) => !reviewedFetchProperties.has(property),
+        ) ||
         headerObjectInitializers.length !== 1 ||
         directHeaderInitializers.length !== 1 ||
         headerObjectInitializers[0] !== directHeaderInitializers[0] ||
