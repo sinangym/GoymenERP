@@ -233,6 +233,7 @@ public sealed class C01E2eGoldenFixtureSqlServerRelationalAcceptanceTests
             ReadCodes(firstPage));
         Assert.True(firstPage.RootElement.GetProperty("hasMore").GetBoolean());
         Assert.Equal(JsonValueKind.Null, firstPage.RootElement.GetProperty("totalCount").ValueKind);
+        Assert.Equal(JsonValueKind.Null, firstPage.RootElement.GetProperty("countScope").ValueKind);
         var cursor = firstPage.RootElement.GetProperty("nextCursor").GetString();
         Assert.False(string.IsNullOrWhiteSpace(cursor));
 
@@ -242,6 +243,8 @@ public sealed class C01E2eGoldenFixtureSqlServerRelationalAcceptanceTests
             + Uri.EscapeDataString(cursor!));
         Assert.Equal(["CAR-000051", "CAR-000052"], ReadCodes(secondPage));
         Assert.False(secondPage.RootElement.GetProperty("hasMore").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, secondPage.RootElement.GetProperty("totalCount").ValueKind);
+        Assert.Equal(JsonValueKind.Null, secondPage.RootElement.GetProperty("countScope").ValueKind);
 
         using var counted = await GetPageAsync(
             client,
@@ -263,12 +266,16 @@ public sealed class C01E2eGoldenFixtureSqlServerRelationalAcceptanceTests
         using var all = await GetPageAsync(
             client,
             "/api/v1/counterparties?partyState=all&pageSize=100");
+        var allItems = all.RootElement.GetProperty("items").EnumerateArray().ToArray();
         Assert.DoesNotContain("CAR-000054", ReadCodes(all));
         Assert.All(
-            all.RootElement.GetProperty("items")
-                .EnumerateArray()
+            allItems
                 .SelectMany(item => item.GetProperty("companyAccounts").EnumerateArray()),
             account => Assert.Equal(GdcCompanyId, account.GetProperty("companyId").GetGuid()));
+        AssertItemProjection(allItems, "CAR-000001", true, GdcCompanyId, 3, true);
+        AssertItemProjection(allItems, "CAR-000002", true, GdcCompanyId, 1, false);
+        AssertItemProjection(allItems, "CAR-000003", true, GdcCompanyId, 8, true);
+        AssertItemProjection(allItems, "CAR-000053", false, GdcCompanyId, 4, true);
     }
 
     private static async Task AssertGspGoldenQueriesAsync(HttpClient client)
@@ -286,12 +293,9 @@ public sealed class C01E2eGoldenFixtureSqlServerRelationalAcceptanceTests
                 .EnumerateArray()
                 .SelectMany(item => item.GetProperty("companyAccounts").EnumerateArray()),
             account => Assert.Equal(GspCompanyId, account.GetProperty("companyId").GetGuid()));
-        Assert.Equal(
-            2,
-            page.RootElement.GetProperty("items")[0]
-                .GetProperty("companyAccounts")[0]
-                .GetProperty("roles")
-                .GetInt32());
+        var items = page.RootElement.GetProperty("items").EnumerateArray().ToArray();
+        AssertItemProjection(items, "CAR-000003", true, GspCompanyId, 2, true);
+        AssertItemProjection(items, "CAR-000054", true, GspCompanyId, 2, true);
     }
 
     private static async Task AssertUnauthorizedCompanyIsFailClosedAsync(
@@ -345,6 +349,23 @@ public sealed class C01E2eGoldenFixtureSqlServerRelationalAcceptanceTests
     {
         using var page = await GetPageAsync(client, "/api/v1/counterparties" + query);
         Assert.Equal(expected, ReadCodes(page));
+    }
+
+    private static void AssertItemProjection(
+        IEnumerable<JsonElement> items,
+        string code,
+        bool partyIsActive,
+        Guid companyId,
+        int roles,
+        bool accountIsActive)
+    {
+        var item = items.Single(candidate =>
+            candidate.GetProperty("code").GetString() == code);
+        Assert.Equal(partyIsActive, item.GetProperty("isActive").GetBoolean());
+        var account = Assert.Single(item.GetProperty("companyAccounts").EnumerateArray());
+        Assert.Equal(companyId, account.GetProperty("companyId").GetGuid());
+        Assert.Equal(roles, account.GetProperty("roles").GetInt32());
+        Assert.Equal(accountIsActive, account.GetProperty("isActive").GetBoolean());
     }
 
     private static async Task<JsonDocument> GetPageAsync(HttpClient client, string path)
