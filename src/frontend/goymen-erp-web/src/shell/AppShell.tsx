@@ -102,6 +102,10 @@ export function AppShell() {
                 }
               }}
             >
+              {/* ERP-000K §13.7: with no bound context the picker must not keep showing
+                  a previous or in-flight target. An explicit empty option makes
+                  value="" match a real option instead of leaving a stale selection. */}
+              {state.activeContext === null ? <option value="">—</option> : null}
               {directory.map((company) => (
                 <option key={company.id} value={company.id}>
                   {company.legalName}

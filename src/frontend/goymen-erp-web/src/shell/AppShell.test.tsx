@@ -10,6 +10,7 @@ import { SHELL_CAPABILITY_CONTRACT_VERSION } from './api'
 const A_ID = 'aaaaaaaa-0000-0000-0000-000000000001'
 const B_ID = 'bbbbbbbb-0000-0000-0000-000000000002'
 const USER_A = '11111111-1111-1111-1111-111111111111'
+const USER_B = '22222222-2222-2222-2222-222222222222'
 
 function identity(userId = USER_A) {
   return {
@@ -150,7 +151,7 @@ describe('SHELL-PILOT-01 P1-1: actor change clears the old context', () => {
     const clearSpy = vi.spyOn(queryClient, 'clear')
 
     // The authenticated actor changes under the same SPA session; refetch identity.
-    currentUser = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+    currentUser = USER_B
     await queryClient.refetchQueries({ queryKey: ['shell', 'identity'] })
 
     await waitFor(() => {
@@ -159,6 +160,23 @@ describe('SHELL-PILOT-01 P1-1: actor change clears the old context', () => {
     })
     expect(clearSpy).toHaveBeenCalled()
     expect(fetchMock).toHaveBeenCalled()
+  })
+
+  it('Codex #139 P1-1: actor B actually gets a working shell (not a permanent dead end)', async () => {
+    let currentUser = USER_A
+    installFetch({ identity: () => json(identity(currentUser)) })
+    const queryClient = renderShell()
+    await screen.findByText('Ortak kabuk hazır')
+    expect(screen.getByText('Kullanıcı A')).toBeTruthy()
+
+    currentUser = USER_B
+    await queryClient.refetchQueries({ queryKey: ['shell', 'identity'] })
+
+    // The old bug: SESSION_RESET kept committedContextRevision, so bootstrap never
+    // re-ran and actor B was stuck with no company forever.
+    expect(await screen.findByText('Kullanıcı B')).toBeTruthy()
+    expect(await screen.findByText('Ortak kabuk hazır')).toBeTruthy()
+    expect((screen.getByRole('combobox') as HTMLSelectElement).value).toBe(A_ID)
   })
 })
 
@@ -206,5 +224,101 @@ describe('SHELL-PILOT-01 company switch', () => {
     // former company A is still the committed context
     expect(select.value).toBe(A_ID)
     expect(screen.getByText('Göymen A')).toBeTruthy()
+  })
+
+  it.each([
+    ['403', () => json({ title: 'forbidden' }, 403)],
+    ['404', () => json({ title: 'not found' }, 404)],
+    ['malformed body', () => json({ contractVersion: 'nope', generation: '', capabilities: [] })],
+    ['202 with a valid body (P1-2: only 200 is success)', () => json(capability('gen-b-1'), 202)],
+  ] as const)('a failed switch (%s) rolls back to the former company', async (_label, responder) => {
+    installFetch({
+      capabilities: (companyId) => (companyId === B_ID ? responder() : json(capability('gen-a-1'))),
+    })
+    renderShell()
+    await screen.findByText('Ortak kabuk hazır')
+    const select = screen.getByRole('combobox') as HTMLSelectElement
+
+    await userEvent.selectOptions(select, B_ID)
+    await waitFor(() => expect(select.value).toBe(A_ID))
+    expect(screen.getByText('Göymen A')).toBeTruthy()
+    expect(screen.getByText('Ortak kabuk hazır')).toBeTruthy()
+  })
+
+  it('the company picker is disabled while a switch is in flight (no picker-driven race)', async () => {
+    let releaseB: () => void = () => {}
+    const gateB = new Promise<void>((resolve) => {
+      releaseB = resolve
+    })
+    installFetch({
+      capabilities: async (companyId) => {
+        if (companyId === B_ID) {
+          await gateB
+          return json(capability('gen-b-1'))
+        }
+        return json(capability('gen-a-1'))
+      },
+    })
+    renderShell()
+    await screen.findByText('Ortak kabuk hazır')
+    const select = screen.getByRole('combobox') as HTMLSelectElement
+
+    await userEvent.selectOptions(select, B_ID)
+    // While 'switching' the picker must not accept another target — this is the
+    // UI-level half of the fence; the reducer's forGeneration check is the other half.
+    await waitFor(() => expect(select.disabled).toBe(true))
+
+    releaseB()
+    await waitFor(() => expect(select.disabled).toBe(false))
+    expect(select.value).toBe(B_ID)
+  })
+
+  it('a superseded in-flight capability response cannot paint after the fence moved', async () => {
+    let releaseB: () => void = () => {}
+    const gateB = new Promise<void>((resolve) => {
+      releaseB = resolve
+    })
+    let currentUser = USER_A
+    installFetch({
+      identity: () => json(identity(currentUser)),
+      capabilities: async (companyId) => {
+        if (companyId === B_ID) {
+          // B's reauth stalls; a session reset will supersede it while in flight.
+          await gateB
+          return json(capability('gen-b-late'))
+        }
+        return json(capability('gen-a-1'))
+      },
+    })
+    const queryClient = renderShell()
+    await screen.findByText('Ortak kabuk hazır')
+    const select = screen.getByRole('combobox') as HTMLSelectElement
+
+    await userEvent.selectOptions(select, B_ID)
+    await waitFor(() => expect(select.disabled).toBe(true))
+
+    // Reachable supersede: the authenticated actor changes while B is still in flight.
+    // SESSION_RESET advances the fence, so B's attempt generation is now stale.
+    currentUser = USER_B
+    await queryClient.refetchQueries({ queryKey: ['shell', 'identity'] })
+    await waitFor(() => expect(screen.getByText('Kullanıcı B')).toBeTruthy())
+
+    // The superseded B response lands now. It must not commit company B for actor B.
+    releaseB()
+    await new Promise((r) => setTimeout(r, 30))
+    expect(screen.getByText('Kullanıcı B')).toBeTruthy()
+    // The rendered active company is the source of truth: actor B bootstrapped to its
+    // own preferred company (A), never the stale in-flight B attempt.
+    expect(await screen.findByText('Göymen A')).toBeTruthy()
+    expect(screen.queryByText('Göymen B')).toBeNull()
+  })
+
+  it('ERP-000K §13.7: with no bound context the picker shows no stale company', async () => {
+    // Capability never resolves -> no committed context -> the picker must not display
+    // a company as if it were active.
+    installFetch({ capabilities: () => json({ title: 'x' }, 503) })
+    renderShell()
+    await screen.findByText(/şirket bağlamı kurulamadı/i)
+    expect(screen.queryByRole('combobox')).toBeNull()
   })
 })

@@ -4,6 +4,7 @@ import {
   contextKey,
   contextKeyString,
   initialShellState,
+  needsBootstrap,
   shellReducer,
   type ShellEvent,
   type ShellState,
@@ -197,6 +198,40 @@ describe('session + capability', () => {
     expect(afterReset.dirtyScopes).toHaveLength(0)
     expect(afterReset.phase).toBe('no-active-company')
     expect(afterReset.requestFenceGeneration).toBe(ready.requestFenceGeneration + 1)
+  })
+
+  it('Codex #139 P1-1: after SESSION_RESET the new session CAN bootstrap again', () => {
+    expect(needsBootstrap(ready)).toBe(false)
+    const afterReset = run(ready, { type: 'SESSION_RESET' })
+    // the cache-namespace revision stays monotonic (never reused) ...
+    expect(afterReset.committedContextRevision).toBe(ready.committedContextRevision)
+    // ... but the session epoch advanced, so bootstrap is required again.
+    expect(afterReset.sessionEpoch).toBe(ready.sessionEpoch + 1)
+    expect(afterReset.bootstrappedSessionEpoch).toBeNull()
+    expect(needsBootstrap(afterReset)).toBe(true)
+  })
+
+  it('Codex #139 P1-1: actor B actually reaches a committed context after the reset', () => {
+    const actorB = run(
+      ready,
+      { type: 'SESSION_RESET' },
+      {
+        type: 'SESSION_READY',
+        context: {
+          userId: 'actor-b',
+          scopeMode: 'single',
+          companyId: 'fixture-company-b',
+          capabilityGeneration: 'gen-b',
+        },
+      },
+    )
+    expect(actorB.phase).toBe('idle')
+    expect(actorB.activeContext?.userId).toBe('actor-b')
+    expect(actorB.activeContext?.companyId).toBe('fixture-company-b')
+    expect(needsBootstrap(actorB)).toBe(false)
+    // namespace never collides with actor A's entries
+    expect(actorB.committedContextRevision).toBe(ready.committedContextRevision + 1)
+    expect(contextKey(actorB)).not.toEqual(contextKey(ready))
   })
 
   it('CAPABILITY_REVOKED fails capability closed and re-fences, keeping company identity', () => {

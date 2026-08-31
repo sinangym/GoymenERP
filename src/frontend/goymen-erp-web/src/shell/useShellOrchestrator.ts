@@ -28,7 +28,7 @@ import {
 } from './api'
 import { classifyOutcome, type RemoteViewState, type ViewOutcome } from './uiState'
 import { useShellDispatch, useShellState } from './shellContext'
-import type { CompanyContext } from './shellState'
+import { needsBootstrap, type CompanyContext } from './shellState'
 
 const COMPANY_PREFERENCE_KEY = 'goymen-company-id'
 
@@ -156,8 +156,9 @@ export function useShellOrchestrator(): ShellOrchestration {
 
   // --- bootstrap -----------------------------------------------------------
   const directoryReady = directoryState.kind === 'ready'
-  const neverBootstrapped =
-    state.phase === 'no-active-company' && state.committedContextRevision === 0
+  // Codex #139 P1-1: keyed on sessionEpoch, so a new actor after SESSION_RESET
+  // bootstraps even though committedContextRevision stays monotonic.
+  const neverBootstrapped = needsBootstrap(state)
 
   useEffect(() => {
     if (sessionInvalid || !neverBootstrapped || identityId === null || !directoryReady) return

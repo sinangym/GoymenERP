@@ -53,7 +53,12 @@ function devHeaders(): Record<string, string> {
 
 interface RawResult {
   readonly status: number
-  readonly ok: boolean
+  /**
+   * EXACT 200 only. Codex #139 P1-2: `Response.ok` is true for the whole 2xx range,
+   * so a 202/206 with a well-formed body would have been accepted as a resolved
+   * context. The accepted contract and OpenAPI define 200 as the only success.
+   */
+  readonly isOk200: boolean
   /** null when the body could not be parsed as JSON. */
   readonly body: unknown
 }
@@ -73,7 +78,7 @@ async function rawRequest(
   } catch {
     body = null
   }
-  return { status: response.status, ok: response.ok, body }
+  return { status: response.status, isOk200: response.status === 200, body }
 }
 
 function isIdentitySummary(value: unknown): value is IdentitySummary {
@@ -129,7 +134,7 @@ export async function fetchIdentity(
     if (!navigator.onLine) return { type: 'offline' }
     throw error
   }
-  if (!result.ok) return { type: 'http', status: result.status }
+  if (!result.isOk200) return { type: 'http', status: result.status }
   if (!isIdentitySummary(result.body)) return { type: 'malformed' }
   return { type: 'ok-single', data: result.body }
 }
@@ -146,7 +151,7 @@ export async function fetchCompanyDirectory(
     if (!navigator.onLine) return { type: 'offline' }
     throw error
   }
-  if (!result.ok) return { type: 'http', status: result.status }
+  if (!result.isOk200) return { type: 'http', status: result.status }
   if (!isCompanySummaryArray(result.body)) return { type: 'malformed' }
   return { type: 'ok', data: result.body, filterActive: false }
 }
@@ -164,7 +169,7 @@ export async function fetchShellCapabilities(
     if (!navigator.onLine) return { type: 'offline' }
     throw error
   }
-  if (!result.ok) return { type: 'http', status: result.status }
+  if (!result.isOk200) return { type: 'http', status: result.status }
   if (!isCapabilitySnapshot(result.body)) return { type: 'malformed' }
   return { type: 'ok-single', data: result.body }
 }

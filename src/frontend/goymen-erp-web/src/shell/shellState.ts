@@ -59,8 +59,21 @@ export interface ShellState {
    * their `forGeneration` equals this exact value.
    */
   readonly requestFenceGeneration: number
-  /** Binding for contextKey / company-scoped cache. Advances only on ATOMIC-COMMIT. */
+  /**
+   * Binding for contextKey / company-scoped cache. Advances only on ATOMIC-COMMIT and
+   * NEVER resets — a monotonic namespace so a cache entry from an earlier session can
+   * never collide with a later one.
+   */
   readonly committedContextRevision: number
+  /**
+   * Identity of the current authenticated session. Advances on SESSION_RESET
+   * (logout / actor change). Codex #139 P1-1: `committedContextRevision` cannot be
+   * used to decide "did we bootstrap yet" because it must stay monotonic across a
+   * reset — that left a new actor permanently un-bootstrapped.
+   */
+  readonly sessionEpoch: number
+  /** The sessionEpoch a context was last committed for; null = this session never bootstrapped. */
+  readonly bootstrappedSessionEpoch: number | null
   /** Open scopes that block a silent switch (dirty form, edit workspace, approval preview). */
   readonly dirtyScopes: readonly string[]
 }
@@ -84,7 +97,20 @@ export const initialShellState: ShellState = {
   verifiedFormerContext: null,
   requestFenceGeneration: 0,
   committedContextRevision: 0,
+  sessionEpoch: 0,
+  bootstrappedSessionEpoch: null,
   dirtyScopes: [],
+}
+
+/**
+ * True while this session still needs an initial company context. Codex #139 P1-1:
+ * this is keyed on `sessionEpoch`, NOT on `committedContextRevision`, so a new actor
+ * after SESSION_RESET bootstraps even though the revision counter keeps climbing.
+ */
+export function needsBootstrap(state: ShellState): boolean {
+  return (
+    state.phase === 'no-active-company' && state.bootstrappedSessionEpoch !== state.sessionEpoch
+  )
 }
 
 /** Begin a transition: fence + attempt id up, snapshot the former context, go neutral. */
@@ -114,6 +140,7 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
         activeContext: event.context,
         pendingTarget: null,
         verifiedFormerContext: null,
+        bootstrappedSessionEpoch: state.sessionEpoch,
         committedContextRevision: state.committedContextRevision + 1,
       }
     }
@@ -205,10 +232,15 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
     }
 
     case 'SESSION_RESET': {
+      // Logout / actor change. Everything context-bound is dropped. The fence and the
+      // cache-namespace revision stay monotonic; `sessionEpoch` advances so the new
+      // session bootstraps (Codex #139 P1-1) while old cache keys can never be reused.
       return {
         ...initialShellState,
         requestFenceGeneration: state.requestFenceGeneration + 1,
         committedContextRevision: state.committedContextRevision,
+        sessionEpoch: state.sessionEpoch + 1,
+        bootstrappedSessionEpoch: null,
       }
     }
 
