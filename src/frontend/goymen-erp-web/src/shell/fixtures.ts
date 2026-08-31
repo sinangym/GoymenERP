@@ -8,6 +8,7 @@ import type { CompanyContext } from './shellState'
 export function fixtureContext(
   companyId: string,
   capabilityGeneration: string | null = 'fixture-cap-gen-1',
+  capabilities: readonly string[] = [],
 ): CompanyContext {
-  return { userId: 'fixture-user', scopeMode: 'single', companyId, capabilityGeneration }
+  return { userId: 'fixture-user', scopeMode: 'single', companyId, capabilityGeneration, capabilities }
 }

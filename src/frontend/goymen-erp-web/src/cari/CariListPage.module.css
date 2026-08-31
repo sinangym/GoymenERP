@@ -1,0 +1,156 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.page h1 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-end;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid #d5dbe6;
+  border-radius: 6px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: #55607a;
+}
+.field input,
+.field select {
+  padding: 6px 10px;
+  border: 1px solid #d5dbe6;
+  border-radius: 4px;
+  font: inherit;
+  color: #1a2233;
+}
+
+.roles {
+  border: 1px solid #d5dbe6;
+  border-radius: 4px;
+  padding: 6px 10px 8px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.roles legend {
+  font-size: 0.8rem;
+  color: #55607a;
+  padding: 0 4px;
+}
+.roles label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.88rem;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border: 1px solid #d5dbe6;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.caption {
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  color: #55607a;
+}
+.table th,
+.table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-top: 1px solid #eef1f6;
+  font-size: 0.9rem;
+  vertical-align: top;
+}
+.table th {
+  background: #f7f9fc;
+  font-weight: 600;
+  color: #35405c;
+}
+.table th button {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.table th button:focus-visible {
+  outline: 2px solid #1f5fd0;
+  outline-offset: 2px;
+}
+.table tr[data-inactive='true'] td {
+  color: #7b8499;
+}
+
+.legalName {
+  display: block;
+}
+.tradeName {
+  display: block;
+  font-size: 0.82rem;
+  color: #7b8499;
+}
+/* Passive cells carry a visible cue as well as their text — colour is never the only
+   signal (ERP-000K §15). */
+td[data-party-state='inactive'],
+td[data-account-state='inactive'] {
+  color: #a3592f;
+  font-weight: 600;
+}
+
+/* Announcement region: read by assistive tech, not a visual banner. */
+.announce {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.more {
+  align-self: flex-start;
+  padding: 8px 16px;
+  border: 1px solid #1f5fd0;
+  border-radius: 4px;
+  background: #fff;
+  color: #1f5fd0;
+  font: inherit;
+  cursor: pointer;
+}
+.more:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+@media (max-width: 767px) {
+  .filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .table {
+    display: block;
+    overflow-x: auto;
+  }
+}

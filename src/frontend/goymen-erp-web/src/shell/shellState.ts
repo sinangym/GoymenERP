@@ -28,6 +28,13 @@ export interface CompanyContext {
    * treats it as an incrementing counter or an authorization proof.
    */
   readonly capabilityGeneration: string | null
+  /**
+   * Capability ids the server allows for this actor in this context. Empty until a
+   * snapshot resolves. The shell NEVER derives a capability from a role name, a route
+   * name or a visible control — this list is the only source (ERP-000K §8.1), and it
+   * is only meaningful while `capabilityGeneration` is non-null.
+   */
+  readonly capabilities: readonly string[]
 }
 
 export interface SwitchTarget {
@@ -236,7 +243,8 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
       return {
         ...state,
         requestFenceGeneration: state.requestFenceGeneration + 1,
-        activeContext: { ...state.activeContext, capabilityGeneration: null },
+        // Revoked: drop the granted list with the generation, so nothing stays mounted.
+        activeContext: { ...state.activeContext, capabilityGeneration: null, capabilities: [] },
       }
     }
 
@@ -324,4 +332,16 @@ export function contextActorMismatch(
 /** True when capability-gated feature mounts must be closed (fail-closed). */
 export function capabilityFailClosed(state: ShellState): boolean {
   return state.phase !== 'idle' || state.activeContext?.capabilityGeneration == null
+}
+
+/**
+ * Whether one server-granted capability is available right now. Fail-closed: no bound
+ * context, an unresolved capability snapshot or a mid-transition phase all answer false.
+ *
+ * This gates what the shell MOUNTS. It is never a substitute for backend authorization —
+ * every request is re-authorized server-side (ERP-000K §10.2).
+ */
+export function hasCapability(state: ShellState, capabilityId: string): boolean {
+  if (capabilityFailClosed(state)) return false
+  return state.activeContext?.capabilities.includes(capabilityId) ?? false
 }

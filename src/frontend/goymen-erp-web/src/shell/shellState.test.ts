@@ -37,7 +37,7 @@ function switchTo(state: ShellState, companyId: string, cap: string | null = 'ge
   return run(switching, {
     type: 'REAUTH_OK',
     forGeneration: switching.requestFenceGeneration,
-    context: { userId: 'fixture-user', scopeMode: 'single', companyId, capabilityGeneration: cap },
+    context: { userId: 'fixture-user', scopeMode: 'single', companyId, capabilityGeneration: cap, capabilities: [] },
   })
 }
 
@@ -113,7 +113,7 @@ describe('two-phase switch — attempt binding (Codex #133 P1-1)', () => {
     const injected = run(switching, {
       type: 'REAUTH_OK',
       forGeneration: switching.requestFenceGeneration,
-      context: { userId: 'user-z', scopeMode: 'single', companyId: 'company-c', capabilityGeneration: 'g' },
+      context: { userId: 'user-z', scopeMode: 'single', companyId: 'company-c', capabilityGeneration: 'g', capabilities: [] },
     })
     expect(injected.phase).toBe('no-active-company')
     expect(injected.activeContext).toBeNull()
@@ -128,7 +128,7 @@ describe('two-phase switch — attempt binding (Codex #133 P1-1)', () => {
     const injected = run(switching, {
       type: 'REAUTH_OK',
       forGeneration: switching.requestFenceGeneration,
-      context: { userId: 'user-z', scopeMode: 'single', companyId: 'fixture-company-b', capabilityGeneration: 'g' },
+      context: { userId: 'user-z', scopeMode: 'single', companyId: 'fixture-company-b', capabilityGeneration: 'g', capabilities: [] },
     })
     expect(injected.phase).toBe('no-active-company')
   })
@@ -243,6 +243,7 @@ describe('session + capability', () => {
       scopeMode: 'single',
       companyId: 'fixture-company-b',
       capabilityGeneration: 'gen-b',
+      capabilities: [],
     })
     expect(actorB.phase).toBe('idle')
     expect(actorB.activeContext?.userId).toBe('actor-b')
@@ -298,10 +299,10 @@ describe('contextKey (INV-NS) — Codex #133 P1-2', () => {
 
   it('does NOT collide on delimiter-ambiguous field values', () => {
     const a = sessionReady(initialShellState, {
-      userId: 'u|single', scopeMode: 'single', companyId: 'c', capabilityGeneration: 'g',
+      userId: 'u|single', scopeMode: 'single', companyId: 'c', capabilityGeneration: 'g', capabilities: [],
     })
     const b = sessionReady(initialShellState, {
-      userId: 'u', scopeMode: 'single', companyId: 'single|c', capabilityGeneration: 'g',
+      userId: 'u', scopeMode: 'single', companyId: 'single|c', capabilityGeneration: 'g', capabilities: [],
     })
     const ka = contextKey(a)
     const kb = contextKey(b)

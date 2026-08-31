@@ -8,12 +8,21 @@
  * (DEC-GOV-007). Company switch is fenced by the reducer + orchestrator.
  */
 
-import { Outlet } from 'react-router'
-import { capabilityFailClosed } from './shellState'
+import { NavLink, Outlet } from 'react-router'
+import { capabilityFailClosed, hasCapability } from './shellState'
 import { useShellDispatch, useShellState } from './shellContext'
 import { useShellOrchestrator } from './useShellOrchestrator'
 import { StateBlock } from './StateBlock'
+import {
+  CAPABILITY,
+  CAPABILITY_NAV_LABEL,
+  CAPABILITY_ROUTE,
+  type CapabilityId,
+} from './capabilities'
 import styles from './AppShell.module.css'
+
+/** Every capability the frontend can actually mount, in nav order. */
+const NAV_CAPABILITIES: readonly CapabilityId[] = [CAPABILITY.cariPartiesList]
 
 export function AppShell() {
   const state = useShellState()
@@ -77,6 +86,13 @@ export function AppShell() {
 
   const switching = state.phase === 'switching' || state.phase === 'confirming-switch'
   const featuresClosed = capabilityFailClosed(state)
+  const navItems = NAV_CAPABILITIES.filter((capability) =>
+    hasCapability(state, capability),
+  ).map((capability) => ({
+    capability,
+    path: CAPABILITY_ROUTE[capability],
+    label: CAPABILITY_NAV_LABEL[capability],
+  }))
 
   return (
     <div className={styles.shell}>
@@ -86,12 +102,28 @@ export function AppShell() {
 
       <nav className={styles.nav} aria-label="Modül navigasyonu">
         <div className={styles.brand}>Göymen ERP</div>
-        {/* Capability-gated: nothing is mounted until the server snapshot allows it. */}
-        <p className={styles.navEmpty}>
-          {featuresClosed
-            ? 'Yetenek bilgisi çözülene kadar modül gösterilmez.'
-            : 'Bu şirket bağlamında henüz uygulanmış modül yok.'}
-        </p>
+        {/* DEC-GOV-007 / ERP-000K §8.1: an entry appears only when the server granted
+            the capability AND the frontend has an implementation for it. No inert item. */}
+        {navItems.length > 0 ? (
+          <ul className={styles.navList}>
+            {navItems.map((entry) => (
+              <li key={entry.capability}>
+                <NavLink
+                  to={entry.path}
+                  className={({ isActive }) => (isActive ? styles.navLinkActive : styles.navLink)}
+                >
+                  {entry.label}
+                </NavLink>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className={styles.navEmpty}>
+            {featuresClosed
+              ? 'Yetenek bilgisi çözülene kadar modül gösterilmez.'
+              : 'Bu şirket bağlamında henüz uygulanmış modül yok.'}
+          </p>
+        )}
       </nav>
 
       <div className={styles.body}>
