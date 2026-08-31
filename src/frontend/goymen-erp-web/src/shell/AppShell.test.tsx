@@ -398,11 +398,14 @@ describe('SHELL-PILOT-01 company switch', () => {
     installFetch({})
     renderShell()
     await screen.findByText('Ortak kabuk hazır')
-    expect(window.localStorage.getItem('goymen-company-id')).toBe(A_ID)
+    // REV.4 derives the preference from the COMMITTED context, so the write happens in
+    // an effect AFTER the paint that says the shell is ready. Reading it synchronously
+    // races that effect — it passed locally and failed on the slower CI runner.
+    await waitFor(() => expect(window.localStorage.getItem('goymen-company-id')).toBe(A_ID))
 
     await userEvent.selectOptions(screen.getByRole('combobox'), B_ID)
-    await waitFor(() => expect(screen.getByText('Göymen B')).toBeTruthy())
-    expect(window.localStorage.getItem('goymen-company-id')).toBe(B_ID)
+    await waitFor(() => expect(window.localStorage.getItem('goymen-company-id')).toBe(B_ID))
+    expect((screen.getByRole('combobox') as HTMLSelectElement).value).toBe(B_ID)
   })
 
   it('ERP-000K §13.7: with no bound context the picker shows no stale company', async () => {
