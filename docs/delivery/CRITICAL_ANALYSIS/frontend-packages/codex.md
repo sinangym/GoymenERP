@@ -40,7 +40,8 @@ gevşetemez.
 - exact tarball SHA-512 integrity kaydı ve `LICENSE.md` içerir;
 - React Router + TanStack Query clean sandbox'ında lockfile v3, install script yok,
   high/critical advisory yok;
-- published package ile TypeScript 6/Vite 8 probe'u başarılıdır.
+- published declaration'lar TypeScript 6 strict probe'undan geçmiştir; Vite 8
+  runtime/build kabulü ayrı package-adoption PR'ında kanıtlanacaktır.
 
 Stage 0'da `react-router-dom`, router devtools veya ek router plugin'i kurulmaz.
 Router loader/action hiçbir zaman backend authorization sayılmaz; direct URL, refresh,
@@ -51,7 +52,8 @@ history ve action her durumda server authorization'a tabidir.
 `@tanstack/react-router@1.170.32` Stage 0 için seçilmez:
 
 - code-based graph React Router'dan belirgin biçimde daha geniştir;
-- file-based/Vite plugin yaklaşımı yaklaşık 60 yeni lock girdisine kadar çıkar;
+- file-based/Vite plugin yaklaşımı ayrıca incelenmesi gereken daha geniş bir
+  build-time supply-chain yüzeyi açar;
 - yayımlanmış graph TypeScript 6 tam declaration kontrolünde
   `router-core/dist/esm/ssr/types.d.ts` içindeki `__beforeLoadContext` alanında hata
   üretmiştir;
@@ -68,7 +70,8 @@ teknik bir Stage 0 kararıdır.
 - yalnız `@tanstack/query-core@5.102.8` doğrudan dependency'sini ekler;
 - exact tarball SHA-512 integrity kaydı ve `LICENSE` içerir;
 - React Router ile clean sandbox toplamında install script ve high/critical advisory yok;
-- TypeScript 6/Vite 8 probe'u başarılıdır.
+- published declaration'lar TypeScript 6 strict probe'undan geçmiştir; Vite 8
+  runtime/build kabulü bu analizle verilmez.
 
 Stage 0'da devtools, persistence veya sessionlar arası cache kurulmaz. TanStack Query
 aşağıdaki güvenlik davranışlarının sahibi değildir:
@@ -192,7 +195,116 @@ Güvenli uygulama sırası:
 `npm audit` yalnız 2026-08-31 registry advisory anlık görüntüsüdür; güvenlik garantisi
 değildir. Head/base veya exact package sürümü değişirse bu inceleme stale olur.
 
-## 8. Birincil kaynaklar
+## 8. Yeniden üretim defteri
+
+Bu bölüm, yukarıdaki ampirik iddiaların 2026-08-31 anlık görüntüsünü aynı exact
+girdilerle yeniden üretmek içindir. Komutlar Windows PowerShell 7 üzerinde
+`node --version` = `v24.16.0` ve `npm --version` = `11.13.0` ile çalıştırılmıştır.
+Sandbox'lar repo dışında, boş dizinlerden oluşturulmuş; hiçbirinde `--force`,
+`--legacy-peer-deps`, override veya audit suppression kullanılmamıştır.
+
+### 8.1 Exact sandbox girdileri ve hashler
+
+Her sandbox'ta yalnız aşağıdaki exact dependency setiyle `npm install
+--package-lock-only`, ardından `npm ci`, `npm audit --json` çalıştırıldı. Paket
+sayısı lockfile v3 içindeki boş root anahtarı hariç `packages` anahtar sayısıdır.
+
+| Sandbox | Exact dependency seti | Manifest SHA-256 | Lock SHA-256 | Paket / install script / audit |
+|---|---|---|---|---|
+| router-query | `react@19.2.8`, `react-dom@19.2.8`, `react-router@8.3.1`, `@tanstack/react-query@5.102.8`, `typescript@6.0.2` | `d6cc4c3f83314684d7ac2fe9bb9824eecb1fc532fc2e36217530f9de3124f5fb` | `789451fe7ab51dc2ef6216e5b15d42f9faec899c18a6f2e879223c0293994ac4` | `8 / 0 / 0 high-critical` |
+| tanstack-router-query | önceki React/Query seti, router yerine `@tanstack/react-router@1.170.32` | `e2793b3c261ac82b7f03ad1d0137ec27f87a14ee98838aada7b8de6e63a4602c` | `6161b9d20f11117fb05f1e47cceb8700fde35614b377768284436e8513da092b` | `16 / 0 / 0 high-critical` |
+| openapi-typescript-isolated | `openapi-typescript@7.13.0`, `typescript@5.9.3` | `ae7cb4d21cc1cdb698d0ab90f35ed79ac41bc378b826bb3d52fe8a12f20a0e93` | `620f1f39fbe7b96ce89e4974205cfb9587b226f9bfac53cae276178114052cb4` | `33 / 0 / 0 high-critical` |
+| openapi-fetch-runtime-ts6 | `openapi-fetch@0.17.0`, `typescript@6.0.2` | `cff98718760cb4fa574594a7cf5a603a6ff6b470bc48d258244406d25a7a65c6` | `5f28d7f0d3bab678365b96c513fce23807f92d98b8ac1ba4d8276e389e4d69dc` | `3 / 0 / 0 high-critical` |
+| orval | `orval@8.27.0`, `prettier@3.6.2`, `typescript@6.0.2` | `cbbcd3c33e6528a83dee3415b7af970498aa7500935d802f5e78ea3206d41392` | `d4aceee09c11197c6c35669ca2eb5d28f549028b2588ee538fdd9cb4ded4f052` | `135 / 1: node_modules/esbuild / 0 high-critical` |
+| hey-api | `@hey-api/openapi-ts@0.99.0`, `typescript@6.0.2` | `cb69bf3dabe7a64e85a425758500d0aec70ca1997ebaba25601deaa0a1034f64` | `c1db21b587a73cba210cf7662c4dd1f3e8630d90d3577cec11ca56ac17cc673b` | `51 / 0 / 4 high` |
+
+Hash ve lock inceleme komutları:
+
+```powershell
+Get-FileHash .\package.json -Algorithm SHA256
+Get-FileHash .\package-lock.json -Algorithm SHA256
+$lock = Get-Content .\package-lock.json -Raw | ConvertFrom-Json -AsHashtable
+($lock.packages.Keys | Where-Object { $_ }).Count
+$lock.packages.GetEnumerator() |
+  Where-Object { $_.Value.hasInstallScript } |
+  Select-Object -ExpandProperty Key
+npm audit --json
+```
+
+Hey API'deki dört high bulgu aynı kök zincirdedir:
+`@hey-api/openapi-ts -> @hey-api/json-schema-ref-parser -> js-yaml@4.2.0`
+ve `@hey-api/shared` üzerinden taşınır. Audit kayıtları
+`GHSA-52cp-r559-cp3m` ile `GHSA-5p4m-2wfm-xmqj` advisories'ini ve
+`@hey-api/openapi-ts`, `@hey-api/json-schema-ref-parser`, `@hey-api/shared`,
+`js-yaml` dependency yollarını raporlamıştır. Bu nedenle sayı yalnız özet değil,
+reddetme kararının exact dependency yoludur.
+
+### 8.2 Compiler/build probe'ları
+
+Router/Query declaration probe'u exact dependency setiyle aşağıdaki minimal
+`probe.ts` girdisini kullanmıştır:
+
+```typescript
+import type { QueryClient } from "@tanstack/react-query";
+import type { RouteObject } from "react-router";
+
+declare const queryClient: QueryClient;
+const route: RouteObject = { path: "/" };
+export { queryClient, route };
+```
+
+Exact kapı:
+
+```powershell
+npx tsc .\probe.ts --noEmit --strict --skipLibCheck false `
+  --module ESNext --moduleResolution Bundler --target ES2022 `
+  --lib ES2022,DOM
+```
+
+Komut exit `0` dönmüştür. Bu, Vite 8 runtime/build kabulü değildir; o kanıt
+package-adoption PR'ına bırakılmıştır. Aynı strict declaration kapısı TanStack
+Router alternatifiyle exit `2` dönmüş; exact hata:
+
+```text
+node_modules/@tanstack/router-core/dist/esm/ssr/types.d.ts(5,24):
+error TS2339: Property '__beforeLoadContext' does not exist on type 'MakeRouteMatch'.
+```
+
+TypeScript 6 root-equivalent generator deneyi:
+
+```powershell
+npm install --save-exact openapi-typescript@7.13.0 `
+  openapi-fetch@0.17.0 typescript@6.0.2
+```
+
+exit nonzero dönmüş ve şu çözümleme kapısında durmuş; install force edilmemiştir:
+
+```text
+npm error code ERESOLVE
+npm error ERESOLVE unable to resolve dependency tree
+npm error Found: typescript@6.0.2
+npm error peer typescript@"^5.x" from openapi-typescript@7.13.0
+```
+
+### 8.3 Published tarball provenance
+
+Her exact sürüm için `npm pack <package>@<version> --dry-run --json` çalıştırılmış,
+çıktıdaki `integrity` ve `files[].path` alanları incelenmiştir:
+
+| Paket | Registry SHA-512 integrity | Lisans kanıtı |
+|---|---|---|
+| `react-router@8.3.1` | `sha512-TEOpiO2g0TJHEOJeRVv4amUFun9v1npCKszvcquNvzETUtJ8udV86ah5eFoHT7g26bsBvT6EiIhqulR8eDF++A==` | `LICENSE.md`; 320 tarball dosyası |
+| `@tanstack/react-query@5.102.8` | `sha512-TYBea4OuXWD7MhaSHq069TWbFe7rcwWN6kzT7JF0OKi1K6c1gTv2IzD6A6ExJsCMozdkqBWeuIUZmu4KQg0O5A==` | `LICENSE`; 415 tarball dosyası |
+| `openapi-typescript@7.13.0` | `sha512-EFP392gcqXS7ntPvbhBzbF8TyBA+baIYEm791Hy5YkjDYKTnk/Tn5OQeKm5BIZvJihpp8Zzr4hzx0Irde1LNGQ==` | `LICENSE` |
+| `openapi-fetch@0.17.0` | `sha512-PsbZR1wAPcG91eEthKhN+Zn92FMHxv+/faECIwjXdxfTODGSGegYv0sc1Olz+HYPvKOuoXfp+0pA2XVt2cI0Ig==` | `LICENSE` |
+| `orval@8.27.0` | `sha512-USIGxWy6LuNj3wf217j6EwU14oWWQFVS6ltm45caGkKRV42zrR9rwWxeny3ClOzPBhz2t5+Z/zsVzIP/aZnSVA==` | published tarball listesinde lisans dosyası yok |
+| `@hey-api/openapi-ts@0.99.0` | `sha512-SePU/5oEWWkvUBYmvzdYRctseoLuskyhs4ET0RvLIcmzc8yLQoA2R+KtBIQ8bPsoSUB0m4E5SmBnl6aGSA0szQ==` | `LICENSE.md` |
+
+Bu defter gelecekteki package kabul PR'ına taşınmış bir audit artefaktı değildir.
+Gerçek adoption PR'ı aynı exact girdilerle taze audit JSON, SBOM, lockfile ve CI
+artefaktını yeniden üretmek zorundadır.
+
+## 9. Birincil kaynaklar
 
 - React Router 8.3.1 release/install/license:
   <https://github.com/remix-run/react-router/releases/tag/react-router%408.3.1>,
@@ -202,6 +314,9 @@ değildir. Head/base veya exact package sürümü değişirse bu inceleme stale 
   <https://tanstack.com/query/latest/docs/framework/react/installation>,
   <https://github.com/TanStack/query/releases/tag/release-2026-08-27-1607>,
   <https://github.com/TanStack/query/blob/main/LICENSE>
+- TanStack Router exact published metadata/repo:
+  <https://registry.npmjs.org/@tanstack/react-router/1.170.32>,
+  <https://github.com/TanStack/router>
 - openapi-typescript package/release/TS6 issue/2026 roadmap:
   <https://github.com/openapi-ts/openapi-typescript/blob/openapi-typescript%407.13.0/packages/openapi-typescript/package.json>,
   <https://github.com/openapi-ts/openapi-typescript/releases/tag/openapi-typescript%407.13.0>,
@@ -214,3 +329,9 @@ değildir. Head/base veya exact package sürümü değişirse bu inceleme stale 
   <https://github.com/orval-labs/orval/security/advisories/GHSA-fg9p-mrxr-hvq7>,
   <https://github.com/orval-labs/orval/security/advisories/GHSA-88f2-fpv8-89q2>,
   <https://github.com/orval-labs/orval/security/advisories/GHSA-cxq5-97v7-87j8>
+- Hey API exact published metadata/package/issues:
+  <https://registry.npmjs.org/@hey-api/openapi-ts/0.99.0>,
+  <https://github.com/hey-api/openapi-ts>,
+  <https://github.com/hey-api/openapi-ts/issues/4252>,
+  <https://github.com/advisories/GHSA-52cp-r559-cp3m>,
+  <https://github.com/advisories/GHSA-5p4m-2wfm-xmqj>
