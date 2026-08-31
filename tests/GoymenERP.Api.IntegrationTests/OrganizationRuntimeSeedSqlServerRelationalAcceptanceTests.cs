@@ -155,72 +155,228 @@ public sealed class OrganizationRuntimeSeedSqlServerRelationalAcceptanceTests
 
         try
         {
-            await MigrateOrganizationDatabaseAsync(
+            await AssertFiscalMigrationCollisionRollsBackAtomicallyAsync(
                 factory.DatabaseConnectionString,
-                PreFiscalMigration);
-            await using (var connection = new SqlConnection(factory.DatabaseConnectionString))
-            {
-                await connection.OpenAsync();
-                await ExecuteAsync(
-                    connection,
-                    """
-                    INSERT INTO [organization].[Companies]
-                        ([Id], [Code], [LegalName], [IsPlaceholder], [IsActive], [Version],
-                         [CreatedAtUtc], [UpdatedAtUtc])
-                    VALUES
-                        (@Id, N'TBD-GOY-01', N'Yanlış kimlikli legacy alias',
-                         1, 1, 1, SYSUTCDATETIME(), SYSUTCDATETIME());
-                    """,
-                    new SqlParameter("@Id", wrongLegacyCompanyId));
-            }
-
-            var exception = await Assert.ThrowsAsync<SqlException>(() =>
-                MigrateOrganizationDatabaseAsync(
-                    factory.DatabaseConnectionString,
-                    targetMigration: null));
-            Assert.Equal(51024, exception.Number);
-
-            await using var verification = new SqlConnection(factory.DatabaseConnectionString);
-            await verification.OpenAsync();
-            Assert.Equal(
-                2,
-                await ScalarAsync<int>(
-                    verification,
-                    "SELECT COUNT(*) FROM [organization].[__EFMigrationsHistory];"));
-            Assert.Equal(
-                0,
-                await ScalarAsync<int>(
-                    verification,
-                    """
-                    SELECT COUNT(*)
-                    FROM [organization].[__EFMigrationsHistory]
-                    WHERE [MigrationId] = N'20260831142045_AddCompanyFiscalRuntimeSeed';
-                    """));
-            Assert.Equal(
-                0,
-                await ScalarAsync<int>(
-                    verification,
-                    """
-                    SELECT COUNT(*)
-                    FROM [sys].[columns]
-                    WHERE [object_id] = OBJECT_ID(N'[organization].[Companies]')
-                      AND [name] IN (N'Vkn', N'InvoiceCapable');
-                    """));
-            Assert.Equal(
                 wrongLegacyCompanyId,
-                await ScalarAsync<Guid>(
-                    verification,
-                    """
-                    SELECT [Id]
-                    FROM [organization].[Companies]
-                    WHERE [Code] = N'TBD-GOY-01';
-                    """));
+                "TBD-GOY-01",
+                "Yanlış kimlikli legacy alias",
+                isPlaceholder: true,
+                version: 1,
+                expectedSqlError: 51024);
         }
         finally
         {
             await factory.DisposeAsync();
             await DropDatabaseAsync(baseConnectionString, factory.DatabaseName);
         }
+    }
+
+    [SqlServerFact]
+    public async Task GinCodeOwnedByUnexpectedCompany_RollsBackFiscalMigrationAtomically()
+    {
+        var baseConnectionString = Environment.GetEnvironmentVariable(
+            SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
+        var factory = new SqlServerRelationalApiFactory(
+            baseConnectionString,
+            applyTestCompanyBTopologyTemplates: false);
+        var wrongGinOwnerId = Guid.Parse(
+            "10000000-0000-0000-0000-000000000099");
+
+        try
+        {
+            await AssertFiscalMigrationCollisionRollsBackAtomicallyAsync(
+                factory.DatabaseConnectionString,
+                wrongGinOwnerId,
+                "GIN",
+                "Yanlış kimlikli GIN şirketi",
+                isPlaceholder: false,
+                version: 7,
+                expectedSqlError: 51026);
+        }
+        finally
+        {
+            await factory.DisposeAsync();
+            await DropDatabaseAsync(baseConnectionString, factory.DatabaseName);
+        }
+    }
+
+    [SqlServerFact]
+    public async Task FixedGinIdWithUnexpectedCode_RollsBackFiscalMigrationAtomically()
+    {
+        var baseConnectionString = Environment.GetEnvironmentVariable(
+            SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
+        var factory = new SqlServerRelationalApiFactory(
+            baseConnectionString,
+            applyTestCompanyBTopologyTemplates: false);
+
+        try
+        {
+            await AssertFiscalMigrationCollisionRollsBackAtomicallyAsync(
+                factory.DatabaseConnectionString,
+                TestCompanyIds.CompanyC,
+                "WRONG-GIN-CODE",
+                "Yanlış kodlu sabit GIN şirketi",
+                isPlaceholder: false,
+                version: 9,
+                expectedSqlError: 51027);
+        }
+        finally
+        {
+            await factory.DisposeAsync();
+            await DropDatabaseAsync(baseConnectionString, factory.DatabaseName);
+        }
+    }
+
+    [SqlServerFact]
+    public async Task FixedGinIdAndCode_WithLegacySemanticDrift_IsNormalizedByFiscalMigration()
+    {
+        var baseConnectionString = Environment.GetEnvironmentVariable(
+            SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
+        var factory = new SqlServerRelationalApiFactory(
+            baseConnectionString,
+            applyTestCompanyBTopologyTemplates: false);
+
+        try
+        {
+            await MigrateOrganizationDatabaseAsync(
+                factory.DatabaseConnectionString,
+                PreFiscalMigration);
+            await using (var connection = new SqlConnection(factory.DatabaseConnectionString))
+            {
+                await connection.OpenAsync();
+                await InsertLegacyCompanyAsync(
+                    connection,
+                    TestCompanyIds.CompanyC,
+                    "GIN",
+                    "Eski ve yanlış GIN hukuki unvanı",
+                    isPlaceholder: false,
+                    version: 11);
+            }
+
+            await MigrateOrganizationDatabaseAsync(
+                factory.DatabaseConnectionString,
+                targetMigration: null);
+
+            await using var verification = new SqlConnection(factory.DatabaseConnectionString);
+            await verification.OpenAsync();
+            var company = Assert.Single(await ReadCompanyRowsAsync(verification));
+            AssertCompany(
+                company,
+                TestCompanyIds.CompanyC,
+                "GIN",
+                GinLegalName,
+                GinPlaceholderVkn,
+                isPlaceholder: true,
+                invoiceCapable: false);
+            Assert.Equal(12, company.Version);
+            Assert.Equal(
+                3,
+                await ScalarAsync<int>(
+                    verification,
+                    "SELECT COUNT(*) FROM [organization].[__EFMigrationsHistory];"));
+        }
+        finally
+        {
+            await factory.DisposeAsync();
+            await DropDatabaseAsync(baseConnectionString, factory.DatabaseName);
+        }
+    }
+
+    private static async Task AssertFiscalMigrationCollisionRollsBackAtomicallyAsync(
+        string connectionString,
+        Guid companyId,
+        string code,
+        string legalName,
+        bool isPlaceholder,
+        long version,
+        int expectedSqlError)
+    {
+        await MigrateOrganizationDatabaseAsync(connectionString, PreFiscalMigration);
+        await using (var connection = new SqlConnection(connectionString))
+        {
+            await connection.OpenAsync();
+            await InsertLegacyCompanyAsync(
+                connection,
+                companyId,
+                code,
+                legalName,
+                isPlaceholder,
+                version);
+        }
+
+        var exception = await Assert.ThrowsAsync<SqlException>(() =>
+            MigrateOrganizationDatabaseAsync(connectionString, targetMigration: null));
+        Assert.Equal(expectedSqlError, exception.Number);
+
+        await using var verification = new SqlConnection(connectionString);
+        await verification.OpenAsync();
+        Assert.Equal(
+            2,
+            await ScalarAsync<int>(
+                verification,
+                "SELECT COUNT(*) FROM [organization].[__EFMigrationsHistory];"));
+        Assert.Equal(
+            0,
+            await ScalarAsync<int>(
+                verification,
+                """
+                SELECT COUNT(*)
+                FROM [organization].[__EFMigrationsHistory]
+                WHERE [MigrationId] = N'20260831142045_AddCompanyFiscalRuntimeSeed';
+                """));
+        Assert.Equal(
+            0,
+            await ScalarAsync<int>(
+                verification,
+                """
+                SELECT COUNT(*)
+                FROM [sys].[columns]
+                WHERE [object_id] = OBJECT_ID(N'[organization].[Companies]')
+                  AND [name] IN (N'Vkn', N'InvoiceCapable');
+                """));
+
+        await using var command = verification.CreateCommand();
+        command.CommandText =
+            """
+            SELECT [Id], [Code], [LegalName], [IsPlaceholder], [IsActive], [Version]
+            FROM [organization].[Companies]
+            WHERE [Id] = @Id;
+            """;
+        command.Parameters.AddWithValue("@Id", companyId);
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(companyId, reader.GetGuid(0));
+        Assert.Equal(code, reader.GetString(1));
+        Assert.Equal(legalName, reader.GetString(2));
+        Assert.Equal(isPlaceholder, reader.GetBoolean(3));
+        Assert.True(reader.GetBoolean(4));
+        Assert.Equal(version, reader.GetInt64(5));
+        Assert.False(await reader.ReadAsync());
+    }
+
+    private static Task InsertLegacyCompanyAsync(
+        SqlConnection connection,
+        Guid companyId,
+        string code,
+        string legalName,
+        bool isPlaceholder,
+        long version)
+    {
+        return ExecuteAsync(
+            connection,
+            """
+            INSERT INTO [organization].[Companies]
+                ([Id], [Code], [LegalName], [IsPlaceholder], [IsActive], [Version],
+                 [CreatedAtUtc], [UpdatedAtUtc])
+            VALUES
+                (@Id, @Code, @LegalName, @IsPlaceholder, 1, @Version,
+                 SYSUTCDATETIME(), SYSUTCDATETIME());
+            """,
+            new SqlParameter("@Id", companyId),
+            new SqlParameter("@Code", code),
+            new SqlParameter("@LegalName", legalName),
+            new SqlParameter("@IsPlaceholder", isPlaceholder),
+            new SqlParameter("@Version", version));
     }
 
     private static async Task PrepareLegacyOrganizationDatabaseAsync(string connectionString)

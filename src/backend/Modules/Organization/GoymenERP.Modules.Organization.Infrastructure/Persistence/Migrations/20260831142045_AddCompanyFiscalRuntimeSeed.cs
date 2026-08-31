@@ -30,6 +30,7 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
                 """
                 DECLARE @GdcId uniqueidentifier = '10000000-0000-0000-0000-000000000001';
                 DECLARE @GspId uniqueidentifier = '10000000-0000-0000-0000-000000000002';
+                DECLARE @GinId uniqueidentifier = '10000000-0000-0000-0000-000000000003';
 
                 IF EXISTS (
                     SELECT 1
@@ -54,6 +55,18 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
                     FROM [organization].[Companies]
                     WHERE [Code] = N'TBD-GOY-02' AND [Id] <> @GspId)
                     THROW 51025, 'Eski GSP şirket kodu beklenen kalıcı şirket kimliğinden farklı bir kayda ait.', 1;
+
+                IF EXISTS (
+                    SELECT 1
+                    FROM [organization].[Companies]
+                    WHERE [Code] = N'GIN' AND [Id] <> @GinId)
+                    THROW 51026, 'GIN şirket kodu beklenen kalıcı şirket kimliğinden farklı bir kayda ait.', 1;
+
+                IF EXISTS (
+                    SELECT 1
+                    FROM [organization].[Companies]
+                    WHERE [Id] = @GinId AND [Code] <> N'GIN')
+                    THROW 51027, 'GIN kalıcı şirket kimliği beklenmeyen bir şirket koduna ait.', 1;
 
                 IF EXISTS (
                     SELECT 1
@@ -86,6 +99,16 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
                     [Version] = [Version] + 1,
                     [UpdatedAtUtc] = SYSUTCDATETIME()
                 WHERE [Id] = @GspId;
+
+                UPDATE [organization].[Companies]
+                SET [Code] = N'GIN',
+                    [LegalName] = N'Göymen İnşaat',
+                    [Vkn] = N'1111111111',
+                    [IsPlaceholder] = 1,
+                    [InvoiceCapable] = 0,
+                    [Version] = [Version] + 1,
+                    [UpdatedAtUtc] = SYSUTCDATETIME()
+                WHERE [Id] = @GinId;
 
                 -- Eski runtime seed aynı fiziksel topolojiyi iki placeholder şirkete de
                 -- yazıyordu. GSP artık hukuki şirket olarak korunur ancak başlangıç

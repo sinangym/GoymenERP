@@ -27,14 +27,18 @@ public sealed class OrganizationMigrationScriptTests
         Assert.Contains("AddCompanyFiscalRuntimeSeed", script, StringComparison.Ordinal);
         Assert.Contains("10000000-0000-0000-0000-000000000001", script, StringComparison.Ordinal);
         Assert.Contains("10000000-0000-0000-0000-000000000002", script, StringComparison.Ordinal);
+        Assert.Contains("10000000-0000-0000-0000-000000000003", script, StringComparison.Ordinal);
         Assert.Contains("TBD-GOY-01", script, StringComparison.Ordinal);
         Assert.Contains("TBD-GOY-02", script, StringComparison.Ordinal);
         Assert.Contains("THROW 51020", script, StringComparison.Ordinal);
         Assert.Contains("THROW 51021", script, StringComparison.Ordinal);
         Assert.Contains("THROW 51024", script, StringComparison.Ordinal);
         Assert.Contains("THROW 51025", script, StringComparison.Ordinal);
+        Assert.Contains("THROW 51026", script, StringComparison.Ordinal);
+        Assert.Contains("THROW 51027", script, StringComparison.Ordinal);
         Assert.Contains("N'4100046586'", script, StringComparison.Ordinal);
         Assert.Contains("N'4101507252'", script, StringComparison.Ordinal);
+        Assert.Contains("N'1111111111'", script, StringComparison.Ordinal);
         Assert.Contains("[organization].[WorkCenters]", script, StringComparison.Ordinal);
         Assert.Contains("[organization].[Locations]", script, StringComparison.Ordinal);
         Assert.Contains("[organization].[Sites]", script, StringComparison.Ordinal);

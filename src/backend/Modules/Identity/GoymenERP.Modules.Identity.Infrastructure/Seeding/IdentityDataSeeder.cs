@@ -26,8 +26,12 @@ internal sealed class IdentityDataSeeder(
         var knownRoleIds = await dbContext.Roles
             .Select(x => x.Id)
             .ToHashSetAsync(cancellationToken);
+        var seedAssignmentIds = seed.Assignments
+            .Select(x => x.Id)
+            .ToArray();
         var existingAssignments = await dbContext.RoleAssignments
             .AsNoTracking()
+            .Where(x => seedAssignmentIds.Contains(x.Id))
             .Include(x => x.Scopes)
             .ToDictionaryAsync(x => x.Id, cancellationToken);
 

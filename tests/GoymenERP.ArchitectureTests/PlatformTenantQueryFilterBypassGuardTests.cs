@@ -172,7 +172,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Organization.Infrastructure/Persistence/"
                  + "Migrations/20260831142045_AddCompanyFiscalRuntimeSeed.cs"] =
                     new(
-                        "37c6987185e0a2c950bdece4be868b8a5b39f180f9580cabc4035a0e3eaf443b",
+                        "27bc99e999554b75715f834aec63b0e5d2bf81a00c70dc18b66eba09266b1f02",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
