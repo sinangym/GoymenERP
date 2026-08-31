@@ -110,7 +110,8 @@ Karşı-aday olarak incelendi ve **NO-GO**:
 - clean sandbox 51 paket girdisi ve install script olmadan kurulur;
 - buna rağmen `npm audit --audit-level=high` dört high bulgu üretmiştir; zincirde
   `js-yaml` CPU-consumption advisory'leri vardır;
-- `0.97.x`e geri dönmek pre-1.0 downgrade ve başka advisory'leri kabul etmek olur.
+- audit'in önerdiği `0.97.0` pre-1.0 semver-major downgrade'ı schema/feature
+  doğruluğu kanıtlanmadan otomatik fallback olarak kabul edilmez.
 
 Yüksek advisory varken generator package/lockfile'a alınamaz.
 
@@ -202,6 +203,9 @@ girdilerle yeniden üretmek içindir. Komutlar Windows PowerShell 7 üzerinde
 `node --version` = `v24.16.0` ve `npm --version` = `11.13.0` ile çalıştırılmıştır.
 Sandbox'lar repo dışında, boş dizinlerden oluşturulmuş; hiçbirinde `--force`,
 `--legacy-peer-deps`, override veya audit suppression kullanılmamıştır.
+Exact manifest/lock girdileri ve canonical audit sonucu
+[`evidence/codex`](evidence/codex/README.md) altında saklanır; tabloda verilen
+hashler bu committed dosyaların SHA-256 değerleridir.
 
 ### 8.1 Exact sandbox girdileri ve hashler
 
@@ -249,7 +253,7 @@ olarak derlemiştir. Exact kapı:
 npm.cmd install --no-save --package-lock=false --ignore-scripts `
   @types/react@19.2.18 @types/react-dom@19.2.4
 node_modules\.bin\tsc.cmd --noEmit --skipLibCheck false `
-  --module NodeNext --moduleResolution NodeNext --target ES2022 `
+  --strict true --module NodeNext --moduleResolution NodeNext --target ES2022 `
   --jsx react-jsx --lib ES2022,DOM,DOM.Iterable --types react,react-dom `
   node_modules\react-router\dist\development\index.d.ts `
   node_modules\@tanstack\react-query\build\modern\index.d.ts
@@ -261,7 +265,7 @@ Router alternatifiyle aşağıdaki exact komutta exit `2` dönmüştür:
 
 ```powershell
 node_modules\.bin\tsc.cmd --noEmit --skipLibCheck false `
-  --module NodeNext --moduleResolution NodeNext --target ES2022 `
+  --strict true --module NodeNext --moduleResolution NodeNext --target ES2022 `
   node_modules\@tanstack\router-core\dist\esm\ssr\types.d.ts
 ```
 
