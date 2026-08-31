@@ -3,15 +3,30 @@
     "Companies": [
       {
         "Id": "10000000-0000-0000-0000-000000000001",
-        "Code": "TBD-GOY-01",
-        "LegalName": "Göymen Grup Şirket 1 (Teyit Bekliyor)",
-        "IsPlaceholder": true
+        "Code": "GDC",
+        "LegalName": "Göymen Demir Çelik İnş. San. ve Tic. Ltd. Şti.",
+        "Vkn": "4100046586",
+        "IsPlaceholder": false,
+        "InvoiceCapable": true,
+        "ApplyTopologyTemplates": true
       },
       {
         "Id": "10000000-0000-0000-0000-000000000002",
-        "Code": "TBD-GOY-02",
-        "LegalName": "Göymen Grup Şirket 2 (Teyit Bekliyor)",
-        "IsPlaceholder": true
+        "Code": "GSP",
+        "LegalName": "Göymen Sac Profil San. ve Tic. Ltd. Şti.",
+        "Vkn": "4101507252",
+        "IsPlaceholder": false,
+        "InvoiceCapable": true,
+        "ApplyTopologyTemplates": false
+      },
+      {
+        "Id": "10000000-0000-0000-0000-000000000003",
+        "Code": "GIN",
+        "LegalName": "Göymen İnşaat",
+        "Vkn": "1111111111",
+        "IsPlaceholder": true,
+        "InvoiceCapable": false,
+        "ApplyTopologyTemplates": false
       }
     ],
     "SiteTemplates": [

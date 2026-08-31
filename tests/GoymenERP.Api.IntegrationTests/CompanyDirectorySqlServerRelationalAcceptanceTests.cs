@@ -9,10 +9,17 @@ namespace GoymenERP.Api.IntegrationTests;
 
 public sealed class CompanyDirectorySqlServerRelationalAcceptanceTests
 {
-    private const string CompanyACode = "TBD-GOY-01";
-    private const string CompanyALegalName = "Göymen Grup Şirket 1 (Teyit Bekliyor)";
-    private const string CompanyBCode = "TBD-GOY-02";
-    private const string CompanyBLegalName = "Göymen Grup Şirket 2 (Teyit Bekliyor)";
+    private const string CompanyACode = "GDC";
+    private const string CompanyALegalName =
+        "Göymen Demir Çelik İnş. San. ve Tic. Ltd. Şti.";
+    private const string CompanyAVkn = "4100046586";
+    private const string CompanyBCode = "GSP";
+    private const string CompanyBLegalName =
+        "Göymen Sac Profil San. ve Tic. Ltd. Şti.";
+    private const string CompanyBVkn = "4101507252";
+    private const string CompanyCCode = "GIN";
+    private const string CompanyCLegalName = "Göymen İnşaat";
+    private const string CompanyCVkn = "1111111111";
     private const string ForgedCompanyCode = "FORGED-FOREIGN-CODE";
     private const string ForgedCompanyLegalName = "FORGED-FOREIGN-LEGAL-NAME";
 
@@ -113,10 +120,16 @@ public sealed class CompanyDirectorySqlServerRelationalAcceptanceTests
         AssertCompanyB(Assert.Single(await ReadCompaniesAsync(companyBResponse)));
         var groupCompanies = await ReadCompaniesAsync(groupResponse);
         Assert.Equal(
-            new[] { TestCompanyIds.CompanyA, TestCompanyIds.CompanyB },
+            new[]
+            {
+                TestCompanyIds.CompanyA,
+                TestCompanyIds.CompanyC,
+                TestCompanyIds.CompanyB,
+            },
             groupCompanies.Select(x => x.Id));
         AssertCompanyA(groupCompanies[0]);
-        AssertCompanyB(groupCompanies[1]);
+        AssertCompanyC(groupCompanies[1]);
+        AssertCompanyB(groupCompanies[2]);
         Assert.Equal(
             groupCompanies.Select(x => x.Code).OrderBy(x => x, StringComparer.Ordinal),
             groupCompanies.Select(x => x.Code));
@@ -191,7 +204,10 @@ public sealed class CompanyDirectorySqlServerRelationalAcceptanceTests
         Assert.Equal(HttpStatusCode.OK, companyBResponse.StatusCode);
         AssertPrivateNoStore(groupResponse);
         AssertPrivateNoStore(companyBResponse);
-        AssertCompanyA(Assert.Single(await ReadCompaniesAsync(groupResponse)));
+        Assert.Collection(
+            await ReadCompaniesAsync(groupResponse),
+            AssertCompanyA,
+            AssertCompanyC);
         Assert.Empty(await ReadCompaniesAsync(companyBResponse));
     }
 
@@ -221,6 +237,7 @@ public sealed class CompanyDirectorySqlServerRelationalAcceptanceTests
         HttpResponseMessage response)
     {
         var payload = await response.Content.ReadAsStringAsync();
+        AssertPublicDirectoryDoesNotExposeFiscalFields(payload);
         using var document = JsonDocument.Parse(payload);
         foreach (var company in document.RootElement.EnumerateArray())
         {
@@ -249,7 +266,7 @@ public sealed class CompanyDirectorySqlServerRelationalAcceptanceTests
             TestCompanyIds.CompanyA,
             CompanyACode,
             CompanyALegalName,
-            isPlaceholder: true);
+            isPlaceholder: false);
     }
 
     private static void AssertCompanyB(CompanySummary company)
@@ -259,6 +276,16 @@ public sealed class CompanyDirectorySqlServerRelationalAcceptanceTests
             TestCompanyIds.CompanyB,
             CompanyBCode,
             CompanyBLegalName,
+            isPlaceholder: false);
+    }
+
+    private static void AssertCompanyC(CompanySummary company)
+    {
+        AssertCompany(
+            company,
+            TestCompanyIds.CompanyC,
+            CompanyCCode,
+            CompanyCLegalName,
             isPlaceholder: true);
     }
 
@@ -283,8 +310,23 @@ public sealed class CompanyDirectorySqlServerRelationalAcceptanceTests
             StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(CompanyBCode, body, StringComparison.Ordinal);
         Assert.DoesNotContain(CompanyBLegalName, body, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            TestCompanyIds.CompanyC.ToString(),
+            body,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(CompanyCCode, body, StringComparison.Ordinal);
+        Assert.DoesNotContain(CompanyCLegalName, body, StringComparison.Ordinal);
         Assert.DoesNotContain(ForgedCompanyCode, body, StringComparison.Ordinal);
         Assert.DoesNotContain(ForgedCompanyLegalName, body, StringComparison.Ordinal);
+    }
+
+    private static void AssertPublicDirectoryDoesNotExposeFiscalFields(string body)
+    {
+        Assert.DoesNotContain("\"vkn\"", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("\"invoiceCapable\"", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(CompanyAVkn, body, StringComparison.Ordinal);
+        Assert.DoesNotContain(CompanyBVkn, body, StringComparison.Ordinal);
+        Assert.DoesNotContain(CompanyCVkn, body, StringComparison.Ordinal);
     }
 
     private static async Task<int> CountAsync(SqlConnection connection, string commandText)

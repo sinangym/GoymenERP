@@ -71,10 +71,20 @@ public sealed class OrganizationDbContext(
     private static void ConfigureCompany(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<Company>();
-        entity.ToTable("Companies", "organization");
+        entity.ToTable("Companies", "organization", table =>
+        {
+            table.HasCheckConstraint(
+                "CK_Companies_Vkn_Format",
+                "[Vkn] IS NULL OR (LEN([Vkn]) = 10 AND [Vkn] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9]%')");
+            table.HasCheckConstraint(
+                "CK_Companies_Placeholder_InvoiceDisabled",
+                "[InvoiceCapable] = 0 OR ([IsPlaceholder] = 0 AND [Vkn] IS NOT NULL)");
+        });
         entity.HasKey(x => x.Id);
         entity.Property(x => x.Code).HasMaxLength(64).IsRequired();
         entity.Property(x => x.LegalName).HasMaxLength(250).IsRequired();
+        entity.Property(x => x.Vkn).HasMaxLength(10);
+        entity.Property(x => x.InvoiceCapable).HasDefaultValue(false);
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.RowVersion).IsRowVersion();
         entity.HasIndex(x => x.Code).IsUnique();

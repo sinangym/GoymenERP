@@ -37,7 +37,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "GoymenERP.Modules.Identity.Infrastructure/Seeding/"
         + "SystemRolePermissionReconciler.cs";
     private const string ReviewedSeederFingerprint =
-        "62f10533863d13b7172d557e99703d8a38fb34953294bc7fa6da9c7fc930c6ac";
+        "b9de3d52d72f20ffc6279f32b9cc4b1b646aa3b3f03c6a12fd2fa8d1d4c4c450";
 
     // This is a reviewed source inventory, not a claim that every entity mapped by every
     // context has a global query filter. Any context change must receive a fresh tenant-safety
@@ -58,7 +58,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["src/backend/Modules/Organization/"
              + "GoymenERP.Modules.Organization.Infrastructure/Persistence/"
              + "OrganizationDbContext.cs"] =
-                "7eec6fc9b5224cfe0e197d545c795cff23bfb36bd9bc652c7b2915731e3e505a"
+                "198fddce9a2fd4552850c2d1545b96b0030411d5d256a70ee932cf5173be2ff2"
         };
 
     // Accepted module initializers own one exact Migrate/EnsureCreated provider branch each.
@@ -164,6 +164,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "Migrations/20260827175405_InitialIdempotency.cs"] =
                     new(
                         "298b1aed84ba4f5ba663b90076a0914ee87d49d7016eacf71e8ee9c6128e1e9d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                ["src/backend/Modules/Organization/"
+                 + "GoymenERP.Modules.Organization.Infrastructure/Persistence/"
+                 + "Migrations/20260831142045_AddCompanyFiscalRuntimeSeed.cs"] =
+                    new(
+                        "27bc99e999554b75715f834aec63b0e5d2bf81a00c70dc18b66eba09266b1f02",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1

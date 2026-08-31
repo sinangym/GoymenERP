@@ -56,7 +56,7 @@ public sealed class OrganizationAuditEventTenantGuardSqlServerRelationalAcceptan
                     companyACorrelation,
                     companyBCorrelation));
             Assert.Equal(
-                2,
+                3,
                 await ScalarAsync<int>(
                     factory.DatabaseConnectionString,
                     "SELECT COUNT(*) FROM [organization].[__EFMigrationsHistory];"));

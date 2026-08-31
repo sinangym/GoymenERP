@@ -19,7 +19,13 @@ public sealed class SeedCompany
 
     public string LegalName { get; init; } = string.Empty;
 
+    public string? Vkn { get; init; }
+
     public bool IsPlaceholder { get; init; }
+
+    public bool InvoiceCapable { get; init; }
+
+    public bool ApplyTopologyTemplates { get; init; }
 }
 
 public sealed class SeedSiteTemplate

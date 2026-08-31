@@ -185,6 +185,9 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CompletedAtUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<int>("HttpStatusCode")
+                        .HasColumnType("int");
+
                     b.Property<string>("IdempotencyKeyHash")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -229,6 +232,8 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_CommandExecutions_Hash_Lengths", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
 
+                            t.HasCheckConstraint("CK_CommandExecutions_HttpStatusCode_Valid", "[HttpStatusCode] BETWEEN 100 AND 599");
+
                             t.HasCheckConstraint("CK_CommandExecutions_ResponseJson_Valid", "ISJSON([ResponseJson]) = 1");
 
                             t.HasCheckConstraint("CK_CommandExecutions_SchemaVersion_Positive", "[SchemaVersion] > 0");
@@ -248,6 +253,11 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("InvoiceCapable")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
@@ -273,12 +283,21 @@ namespace GoymenERP.Modules.Organization.Infrastructure.Persistence.Migrations
                         .IsConcurrencyToken()
                         .HasColumnType("bigint");
 
+                    b.Property<string>("Vkn")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Code")
                         .IsUnique();
 
-                    b.ToTable("Companies", "organization");
+                    b.ToTable("Companies", "organization", t =>
+                        {
+                            t.HasCheckConstraint("CK_Companies_Placeholder_InvoiceDisabled", "[InvoiceCapable] = 0 OR ([IsPlaceholder] = 0 AND [Vkn] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_Companies_Vkn_Format", "[Vkn] IS NULL OR (LEN([Vkn]) = 10 AND [Vkn] COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^0-9]%')");
+                        });
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Organization.Domain.Locations.Location", b =>

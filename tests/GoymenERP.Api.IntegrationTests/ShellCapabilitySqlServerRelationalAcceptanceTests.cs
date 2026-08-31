@@ -164,7 +164,20 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
                 TestCompanyIds.CompanyB.ToString("D"),
                 inactiveCompanyBody,
                 StringComparison.OrdinalIgnoreCase);
-            Assert.DoesNotContain("TBD-GOY-02", inactiveCompanyBody, StringComparison.Ordinal);
+            Assert.DoesNotContain("GSP", inactiveCompanyBody, StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                "Göymen Sac Profil San. ve Tic. Ltd. Şti.",
+                inactiveCompanyBody,
+                StringComparison.Ordinal);
+            Assert.DoesNotContain("4101507252", inactiveCompanyBody, StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                "vkn",
+                inactiveCompanyBody,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(
+                "invoiceCapable",
+                inactiveCompanyBody,
+                StringComparison.OrdinalIgnoreCase);
         }
         finally
         {
