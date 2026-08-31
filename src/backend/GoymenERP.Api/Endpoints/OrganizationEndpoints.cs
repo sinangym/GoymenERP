@@ -1,4 +1,5 @@
 using GoymenERP.Api.Multitenancy;
+using GoymenERP.Api.OpenApi;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
@@ -27,19 +28,31 @@ public static class OrganizationEndpoints
             httpContext.Response.Headers.CacheControl = "private, no-store";
             var companies = await service.GetAuthorizedCompaniesAsync(cancellationToken);
             return Results.Ok(companies);
-        });
+        })
+            .WithName("GetAuthorizedCompaniesV1")
+            .Produces<IReadOnlyList<CompanySummary>>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpAuthenticatedProblems();
 
         group.MapGet("/context", (ICompanyContext context) =>
-                Results.Ok(new { companyId = context.CompanyId }))
+                Results.Ok(new CompanyContextResponse(context.CompanyId)))
             .RequireCompanyContext()
-            .RequireAuthorization(ErpPermissions.OrganizationContextRead);
+            .RequireAuthorization(ErpPermissions.OrganizationContextRead)
+            .WithName("GetOrganizationContextV1")
+            .Produces<CompanyContextResponse>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpAuthenticatedProblems();
 
         group.MapGet("/sites", async (
                 IOrganizationService service,
                 CancellationToken cancellationToken) =>
             Results.Ok(await service.GetSitesAsync(cancellationToken)))
             .RequireCompanyContext()
-            .RequireAuthorization(ErpPermissions.OrganizationSitesRead);
+            .RequireAuthorization(ErpPermissions.OrganizationSitesRead)
+            .WithName("GetOrganizationSitesV1")
+            .Produces<IReadOnlyList<SiteSummary>>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpAuthenticatedProblems();
 
         group.MapGet("/locations", async (
                 int? page,
@@ -51,7 +64,12 @@ public static class OrganizationEndpoints
                 pageSize ?? 25,
                 cancellationToken)))
             .RequireCompanyContext()
-            .RequireAuthorization(ErpPermissions.OrganizationLocationsRead);
+            .RequireAuthorization(ErpPermissions.OrganizationLocationsRead)
+            .WithName("GetOrganizationLocationsV1")
+            .Produces<PageResult<LocationSummary>>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpAuthenticatedProblems();
 
         group.MapGet("/locations/{id:guid}", async (
                 Guid id,
@@ -63,7 +81,12 @@ public static class OrganizationEndpoints
                 ? NotFound()
                 : Results.Ok(location);
         }).RequireCompanyContext()
-            .RequireAuthorization(ErpPermissions.OrganizationLocationsRead);
+            .RequireAuthorization(ErpPermissions.OrganizationLocationsRead)
+            .WithName("GetOrganizationLocationV1")
+            .Produces<LocationSummary>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpNotFound()
+            .ProducesErpAuthenticatedProblems();
 
         group.MapPut("/locations/{id:guid}/active-state", async (
                 Guid id,
@@ -75,6 +98,14 @@ public static class OrganizationEndpoints
                 HttpContext httpContext,
                 CancellationToken cancellationToken) =>
         {
+            if (command.ExpectedVersion <= 0)
+            {
+                return Results.Problem(
+                    title: "Beklenen sürüm gerekli.",
+                    detail: "Durum değişikliği için sıfırdan büyük beklenen sürüm zorunludur.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
             if (string.IsNullOrWhiteSpace(command.Reason)
                 || command.Reason.Trim().Length > 1000)
             {
@@ -112,14 +143,30 @@ public static class OrganizationEndpoints
 
             return ToHttpResult(execution.Response);
         }).RequireCompanyContext()
-            .RequireAuthorization(ErpPermissions.OrganizationLocationsStatusUpdate);
+            .RequireAuthorization(ErpPermissions.OrganizationLocationsStatusUpdate)
+            .WithIdempotencyContract(
+                StatusCodes.Status204NoContent,
+                StatusCodes.Status404NotFound,
+                StatusCodes.Status409Conflict)
+            .WithName("SetOrganizationLocationActiveStateV1")
+            .Accepts<SetLocationActiveState>("application/json")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesErpBadRequest()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpNotFound()
+            .ProducesErpConflict()
+            .ProducesErpAuthenticatedProblems();
 
         group.MapGet("/work-centers", async (
                 IOrganizationService service,
                 CancellationToken cancellationToken) =>
             Results.Ok(await service.GetWorkCentersAsync(cancellationToken)))
             .RequireCompanyContext()
-            .RequireAuthorization(ErpPermissions.OrganizationWorkCentersRead);
+            .RequireAuthorization(ErpPermissions.OrganizationWorkCentersRead)
+            .WithName("GetOrganizationWorkCentersV1")
+            .Produces<IReadOnlyList<WorkCenterSummary>>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpAuthenticatedProblems();
 
         return endpoints;
     }
@@ -200,3 +247,5 @@ public static class OrganizationEndpoints
             && !canonicalValue.Contains(',', StringComparison.Ordinal);
     }
 }
+
+public sealed record CompanyContextResponse(Guid CompanyId);

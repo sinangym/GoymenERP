@@ -1,4 +1,5 @@
 using GoymenERP.Api.Multitenancy;
+using GoymenERP.Api.OpenApi;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
 
@@ -45,7 +46,12 @@ public static class AuditEndpoints
             })
             .RequireAuthorization(ErpPermissions.IdentityAuditRead)
             .RequireCompanyContext()
-            .WithTags("Audit");
+            .WithTags("Audit")
+            .WithName("GetAuditEventsV1")
+            .Produces<AuditEventPage>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpAuthenticatedProblems();
 
         return endpoints;
     }

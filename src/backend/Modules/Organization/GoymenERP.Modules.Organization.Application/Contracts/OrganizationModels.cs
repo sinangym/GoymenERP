@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GoymenERP.Modules.Organization.Application.Contracts;
 
 public sealed record CompanySummary(
@@ -37,8 +39,8 @@ public sealed record PageResult<T>(
     int TotalCount);
 
 public sealed record SetLocationActiveState(
-    bool IsActive,
-    long ExpectedVersion,
+    [property: JsonRequired] bool IsActive,
+    [property: JsonRequired] long ExpectedVersion,
     string Reason);
 
 public sealed record CommandMetadata(

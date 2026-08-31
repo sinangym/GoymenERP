@@ -1,4 +1,5 @@
 using GoymenERP.Api.Multitenancy;
+using GoymenERP.Api.OpenApi;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
@@ -27,7 +28,13 @@ public static class CounterpartyEndpoints
                 companyId,
                 cancellationToken);
             return Results.Ok(parties);
-        });
+        })
+            .UsesOptionalCompanyContext()
+            .WithName("GetCounterpartiesV1")
+            .Produces<IReadOnlyList<PartyCoreView>>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(CounterpartyProblemCodesV1.ValidationFailed)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpAuthenticatedProblems();
 
         group.MapGet("/{partyId:guid}", async (
             Guid partyId,
@@ -42,7 +49,14 @@ public static class CounterpartyEndpoints
             return party is null
                 ? NotFound()
                 : Results.Ok(party);
-        });
+        })
+            .UsesOptionalCompanyContext()
+            .WithName("GetCounterpartyV1")
+            .Produces<PartyCoreView>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(CounterpartyProblemCodesV1.ValidationFailed)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpNotFound(CounterpartyProblemCodesV1.NotFound)
+            .ProducesErpAuthenticatedProblems();
 
         group.MapPost("/", async (
                 CreateCounterparty command,
@@ -77,7 +91,17 @@ public static class CounterpartyEndpoints
             ApplyReplayHeaders(httpContext, execution);
             return ToHttpResult(execution.Response);
         }).RequireCompanyContext()
-            .RequireAuthorization(ErpPermissions.CounterpartyPartiesCreate);
+            .RequireAuthorization(ErpPermissions.CounterpartyPartiesCreate)
+            .WithIdempotencyContract(StatusCodes.Status201Created)
+            .WithName("CreateCounterpartyV1")
+            .Accepts<CreateCounterparty>("application/json")
+            .Produces<PartyCoreView>(StatusCodes.Status201Created)
+            .ProducesErpBadRequest(
+                CounterpartyProblemCodesV1.ValidationFailed,
+                CounterpartyProblemCodesV1.CommandMetadataInvalid)
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(CounterpartyProblemCodesV1.IdempotencyConflict)
+            .ProducesErpAuthenticatedProblems();
 
         group.MapPost("/{partyId:guid}/company-account", async (
                 Guid partyId,
@@ -115,7 +139,24 @@ public static class CounterpartyEndpoints
             return ToHttpResult(execution.Response);
         }).RequireCompanyContext()
             .RequireAuthorization(ErpPermissions.CounterpartyAccountsCreate)
-            .RequireAuthorization(ErpPermissions.CounterpartyPartiesRead);
+            .RequireAuthorization(ErpPermissions.CounterpartyPartiesRead)
+            .RequiresNonEmptyGuidPathParameter("partyId")
+            .WithIdempotencyContract(
+                StatusCodes.Status201Created,
+                StatusCodes.Status404NotFound,
+                StatusCodes.Status409Conflict)
+            .WithName("CreateCounterpartyCompanyAccountV1")
+            .Accepts<CreateCompanyPartyAccount>("application/json")
+            .Produces<PartyCoreView>(StatusCodes.Status201Created)
+            .ProducesErpBadRequest(
+                CounterpartyProblemCodesV1.ValidationFailed,
+                CounterpartyProblemCodesV1.CommandMetadataInvalid)
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpNotFound(CounterpartyProblemCodesV1.NotFound)
+            .ProducesErpConflict(
+                CounterpartyProblemCodesV1.AlreadyLinked,
+                CounterpartyProblemCodesV1.IdempotencyConflict)
+            .ProducesErpAuthenticatedProblems();
 
         group.MapPut("/{partyId:guid}/company-account/active-state", async (
                 Guid partyId,
@@ -155,7 +196,24 @@ public static class CounterpartyEndpoints
             ApplyReplayHeaders(httpContext, execution);
             return ToHttpResult(execution.Response);
         }).RequireCompanyContext()
-            .RequireAuthorization(ErpPermissions.CounterpartyAccountsStatusUpdate);
+            .RequireAuthorization(ErpPermissions.CounterpartyAccountsStatusUpdate)
+            .RequiresNonEmptyGuidPathParameter("partyId")
+            .WithIdempotencyContract(
+                StatusCodes.Status204NoContent,
+                StatusCodes.Status404NotFound,
+                StatusCodes.Status409Conflict)
+            .WithName("SetCounterpartyCompanyAccountActiveStateV1")
+            .Accepts<SetCompanyPartyAccountActiveState>("application/json")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesErpBadRequest(
+                CounterpartyProblemCodesV1.ValidationFailed,
+                CounterpartyProblemCodesV1.CommandMetadataInvalid)
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpNotFound(CounterpartyProblemCodesV1.NotFound)
+            .ProducesErpConflict(
+                CounterpartyProblemCodesV1.VersionConflict,
+                CounterpartyProblemCodesV1.IdempotencyConflict)
+            .ProducesErpAuthenticatedProblems();
 
         return endpoints;
     }

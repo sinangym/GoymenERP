@@ -1,3 +1,4 @@
+using GoymenERP.Api.OpenApi;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Identity.Application.Contracts;
 
@@ -23,7 +24,11 @@ public static class IdentityEndpoints
                     detail: "Oturum kimliği etkin bir ERP kullanıcısıyla eşleşmiyor.",
                     statusCode: StatusCodes.Status403Forbidden)
                 : Results.Ok(profile);
-        });
+        })
+            .WithName("GetCurrentIdentityV1")
+            .Produces<IdentityProfile>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpAuthenticatedProblems();
 
         return endpoints;
     }

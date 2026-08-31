@@ -1,6 +1,8 @@
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
 
+using System.Text.Json.Serialization;
+
 namespace GoymenERP.Modules.Counterparty.Application.Contracts;
 
 public interface ICounterpartyCommandService
@@ -36,8 +38,8 @@ public sealed record CreateCompanyPartyAccount(
     PartyRole Roles);
 
 public sealed record SetCompanyPartyAccountActiveState(
-    bool IsActive,
-    long ExpectedVersion,
+    [property: JsonRequired] bool IsActive,
+    [property: JsonRequired] long ExpectedVersion,
     string Reason);
 
 public sealed record CounterpartyCommandMetadata(

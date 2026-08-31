@@ -2,9 +2,11 @@ using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.Errors;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.Observability;
+using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.Security;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.OpenApi;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure;
@@ -13,10 +15,38 @@ using GoymenERP.Modules.Counterparty.Infrastructure;
 using GoymenERP.Modules.Idempotency.Infrastructure;
 using GoymenERP.Modules.Organization.Infrastructure;
 using GoymenERP.Modules.Identity.Infrastructure;
-using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
+var isOpenApiDocumentGeneration = OpenApiDocumentGenerationMode.IsActive;
+
+if (isOpenApiDocumentGeneration)
+{
+    var buildTimeDefaults = new Dictionary<string, string?>
+    {
+        ["DB_PROVIDER"] = "SqlServer",
+        ["Authentication:Mode"] = AuthenticationModes.OidcJwtBearer,
+        ["Authentication:Oidc:RequireHttpsMetadata"] = "true",
+    };
+    if (string.IsNullOrWhiteSpace(builder.Configuration["DB_CONNECTION_STRING"]))
+    {
+        buildTimeDefaults["DB_CONNECTION_STRING"] =
+            "Server=openapi.invalid;Database=OpenApi;User Id=OpenApi;Password=OpenApi;"
+            + "Encrypt=true;TrustServerCertificate=false;Connect Timeout=1;";
+    }
+
+    if (string.IsNullOrWhiteSpace(builder.Configuration["Authentication:Oidc:Authority"]))
+    {
+        buildTimeDefaults["Authentication:Oidc:Authority"] = "https://openapi.invalid";
+    }
+
+    if (string.IsNullOrWhiteSpace(builder.Configuration["Authentication:Oidc:Audience"]))
+    {
+        buildTimeDefaults["Authentication:Oidc:Audience"] = "goymen-erp-api";
+    }
+
+    builder.Configuration.AddInMemoryCollection(buildTimeDefaults);
+}
 
 builder.Configuration.AddJsonFile(
     "Seed/organization-seed.json",
@@ -28,6 +58,7 @@ builder.Configuration.AddJsonFile(
     reloadOnChange: false);
 
 builder.Services.AddErpProblemDetails();
+builder.Services.AddErpOpenApi();
 builder.Services.AddHealthChecks();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICompanyContext, CompanyContext>();
@@ -71,17 +102,15 @@ app.UseAuthentication();
 app.UseMiddleware<CompanyContextMiddleware>();
 app.UseAuthorization();
 
-app.MapHealthChecks("/health/live", new HealthCheckOptions
-{
-    ResponseWriter = ErpHealthCheckResponseWriter.WriteAsync,
-}).AllowAnonymous();
+app.MapErpHealthEndpoints();
 app.MapOrganizationEndpoints();
 app.MapIdentityEndpoints();
 app.MapAuditEndpoints();
 app.MapCounterpartyEndpoints();
 app.MapShellEndpoints();
 
-if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
+if (!isOpenApiDocumentGeneration
+    && (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing")))
 {
     await app.Services.InitializeOrganizationModuleAsync();
     await app.Services.InitializeIdentityModuleAsync();
