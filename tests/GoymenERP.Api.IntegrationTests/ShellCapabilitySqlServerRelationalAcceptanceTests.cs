@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -5,6 +7,7 @@ using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -147,6 +150,16 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
             Assert.Equal(
                 HttpStatusCode.ServiceUnavailable,
                 inactiveCompanyResponse.StatusCode);
+            Assert.Contains(
+                "no-store",
+                inactiveCompanyResponse.Headers.CacheControl!.ToString());
+            Assert.True(inactiveCompanyResponse.Headers.CacheControl.Private);
+            using (var inactiveCompanyProblem = JsonDocument.Parse(inactiveCompanyBody))
+            {
+                Assert.Equal(
+                    "service_unavailable",
+                    inactiveCompanyProblem.RootElement.GetProperty("code").GetString());
+            }
             Assert.DoesNotContain(
                 TestCompanyIds.CompanyB.ToString("D"),
                 inactiveCompanyBody,
@@ -187,6 +200,15 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
             await using var setupConnection = new SqlConnection(
                 factory.DatabaseConnectionString);
             await setupConnection.OpenAsync();
+            Assert.Equal(
+                1,
+                await ScalarAsync<int>(
+                    setupConnection,
+                    """
+                    SELECT CONVERT(int, [is_read_committed_snapshot_on])
+                    FROM [sys].[databases]
+                    WHERE [database_id] = DB_ID();
+                    """));
             await SetPermissionPairAsync(
                 setupConnection,
                 includeFirst: true,
@@ -195,7 +217,13 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
             using var client = factory.CreateClientFor(
                 TestUsers.CompanyA,
                 TestCompanyIds.CompanyA);
-            var initial = await ReadSnapshotAsync(client);
+            CapabilitySnapshotProbe initial;
+            using (var commandObserver = new AuthorizationProjectionCommandObserver(
+                       factory.DatabaseName))
+            {
+                initial = await ReadSnapshotAsync(client);
+                Assert.Equal(1, commandObserver.CommandCount);
+            }
             Assert.DoesNotContain(MultiPermissionTestProvider.CapabilityId, initial.Capabilities);
 
             await SetPermissionPairAsync(
@@ -213,34 +241,75 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
             Assert.DoesNotContain(MultiPermissionTestProvider.CapabilityId, revoked.Capabilities);
             Assert.NotEqual(granted.Generation, revoked.Generation);
 
-            var writer = Task.Run(async () =>
+            for (var iteration = 0; iteration < 6; iteration++)
             {
-                await using var writerConnection = new SqlConnection(
-                    factory.DatabaseConnectionString);
-                await writerConnection.OpenAsync();
-                for (var iteration = 0; iteration < 20; iteration++)
-                {
-                    await SetPermissionPairAsync(
-                        writerConnection,
-                        includeFirst: iteration % 2 == 0,
-                        includeSecond: iteration % 2 != 0);
-                }
-            });
-            var readers = Enumerable.Range(0, 2).Select(async _ =>
+                var includeFirst = iteration % 2 != 0;
+                var includeSecond = !includeFirst;
+                await WithUncommittedPermissionPairAsync(
+                    factory.DatabaseConnectionString,
+                    includeFirst,
+                    includeSecond,
+                    async () =>
+                    {
+                        var overlappingReads = Enumerable.Range(0, 4)
+                            .Select(async _ =>
+                            {
+                                using var readerClient = factory.CreateClientFor(
+                                    TestUsers.CompanyA,
+                                    TestCompanyIds.CompanyA);
+                                return await ReadSnapshotAsync(readerClient);
+                            })
+                            .ToArray();
+                        var allReads = Task.WhenAll(overlappingReads);
+                        var completed = await Task.WhenAny(
+                            allReads,
+                            Task.Delay(TimeSpan.FromSeconds(30)));
+                        Assert.Same(allReads, completed);
+                        foreach (var snapshot in await allReads)
+                        {
+                            Assert.DoesNotContain(
+                                MultiPermissionTestProvider.CapabilityId,
+                                snapshot.Capabilities);
+                        }
+                    });
+
+                var committedSnapshot = await ReadSnapshotAsync(client);
+                Assert.DoesNotContain(
+                    MultiPermissionTestProvider.CapabilityId,
+                    committedSnapshot.Capabilities);
+            }
+        }
+        finally
+        {
+            await factory.DisposeAsync();
+            await DropDatabaseAsync(baseConnectionString, factory.DatabaseName);
+        }
+    }
+
+    [SqlServerFact]
+    public async Task AuthorizationSnapshotStartup_FailsClosedWhenRcsiIsDisabled()
+    {
+        var baseConnectionString = Environment.GetEnvironmentVariable(
+            SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
+        var factory = new SqlServerRelationalApiFactory(baseConnectionString);
+        await CreateDatabaseWithRcsiDisabledAsync(
+            baseConnectionString,
+            factory.DatabaseName);
+
+        try
+        {
+            var exception = await Record.ExceptionAsync(async () =>
             {
-                using var readerClient = factory.CreateClientFor(
-                    TestUsers.CompanyA,
-                    TestCompanyIds.CompanyA);
-                for (var iteration = 0; iteration < 20; iteration++)
-                {
-                    var snapshot = await ReadSnapshotAsync(readerClient);
-                    Assert.DoesNotContain(
-                        MultiPermissionTestProvider.CapabilityId,
-                        snapshot.Capabilities);
-                }
+                using var client = factory.CreateClient();
+                using var response = await client.GetAsync("/health/live");
             });
 
-            await Task.WhenAll(readers.Append(writer));
+            Assert.NotNull(exception);
+            Assert.Contains(
+                "Identity authorization snapshot requires SQL Server "
+                + "READ_COMMITTED_SNAPSHOT ON.",
+                exception.ToString(),
+                StringComparison.Ordinal);
         }
         finally
         {
@@ -255,8 +324,40 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
         bool includeSecond)
     {
         await using var transaction = await connection.BeginTransactionAsync();
+        await WritePermissionPairAsync(
+            connection,
+            (SqlTransaction)transaction,
+            includeFirst,
+            includeSecond);
+        await transaction.CommitAsync();
+    }
+
+    private static async Task WithUncommittedPermissionPairAsync(
+        string connectionString,
+        bool includeFirst,
+        bool includeSecond,
+        Func<Task> whileTransactionIsOpen)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        await WritePermissionPairAsync(
+            connection,
+            (SqlTransaction)transaction,
+            includeFirst,
+            includeSecond);
+        await whileTransactionIsOpen();
+        await transaction.CommitAsync();
+    }
+
+    private static async Task WritePermissionPairAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        bool includeFirst,
+        bool includeSecond)
+    {
         await using var command = connection.CreateCommand();
-        command.Transaction = (SqlTransaction)transaction;
+        command.Transaction = transaction;
         command.CommandText =
             """
             DELETE FROM [identity].[RolePermissions]
@@ -282,7 +383,6 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
             new SqlParameter("@IncludeSecond", includeSecond),
         ]);
         await command.ExecuteNonQueryAsync();
-        await transaction.CommitAsync();
     }
 
     private static async Task<CapabilitySnapshotProbe> ReadSnapshotAsync(HttpClient client)
@@ -360,11 +460,104 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
         await command.ExecuteNonQueryAsync();
     }
 
+    private static async Task CreateDatabaseWithRcsiDisabledAsync(
+        string baseConnectionString,
+        string databaseName)
+    {
+        var builder = new SqlConnectionStringBuilder(baseConnectionString)
+        {
+            InitialCatalog = "master",
+        };
+        await using var connection = new SqlConnection(builder.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            CREATE DATABASE [{databaseName}];
+            ALTER DATABASE [{databaseName}]
+                SET READ_COMMITTED_SNAPSHOT OFF WITH ROLLBACK IMMEDIATE;
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
+
     private sealed record CapabilitySnapshotProbe(
         string ContractVersion,
         string Generation,
         IReadOnlyList<string> Capabilities,
         string RawJson);
+
+    private sealed class AuthorizationProjectionCommandObserver :
+        IObserver<DiagnosticListener>,
+        IObserver<KeyValuePair<string, object?>>,
+        IDisposable
+    {
+        private readonly string _databaseName;
+        private readonly ConcurrentBag<IDisposable> _listenerSubscriptions = [];
+        private readonly IDisposable _allListenersSubscription;
+        private int _commandCount;
+
+        public AuthorizationProjectionCommandObserver(string databaseName)
+        {
+            _databaseName = databaseName;
+            _allListenersSubscription = DiagnosticListener.AllListeners.Subscribe(this);
+        }
+
+        public int CommandCount => Volatile.Read(ref _commandCount);
+
+        public void OnNext(DiagnosticListener listener)
+        {
+            if (string.Equals(
+                    listener.Name,
+                    "Microsoft.EntityFrameworkCore",
+                    StringComparison.Ordinal))
+            {
+                _listenerSubscriptions.Add(listener.Subscribe(this));
+            }
+        }
+
+        public void OnNext(KeyValuePair<string, object?> value)
+        {
+            if (!string.Equals(
+                    value.Key,
+                    RelationalEventId.CommandExecuting.Name,
+                    StringComparison.Ordinal)
+                || value.Value is not CommandEventData commandEvent
+                || !string.Equals(
+                    commandEvent.Command.Connection?.Database,
+                    _databaseName,
+                    StringComparison.Ordinal)
+                || !commandEvent.Command.CommandText.Contains(
+                    "FROM [identity].[Users] AS [u]",
+                    StringComparison.Ordinal)
+                || !commandEvent.Command.CommandText.Contains(
+                    "[identity].[RolePermissions]",
+                    StringComparison.Ordinal)
+                || !commandEvent.Command.CommandText.Contains(
+                    "[identity].[RoleAssignmentScopes]",
+                    StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            Interlocked.Increment(ref _commandCount);
+        }
+
+        public void OnCompleted()
+        {
+        }
+
+        public void OnError(Exception error)
+        {
+        }
+
+        public void Dispose()
+        {
+            _allListenersSubscription.Dispose();
+            foreach (var subscription in _listenerSubscriptions)
+            {
+                subscription.Dispose();
+            }
+        }
+    }
 
     private sealed class MultiPermissionTestProvider : IShellCapabilityProvider
     {

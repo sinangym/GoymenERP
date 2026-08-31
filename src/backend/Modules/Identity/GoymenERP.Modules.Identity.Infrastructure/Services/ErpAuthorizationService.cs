@@ -1,4 +1,3 @@
-using System.Data;
 using System.Security.Cryptography;
 using System.Text;
 using GoymenERP.BuildingBlocks.Security;
@@ -109,18 +108,12 @@ internal sealed class ErpAuthorizationService(
                 .ToListAsync(cancellationToken);
         }
 
-        if (!dbContext.Database.IsRelational()
-            || dbContext.Database.CurrentTransaction is not null)
-        {
-            return await ReadAsync();
-        }
-
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(
-            IsolationLevel.Serializable,
-            cancellationToken);
-        var rows = await ReadAsync();
-        await transaction.CommitAsync(cancellationToken);
-        return rows;
+        // This is deliberately one SQL statement. SQL Server installations are guarded at
+        // process start by AuthorizationSnapshotDatabaseReadinessService, which requires
+        // READ_COMMITTED_SNAPSHOT. That combination gives one statement-consistent,
+        // non-blocking authorization image without the read/write deadlocks caused by a
+        // Serializable transaction around this projection.
+        return await ReadAsync();
     }
 
     private static AuthorizationSnapshot BuildSnapshot(
