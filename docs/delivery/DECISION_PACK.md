@@ -60,3 +60,93 @@ _(yalnız CHATGPT-BUSINESS derleyicisi, doğrulanmış Issue #66 adaylarını bu
 ## P0 blocker kayıtları
 
 _(yalnız güvenle azaltılamayan P0 güvenlik/veri-bütünlüğü bulguları)_
+
+## DECISION-ROUND-2026-09-01-v1 — ÇÖZÜLDÜ
+
+- Revision: `v1`
+- Status: **ÇÖZÜLDÜ — 2026-09-01**
+- Taban: `main@e64c2ad7cf3f557541e57f5f6b3d3e1dea36123d`
+- Karar sahibi: Sinan Göymen
+- Derleyen: `CHATGPT-BUSINESS`
+- Supersedes: bu dosyanın üstündeki tarihsel `Bilinen OPEN-* kilitleri` tablosunun terminal soru seçimi. Güncel açık-alt-karar gerçeği `docs/decisions/ACIK_KARARLAR.md` dosyasındadır.
+
+Bu tur yeni feature spec değildir. Kararların kayıt altına alınması migration, production deployment, bulut aktarımı, purge veya dış entegrasyon credential yetkisi vermez.
+
+### Q1 — GIN / VKN: `A`
+
+- GIN gerçek unvan/VKN henüz yok; placeholder kalır.
+- `Vkn=NULL`, `IsPlaceholder=true`, `InvoiceCapable=false`.
+- Eski `1111111111` kaldırılacak.
+- Gerçek non-null VKN aktif/pasif bütün şirketlerde group-wide unique.
+- SQL Server filtered unique index: `WHERE Vkn IS NOT NULL`.
+- Kalan açık alt karar: `OPEN-001-GIN` gerçek unvan + gerçek VKN.
+
+### Q2 — Hacim: kısmi gerçek veri
+
+- Yıllık ciro yaklaşık `5 milyar TL`.
+- Ortalama ürün fiyatı yaklaşık `30.000 TL/ton`.
+- Türetilmiş planlama çıpası yaklaşık `166.667 ton/yıl`.
+- Gerçek ortalama sipariş tonajı bilinmediği için yalnız sentetik performans testi için `10–25 ton/sipariş` ve yaklaşık `6.700–16.700 sipariş/yıl` geçici aralığı kullanılır.
+- Kalan: müşteri/cari sayısı, eşzamanlı kullanıcı, yoğun saat, belge/OCR hacmi ve production SLO.
+
+### Q3 — Entegrasyon: ilk sürümde yok
+
+İleri öncelik:
+
+1. resmî e-fatura/e-arşiv,
+2. Mikro muhasebe mutabakatı ve kullanıcı onaylı fiş taslağı,
+3. banka hareketleri.
+
+Adapter yöntemi gerçek sağlayıcıya göre dosya, salt-okunur DB, manuel Excel/CSV veya yerel AI/OCR taslağı olabilir. Serbest doğrudan DB yazımı yoktur. Kalan: sağlayıcı, credential, sandbox ve exact erişim yöntemi.
+
+### Q4 — RPO/RTO: `A`
+
+- Başlangıç hedefi `RPO=15 dakika`, `RTO=4 saat`.
+- On-prem/hibrid ana çalışma ve tesis dışı şifreli yedek.
+- Production kapısı: gerçek restore tatbikatı + DB/belge checksum mutabakatı.
+- Gerçek hacim ölçülünce yeniden doğrulanır.
+
+### Q5 — Yıllık dönem + retention ayrımı
+
+- Yıllık dönemler; yeni döneme yalnız açık kalem/işlemler kaynak bağıyla carry-forward/snapshot.
+- Geçmiş kesinleşmiş olaylar kopyalanmaz ve kapalı dönemde değişmez.
+- Yetkili çok-yıllı rapor/AI analizi türetilmiş read model üzerinden çalışabilir.
+- Fiziksel purge yalnız en yüksek yetki + legal hold kontrolü + ikinci onay + audit.
+- Otomatik purge varsayılan kapalı.
+- Kalan: belge/audit/idempotency türü bazlı yasal süreler ve legal-hold rol matrisi.
+
+### Q6 — PDF/logo/antet: `A`
+
+- Her şirket ayrı logo/antet.
+- Şirket bazlı, versiyonlu ve auditli şablon.
+- Gömülü açık lisanslı `Noto Sans` teknik fallback.
+- Gerçek asset kullanıcı tarafından sağlanmadan kurumsal PDF UAT tamamlanmaz.
+- Kalan: asset dosyaları, varsa marka font lisansı ve exact onay permission/rolü.
+
+### Q7 — AI: yerel-first ve temel UX
+
+- Veri kullanıcı tarafında/on-prem kalır.
+- AI + yerel OCR sürekli erişilebilir temel UX olarak tasarlanır.
+- AI yetki, onay, formül veya iş doğrusu değildir; AI kesintisi normal ERP'yi bloke etmez.
+- Yerel model/GPU/OCR PoC'si sunucu envanterine bağlıdır.
+- Bulut AI sağlayıcı/KVKK/veri sınıfı ve ayrı aktivasyon olmadan default-deny kapalıdır.
+
+### Q8 — C-01 continuation: `A`
+
+- İlk doğrulanmış satırlar `offline`, `network-error`, `500`, `503` continuation hatasında kalır.
+- Continuation-level açık retry vardır; otomatik resend yoktur.
+- Aynı actor/session, CompanyContext/generation, query ve cursor snapshot'ı kullanılır.
+- Hatalı sayfa append edilmez; başarılı retry bir kez append eder.
+- `401`, `403`, tenant-binding ve malformed cevaplar maskelenmez.
+
+## Bu turdan sonra gerçekten açık kalan kararlar
+
+- `OPEN-001-GIN`: gerçek GIN unvanı ve VKN.
+- `OPEN-014`: gerçek sunucu/GPU/UPS/ağ/yedek envanteri.
+- `OPEN-015`: gerçek sipariş/müşteri/eşzamanlı kullanıcı/belge-OCR hacmi ve production SLO.
+- `OPEN-016`: sağlayıcı/credential/sandbox ve exact entegrasyon yöntemi.
+- `OPEN-018/021`: yasal saklama süreleri, legal hold ve partition/imha matrisi.
+- `OPEN-019`: gerçek logo/antet/font assetleri ve exact onay permission'ı.
+- `OPEN-020`: yerel model/GPU PoC; bulut sağlayıcı/KVKK/veri sınıfı/aktivasyon.
+
+Kapanan alt bölümler yeniden `NEEDS-SINAN` olarak sorulmaz.
