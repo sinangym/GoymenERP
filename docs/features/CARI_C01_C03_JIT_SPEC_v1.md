@@ -229,7 +229,7 @@ C-03A `companyId` query parametresi kullanmaz. `partyId` boş veya geçersiz UUI
 
 ### 5.2 Hassas ve kapsam dışı alanlar
 
-Mevcut `PartyCoreView` içindeki `externalIntegrationCode`, dedicated read permission ve redaction sahibi kabul edilene kadar:
+Mevcut `PartyCoreView.companyAccounts[].externalIntegrationCode`, dedicated read permission ve redaction sahibi kabul edilene kadar:
 
 - ekranda gösterilmez;
 - aranmaz;
