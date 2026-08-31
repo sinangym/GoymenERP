@@ -61,7 +61,7 @@ public sealed class SqlServerRelationalAcceptanceTests
         await connection.OpenAsync();
 
         Assert.Equal(
-            2,
+            3,
             await ScalarAsync<int>(
                 connection,
                 "SELECT COUNT(*) FROM [organization].[__EFMigrationsHistory];"));
@@ -81,7 +81,7 @@ public sealed class SqlServerRelationalAcceptanceTests
                 connection,
                 "SELECT COUNT(*) FROM [idempotency].[__EFMigrationsHistory];"));
         Assert.Equal(
-            2,
+            3,
             await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM [organization].[Companies];"));
         Assert.Equal(
             6,
@@ -99,8 +99,32 @@ public sealed class SqlServerRelationalAcceptanceTests
             5,
             await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM [identity].[Roles];"));
         Assert.Equal(
-            6,
+            7,
             await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM [identity].[RoleAssignments];"));
+        await AssertTopologyCountsAsync(
+            connection,
+            TestCompanyIds.CompanyA,
+            expectedSites: 3,
+            expectedLocations: 15,
+            expectedWorkCenters: 5);
+        await AssertTopologyCountsAsync(
+            connection,
+            TestCompanyIds.CompanyB,
+            expectedSites: 3,
+            expectedLocations: 15,
+            expectedWorkCenters: 5);
+        await AssertTopologyCountsAsync(
+            connection,
+            TestCompanyIds.CompanyC,
+            expectedSites: 0,
+            expectedLocations: 0,
+            expectedWorkCenters: 0);
+        Assert.Equal(
+            1,
+            await ScalarAsync<int>(
+                connection,
+                "SELECT COUNT(*) FROM [identity].[RoleAssignments] WHERE [CompanyId] = @CompanyId;",
+                new SqlParameter("@CompanyId", TestCompanyIds.CompanyC)));
         Assert.Equal(
             0,
             await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM [audit].[AuditEvents];"));
@@ -109,6 +133,34 @@ public sealed class SqlServerRelationalAcceptanceTests
             await ScalarAsync<int>(
                 connection,
                 "SELECT COUNT(*) FROM [idempotency].[CommandExecutions];"));
+    }
+
+    private static async Task AssertTopologyCountsAsync(
+        SqlConnection connection,
+        Guid companyId,
+        int expectedSites,
+        int expectedLocations,
+        int expectedWorkCenters)
+    {
+        var companyIdParameter = new SqlParameter("@CompanyId", companyId);
+        Assert.Equal(
+            expectedSites,
+            await ScalarAsync<int>(
+                connection,
+                "SELECT COUNT(*) FROM [organization].[Sites] WHERE [CompanyId] = @CompanyId;",
+                companyIdParameter));
+        Assert.Equal(
+            expectedLocations,
+            await ScalarAsync<int>(
+                connection,
+                "SELECT COUNT(*) FROM [organization].[Locations] WHERE [CompanyId] = @CompanyId;",
+                new SqlParameter("@CompanyId", companyId)));
+        Assert.Equal(
+            expectedWorkCenters,
+            await ScalarAsync<int>(
+                connection,
+                "SELECT COUNT(*) FROM [organization].[WorkCenters] WHERE [CompanyId] = @CompanyId;",
+                new SqlParameter("@CompanyId", companyId)));
     }
 
     private static async Task AssertIdentityRelationalConstraintsAsync(string connectionString)
@@ -1060,12 +1112,15 @@ internal sealed class SqlServerRelationalApiFactory : WebApplicationFactory<Prog
 {
     private readonly string _databaseConnectionString;
     private readonly Action<IServiceCollection>? _configureServices;
+    private readonly bool _applyTestCompanyBTopologyTemplates;
 
     public SqlServerRelationalApiFactory(
         string baseConnectionString,
-        Action<IServiceCollection>? configureServices = null)
+        Action<IServiceCollection>? configureServices = null,
+        bool applyTestCompanyBTopologyTemplates = true)
     {
         _configureServices = configureServices;
+        _applyTestCompanyBTopologyTemplates = applyTestCompanyBTopologyTemplates;
         DatabaseName = $"goymen_erp_ci_{Guid.NewGuid():N}";
         var builder = new SqlConnectionStringBuilder(baseConnectionString)
         {
@@ -1084,7 +1139,7 @@ internal sealed class SqlServerRelationalApiFactory : WebApplicationFactory<Prog
         builder.UseSetting("DB_CONNECTION_STRING", _databaseConnectionString);
         builder.ConfigureAppConfiguration((_, configuration) =>
         {
-            configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            var testConfiguration = new Dictionary<string, string?>
             {
                 ["Authentication:Mode"] = "DevelopmentBootstrap",
                 ["BootstrapIdentity:HeaderName"] = "X-Development-User",
@@ -1102,7 +1157,16 @@ internal sealed class SqlServerRelationalApiFactory : WebApplicationFactory<Prog
                 ["BootstrapIdentity:Users:5:DisplayName"] = "ERP Kaydı Olmayan SQL Test Kullanıcısı",
                 ["BootstrapIdentity:Users:6:UserId"] = TestUsers.NoAssignment,
                 ["BootstrapIdentity:Users:6:DisplayName"] = "Atamasız ERP SQL Test Kullanıcısı",
-            });
+            };
+            if (_applyTestCompanyBTopologyTemplates)
+            {
+                // Test-only foreign-company topology for relational isolation probes.
+                // Production runtime seed keeps GSP/GIN company-only.
+                testConfiguration["OrganizationSeed:Companies:1:ApplyTopologyTemplates"] =
+                    "true";
+            }
+
+            configuration.AddInMemoryCollection(testConfiguration);
         });
         if (_configureServices is not null)
         {

@@ -26,9 +26,20 @@ internal sealed class IdentityDataSeeder(
         var knownRoleIds = await dbContext.Roles
             .Select(x => x.Id)
             .ToHashSetAsync(cancellationToken);
-        var knownAssignmentIds = await dbContext.RoleAssignments
-            .Select(x => x.Id)
-            .ToHashSetAsync(cancellationToken);
+        var existingAssignments = await dbContext.RoleAssignments
+            .AsNoTracking()
+            .Include(x => x.Scopes)
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        foreach (var assignmentSeed in seed.Assignments)
+        {
+            if (existingAssignments.TryGetValue(
+                    assignmentSeed.Id,
+                    out var existingAssignment))
+            {
+                EnsureExistingAssignmentMatchesSeed(existingAssignment, assignmentSeed);
+            }
+        }
 
         foreach (var userSeed in seed.Users)
         {
@@ -75,7 +86,7 @@ internal sealed class IdentityDataSeeder(
 
         foreach (var assignmentSeed in seed.Assignments)
         {
-            if (!knownAssignmentIds.Add(assignmentSeed.Id))
+            if (existingAssignments.ContainsKey(assignmentSeed.Id))
             {
                 continue;
             }
@@ -101,6 +112,38 @@ internal sealed class IdentityDataSeeder(
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    private static void EnsureExistingAssignmentMatchesSeed(
+        RoleAssignment existing,
+        IdentityAssignmentSeed seed)
+    {
+        var seedScopes = seed.Scopes
+            .Select(scope => (
+                Type: Enum.Parse<AccessScopeType>(scope.Type, ignoreCase: true),
+                scope.Id))
+            .ToHashSet();
+        var existingScopes = existing.Scopes
+            .Select(scope => (Type: scope.ScopeType, Id: scope.ScopeId))
+            .ToHashSet();
+
+        var matches = existing.UserId == seed.UserId
+            && existing.RoleId == seed.RoleId
+            && existing.CompanyId == seed.CompanyId
+            && existing.ValidFromUtc == seed.ValidFromUtc
+            && existing.ValidUntilUtc == seed.ValidUntilUtc
+            && existing.ApprovedByUserId == seed.ApprovedByUserId
+            && existing.Status == RoleAssignmentStatus.Active
+            && existing.Scopes.All(scope =>
+                scope.RoleAssignmentId == existing.Id
+                && scope.CompanyId == existing.CompanyId)
+            && existingScopes.SetEquals(seedScopes);
+
+        if (!matches)
+        {
+            throw new InvalidOperationException(
+                $"Seed rol ataması kalıcı kayıtla eşleşmiyor: {seed.Id:D}.");
+        }
+    }
+
     private static void Validate(IdentitySeedOptions seed)
     {
         if (seed.Users.Count == 0 || seed.Roles.Count == 0 || seed.Assignments.Count == 0)
@@ -110,9 +153,19 @@ internal sealed class IdentityDataSeeder(
 
         var userIds = seed.Users.Select(x => x.Id).ToHashSet();
         var roleIds = seed.Roles.Select(x => x.Id).ToHashSet();
-        if (userIds.Contains(Guid.Empty) || roleIds.Contains(Guid.Empty))
+        if (userIds.Contains(Guid.Empty)
+            || roleIds.Contains(Guid.Empty)
+            || seed.Assignments.Any(x => x.Id == Guid.Empty))
         {
             throw new InvalidOperationException("Kimlik seed değerlerinde boş kimlik bulunamaz.");
+        }
+
+        if (seed.Assignments
+            .GroupBy(x => x.Id)
+            .Any(group => group.Count() > 1))
+        {
+            throw new InvalidOperationException(
+                "Seed rol ataması kimlikleri benzersiz olmalıdır.");
         }
 
         var unknownPermissions = seed.Roles

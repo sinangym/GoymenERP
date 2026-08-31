@@ -160,11 +160,14 @@ public sealed class ShellCapabilityAcceptanceTests(
             TestCompanyIds.CompanyB.ToString("D"),
             body,
             StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("TBD-GOY-02", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("GSP", body, StringComparison.Ordinal);
         Assert.DoesNotContain(
-            "Göymen Grup Şirket 2",
+            "Göymen Sac Profil San. ve Tic. Ltd. Şti.",
             body,
             StringComparison.Ordinal);
+        Assert.DoesNotContain("4101507252", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("vkn", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("invoiceCapable", body, StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<string> ReadGenerationAsync(HttpClient client)

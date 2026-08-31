@@ -77,7 +77,7 @@ public sealed class IdentityPermissionReconciliationSqlServerRelationalAcceptanc
                     connection,
                     "SELECT COUNT(*) FROM [identity].[Roles] WHERE [Code] = N'COUNTERPARTY_ACCOUNT_OPERATOR';"));
             Assert.Equal(
-                6,
+                7,
                 await ScalarAsync<int>(
                     connection,
                     "SELECT COUNT(*) FROM [identity].[RoleAssignments];"));

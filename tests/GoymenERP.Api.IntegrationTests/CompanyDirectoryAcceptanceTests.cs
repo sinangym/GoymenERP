@@ -14,10 +14,17 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed class CompanyDirectoryAcceptanceTests(GoymenErpApiFactory factory)
     : IClassFixture<GoymenErpApiFactory>
 {
-    private const string CompanyACode = "TBD-GOY-01";
-    private const string CompanyALegalName = "Göymen Grup Şirket 1 (Teyit Bekliyor)";
-    private const string CompanyBCode = "TBD-GOY-02";
-    private const string CompanyBLegalName = "Göymen Grup Şirket 2 (Teyit Bekliyor)";
+    private const string CompanyACode = "GDC";
+    private const string CompanyALegalName =
+        "Göymen Demir Çelik İnş. San. ve Tic. Ltd. Şti.";
+    private const string CompanyAVkn = "4100046586";
+    private const string CompanyBCode = "GSP";
+    private const string CompanyBLegalName =
+        "Göymen Sac Profil San. ve Tic. Ltd. Şti.";
+    private const string CompanyBVkn = "4101507252";
+    private const string CompanyCCode = "GIN";
+    private const string CompanyCLegalName = "Göymen İnşaat";
+    private const string CompanyCPlaceholderVkn = "1111111111";
     private const string ForgedCompanyCode = "FORGED-FOREIGN-CODE";
     private const string ForgedCompanyLegalName = "FORGED-FOREIGN-LEGAL-NAME";
 
@@ -69,12 +76,18 @@ public sealed class CompanyDirectoryAcceptanceTests(GoymenErpApiFactory factory)
         AssertCompanyA(companyA);
         AssertCompanyB(companyB);
         Assert.Equal(
-            new[] { TestCompanyIds.CompanyA, TestCompanyIds.CompanyB },
+            new[]
+            {
+                TestCompanyIds.CompanyA,
+                TestCompanyIds.CompanyC,
+                TestCompanyIds.CompanyB,
+            },
             groupCompanies.Select(x => x.Id));
         AssertCompanyA(groupCompanies[0]);
-        AssertCompanyB(groupCompanies[1]);
+        AssertCompanyC(groupCompanies[1]);
+        AssertCompanyB(groupCompanies[2]);
         Assert.Equal(
-            groupCompanies.Select(x => x.Code).OrderBy(x => x, StringComparer.Ordinal),
+            new[] { CompanyACode, CompanyCCode, CompanyBCode },
             groupCompanies.Select(x => x.Code));
     }
 
@@ -108,7 +121,10 @@ public sealed class CompanyDirectoryAcceptanceTests(GoymenErpApiFactory factory)
             Assert.Equal(HttpStatusCode.OK, companyBResponse.StatusCode);
             AssertPrivateNoStore(groupResponse);
             AssertPrivateNoStore(companyBResponse);
-            AssertCompanyA(Assert.Single(await ReadCompaniesAsync(groupResponse)));
+            var groupCompanies = await ReadCompaniesAsync(groupResponse);
+            Assert.Equal(2, groupCompanies.Count);
+            AssertCompanyA(groupCompanies[0]);
+            AssertCompanyC(groupCompanies[1]);
             Assert.Empty(await ReadCompaniesAsync(companyBResponse));
         }
         finally
@@ -200,6 +216,7 @@ public sealed class CompanyDirectoryAcceptanceTests(GoymenErpApiFactory factory)
                 ["id", "code", "legalName", "isPlaceholder"],
                 company.EnumerateObject().Select(property => property.Name).ToArray());
         }
+        AssertDirectoryDoesNotExposeFiscalFields(payload);
 
         return Assert.IsType<List<CompanySummary>>(
             JsonSerializer.Deserialize<List<CompanySummary>>(
@@ -221,7 +238,7 @@ public sealed class CompanyDirectoryAcceptanceTests(GoymenErpApiFactory factory)
             TestCompanyIds.CompanyA,
             CompanyACode,
             CompanyALegalName,
-            isPlaceholder: true);
+            isPlaceholder: false);
     }
 
     private static void AssertCompanyB(CompanySummary company)
@@ -231,6 +248,16 @@ public sealed class CompanyDirectoryAcceptanceTests(GoymenErpApiFactory factory)
             TestCompanyIds.CompanyB,
             CompanyBCode,
             CompanyBLegalName,
+            isPlaceholder: false);
+    }
+
+    private static void AssertCompanyC(CompanySummary company)
+    {
+        AssertCompany(
+            company,
+            TestCompanyIds.CompanyC,
+            CompanyCCode,
+            CompanyCLegalName,
             isPlaceholder: true);
     }
 
@@ -255,7 +282,23 @@ public sealed class CompanyDirectoryAcceptanceTests(GoymenErpApiFactory factory)
             StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(CompanyBCode, body, StringComparison.Ordinal);
         Assert.DoesNotContain(CompanyBLegalName, body, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            TestCompanyIds.CompanyC.ToString(),
+            body,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(CompanyCCode, body, StringComparison.Ordinal);
+        Assert.DoesNotContain(CompanyCLegalName, body, StringComparison.Ordinal);
         Assert.DoesNotContain(ForgedCompanyCode, body, StringComparison.Ordinal);
         Assert.DoesNotContain(ForgedCompanyLegalName, body, StringComparison.Ordinal);
+        AssertDirectoryDoesNotExposeFiscalFields(body);
+    }
+
+    private static void AssertDirectoryDoesNotExposeFiscalFields(string body)
+    {
+        Assert.DoesNotContain("vkn", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("invoiceCapable", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(CompanyAVkn, body, StringComparison.Ordinal);
+        Assert.DoesNotContain(CompanyBVkn, body, StringComparison.Ordinal);
+        Assert.DoesNotContain(CompanyCPlaceholderVkn, body, StringComparison.Ordinal);
     }
 }

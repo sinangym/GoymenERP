@@ -8,8 +8,17 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed class CompanyIsolationTests(GoymenErpApiFactory factory)
     : IClassFixture<GoymenErpApiFactory>
 {
-    private const string CompanyBCode = "TBD-GOY-02";
-    private const string CompanyBLegalName = "Göymen Grup Şirket 2 (Teyit Bekliyor)";
+    private const string CompanyACode = "GDC";
+    private const string CompanyALegalName =
+        "Göymen Demir Çelik İnş. San. ve Tic. Ltd. Şti.";
+    private const string CompanyAVkn = "4100046586";
+    private const string CompanyBCode = "GSP";
+    private const string CompanyBLegalName =
+        "Göymen Sac Profil San. ve Tic. Ltd. Şti.";
+    private const string CompanyBVkn = "4101507252";
+    private const string CompanyCCode = "GIN";
+    private const string CompanyCLegalName = "Göymen İnşaat";
+    private const string CompanyCPlaceholderVkn = "1111111111";
 
     [Fact]
     public async Task AnonymousRequest_IsRejected()
@@ -35,9 +44,16 @@ public sealed class CompanyIsolationTests(GoymenErpApiFactory factory)
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var company = Assert.Single(Assert.IsType<List<CompanySummary>>(companies));
         Assert.Equal(TestCompanyIds.CompanyA, company.Id);
+        Assert.Equal(CompanyACode, company.Code);
+        Assert.Equal(CompanyALegalName, company.LegalName);
+        Assert.False(company.IsPlaceholder);
         Assert.DoesNotContain(CompanyBCode, body, StringComparison.Ordinal);
         Assert.DoesNotContain(CompanyBLegalName, body, StringComparison.Ordinal);
         Assert.DoesNotContain(TestCompanyIds.CompanyB.ToString(), body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(CompanyCCode, body, StringComparison.Ordinal);
+        Assert.DoesNotContain(CompanyCLegalName, body, StringComparison.Ordinal);
+        Assert.DoesNotContain(TestCompanyIds.CompanyC.ToString(), body, StringComparison.OrdinalIgnoreCase);
+        AssertDirectoryDoesNotExposeFiscalFields(body);
     }
 
     [Fact]
@@ -274,5 +290,15 @@ public sealed class CompanyIsolationTests(GoymenErpApiFactory factory)
         Assert.DoesNotContain(CompanyBCode, body, StringComparison.Ordinal);
         Assert.DoesNotContain(CompanyBLegalName, body, StringComparison.Ordinal);
         Assert.DoesNotContain(TestCompanyIds.CompanyB.ToString(), body, StringComparison.OrdinalIgnoreCase);
+        AssertDirectoryDoesNotExposeFiscalFields(body);
+    }
+
+    private static void AssertDirectoryDoesNotExposeFiscalFields(string body)
+    {
+        Assert.DoesNotContain("vkn", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("invoiceCapable", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(CompanyAVkn, body, StringComparison.Ordinal);
+        Assert.DoesNotContain(CompanyBVkn, body, StringComparison.Ordinal);
+        Assert.DoesNotContain(CompanyCPlaceholderVkn, body, StringComparison.Ordinal);
     }
 }

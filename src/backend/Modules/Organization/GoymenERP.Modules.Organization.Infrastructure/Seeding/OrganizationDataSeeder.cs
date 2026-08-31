@@ -18,10 +18,15 @@ internal sealed class OrganizationDataSeeder(
         var seed = options.Value;
         Validate(seed);
 
-        var existingCompanyIds = await dbContext.Companies
+        var existingCompanies = await dbContext.Companies
             .IgnoreQueryFilters()
+            .Select(x => new { x.Id, x.Code })
+            .ToListAsync(cancellationToken);
+        var existingCompanyIds = existingCompanies
             .Select(x => x.Id)
-            .ToHashSetAsync(cancellationToken);
+            .ToHashSet();
+        var existingCompanyCodes = existingCompanies
+            .ToDictionary(x => x.Code, x => x.Id, StringComparer.OrdinalIgnoreCase);
         var existingSites = await dbContext.Sites
             .IgnoreQueryFilters()
             .Select(x => new { x.CompanyId, x.Code })
@@ -47,13 +52,42 @@ internal sealed class OrganizationDataSeeder(
 
         foreach (var companySeed in seed.Companies)
         {
-            if (existingCompanyIds.Add(companySeed.Id))
+            if (!existingCompanyIds.Add(companySeed.Id))
             {
+                var persistedCode = existingCompanies
+                    .Single(company => company.Id == companySeed.Id)
+                    .Code;
+                if (!string.Equals(
+                        persistedCode,
+                        companySeed.Code,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        $"Seed şirket kimliği beklenmeyen bir şirket koduna ait: {companySeed.Id:D}.");
+                }
+            }
+            else
+            {
+                if (existingCompanyCodes.TryGetValue(companySeed.Code, out var codeOwnerId)
+                    && codeOwnerId != companySeed.Id)
+                {
+                    throw new InvalidOperationException(
+                        $"Seed şirket kodu başka bir şirket kimliğiyle çakışıyor: {companySeed.Code}.");
+                }
+
                 dbContext.Companies.Add(new Company(
                     companySeed.Id,
                     companySeed.Code,
                     companySeed.LegalName,
-                    companySeed.IsPlaceholder));
+                    companySeed.Vkn,
+                    companySeed.IsPlaceholder,
+                    companySeed.InvoiceCapable));
+                existingCompanyCodes.Add(companySeed.Code, companySeed.Id);
+            }
+
+            if (!companySeed.ApplyTopologyTemplates)
+            {
+                continue;
             }
 
             foreach (var siteSeed in seed.SiteTemplates)
@@ -123,6 +157,34 @@ internal sealed class OrganizationDataSeeder(
         if (seed.Companies.Any(x => x.Id == Guid.Empty))
         {
             throw new InvalidOperationException("Seed şirket kimliği boş olamaz.");
+        }
+
+        if (seed.Companies
+            .GroupBy(x => x.Id)
+            .Any(group => group.Count() > 1)
+            || seed.Companies
+                .GroupBy(x => x.Code, StringComparer.OrdinalIgnoreCase)
+                .Any(group => group.Count() > 1))
+        {
+            throw new InvalidOperationException(
+                "Seed şirket kimliği ve kodu benzersiz olmalıdır.");
+        }
+
+        foreach (var company in seed.Companies)
+        {
+            _ = new Company(
+                company.Id,
+                company.Code,
+                company.LegalName,
+                company.Vkn,
+                company.IsPlaceholder,
+                company.InvoiceCapable);
+        }
+
+        if (!seed.Companies.Any(x => x.ApplyTopologyTemplates))
+        {
+            throw new InvalidOperationException(
+                "En az bir seed şirketi organizasyon topolojisi uygulamalıdır.");
         }
 
         var locationCodes = seed.SiteTemplates

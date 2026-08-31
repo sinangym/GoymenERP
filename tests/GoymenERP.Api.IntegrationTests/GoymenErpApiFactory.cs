@@ -46,6 +46,10 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
                 ["BootstrapIdentity:Users:5:DisplayName"] = "Dar Kapsam Audit Test Kullanıcısı",
                 ["BootstrapIdentity:Users:6:UserId"] = TestUsers.NoAssignment,
                 ["BootstrapIdentity:Users:6:DisplayName"] = "Atamasız ERP Test Kullanıcısı",
+                // Runtime seed assigns physical topology only to GDC. Company-B
+                // isolation tests still need a foreign tenant fixture, so the test
+                // host explicitly provisions the same deterministic topology for GSP.
+                ["OrganizationSeed:Companies:1:ApplyTopologyTemplates"] = "true",
             });
         });
 
@@ -168,6 +172,9 @@ public static class TestCompanyIds
 
     public static readonly Guid CompanyB = Guid.Parse(
         "10000000-0000-0000-0000-000000000002");
+
+    public static readonly Guid CompanyC = Guid.Parse(
+        "10000000-0000-0000-0000-000000000003");
 }
 
 public static class TestUsers
