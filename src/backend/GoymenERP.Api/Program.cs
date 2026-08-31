@@ -101,8 +101,8 @@ var app = builder.Build();
 _ = app.Services.GetRequiredService<ShellCapabilityRegistry>().Revision;
 
 app.UseExceptionHandler();
-app.UseMiddleware<CorrelationContextMiddleware>();
 app.UseMiddleware<ShellCapabilityTransportMiddleware>();
+app.UseMiddleware<CorrelationContextMiddleware>();
 app.UseCors();
 app.UseAuthentication();
 app.UseMiddleware<CompanyContextMiddleware>();

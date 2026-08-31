@@ -103,6 +103,27 @@ public sealed class ShellCapabilityAcceptanceTests(
             out _));
     }
 
+    [Theory]
+    [InlineData("X-Correlation-Id")]
+    [InlineData("X-Causation-Id")]
+    public async Task InvalidCorrelationMetadata_IsPrivateAndNonCacheable(
+        string invalidHeaderName)
+    {
+        using var client = factory.CreateClientFor(
+            TestUsers.CompanyA,
+            TestCompanyIds.CompanyA);
+        client.DefaultRequestHeaders.Remove(invalidHeaderName);
+        client.DefaultRequestHeaders.TryAddWithoutValidation(
+            invalidHeaderName,
+            "invalid metadata");
+
+        using var response = await client.GetAsync("/api/v1/shell/capabilities");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        AssertPrivateNoStore(response);
+        await AssertProblemCodeAsync(response, "correlation_metadata_invalid");
+    }
+
     [Fact]
     public async Task ValidActor_GetsPrivateReplaceAllEmptySnapshotWithoutAuthorityInventory()
     {
