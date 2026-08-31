@@ -196,3 +196,32 @@ td[data-account-state='inactive'] {
  * the accessibility tree, which costs a screen-reader user the column headers. The
  * scroll now lives on a wrapper element instead, so the table stays a table.
  */
+
+/* Continuation-level failure: scoped to the "load more" affordance, never a
+   replacement for the list above it (B-C01-008). */
+.continuationError {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 14px;
+  border: 1px solid #d9a441;
+  border-left: 4px solid #a3592f;
+  border-radius: 4px;
+  background: #fdf7ec;
+  color: #6b4415;
+  font-size: 0.9rem;
+}
+.continuationError button {
+  padding: 6px 14px;
+  border: 1px solid #1f5fd0;
+  border-radius: 4px;
+  background: #fff;
+  color: #1f5fd0;
+  font: inherit;
+  cursor: pointer;
+}
+.continuationError button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
