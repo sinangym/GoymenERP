@@ -375,6 +375,16 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
           {/* The rows below are the last VALIDATED set. While a refetch is in flight
               (filter change, or a continuation page) that is a fact the user is
               entitled to, not a detail to hide behind unchanged-looking content. */}
+          {/* Six columns do not fit a phone. The TABLE may scroll sideways; the PAGE
+              must not (WCAG 1.4.10). `tabindex=0` makes the scroll region reachable
+              by keyboard — otherwise the off-screen columns are mouse-only. */}
+          <div
+            className={styles.tableScroll}
+            // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+            tabIndex={0}
+            role="region"
+            aria-label="Cari listesi tablosu"
+          >
           <table className={styles.table} aria-busy={query.isFetching}>
             <caption className={styles.caption}>
               {/* The scope is VALIDATED, not displayed: `filtered-authorized-visible-parties`
@@ -437,6 +447,7 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
               })}
             </tbody>
           </table>
+          </div>
 
           {page?.hasMore ? (
             <button

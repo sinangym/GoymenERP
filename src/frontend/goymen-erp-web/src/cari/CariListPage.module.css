@@ -56,6 +56,25 @@
   font-size: 0.88rem;
 }
 
+/**
+ * Six columns do not fit a phone. WCAG 1.4.10 allows the TABLE to scroll sideways —
+ * it does not allow the PAGE to. Without this container the table pushed the document
+ * wider than the viewport, so every screen (filters, heading, nav) scrolled with it
+ * and the last column was simply unreachable.
+ *
+ * `tabindex="0"` + a label make the scroll region reachable by keyboard: a sighted
+ * mouse user can drag it, and without this a keyboard user could not reach the
+ * off-screen columns at all.
+ */
+.tableScroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.tableScroll:focus-visible {
+  outline: 2px solid #1f5fd0;
+  outline-offset: 2px;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;
@@ -63,6 +82,8 @@
   border: 1px solid #d5dbe6;
   border-radius: 6px;
   overflow: hidden;
+  /* Keeps columns legible instead of crushing them; the container scrolls instead. */
+  min-width: 42rem;
 }
 .caption {
   text-align: left;
@@ -149,8 +170,29 @@ td[data-account-state='inactive'] {
     flex-direction: column;
     align-items: stretch;
   }
-  .table {
-    display: block;
-    overflow-x: auto;
+  /* Stretching a column is not enough: a flex item defaults to `min-width: auto`, and
+     an <input>/<select> has an intrinsic minimum width, so the fields refused to
+     shrink and pushed the whole page wider than the viewport at 320 CSS px. */
+  .field {
+    min-width: 0;
+  }
+  .field input,
+  .field select {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+  /* Four role checkboxes do not fit one 320px row. */
+  .roles {
+    flex-wrap: wrap;
+    min-width: 0;
   }
 }
+
+/*
+ * The old rule here was `.table { display: block; overflow-x: auto }`. It did not
+ * work — the browser measurement showed the document still scrolling sideways at
+ * 375px — and `display: block` on a <table> drops the table's row/cell semantics in
+ * the accessibility tree, which costs a screen-reader user the column headers. The
+ * scroll now lives on a wrapper element instead, so the table stays a table.
+ */
