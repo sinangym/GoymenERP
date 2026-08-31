@@ -71,7 +71,7 @@ export type ShellEvent =
   | { type: 'CONFIRM_SWITCH_DISCARD' }
   | { type: 'CONFIRM_SWITCH_STAY' }
   | { type: 'REAUTH_OK'; forGeneration: number; context: CompanyContext }
-  | { type: 'REAUTH_FAIL'; forGeneration: number; restoredCapabilityGeneration: string | null }
+  | { type: 'REAUTH_FAIL'; forGeneration: number }
   | { type: 'CAPABILITY_REVOKED' }
   | { type: 'SESSION_RESET' }
   | { type: 'DIRTY_SET'; scope: string }
@@ -171,12 +171,12 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
       const fenced = state.requestFenceGeneration + 1
       const former = state.verifiedFormerContext
       if (former !== null) {
-        // Restore the SNAPSHOT taken at transition start, only refreshing the
-        // opaque capability generation the server just re-issued.
+        // Restore the SNAPSHOT taken at transition start, unchanged. It was
+        // server-verified moments ago; the target was never committed.
         return {
           ...state,
           phase: 'idle',
-          activeContext: { ...former, capabilityGeneration: event.restoredCapabilityGeneration },
+          activeContext: former,
           pendingTarget: null,
           verifiedFormerContext: null,
           requestFenceGeneration: fenced,

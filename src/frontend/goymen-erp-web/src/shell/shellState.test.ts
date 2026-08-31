@@ -117,7 +117,7 @@ describe('two-phase switch — attempt binding (Codex #133 P1-1)', () => {
 })
 
 describe('two-phase switch — failure (Codex #133 P1-1)', () => {
-  it('REAUTH_FAIL restores the SNAPSHOT, never a caller-supplied context', () => {
+  it('REAUTH_FAIL restores the former SNAPSHOT unchanged, never a caller-supplied context', () => {
     const switching = run(ready, {
       type: 'REQUEST_SWITCH',
       target: { scopeMode: 'single', companyId: 'fixture-company-b' },
@@ -125,12 +125,11 @@ describe('two-phase switch — failure (Codex #133 P1-1)', () => {
     const failed = run(switching, {
       type: 'REAUTH_FAIL',
       forGeneration: switching.requestFenceGeneration,
-      restoredCapabilityGeneration: 'refreshed-gen',
     })
     expect(failed.phase).toBe('idle')
     expect(failed.activeContext?.companyId).toBe('fixture-company-a') // from snapshot
     expect(failed.activeContext?.userId).toBe('fixture-user')
-    expect(failed.activeContext?.capabilityGeneration).toBe('refreshed-gen')
+    expect(failed.activeContext?.capabilityGeneration).toBe('fixture-cap-gen-1') // unchanged
     expect(failed.requestFenceGeneration).toBe(ready.requestFenceGeneration + 2)
     expect(failed.committedContextRevision).toBe(ready.committedContextRevision)
   })
@@ -140,11 +139,7 @@ describe('two-phase switch — failure (Codex #133 P1-1)', () => {
       type: 'REQUEST_SWITCH',
       target: { scopeMode: 'single', companyId: 'fixture-company-b' },
     })
-    const stale = run(switching, {
-      type: 'REAUTH_FAIL',
-      forGeneration: 999,
-      restoredCapabilityGeneration: null,
-    })
+    const stale = run(switching, { type: 'REAUTH_FAIL', forGeneration: 999 })
     expect(stale).toBe(switching)
   })
 
@@ -156,7 +151,6 @@ describe('two-phase switch — failure (Codex #133 P1-1)', () => {
     const failed = run(switching, {
       type: 'REAUTH_FAIL',
       forGeneration: switching.requestFenceGeneration,
-      restoredCapabilityGeneration: null,
     })
     expect(failed.phase).toBe('no-active-company')
     expect(failed.activeContext).toBeNull()
@@ -243,11 +237,9 @@ describe('contextKey (INV-NS) — Codex #133 P1-2', () => {
     const afterFailedSwitch = run(
       ready,
       { type: 'REQUEST_SWITCH', target: { scopeMode: 'single', companyId: 'fixture-company-b' } },
-      { type: 'REAUTH_FAIL', forGeneration: ready.requestFenceGeneration + 1, restoredCapabilityGeneration: null },
+      { type: 'REAUTH_FAIL', forGeneration: ready.requestFenceGeneration + 1 },
     )
-    // company + committed revision unchanged → namespace unchanged (fence not in the key)
-    expect(contextKey(afterFailedSwitch)).toEqual([
-      'fixture-user', 'single', 'fixture-company-a', 'no-capability', '1',
-    ])
+    // former context restored unchanged → namespace identical to `ready` (fence not in the key)
+    expect(contextKey(afterFailedSwitch)).toEqual(contextKey(ready))
   })
 })

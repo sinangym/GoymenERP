@@ -116,3 +116,22 @@
     flex-wrap: wrap;
   }
 }
+
+.switchFailure {
+  margin: 12px 20px 0;
+  padding: 10px 14px;
+  border: 1px solid #e0b4b4;
+  border-radius: 4px;
+  background: #fdf3f3;
+  font-size: 0.9rem;
+}
+.switchFailure button {
+  margin-left: 8px;
+  padding: 4px 10px;
+  border: 1px solid #1f5fd0;
+  border-radius: 4px;
+  background: #fff;
+  color: #1f5fd0;
+  font: inherit;
+  cursor: pointer;
+}

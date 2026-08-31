@@ -35,6 +35,13 @@ export interface ShellCapabilitySnapshot {
   readonly capabilities: readonly string[]
 }
 
+/**
+ * The exact backend canonical version (ShellCapabilityRegistry.ContractVersion).
+ * A snapshot with any other version, or an empty generation, is NOT a valid
+ * capability resolution — it fails closed (Codex #139 P1-3).
+ */
+export const SHELL_CAPABILITY_CONTRACT_VERSION = 'SHELL-CAPABILITY-V1'
+
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
 const DEV_IDENTITY_ENABLED =
@@ -100,8 +107,11 @@ function isCapabilitySnapshot(value: unknown): value is ShellCapabilitySnapshot 
   if (typeof value !== 'object' || value === null) return false
   const snapshot = value as ShellCapabilitySnapshot
   return (
-    typeof snapshot.contractVersion === 'string' &&
+    // Exact canonical version only — an unknown version fails closed.
+    snapshot.contractVersion === SHELL_CAPABILITY_CONTRACT_VERSION &&
     typeof snapshot.generation === 'string' &&
+    // A non-empty opaque generation token is required.
+    snapshot.generation.trim().length > 0 &&
     Array.isArray(snapshot.capabilities) &&
     snapshot.capabilities.every((capability) => typeof capability === 'string')
   )

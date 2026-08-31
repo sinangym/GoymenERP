@@ -18,17 +18,52 @@ import styles from './AppShell.module.css'
 export function AppShell() {
   const state = useShellState()
   const dispatch = useShellDispatch()
-  const { identity, directory, identityState, directoryState } = useShellOrchestrator()
+  const {
+    identity,
+    directory,
+    identityState,
+    directoryState,
+    bootstrapping,
+    bootstrapFailure,
+    switchFailure,
+    sessionInvalid,
+    retry,
+  } = useShellOrchestrator()
+
+  // 401 anywhere — session is dead. Terminal (no login flow yet).
+  if (sessionInvalid || identityState.kind === 'unauthenticated') {
+    return <StateBlock state={{ kind: 'unauthenticated' }} subject="oturum" />
+  }
 
   // Directory / identity problems block the whole shell — fail closed.
-  if (identityState.kind !== 'ready' && identityState.kind !== 'initial-loading') {
-    return <StateBlock state={identityState} subject="kimlik" />
+  if (identityState.kind === 'initial-loading' || directoryState.kind === 'initial-loading') {
+    return <StateBlock state={{ kind: 'initial-loading' }} subject="oturum" />
+  }
+  if (identityState.kind !== 'ready') {
+    return <StateBlock state={identityState} subject="kimlik" onRetry={retry} />
   }
   if (directoryState.kind === 'no-authorized-company' || directoryState.kind === 'empty-no-data') {
     return <StateBlock state={{ kind: 'no-authorized-company' }} subject="şirket" />
   }
-  if (directoryState.kind !== 'ready' && directoryState.kind !== 'initial-loading') {
-    return <StateBlock state={directoryState} subject="şirket dizini" />
+  if (directoryState.kind !== 'ready') {
+    return <StateBlock state={directoryState} subject="şirket dizini" onRetry={retry} />
+  }
+
+  // Bootstrap could not reach a verified company context — retryable, no shell yet.
+  if (bootstrapFailure) {
+    return (
+      <StateBlock
+        state={{ kind: 'service-unavailable' }}
+        subject="şirket bağlamı kurulamadı"
+        onRetry={retry}
+      />
+    )
+  }
+
+  // P2-1: identity + directory resolved, context still being established — this is
+  // loading, not "no authorized company".
+  if (bootstrapping && state.phase === 'no-active-company') {
+    return <StateBlock state={{ kind: 'initial-loading' }} subject="şirket bağlamı" />
   }
 
   const switching = state.phase === 'switching' || state.phase === 'confirming-switch'
@@ -76,10 +111,17 @@ export function AppShell() {
             </select>
           </label>
 
-          <div className={styles.user}>
-            {identity ? identity.displayName : '…'}
-          </div>
+          <div className={styles.user}>{identity ? identity.displayName : '…'}</div>
         </header>
+
+        {switchFailure ? (
+          <div className={styles.switchFailure} role="alert">
+            Şirket değiştirilemedi; önceki şirkette kalındı.{' '}
+            <button type="button" onClick={retry}>
+              Tekrar dene
+            </button>
+          </div>
+        ) : null}
 
         <main id="main-content" className={styles.main} tabIndex={-1}>
           {switching ? (

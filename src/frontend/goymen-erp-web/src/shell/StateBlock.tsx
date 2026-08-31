@@ -41,19 +41,24 @@ const MESSAGES: Record<string, { title: string; detail: string }> = {
   ready: { title: 'Hazır', detail: '' },
 }
 
+const RETRYABLE = new Set(['offline', 'service-unavailable', 'malformed-response'])
+
 export function StateBlock({
   state,
   subject,
+  onRetry,
 }: {
   readonly state: RemoteViewState<unknown>
   readonly subject: string
+  readonly onRetry?: () => void
 }) {
   const message = MESSAGES[state.kind] ?? MESSAGES['malformed-response']
   const isBusy = state.kind === 'initial-loading'
+  const showRetry = onRetry !== undefined && RETRYABLE.has(state.kind)
   return (
     <div
       className={styles.block}
-      role="status"
+      role={isBusy ? 'status' : 'alert'}
       aria-live={isBusy ? 'polite' : 'assertive'}
       data-state={state.kind}
     >
@@ -62,6 +67,11 @@ export function StateBlock({
         {subject ? ` — ${subject}` : ''}
       </p>
       {message.detail ? <p className={styles.detail}>{message.detail}</p> : null}
+      {showRetry ? (
+        <button type="button" className={styles.retry} onClick={onRetry}>
+          Tekrar dene
+        </button>
+      ) : null}
     </div>
   )
 }

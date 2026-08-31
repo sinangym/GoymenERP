@@ -16,9 +16,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { initialShellState, shellReducer } from './shellState'
 import { ShellDispatchContext, ShellStateContext } from './shellContext'
 
-export function ShellProvider({ children }: { readonly children: ReactNode }) {
+export function ShellProvider({
+  children,
+  queryClient: externalClient,
+}: {
+  readonly children: ReactNode
+  /** Test seam — production always uses the internal client. */
+  readonly queryClient?: QueryClient
+}) {
   const [state, dispatch] = useReducer(shellReducer, initialShellState)
-  const [queryClient] = useState(
+  const [internalClient] = useState(
     () =>
       new QueryClient({
         defaultOptions: {
@@ -26,6 +33,7 @@ export function ShellProvider({ children }: { readonly children: ReactNode }) {
         },
       }),
   )
+  const queryClient = externalClient ?? internalClient
 
   return (
     <QueryClientProvider client={queryClient}>
