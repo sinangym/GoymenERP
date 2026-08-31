@@ -18,6 +18,30 @@ vermez. `AGENTS.md`, governance, CI veya merge politikası değişiklikleri otom
 edilemez; insan review kapısında kalır.
 
 `docs/governance/GOYMEN_ERP_OTONOM_TESLIM_PLANI_v2.md` merge edilmişse ayrıca okunur.
+
+`docs/governance/GOYMEN_ERP_HIZLI_TESLIM_v3.md` merge edilmişse **önce** okunur ve
+uygulanır. v3, v2'nin **rol dağılımını, dilim sırasını ve tören seviyesini** günceller;
+güvenlik değişmezleri (bu dosyanın "Mimari değişmezler" ve "Yasaklar" bölümleri,
+`KARAR_SICILI.md` önceliği, production aktivasyonunun insanda kalması) aynen korunur.
+Çelişkide v3 süreç tarafında, v2 güvenlik tarafında üstündür.
+
+- Pre-production PR'ı tek karşı-ajan review + fresh zorunlu CI ile coordinator merge edilir.
+- İki bağımsız exact-head review yalnız **K3**'te gerekir; K3 kapsamı dardır: DB
+  migration/constraint · para/formül/tolerans · permission/rol · cross-module contract ·
+  `.github/**` · production activation. Diğer her şey K1/K2.
+- Karara bağlanmamış nokta: ajan **durmaz**; Issue #66'ya `NEEDS-SINAN: <soru>` tek satır
+  yazar ve sıradaki dilime geçer. Geri alınabilir teknik/UX ayarı ChatGPT hakemliğiyle
+  `ASSUMPTION-*` olabilir; para/stok/üretim/formül/yetki/güvenlik/migration/saklama
+  politikası tahminle etkinleştirilemez.
+- Şeritler (v3 §6): **Codex** = backend + endpoint + gerçek-SQL + OpenAPI + formül
+  calculator. **Claude** = tüm frontend / React shell / ekranlar / generated-client
+  tüketimi / browser-a11y. **ChatGPT** = iş spec + acceptance + formül golden + backlog +
+  hakemlik (tam-zamanında, bir dilim önde). **`CODEX-ORCHESTRATOR`** = merge. Üç ajan
+  aynı dikey dilimin farklı katmanında çalışır.
+
+En güncel kullanıcı kararları için `docs/decisions/` içindeki tarihli `SINAN_KARARLARI_*.md`
+dosyaları `KARAR_SICILI.md`'den önce, "son kullanıcı kararı" seviyesinde geçerlidir.
+
 31 Ağustos 2026 tarihli kullanıcı kararı, geliştirme PR'ları için aşağıdaki dar ve geri
 alınabilir standing merge yetkisini verir:
 
