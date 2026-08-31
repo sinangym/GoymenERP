@@ -135,13 +135,13 @@ public sealed class OpenApiContractGenerationTests
         "CreateCounterpartyV1",
         "CreateCounterpartyCompanyAccountV1",
         "SetCounterpartyCompanyAccountActiveStateV1",
-        "GetShellCapabilitiesV1",
     ];
 
     private static readonly HashSet<string> OptionalCompanyOperations =
     [
         "GetCounterpartiesV1",
         "GetCounterpartyV1",
+        "GetShellCapabilitiesV1",
     ];
 
     private static readonly HashSet<string> IdempotentOperations =
@@ -219,6 +219,7 @@ public sealed class OpenApiContractGenerationTests
             ["SetCounterpartyCompanyAccountActiveStateV1:404"] = ["not_found"],
             ["SetCounterpartyCompanyAccountActiveStateV1:409"] =
                 ["idempotency_conflict", "version_conflict"],
+            ["GetShellCapabilitiesV1:400"] = ["company_context_invalid"],
         };
 
     private static readonly IReadOnlyDictionary<string, ComponentSchemaExpectation>

@@ -1,5 +1,7 @@
+using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
+using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -48,6 +50,7 @@ public static class CounterpartyModuleExtensions
         services.AddSingleton<ICounterpartyCursorCodec, CounterpartyCursorCodec>();
         services.AddScoped<ICounterpartyCommandService, CounterpartyCommandService>();
         services.AddScoped<ICounterpartyCompanyAccountLinkService, CounterpartyCompanyAccountLinkService>();
+        services.AddSingleton<IShellCapabilityProvider, CounterpartyShellCapabilityProvider>();
 
         return services;
     }

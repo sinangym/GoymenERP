@@ -18,9 +18,7 @@ public sealed class ShellCapabilityService(
     public async Task<ShellCapabilitySnapshot> GetSnapshotAsync(
         CancellationToken cancellationToken = default)
     {
-        if (!companyContext.IsResolved
-            || companyContext.CompanyId == Guid.Empty
-            || !Guid.TryParse(currentUser.UserId, out var userId))
+        if (!Guid.TryParse(currentUser.UserId, out var userId))
         {
             throw new ShellCapabilityUnavailableException();
         }
@@ -31,27 +29,62 @@ public sealed class ShellCapabilityService(
             throw new ShellCapabilityUnavailableException();
         }
 
-        var authorizationSnapshot = await authorizationService.GetAuthorizationSnapshotAsync(
-            companyContext.CompanyId,
-            ErpPermissions.All.ToArray(),
-            cancellationToken);
         var authorizedCompanies = await organizationService.GetAuthorizedCompaniesAsync(
             cancellationToken);
         var activeAuthorizedCompanyIds = authorizedCompanies
             .Select(company => company.Id)
-            .Where(authorizationSnapshot.AllowedCompanyIds.Contains)
-            .ToHashSet();
-        if (!currentUser.CanAccessCompany(companyContext.CompanyId)
-            || !activeAuthorizedCompanyIds.Contains(companyContext.CompanyId))
+            .Where(currentUser.CanAccessCompany)
+            .Distinct()
+            .Order()
+            .ToArray();
+        if (activeAuthorizedCompanyIds.Length == 0)
         {
             throw new ShellCapabilityUnavailableException();
         }
 
-        var scopes = authorizationSnapshot.PermissionScopes;
+        var isSingleCompany = companyContext.IsResolved;
+        var selectedCompanyId = isSingleCompany
+            ? companyContext.CompanyId
+            : (Guid?)null;
+        if (selectedCompanyId is Guid selected
+            && (selected == Guid.Empty
+                || !currentUser.CanAccessCompany(selected)
+                || !activeAuthorizedCompanyIds.Contains(selected)))
+        {
+            throw new ShellCapabilityUnavailableException();
+        }
+
+        var candidateCompanyIds = selectedCompanyId is Guid selectedCompany
+            ? [selectedCompany]
+            : activeAuthorizedCompanyIds;
+        var authorizations = new List<CompanyAuthorization>(candidateCompanyIds.Length);
+        foreach (var candidateCompanyId in candidateCompanyIds)
+        {
+            var snapshot = await authorizationService.GetAuthorizationSnapshotAsync(
+                candidateCompanyId,
+                ErpPermissions.All.ToArray(),
+                cancellationToken);
+            if (snapshot.AllowedCompanyIds.Contains(candidateCompanyId))
+            {
+                authorizations.Add(new CompanyAuthorization(candidateCompanyId, snapshot));
+            }
+        }
+
+        if (authorizations.Count == 0
+            || isSingleCompany && authorizations.Count != 1)
+        {
+            throw new ShellCapabilityUnavailableException();
+        }
 
         var capabilities = registry.Registrations
             .Where(registration => registration.Declaration.ImplementationAvailable)
-            .Where(registration => IsAllowed(registration.Declaration, scopes))
+            .Where(registration => IsContextCompatible(
+                registration.Declaration,
+                isSingleCompany))
+            .Where(registration => authorizations.Any(authorization =>
+                IsAllowed(
+                    registration.Declaration,
+                    authorization.Snapshot.PermissionScopes)))
             .Select(registration => registration.Declaration.CapabilityId)
             .OrderBy(capability => capability, StringComparer.Ordinal)
             .ToArray();
@@ -60,33 +93,37 @@ public sealed class ShellCapabilityService(
         {
             ShellCapabilityRegistry.ContractVersion,
             registry.Revision,
-            authorizationSnapshot.Revision,
             userId.ToString("D", CultureInfo.InvariantCulture),
             sessionBinding,
-            companyContext.CompanyId.ToString("D", CultureInfo.InvariantCulture),
+            isSingleCompany ? "single-company" : "authorized-multi-company-read",
+            selectedCompanyId?.ToString("D", CultureInfo.InvariantCulture) ?? "-",
         };
         generationComponents.AddRange(activeAuthorizedCompanyIds
-            .OrderBy(id => id)
             .Select(id => $"company:{id:D}"));
-        foreach (var (permission, scope) in scopes.OrderBy(
-                     entry => entry.Key,
-                     StringComparer.Ordinal))
+        foreach (var authorization in authorizations.OrderBy(item => item.CompanyId))
         {
-            generationComponents.Add($"permission:{permission}");
-            generationComponents.Add(scope.IsGranted ? "granted:1" : "granted:0");
-            generationComponents.Add(scope.IsCompanyWide ? "company-wide:1" : "company-wide:0");
-            generationComponents.AddRange(scope.RoleCodes
-                .OrderBy(x => x, StringComparer.Ordinal)
-                .Select(role => $"role:{role}"));
-            generationComponents.AddRange(scope.SiteIds
-                .OrderBy(x => x)
-                .Select(id => $"site:{id:D}"));
-            generationComponents.AddRange(scope.LocationIds
-                .OrderBy(x => x)
-                .Select(id => $"location:{id:D}"));
-            generationComponents.AddRange(scope.WorkCenterIds
-                .OrderBy(x => x)
-                .Select(id => $"work-center:{id:D}"));
+            generationComponents.Add($"authorization-company:{authorization.CompanyId:D}");
+            generationComponents.Add($"authorization-revision:{authorization.Snapshot.Revision}");
+            foreach (var (permission, scope) in authorization.Snapshot.PermissionScopes
+                         .OrderBy(entry => entry.Key, StringComparer.Ordinal))
+            {
+                generationComponents.Add($"permission:{permission}");
+                generationComponents.Add(scope.IsGranted ? "granted:1" : "granted:0");
+                generationComponents.Add(
+                    scope.IsCompanyWide ? "company-wide:1" : "company-wide:0");
+                generationComponents.AddRange(scope.RoleCodes
+                    .OrderBy(x => x, StringComparer.Ordinal)
+                    .Select(role => $"role:{role}"));
+                generationComponents.AddRange(scope.SiteIds
+                    .OrderBy(x => x)
+                    .Select(id => $"site:{id:D}"));
+                generationComponents.AddRange(scope.LocationIds
+                    .OrderBy(x => x)
+                    .Select(id => $"location:{id:D}"));
+                generationComponents.AddRange(scope.WorkCenterIds
+                    .OrderBy(x => x)
+                    .Select(id => $"work-center:{id:D}"));
+            }
         }
 
         generationComponents.AddRange(capabilities.Select(x => $"capability:{x}"));
@@ -94,6 +131,15 @@ public sealed class ShellCapabilityService(
             ShellCapabilityRegistry.ContractVersion,
             protector.Protect(generationComponents),
             Array.AsReadOnly(capabilities));
+    }
+
+    private static bool IsContextCompatible(
+        ShellCapabilityDeclaration declaration,
+        bool isSingleCompany)
+    {
+        return isSingleCompany
+            || declaration.ContextRequirement
+            == ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead;
     }
 
     private static bool IsAllowed(
@@ -109,6 +155,10 @@ public sealed class ShellCapabilityService(
                     || scope.IsCompanyWide);
         });
     }
+
+    private sealed record CompanyAuthorization(
+        Guid CompanyId,
+        AuthorizationSnapshot Snapshot);
 }
 
 public sealed record ShellCapabilitySnapshot(

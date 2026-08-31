@@ -132,11 +132,11 @@ public sealed partial class ShellCapabilityRegistry
             "Capability kimliği");
         _ = RequiredMatch(
             declaration.RouteId,
-            RouteAndScreenIdPattern(),
+            RouteIdPattern(),
             "Route kimliği");
         _ = RequiredMatch(
             declaration.ScreenId,
-            RouteAndScreenIdPattern(),
+            ScreenIdPattern(),
             "Ekran kimliği");
 
         var routePath = declaration.RoutePath?.Trim() ?? string.Empty;
@@ -151,7 +151,8 @@ public sealed partial class ShellCapabilityRegistry
         }
 
         if (declaration.ContextRequirement
-            != ShellCapabilityContextRequirement.SingleCompany)
+            is not ShellCapabilityContextRequirement.SingleCompany
+            and not ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead)
         {
             throw new InvalidOperationException(
                 $"'{owner}' provider desteklenmeyen shell context ilan etti.");
@@ -328,17 +329,24 @@ public sealed partial class ShellCapabilityRegistry
                 || ParameterRouteSegmentPattern().IsMatch(segment));
     }
 
-    [GeneratedRegex("^[A-Z][A-Z0-9-]{1,63}$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(
+        "^[A-Z][A-Z0-9-]{1,63}(?:/[A-Z][A-Z0-9-]{1,63})*$",
+        RegexOptions.CultureInvariant)]
     private static partial Regex OwnerPattern();
 
-    [GeneratedRegex("^[A-Z][A-Z0-9.-]{2,127}$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9.-]{0,127}$", RegexOptions.CultureInvariant)]
     private static partial Regex ContractVersionPattern();
 
     [GeneratedRegex("^[a-z][a-z0-9.-]{2,127}$", RegexOptions.CultureInvariant)]
     private static partial Regex CapabilityIdPattern();
 
+    [GeneratedRegex(
+        "^(?:[a-z][a-z0-9.-]{2,127}|[A-Z][A-Z0-9-]{2,63})$",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex RouteIdPattern();
+
     [GeneratedRegex("^[A-Z][A-Z0-9-]{2,63}$", RegexOptions.CultureInvariant)]
-    private static partial Regex RouteAndScreenIdPattern();
+    private static partial Regex ScreenIdPattern();
 
     [GeneratedRegex("^[a-z0-9][a-z0-9._-]*$", RegexOptions.CultureInvariant)]
     private static partial Regex LiteralRouteSegmentPattern();

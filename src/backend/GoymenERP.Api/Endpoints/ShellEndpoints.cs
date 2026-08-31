@@ -1,7 +1,11 @@
 using GoymenERP.Api.Multitenancy;
+using GoymenERP.Api.Errors;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.Shell;
-using Microsoft.Net.Http.Headers;
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Security;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Primitives;
 
 namespace GoymenERP.Api.Endpoints;
 
@@ -12,15 +16,16 @@ public static class ShellEndpoints
     {
         var group = endpoints.MapGroup("/api/v1/shell")
             .RequireAuthorization()
+            .WithMetadata(ShellCapabilityPrivateNoStoreMetadata.Instance)
+            .AddEndpointFilter(ResolveOptionalCompanyContextAsync)
             .WithTags("Shell");
 
         group.MapGet("/capabilities", async (
                 ShellCapabilityService service,
                 HttpContext httpContext,
                 ILogger<ShellCapabilityService> logger,
-                CancellationToken cancellationToken) =>
+            CancellationToken cancellationToken) =>
             {
-                SetPrivateNoStore(httpContext.Response.Headers);
                 try
                 {
                     return Results.Ok(
@@ -35,7 +40,7 @@ public static class ShellEndpoints
                         statusCode: StatusCodes.Status503ServiceUnavailable);
                 }
             })
-            .RequireCompanyContext()
+            .UsesOptionalCompanyContext(usesPlatformInvalidCode: true)
             .WithName("GetShellCapabilitiesV1")
             .Produces<ShellCapabilitySnapshot>(StatusCodes.Status200OK)
             .ProducesErpBadRequest()
@@ -45,9 +50,43 @@ public static class ShellEndpoints
         return endpoints;
     }
 
-    private static void SetPrivateNoStore(IHeaderDictionary headers)
+    private static async ValueTask<object?> ResolveOptionalCompanyContextAsync(
+        EndpointFilterInvocationContext invocationContext,
+        EndpointFilterDelegate next)
     {
-        headers[HeaderNames.CacheControl] = "private, no-store";
-        headers[HeaderNames.Pragma] = "no-cache";
+        var httpContext = invocationContext.HttpContext;
+        if (!httpContext.Request.Headers.TryGetValue(
+                CompanyContextMiddleware.CompanyHeaderName,
+                out var headerValue))
+        {
+            return await next(invocationContext);
+        }
+
+        if (!TryParseSelectedCompanyId(headerValue, out var companyId))
+        {
+            return ErpRequestMetadataProblem.CompanyContextInvalid();
+        }
+
+        var currentUser = httpContext.RequestServices.GetRequiredService<ICurrentUser>();
+        if (!currentUser.CanAccessCompany(companyId))
+        {
+            return Results.Problem(statusCode: StatusCodes.Status403Forbidden);
+        }
+
+        httpContext.RequestServices
+            .GetRequiredService<ICompanyContext>()
+            .Set(companyId);
+
+        return await next(invocationContext);
+    }
+
+    internal static bool TryParseSelectedCompanyId(
+        StringValues headerValue,
+        out Guid companyId)
+    {
+        companyId = Guid.Empty;
+        return headerValue.Count == 1
+            && Guid.TryParse(headerValue[0], out companyId)
+            && companyId != Guid.Empty;
     }
 }

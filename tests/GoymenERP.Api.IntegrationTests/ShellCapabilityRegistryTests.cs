@@ -2,12 +2,54 @@ using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 using GoymenERP.Modules.Organization.Application.Contracts;
 
 namespace GoymenERP.Api.IntegrationTests;
 
 public sealed class ShellCapabilityRegistryTests
 {
+    [Fact]
+    public void AcceptedCounterpartyListProvider_MatchesExactOwnerSourceAndAuthority()
+    {
+        var provider = new CounterpartyShellCapabilityProvider();
+        var registry = new ShellCapabilityRegistry(
+            [provider],
+            new ShellCapabilityAuthorityCatalog(
+                [ShellCapabilityRegistryAuthorities.CounterpartyListV15]));
+
+        var registration = Assert.Single(registry.Registrations);
+        Assert.Equal(
+            ShellCapabilityRegistryAuthorities.CounterpartyListV15,
+            registry.Revision);
+        Assert.Equal(CounterpartyShellCapabilityProvider.OwnerId, registration.Owner);
+        Assert.Equal(
+            CounterpartyShellCapabilityProvider.OwnerContractVersion,
+            registration.OwnerContractVersion);
+        Assert.Equal(
+            CounterpartyShellCapabilityProvider.ListCapabilityId,
+            registration.Declaration.CapabilityId);
+        Assert.Equal(
+            CounterpartyShellCapabilityProvider.ListRouteId,
+            registration.Declaration.RouteId);
+        Assert.Equal(
+            CounterpartyShellCapabilityProvider.ListRoutePath,
+            registration.Declaration.RoutePath);
+        Assert.Equal(
+            CounterpartyShellCapabilityProvider.ListScreenId,
+            registration.Declaration.ScreenId);
+        Assert.Equal(
+            ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+            registration.Declaration.ContextRequirement);
+        Assert.Equal(
+            ShellCapabilityScopeRequirement.CompanyWide,
+            registration.Declaration.ScopeRequirement);
+        Assert.Equal(
+            [ErpPermissions.CounterpartyPartiesRead],
+            registration.Declaration.RequiredPermissions);
+        Assert.False(registration.Declaration.ImplementationAvailable);
+    }
+
     [Fact]
     public void EmptyRegistry_IsValidDeterministicAndExposesNoCapabilities()
     {

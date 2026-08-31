@@ -221,11 +221,13 @@ public static class ErpOpenApiContract
     }
 
     public static TBuilder UsesOptionalCompanyContext<TBuilder>(
-        this TBuilder builder)
+        this TBuilder builder,
+        bool usesPlatformInvalidCode = false)
         where TBuilder : IEndpointConventionBuilder
     {
         builder.Add(endpointBuilder =>
-            endpointBuilder.Metadata.Add(OptionalCompanyContextMetadata.Instance));
+            endpointBuilder.Metadata.Add(
+                new OptionalCompanyContextMetadata(usesPlatformInvalidCode)));
         return builder;
     }
 
@@ -445,8 +447,21 @@ public static class ErpOpenApiContract
                 "uuid",
                 nonEmptyUuid: true);
         }
-        else if (endpointMetadata.Contains(OptionalCompanyContextMetadata.Instance))
+        else if (endpointMetadata
+                 .OfType<OptionalCompanyContextMetadata>()
+                 .SingleOrDefault() is { } optionalCompanyContext)
         {
+            if (optionalCompanyContext.UsesPlatformInvalidCode)
+            {
+                problemCodesByStatus[StatusCodes.Status400BadRequest] =
+                    problemCodesByStatus
+                        .GetValueOrDefault(StatusCodes.Status400BadRequest, [])
+                        .Append(ErpProblemCodes.CompanyContextInvalid)
+                        .Distinct(StringComparer.Ordinal)
+                        .Order(StringComparer.Ordinal)
+                        .ToArray();
+            }
+
             AddHeaderParameter(
                 operation,
                 CompanyContextMiddleware.CompanyHeaderName,
@@ -974,10 +989,7 @@ public static class ErpOpenApiContract
             new ErpProblemCodeMetadata(statusCode, codes)));
     }
 
-    private sealed class OptionalCompanyContextMetadata
-    {
-        public static readonly OptionalCompanyContextMetadata Instance = new();
-    }
+    private sealed record OptionalCompanyContextMetadata(bool UsesPlatformInvalidCode);
 
     private sealed record IdempotentCommandMetadata(
         IReadOnlySet<int> ReplayableStatusCodes)
