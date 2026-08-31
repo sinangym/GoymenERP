@@ -79,6 +79,13 @@ internal sealed class CounterpartyReadService(
                 cursor,
                 cancellationToken);
 
+        if (!await CompaniesRemainActiveAsync(
+                authorization.ReadableCompanyIds,
+                cancellationToken))
+        {
+            return CounterpartyPageExecution.Forbidden();
+        }
+
         return CounterpartyPageExecution.Succeeded(page);
     }
 
@@ -101,14 +108,21 @@ internal sealed class CounterpartyReadService(
         }
 
         var companyIdArray = authorizedCompanyIds.ToArray();
-        var accounts = await dbContext.CompanyPartyAccounts
+        var accountsQuery = dbContext.CompanyPartyAccounts
             .AsNoTracking()
             .Where(account =>
                 account.PartyId == partyId
                 && companyIdArray.Contains(account.CompanyId))
             .OrderBy(account => account.CompanyId)
-            .ThenBy(account => account.Id)
-            .ToListAsync(cancellationToken);
+            .ThenBy(account => account.Id);
+        if (dbContext.Database.IsRelational())
+        {
+            sqlObserver.Observe(
+                CounterpartyReadSqlOperation.DetailAccounts,
+                accountsQuery.ToQueryString());
+        }
+
+        var accounts = await accountsQuery.ToListAsync(cancellationToken);
         if (accounts.Count == 0)
         {
             return null;
@@ -117,12 +131,18 @@ internal sealed class CounterpartyReadService(
         var party = await dbContext.Parties
             .AsNoTracking()
             .SingleOrDefaultAsync(candidate => candidate.Id == partyId, cancellationToken);
-        return party is null
-            ? null
-            : PartyCoreViewComposer.ComposeAuthorized(
-                party,
-                accounts,
-                authorizedCompanyIds);
+        if (party is null
+            || !await CompaniesRemainActiveAsync(
+                authorizedCompanyIds,
+                cancellationToken))
+        {
+            return null;
+        }
+
+        return PartyCoreViewComposer.ComposeAuthorized(
+            party,
+            accounts,
+            authorizedCompanyIds);
     }
 
     private async Task<CounterpartyPage> QuerySqlServerAsync(
@@ -675,6 +695,21 @@ internal sealed class CounterpartyReadService(
             .Distinct()
             .Order()
             .ToArray();
+    }
+
+    private async Task<bool> CompaniesRemainActiveAsync(
+        IEnumerable<Guid> expectedCompanyIds,
+        CancellationToken cancellationToken)
+    {
+        var expected = expectedCompanyIds.ToHashSet();
+        if (expected.Count == 0)
+        {
+            return false;
+        }
+
+        var activeAuthorized = await ResolveActiveAuthorizedCompanyIdsAsync(
+            cancellationToken);
+        return expected.IsSubsetOf(activeAuthorized);
     }
 
     private string CreateNextCursor(

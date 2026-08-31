@@ -10,6 +10,7 @@ internal enum CounterpartyReadSqlOperation
     Page = 1,
     Accounts = 2,
     Count = 3,
+    DetailAccounts = 4,
 }
 
 internal sealed class NullCounterpartyReadSqlObserver : ICounterpartyReadSqlObserver
