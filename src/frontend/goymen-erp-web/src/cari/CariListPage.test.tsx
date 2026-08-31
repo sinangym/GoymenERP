@@ -645,3 +645,36 @@ describe('C-01 deferred continuation (ChatGPT #147 P1)', () => {
     expect(screen.queryByRole('table')).toBeNull()
   })
 })
+
+describe('C-01 reflow structure (browser UAT finding)', () => {
+  /**
+   * jsdom has no layout, so it cannot measure the overflow this pins. The layout proof
+   * is the browser measurement recorded on the PR (320px: docScrollWidth === viewport,
+   * nothing overflowing outside the scroll region). What these tests DO prevent is the
+   * structure that made the overflow possible from coming back.
+   */
+  it('the table scrolls inside its own labelled, keyboard-reachable region', async () => {
+    installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    const region = screen.getByRole('region', { name: 'Cari listesi tablosu' })
+    // Reachable by keyboard: without this the off-screen columns are mouse-only.
+    expect(region.getAttribute('tabindex')).toBe('0')
+    expect(region.contains(screen.getByRole('table'))).toBe(true)
+  })
+
+  it('the table keeps its table semantics — the scroll lives on the wrapper', async () => {
+    installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    // The previous attempt was `.table { display: block; overflow-x: auto }`, which
+    // both failed to stop the page scrolling AND drops row/cell semantics from the
+    // accessibility tree — costing a screen-reader user the column headers.
+    const table = screen.getByRole('table')
+    expect(table.tagName).toBe('TABLE')
+    expect(screen.getAllByRole('columnheader')).toHaveLength(6)
+    expect(screen.getAllByRole('row').length).toBeGreaterThan(1)
+  })
+})
