@@ -1,11 +1,13 @@
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
+using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Net.Http.Headers;
 
 namespace GoymenERP.Api.Endpoints;
 
@@ -20,20 +22,58 @@ public static class CounterpartyEndpoints
             .WithTags("Counterparty");
 
         group.MapGet("/", async (
-            Guid? companyId,
+            HttpContext httpContext,
             ICounterpartyReadService service,
+            ICurrentUser currentUser,
+            IActorSessionBindingResolver sessionBindingResolver,
             CancellationToken cancellationToken) =>
         {
-            var parties = await service.GetAuthorizedPartiesAsync(
-                companyId,
+            SetPrivateNoStore(httpContext.Response.Headers);
+            var parseResult = CounterpartyPageQueryParser.Parse(
+                httpContext.Request.Query,
+                out var query,
+                out var error);
+            if (parseResult == CounterpartyPageQueryParseResult.InvalidCursor)
+            {
+                return InvalidCursor();
+            }
+
+            if (parseResult == CounterpartyPageQueryParseResult.ValidationFailed)
+            {
+                return ValidationProblem("Cari listeleme isteği geçersiz.", error);
+            }
+
+            var sessionBinding = await sessionBindingResolver.ResolveAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(currentUser.UserId)
+                || string.IsNullOrWhiteSpace(sessionBinding))
+            {
+                return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+
+            var execution = await service.GetAuthorizedPageAsync(
+                new CounterpartyReadRequest(
+                    query,
+                    currentUser.UserId,
+                    sessionBinding),
                 cancellationToken);
-            return Results.Ok(parties);
+            return execution.Result switch
+            {
+                CounterpartyPageResult.Succeeded => Results.Ok(execution.Page),
+                CounterpartyPageResult.Forbidden => Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden),
+                CounterpartyPageResult.InvalidCursor => InvalidCursor(),
+                CounterpartyPageResult.ServiceUnavailable => Results.Problem(
+                    statusCode: StatusCodes.Status503ServiceUnavailable),
+                _ => throw new InvalidOperationException("Bilinmeyen Cari listeleme sonucu."),
+            };
         })
             .UsesOptionalCompanyContext()
             .WithName("GetCounterpartiesV1")
-            .Produces<IReadOnlyList<PartyCoreView>>(StatusCodes.Status200OK)
-            .ProducesErpBadRequest(CounterpartyProblemCodesV1.ValidationFailed)
-            .AllowsEmptyErpBadRequestBody()
+            .Produces<CounterpartyPage>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(
+                CounterpartyProblemCodesV1.ValidationFailed,
+                CounterpartyProblemCodesV1.InvalidCursor)
+            .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
         group.MapGet("/{partyId:guid}", async (
@@ -399,6 +439,15 @@ public static class CounterpartyEndpoints
         };
     }
 
+    private static IResult InvalidCursor()
+    {
+        return CounterpartyProblem(
+            StatusCodes.Status400BadRequest,
+            CounterpartyProblemCodesV1.InvalidCursor,
+            "Sayfalama bilgisi geçersiz.",
+            "Sayfalama bilgisi süresi dolmuş, değiştirilmiş veya mevcut kapsamla eşleşmiyor.");
+    }
+
     private static IResult ValidationProblem(string title, string detail)
     {
         return CounterpartyProblem(
@@ -447,5 +496,11 @@ public static class CounterpartyEndpoints
             detail: detail,
             statusCode: statusCode,
             extensions: extensions);
+    }
+
+    private static void SetPrivateNoStore(IHeaderDictionary headers)
+    {
+        headers[HeaderNames.CacheControl] = "private, no-store";
+        headers[HeaderNames.Pragma] = "no-cache";
     }
 }

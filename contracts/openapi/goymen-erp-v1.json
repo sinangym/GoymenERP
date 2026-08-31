@@ -1884,14 +1884,6 @@
         "operationId": "GetCounterpartiesV1",
         "parameters": [
           {
-            "name": "companyId",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
             "name": "X-Correlation-Id",
             "in": "header",
             "description": "Optional client correlation identifier; the server creates one when absent.",
@@ -1922,6 +1914,120 @@
               "format": "uuid",
               "x-erp-non-empty-uuid": true
             }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Code, legalName or tradeName contains search; Unicode trim + NFC, Turkish CI/AS.",
+            "explode": false,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 0,
+              "type": "string",
+              "x-erp-canonicalization": "unicode-trim+nfc"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "description": "Optional Party kind.",
+            "explode": false,
+            "schema": {
+              "pattern": "^(LegalEntity|NaturalPerson)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "role",
+            "in": "query",
+            "description": "Repeatable Party role filter; one visible account must satisfy roleMatch.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "pattern": "^(Customer|Supplier|Tolling|Service)$",
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "roleMatch",
+            "in": "query",
+            "description": "Role matching mode; default any.",
+            "explode": false,
+            "schema": {
+              "pattern": "^(any|all)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "partyState",
+            "in": "query",
+            "description": "Global Party state; default active.",
+            "explode": false,
+            "schema": {
+              "pattern": "^(active|inactive|all)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "accountState",
+            "in": "query",
+            "description": "Visible company-account state; default all.",
+            "explode": false,
+            "schema": {
+              "pattern": "^(active|inactive|all)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Keyset sort; default code.",
+            "explode": false,
+            "schema": {
+              "pattern": "^(code|legalName|updatedAt)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "description": "Sort direction; default asc.",
+            "explode": false,
+            "schema": {
+              "pattern": "^(asc|desc)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "description": "Page size; default 50.",
+            "explode": false,
+            "schema": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque authenticated cursor bound to actor, session, scope and normalized query.",
+            "explode": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "name": "includeCount",
+            "in": "query",
+            "description": "Return exact filtered authorized distinct Party count; default false.",
+            "explode": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -1941,10 +2047,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/PartyCoreView"
-                  }
+                  "$ref": "#/components/schemas/CounterpartyPage"
                 }
               }
             }
@@ -1971,9 +2074,33 @@
             },
             "x-erp-problem-codes": [
               "correlation_metadata_invalid",
+              "invalid_cursor",
               "validation_failed"
-            ],
-            "x-erp-empty-body-possible": true
+            ]
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "service_unavailable"
+            ]
           },
           "401": {
             "description": "Unauthorized",
@@ -3562,6 +3689,125 @@
           },
           "isPlaceholder": {
             "type": "boolean"
+          }
+        }
+      },
+      "CounterpartyListAccount": {
+        "required": [
+          "id",
+          "companyId",
+          "roles",
+          "isActive",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "roles": {
+            "$ref": "#/components/schemas/PartyRole"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "CounterpartyListItem": {
+        "required": [
+          "id",
+          "code",
+          "kind",
+          "legalName",
+          "tradeName",
+          "isActive",
+          "version",
+          "companyAccounts"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/PartyKind"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "tradeName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "companyAccounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CounterpartyListAccount"
+            }
+          }
+        }
+      },
+      "CounterpartyPage": {
+        "required": [
+          "items",
+          "nextCursor",
+          "hasMore",
+          "totalCount",
+          "countScope"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CounterpartyListItem"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "totalCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "countScope": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

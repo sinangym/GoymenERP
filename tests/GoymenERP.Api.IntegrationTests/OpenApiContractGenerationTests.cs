@@ -59,8 +59,24 @@ public sealed class OpenApiContractGenerationTests
         new("get", "/api/v1/identity/me", "GetCurrentIdentityV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json")),
         new("get", "/api/v1/counterparties", "GetCounterpartiesV1",
-            AuthenticatedResponses("200:application/json", "400:application/problem+json"),
-            ParameterValues: ["query:companyId:false:type:string;format:uuid"]),
+            AuthenticatedResponses(
+                "200:application/json",
+                "400:application/problem+json",
+                "503:application/problem+json"),
+            ParameterValues:
+            [
+                "query:q:false:type:string;canonicalization:unicode-trim+nfc",
+                "query:kind:false:type:string;pattern:^(LegalEntity|NaturalPerson)$",
+                "query:role:false:type:array;items:type:string",
+                "query:roleMatch:false:type:string;pattern:^(any|all)$",
+                "query:partyState:false:type:string;pattern:^(active|inactive|all)$",
+                "query:accountState:false:type:string;pattern:^(active|inactive|all)$",
+                "query:sort:false:type:string;pattern:^(code|legalName|updatedAt)$",
+                "query:direction:false:type:string;pattern:^(asc|desc)$",
+                "query:pageSize:false:type:integer",
+                "query:cursor:false:type:string",
+                "query:includeCount:false:type:boolean",
+            ]),
         new("post", "/api/v1/counterparties", "CreateCounterpartyV1",
             AuthenticatedResponses("201:application/json", "400:application/problem+json", "409:application/problem+json", "415:"),
             "#/components/schemas/CreateCounterparty"),
@@ -99,7 +115,7 @@ public sealed class OpenApiContractGenerationTests
             ["SetOrganizationLocationActiveStateV1"] = "none",
             ["GetOrganizationWorkCentersV1"] = "array:WorkCenterSummary",
             ["GetCurrentIdentityV1"] = "ref:IdentityProfile",
-            ["GetCounterpartiesV1"] = "array:PartyCoreView",
+            ["GetCounterpartiesV1"] = "ref:CounterpartyPage",
             ["CreateCounterpartyV1"] = "ref:PartyCoreView",
             ["GetCounterpartyV1"] = "ref:PartyCoreView",
             ["CreateCounterpartyCompanyAccountV1"] = "ref:PartyCoreView",
@@ -165,7 +181,6 @@ public sealed class OpenApiContractGenerationTests
     [
         "GetAuditEventsV1",
         "GetOrganizationLocationsV1",
-        "GetCounterpartiesV1",
         "GetCounterpartyV1",
         "SetOrganizationLocationActiveStateV1",
         "CreateCounterpartyV1",
@@ -189,7 +204,7 @@ public sealed class OpenApiContractGenerationTests
     private static readonly IReadOnlyDictionary<string, string[]> AdditionalProblemCodes =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
-            ["GetCounterpartiesV1:400"] = ["validation_failed"],
+            ["GetCounterpartiesV1:400"] = ["invalid_cursor", "validation_failed"],
             ["GetCounterpartyV1:400"] = ["validation_failed"],
             ["GetCounterpartyV1:404"] = ["not_found"],
             ["CreateCounterpartyV1:400"] = ["command_metadata_invalid", "validation_failed"],
@@ -263,6 +278,30 @@ public sealed class OpenApiContractGenerationTests
                     ("externalIntegrationCode", "type:null|string"),
                     ("isActive", "type:boolean"),
                     ("version", "type:integer;format:int64")),
+                ["CounterpartyListAccount"] = ObjectSchema(
+                    ["id", "companyId", "roles", "isActive", "version"],
+                    ("id", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("roles", "ref:PartyRole"),
+                    ("isActive", "type:boolean"),
+                    ("version", "type:integer;format:int64")),
+                ["CounterpartyListItem"] = ObjectSchema(
+                    ["id", "code", "kind", "legalName", "tradeName", "isActive", "version", "companyAccounts"],
+                    ("id", "type:string;format:uuid"),
+                    ("code", "type:string"),
+                    ("kind", "ref:PartyKind"),
+                    ("legalName", "type:string"),
+                    ("tradeName", "type:null|string"),
+                    ("isActive", "type:boolean"),
+                    ("version", "type:integer;format:int64"),
+                    ("companyAccounts", "type:array;items:ref:CounterpartyListAccount")),
+                ["CounterpartyPage"] = ObjectSchema(
+                    ["items", "nextCursor", "hasMore", "totalCount", "countScope"],
+                    ("items", "type:array;items:ref:CounterpartyListItem"),
+                    ("nextCursor", "type:null|string"),
+                    ("hasMore", "type:boolean"),
+                    ("totalCount", "type:integer|null|string;format:int64"),
+                    ("countScope", "type:null|string")),
                 ["CompanySummary"] = ObjectSchema(
                     ["id", "code", "legalName", "isPlaceholder"],
                     ("id", "type:string;format:uuid"),
@@ -536,7 +575,6 @@ public sealed class OpenApiContractGenerationTests
             (Client: scopedAdminClient, Path: "/api/v1/audit/events?pageSize=not-an-integer"),
             (Client: scopedAdminClient, Path: "/api/v1/organization/locations?page=not-an-integer"),
             (Client: scopedAdminClient, Path: "/api/v1/organization/locations?pageSize=not-an-integer"),
-            (Client: groupClient, Path: "/api/v1/counterparties?companyId=not-a-guid"),
             (Client: groupClient, Path: $"/api/v1/counterparties/{partyId}?companyId=not-a-guid"),
         };
 
@@ -962,6 +1000,10 @@ public sealed class OpenApiContractGenerationTests
                     + $":{parameter.Schema}")
                 .ToArray();
             Assert.Equal(expected.Parameters, nonHeaderParameters);
+            if (expected.OperationId == "GetCounterpartiesV1")
+            {
+                AssertCounterpartyPageQueryContract(actual.Value);
+            }
         }
 
         var anonymousOperation = Assert.Single(operations, operation =>
@@ -1311,6 +1353,37 @@ public sealed class OpenApiContractGenerationTests
             pattern,
             format: null,
             canonicalMaximumLength: null);
+    }
+
+    private static void AssertCounterpartyPageQueryContract(JsonElement operation)
+    {
+        var parameters = operation.GetProperty("parameters")
+            .EnumerateArray()
+            .Where(parameter => parameter.GetProperty("in").GetString() == "query")
+            .ToDictionary(
+                parameter => parameter.GetProperty("name").GetString()!,
+                parameter => parameter.GetProperty("schema"),
+                StringComparer.Ordinal);
+
+        Assert.Equal(11, parameters.Count);
+        var search = parameters["q"];
+        Assert.Equal(200, search.GetProperty("maxLength").GetInt32());
+        Assert.Equal(
+            "unicode-trim+nfc",
+            search.GetProperty(ErpOpenApiContract.CanonicalizationExtensionName).GetString());
+
+        var role = parameters["role"];
+        Assert.Equal("array", role.GetProperty("type").GetString());
+        Assert.Equal(
+            "^(Customer|Supplier|Tolling|Service)$",
+            role.GetProperty("items").GetProperty("pattern").GetString());
+
+        var pageSize = parameters["pageSize"];
+        Assert.Equal(1, pageSize.GetProperty("minimum").GetInt32());
+        Assert.Equal(200, pageSize.GetProperty("maximum").GetInt32());
+        Assert.Equal(1, parameters["cursor"].GetProperty("minLength").GetInt32());
+        Assert.Equal("boolean", parameters["includeCount"].GetProperty("type").GetString());
+        Assert.DoesNotContain("companyId", parameters.Keys);
     }
 
     private static void AssertStringSchema(

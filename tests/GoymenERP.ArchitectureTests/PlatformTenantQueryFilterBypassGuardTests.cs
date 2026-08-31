@@ -29,7 +29,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string OpenApiStartupPath =
         "src/backend/GoymenERP.Api/Program.cs";
     private const string ReviewedOpenApiStartupFingerprint =
-        "badcb3c543e61a7387524803992826878dc16208dd5cc9cc8004b915169eb0c8";
+        "f674c6a1426f87c2c062cf7905b38621a4511d60091e608ee7d17358d1b77c94";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -90,7 +90,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Identity/"
                  + "GoymenERP.Modules.Identity.Infrastructure/IdentityModuleExtensions.cs"] =
                     new(
-                        "375cb42ab89112a4ac4d92487c6a46fde0327de033145583fd78b06c9eff5d69",
+                        "d999f3036333f1b70d2d0bb4ecdefb0efe8fdc9249fea6e5401df42f6e70834d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
