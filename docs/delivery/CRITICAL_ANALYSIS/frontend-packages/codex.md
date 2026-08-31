@@ -241,29 +241,31 @@ reddetme kararının exact dependency yoludur.
 
 ### 8.2 Compiler/build probe'ları
 
-Router/Query declaration probe'u exact dependency setiyle aşağıdaki minimal
-`probe.ts` girdisini kullanmıştır:
-
-```typescript
-import type { QueryClient } from "@tanstack/react-query";
-import type { RouteObject } from "react-router";
-
-declare const queryClient: QueryClient;
-const route: RouteObject = { path: "/" };
-export { queryClient, route };
-```
-
-Exact kapı:
+Router/Query declaration probe'u sandbox lockfile'ını değiştirmeden exact React
+type paketlerini ekleyip yayımlanmış declaration girişlerini doğrudan strict
+olarak derlemiştir. Exact kapı:
 
 ```powershell
-npx tsc .\probe.ts --noEmit --strict --skipLibCheck false `
-  --module ESNext --moduleResolution Bundler --target ES2022 `
-  --lib ES2022,DOM
+npm.cmd install --no-save --package-lock=false --ignore-scripts `
+  @types/react@19.2.18 @types/react-dom@19.2.4
+node_modules\.bin\tsc.cmd --noEmit --skipLibCheck false `
+  --module NodeNext --moduleResolution NodeNext --target ES2022 `
+  --jsx react-jsx --lib ES2022,DOM,DOM.Iterable --types react,react-dom `
+  node_modules\react-router\dist\development\index.d.ts `
+  node_modules\@tanstack\react-query\build\modern\index.d.ts
 ```
 
 Komut exit `0` dönmüştür. Bu, Vite 8 runtime/build kabulü değildir; o kanıt
 package-adoption PR'ına bırakılmıştır. Aynı strict declaration kapısı TanStack
-Router alternatifiyle exit `2` dönmüş; exact hata:
+Router alternatifiyle aşağıdaki exact komutta exit `2` dönmüştür:
+
+```powershell
+node_modules\.bin\tsc.cmd --noEmit --skipLibCheck false `
+  --module NodeNext --moduleResolution NodeNext --target ES2022 `
+  node_modules\@tanstack\router-core\dist\esm\ssr\types.d.ts
+```
+
+Exact hata:
 
 ```text
 node_modules/@tanstack/router-core/dist/esm/ssr/types.d.ts(5,24):
@@ -295,10 +297,10 @@ Her exact sürüm için `npm pack <package>@<version> --dry-run --json` çalış
 |---|---|---|
 | `react-router@8.3.1` | `sha512-TEOpiO2g0TJHEOJeRVv4amUFun9v1npCKszvcquNvzETUtJ8udV86ah5eFoHT7g26bsBvT6EiIhqulR8eDF++A==` | `LICENSE.md`; 320 tarball dosyası |
 | `@tanstack/react-query@5.102.8` | `sha512-TYBea4OuXWD7MhaSHq069TWbFe7rcwWN6kzT7JF0OKi1K6c1gTv2IzD6A6ExJsCMozdkqBWeuIUZmu4KQg0O5A==` | `LICENSE`; 415 tarball dosyası |
-| `openapi-typescript@7.13.0` | `sha512-EFP392gcqXS7ntPvbhBzbF8TyBA+baIYEm791Hy5YkjDYKTnk/Tn5OQeKm5BIZvJihpp8Zzr4hzx0Irde1LNGQ==` | `LICENSE` |
-| `openapi-fetch@0.17.0` | `sha512-PsbZR1wAPcG91eEthKhN+Zn92FMHxv+/faECIwjXdxfTODGSGegYv0sc1Olz+HYPvKOuoXfp+0pA2XVt2cI0Ig==` | `LICENSE` |
-| `orval@8.27.0` | `sha512-USIGxWy6LuNj3wf217j6EwU14oWWQFVS6ltm45caGkKRV42zrR9rwWxeny3ClOzPBhz2t5+Z/zsVzIP/aZnSVA==` | published tarball listesinde lisans dosyası yok |
-| `@hey-api/openapi-ts@0.99.0` | `sha512-SePU/5oEWWkvUBYmvzdYRctseoLuskyhs4ET0RvLIcmzc8yLQoA2R+KtBIQ8bPsoSUB0m4E5SmBnl6aGSA0szQ==` | `LICENSE.md` |
+| `openapi-typescript@7.13.0` | `sha512-EFP392gcqXS7ntPvbhBzbF8TyBA+baIYEm791Hy5YkjDYKTnk/Tn5OQeKm5BIZvJihpp8Zzr4hzx0Irde1LNGQ==` | `LICENSE`; 105 tarball dosyası |
+| `openapi-fetch@0.17.0` | `sha512-PsbZR1wAPcG91eEthKhN+Zn92FMHxv+/faECIwjXdxfTODGSGegYv0sc1Olz+HYPvKOuoXfp+0pA2XVt2cI0Ig==` | `LICENSE`; 14 tarball dosyası |
+| `orval@8.27.0` | `sha512-USIGxWy6LuNj3wf217j6EwU14oWWQFVS6ltm45caGkKRV42zrR9rwWxeny3ClOzPBhz2t5+Z/zsVzIP/aZnSVA==` | 10 tarball dosyası; lisans girdisi yok |
+| `@hey-api/openapi-ts@0.99.0` | `sha512-SePU/5oEWWkvUBYmvzdYRctseoLuskyhs4ET0RvLIcmzc8yLQoA2R+KtBIQ8bPsoSUB0m4E5SmBnl6aGSA0szQ==` | `LICENSE.md`; 61 tarball dosyası |
 
 Bu defter gelecekteki package kabul PR'ına taşınmış bir audit artefaktı değildir.
 Gerçek adoption PR'ı aynı exact girdilerle taze audit JSON, SBOM, lockfile ve CI
