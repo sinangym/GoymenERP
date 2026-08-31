@@ -87,6 +87,27 @@ public sealed class ShellCapabilityAcceptanceTests(
     }
 
     [Fact]
+    public async Task AuthorizedSystemAdministrator_GetsOnlyTheAcceptedCounterpartyListCapability()
+    {
+        using var client = factory.CreateClientFor(
+            TestUsers.GroupAdmin,
+            TestCompanyIds.CompanyA);
+
+        using var response = await client.GetAsync("/api/v1/shell/capabilities");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("no-store", response.Headers.CacheControl!.ToString());
+        Assert.True(response.Headers.CacheControl.Private);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(
+            ["cari.parties.list"],
+            document.RootElement.GetProperty("capabilities")
+                .EnumerateArray()
+                .Select(item => item.GetString()!)
+                .ToArray());
+    }
+
+    [Fact]
     public async Task Generation_IsStableForOneSessionAndChangesAcrossActorOrCompany()
     {
         using var companyAClient = factory.CreateClientFor(

@@ -21,6 +21,9 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
     private static readonly Guid OrganizationOperatorRoleId = Guid.Parse(
         "30000000-0000-0000-0000-000000000002");
 
+    private static readonly Guid SystemAdministratorRoleId = Guid.Parse(
+        "30000000-0000-0000-0000-000000000003");
+
     [SqlServerFact]
     public async Task ExactCompanySnapshot_TracksPersistedAuthorizationAndHasNoWriteSideEffects()
     {
@@ -187,6 +190,63 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task CounterpartyListCapability_TracksCompanyWidePermissionRevocation()
+    {
+        var baseConnectionString = Environment.GetEnvironmentVariable(
+            SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
+        var factory = new SqlServerRelationalApiFactory(baseConnectionString);
+
+        try
+        {
+            using (var healthClient = factory.CreateClient())
+            using (var healthResponse = await healthClient.GetAsync("/health/live"))
+            {
+                Assert.Equal(HttpStatusCode.OK, healthResponse.StatusCode);
+            }
+
+            using var administratorClient = factory.CreateClientFor(
+                TestUsers.GroupAdmin,
+                TestCompanyIds.CompanyA);
+            using var operatorClient = factory.CreateClientFor(
+                TestUsers.CompanyA,
+                TestCompanyIds.CompanyA);
+
+            var granted = await ReadSnapshotAsync(administratorClient);
+            var denied = await ReadSnapshotAsync(operatorClient);
+            Assert.Equal(["cari.parties.list"], granted.Capabilities);
+            Assert.DoesNotContain("cari.parties.list", denied.Capabilities);
+
+            await using var connection = new SqlConnection(factory.DatabaseConnectionString);
+            await connection.OpenAsync();
+            var deleted = await ExecuteNonQueryAsync(
+                connection,
+                """
+                DELETE FROM [identity].[RolePermissions]
+                WHERE [RoleId] = @RoleId
+                  AND [PermissionCode] = @PermissionCode;
+                """,
+                new SqlParameter("@RoleId", SystemAdministratorRoleId),
+                new SqlParameter(
+                    "@PermissionCode",
+                    ErpPermissions.CounterpartyPartiesRead));
+            Assert.Equal(1, deleted);
+
+            var revoked = await ReadSnapshotAsync(administratorClient);
+            Assert.DoesNotContain("cari.parties.list", revoked.Capabilities);
+            Assert.NotEqual(granted.Generation, revoked.Generation);
+            Assert.DoesNotContain(
+                ErpPermissions.CounterpartyPartiesRead,
+                revoked.RawJson,
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            await factory.DisposeAsync();
+            await DropDatabaseAsync(baseConnectionString, factory.DatabaseName);
+        }
+    }
+
+    [SqlServerFact]
     public async Task AuthorizationSnapshot_NeverPublishesSyntheticMultiPermissionGrant()
     {
         var baseConnectionString = Environment.GetEnvironmentVariable(
@@ -198,6 +258,7 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
             services =>
             {
                 services.RemoveAll<ShellCapabilityAuthorityCatalog>();
+                services.RemoveAll<IShellCapabilityProvider>();
                 services.AddSingleton(new ShellCapabilityAuthorityCatalog([authorityRevision]));
                 services.AddSingleton<IShellCapabilityProvider>(provider);
             });
