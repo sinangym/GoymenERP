@@ -1,0 +1,104 @@
+{
+  "auditReportVersion": 2,
+  "vulnerabilities": {
+    "@hey-api/json-schema-ref-parser": {
+      "name": "@hey-api/json-schema-ref-parser",
+      "severity": "high",
+      "isDirect": false,
+      "via": ["js-yaml"],
+      "effects": ["@hey-api/openapi-ts", "@hey-api/shared"],
+      "range": "<=0.0.0-next-20260824173136 || 1.3.0 - 1.3.1 || >=1.4.2",
+      "nodes": ["node_modules/@hey-api/json-schema-ref-parser"],
+      "fixAvailable": {
+        "name": "@hey-api/openapi-ts",
+        "version": "0.97.0",
+        "isSemVerMajor": true
+      }
+    },
+    "@hey-api/openapi-ts": {
+      "name": "@hey-api/openapi-ts",
+      "severity": "high",
+      "isDirect": true,
+      "via": ["@hey-api/json-schema-ref-parser", "@hey-api/shared"],
+      "effects": [],
+      "range": "<=0.0.0-next-20260824173136 || 0.92.4 - 0.95.0 || >=0.97.1",
+      "nodes": ["node_modules/@hey-api/openapi-ts"],
+      "fixAvailable": {
+        "name": "@hey-api/openapi-ts",
+        "version": "0.97.0",
+        "isSemVerMajor": true
+      }
+    },
+    "@hey-api/shared": {
+      "name": "@hey-api/shared",
+      "severity": "high",
+      "isDirect": false,
+      "via": ["@hey-api/json-schema-ref-parser"],
+      "effects": [],
+      "range": "<=0.0.0-next-20260824173136 || 0.2.0 - 0.3.0 || >=0.4.3",
+      "nodes": ["node_modules/@hey-api/shared"],
+      "fixAvailable": true
+    },
+    "js-yaml": {
+      "name": "js-yaml",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        {
+          "source": 1123911,
+          "name": "js-yaml",
+          "dependency": "js-yaml",
+          "title": "js-yaml: YAML merge-key chains can force quadratic CPU consumption",
+          "url": "https://github.com/advisories/GHSA-52cp-r559-cp3m",
+          "severity": "high",
+          "cwe": ["CWE-400", "CWE-407"],
+          "cvss": {
+            "score": 7.5,
+            "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+          },
+          "range": ">=4.0.0 <4.3.0"
+        },
+        {
+          "source": 1138115,
+          "name": "js-yaml",
+          "dependency": "js-yaml",
+          "title": "JS-YAML: Quadratic CPU consumption in !!omap resolution (3.x and 4.x) — CVE-2026-59870 fix not backported",
+          "url": "https://github.com/advisories/GHSA-5p4m-2wfm-xmqj",
+          "severity": "high",
+          "cwe": ["CWE-407"],
+          "cvss": {
+            "score": 7.5,
+            "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+          },
+          "range": ">=4.0.0 <4.3.1"
+        }
+      ],
+      "effects": ["@hey-api/json-schema-ref-parser"],
+      "range": "4.0.0 - 4.3.0",
+      "nodes": ["node_modules/js-yaml"],
+      "fixAvailable": {
+        "name": "@hey-api/openapi-ts",
+        "version": "0.97.0",
+        "isSemVerMajor": true
+      }
+    }
+  },
+  "metadata": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 4,
+      "critical": 0,
+      "total": 4
+    },
+    "dependencies": {
+      "prod": 52,
+      "dev": 0,
+      "optional": 0,
+      "peer": 0,
+      "peerOptional": 0,
+      "total": 51
+    }
+  }
+}
