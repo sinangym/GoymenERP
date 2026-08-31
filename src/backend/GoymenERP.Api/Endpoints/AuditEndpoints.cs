@@ -50,6 +50,7 @@ public static class AuditEndpoints
             .WithName("GetAuditEventsV1")
             .Produces<AuditEventPage>(StatusCodes.Status200OK)
             .ProducesErpBadRequest()
+            .AllowsCodeLessErpBadRequestBody()
             .AllowsEmptyErpBadRequestBody()
             .ProducesErpAuthenticatedProblems();
 

@@ -173,6 +173,19 @@ public sealed class OpenApiContractGenerationTests
         "SetCounterpartyCompanyAccountActiveStateV1",
     ];
 
+    private static readonly HashSet<string> CodeLessProblemResponses =
+    [
+        "GetOrganizationLocationV1:404",
+        "SetOrganizationLocationActiveStateV1:404",
+        "SetOrganizationLocationActiveStateV1:409",
+    ];
+
+    private static readonly HashSet<string> MixedProblemResponses =
+    [
+        "GetAuditEventsV1:400",
+        "SetOrganizationLocationActiveStateV1:400",
+    ];
+
     private static readonly IReadOnlyDictionary<string, string[]> AdditionalProblemCodes =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
@@ -341,13 +354,20 @@ public sealed class OpenApiContractGenerationTests
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
                 ["ErpProblemDetailsContract"] = ObjectSchema(
+                    ["type", "title", "status", "detail", "code"],
+                    ("type", "type:string"),
+                    ("title", "type:string"),
+                    ("status", "type:integer;format:int32"),
+                    ("detail", "type:string"),
+                    ("code", "type:string"),
+                    ("correlationId", "type:null|string"),
+                    ("conflict", "oneOf:ref:ErpVersionConflictContract|type:null")),
+                ["ErpCodeLessProblemDetailsContract"] = ObjectSchema(
                     ["type", "title", "status", "detail"],
                     ("type", "type:string"),
                     ("title", "type:string"),
                     ("status", "type:integer;format:int32"),
                     ("detail", "type:string"),
-                    ("code", "type:null|string"),
-                    ("correlationId", "type:null|string"),
                     ("conflict", "oneOf:ref:ErpVersionConflictContract|type:null")),
                 ["ErpVersionConflictContract"] = ObjectSchema(
                     ["expectedVersion", "currentVersion"],
@@ -896,9 +916,10 @@ public sealed class OpenApiContractGenerationTests
                         "application/problem+json",
                         out var problemContent))
                 {
-                    Assert.Equal(
-                        "#/components/schemas/ErpProblemDetailsContract",
-                        problemContent.GetProperty("schema").GetProperty("$ref").GetString());
+                    AssertProblemResponseSchema(
+                        expected.OperationId,
+                        int.Parse(response.Name, CultureInfo.InvariantCulture),
+                        problemContent.GetProperty("schema"));
                 }
             }
 
@@ -1097,14 +1118,21 @@ public sealed class OpenApiContractGenerationTests
 
                 if (numericStatusCode >= StatusCodes.Status400BadRequest)
                 {
-                    Assert.True(response.Value.TryGetProperty(
+                    var expectedProblemCodes = ExpectedProblemCodes(
+                        operation.OperationId,
+                        numericStatusCode);
+                    var hasProblemCodes = response.Value.TryGetProperty(
                         "x-erp-problem-codes",
-                        out var stableCodes));
-                    Assert.Equal(
-                        ExpectedProblemCodes(operation.OperationId, numericStatusCode),
-                        stableCodes.EnumerateArray()
-                            .Select(code => code.GetString())
-                            .Order(StringComparer.Ordinal));
+                        out var stableCodes);
+                    Assert.Equal(expectedProblemCodes.Count > 0, hasProblemCodes);
+                    if (hasProblemCodes)
+                    {
+                        Assert.Equal(
+                            expectedProblemCodes,
+                            stableCodes.EnumerateArray()
+                                .Select(code => code.GetString())
+                                .Order(StringComparer.Ordinal));
+                    }
                 }
 
                 if (numericStatusCode == StatusCodes.Status400BadRequest)
@@ -1418,7 +1446,7 @@ public sealed class OpenApiContractGenerationTests
 
         var problem = schemas.GetProperty("ErpProblemDetailsContract");
         Assert.Equal(
-            ["detail", "status", "title", "type"],
+            ["code", "detail", "status", "title", "type"],
             problem.GetProperty("required")
                 .EnumerateArray()
                 .Select(item => item.GetString())
@@ -1429,7 +1457,8 @@ public sealed class OpenApiContractGenerationTests
             properties.EnumerateObject()
                 .Select(property => property.Name)
                 .Order(StringComparer.Ordinal));
-        Assert.True(IsNullable(properties.GetProperty("code")));
+        Assert.False(IsNullable(properties.GetProperty("code")));
+        Assert.Equal("string", properties.GetProperty("code").GetProperty("type").GetString());
         Assert.True(IsNullable(properties.GetProperty("correlationId")));
         Assert.True(IsNullable(properties.GetProperty("conflict")));
         Assert.Equal(
@@ -1439,6 +1468,29 @@ public sealed class OpenApiContractGenerationTests
             "#/components/schemas/ErpVersionConflictContract",
             properties.GetProperty("conflict").GetRawText(),
             StringComparison.Ordinal);
+
+        var codeLessProblem = schemas.GetProperty("ErpCodeLessProblemDetailsContract");
+        Assert.Equal(
+            ["detail", "status", "title", "type"],
+            codeLessProblem.GetProperty("required")
+                .EnumerateArray()
+                .Select(item => item.GetString())
+                .Order(StringComparer.Ordinal));
+        var codeLessProperties = codeLessProblem.GetProperty("properties");
+        Assert.Equal(
+            ["conflict", "detail", "status", "title", "type"],
+            codeLessProperties.EnumerateObject()
+                .Select(property => property.Name)
+                .Order(StringComparer.Ordinal));
+        Assert.False(codeLessProperties.TryGetProperty("code", out _));
+        Assert.False(codeLessProperties.TryGetProperty("correlationId", out _));
+        Assert.True(IsNullable(codeLessProperties.GetProperty("conflict")));
+        Assert.Equal(
+            ["code"],
+            codeLessProblem.GetProperty("not")
+                .GetProperty("required")
+                .EnumerateArray()
+                .Select(item => item.GetString()));
 
         var versionConflict = schemas.GetProperty("ErpVersionConflictContract");
         Assert.Equal(
@@ -1756,6 +1808,34 @@ public sealed class OpenApiContractGenerationTests
         return codes.Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
             .ToArray();
+    }
+
+    private static void AssertProblemResponseSchema(
+        string operationId,
+        int statusCode,
+        JsonElement schema)
+    {
+        var responseKey = $"{operationId}:{statusCode}";
+        if (MixedProblemResponses.Contains(responseKey))
+        {
+            Assert.False(schema.TryGetProperty("$ref", out _));
+            Assert.Equal(
+                [
+                    "#/components/schemas/ErpCodeLessProblemDetailsContract",
+                    "#/components/schemas/ErpProblemDetailsContract",
+                ],
+                schema.GetProperty("oneOf")
+                    .EnumerateArray()
+                    .Select(option => option.GetProperty("$ref").GetString())
+                    .Order(StringComparer.Ordinal));
+            return;
+        }
+
+        var expectedReference = CodeLessProblemResponses.Contains(responseKey)
+            ? "#/components/schemas/ErpCodeLessProblemDetailsContract"
+            : "#/components/schemas/ErpProblemDetailsContract";
+        Assert.Equal(expectedReference, schema.GetProperty("$ref").GetString());
+        Assert.False(schema.TryGetProperty("oneOf", out _));
     }
 
     private static string? NormalizeRoute(string? rawText)

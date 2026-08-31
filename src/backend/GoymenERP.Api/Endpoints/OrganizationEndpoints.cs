@@ -85,7 +85,7 @@ public static class OrganizationEndpoints
             .WithName("GetOrganizationLocationV1")
             .Produces<LocationSummary>(StatusCodes.Status200OK)
             .ProducesErpBadRequest()
-            .ProducesErpNotFound()
+            .ProducesErpCodeLessNotFound()
             .ProducesErpAuthenticatedProblems();
 
         group.MapPut("/locations/{id:guid}/active-state", async (
@@ -152,9 +152,10 @@ public static class OrganizationEndpoints
             .Accepts<SetLocationActiveState>("application/json")
             .Produces(StatusCodes.Status204NoContent)
             .ProducesErpBadRequest()
+            .AllowsCodeLessErpBadRequestBody()
             .ProducesErpUnsupportedMediaType()
-            .ProducesErpNotFound()
-            .ProducesErpConflict()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpCodeLessConflict()
             .ProducesErpAuthenticatedProblems();
 
         group.MapGet("/work-centers", async (

@@ -180,9 +180,21 @@ public static class ErpOpenApiContract
                     SetIntegerProperty(schema, "totalCount", nullable: false);
                 }
 
-                if (context.JsonTypeInfo.Type == typeof(ErpProblemDetailsContract))
+                if (context.JsonTypeInfo.Type == typeof(ErpProblemDetailsContract)
+                    || context.JsonTypeInfo.Type == typeof(ErpCodeLessProblemDetailsContract))
                 {
                     SetIntegerProperty(schema, "status", nullable: false);
+                }
+
+                if (context.JsonTypeInfo.Type == typeof(ErpCodeLessProblemDetailsContract))
+                {
+                    schema.Not = new OpenApiSchema
+                    {
+                        Required = new HashSet<string>(StringComparer.Ordinal)
+                        {
+                            "code",
+                        },
+                    };
                 }
 
                 if (context.JsonTypeInfo.Type == typeof(ErpVersionConflictContract))
@@ -292,6 +304,13 @@ public static class ErpOpenApiContract
         this RouteHandlerBuilder builder,
         params string[] stableCodes)
     {
+        if (stableCodes.Length == 0)
+        {
+            throw new InvalidOperationException(
+                "Coded 404 OpenAPI responses require at least one stable code. "
+                + "Use ProducesErpCodeLessNotFound for module-owned code-less responses.");
+        }
+
         builder.Produces<ErpProblemDetailsContract>(
             StatusCodes.Status404NotFound,
             "application/problem+json");
@@ -299,15 +318,38 @@ public static class ErpOpenApiContract
         return builder;
     }
 
+    public static RouteHandlerBuilder ProducesErpCodeLessNotFound(
+        this RouteHandlerBuilder builder)
+    {
+        return builder.Produces<ErpCodeLessProblemDetailsContract>(
+            StatusCodes.Status404NotFound,
+            "application/problem+json");
+    }
+
     public static RouteHandlerBuilder ProducesErpConflict(
         this RouteHandlerBuilder builder,
         params string[] stableCodes)
     {
+        if (stableCodes.Length == 0)
+        {
+            throw new InvalidOperationException(
+                "Coded 409 OpenAPI responses require at least one stable code. "
+                + "Use ProducesErpCodeLessConflict for module-owned code-less responses.");
+        }
+
         builder.Produces<ErpProblemDetailsContract>(
             StatusCodes.Status409Conflict,
             "application/problem+json");
         AddProblemCodeMetadata(builder, StatusCodes.Status409Conflict, stableCodes);
         return builder;
+    }
+
+    public static RouteHandlerBuilder ProducesErpCodeLessConflict(
+        this RouteHandlerBuilder builder)
+    {
+        return builder.Produces<ErpCodeLessProblemDetailsContract>(
+            StatusCodes.Status409Conflict,
+            "application/problem+json");
     }
 
     public static RouteHandlerBuilder ProducesErpUnsupportedMediaType(
@@ -325,6 +367,15 @@ public static class ErpOpenApiContract
     {
         builder.Add(endpointBuilder => endpointBuilder.Metadata.Add(
             new EmptyBodyPossibleResponseMetadata(StatusCodes.Status400BadRequest)));
+        return builder;
+    }
+
+    public static RouteHandlerBuilder AllowsCodeLessErpBadRequestBody(
+        this RouteHandlerBuilder builder)
+    {
+        builder.Add(endpointBuilder => endpointBuilder.Metadata.Add(
+            new CodeLessProblemDetailsResponseMetadata(
+                StatusCodes.Status400BadRequest)));
         return builder;
     }
 
@@ -511,7 +562,8 @@ public static class ErpOpenApiContract
 
             if (hasNumericStatusCode
                 && numericStatusCode >= StatusCodes.Status400BadRequest
-                && problemCodesByStatus.TryGetValue(numericStatusCode, out var problemCodes))
+                && problemCodesByStatus.TryGetValue(numericStatusCode, out var problemCodes)
+                && problemCodes.Length > 0)
             {
                 var codeArray = new JsonArray();
                 foreach (var problemCode in problemCodes)
@@ -523,6 +575,31 @@ public static class ErpOpenApiContract
                     new Dictionary<string, IOpenApiExtension>(StringComparer.Ordinal);
                 concreteResponse.Extensions[ProblemCodesExtensionName] =
                     new JsonNodeExtension(codeArray);
+            }
+
+            if (hasNumericStatusCode
+                && endpointMetadata.OfType<CodeLessProblemDetailsResponseMetadata>()
+                    .Any(metadata => metadata.StatusCode == numericStatusCode)
+                && concreteResponse.Content is not null
+                && concreteResponse.Content.TryGetValue(
+                    "application/problem+json",
+                    out var problemMediaType)
+                && problemMediaType is OpenApiMediaType concreteProblemMediaType)
+            {
+                concreteProblemMediaType.Schema = new OpenApiSchema
+                {
+                    OneOf =
+                    [
+                        new OpenApiSchemaReference(
+                            nameof(ErpProblemDetailsContract),
+                            context.Document,
+                            externalResource: null),
+                        new OpenApiSchemaReference(
+                            nameof(ErpCodeLessProblemDetailsContract),
+                            context.Document,
+                            externalResource: null),
+                    ],
+                };
             }
 
             if (hasNumericStatusCode
@@ -783,6 +860,8 @@ public static class ErpOpenApiContract
 
     private sealed record EmptyBodyPossibleResponseMetadata(int StatusCode);
 
+    private sealed record CodeLessProblemDetailsResponseMetadata(int StatusCode);
+
     private sealed record NonEmptyGuidPathParameterMetadata(string ParameterName);
 }
 
@@ -796,9 +875,22 @@ public sealed class ErpProblemDetailsContract
 
     public required string Detail { get; init; }
 
-    public string? Code { get; init; }
+    public required string Code { get; init; }
 
     public string? CorrelationId { get; init; }
+
+    public ErpVersionConflictContract? Conflict { get; init; }
+}
+
+public sealed class ErpCodeLessProblemDetailsContract
+{
+    public required string Type { get; init; }
+
+    public required string Title { get; init; }
+
+    public required int Status { get; init; }
+
+    public required string Detail { get; init; }
 
     public ErpVersionConflictContract? Conflict { get; init; }
 }
