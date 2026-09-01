@@ -14,7 +14,7 @@ export const EXPECTED_CASES = Array.from(
   (_, index) => `B-C01-${String(index + 1).padStart(3, '0')}`,
 ) as readonly string[]
 
-/** The declared reflow matrix. B-C01-009 is the case that actually walks it. */
+/** The declared reflow matrix. B-C01-005 is the case that actually walks it. */
 export const EXPECTED_VIEWPORTS = ['1600x900', '768x1024', '390x844', '640x900', '320x900'] as const
 
 /** Only these four paths may appear in the network evidence at all. */

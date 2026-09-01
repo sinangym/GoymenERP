@@ -19,7 +19,7 @@ a response arriving after the context has moved and being ignored.
 - **One Playwright project.** The evidence contract requires exactly ten JUnit
   `testcase` entries with unique `B-C01` ids. Running the viewport matrix as
   projects would emit five entries per case. The matrix is walked inside
-  `B-C01-009` instead.
+  `B-C01-005` instead.
 - **No retries.** An acceptance case that only passes on the second attempt has
   not shown the behaviour it claims. `retry-200` is a fault the suite injects on
   purpose, which is a different thing from a flaky test.
