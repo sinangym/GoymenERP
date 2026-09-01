@@ -150,6 +150,11 @@ public sealed class SqlServerRcsiReadinessPolicyTests
         Assert.Equal(
             SqlServerRcsiReadinessExitCode.ExpectedLogicalEndpointMismatch,
             evidence.ExitCode);
+        Assert.False(evidence.LogicalEndpointMatches);
+        Assert.Equal(
+            SqlServerLogicalEndpointFingerprint.ComputeSha256(
+                "tcp:unapproved-after-open.invalid,1433"),
+            evidence.ObservedLogicalEndpointSha256);
         Assert.Equal(1, connection.OpenCount);
         Assert.Equal(0, connection.CreateCommandCount);
         Assert.Equal(1, connection.CloseCount);
@@ -180,6 +185,7 @@ public sealed class SqlServerRcsiReadinessPolicyTests
             ToolAssemblySha256,
             ToolAssemblySha256,
             ToolAssemblySha256,
+            ToolAssemblySha256,
             DateTimeOffset.UtcNow,
             out _));
         Assert.False(SqlServerRcsiReadinessRunContext.TryCreate(
@@ -188,11 +194,13 @@ public sealed class SqlServerRcsiReadinessPolicyTests
             ToolAssemblySha256,
             ToolAssemblySha256,
             ToolAssemblySha256,
+            ToolAssemblySha256,
             DateTimeOffset.UtcNow,
             out _));
         Assert.False(SqlServerRcsiReadinessRunContext.TryCreate(
             Guid.NewGuid().ToString("D"),
             new string('a', 40),
+            ToolAssemblySha256,
             ToolAssemblySha256,
             ToolAssemblySha256,
             ToolAssemblySha256,
@@ -226,6 +234,7 @@ public sealed class SqlServerRcsiReadinessPolicyTests
             + "\"expectedToolAssemblySha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\","
             + "\"observedToolAssemblySha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\","
             + "\"runtimePayloadManifestSha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\","
+            + "\"runtimePayloadEntryExecutableSha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\","
             + "\"observedAtUtc\":\"2026-09-01T10:20:30.1234567Z\","
             + "\"targetLabel\":\"staging/blue\","
             + "\"approvedLogicalEndpointSha256\":["
@@ -253,6 +262,7 @@ public sealed class SqlServerRcsiReadinessPolicyTests
         Assert.True(SqlServerRcsiReadinessRunContext.TryCreate(
             "11111111-1111-1111-1111-111111111111",
             new string('a', 40),
+            ToolAssemblySha256,
             ToolAssemblySha256,
             ToolAssemblySha256,
             ToolAssemblySha256,

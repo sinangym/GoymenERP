@@ -1,10 +1,16 @@
 using System.Globalization;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.SqlServer;
 using Microsoft.Data.SqlClient;
+
+if (!RcsiReadinessProcessContainment.TryEnterOwnProcessGroup())
+{
+    return (int)SqlServerRcsiReadinessExitCode.InvalidBinding;
+}
 
 return await SqlServerRcsiReadinessCli.RunAsync(
     args,
@@ -16,10 +22,12 @@ return await SqlServerRcsiReadinessCli.RunAsync(
         new SqlServerRcsiReadinessProbe().ProbeAsync(
             connection,
             binding,
-            cancellationToken));
+            cancellationToken),
+    standardInput: Console.OpenStandardInput());
 
 internal static class SqlServerRcsiReadinessCli
 {
+    private const int MaximumConnectionSecretUtf8Bytes = ushort.MaxValue;
     private static readonly string[] ForbiddenRuntimeInjectionEnvironmentVariables =
     [
         "DOTNET_STARTUP_HOOKS",
@@ -33,10 +41,20 @@ internal static class SqlServerRcsiReadinessCli
         "COR_ENABLE_PROFILING",
         "COR_PROFILER",
         "COR_PROFILER_PATH",
+        "DOTNET_DiagnosticPorts",
+        "DOTNET_DefaultDiagnosticPortSuspend",
+        "DOTNET_EnableDiagnostics",
+        "DOTNET_EnableDiagnostics_Debugger",
+        "DOTNET_EnableDiagnostics_Profiler",
+        "DOTNET_EnableDiagnostics_IPC",
+        "LD_PRELOAD",
+        "LD_AUDIT",
+        "DYLD_INSERT_LIBRARIES",
+        "DYLD_LIBRARY_PATH",
     ];
     private const string Usage =
         "Usage: GoymenERP.SqlServerRcsiReadiness "
-        + "--connection-string-env <ENV_NAME> "
+        + "(--connection-string-env <ENV_NAME> | --connection-secret-stdin true) "
         + "--expected-database <DATABASE> "
         + "--target-label <LABEL> "
         + "--expected-logical-endpoint-sha256 <SHA256> "
@@ -61,7 +79,8 @@ internal static class SqlServerRcsiReadinessCli
             CancellationToken,
             Task<SqlServerRcsiReadinessEvidence>> probeAsync,
         CancellationToken cancellationToken = default,
-        SqlServerRcsiReadinessRuntimePayloadVerifierDelegate? verifyRuntimePayload = null)
+        SqlServerRcsiReadinessRuntimePayloadVerifierDelegate? verifyRuntimePayload = null,
+        Stream? standardInput = null)
     {
         ArgumentNullException.ThrowIfNull(arguments);
         ArgumentNullException.ThrowIfNull(getEnvironmentVariable);
@@ -86,7 +105,8 @@ internal static class SqlServerRcsiReadinessCli
                 options.ExpectedDatabase,
                 options.ApprovedLogicalEndpointSha256,
                 out var binding)
-            || !IsSafeEnvironmentVariableName(options.ConnectionStringEnvironmentVariable)
+            || (!options.ConnectionSecretFromStandardInput
+                && !IsSafeEnvironmentVariableName(options.ConnectionStringEnvironmentVariable))
             || !HasValidInvocationMetadata(options, observedAtUtc))
         {
             return await WriteStandardOutputOnlyAsync(
@@ -116,6 +136,7 @@ internal static class SqlServerRcsiReadinessCli
                 options.ExpectedToolAssemblySha256,
                 toolArtifactIdentity.AssemblySha256,
                 toolArtifactIdentity.RuntimePayloadManifestSha256,
+                toolArtifactIdentity.EntryExecutableSha256,
                 observedAtUtc,
                 out var runContext))
         {
@@ -160,8 +181,19 @@ internal static class SqlServerRcsiReadinessCli
                 standardOutput);
         }
 
-        var connectionString = getEnvironmentVariable(
-            options.ConnectionStringEnvironmentVariable!);
+        string? connectionString;
+        if (options.ConnectionSecretFromStandardInput)
+        {
+            connectionString = await ReadConnectionStringFromStandardInputAsync(
+                standardInput,
+                options.Timeout,
+                cancellationToken);
+        }
+        else
+        {
+            connectionString = getEnvironmentVariable(
+                options.ConnectionStringEnvironmentVariable!);
+        }
         if (string.IsNullOrWhiteSpace(connectionString))
         {
             return await WriteEvidenceAsync(
@@ -265,6 +297,14 @@ internal static class SqlServerRcsiReadinessCli
                 case "--connection-string-env":
                     options.ConnectionStringEnvironmentVariable = value;
                     break;
+                case "--connection-secret-stdin":
+                    if (!string.Equals(value, "true", StringComparison.Ordinal))
+                    {
+                        return false;
+                    }
+
+                    options.ConnectionSecretFromStandardInput = true;
+                    break;
                 case "--expected-database":
                     options.ExpectedDatabase = value;
                     break;
@@ -305,7 +345,8 @@ internal static class SqlServerRcsiReadinessCli
             }
         }
 
-        return !string.IsNullOrWhiteSpace(options.ConnectionStringEnvironmentVariable)
+        return (options.ConnectionSecretFromStandardInput
+                   ^ !string.IsNullOrWhiteSpace(options.ConnectionStringEnvironmentVariable))
                && !string.IsNullOrWhiteSpace(options.ExpectedDatabase)
                && !string.IsNullOrWhiteSpace(options.TargetLabel)
                && options.ApprovedLogicalEndpointSha256.Count > 0
@@ -352,8 +393,63 @@ internal static class SqlServerRcsiReadinessCli
             return false;
         }
 
-        return value.All(character =>
-            char.IsAsciiLetterOrDigit(character) || character == '_');
+        if (!value.All(character =>
+                char.IsAsciiLetterOrDigit(character) || character == '_'))
+        {
+            return false;
+        }
+
+        return !new[] { "DOTNET_", "CORECLR_", "COR_", "COMPLUS_", "LD_", "DYLD_" }
+            .Any(prefix => value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static async Task<string?> ReadConnectionStringFromStandardInputAsync(
+        Stream? standardInput,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        if (standardInput is null || !standardInput.CanRead)
+        {
+            return null;
+        }
+
+        using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken);
+        timeoutSource.CancelAfter(timeout);
+        try
+        {
+            using var buffer = new MemoryStream();
+            var chunk = new byte[8192];
+            while (true)
+            {
+                var bytesRead = await standardInput.ReadAsync(
+                    chunk.AsMemory(),
+                    timeoutSource.Token);
+                if (bytesRead == 0)
+                {
+                    break;
+                }
+
+                if (buffer.Length + bytesRead > MaximumConnectionSecretUtf8Bytes)
+                {
+                    return null;
+                }
+
+                await buffer.WriteAsync(chunk.AsMemory(0, bytesRead), timeoutSource.Token);
+            }
+            return new UTF8Encoding(
+                encoderShouldEmitUTF8Identifier: false,
+                throwOnInvalidBytes: true).GetString(buffer.ToArray());
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+        catch (Exception exception) when (
+            exception is DecoderFallbackException or IOException or NotSupportedException)
+        {
+            return null;
+        }
     }
 
     private static bool HasValidInvocationMetadata(
@@ -370,10 +466,10 @@ internal static class SqlServerRcsiReadinessCli
                && SqlServerLogicalEndpointFingerprint.TryNormalizeSha256(
                    options.ExpectedRuntimePayloadManifestSha256,
                    out _)
-               && !string.IsNullOrWhiteSpace(options.RuntimePayloadRoot)
-               && Path.IsPathFullyQualified(options.RuntimePayloadRoot)
-               && !string.IsNullOrWhiteSpace(options.RuntimePayloadManifestPath)
-               && Path.IsPathFullyQualified(options.RuntimePayloadManifestPath)
+               && SqlServerRcsiReadinessRuntimePayloadVerifier
+                   .IsSafeCanonicalAbsolutePath(options.RuntimePayloadRoot)
+               && SqlServerRcsiReadinessRuntimePayloadVerifier
+                   .IsSafeCanonicalAbsolutePath(options.RuntimePayloadManifestPath)
                && observedAtUtc.Offset == TimeSpan.Zero;
     }
 
@@ -384,12 +480,13 @@ internal static class SqlServerRcsiReadinessCli
         fullOutputPath = string.Empty;
         try
         {
-            if (string.IsNullOrWhiteSpace(outputPath))
+            if (!SqlServerRcsiReadinessRuntimePayloadVerifier
+                    .IsSafeCanonicalAbsolutePath(outputPath))
             {
                 return false;
             }
 
-            fullOutputPath = Path.GetFullPath(outputPath);
+            fullOutputPath = Path.GetFullPath(outputPath!);
             return !File.Exists(fullOutputPath)
                    && !Directory.Exists(fullOutputPath)
                    && !string.IsNullOrWhiteSpace(Path.GetFileName(fullOutputPath));
@@ -408,12 +505,13 @@ internal static class SqlServerRcsiReadinessCli
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(outputPath))
+            if (!SqlServerRcsiReadinessRuntimePayloadVerifier
+                    .IsSafeCanonicalAbsolutePath(outputPath))
             {
                 return false;
             }
 
-            var fullPath = Path.GetFullPath(outputPath);
+            var fullPath = Path.GetFullPath(outputPath!);
             return !string.IsNullOrWhiteSpace(Path.GetFileName(fullPath));
         }
         catch (Exception exception) when (
@@ -559,6 +657,8 @@ internal static class SqlServerRcsiReadinessCli
     {
         public string? ConnectionStringEnvironmentVariable { get; set; }
 
+        public bool ConnectionSecretFromStandardInput { get; set; }
+
         public string? ExpectedDatabase { get; set; }
 
         public string? TargetLabel { get; set; }
@@ -583,6 +683,35 @@ internal static class SqlServerRcsiReadinessCli
     }
 }
 
+internal static partial class RcsiReadinessProcessContainment
+{
+    public static bool TryEnterOwnProcessGroup()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return true;
+        }
+
+        if (!OperatingSystem.IsLinux() && !OperatingSystem.IsMacOS())
+        {
+            return false;
+        }
+
+        try
+        {
+            return SetProcessGroup(0, 0) == 0;
+        }
+        catch (Exception exception) when (
+            exception is DllNotFoundException or EntryPointNotFoundException)
+        {
+            return false;
+        }
+    }
+
+    [DllImport("libc", EntryPoint = "setpgid", SetLastError = true)]
+    private static extern int SetProcessGroup(int processId, int processGroupId);
+}
+
 internal delegate bool SqlServerRcsiReadinessRuntimePayloadVerifierDelegate(
     string? payloadRoot,
     string? manifestPath,
@@ -592,16 +721,20 @@ internal delegate bool SqlServerRcsiReadinessRuntimePayloadVerifierDelegate(
 internal sealed record SqlServerRcsiReadinessToolArtifactIdentity(
     string SourceRevisionId,
     string AssemblySha256,
-    string RuntimePayloadManifestSha256)
+    string RuntimePayloadManifestSha256,
+    string EntryExecutablePath,
+    string EntryExecutableSha256)
 {
     public static bool TryReadExecutingAssembly(
         out string sourceRevisionId,
         out string assemblySha256,
-        out string assemblyFileName)
+        out string assemblyFileName,
+        out string assemblyPath)
     {
         sourceRevisionId = string.Empty;
         assemblySha256 = string.Empty;
         assemblyFileName = string.Empty;
+        assemblyPath = string.Empty;
         try
         {
             var assembly = typeof(SqlServerRcsiReadinessCli).Assembly;
@@ -620,7 +753,7 @@ internal sealed record SqlServerRcsiReadinessToolArtifactIdentity(
                 return false;
             }
 
-            var assemblyPath = assembly.Location;
+            assemblyPath = assembly.Location;
             if (string.IsNullOrWhiteSpace(assemblyPath) || !File.Exists(assemblyPath))
             {
                 return false;
@@ -651,7 +784,7 @@ internal sealed record SqlServerRcsiReadinessToolArtifactIdentity(
 internal static class SqlServerRcsiReadinessRuntimePayloadVerifier
 {
     private const string ManifestContractVersion =
-        "GOYMEN-ERP-RCSI-RUNTIME-PAYLOAD-V1";
+        "GOYMEN-ERP-RCSI-RUNTIME-PAYLOAD-V2";
     private static readonly StringComparison PathComparison =
         OperatingSystem.IsWindows()
             ? StringComparison.OrdinalIgnoreCase
@@ -661,6 +794,40 @@ internal static class SqlServerRcsiReadinessRuntimePayloadVerifier
         string? payloadRoot,
         string? manifestPath,
         string? expectedManifestSha256,
+        out SqlServerRcsiReadinessToolArtifactIdentity identity) =>
+        TryVerifyCore(
+            payloadRoot,
+            manifestPath,
+            expectedManifestSha256,
+            Environment.ProcessPath,
+            executingAssemblyPathOverride: null,
+            requireCurrentEntryAssembly: true,
+            out identity);
+
+    internal static bool TryVerifyForTesting(
+        string? payloadRoot,
+        string? manifestPath,
+        string? expectedManifestSha256,
+        string? processExecutablePath,
+        out SqlServerRcsiReadinessToolArtifactIdentity identity) =>
+        TryVerifyCore(
+            payloadRoot,
+            manifestPath,
+            expectedManifestSha256,
+            processExecutablePath,
+            string.IsNullOrWhiteSpace(payloadRoot)
+                ? null
+                : Path.Combine(payloadRoot, "GoymenERP.SqlServerRcsiReadiness.dll"),
+            requireCurrentEntryAssembly: false,
+            out identity);
+
+    private static bool TryVerifyCore(
+        string? payloadRoot,
+        string? manifestPath,
+        string? expectedManifestSha256,
+        string? processExecutablePath,
+        string? executingAssemblyPathOverride,
+        bool requireCurrentEntryAssembly,
         out SqlServerRcsiReadinessToolArtifactIdentity identity)
     {
         identity = null!;
@@ -668,26 +835,53 @@ internal static class SqlServerRcsiReadinessRuntimePayloadVerifier
         {
             if (string.IsNullOrWhiteSpace(payloadRoot)
                 || string.IsNullOrWhiteSpace(manifestPath)
-                || !Path.IsPathFullyQualified(payloadRoot)
-                || !Path.IsPathFullyQualified(manifestPath)
+                || !IsSafeCanonicalAbsolutePath(payloadRoot)
+                || !IsSafeCanonicalAbsolutePath(manifestPath)
+                || !IsSafeCanonicalAbsolutePath(processExecutablePath)
                 || !SqlServerLogicalEndpointFingerprint.TryNormalizeSha256(
                     expectedManifestSha256,
                     out var normalizedExpectedManifestSha256)
                 || !SqlServerRcsiReadinessToolArtifactIdentity.TryReadExecutingAssembly(
                     out var sourceRevisionId,
                     out var executingAssemblySha256,
-                    out var executingAssemblyFileName))
+                    out var executingAssemblyFileName,
+                    out var executingAssemblyPath))
             {
                 return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(executingAssemblyPathOverride))
+            {
+                if (!IsSafeCanonicalAbsolutePath(executingAssemblyPathOverride)
+                    || !File.Exists(executingAssemblyPathOverride))
+                {
+                    return false;
+                }
+
+                executingAssemblyPath = Path.GetFullPath(executingAssemblyPathOverride);
+                executingAssemblyFileName = Path.GetFileName(executingAssemblyPath);
+                using var overrideAssemblyStream = new FileStream(
+                    executingAssemblyPath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read);
+                executingAssemblySha256 = Convert.ToHexString(
+                        SHA256.HashData(overrideAssemblyStream))
+                    .ToLowerInvariant();
             }
 
             var fullPayloadRoot = Path.TrimEndingDirectorySeparator(
                 Path.GetFullPath(payloadRoot));
             var fullManifestPath = Path.GetFullPath(manifestPath);
+            var fullProcessExecutablePath = Path.GetFullPath(processExecutablePath!);
+            var fullExecutingAssemblyPath = Path.GetFullPath(executingAssemblyPath);
             if (!Directory.Exists(fullPayloadRoot)
                 || !File.Exists(fullManifestPath)
+                || !File.Exists(fullProcessExecutablePath)
                 || HasReparsePointInExistingAncestry(fullPayloadRoot)
                 || HasReparsePointInExistingAncestry(fullManifestPath)
+                || HasReparsePointInExistingAncestry(fullProcessExecutablePath)
+                || HasReparsePointInExistingAncestry(fullExecutingAssemblyPath)
                 || IsUnderPayloadRoot(fullPayloadRoot, fullManifestPath))
             {
                 return false;
@@ -702,6 +896,7 @@ internal static class SqlServerRcsiReadinessRuntimePayloadVerifier
                 || !TryParseCanonicalManifest(
                     manifestBytes,
                     out var manifestSourceRevisionId,
+                    out var manifestEntryExecutablePath,
                     out var manifestFiles)
                 || !string.Equals(
                     manifestSourceRevisionId,
@@ -737,11 +932,23 @@ internal static class SqlServerRcsiReadinessRuntimePayloadVerifier
             var requiredFiles = new[]
             {
                 executingAssemblyFileName,
+                manifestEntryExecutablePath,
                 "GoymenERP.BuildingBlocks.SqlServer.dll",
                 "GoymenERP.SqlServerRcsiReadiness.deps.json",
                 "GoymenERP.SqlServerRcsiReadiness.runtimeconfig.json",
+                "System.Private.CoreLib.dll",
             };
-            if (requiredFiles.Any(requiredFile => !manifestFiles.ContainsKey(requiredFile))
+            var requiredNativeRuntimeFiles = OperatingSystem.IsWindows()
+                ? new[] { "hostfxr.dll", "hostpolicy.dll", "coreclr.dll" }
+                : OperatingSystem.IsMacOS()
+                    ? new[] { "libhostfxr.dylib", "libhostpolicy.dylib", "libcoreclr.dylib" }
+                    : new[] { "libhostfxr.so", "libhostpolicy.so", "libcoreclr.so" };
+            var runtimeConfigPath = Path.Combine(
+                fullPayloadRoot,
+                "GoymenERP.SqlServerRcsiReadiness.runtimeconfig.json");
+            if (requiredFiles.Concat(requiredNativeRuntimeFiles)
+                    .Any(requiredFile => !manifestFiles.ContainsKey(requiredFile))
+                || !IsSelfContainedRuntimeConfig(runtimeConfigPath)
                 || !string.Equals(
                     manifestFiles[executingAssemblyFileName].Sha256,
                     executingAssemblySha256,
@@ -751,11 +958,38 @@ internal static class SqlServerRcsiReadinessRuntimePayloadVerifier
             }
 
             var assembly = typeof(SqlServerRcsiReadinessCli).Assembly;
-            if (ReferenceEquals(Assembly.GetEntryAssembly(), assembly)
-                && !string.Equals(
-                    Path.GetFullPath(assembly.Location),
-                    Path.Combine(fullPayloadRoot, executingAssemblyFileName),
+            var expectedAssemblyPath = Path.GetFullPath(
+                Path.Combine(fullPayloadRoot, executingAssemblyFileName));
+            var expectedProcessExecutablePath = Path.GetFullPath(
+                Path.Combine(
+                    fullPayloadRoot,
+                    manifestEntryExecutablePath.Replace('/', Path.DirectorySeparatorChar)));
+            if ((requireCurrentEntryAssembly
+                 && !ReferenceEquals(Assembly.GetEntryAssembly(), assembly))
+                || !string.Equals(
+                    fullExecutingAssemblyPath,
+                    expectedAssemblyPath,
+                    PathComparison)
+                || !string.Equals(
+                    fullProcessExecutablePath,
+                    expectedProcessExecutablePath,
                     PathComparison))
+            {
+                return false;
+            }
+
+            using var processExecutableStream = new FileStream(
+                fullProcessExecutablePath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read);
+            var processExecutableSha256 = Convert.ToHexString(
+                    SHA256.HashData(processExecutableStream))
+                .ToLowerInvariant();
+            if (!string.Equals(
+                    manifestFiles[manifestEntryExecutablePath].Sha256,
+                    processExecutableSha256,
+                    StringComparison.Ordinal))
             {
                 return false;
             }
@@ -763,7 +997,9 @@ internal static class SqlServerRcsiReadinessRuntimePayloadVerifier
             identity = new SqlServerRcsiReadinessToolArtifactIdentity(
                 sourceRevisionId,
                 executingAssemblySha256,
-                manifestSha256);
+                manifestSha256,
+                manifestEntryExecutablePath,
+                processExecutableSha256);
             return true;
         }
         catch (Exception exception) when (
@@ -790,6 +1026,53 @@ internal static class SqlServerRcsiReadinessRuntimePayloadVerifier
         return candidate.StartsWith(
             root + Path.DirectorySeparatorChar,
             PathComparison);
+    }
+
+    public static bool IsSafeCanonicalAbsolutePath(string? path)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(path)
+                || !Path.IsPathFullyQualified(path)
+                || path.IndexOf('\0') >= 0)
+            {
+                return false;
+            }
+
+            var fullPath = Path.GetFullPath(path);
+            if (OperatingSystem.IsWindows())
+            {
+                if (path.Length < 3
+                    || !char.IsAsciiLetter(path[0])
+                    || path[1] != ':'
+                    || path[2] != Path.DirectorySeparatorChar
+                    || path.AsSpan(2).Contains(':')
+                    || path.Contains('/')
+                    || path.Split(Path.DirectorySeparatorChar)
+                        .Any(segment => segment.Contains('~')))
+                {
+                    return false;
+                }
+
+                return string.Equals(
+                    Path.TrimEndingDirectorySeparator(path),
+                    Path.TrimEndingDirectorySeparator(fullPath),
+                    StringComparison.OrdinalIgnoreCase);
+            }
+
+            return string.Equals(
+                Path.TrimEndingDirectorySeparator(path),
+                Path.TrimEndingDirectorySeparator(fullPath),
+                StringComparison.Ordinal);
+        }
+        catch (Exception exception) when (
+            exception is IOException
+            or UnauthorizedAccessException
+            or NotSupportedException
+            or ArgumentException)
+        {
+            return false;
+        }
     }
 
     public static bool HasReparsePointInExistingAncestry(string path)
@@ -868,16 +1151,19 @@ internal static class SqlServerRcsiReadinessRuntimePayloadVerifier
     private static bool TryParseCanonicalManifest(
         byte[] bytes,
         out string sourceRevisionId,
+        out string entryExecutablePath,
         out SortedDictionary<string, PayloadFile> files)
     {
         sourceRevisionId = string.Empty;
+        entryExecutablePath = string.Empty;
         files = new SortedDictionary<string, PayloadFile>(StringComparer.Ordinal);
         using var document = JsonDocument.Parse(bytes);
         var root = document.RootElement;
         if (root.ValueKind != JsonValueKind.Object
-            || root.EnumerateObject().Count() != 3
+            || root.EnumerateObject().Count() != 4
             || !root.TryGetProperty("contractVersion", out var contractVersion)
             || !root.TryGetProperty("sourceRevisionId", out var sourceRevision)
+            || !root.TryGetProperty("entryExecutablePath", out var entryExecutable)
             || !root.TryGetProperty("files", out var fileArray)
             || !string.Equals(
                 contractVersion.GetString(),
@@ -888,8 +1174,11 @@ internal static class SqlServerRcsiReadinessRuntimePayloadVerifier
         }
 
         sourceRevisionId = sourceRevision.GetString()?.ToLowerInvariant() ?? string.Empty;
+        entryExecutablePath = entryExecutable.GetString() ?? string.Empty;
         if (sourceRevisionId.Length != 40
             || !sourceRevisionId.All(Uri.IsHexDigit)
+            || !IsSafeRelativePayloadPath(entryExecutablePath)
+            || entryExecutablePath.Contains('/')
             || fileArray.ValueKind != JsonValueKind.Array)
         {
             return false;
@@ -920,12 +1209,21 @@ internal static class SqlServerRcsiReadinessRuntimePayloadVerifier
             }
         }
 
-        var canonicalBytes = SerializeCanonicalManifest(sourceRevisionId, files);
+        if (!files.ContainsKey(entryExecutablePath))
+        {
+            return false;
+        }
+
+        var canonicalBytes = SerializeCanonicalManifest(
+            sourceRevisionId,
+            entryExecutablePath,
+            files);
         return bytes.AsSpan().SequenceEqual(canonicalBytes);
     }
 
     private static byte[] SerializeCanonicalManifest(
         string sourceRevisionId,
+        string entryExecutablePath,
         IReadOnlyDictionary<string, PayloadFile> files)
     {
         using var stream = new MemoryStream();
@@ -934,6 +1232,7 @@ internal static class SqlServerRcsiReadinessRuntimePayloadVerifier
             writer.WriteStartObject();
             writer.WriteString("contractVersion", ManifestContractVersion);
             writer.WriteString("sourceRevisionId", sourceRevisionId);
+            writer.WriteString("entryExecutablePath", entryExecutablePath);
             writer.WriteStartArray("files");
             foreach (var (path, file) in files)
             {
@@ -967,6 +1266,30 @@ internal static class SqlServerRcsiReadinessRuntimePayloadVerifier
         return segments.All(segment => segment.Length > 0
                                        && segment != "."
                                        && segment != "..");
+    }
+
+    private static bool IsSelfContainedRuntimeConfig(string path)
+    {
+        using var document = JsonDocument.Parse(File.ReadAllBytes(path));
+        if (!document.RootElement.TryGetProperty("runtimeOptions", out var runtimeOptions)
+            || runtimeOptions.ValueKind != JsonValueKind.Object
+            || runtimeOptions.TryGetProperty("framework", out _)
+            || runtimeOptions.TryGetProperty("frameworks", out _)
+            || !runtimeOptions.TryGetProperty("includedFrameworks", out var frameworks)
+            || frameworks.ValueKind != JsonValueKind.Array
+            || frameworks.GetArrayLength() == 0)
+        {
+            return false;
+        }
+
+        return frameworks.EnumerateArray().All(framework =>
+            framework.ValueKind == JsonValueKind.Object
+            && framework.TryGetProperty("name", out var name)
+            && name.ValueKind == JsonValueKind.String
+            && !string.IsNullOrWhiteSpace(name.GetString())
+            && framework.TryGetProperty("version", out var version)
+            && version.ValueKind == JsonValueKind.String
+            && !string.IsNullOrWhiteSpace(version.GetString()));
     }
 
     private static bool IsReparsePoint(string path) =>

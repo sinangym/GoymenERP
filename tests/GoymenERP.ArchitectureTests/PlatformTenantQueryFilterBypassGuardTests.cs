@@ -41,13 +41,43 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "SqlServerRcsiReadiness.cs";
     private const string ReviewedSqlServerRcsiToolProgramPath =
         "tools/GoymenERP.SqlServerRcsiReadiness/Program.cs";
+    private const string ReviewedSqlServerRcsiWrapperPath =
+        "tools/GoymenERP.SqlServerRcsiReadiness/"
+        + "Invoke-GoymenERP.SqlServerRcsiReadiness.ps1";
+    private const string ReviewedSqlServerRcsiWrapperFingerprint =
+        "157ffb1d8c5e385b8e08618be67ea41f000d73a396f90cbb5c66432274f5d4c0";
     private const string ReviewedSqlServerRcsiToolRootPath =
         "tools/GoymenERP.SqlServerRcsiReadiness";
     private const string ReviewedSqlServerRcsiToolProjectPath =
         "tools/GoymenERP.SqlServerRcsiReadiness/"
         + "GoymenERP.SqlServerRcsiReadiness.csproj";
     private const string ReviewedSqlServerRcsiToolProjectFingerprint =
-        "dc519533d701e8ae4c92a77047004e7b381ec4cea889c2f35d71cbc8f1f999f3";
+        "bbfb2841dbb968a34c65e9da6acabc67e810660fd77647416421e54deccbe478";
+    private const string SolutionPath = "GoymenERP.slnx";
+    private const string SqlServerRcsiToolTestsProjectPath =
+        "tests/GoymenERP.SqlServerRcsiReadiness.Tests/"
+        + "GoymenERP.SqlServerRcsiReadiness.Tests.csproj";
+    private const string ReviewedSqlServerRcsiToolTestsProjectFingerprint =
+        "0a5d40cdf5b24b687eb6acbf6f96d4b70d050a24e9268498aa6a12007bb9e525";
+    private const string SqlServerRcsiIntegrationProjectPath =
+        "tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj";
+    private const string ReviewedSqlServerRcsiIntegrationProjectFingerprint =
+        "ca66331637b7045c24627a16469b3231da93e5109735fbb2f64e2b666af7de5b";
+    private const string SqlServerRcsiRelationalAcceptancePath =
+        "tests/GoymenERP.Api.IntegrationTests/"
+        + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.cs";
+    private const string SqlServerRcsiVerifierPath =
+        "tools/verify_rcsi_relational_acceptance.py";
+    private const string ReviewedSqlServerRcsiVerifierFingerprint =
+        "f415a376f83d4fdd83c416c5e165fd29db61bcdee79515db2d981194740e4271";
+    private const string SqlServerRcsiVerifierTestsPath =
+        "tests/rcsi_relational_acceptance_verifier/"
+        + "test_verify_rcsi_relational_acceptance.py";
+    private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
+        "2645fa643e4f2f2a1fa6c3ac3a8bf8224d0281f0693add831ddfa2d9cf076d4f";
+    private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
+    private const string ReviewedContinuousIntegrationWorkflowFingerprint =
+        "2485e3a3e23235bc13c3c68d6baca91106e752e3451f4bb228538ad8192234e2";
     private const string ReviewedSeederFingerprint =
         "b9de3d52d72f20ffc6279f32b9cc4b1b646aa3b3f03c6a12fd2fa8d1d4c4c450";
 
@@ -113,7 +143,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 [ReviewedSqlServerRcsiReadinessProbePath] =
                     new(
-                        "d9eff6e2baf5209828c674c1d602a271e97356c5914fcde42a30f99da7456cb2",
+                        "8178438d5aad9697c4778da41929743917ddc1e9b67a1cb17c56cd984cfe42db",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -122,7 +152,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 [ReviewedSqlServerRcsiToolProgramPath] =
                     new(
-                        "1bd647f9c932f5d80ecf50b8a95a89fbe8c5d622d97becc9e2376e8840271448",
+                        "8435a25152ad98c8827a298515f65078ffbcf016e7da996ccda9aad63feb62e2",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
@@ -330,6 +360,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             File.ReadAllText(Path.Combine(
                 repositoryRoot,
                 ReviewedSqlServerRcsiToolProjectPath.Replace(
+                    '/',
+                    Path.DirectorySeparatorChar)))));
+        errors.AddRange(ValidateReviewedSqlServerRcsiWrapper(
+            File.ReadAllText(Path.Combine(
+                repositoryRoot,
+                ReviewedSqlServerRcsiWrapperPath.Replace(
                     '/',
                     Path.DirectorySeparatorChar)))));
         errors.AddRange(ValidateReviewedMigrationMutationSurface(inventory.Sources));
@@ -891,10 +927,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 Path.DirectorySeparatorChar)));
         var toolInventory = ReadSqlServerRcsiToolSourceInventory(repositoryRoot);
         var toolSources = toolInventory.Sources;
+        var wrapperSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            ReviewedSqlServerRcsiWrapperPath.Replace('/', Path.DirectorySeparatorChar)));
 
         Assert.Empty(toolInventory.DefinitionErrors);
         Assert.Empty(ValidateReviewedSqlServerRcsiToolProject(projectSource));
         Assert.Empty(ValidateSqlServerRcsiToolMutationSurface(toolSources));
+        Assert.Empty(ValidateReviewedSqlServerRcsiWrapper(wrapperSource));
 
         var withoutPackage = projectSource.Replace(
             "Microsoft.Data.SqlClient",
@@ -939,6 +979,249 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ValidateSqlServerRcsiToolMutationSurface(dangerousSources),
             error => error.Contains("ALTER DATABASE", StringComparison.Ordinal)
                      && error.Contains(dangerousPath, StringComparison.Ordinal));
+
+        foreach (var dangerousWrapperFragment in new[]
+                 {
+                     "ALTER DATABASE [X] SET OFFLINE",
+                     "Invoke-Expression $payload",
+                     "[Diagnostics.ProcessStartInfo]::new('dotnet')",
+                     "Password=PlaintextSecret",
+                 })
+        {
+            Assert.Contains(
+                ValidateReviewedSqlServerRcsiWrapper(
+                    wrapperSource + Environment.NewLine + dangerousWrapperFragment),
+                error => error.Contains("wrapper", StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    [Fact]
+    public void SqlServer_RCSI_publish_and_test_discovery_contracts_are_fail_closed()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var solutionSource = File.ReadAllText(Path.Combine(repositoryRoot, SolutionPath));
+        var integrationProjectSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            SqlServerRcsiIntegrationProjectPath.Replace('/', Path.DirectorySeparatorChar)));
+        var toolTestsProjectSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            SqlServerRcsiToolTestsProjectPath.Replace('/', Path.DirectorySeparatorChar)));
+        var relationalAcceptanceSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            SqlServerRcsiRelationalAcceptancePath.Replace('/', Path.DirectorySeparatorChar)));
+        var workflowSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            ContinuousIntegrationWorkflowPath.Replace('/', Path.DirectorySeparatorChar)));
+        var normalizedWorkflowSource = workflowSource.Replace(
+            "\r\n",
+            "\n",
+            StringComparison.Ordinal);
+        var verifierSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            SqlServerRcsiVerifierPath.Replace('/', Path.DirectorySeparatorChar)));
+        var verifierTestsSource = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            SqlServerRcsiVerifierTestsPath.Replace('/', Path.DirectorySeparatorChar)));
+
+        Assert.Equal(
+            ReviewedSqlServerRcsiVerifierFingerprint,
+            ComputeReviewedSourceFingerprint(verifierSource));
+        Assert.Equal(
+            ReviewedSqlServerRcsiVerifierTestsFingerprint,
+            ComputeReviewedSourceFingerprint(verifierTestsSource));
+        Assert.NotEqual(
+            ReviewedSqlServerRcsiVerifierFingerprint,
+            ComputeReviewedSourceFingerprint(verifierSource + "\n# discovery bypass"));
+        Assert.Equal(
+            ReviewedSqlServerRcsiToolTestsProjectFingerprint,
+            ComputeReviewedSourceFingerprint(toolTestsProjectSource));
+        var toolTestsProject = XDocument.Parse(toolTestsProjectSource);
+        Assert.Single(toolTestsProject.Descendants("PackageReference"), element =>
+            string.Equals(
+                element.Attribute("Include")?.Value,
+                "Microsoft.NET.Test.Sdk",
+                StringComparison.Ordinal));
+        Assert.DoesNotContain(toolTestsProject.Descendants("IsTestProject"), element =>
+            string.Equals(element.Value.Trim(), "false", StringComparison.OrdinalIgnoreCase));
+        Assert.NotEqual(
+            ReviewedSqlServerRcsiToolTestsProjectFingerprint,
+            ComputeReviewedSourceFingerprint(toolTestsProjectSource.Replace(
+                "<IsPackable>false</IsPackable>",
+                "<IsPackable>false</IsPackable>\n    <IsTestProject>false</IsTestProject>",
+                StringComparison.Ordinal)));
+
+        Assert.Empty(ValidateSqlServerRcsiPublishAndDiscoveryContracts(
+            solutionSource,
+            integrationProjectSource,
+            relationalAcceptanceSource,
+            normalizedWorkflowSource));
+
+        Assert.Contains(
+            ValidateSqlServerRcsiPublishAndDiscoveryContracts(
+                solutionSource,
+                integrationProjectSource,
+                relationalAcceptanceSource,
+                normalizedWorkflowSource + "\n# unreviewed workflow drift"),
+            error => error.Contains("exact reviewed fingerprint", StringComparison.Ordinal));
+
+        Assert.Contains(
+            ValidateSqlServerRcsiPublishAndDiscoveryContracts(
+                solutionSource.Replace(
+                    "tests/GoymenERP.SqlServerRcsiReadiness.Tests/"
+                    + "GoymenERP.SqlServerRcsiReadiness.Tests.csproj",
+                    "tests/Removed/Removed.csproj",
+                    StringComparison.Ordinal),
+                integrationProjectSource,
+                relationalAcceptanceSource,
+                normalizedWorkflowSource),
+            error => error.Contains("solution membership", StringComparison.Ordinal));
+
+        Assert.Contains(
+            ValidateSqlServerRcsiPublishAndDiscoveryContracts(
+                solutionSource,
+                integrationProjectSource.Replace(
+                    "$(MSBuildProjectDirectory)\\..\\..\\tools\\"
+                    + "GoymenERP.SqlServerRcsiReadiness\\"
+                    + "GoymenERP.SqlServerRcsiReadiness.csproj",
+                    "$(MSBuildProjectDirectory)\\..\\Alternate\\Alternate.csproj",
+                    StringComparison.Ordinal),
+                relationalAcceptanceSource,
+                normalizedWorkflowSource),
+            error => error.Contains("tool project path", StringComparison.Ordinal));
+
+        Assert.Contains(
+            ValidateSqlServerRcsiPublishAndDiscoveryContracts(
+                solutionSource,
+                integrationProjectSource.Replace(
+                    "SelfContained=true",
+                    "SelfContained=false",
+                    StringComparison.Ordinal),
+                relationalAcceptanceSource,
+                normalizedWorkflowSource),
+            error => error.Contains("SelfContained=true", StringComparison.Ordinal));
+
+        Assert.Contains(
+            ValidateSqlServerRcsiPublishAndDiscoveryContracts(
+                solutionSource,
+                integrationProjectSource.Replace(
+                    "<RemoveDir Directories=\"$(RcsiToolSelfContainedPublishDir)\" />",
+                    "<Message Text=\"clean removed\" />",
+                    StringComparison.Ordinal),
+                relationalAcceptanceSource,
+                normalizedWorkflowSource),
+            error => error.Contains("cleaned before publication", StringComparison.Ordinal));
+
+        Assert.Contains(
+            ValidateSqlServerRcsiPublishAndDiscoveryContracts(
+                solutionSource,
+                integrationProjectSource.Replace(
+                    "<RemoveDir Directories=\"$(RcsiToolSelfContainedPublishDir)\" />",
+                    "<RemoveDir Directories=\"$(RcsiToolSelfContainedPublishDir)\" "
+                    + "Condition=\"'false'\" />",
+                    StringComparison.Ordinal),
+                relationalAcceptanceSource,
+                normalizedWorkflowSource),
+            error => error.Contains("cleaned before publication", StringComparison.Ordinal));
+
+        Assert.Contains(
+            ValidateSqlServerRcsiPublishAndDiscoveryContracts(
+                solutionSource,
+                integrationProjectSource,
+                relationalAcceptanceSource.Replace(
+                    "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests",
+                    "RenamedRcsiAcceptanceTests",
+                    StringComparison.Ordinal),
+                normalizedWorkflowSource),
+            error => error.Contains("relational discovery", StringComparison.Ordinal));
+
+        Assert.Contains(
+            ValidateSqlServerRcsiPublishAndDiscoveryContracts(
+                solutionSource,
+                integrationProjectSource,
+                relationalAcceptanceSource.Replace(
+                    "SqlServerRcsiReadinessProcessAcceptanceTests",
+                    "RemovedRcsiProcessAcceptanceTests",
+                    StringComparison.Ordinal),
+                normalizedWorkflowSource),
+            error => error.Contains("process acceptance discovery", StringComparison.Ordinal));
+
+        Assert.Contains(
+            ValidateSqlServerRcsiPublishAndDiscoveryContracts(
+                solutionSource,
+                integrationProjectSource,
+                "#if NEVER" + Environment.NewLine + relationalAcceptanceSource
+                + Environment.NewLine + "#endif",
+                normalizedWorkflowSource),
+            error => error.Contains("relational discovery", StringComparison.Ordinal));
+
+        foreach (var verifierBypass in new[] { " --list-tests", " || true", "; true" })
+        {
+            Assert.Contains(
+                ValidateSqlServerRcsiPublishAndDiscoveryContracts(
+                    solutionSource,
+                    integrationProjectSource,
+                    relationalAcceptanceSource,
+                    normalizedWorkflowSource.Replace(
+                        "python3 -I -S -B tools/verify_rcsi_relational_acceptance.py",
+                        "python3 -I -S -B tools/verify_rcsi_relational_acceptance.py"
+                        + verifierBypass,
+                        StringComparison.Ordinal)),
+                error => error.Contains("relational CI verifier", StringComparison.Ordinal));
+        }
+
+        Assert.Contains(
+            ValidateSqlServerRcsiPublishAndDiscoveryContracts(
+                solutionSource,
+                integrationProjectSource,
+                relationalAcceptanceSource,
+                normalizedWorkflowSource.Replace(
+                    "GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: >-",
+                    "REMOVED_SQLSERVER_CONNECTION: >-",
+                    StringComparison.Ordinal)),
+            error => error.Contains("SQL Server fixture binding", StringComparison.Ordinal));
+
+        foreach (var softGate in new[]
+                 {
+                     "        if: ${{ false }}",
+                     "        continue-on-error: true",
+                     "        shell: echo {0}",
+                     "        env:\n          GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: ''",
+                 })
+        {
+            Assert.Contains(
+                ValidateSqlServerRcsiPublishAndDiscoveryContracts(
+                    solutionSource,
+                    integrationProjectSource,
+                    relationalAcceptanceSource,
+                    normalizedWorkflowSource.Replace(
+                        "      - name: Run exact RCSI relational acceptance verifier",
+                        "      - name: Run exact RCSI relational acceptance verifier\n"
+                        + softGate,
+                        StringComparison.Ordinal)),
+                error => error.Contains("relational CI verifier", StringComparison.Ordinal));
+        }
+
+        Assert.Contains(
+            ValidateSqlServerRcsiPublishAndDiscoveryContracts(
+                solutionSource,
+                integrationProjectSource,
+                relationalAcceptanceSource,
+                normalizedWorkflowSource.Replace(
+                    "      - name: Test",
+                    "      - name: Test\n        if: ${{ false }}",
+                    StringComparison.Ordinal)),
+            error => error.Contains("backend solution test step", StringComparison.Ordinal));
+
+        Assert.Contains(
+            ValidateSqlServerRcsiPublishAndDiscoveryContracts(
+                solutionSource,
+                integrationProjectSource,
+                relationalAcceptanceSource,
+                normalizedWorkflowSource.Replace(
+                    "\n    env:\n      GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: >-\n        Server=",
+                    "\n        env:\n          GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: >-\n            Server=",
+                    StringComparison.Ordinal)),
+            error => error.Contains("SQL Server fixture binding", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -984,6 +1267,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 Path.Combine(testRoot, "Directory.Build.targets"),
                 "<Project><Target Name=\"InjectOutsideRepository\" /></Project>");
             File.WriteAllText(
+                Path.Combine(testRoot, "Directory.Packages.props"),
+                "<Project><ItemGroup><PackageReference Include=\"Injected\" /></ItemGroup></Project>");
+            File.WriteAllText(
                 Path.Combine(
                     repositoryRoot,
                     ReviewedSqlServerRcsiToolProjectPath.Replace(
@@ -1004,6 +1290,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                              StringComparison.Ordinal));
             Assert.Contains(
                 inventory.DefinitionErrors,
+                error => error.Contains("outside the repository", StringComparison.Ordinal)
+                         && error.Contains(
+                             "Directory.Packages.props",
+                             StringComparison.Ordinal));
+            Assert.Contains(
+                inventory.DefinitionErrors,
                 error => error.Contains(".csproj.user", StringComparison.Ordinal));
             Assert.True(inventory.Sources.ContainsKey(dangerousPath));
             var directErrors = ValidateNoDirectDatabaseBypassCapabilities(inventory.Sources);
@@ -1019,6 +1311,92 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ValidateSqlServerRcsiToolMutationSurface(inventory.Sources),
                 error => error.Contains("ALTER DATABASE", StringComparison.Ordinal)
                          && error.Contains(dangerousPath, StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (Directory.Exists(testRoot))
+            {
+                Directory.Delete(testRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void SqlServer_RCSI_tool_compile_policy_accepts_literal_Link_and_rejects_hiding_directives()
+    {
+        var sourceRepositoryRoot = FindRepositoryRoot();
+        var testRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"goymen-rcsi-tool-compile-policy-{Guid.NewGuid():N}");
+        var repositoryRoot = Path.Combine(testRoot, "repository");
+        var toolRoot = Path.Combine(
+            repositoryRoot,
+            ReviewedSqlServerRcsiToolRootPath.Replace('/', Path.DirectorySeparatorChar));
+        try
+        {
+            Directory.CreateDirectory(toolRoot);
+            Directory.CreateDirectory(Path.Combine(repositoryRoot, "tools"));
+            File.Copy(
+                Path.Combine(sourceRepositoryRoot, "Directory.Build.props"),
+                Path.Combine(repositoryRoot, "Directory.Build.props"));
+            foreach (var sourceName in new[] { "Program.cs", "AssemblyInfo.cs" })
+            {
+                File.WriteAllText(Path.Combine(toolRoot, sourceName), $"internal class {sourceName[..^3]};");
+            }
+
+            File.WriteAllText(Path.Combine(repositoryRoot, "tools", "Safe.cs"), "internal class Safe;");
+            Directory.CreateDirectory(Path.Combine(toolRoot, "obj"));
+            Directory.CreateDirectory(Path.Combine(toolRoot, "bin"));
+            File.WriteAllText(
+                Path.Combine(toolRoot, "obj", "Dangerous.cs"),
+                "connection.CreateCommand().ExecuteNonQuery();");
+            File.WriteAllText(
+                Path.Combine(toolRoot, "bin", "Dangerous.cs"),
+                "connection.CreateCommand().ExecuteNonQuery();");
+
+            var projectPath = Path.Combine(
+                repositoryRoot,
+                ReviewedSqlServerRcsiToolProjectPath.Replace('/', Path.DirectorySeparatorChar));
+            var baseProject = File.ReadAllText(Path.Combine(
+                sourceRepositoryRoot,
+                ReviewedSqlServerRcsiToolProjectPath.Replace('/', Path.DirectorySeparatorChar)));
+            var linkedProject = baseProject.Replace(
+                "</Project>",
+                """
+                  <ItemGroup>
+                    <Compile Include="..\Safe.cs">
+                      <Link>Safe.cs</Link>
+                    </Compile>
+                  </ItemGroup>
+                </Project>
+                """,
+                StringComparison.Ordinal);
+            File.WriteAllText(projectPath, linkedProject);
+
+            var inventory = ReadSqlServerRcsiToolSourceInventory(repositoryRoot);
+            Assert.Empty(inventory.DefinitionErrors);
+            Assert.Contains("tools/Safe.cs", inventory.Sources.Keys);
+            Assert.DoesNotContain(
+                inventory.Sources.Keys,
+                path => path.Contains("/obj/", StringComparison.Ordinal)
+                        || path.Contains("/bin/", StringComparison.Ordinal));
+
+            foreach (var mutation in new[]
+                     {
+                         "<Compile Remove=\"Program.cs\" />",
+                         "<Compile Update=\"Program.cs\" />",
+                         "<Compile Include=\"..\\Safe.cs\" Exclude=\"Program.cs\" />",
+                     })
+            {
+                var mutatedProject = baseProject.Replace(
+                    "</Project>",
+                    $"<ItemGroup>{mutation}</ItemGroup></Project>",
+                    StringComparison.Ordinal);
+                File.WriteAllText(projectPath, mutatedProject);
+                Assert.Contains(
+                    ReadSqlServerRcsiToolSourceInventory(repositoryRoot).DefinitionErrors,
+                    error => error.Contains("RCSI tool Compile", StringComparison.Ordinal));
+            }
         }
         finally
         {
@@ -3847,8 +4225,408 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 + "project reference.");
         }
 
+        var exactRuntimeIdentifiers = document.Descendants("RuntimeIdentifiers")
+            .Where(element => !element.HasAttributes
+                              && !element.Elements().Any()
+                              && string.Equals(
+                                  element.Value.Trim(),
+                                  "$(NETCoreSdkRuntimeIdentifier)",
+                                  StringComparison.Ordinal))
+            .ToArray();
+        if (exactRuntimeIdentifiers.Length != 1)
+        {
+            errors.Add(
+                "SQL Server RCSI tool must bind self-contained publication to the "
+                + "current reviewed SDK runtime identifier.");
+        }
+
         return errors;
     }
+
+    private static IReadOnlyList<string> ValidateReviewedSqlServerRcsiWrapper(
+        string wrapperSource)
+    {
+        var errors = new List<string>();
+        var fingerprint = ComputeReviewedSourceFingerprint(wrapperSource);
+        if (!string.Equals(
+                fingerprint,
+                ReviewedSqlServerRcsiWrapperFingerprint,
+                StringComparison.Ordinal))
+        {
+            errors.Add(
+                "SQL Server RCSI wrapper does not match its exact reviewed fingerprint. "
+                + $"Expected {ReviewedSqlServerRcsiWrapperFingerprint}, found {fingerprint}: "
+                + ReviewedSqlServerRcsiWrapperPath);
+        }
+
+        foreach (var required in new[]
+                 {
+                     "#requires -Version 7.2",
+                     "[Diagnostics.ProcessStartInfo]::new($verifiedPayload.EntryPath)",
+                     "$startInfo.Environment.Clear()",
+                     "$startInfo.RedirectStandardInput = $true",
+                     "'--connection-secret-stdin', 'true'",
+                     "[GoymenErpRcsiProcessContainment]::CreateWindowsJob()",
+                     "[GoymenErpRcsiProcessContainment]::KillUnixProcessGroup",
+                     "$overallDeadlineStopwatch",
+                     "[Array]::Clear($probeSecretBytes",
+                     "-ccontains",
+                     "$process.Kill($true)",
+                     "exit $scriptExitCode",
+                 })
+        {
+            if (!wrapperSource.Contains(required, StringComparison.Ordinal))
+            {
+                errors.Add($"SQL Server RCSI wrapper lost required fail-closed surface: {required}");
+            }
+        }
+
+        foreach (var (pattern, description) in new[]
+                 {
+                     (@"(?i)\bALTER\s+DATABASE\b", "ALTER DATABASE"),
+                     (@"(?i)\bInvoke-Expression\b", "Invoke-Expression"),
+                     ("(?i)ProcessStartInfo\\]\\s*::\\s*new\\s*\\(\\s*['\"]dotnet['\"]", "PATH dotnet host"),
+                     (@"(?i)\b(?:Password|Pwd|User\s+ID|Server|Data\s+Source)\s*=", "plaintext connection value"),
+                 })
+        {
+            if (Regex.IsMatch(wrapperSource, pattern, RegexOptions.CultureInvariant))
+            {
+                errors.Add($"SQL Server RCSI wrapper contains forbidden {description} surface.");
+            }
+        }
+
+        return errors;
+    }
+
+    private static IReadOnlyList<string> ValidateSqlServerRcsiPublishAndDiscoveryContracts(
+        string solutionSource,
+        string integrationProjectSource,
+        string relationalAcceptanceSource,
+        string workflowSource)
+    {
+        var errors = new List<string>();
+        var workflowFingerprint = ComputeReviewedSourceFingerprint(workflowSource);
+        if (!string.Equals(
+                workflowFingerprint,
+                ReviewedContinuousIntegrationWorkflowFingerprint,
+                StringComparison.Ordinal))
+        {
+            errors.Add(
+                "RCSI CI workflow left its exact reviewed fingerprint. Expected "
+                + $"{ReviewedContinuousIntegrationWorkflowFingerprint}, found "
+                + $"{workflowFingerprint}: {ContinuousIntegrationWorkflowPath}");
+        }
+
+        XDocument solution;
+        XDocument project;
+        try
+        {
+            solution = XDocument.Parse(solutionSource, LoadOptions.SetLineInfo);
+            project = XDocument.Parse(integrationProjectSource, LoadOptions.SetLineInfo);
+        }
+        catch (System.Xml.XmlException exception)
+        {
+            return [$"RCSI publish/discovery XML is invalid: {exception.Message}"];
+        }
+
+        var integrationProjectFingerprint =
+            ComputeReviewedSourceFingerprint(integrationProjectSource);
+        if (!string.Equals(
+                integrationProjectFingerprint,
+                ReviewedSqlServerRcsiIntegrationProjectFingerprint,
+                StringComparison.Ordinal))
+        {
+            errors.Add(
+                "RCSI integration publish project left its exact reviewed fingerprint. "
+                + $"Expected {ReviewedSqlServerRcsiIntegrationProjectFingerprint}, found "
+                + $"{integrationProjectFingerprint}: {SqlServerRcsiIntegrationProjectPath}");
+        }
+
+        foreach (var requiredProject in new[]
+                 {
+                     "tools/GoymenERP.SqlServerRcsiReadiness/"
+                     + "GoymenERP.SqlServerRcsiReadiness.csproj",
+                     "tests/GoymenERP.SqlServerRcsiReadiness.Tests/"
+                     + "GoymenERP.SqlServerRcsiReadiness.Tests.csproj",
+                     SqlServerRcsiIntegrationProjectPath,
+                 })
+        {
+            var matches = solution.Descendants("Project")
+                .Count(element => string.Equals(
+                    NormalizeRepositoryPath(element.Attribute("Path")?.Value ?? string.Empty),
+                    requiredProject,
+                    StringComparison.Ordinal));
+            if (matches != 1)
+            {
+                errors.Add(
+                    "RCSI solution membership must contain exactly one reviewed project: "
+                    + requiredProject);
+            }
+        }
+
+        var publishDirectoryProperties = project.Descendants("RcsiToolSelfContainedPublishDir")
+            .Where(element => !element.HasAttributes
+                              && !element.Elements().Any()
+                              && string.Equals(
+                element.Value.Trim(),
+                "$(MSBuildProjectDirectory)\\bin\\$(Configuration)\\"
+                + "rcsi-tool-self-contained\\$(NETCoreSdkRuntimeIdentifier)\\",
+                StringComparison.Ordinal))
+            .ToArray();
+        if (publishDirectoryProperties.Length != 1)
+        {
+            errors.Add(
+                "RCSI self-contained publish directory must remain runtime-specific and reviewed.");
+        }
+
+        var toolProjectProperties = project.Descendants("RcsiToolProject")
+            .Where(element => !element.HasAttributes
+                              && !element.Elements().Any()
+                              && string.Equals(
+                                  element.Value.Trim(),
+                                  "$(MSBuildProjectDirectory)\\..\\..\\tools\\"
+                                  + "GoymenERP.SqlServerRcsiReadiness\\"
+                                  + "GoymenERP.SqlServerRcsiReadiness.csproj",
+                                  StringComparison.Ordinal))
+            .ToArray();
+        if (toolProjectProperties.Length != 1)
+        {
+            errors.Add("RCSI publish caller must retain the exact reviewed tool project path.");
+        }
+
+        var publishTargets = project.Descendants("Target")
+            .Where(element => string.Equals(
+                element.Attribute("Name")?.Value,
+                "PublishSelfContainedSqlServerRcsiReadinessTool",
+                StringComparison.Ordinal))
+            .ToArray();
+        if (publishTargets.Length != 1)
+        {
+            errors.Add("RCSI integration project must retain exactly one reviewed publish target.");
+        }
+        else
+        {
+            var target = publishTargets[0];
+            var tasks = target.Elements().ToArray();
+            if (target.Attributes().Count() != 3
+                || !string.Equals(
+                    target.Attribute("AfterTargets")?.Value,
+                    "Build",
+                    StringComparison.Ordinal)
+                || !string.Equals(
+                    target.Attribute("Condition")?.Value,
+                    "'$(DesignTimeBuild)' != 'true' and "
+                    + "'$(IsCrossTargetingBuild)' != 'true'",
+                    StringComparison.Ordinal))
+            {
+                errors.Add("RCSI self-contained publish target scheduling drifted.");
+            }
+
+            if (tasks.Length != 2
+                || !string.Equals(tasks[0].Name.LocalName, "RemoveDir", StringComparison.Ordinal)
+                || tasks[0].Attributes().Count() != 1
+                || !string.Equals(
+                    tasks[0].Attribute("Directories")?.Value,
+                    "$(RcsiToolSelfContainedPublishDir)",
+                    StringComparison.Ordinal))
+            {
+                errors.Add("RCSI publish directory must be cleaned before publication.");
+            }
+
+            var publishTask = tasks.Length == 2
+                && string.Equals(tasks[1].Name.LocalName, "MSBuild", StringComparison.Ordinal)
+                    ? tasks[1]
+                    : null;
+            const string reviewedPublishProperties =
+                "Configuration=$(Configuration);"
+                + "RuntimeIdentifier=$(NETCoreSdkRuntimeIdentifier);"
+                + "SelfContained=true;PublishSingleFile=false;PublishTrimmed=false;"
+                + "PublishDir=$(RcsiToolSelfContainedPublishDir);NoRestore=true";
+            if (publishTask is null
+                || publishTask.Attributes().Count() != 4
+                || !string.Equals(
+                    publishTask.Attribute("Projects")?.Value,
+                    "$(RcsiToolProject)",
+                    StringComparison.Ordinal)
+                || !string.Equals(
+                    publishTask.Attribute("Targets")?.Value,
+                    "Publish",
+                    StringComparison.Ordinal)
+                || !string.Equals(
+                    publishTask.Attribute("BuildInParallel")?.Value,
+                    "false",
+                    StringComparison.Ordinal)
+                || !string.Equals(
+                    publishTask.Attribute("Properties")?.Value,
+                    reviewedPublishProperties,
+                    StringComparison.Ordinal))
+            {
+                errors.Add(
+                    "RCSI publish caller must retain exact RuntimeIdentifier and "
+                    + "SelfContained=true semantics.");
+            }
+        }
+
+        if (Regex.IsMatch(
+                relationalAcceptanceSource,
+                @"(?m)^\s*#\s*(?:if|elif|else|endif)\b",
+                RegexOptions.CultureInvariant)
+            || Regex.Matches(
+                relationalAcceptanceSource,
+                @"\bpublic\s+sealed\s+class\s+"
+                + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests\\b",
+                RegexOptions.CultureInvariant).Count != 1
+            || Regex.Matches(
+                relationalAcceptanceSource,
+                Regex.Escape("[SqlServerFact]"),
+                RegexOptions.CultureInvariant).Count != 9)
+        {
+            errors.Add(
+                "RCSI relational discovery must retain the reviewed class name and nine tests.");
+        }
+
+        if (Regex.Matches(
+                relationalAcceptanceSource,
+                @"\bpublic\s+sealed\s+class\s+"
+                + "SqlServerRcsiReadinessProcessAcceptanceTests\\b",
+                RegexOptions.CultureInvariant).Count != 1
+            || Regex.Matches(
+                relationalAcceptanceSource,
+                Regex.Escape("[Fact]"),
+                RegexOptions.CultureInvariant).Count != 3)
+        {
+            errors.Add(
+                "RCSI process acceptance discovery must retain the reviewed "
+                + "non-SQL class and three tests.");
+        }
+
+        var normalizedWorkflow = workflowSource.Replace("\r\n", "\n", StringComparison.Ordinal);
+        var backendJobStart = normalizedWorkflow.IndexOf("\n  backend:\n", StringComparison.Ordinal);
+        var backendJobEnd = backendJobStart < 0
+            ? -1
+            : normalizedWorkflow.IndexOf("\n  frontend:\n", backendJobStart, StringComparison.Ordinal);
+        var backendJob = backendJobStart >= 0 && backendJobEnd > backendJobStart
+            ? normalizedWorkflow[backendJobStart..backendJobEnd]
+            : string.Empty;
+        var backendTestStepStart = backendJob.IndexOf(
+            "\n      - name: Test\n",
+            StringComparison.Ordinal);
+        var backendTestStep = ExtractYamlStep(backendJob, backendTestStepStart);
+        var activeBackendTestLines = ReadActiveYamlLines(backendTestStep);
+        var expectedBackendTestLines = new[]
+        {
+            "- name: Test",
+            "run: |",
+            "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py",
+            "dotnet test GoymenERP.slnx -noAutoResponse --configuration Release "
+            + "--no-build --logger \"console;verbosity=normal\"",
+        };
+        if (backendTestStepStart < 0
+            || !activeBackendTestLines.SequenceEqual(
+                expectedBackendTestLines,
+                StringComparer.Ordinal))
+        {
+            errors.Add(
+                "RCSI CLI/policy tests require the exact unconditional backend solution test step.");
+        }
+
+        var relationalJobStart = normalizedWorkflow.IndexOf(
+            "\n  relational:\n",
+            StringComparison.Ordinal);
+        var relationalJobEnd = relationalJobStart < 0
+            ? -1
+            : normalizedWorkflow.IndexOf(
+                "\n  contract-drift:\n",
+                relationalJobStart,
+                StringComparison.Ordinal);
+        var relationalJob = relationalJobStart >= 0 && relationalJobEnd > relationalJobStart
+            ? normalizedWorkflow[relationalJobStart..relationalJobEnd]
+            : string.Empty;
+        var activeRelationalJobLines = ReadActiveYamlLines(relationalJob);
+        var broadStepStart = relationalJob.IndexOf(
+            "\n      - name: Run broad SQL Server relational acceptance verifier\n",
+            StringComparison.Ordinal);
+        var broadStep = ExtractYamlStep(relationalJob, broadStepStart);
+        var activeBroadStepLines = ReadActiveYamlLines(broadStep);
+        var expectedBroadStepLines = new[]
+        {
+            "- name: Run broad SQL Server relational acceptance verifier",
+            "run: |",
+            "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py",
+            "python3 -I -S -B -m unittest discover -s "
+            + "tests/rcsi_relational_acceptance_verifier -p \"test_*.py\" -v",
+            "python3 -I -S -B tools/verify_rcsi_relational_acceptance.py --broad",
+        };
+        var rcsiStepStart = relationalJob.IndexOf(
+            "\n      - name: Run exact RCSI relational acceptance verifier\n",
+            StringComparison.Ordinal);
+        var rcsiStep = ExtractYamlStep(relationalJob, rcsiStepStart);
+        var activeRcsiStepLines = ReadActiveYamlLines(rcsiStep);
+        var expectedRcsiStepLines = new[]
+        {
+            "- name: Run exact RCSI relational acceptance verifier",
+            "run: |",
+            "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py",
+            "python3 -I -S -B tools/verify_rcsi_relational_acceptance.py --rcsi",
+        };
+        if (broadStepStart < 0
+            || rcsiStepStart < 0
+            || !activeBroadStepLines.SequenceEqual(
+                expectedBroadStepLines,
+                StringComparer.Ordinal)
+            || !activeRcsiStepLines.SequenceEqual(
+                expectedRcsiStepLines,
+                StringComparer.Ordinal))
+        {
+            errors.Add("RCSI relational CI verifier step must remain exact and non-vacuous.");
+        }
+
+        var expectedSqlEnvironmentPrefix =
+            "\n    env:\n      GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: >-\n        Server=";
+        var sqlEnvironmentStart = relationalJob.IndexOf(
+            expectedSqlEnvironmentPrefix,
+            StringComparison.Ordinal);
+        var sqlEnvironmentLine = sqlEnvironmentStart < 0
+            ? string.Empty
+            : relationalJob[(sqlEnvironmentStart + expectedSqlEnvironmentPrefix.Length -
+                "Server=".Length)..].Split('\n')[0].Trim();
+        if (sqlEnvironmentStart < 0
+            || !sqlEnvironmentLine.StartsWith("Server=", StringComparison.Ordinal)
+            || !sqlEnvironmentLine.Contains("Database=master", StringComparison.Ordinal)
+            || !sqlEnvironmentLine.Contains("Password=", StringComparison.Ordinal)
+            || !activeRelationalJobLines.Contains("services:", StringComparer.Ordinal)
+            || !activeRelationalJobLines.Contains("sqlserver:", StringComparer.Ordinal)
+            || ContainsConditionalOrSoftFailure(
+                ReadActiveYamlLines(relationalJob.Split("\n    steps:\n")[0])))
+        {
+            errors.Add(
+                "RCSI relational CI job must retain a non-empty SQL Server fixture binding.");
+        }
+
+        return errors;
+    }
+
+    private static string ExtractYamlStep(string jobSource, int stepStart)
+    {
+        if (stepStart < 0)
+        {
+            return string.Empty;
+        }
+
+        var step = jobSource[stepStart..];
+        var nextStep = step.IndexOf("\n      - name:", 2, StringComparison.Ordinal);
+        return nextStep > 0 ? step[..nextStep] : step;
+    }
+
+    private static string[] ReadActiveYamlLines(string source) =>
+        source.Split('\n')
+            .Select(line => line.Trim())
+            .Where(line => line.Length > 0 && !line.StartsWith('#'))
+            .ToArray();
+
+    private static bool ContainsConditionalOrSoftFailure(IEnumerable<string> lines) =>
+        lines.Any(line => line.StartsWith("if:", StringComparison.Ordinal)
+                          || line.StartsWith("continue-on-error:", StringComparison.Ordinal));
 
     private static BackendSourceInventory
         ReadSqlServerRcsiToolSourceInventory(string repositoryRoot)
@@ -3966,6 +4744,20 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             exactOutputType[0].Remove();
         }
 
+        var exactRuntimeIdentifiers = reviewedDocument.Descendants()
+            .Where(element => element.Name.LocalName == "RuntimeIdentifiers")
+            .Where(element => !element.HasAttributes
+                              && !element.Elements().Any()
+                              && string.Equals(
+                                  element.Value.Trim(),
+                                  "$(NETCoreSdkRuntimeIdentifier)",
+                                  StringComparison.Ordinal))
+            .ToArray();
+        if (exactRuntimeIdentifiers.Length == 1)
+        {
+            exactRuntimeIdentifiers[0].Remove();
+        }
+
         var exactSqlClientPackage = reviewedDocument.Descendants()
             .Where(element => element.Name.LocalName == "PackageReference")
             .Where(element => element.Attributes().Count() == 2
@@ -3984,9 +4776,28 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             exactSqlClientPackage[0].Remove();
         }
 
-        return AnalyzeProjectDefinition(
+        var analysis = AnalyzeProjectDefinition(
             reviewedDocument,
             ReviewedSqlServerRcsiToolProjectPath);
+        var errors = analysis.Errors.ToList();
+        foreach (var directive in analysis.CompileDirectives)
+        {
+            if (directive.Kind is CompileDirectiveKind.Remove or CompileDirectiveKind.Update)
+            {
+                errors.Add(
+                    $"RCSI tool Compile {directive.Kind} is forbidden because the exact "
+                    + "compile inventory must remain additive and reviewable.");
+            }
+
+            if (directive.Excludes.Count != 0)
+            {
+                errors.Add(
+                    "RCSI tool Compile Exclude is forbidden because it can hide reviewed "
+                    + "compile inputs.");
+            }
+        }
+
+        return new ProjectDefinitionAnalysis(analysis.CompileDirectives, errors);
     }
 
     private static IReadOnlyList<DirectDatabaseBypassOccurrence>

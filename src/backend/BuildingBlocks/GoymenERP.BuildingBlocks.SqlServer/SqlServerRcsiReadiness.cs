@@ -4,7 +4,9 @@ using System.Data.Common;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Unicode;
 
 namespace GoymenERP.BuildingBlocks.SqlServer;
 
@@ -187,6 +189,7 @@ public sealed class SqlServerRcsiReadinessRunContext
         string expectedToolAssemblySha256,
         string observedToolAssemblySha256,
         string runtimePayloadManifestSha256,
+        string runtimePayloadEntryExecutableSha256,
         DateTimeOffset observedAtUtc)
     {
         RunId = runId;
@@ -194,6 +197,7 @@ public sealed class SqlServerRcsiReadinessRunContext
         ExpectedToolAssemblySha256 = expectedToolAssemblySha256;
         ObservedToolAssemblySha256 = observedToolAssemblySha256;
         RuntimePayloadManifestSha256 = runtimePayloadManifestSha256;
+        RuntimePayloadEntryExecutableSha256 = runtimePayloadEntryExecutableSha256;
         ObservedAtUtc = observedAtUtc;
     }
 
@@ -207,6 +211,8 @@ public sealed class SqlServerRcsiReadinessRunContext
 
     public string RuntimePayloadManifestSha256 { get; }
 
+    public string RuntimePayloadEntryExecutableSha256 { get; }
+
     public DateTimeOffset ObservedAtUtc { get; }
 
     public static bool TryCreate(
@@ -215,6 +221,7 @@ public sealed class SqlServerRcsiReadinessRunContext
         string? expectedToolAssemblySha256,
         string? observedToolAssemblySha256,
         string? runtimePayloadManifestSha256,
+        string? runtimePayloadEntryExecutableSha256,
         DateTimeOffset observedAtUtc,
         out SqlServerRcsiReadinessRunContext context)
     {
@@ -233,6 +240,9 @@ public sealed class SqlServerRcsiReadinessRunContext
             || !SqlServerLogicalEndpointFingerprint.TryNormalizeSha256(
                 runtimePayloadManifestSha256,
                 out var normalizedRuntimePayloadManifestSha256)
+            || !SqlServerLogicalEndpointFingerprint.TryNormalizeSha256(
+                runtimePayloadEntryExecutableSha256,
+                out var normalizedRuntimePayloadEntryExecutableSha256)
             || observedAtUtc.Offset != TimeSpan.Zero)
         {
             return false;
@@ -244,6 +254,7 @@ public sealed class SqlServerRcsiReadinessRunContext
             normalizedExpectedToolAssemblySha256,
             normalizedObservedToolAssemblySha256,
             normalizedRuntimePayloadManifestSha256,
+            normalizedRuntimePayloadEntryExecutableSha256,
             observedAtUtc);
         return true;
     }
@@ -525,6 +536,8 @@ public sealed class SqlServerRcsiReadinessProbe
                     connection.DataSource,
                     out observedLogicalEndpointSha256))
             {
+                observedLogicalEndpointSha256 = null;
+                logicalEndpointMatches = null;
                 evidence = SqlServerRcsiReadinessPolicy.ProbeFailed(
                     binding,
                     configuredDatabase);
@@ -616,6 +629,7 @@ public static class SqlServerRcsiReadinessEvidenceJson
                    {
                        Indented = false,
                        SkipValidation = false,
+                       Encoder = JavaScriptEncoder.Create(UnicodeRanges.All),
                    }))
         {
             writer.WriteStartObject();
@@ -631,6 +645,9 @@ public static class SqlServerRcsiReadinessEvidenceJson
             writer.WriteString(
                 "runtimePayloadManifestSha256",
                 runContext.RuntimePayloadManifestSha256);
+            writer.WriteString(
+                "runtimePayloadEntryExecutableSha256",
+                runContext.RuntimePayloadEntryExecutableSha256);
             writer.WriteString(
                 "observedAtUtc",
                 runContext.ObservedAtUtc.ToString(

@@ -177,15 +177,16 @@ jobs:
           -noAutoResponse \
           --configfile NuGet.Config
 
-      - name: Run relational acceptance test
+      - name: Run broad SQL Server relational acceptance verifier
         run: |
           python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
-          dotnet test tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj \
-          -noAutoResponse \
-          --configuration Release \
-          --no-restore \
-          --filter "FullyQualifiedName~SqlServerRelationalAcceptanceTests" \
-          --logger "console;verbosity=normal"
+          python3 -I -S -B -m unittest discover -s tests/rcsi_relational_acceptance_verifier -p "test_*.py" -v
+          python3 -I -S -B tools/verify_rcsi_relational_acceptance.py --broad
+
+      - name: Run exact RCSI relational acceptance verifier
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B tools/verify_rcsi_relational_acceptance.py --rcsi
 
   contract-drift:
     name: OpenAPI contract drift

@@ -20,288 +20,138 @@ derives the approved runtime set from non-empty connection-string `DataSource`
 and `FailoverPartner`; the CLI receives one or more approved hashes from an
 external inventory.
 
-The executable proof is a prebuilt runtime payload, not a source checkout. Its
-external canonical manifest is
-`GOYMEN-ERP-RCSI-RUNTIME-PAYLOAD-V1`: exact `sourceRevisionId` plus a sorted,
-unique list of every payload file's normalized relative path, byte length, and
-SHA-256. The CLI rejects missing/extra files, path traversal, reparse points,
-manifest drift, dependency drift, and a tool DLL/commit mismatch both before
-reading the connection secret and again after the probe. The manifest itself
-must be outside the payload directory. The evidence output must also be outside
-that directory.
+The executable proof is an approved **self-contained publish payload**. It is
+not a source checkout, a framework-dependent DLL, or a `dotnet` host resolved
+from `PATH`. Its external canonical manifest uses
+`GOYMEN-ERP-RCSI-RUNTIME-PAYLOAD-V2` and binds:
 
-## Fresh fail-closed invocation
+- the exact `sourceRevisionId`;
+- the root-level self-contained `entryExecutablePath`;
+- every payload file's sorted, unique normalized path, byte length, and SHA-256;
+- the tool assembly, shared SQL policy assembly, deps/runtimeconfig, native
+  apphost, managed runtime, native runtime, and all transitive payload files.
 
-The approved immutable build inventory supplies all of these values together:
+The manifest is outside the payload. The approved runner must expose both the
+payload and that external manifest through an OS-enforced read-only mount/ACL
+that the wrapper identity cannot modify for the whole invocation. Pre/post
+hashing detects drift but does not by itself defeat an active
+replace-execute-restore writer. The tool verifies the complete payload,
+executing apphost, tool assembly and source revision before reading the secret
+and again after probing. Missing/extra files, dependency drift, reparse paths,
+device/UNC/8.3 aliases, or manifest drift fail closed. Windows runners must
+also prohibit `SUBST`/DOS-device aliases for payload, manifest, and evidence
+paths; the wrapper does not prove drive-letter alias identity. Evidence is
+written outside the payload to a new invocation directory.
 
-- absolute prebuilt payload directory and tool DLL path;
-- absolute external canonical payload-manifest path and its SHA-256;
-- exact 40-hex reviewed commit from that manifest;
-- exact tool DLL SHA-256 from that manifest;
-- approved logical-endpoint hashes.
+This repository does not prove that external staging prerequisite. Until a
+trusted artifact owner supplies and verifies the read-only staging boundary,
+the operational state remains `STAGING_REHEARSAL_PENDING`; even a `READY`
+probe is not deployment, cutover, or production-activation evidence.
 
-The deployment runner or secret manager must inject the connection string into
-the named environment variable before this wrapper starts. Never type a secret
-assignment into interactive history. Both the probe timeout and the whole-child
-process timeout are operator-owned, required positive values; this repository
-chooses no operational default. The CLI timeout covers only connection/probe
-work. The wrapper timeout covers the complete child process and kills the full
-child tree before cleanup if exceeded.
+## Approved wrapper
 
-Save and review the block below as a non-interactive `.ps1` runner step. Do not
-paste it into an interactive shell. An uncaught `throw` is the runner failure;
-the orchestration layer must require the PowerShell process itself to exit zero,
-not merely inspect `$LASTEXITCODE` from a nested command.
+Use the reviewed PowerShell 7.2+ artifact:
+
+`tools/GoymenERP.SqlServerRcsiReadiness/Invoke-GoymenERP.SqlServerRcsiReadiness.ps1`
+
+Do not copy an inline script from documentation and do not use `dotnet run`.
+The deployment runner or secret manager injects the connection string only as
+`GOYMEN_ERP_RCSI_PROBE_CONNECTION` into a **dedicated** wrapper process. The
+wrapper is never dot-sourced or invoked as an in-process PowerShell script.
+Parameter binding and `#requires` run before script `try/finally`; therefore the
+outer runner must create a fresh process with a sanitized environment and clear
+its own injected secret in an outer `finally`, including binding/start failure.
+Never type a secret assignment into interactive history.
+
+The same approved immutable build/change inventory supplies:
+
+- absolute self-contained payload directory;
+- absolute external manifest path and exact SHA-256;
+- exact reviewed 40-hex commit;
+- exact tool DLL SHA-256;
+- one or more approved logical-endpoint hashes;
+- exact database and non-secret target label;
+- operator-owned positive probe and overall-process timeout values.
+
+Invoke the wrapper through a runner-owned, approved **absolute** PowerShell 7.2+
+path with `-NoProfile -NonInteractive -File`. The runner passes endpoint hashes
+as a canonical JSON string array so native `-File` argument binding remains
+unambiguous for one or many values. Every invocation uses a fresh, previously
+absent evidence directory and output path. The following is an argument
+template for that dedicated process; it is not an in-process command block:
 
 ```powershell
-$probeEnvName = 'GOYMEN_ERP_RCSI_PROBE_CONNECTION'
-$process = $null
-$startInfo = $null
-$processStarted = $false
-$nativeExitCode = $null
-$stdoutBuffer = $null
-$stderrBuffer = $null
-$stdoutTask = $null
-$stderrTask = $null
-$waitCts = $null
-
-try {
-  # All values below come from the same approved immutable build/change inventory.
-  $payloadRoot = [IO.Path]::GetFullPath('<approved prebuilt payload directory>')
-  $toolDll = [IO.Path]::GetFullPath('<approved prebuilt tool DLL path>')
-  $payloadManifest = [IO.Path]::GetFullPath('<approved external payload manifest path>')
-  $expectedPayloadManifestSha256 = '<approved payload manifest SHA-256>'
-  $expectedToolAssemblySha256 = '<approved tool DLL SHA-256>'
-  $testedCommit = '<approved exact 40-hex source revision>'
-  $approvedLogicalEndpointHashes = @(
-    '<approved logical endpoint SHA-256>'
-  ) | Sort-Object -Unique
-  $expectedDatabase = '<exact approved database name>'
-  $targetLabel = '<approved non-secret environment/slot label>'
-  $probeTimeoutSeconds = [long]'<operator-owned positive probe timeout seconds>'
-  $overallProcessTimeoutSeconds = [long]'<operator-owned positive overall timeout seconds>'
-
-  if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($probeEnvName))) {
-    throw 'The approved runner did not inject the probe secret environment variable.'
-  }
-  if ($probeTimeoutSeconds -le 0 -or $overallProcessTimeoutSeconds -le 0) {
-    throw 'Both operator-owned timeouts must be positive.'
-  }
-  try {
-    $probeTimeout = [TimeSpan]::FromSeconds($probeTimeoutSeconds)
-    $overallProcessTimeout = [TimeSpan]::FromSeconds($overallProcessTimeoutSeconds)
-  }
-  catch {
-    throw 'An operator-owned timeout is outside the supported technical range.'
-  }
-  $maximumTimeoutMilliseconds = [double][uint32]::MaxValue - 1
-  if ($probeTimeout.TotalMilliseconds -gt $maximumTimeoutMilliseconds -or
-      $overallProcessTimeout.TotalMilliseconds -gt $maximumTimeoutMilliseconds) {
-    throw 'An operator-owned timeout is outside the supported technical range.'
-  }
-  if ($approvedLogicalEndpointHashes.Count -eq 0 -or
-      @($approvedLogicalEndpointHashes | Where-Object {
-        $_ -notmatch '\A[0-9a-f]{64}\z'
-      }).Count -ne 0) {
-    throw 'The approved logical-endpoint inventory must contain lowercase SHA-256 values.'
-  }
-  if (-not [IO.Path]::IsPathFullyQualified($payloadRoot) -or
-      -not [IO.Path]::IsPathFullyQualified($toolDll) -or
-      -not [IO.Path]::IsPathFullyQualified($payloadManifest)) {
-    throw 'Payload, tool, and manifest paths must be absolute.'
-  }
-  if (-not (Test-Path -LiteralPath $toolDll -PathType Leaf) -or
-      -not (Test-Path -LiteralPath $payloadManifest -PathType Leaf)) {
-    throw 'The approved prebuilt tool or external manifest is missing.'
-  }
-
-  $runId = [Guid]::NewGuid().ToString('D')
-  $evidenceDirectory = [IO.Path]::GetFullPath((Join-Path 'artifacts/rcsi' $runId))
-  $outputPath = Join-Path $evidenceDirectory 'readiness.json'
-  if (Test-Path -LiteralPath $evidenceDirectory) {
-    throw 'The invocation evidence directory is not fresh.'
-  }
-  New-Item -ItemType Directory -Path $evidenceDirectory -ErrorAction Stop | Out-Null
-
-  $startInfo = [Diagnostics.ProcessStartInfo]::new('dotnet')
-  $startInfo.UseShellExecute = $false
-  $startInfo.RedirectStandardOutput = $true
-  $startInfo.RedirectStandardError = $true
-  $startInfo.ArgumentList.Add($toolDll)
-  $arguments = @(
-    '--connection-string-env', $probeEnvName,
-    '--expected-database', $expectedDatabase,
-    '--target-label', $targetLabel,
-    '--run-id', $runId,
-    '--tested-commit', $testedCommit,
-    '--expected-tool-assembly-sha256', $expectedToolAssemblySha256,
-    '--runtime-payload-root', $payloadRoot,
-    '--runtime-payload-manifest', $payloadManifest,
-    '--expected-runtime-payload-manifest-sha256', $expectedPayloadManifestSha256,
-    '--timeout-seconds', $probeTimeoutSeconds.ToString([Globalization.CultureInfo]::InvariantCulture),
-    '--output', $outputPath
-  )
-  foreach ($hash in $approvedLogicalEndpointHashes) {
-    $arguments += @('--expected-logical-endpoint-sha256', $hash)
-  }
-  foreach ($argument in $arguments) { $startInfo.ArgumentList.Add([string]$argument) }
-
-  # Do not allow host/runtime injection into the reviewed prebuilt child.
-  @(
-    'DOTNET_STARTUP_HOOKS','DOTNET_ADDITIONAL_DEPS','DOTNET_SHARED_STORE',
-    'CORECLR_ENABLE_PROFILING','CORECLR_PROFILER','CORECLR_PROFILER_PATH',
-    'CORECLR_PROFILER_PATH_32','CORECLR_PROFILER_PATH_64',
-    'COR_ENABLE_PROFILING','COR_PROFILER','COR_PROFILER_PATH'
-  ) | ForEach-Object { $startInfo.Environment.Remove($_) | Out-Null }
-
-  $process = [Diagnostics.Process]::new()
-  $process.StartInfo = $startInfo
-  $startedAtUtc = [DateTimeOffset]::UtcNow
-  if (-not $process.Start()) { throw 'The prebuilt readiness process did not start.' }
-  $processStarted = $true
-
-  $stdoutBuffer = [IO.MemoryStream]::new()
-  $stderrBuffer = [IO.MemoryStream]::new()
-  $stdoutTask = $process.StandardOutput.BaseStream.CopyToAsync($stdoutBuffer)
-  $stderrTask = $process.StandardError.BaseStream.CopyToAsync($stderrBuffer)
-  $waitCts = [Threading.CancellationTokenSource]::new($overallProcessTimeout)
-  $processTimedOut = $false
-  try {
-    try {
-      $process.WaitForExitAsync($waitCts.Token).GetAwaiter().GetResult()
-    }
-    catch [OperationCanceledException] {
-      if (-not $process.HasExited) { $process.Kill($true) }
-      $process.WaitForExitAsync([Threading.CancellationToken]::None).GetAwaiter().GetResult()
-      $processTimedOut = $true
-    }
-    $stdoutTask.GetAwaiter().GetResult()
-    $stderrTask.GetAwaiter().GetResult()
-    if ($processTimedOut) {
-      throw 'The operator-owned overall readiness timeout expired; child tree was terminated.'
-    }
-  }
-  finally { $waitCts.Dispose(); $waitCts = $null }
-  $completedAtUtc = [DateTimeOffset]::UtcNow
-  $nativeExitCode = $process.ExitCode
-  $stdoutBytes = $stdoutBuffer.ToArray()
-  $stderrBytes = $stderrBuffer.ToArray()
-  if ($nativeExitCode -ne 0) {
-    throw "RCSI readiness child failed closed with native exit $nativeExitCode."
-  }
-  if ($stderrBytes.Length -ne 0) { throw 'Successful readiness emitted stderr.' }
-  if (-not (Test-Path -LiteralPath $outputPath -PathType Leaf)) {
-    throw 'Exit zero did not produce a fresh evidence file.'
-  }
-
-  $fileBytes = [IO.File]::ReadAllBytes($outputPath)
-  if ($stdoutBytes.Length -ne $fileBytes.Length -or
-      -not [Convert]::ToHexString($stdoutBytes).Equals(
-        [Convert]::ToHexString($fileBytes), [StringComparison]::Ordinal)) {
-    throw 'Raw stdout bytes and evidence file bytes differ.'
-  }
-  if ($fileBytes.Length -ge 3 -and $fileBytes[0] -eq 0xEF -and
-      $fileBytes[1] -eq 0xBB -and $fileBytes[2] -eq 0xBF) {
-    throw 'Canonical evidence must be UTF-8 without BOM.'
-  }
-  $utf8 = [Text.UTF8Encoding]::new($false, $true)
-  $evidence = ($utf8.GetString($fileBytes) | ConvertFrom-Json -ErrorAction Stop)
-  $observedAtUtc = [DateTimeOffset]::ParseExact(
-    [string]$evidence.observedAtUtc,
-    "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'",
-    [Globalization.CultureInfo]::InvariantCulture,
-    [Globalization.DateTimeStyles]::AssumeUniversal -bor
-      [Globalization.DateTimeStyles]::AdjustToUniversal)
-  $evidenceEndpointHashes = @($evidence.approvedLogicalEndpointSha256)
-  $endpointInventoryMatches =
-    $evidenceEndpointHashes.Count -eq $approvedLogicalEndpointHashes.Count
-  if ($endpointInventoryMatches) {
-    for ($index = 0; $index -lt $approvedLogicalEndpointHashes.Count; $index++) {
-      if ($evidenceEndpointHashes[$index] -cne $approvedLogicalEndpointHashes[$index]) {
-        $endpointInventoryMatches = $false
-        break
-      }
-    }
-  }
-
-  if ($evidence.contractVersion -ne 'GOYMEN-ERP-SQL-RCSI-READINESS-V1' -or
-      $evidence.status -ne 'READY' -or [int]$evidence.exitCode -ne 0 -or
-      $evidence.reasonCode -ne 'RCSI_READY' -or
-      $evidence.queryMode -ne 'READ_ONLY_SYS_DATABASES_CURRENT_V1' -or
-      $evidence.runId -ne $runId -or $evidence.testedCommit -ne $testedCommit -or
-      $evidence.expectedToolAssemblySha256 -ne $expectedToolAssemblySha256 -or
-      $evidence.observedToolAssemblySha256 -ne $expectedToolAssemblySha256 -or
-      $evidence.runtimePayloadManifestSha256 -ne $expectedPayloadManifestSha256 -or
-      $evidence.targetLabel -ne $targetLabel -or
-      $evidence.expectedDatabase -ne $expectedDatabase -or
-      $evidence.configuredDatabase -ne $expectedDatabase -or
-      $evidence.observedDatabase -ne $expectedDatabase -or
-      -not $endpointInventoryMatches -or
-      $evidence.logicalEndpointMatches -ne $true -or
-      $evidence.readCommittedSnapshotEnabled -ne $true -or
-      $approvedLogicalEndpointHashes -notcontains $evidence.observedLogicalEndpointSha256 -or
-      $observedAtUtc -lt $startedAtUtc -or $observedAtUtc -gt $completedAtUtc) {
-    throw 'Evidence fields do not bind the same successful invocation.'
-  }
-}
-finally {
-  try {
-    try {
-      if ($processStarted) {
-        try {
-          if (-not $process.HasExited) { $process.Kill($true) }
-        }
-        catch [InvalidOperationException] {
-          # The child won the exit race; WaitForExitAsync below still joins it.
-        }
-        $process.WaitForExitAsync(
-          [Threading.CancellationToken]::None).GetAwaiter().GetResult()
-      }
-      if ($stdoutTask -ne $null) { $stdoutTask.GetAwaiter().GetResult() }
-      if ($stderrTask -ne $null) { $stderrTask.GetAwaiter().GetResult() }
-    }
-    finally {
-      try {
-        if ($startInfo -ne $null) {
-          $startInfo.Environment.Remove($probeEnvName) | Out-Null
-        }
-      }
-      finally {
-        [Environment]::SetEnvironmentVariable(
-          $probeEnvName, $null, [EnvironmentVariableTarget]::Process)
-      }
-    }
-  }
-  finally {
-    if ($waitCts -ne $null) { $waitCts.Dispose() }
-    if ($stdoutBuffer -ne $null) { $stdoutBuffer.Dispose() }
-    if ($stderrBuffer -ne $null) { $stderrBuffer.Dispose() }
-    if ($process -ne $null) { $process.Dispose() }
-  }
-}
+<approved absolute pwsh> -NoLogo -NoProfile -NonInteractive -File `
+  '<reviewed absolute wrapper path>' `
+  -PayloadRoot '<approved absolute self-contained payload directory>' `
+  -PayloadManifest '<approved absolute external manifest path>' `
+  -ExpectedPayloadManifestSha256 '<approved manifest SHA-256>' `
+  -ExpectedToolAssemblySha256 '<approved tool DLL SHA-256>' `
+  -TestedCommit '<approved exact 40-hex source revision>' `
+  -ApprovedLogicalEndpointSha256Json '["<approved SHA-256>","<optional failover SHA-256>"]' `
+  -ExpectedDatabase '<exact approved database name>' `
+  -TargetLabel '<approved non-secret environment/slot label>' `
+  -ProbeTimeoutSeconds <operator-owned positive seconds> `
+  -OverallProcessTimeoutSeconds <operator-owned positive seconds> `
+  -OutputPath '<fresh absolute evidence directory>\readiness.json'
 ```
 
-Any exception or native exit `2`–`6` is a real failed gate. The wrapper never
-converts it to success. A new invocation requires a new run ID and a path that
-did not previously exist; stale READY evidence is never overwritten.
+The outer runner must place the dedicated wrapper process in its own
+operator-managed Windows Job Object or Unix service/cgroup/process containment
+before injecting the secret. This outer boundary handles abrupt wrapper
+termination; the reviewed wrapper additionally assigns the managed apphost to a
+kill-on-close Windows job or the apphost's self-created Unix process group.
+
+The wrapper normalizes and validates commit/hash inputs, validates the apphost
+against the approved manifest before launch, invokes its absolute payload path
+with an empty child environment except for the Windows loader prerequisites
+`SystemRoot` and `WINDIR`, establishes OS containment, then
+passes the secret through redirected standard input (never the child
+environment). One monotonic operator-owned deadline covers launch, stdin
+handoff, process wait, output drain, containment release and cleanup. It kills
+and joins the child tree on timeout, verifies the payload again, compares
+raw stdout bytes with evidence bytes, validates every evidence field before
+emitting it, clears the fixed secret from the wrapper environment on every
+script-controlled path, and propagates non-zero child exit codes. The dedicated
+wrapper process lifetime also clears the secret on parameter-binding or
+`#requires` failure; the outer deployment runner remains responsible for its
+own `finally` cleanup and for treating every non-zero native exit as failure.
+Successful
+evidence must bind the same run ID, commit, apphost, tool DLL, payload manifest,
+UTC observation interval, target, database, endpoint inventory, and RCSI state.
+
+The wrapper reserves one fifth of that same hard deadline for containment and
+pipe cleanup, with reviewed technical bounds of 250 milliseconds minimum and
+5 seconds maximum. This is not a second timeout: normal child execution is
+cancelled before `T` so kill/join/drain can still finish by the original `T`.
+`OverallProcessTimeoutSeconds` binds the contained apphost process phase; it
+does not bound PowerShell startup or canonical pre/post payload inventory
+hashing. The required outer deployment runner must enforce its own hard wrapper
+process ceiling and kill its outer containment on expiry.
+
+Any wrapper or child non-zero exit is a failed gate. Stale READY evidence is
+never overwritten. Every retry uses a new absent directory/path.
 
 ## RCSI-OFF remediation
 
-The application and CLI never remediate RCSI drift. Exit 4 stops activation.
-A DBA must independently confirm the exact database and physical/topology
-evidence, backup/restore point, owner, rollback plan, and maintenance window.
-Any environment-specific `ALTER DATABASE` command is prepared and peer-reviewed
-outside this repository. Enabling RCSI may terminate active connections; that
-impact requires explicit operational acceptance. After the human-run change,
-restart the candidate and rerun the prebuilt tool with a new run ID/output.
+The application, CLI and wrapper never remediate RCSI drift. Exit 4 stops
+activation. A DBA independently confirms the exact database and physical/
+topology evidence, backup/restore point, owner, rollback plan, and maintenance
+window. Any environment-specific `ALTER DATABASE` command is prepared and
+peer-reviewed outside this repository. Enabling RCSI may terminate active
+connections; that impact requires explicit operational acceptance.
 
-Do not automatically turn RCSI OFF as a deployment rollback. Deployment
-rollback and database-option reversal are separate DBA changes.
+After the human-run change, restart the candidate and rerun the exact approved
+self-contained payload with a fresh output. Do not automatically turn RCSI OFF
+as a deployment rollback: deployment rollback and database-option reversal are
+separate DBA changes.
 
 ## Rehearsal evidence
 
 `SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests` uses disposable SQL
-Server databases to prove ON readiness, OFF no-change behavior, startup/probe
-parity, logical endpoint/database mismatch, real CLI exits 0/4/6, canonical raw
-stdout/file parity, prebuilt payload binding, stale-output rejection, and
-kill-and-await cleanup. Test-only `ALTER DATABASE` remains confined to tests.
+Server databases and the real self-contained apphost to prove ON readiness, OFF
+no-change behavior, startup/probe parity, target mismatch, CLI exits 0/4/6,
+canonical raw-byte parity, payload/apphost binding, stale-output rejection and
+kill-and-await cleanup. It also exercises the versioned PowerShell wrapper for a
+sorted multi-endpoint inventory, native exits 0/2/4, timeout cleanup and secret
+removal. Test-only `ALTER DATABASE` remains confined to tests.

@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Runtime.InteropServices;
 using GoymenERP.BuildingBlocks.SqlServer;
 using Microsoft.Data.SqlClient;
 
@@ -12,13 +13,6 @@ namespace GoymenERP.Api.IntegrationTests;
 
 public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
 {
-    private static readonly string[] ForbiddenRuntimeInjectionEnvironmentVariables =
-    [
-        "DOTNET_STARTUP_HOOKS", "DOTNET_ADDITIONAL_DEPS", "DOTNET_SHARED_STORE",
-        "CORECLR_ENABLE_PROFILING", "CORECLR_PROFILER", "CORECLR_PROFILER_PATH",
-        "CORECLR_PROFILER_PATH_32", "CORECLR_PROFILER_PATH_64",
-        "COR_ENABLE_PROFILING", "COR_PROFILER", "COR_PROFILER_PATH",
-    ];
     [SqlServerFact]
     public async Task RcsiOn_ProbeAndIdentityStartupUseTheSameReadyPolicy()
     {
@@ -420,9 +414,13 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
                 Guid.NewGuid().ToString("D"),
                 runtimePayload.SourceRevisionId,
                 runtimePayload,
-                TimeSpan.FromSeconds(1));
+                TimeSpan.FromSeconds(10));
 
-            using var acceptedClient = await acceptTask.WaitAsync(TimeSpan.FromSeconds(10));
+            var acceptedTask = acceptTask;
+            var firstCompleted = await Task.WhenAny(acceptedTask, invocation)
+                .WaitAsync(TimeSpan.FromSeconds(60));
+            Assert.Same(acceptedTask, firstCompleted);
+            using var acceptedClient = await acceptedTask;
             await Assert.ThrowsAsync<TimeoutException>(() => invocation);
             Assert.False(File.Exists(outputPath));
             Assert.Empty(Directory.GetFiles(evidenceDirectory, "*.tmp"));
@@ -432,6 +430,324 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
             listener.Stop();
             Directory.Delete(evidenceDirectory, recursive: true);
         }
+    }
+
+    [SqlServerFact]
+    public async Task PowerShellWrapper_MultipleEndpointsReadyAndOffUseBoundApphostAndPropagateExit()
+    {
+        var baseConnectionString = GetBaseConnectionString();
+        var readyDatabase = NewDatabaseName("göymen_erp_rcsi_wrapper");
+        var offDatabase = NewDatabaseName("goymen_erp_rcsi_wrapper");
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            $"goymen-erp-rcsi-wrapper-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        var readyCreated = false;
+        var offCreated = false;
+        try
+        {
+            await CreateDatabaseAsync(baseConnectionString, readyDatabase, rcsiEnabled: true);
+            readyCreated = true;
+            await CreateDatabaseAsync(baseConnectionString, offDatabase, rcsiEnabled: false);
+            offCreated = true;
+            var payload = CreateRuntimePayloadManifest(root);
+            var readyConnection = BuildDatabaseConnectionString(baseConnectionString, readyDatabase);
+            var endpoint = new SqlConnectionStringBuilder(readyConnection).DataSource;
+            var endpointSha256 = SqlServerLogicalEndpointFingerprint.ComputeSha256(endpoint);
+            var alternateEndpointSha256 = SqlServerLogicalEndpointFingerprint.ComputeSha256(
+                "tcp:approved-but-not-observed.invalid,1433");
+            var approvedEndpointInventory = new[]
+            {
+                alternateEndpointSha256,
+                endpointSha256,
+            }.OrderBy(value => value, StringComparer.Ordinal).ToArray();
+
+            var readyOutput = Path.Combine(root, "ready-run", "readiness.json");
+            var ready = await RunPowerShellWrapperAsync(
+                readyConnection,
+                readyDatabase,
+                approvedEndpointInventory,
+                readyOutput,
+                payload,
+                overallTimeoutSeconds: 30,
+                testProcessTimeout: TimeSpan.FromSeconds(60));
+            Assert.True(
+                ready.ExitCode == 0,
+                $"Wrapper READY exit was {ready.ExitCode}; stderr: {ready.StandardError}");
+            Assert.Empty(ready.StandardError);
+            Assert.True(
+                File.ReadAllBytes(readyOutput).SequenceEqual(ready.StandardOutput),
+                $"Wrapper stdout differed from evidence: {Encoding.UTF8.GetString(ready.StandardOutput)}");
+            Assert.DoesNotContain(
+                new SqlConnectionStringBuilder(readyConnection).Password,
+                Encoding.UTF8.GetString(ready.StandardOutput),
+                StringComparison.Ordinal);
+            using (var document = JsonDocument.Parse(ready.StandardOutput))
+            {
+                var hashes = document.RootElement
+                    .GetProperty("approvedLogicalEndpointSha256")
+                    .EnumerateArray()
+                    .Select(item => item.GetString()!)
+                    .ToArray();
+                Assert.Equal(approvedEndpointInventory, hashes);
+            }
+
+            var offConnection = BuildDatabaseConnectionString(baseConnectionString, offDatabase);
+            var offOutput = Path.Combine(root, "off-run", "readiness.json");
+            var off = await RunPowerShellWrapperAsync(
+                offConnection,
+                offDatabase,
+                [endpointSha256],
+                offOutput,
+                payload,
+                overallTimeoutSeconds: 30,
+                testProcessTimeout: TimeSpan.FromSeconds(60));
+            Assert.Equal(4, off.ExitCode);
+            Assert.Contains("native exit 4", off.StandardError, StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                new SqlConnectionStringBuilder(offConnection).Password,
+                off.StandardError,
+                StringComparison.Ordinal);
+            Assert.True(File.Exists(offOutput));
+            Assert.Equal(File.ReadAllBytes(offOutput), off.StandardOutput);
+            using (var document = JsonDocument.Parse(off.StandardOutput))
+            {
+                Assert.Equal(4, document.RootElement.GetProperty("exitCode").GetInt32());
+                Assert.Equal(
+                    "RCSI_DISABLED",
+                    document.RootElement.GetProperty("reasonCode").GetString());
+            }
+            Assert.Equal(0, await ReadRcsiSettingAsync(baseConnectionString, offDatabase));
+
+            var invalidBindingOutput = Path.Combine(
+                root,
+                "invalid-binding-run",
+                "readiness.json");
+            var invalidBinding = await RunPowerShellWrapperAsync(
+                "not-a-connection-string",
+                readyDatabase,
+                [endpointSha256],
+                invalidBindingOutput,
+                payload,
+                overallTimeoutSeconds: 30,
+                testProcessTimeout: TimeSpan.FromSeconds(60));
+            Assert.Equal(2, invalidBinding.ExitCode);
+            Assert.Contains("native exit 2", invalidBinding.StandardError, StringComparison.Ordinal);
+            Assert.True(File.Exists(invalidBindingOutput));
+            Assert.Equal(File.ReadAllBytes(invalidBindingOutput), invalidBinding.StandardOutput);
+            using (var document = JsonDocument.Parse(invalidBinding.StandardOutput))
+            {
+                Assert.Equal(2, document.RootElement.GetProperty("exitCode").GetInt32());
+                Assert.Equal(
+                    "BINDING_INVALID",
+                    document.RootElement.GetProperty("reasonCode").GetString());
+                Assert.Equal(
+                    JsonValueKind.Null,
+                    document.RootElement.GetProperty("targetLabel").ValueKind);
+                Assert.Equal(
+                    JsonValueKind.Null,
+                    document.RootElement.GetProperty("approvedLogicalEndpointSha256").ValueKind);
+            }
+            Assert.DoesNotContain(
+                "not-a-connection-string",
+                invalidBinding.StandardError,
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            try
+            {
+                if (readyCreated)
+                {
+                    await DropDatabaseAsync(baseConnectionString, readyDatabase);
+                }
+            }
+            finally
+            {
+                try
+                {
+                    if (offCreated)
+                    {
+                        await DropDatabaseAsync(baseConnectionString, offDatabase);
+                    }
+                }
+                finally
+                {
+                    Directory.Delete(root, recursive: true);
+                }
+            }
+        }
+    }
+
+    [SqlServerFact]
+    public async Task PowerShellWrapper_OverallTimeoutKillsChildWithoutEvidenceOrSecretEcho()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            $"goymen-erp-rcsi-wrapper-timeout-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        try
+        {
+            var payload = CreateRuntimePayloadManifest(root);
+            var endpoint = (IPEndPoint)listener.LocalEndpoint;
+            const string timeoutSecret = "wrapper-timeout-secret";
+            var connectionString = new SqlConnectionStringBuilder
+            {
+                DataSource = $"127.0.0.1,{endpoint.Port}",
+                InitialCatalog = "goymen_erp_rcsi_wrapper_timeout",
+                UserID = "probe",
+                Password = timeoutSecret,
+                Encrypt = false,
+                ConnectTimeout = 30,
+            }.ConnectionString;
+            var outputPath = Path.Combine(root, "timeout-run", "readiness.json");
+            var acceptTask = listener.AcceptTcpClientAsync();
+            var invocation = RunPowerShellWrapperAsync(
+                connectionString,
+                "goymen_erp_rcsi_wrapper_timeout",
+                [SqlServerLogicalEndpointFingerprint.ComputeSha256(
+                    new SqlConnectionStringBuilder(connectionString).DataSource)],
+                outputPath,
+                payload,
+                overallTimeoutSeconds: 20,
+                testProcessTimeout: TimeSpan.FromSeconds(90));
+
+            var acceptedTask = acceptTask;
+            var firstCompleted = await Task.WhenAny(acceptedTask, invocation)
+                .WaitAsync(TimeSpan.FromSeconds(20));
+            if (firstCompleted == invocation)
+            {
+                var earlyResult = await invocation;
+                Assert.Fail(
+                    $"Wrapper exited before opening the test socket. Exit: {earlyResult.ExitCode}; " +
+                    $"stderr: {earlyResult.StandardError}");
+            }
+
+            using var accepted = await acceptedTask;
+            var result = await invocation;
+            Assert.Equal(5, result.ExitCode);
+            Assert.Contains("timeout expired", result.StandardError, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(timeoutSecret, result.StandardError, StringComparison.Ordinal);
+            Assert.DoesNotContain(timeoutSecret, Encoding.UTF8.GetString(result.StandardOutput), StringComparison.Ordinal);
+            Assert.False(File.Exists(outputPath));
+            Assert.Empty(Directory.GetFiles(root, "*.tmp", SearchOption.AllDirectories));
+            var eofBuffer = new byte[1];
+            try
+            {
+                var bytesRead = await accepted.GetStream()
+                    .ReadAsync(eofBuffer.AsMemory())
+                    .AsTask()
+                    .WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.Equal(0, bytesRead);
+            }
+            catch (IOException exception) when (
+                exception.InnerException is SocketException
+                {
+                    SocketErrorCode: SocketError.ConnectionReset
+                        or SocketError.ConnectionAborted,
+                })
+            {
+                // Kill-tree can close the accepted SQL pre-login socket by EOF or RST.
+            }
+        }
+        finally
+        {
+            listener.Stop();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    internal static async Task<WrapperProcessResult> RunPowerShellWrapperAsync(
+        string connectionString,
+        string expectedDatabase,
+        IReadOnlyList<string> approvedLogicalEndpointSha256,
+        string outputPath,
+        RuntimePayloadManifest payload,
+        int overallTimeoutSeconds,
+        TimeSpan testProcessTimeout)
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var wrapperPath = Path.Combine(
+            repositoryRoot,
+            "tools",
+            "GoymenERP.SqlServerRcsiReadiness",
+            "Invoke-GoymenERP.SqlServerRcsiReadiness.ps1");
+        Assert.True(File.Exists(wrapperPath));
+        const string secretEnvironment = "GOYMEN_ERP_RCSI_PROBE_CONNECTION";
+        var startInfo = new ProcessStartInfo(GetPowerShellPath())
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        foreach (var argument in new[]
+                 {
+                     "-NoLogo", "-NoProfile", "-NonInteractive", "-File", wrapperPath,
+                     "-PayloadRoot", payload.PayloadRoot,
+                     "-PayloadManifest", payload.ManifestPath,
+                     "-ExpectedPayloadManifestSha256", payload.ManifestSha256,
+                     "-ExpectedToolAssemblySha256", payload.ToolAssemblySha256,
+                     "-TestedCommit", payload.SourceRevisionId,
+                     "-ApprovedLogicalEndpointSha256Json",
+                     JsonSerializer.Serialize(approvedLogicalEndpointSha256),
+                     "-ExpectedDatabase", expectedDatabase,
+                     "-TargetLabel", "relational/wrapper-entrypoint",
+                     "-ProbeTimeoutSeconds", "30",
+                     "-OverallProcessTimeoutSeconds",
+                     overallTimeoutSeconds.ToString(CultureInfo.InvariantCulture),
+                     "-OutputPath", outputPath,
+                 })
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        startInfo.Environment.Clear();
+        AddRequiredOperatingSystemEnvironment(startInfo);
+        startInfo.Environment[secretEnvironment] = connectionString;
+        using var process = new Process { StartInfo = startInfo };
+        Assert.True(process.Start());
+        var stdoutTask = ReadAllBytesAsync(process.StandardOutput.BaseStream);
+        var stderrTask = process.StandardError.ReadToEndAsync();
+        using var timeout = new CancellationTokenSource(testProcessTimeout);
+        try
+        {
+            await process.WaitForExitAsync(timeout.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            await process.WaitForExitAsync(CancellationToken.None);
+            throw new TimeoutException("The PowerShell wrapper test process did not exit.");
+        }
+
+        return new WrapperProcessResult(
+            process.ExitCode,
+            await stdoutTask,
+            (await stderrTask).TrimEnd('\r', '\n'));
+    }
+
+    private static string GetPowerShellPath()
+    {
+        var executableName = OperatingSystem.IsWindows() ? "pwsh.exe" : "pwsh";
+        var candidates = (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Select(path => path.Trim().Trim('"'))
+            .Where(path => path.Length > 0)
+            .Select(path => Path.Combine(path, executableName))
+            .Where(File.Exists)
+            .Select(Path.GetFullPath)
+            .Distinct(OperatingSystem.IsWindows()
+                ? StringComparer.OrdinalIgnoreCase
+                : StringComparer.Ordinal)
+            .ToArray();
+        Assert.NotEmpty(candidates);
+        return candidates[0];
     }
 
     private static async Task<CliProcessResult> RunCliProcessAsync(
@@ -444,16 +760,17 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         RuntimePayloadManifest runtimePayload,
         TimeSpan? overallTimeout = null)
     {
-        var toolAssembly = runtimePayload.ToolAssemblyPath;
-        Assert.True(File.Exists(toolAssembly), $"RCSI CLI assembly is missing: {toolAssembly}");
+        var entryExecutable = runtimePayload.EntryExecutablePath;
+        Assert.True(
+            File.Exists(entryExecutable),
+            $"Self-contained RCSI CLI apphost is missing: {entryExecutable}");
 
-        var startInfo = new ProcessStartInfo("dotnet")
+        var startInfo = new ProcessStartInfo(entryExecutable)
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
         };
-        startInfo.ArgumentList.Add(toolAssembly);
         startInfo.ArgumentList.Add("--connection-string-env");
         startInfo.ArgumentList.Add("GOYMEN_ERP_RCSI_PROCESS_CONNECTION");
         startInfo.ArgumentList.Add("--expected-database");
@@ -482,11 +799,9 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         startInfo.ArgumentList.Add("30");
         startInfo.ArgumentList.Add("--output");
         startInfo.ArgumentList.Add(outputPath);
+        startInfo.Environment.Clear();
+        AddRequiredOperatingSystemEnvironment(startInfo);
         startInfo.Environment["GOYMEN_ERP_RCSI_PROCESS_CONNECTION"] = connectionString;
-        foreach (var variable in ForbiddenRuntimeInjectionEnvironmentVariables)
-        {
-            startInfo.Environment.Remove(variable);
-        }
 
         using var process = new Process { StartInfo = startInfo };
         var startedAtUtc = DateTimeOffset.UtcNow;
@@ -535,7 +850,10 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         string expectedDatabase,
         RuntimePayloadManifest runtimePayload)
     {
-        Assert.Equal(expectedExitCode, result.ExitCode);
+        Assert.True(
+            result.ExitCode == expectedExitCode,
+            $"Expected CLI exit {expectedExitCode}, observed {result.ExitCode}; " +
+            $"stderr: {result.StandardError}; stdout: {Encoding.UTF8.GetString(result.StandardOutput)}");
         Assert.Empty(result.StandardError);
         Assert.True(File.Exists(result.OutputPath));
         var fileBytes = File.ReadAllBytes(result.OutputPath);
@@ -572,6 +890,9 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         Assert.Equal(
             runtimePayload.ManifestSha256,
             root.GetProperty("runtimePayloadManifestSha256").GetString());
+        Assert.Equal(
+            runtimePayload.EntryExecutableSha256,
+            root.GetProperty("runtimePayloadEntryExecutableSha256").GetString());
         Assert.Equal(expectedDatabase, root.GetProperty("expectedDatabase").GetString());
         Assert.Equal(expectedDatabase, root.GetProperty("configuredDatabase").GetString());
         Assert.Equal(
@@ -606,18 +927,23 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         Assert.InRange(observedAtUtc, result.StartedAtUtc, result.CompletedAtUtc);
     }
 
-    private static RuntimePayloadManifest CreateRuntimePayloadManifest(
+    internal static RuntimePayloadManifest CreateRuntimePayloadManifest(
         string manifestDirectory)
     {
         var repositoryRoot = FindRepositoryRoot();
         var configuration = new DirectoryInfo(AppContext.BaseDirectory).Parent!.Name;
         var payloadRoot = Path.Combine(
             repositoryRoot,
-            "tools",
-            "GoymenERP.SqlServerRcsiReadiness",
+            "tests",
+            "GoymenERP.Api.IntegrationTests",
             "bin",
             configuration,
-            "net10.0");
+            "rcsi-tool-self-contained",
+            RuntimeInformation.RuntimeIdentifier);
+        var entryExecutableFileName = OperatingSystem.IsWindows()
+            ? "GoymenERP.SqlServerRcsiReadiness.exe"
+            : "GoymenERP.SqlServerRcsiReadiness";
+        var entryExecutablePath = Path.Combine(payloadRoot, entryExecutableFileName);
         var toolAssemblyPath = Path.Combine(
             payloadRoot,
             "GoymenERP.SqlServerRcsiReadiness.dll");
@@ -627,6 +953,7 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         var sourceRevisionId = productVersion![(separatorIndex + 1)..].ToLowerInvariant();
         Assert.Equal(40, sourceRevisionId.Length);
         Assert.All(sourceRevisionId, character => Assert.True(Uri.IsHexDigit(character)));
+        Assert.Equal(ReadRepositoryHead(repositoryRoot), sourceRevisionId);
 
         var files = Directory.EnumerateFiles(payloadRoot, "*", SearchOption.AllDirectories)
             .Select(path => new
@@ -643,8 +970,9 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
             writer.WriteStartObject();
             writer.WriteString(
                 "contractVersion",
-                "GOYMEN-ERP-RCSI-RUNTIME-PAYLOAD-V1");
+                "GOYMEN-ERP-RCSI-RUNTIME-PAYLOAD-V2");
             writer.WriteString("sourceRevisionId", sourceRevisionId);
+            writer.WriteString("entryExecutablePath", entryExecutableFileName);
             writer.WriteStartArray("files");
             foreach (var file in files)
             {
@@ -668,7 +996,22 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
             ComputeSha256(manifestBytes),
             toolAssemblyPath,
             ComputeFileSha256(toolAssemblyPath),
+            entryExecutablePath,
+            ComputeFileSha256(entryExecutablePath),
             sourceRevisionId);
+    }
+
+    private static void AddRequiredOperatingSystemEnvironment(ProcessStartInfo startInfo)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var windowsDirectory = Directory.GetParent(Environment.SystemDirectory)?.FullName;
+        Assert.False(string.IsNullOrWhiteSpace(windowsDirectory));
+        startInfo.Environment["SystemRoot"] = windowsDirectory;
+        startInfo.Environment["WINDIR"] = windowsDirectory;
     }
 
     private static async Task<byte[]> ReadAllBytesAsync(Stream stream)
@@ -703,6 +1046,38 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         throw new DirectoryNotFoundException("Göymen ERP repository root was not found.");
     }
 
+    private static string ReadRepositoryHead(string repositoryRoot)
+    {
+        var marker = Path.Combine(repositoryRoot, ".git");
+        var gitDirectory = Directory.Exists(marker)
+            ? marker
+            : Path.GetFullPath(
+                File.ReadAllText(marker).Trim()["gitdir:".Length..].Trim(),
+                repositoryRoot);
+        var head = File.ReadAllText(Path.Combine(gitDirectory, "HEAD")).Trim();
+        if (!head.StartsWith("ref: ", StringComparison.Ordinal))
+        {
+            return head.ToLowerInvariant();
+        }
+
+        var commonDirectoryPath = Path.Combine(gitDirectory, "commondir");
+        var commonDirectory = File.Exists(commonDirectoryPath)
+            ? Path.GetFullPath(File.ReadAllText(commonDirectoryPath).Trim(), gitDirectory)
+            : gitDirectory;
+        var reference = head["ref: ".Length..];
+        var looseReferencePath = Path.Combine(
+            commonDirectory,
+            reference.Replace('/', Path.DirectorySeparatorChar));
+        if (File.Exists(looseReferencePath))
+        {
+            return File.ReadAllText(looseReferencePath).Trim().ToLowerInvariant();
+        }
+
+        var packedLine = File.ReadLines(Path.Combine(commonDirectory, "packed-refs"))
+            .Single(line => line.EndsWith(" " + reference, StringComparison.Ordinal));
+        return packedLine[..40].ToLowerInvariant();
+    }
+
     private sealed record CliProcessResult(
         int ExitCode,
         byte[] StandardOutput,
@@ -712,12 +1087,19 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         DateTimeOffset StartedAtUtc,
         DateTimeOffset CompletedAtUtc);
 
-    private sealed record RuntimePayloadManifest(
+    internal sealed record WrapperProcessResult(
+        int ExitCode,
+        byte[] StandardOutput,
+        string StandardError);
+
+    internal sealed record RuntimePayloadManifest(
         string PayloadRoot,
         string ManifestPath,
         string ManifestSha256,
         string ToolAssemblyPath,
         string ToolAssemblySha256,
+        string EntryExecutablePath,
+        string EntryExecutableSha256,
         string SourceRevisionId);
 
     private static string GetBaseConnectionString() =>
@@ -854,5 +1236,198 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         var connection = new SqlConnection(builder.ConnectionString);
         await connection.OpenAsync();
         return connection;
+    }
+}
+
+public sealed class SqlServerRcsiReadinessProcessAcceptanceTests
+{
+    [Fact]
+    public async Task Wrapper_MalformedSecretPropagatesCanonicalExitTwoWithoutSqlServer()
+    {
+        var root = CreateTemporaryDirectory("invalid-binding");
+        try
+        {
+            var payload = SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
+                .CreateRuntimePayloadManifest(root);
+            var outputPath = Path.Combine(root, "evidence", "readiness.json");
+            var endpointSha256 = SqlServerLogicalEndpointFingerprint.ComputeSha256(
+                "tcp:127.0.0.1,1");
+            var result = await SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
+                .RunPowerShellWrapperAsync(
+                    "not-a-connection-string",
+                    "goymen_erp_rcsi_process_invalid",
+                    [endpointSha256],
+                    outputPath,
+                    payload,
+                    overallTimeoutSeconds: 15,
+                    testProcessTimeout: TimeSpan.FromSeconds(90));
+
+            Assert.Equal(2, result.ExitCode);
+            Assert.Equal(File.ReadAllBytes(outputPath), result.StandardOutput);
+            Assert.Contains("native exit 2", result.StandardError, StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                "not-a-connection-string",
+                result.StandardError,
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Wrapper_PreOpenDatabaseAndLogicalEndpointMismatchesAreCanonical()
+    {
+        var root = CreateTemporaryDirectory("pre-open-mismatch");
+        try
+        {
+            var payload = SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
+                .CreateRuntimePayloadManifest(root);
+            const string expectedDatabase = "goymen_erp_rcsi_process_expected";
+            const string logicalEndpoint = "127.0.0.1,1";
+            var actualEndpointSha256 = SqlServerLogicalEndpointFingerprint.ComputeSha256(
+                logicalEndpoint);
+            var databaseMismatchConnection = new SqlConnectionStringBuilder
+            {
+                DataSource = logicalEndpoint,
+                InitialCatalog = "goymen_erp_rcsi_process_other",
+                UserID = "probe",
+                Password = "pre-open-database-secret",
+                Encrypt = false,
+                ConnectTimeout = 1,
+            }.ConnectionString;
+            var databaseOutput = Path.Combine(root, "database-mismatch", "readiness.json");
+            var databaseMismatch = await SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
+                .RunPowerShellWrapperAsync(
+                    databaseMismatchConnection,
+                    expectedDatabase,
+                    [actualEndpointSha256],
+                    databaseOutput,
+                    payload,
+                    overallTimeoutSeconds: 15,
+                    testProcessTimeout: TimeSpan.FromSeconds(90));
+            Assert.Equal(3, databaseMismatch.ExitCode);
+            Assert.Equal(File.ReadAllBytes(databaseOutput), databaseMismatch.StandardOutput);
+
+            var endpointMismatchConnection = new SqlConnectionStringBuilder(
+                databaseMismatchConnection)
+            {
+                InitialCatalog = expectedDatabase,
+            }.ConnectionString;
+            var endpointOutput = Path.Combine(root, "endpoint-mismatch", "readiness.json");
+            var endpointMismatch = await SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
+                .RunPowerShellWrapperAsync(
+                    endpointMismatchConnection,
+                    expectedDatabase,
+                    [SqlServerLogicalEndpointFingerprint.ComputeSha256(
+                        "tcp:approved-but-not-observed.invalid,1433")],
+                    endpointOutput,
+                    payload,
+                    overallTimeoutSeconds: 15,
+                    testProcessTimeout: TimeSpan.FromSeconds(90));
+            Assert.Equal(6, endpointMismatch.ExitCode);
+            Assert.Equal(File.ReadAllBytes(endpointOutput), endpointMismatch.StandardOutput);
+            Assert.DoesNotContain(
+                "pre-open-database-secret",
+                databaseMismatch.StandardError + endpointMismatch.StandardError,
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Wrapper_OneDeadlineKillsHungPreLoginSocketWithoutResidue()
+    {
+        var root = CreateTemporaryDirectory("deadline");
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        try
+        {
+            var payload = SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
+                .CreateRuntimePayloadManifest(root);
+            var endpoint = (IPEndPoint)listener.LocalEndpoint;
+            const string expectedDatabase = "goymen_erp_rcsi_process_timeout";
+            const string timeoutSecret = "process-timeout-secret";
+            var connectionString = new SqlConnectionStringBuilder
+            {
+                DataSource = $"127.0.0.1,{endpoint.Port}",
+                InitialCatalog = expectedDatabase,
+                UserID = "probe",
+                Password = timeoutSecret,
+                Encrypt = false,
+                ConnectTimeout = 30,
+            }.ConnectionString;
+            var outputPath = Path.Combine(root, "timeout", "readiness.json");
+            var acceptTask = listener.AcceptTcpClientAsync();
+            var invocation = SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
+                .RunPowerShellWrapperAsync(
+                    connectionString,
+                    expectedDatabase,
+                    [SqlServerLogicalEndpointFingerprint.ComputeSha256(
+                        new SqlConnectionStringBuilder(connectionString).DataSource)],
+                    outputPath,
+                    payload,
+                    overallTimeoutSeconds: 20,
+                    testProcessTimeout: TimeSpan.FromSeconds(90));
+
+            var firstCompleted = await Task.WhenAny(acceptTask, invocation)
+                .WaitAsync(TimeSpan.FromSeconds(60));
+            Assert.Same(acceptTask, firstCompleted);
+            using var accepted = await acceptTask;
+            var containedChildStopwatch = Stopwatch.StartNew();
+            var eofBuffer = new byte[256];
+            try
+            {
+                while (await accepted.GetStream()
+                           .ReadAsync(eofBuffer.AsMemory())
+                           .AsTask()
+                           .WaitAsync(TimeSpan.FromSeconds(22)) != 0)
+                {
+                    // Drain SQL pre-login bytes until containment closes the socket.
+                }
+            }
+            catch (IOException exception) when (
+                exception.InnerException is SocketException
+                {
+                    SocketErrorCode: SocketError.ConnectionReset
+                        or SocketError.ConnectionAborted,
+                })
+            {
+                // Containment can close the pre-login socket by EOF or RST.
+            }
+            containedChildStopwatch.Stop();
+            Assert.InRange(
+                containedChildStopwatch.Elapsed,
+                TimeSpan.Zero,
+                TimeSpan.FromSeconds(22));
+
+            var result = await invocation;
+            Assert.Equal(5, result.ExitCode);
+            Assert.False(File.Exists(outputPath));
+            Assert.Empty(Directory.GetFiles(root, "*.tmp", SearchOption.AllDirectories));
+            Assert.DoesNotContain(timeoutSecret, result.StandardError, StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                timeoutSecret,
+                Encoding.UTF8.GetString(result.StandardOutput),
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            listener.Stop();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static string CreateTemporaryDirectory(string scenario)
+    {
+        var path = Path.Combine(
+            Path.GetTempPath(),
+            $"goymen-erp-rcsi-process-{scenario}-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(path);
+        return path;
     }
 }
