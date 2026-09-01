@@ -80,8 +80,10 @@ public static class CounterpartyEndpoints
             Guid partyId,
             Guid? companyId,
             ICounterpartyReadService service,
+            HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
+            SetPrivateNoStore(httpContext.Response.Headers);
             var party = await service.GetAuthorizedPartyAsync(
                 partyId,
                 companyId,
@@ -92,7 +94,7 @@ public static class CounterpartyEndpoints
         })
             .UsesOptionalCompanyContext()
             .WithName("GetCounterpartyV1")
-            .Produces<PartyCoreView>(StatusCodes.Status200OK)
+            .Produces<CounterpartyDetailView>(StatusCodes.Status200OK)
             .ProducesErpBadRequest(CounterpartyProblemCodesV1.ValidationFailed)
             .AllowsEmptyErpBadRequestBody()
             .ProducesErpNotFound(CounterpartyProblemCodesV1.NotFound)

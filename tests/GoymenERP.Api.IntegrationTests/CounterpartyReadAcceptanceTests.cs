@@ -21,6 +21,8 @@ public sealed class CounterpartyReadAcceptanceTests(GoymenErpApiFactory factory)
         "51000000-0000-0000-0000-000000000002");
     private static readonly Guid CompanyBOnlyPartyId = Guid.Parse(
         "51000000-0000-0000-0000-000000000003");
+    private const string CompanyAIntegrationSecret = "HTTP-C03-SECRET-A";
+    private const string CompanyBIntegrationSecret = "HTTP-C03-SECRET-B";
 
     [Fact]
     public async Task CompanyA_User_CannotObserveCompanyBOnlyParty()
@@ -112,6 +114,131 @@ public sealed class CounterpartyReadAcceptanceTests(GoymenErpApiFactory factory)
         Assert.Equal(
             TestCompanyIds.CompanyA,
             customerAccount.GetProperty("companyId").GetGuid());
+    }
+
+    [Fact]
+    public async Task Authorized_detail_is_scoped_redacted_lossless_and_private()
+    {
+        await PrepareScenarioAsync();
+
+        using var companyClient = factory.CreateClientFor(
+            TestUsers.CompanyA,
+            TestCompanyIds.CompanyA);
+        using var companyResponse = await companyClient.GetAsync(
+            $"/api/v1/counterparties/{SharedPartyId}");
+        Assert.Equal(HttpStatusCode.OK, companyResponse.StatusCode);
+        AssertPrivateNoStore(companyResponse);
+        var companyBody = await companyResponse.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(
+            "externalIntegrationCode",
+            companyBody,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(
+            CompanyAIntegrationSecret,
+            companyBody,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            CompanyBIntegrationSecret,
+            companyBody,
+            StringComparison.Ordinal);
+        using var companyJson = JsonDocument.Parse(companyBody);
+        AssertExactProperties(
+            companyJson.RootElement,
+            "code",
+            "companyAccounts",
+            "id",
+            "isActive",
+            "kind",
+            "legalName",
+            "tradeName",
+            "version");
+        Assert.Equal(JsonValueKind.String, companyJson.RootElement.GetProperty("version").ValueKind);
+        Assert.Equal("1", companyJson.RootElement.GetProperty("version").GetString());
+        var companyAccount = Assert.Single(
+            companyJson.RootElement.GetProperty("companyAccounts").EnumerateArray());
+        AssertExactProperties(
+            companyAccount,
+            "companyId",
+            "id",
+            "isActive",
+            "roles",
+            "version");
+        Assert.Equal(TestCompanyIds.CompanyA, companyAccount.GetProperty("companyId").GetGuid());
+        Assert.Equal(JsonValueKind.String, companyAccount.GetProperty("version").ValueKind);
+        Assert.Equal("1", companyAccount.GetProperty("version").GetString());
+
+        using var groupClient = factory.CreateClientFor(TestUsers.GroupAdmin);
+        using var groupResponse = await groupClient.GetAsync(
+            $"/api/v1/counterparties/{SharedPartyId}");
+        Assert.Equal(HttpStatusCode.OK, groupResponse.StatusCode);
+        AssertPrivateNoStore(groupResponse);
+        var groupBody = await groupResponse.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(
+            "externalIntegrationCode",
+            groupBody,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(
+            CompanyAIntegrationSecret,
+            groupBody,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            CompanyBIntegrationSecret,
+            groupBody,
+            StringComparison.Ordinal);
+        using var groupJson = JsonDocument.Parse(groupBody);
+        var groupAccounts = groupJson.RootElement
+            .GetProperty("companyAccounts")
+            .EnumerateArray()
+            .ToArray();
+        Assert.Equal(2, groupAccounts.Length);
+        Assert.Equal(
+            [TestCompanyIds.CompanyA, TestCompanyIds.CompanyB],
+            groupAccounts.Select(account => account.GetProperty("companyId").GetGuid()));
+        Assert.All(groupAccounts, account =>
+        {
+            Assert.Equal(JsonValueKind.String, account.GetProperty("version").ValueKind);
+            Assert.Equal("1", account.GetProperty("version").GetString());
+        });
+    }
+
+    [Fact]
+    public async Task Narrow_scope_and_missing_detail_are_indistinguishable()
+    {
+        await PrepareScenarioAsync();
+
+        using var narrowClient = factory.CreateClientFor(
+            TestUsers.CompanyAViewer,
+            TestCompanyIds.CompanyA);
+        using var narrowResponse = await narrowClient.GetAsync(
+            $"/api/v1/counterparties/{SharedPartyId}");
+        var narrowBody = await AssertProblemCodeAsync(
+            narrowResponse,
+            HttpStatusCode.NotFound,
+            CounterpartyProblemCodesV1.NotFound);
+        AssertPrivateNoStore(narrowResponse);
+
+        using var authorizedClient = factory.CreateClientFor(
+            TestUsers.CompanyA,
+            TestCompanyIds.CompanyA);
+        var missingPartyId = Guid.Parse("51000000-0000-0000-0000-000000000099");
+        using var missingResponse = await authorizedClient.GetAsync(
+            $"/api/v1/counterparties/{missingPartyId}");
+        var missingBody = await AssertProblemCodeAsync(
+            missingResponse,
+            HttpStatusCode.NotFound,
+            CounterpartyProblemCodesV1.NotFound);
+        AssertPrivateNoStore(missingResponse);
+
+        foreach (var hiddenValue in new[]
+                 {
+                     SharedPartyId.ToString("D"),
+                     TestCompanyIds.CompanyA.ToString("D"),
+                     CompanyAIntegrationSecret,
+                 })
+        {
+            Assert.DoesNotContain(hiddenValue, narrowBody, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(hiddenValue, missingBody, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     [Fact]
@@ -268,6 +395,21 @@ public sealed class CounterpartyReadAcceptanceTests(GoymenErpApiFactory factory)
         return body;
     }
 
+    private static void AssertPrivateNoStore(HttpResponseMessage response)
+    {
+        Assert.True(response.Headers.CacheControl?.Private);
+        Assert.True(response.Headers.CacheControl?.NoStore);
+    }
+
+    private static void AssertExactProperties(JsonElement value, params string[] names)
+    {
+        Assert.Equal(
+            names.Order(StringComparer.Ordinal),
+            value.EnumerateObject()
+                .Select(property => property.Name)
+                .Order(StringComparer.Ordinal));
+    }
+
     private async Task PrepareScenarioAsync()
     {
         _ = factory.Services;
@@ -333,7 +475,8 @@ public sealed class CounterpartyReadAcceptanceTests(GoymenErpApiFactory factory)
                 Guid.Parse("52000000-0000-0000-0000-000000000001"),
                 TestCompanyIds.CompanyA,
                 SharedPartyId,
-                PartyRole.Customer),
+                PartyRole.Customer,
+                CompanyAIntegrationSecret),
             new CompanyPartyAccount(
                 Guid.Parse("52000000-0000-0000-0000-000000000003"),
                 TestCompanyIds.CompanyA,
@@ -361,7 +504,8 @@ public sealed class CounterpartyReadAcceptanceTests(GoymenErpApiFactory factory)
                 Guid.Parse("52000000-0000-0000-0000-000000000002"),
                 TestCompanyIds.CompanyB,
                 SharedPartyId,
-                PartyRole.Supplier),
+                PartyRole.Supplier,
+                CompanyBIntegrationSecret),
             new CompanyPartyAccount(
                 Guid.Parse("52000000-0000-0000-0000-000000000004"),
                 TestCompanyIds.CompanyB,
