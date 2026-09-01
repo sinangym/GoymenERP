@@ -33,6 +33,12 @@ public sealed partial class C02ScreenIdentitySourceContractTests
         Assert.Contains("C-02", includedScreens);
         Assert.All(includedScreens, screen => Assert.Matches(ScreenIdRegex(), screen));
 
+        var futureScreens = root.GetProperty("screenScope")
+            .GetProperty("separateFutureScreens")
+            .EnumerateArray()
+            .Select(item => item.GetString()!)
+            .ToArray();
+
         var routeInvariant = root.GetProperty("routeContractInvariants")
             .GetProperty("cari.create");
         var createRoute = root.GetProperty("routes")
@@ -66,6 +72,11 @@ public sealed partial class C02ScreenIdentitySourceContractTests
             .EnumerateArray()
             .Select(item => item.GetProperty("screen").GetString()!)
             .ToArray();
+
+        Assert.DoesNotContain("C-02A", includedScreens);
+        Assert.DoesNotContain("C-02A", futureScreens);
+        Assert.DoesNotContain("C-02A", routeScreens);
+
         var forbiddenScreens = routeInvariant.GetProperty("forbiddenScreenLiterals")
             .EnumerateArray()
             .Select(item => item.GetString()!)
