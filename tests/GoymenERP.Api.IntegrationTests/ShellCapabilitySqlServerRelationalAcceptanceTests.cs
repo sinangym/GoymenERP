@@ -322,10 +322,16 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
                 CounterpartyShellCapabilityProvider.ListCapabilityId,
                 granted.Capabilities);
             Assert.DoesNotContain(
+                CounterpartyShellCapabilityProvider.CreateCapabilityId,
+                granted.Capabilities);
+            Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.LinkCapabilityId,
                 granted.Capabilities);
             Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.ListCapabilityId,
+                denied.Capabilities);
+            Assert.DoesNotContain(
+                CounterpartyShellCapabilityProvider.CreateCapabilityId,
                 denied.Capabilities);
             Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.LinkCapabilityId,
@@ -351,12 +357,38 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
                 CounterpartyShellCapabilityProvider.ListCapabilityId,
                 revoked.Capabilities);
             Assert.DoesNotContain(
+                CounterpartyShellCapabilityProvider.CreateCapabilityId,
+                revoked.Capabilities);
+            Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.LinkCapabilityId,
                 revoked.Capabilities);
             Assert.NotEqual(granted.Generation, revoked.Generation);
             Assert.DoesNotContain(
                 ErpPermissions.CounterpartyPartiesRead,
                 revoked.RawJson,
+                StringComparison.Ordinal);
+
+            var createPermissionDeleted = await ExecuteNonQueryAsync(
+                connection,
+                """
+                DELETE FROM [identity].[RolePermissions]
+                WHERE [RoleId] = @RoleId
+                  AND [PermissionCode] = @PermissionCode;
+                """,
+                new SqlParameter("@RoleId", SystemAdministratorRoleId),
+                new SqlParameter(
+                    "@PermissionCode",
+                    ErpPermissions.CounterpartyPartiesCreate));
+            Assert.Equal(1, createPermissionDeleted);
+
+            var createPermissionRevoked = await ReadSnapshotAsync(administratorClient);
+            Assert.DoesNotContain(
+                CounterpartyShellCapabilityProvider.CreateCapabilityId,
+                createPermissionRevoked.Capabilities);
+            Assert.NotEqual(revoked.Generation, createPermissionRevoked.Generation);
+            Assert.DoesNotContain(
+                ErpPermissions.CounterpartyPartiesCreate,
+                createPermissionRevoked.RawJson,
                 StringComparison.Ordinal);
         }
         finally

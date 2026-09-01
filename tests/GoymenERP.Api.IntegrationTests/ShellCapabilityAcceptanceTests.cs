@@ -176,6 +176,9 @@ public sealed class ShellCapabilityAcceptanceTests(
             CounterpartyShellCapabilityProvider.ListCapabilityId,
             capabilities);
         Assert.DoesNotContain(
+            CounterpartyShellCapabilityProvider.CreateCapabilityId,
+            capabilities);
+        Assert.DoesNotContain(
             CounterpartyShellCapabilityProvider.LinkCapabilityId,
             capabilities);
     }
