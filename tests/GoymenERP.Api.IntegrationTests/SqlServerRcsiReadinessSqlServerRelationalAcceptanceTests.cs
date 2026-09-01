@@ -633,14 +633,18 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
             Assert.DoesNotContain(timeoutSecret, Encoding.UTF8.GetString(result.StandardOutput), StringComparison.Ordinal);
             Assert.False(File.Exists(outputPath));
             Assert.Empty(Directory.GetFiles(root, "*.tmp", SearchOption.AllDirectories));
-            var eofBuffer = new byte[1];
+            var eofBuffer = new byte[256];
+            async Task DrainUntilEofAsync()
+            {
+                while (await accepted.GetStream().ReadAsync(eofBuffer.AsMemory()) != 0)
+                {
+                    // Drain buffered SQL pre-login bytes until containment closes the socket.
+                }
+            }
+
             try
             {
-                var bytesRead = await accepted.GetStream()
-                    .ReadAsync(eofBuffer.AsMemory())
-                    .AsTask()
-                    .WaitAsync(TimeSpan.FromSeconds(5));
-                Assert.Equal(0, bytesRead);
+                await DrainUntilEofAsync().WaitAsync(TimeSpan.FromSeconds(5));
             }
             catch (IOException exception) when (
                 exception.InnerException is SocketException
