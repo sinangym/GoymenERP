@@ -13,6 +13,7 @@ import { ShellHome } from './ShellHome'
 import { CapabilityRoute } from './CapabilityRoute'
 import { CAPABILITY, CAPABILITY_ROUTE } from './capabilities'
 import { CariListPage } from '../cari/CariListPage'
+import { CariDetailPage } from '../cari/CariDetailPage'
 import { StateBlock } from './StateBlock'
 
 export const shellRoutes: RouteObject[] = [
@@ -26,6 +27,26 @@ export const shellRoutes: RouteObject[] = [
         element: (
           <CapabilityRoute capability={CAPABILITY.cariPartiesList}>
             <CariListPage />
+          </CapabilityRoute>
+        ),
+      },
+      {
+        /**
+         * C-03 detail, mounted under the SAME capability as the list.
+         *
+         * The server authorizes both reads with one permission
+         * (`counterparty.parties.read`) and the registry publishes no
+         * `cari.parties.detail`. Inventing one here would be the frontend
+         * granting itself authority the backend never declared — the exact thing
+         * DEC-GOV-007 exists to stop.
+         *
+         * If a separately grantable detail is wanted, it has to come from the
+         * provider first, not from this table.
+         */
+        path: 'cari/:partyId',
+        element: (
+          <CapabilityRoute capability={CAPABILITY.cariPartiesList}>
+            <CariDetailPage />
           </CapabilityRoute>
         ),
       },

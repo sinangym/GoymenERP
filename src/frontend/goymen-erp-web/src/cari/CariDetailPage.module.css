@@ -1,0 +1,58 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.page h1 {
+  font-size: 1.25rem;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.back {
+  align-self: flex-start;
+  color: #1f5fd0;
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+.back:hover {
+  text-decoration: underline;
+}
+.back:focus-visible {
+  outline: 2px solid #1f5fd0;
+  outline-offset: 2px;
+}
+
+.facts {
+  display: grid;
+  /* Wraps instead of forcing a page-level horizontal scroll (WCAG 1.4.10). */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: 1px;
+  margin: 0;
+  background: #d5dbe6;
+  border: 1px solid #d5dbe6;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.fact {
+  background: #fff;
+  padding: 12px 14px;
+  min-width: 0;
+}
+.fact dt {
+  font-size: 0.8rem;
+  color: #55607a;
+  margin-bottom: 4px;
+}
+.fact dd {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #1a2233;
+  overflow-wrap: anywhere;
+}
+/* Passive carries a visible cue beyond colour (ERP-000K §15). */
+.fact dd[data-party-state='inactive'],
+.fact dd[data-account-state='inactive'] {
+  color: #a3592f;
+  font-weight: 600;
+}
