@@ -81,6 +81,16 @@ export interface ShellState {
   readonly sessionEpoch: number
   /** The sessionEpoch a context was last committed for; null = this session never bootstrapped. */
   readonly bootstrappedSessionEpoch: number | null
+  /**
+   * The server rejected this session (401). TERMINAL until a real re-login.
+   *
+   * This lives in the reducer, not in a component, because a SESSION_RESET alone
+   * is not enough: it advances the epoch, which makes `needsBootstrap` true, and
+   * the orchestrator immediately establishes a NEW session. The reset then looks
+   * like it worked while the user is quietly signed back in — worse than doing
+   * nothing, because it is invisible (Issue #165 SAB-002).
+   */
+  readonly sessionInvalid: boolean
   /** Open scopes that block a silent switch (dirty form, edit workspace, approval preview). */
   readonly dirtyScopes: readonly string[]
 }
@@ -100,6 +110,8 @@ export type ShellEvent =
   | { type: 'REAUTH_FAIL'; forGeneration: number }
   | { type: 'CAPABILITY_REVOKED' }
   | { type: 'SESSION_RESET' }
+  /** A 401: drop everything AND refuse to bootstrap again until re-login. */
+  | { type: 'SESSION_INVALIDATED' }
   | { type: 'DIRTY_SET'; scope: string }
   | { type: 'DIRTY_CLEAR'; scope: string }
 
@@ -112,6 +124,7 @@ export const initialShellState: ShellState = {
   committedContextRevision: 0,
   sessionEpoch: 0,
   bootstrappedSessionEpoch: null,
+  sessionInvalid: false,
   dirtyScopes: [],
 }
 
@@ -121,6 +134,7 @@ export const initialShellState: ShellState = {
  * after SESSION_RESET bootstraps even though the revision counter keeps climbing.
  */
 export function needsBootstrap(state: ShellState): boolean {
+  if (state.sessionInvalid) return false
   return (
     state.phase === 'no-active-company' && state.bootstrappedSessionEpoch !== state.sessionEpoch
   )
@@ -258,6 +272,19 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
         committedContextRevision: state.committedContextRevision,
         sessionEpoch: state.sessionEpoch + 1,
         bootstrappedSessionEpoch: null,
+      }
+    }
+
+    case 'SESSION_INVALIDATED': {
+      // Everything SESSION_RESET does, plus the terminal flag that stops the
+      // orchestrator from silently signing the user back in.
+      return {
+        ...initialShellState,
+        requestFenceGeneration: state.requestFenceGeneration + 1,
+        committedContextRevision: state.committedContextRevision,
+        sessionEpoch: state.sessionEpoch + 1,
+        bootstrappedSessionEpoch: null,
+        sessionInvalid: true,
       }
     }
 
