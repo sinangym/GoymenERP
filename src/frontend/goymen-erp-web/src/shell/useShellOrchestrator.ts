@@ -165,6 +165,14 @@ export function useShellOrchestrator(): ShellOrchestration {
   const directory = directoryOf(directoryQuery.data)
   const identityId = identity?.userId ?? null
 
+  // The reducer needs the AUTHENTICATED actor, not just the committed one, to
+  // judge a late security outcome (Issue #165 P1-4). Reported as soon as identity
+  // resolves — before the actor-change reset below, which is the window that was
+  // exploitable.
+  useEffect(() => {
+    dispatch({ type: 'IDENTITY_OBSERVED', actorId: identityId })
+  }, [identityId, dispatch])
+
   // --- P1-1: actor change -> full reset --------------------------------------
   useEffect(() => {
     if (identityId === null) return
