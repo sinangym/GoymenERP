@@ -6,6 +6,7 @@ using System.Text.Json;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 using GoymenERP.Modules.Identity.Infrastructure.Services;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -294,7 +295,7 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
-    public async Task StagedCounterpartyCapability_RemainsHiddenAndTracksPermissionRevision()
+    public async Task StagedCounterpartyCapabilities_RemainHiddenAndTrackPermissionRevision()
     {
         var baseConnectionString = Environment.GetEnvironmentVariable(
             SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
@@ -317,8 +318,18 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
 
             var granted = await ReadSnapshotAsync(administratorClient);
             var denied = await ReadSnapshotAsync(operatorClient);
-            Assert.DoesNotContain("cari.parties.list", granted.Capabilities);
-            Assert.DoesNotContain("cari.parties.list", denied.Capabilities);
+            Assert.DoesNotContain(
+                CounterpartyShellCapabilityProvider.ListCapabilityId,
+                granted.Capabilities);
+            Assert.DoesNotContain(
+                CounterpartyShellCapabilityProvider.LinkCapabilityId,
+                granted.Capabilities);
+            Assert.DoesNotContain(
+                CounterpartyShellCapabilityProvider.ListCapabilityId,
+                denied.Capabilities);
+            Assert.DoesNotContain(
+                CounterpartyShellCapabilityProvider.LinkCapabilityId,
+                denied.Capabilities);
 
             await using var connection = new SqlConnection(factory.DatabaseConnectionString);
             await connection.OpenAsync();
@@ -336,7 +347,12 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
             Assert.Equal(1, deleted);
 
             var revoked = await ReadSnapshotAsync(administratorClient);
-            Assert.DoesNotContain("cari.parties.list", revoked.Capabilities);
+            Assert.DoesNotContain(
+                CounterpartyShellCapabilityProvider.ListCapabilityId,
+                revoked.Capabilities);
+            Assert.DoesNotContain(
+                CounterpartyShellCapabilityProvider.LinkCapabilityId,
+                revoked.Capabilities);
             Assert.NotEqual(granted.Generation, revoked.Generation);
             Assert.DoesNotContain(
                 ErpPermissions.CounterpartyPartiesRead,

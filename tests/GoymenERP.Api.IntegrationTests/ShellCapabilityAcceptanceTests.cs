@@ -5,6 +5,7 @@ using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -155,7 +156,7 @@ public sealed class ShellCapabilityAcceptanceTests(
     }
 
     [Fact]
-    public async Task StagedCounterpartyCapability_IsNotPublishedBeforeItsUiMount()
+    public async Task StagedCounterpartyCapabilities_AreNotPublishedBeforeTheirUiMounts()
     {
         using var client = factory.CreateClientFor(
             TestUsers.GroupAdmin,
@@ -166,7 +167,17 @@ public sealed class ShellCapabilityAcceptanceTests(
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         AssertPrivateNoStore(response);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.Empty(document.RootElement.GetProperty("capabilities").EnumerateArray());
+        var capabilities = document.RootElement.GetProperty("capabilities")
+            .EnumerateArray()
+            .Select(item => item.GetString()!)
+            .ToArray();
+        Assert.Empty(capabilities);
+        Assert.DoesNotContain(
+            CounterpartyShellCapabilityProvider.ListCapabilityId,
+            capabilities);
+        Assert.DoesNotContain(
+            CounterpartyShellCapabilityProvider.LinkCapabilityId,
+            capabilities);
     }
 
     [Fact]
