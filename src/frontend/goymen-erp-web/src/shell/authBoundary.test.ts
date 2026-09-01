@@ -226,6 +226,40 @@ describe('ChatGPT #169 P1-2 / P1-3 — the decision and the ledger live in the r
     }
   }
 
+  it('a 403 captured under a SUPERSEDED capability generation is ignored', () => {
+    // The scenario: a read is authorized under generation g1, the capability is
+    // re-granted as g2 in the meantime (which is what a successful mid-switch
+    // reauth does), and only then does g1's 403 arrive. Nothing else has moved —
+    // same actor, same session epoch, same company, same committed revision — so
+    // every other currentness term still matches and only the generation can tell
+    // the two apart.
+    //
+    // Without that term the stale outcome revokes an authority the server never
+    // refused. This test exists because removing the term left all 189 other tests
+    // green: an unproven clause in a security reducer is not something to ship.
+    const s = ready()
+    const underG1 = snapshotOf(s)
+    const regranted: ShellState = {
+      ...s,
+      activeContext: s.activeContext
+        ? { ...s.activeContext, capabilityGeneration: 'gen-2' }
+        : null,
+    }
+    expect(underG1.capabilityGeneration).not.toBe('gen-2')
+
+    const out = shellReducer(regranted, {
+      type: 'BUSINESS_AUTH_OUTCOME',
+      status: 403,
+      authenticatedActorId: ACTOR_A,
+      snapshot: underG1,
+    })
+
+    expect(out).toBe(regranted)
+    expect(out.activeContext?.capabilityGeneration).toBe('gen-2')
+    expect(out.requestFenceGeneration).toBe(regranted.requestFenceGeneration)
+    expect(out.lastSecurityEffect).toBeNull()
+  })
+
   it('a current 401 is terminal and records the effect', () => {
     const s = ready()
     const out = shellReducer(s, {
@@ -425,22 +459,90 @@ describe('ChatGPT #169 P1-5 — a rejection that lands mid-switch', () => {
     expect(capabilityFailClosed(restored)).toBe(true)
   })
 
-  it('a 401 for company A during a switch is terminal', () => {
+  it('a 401 for company A during a switch is HELD, not applied immediately', () => {
+    // This case used to assert immediate termination. Codex's #169 P1-1 produced
+    // the counter-example and it is decisive: if the switch then succeeds, the
+    // server has just authenticated the session one call later, so the former
+    // 401 cannot have been about the session — and terminating on it killed a
+    // live session. Issue #165 calls for the success/failure target distinction.
     const a = ready(ACTOR_A, COMPANY_A)
     const snapA = snapOf(a)
     const switching = shellReducer(a, {
       type: 'REQUEST_SWITCH',
       target: { scopeMode: 'single', companyId: COMPANY_B },
     })
-    const out = shellReducer(switching, {
+    const held = shellReducer(switching, {
       type: 'BUSINESS_AUTH_OUTCOME',
       status: 401,
       authenticatedActorId: ACTOR_A,
       snapshot: snapA,
     })
+
+    // Held: nothing is torn down while the target is still being verified.
+    expect(held.sessionInvalid).toBe(false)
+    expect(held.pendingFormerSessionFailure).not.toBeNull()
+    expect(held.phase).toBe('switching')
+    expect(held.verifiedFormerContext).not.toBeNull()
+    // The ledger still records it, so a second observer cannot re-apply it.
+    expect(held.lastSecurityEffect).not.toBeNull()
+  })
+
+  it('a successful switch DISCARDS the held former 401', () => {
+    const a = ready(ACTOR_A, COMPANY_A)
+    const snapA = snapOf(a)
+    const switching = shellReducer(a, {
+      type: 'REQUEST_SWITCH',
+      target: { scopeMode: 'single', companyId: COMPANY_B },
+    })
+    const held = shellReducer(switching, {
+      type: 'BUSINESS_AUTH_OUTCOME',
+      status: 401,
+      authenticatedActorId: ACTOR_A,
+      snapshot: snapA,
+    })
+    const out = shellReducer(held, {
+      type: 'REAUTH_OK',
+      forGeneration: held.requestFenceGeneration,
+      context: {
+        userId: ACTOR_A,
+        companyId: COMPANY_B,
+        scopeMode: 'single',
+        capabilityGeneration: 'gen-b',
+        capabilities: [],
+      },
+    })
+
+    // The server authenticated the target, so the session is demonstrably alive.
+    expect(out.sessionInvalid).toBe(false)
+    expect(out.pendingFormerSessionFailure).toBeNull()
+    expect(out.phase).toBe('idle')
+    expect(out.activeContext?.companyId).toBe(COMPANY_B)
+  })
+
+  it('a failed switch APPLIES the held former 401 instead of restoring', () => {
+    const a = ready(ACTOR_A, COMPANY_A)
+    const snapA = snapOf(a)
+    const switching = shellReducer(a, {
+      type: 'REQUEST_SWITCH',
+      target: { scopeMode: 'single', companyId: COMPANY_B },
+    })
+    const held = shellReducer(switching, {
+      type: 'BUSINESS_AUTH_OUTCOME',
+      status: 401,
+      authenticatedActorId: ACTOR_A,
+      snapshot: snapA,
+    })
+    const out = shellReducer(held, {
+      type: 'REAUTH_FAIL',
+      forGeneration: held.requestFenceGeneration,
+    })
+
+    // Nothing contradicted the 401, so it stands — and the former context is NOT
+    // restored, because restoring it would carry an authority nothing confirmed.
     expect(out.sessionInvalid).toBe(true)
     expect(out.activeContext).toBeNull()
     expect(out.verifiedFormerContext).toBeNull()
+    expect(out.pendingFormerSessionFailure).toBeNull()
   })
 
   it('a rejection for a DIFFERENT company during a switch is still stale', () => {
