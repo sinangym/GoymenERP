@@ -369,7 +369,9 @@ public sealed partial class ShellCapabilityRegistry
     [GeneratedRegex("^[a-z0-9][a-z0-9._-]*$", RegexOptions.CultureInvariant)]
     private static partial Regex LiteralRouteSegmentPattern();
 
-    [GeneratedRegex("^\\{[a-z][a-z0-9-]*\\}$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(
+        "^(?:\\{[a-z][a-z0-9-]*\\}|:[a-z][A-Za-z0-9]*)$",
+        RegexOptions.CultureInvariant)]
     private static partial Regex ParameterRouteSegmentPattern();
 }
 

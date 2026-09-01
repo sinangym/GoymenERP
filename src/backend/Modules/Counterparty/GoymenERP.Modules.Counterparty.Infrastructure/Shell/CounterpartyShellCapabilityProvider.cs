@@ -21,7 +21,7 @@ public sealed class CounterpartyShellCapabilityProvider : IShellCapabilityProvid
     public const string LinkScreenId = "CARI-LINK-WORKSPACE-001";
     public const string DetailCapabilityId = "cari.parties.detail";
     public const string DetailRouteId = "cari.detail";
-    public const string DetailRoutePath = "/cari/{party-id}";
+    public const string DetailRoutePath = "/cari/:partyId";
     public const string DetailScreenId = "C-03";
 
     public string Owner => OwnerId;

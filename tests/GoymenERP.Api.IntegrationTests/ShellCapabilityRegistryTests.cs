@@ -206,22 +206,27 @@ public sealed class ShellCapabilityRegistryTests
             new ShellCapabilityRegistry([first, duplicateScreen]));
     }
 
-    [Fact]
-    public void DifferentRouteParameterNames_CollideAfterCanonicalization()
+    [Theory]
+    [InlineData("/owner/{id}", "/owner/{party-id}")]
+    [InlineData("/owner/:id", "/owner/:partyId")]
+    [InlineData("/owner/:id", "/owner/{party-id}")]
+    public void DifferentRouteParameterNamesOrAcceptedGrammars_CollideByShape(
+        string firstPath,
+        string secondPath)
     {
         var first = Provider(
             "OWNER-A",
             Declaration(
                 "owner.a.read",
                 "OWNER-A-ROUTE",
-                "/owner/{id}",
+                firstPath,
                 "OWNER-A-01"));
         var second = Provider(
             "OWNER-B",
             Declaration(
                 "owner.b.read",
                 "OWNER-B-ROUTE",
-                "/owner/{party-id}",
+                secondPath,
                 "OWNER-B-01"));
 
         Assert.Throws<InvalidOperationException>(() =>
@@ -231,6 +236,8 @@ public sealed class ShellCapabilityRegistryTests
     [Theory]
     [InlineData("/cari/new", "/cari/{id}")]
     [InlineData("/cari/{id}", "/cari/new")]
+    [InlineData("/cari/new", "/cari/:partyId")]
+    [InlineData("/cari/:partyId", "/cari/new")]
     public void StaticRoutesTakePrecedenceOverParameterizedRoutes(
         string firstPath,
         string secondPath)
@@ -366,6 +373,12 @@ public sealed class ShellCapabilityRegistryTests
             "OWNER-A-ROUTE",
             "/owner//a",
             "OWNER-A-01");
+        var invalidColonParameterRoute = Declaration(
+            "owner.a.invalid-parameter",
+            "OWNER-A-INVALID-PARAMETER",
+            "/owner/:PartyId",
+            "OWNER-A-02",
+            routePrecedence: ShellCapabilityRoutePrecedence.ParameterizedAfterStatic);
         var invalidContext = Declaration(
             "owner.a.read",
             "OWNER-A-ROUTE",
@@ -415,6 +428,8 @@ public sealed class ShellCapabilityRegistryTests
 
         Assert.Throws<InvalidOperationException>(() =>
             new ShellCapabilityRegistry([Provider("OWNER-A", invalidRoute)]));
+        Assert.Throws<InvalidOperationException>(() =>
+            new ShellCapabilityRegistry([Provider("OWNER-A", invalidColonParameterRoute)]));
         Assert.Throws<InvalidOperationException>(() =>
             new ShellCapabilityRegistry([Provider(
                 "OWNER-A",
@@ -710,6 +725,8 @@ public sealed class ShellCapabilityRegistryTests
             screenId,
             routePrecedence
                 ?? (routePath.Contains('{', StringComparison.Ordinal)
+                    || routePath.Split('/', StringSplitOptions.None)
+                        .Any(segment => segment.StartsWith(':'))
                     ? ShellCapabilityRoutePrecedence.ParameterizedAfterStatic
                     : ShellCapabilityRoutePrecedence.Static),
             ShellCapabilityContextRequirement.SingleCompany,

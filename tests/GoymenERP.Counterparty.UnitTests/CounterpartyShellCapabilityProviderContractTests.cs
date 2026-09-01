@@ -209,10 +209,7 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
             .EnumerateArray()
             .Single(item => item.GetProperty("id").GetString() == "cari.detail");
         Assert.Equal(route.GetProperty("id").GetString(), declaration.RouteId);
-        Assert.Equal(
-            route.GetProperty("path").GetString()!
-                .Replace(":partyId", "{party-id}", StringComparison.Ordinal),
-            declaration.RoutePath);
+        Assert.Equal(route.GetProperty("path").GetString(), declaration.RoutePath);
         Assert.Equal(route.GetProperty("screen").GetString(), declaration.ScreenId);
         Assert.Equal(route.GetProperty("capability").GetString(), declaration.CapabilityId);
         Assert.Equal("parameter-after-static", route.GetProperty("priority").GetString());
