@@ -194,6 +194,61 @@ class EvidenceContractTests(unittest.TestCase):
         with self.assertRaisesRegex(validator.ContractError, "redacted"):
             self.validate(network=network)
 
+    def test_extra_raw_url_field_fails(self):
+        network = copy.deepcopy(valid_network())
+        network["requests"][0]["rawUrl"] = "?cursor=RAW-SECRET"
+        with self.assertRaisesRegex(validator.ContractError, "keys mismatch"):
+            self.validate(network=network)
+
+    def test_fault_outcome_on_identity_path_fails(self):
+        network = copy.deepcopy(valid_network())
+        fault = next(
+            request for request in network["requests"]
+            if request["outcome"] == "injected-offline"
+        )
+        fault["path"] = "/api/v1/identity/me"
+        with self.assertRaisesRegex(validator.ContractError, "Counterparty read endpoint"):
+            self.validate(network=network)
+
+    def test_retry_200_without_retry_ordinal_fails(self):
+        network = copy.deepcopy(valid_network())
+        retry = next(
+            request for request in network["requests"]
+            if request["outcome"] == "retry-200"
+        )
+        retry["retryOrdinal"] = 0
+        with self.assertRaisesRegex(validator.ContractError, "retryOrdinal > 0"):
+            self.validate(network=network)
+
+    def test_duplicate_network_ordinal_fails(self):
+        network = copy.deepcopy(valid_network())
+        network["requests"][-1]["ordinal"] = network["requests"][-2]["ordinal"]
+        with self.assertRaisesRegex(validator.ContractError, "unique and contiguous"):
+            self.validate(network=network)
+
+    def test_one_junit_case_concatenating_all_ids_fails(self):
+        joined = " ".join(validator.EXPECTED_CASES)
+        self.junit.write_text(
+            "<testsuites><testsuite>"
+            f'<testcase name="{joined}" classname="c01" />'
+            "</testsuite></testsuites>",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(validator.ContractError, "exactly ten"):
+            self.validate()
+
+    def test_junit_duplicate_case_id_fails(self):
+        cases = "".join(
+            '<testcase name="B-C01-001 duplicate" classname="c01" />'
+            for _ in validator.EXPECTED_CASES
+        )
+        self.junit.write_text(
+            f"<testsuites><testsuite>{cases}</testsuite></testsuites>",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(validator.ContractError, "exact and unique"):
+            self.validate()
+
 
 if __name__ == "__main__":
     unittest.main()
