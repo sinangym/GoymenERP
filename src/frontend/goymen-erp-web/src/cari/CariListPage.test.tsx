@@ -804,10 +804,14 @@ describe('C-01 continuation failure — what must NOT be masked (Q8=A kapsam dı
     // Losing the session is not a paging hiccup. Keeping rows visible would show
     // data from a session the server has already rejected.
     //
-    // NOTE what this does NOT assert: the central shell boundary. A business 401
-    // does not currently fire SESSION_RESET or clear the QueryClient — only a
-    // CAPABILITY 401 does. Naming this test "ends the session" claimed a
-    // guarantee that is not there. That gap is real and is separate shell work.
+    // SCOPE, not a gap: this asserts the LOCAL fail-closed render only. A
+    // business 401 now does also end the session centrally — that is what #169
+    // implements — but the central effect is the shell's to prove, and it is
+    // proved in `shell/authBoundaryLiveActor.test.tsx` and
+    // `cari/authBoundaryIntegration.test.tsx` against the real provider.
+    // Asserting it here too would duplicate the guarantee in a file that cannot
+    // see the reducer, which is how the earlier version of this comment ended up
+    // documenting behaviour that had already changed.
     expect(await findStateBlock('unauthenticated')).toBeTruthy()
     expect(screen.queryByRole('table')).toBeNull()
     expect(screen.queryByText('C-0001')).toBeNull()
