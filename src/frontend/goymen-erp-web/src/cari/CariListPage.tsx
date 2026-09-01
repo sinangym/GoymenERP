@@ -30,10 +30,11 @@ import {
   type CounterpartyListItem,
   type CounterpartyPage,
 } from './contract'
-import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
+import { classifyOutcome, type RemoteViewState, type ViewOutcome } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
 import { contextKeyString, contextKey } from '../shell/shellState'
 import { StateBlock } from '../shell/StateBlock'
+import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './CariListPage.module.css'
 
 const KIND_LABEL: Record<number, string> = {
@@ -119,6 +120,9 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
    * — silently omitting the facts that differ per company. Fail closed instead of
    * showing an incomplete truth.
    */
+  // The central security boundary for every authenticated read on this screen.
+  const boundary = useAuthBoundary(shell.activeContext?.userId ?? null)
+
   const singleCompanyContext = scopeMode === 'single' && activeCompanyId !== null
 
   const filterActive =
@@ -143,8 +147,12 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
      * can only ever mean a different filter or sort inside the SAME company.
      */
     placeholderData: keepPreviousData,
-    queryFn: ({ signal }) =>
-      fetchCounterparties(
+    queryFn: async ({ signal }) => {
+      // SAB-001: the security bindings are captured BEFORE the request starts.
+      // Deriving them at response time would let a slow 401 from a departed
+      // actor reset the session of whoever is here now.
+      const snapshot = boundary.capture()
+      const outcome = await fetchCounterparties(
         scope,
         {
           q,
@@ -159,7 +167,19 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
           cursor,
         },
         signal,
-      ),
+      )
+      // SAB-006: first page, continuation and refetch all report here. There is
+      // no weaker per-path variant — this IS the path.
+      if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) {
+        const action = boundary.report(outcome.status, snapshot)
+        // SAB-008/009: a result that is no longer current produces no security
+        // effect and no data — it is discarded, not rendered as an error.
+        if (action.kind === 'stale-discard') {
+          return { type: 'fence-stale' } satisfies ViewOutcome<CounterpartyPage>
+        }
+      }
+      return outcome
+    },
   })
 
   const outcome = query.data

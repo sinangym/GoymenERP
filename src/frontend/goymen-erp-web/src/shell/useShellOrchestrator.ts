@@ -125,7 +125,15 @@ export function useShellOrchestrator(): ShellOrchestration {
   const seenActorId = useRef<string | null>(null)
   const [bootstrapFailure, setBootstrapFailure] = useState(false)
   const [switchFailure, setSwitchFailure] = useState(false)
-  const [sessionInvalid, setSessionInvalid] = useState(false)
+  // Terminal session-invalid now lives in the reducer so a business-read 401 and a
+  // capability 401 reach the SAME terminal state (Issue #165 SAB-006).
+  const sessionInvalid = state.sessionInvalid
+  const setSessionInvalid = useCallback(
+    (v: boolean) => {
+      if (v) dispatch({ type: 'SESSION_INVALIDATED' })
+    },
+    [dispatch],
+  )
 
   // A dead session must stop talking to the server. Without `enabled`, the P1-3
   // `clear()` below would evict these queries while their observers are still
@@ -172,7 +180,7 @@ export function useShellOrchestrator(): ShellOrchestration {
       dispatch({ type: 'SESSION_RESET' })
       queryClient.clear()
     }
-  }, [identityId, dispatch, queryClient])
+  }, [identityId, dispatch, queryClient, setSessionInvalid])
 
   // --- bootstrap -----------------------------------------------------------
   const directoryReady = directoryState.kind === 'ready'
@@ -232,6 +240,7 @@ export function useShellOrchestrator(): ShellOrchestration {
     sessionEpoch,
     dispatch,
     queryClient,
+    setSessionInvalid,
   ])
 
   // --- switch ------------------------------------------------------------
@@ -284,7 +293,15 @@ export function useShellOrchestrator(): ShellOrchestration {
         fail()
       })
     return () => controller.abort()
-  }, [switchCompanyId, switchScopeMode, attemptGeneration, identityId, dispatch, queryClient])
+  }, [
+    switchCompanyId,
+    switchScopeMode,
+    attemptGeneration,
+    identityId,
+    dispatch,
+    queryClient,
+    setSessionInvalid,
+  ])
 
   /**
    * The company preference mirrors the COMMITTED context, never an attempted target.

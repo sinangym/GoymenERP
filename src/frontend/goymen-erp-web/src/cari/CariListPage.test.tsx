@@ -310,11 +310,17 @@ describe('C-01 states', () => {
     await waitFor(() => expect(queryStateBlock('empty-filtered')).not.toBeNull())
   })
 
-  it('403 is non-disclosing and does not render a list', async () => {
+  it('403 is non-disclosing and closes the capability, not just the list', async () => {
     installFetch({ counterparties: () => json({ code: 'forbidden' }, 403) })
     renderAt('/cari')
-    expect(await findStateBlock('forbidden')).toBeTruthy()
+    // Issue #165 SAB-004/005 raised this bar. The old contract was a local
+    // 'forbidden' block over a capability that stayed usable — so a route return
+    // or a refetch could mount the feature again on the authority the server had
+    // just rejected. The capability is now re-fenced, which closes the gated
+    // route itself; the block is the same non-disclosing one an unknown page gets.
+    await waitFor(() => expect(document.querySelector('[data-state]')).not.toBeNull())
     expect(screen.queryByRole('table')).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Cari Kartlar' })).toBeNull()
   })
 
   it('a malformed page fails closed instead of rendering a partial list', async () => {
@@ -811,9 +817,12 @@ describe('C-01 continuation failure — what must NOT be masked (Q8=A kapsam dı
     await loadThenPage2(403, 'forbidden')
     // Authorization was revoked mid-session; continuing to show the list would
     // keep rendering records the actor is no longer entitled to.
-    expect(await findStateBlock('forbidden')).toBeTruthy()
+    // The capability is re-fenced (SAB-004), so the gated route closes rather
+    // than showing a local forbidden block over still-visible rows.
+    await waitFor(() => expect(document.querySelector('[data-state]')).not.toBeNull())
     expect(screen.queryByRole('table')).toBeNull()
     expect(screen.queryByText('C-0001')).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Cari Kartlar' })).toBeNull()
   })
 
   it('a malformed second page is NOT hidden behind "rows preserved"', async () => {
