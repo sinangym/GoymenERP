@@ -770,9 +770,10 @@ class WorkflowOrderingTests(unittest.TestCase):
                 self.assertIn("dotnet test ", step)
                 self.assertIn("-noAutoResponse", step)
 
-        relational_test = self.step_body(relational, "Run relational acceptance test")
-        self.assertIn("dotnet test ", relational_test)
-        self.assertIn("-noAutoResponse", relational_test)
+        verifier_source = (REPOSITORY_ROOT / "tools" / "verify_rcsi_relational_acceptance.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(verifier_source.count('"-noAutoResponse"'), 2)
         relational_restore = self.step_body(relational, "Restore relational test packages")
         self.assertIn("dotnet restore ", relational_restore)
         self.assertIn("-noAutoResponse", relational_restore)
@@ -794,8 +795,10 @@ class WorkflowOrderingTests(unittest.TestCase):
 
         relational_restore = self.step_body(relational, "Restore relational test packages")
         self.assertIn("--configfile NuGet.Config", relational_restore)
-        relational_test = self.step_body(relational, "Run relational acceptance test")
-        self.assertIn("--no-restore", relational_test)
+        verifier_source = (REPOSITORY_ROOT / "tools" / "verify_rcsi_relational_acceptance.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(verifier_source.count('"--no-restore"'), 2)
         vulnerable_step = self.step_body(backend, "Check vulnerable dependencies")
         self.assertIn("--no-restore", vulnerable_step)
         self.assertIn("--configfile NuGet.Config", vulnerable_step)
@@ -851,7 +854,6 @@ class WorkflowOrderingTests(unittest.TestCase):
                 self.assertEqual(step.count(validator_command), 1)
                 self.assertLess(step.index(validator_command), step.index(command))
 
-        relational_step = self.step_body(relational, "Run relational acceptance test")
         relational_restore_step = self.step_body(
             relational, "Restore relational test packages"
         )
@@ -860,15 +862,24 @@ class WorkflowOrderingTests(unittest.TestCase):
             relational_restore_step.index(validator_command),
             relational_restore_step.index("dotnet restore "),
         )
-        relational_command = (
-            "dotnet test tests/GoymenERP.Api.IntegrationTests/"
-            "GoymenERP.Api.IntegrationTests.csproj"
+        for step_name, mode in (
+            ("Run broad SQL Server relational acceptance verifier", "--broad"),
+            ("Run exact RCSI relational acceptance verifier", "--rcsi"),
+        ):
+            with self.subTest(step=step_name):
+                relational_step = self.step_body(relational, step_name)
+                self.assertEqual(relational_step.count(validator_command), 1)
+                self.assertLess(
+                    relational_step.index(validator_command),
+                    relational_step.index(
+                        f"python3 -I -S -B tools/verify_rcsi_relational_acceptance.py {mode}"
+                    ),
+                )
+
+        verifier_source = (REPOSITORY_ROOT / "tools" / "verify_rcsi_relational_acceptance.py").read_text(
+            encoding="utf-8"
         )
-        self.assertEqual(relational_step.count(validator_command), 1)
-        self.assertLess(
-            relational_step.index(validator_command),
-            relational_step.index(relational_command),
-        )
+        self.assertEqual(verifier_source.count("run_bootstrap_preflight(repository_root)"), 2)
 
     def test_container_dotnet_surface_depends_on_both_preflight_jobs(self) -> None:
         body = self.job_body("containers")

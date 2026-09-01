@@ -28,11 +28,30 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\backend\BuildingBlocks\GoymenERP.BuildingBlocks.SqlServer\GoymenERP.BuildingBlocks.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\backend\GoymenERP.Api\GoymenERP.Api.csproj" />
     <ProjectReference Include="..\..\src\backend\Modules\Audit\GoymenERP.Modules.Audit.Infrastructure\GoymenERP.Modules.Audit.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\backend\Modules\Counterparty\GoymenERP.Modules.Counterparty.Infrastructure\GoymenERP.Modules.Counterparty.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\backend\Modules\Idempotency\GoymenERP.Modules.Idempotency.Infrastructure\GoymenERP.Modules.Idempotency.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\backend\Modules\Organization\GoymenERP.Modules.Organization.Infrastructure\GoymenERP.Modules.Organization.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\tools\GoymenERP.SqlServerRcsiReadiness\GoymenERP.SqlServerRcsiReadiness.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
+
+  <PropertyGroup>
+    <RcsiToolProject>$(MSBuildProjectDirectory)\..\..\tools\GoymenERP.SqlServerRcsiReadiness\GoymenERP.SqlServerRcsiReadiness.csproj</RcsiToolProject>
+    <RcsiToolSelfContainedPublishDir>$(MSBuildProjectDirectory)\bin\$(Configuration)\rcsi-tool-self-contained\$(NETCoreSdkRuntimeIdentifier)\</RcsiToolSelfContainedPublishDir>
+  </PropertyGroup>
+
+  <Target
+    Name="PublishSelfContainedSqlServerRcsiReadinessTool"
+    AfterTargets="Build"
+    Condition="'$(DesignTimeBuild)' != 'true' and '$(IsCrossTargetingBuild)' != 'true'">
+    <RemoveDir Directories="$(RcsiToolSelfContainedPublishDir)" />
+    <MSBuild
+      Projects="$(RcsiToolProject)"
+      Targets="Publish"
+      BuildInParallel="false"
+      Properties="Configuration=$(Configuration);RuntimeIdentifier=$(NETCoreSdkRuntimeIdentifier);SelfContained=true;PublishSingleFile=false;PublishTrimmed=false;PublishDir=$(RcsiToolSelfContainedPublishDir);NoRestore=true" />
+  </Target>
 
 </Project>

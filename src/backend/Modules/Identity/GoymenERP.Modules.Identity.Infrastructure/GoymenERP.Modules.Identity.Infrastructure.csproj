@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\BuildingBlocks\GoymenERP.BuildingBlocks\GoymenERP.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\GoymenERP.BuildingBlocks.SqlServer\GoymenERP.BuildingBlocks.SqlServer.csproj" />
     <ProjectReference Include="..\GoymenERP.Modules.Identity.Domain\GoymenERP.Modules.Identity.Domain.csproj" />
     <ProjectReference Include="..\GoymenERP.Modules.Identity.Application\GoymenERP.Modules.Identity.Application.csproj" />
   </ItemGroup>
