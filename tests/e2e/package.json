@@ -1,0 +1,17 @@
+{
+  "name": "goymen-erp-c01-e2e",
+  "private": true,
+  "version": "1.0.0",
+  "description": "C-01 real-browser acceptance suite (B-C01-001..010) against the disposable compose stack.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "c01:ci": "playwright test",
+    "c01:local": "playwright test --reporter=list"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1"
+  }
+}
