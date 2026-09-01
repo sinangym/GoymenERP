@@ -97,6 +97,16 @@ export interface ShellState {
    * like it worked while the user is quietly signed back in — worse than doing
    * nothing, because it is invisible (Issue #165 SAB-002).
    */
+  /**
+   * The actor the server currently authenticates, as last observed.
+   *
+   * The committed context is not enough (ChatGPT #169 P1-4). Between identity
+   * resolving as B and the actor-change effect dispatching SESSION_RESET, the
+   * context still says A — so a late 401 from A looked current and would have
+   * put B into a terminal session.  closes the RENDER in
+   * that window; it does not close the reducer.
+   */
+  readonly authenticatedActorId: string | null
   readonly sessionInvalid: boolean
   /**
    * The last business-auth security effect this reducer applied, by identity.
@@ -127,6 +137,8 @@ export type ShellEvent =
   | { type: 'SESSION_RESET' }
   /** A 401: drop everything AND refuse to bootstrap again until re-login. */
   | { type: 'SESSION_INVALIDATED' }
+  /** The identity endpoint resolved. Carries no authority; it only records who. */
+  | { type: 'IDENTITY_OBSERVED'; actorId: string | null }
   /**
    * An authenticated business read came back 401/403 (Issue #165).
    *
@@ -161,6 +173,7 @@ export const initialShellState: ShellState = {
   committedContextRevision: 0,
   sessionEpoch: 0,
   bootstrappedSessionEpoch: null,
+  authenticatedActorId: null,
   sessionInvalid: false,
   lastSecurityEffect: null,
   dirtyScopes: [],
@@ -332,17 +345,35 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
       }
     }
 
+    case 'IDENTITY_OBSERVED': {
+      if (state.authenticatedActorId === event.actorId) return state
+      return { ...state, authenticatedActorId: event.actorId }
+    }
+
     case 'BUSINESS_AUTH_OUTCOME': {
       const snap = event.snapshot
       // Current, or nothing. A late result from a departed actor or a company we
       // have left produces NO security effect (SAB-008/009) — resetting the
       // session of whoever is here now would be a denial of service wearing
       // security's clothes.
+      // A read is judged against the context it was AUTHORIZED under. During a
+      // switch that is not activeContext — that is null, and the former context
+      // waits in verifiedFormerContext to be restored if the switch fails.
+      // Ignoring a rejection that lands in that window let REAUTH_FAIL bring the
+      // former context back carrying the very capability the server had just
+      // refused (ChatGPT #169 P1-5).
+      const judgedAgainst =
+        state.phase === 'switching' ? state.verifiedFormerContext : state.activeContext
+
       const current =
-        snap.actorId === (state.activeContext?.userId ?? null) &&
+        snap.actorId === (judgedAgainst?.userId ?? null) &&
         snap.sessionEpoch === state.sessionEpoch &&
-        snap.companyId === (state.activeContext?.companyId ?? null) &&
-        snap.committedContextRevision === state.committedContextRevision
+        snap.companyId === (judgedAgainst?.companyId ?? null) &&
+        snap.committedContextRevision === state.committedContextRevision &&
+        // ...and the actor must still be the one the server authenticates. The
+        // committed context lags identity by one effect, so trusting it alone let
+        // a departed actor's late 401 terminate the CURRENT actor (P1-4).
+        (state.authenticatedActorId === null || snap.actorId === state.authenticatedActorId)
       if (!current) return state
 
       const kind = event.status === 401 ? 'session-reset' : 'capability-refence'
@@ -374,13 +405,20 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
       // longer trustworthy: drop the generation and the granted list, advance the
       // fence, and let capabilityFailClosed shut every gated mount until a FRESH
       // snapshot arrives (SAB-004/005).
+      // Strip the capability from WHICHEVER context the read was authorized
+      // under. If the rejection arrived mid-switch, the one that matters is the
+      // former context — because REAUTH_FAIL restores exactly that, and it must
+      // not come back holding authority the server has rejected.
+      const stripped = (c: CompanyContext | null) =>
+        c === null ? null : { ...c, capabilityGeneration: null, capabilities: [] }
       return {
         ...state,
         requestFenceGeneration: state.requestFenceGeneration + 1,
-        activeContext:
-          state.activeContext === null
-            ? null
-            : { ...state.activeContext, capabilityGeneration: null, capabilities: [] },
+        activeContext: stripped(state.activeContext),
+        verifiedFormerContext:
+          state.phase === 'switching'
+            ? stripped(state.verifiedFormerContext)
+            : state.verifiedFormerContext,
         lastSecurityEffect: effect,
       }
     }
