@@ -65,46 +65,60 @@ async function holdNextBusinessRead(
   page: Page,
   status: 401 | 403,
 ): Promise<{
+  ready: Promise<void>
   release: () => void
-  wasRequested: () => boolean
-  wasDelivered: () => boolean
+  /** True only once the PAGE observed the response — not merely that fulfil resolved. */
+  wasReceivedByPage: () => boolean
+  /** The exact URL of the held read, for request-level assertions. */
+  url: () => string | null
 }> {
   let release: () => void = () => {}
   const held = new Promise<void>((resolve) => {
     release = resolve
   })
-  let requested = false
-  let delivered = false
+  let markReady: () => void = () => {}
+  const ready = new Promise<void>((resolve) => {
+    markReady = resolve
+  })
+
+  // DELIVERY IS OBSERVED FROM THE PAGE SIDE.
+  //
+  // An earlier version reported delivery from whether `route.fulfill` resolved.
+  // Codex was right that this proves nothing about the client: fulfil resolving
+  // says the interceptor wrote a response, not that the production queryFn read
+  // its status and reported it. The response event is the page's own account of
+  // having received it.
+  let receivedByPage = false
+  let heldUrl: string | null = null
+  page.on('response', (response) => {
+    if (heldUrl !== null && response.url() === heldUrl && response.status() === status) {
+      receivedByPage = true
+    }
+  })
+
   let used = false
   await page.route('**/api/v1/counterparties*', async (route: Route) => {
     if (used) return route.fallback()
     used = true
-    requested = true
+    heldUrl = route.request().url()
+    markReady()
     await held
-    try {
-      await route.fulfill({
+    await route.fulfill({
+      status,
+      contentType: 'application/problem+json',
+      body: JSON.stringify({
+        type: 'about:blank',
+        title: status === 401 ? 'authentication_required' : 'forbidden',
         status,
-        contentType: 'application/problem+json',
-        body: JSON.stringify({
-          type: 'about:blank',
-          title: status === 401 ? 'authentication_required' : 'forbidden',
-          status,
-          code: status === 401 ? 'authentication_required' : 'forbidden',
-        }),
-      })
-      // Only true if the response really reached the page. If the request had been
-      // torn down — by a reload, or by the client abandoning it — fulfil throws and
-      // the case would be passing because nothing was delivered, which is the
-      // failure mode this whole suite exists to avoid.
-      delivered = true
-    } catch {
-      delivered = false
-    }
+        code: status === 401 ? 'authentication_required' : 'forbidden',
+      }),
+    })
   })
   return {
+    ready,
     release: () => release(),
-    wasRequested: () => requested,
-    wasDelivered: () => delivered,
+    wasReceivedByPage: () => receivedByPage,
+    url: () => heldUrl,
   }
 }
 
@@ -196,103 +210,105 @@ test('SAB-007 a terminated session cannot be resurfaced by leaving and returning
   expect(await page.locator('body').innerText()).not.toContain(GDC_ROW)
 })
 
-test('SAB-008 the stale-actor window is not reachable in a browser, and this is why', async ({
+test('SAB-008 an actor change ABORTS the in-flight read, so no stale response is delivered', async ({
   page,
+  context,
 }) => {
-  // HONEST SCOPE. I could not produce SAB-008 in a browser, and rather than dress
-  // a vacuous pass as evidence, this case pins the REASON — which is a real
-  // regression guard.
+  test.setTimeout(150_000)
+
+  // WHAT THIS PROVES, AND WHAT IT DOES NOT. This is PREVENTION, not rejection,
+  // and the difference is the whole point of this suite — so it is named in the
+  // title rather than buried.
   //
-  // What I tried first: hold actor A's business 401, make the server answer
-  // identity as somebody else, fire window focus so the shell observes it, then
-  // deliver A's 401. It passed. It passed for the wrong reason: measured, the
-  // focus produced ZERO identity requests, so the shell never left actor A, A's
-  // 401 was CURRENT, and terminating the session was correct behaviour. The
-  // earlier version of this case used page.reload() instead — which tears the page
-  // down and takes the held request with it, so the 401 was never delivered at
-  // all. Both are the abort-instead-of-delivery trap this suite exists to avoid.
+  // I got here by being wrong twice, and both corrections came from measurement.
+  // First I claimed the actor could not change inside one page lifetime. Codex
+  // refuted it and I reproduced the refutation: ShellProvider sets only
+  // `refetchOnWindowFocus: false`, and TanStack's `refetchOnReconnect` defaults to
+  // TRUE, so once staleTime has elapsed an offline→online transition refetches
+  // identity in place (identity call count 2 → 3). The actor CAN change.
   //
-  // The root cause is a deliberate app decision: ShellProvider sets
-  // `refetchOnWindowFocus: false`, and the identity query has no other refetch
-  // trigger. The authenticated actor therefore cannot change inside one page
-  // lifetime, and a page load destroys any in-flight read. There is no browser
-  // path that delivers a departed actor's response into a live successor session.
+  // Then the delivered-stale version failed at the delivery check. Isolating the
+  // three variables one at a time gave the answer:
   //
-  // The invariant itself IS proved, at the level where it is decidable:
-  // `src/shell/authBoundaryLiveActor.test.tsx` drives the real ShellProvider, the
-  // real orchestrator and the real useAuthBoundary, reads the actor from the live
-  // identity cache through production code, and is mutation-checked three ways
-  // (wrong query key, always-null, constant-wrong-actor).
+  //   hold, wait, release                    → received
+  //   hold, offline→online, release          → received   (the toggle is innocent)
+  //   hold, actor changes, release           → net::ERR_ABORTED
   //
-  // If someone later enables focus refetching, the window opens and this test goes
-  // red — which is exactly when the browser case becomes both necessary and
-  // writable.
+  // The chain, verified in source: `actorMismatch` is a SYNCHRONOUS render gate in
+  // AppShell, so an actor change unmounts CariListPage in the same paint; TanStack
+  // cancels the query when its last observer goes; the queryFn's AbortSignal fires;
+  // and `cari/api.ts` classifies an aborted read as `fence-stale` rather than
+  // reporting it to the boundary at all.
+  //
+  // So in a browser the departed actor's response is never DELIVERED. That is a
+  // real security property and it is what this case pins. It is NOT evidence that
+  // a delivered stale response would be rejected — nothing was delivered. That
+  // invariant is proved where it is decidable, in
+  // `src/shell/authBoundaryLiveActor.test.tsx`, against the real provider and hook,
+  // mutation-checked three ways.
+  //
+  // If the abort ever stops happening, this goes red and the delivered-stale
+  // browser case becomes both necessary and writable.
   await openList(page)
 
-  let identityRequests = 0
-  page.on('request', (request) => {
-    if (request.url().includes('/api/v1/identity/me')) identityRequests += 1
+  let abortedError: string | null = null
+  let heldUrl: string | null = null
+  page.on('requestfailed', (request) => {
+    if (heldUrl !== null && request.url() === heldUrl) {
+      abortedError = request.failure()?.errorText ?? 'unknown'
+    }
   })
 
-  await page.evaluate(() => {
-    window.dispatchEvent(new Event('blur'))
-    window.dispatchEvent(new Event('focus'))
-    document.dispatchEvent(new Event('visibilitychange'))
-  })
-  await page.waitForTimeout(2500)
-
-  expect(
-    identityRequests,
-    'identity now refetches without a reload: the stale-actor window is reachable in ' +
-      'the browser and SAB-008 must be written as a real delivered-stale case',
-  ).toBe(0)
-})
-
-test.skip('SAB-008-BROWSER stale actor A 401 vs live actor B', async ({ page }) => {
-  // Kept as the shape the case must take once identity can refetch in place.
-  // Skipped, not deleted, and never counted as evidence.
   const gate = await holdNextBusinessRead(page, 401)
   await page.locator('th').filter({ hasText: 'Kod' }).first().getByRole('button').click()
-  await expect.poll(() => gate.wasRequested(), { timeout: 20_000 }).toBe(true)
+  await gate.ready
+  heldUrl = gate.url()
 
-  // The server now authenticates somebody else, and the shell observes it through
-  // a real focus-driven identity refetch.
-  //
-  // NOT page.reload(): a reload tears the page down, which takes the held request
-  // with it. The 401 would then never be delivered and this case would pass
-  // vacuously — the abort-instead-of-delivery trap. Keeping the page alive is what
-  // makes the delivery real, and `wasDelivered` below is the check on that.
+  // The server now authenticates somebody else, and a reconnect makes the shell
+  // observe it in place. staleTime must elapse first or the refetch is skipped.
   await serverAuthenticatesDifferentActor(page, '20000000-0000-0000-0000-000000000009')
-  await page.evaluate(() => {
-    window.dispatchEvent(new Event('blur'))
-    window.dispatchEvent(new Event('focus'))
-  })
-  await page.waitForTimeout(2000)
+  await page.waitForTimeout(31_000)
+  await context.setOffline(true)
+  await page.waitForTimeout(600)
+  await context.setOffline(false)
 
-  // Deliver actor A's 401 now. It is not prevented; it arrives.
+  await expect(
+    page.getByText('Başka Kullanıcı'),
+    'the actor never changed, so this case exercised nothing',
+  ).toBeVisible({ timeout: 30_000 })
+
+  // Release the departed actor's 401. It cannot arrive: the read is already gone.
   gate.release()
   await page.waitForTimeout(2500)
-  expect(
-    gate.wasDelivered(),
-    'the stale 401 was never delivered, so this case proved nothing',
-  ).toBe(true)
 
-  // It must be discarded: the session is not terminated by a departed actor.
-  await expect(
-    page.locator(TERMINATED),
-    'a stale 401 for the departed actor terminated the session',
-  ).toHaveCount(0)
+  expect(abortedError, 'the in-flight read survived the actor change').toBe('net::ERR_ABORTED')
+  expect(
+    gate.wasReceivedByPage(),
+    'the stale response WAS delivered — this is now a rejection case, not a prevention one',
+  ).toBe(false)
+
+  // And the successor session is intact.
+  await expect(page.locator(TERMINATED)).toHaveCount(0)
+  await expect(page.getByText('Başka Kullanıcı')).toBeVisible()
 })
 
-test('SAB-009 a stale 403 for the departed company cannot revoke the new company', async ({
+test('SAB-009 a company switch cancels the old read, so no stale 403 reaches the successor', async ({
   page,
 }) => {
   await openList(page)
 
   // A business read bound to GDC is issued and its 403 is withheld.
+  let abortedError: string | null = null
+  let heldUrl: string | null = null
+  page.on('requestfailed', (request) => {
+    if (heldUrl !== null && request.url() === heldUrl) {
+      abortedError = request.failure()?.errorText ?? 'unknown'
+    }
+  })
   const gate = await holdNextBusinessRead(page, 403)
   await page.locator('th').filter({ hasText: 'Kod' }).first().getByRole('button').click()
-  await expect.poll(() => gate.wasRequested(), { timeout: 20_000 }).toBe(true)
+  await gate.ready
+  heldUrl = gate.url()
 
   // Commit GSP while GDC's 403 is still in flight.
   const picker = page.getByRole('combobox', { name: 'Şirket', exact: true })
@@ -302,12 +318,19 @@ test('SAB-009 a stale 403 for the departed company cannot revoke the new company
   expect(gspCodes).toContain(GSP_ROW)
 
   // Deliver the departed company's 403.
+  // Release the departed company's 403. Measured: the switch cancels the read, so
+  // it cannot arrive — same shape as SAB-008 and as B-C01-003. Prevention, and the
+  // title says so.
   gate.release()
   await page.waitForTimeout(2500)
   expect(
-    gate.wasDelivered(),
-    'the stale 403 was never delivered, so this case proved nothing',
-  ).toBe(true)
+    abortedError,
+    'the departed company read survived the switch — this is now a delivery case',
+  ).toBe('net::ERR_ABORTED')
+  expect(
+    gate.wasReceivedByPage(),
+    'the stale 403 WAS delivered, so this case must assert rejection, not prevention',
+  ).toBe(false)
 
   // GSP's capability must survive: the gated screen is still mounted, still
   // showing GSP's own rows, and the nav entry is still there.
