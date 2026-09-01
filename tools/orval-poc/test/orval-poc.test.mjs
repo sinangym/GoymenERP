@@ -564,7 +564,7 @@ const res = await fetch(getGetLivenessV1Url(),
     assert.notEqual(decoySource, rawSource);
     assert.throws(
       () => applyProtectedHeaderGuard(decoySource, canonical),
-      /fetch contract initializer drifted/u,
+      /fetch lexical binding drifted/u,
     );
 
     const shadowedSource = rawSource.replace(
@@ -589,6 +589,80 @@ ${livenessFetch}`,
     assert.throws(
       () => applyProtectedHeaderGuard(fetchShadowedSource, canonical),
       /fetch lexical binding drifted/u,
+    );
+
+    const globallyReboundFetchSource = rawSource.replace(
+      livenessFetch,
+      `const originalFetch = globalThis.fetch;
+globalThis.fetch = (input, init) => originalFetch('/attacker', init);
+${livenessFetch}`,
+    );
+    assert.notEqual(globallyReboundFetchSource, rawSource);
+    assert.throws(
+      () => applyProtectedHeaderGuard(globallyReboundFetchSource, canonical),
+      /fetch lexical binding drifted/u,
+    );
+
+    const moduleFetchSideEffectSource = `fetch('/attacker');\n${rawSource}`;
+    assert.throws(
+      () => applyProtectedHeaderGuard(moduleFetchSideEffectSource, canonical),
+      /fetch lexical binding drifted/u,
+    );
+
+    const moduleFetchAliasSource = `const attackerFetch = fetch;\nattackerFetch('/attacker');\n${rawSource}`;
+    assert.throws(
+      () => applyProtectedHeaderGuard(moduleFetchAliasSource, canonical),
+      /fetch lexical binding drifted/u,
+    );
+
+    const moduleGlobalFetchMutationSource = `globalThis.fetch = () => Promise.reject(new Error('attacker'));\n${rawSource}`;
+    assert.throws(
+      () =>
+        applyProtectedHeaderGuard(moduleGlobalFetchMutationSource, canonical),
+      /fetch lexical binding drifted/u,
+    );
+
+    const unicodeEscapedTrustedBindingSource = rawSource.replace(
+      livenessFetch,
+      `${livenessFetch}
+function goymenErpReviewedFet\\u0063h(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  void input;
+  void init;
+  return Promise.resolve(new Response(null, { status: 204 }));
+}`,
+    );
+    assert.notEqual(unicodeEscapedTrustedBindingSource, rawSource);
+    assert.equal(
+      unicodeEscapedTrustedBindingSource.includes("goymenErpReviewedFetch"),
+      false,
+    );
+    assert.throws(
+      () =>
+        applyProtectedHeaderGuard(
+          unicodeEscapedTrustedBindingSource,
+          canonical,
+        ),
+      /fetch lexical binding drifted/u,
+    );
+
+    const reorderedRequestInitSource = rawSource.replace(
+      livenessFetch,
+      livenessFetch.replace(
+        `    ...options,
+    method: 'GET',
+    headers: { ...headers, ...getHeaders(options?.headers) }`,
+        `    method: 'GET',
+    headers: { ...headers, ...getHeaders(options?.headers) },
+    ...options`,
+      ),
+    );
+    assert.notEqual(reorderedRequestInitSource, rawSource);
+    assert.throws(
+      () => applyProtectedHeaderGuard(reorderedRequestInitSource, canonical),
+      /fetch contract initializer drifted/u,
     );
 
     const trailingRequestInitSpreadSource = rawSource.replace(
@@ -794,7 +868,6 @@ test("generated transport rejects contract-controlled RequestInit headers at run
       path.join(generatedRoot, "client.ts"),
       "utf8",
     );
-    const generated = await importGeneratedSource(source);
     const calls = [];
     globalThis.fetch = async (url, init) => {
       calls.push({ url, init });
@@ -803,6 +876,7 @@ test("generated transport rejects contract-controlled RequestInit headers at run
         headers: { "Content-Type": "application/json" },
       });
     };
+    const generated = await importGeneratedSource(source);
 
     const typedHeaders = {
       "X-Company-Id": "11111111-1111-1111-1111-111111111111",

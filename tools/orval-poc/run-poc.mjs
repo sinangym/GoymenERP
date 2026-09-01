@@ -58,6 +58,8 @@ const TYPED_HEADER_GUARD_FUNCTION = "goymenValidateTypedRequestHeaders";
 const REQUEST_OPTIONS_GUARD_MARKER =
   "Generic request options cannot set the generated method or body.";
 const REQUEST_OPTIONS_GUARD_FUNCTION = "goymenValidateRequestOptions";
+const TRUSTED_FETCH_FUNCTION = "goymenErpReviewedFetch";
+const trustedFetchRuntimeBinding = `const ${TRUSTED_FETCH_FUNCTION}: typeof globalThis.fetch = globalThis.fetch.bind(globalThis);\n\n`;
 const GUARDED_REQUEST_HEADERS_HELPER_SIGNATURE =
   "const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string> => {";
 const MAX_FILE_BYTES = 16 * 1024 * 1024;
@@ -756,7 +758,8 @@ export const applyProtectedHeaderGuard = (source, document) => {
     source.includes(TYPED_HEADER_GUARD_MARKER) ||
     source.includes(TYPED_HEADER_GUARD_FUNCTION) ||
     source.includes(REQUEST_OPTIONS_GUARD_MARKER) ||
-    source.includes(REQUEST_OPTIONS_GUARD_FUNCTION)
+    source.includes(REQUEST_OPTIONS_GUARD_FUNCTION) ||
+    source.includes(TRUSTED_FETCH_FUNCTION)
   ) {
     throw new PocError(
       "Generated protected-header guard precondition failed closed.",
@@ -775,6 +778,10 @@ export const applyProtectedHeaderGuard = (source, document) => {
     return false;
   };
   const fetchBindings = [];
+  const rawFetchCalls = [];
+  const rawNonCallFetchReferences = [];
+  const rawFetchMemberReferences = [];
+  const trustedFetchIdentifierReferences = [];
   const collectFetchBindings = (node) => {
     let bindingName;
     if (
@@ -794,10 +801,34 @@ export const applyProtectedHeaderGuard = (source, document) => {
     if (bindingName && bindingNameContains(bindingName, "fetch")) {
       fetchBindings.push(node);
     }
+    if (ts.isIdentifier(node) && node.text === "fetch") {
+      if (ts.isCallExpression(node.parent) && node.parent.expression === node) {
+        rawFetchCalls.push(node.parent);
+      } else {
+        rawNonCallFetchReferences.push(node);
+      }
+    }
+    if (ts.isIdentifier(node) && node.text === TRUSTED_FETCH_FUNCTION) {
+      trustedFetchIdentifierReferences.push(node);
+    }
+    if (
+      (ts.isPropertyAccessExpression(node) && node.name.text === "fetch") ||
+      (ts.isElementAccessExpression(node) &&
+        ts.isStringLiteralLike(node.argumentExpression) &&
+        node.argumentExpression.text === "fetch")
+    ) {
+      rawFetchMemberReferences.push(node);
+    }
     ts.forEachChild(node, collectFetchBindings);
   };
   collectFetchBindings(sourceFile);
-  if (fetchBindings.length !== 0) {
+  if (
+    fetchBindings.length !== 0 ||
+    rawFetchCalls.length !== expectedHelperCount ||
+    rawNonCallFetchReferences.length !== 0 ||
+    rawFetchMemberReferences.length !== 0 ||
+    trustedFetchIdentifierReferences.length !== 0
+  ) {
     throw new PocError(
       "Generated fetch lexical binding drifted from the reviewed shape.",
     );
@@ -948,6 +979,8 @@ export const applyProtectedHeaderGuard = (source, document) => {
         (fetchDeclarationList.flags & ts.NodeFlags.Const) === 0 ||
         !ts.isVariableStatement(fetchStatement) ||
         fetchStatement.parent !== declaration.initializer.body ||
+        declaration.initializer.body.statements[0] !== helperStatements[0] ||
+        declaration.initializer.body.statements[1] !== fetchStatement ||
         reviewedHelperDeclarations.length !== 1 ||
         getHeadersDeclarations.length !== 1 ||
         getHeadersDeclarations[0] !== reviewedHelperDeclarations[0]
@@ -989,10 +1022,20 @@ export const applyProtectedHeaderGuard = (source, document) => {
         ...directBodyInitializers,
         ...directOptionsSpreads,
       ]);
+      const expectedOrderedFetchProperties = [
+        directOptionsSpreads[0],
+        directMethodInitializers[0],
+        directHeaderInitializers[0],
+        ...(metadata.hasRequestBody ? [directBodyInitializers[0]] : []),
+      ];
       if (
         reviewedFetchProperties.size !== fetchInitializer.properties.length ||
         fetchInitializer.properties.some(
           (property) => !reviewedFetchProperties.has(property),
+        ) ||
+        fetchInitializer.properties.some(
+          (property, index) =>
+            property !== expectedOrderedFetchProperties[index],
         ) ||
         headerObjectInitializers.length !== 1 ||
         directHeaderInitializers.length !== 1 ||
@@ -1049,6 +1092,11 @@ export const applyProtectedHeaderGuard = (source, document) => {
       }
 
       replacements.push({
+        start: fetchCall.expression.getStart(sourceFile),
+        end: fetchCall.expression.getEnd(),
+        text: TRUSTED_FETCH_FUNCTION,
+      });
+      replacements.push({
         start: helperStatements[0].getStart(sourceFile),
         end: helperStatements[0].getEnd(),
         text: guardedHelper,
@@ -1080,7 +1128,7 @@ export const applyProtectedHeaderGuard = (source, document) => {
   for (const replacement of replacements) {
     guardedSource = `${guardedSource.slice(0, replacement.start)}${replacement.text}${guardedSource.slice(replacement.end)}`;
   }
-  guardedSource = `${requestOptionsRuntimeGuard}${typedHeaderRuntimeGuard}${guardedSource}`;
+  guardedSource = `${trustedFetchRuntimeBinding}${requestOptionsRuntimeGuard}${typedHeaderRuntimeGuard}${guardedSource}`;
   const guardCount =
     guardedSource.split(GUARDED_REQUEST_HEADERS_HELPER_SIGNATURE).length - 1;
   const typedGuardCallCount =
@@ -1088,11 +1136,14 @@ export const applyProtectedHeaderGuard = (source, document) => {
   const requestOptionsGuardCallCount =
     guardedSource.split(`...${REQUEST_OPTIONS_GUARD_FUNCTION}(options)`)
       .length - 1;
+  const trustedFetchCallCount =
+    guardedSource.split(`${TRUSTED_FETCH_FUNCTION}(`).length - 1;
   if (
     guardedSource.includes(RAW_REQUEST_HEADERS_HELPER) ||
     guardCount !== expectedHelperCount ||
     typedGuardCallCount !== expectedHelperCount ||
-    requestOptionsGuardCallCount !== expectedHelperCount
+    requestOptionsGuardCallCount !== expectedHelperCount ||
+    trustedFetchCallCount !== expectedHelperCount
   ) {
     throw new PocError("Generated protected-header guard failed closed.");
   }
