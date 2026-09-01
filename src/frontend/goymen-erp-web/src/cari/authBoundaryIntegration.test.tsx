@@ -111,6 +111,24 @@ function renderApp(epochLog?: number[]) {
   return { queryClient, router }
 }
 
+/**
+ * Waits for the cache side of a security effect to land.
+ *
+ * The clear runs in a provider-level EFFECT now, not synchronously inside the
+ * report — that is what makes it survive the reporting component unmounting. So
+ * an assertion taken the instant the terminal text appears races it: five runs of
+ * this file produced one red. Waiting on the condition, not on a paint, is the
+ * fix; a flaky security test is worse than no test.
+ */
+async function waitForSecurityEffect(queryClient: QueryClient) {
+  await waitFor(() => {
+    const ev = securityEvidence(queryClient)
+    expect(ev.queriesWithData).toBe(0)
+    expect(ev.businessQueries).toBe(0)
+  })
+  return securityEvidence(queryClient)
+}
+
 /** SAB-011: the evidence a security assertion must actually rest on. */
 function securityEvidence(queryClient: QueryClient) {
   const queries = queryClient.getQueryCache().getAll()
@@ -145,7 +163,7 @@ describe('SAB-002 / SAB-003 — a current 401 ends the session centrally', () =>
 
     expect(await screen.findByText(/Oturum sonlandı/i)).toBeTruthy()
 
-    const ev = securityEvidence(queryClient)
+    const ev = await waitForSecurityEffect(queryClient)
     // Not just "no table" — nothing survives anywhere.
     expect(ev.tableRendered).toBe(false)
     expect(ev.domHasBusinessData).toBe(false)
@@ -177,10 +195,8 @@ describe('SAB-002 / SAB-003 — a current 401 ends the session centrally', () =>
     await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
 
     expect(await screen.findByText(/Oturum sonlandı/i)).toBeTruthy()
-    const ev = securityEvidence(queryClient)
+    const ev = await waitForSecurityEffect(queryClient)
     expect(ev.domHasBusinessData).toBe(false)
-    expect(ev.queriesWithData).toBe(0)
-    expect(ev.businessQueries).toBe(0)
     expect(h.listCallCount()).toBe(2)
   })
 })
@@ -246,9 +262,7 @@ describe('SAB-006 — one boundary on every read path', () => {
 
     // Same terminal outcome as the first-page case above — no weaker variant.
     expect(await screen.findByText(/Oturum sonlandı/i)).toBeTruthy()
-    const ev = securityEvidence(queryClient)
-    expect(ev.queriesWithData).toBe(0)
-    expect(ev.businessQueries).toBe(0)
+    const ev = await waitForSecurityEffect(queryClient)
     expect(ev.domHasBusinessData).toBe(false)
   })
 })
@@ -284,9 +298,6 @@ describe('SAB-010 — the same outcome applies exactly once', () => {
     // THE assertion: the epoch moved exactly one step. Two resets would move it
     // twice and push the fence past what the facts justify.
     expect(epochs[epochs.length - 1]).toBe(epochBefore + 1)
-
-    const ev = securityEvidence(queryClient)
-    expect(ev.queriesWithData).toBe(0)
-    expect(ev.businessQueries).toBe(0)
+    await waitForSecurityEffect(queryClient)
   })
 })
