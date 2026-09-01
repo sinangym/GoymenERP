@@ -620,7 +620,10 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
 
             var acceptedTask = acceptTask;
             var firstCompleted = await Task.WhenAny(acceptedTask, invocation)
-                .WaitAsync(TimeSpan.FromSeconds(20));
+                // Keep the behavioral timeout at 20 seconds, but allow a cold or
+                // fully-loaded host the same 60-second child-start budget used by
+                // the direct CLI containment test above.
+                .WaitAsync(TimeSpan.FromSeconds(60));
             if (firstCompleted == invocation)
             {
                 var earlyResult = await invocation;

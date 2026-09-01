@@ -80,6 +80,7 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.ShellCapabilitySqlServerRelationalAcceptanceTests.AuthorizationSnapshotStartup_FailsClosedWhenRcsiIsDisabled",
     "GoymenERP.Api.IntegrationTests.ShellCapabilitySqlServerRelationalAcceptanceTests.ExactCompanySnapshot_TracksPersistedAuthorizationAndHasNoWriteSideEffects",
     "GoymenERP.Api.IntegrationTests.ShellCapabilitySqlServerRelationalAcceptanceTests.HeaderlessGroupCapability_UsesPerCompanyPermissionsAndTracksRevocation",
+    "GoymenERP.Api.IntegrationTests.ShellCapabilitySqlServerRelationalAcceptanceTests.SelectedCompanySnapshot_FailsClosedWhenCompanyIsDeactivatedDuringAuthorization",
     "GoymenERP.Api.IntegrationTests.ShellCapabilitySqlServerRelationalAcceptanceTests.StagedCounterpartyCapability_RemainsHiddenAndTracksPermissionRevision",
     "GoymenERP.Api.IntegrationTests.SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.CliProcess_OverallTimeoutKillsAndAwaitsTheHungChildWithoutEvidence",
     "GoymenERP.Api.IntegrationTests.SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.CliProcess_ProducesFreshAtomicEvidenceForReadyOffMismatchAndStalePaths",
@@ -93,8 +94,8 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.UnapprovedLogicalEndpoint_IsRejectedWithoutChangingDatabase",
     "GoymenERP.Api.IntegrationTests.SqlServerRelationalAcceptanceTests.MigrationSeedWriteGuardCompositeForeignKeyAndHttpIsolation_AreEnforced",
 )
-BROAD_DISCOVERY_COUNT = 52
-BROAD_EXECUTION_COUNT = 59
+BROAD_DISCOVERY_COUNT = 53
+BROAD_EXECUTION_COUNT = 60
 
 
 def verify_discovery(standard_output: str) -> None:

@@ -77,8 +77,10 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
                 argument.startswith("trx;") for argument in arguments
             ):
                 results_directory = Path(arguments[arguments.index("--results-directory") + 1])
+                execution_count = VERIFIER.BROAD_EXECUTION_COUNT
                 (results_directory / "rcsi.trx").write_text(
-                    '<TestRun><Counters total="59" executed="59" passed="59" '
+                    f'<TestRun><Counters total="{execution_count}" '
+                    f'executed="{execution_count}" passed="{execution_count}" '
                     'failed="0" error="0" timeout="0" aborted="0" '
                     'inconclusive="0" notExecuted="0" /></TestRun>',
                     encoding="utf-8",

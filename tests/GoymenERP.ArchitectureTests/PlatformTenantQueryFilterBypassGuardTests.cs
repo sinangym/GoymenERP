@@ -69,12 +69,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string SqlServerRcsiVerifierPath =
         "tools/verify_rcsi_relational_acceptance.py";
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "985d87cc9048c5be1396dc931246ef4b06a673a895eb1269b3557de22e6d6721";
+        "b4d1fc0885acef45bac185af61dfde9d4048e2d77d20aa6bfec72a9c6cce6e9a";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "c0a79a6a7da9a93aba083bf74f011dffd8d5ac140328c3ca6a277835f608a55c";
+        "d883bf2fe132b2c6ae62a520c4ad5c78d789beff9c4209142a6e4c9f9ea6894f";
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "2485e3a3e23235bc13c3c68d6baca91106e752e3451f4bb228538ad8192234e2";
