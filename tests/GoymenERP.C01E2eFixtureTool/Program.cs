@@ -65,16 +65,7 @@ internal static partial class C01E2eFixtureTool
         using var artifact = C01E2eGoldenFixture.Load();
         await C01E2eGoldenFixture.ApplyAsync(connection, artifact);
 
-        try
-        {
-            await C01E2eGoldenFixture.ApplyAsync(connection, artifact);
-            throw new InvalidOperationException(
-                "Fixture ikinci uygulamada tanımlı fail-fast üretmedi.");
-        }
-        catch (SqlException exception) when (exception.Number == 51021)
-        {
-            // Expected: exact fixture is already present and no duplicate was written.
-        }
+        await RequireExactFixtureAlreadyAppliedAsync(connection, artifact);
 
         var database = await C01E2eGoldenFixtureDatabaseVerifier.VerifyAsync(connection);
         if (database.AuditEventCount != auditBefore
@@ -150,6 +141,7 @@ internal static partial class C01E2eFixtureTool
             throw new InvalidOperationException(
                 "Browser koşusu golden fixture cardinality veya sequence durumunu değiştirdi.");
         }
+        await RequireExactFixtureAlreadyAppliedAsync(connection, artifact);
 
         var evidence = new C01E2eReadOnlyVerificationEvidence(
             SchemaVersion: 1,
@@ -160,6 +152,7 @@ internal static partial class C01E2eFixtureTool
             ComposeProject: settings.ComposeProject,
             Fixture: baseline.Fixture,
             Database: current,
+            ExactFixtureVerificationOutcome: "fixture_already_applied:51021",
             BaselineEvidenceFile: Path.GetFileName(baselinePath),
             StartedAtUtc: startedAtUtc,
             CompletedAtUtc: DateTimeOffset.UtcNow);
@@ -185,6 +178,23 @@ internal static partial class C01E2eFixtureTool
             CommandExecutionCount: database.CommandExecutionCount,
             FixtureAuditDelta: auditDelta,
             FixtureCommandExecutionDelta: commandExecutionDelta);
+    }
+
+    private static async Task RequireExactFixtureAlreadyAppliedAsync(
+        SqlConnection connection,
+        C01E2eGoldenFixtureArtifact artifact)
+    {
+        try
+        {
+            await C01E2eGoldenFixture.ApplyAsync(connection, artifact);
+            throw new InvalidOperationException(
+                "Fixture exact ikinci uygulamada tanımlı fail-fast üretmedi.");
+        }
+        catch (SqlException exception) when (exception.Number == 51021)
+        {
+            // SQL 51021 is emitted only after every Party/account field, total count and
+            // sequence value exactly match the canonical fixture. Any row mutation is 51022.
+        }
     }
 
     private static void ValidateBaselineIdentity(
@@ -376,6 +386,7 @@ internal sealed record C01E2eReadOnlyVerificationEvidence(
     string ComposeProject,
     C01E2eFixtureArtifactEvidence Fixture,
     C01E2eFixtureDatabaseJsonEvidence Database,
+    string ExactFixtureVerificationOutcome,
     string BaselineEvidenceFile,
     DateTimeOffset StartedAtUtc,
     DateTimeOffset CompletedAtUtc);

@@ -34,6 +34,26 @@ REQUIRED_FAULT_OUTCOMES = {
     "retry-200",
     "real-400-invalid-cursor",
 }
+ALLOWED_NETWORK_OUTCOMES = REQUIRED_FAULT_OUTCOMES | {
+    "real-200",
+    "real-401",
+    "real-403",
+}
+NETWORK_ROOT_KEYS = {
+    "schemaVersion",
+    "testedCommit",
+    "authorizedCompanyId",
+    "foreignRecordAbsent",
+    "redacted",
+    "requests",
+}
+NETWORK_REQUEST_KEYS = {
+    "method",
+    "path",
+    "ordinal",
+    "outcome",
+    "retryOrdinal",
+}
 
 
 class ContractError(ValueError):
@@ -43,6 +63,16 @@ class ContractError(ValueError):
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise ContractError(message)
+
+
+def require_exact_keys(value: dict[str, Any], expected: set[str], name: str) -> None:
+    actual = set(value)
+    missing = sorted(expected - actual)
+    extra = sorted(actual - expected)
+    require(
+        not missing and not extra,
+        f"{name} keys mismatch; missing={missing}, extra={extra}",
+    )
 
 
 def load_json(path: str) -> dict[str, Any]:
@@ -147,6 +177,25 @@ def validate_evidence(
     expected_run_id: str,
     expected_project: str,
 ) -> None:
+    require_exact_keys(
+        evidence,
+        {
+            "schemaVersion",
+            "suiteId",
+            "repository",
+            "testedCommit",
+            "runId",
+            "composeProject",
+            "fixture",
+            "browser",
+            "viewports",
+            "cases",
+            "skipped",
+            "startedAtUtc",
+            "completedAtUtc",
+        },
+        "evidence",
+    )
     require(evidence.get("schemaVersion") == 1, "evidence schemaVersion mismatch")
     require(evidence.get("suiteId") == "C01-REAL-BROWSER-E2E-V1", "suiteId mismatch")
     require(evidence.get("repository") == "sinangym/GoymenERP", "repository mismatch")
@@ -155,6 +204,20 @@ def validate_evidence(
     require(evidence.get("composeProject") == expected_project, "composeProject mismatch")
 
     fixture = evidence.get("fixture", {})
+    require(isinstance(fixture, dict), "fixture evidence must be an object")
+    require_exact_keys(
+        fixture,
+        {
+            "id",
+            "schemaVersion",
+            "byteLength",
+            "sha256",
+            "partyCount",
+            "accountCount",
+            "sequenceNextValue",
+        },
+        "fixture evidence",
+    )
     require(fixture.get("id") == FIXTURE_ID, "fixture id mismatch")
     require(fixture.get("schemaVersion") == 1, "fixture schemaVersion mismatch")
     require(fixture.get("byteLength") == 29_817, "fixture byteLength mismatch")
@@ -164,12 +227,17 @@ def validate_evidence(
     require(fixture.get("sequenceNextValue") == 55, "fixture sequence mismatch")
 
     browser = evidence.get("browser", {})
+    require(isinstance(browser, dict), "browser evidence must be an object")
+    require_exact_keys(browser, {"name", "version"}, "browser evidence")
     require(browser.get("name") == "chromium", "browser must be chromium")
     require(isinstance(browser.get("version"), str) and browser["version"].strip(), "browser version missing")
     require(evidence.get("viewports") == EXPECTED_VIEWPORTS, "viewport matrix mismatch")
     cases = evidence.get("cases")
     require(isinstance(cases, list) and len(cases) == 10, "exactly ten cases are required")
-    case_ids = [case.get("id") for case in cases if isinstance(case, dict)]
+    require(all(isinstance(case, dict) for case in cases), "every case must be an object")
+    for case in cases:
+        require_exact_keys(case, {"id", "status"}, "browser case")
+    case_ids = [case.get("id") for case in cases]
     require(case_ids == EXPECTED_CASES, "case IDs or order mismatch")
     require(all(case.get("status") == "passed" for case in cases), "every case must pass")
     require(evidence.get("skipped") == 0, "skipped must be zero")
@@ -184,6 +252,7 @@ def validate_evidence(
 
 
 def validate_network(network: dict[str, Any], expected_commit: str) -> None:
+    require_exact_keys(network, NETWORK_ROOT_KEYS, "network evidence")
     require(network.get("schemaVersion") == 1, "network schemaVersion mismatch")
     require(network.get("testedCommit") == expected_commit, "network testedCommit mismatch")
     require(network.get("authorizedCompanyId") == GDC_COMPANY_ID, "network company mismatch")
@@ -192,24 +261,65 @@ def validate_network(network: dict[str, Any], expected_commit: str) -> None:
     requests = network.get("requests")
     require(isinstance(requests, list) and requests, "network requests are required")
     observed_paths: set[str] = set()
+    successful_paths: set[str] = set()
     outcomes: set[str] = set()
+    ordinals: list[int] = []
     for request in requests:
         require(isinstance(request, dict), "network request entry must be an object")
+        require_exact_keys(request, NETWORK_REQUEST_KEYS, "network request")
         require(request.get("method") == "GET", "C-01 browser suite must be read-only")
         path = request.get("path")
-        require(isinstance(path, str) and path.startswith("/api/v1/"), "network path is invalid")
-        require("?" not in path and "cursor" not in path.lower(), "network path must be query-redacted")
-        require(isinstance(request.get("ordinal"), int) and request["ordinal"] > 0, "request ordinal invalid")
+        require(isinstance(path, str), "network path is invalid")
         require(
-            isinstance(request.get("retryOrdinal"), int) and request["retryOrdinal"] >= 0,
+            "?" not in path and "cursor" not in path.lower(),
+            "network path must be query-redacted",
+        )
+        require(path in REQUIRED_REAL_PATHS, "network path is outside the C-01 allowlist")
+        require(
+            type(request.get("ordinal")) is int and request["ordinal"] > 0,
+            "request ordinal invalid",
+        )
+        require(
+            type(request.get("retryOrdinal")) is int and request["retryOrdinal"] >= 0,
             "retry ordinal invalid",
         )
         outcome = request.get("outcome")
-        require(isinstance(outcome, str) and outcome, "network outcome is required")
+        require(
+            outcome in ALLOWED_NETWORK_OUTCOMES,
+            "network outcome is outside the C-01 allowlist",
+        )
+        if outcome in REQUIRED_FAULT_OUTCOMES:
+            require(
+                path == "/api/v1/counterparties",
+                f"{outcome} must be bound to the Counterparty read endpoint",
+            )
+        if outcome == "retry-200":
+            require(request["retryOrdinal"] > 0, "retry-200 must have retryOrdinal > 0")
+        else:
+            require(request["retryOrdinal"] == 0, f"{outcome} must have retryOrdinal 0")
+        if path != "/api/v1/counterparties":
+            require(
+                outcome == "real-200",
+                f"{path} must be a successful real bootstrap read",
+            )
         observed_paths.add(path)
         outcomes.add(outcome)
+        ordinals.append(request["ordinal"])
+        if outcome == "real-200":
+            successful_paths.add(path)
     require(REQUIRED_REAL_PATHS <= observed_paths, "required real API paths are missing")
-    require(REQUIRED_FAULT_OUTCOMES <= outcomes, "continuation fault/retry evidence is incomplete")
+    require(
+        REQUIRED_REAL_PATHS <= successful_paths,
+        "required real API success paths are missing",
+    )
+    require(
+        REQUIRED_FAULT_OUTCOMES <= outcomes,
+        "continuation fault/retry evidence is incomplete",
+    )
+    require(
+        sorted(ordinals) == list(range(1, len(ordinals) + 1)),
+        "network ordinals must be unique and contiguous from 1",
+    )
     serialized = json.dumps(network, ensure_ascii=False).lower()
     for forbidden in ("password=", "authorization", "idempotency-key", "mssql_sa_password"):
         require(forbidden not in serialized, f"network evidence contains forbidden secret field: {forbidden}")
@@ -218,12 +328,20 @@ def validate_network(network: dict[str, Any], expected_commit: str) -> None:
 def validate_junit(path: str) -> None:
     root = et.parse(path).getroot()
     cases = root.findall(".//testcase")
-    require(cases, "JUnit report has no test cases")
-    joined_names = "\n".join(
-        f"{case.attrib.get('classname', '')} {case.attrib.get('name', '')}" for case in cases
+    require(
+        len(cases) == len(EXPECTED_CASES),
+        "JUnit report must contain exactly ten test cases",
     )
-    for case_id in EXPECTED_CASES:
-        require(case_id in joined_names, f"JUnit report is missing {case_id}")
+    case_ids: list[str] = []
+    for case in cases:
+        name = case.attrib.get("name", "")
+        match = re.match(r"^(B-C01-\d{3})(?:\s|$)", name)
+        require(
+            match is not None,
+            "each JUnit testcase name must start with one exact B-C01 ID",
+        )
+        case_ids.append(match.group(1))
+    require(sorted(case_ids) == EXPECTED_CASES, "JUnit case IDs must be exact and unique")
     require(not root.findall(".//failure"), "JUnit report contains failures")
     require(not root.findall(".//error"), "JUnit report contains errors")
     require(not root.findall(".//skipped"), "JUnit report contains skipped tests")
