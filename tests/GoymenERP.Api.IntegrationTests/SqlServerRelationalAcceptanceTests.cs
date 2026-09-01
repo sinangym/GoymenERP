@@ -1117,11 +1117,12 @@ internal sealed class SqlServerRelationalApiFactory : WebApplicationFactory<Prog
     public SqlServerRelationalApiFactory(
         string baseConnectionString,
         Action<IServiceCollection>? configureServices = null,
-        bool applyTestCompanyBTopologyTemplates = true)
+        bool applyTestCompanyBTopologyTemplates = true,
+        string? databaseName = null)
     {
         _configureServices = configureServices;
         _applyTestCompanyBTopologyTemplates = applyTestCompanyBTopologyTemplates;
-        DatabaseName = $"goymen_erp_ci_{Guid.NewGuid():N}";
+        DatabaseName = databaseName ?? $"goymen_erp_ci_{Guid.NewGuid():N}";
         var builder = new SqlConnectionStringBuilder(baseConnectionString)
         {
             InitialCatalog = DatabaseName,

@@ -36,6 +36,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "src/backend/Modules/Identity/"
         + "GoymenERP.Modules.Identity.Infrastructure/Seeding/"
         + "SystemRolePermissionReconciler.cs";
+    private const string ReviewedSqlServerRcsiReadinessProbePath =
+        "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks.SqlServer/"
+        + "SqlServerRcsiReadiness.cs";
     private const string ReviewedSeederFingerprint =
         "b9de3d52d72f20ffc6279f32b9cc4b1b646aa3b3f03c6a12fd2fa8d1d4c4c450";
 
@@ -62,8 +65,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         };
 
     // Accepted module initializers own one exact Migrate/EnsureCreated provider branch each.
-    // The Identity reconciler also owns one parameterized row/range-lock query. Exact source
-    // fingerprints and API counts keep these from becoming general database bypass exemptions.
+    // The Identity reconciler owns one parameterized row/range-lock query. The shared RCSI
+    // readiness probe owns one reviewed read-only command. Exact source fingerprints and API
+    // counts keep these from becoming general database bypass exemptions.
     private static readonly IReadOnlyDictionary<string, ReviewedRuntimeDatabaseBypassSource>
         ReviewedRuntimeDatabaseBypassSources =
             new Dictionary<string, ReviewedRuntimeDatabaseBypassSource>(StringComparer.Ordinal)
@@ -90,12 +94,22 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Identity/"
                  + "GoymenERP.Modules.Identity.Infrastructure/IdentityModuleExtensions.cs"] =
                     new(
-                        "d999f3036333f1b70d2d0bb4ecdefb0efe8fdc9249fea6e5401df42f6e70834d",
+                        "267f958fcaf9360c2eb844263fd9365b4a3e22d77143be22649756e9af6e66cf",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
                             ["MigrateAsync"] = 1,
-                            ["SqlQueryRaw"] = 1
+                            ["GetDbConnection"] = 1,
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                [ReviewedSqlServerRcsiReadinessProbePath] =
+                    new(
+                        "2d669920fcb4b6b9eb27569fb43ff8172ee871964f585b466834e42fceaaefcd",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                            ["DbConnection"] = 1,
+                            ["CreateCommand"] = 1
                         }),
                 [ReviewedIdentityReconcilerPath] =
                     new(
@@ -748,6 +762,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 path.Replace('/', Path.DirectorySeparatorChar))),
             StringComparer.Ordinal);
         var reviewedSource = exactSources[ReviewedIdentityReconcilerPath];
+        var reviewedProbeSource = exactSources[ReviewedSqlServerRcsiReadinessProbePath];
 
         Assert.Empty(ValidateNoDirectDatabaseBypassCapabilities(
             exactSources,
@@ -770,6 +785,33 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 requireReviewedSources: true),
             error => error.Contains(
                 "Expected exactly 1 reviewed runtime 'FromSqlInterpolated' occurrence(s), but found 0",
+                StringComparison.Ordinal));
+
+        exactSources[ReviewedIdentityReconcilerPath] = reviewedSource;
+        exactSources[ReviewedSqlServerRcsiReadinessProbePath] =
+            reviewedProbeSource + "\n// fingerprint drift";
+        Assert.Contains(
+            ValidateNoDirectDatabaseBypassCapabilities(
+                exactSources,
+                requireReviewedSources: true),
+            error => error.Contains(
+                "does not match the exact fingerprint",
+                StringComparison.Ordinal)
+                && error.Contains(
+                    ReviewedSqlServerRcsiReadinessProbePath,
+                    StringComparison.Ordinal));
+
+        exactSources[ReviewedSqlServerRcsiReadinessProbePath] =
+            reviewedProbeSource.Replace(
+                ".CreateCommand()",
+                ".CreateReadOnlyCommand()",
+                StringComparison.Ordinal);
+        Assert.Contains(
+            ValidateNoDirectDatabaseBypassCapabilities(
+                exactSources,
+                requireReviewedSources: true),
+            error => error.Contains(
+                "Expected exactly 1 reviewed runtime 'CreateCommand' occurrence(s), but found 0",
                 StringComparison.Ordinal));
     }
 

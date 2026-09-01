@@ -5,6 +5,7 @@
   </Folder>
   <Folder Name="/src/backend/BuildingBlocks/">
     <Project Path="src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/GoymenERP.BuildingBlocks.csproj" />
+    <Project Path="src/backend/BuildingBlocks/GoymenERP.BuildingBlocks.SqlServer/GoymenERP.BuildingBlocks.SqlServer.csproj" />
   </Folder>
   <Folder Name="/src/backend/Modules/" />
   <Folder Name="/src/backend/Modules/Audit/">
@@ -39,5 +40,8 @@
     <Project Path="tests/GoymenERP.Organization.UnitTests/GoymenERP.Organization.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.Identity.UnitTests/GoymenERP.Identity.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.Idempotency.UnitTests/GoymenERP.Idempotency.UnitTests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/GoymenERP.SqlServerRcsiReadiness/GoymenERP.SqlServerRcsiReadiness.csproj" />
   </Folder>
 </Solution>

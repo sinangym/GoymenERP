@@ -1,9 +1,11 @@
-using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.OpenApi;
+using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.BuildingBlocks.SqlServer;
 using GoymenERP.Modules.Identity.Application.Contracts;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Seeding;
 using GoymenERP.Modules.Identity.Infrastructure.Services;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,6 +35,12 @@ public static class IdentityModuleExtensions
                 "SQL Server bağlantı dizesi DB_CONNECTION_STRING secret/env değeriyle tanımlanmalıdır.");
         }
 
+        var connectionStringBuilder = new SqlConnectionStringBuilder(connectionString);
+        var rcsiBinding = SqlServerRcsiReadinessBinding.CreateFromDataSource(
+            "identity-authorization-snapshot-startup",
+            connectionStringBuilder.InitialCatalog,
+            connectionStringBuilder.DataSource);
+
         services.Configure<IdentitySeedOptions>(
             configuration.GetSection(IdentitySeedOptions.SectionName));
         services.AddDbContext<IdentityDbContext>(options =>
@@ -46,6 +54,8 @@ public static class IdentityModuleExtensions
         services.AddScoped<IIdentityProfileService, IdentityProfileService>();
         services.AddScoped<ISystemRolePermissionReconciler, SystemRolePermissionReconciler>();
         services.AddScoped<IdentityDataSeeder>();
+        services.AddSingleton(rcsiBinding);
+        services.AddSingleton<SqlServerRcsiReadinessProbe>();
         if (!OpenApiDocumentGenerationMode.IsActive)
         {
             services.AddHostedService<AuthorizationSnapshotDatabaseReadinessService>();
@@ -76,7 +86,9 @@ public static class IdentityModuleExtensions
 }
 
 internal sealed class AuthorizationSnapshotDatabaseReadinessService(
-    IServiceScopeFactory scopeFactory)
+    IServiceScopeFactory scopeFactory,
+    SqlServerRcsiReadinessProbe readinessProbe,
+    SqlServerRcsiReadinessBinding readinessBinding)
     : IHostedService
 {
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -88,18 +100,14 @@ internal sealed class AuthorizationSnapshotDatabaseReadinessService(
             return;
         }
 
-        var isReadCommittedSnapshotOn = await dbContext.Database
-            .SqlQueryRaw<int>(
-                """
-                SELECT CONVERT(int, [is_read_committed_snapshot_on]) AS [Value]
-                FROM [sys].[databases]
-                WHERE [database_id] = DB_ID()
-                """)
-            .SingleAsync(cancellationToken);
-        if (isReadCommittedSnapshotOn != 1)
+        var evidence = await readinessProbe.ProbeAsync(
+            dbContext.Database.GetDbConnection(),
+            readinessBinding,
+            cancellationToken);
+        if (!evidence.IsReady)
         {
             throw new InvalidOperationException(
-                "Identity authorization snapshot requires SQL Server READ_COMMITTED_SNAPSHOT ON.");
+                SqlServerRcsiReadinessPolicy.GetStartupFailureMessage(evidence));
         }
     }
 
