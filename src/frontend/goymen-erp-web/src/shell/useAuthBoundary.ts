@@ -19,9 +19,12 @@
  */
 
 import { useCallback } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useShellDispatch, useShellState } from './shellContext'
 import { contextKey, contextKeyString } from './shellState'
 import { captureSecuritySnapshot, type SecuritySnapshot } from './authBoundary'
+import type { IdentitySummary } from './api'
+import type { ViewOutcome } from './uiState'
 
 export interface AuthBoundary {
   /** Snapshot the security bindings for a read that is about to start (SAB-001). */
@@ -33,6 +36,7 @@ export interface AuthBoundary {
 export function useAuthBoundary(): AuthBoundary {
   const state = useShellState()
   const dispatch = useShellDispatch()
+  const queryClient = useQueryClient()
 
   const capture = useCallback((): SecuritySnapshot => {
     const key = contextKey(state)
@@ -48,10 +52,38 @@ export function useAuthBoundary(): AuthBoundary {
   const report = useCallback(
     (status: number, snapshot: SecuritySnapshot) => {
       if (status !== 401 && status !== 403) return
-      dispatch({ type: 'BUSINESS_AUTH_OUTCOME', status, snapshot })
+      dispatch({
+        type: 'BUSINESS_AUTH_OUTCOME',
+        status,
+        snapshot,
+        // Read at REPORT time, straight from the query cache.
+        //
+        // The first version carried this into the reducer with an
+        // IDENTITY_OBSERVED effect, which left a window: identity renders as B,
+        // the effect has not run, and the reducer still believes A is
+        // authenticated — so A's late 401 could terminate B (ChatGPT/Codex #169
+        // P1-1). An effect is one tick too late for a security decision.
+        //
+        // The cache has no such lag. `report` is called from a queryFn, which is
+        // after render, so whatever identity has resolved is already here.
+        authenticatedActorId: readAuthenticatedActor(queryClient),
+      })
     },
-    [dispatch],
+    [dispatch, queryClient],
   )
 
   return { capture, report }
+}
+
+/**
+ * The actor the server currently authenticates, from the live identity query.
+ *
+ * Returns null when identity is unresolved or did not come back as a valid
+ * envelope — and the reducer treats null as "unknown", which does not by itself
+ * make an outcome stale. Refusing every outcome while identity is loading would
+ * turn a slow identity call into a silent security bypass.
+ */
+function readAuthenticatedActor(queryClient: ReturnType<typeof useQueryClient>): string | null {
+  const cached = queryClient.getQueryData<ViewOutcome<IdentitySummary>>(['shell', 'identity'])
+  return cached?.type === 'ok-single' ? cached.data.userId : null
 }

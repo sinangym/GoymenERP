@@ -231,6 +231,7 @@ describe('ChatGPT #169 P1-2 / P1-3 — the decision and the ledger live in the r
     const out = shellReducer(s, {
       type: 'BUSINESS_AUTH_OUTCOME',
       status: 401,
+      authenticatedActorId: ACTOR_A,
       snapshot: snapshotOf(s),
     })
     expect(out.sessionInvalid).toBe(true)
@@ -247,12 +248,12 @@ describe('ChatGPT #169 P1-2 / P1-3 — the decision and the ledger live in the r
     // still current and only the ledger can stop the second application.
     const s = ready()
     const snap = snapshotOf(s)
-    const once = shellReducer(s, { type: 'BUSINESS_AUTH_OUTCOME', status: 403, snapshot: snap })
+    const once = shellReducer(s, { type: 'BUSINESS_AUTH_OUTCOME', status: 403, authenticatedActorId: ACTOR_A, snapshot: snap })
     expect(once.requestFenceGeneration).toBe(s.requestFenceGeneration + 1)
 
     // A SECOND reader reporting the same rejection. Per-hook Sets could not see
     // each other; the reducer ledger can.
-    const twice = shellReducer(once, { type: 'BUSINESS_AUTH_OUTCOME', status: 403, snapshot: snap })
+    const twice = shellReducer(once, { type: 'BUSINESS_AUTH_OUTCOME', status: 403, authenticatedActorId: ACTOR_A, snapshot: snap })
     expect(twice).toBe(once)
     expect(twice.requestFenceGeneration).toBe(s.requestFenceGeneration + 1)
   })
@@ -273,7 +274,7 @@ describe('ChatGPT #169 P1-2 / P1-3 — the decision and the ledger live in the r
       },
     })
     // The A consumer is long unmounted; only its snapshot survives.
-    const out = shellReducer(b, { type: 'BUSINESS_AUTH_OUTCOME', status: 401, snapshot: snapA })
+    const out = shellReducer(b, { type: 'BUSINESS_AUTH_OUTCOME', status: 401, authenticatedActorId: ACTOR_B, snapshot: snapA })
     expect(out).toBe(b)
     expect(out.sessionInvalid).toBe(false)
     expect(out.activeContext?.userId).toBe(ACTOR_B)
@@ -283,7 +284,7 @@ describe('ChatGPT #169 P1-2 / P1-3 — the decision and the ledger live in the r
     const a = ready(ACTOR_A, COMPANY_A)
     const snapA = snapshotOf(a)
     const b = switchTo(a, COMPANY_B)
-    const out = shellReducer(b, { type: 'BUSINESS_AUTH_OUTCOME', status: 403, snapshot: snapA })
+    const out = shellReducer(b, { type: 'BUSINESS_AUTH_OUTCOME', status: 403, authenticatedActorId: ACTOR_A, snapshot: snapA })
     expect(out).toBe(b)
     expect(out.activeContext?.capabilityGeneration).toBe('gen-2')
     expect(out.activeContext?.capabilities).toEqual(['cari.parties.list'])
@@ -294,6 +295,7 @@ describe('ChatGPT #169 P1-2 / P1-3 — the decision and the ledger live in the r
     const out = shellReducer(s, {
       type: 'BUSINESS_AUTH_OUTCOME',
       status: 403,
+      authenticatedActorId: ACTOR_A,
       snapshot: snapshotOf(s),
     })
     expect(out.sessionInvalid).toBe(false)
@@ -320,15 +322,16 @@ describe('ChatGPT #169 P1-4 — identity moved to B, context still says A', () =
   it("a late A 401 in the pre-reset window cannot terminate actor B", () => {
     const a = ready(ACTOR_A)
     const snapA = snapOf(a)
-    // Identity resolved as B. The actor-change effect has NOT run yet, so the
-    // committed context still says A — this is the exploitable window.
-    const window = shellReducer(a, { type: 'IDENTITY_OBSERVED', actorId: ACTOR_B })
+    // Identity resolved as B while the committed context still says A. This is
+    // the window, and it no longer depends on any effect having run: the actor is
+    // read at REPORT time and carried on the event.
+    const window = a
     expect(window.activeContext?.userId).toBe(ACTOR_A)
-    expect(window.authenticatedActorId).toBe(ACTOR_B)
 
     const out = shellReducer(window, {
       type: 'BUSINESS_AUTH_OUTCOME',
       status: 401,
+      authenticatedActorId: ACTOR_B,
       snapshot: snapA,
     })
     expect(out).toBe(window)
@@ -338,10 +341,12 @@ describe('ChatGPT #169 P1-4 — identity moved to B, context still says A', () =
   it('a late A 403 in the same window cannot revoke anything either', () => {
     const a = ready(ACTOR_A)
     const snapA = snapOf(a)
-    const window = shellReducer(a, { type: 'IDENTITY_OBSERVED', actorId: ACTOR_B })
+    const window = a
     const out = shellReducer(window, {
       type: 'BUSINESS_AUTH_OUTCOME',
       status: 403,
+      // Identity already resolved as B when this outcome was reported.
+      authenticatedActorId: ACTOR_B,
       snapshot: snapA,
     })
     expect(out).toBe(window)
@@ -350,10 +355,11 @@ describe('ChatGPT #169 P1-4 — identity moved to B, context still says A', () =
 
   it('the SAME actor still produces the effect — the guard is not a blanket refusal', () => {
     const a = ready(ACTOR_A)
-    const observed = shellReducer(a, { type: 'IDENTITY_OBSERVED', actorId: ACTOR_A })
+    const observed = a
     const out = shellReducer(observed, {
       type: 'BUSINESS_AUTH_OUTCOME',
       status: 401,
+      authenticatedActorId: ACTOR_A,
       snapshot: snapOf(observed),
     })
     expect(out.sessionInvalid).toBe(true)
@@ -386,6 +392,7 @@ describe('ChatGPT #169 P1-5 — a rejection that lands mid-switch', () => {
     const out = shellReducer(switching, {
       type: 'BUSINESS_AUTH_OUTCOME',
       status: 403,
+      authenticatedActorId: ACTOR_A,
       snapshot: snapA,
     })
     expect(out).not.toBe(switching)
@@ -402,6 +409,7 @@ describe('ChatGPT #169 P1-5 — a rejection that lands mid-switch', () => {
     const rejected = shellReducer(switching, {
       type: 'BUSINESS_AUTH_OUTCOME',
       status: 403,
+      authenticatedActorId: ACTOR_A,
       snapshot: snapA,
     })
     // The switch to B now fails, and REAUTH_FAIL restores the former context.
@@ -427,6 +435,7 @@ describe('ChatGPT #169 P1-5 — a rejection that lands mid-switch', () => {
     const out = shellReducer(switching, {
       type: 'BUSINESS_AUTH_OUTCOME',
       status: 401,
+      authenticatedActorId: ACTOR_A,
       snapshot: snapA,
     })
     expect(out.sessionInvalid).toBe(true)
@@ -444,8 +453,95 @@ describe('ChatGPT #169 P1-5 — a rejection that lands mid-switch', () => {
     const out = shellReducer(switching, {
       type: 'BUSINESS_AUTH_OUTCOME',
       status: 403,
+      authenticatedActorId: ACTOR_A,
       snapshot: foreign,
     })
     expect(out).toBe(switching)
+  })
+})
+
+describe('ChatGPT/Codex #169 P1-2 — a mid-switch 403 must not orphan the switch', () => {
+  function snapOf(s: ShellState, ns = 'ns') {
+    return {
+      actorId: s.activeContext?.userId ?? null,
+      sessionEpoch: s.sessionEpoch,
+      companyId: s.activeContext?.companyId ?? null,
+      committedContextRevision: s.committedContextRevision,
+      capabilityGeneration: s.activeContext?.capabilityGeneration ?? null,
+      namespace: ns,
+    }
+  }
+
+  it('a REAUTH_OK carrying the ORIGINAL generation still commits', () => {
+    const a = ready(ACTOR_A, COMPANY_A)
+    const snapA = snapOf(a)
+    const switching = shellReducer(a, {
+      type: 'REQUEST_SWITCH',
+      target: { scopeMode: 'single', companyId: COMPANY_B },
+    })
+    // This is what the in-flight request captured when it started. It cannot
+    // learn about anything that happens afterwards.
+    const g1 = switching.requestFenceGeneration
+
+    const refenced = shellReducer(switching, {
+      type: 'BUSINESS_AUTH_OUTCOME',
+      status: 403,
+      authenticatedActorId: ACTOR_A,
+      snapshot: snapA,
+    })
+    // The 403 was handled — but the attempt's identity must be untouched, or the
+    // reauth below can never be recognised and the shell hangs in `switching`.
+    expect(refenced.lastSecurityEffect?.kind).toBe('capability-refence')
+    expect(refenced.requestFenceGeneration).toBe(g1)
+
+    const committed = shellReducer(refenced, {
+      type: 'REAUTH_OK',
+      forGeneration: g1,
+      context: {
+        userId: ACTOR_A,
+        scopeMode: 'single',
+        companyId: COMPANY_B,
+        capabilityGeneration: 'gen-b',
+        capabilities: ['cari.parties.list'],
+      },
+    })
+    expect(committed.phase).toBe('idle')
+    expect(committed.activeContext?.companyId).toBe(COMPANY_B)
+  })
+
+  it('a REAUTH_FAIL carrying the ORIGINAL generation still restores — fail-closed', () => {
+    const a = ready(ACTOR_A, COMPANY_A)
+    const snapA = snapOf(a)
+    const switching = shellReducer(a, {
+      type: 'REQUEST_SWITCH',
+      target: { scopeMode: 'single', companyId: COMPANY_B },
+    })
+    const g1 = switching.requestFenceGeneration
+
+    const refenced = shellReducer(switching, {
+      type: 'BUSINESS_AUTH_OUTCOME',
+      status: 403,
+      authenticatedActorId: ACTOR_A,
+      snapshot: snapA,
+    })
+    const restored = shellReducer(refenced, { type: 'REAUTH_FAIL', forGeneration: g1 })
+
+    // Recognised, so no permanent `switching`...
+    expect(restored.phase).toBe('idle')
+    expect(restored.activeContext?.companyId).toBe(COMPANY_A)
+    // ...and still without the authority the server refused.
+    expect(restored.activeContext?.capabilityGeneration).toBeNull()
+    expect(capabilityFailClosed(restored)).toBe(true)
+  })
+
+  it('outside a switch, a 403 DOES advance the fence — nothing is in flight to break', () => {
+    const s = ready()
+    const out = shellReducer(s, {
+      type: 'BUSINESS_AUTH_OUTCOME',
+      status: 403,
+      authenticatedActorId: ACTOR_A,
+      snapshot: snapOf(s),
+    })
+    expect(out.requestFenceGeneration).toBe(s.requestFenceGeneration + 1)
   })
 })
