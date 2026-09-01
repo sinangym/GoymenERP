@@ -793,10 +793,15 @@ describe('C-01 continuation failure — what must NOT be masked (Q8=A kapsam dı
     await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
   }
 
-  it('a 401 on the second page ends the session — rows are NOT preserved', async () => {
+  it('a 401 on the second page fails closed LOCALLY — rows are NOT preserved', async () => {
     await loadThenPage2(401, 'authentication_required')
     // Losing the session is not a paging hiccup. Keeping rows visible would show
     // data from a session the server has already rejected.
+    //
+    // NOTE what this does NOT assert: the central shell boundary. A business 401
+    // does not currently fire SESSION_RESET or clear the QueryClient — only a
+    // CAPABILITY 401 does. Naming this test "ends the session" claimed a
+    // guarantee that is not there. That gap is real and is separate shell work.
     expect(await findStateBlock('unauthenticated')).toBeTruthy()
     expect(screen.queryByRole('table')).toBeNull()
     expect(screen.queryByText('C-0001')).toBeNull()
