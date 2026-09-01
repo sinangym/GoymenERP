@@ -328,6 +328,9 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
                 CounterpartyShellCapabilityProvider.LinkCapabilityId,
                 granted.Capabilities);
             Assert.DoesNotContain(
+                CounterpartyShellCapabilityProvider.DetailCapabilityId,
+                granted.Capabilities);
+            Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.ListCapabilityId,
                 denied.Capabilities);
             Assert.DoesNotContain(
@@ -335,6 +338,9 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
                 denied.Capabilities);
             Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.LinkCapabilityId,
+                denied.Capabilities);
+            Assert.DoesNotContain(
+                CounterpartyShellCapabilityProvider.DetailCapabilityId,
                 denied.Capabilities);
 
             await using var connection = new SqlConnection(factory.DatabaseConnectionString);
@@ -361,6 +367,9 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
                 revoked.Capabilities);
             Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.LinkCapabilityId,
+                revoked.Capabilities);
+            Assert.DoesNotContain(
+                CounterpartyShellCapabilityProvider.DetailCapabilityId,
                 revoked.Capabilities);
             Assert.NotEqual(granted.Generation, revoked.Generation);
             Assert.DoesNotContain(
@@ -996,9 +1005,10 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
             new ShellCapabilityDeclaration(
                 CapabilityId,
                 "TEST-MULTI-PERMISSION-ROUTE",
-                "/test/multi-permission",
-                "TEST-MULTI-PERMISSION-01",
-                ShellCapabilityContextRequirement.SingleCompany,
+                  "/test/multi-permission",
+                  "TEST-MULTI-PERMISSION-01",
+                  ShellCapabilityRoutePrecedence.Static,
+                  ShellCapabilityContextRequirement.SingleCompany,
                 ShellCapabilityScopeRequirement.CompanyWide,
                 [
                     ErpPermissions.OrganizationLocationsRead,
@@ -1021,9 +1031,10 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
             new ShellCapabilityDeclaration(
                 CapabilityId,
                 "test.group-read",
-                "/test/group-read",
-                "TEST-GROUP-READ-01",
-                ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+                  "/test/group-read",
+                  "TEST-GROUP-READ-01",
+                  ShellCapabilityRoutePrecedence.Static,
+                  ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
                 ShellCapabilityScopeRequirement.CompanyWide,
                 [ErpPermissions.CounterpartyPartiesRead],
                 ImplementationAvailable: true),

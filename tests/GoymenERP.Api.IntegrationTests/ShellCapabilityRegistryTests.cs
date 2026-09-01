@@ -16,11 +16,11 @@ public sealed class ShellCapabilityRegistryTests
         var registry = new ShellCapabilityRegistry(
             [provider],
             new ShellCapabilityAuthorityCatalog(
-                [ShellCapabilityRegistryAuthorities.CounterpartyListCreateAndLinkV15]));
+                [ShellCapabilityRegistryAuthorities.CounterpartyListCreateLinkAndDetailV15]));
 
-        Assert.Equal(3, registry.Registrations.Count);
+        Assert.Equal(4, registry.Registrations.Count);
         Assert.Equal(
-            ShellCapabilityRegistryAuthorities.CounterpartyListCreateAndLinkV15,
+            ShellCapabilityRegistryAuthorities.CounterpartyListCreateLinkAndDetailV15,
             registry.Revision);
         var registration = Assert.Single(
             registry.Registrations,
@@ -42,6 +42,9 @@ public sealed class ShellCapabilityRegistryTests
         Assert.Equal(
             CounterpartyShellCapabilityProvider.ListScreenId,
             registration.Declaration.ScreenId);
+        Assert.Equal(
+            ShellCapabilityRoutePrecedence.Static,
+            registration.Declaration.RoutePrecedence);
         Assert.Equal(
             ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
             registration.Declaration.ContextRequirement);
@@ -71,6 +74,9 @@ public sealed class ShellCapabilityRegistryTests
             CounterpartyShellCapabilityProvider.CreateScreenId,
             createRegistration.Declaration.ScreenId);
         Assert.Equal(
+            ShellCapabilityRoutePrecedence.Static,
+            createRegistration.Declaration.RoutePrecedence);
+        Assert.Equal(
             ShellCapabilityContextRequirement.SingleCompany,
             createRegistration.Declaration.ContextRequirement);
         Assert.Equal(
@@ -99,6 +105,9 @@ public sealed class ShellCapabilityRegistryTests
             CounterpartyShellCapabilityProvider.LinkScreenId,
             linkRegistration.Declaration.ScreenId);
         Assert.Equal(
+            ShellCapabilityRoutePrecedence.Static,
+            linkRegistration.Declaration.RoutePrecedence);
+        Assert.Equal(
             ShellCapabilityContextRequirement.SingleCompany,
             linkRegistration.Declaration.ContextRequirement);
         Assert.Equal(
@@ -111,6 +120,37 @@ public sealed class ShellCapabilityRegistryTests
             ],
             linkRegistration.Declaration.RequiredPermissions);
         Assert.False(linkRegistration.Declaration.ImplementationAvailable);
+
+        var detailRegistration = Assert.Single(
+            registry.Registrations,
+            item => item.Declaration.CapabilityId
+                == CounterpartyShellCapabilityProvider.DetailCapabilityId);
+        Assert.Equal(CounterpartyShellCapabilityProvider.OwnerId, detailRegistration.Owner);
+        Assert.Equal(
+            CounterpartyShellCapabilityProvider.OwnerContractVersion,
+            detailRegistration.OwnerContractVersion);
+        Assert.Equal(
+            CounterpartyShellCapabilityProvider.DetailRouteId,
+            detailRegistration.Declaration.RouteId);
+        Assert.Equal(
+            CounterpartyShellCapabilityProvider.DetailRoutePath,
+            detailRegistration.Declaration.RoutePath);
+        Assert.Equal(
+            CounterpartyShellCapabilityProvider.DetailScreenId,
+            detailRegistration.Declaration.ScreenId);
+        Assert.Equal(
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            detailRegistration.Declaration.RoutePrecedence);
+        Assert.Equal(
+            ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+            detailRegistration.Declaration.ContextRequirement);
+        Assert.Equal(
+            ShellCapabilityScopeRequirement.CompanyWide,
+            detailRegistration.Declaration.ScopeRequirement);
+        Assert.Equal(
+            [ErpPermissions.CounterpartyPartiesRead],
+            detailRegistration.Declaration.RequiredPermissions);
+        Assert.False(detailRegistration.Declaration.ImplementationAvailable);
     }
 
     [Fact]
@@ -166,22 +206,27 @@ public sealed class ShellCapabilityRegistryTests
             new ShellCapabilityRegistry([first, duplicateScreen]));
     }
 
-    [Fact]
-    public void DifferentRouteParameterNames_CollideAfterCanonicalization()
+    [Theory]
+    [InlineData("/owner/{id}", "/owner/{party-id}")]
+    [InlineData("/owner/:id", "/owner/:partyId")]
+    [InlineData("/owner/:id", "/owner/{party-id}")]
+    public void DifferentRouteParameterNamesOrAcceptedGrammars_CollideByShape(
+        string firstPath,
+        string secondPath)
     {
         var first = Provider(
             "OWNER-A",
             Declaration(
                 "owner.a.read",
                 "OWNER-A-ROUTE",
-                "/owner/{id}",
+                firstPath,
                 "OWNER-A-01"));
         var second = Provider(
             "OWNER-B",
             Declaration(
                 "owner.b.read",
                 "OWNER-B-ROUTE",
-                "/owner/{party-id}",
+                secondPath,
                 "OWNER-B-01"));
 
         Assert.Throws<InvalidOperationException>(() =>
@@ -191,8 +236,9 @@ public sealed class ShellCapabilityRegistryTests
     [Theory]
     [InlineData("/cari/new", "/cari/{id}")]
     [InlineData("/cari/{id}", "/cari/new")]
-    [InlineData("/a/{id}/details", "/a/active/{section}")]
-    public void StaticAndParameterRouteOverlaps_RejectTheWholeRegistry(
+    [InlineData("/cari/new", "/cari/:partyId")]
+    [InlineData("/cari/:partyId", "/cari/new")]
+    public void StaticRoutesTakePrecedenceOverParameterizedRoutes(
         string firstPath,
         string secondPath)
     {
@@ -202,6 +248,29 @@ public sealed class ShellCapabilityRegistryTests
         var second = Provider(
             "OWNER-B",
             Declaration("owner.b.read", "OWNER-B-ROUTE", secondPath, "OWNER-B-01"));
+
+        var registry = AuthorizedRegistry([first, second]);
+
+        Assert.Equal(2, registry.Registrations.Count);
+    }
+
+    [Fact]
+    public void OverlappingParameterizedRoutes_RejectTheWholeRegistry()
+    {
+        var first = Provider(
+            "OWNER-A",
+            Declaration(
+                "owner.a.read",
+                "OWNER-A-ROUTE",
+                "/a/{id}/details",
+                "OWNER-A-01"));
+        var second = Provider(
+            "OWNER-B",
+            Declaration(
+                "owner.b.read",
+                "OWNER-B-ROUTE",
+                "/a/active/{section}",
+                "OWNER-B-01"));
 
         Assert.Throws<InvalidOperationException>(() =>
             new ShellCapabilityRegistry([first, second]));
@@ -304,6 +373,12 @@ public sealed class ShellCapabilityRegistryTests
             "OWNER-A-ROUTE",
             "/owner//a",
             "OWNER-A-01");
+        var invalidColonParameterRoute = Declaration(
+            "owner.a.invalid-parameter",
+            "OWNER-A-INVALID-PARAMETER",
+            "/owner/:PartyId",
+            "OWNER-A-02",
+            routePrecedence: ShellCapabilityRoutePrecedence.ParameterizedAfterStatic);
         var invalidContext = Declaration(
             "owner.a.read",
             "OWNER-A-ROUTE",
@@ -320,6 +395,26 @@ public sealed class ShellCapabilityRegistryTests
         {
             ScopeRequirement = (ShellCapabilityScopeRequirement)999,
         };
+        var parameterRouteMarkedStatic = Declaration(
+            "owner.a.read",
+            "OWNER-A-ROUTE",
+            "/owner/{id}",
+            "OWNER-A-01",
+            routePrecedence: ShellCapabilityRoutePrecedence.Static);
+        var staticRouteMarkedParameterized = Declaration(
+            "owner.a.read",
+            "OWNER-A-ROUTE",
+            "/owner/a",
+            "OWNER-A-01",
+            routePrecedence: ShellCapabilityRoutePrecedence.ParameterizedAfterStatic);
+        var invalidRoutePrecedence = Declaration(
+            "owner.a.read",
+            "OWNER-A-ROUTE",
+            "/owner/a",
+            "OWNER-A-01") with
+        {
+            RoutePrecedence = (ShellCapabilityRoutePrecedence)999,
+        };
         var duplicatePermission = Declaration(
             "owner.a.read",
             "OWNER-A-ROUTE",
@@ -334,6 +429,8 @@ public sealed class ShellCapabilityRegistryTests
         Assert.Throws<InvalidOperationException>(() =>
             new ShellCapabilityRegistry([Provider("OWNER-A", invalidRoute)]));
         Assert.Throws<InvalidOperationException>(() =>
+            new ShellCapabilityRegistry([Provider("OWNER-A", invalidColonParameterRoute)]));
+        Assert.Throws<InvalidOperationException>(() =>
             new ShellCapabilityRegistry([Provider(
                 "OWNER-A",
                 "bad contract",
@@ -346,6 +443,12 @@ public sealed class ShellCapabilityRegistryTests
             new ShellCapabilityRegistry([Provider("OWNER-A", invalidContext)]));
         Assert.Throws<InvalidOperationException>(() =>
             new ShellCapabilityRegistry([Provider("OWNER-A", invalidScope)]));
+        Assert.Throws<InvalidOperationException>(() =>
+            new ShellCapabilityRegistry([Provider("OWNER-A", parameterRouteMarkedStatic)]));
+        Assert.Throws<InvalidOperationException>(() =>
+            new ShellCapabilityRegistry([Provider("OWNER-A", staticRouteMarkedParameterized)]));
+        Assert.Throws<InvalidOperationException>(() =>
+            new ShellCapabilityRegistry([Provider("OWNER-A", invalidRoutePrecedence)]));
         Assert.Throws<InvalidOperationException>(() =>
             new ShellCapabilityRegistry([Provider("OWNER-A", duplicatePermission)]));
     }
@@ -612,13 +715,20 @@ public sealed class ShellCapabilityRegistryTests
         string screenId,
         ShellCapabilityScopeRequirement scopeRequirement =
             ShellCapabilityScopeRequirement.CompanyWide,
-        IReadOnlyCollection<string>? requiredPermissions = null)
+        IReadOnlyCollection<string>? requiredPermissions = null,
+        ShellCapabilityRoutePrecedence? routePrecedence = null)
     {
         return new ShellCapabilityDeclaration(
             capabilityId,
             routeId,
             routePath,
             screenId,
+            routePrecedence
+                ?? (routePath.Contains('{', StringComparison.Ordinal)
+                    || routePath.Split('/', StringSplitOptions.None)
+                        .Any(segment => segment.StartsWith(':'))
+                    ? ShellCapabilityRoutePrecedence.ParameterizedAfterStatic
+                    : ShellCapabilityRoutePrecedence.Static),
             ShellCapabilityContextRequirement.SingleCompany,
             scopeRequirement,
             requiredPermissions ?? [ErpPermissions.OrganizationContextRead],

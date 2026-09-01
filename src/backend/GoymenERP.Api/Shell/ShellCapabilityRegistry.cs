@@ -150,6 +150,19 @@ public sealed partial class ShellCapabilityRegistry
                 $"'{owner}' provider geçersiz route yolu ilan etti.");
         }
 
+        var hasRouteParameter = routePath
+            .Split('/', StringSplitOptions.None)
+            .Skip(1)
+            .Any(segment => ParameterRouteSegmentPattern().IsMatch(segment));
+        if (!Enum.IsDefined(declaration.RoutePrecedence)
+            || hasRouteParameter
+                != (declaration.RoutePrecedence
+                    == ShellCapabilityRoutePrecedence.ParameterizedAfterStatic))
+        {
+            throw new InvalidOperationException(
+                $"'{owner}' provider route yapısıyla uyumsuz öncelik ilan etti.");
+        }
+
         if (declaration.ContextRequirement
             is not ShellCapabilityContextRequirement.SingleCompany
             and not ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead)
@@ -232,9 +245,9 @@ public sealed partial class ShellCapabilityRegistry
                  rightIndex < registrations.Count;
                  rightIndex++)
             {
-                if (RoutesOverlap(
-                        registrations[leftIndex].Declaration.RoutePath,
-                        registrations[rightIndex].Declaration.RoutePath))
+                if (RoutesAreAmbiguous(
+                        registrations[leftIndex].Declaration,
+                        registrations[rightIndex].Declaration))
                 {
                     throw new InvalidOperationException(
                         "Shell registry çakışan route yolu içeriyor.");
@@ -243,8 +256,12 @@ public sealed partial class ShellCapabilityRegistry
         }
     }
 
-    private static bool RoutesOverlap(string leftPath, string rightPath)
+    private static bool RoutesAreAmbiguous(
+        ShellCapabilityDeclaration left,
+        ShellCapabilityDeclaration right)
     {
+        var leftPath = left.RoutePath;
+        var rightPath = right.RoutePath;
         var leftSegments = leftPath.Split('/', StringSplitOptions.None).Skip(1).ToArray();
         var rightSegments = rightPath.Split('/', StringSplitOptions.None).Skip(1).ToArray();
         if (leftSegments.Length != rightSegments.Length)
@@ -269,7 +286,7 @@ public sealed partial class ShellCapabilityRegistry
             }
         }
 
-        return true;
+        return left.RoutePrecedence == right.RoutePrecedence;
     }
 
     private static string ComputeRevision(
@@ -286,6 +303,7 @@ public sealed partial class ShellCapabilityRegistry
             Append(canonical, declaration.RouteId);
             Append(canonical, declaration.RoutePath);
             Append(canonical, declaration.ScreenId);
+            Append(canonical, declaration.RoutePrecedence.ToString());
             Append(canonical, declaration.ContextRequirement.ToString());
             Append(canonical, declaration.ScopeRequirement.ToString());
             Append(canonical, declaration.ImplementationAvailable ? "1" : "0");
@@ -351,7 +369,9 @@ public sealed partial class ShellCapabilityRegistry
     [GeneratedRegex("^[a-z0-9][a-z0-9._-]*$", RegexOptions.CultureInvariant)]
     private static partial Regex LiteralRouteSegmentPattern();
 
-    [GeneratedRegex("^\\{[a-z][a-z0-9-]*\\}$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(
+        "^(?:\\{[a-z][a-z0-9-]*\\}|:[a-z][A-Za-z0-9]*)$",
+        RegexOptions.CultureInvariant)]
     private static partial Regex ParameterRouteSegmentPattern();
 }
 
