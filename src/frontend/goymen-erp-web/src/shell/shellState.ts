@@ -106,6 +106,21 @@ export interface ShellState {
    * exactly one of, so the ledger belongs here.
    */
   readonly lastSecurityEffect: SecurityEffect | null
+
+  /**
+   * A former-context 401 that arrived DURING a switch, held until the target's
+   * reauth answers.
+   *
+   * Terminating immediately was wrong and Codex's #169 P1-1 produced the case: if
+   * the switch then SUCCEEDS, the server has just demonstrated the session is
+   * alive, so the former 401 cannot have been about the session. Applying it
+   * anyway killed a session the server had authenticated one call later.
+   *
+   * Holding it is bounded and fail-closed: during `switching` no business data is
+   * rendered, and the target's own capability call is the authority that resolves
+   * it. REAUTH_OK discards this; REAUTH_FAIL applies it.
+   */
+  readonly pendingFormerSessionFailure: SecurityEffect | null
   /** Open scopes that block a silent switch (dirty form, edit workspace, approval preview). */
   readonly dirtyScopes: readonly string[]
 }
@@ -170,6 +185,7 @@ export const initialShellState: ShellState = {
   bootstrappedSessionEpoch: null,
   sessionInvalid: false,
   lastSecurityEffect: null,
+  pendingFormerSessionFailure: null,
   dirtyScopes: [],
 }
 
@@ -264,6 +280,9 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
         pendingTarget: null,
         verifiedFormerContext: null,
         committedContextRevision: state.committedContextRevision + 1,
+        // The server authenticated this switch, so a former-context 401 held
+        // during it cannot have been about the session. Discard it.
+        pendingFormerSessionFailure: null,
       }
     }
 
@@ -272,6 +291,22 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
       if (event.forGeneration !== state.requestFenceGeneration) return state
       const fenced = state.requestFenceGeneration + 1
       const former = state.verifiedFormerContext
+
+      // The target could not be authenticated, so the held former-context 401 is
+      // never contradicted. Apply it: the session ends rather than the former
+      // context being restored under an authority nothing has confirmed.
+      if (state.pendingFormerSessionFailure !== null) {
+        return {
+          ...initialShellState,
+          requestFenceGeneration: fenced,
+          committedContextRevision: state.committedContextRevision,
+          sessionEpoch: state.sessionEpoch + 1,
+          bootstrappedSessionEpoch: null,
+          sessionInvalid: true,
+          lastSecurityEffect: state.pendingFormerSessionFailure,
+        }
+      }
+
       if (former !== null) {
         // Restore the SNAPSHOT taken at transition start, unchanged. It was
         // server-verified moments ago; the target was never committed.
@@ -323,6 +358,7 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
         // again — the terminal state undone one dispatch later (ChatGPT #169 P1-1).
         sessionInvalid: state.sessionInvalid,
         lastSecurityEffect: state.lastSecurityEffect,
+        pendingFormerSessionFailure: state.pendingFormerSessionFailure,
       }
     }
 
@@ -359,10 +395,38 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
         snap.sessionEpoch === state.sessionEpoch &&
         snap.companyId === (judgedAgainst?.companyId ?? null) &&
         snap.committedContextRevision === state.committedContextRevision &&
+        // The capability generation the read was authorized under must still be
+        // the live one.
+        //
+        // Leaving this out was an inconsistency, and it was reachable: the
+        // exactly-once key below DOES include the generation, so once a first 403
+        // stripped the capability, a second consumer's outcome — captured under
+        // the generation that had just been cleared — was judged "current" while
+        // hashing to a DIFFERENT key. It applied a second time and the fence moved
+        // twice for one revocation. Codex predicted this in the #169 P1-2 review;
+        // `authBoundaryMultiConsumer.test.tsx` reproduces it.
+        //
+        // Currentness and identity now agree on what "the same authority" means.
+        snap.capabilityGeneration === (judgedAgainst?.capabilityGeneration ?? null) &&
         // ...and the actor must still be the one the server authenticates, as of
         // the moment this outcome was reported (P1-4).
         (event.authenticatedActorId === null || snap.actorId === event.authenticatedActorId)
       if (!current) return state
+
+      // A 403 captured when there was no capability to begin with carries no new
+      // information: there is nothing left to revoke, and re-fencing would move the
+      // fence for a revocation that has already happened.
+      //
+      // This is the second consumer in the SAB-010 topology. Measured, its snapshot
+      // is taken AFTER the first 403 stripped the capability, so it hashes to a
+      // different exactly-once key (`…,null` instead of `…,"gen-1"`) and slipped
+      // past the ledger — the fence moved twice for one revocation. Deduplicating
+      // by key alone could not catch it, because the two events genuinely differ;
+      // what makes the second one meaningless is that it revokes nothing.
+      //
+      // A 401 is deliberately NOT covered: losing the session is meaningful whether
+      // or not a capability was held.
+      if (event.status === 403 && snap.capabilityGeneration === null) return state
 
       const kind = event.status === 401 ? 'session-reset' : 'capability-refence'
       const key = JSON.stringify([
@@ -378,6 +442,11 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
       const effect: SecurityEffect = { key, kind, namespace: snap.namespace }
 
       if (event.status === 401) {
+        // Mid-switch, and this 401 belongs to the context we are LEAVING: hold it
+        // until the target answers. See `pendingFormerSessionFailure`.
+        if (state.phase === 'switching') {
+          return { ...state, pendingFormerSessionFailure: effect, lastSecurityEffect: effect }
+        }
         return {
           ...initialShellState,
           requestFenceGeneration: state.requestFenceGeneration + 1,
