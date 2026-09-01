@@ -77,6 +77,18 @@ public sealed class OpenApiContractGenerationTests
                 "query:cursor:false:type:string",
                 "query:includeCount:false:type:boolean",
             ]),
+        new("get", "/api/v1/counterparties/company-account-link-candidates",
+            "GetCounterpartyCompanyAccountLinkCandidatesV1",
+            AuthenticatedResponses(
+                "200:application/json",
+                "400:application/problem+json",
+                "503:application/problem+json"),
+            ParameterValues:
+            [
+                "query:q:false:type:string;canonicalization:unicode-trim+nfc",
+                "query:pageSize:false:type:integer",
+                "query:cursor:false:type:string",
+            ]),
         new("post", "/api/v1/counterparties", "CreateCounterpartyV1",
             AuthenticatedResponses("201:application/json", "400:application/problem+json", "409:application/problem+json", "415:"),
             "#/components/schemas/CreateCounterparty"),
@@ -116,6 +128,8 @@ public sealed class OpenApiContractGenerationTests
             ["GetOrganizationWorkCentersV1"] = "array:WorkCenterSummary",
             ["GetCurrentIdentityV1"] = "ref:IdentityProfile",
             ["GetCounterpartiesV1"] = "ref:CounterpartyPage",
+            ["GetCounterpartyCompanyAccountLinkCandidatesV1"] =
+                "ref:CounterpartyLinkCandidatePage",
             ["CreateCounterpartyV1"] = "ref:PartyCoreView",
             ["GetCounterpartyV1"] = "ref:CounterpartyDetailView",
             ["CreateCounterpartyCompanyAccountV1"] = "ref:PartyCoreView",
@@ -132,6 +146,7 @@ public sealed class OpenApiContractGenerationTests
         "GetOrganizationLocationV1",
         "SetOrganizationLocationActiveStateV1",
         "GetOrganizationWorkCentersV1",
+        "GetCounterpartyCompanyAccountLinkCandidatesV1",
         "CreateCounterpartyV1",
         "CreateCounterpartyCompanyAccountV1",
         "SetCounterpartyCompanyAccountActiveStateV1",
@@ -205,6 +220,8 @@ public sealed class OpenApiContractGenerationTests
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
             ["GetCounterpartiesV1:400"] = ["invalid_cursor", "validation_failed"],
+            ["GetCounterpartyCompanyAccountLinkCandidatesV1:400"] =
+                ["invalid_cursor", "validation_failed"],
             ["GetCounterpartyV1:400"] = ["validation_failed"],
             ["GetCounterpartyV1:404"] = ["not_found"],
             ["CreateCounterpartyV1:400"] = ["command_metadata_invalid", "validation_failed"],
@@ -313,6 +330,27 @@ public sealed class OpenApiContractGenerationTests
                     ("isActive", "type:boolean"),
                     ("version", "type:integer;format:int64"),
                     ("companyAccounts", "type:array;items:ref:CounterpartyListAccount")),
+                ["CounterpartyLinkCandidateSourceAccount"] = ObjectSchema(
+                    ["id", "companyId", "roles", "isActive", "version"],
+                    ("id", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("roles", "ref:PartyRole"),
+                    ("isActive", "type:boolean"),
+                    ("version", "type:string")),
+                ["CounterpartyLinkCandidateItem"] = ObjectSchema(
+                    ["id", "code", "kind", "legalName", "tradeName", "isActive", "visibleSourceAccounts"],
+                    ("id", "type:string;format:uuid"),
+                    ("code", "type:string"),
+                    ("kind", "ref:PartyKind"),
+                    ("legalName", "type:string"),
+                    ("tradeName", "type:null|string"),
+                    ("isActive", "type:boolean"),
+                    ("visibleSourceAccounts", "type:array;items:ref:CounterpartyLinkCandidateSourceAccount")),
+                ["CounterpartyLinkCandidatePage"] = ObjectSchema(
+                    ["items", "nextCursor", "hasMore"],
+                    ("items", "type:array;items:ref:CounterpartyLinkCandidateItem"),
+                    ("nextCursor", "type:null|string"),
+                    ("hasMore", "type:boolean")),
                 ["CounterpartyPage"] = ObjectSchema(
                     ["items", "nextCursor", "hasMore", "totalCount", "countScope"],
                     ("items", "type:array;items:ref:CounterpartyListItem"),
@@ -942,9 +980,9 @@ public sealed class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(16, operations.Count);
+        Assert.Equal(17, operations.Count);
         Assert.Equal(
-            16,
+            17,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
@@ -1021,6 +1059,11 @@ public sealed class OpenApiContractGenerationTests
             if (expected.OperationId == "GetCounterpartiesV1")
             {
                 AssertCounterpartyPageQueryContract(actual.Value);
+            }
+
+            if (expected.OperationId == "GetCounterpartyCompanyAccountLinkCandidatesV1")
+            {
+                AssertCounterpartyLinkCandidateQueryContract(actual.Value);
             }
         }
 
@@ -1404,6 +1447,30 @@ public sealed class OpenApiContractGenerationTests
         Assert.DoesNotContain("companyId", parameters.Keys);
     }
 
+    private static void AssertCounterpartyLinkCandidateQueryContract(JsonElement operation)
+    {
+        var parameters = operation.GetProperty("parameters")
+            .EnumerateArray()
+            .Where(parameter => parameter.GetProperty("in").GetString() == "query")
+            .ToDictionary(
+                parameter => parameter.GetProperty("name").GetString()!,
+                parameter => parameter.GetProperty("schema"),
+                StringComparer.Ordinal);
+
+        Assert.Equal(3, parameters.Count);
+        var search = parameters["q"];
+        Assert.Equal(200, search.GetProperty("maxLength").GetInt32());
+        Assert.Equal(
+            "unicode-trim+nfc",
+            search.GetProperty(ErpOpenApiContract.CanonicalizationExtensionName).GetString());
+
+        var pageSize = parameters["pageSize"];
+        Assert.Equal(1, pageSize.GetProperty("minimum").GetInt32());
+        Assert.Equal(100, pageSize.GetProperty("maximum").GetInt32());
+        Assert.Equal(1, parameters["cursor"].GetProperty("minLength").GetInt32());
+        Assert.DoesNotContain("companyId", parameters.Keys);
+    }
+
     private static void AssertStringSchema(
         JsonElement schema,
         string type,
@@ -1536,6 +1603,9 @@ public sealed class OpenApiContractGenerationTests
         AssertComponentSchemaMatrix(schemas, ExpectedProblemComponentSchemas);
         AssertPositiveIntegerStringVersion(schemas, "CounterpartyDetailAccountView");
         AssertPositiveIntegerStringVersion(schemas, "CounterpartyDetailView");
+        AssertPositiveIntegerStringVersion(
+            schemas,
+            "CounterpartyLinkCandidateSourceAccount");
 
         var problem = schemas.GetProperty("ErpProblemDetailsContract");
         Assert.Equal(

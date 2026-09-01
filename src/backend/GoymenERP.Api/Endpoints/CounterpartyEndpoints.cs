@@ -76,6 +76,64 @@ public static class CounterpartyEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        group.MapGet("/company-account-link-candidates", async (
+            HttpContext httpContext,
+            ICounterpartyLinkCandidateReadService service,
+            ICurrentUser currentUser,
+            IActorSessionBindingResolver sessionBindingResolver,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response.Headers);
+            var parseResult = CounterpartyLinkCandidateQueryParser.Parse(
+                httpContext.Request.Query,
+                out var query,
+                out var error);
+            if (parseResult == CounterpartyLinkCandidateQueryParseResult.InvalidCursor)
+            {
+                return InvalidCursor();
+            }
+
+            if (parseResult == CounterpartyLinkCandidateQueryParseResult.ValidationFailed)
+            {
+                return ValidationProblem("Cari bağlama adayı isteği geçersiz.", error);
+            }
+
+            var sessionBinding = await sessionBindingResolver.ResolveAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(currentUser.UserId)
+                || string.IsNullOrWhiteSpace(sessionBinding))
+            {
+                return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+
+            var execution = await service.GetAuthorizedPageAsync(
+                new CounterpartyLinkCandidateRequest(
+                    query,
+                    currentUser.UserId,
+                    sessionBinding),
+                cancellationToken);
+            return execution.Result switch
+            {
+                CounterpartyLinkCandidateResult.Succeeded => Results.Ok(execution.Page),
+                CounterpartyLinkCandidateResult.Forbidden => Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden),
+                CounterpartyLinkCandidateResult.InvalidCursor => InvalidCursor(),
+                CounterpartyLinkCandidateResult.ServiceUnavailable => Results.Problem(
+                    statusCode: StatusCodes.Status503ServiceUnavailable),
+                _ => throw new InvalidOperationException(
+                    "Bilinmeyen cari bağlama adayı listeleme sonucu."),
+            };
+        })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.CounterpartyAccountsCreate)
+            .RequireAuthorization(ErpPermissions.CounterpartyPartiesRead)
+            .WithName("GetCounterpartyCompanyAccountLinkCandidatesV1")
+            .Produces<CounterpartyLinkCandidatePage>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(
+                CounterpartyProblemCodesV1.ValidationFailed,
+                CounterpartyProblemCodesV1.InvalidCursor)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         group.MapGet("/{partyId:guid}", async (
             Guid partyId,
             Guid? companyId,
