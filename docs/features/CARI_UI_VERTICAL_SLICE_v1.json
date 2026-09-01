@@ -36,7 +36,7 @@
   "screenScope": {
     "included": [
       "C-01",
-      "C-02:create-subset",
+      "C-02",
       "C-03",
       "CARI-LINK-WORKSPACE-001"
     ],
@@ -66,6 +66,18 @@
       "group-totals"
     ]
   },
+  "routeContractInvariants": {
+    "cari.create": {
+      "routeId": "cari.create",
+      "screen": "C-02",
+      "scopeVariant": "create-subset",
+      "path": "/cari/yeni",
+      "capability": "cari.parties.create",
+      "forbiddenScreenLiterals": [
+        "C-02:create-subset"
+      ]
+    }
+  },
   "routes": [
     {
       "id": "cari.list",
@@ -77,11 +89,12 @@
     },
     {
       "id": "cari.create",
-      "screen": "C-02:create-subset",
+      "screen": "C-02",
       "path": "/cari/yeni",
       "priority": "static-before-parameter",
       "context": "single-company",
-      "capability": "cari.parties.create"
+      "capability": "cari.parties.create",
+      "scopeVariant": "create-subset"
     },
     {
       "id": "cari.company-link",

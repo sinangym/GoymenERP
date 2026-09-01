@@ -397,9 +397,11 @@ Başarı response’u yalnız hedef hesapla C-03’e bağlanır. Source hesap pa
 
 Önerilen mevcut route/capability kimlikleri accepted Cari contracttan gelir:
 
+Canonical shell screen kimliği `C-02`’dir. `C-02A` yalnız business/UX alt-akış etiketidir; shell screen id veya alias değildir. `create-subset`, `cari.create` route’unun makine-okunur `scopeVariant` metadata’sıdır ve screen kimliğinin parçası değildir.
+
 | Ekran | Route | Capability | Permission |
 |---|---|---|---|
-| C-02A create | `cari.create` / `/cari/yeni` | `cari.parties.create` | `counterparty.parties.create` |
+| `C-02` (`C-02A` business/UX alt akışı; `scopeVariant=create-subset`) | `cari.create` / `/cari/yeni` | `cari.parties.create` | `counterparty.parties.create` |
 | Link workspace | `cari.company-link` / `/cari/sirkete-bagla` | `cari.accounts.link` | `counterparty.accounts.create` + `counterparty.parties.read` |
 
 Capability provider önce `ImplementationAvailable=false` ile staging yapılabilir. Şu koşullar olmadan `true` olmaz:
