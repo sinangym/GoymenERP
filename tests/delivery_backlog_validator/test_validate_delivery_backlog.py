@@ -27,11 +27,18 @@ validate_repository_with_statistics = (
 )
 
 FIXTURE_SCREEN_HASH = hashlib.sha256(b"C-001").hexdigest()
-FIXTURE_DECISION_ROW = "| DEC-TST-001 | Fixture | Fixture | KILITLI |"
+FIXTURE_DECISION_ROW = (
+    "| DEC-TST-001 | Fixture | Fixture | KILITLI | K0 | Fixture source | "
+    "Fixture owner | Fixture acceptance |"
+)
 FIXTURE_DECISION_ROWS_HASH = hashlib.sha256(
     FIXTURE_DECISION_ROW.encode("utf-8")
 ).hexdigest()
-FIXTURE_OPEN_ROW = "| OPEN-001 | Fixture decision |"
+FIXTURE_DECISION_ORDER_HASH = hashlib.sha256(b"DEC-TST-001").hexdigest()
+FIXTURE_OPEN_ROW = (
+    "| OPEN-001 | **KISMEN** | Fixture closed | Fixture open | Fixture evidence | "
+    "Fixture code evidence |"
+)
 FIXTURE_OPEN_ROWS_HASH = hashlib.sha256(FIXTURE_OPEN_ROW.encode("utf-8")).hexdigest()
 FIXTURE_ACCEPTANCE_ROW = "- **AT-001:** Fixture acceptance."
 FIXTURE_ACCEPTANCE_ROWS_HASH = hashlib.sha256(
@@ -102,6 +109,7 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
         self.backlog_path = self.root / "docs/backlog/DELIVERY_BACKLOG_v1.json"
         self.manifest_path = self.root / "docs/backlog/task_manifest.json"
         self.decision_registry_path = self.root / "docs/decisions/KARAR_SICILI.md"
+        self.decision_registry_csv_path = self.root / "docs/decisions/KARAR_SICILI.csv"
         self.open_decisions_path = self.root / "docs/decisions/ACIK_KARARLAR.md"
         self.acceptance_path = self.root / "docs/acceptance/ACCEPTANCE_70.md"
         self.screen_catalog_path = self.root / "docs/ui/CANONICAL_SCREEN_STATUS.csv"
@@ -235,12 +243,14 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
         cases = (
             (
                 self.decision_registry_path,
-                "| DEC-TST-002 | Missing | Fixture | KILITLI |\n",
+                "| DEC-TST-002 | Missing | Fixture | KILITLI | K1 | Fixture source | "
+                "Fixture owner | Fixture acceptance |\n",
                 "missing decision ids: DEC-TST-002",
             ),
             (
                 self.open_decisions_path,
-                "| OPEN-002 | Missing fixture decision |\n",
+                "| OPEN-002 | **KISMEN** | Missing closed | Missing open | "
+                "Missing evidence | Missing code evidence |\n",
                 "missing open decision ids: OPEN-002",
             ),
             (
@@ -390,7 +400,10 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
         self._write_json(self.backlog_path, backlog)
 
         first = FIXTURE_DECISION_ROW
-        second = "| DEC-TST-002 | Fixture two | Fixture | GECICI_VARSAYIM |"
+        second = (
+            "| DEC-TST-002 | Fixture two | Fixture | GECICI_VARSAYIM | K1 | "
+            "Fixture source | Fixture owner | Fixture acceptance |"
+        )
         original_rows_hash = hashlib.sha256(
             "\n".join(sorted((first, second))).encode("utf-8")
         ).hexdigest()
@@ -399,8 +412,8 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
         self._write_text(
             self.decision_registry_path,
             "# Decisions\n\n"
-            "| Kimlik | Başlık | Kapsam | Durum |\n"
-            "|---|---|---|---|\n"
+            "| ID | Alan | Karar | Durum | Öncelik | Kaynak | Sahip | Kabul kanıtı |\n"
+            "|---|---|---|---|---|---|---|---|\n"
             f"{swapped_first}\n{swapped_second}\n",
         )
 
@@ -410,6 +423,9 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
             EXPECTED_LOCKED_DECISION_COUNT=1,
             EXPECTED_TEMPORARY_DECISION_COUNT=1,
             EXPECTED_DECISION_ROWS_SHA256=original_rows_hash,
+            EXPECTED_DECISION_ORDER_SHA256=hashlib.sha256(
+                b"DEC-TST-001\nDEC-TST-002"
+            ).hexdigest(),
             EXPECTED_OPEN_IDS={"OPEN-001"},
             EXPECTED_ACCEPTANCE_IDS={"AT-001"},
             EXPECTED_OPEN_ROWS_SHA256=FIXTURE_OPEN_ROWS_HASH,
@@ -433,7 +449,7 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
             (
                 "open",
                 self.open_decisions_path,
-                "Fixture decision",
+                "Fixture open",
                 "Weakened production gate",
                 "Open decision catalog row baseline hash drift",
             ),
@@ -643,6 +659,7 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
             EXPECTED_LOCKED_DECISION_COUNT=1,
             EXPECTED_TEMPORARY_DECISION_COUNT=0,
             EXPECTED_DECISION_ROWS_SHA256=decision_rows_hash,
+            EXPECTED_DECISION_ORDER_SHA256=FIXTURE_DECISION_ORDER_HASH,
             EXPECTED_OPEN_IDS={"OPEN-001"},
             EXPECTED_ACCEPTANCE_IDS={"AT-001"},
             EXPECTED_OPEN_ROWS_SHA256=FIXTURE_OPEN_ROWS_HASH,
@@ -720,15 +737,22 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
         self._write_text(
             self.decision_registry_path,
             "# Decisions\n\n"
-            "| Kimlik | Başlık | Kapsam | Durum |\n"
-            "|---|---|---|---|\n"
+            "| ID | Alan | Karar | Durum | Öncelik | Kaynak | Sahip | Kabul kanıtı |\n"
+            "|---|---|---|---|---|---|---|---|\n"
             f"{FIXTURE_DECISION_ROW}\n",
+        )
+        self._write_text(
+            self.decision_registry_csv_path,
+            "DecisionId,Alan,Karar,Durum,Oncelik,Kaynak,Sahip,KabulKaniti\n"
+            "DEC-TST-001,Fixture,Fixture,KILITLI,K0,Fixture source,Fixture owner,"
+            "Fixture acceptance\n",
         )
         self._write_text(
             self.open_decisions_path,
             "# Open decisions\n\n"
-            "| Kimlik | Konu |\n"
-            "|---|---|\n"
+            "| ID | Durum | Kullanıcı tarafından kapanan / kabul edilen bölüm | "
+            "Gerçekten açık kalan bölüm | Karar kanıtı | Kod / seed kanıtı |\n"
+            "|---|---|---|---|---|---|\n"
             f"{FIXTURE_OPEN_ROW}\n",
         )
         self._write_text(
