@@ -414,6 +414,103 @@ public sealed class ShellCapabilityRegistryTests
             async () => await inactiveOrganization.GetSnapshotAsync());
     }
 
+    [Fact]
+    public async Task Snapshot_RejectsActiveCompanySetChangedDuringAuthorization()
+    {
+        var userId = Guid.NewGuid();
+        var companyId = Guid.NewGuid();
+        var companyContext = new CompanyContext();
+        companyContext.Set(companyId);
+        var organizationService = new ChangingOrganizationService(
+            [companyId],
+            []);
+        using var protector = new ShellCapabilityGenerationProtector();
+        var service = new ShellCapabilityService(
+            new ShellCapabilityRegistry([]),
+            new FakeSessionBindingResolver("trusted-test-session"),
+            protector,
+            new FakeCurrentUser(userId, companyId),
+            companyContext,
+            new FakeAuthorizationService(PermissionScope.Denied, companyId),
+            organizationService);
+
+        await Assert.ThrowsAsync<ShellCapabilityUnavailableException>(
+            async () => await service.GetSnapshotAsync());
+
+        Assert.Equal(2, organizationService.ReadCount);
+    }
+
+    [Fact]
+    public async Task Snapshot_RejectsEveryGroupActiveCompanySetChangeDuringAuthorization()
+    {
+        var companyA = Guid.Parse("10000000-0000-0000-0000-000000000001");
+        var companyB = Guid.Parse("10000000-0000-0000-0000-000000000002");
+        var companyC = Guid.Parse("10000000-0000-0000-0000-000000000003");
+
+        await AssertGroupActiveCompanyChangeRejectedAsync(
+            [companyA, companyB],
+            [companyA]);
+        await AssertGroupActiveCompanyChangeRejectedAsync(
+            [companyA, companyB],
+            [companyA, companyC]);
+        await AssertGroupActiveCompanyChangeRejectedAsync(
+            [companyA, companyB],
+            [companyA, companyB, companyC]);
+    }
+
+    [Fact]
+    public async Task Snapshot_AcceptsSameGroupActiveCompanySetInDifferentSourceOrder()
+    {
+        var userId = Guid.NewGuid();
+        var companyA = Guid.Parse("10000000-0000-0000-0000-000000000001");
+        var companyB = Guid.Parse("10000000-0000-0000-0000-000000000002");
+        var organizationService = new ChangingOrganizationService(
+            [companyB, companyA],
+            [companyA, companyB]);
+        using var protector = new ShellCapabilityGenerationProtector();
+        var service = new ShellCapabilityService(
+            new ShellCapabilityRegistry([]),
+            new FakeSessionBindingResolver("trusted-test-session"),
+            protector,
+            new FakeCurrentUser(userId, companyA, companyB),
+            new CompanyContext(),
+            new FakeAuthorizationService(PermissionScope.Denied, companyA, companyB),
+            organizationService);
+
+        var snapshot = await service.GetSnapshotAsync();
+
+        Assert.Empty(snapshot.Capabilities);
+        Assert.Equal(2, organizationService.ReadCount);
+    }
+
+    private static async Task AssertGroupActiveCompanyChangeRejectedAsync(
+        Guid[] initialCompanyIds,
+        Guid[] revalidatedCompanyIds)
+    {
+        var userId = Guid.NewGuid();
+        var allowedCompanyIds = initialCompanyIds
+            .Concat(revalidatedCompanyIds)
+            .Distinct()
+            .ToArray();
+        var organizationService = new ChangingOrganizationService(
+            initialCompanyIds,
+            revalidatedCompanyIds);
+        using var protector = new ShellCapabilityGenerationProtector();
+        var service = new ShellCapabilityService(
+            new ShellCapabilityRegistry([]),
+            new FakeSessionBindingResolver("trusted-test-session"),
+            protector,
+            new FakeCurrentUser(userId, allowedCompanyIds),
+            new CompanyContext(),
+            new FakeAuthorizationService(PermissionScope.Denied, allowedCompanyIds),
+            organizationService);
+
+        await Assert.ThrowsAsync<ShellCapabilityUnavailableException>(
+            async () => await service.GetSnapshotAsync());
+
+        Assert.Equal(2, organizationService.ReadCount);
+    }
+
     private static async Task<ShellCapabilitySnapshot> SnapshotAsync(
         ShellCapabilityRegistry registry,
         ShellCapabilityGenerationProtector protector,
@@ -557,6 +654,54 @@ public sealed class ShellCapabilityRegistryTests
                     $"Test Company {id:N}",
                     false))
                 .ToArray());
+
+        public Task<IReadOnlyList<SiteSummary>> GetSitesAsync(
+            CancellationToken cancellationToken) => throw NotUsed();
+
+        public Task<PageResult<LocationSummary>> GetLocationsAsync(
+            int page,
+            int pageSize,
+            CancellationToken cancellationToken) => throw NotUsed();
+
+        public Task<LocationSummary?> GetLocationAsync(
+            Guid id,
+            CancellationToken cancellationToken) => throw NotUsed();
+
+        public Task<IReadOnlyList<WorkCenterSummary>> GetWorkCentersAsync(
+            CancellationToken cancellationToken) => throw NotUsed();
+
+        public Task<CommandExecutionResult> SetLocationActiveStateAsync(
+            Guid id,
+            SetLocationActiveState command,
+            CommandMetadata metadata,
+            CancellationToken cancellationToken) => throw NotUsed();
+
+        private static InvalidOperationException NotUsed() =>
+            new("Shell testinde bu Organization işlemi kullanılmamalıdır.");
+    }
+
+    private sealed class ChangingOrganizationService(params Guid[][] activeCompanyIdReads)
+        : IOrganizationService
+    {
+        private int _readCount;
+
+        public int ReadCount => Volatile.Read(ref _readCount);
+
+        public Task<IReadOnlyList<CompanySummary>> GetAuthorizedCompaniesAsync(
+            CancellationToken cancellationToken)
+        {
+            var index = Interlocked.Increment(ref _readCount) - 1;
+            var activeCompanyIds = activeCompanyIdReads[Math.Min(
+                index,
+                activeCompanyIdReads.Length - 1)];
+            return Task.FromResult<IReadOnlyList<CompanySummary>>(activeCompanyIds
+                .Select(id => new CompanySummary(
+                    id,
+                    $"TEST-{id:N}",
+                    $"Test Company {id:N}",
+                    false))
+                .ToArray());
+        }
 
         public Task<IReadOnlyList<SiteSummary>> GetSitesAsync(
             CancellationToken cancellationToken) => throw NotUsed();
