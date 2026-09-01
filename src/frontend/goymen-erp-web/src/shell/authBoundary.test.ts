@@ -5,7 +5,13 @@ import {
   decideBoundaryAction,
   isSnapshotCurrent,
 } from './authBoundary'
-import { initialShellState, shellReducer, type ShellState } from './shellState'
+import {
+  capabilityFailClosed,
+  initialShellState,
+  needsBootstrap,
+  shellReducer,
+  type ShellState,
+} from './shellState'
 
 const ACTOR_A = 'aaaa1111-0000-0000-0000-000000000001'
 const ACTOR_B = 'bbbb2222-0000-0000-0000-000000000002'
@@ -193,5 +199,108 @@ describe('isSnapshotCurrent — what counts as identity', () => {
     expect(failed.requestFenceGeneration).toBeGreaterThan(snap.requestFenceGeneration)
     expect(failed.activeContext?.companyId).toBe(COMPANY_A)
     expect(isSnapshotCurrent(snap, failed, ACTOR_A)).toBe(true)
+  })
+})
+
+describe('ChatGPT #169 P1-1 — a reset must not resurrect a rejected session', () => {
+  it('SESSION_RESET after SESSION_INVALIDATED keeps the terminal flag', () => {
+    const invalid = shellReducer(ready(), { type: 'SESSION_INVALIDATED' })
+    expect(invalid.sessionInvalid).toBe(true)
+    // The switch-401 path used to dispatch both, and the second rebuilt
+    // initialShellState — undoing the terminal state one dispatch later.
+    const afterReset = shellReducer(invalid, { type: 'SESSION_RESET' })
+    expect(afterReset.sessionInvalid).toBe(true)
+    expect(needsBootstrap(afterReset)).toBe(false)
+  })
+})
+
+describe('ChatGPT #169 P1-2 / P1-3 — the decision and the ledger live in the reducer', () => {
+  function snapshotOf(s: ShellState, namespace = 'ns-1') {
+    return {
+      actorId: s.activeContext?.userId ?? null,
+      sessionEpoch: s.sessionEpoch,
+      companyId: s.activeContext?.companyId ?? null,
+      committedContextRevision: s.committedContextRevision,
+      capabilityGeneration: s.activeContext?.capabilityGeneration ?? null,
+      namespace,
+    }
+  }
+
+  it('a current 401 is terminal and records the effect', () => {
+    const s = ready()
+    const out = shellReducer(s, {
+      type: 'BUSINESS_AUTH_OUTCOME',
+      status: 401,
+      snapshot: snapshotOf(s),
+    })
+    expect(out.sessionInvalid).toBe(true)
+    expect(out.activeContext).toBeNull()
+    expect(out.sessionEpoch).toBe(s.sessionEpoch + 1)
+    expect(out.lastSecurityEffect?.kind).toBe('session-reset')
+  })
+
+  it('P1-3: the SAME outcome applied twice moves nothing the second time', () => {
+    // A 403 is the case that actually exercises the LEDGER. After a 401 the
+    // context is gone, so the second report is already rejected as stale and the
+    // ledger never gets a turn — testing it with a 401 proves nothing. After a
+    // 403 the actor, company and revision are unchanged, so the same snapshot is
+    // still current and only the ledger can stop the second application.
+    const s = ready()
+    const snap = snapshotOf(s)
+    const once = shellReducer(s, { type: 'BUSINESS_AUTH_OUTCOME', status: 403, snapshot: snap })
+    expect(once.requestFenceGeneration).toBe(s.requestFenceGeneration + 1)
+
+    // A SECOND reader reporting the same rejection. Per-hook Sets could not see
+    // each other; the reducer ledger can.
+    const twice = shellReducer(once, { type: 'BUSINESS_AUTH_OUTCOME', status: 403, snapshot: snap })
+    expect(twice).toBe(once)
+    expect(twice.requestFenceGeneration).toBe(s.requestFenceGeneration + 1)
+  })
+
+  it('P1-2: a late 401 from a departed actor cannot invalidate the current one', () => {
+    const a = ready(ACTOR_A)
+    const snapA = snapshotOf(a)
+    const reset = shellReducer(a, { type: 'SESSION_RESET' })
+    const b = shellReducer(reset, {
+      type: 'SESSION_READY',
+      forSessionEpoch: reset.sessionEpoch,
+      context: {
+        userId: ACTOR_B,
+        scopeMode: 'single',
+        companyId: COMPANY_A,
+        capabilityGeneration: 'gen-b',
+        capabilities: ['cari.parties.list'],
+      },
+    })
+    // The A consumer is long unmounted; only its snapshot survives.
+    const out = shellReducer(b, { type: 'BUSINESS_AUTH_OUTCOME', status: 401, snapshot: snapA })
+    expect(out).toBe(b)
+    expect(out.sessionInvalid).toBe(false)
+    expect(out.activeContext?.userId).toBe(ACTOR_B)
+  })
+
+  it('P1-2: a late 403 from a company we left cannot revoke the current one', () => {
+    const a = ready(ACTOR_A, COMPANY_A)
+    const snapA = snapshotOf(a)
+    const b = switchTo(a, COMPANY_B)
+    const out = shellReducer(b, { type: 'BUSINESS_AUTH_OUTCOME', status: 403, snapshot: snapA })
+    expect(out).toBe(b)
+    expect(out.activeContext?.capabilityGeneration).toBe('gen-2')
+    expect(out.activeContext?.capabilities).toEqual(['cari.parties.list'])
+  })
+
+  it('a current 403 re-fences the capability without ending the session', () => {
+    const s = ready()
+    const out = shellReducer(s, {
+      type: 'BUSINESS_AUTH_OUTCOME',
+      status: 403,
+      snapshot: snapshotOf(s),
+    })
+    expect(out.sessionInvalid).toBe(false)
+    expect(out.activeContext?.capabilityGeneration).toBeNull()
+    expect(out.activeContext?.capabilities).toEqual([])
+    expect(out.activeContext?.companyId).toBe(COMPANY_A)
+    expect(out.requestFenceGeneration).toBe(s.requestFenceGeneration + 1)
+    expect(capabilityFailClosed(out)).toBe(true)
   })
 })

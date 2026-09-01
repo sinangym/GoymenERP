@@ -37,6 +37,13 @@ export interface CompanyContext {
   readonly capabilities: readonly string[]
 }
 
+/** What the boundary did, recorded so the cache side-effect runs once per identity. */
+export interface SecurityEffect {
+  readonly key: string
+  readonly kind: 'session-reset' | 'capability-refence'
+  readonly namespace: string | null
+}
+
 export interface SwitchTarget {
   readonly scopeMode: 'single' | 'group'
   readonly companyId: string | null
@@ -91,6 +98,14 @@ export interface ShellState {
    * nothing, because it is invisible (Issue #165 SAB-002).
    */
   readonly sessionInvalid: boolean
+  /**
+   * The last business-auth security effect this reducer applied, by identity.
+   *
+   * Exactly-once (SAB-010) cannot live in a component: two readers hold two refs
+   * and each accepts the same outcome. The reducer is the only thing there is
+   * exactly one of, so the ledger belongs here.
+   */
+  readonly lastSecurityEffect: SecurityEffect | null
   /** Open scopes that block a silent switch (dirty form, edit workspace, approval preview). */
   readonly dirtyScopes: readonly string[]
 }
@@ -112,6 +127,28 @@ export type ShellEvent =
   | { type: 'SESSION_RESET' }
   /** A 401: drop everything AND refuse to bootstrap again until re-login. */
   | { type: 'SESSION_INVALIDATED' }
+  /**
+   * An authenticated business read came back 401/403 (Issue #165).
+   *
+   * The DECISION lives here, not in the calling component. A feature hook holds
+   * refs that stop tracking the provider once it unmounts, and its closure would
+   * then judge a departed actor's late response against frozen state — the exact
+   * mistake the boundary exists to prevent (ChatGPT #169 P1-2). The reducer always
+   * has current state and there is exactly one of it, which also makes the
+   * exactly-once ledger real rather than per-consumer (P1-3).
+   */
+  | {
+      type: 'BUSINESS_AUTH_OUTCOME'
+      status: 401 | 403
+      snapshot: {
+        readonly actorId: string | null
+        readonly sessionEpoch: number
+        readonly companyId: string | null
+        readonly committedContextRevision: number
+        readonly capabilityGeneration: string | null
+        readonly namespace: string | null
+      }
+    }
   | { type: 'DIRTY_SET'; scope: string }
   | { type: 'DIRTY_CLEAR'; scope: string }
 
@@ -125,6 +162,7 @@ export const initialShellState: ShellState = {
   sessionEpoch: 0,
   bootstrappedSessionEpoch: null,
   sessionInvalid: false,
+  lastSecurityEffect: null,
   dirtyScopes: [],
 }
 
@@ -272,6 +310,12 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
         committedContextRevision: state.committedContextRevision,
         sessionEpoch: state.sessionEpoch + 1,
         bootstrappedSessionEpoch: null,
+        // A reset must never RESURRECT a session the server already rejected.
+        // Spreading initialShellState silently set this back to false, so a
+        // SESSION_INVALIDATED followed by a SESSION_RESET became bootstrappable
+        // again — the terminal state undone one dispatch later (ChatGPT #169 P1-1).
+        sessionInvalid: state.sessionInvalid,
+        lastSecurityEffect: state.lastSecurityEffect,
       }
     }
 
@@ -285,6 +329,59 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
         sessionEpoch: state.sessionEpoch + 1,
         bootstrappedSessionEpoch: null,
         sessionInvalid: true,
+      }
+    }
+
+    case 'BUSINESS_AUTH_OUTCOME': {
+      const snap = event.snapshot
+      // Current, or nothing. A late result from a departed actor or a company we
+      // have left produces NO security effect (SAB-008/009) — resetting the
+      // session of whoever is here now would be a denial of service wearing
+      // security's clothes.
+      const current =
+        snap.actorId === (state.activeContext?.userId ?? null) &&
+        snap.sessionEpoch === state.sessionEpoch &&
+        snap.companyId === (state.activeContext?.companyId ?? null) &&
+        snap.committedContextRevision === state.committedContextRevision
+      if (!current) return state
+
+      const kind = event.status === 401 ? 'session-reset' : 'capability-refence'
+      const key = JSON.stringify([
+        kind,
+        snap.actorId,
+        snap.sessionEpoch,
+        snap.companyId,
+        snap.committedContextRevision,
+        snap.capabilityGeneration,
+      ])
+      // Exactly once per identity, however many observers report it (SAB-010).
+      if (state.lastSecurityEffect?.key === key) return state
+      const effect: SecurityEffect = { key, kind, namespace: snap.namespace }
+
+      if (event.status === 401) {
+        return {
+          ...initialShellState,
+          requestFenceGeneration: state.requestFenceGeneration + 1,
+          committedContextRevision: state.committedContextRevision,
+          sessionEpoch: state.sessionEpoch + 1,
+          bootstrappedSessionEpoch: null,
+          sessionInvalid: true,
+          lastSecurityEffect: effect,
+        }
+      }
+
+      // 403 does not end the session, but the capability we read under is no
+      // longer trustworthy: drop the generation and the granted list, advance the
+      // fence, and let capabilityFailClosed shut every gated mount until a FRESH
+      // snapshot arrives (SAB-004/005).
+      return {
+        ...state,
+        requestFenceGeneration: state.requestFenceGeneration + 1,
+        activeContext:
+          state.activeContext === null
+            ? null
+            : { ...state.activeContext, capabilityGeneration: null, capabilities: [] },
+        lastSecurityEffect: effect,
       }
     }
 

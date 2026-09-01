@@ -30,7 +30,7 @@ import {
   type CounterpartyListItem,
   type CounterpartyPage,
 } from './contract'
-import { classifyOutcome, type RemoteViewState, type ViewOutcome } from '../shell/uiState'
+import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
 import { contextKeyString, contextKey } from '../shell/shellState'
 import { StateBlock } from '../shell/StateBlock'
@@ -121,7 +121,7 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
    * showing an incomplete truth.
    */
   // The central security boundary for every authenticated read on this screen.
-  const boundary = useAuthBoundary(shell.activeContext?.userId ?? null)
+  const boundary = useAuthBoundary()
 
   const singleCompanyContext = scopeMode === 'single' && activeCompanyId !== null
 
@@ -171,12 +171,9 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
       // SAB-006: first page, continuation and refetch all report here. There is
       // no weaker per-path variant — this IS the path.
       if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) {
-        const action = boundary.report(outcome.status, snapshot)
-        // SAB-008/009: a result that is no longer current produces no security
-        // effect and no data — it is discarded, not rendered as an error.
-        if (action.kind === 'stale-discard') {
-          return { type: 'fence-stale' } satisfies ViewOutcome<CounterpartyPage>
-        }
+        // The reducer decides whether this is current and what it means; a stale
+        // result is discarded there and produces no effect (SAB-008/009).
+        boundary.report(outcome.status, snapshot)
       }
       return outcome
     },
