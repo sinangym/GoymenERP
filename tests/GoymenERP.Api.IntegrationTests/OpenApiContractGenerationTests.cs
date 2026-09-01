@@ -117,7 +117,7 @@ public sealed class OpenApiContractGenerationTests
             ["GetCurrentIdentityV1"] = "ref:IdentityProfile",
             ["GetCounterpartiesV1"] = "ref:CounterpartyPage",
             ["CreateCounterpartyV1"] = "ref:PartyCoreView",
-            ["GetCounterpartyV1"] = "ref:PartyCoreView",
+            ["GetCounterpartyV1"] = "ref:CounterpartyDetailView",
             ["CreateCounterpartyCompanyAccountV1"] = "ref:PartyCoreView",
             ["SetCounterpartyCompanyAccountActiveStateV1"] = "none",
             ["GetShellCapabilitiesV1"] = "ref:ShellCapabilitySnapshot",
@@ -279,6 +279,23 @@ public sealed class OpenApiContractGenerationTests
                     ("externalIntegrationCode", "type:null|string"),
                     ("isActive", "type:boolean"),
                     ("version", "type:integer;format:int64")),
+                ["CounterpartyDetailAccountView"] = ObjectSchema(
+                    ["id", "companyId", "roles", "isActive", "version"],
+                    ("id", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("roles", "ref:PartyRole"),
+                    ("isActive", "type:boolean"),
+                    ("version", "type:string")),
+                ["CounterpartyDetailView"] = ObjectSchema(
+                    ["id", "code", "kind", "legalName", "tradeName", "isActive", "version", "companyAccounts"],
+                    ("id", "type:string;format:uuid"),
+                    ("code", "type:string"),
+                    ("kind", "ref:PartyKind"),
+                    ("legalName", "type:string"),
+                    ("tradeName", "type:null|string"),
+                    ("isActive", "type:boolean"),
+                    ("version", "type:string"),
+                    ("companyAccounts", "type:array;items:ref:CounterpartyDetailAccountView")),
                 ["CounterpartyListAccount"] = ObjectSchema(
                     ["id", "companyId", "roles", "isActive", "version"],
                     ("id", "type:string;format:uuid"),
@@ -1517,6 +1534,8 @@ public sealed class OpenApiContractGenerationTests
     {
         AssertComponentSchemaMatrix(schemas, ExpectedRequestComponentSchemas);
         AssertComponentSchemaMatrix(schemas, ExpectedProblemComponentSchemas);
+        AssertPositiveIntegerStringVersion(schemas, "CounterpartyDetailAccountView");
+        AssertPositiveIntegerStringVersion(schemas, "CounterpartyDetailView");
 
         var problem = schemas.GetProperty("ErpProblemDetailsContract");
         Assert.Equal(
@@ -1628,6 +1647,26 @@ public sealed class OpenApiContractGenerationTests
         AssertStatusRequestConstraints(
             schemas.GetProperty("SetLocationActiveState"),
             expectedVersionMinimum: 1);
+    }
+
+    private static void AssertPositiveIntegerStringVersion(
+        JsonElement schemas,
+        string schemaName)
+    {
+        var version = schemas
+            .GetProperty(schemaName)
+            .GetProperty("properties")
+            .GetProperty("version");
+        Assert.Equal("string", version.GetProperty("type").GetString());
+        Assert.False(IsNullable(version));
+        Assert.False(version.TryGetProperty("format", out _));
+        Assert.False(version.TryGetProperty("minimum", out _));
+        Assert.False(version.TryGetProperty("maximum", out _));
+        Assert.Equal(1, version.GetProperty("minLength").GetInt32());
+        Assert.Equal(19, version.GetProperty("maxLength").GetInt32());
+        Assert.Equal(
+            ErpOpenApiContract.PositiveIntegerStringPattern,
+            version.GetProperty("pattern").GetString());
     }
 
     private static void AssertStatusRequestConstraints(

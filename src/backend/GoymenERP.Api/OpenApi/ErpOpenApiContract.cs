@@ -175,6 +175,12 @@ public static class ErpOpenApiContract
                     SetIntegerProperty(schema, "version", nullable: false);
                 }
 
+                if (context.JsonTypeInfo.Type == typeof(CounterpartyDetailAccountView)
+                    || context.JsonTypeInfo.Type == typeof(CounterpartyDetailView))
+                {
+                    SetPositiveIntegerStringProperty(schema, "version");
+                }
+
                 if (context.JsonTypeInfo.Type == typeof(PageResult<LocationSummary>))
                 {
                     SetIntegerProperty(schema, "page", nullable: false);
@@ -944,6 +950,26 @@ public static class ErpOpenApiContract
             ? JsonSchemaType.Integer | JsonSchemaType.Null
             : JsonSchemaType.Integer;
         concreteProperty.Pattern = null;
+    }
+
+    private static void SetPositiveIntegerStringProperty(
+        OpenApiSchema schema,
+        string propertyName)
+    {
+        if (schema.Properties?.TryGetValue(propertyName, out var property) != true
+            || property is not OpenApiSchema concreteProperty)
+        {
+            throw new InvalidOperationException(
+                $"OpenAPI property '{propertyName}' is not a concrete schema.");
+        }
+
+        concreteProperty.Type = JsonSchemaType.String;
+        concreteProperty.Format = null;
+        concreteProperty.Minimum = null;
+        concreteProperty.Maximum = null;
+        concreteProperty.MinLength = 1;
+        concreteProperty.MaxLength = 19;
+        concreteProperty.Pattern = PositiveIntegerStringPattern;
     }
 
     private static void SetSchemaExtension(

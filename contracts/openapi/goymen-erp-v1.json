@@ -2501,7 +2501,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PartyCoreView"
+                  "$ref": "#/components/schemas/CounterpartyDetailView"
                 }
               }
             }
@@ -3688,6 +3688,87 @@
           },
           "isPlaceholder": {
             "type": "boolean"
+          }
+        }
+      },
+      "CounterpartyDetailAccountView": {
+        "required": [
+          "id",
+          "companyId",
+          "roles",
+          "isActive",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "roles": {
+            "$ref": "#/components/schemas/PartyRole"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "version": {
+            "maxLength": 19,
+            "minLength": 1,
+            "pattern": "^[1-9][0-9]*$",
+            "type": "string"
+          }
+        }
+      },
+      "CounterpartyDetailView": {
+        "required": [
+          "id",
+          "code",
+          "kind",
+          "legalName",
+          "tradeName",
+          "isActive",
+          "version",
+          "companyAccounts"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/PartyKind"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "tradeName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "version": {
+            "maxLength": 19,
+            "minLength": 1,
+            "pattern": "^[1-9][0-9]*$",
+            "type": "string"
+          },
+          "companyAccounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CounterpartyDetailAccountView"
+            }
           }
         }
       },
