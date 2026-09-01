@@ -12,6 +12,6 @@
     "c01:local": "playwright test --reporter=list"
   },
   "devDependencies": {
-    "@playwright/test": "1.56.1"
+    "@playwright/test": "1.62.1"
   }
 }
