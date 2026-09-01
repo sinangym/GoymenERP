@@ -33,14 +33,35 @@ a response arriving after the context has moved and being ignored.
   string or a cursor. The validator re-checks this; the guarantee is that no code
   path appends a query in the first place.
 
+- **Artifact privacy.** Playwright traces, screenshots and video are OFF. A trace
+  captures full request URLs and headers, and CI uploads artifacts — keeping them
+  would re-publish, in a zip, exactly the cursor material `redactPath` exists to
+  strip. A failing case is diagnosed by re-running it against the disposable
+  stack, which is reproducible by construction.
+
+## What each case actually exercises
+
+Ten green JUnit names are not a claim of complete scenario parity with Issue #146.
+This table is the honest scope, so the report cannot be read as more than it is.
+
+| Case | Exercised | Not exercised here |
+|---|---|---|
+| `B-C01-001` | nav discoverability, 50 rows, first row identity, combined roles, GSP-only party absent, no raw UUID / integration code | column-by-column formatting |
+| `B-C01-002` | unauthorized profile: no nav entry, deep link closes non-disclosingly, and **zero** counterparty requests attempted | per-capability matrix beyond `cari.parties.list` |
+| `B-C01-003` | a real GDC response withheld, GSP committed and painted, then the stale response **delivered** and ignored | actor change (that is SAB, not C-01) |
+| `B-C01-004` | `aria-sort` toggle, server-side re-sort proven by row identity, focus retained across re-render | full tab-order walk, focus-visible styling |
+| `B-C01-005` | five viewports, no page-level horizontal scroll, `display: table` preserved, labelled scroll region | colour-contrast, zoom beyond 320px |
+| `B-C01-006` | one `h1`, nav landmark, six `scope=col`, polite live region, `aria-busy=false`, no internal capability vocabulary | full axe ruleset |
+| `B-C01-007` | page 2 appends `CAR-000051/052`, 52 rows, no duplicates, control removed when `hasMore` is false | concurrent double-click on the control |
+| `B-C01-008` | 500, 503, abort and dropped-connection each preserve the verified rows; retry re-issues the same cursor; recovery appends exactly once | server-side retry semantics |
+| `B-C01-009` | the application's own cursor corrupted in flight, real `400 invalid_cursor`, recovery to page 1 announced in the live region | cursor forgery across companies |
+| `B-C01-010` | party state and account state as separate cells, globally inactive party hidden by the default filter | the full account-state filter matrix |
+
 ## Status
 
-The runner infrastructure is complete and verified end to end: Playwright's own
-JUnit and HTML reporters plus `src/evidenceReporter.ts` produce artifacts that
-pass the real validator, and the validator was confirmed to REJECT a query string
-in a path, a missing fault outcome, a one-character fixture SHA change, a failed
-case and a `retry-200` with `retryOrdinal: 0`.
+All ten pass against the disposable stack, and the emitted evidence passes
+`tools/validate_c01_e2e_contract.py`: every required fault outcome observed,
+`skipped=0`, and no query string or cursor in any recorded path.
 
-**The ten case specs are not written yet.** `specs/` is empty on purpose. A suite
-that emitted ten `passed` cases without exercising the application would turn the
-merge gate green on nothing, which is worse than a gate that is honestly red.
+`retry-200` is **observed**, not declared — the recorder writes it only when a
+real 200 arrives for the retried read.

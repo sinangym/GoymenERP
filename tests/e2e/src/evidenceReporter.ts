@@ -154,10 +154,14 @@ export default class C01EvidenceReporter implements Reporter {
       schemaVersion: 1,
       testedCommit: env.testedCommit,
       authorizedCompanyId: GDC_COMPANY_ID,
-      // Both claims are proved by cases, not asserted here: B-C01-005 shows the
-      // foreign record is absent under the authorized company, and `redactPath`
-      // is the only way a path enters this list.
-      foreignRecordAbsent: this.cases.get('B-C01-005')?.status === 'passed',
+      // B-C01-001 is the case that actually asserts the GSP-only party is absent
+      // from the authorized company's rendered page.
+      //
+      // This used to read B-C01-005 — the REFLOW case, which never looks at a
+      // foreign record at all. The evidence therefore carried a claim no test
+      // supported, which is the one thing an evidence file must never do. Codex
+      // caught it (#173 P1-5).
+      foreignRecordAbsent: this.cases.get('B-C01-001')?.status === 'passed',
       redacted: true,
       requests: this.network,
     }

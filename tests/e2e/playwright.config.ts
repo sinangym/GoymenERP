@@ -36,8 +36,19 @@ export default defineConfig({
     baseURL: env.authorizedBaseUrl,
     viewport: { width: 1600, height: 900 },
     ignoreHTTPSErrors: false,
-    trace: 'retain-on-failure',
-    screenshot: 'only-on-failure',
+    // ARTIFACT PRIVACY, decided rather than defaulted (#173 P2).
+    //
+    // The whole point of the network summary is that a cursor never leaves the
+    // run: `redactPath` strips every query string. A Playwright trace does the
+    // opposite — it captures full request URLs, headers and bodies, and CI
+    // uploads artifacts. Keeping traces would have re-published, in a zip, exactly
+    // the material the evidence contract forbids.
+    //
+    // So they are off. A failing acceptance case is diagnosed by re-running it
+    // against the disposable stack, which is reproducible by construction; that is
+    // cheaper than making an unredacted artifact safe to publish.
+    trace: 'off',
+    screenshot: 'off',
     video: 'off',
   },
 })

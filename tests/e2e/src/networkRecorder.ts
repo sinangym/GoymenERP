@@ -29,9 +29,6 @@ const API_PREFIX = '/api/v1/'
 export class NetworkRecorder {
   private readonly records: NetworkRecord[] = []
 
-  /** Outcomes the spec has declared for the NEXT matching counterparty read. */
-  private readonly queued: NetworkOutcome[] = []
-
   private constructor(private readonly page: Page) {}
 
   static async attach(page: Page): Promise<NetworkRecorder> {
@@ -41,7 +38,17 @@ export class NetworkRecorder {
       if (!url.includes(API_PREFIX)) return
       // A fulfilled (injected) response is recorded by the injector itself, so it
       // is not double counted here.
-      if (recorder.injectedUrls.has(url)) return
+      //
+      // This is a COUNT per URL, not a set. A retry re-issues the SAME cursor URL,
+      // so a set made the recorder skip the successful retry response forever —
+      // which is precisely why `retry-200` had to be asserted by hand instead of
+      // observed (#173 P1-3). Aborts never produce a response event, so they must
+      // not add to the count or they would swallow the next real one.
+      const pending = recorder.injectedResponses.get(url) ?? 0
+      if (pending > 0) {
+        recorder.injectedResponses.set(url, pending - 1)
+        return
+      }
       const status = response.status()
       const outcome: NetworkOutcome | null =
         status === 200
@@ -54,12 +61,30 @@ export class NetworkRecorder {
                 ? 'real-400-invalid-cursor'
                 : null
       if (outcome === null) return
-      recorder.push(redactPath(url), outcome, 0)
+      const path = redactPath(url)
+      // A successful counterparty read that the spec declared to be a retry
+      // recovery is recorded as such — observed, never asserted in advance.
+      if (
+        outcome === 'real-200' &&
+        path === '/api/v1/counterparties' &&
+        recorder.pendingRetryOrdinal !== null
+      ) {
+        const ordinal = recorder.pendingRetryOrdinal
+        recorder.pendingRetryOrdinal = null
+        recorder.push(path, 'retry-200', ordinal)
+        return
+      }
+      recorder.push(path, outcome, 0)
     })
     return recorder
   }
 
-  private readonly injectedUrls = new Set<string>()
+  /** url -> number of injected responses still expected on the response channel. */
+  private readonly injectedResponses = new Map<string, number>()
+
+  private expectInjectedResponse(url: string): void {
+    this.injectedResponses.set(url, (this.injectedResponses.get(url) ?? 0) + 1)
+  }
 
   private push(path: string, outcome: NetworkOutcome, retryOrdinal: number): void {
     // `ordinal` is a placeholder: the reporter renumbers every record across the
@@ -88,7 +113,7 @@ export class NetworkRecorder {
       if (used) return route.fallback()
       used = true
       const url = route.request().url()
-      this.injectedUrls.add(url)
+      if (outcome !== 'injected-abort') this.expectInjectedResponse(url)
       if (options.delayMs) await new Promise((resolve) => setTimeout(resolve, options.delayMs))
       this.push(redactPath(url), outcome, 0)
       if (outcome === 'injected-abort') return route.abort('failed')
@@ -122,30 +147,57 @@ export class NetworkRecorder {
       if (used) return route.fallback()
       used = true
       const url = route.request().url()
-      this.injectedUrls.add(url)
+      // An abort produces no response event, so nothing is expected on that channel.
       this.push(redactPath(url), 'injected-offline', 0)
       return route.abort('internetdisconnected')
     })
   }
 
-  /** Hold the next counterparty read, then let the real one through. */
-  async delayNextCounterpartyRead(delayMs: number): Promise<void> {
+  /**
+   * Fetch the next counterparty response for real, then WITHHOLD its delivery
+   * until the returned function is called.
+   *
+   * This is the difference between proving something and appearing to. An earlier
+   * version slept before `route.continue()`, which delays the REQUEST — the
+   * response then arrives into a context that has not moved, so nothing about
+   * stale delivery is exercised. Codex was right to block on it (#173 P1-2).
+   *
+   * Here the real server response is obtained first and held at the transport.
+   * The caller can commit a different company in the meantime and then release an
+   * genuinely stale, genuinely delivered response.
+   */
+  async holdNextCounterpartyResponse(): Promise<() => void> {
+    let release: () => void = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
     let used = false
     await this.page.route('**/api/v1/counterparties*', async (route: Route) => {
       if (used) return route.fallback()
       used = true
       const url = route.request().url()
-      await new Promise((resolve) => setTimeout(resolve, delayMs))
+      this.expectInjectedResponse(url)
+      const response = await route.fetch()
+      const body = await response.body()
+      await held
       this.push(redactPath(url), 'injected-delay', 0)
-      this.injectedUrls.add(url)
-      return route.continue()
+      return route.fulfill({ response, body })
     })
+    return () => release()
   }
 
-  /** Mark the read that succeeded after a user-driven retry. */
-  noteRetrySuccess(retryOrdinal: number): void {
-    this.push('/api/v1/counterparties', 'retry-200', retryOrdinal)
+  /**
+   * Classify the next SUCCESSFUL counterparty read as the recovery of a retry.
+   *
+   * Previously this pushed a `retry-200` record unconditionally, which meant the
+   * evidence asserted a recovery the recorder had never seen (#173 P1-3). Now the
+   * outcome is only written when a real 200 actually arrives.
+   */
+  expectRetrySuccess(retryOrdinal: number): void {
+    this.pendingRetryOrdinal = retryOrdinal
   }
+
+  private pendingRetryOrdinal: number | null = null
 
   async detach(testInfo: TestInfo): Promise<void> {
     await this.page.unrouteAll({ behavior: 'ignoreErrors' })

@@ -96,6 +96,13 @@ test('B-C01-002 the unauthorized profile is not told the screen exists', async (
   const page = await context.newPage()
   const net = await NetworkRecorder.attach(page)
 
+  // Capability-zero means the read is never ATTEMPTED, not that it is attempted
+  // and refused. Counting the requests is the only way to tell those apart.
+  let counterpartyRequests = 0
+  page.on('request', (request) => {
+    if (request.url().includes('/api/v1/counterparties')) counterpartyRequests += 1
+  })
+
   await page.goto('/')
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 20_000 })
   await expect(page.getByRole('link', { name: 'Cari Kartlar' })).toHaveCount(0)
@@ -107,6 +114,10 @@ test('B-C01-002 the unauthorized profile is not told the screen exists', async (
   await expect(page.getByRole('table')).toHaveCount(0)
   const body = await page.locator('body').innerText()
   expect(body).not.toContain(FIRST_ROW.code)
+  expect(
+    counterpartyRequests,
+    'the gated screen issued a counterparty read it was never entitled to attempt',
+  ).toBe(0)
 
   await net.detach(testInfo)
   await context.close()
@@ -117,20 +128,34 @@ test('B-C01-003 a company switch cannot leak the company we left', async ({ page
   await openList(page)
   await expect(rows(page)).toHaveCount(50)
 
-  // Hold the GSP read at the response stage so the switch is observed while the
-  // old company's rows are still painted. This is the delivery-not-prevention
-  // window that jsdom could never reach.
-  await net.delayNextCounterpartyRead(600)
+  // A GDC read is started and its REAL response is fetched and then withheld.
+  // The first version of this case slept before route.continue(), which delays
+  // the REQUEST — the response then lands in a context that never moved, so it
+  // proved nothing about stale delivery. Codex was right (#173 P1-2). Here the
+  // old company's response genuinely exists and is genuinely delivered late.
+  const releaseGdcResponse = await net.holdNextCounterpartyResponse()
+  await page.getByRole('button', { name: 'Daha fazla yükle' }).click()
 
   const picker = page.getByRole('combobox', { name: 'Şirket', exact: true })
   await picker.selectOption(GSP)
 
+  // GSP is committed and painted while GDC's response is still held.
   await expect(rows(page)).toHaveCount(GSP_ACTIVE_VISIBLE, { timeout: 30_000 })
-  const gspCodes = await codesOf(page)
-  expect(gspCodes).toContain(GSP_ONLY)
-  // Nothing that belongs only to GDC may survive the switch.
-  expect(gspCodes).not.toContain(FIRST_ROW.code)
+  const duringSwitch = await codesOf(page)
+  expect(duringSwitch).toContain(GSP_ONLY)
+  expect(duringSwitch, 'a GDC row survived the switch').not.toContain(FIRST_ROW.code)
   expect(await page.locator('body').innerText()).not.toContain(FIRST_ROW.name)
+
+  // NOW deliver the old company's response. It is not prevented, it arrives.
+  releaseGdcResponse()
+  await page.waitForTimeout(1500)
+
+  // It must be ignored: no GDC row, no row-count change, GSP still selected.
+  const afterStale = await codesOf(page)
+  expect(afterStale, 'a delivered stale GDC response painted rows').not.toContain(FIRST_ROW.code)
+  expect(afterStale).toEqual(duringSwitch)
+  expect(await page.locator('body').innerText()).not.toContain(FIRST_ROW.name)
+  await expect(picker).toHaveValue(GSP)
 
   await picker.selectOption(GDC)
   await expect(rows(page)).toHaveCount(50, { timeout: 30_000 })
@@ -201,6 +226,13 @@ test('B-C01-006 the accessible structure is the one screen readers need', async 
   await expect(page.getByRole('status')).toHaveAttribute('aria-live', 'polite')
   await expect(page.getByRole('region', { name: 'Cari listesi tablosu' })).toBeVisible()
   await expect(page.getByRole('search')).toBeVisible()
+  // A settled table must say so; a stuck aria-busy makes a screen reader wait
+  // forever for a load that already finished.
+  await expect(page.getByRole('table')).toHaveAttribute('aria-busy', 'false')
+  // Internal capability names are not user-facing vocabulary.
+  const shown = await page.locator('body').innerText()
+  expect(shown).not.toContain('filtered-authorized-visible-parties')
+  expect(shown.toLowerCase()).not.toContain('capability')
 
   await net.detach(testInfo)
 })
@@ -260,9 +292,11 @@ test('B-C01-008 a failed continuation keeps the verified rows and offers a retry
   // Four failures, and the verified rows never moved. The successful retry then
   // appends the rest exactly once — proof that each failed attempt re-issued the
   // same cursor rather than advancing it.
+  // The recovery is OBSERVED, not asserted in advance: the recorder only writes
+  // retry-200 when a real 200 actually arrives for this read.
+  net.expectRetrySuccess(1)
   await retry.click()
   await expect(rows(page)).toHaveCount(GDC_ACTIVE_VISIBLE, { timeout: 30_000 })
-  net.noteRetrySuccess(1)
   expect(new Set(await codesOf(page)).size).toBe(GDC_ACTIVE_VISIBLE)
 
   await net.detach(testInfo)
