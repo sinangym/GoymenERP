@@ -5,6 +5,7 @@ public sealed record ShellCapabilityDeclaration(
     string RouteId,
     string RoutePath,
     string ScreenId,
+    ShellCapabilityRoutePrecedence RoutePrecedence,
     ShellCapabilityContextRequirement ContextRequirement,
     ShellCapabilityScopeRequirement ScopeRequirement,
     IReadOnlyCollection<string> RequiredPermissions,

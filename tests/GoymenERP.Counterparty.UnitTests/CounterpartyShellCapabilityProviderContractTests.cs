@@ -18,7 +18,7 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
         var root = document.RootElement;
         var provider = new CounterpartyShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
-        Assert.Equal(3, declarations.Count);
+        Assert.Equal(4, declarations.Count);
         var declaration = Assert.Single(
             declarations,
             item => item.CapabilityId
@@ -38,6 +38,8 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
         Assert.Equal(route.GetProperty("path").GetString(), declaration.RoutePath);
         Assert.Equal(route.GetProperty("screen").GetString(), declaration.ScreenId);
         Assert.Equal(route.GetProperty("capability").GetString(), declaration.CapabilityId);
+        Assert.Equal("static", route.GetProperty("priority").GetString());
+        Assert.Equal(ShellCapabilityRoutePrecedence.Static, declaration.RoutePrecedence);
         Assert.Equal(
             "single-or-authorized-multi-company-read",
             route.GetProperty("context").GetString());
@@ -98,6 +100,8 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
         Assert.Equal(route.GetProperty("path").GetString(), declaration.RoutePath);
         Assert.Equal(route.GetProperty("screen").GetString(), declaration.ScreenId);
         Assert.Equal(route.GetProperty("capability").GetString(), declaration.CapabilityId);
+        Assert.Equal("static-before-parameter", route.GetProperty("priority").GetString());
+        Assert.Equal(ShellCapabilityRoutePrecedence.Static, declaration.RoutePrecedence);
         Assert.Equal("create-subset", route.GetProperty("scopeVariant").GetString());
         Assert.Equal("single-company", route.GetProperty("context").GetString());
         Assert.Equal(
@@ -151,6 +155,8 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
         Assert.Equal(route.GetProperty("path").GetString(), declaration.RoutePath);
         Assert.Equal(route.GetProperty("screen").GetString(), declaration.ScreenId);
         Assert.Equal(route.GetProperty("capability").GetString(), declaration.CapabilityId);
+        Assert.Equal("static-before-parameter", route.GetProperty("priority").GetString());
+        Assert.Equal(ShellCapabilityRoutePrecedence.Static, declaration.RoutePrecedence);
         Assert.Equal("single-target-company", route.GetProperty("context").GetString());
         Assert.Equal(
             ShellCapabilityContextRequirement.SingleCompany,
@@ -172,6 +178,69 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
             ],
             declaration.RequiredPermissions);
         Assert.Equal("both-company-wide-on-target", capability.GetProperty("scope").GetString());
+        Assert.Equal(
+            ShellCapabilityScopeRequirement.CompanyWide,
+            declaration.ScopeRequirement);
+        Assert.Equal("blocked", root.GetProperty("implementationReadiness").GetString());
+        Assert.Equal("no_go", root.GetProperty("productionActivation").GetString());
+        Assert.False(declaration.ImplementationAvailable);
+    }
+
+    [Fact]
+    public void StagedDetailDeclaration_MatchesTheAcceptedRepositoryOwnerSource()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(
+            Path.Combine(FindRepositoryRoot(), ContractPath)));
+        var root = document.RootElement;
+        var provider = new CounterpartyShellCapabilityProvider();
+        var declaration = Assert.Single(
+            provider.GetDeclarations(),
+            item => item.CapabilityId
+                == CounterpartyShellCapabilityProvider.DetailCapabilityId);
+
+        Assert.Equal(
+            root.GetProperty("owners")
+                .GetProperty("businessAndCariFeature")
+                .GetString(),
+            provider.Owner);
+        Assert.Equal(root.GetProperty("contractVersion").GetString(), provider.ContractVersion);
+
+        var route = root.GetProperty("routes")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == "cari.detail");
+        Assert.Equal(route.GetProperty("id").GetString(), declaration.RouteId);
+        Assert.Equal(
+            route.GetProperty("path").GetString()!
+                .Replace(":partyId", "{party-id}", StringComparison.Ordinal),
+            declaration.RoutePath);
+        Assert.Equal(route.GetProperty("screen").GetString(), declaration.ScreenId);
+        Assert.Equal(route.GetProperty("capability").GetString(), declaration.CapabilityId);
+        Assert.Equal("parameter-after-static", route.GetProperty("priority").GetString());
+        Assert.Equal(
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            declaration.RoutePrecedence);
+        Assert.Equal(
+            "single-or-authorized-multi-company-read",
+            route.GetProperty("context").GetString());
+        Assert.Equal(
+            ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+            declaration.ContextRequirement);
+
+        var capability = root.GetProperty("capabilities")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == declaration.CapabilityId);
+        Assert.Equal(
+            capability.GetProperty("permissions")
+                .EnumerateArray()
+                .Select(item => item.GetString()!)
+                .ToArray(),
+            declaration.RequiredPermissions);
+        Assert.Equal(
+            [ErpPermissions.CounterpartyPartiesRead],
+            declaration.RequiredPermissions);
+        Assert.Equal(
+            "company-or-authorized-multi-company-read",
+            capability.GetProperty("scope").GetString());
         Assert.Equal(
             ShellCapabilityScopeRequirement.CompanyWide,
             declaration.ScopeRequirement);

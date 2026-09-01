@@ -2,6 +2,6 @@ namespace GoymenERP.Api.Shell;
 
 internal static class ShellCapabilityRegistryAuthorities
 {
-    internal const string CounterpartyListCreateAndLinkV15 =
-        "sha256:7z0swX7xgDLlK3z8zg8oDXpw9mqkaqrZAMObFtjGOk8";
+    internal const string CounterpartyListCreateLinkAndDetailV15 =
+        "sha256:1WJe3lWRX_TIDVpLqo1o--H1fY2X2_VnR46lXXiFrkA";
 }

@@ -181,6 +181,9 @@ public sealed class ShellCapabilityAcceptanceTests(
         Assert.DoesNotContain(
             CounterpartyShellCapabilityProvider.LinkCapabilityId,
             capabilities);
+        Assert.DoesNotContain(
+            CounterpartyShellCapabilityProvider.DetailCapabilityId,
+            capabilities);
     }
 
     [Fact]
@@ -348,9 +351,10 @@ public sealed class ShellCapabilityAcceptanceTests(
             new ShellCapabilityDeclaration(
                 CapabilityId,
                 "TEST-SINGLE",
-                "/test-single",
-                "TEST-SCREEN",
-                ShellCapabilityContextRequirement.SingleCompany,
+                  "/test-single",
+                  "TEST-SCREEN",
+                  ShellCapabilityRoutePrecedence.Static,
+                  ShellCapabilityContextRequirement.SingleCompany,
                 ShellCapabilityScopeRequirement.CompanyWide,
                 [ErpPermissions.CounterpartyPartiesRead],
                 ImplementationAvailable: true),
