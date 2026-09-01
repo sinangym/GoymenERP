@@ -63,6 +63,13 @@ public sealed class C01E2eGoldenFixtureSqlServerRelationalAcceptanceTests
             using var artifact = C01E2eGoldenFixture.Load();
             await C01E2eGoldenFixture.ApplyAsync(connection, artifact);
 
+            var reusableEvidence =
+                await C01E2eGoldenFixtureDatabaseVerifier.VerifyAsync(connection);
+            Assert.Equal(54, reusableEvidence.PartyCount);
+            Assert.Equal(55, reusableEvidence.AccountCount);
+            Assert.Equal(55, reusableEvidence.Sequence.CurrentValue);
+            Assert.Null(reusableEvidence.Sequence.LastUsedValue);
+
             var secondApply = await Assert.ThrowsAsync<SqlException>(
                 () => C01E2eGoldenFixture.ApplyAsync(connection, artifact));
             Assert.Equal(51021, secondApply.Number);

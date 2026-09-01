@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile
+      Include="..\GoymenERP.Api.IntegrationTests\Fixtures\C01E2eGoldenFixture.cs"
+      Link="Fixtures\C01E2eGoldenFixture.cs" />
+    <Compile
+      Include="..\GoymenERP.Api.IntegrationTests\Fixtures\C01E2eGoldenFixtureDatabaseVerifier.cs"
+      Link="Fixtures\C01E2eGoldenFixtureDatabaseVerifier.cs" />
+    <EmbeddedResource
+      Include="..\e2e-fixtures\C01-E2E-GOLDEN-V1.json"
+      LogicalName="GoymenERP.Api.IntegrationTests.Fixtures.C01-E2E-GOLDEN-V1.json" />
+  </ItemGroup>
+
+</Project>
