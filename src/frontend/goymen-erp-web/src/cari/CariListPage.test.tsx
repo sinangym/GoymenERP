@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient } from '@tanstack/react-query'
 import { RouterProvider, createMemoryRouter } from 'react-router'
@@ -901,5 +901,49 @@ describe('C-01 continuation failure — the transport half of the allowlist', ()
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy())
     expect(screen.getByRole('row', { name: /C-0001/ })).toBeTruthy()
     expect(queryStateBlock('network-error')).toBeNull()
+  })
+})
+
+describe('non-disclosure: a denied route and an unknown route are indistinguishable', () => {
+  /**
+   * B-C01-002-UI, found against the real stack with an unauthorized actor.
+   *
+   * `/cari` without the capability rendered the neutral not-found block inside the
+   * shell, while a genuinely unknown path fell through to react-router's own error
+   * boundary — "Unexpected Application Error! 404 Not Found", no shell at all.
+   *
+   * Being able to tell those apart IS the disclosure. It answers the one question
+   * non-disclosure exists to refuse: does this module exist and am I merely denied?
+   */
+  function blockHtmlAt(path: string) {
+    const el = document.querySelector('[data-state]')
+    return { path, kind: el?.getAttribute('data-state') ?? null, html: el?.outerHTML ?? null }
+  }
+
+  it('both render the same block, inside the same shell', async () => {
+    installFetch({ capabilities: [] })
+    renderAt('/cari')
+    await findStateBlock('not-found')
+    const denied = blockHtmlAt('/cari')
+    const deniedHadShell = document.querySelector('nav') !== null
+    cleanup()
+
+    installFetch({ capabilities: [] })
+    renderAt('/boyle-bir-sayfa-yok')
+    await findStateBlock('not-found')
+    const unknown = blockHtmlAt('/boyle-bir-sayfa-yok')
+
+    expect(denied.kind).toBe('not-found')
+    expect(unknown.kind).toBe('not-found')
+    expect(unknown.html).toBe(denied.html)
+    expect(deniedHadShell).toBe(true)
+    expect(document.querySelector('nav')).not.toBeNull()
+  })
+
+  it('an unknown route does not reach react-router error boundary', async () => {
+    installFetch({ capabilities: [] })
+    renderAt('/hic-olmayan/derin/yol')
+    await findStateBlock('not-found')
+    expect(document.body.textContent).not.toContain('Unexpected Application Error')
   })
 })
