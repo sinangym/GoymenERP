@@ -123,18 +123,37 @@ test('B-C01-002 the unauthorized profile is not told the screen exists', async (
   await context.close()
 })
 
-test('B-C01-003 a company switch cannot leak the company we left', async ({ page }, testInfo) => {
+test('B-C01-003 a company switch cancels the old read, so it cannot leak', async ({ page }, testInfo) => {
   const net = await NetworkRecorder.attach(page)
   await openList(page)
   await expect(rows(page)).toHaveCount(50)
 
-  // A GDC read is started and its REAL response is fetched and then withheld.
-  // The first version of this case slept before route.continue(), which delays
-  // the REQUEST — the response then lands in a context that never moved, so it
-  // proved nothing about stale delivery. Codex was right (#173 P1-2). Here the
-  // old company's response genuinely exists and is genuinely delivered late.
-  const releaseGdcResponse = await net.holdNextCounterpartyResponse()
+  // PREVENTION, NOT REJECTION — and the title says so, because I had this wrong.
+  //
+  // Two corrections got this case to the truth. The first version slept before
+  // route.continue(), which delays the REQUEST, so the response landed in a
+  // context that had never moved (#173 P1-2). The second version fetched the real
+  // response and withheld it, and reported success from whether `route.fulfill`
+  // resolved. Measured on the running app, that signal is worthless:
+  //
+  //     fulfilOk=true  pageReceived=false  aborted=net::ERR_ABORTED
+  //
+  // The company switch CANCELS the in-flight read, so the stale response is never
+  // delivered at all. Fulfil resolving says only that the interceptor wrote bytes
+  // nobody was listening for. Codex's post-merge audit warned that SAB-009 could
+  // pass vacuously for exactly this reason; the warning generalises here.
+  //
+  // What this case now pins is the real, observable property: an old company's
+  // read does not survive the switch. Whether a DELIVERED stale response would be
+  // rejected is a different claim, it is not provable in this browser path, and it
+  // is proved in the reducer tests instead.
+  const gdcRead = await net.holdNextCounterpartyResponse()
   await page.getByRole('button', { name: 'Daha fazla yükle' }).click()
+  // Wait until the response genuinely EXISTS and is parked. Without this latch the
+  // release could fire before the handler even reached route.fetch(), delivering
+  // into a context that had not moved yet — the case would pass having proved
+  // nothing (#173 post-merge audit, point 3).
+  await gdcRead.ready
 
   const picker = page.getByRole('combobox', { name: 'Şirket', exact: true })
   await picker.selectOption(GSP)
@@ -146,13 +165,21 @@ test('B-C01-003 a company switch cannot leak the company we left', async ({ page
   expect(duringSwitch, 'a GDC row survived the switch').not.toContain(FIRST_ROW.code)
   expect(await page.locator('body').innerText()).not.toContain(FIRST_ROW.name)
 
-  // NOW deliver the old company's response. It is not prevented, it arrives.
-  releaseGdcResponse()
+  // Release the old company's response. It cannot arrive: the read is already gone.
+  gdcRead.release()
   await page.waitForTimeout(1500)
+  expect(
+    gdcRead.abortError(),
+    'the old company read survived the switch — this is now a delivery case, not a prevention one',
+  ).toBe('net::ERR_ABORTED')
+  expect(
+    gdcRead.wasDelivered(),
+    'the stale response WAS delivered, so this case must assert rejection, not prevention',
+  ).toBe(false)
 
-  // It must be ignored: no GDC row, no row-count change, GSP still selected.
+  // And nothing from the departed company is on screen either way.
   const afterStale = await codesOf(page)
-  expect(afterStale, 'a delivered stale GDC response painted rows').not.toContain(FIRST_ROW.code)
+  expect(afterStale, 'a GDC row appeared after the switch').not.toContain(FIRST_ROW.code)
   expect(afterStale).toEqual(duringSwitch)
   expect(await page.locator('body').innerText()).not.toContain(FIRST_ROW.name)
   await expect(picker).toHaveValue(GSP)
@@ -270,22 +297,30 @@ test('B-C01-008 a failed continuation keeps the verified rows and offers a retry
   // scoped retry — the load-more control is GONE, not merely disabled. That is the
   // shape DEC-CAR-004 asks for (explicit user retry, no automatic resend), so every
   // fault after the first is driven through the retry button.
-  await net.failNextCounterpartyRead('injected-500')
+  const used500 = await net.failNextCounterpartyRead('injected-500')
   await page.getByRole('button', { name: 'Daha fazla yükle' }).click()
+  await expect.poll(used500, { timeout: 20_000 }).toBe(true)
   await expect(alert, 'no continuation error after injected-500').toBeVisible({ timeout: 30_000 })
   await expect(rows(page), 'rows were dropped on injected-500').toHaveCount(50)
   await expect(page.getByRole('button', { name: 'Daha fazla yükle' })).toHaveCount(0)
 
   for (const fault of ['injected-503', 'injected-abort'] as const) {
-    await net.failNextCounterpartyRead(fault)
+    const used = await net.failNextCounterpartyRead(fault)
     await retry.click()
-    await expect(alert, `no continuation error after ${fault}`).toBeVisible({ timeout: 30_000 })
+    // The alert from the PREVIOUS fault is still on screen, so a bare toBeVisible
+    // would be satisfied by it and the new fault would never be observed (#173
+    // post-merge audit, point 4). Waiting for the injector to have been CONSUMED
+    // is the signal that does not depend on catching a transient UI state.
+    await expect.poll(used, { timeout: 20_000 }).toBe(true)
+    await expect(retry, `the retry never settled after ${fault}`).toBeEnabled({ timeout: 30_000 })
+    await expect(alert, `no continuation error after ${fault}`).toBeVisible()
     await expect(rows(page), `rows were dropped on ${fault}`).toHaveCount(50)
   }
 
   // A dropped connection is a transport fault, not a status code.
-  await net.dropNextCounterpartyRead()
+  const usedDrop = await net.dropNextCounterpartyRead()
   await retry.click()
+  await expect.poll(usedDrop, { timeout: 20_000 }).toBe(true)
   await expect(alert).toBeVisible({ timeout: 30_000 })
   await expect(rows(page)).toHaveCount(50)
 
