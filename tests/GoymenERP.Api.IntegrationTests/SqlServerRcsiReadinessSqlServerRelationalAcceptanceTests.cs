@@ -435,6 +435,10 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public async Task PowerShellWrapper_MultipleEndpointsReadyAndOffUseBoundApphostAndPropagateExit()
     {
+        // Test-only host budget: this protects the wrapper contract from cold-host and
+        // full-matrix scheduling variance. Production operators still own T via the runbook.
+        const int wrapperOverallTimeoutSeconds = 60;
+        var wrapperTestProcessTimeout = TimeSpan.FromSeconds(90);
         var baseConnectionString = GetBaseConnectionString();
         var readyDatabase = NewDatabaseName("göymen_erp_rcsi_wrapper");
         var offDatabase = NewDatabaseName("goymen_erp_rcsi_wrapper");
@@ -469,8 +473,8 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
                 approvedEndpointInventory,
                 readyOutput,
                 payload,
-                overallTimeoutSeconds: 30,
-                testProcessTimeout: TimeSpan.FromSeconds(60));
+                overallTimeoutSeconds: wrapperOverallTimeoutSeconds,
+                testProcessTimeout: wrapperTestProcessTimeout);
             Assert.True(
                 ready.ExitCode == 0,
                 $"Wrapper READY exit was {ready.ExitCode}; stderr: {ready.StandardError}");
@@ -500,8 +504,8 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
                 [endpointSha256],
                 offOutput,
                 payload,
-                overallTimeoutSeconds: 30,
-                testProcessTimeout: TimeSpan.FromSeconds(60));
+                overallTimeoutSeconds: wrapperOverallTimeoutSeconds,
+                testProcessTimeout: wrapperTestProcessTimeout);
             Assert.Equal(4, off.ExitCode);
             Assert.Contains("native exit 4", off.StandardError, StringComparison.Ordinal);
             Assert.DoesNotContain(
@@ -529,8 +533,8 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
                 [endpointSha256],
                 invalidBindingOutput,
                 payload,
-                overallTimeoutSeconds: 30,
-                testProcessTimeout: TimeSpan.FromSeconds(60));
+                overallTimeoutSeconds: wrapperOverallTimeoutSeconds,
+                testProcessTimeout: wrapperTestProcessTimeout);
             Assert.Equal(2, invalidBinding.ExitCode);
             Assert.Contains("native exit 2", invalidBinding.StandardError, StringComparison.Ordinal);
             Assert.True(File.Exists(invalidBindingOutput));
@@ -660,6 +664,77 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         }
     }
 
+    [SqlServerFact]
+    public async Task PowerShellWrapper_InFlightScriptDriftFailsClosedAndDiscardsEvidence()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            $"goymen-erp-rcsi-wrapper-drift-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        try
+        {
+            var payload = CreateRuntimePayloadManifest(root);
+            var wrapperPath = Path.Combine(root, "approved-wrapper.ps1");
+            File.Copy(payload.WrapperScriptPath, wrapperPath);
+            var approvedWrapperSha256 = ComputeFileSha256(wrapperPath);
+            var endpoint = (IPEndPoint)listener.LocalEndpoint;
+            const string secret = "in-flight-wrapper-drift-secret";
+            const string expectedDatabase = "goymen_erp_rcsi_wrapper_drift";
+            var connectionString = new SqlConnectionStringBuilder
+            {
+                DataSource = $"127.0.0.1,{endpoint.Port}",
+                InitialCatalog = expectedDatabase,
+                UserID = "probe",
+                Password = secret,
+                Encrypt = false,
+                ConnectTimeout = 30,
+            }.ConnectionString;
+            var outputPath = Path.Combine(root, "drift-run", "readiness.json");
+            var acceptTask = listener.AcceptTcpClientAsync();
+            var invocation = RunPowerShellWrapperAsync(
+                connectionString,
+                expectedDatabase,
+                [SqlServerLogicalEndpointFingerprint.ComputeSha256(
+                    new SqlConnectionStringBuilder(connectionString).DataSource)],
+                outputPath,
+                payload,
+                overallTimeoutSeconds: 6,
+                testProcessTimeout: TimeSpan.FromSeconds(60),
+                wrapperPathOverride: wrapperPath,
+                expectedWrapperScriptSha256Override: approvedWrapperSha256);
+
+            var firstCompleted = await Task.WhenAny(acceptTask, invocation);
+            if (firstCompleted == invocation)
+            {
+                var early = await invocation;
+                Assert.Fail(
+                    $"Wrapper exited before opening the drift socket. " +
+                    $"Exit: {early.ExitCode}; stderr: {early.StandardError}");
+            }
+
+            using var accepted = await acceptTask;
+            await File.AppendAllTextAsync(wrapperPath, "# post-start-drift");
+            var result = await invocation;
+
+            Assert.Equal(2, result.ExitCode);
+            Assert.Empty(result.StandardOutput);
+            Assert.Contains(
+                "Final wrapper script verification failed closed.",
+                result.StandardError,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(secret, result.StandardError, StringComparison.Ordinal);
+            Assert.False(File.Exists(outputPath));
+            Assert.Empty(Directory.GetFiles(root, "*.tmp", SearchOption.AllDirectories));
+        }
+        finally
+        {
+            listener.Stop();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     internal static async Task<WrapperProcessResult> RunPowerShellWrapperAsync(
         string connectionString,
         string expectedDatabase,
@@ -667,14 +742,13 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         string outputPath,
         RuntimePayloadManifest payload,
         int overallTimeoutSeconds,
-        TimeSpan testProcessTimeout)
+        TimeSpan testProcessTimeout,
+        string? wrapperPathOverride = null,
+        string? expectedWrapperScriptSha256Override = null)
     {
-        var repositoryRoot = FindRepositoryRoot();
-        var wrapperPath = Path.Combine(
-            repositoryRoot,
-            "tools",
-            "GoymenERP.SqlServerRcsiReadiness",
-            "Invoke-GoymenERP.SqlServerRcsiReadiness.ps1");
+        var wrapperPath = wrapperPathOverride ?? payload.WrapperScriptPath;
+        var expectedWrapperScriptSha256 =
+            expectedWrapperScriptSha256Override ?? payload.WrapperScriptSha256;
         Assert.True(File.Exists(wrapperPath));
         const string secretEnvironment = "GOYMEN_ERP_RCSI_PROBE_CONNECTION";
         var startInfo = new ProcessStartInfo(GetPowerShellPath())
@@ -690,6 +764,7 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
                      "-PayloadManifest", payload.ManifestPath,
                      "-ExpectedPayloadManifestSha256", payload.ManifestSha256,
                      "-ExpectedToolAssemblySha256", payload.ToolAssemblySha256,
+                     "-ExpectedWrapperScriptSha256", expectedWrapperScriptSha256,
                      "-TestedCommit", payload.SourceRevisionId,
                      "-ApprovedLogicalEndpointSha256Json",
                      JsonSerializer.Serialize(approvedLogicalEndpointSha256),
@@ -788,6 +863,10 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         startInfo.ArgumentList.Add(runId);
         startInfo.ArgumentList.Add("--tested-commit");
         startInfo.ArgumentList.Add(testedCommit);
+        startInfo.ArgumentList.Add("--expected-wrapper-script-sha256");
+        startInfo.ArgumentList.Add(runtimePayload.WrapperScriptSha256);
+        startInfo.ArgumentList.Add("--observed-wrapper-script-sha256");
+        startInfo.ArgumentList.Add(runtimePayload.WrapperScriptSha256);
         startInfo.ArgumentList.Add("--expected-tool-assembly-sha256");
         startInfo.ArgumentList.Add(runtimePayload.ToolAssemblySha256);
         startInfo.ArgumentList.Add("--runtime-payload-root");
@@ -883,6 +962,12 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
             runtimePayload.SourceRevisionId,
             root.GetProperty("testedCommit").GetString());
         Assert.Equal(
+            runtimePayload.WrapperScriptSha256,
+            root.GetProperty("expectedWrapperScriptSha256").GetString());
+        Assert.Equal(
+            runtimePayload.WrapperScriptSha256,
+            root.GetProperty("observedWrapperScriptSha256").GetString());
+        Assert.Equal(
             runtimePayload.ToolAssemblySha256,
             root.GetProperty("expectedToolAssemblySha256").GetString());
         Assert.Equal(
@@ -948,6 +1033,11 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         var toolAssemblyPath = Path.Combine(
             payloadRoot,
             "GoymenERP.SqlServerRcsiReadiness.dll");
+        var wrapperScriptPath = Path.Combine(
+            repositoryRoot,
+            "tools",
+            "GoymenERP.SqlServerRcsiReadiness",
+            "Invoke-GoymenERP.SqlServerRcsiReadiness.ps1");
         var productVersion = FileVersionInfo.GetVersionInfo(toolAssemblyPath).ProductVersion;
         var separatorIndex = productVersion?.LastIndexOf('+') ?? -1;
         Assert.True(separatorIndex >= 0);
@@ -999,6 +1089,8 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
             ComputeFileSha256(toolAssemblyPath),
             entryExecutablePath,
             ComputeFileSha256(entryExecutablePath),
+            wrapperScriptPath,
+            ComputeFileSha256(wrapperScriptPath),
             sourceRevisionId);
     }
 
@@ -1101,6 +1193,8 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         string ToolAssemblySha256,
         string EntryExecutablePath,
         string EntryExecutableSha256,
+        string WrapperScriptPath,
+        string WrapperScriptSha256,
         string SourceRevisionId);
 
     private static string GetBaseConnectionString() =>

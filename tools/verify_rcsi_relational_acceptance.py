@@ -31,6 +31,7 @@ EXPECTED_TESTS = tuple(
             "ExpectedDatabaseMismatch_IsRejectedBeforeTheConnectionIsOpened",
             "PowerShellWrapper_MultipleEndpointsReadyAndOffUseBoundApphostAndPropagateExit",
             "PowerShellWrapper_OverallTimeoutKillsChildWithoutEvidenceOrSecretEcho",
+            "PowerShellWrapper_InFlightScriptDriftFailsClosedAndDiscardsEvidence",
             "RcsiOffStartupFailsThenExplicitTestAdminEnableAllowsStartupAndProbe",
             "RcsiOff_ProbeFailsClosedAndDoesNotChangeTheDatabase",
             "RcsiOn_ProbeAndIdentityStartupUseTheSameReadyPolicy",
@@ -85,14 +86,15 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.ExpectedDatabaseMismatch_IsRejectedBeforeTheConnectionIsOpened",
     "GoymenERP.Api.IntegrationTests.SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.PowerShellWrapper_MultipleEndpointsReadyAndOffUseBoundApphostAndPropagateExit",
     "GoymenERP.Api.IntegrationTests.SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.PowerShellWrapper_OverallTimeoutKillsChildWithoutEvidenceOrSecretEcho",
+    "GoymenERP.Api.IntegrationTests.SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.PowerShellWrapper_InFlightScriptDriftFailsClosedAndDiscardsEvidence",
     "GoymenERP.Api.IntegrationTests.SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.RcsiOff_ProbeFailsClosedAndDoesNotChangeTheDatabase",
     "GoymenERP.Api.IntegrationTests.SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.RcsiOffStartupFailsThenExplicitTestAdminEnableAllowsStartupAndProbe",
     "GoymenERP.Api.IntegrationTests.SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.RcsiOn_ProbeAndIdentityStartupUseTheSameReadyPolicy",
     "GoymenERP.Api.IntegrationTests.SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.UnapprovedLogicalEndpoint_IsRejectedWithoutChangingDatabase",
     "GoymenERP.Api.IntegrationTests.SqlServerRelationalAcceptanceTests.MigrationSeedWriteGuardCompositeForeignKeyAndHttpIsolation_AreEnforced",
 )
-BROAD_DISCOVERY_COUNT = 51
-BROAD_EXECUTION_COUNT = 58
+BROAD_DISCOVERY_COUNT = 52
+BROAD_EXECUTION_COUNT = 59
 
 
 def verify_discovery(standard_output: str) -> None:
@@ -105,7 +107,7 @@ def verify_discovery(standard_output: str) -> None:
     )
     if discovered != EXPECTED_TESTS:
         raise RuntimeError(
-            "RCSI discovery must contain exactly the nine reviewed tests. "
+            "RCSI discovery must contain exactly the ten reviewed tests. "
             f"Expected {EXPECTED_TESTS!r}, found {discovered!r}."
         )
 

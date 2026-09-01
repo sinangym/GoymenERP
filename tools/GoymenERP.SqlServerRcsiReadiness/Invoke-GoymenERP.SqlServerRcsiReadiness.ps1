@@ -6,6 +6,7 @@ param(
   [Parameter(Mandatory)][string]$PayloadManifest,
   [Parameter(Mandatory)][string]$ExpectedPayloadManifestSha256,
   [Parameter(Mandatory)][string]$ExpectedToolAssemblySha256,
+  [Parameter(Mandatory)][string]$ExpectedWrapperScriptSha256,
   [Parameter(Mandatory)][string]$TestedCommit,
   [Parameter(Mandatory)][string]$ApprovedLogicalEndpointSha256Json,
   [Parameter(Mandatory)][string]$ExpectedDatabase,
@@ -194,6 +195,34 @@ function Test-CanonicalAbsolutePath {
 function Get-FileSha256 {
   param([Parameter(Mandatory)][string]$Path)
   return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+function Get-VerifiedWrapperScriptIdentity {
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][string]$ExpectedSha256
+  )
+
+  if (-not (Test-CanonicalAbsolutePath $Path) -or
+      -not (Test-Path -LiteralPath $Path -PathType Leaf) -or
+      -not (Test-NoReparsePointInExistingAncestry $Path)) {
+    throw 'The approved wrapper script path is not canonical, present and reparse-free.'
+  }
+
+  # Hash one raw byte snapshot. This is defense in depth and evidence binding;
+  # the required outer runner remains the trust root and must perform its own
+  # pre-secret check while holding an OS-enforced immutable/read-only boundary.
+  $bytes = [IO.File]::ReadAllBytes($Path)
+  $actualSha256 = [Convert]::ToHexString(
+    [Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+  if ($actualSha256 -cne $ExpectedSha256) {
+    throw 'The wrapper script SHA-256 does not match the approved outer inventory.'
+  }
+
+  return [pscustomobject]@{
+    Path = [IO.Path]::GetFullPath($Path)
+    Sha256 = $actualSha256
+  }
 }
 
 function Test-NoReparsePointInExistingAncestry {
@@ -621,6 +650,7 @@ $connectionStringEnvironmentVariable = 'GOYMEN_ERP_RCSI_PROBE_CONNECTION'
 $scriptExitCode = 0
 $failureMessage = $null
 $evidenceValidated = $false
+$validatedStdoutBytes = $null
 $outputPathFull = $null
 $cleanupTimeoutMilliseconds = $null
 $childTerminationAttempted = $false
@@ -628,6 +658,8 @@ $childTerminationSucceeded = $false
 $windowsJobHandle = [IntPtr]::Zero
 $unixProcessGroupId = 0
 $postPayloadVerified = $false
+$wrapperScriptVerifiedBeforeSecret = $false
+$verifiedWrapperScript = $null
 $evidenceDirectoryCreatedByWrapper = $false
 $temporaryOutputPath = $null
 $overallDeadlineStopwatch = $null
@@ -638,6 +670,14 @@ try {
     $ExpectedPayloadManifestSha256 64 'Runtime payload manifest SHA-256'
   $expectedToolAssemblyNormalized = ConvertTo-LowerHex `
     $ExpectedToolAssemblySha256 64 'Tool assembly SHA-256'
+  $expectedWrapperScriptNormalized = ConvertTo-LowerHex `
+    $ExpectedWrapperScriptSha256 64 'Wrapper script SHA-256'
+  if ([string]::IsNullOrWhiteSpace($PSCommandPath)) {
+    throw 'The approved wrapper must be invoked from a script file.'
+  }
+  $verifiedWrapperScript = Get-VerifiedWrapperScriptIdentity `
+    $PSCommandPath $expectedWrapperScriptNormalized
+  $wrapperScriptVerifiedBeforeSecret = $true
   $endpointDocument = [Text.Json.JsonDocument]::Parse($ApprovedLogicalEndpointSha256Json)
   if ($endpointDocument.RootElement.ValueKind -ne [Text.Json.JsonValueKind]::Array) {
     throw 'The approved logical endpoint inventory must be a JSON string array.'
@@ -757,6 +797,8 @@ try {
     '--target-label', $TargetLabel,
     '--run-id', $runId,
     '--tested-commit', $testedCommitNormalized,
+    '--expected-wrapper-script-sha256', $expectedWrapperScriptNormalized,
+    '--observed-wrapper-script-sha256', $verifiedWrapperScript.Sha256,
     '--expected-tool-assembly-sha256', $expectedToolAssemblyNormalized,
     '--runtime-payload-root', $payloadRootFull,
     '--runtime-payload-manifest', $payloadManifestFull,
@@ -865,6 +907,18 @@ try {
     throw 'The approved runtime payload identity changed during the probe.'
   }
   $postPayloadVerified = $true
+  try {
+    $postWrapperScript = Get-VerifiedWrapperScriptIdentity `
+      $verifiedWrapperScript.Path $expectedWrapperScriptNormalized
+    if ($postWrapperScript.Path -cne $verifiedWrapperScript.Path -or
+        $postWrapperScript.Sha256 -cne $verifiedWrapperScript.Sha256) {
+      throw 'The approved wrapper script identity changed during the probe.'
+    }
+  }
+  catch {
+    $scriptExitCode = 2
+    throw
+  }
   if ($processTimedOut) {
     $scriptExitCode = 5
     throw 'The operator-owned overall readiness timeout expired; child tree was terminated.'
@@ -902,6 +956,8 @@ try {
     'contractVersion',
     'runId',
     'testedCommit',
+    'expectedWrapperScriptSha256',
+    'observedWrapperScriptSha256',
     'expectedToolAssemblySha256',
     'observedToolAssemblySha256',
     'runtimePayloadManifestSha256',
@@ -960,7 +1016,9 @@ try {
     throw 'Evidence JSON bytes are not the exact canonical representation.'
   }
   foreach ($propertyName in @(
-      'contractVersion', 'runId', 'testedCommit', 'expectedToolAssemblySha256',
+      'contractVersion', 'runId', 'testedCommit',
+      'expectedWrapperScriptSha256', 'observedWrapperScriptSha256',
+      'expectedToolAssemblySha256',
       'observedToolAssemblySha256', 'runtimePayloadManifestSha256',
       'runtimePayloadEntryExecutableSha256', 'observedAtUtc',
       'status', 'reasonCode', 'queryMode')) {
@@ -1111,6 +1169,8 @@ try {
       $evidence.queryMode -cne 'READ_ONLY_SYS_DATABASES_CURRENT_V1' -or
       $evidence.runId -cne $runId -or
       $evidence.testedCommit -cne $testedCommitNormalized -or
+      $evidence.expectedWrapperScriptSha256 -cne $expectedWrapperScriptNormalized -or
+      $evidence.observedWrapperScriptSha256 -cne $verifiedWrapperScript.Sha256 -or
       $evidence.expectedToolAssemblySha256 -cne $expectedToolAssemblyNormalized -or
       $evidence.observedToolAssemblySha256 -cne $expectedToolAssemblyNormalized -or
       $evidence.runtimePayloadManifestSha256 -cne $expectedPayloadManifestNormalized -or
@@ -1126,8 +1186,7 @@ try {
   }
 
   $evidenceDocument.Dispose()
-  [Console]::OpenStandardOutput().Write($stdoutBytes, 0, $stdoutBytes.Length)
-  [Console]::OpenStandardOutput().Flush()
+  $validatedStdoutBytes = $stdoutBytes
   $evidenceValidated = $true
   if ($nativeExitCode -ne 0) {
     $scriptExitCode = $nativeExitCode
@@ -1176,6 +1235,8 @@ finally {
     catch {
       if ($scriptExitCode -eq 0) { $scriptExitCode = 1 }
       if ($failureMessage -eq $null) { $failureMessage = 'Readiness child cleanup failed closed.' }
+      $evidenceValidated = $false
+      $validatedStdoutBytes = $null
     }
     finally {
       try {
@@ -1197,6 +1258,22 @@ finally {
     }
   }
   finally {
+    if ($wrapperScriptVerifiedBeforeSecret) {
+      try {
+        $finalWrapperScript = Get-VerifiedWrapperScriptIdentity `
+          $verifiedWrapperScript.Path $expectedWrapperScriptNormalized
+        if ($finalWrapperScript.Path -cne $verifiedWrapperScript.Path -or
+            $finalWrapperScript.Sha256 -cne $verifiedWrapperScript.Sha256) {
+          throw 'The approved wrapper script identity changed during cleanup.'
+        }
+      }
+      catch {
+        $scriptExitCode = 2
+        $evidenceValidated = $false
+        $validatedStdoutBytes = $null
+        $failureMessage = 'Final wrapper script verification failed closed.'
+      }
+    }
     if (-not $evidenceValidated -and $null -ne $outputPathFull -and
         (Test-Path -LiteralPath $outputPathFull -PathType Leaf)) {
       try { Remove-Item -LiteralPath $outputPathFull -Force -ErrorAction Stop }
@@ -1237,6 +1314,13 @@ finally {
   }
 }
 
+if ($evidenceValidated -and $null -ne $validatedStdoutBytes) {
+  [Console]::OpenStandardOutput().Write(
+    $validatedStdoutBytes,
+    0,
+    $validatedStdoutBytes.Length)
+  [Console]::OpenStandardOutput().Flush()
+}
 if ($failureMessage -ne $null) {
   [Console]::Error.WriteLine($failureMessage)
 }

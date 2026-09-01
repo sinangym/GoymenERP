@@ -15,6 +15,8 @@ public sealed class SqlServerRcsiReadinessPolicyTests
         "f67561664930dd93b930601f71be9bcd6ce230064681b7b7f03695df0c745fe1";
     private const string ToolAssemblySha256 =
         "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+    private const string WrapperScriptSha256 =
+        "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
     private static readonly SqlServerRcsiReadinessBinding Binding =
         SqlServerRcsiReadinessBinding.Create(
             "staging/blue",
@@ -182,6 +184,8 @@ public sealed class SqlServerRcsiReadinessPolicyTests
         Assert.False(SqlServerRcsiReadinessRunContext.TryCreate(
             Guid.Empty.ToString("D"),
             new string('a', 40),
+            WrapperScriptSha256,
+            WrapperScriptSha256,
             ToolAssemblySha256,
             ToolAssemblySha256,
             ToolAssemblySha256,
@@ -191,6 +195,8 @@ public sealed class SqlServerRcsiReadinessPolicyTests
         Assert.False(SqlServerRcsiReadinessRunContext.TryCreate(
             Guid.NewGuid().ToString("D"),
             "short",
+            WrapperScriptSha256,
+            WrapperScriptSha256,
             ToolAssemblySha256,
             ToolAssemblySha256,
             ToolAssemblySha256,
@@ -200,6 +206,8 @@ public sealed class SqlServerRcsiReadinessPolicyTests
         Assert.False(SqlServerRcsiReadinessRunContext.TryCreate(
             Guid.NewGuid().ToString("D"),
             new string('a', 40),
+            WrapperScriptSha256,
+            WrapperScriptSha256,
             ToolAssemblySha256,
             ToolAssemblySha256,
             ToolAssemblySha256,
@@ -231,6 +239,8 @@ public sealed class SqlServerRcsiReadinessPolicyTests
             "{\"contractVersion\":\"GOYMEN-ERP-SQL-RCSI-READINESS-V1\","
             + "\"runId\":\"11111111-1111-1111-1111-111111111111\","
             + "\"testedCommit\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\","
+            + "\"expectedWrapperScriptSha256\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\","
+            + "\"observedWrapperScriptSha256\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\","
             + "\"expectedToolAssemblySha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\","
             + "\"observedToolAssemblySha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\","
             + "\"runtimePayloadManifestSha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\","
@@ -262,6 +272,8 @@ public sealed class SqlServerRcsiReadinessPolicyTests
         Assert.True(SqlServerRcsiReadinessRunContext.TryCreate(
             "11111111-1111-1111-1111-111111111111",
             new string('a', 40),
+            WrapperScriptSha256,
+            WrapperScriptSha256,
             ToolAssemblySha256,
             ToolAssemblySha256,
             ToolAssemblySha256,

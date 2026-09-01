@@ -60,6 +60,8 @@ internal static class SqlServerRcsiReadinessCli
         + "--expected-logical-endpoint-sha256 <SHA256> "
         + "[--expected-logical-endpoint-sha256 <SHA256> ...] "
         + "--run-id <UUID> --tested-commit <40HEX> "
+        + "--expected-wrapper-script-sha256 <SHA256> "
+        + "--observed-wrapper-script-sha256 <SHA256> "
         + "--expected-tool-assembly-sha256 <SHA256> "
         + "--runtime-payload-root <ABSOLUTE_DIRECTORY> "
         + "--runtime-payload-manifest <ABSOLUTE_JSON_PATH> "
@@ -133,6 +135,8 @@ internal static class SqlServerRcsiReadinessCli
             || !SqlServerRcsiReadinessRunContext.TryCreate(
                 options.RunId,
                 options.TestedCommit,
+                options.ExpectedWrapperScriptSha256,
+                options.ObservedWrapperScriptSha256,
                 options.ExpectedToolAssemblySha256,
                 toolArtifactIdentity.AssemblySha256,
                 toolArtifactIdentity.RuntimePayloadManifestSha256,
@@ -149,6 +153,10 @@ internal static class SqlServerRcsiReadinessCli
         if (!string.Equals(
                 runContext.TestedCommit,
                 toolArtifactIdentity.SourceRevisionId,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                runContext.ExpectedWrapperScriptSha256,
+                runContext.ObservedWrapperScriptSha256,
                 StringComparison.Ordinal)
             || !string.Equals(
                 runContext.ExpectedToolAssemblySha256,
@@ -317,6 +325,12 @@ internal static class SqlServerRcsiReadinessCli
                 case "--tested-commit":
                     options.TestedCommit = value;
                     break;
+                case "--expected-wrapper-script-sha256":
+                    options.ExpectedWrapperScriptSha256 = value;
+                    break;
+                case "--observed-wrapper-script-sha256":
+                    options.ObservedWrapperScriptSha256 = value;
+                    break;
                 case "--expected-tool-assembly-sha256":
                     options.ExpectedToolAssemblySha256 = value;
                     break;
@@ -352,6 +366,8 @@ internal static class SqlServerRcsiReadinessCli
                && options.ApprovedLogicalEndpointSha256.Count > 0
                && !string.IsNullOrWhiteSpace(options.RunId)
                && !string.IsNullOrWhiteSpace(options.TestedCommit)
+               && !string.IsNullOrWhiteSpace(options.ExpectedWrapperScriptSha256)
+               && !string.IsNullOrWhiteSpace(options.ObservedWrapperScriptSha256)
                && !string.IsNullOrWhiteSpace(options.ExpectedToolAssemblySha256)
                && !string.IsNullOrWhiteSpace(options.RuntimePayloadRoot)
                && !string.IsNullOrWhiteSpace(options.RuntimePayloadManifestPath)
@@ -460,6 +476,12 @@ internal static class SqlServerRcsiReadinessCli
                && runId != Guid.Empty
                && options.TestedCommit is { Length: 40 }
                && options.TestedCommit.All(Uri.IsHexDigit)
+               && SqlServerLogicalEndpointFingerprint.TryNormalizeSha256(
+                   options.ExpectedWrapperScriptSha256,
+                   out _)
+               && SqlServerLogicalEndpointFingerprint.TryNormalizeSha256(
+                   options.ObservedWrapperScriptSha256,
+                   out _)
                && SqlServerLogicalEndpointFingerprint.TryNormalizeSha256(
                    options.ExpectedToolAssemblySha256,
                    out _)
@@ -668,6 +690,10 @@ internal static class SqlServerRcsiReadinessCli
         public string? RunId { get; set; }
 
         public string? TestedCommit { get; set; }
+
+        public string? ExpectedWrapperScriptSha256 { get; set; }
+
+        public string? ObservedWrapperScriptSha256 { get; set; }
 
         public string? ExpectedToolAssemblySha256 { get; set; }
 

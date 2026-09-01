@@ -31,9 +31,10 @@ from `PATH`. Its external canonical manifest uses
 - the tool assembly, shared SQL policy assembly, deps/runtimeconfig, native
   apphost, managed runtime, native runtime, and all transitive payload files.
 
-The manifest is outside the payload. The approved runner must expose both the
-payload and that external manifest through an OS-enforced read-only mount/ACL
-that the wrapper identity cannot modify for the whole invocation. Pre/post
+The manifest is outside the payload. The approved runner must expose the
+payload, that external manifest, and the exact wrapper script through an
+OS-enforced read-only/private mount or ACL that the wrapper identity and every
+concurrent untrusted writer cannot modify for the whole invocation. Pre/post
 hashing detects drift but does not by itself defeat an active
 replace-execute-restore writer. The tool verifies the complete payload,
 executing apphost, tool assembly and source revision before reading the secret
@@ -65,6 +66,7 @@ Never type a secret assignment into interactive history.
 
 The same approved immutable build/change inventory supplies:
 
+- canonical absolute wrapper path and the exact SHA-256 of its raw bytes;
 - absolute self-contained payload directory;
 - absolute external manifest path and exact SHA-256;
 - exact reviewed 40-hex commit;
@@ -73,8 +75,19 @@ The same approved immutable build/change inventory supplies:
 - exact database and non-secret target label;
 - operator-owned positive probe and overall-process timeout values.
 
-Invoke the wrapper through a runner-owned, approved **absolute** PowerShell 7.2+
-path with `-NoProfile -NonInteractive -File`. The runner passes endpoint hashes
+Before it asks the secret manager for the connection string, adds the secret to
+a child environment, or starts a process, the trusted outer runner must open
+the canonical absolute wrapper path inside that immutable boundary, hash the
+raw bytes, and compare them with the runner-owned approved wrapper SHA-256.
+The approved hash must not be read from the wrapper, the mutable checkout, or
+another caller-controlled file. A mismatch fails before secret resolution and
+must create neither a process nor evidence. The outer runner keeps the
+immutable/read-only boundary in force until the dedicated wrapper process has
+exited and cleanup is complete.
+
+Only after that outer pre-secret check may the runner invoke the wrapper through
+a runner-owned, approved **absolute** PowerShell 7.2+ path with `-NoProfile
+-NonInteractive -File`. The runner passes endpoint hashes
 as a canonical JSON string array so native `-File` argument binding remains
 unambiguous for one or many values. Every invocation uses a fresh, previously
 absent evidence directory and output path. The following is an argument
@@ -87,6 +100,7 @@ template for that dedicated process; it is not an in-process command block:
   -PayloadManifest '<approved absolute external manifest path>' `
   -ExpectedPayloadManifestSha256 '<approved manifest SHA-256>' `
   -ExpectedToolAssemblySha256 '<approved tool DLL SHA-256>' `
+  -ExpectedWrapperScriptSha256 '<approved raw wrapper SHA-256>' `
   -TestedCommit '<approved exact 40-hex source revision>' `
   -ApprovedLogicalEndpointSha256Json '["<approved SHA-256>","<optional failover SHA-256>"]' `
   -ExpectedDatabase '<exact approved database name>' `
@@ -102,23 +116,34 @@ before injecting the secret. This outer boundary handles abrupt wrapper
 termination; the reviewed wrapper additionally assigns the managed apphost to a
 kill-on-close Windows job or the apphost's self-created Unix process group.
 
-The wrapper normalizes and validates commit/hash inputs, validates the apphost
-against the approved manifest before launch, invokes its absolute payload path
+The wrapper normalizes and validates commit/hash inputs, verifies the canonical
+reparse-free `$PSCommandPath` raw-byte SHA-256 before reading the secret,
+validates the apphost against the approved manifest before launch, invokes its absolute payload path
 with an empty child environment except for the Windows loader prerequisites
 `SystemRoot` and `WINDIR`, establishes OS containment, then
 passes the secret through redirected standard input (never the child
-environment). One monotonic operator-owned deadline covers launch, stdin
+environment). The expected and observed wrapper hashes are also bound into the
+canonical child evidence. One monotonic operator-owned deadline covers launch, stdin
 handoff, process wait, output drain, containment release and cleanup. It kills
 and joins the child tree on timeout, verifies the payload again, compares
 raw stdout bytes with evidence bytes, validates every evidence field before
-emitting it, clears the fixed secret from the wrapper environment on every
+emitting it, rechecks the wrapper bytes during normal completion and cleanup,
+discards unvalidated evidence on drift, clears the fixed secret from the wrapper environment on every
 script-controlled path, and propagates non-zero child exit codes. The dedicated
 wrapper process lifetime also clears the secret on parameter-binding or
 `#requires` failure; the outer deployment runner remains responsible for its
 own `finally` cleanup and for treating every non-zero native exit as failure.
 Successful
-evidence must bind the same run ID, commit, apphost, tool DLL, payload manifest,
+evidence must bind the same run ID, commit, wrapper script, apphost, tool DLL, payload manifest,
 UTC observation interval, target, database, endpoint inventory, and RCSI state.
+
+The wrapper's `ExpectedWrapperScriptSha256` parameter and self-hash are defense
+in depth, not the trust root. A malicious replacement script could remove or
+forge its own check while the secret is already present in its process
+environment. Therefore self-hash alone never authorizes secret injection; the
+outer pre-secret byte check plus the OS-enforced immutable boundary above are
+mandatory. Pre/post self-hashing also cannot defeat an active
+replace-execute-restore writer without that boundary.
 
 The wrapper reserves one fifth of that same hard deadline for containment and
 pipe cleanup, with reviewed technical bounds of 250 milliseconds minimum and
@@ -154,4 +179,9 @@ no-change behavior, startup/probe parity, target mismatch, CLI exits 0/4/6,
 canonical raw-byte parity, payload/apphost binding, stale-output rejection and
 kill-and-await cleanup. It also exercises the versioned PowerShell wrapper for a
 sorted multi-endpoint inventory, native exits 0/2/4, timeout cleanup and secret
-removal. Test-only `ALTER DATABASE` remains confined to tests.
+removal. Executable outer-harness tests reject malformed/stale wrapper hashes
+and one-byte, prepended-exfiltration, or removed-self-check mutations before
+secret resolution or process start; a separate in-flight mutation proves the
+wrapper post-check discards evidence. These tests prove the repository protocol,
+not the external staging ACL/mount. Test-only `ALTER DATABASE` remains confined
+to tests.

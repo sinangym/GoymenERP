@@ -186,6 +186,8 @@ public sealed class SqlServerRcsiReadinessRunContext
     private SqlServerRcsiReadinessRunContext(
         string runId,
         string testedCommit,
+        string expectedWrapperScriptSha256,
+        string observedWrapperScriptSha256,
         string expectedToolAssemblySha256,
         string observedToolAssemblySha256,
         string runtimePayloadManifestSha256,
@@ -194,6 +196,8 @@ public sealed class SqlServerRcsiReadinessRunContext
     {
         RunId = runId;
         TestedCommit = testedCommit;
+        ExpectedWrapperScriptSha256 = expectedWrapperScriptSha256;
+        ObservedWrapperScriptSha256 = observedWrapperScriptSha256;
         ExpectedToolAssemblySha256 = expectedToolAssemblySha256;
         ObservedToolAssemblySha256 = observedToolAssemblySha256;
         RuntimePayloadManifestSha256 = runtimePayloadManifestSha256;
@@ -204,6 +208,10 @@ public sealed class SqlServerRcsiReadinessRunContext
     public string RunId { get; }
 
     public string TestedCommit { get; }
+
+    public string ExpectedWrapperScriptSha256 { get; }
+
+    public string ObservedWrapperScriptSha256 { get; }
 
     public string ExpectedToolAssemblySha256 { get; }
 
@@ -218,6 +226,8 @@ public sealed class SqlServerRcsiReadinessRunContext
     public static bool TryCreate(
         string? runId,
         string? testedCommit,
+        string? expectedWrapperScriptSha256,
+        string? observedWrapperScriptSha256,
         string? expectedToolAssemblySha256,
         string? observedToolAssemblySha256,
         string? runtimePayloadManifestSha256,
@@ -231,6 +241,12 @@ public sealed class SqlServerRcsiReadinessRunContext
             || testedCommit is null
             || testedCommit.Length != 40
             || !testedCommit.All(Uri.IsHexDigit)
+            || !SqlServerLogicalEndpointFingerprint.TryNormalizeSha256(
+                expectedWrapperScriptSha256,
+                out var normalizedExpectedWrapperScriptSha256)
+            || !SqlServerLogicalEndpointFingerprint.TryNormalizeSha256(
+                observedWrapperScriptSha256,
+                out var normalizedObservedWrapperScriptSha256)
             || !SqlServerLogicalEndpointFingerprint.TryNormalizeSha256(
                 expectedToolAssemblySha256,
                 out var normalizedExpectedToolAssemblySha256)
@@ -251,6 +267,8 @@ public sealed class SqlServerRcsiReadinessRunContext
         context = new SqlServerRcsiReadinessRunContext(
             parsedRunId.ToString("D", CultureInfo.InvariantCulture),
             testedCommit.ToLowerInvariant(),
+            normalizedExpectedWrapperScriptSha256,
+            normalizedObservedWrapperScriptSha256,
             normalizedExpectedToolAssemblySha256,
             normalizedObservedToolAssemblySha256,
             normalizedRuntimePayloadManifestSha256,
@@ -636,6 +654,12 @@ public static class SqlServerRcsiReadinessEvidenceJson
             writer.WriteString("contractVersion", evidence.ContractVersion);
             writer.WriteString("runId", runContext.RunId);
             writer.WriteString("testedCommit", runContext.TestedCommit);
+            writer.WriteString(
+                "expectedWrapperScriptSha256",
+                runContext.ExpectedWrapperScriptSha256);
+            writer.WriteString(
+                "observedWrapperScriptSha256",
+                runContext.ObservedWrapperScriptSha256);
             writer.WriteString(
                 "expectedToolAssemblySha256",
                 runContext.ExpectedToolAssemblySha256);

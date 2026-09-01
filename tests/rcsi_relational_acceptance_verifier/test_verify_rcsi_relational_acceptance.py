@@ -24,16 +24,16 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
 
     def test_missing_discovery_is_rejected(self) -> None:
         output = "\n".join(VERIFIER.EXPECTED_TESTS[:-1])
-        with self.assertRaisesRegex(RuntimeError, "exactly the nine"):
+        with self.assertRaisesRegex(RuntimeError, "exactly the ten"):
             VERIFIER.verify_discovery(output)
 
     def test_exact_trx_counters_are_accepted(self) -> None:
         self._verify_trx(
-            '<TestRun xmlns="urn:test"><ResultSummary><Counters total="9" '
-            'executed="9" passed="9" failed="0" error="0" timeout="0" '
+            '<TestRun xmlns="urn:test"><ResultSummary><Counters total="10" '
+            'executed="10" passed="10" failed="0" error="0" timeout="0" '
             'aborted="0" inconclusive="0" notExecuted="0" />'
             "</ResultSummary></TestRun>",
-            9,
+            10,
         )
 
     def test_skipped_or_missing_counter_is_rejected(self) -> None:
@@ -78,7 +78,7 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             ):
                 results_directory = Path(arguments[arguments.index("--results-directory") + 1])
                 (results_directory / "rcsi.trx").write_text(
-                    '<TestRun><Counters total="58" executed="58" passed="58" '
+                    '<TestRun><Counters total="59" executed="59" passed="59" '
                     'failed="0" error="0" timeout="0" aborted="0" '
                     'inconclusive="0" notExecuted="0" /></TestRun>',
                     encoding="utf-8",

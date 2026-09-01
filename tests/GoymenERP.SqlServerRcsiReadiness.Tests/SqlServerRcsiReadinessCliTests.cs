@@ -16,6 +16,8 @@ public sealed class SqlServerRcsiReadinessCliTests : IDisposable
         "75a99409b81404222ad7347d4dad424dfab7b355844a736531e2105eb621c05f";
     private const string LogicalEndpointBSha256 =
         "f67561664930dd93b930601f71be9bcd6ce230064681b7b7f03695df0c745fe1";
+    private const string WrapperScriptSha256 =
+        "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
     private static readonly DateTimeOffset ObservedAtUtc =
         new(2026, 9, 1, 10, 20, 30, TimeSpan.Zero);
     private static readonly RuntimePayloadFixture SharedPayload =
@@ -57,6 +59,12 @@ public sealed class SqlServerRcsiReadinessCliTests : IDisposable
             var root = document.RootElement;
             Assert.Equal(DatabaseName, root.GetProperty("expectedDatabase").GetString());
             Assert.Equal(_payload.SourceRevisionId, root.GetProperty("testedCommit").GetString());
+            Assert.Equal(
+                WrapperScriptSha256,
+                root.GetProperty("expectedWrapperScriptSha256").GetString());
+            Assert.Equal(
+                WrapperScriptSha256,
+                root.GetProperty("observedWrapperScriptSha256").GetString());
             Assert.Equal(
                 _payload.ToolAssemblySha256,
                 root.GetProperty("expectedToolAssemblySha256").GetString());
@@ -413,7 +421,7 @@ public sealed class SqlServerRcsiReadinessCliTests : IDisposable
     public static TheoryData<string> InvalidArgumentCases => new()
     {
         "timeout-zero", "timeout-negative", "timeout-overflow", "unsafe-env", "reserved-env",
-        "empty-run", "invalid-run", "invalid-commit", "missing-endpoint",
+        "empty-run", "invalid-run", "invalid-commit", "invalid-wrapper-hash", "missing-endpoint",
         "invalid-endpoint", "invalid-tool-hash", "duplicate-scalar",
         "unknown-option", "missing-option", "bad-output", "invalid-stdin-mode",
         "duplicate-secret-source"
@@ -478,6 +486,7 @@ public sealed class SqlServerRcsiReadinessCliTests : IDisposable
 
     [Theory]
     [InlineData("commit")]
+    [InlineData("wrapper-hash")]
     [InlineData("tool-hash")]
     [InlineData("manifest-hash")]
     public async Task ArtifactBindingMismatch_IsExitTwoBeforeSecretProbeOrOutput(string mismatch)
@@ -490,11 +499,232 @@ public sealed class SqlServerRcsiReadinessCliTests : IDisposable
             mismatch switch
             {
                 "commit" => "--tested-commit",
+                "wrapper-hash" => "--observed-wrapper-script-sha256",
                 "tool-hash" => "--expected-tool-assembly-sha256",
                 _ => "--expected-runtime-payload-manifest-sha256",
             },
-            mismatch == "commit" ? new string('b', 40) : new string('d', 64));
+            mismatch switch
+            {
+                "commit" => new string('b', 40),
+                "wrapper-hash" => new string('e', 64),
+                _ => new string('d', 64),
+            });
         await AssertPreSecretExitTwo(arguments, outputPath);
+    }
+
+    [Theory]
+    [InlineData("one-byte")]
+    [InlineData("prepended-exfiltration")]
+    [InlineData("self-check-removal")]
+    public async Task OuterHarness_WrapperMutationIsRejectedBeforeSecretProcessOrEvidence(
+        string mutation)
+    {
+        var directory = CreateTemporaryDirectory();
+        var sourceWrapper = Path.Combine(
+            FindRepositoryRoot(),
+            "tools",
+            "GoymenERP.SqlServerRcsiReadiness",
+            "Invoke-GoymenERP.SqlServerRcsiReadiness.ps1");
+        var wrapperPath = Path.Combine(directory, "approved-wrapper.ps1");
+        var markerPath = Path.Combine(directory, "exfiltrated.txt");
+        var outputPath = Path.Combine(directory, "evidence", "readiness.json");
+        File.Copy(sourceWrapper, wrapperPath);
+        var approvedHash = ComputeFileSha256(wrapperPath);
+        switch (mutation)
+        {
+            case "one-byte":
+                await File.AppendAllTextAsync(wrapperPath, "#");
+                break;
+            case "prepended-exfiltration":
+                var original = await File.ReadAllTextAsync(wrapperPath);
+                var escapedMarker = markerPath.Replace("'", "''", StringComparison.Ordinal);
+                await File.WriteAllTextAsync(
+                    wrapperPath,
+                    $"[IO.File]::WriteAllText('{escapedMarker}', " +
+                    "[Environment]::GetEnvironmentVariable(" +
+                    "'GOYMEN_ERP_RCSI_PROBE_CONNECTION'))\n" + original,
+                    new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+                break;
+            case "self-check-removal":
+                var source = (await File.ReadAllTextAsync(wrapperPath))
+                    .Replace("\r\n", "\n", StringComparison.Ordinal);
+                const string check =
+                    "$verifiedWrapperScript = Get-VerifiedWrapperScriptIdentity";
+                Assert.Contains(check, source, StringComparison.Ordinal);
+                await File.WriteAllTextAsync(
+                    wrapperPath,
+                    source.Replace(
+                        check,
+                        "$verifiedWrapperScript = [pscustomobject]@{ Path = " +
+                        "$PSCommandPath; Sha256 = $expectedWrapperScriptNormalized }; #",
+                        StringComparison.Ordinal),
+                    new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(mutation));
+        }
+
+        var secretResolutionCount = 0;
+        try
+        {
+            var result = await RunOuterApprovedWrapperProcessAsync(
+                _payload,
+                outputPath,
+                wrapperPath,
+                approvedHash,
+                () =>
+                {
+                    secretResolutionCount++;
+                    return "outer-mutation-secret";
+                },
+                LogicalEndpointASha256,
+                probeTimeoutSeconds: "5",
+                overallProcessTimeoutSeconds: "10");
+
+            Assert.False(result.OuterIdentityAccepted);
+            Assert.False(result.ProcessStarted);
+            Assert.Equal(0, secretResolutionCount);
+            Assert.Empty(result.StandardOutput);
+            Assert.False(File.Exists(outputPath));
+            Assert.False(Directory.Exists(Path.GetDirectoryName(outputPath)));
+            Assert.False(File.Exists(markerPath));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task OuterHarness_MalformedHashIsRejectedBeforeSecretOrProcess()
+    {
+        var directory = CreateTemporaryDirectory();
+        var wrapperPath = Path.Combine(
+            FindRepositoryRoot(),
+            "tools",
+            "GoymenERP.SqlServerRcsiReadiness",
+            "Invoke-GoymenERP.SqlServerRcsiReadiness.ps1");
+        var outputPath = Path.Combine(directory, "evidence", "readiness.json");
+        var secretResolutionCount = 0;
+        try
+        {
+            var result = await RunOuterApprovedWrapperProcessAsync(
+                _payload,
+                outputPath,
+                wrapperPath,
+                "not-a-sha256",
+                () =>
+                {
+                    secretResolutionCount++;
+                    return "malformed-hash-secret";
+                },
+                LogicalEndpointASha256,
+                probeTimeoutSeconds: "5",
+                overallProcessTimeoutSeconds: "10");
+
+            Assert.False(result.OuterIdentityAccepted);
+            Assert.False(result.ProcessStarted);
+            Assert.Equal(0, secretResolutionCount);
+            Assert.False(File.Exists(outputPath));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task WrapperSource_FinalIdentityCheckPrecedesCleanupAndDeferredStdout()
+    {
+        var wrapperPath = Path.Combine(
+            FindRepositoryRoot(),
+            "tools",
+            "GoymenERP.SqlServerRcsiReadiness",
+            "Invoke-GoymenERP.SqlServerRcsiReadiness.ps1");
+        var source = (await File.ReadAllTextAsync(wrapperPath))
+            .Replace("\r\n", "\n", StringComparison.Ordinal);
+
+        var evidenceAccepted = source.IndexOf(
+            "$evidenceValidated = $true",
+            StringComparison.Ordinal);
+        var finalIdentityCheck = source.IndexOf(
+            "$finalWrapperScript = Get-VerifiedWrapperScriptIdentity",
+            StringComparison.Ordinal);
+        var invalidEvidenceCleanup = source.IndexOf(
+            "if (-not $evidenceValidated -and $null -ne $outputPathFull",
+            StringComparison.Ordinal);
+        var deferredStdout = source.LastIndexOf(
+            "[Console]::OpenStandardOutput().Write(",
+            StringComparison.Ordinal);
+
+        Assert.DoesNotContain("$postWrapperScriptVerified", source, StringComparison.Ordinal);
+        Assert.True(evidenceAccepted >= 0);
+        Assert.True(finalIdentityCheck > evidenceAccepted);
+        Assert.True(invalidEvidenceCleanup > finalIdentityCheck);
+        Assert.True(deferredStdout > invalidEvidenceCleanup);
+        Assert.Contains(
+            "  finally {\n" +
+            "    if ($wrapperScriptVerifiedBeforeSecret) {\n" +
+            "      try {\n" +
+            "        $finalWrapperScript = Get-VerifiedWrapperScriptIdentity",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$failureMessage = 'Readiness child cleanup failed closed.' }\n" +
+            "      $evidenceValidated = $false\n" +
+            "      $validatedStdoutBytes = $null",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "$scriptExitCode = 2\n" +
+            "        $evidenceValidated = $false\n" +
+            "        $validatedStdoutBytes = $null\n" +
+            "        $failureMessage = 'Final wrapper script verification failed closed.'",
+            source[finalIdentityCheck..invalidEvidenceCleanup],
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task OuterHarness_ExactHashResolvesSecretOnlyAfterIdentityAndStartsProcess()
+    {
+        var directory = CreateTemporaryDirectory();
+        var wrapperPath = Path.Combine(
+            FindRepositoryRoot(),
+            "tools",
+            "GoymenERP.SqlServerRcsiReadiness",
+            "Invoke-GoymenERP.SqlServerRcsiReadiness.ps1");
+        var outputPath = Path.Combine(directory, "evidence", "readiness.json");
+        var secretResolutionCount = 0;
+        try
+        {
+            var result = await RunOuterApprovedWrapperProcessAsync(
+                _payload,
+                outputPath,
+                wrapperPath,
+                ComputeFileSha256(wrapperPath),
+                () =>
+                {
+                    secretResolutionCount++;
+                    return "exact-wrapper-secret";
+                },
+                LogicalEndpointASha256,
+                probeTimeoutSeconds: "not-a-number",
+                overallProcessTimeoutSeconds: "10");
+
+            Assert.True(result.OuterIdentityAccepted);
+            Assert.True(result.ProcessStarted);
+            Assert.Equal(1, secretResolutionCount);
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.DoesNotContain(
+                "exact-wrapper-secret",
+                result.StandardError,
+                StringComparison.Ordinal);
+            Assert.False(File.Exists(outputPath));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     [Fact]
@@ -949,6 +1179,8 @@ public sealed class SqlServerRcsiReadinessCliTests : IDisposable
             "--expected-logical-endpoint-sha256", LogicalEndpointASha256,
             "--run-id", "11111111-1111-1111-1111-111111111111",
             "--tested-commit", payload.SourceRevisionId,
+            "--expected-wrapper-script-sha256", WrapperScriptSha256,
+            "--observed-wrapper-script-sha256", WrapperScriptSha256,
             "--expected-tool-assembly-sha256", payload.ToolAssemblySha256,
             "--runtime-payload-root", payload.PayloadRoot,
             "--runtime-payload-manifest", payload.ManifestPath,
@@ -1019,6 +1251,7 @@ public sealed class SqlServerRcsiReadinessCliTests : IDisposable
             case "empty-run": ReplaceValue(arguments, "--run-id", string.Empty); break;
             case "invalid-run": ReplaceValue(arguments, "--run-id", "bad"); break;
             case "invalid-commit": ReplaceValue(arguments, "--tested-commit", "bad"); break;
+            case "invalid-wrapper-hash": ReplaceValue(arguments, "--expected-wrapper-script-sha256", "bad"); break;
             case "missing-endpoint": RemoveOptions(arguments, "--expected-logical-endpoint-sha256"); break;
             case "invalid-endpoint": ReplaceValue(arguments, "--expected-logical-endpoint-sha256", "bad"); break;
             case "invalid-tool-hash": ReplaceValue(arguments, "--expected-tool-assembly-sha256", "bad"); break;
@@ -1088,6 +1321,52 @@ public sealed class SqlServerRcsiReadinessCliTests : IDisposable
             "tools",
             "GoymenERP.SqlServerRcsiReadiness",
             "Invoke-GoymenERP.SqlServerRcsiReadiness.ps1");
+        var wrapperScriptSha256 = ComputeFileSha256(wrapperPath);
+        return await RunOuterApprovedWrapperProcessAsync(
+            payload,
+            outputPath,
+            wrapperPath,
+            wrapperScriptSha256,
+            () =>
+                $"Server=127.0.0.1,1;Database={DatabaseName};User ID=probe;Password={secret};" +
+                "Encrypt=False;Connect Timeout=1",
+            LogicalEndpointASha256,
+            probeTimeoutSeconds,
+            overallProcessTimeoutSeconds: "10");
+    }
+
+    private static async Task<WrapperProcessResult> RunOuterApprovedWrapperProcessAsync(
+        RuntimePayloadFixture payload,
+        string outputPath,
+        string wrapperPath,
+        string approvedWrapperScriptSha256,
+        Func<string> resolveConnectionSecret,
+        string approvedLogicalEndpointSha256,
+        string probeTimeoutSeconds,
+        string overallProcessTimeoutSeconds)
+    {
+        var normalizedApprovedHash = approvedWrapperScriptSha256.Trim().ToLowerInvariant();
+        if (normalizedApprovedHash.Length != 64
+            || normalizedApprovedHash.Any(character => !Uri.IsHexDigit(character))
+            || !Path.IsPathFullyQualified(wrapperPath)
+            || !File.Exists(wrapperPath)
+            || !string.Equals(
+                Path.GetFullPath(wrapperPath),
+                wrapperPath,
+                OperatingSystem.IsWindows()
+                    ? StringComparison.OrdinalIgnoreCase
+                    : StringComparison.Ordinal)
+            || !string.Equals(
+                ComputeFileSha256(wrapperPath),
+                normalizedApprovedHash,
+                StringComparison.Ordinal))
+        {
+            return WrapperProcessResult.OuterRejected;
+        }
+
+        // This callback models the deployment secret resolver. It is deliberately
+        // invoked only after the outer raw-byte identity check has passed.
+        var connectionSecret = resolveConnectionSecret();
         var startInfo = new ProcessStartInfo(GetPowerShellPath())
         {
             RedirectStandardOutput = true,
@@ -1101,13 +1380,14 @@ public sealed class SqlServerRcsiReadinessCliTests : IDisposable
                      "-PayloadManifest", payload.ManifestPath,
                      "-ExpectedPayloadManifestSha256", payload.ManifestSha256,
                      "-ExpectedToolAssemblySha256", payload.ToolAssemblySha256,
+                     "-ExpectedWrapperScriptSha256", normalizedApprovedHash,
                      "-TestedCommit", payload.SourceRevisionId,
                      "-ApprovedLogicalEndpointSha256Json",
-                     JsonSerializer.Serialize(new[] { LogicalEndpointASha256 }),
+                     JsonSerializer.Serialize(new[] { approvedLogicalEndpointSha256 }),
                      "-ExpectedDatabase", DatabaseName,
                      "-TargetLabel", "unit/wrapper-prelaunch",
                      "-ProbeTimeoutSeconds", probeTimeoutSeconds,
-                     "-OverallProcessTimeoutSeconds", "10",
+                     "-OverallProcessTimeoutSeconds", overallProcessTimeoutSeconds,
                      "-OutputPath", outputPath,
                  })
         {
@@ -1122,9 +1402,7 @@ public sealed class SqlServerRcsiReadinessCliTests : IDisposable
             startInfo.Environment["SystemRoot"] = windowsDirectory;
             startInfo.Environment["WINDIR"] = windowsDirectory;
         }
-        startInfo.Environment[ConnectionEnvironment] =
-            $"Server=127.0.0.1,1;Database={DatabaseName};User ID=probe;Password={secret};" +
-            "Encrypt=False;Connect Timeout=1";
+        startInfo.Environment[ConnectionEnvironment] = connectionSecret;
 
         using var process = new Process { StartInfo = startInfo };
         Assert.True(process.Start());
@@ -1148,7 +1426,9 @@ public sealed class SqlServerRcsiReadinessCliTests : IDisposable
         return new WrapperProcessResult(
             process.ExitCode,
             await standardOutputTask,
-            (await standardErrorTask).TrimEnd('\r', '\n'));
+            (await standardErrorTask).TrimEnd('\r', '\n'),
+            OuterIdentityAccepted: true,
+            ProcessStarted: true);
     }
 
     private static string GetPowerShellPath()
@@ -1176,7 +1456,17 @@ public sealed class SqlServerRcsiReadinessCliTests : IDisposable
     private sealed record WrapperProcessResult(
         int ExitCode,
         string StandardOutput,
-        string StandardError);
+        string StandardError,
+        bool OuterIdentityAccepted,
+        bool ProcessStarted)
+    {
+        public static WrapperProcessResult OuterRejected { get; } = new(
+            ExitCode: -1,
+            StandardOutput: string.Empty,
+            StandardError: "The outer runner rejected the wrapper identity before secret resolution.",
+            OuterIdentityAccepted: false,
+            ProcessStarted: false);
+    }
 
     private sealed class RuntimePayloadFixture : IDisposable
     {

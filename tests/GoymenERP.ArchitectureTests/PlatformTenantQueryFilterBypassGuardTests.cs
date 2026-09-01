@@ -45,7 +45,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "tools/GoymenERP.SqlServerRcsiReadiness/"
         + "Invoke-GoymenERP.SqlServerRcsiReadiness.ps1";
     private const string ReviewedSqlServerRcsiWrapperFingerprint =
-        "157ffb1d8c5e385b8e08618be67ea41f000d73a396f90cbb5c66432274f5d4c0";
+        "45598900747141d62bce9b983b43ffb26eef123a1a2a49d1c72e6645e2990d7e";
     private const string ReviewedSqlServerRcsiToolRootPath =
         "tools/GoymenERP.SqlServerRcsiReadiness";
     private const string ReviewedSqlServerRcsiToolProjectPath =
@@ -69,12 +69,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string SqlServerRcsiVerifierPath =
         "tools/verify_rcsi_relational_acceptance.py";
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "f415a376f83d4fdd83c416c5e165fd29db61bcdee79515db2d981194740e4271";
+        "985d87cc9048c5be1396dc931246ef4b06a673a895eb1269b3557de22e6d6721";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "2645fa643e4f2f2a1fa6c3ac3a8bf8224d0281f0693add831ddfa2d9cf076d4f";
+        "c0a79a6a7da9a93aba083bf74f011dffd8d5ac140328c3ca6a277835f608a55c";
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "2485e3a3e23235bc13c3c68d6baca91106e752e3451f4bb228538ad8192234e2";
@@ -143,7 +143,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 [ReviewedSqlServerRcsiReadinessProbePath] =
                     new(
-                        "8178438d5aad9697c4778da41929743917ddc1e9b67a1cb17c56cd984cfe42db",
+                        "b6291e2db3fef669f312b3046fdc46d826992901a7a2ca7243d35bd0557c9c34",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -152,7 +152,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 [ReviewedSqlServerRcsiToolProgramPath] =
                     new(
-                        "8435a25152ad98c8827a298515f65078ffbcf016e7da996ccda9aad63feb62e2",
+                        "ca87896160c49d8b09bcd9e471d8d40d393902a463892f580f279419529841dc",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
@@ -4262,6 +4262,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         foreach (var required in new[]
                  {
                      "#requires -Version 7.2",
+                     "[Parameter(Mandatory)][string]$ExpectedWrapperScriptSha256",
+                      "Get-VerifiedWrapperScriptIdentity",
+                      "$finalWrapperScript = Get-VerifiedWrapperScriptIdentity",
+                      "if ($evidenceValidated -and $null -ne $validatedStdoutBytes)",
+                      "'--expected-wrapper-script-sha256'",
+                     "'--observed-wrapper-script-sha256'",
+                     "'expectedWrapperScriptSha256'",
+                     "'observedWrapperScriptSha256'",
                      "[Diagnostics.ProcessStartInfo]::new($verifiedPayload.EntryPath)",
                      "$startInfo.Environment.Clear()",
                      "$startInfo.RedirectStandardInput = $true",
@@ -4479,10 +4487,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             || Regex.Matches(
                 relationalAcceptanceSource,
                 Regex.Escape("[SqlServerFact]"),
-                RegexOptions.CultureInvariant).Count != 9)
+                RegexOptions.CultureInvariant).Count != 10)
         {
             errors.Add(
-                "RCSI relational discovery must retain the reviewed class name and nine tests.");
+                "RCSI relational discovery must retain the reviewed class name and ten tests.");
         }
 
         if (Regex.Matches(
