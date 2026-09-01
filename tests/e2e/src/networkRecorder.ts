@@ -190,9 +190,17 @@ export class NetworkRecorder {
    * response then arrives into a context that has not moved, so nothing about
    * stale delivery is exercised. Codex was right to block on it (#173 P1-2).
    *
-   * Here the real server response is obtained first and held at the transport.
-   * The caller can commit a different company in the meantime and then release an
-   * genuinely stale, genuinely delivered response.
+   * Here the real server response is obtained first and held at the transport, so
+   * the caller can commit a different company before releasing it.
+   *
+   * WHAT ACTUALLY HAPPENS THEN, measured rather than assumed: the switch CANCELS
+   * the in-flight read, so the release lands on a request that is already gone and
+   * the page observes `net::ERR_ABORTED`. `wasDelivered()` reports the page's own
+   * account of this, which is why it is a page-side listener and not the result of
+   * `route.fulfill` — fulfil resolves even when nobody is listening.
+   *
+   * So this helper sets up a delivery attempt; whether delivery OCCURS is a
+   * measurement, not a guarantee, and the caller must assert which one it got.
    */
   async holdNextCounterpartyResponse(): Promise<HeldResponse> {
     let release: () => void = () => {}

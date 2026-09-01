@@ -11,8 +11,10 @@ not assumed: the app binds `fetch` at module load, so a page-level `fetch` patch
 never reaches it, and every jsdom attempt at the stale-response cases ends in the
 request being **aborted** rather than delivered. An abort is a safe outcome; it is
 not evidence that a delivered stale response would be rejected, because nothing
-was delivered. Only response-stage interception against the real server can show
-a response arriving after the context has moved and being ignored.
+was delivered. Response-stage interception against the real server is what lets us
+tell those apart — and measured, this app CANCELS the in-flight read when the
+context moves, so what the browser can prove here is prevention. Rejection of a
+delivered stale response is proved in the reducer tests instead.
 
 ## Design constraints that are not free choices
 
@@ -48,7 +50,7 @@ This table is the honest scope, so the report cannot be read as more than it is.
 |---|---|---|
 | `B-C01-001` | nav discoverability, 50 rows, first row identity, combined roles, GSP-only party absent, no raw UUID / integration code | column-by-column formatting |
 | `B-C01-002` | unauthorized profile: no nav entry, deep link closes non-disclosingly, and **zero** counterparty requests attempted | per-capability matrix beyond `cari.parties.list` |
-| `B-C01-003` | a real GDC response withheld, GSP committed and painted, then the stale response **delivered** and ignored | actor change (that is SAB, not C-01) |
+| `B-C01-003` | the old company's read is **cancelled** by the switch (`net::ERR_ABORTED`, page-observed), so no stale response reaches the successor | rejection of a *delivered* stale response — not reachable on this path, proved in the reducer tests |
 | `B-C01-004` | `aria-sort` toggle, server-side re-sort proven by row identity, focus retained across re-render | full tab-order walk, focus-visible styling |
 | `B-C01-005` | five viewports, no page-level horizontal scroll, `display: table` preserved, labelled scroll region | colour-contrast, zoom beyond 320px |
 | `B-C01-006` | one `h1`, nav landmark, six `scope=col`, polite live region, `aria-busy=false`, no internal capability vocabulary | full axe ruleset |
