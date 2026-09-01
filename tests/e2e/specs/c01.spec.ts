@@ -56,6 +56,10 @@ test('B-C01-001 the authorized first page is the fixture, and only the fixture',
     contentType: 'text/plain',
   })
 
+  // The nav entry is checked from the shell root, before the deep link: reaching
+  // /cari directly would prove the route works but say nothing about whether the
+  // module is discoverable.
+  await page.goto('/')
   await expect(page.getByRole('link', { name: 'Cari Kartlar' })).toBeVisible({ timeout: 20_000 })
   await openList(page)
 
@@ -222,35 +226,41 @@ test('B-C01-007 continuation appends the rest exactly once', async ({ page }, te
 
 test('B-C01-008 a failed continuation keeps the verified rows and offers a retry', async ({
   page,
-  context,
 }, testInfo) => {
   const net = await NetworkRecorder.attach(page)
   await openList(page)
   await expect(rows(page)).toHaveCount(50)
 
-  const more = page.getByRole('button', { name: 'Daha fazla yükle' })
   const alert = page.getByRole('alert')
+  const retry = alert.getByRole('button')
 
-  // Each fault is injected at the response stage, once, and the verified first
-  // page must survive every one of them.
-  for (const fault of ['injected-500', 'injected-503', 'injected-abort'] as const) {
+  // Once a continuation has failed, the screen replaces "Daha fazla yükle" with a
+  // scoped retry — the load-more control is GONE, not merely disabled. That is the
+  // shape DEC-CAR-004 asks for (explicit user retry, no automatic resend), so every
+  // fault after the first is driven through the retry button.
+  await net.failNextCounterpartyRead('injected-500')
+  await page.getByRole('button', { name: 'Daha fazla yükle' }).click()
+  await expect(alert, 'no continuation error after injected-500').toBeVisible({ timeout: 30_000 })
+  await expect(rows(page), 'rows were dropped on injected-500').toHaveCount(50)
+  await expect(page.getByRole('button', { name: 'Daha fazla yükle' })).toHaveCount(0)
+
+  for (const fault of ['injected-503', 'injected-abort'] as const) {
     await net.failNextCounterpartyRead(fault)
-    await more.click()
+    await retry.click()
     await expect(alert, `no continuation error after ${fault}`).toBeVisible({ timeout: 30_000 })
     await expect(rows(page), `rows were dropped on ${fault}`).toHaveCount(50)
   }
 
-  // Offline is a transport fault, not a status code, so it is produced by the
-  // browser rather than by an injected response.
-  await context.setOffline(true)
-  net.note('/api/v1/counterparties', 'injected-offline')
-  await more.click()
+  // A dropped connection is a transport fault, not a status code.
+  await net.dropNextCounterpartyRead()
+  await retry.click()
   await expect(alert).toBeVisible({ timeout: 30_000 })
   await expect(rows(page)).toHaveCount(50)
-  await context.setOffline(false)
 
-  // The retry is explicit and user-driven; nothing was resent automatically.
-  await page.getByRole('alert').getByRole('button').click()
+  // Four failures, and the verified rows never moved. The successful retry then
+  // appends the rest exactly once — proof that each failed attempt re-issued the
+  // same cursor rather than advancing it.
+  await retry.click()
   await expect(rows(page)).toHaveCount(GDC_ACTIVE_VISIBLE, { timeout: 30_000 })
   net.noteRetrySuccess(1)
   expect(new Set(await codesOf(page)).size).toBe(GDC_ACTIVE_VISIBLE)
@@ -262,26 +272,49 @@ test('B-C01-009 a tampered cursor is refused with a stable code', async ({ page 
   const net = await NetworkRecorder.attach(page)
   await openList(page)
 
-  // The cursor is taken from the REAL first-page response and then corrupted, so
-  // this exercises the server's own validation rather than a made-up token.
-  const response = await page.request.get(
-    `${env.authorizedBaseUrl}/api/v1/counterparties?pageSize=50`,
-    { headers: { 'X-Company-Id': GDC } },
-  )
-  expect(response.status()).toBe(200)
-  const body = (await response.json()) as { nextCursor: string | null }
-  expect(body.nextCursor, 'the fixture must produce a real cursor').toBeTruthy()
-  const tampered = `${body.nextCursor!.slice(0, -4)}ZZZZ`
+  // The APPLICATION's own continuation request is intercepted and its real cursor
+  // is corrupted in flight, then forwarded to the real server.
+  //
+  // The obvious alternative — issuing a raw page.request.get — was tried and is
+  // wrong: it does not carry the headers the client attaches, so the server
+  // answers 401 and the case proves nothing about cursor validation. Rewriting
+  // the app's own request keeps every header, so what comes back is the server
+  // refusing a tampered token from an otherwise legitimate caller.
+  let tamperedOnce = false
+  await page.route('**/api/v1/counterparties*', async (route) => {
+    const url = new URL(route.request().url())
+    const cursor = url.searchParams.get('cursor')
+    if (tamperedOnce || !cursor) return route.fallback()
+    tamperedOnce = true
+    url.searchParams.set('cursor', `${cursor.slice(0, -4)}ZZZZ`)
+    return route.continue({ url: url.toString() })
+  })
 
-  const refused = await page.request.get(
-    `${env.authorizedBaseUrl}/api/v1/counterparties?pageSize=50&cursor=${encodeURIComponent(tampered)}`,
-    { headers: { 'X-Company-Id': GDC } },
+  const refused = page.waitForResponse(
+    (r) => r.url().includes('/counterparties') && r.status() === 400,
+    { timeout: 30_000 },
   )
-  expect(refused.status()).toBe(400)
-  const problem = (await refused.json()) as { code?: string; detail?: string }
-  // The stable machine code is the contract; the localized detail is not.
+  await page.getByRole('button', { name: 'Daha fazla yükle' }).click()
+  const response = await refused
+  expect(tamperedOnce, 'no cursor request was intercepted').toBe(true)
+
+  const problem = (await response.json()) as { code?: string; detail?: string }
+  // The stable machine code is the contract; the localized detail is not, and the
+  // UI must not branch on it.
   expect(problem.code).toBe('invalid_cursor')
-  net.note('/api/v1/counterparties', 'real-400-invalid-cursor')
+
+  // A refused cursor cannot be retried — resending it would fail forever — so the
+  // screen recovers to the first page and SAYS SO in the live region rather than
+  // leaving the user on a dead-end control.
+  //
+  // My first version of this assertion expected the load-more button to disappear.
+  // That was invented; the case definition says nothing about it, and the measured
+  // behaviour is better than what I assumed. Asserting the announcement pins the
+  // recovery that actually exists.
+  await expect(page.getByRole('status')).toHaveText('Liste güncellendi; ilk sayfaya dönüldü.', {
+    timeout: 20_000,
+  })
+  await expect(rows(page)).toHaveCount(50)
 
   await net.detach(testInfo)
 })

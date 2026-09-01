@@ -105,6 +105,29 @@ export class NetworkRecorder {
     })
   }
 
+  /**
+   * Fail the next counterparty read the way a dropped connection does.
+   *
+   * `BrowserContext.setOffline` was the obvious choice and it is the WRONG one
+   * here: measured against the running app, a read started while offline stays
+   * PENDING and then completes successfully the moment connectivity returns. That
+   * produces a delayed success, not a failure, so the case it was meant to prove
+   * silently proved nothing. Aborting with `internetdisconnected` fails the read
+   * deterministically at the transport layer, which is the condition the
+   * continuation allowlist actually classifies.
+   */
+  async dropNextCounterpartyRead(): Promise<void> {
+    let used = false
+    await this.page.route('**/api/v1/counterparties*', async (route: Route) => {
+      if (used) return route.fallback()
+      used = true
+      const url = route.request().url()
+      this.injectedUrls.add(url)
+      this.push(redactPath(url), 'injected-offline', 0)
+      return route.abort('internetdisconnected')
+    })
+  }
+
   /** Hold the next counterparty read, then let the real one through. */
   async delayNextCounterpartyRead(delayMs: number): Promise<void> {
     let used = false
