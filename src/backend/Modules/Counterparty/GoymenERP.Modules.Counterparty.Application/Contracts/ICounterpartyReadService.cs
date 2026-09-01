@@ -6,7 +6,7 @@ public interface ICounterpartyReadService
         CounterpartyReadRequest request,
         CancellationToken cancellationToken = default);
 
-    Task<PartyCoreView?> GetAuthorizedPartyAsync(
+    Task<CounterpartyDetailView?> GetAuthorizedPartyAsync(
         Guid partyId,
         Guid? companyId,
         CancellationToken cancellationToken = default);

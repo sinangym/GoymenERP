@@ -7,7 +7,6 @@ using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
-using GoymenERP.Modules.Counterparty.Application.Views;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
 using Microsoft.EntityFrameworkCore;
@@ -80,7 +79,7 @@ internal sealed class CounterpartyReadService(
         return CounterpartyPageExecution.Succeeded(page);
     }
 
-    public async Task<PartyCoreView?> GetAuthorizedPartyAsync(
+    public async Task<CounterpartyDetailView?> GetAuthorizedPartyAsync(
         Guid partyId,
         Guid? companyId,
         CancellationToken cancellationToken = default)
@@ -106,6 +105,12 @@ internal sealed class CounterpartyReadService(
                 && companyIdArray.Contains(account.CompanyId))
             .OrderBy(account => account.CompanyId)
             .ThenBy(account => account.Id)
+            .Select(account => new CounterpartyDetailAccountRow(
+                account.Id,
+                account.CompanyId,
+                account.Roles,
+                account.IsActive,
+                account.Version))
             .ToListAsync(cancellationToken);
         if (accounts.Count == 0)
         {
@@ -114,13 +119,33 @@ internal sealed class CounterpartyReadService(
 
         var party = await dbContext.Parties
             .AsNoTracking()
-            .SingleOrDefaultAsync(candidate => candidate.Id == partyId, cancellationToken);
+            .Where(candidate => candidate.Id == partyId)
+            .Select(candidate => new CounterpartyDetailPartyRow(
+                candidate.Id,
+                candidate.Code.Value,
+                candidate.Kind,
+                candidate.LegalName,
+                candidate.TradeName,
+                candidate.IsActive,
+                candidate.Version))
+            .SingleOrDefaultAsync(cancellationToken);
         return party is null
             ? null
-            : PartyCoreViewComposer.ComposeAuthorized(
-                party,
-                accounts,
-                authorizedCompanyIds);
+            : new CounterpartyDetailView(
+                party.Id,
+                party.Code,
+                party.Kind,
+                party.LegalName,
+                party.TradeName,
+                party.IsActive,
+                FormatVersion(party.Version),
+                accounts.Select(account => new CounterpartyDetailAccountView(
+                        account.Id,
+                        account.CompanyId,
+                        account.Roles,
+                        account.IsActive,
+                        FormatVersion(account.Version)))
+                    .ToArray());
     }
 
     private async Task<CounterpartyPage> QuerySqlServerAsync(
@@ -796,6 +821,9 @@ internal sealed class CounterpartyReadService(
             .Replace("[", "~[", StringComparison.Ordinal);
     }
 
+    private static string FormatVersion(long version) =>
+        version.ToString(CultureInfo.InvariantCulture);
+
     private static bool AccountMatches(
         CompanyPartyAccount account,
         CounterpartyPageQuery query)
@@ -866,6 +894,22 @@ internal sealed class CounterpartyReadService(
         Guid Id,
         Guid CompanyId,
         Guid PartyId,
+        PartyRole Roles,
+        bool IsActive,
+        long Version);
+
+    private sealed record CounterpartyDetailPartyRow(
+        Guid Id,
+        string Code,
+        PartyKind Kind,
+        string LegalName,
+        string? TradeName,
+        bool IsActive,
+        long Version);
+
+    private sealed record CounterpartyDetailAccountRow(
+        Guid Id,
+        Guid CompanyId,
         PartyRole Roles,
         bool IsActive,
         long Version);

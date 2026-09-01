@@ -1,3 +1,4 @@
+using System.Data;
 using System.Net;
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
@@ -6,6 +7,16 @@ namespace GoymenERP.Api.IntegrationTests;
 
 public sealed class CounterpartySqlServerRelationalAcceptanceTests
 {
+    private const long PartyVersion = 9_007_199_254_740_993;
+    private const long CompanyAAccountVersion = 9_007_199_254_740_995;
+    private const long CompanyBAccountVersion = 9_007_199_254_740_997;
+    private const string CompanyAIntegrationSecret = "SQL-C03-SECRET-A";
+    private const string CompanyBIntegrationSecret = "SQL-C03-SECRET-B";
+    private static readonly Guid CompanyAAccountId = Guid.Parse(
+        "62000000-0000-0000-0000-000000000001");
+    private static readonly Guid CompanyBAccountId = Guid.Parse(
+        "62000000-0000-0000-0000-000000000002");
+
     [SqlServerFact]
     public async Task CounterpartyMigrationConstraintsAndGroupRead_AreEnforced()
     {
@@ -36,25 +47,66 @@ public sealed class CounterpartySqlServerRelationalAcceptanceTests
             await AssertInvalidPartyCodeRejectedAsync(connection);
 
             var partyId = Guid.Parse("61000000-0000-0000-0000-000000000001");
-            await InsertPartyAsync(connection, partyId, "CAR-000001", "SQL Ortak Cari A.Ş.");
+            await InsertPartyAsync(
+                connection,
+                partyId,
+                "CAR-000001",
+                "SQL Ortak Cari A.Ş.",
+                PartyVersion);
 
             await AssertUnknownCompanyRejectedAsync(connection, partyId);
 
             await InsertAccountAsync(
                 connection,
-                Guid.Parse("62000000-0000-0000-0000-000000000001"),
+                CompanyAAccountId,
                 TestCompanyIds.CompanyA,
                 partyId,
-                roles: 1);
+                roles: 1,
+                externalIntegrationCode: CompanyAIntegrationSecret,
+                version: CompanyAAccountVersion);
             await InsertAccountAsync(
                 connection,
-                Guid.Parse("62000000-0000-0000-0000-000000000002"),
+                CompanyBAccountId,
                 TestCompanyIds.CompanyB,
                 partyId,
-                roles: 2);
+                roles: 2,
+                externalIntegrationCode: CompanyBIntegrationSecret,
+                version: CompanyBAccountVersion);
+
+            Assert.Equal(
+                PartyVersion,
+                await ScalarAsync<long>(
+                    connection,
+                    $"SELECT [Version] FROM [counterparty].[Parties] WHERE [Id] = '{partyId:D}';"));
+            Assert.Equal(
+                CompanyAIntegrationSecret,
+                await ScalarAsync<string>(
+                    connection,
+                    $"SELECT [ExternalIntegrationCode] FROM [counterparty].[CompanyPartyAccounts] WHERE [Id] = '{CompanyAAccountId:D}';"));
+            Assert.Equal(
+                CompanyBAccountVersion,
+                await ScalarAsync<long>(
+                    connection,
+                    $"SELECT [Version] FROM [counterparty].[CompanyPartyAccounts] WHERE [Id] = '{CompanyBAccountId:D}';"));
 
             await AssertDuplicateCompanyPartyRejectedAsync(connection, partyId);
+            var auditBefore = await ScalarAsync<long>(
+                connection,
+                "SELECT COUNT_BIG(*) FROM [audit].[AuditEvents];");
+            var commandExecutionsBefore = await ScalarAsync<long>(
+                connection,
+                "SELECT COUNT_BIG(*) FROM [idempotency].[CommandExecutions];");
             await AssertGroupAndCompanyReadAsync(factory, partyId);
+            Assert.Equal(
+                auditBefore,
+                await ScalarAsync<long>(
+                    connection,
+                    "SELECT COUNT_BIG(*) FROM [audit].[AuditEvents];"));
+            Assert.Equal(
+                commandExecutionsBefore,
+                await ScalarAsync<long>(
+                    connection,
+                    "SELECT COUNT_BIG(*) FROM [idempotency].[CommandExecutions];"));
         }
         finally
         {
@@ -130,6 +182,28 @@ public sealed class CounterpartySqlServerRelationalAcceptanceTests
             .ToArray();
         Assert.Equal(2, groupAccounts.Length);
 
+        using var groupDetailResponse = await groupClient.GetAsync(
+            $"/api/v1/counterparties/{partyId}");
+        Assert.Equal(HttpStatusCode.OK, groupDetailResponse.StatusCode);
+        AssertPrivateNoStore(groupDetailResponse);
+        var groupDetailBody = await groupDetailResponse.Content.ReadAsStringAsync();
+        AssertRedacted(groupDetailBody);
+        using var groupDetail = JsonDocument.Parse(groupDetailBody);
+        Assert.Equal(JsonValueKind.String, groupDetail.RootElement.GetProperty("version").ValueKind);
+        Assert.Equal(PartyVersion.ToString(), groupDetail.RootElement.GetProperty("version").GetString());
+        var groupDetailAccounts = groupDetail.RootElement
+            .GetProperty("companyAccounts")
+            .EnumerateArray()
+            .ToArray();
+        Assert.Equal(2, groupDetailAccounts.Length);
+        Assert.Equal(
+            [TestCompanyIds.CompanyA, TestCompanyIds.CompanyB],
+            groupDetailAccounts.Select(account => account.GetProperty("companyId").GetGuid()));
+        Assert.Equal(
+            [CompanyAAccountVersion.ToString(), CompanyBAccountVersion.ToString()],
+            groupDetailAccounts.Select(account =>
+                account.GetProperty("version").GetString()));
+
         using var companyClient = factory.CreateClientFor(
             TestUsers.GroupAdmin,
             TestCompanyIds.CompanyA);
@@ -150,6 +224,74 @@ public sealed class CounterpartySqlServerRelationalAcceptanceTests
         Assert.Equal(
             TestCompanyIds.CompanyA,
             companyAccounts[0].GetProperty("companyId").GetGuid());
+
+        using var companyDetailResponse = await companyClient.GetAsync(
+            $"/api/v1/counterparties/{partyId}");
+        Assert.Equal(HttpStatusCode.OK, companyDetailResponse.StatusCode);
+        AssertPrivateNoStore(companyDetailResponse);
+        var companyDetailBody = await companyDetailResponse.Content.ReadAsStringAsync();
+        AssertRedacted(companyDetailBody);
+        using var companyDetail = JsonDocument.Parse(companyDetailBody);
+        var companyDetailAccount = Assert.Single(
+            companyDetail.RootElement.GetProperty("companyAccounts").EnumerateArray());
+        Assert.Equal(
+            TestCompanyIds.CompanyA,
+            companyDetailAccount.GetProperty("companyId").GetGuid());
+        Assert.Equal(
+            CompanyAAccountVersion.ToString(),
+            companyDetailAccount.GetProperty("version").GetString());
+        Assert.DoesNotContain(
+            TestCompanyIds.CompanyB.ToString("D"),
+            companyDetailBody,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(
+            CompanyBAccountId.ToString("D"),
+            companyDetailBody,
+            StringComparison.OrdinalIgnoreCase);
+
+        using var companyBClient = factory.CreateClientFor(
+            TestUsers.GroupAdmin,
+            TestCompanyIds.CompanyB);
+        using var companyBDetailResponse = await companyBClient.GetAsync(
+            $"/api/v1/counterparties/{partyId}");
+        Assert.Equal(HttpStatusCode.OK, companyBDetailResponse.StatusCode);
+        using var companyBDetail = JsonDocument.Parse(
+            await companyBDetailResponse.Content.ReadAsStringAsync());
+        var companyBDetailAccount = Assert.Single(
+            companyBDetail.RootElement.GetProperty("companyAccounts").EnumerateArray());
+        Assert.Equal(
+            TestCompanyIds.CompanyB,
+            companyBDetailAccount.GetProperty("companyId").GetGuid());
+        Assert.Equal(
+            CompanyBAccountVersion.ToString(),
+            companyBDetailAccount.GetProperty("version").GetString());
+
+        using var explicitCompanyDetailResponse = await groupClient.GetAsync(
+            $"/api/v1/counterparties/{partyId}?companyId={TestCompanyIds.CompanyA:D}");
+        Assert.Equal(HttpStatusCode.OK, explicitCompanyDetailResponse.StatusCode);
+        using var explicitCompanyDetail = JsonDocument.Parse(
+            await explicitCompanyDetailResponse.Content.ReadAsStringAsync());
+        var explicitCompanyAccount = Assert.Single(
+            explicitCompanyDetail.RootElement.GetProperty("companyAccounts").EnumerateArray());
+        Assert.Equal(
+            TestCompanyIds.CompanyA,
+            explicitCompanyAccount.GetProperty("companyId").GetGuid());
+
+        using var conflictingDetailResponse = await companyClient.GetAsync(
+            $"/api/v1/counterparties/{partyId}?companyId={TestCompanyIds.CompanyB:D}");
+        await AssertNotFoundAsync(conflictingDetailResponse, partyId);
+
+        using var narrowClient = factory.CreateClientFor(
+            TestUsers.CompanyAViewer,
+            TestCompanyIds.CompanyA);
+        using var narrowDetailResponse = await narrowClient.GetAsync(
+            $"/api/v1/counterparties/{partyId}");
+        await AssertNotFoundAsync(narrowDetailResponse, partyId);
+
+        var missingPartyId = Guid.Parse("61000000-0000-0000-0000-000000000099");
+        using var missingDetailResponse = await companyClient.GetAsync(
+            $"/api/v1/counterparties/{missingPartyId:D}");
+        await AssertNotFoundAsync(missingDetailResponse, missingPartyId);
 
         using var conflictingFilter = await companyClient.GetAsync(
             $"/api/v1/counterparties?companyId={TestCompanyIds.CompanyB}");
@@ -172,11 +314,44 @@ public sealed class CounterpartySqlServerRelationalAcceptanceTests
         return client;
     }
 
+    private static void AssertPrivateNoStore(HttpResponseMessage response)
+    {
+        Assert.True(response.Headers.CacheControl?.Private);
+        Assert.True(response.Headers.CacheControl?.NoStore);
+    }
+
+    private static void AssertRedacted(string body)
+    {
+        Assert.DoesNotContain(
+            "externalIntegrationCode",
+            body,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(CompanyAIntegrationSecret, body, StringComparison.Ordinal);
+        Assert.DoesNotContain(CompanyBIntegrationSecret, body, StringComparison.Ordinal);
+    }
+
+    private static async Task AssertNotFoundAsync(
+        HttpResponseMessage response,
+        Guid hiddenPartyId)
+    {
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        AssertPrivateNoStore(response);
+        var body = await response.Content.ReadAsStringAsync();
+        using var problem = JsonDocument.Parse(body);
+        Assert.Equal("not_found", problem.RootElement.GetProperty("code").GetString());
+        Assert.DoesNotContain(
+            hiddenPartyId.ToString("D"),
+            body,
+            StringComparison.OrdinalIgnoreCase);
+        AssertRedacted(body);
+    }
+
     private static Task InsertPartyAsync(
         SqlConnection connection,
         Guid id,
         string code,
-        string legalName)
+        string legalName,
+        long version = 1)
     {
         return ExecuteNonQueryAsync(
             connection,
@@ -185,12 +360,13 @@ public sealed class CounterpartySqlServerRelationalAcceptanceTests
                 ([Id], [Code], [Kind], [LegalName], [TradeName], [IsActive], [Version],
                  [CreatedAtUtc], [UpdatedAtUtc])
             VALUES
-                (@Id, @Code, N'LegalEntity', @LegalName, NULL, 1, 1,
-                 SYSUTCDATETIME(), SYSUTCDATETIME());
+                (@Id, @Code, N'LegalEntity', @LegalName, NULL, 1, @Version,
+                  SYSUTCDATETIME(), SYSUTCDATETIME());
             """,
             new SqlParameter("@Id", id),
             new SqlParameter("@Code", code),
-            new SqlParameter("@LegalName", legalName));
+            new SqlParameter("@LegalName", legalName),
+            new SqlParameter("@Version", SqlDbType.BigInt) { Value = version });
     }
 
     private static Task InsertAccountAsync(
@@ -198,7 +374,9 @@ public sealed class CounterpartySqlServerRelationalAcceptanceTests
         Guid id,
         Guid companyId,
         Guid partyId,
-        int roles)
+        int roles,
+        string? externalIntegrationCode = null,
+        long version = 1)
     {
         return ExecuteNonQueryAsync(
             connection,
@@ -207,13 +385,18 @@ public sealed class CounterpartySqlServerRelationalAcceptanceTests
                 ([Id], [CompanyId], [PartyId], [Roles], [ExternalIntegrationCode],
                  [IsActive], [Version], [CreatedAtUtc], [UpdatedAtUtc])
             VALUES
-                (@Id, @CompanyId, @PartyId, @Roles, NULL,
-                 1, 1, SYSUTCDATETIME(), SYSUTCDATETIME());
+                (@Id, @CompanyId, @PartyId, @Roles, @ExternalIntegrationCode,
+                 1, @Version, SYSUTCDATETIME(), SYSUTCDATETIME());
             """,
             new SqlParameter("@Id", id),
             new SqlParameter("@CompanyId", companyId),
             new SqlParameter("@PartyId", partyId),
-            new SqlParameter("@Roles", roles));
+            new SqlParameter("@Roles", roles),
+            new SqlParameter("@ExternalIntegrationCode", SqlDbType.NVarChar, 128)
+            {
+                Value = (object?)externalIntegrationCode ?? DBNull.Value,
+            },
+            new SqlParameter("@Version", SqlDbType.BigInt) { Value = version });
     }
 
     private static async Task<T> ScalarAsync<T>(
