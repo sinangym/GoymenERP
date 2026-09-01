@@ -1,103 +1,56 @@
 /**
  * React binding for the central business-read security boundary (Issue #165).
  *
- * Every authenticated business read calls `capture()` before it starts and
- * `report()` with the status it got. The hook owns the effect; the feature
- * component owns nothing security-relevant beyond passing the snapshot through.
+ * WHAT THIS HOOK IS NOT: the decision. It only captures the snapshot and forwards
+ * the status. Whether an outcome is current, and whether its effect has already
+ * been applied, is decided by the reducer.
+ *
+ * The first version got this wrong, and ChatGPT's #169 review was right about
+ * both halves. The hook held `stateRef`/`actorRef` and an `applied` Set per
+ * instance, so:
+ *
+ *  - once the consumer unmounted, its refs stopped tracking the provider and its
+ *    in-flight promise judged a departed actor's late response against frozen
+ *    state — which is the exact mistake the boundary exists to prevent;
+ *  - two readers meant two Sets, so the same 401 could be applied twice.
+ *
+ * Both disappear when there is exactly one decider, and there is exactly one
+ * reducer. See `BUSINESS_AUTH_OUTCOME` in ./shellState.ts.
  */
 
-import { useCallback, useEffect, useRef } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useCallback } from 'react'
 import { useShellDispatch, useShellState } from './shellContext'
 import { contextKey, contextKeyString } from './shellState'
-import {
-  boundaryEffectKey,
-  captureSecuritySnapshot,
-  decideBoundaryAction,
-  type BoundaryAction,
-  type SecuritySnapshot,
-} from './authBoundary'
+import { captureSecuritySnapshot, type SecuritySnapshot } from './authBoundary'
 
 export interface AuthBoundary {
-  /** Snapshot the security bindings for a read that is about to start. */
+  /** Snapshot the security bindings for a read that is about to start (SAB-001). */
   readonly capture: () => SecuritySnapshot
-  /** Report the status a read came back with. Returns what the boundary did. */
-  readonly report: (status: number, snapshot: SecuritySnapshot) => BoundaryAction
+  /** Report the status a read came back with. The reducer decides what it means. */
+  readonly report: (status: number, snapshot: SecuritySnapshot) => void
 }
 
-export function useAuthBoundary(actorId: string | null): AuthBoundary {
+export function useAuthBoundary(): AuthBoundary {
   const state = useShellState()
   const dispatch = useShellDispatch()
-  const queryClient = useQueryClient()
-
-  /**
-   * Security outcomes already applied. SAB-010: the same 401 seen by two
-   * observers must reset once, not twice — a second reset advances the fence
-   * past what the facts justify and triggers a re-render storm.
-   *
-   * A ref, not state: this must not itself cause a render, and it must be
-   * consulted synchronously inside the same event that reports the outcome.
-   */
-  const applied = useRef<Set<string>>(new Set())
-
-  /**
-   * `report` must compare against the state as it is WHEN THE RESPONSE LANDS, not
-   * as it was when the request was made — that comparison is the whole point. So
-   * it reads through refs rather than closing over a render value.
-   *
-   * Synced in an effect, not during render: writing a ref while rendering is a
-   * tearing hazard, and it is unnecessary here because a response can only
-   * arrive after the render that started it has committed.
-   */
-  const stateRef = useRef(state)
-  const actorRef = useRef(actorId)
-  useEffect(() => {
-    stateRef.current = state
-    actorRef.current = actorId
-  }, [state, actorId])
 
   const capture = useCallback((): SecuritySnapshot => {
-    const key = contextKey(stateRef.current)
+    const key = contextKey(state)
+    // The actor is read from the COMMITTED context, not from a caller-supplied
+    // value: it is the identity the read is actually authorized under.
     return captureSecuritySnapshot(
-      stateRef.current,
-      actorRef.current,
+      state,
+      state.activeContext?.userId ?? null,
       key === null ? null : contextKeyString(key),
     )
-  }, [])
+  }, [state])
 
   const report = useCallback(
-    (status: number, snapshot: SecuritySnapshot): BoundaryAction => {
-      const action = decideBoundaryAction(status, snapshot, stateRef.current, actorRef.current)
-      const effectKey = boundaryEffectKey(action, snapshot)
-      if (effectKey === null) return action
-      if (applied.current.has(effectKey)) return action
-      applied.current.add(effectKey)
-
-      if (action.kind === 'session-reset') {
-        // SAB-002/003: end the session centrally, TERMINALLY, and drop every cached read
-        // taken under it — feature, identity, directory and capability alike.
-        // `clear()` also removes the queries, so mounted observers have nothing
-        // to serve and no data to resurrect on focus or reconnect (SAB-007).
-        dispatch({ type: 'SESSION_INVALIDATED' })
-        queryClient.clear()
-        return action
-      }
-
-      // SAB-004/005: a 403 does not have to end the session, but the capability
-      // we read under is no longer trustworthy. CAPABILITY_REVOKED nulls the
-      // generation and the granted list and advances the fence, so
-      // `capabilityFailClosed` closes every gated mount until a FRESH snapshot
-      // is fetched — the feature cannot come back on stale authority.
-      dispatch({ type: 'CAPABILITY_REVOKED' })
-      // Remove, not invalidate: invalidate would refetch under the very
-      // authority the server just rejected.
-      queryClient.removeQueries({
-        predicate: (query) =>
-          snapshot.namespace !== null && query.queryKey[0] === snapshot.namespace,
-      })
-      return action
+    (status: number, snapshot: SecuritySnapshot) => {
+      if (status !== 401 && status !== 403) return
+      dispatch({ type: 'BUSINESS_AUTH_OUTCOME', status, snapshot })
     },
-    [dispatch, queryClient],
+    [dispatch],
   )
 
   return { capture, report }

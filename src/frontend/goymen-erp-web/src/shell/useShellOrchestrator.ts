@@ -263,11 +263,14 @@ export function useShellOrchestrator(): ShellOrchestration {
         const resolution = resolveCapability(outcome)
         if (resolution.kind === 'session-invalid') {
           setSwitchFailure(false)
+          // ONE terminal event. This used to dispatch SESSION_INVALIDATED and then
+          // SESSION_RESET; the second rebuilt initialShellState and silently set
+          // sessionInvalid back to false, so the terminal state was undone one
+          // dispatch later and the shell became bootstrappable again
+          // (ChatGPT #169 P1-1). SESSION_INVALIDATED already drops everything
+          // SESSION_RESET drops.
           setSessionInvalid(true)
-          dispatch({ type: 'SESSION_RESET' })
-          // Codex #139 P1-3: SESSION_RESET drops the shell context but left every
-          // company-scoped business query sitting in the cache, ready to be served
-          // to whoever authenticates next in this tab.
+          // The session is dead; so is every read taken under it.
           queryClient.clear()
           return
         }
