@@ -63,7 +63,17 @@ describe('decodeCounterpartyDetail — happy path', () => {
   })
 })
 
-describe('decodeCounterpartyDetail — externalIntegrationCode never enters the client (§5.2)', () => {
+describe('decodeCounterpartyDetail — externalIntegrationCode stays out of the decoded model (§5.2)', () => {
+  /**
+   * The boundary these tests prove, stated precisely: the field does not enter the
+   * decoded business model, anything derived from it, or JSON.stringify(decoded).
+   *
+   * It DOES reach the browser — it is in the fetch response, in transport memory
+   * and visible in the Network panel. This is model hygiene and defense in depth.
+   * It is NOT a substitute for the real boundary: a narrow server projection that
+   * does not emit the field until a dedicated read permission and a redaction
+   * owner exist (§5.2).
+   */
   it('is absent from the decoded account even though the server sent it', () => {
     const decoded = decodeCounterpartyDetail(detail(), COMPANY_A)
     // Not "not rendered" — not present. A field on the view model reaches React
