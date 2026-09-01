@@ -10,18 +10,22 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed class ShellCapabilityRegistryTests
 {
     [Fact]
-    public void AcceptedCounterpartyListProvider_MatchesExactOwnerSourceAndAuthority()
+    public void AcceptedCounterpartyProvider_MatchesExactOwnerSourceAndAuthority()
     {
         var provider = new CounterpartyShellCapabilityProvider();
         var registry = new ShellCapabilityRegistry(
             [provider],
             new ShellCapabilityAuthorityCatalog(
-                [ShellCapabilityRegistryAuthorities.CounterpartyListV15]));
+                [ShellCapabilityRegistryAuthorities.CounterpartyListAndLinkV15]));
 
-        var registration = Assert.Single(registry.Registrations);
+        Assert.Equal(2, registry.Registrations.Count);
         Assert.Equal(
-            ShellCapabilityRegistryAuthorities.CounterpartyListV15,
+            ShellCapabilityRegistryAuthorities.CounterpartyListAndLinkV15,
             registry.Revision);
+        var registration = Assert.Single(
+            registry.Registrations,
+            item => item.Declaration.CapabilityId
+                == CounterpartyShellCapabilityProvider.ListCapabilityId);
         Assert.Equal(CounterpartyShellCapabilityProvider.OwnerId, registration.Owner);
         Assert.Equal(
             CounterpartyShellCapabilityProvider.OwnerContractVersion,
@@ -48,6 +52,37 @@ public sealed class ShellCapabilityRegistryTests
             [ErpPermissions.CounterpartyPartiesRead],
             registration.Declaration.RequiredPermissions);
         Assert.False(registration.Declaration.ImplementationAvailable);
+
+        var linkRegistration = Assert.Single(
+            registry.Registrations,
+            item => item.Declaration.CapabilityId
+                == CounterpartyShellCapabilityProvider.LinkCapabilityId);
+        Assert.Equal(CounterpartyShellCapabilityProvider.OwnerId, linkRegistration.Owner);
+        Assert.Equal(
+            CounterpartyShellCapabilityProvider.OwnerContractVersion,
+            linkRegistration.OwnerContractVersion);
+        Assert.Equal(
+            CounterpartyShellCapabilityProvider.LinkRouteId,
+            linkRegistration.Declaration.RouteId);
+        Assert.Equal(
+            CounterpartyShellCapabilityProvider.LinkRoutePath,
+            linkRegistration.Declaration.RoutePath);
+        Assert.Equal(
+            CounterpartyShellCapabilityProvider.LinkScreenId,
+            linkRegistration.Declaration.ScreenId);
+        Assert.Equal(
+            ShellCapabilityContextRequirement.SingleCompany,
+            linkRegistration.Declaration.ContextRequirement);
+        Assert.Equal(
+            ShellCapabilityScopeRequirement.CompanyWide,
+            linkRegistration.Declaration.ScopeRequirement);
+        Assert.Equal(
+            [
+                ErpPermissions.CounterpartyAccountsCreate,
+                ErpPermissions.CounterpartyPartiesRead,
+            ],
+            linkRegistration.Declaration.RequiredPermissions);
+        Assert.False(linkRegistration.Declaration.ImplementationAvailable);
     }
 
     [Fact]
