@@ -367,6 +367,29 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
                 ErpPermissions.CounterpartyPartiesRead,
                 revoked.RawJson,
                 StringComparison.Ordinal);
+
+            var createPermissionDeleted = await ExecuteNonQueryAsync(
+                connection,
+                """
+                DELETE FROM [identity].[RolePermissions]
+                WHERE [RoleId] = @RoleId
+                  AND [PermissionCode] = @PermissionCode;
+                """,
+                new SqlParameter("@RoleId", SystemAdministratorRoleId),
+                new SqlParameter(
+                    "@PermissionCode",
+                    ErpPermissions.CounterpartyPartiesCreate));
+            Assert.Equal(1, createPermissionDeleted);
+
+            var createPermissionRevoked = await ReadSnapshotAsync(administratorClient);
+            Assert.DoesNotContain(
+                CounterpartyShellCapabilityProvider.CreateCapabilityId,
+                createPermissionRevoked.Capabilities);
+            Assert.NotEqual(revoked.Generation, createPermissionRevoked.Generation);
+            Assert.DoesNotContain(
+                ErpPermissions.CounterpartyPartiesCreate,
+                createPermissionRevoked.RawJson,
+                StringComparison.Ordinal);
         }
         finally
         {
