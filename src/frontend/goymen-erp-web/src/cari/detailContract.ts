@@ -33,10 +33,16 @@ function isSafeIntish(value: unknown): value is number {
  * The selected company's account, as C-03 is allowed to know it.
  *
  * `externalIntegrationCode` is deliberately ABSENT from this type and never copied
- * out of the raw response (§5.2). "Not rendering it" would not be enough: a field
- * present on the view model reaches React state, a devtools inspection, a future
- * child component and anything that serializes the object. The only way to keep a
- * promise about where a value does not go is to never take it.
+ * out of the raw response (§5.2).
+ *
+ * The precise claim, because the loose one is false: the raw JSON DOES reach the
+ * browser — it is in the fetch response and in transport memory, and nothing here
+ * changes that. What this guarantees is narrower and is the part we control: the
+ * field never enters the decoded business model, so it cannot reach React state,
+ * props, a devtools inspection of that state, a future child component, or
+ * anything that serializes the decoded value.
+ *
+ * "Not rendering it" would not have been enough for that.
  */
 export interface CounterpartyDetailAccount {
   readonly id: string
