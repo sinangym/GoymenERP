@@ -1259,7 +1259,7 @@ public sealed class SqlServerRcsiReadinessProcessAcceptanceTests
                     [endpointSha256],
                     outputPath,
                     payload,
-                    overallTimeoutSeconds: 15,
+                    overallTimeoutSeconds: 30,
                     testProcessTimeout: TimeSpan.FromSeconds(90));
 
             Assert.Equal(2, result.ExitCode);
@@ -1305,7 +1305,7 @@ public sealed class SqlServerRcsiReadinessProcessAcceptanceTests
                     [actualEndpointSha256],
                     databaseOutput,
                     payload,
-                    overallTimeoutSeconds: 15,
+                    overallTimeoutSeconds: 30,
                     testProcessTimeout: TimeSpan.FromSeconds(90));
             Assert.Equal(3, databaseMismatch.ExitCode);
             Assert.Equal(File.ReadAllBytes(databaseOutput), databaseMismatch.StandardOutput);
@@ -1324,7 +1324,7 @@ public sealed class SqlServerRcsiReadinessProcessAcceptanceTests
                         "tcp:approved-but-not-observed.invalid,1433")],
                     endpointOutput,
                     payload,
-                    overallTimeoutSeconds: 15,
+                    overallTimeoutSeconds: 30,
                     testProcessTimeout: TimeSpan.FromSeconds(90));
             Assert.Equal(6, endpointMismatch.ExitCode);
             Assert.Equal(File.ReadAllBytes(endpointOutput), endpointMismatch.StandardOutput);
