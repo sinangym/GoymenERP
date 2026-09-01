@@ -29,14 +29,8 @@ public sealed class ShellCapabilityService(
             throw new ShellCapabilityUnavailableException();
         }
 
-        var authorizedCompanies = await organizationService.GetAuthorizedCompaniesAsync(
+        var activeAuthorizedCompanyIds = await GetActiveAuthorizedCompanyIdsAsync(
             cancellationToken);
-        var activeAuthorizedCompanyIds = authorizedCompanies
-            .Select(company => company.Id)
-            .Where(currentUser.CanAccessCompany)
-            .Distinct()
-            .Order()
-            .ToArray();
         if (activeAuthorizedCompanyIds.Length == 0)
         {
             throw new ShellCapabilityUnavailableException();
@@ -127,10 +121,33 @@ public sealed class ShellCapabilityService(
         }
 
         generationComponents.AddRange(capabilities.Select(x => $"capability:{x}"));
+        var generation = protector.Protect(generationComponents);
+        var readonlyCapabilities = Array.AsReadOnly(capabilities);
+        var revalidatedActiveAuthorizedCompanyIds =
+            await GetActiveAuthorizedCompanyIdsAsync(cancellationToken);
+        if (!activeAuthorizedCompanyIds.SequenceEqual(
+                revalidatedActiveAuthorizedCompanyIds))
+        {
+            throw new ShellCapabilityUnavailableException();
+        }
+
         return new ShellCapabilitySnapshot(
             ShellCapabilityRegistry.ContractVersion,
-            protector.Protect(generationComponents),
-            Array.AsReadOnly(capabilities));
+            generation,
+            readonlyCapabilities);
+    }
+
+    private async Task<Guid[]> GetActiveAuthorizedCompanyIdsAsync(
+        CancellationToken cancellationToken)
+    {
+        var authorizedCompanies = await organizationService.GetAuthorizedCompaniesAsync(
+            cancellationToken);
+        return authorizedCompanies
+            .Select(company => company.Id)
+            .Where(currentUser.CanAccessCompany)
+            .Distinct()
+            .Order()
+            .ToArray();
     }
 
     private static bool IsContextCompatible(

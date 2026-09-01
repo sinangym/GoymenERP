@@ -6,6 +6,7 @@ using System.Text.Json;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.Modules.Identity.Infrastructure.Services;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,6 +30,103 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
 
     private static readonly Guid SystemAdministratorRoleId = Guid.Parse(
         "30000000-0000-0000-0000-000000000003");
+
+    [SqlServerFact]
+    public async Task SelectedCompanySnapshot_FailsClosedWhenCompanyIsDeactivatedDuringAuthorization()
+    {
+        var baseConnectionString = Environment.GetEnvironmentVariable(
+            SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
+        SqlServerRelationalApiFactory? factory = null;
+        var observer = new DeactivatingAuthorizationSnapshotReadObserver(
+            () => factory!.DatabaseConnectionString,
+            TestCompanyIds.CompanyA);
+        factory = new SqlServerRelationalApiFactory(
+            baseConnectionString,
+            services =>
+            {
+                services.RemoveAll<IAuthorizationSnapshotReadObserver>();
+                services.AddSingleton<IAuthorizationSnapshotReadObserver>(observer);
+            });
+
+        try
+        {
+            using (var healthClient = factory.CreateClient())
+            using (var healthResponse = await healthClient.GetAsync("/health/live"))
+            {
+                Assert.Equal(HttpStatusCode.OK, healthResponse.StatusCode);
+            }
+
+            await using var connection = new SqlConnection(factory.DatabaseConnectionString);
+            await connection.OpenAsync();
+            var auditCountBefore = await ScalarAsync<int>(
+                connection,
+                "SELECT COUNT(*) FROM [audit].[AuditEvents];");
+            var commandExecutionCountBefore = await ScalarAsync<int>(
+                connection,
+                "SELECT COUNT(*) FROM [idempotency].[CommandExecutions];");
+
+            using var client = factory.CreateClientFor(
+                TestUsers.CompanyA,
+                TestCompanyIds.CompanyA);
+            using (var response = await client.GetAsync("/api/v1/shell/capabilities"))
+            {
+                var body = await response.Content.ReadAsStringAsync();
+
+                Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+                Assert.Contains("no-store", response.Headers.CacheControl!.ToString());
+                Assert.True(response.Headers.CacheControl.Private);
+                using var problem = JsonDocument.Parse(body);
+                Assert.Equal(
+                    "service_unavailable",
+                    problem.RootElement.GetProperty("code").GetString());
+                Assert.DoesNotContain(
+                    TestCompanyIds.CompanyA.ToString("D"),
+                    body,
+                    StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("GDC", body, StringComparison.Ordinal);
+                Assert.DoesNotContain(
+                    "Göymen Demir Çelik İnş. San. ve Tic. Ltd. Şti.",
+                    body,
+                    StringComparison.Ordinal);
+                Assert.DoesNotContain("4100046586", body, StringComparison.Ordinal);
+            }
+
+            Assert.Equal(1, observer.DeactivationCount);
+            Assert.Equal(
+                0,
+                await ScalarAsync<int>(
+                    connection,
+                    "SELECT CONVERT(int, [IsActive]) FROM [organization].[Companies] WHERE [Id] = @CompanyId;",
+                    new SqlParameter("@CompanyId", TestCompanyIds.CompanyA)));
+            Assert.Equal(
+                auditCountBefore,
+                await ScalarAsync<int>(
+                    connection,
+                    "SELECT COUNT(*) FROM [audit].[AuditEvents];"));
+            Assert.Equal(
+                commandExecutionCountBefore,
+                await ScalarAsync<int>(
+                    connection,
+                    "SELECT COUNT(*) FROM [idempotency].[CommandExecutions];"));
+
+            Assert.Equal(
+                1,
+                await ExecuteNonQueryAsync(
+                    connection,
+                    "UPDATE [organization].[Companies] SET [IsActive] = 1 WHERE [Id] = @CompanyId;",
+                    new SqlParameter("@CompanyId", TestCompanyIds.CompanyA)));
+            var recovered = await ReadSnapshotAsync(client);
+            AssertExactEmptySnapshot(recovered);
+        }
+        finally
+        {
+            if (factory is not null)
+            {
+                await factory.DisposeAsync();
+                await DropDatabaseAsync(baseConnectionString, factory.DatabaseName);
+            }
+        }
+    }
 
     [SqlServerFact]
     public async Task ExactCompanySnapshot_TracksPersistedAuthorizationAndHasNoWriteSideEffects()
@@ -732,6 +830,36 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
         string Generation,
         IReadOnlyList<string> Capabilities,
         string RawJson);
+
+    private sealed class DeactivatingAuthorizationSnapshotReadObserver(
+        Func<string> connectionStringAccessor,
+        Guid companyId)
+        : IAuthorizationSnapshotReadObserver
+    {
+        private int _deactivationCount;
+
+        public int DeactivationCount => Volatile.Read(ref _deactivationCount);
+
+        public void ObserveDatabaseRead()
+        {
+            if (Interlocked.CompareExchange(ref _deactivationCount, 1, 0) != 0)
+            {
+                return;
+            }
+
+            using var connection = new SqlConnection(connectionStringAccessor());
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                "UPDATE [organization].[Companies] SET [IsActive] = 0 WHERE [Id] = @CompanyId;";
+            command.Parameters.Add(new SqlParameter("@CompanyId", companyId));
+            if (command.ExecuteNonQuery() != 1)
+            {
+                throw new InvalidOperationException(
+                    "Shell capability yarış probu seçili şirketi pasifleştiremedi.");
+            }
+        }
+    }
 
     private sealed class AuthorizationProjectionCommandObserver :
         IObserver<DiagnosticListener>,

@@ -62,6 +62,20 @@ const DEFAULT_ACCOUNT_STATE: AccountStateFilter = 'all'
 const DEFAULT_PAGE_SIZE = 50
 
 /**
+ * The ONLY failures a continuation may survive: the request did not get through, or
+ * the service is temporarily down. Everything else must fail closed.
+ *
+ * This is an allowlist on purpose (DECISION_PACK Q8=A, "kapsam dışı/korunan güvenlik").
+ * `state.kind !== 'ready'` would have kept the rows on screen for a 401 — showing
+ * data from a session the server has already rejected — for a 403 after
+ * authorization was revoked mid-session, and for a malformed page, burying a
+ * broken server behind a reassuring "mevcut kayıtlar korunuyor". Keeping what the
+ * user already has is a courtesy for transport failures, not a place to hide any
+ * of those.
+ */
+const CONTINUATION_SURVIVABLE = new Set(['offline', 'network-error', 'service-unavailable'])
+
+/**
  * The context fence for this screen (Codex/ChatGPT #147 P1-2).
  *
  * The list is REMOUNTED whenever the context namespace changes — a different actor,
@@ -183,6 +197,20 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
    */
   const crossPageDuplicate = new Set(accumulated.map((item) => item.id)).size !== accumulated.length
   const items = crossPageDuplicate ? [] : accumulated
+
+  /**
+   * A CONTINUATION failed. The user asked for more; more did not arrive. What they
+   * already had is still valid and server-verified — replacing the whole screen
+   * throws away good data as a punishment for asking, and loses their place in the
+   * list. The FIRST page is different: there is nothing to keep.
+   */
+  const continuationFailed =
+    cursor !== undefined &&
+    loaded.length > 0 &&
+    !crossPageDuplicate &&
+    CONTINUATION_SURVIVABLE.has(state.kind)
+
+
 
   function resetPaging() {
     setCursor(undefined)
@@ -356,7 +384,7 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
         </label>
       </div>
 
-      {state.kind !== 'ready' || crossPageDuplicate ? (
+      {(state.kind !== 'ready' && !continuationFailed) || crossPageDuplicate ? (
         <StateBlock
           state={crossPageDuplicate ? { kind: 'malformed-response' } : state}
           subject="cari listesi"
@@ -449,7 +477,17 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
           </table>
           </div>
 
-          {page?.hasMore ? (
+          {continuationFailed ? (
+            /* Scoped to the continuation, not the list. Retry re-issues the SAME
+               cursor request — it does not reset paging, so the rows above stay
+               exactly where they are. */
+            <div className={styles.continuationError} role="alert">
+              <span>Daha fazla kayıt yüklenemedi; mevcut kayıtlar korunuyor.</span>
+              <button type="button" onClick={() => void query.refetch()} disabled={query.isFetching}>
+                {query.isFetching ? 'Yükleniyor…' : 'Tekrar dene'}
+              </button>
+            </div>
+          ) : page?.hasMore ? (
             <button
               type="button"
               className={styles.more}
