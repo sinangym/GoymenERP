@@ -26,6 +26,15 @@ import {
 
 const API_PREFIX = '/api/v1/'
 
+/** A real response fetched and parked at the transport, awaiting delivery. */
+export interface HeldResponse {
+  /** Resolves once the real response exists and is genuinely being withheld. */
+  readonly ready: Promise<void>
+  readonly release: () => void
+  /** False if the page was torn down before the response could be delivered. */
+  readonly wasDelivered: () => boolean
+}
+
 export class NetworkRecorder {
   private readonly records: NetworkRecord[] = []
 
@@ -67,7 +76,8 @@ export class NetworkRecorder {
       if (
         outcome === 'real-200' &&
         path === '/api/v1/counterparties' &&
-        recorder.pendingRetryOrdinal !== null
+        recorder.pendingRetryOrdinal !== null &&
+        url === recorder.failedReadUrl
       ) {
         const ordinal = recorder.pendingRetryOrdinal
         recorder.pendingRetryOrdinal = null
@@ -107,12 +117,13 @@ export class NetworkRecorder {
   async failNextCounterpartyRead(
     outcome: Extract<NetworkOutcome, 'injected-500' | 'injected-503' | 'injected-abort'>,
     options: { readonly delayMs?: number } = {},
-  ): Promise<void> {
+  ): Promise<() => boolean> {
     let used = false
     await this.page.route('**/api/v1/counterparties*', async (route: Route) => {
       if (used) return route.fallback()
       used = true
       const url = route.request().url()
+      this.failedReadUrl = url
       if (outcome !== 'injected-abort') this.expectInjectedResponse(url)
       if (options.delayMs) await new Promise((resolve) => setTimeout(resolve, options.delayMs))
       this.push(redactPath(url), outcome, 0)
@@ -128,6 +139,12 @@ export class NetworkRecorder {
         }),
       })
     })
+    // Returned so a caller can wait for the fault to have been CONSUMED. Watching
+    // the retry control go disabled was the obvious signal and it is unreliable:
+    // an injected response settles fast enough that the transient state is missed
+    // between polls, and the alert from the previous fault is still on screen, so
+    // a bare visibility check is satisfied by the wrong thing.
+    return () => used
   }
 
   /**
@@ -141,16 +158,18 @@ export class NetworkRecorder {
    * deterministically at the transport layer, which is the condition the
    * continuation allowlist actually classifies.
    */
-  async dropNextCounterpartyRead(): Promise<void> {
+  async dropNextCounterpartyRead(): Promise<() => boolean> {
     let used = false
     await this.page.route('**/api/v1/counterparties*', async (route: Route) => {
       if (used) return route.fallback()
       used = true
       const url = route.request().url()
+      this.failedReadUrl = url
       // An abort produces no response event, so nothing is expected on that channel.
       this.push(redactPath(url), 'injected-offline', 0)
       return route.abort('internetdisconnected')
     })
+    return () => used
   }
 
   /**
@@ -166,11 +185,22 @@ export class NetworkRecorder {
    * The caller can commit a different company in the meantime and then release an
    * genuinely stale, genuinely delivered response.
    */
-  async holdNextCounterpartyResponse(): Promise<() => void> {
+  async holdNextCounterpartyResponse(): Promise<HeldResponse> {
     let release: () => void = () => {}
     const held = new Promise<void>((resolve) => {
       release = resolve
     })
+    // READY LATCH. Without it the caller gets `release` immediately and can call
+    // it before the handler has even reached `route.fetch()` — the response then
+    // lands while the context is still the old one and the case silently proves
+    // nothing. Codex's post-merge audit on #173 was right to flag it. The caller
+    // must await `ready`, which resolves only once the real response is fetched
+    // and parked.
+    let markReady: () => void = () => {}
+    const ready = new Promise<void>((resolve) => {
+      markReady = resolve
+    })
+    let delivered = false
     let used = false
     await this.page.route('**/api/v1/counterparties*', async (route: Route) => {
       if (used) return route.fallback()
@@ -179,11 +209,19 @@ export class NetworkRecorder {
       this.expectInjectedResponse(url)
       const response = await route.fetch()
       const body = await response.body()
+      markReady()
       await held
       this.push(redactPath(url), 'injected-delay', 0)
-      return route.fulfill({ response, body })
+      try {
+        await route.fulfill({ response, body })
+        delivered = true
+      } catch {
+        // The page was torn down before delivery. Recorded rather than thrown so
+        // the test can assert on it instead of passing by accident.
+        delivered = false
+      }
     })
-    return () => release()
+    return { ready, release: () => release(), wasDelivered: () => delivered }
   }
 
   /**
@@ -198,6 +236,16 @@ export class NetworkRecorder {
   }
 
   private pendingRetryOrdinal: number | null = null
+
+  /**
+   * The exact URL of the read that failed, so a recovery is bound to THAT read.
+   *
+   * Classifying "the next 200 on /counterparties" was too loose: any other
+   * successful read arriving first would have been mislabelled as the recovery
+   * (#173 post-merge audit, point 4). The cursor is part of the URL, so matching
+   * it also binds the retry to the same cursor rather than to a fresh page one.
+   */
+  private failedReadUrl: string | null = null
 
   async detach(testInfo: TestInfo): Promise<void> {
     await this.page.unrouteAll({ behavior: 'ignoreErrors' })

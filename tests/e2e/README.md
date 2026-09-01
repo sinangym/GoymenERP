@@ -57,6 +57,20 @@ This table is the honest scope, so the report cannot be read as more than it is.
 | `B-C01-009` | the application's own cursor corrupted in flight, real `400 invalid_cursor`, recovery to page 1 announced in the live region | cursor forgery across companies |
 | `B-C01-010` | party state and account state as separate cells, globally inactive party hidden by the default filter | the full account-state filter matrix |
 
+## What is NOT here yet
+
+This directory is the RUNNER. Two things it depends on are **not on main**, and
+the suite therefore does not run in CI yet:
+
+- `.github/workflows/c01-real-browser-e2e.yml` — the job that stands up the
+  disposable stack and invokes `npm run c01:ci`
+- `tools/validate_c01_e2e_contract.py` — the evidence contract validator
+
+Both live in PR #163. Until that lands, a green run of this suite is a LOCAL
+result against a manually started stack. It is not exact-head browser CI, and it
+is not, on its own, verified C-01 browser acceptance evidence. Codex's post-merge
+audit on #173 made that distinction and it is the correct one.
+
 ## Status
 
 All ten pass against the disposable stack, and the emitted evidence passes
