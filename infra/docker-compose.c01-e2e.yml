@@ -1,6 +1,6 @@
 services:
   sqlserver:
-    image: mcr.microsoft.com/mssql/server:2022-latest
+    image: mcr.microsoft.com/mssql/server@sha256:ba4c8329f48fb8f02e1416be6a930ebfd71268caee78aa985f3af4315e457c89
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_PID: Developer
@@ -32,10 +32,20 @@ services:
         org.opencontainers.image.revision: ${C01_E2E_TESTED_COMMIT:?C01_E2E_TESTED_COMMIT must be set}
         com.goymen.e2e.suite: C01-REAL-BROWSER-E2E-V1
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_ENVIRONMENT: Testing
       DB_PROVIDER: SqlServer
-      DB_CONNECTION_STRING: Server=sqlserver,1433;Database=GoymenErp;User Id=sa;Password=${MSSQL_SA_PASSWORD};Encrypt=True;TrustServerCertificate=True
+      DB_CONNECTION_STRING: Server=sqlserver,1433;Database=${C01_E2E_DATABASE_NAME:?C01_E2E_DATABASE_NAME must be set};User Id=sa;Password=${MSSQL_SA_PASSWORD};Encrypt=True;TrustServerCertificate=True
       Counterparty__CursorSigningKey: ${C01_E2E_CURSOR_SIGNING_KEY:?C01_E2E_CURSOR_SIGNING_KEY must be set}
+      C01E2e__EnableListCapability: "true"
+      GOYMEN_ERP_C01_E2E_DISPOSABLE: ${GOYMEN_ERP_C01_E2E_DISPOSABLE:?GOYMEN_ERP_C01_E2E_DISPOSABLE must be set}
+      GOYMEN_ERP_C01_E2E_TESTED_COMMIT: ${GOYMEN_ERP_C01_E2E_TESTED_COMMIT:?GOYMEN_ERP_C01_E2E_TESTED_COMMIT must be set}
+      GOYMEN_ERP_C01_E2E_RUN_ID: ${GOYMEN_ERP_C01_E2E_RUN_ID:?GOYMEN_ERP_C01_E2E_RUN_ID must be set}
+      GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT: ${GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT:?GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT must be set}
+      BootstrapIdentity__HeaderName: X-Development-User
+      BootstrapIdentity__Users__0__UserId: group-bootstrap-admin
+      BootstrapIdentity__Users__0__DisplayName: C01 E2E Group Administrator
+      BootstrapIdentity__Users__1__UserId: company-a-user
+      BootstrapIdentity__Users__1__DisplayName: C01 E2E Unauthorized User
     ports:
       - target: 8080
         published: ${C01_E2E_API_PORT:-15080}

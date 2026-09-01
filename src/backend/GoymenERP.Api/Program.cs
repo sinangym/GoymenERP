@@ -65,8 +65,6 @@ builder.Services.AddScoped<ICompanyContext, CompanyContext>();
 builder.Services.AddScoped<ICorrelationContext, CorrelationContext>();
 builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
 builder.Services.AddSingleton<ShellCapabilityGenerationProtector>();
-builder.Services.AddSingleton(new ShellCapabilityAuthorityCatalog(
-    [ShellCapabilityRegistryAuthorities.CounterpartyListCreateLinkAndDetailV15]));
 builder.Services.AddSingleton<ShellCapabilityRegistry>();
 builder.Services.AddScoped<IActorSessionBindingResolver, ActorSessionBindingResolver>();
 builder.Services.AddScoped<ShellCapabilityService>();
@@ -85,6 +83,12 @@ builder.Services.AddCounterpartyModule(
         builder.Environment.IsDevelopment()
         || builder.Environment.IsEnvironment("Testing")
         || isOpenApiDocumentGeneration);
+var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
+    builder.Services,
+    builder.Environment,
+    builder.Configuration);
+builder.Services.AddSingleton(new ShellCapabilityAuthorityCatalog(
+    [shellCapabilityAuthority]));
 builder.Services.AddErpAuthentication(builder.Configuration, builder.Environment);
 
 var allowedOrigins = builder.Configuration

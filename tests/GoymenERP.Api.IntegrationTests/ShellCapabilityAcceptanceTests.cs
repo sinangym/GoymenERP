@@ -7,6 +7,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -187,6 +188,55 @@ public sealed class ShellCapabilityAcceptanceTests(
     }
 
     [Fact]
+    public async Task DisposableC01E2eActivation_IsRunBoundSelectedCompanyOnlyAndListOnly()
+    {
+        await using var isolatedFactory = factory.WithWebHostBuilder(builder =>
+        {
+            foreach (var (key, value) in C01E2eShellCapabilityActivationTests.ExactEnvelope())
+            {
+                builder.UseSetting(key, value);
+            }
+        });
+        using var selected = isolatedFactory.CreateClient();
+        selected.DefaultRequestHeaders.Add("X-Development-User", TestUsers.GroupAdmin);
+        selected.DefaultRequestHeaders.Add(
+            "X-Company-Id",
+            TestCompanyIds.CompanyA.ToString("D"));
+        using var group = isolatedFactory.CreateClient();
+        group.DefaultRequestHeaders.Add("X-Development-User", TestUsers.GroupAdmin);
+        using var unauthorized = isolatedFactory.CreateClient();
+        unauthorized.DefaultRequestHeaders.Add("X-Development-User", TestUsers.CompanyA);
+        unauthorized.DefaultRequestHeaders.Add(
+            "X-Company-Id",
+            TestCompanyIds.CompanyA.ToString("D"));
+
+        var selectedGeneration = await ReadGenerationAsync(selected);
+        var selectedCapabilities = await ReadCapabilitiesAsync(selected);
+        var groupCapabilities = await ReadCapabilitiesAsync(group);
+        var unauthorizedCapabilities = await ReadCapabilitiesAsync(unauthorized);
+        using var canonical = factory.CreateClientFor(
+            TestUsers.GroupAdmin,
+            TestCompanyIds.CompanyA);
+        var canonicalGeneration = await ReadGenerationAsync(canonical);
+
+        Assert.Equal(
+            [CounterpartyShellCapabilityProvider.ListCapabilityId],
+            selectedCapabilities);
+        Assert.Empty(groupCapabilities);
+        Assert.Empty(unauthorizedCapabilities);
+        Assert.NotEqual(canonicalGeneration, selectedGeneration);
+        Assert.DoesNotContain(
+            CounterpartyShellCapabilityProvider.CreateCapabilityId,
+            selectedCapabilities);
+        Assert.DoesNotContain(
+            CounterpartyShellCapabilityProvider.LinkCapabilityId,
+            selectedCapabilities);
+        Assert.DoesNotContain(
+            CounterpartyShellCapabilityProvider.DetailCapabilityId,
+            selectedCapabilities);
+    }
+
+    [Fact]
     public async Task HeaderlessGroupContext_ExcludesSingleCompanyOnlyDeclarations()
     {
         var provider = new SingleCompanyOnlyTestProvider();
@@ -318,6 +368,17 @@ public sealed class ShellCapabilityAcceptanceTests(
         response.EnsureSuccessStatusCode();
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
         return payload.GetProperty("generation").GetString()!;
+    }
+
+    private static async Task<string[]> ReadCapabilitiesAsync(HttpClient client)
+    {
+        using var response = await client.GetAsync("/api/v1/shell/capabilities");
+        response.EnsureSuccessStatusCode();
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        return payload.GetProperty("capabilities")
+            .EnumerateArray()
+            .Select(item => item.GetString()!)
+            .ToArray();
     }
 
     private static async Task AssertProblemCodeAsync(

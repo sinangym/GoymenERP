@@ -50,6 +50,13 @@ def main() -> int:
     require(status == 200, f"authorized capability status was {status}")
     require(selected.get("contractVersion") == "SHELL-CAPABILITY-V1", "capability contract drift")
     require(selected.get("capabilities") == [CAPABILITY], "selected-company capability drift")
+    selected_generation = selected.get("generation")
+    require(
+        isinstance(selected_generation, str)
+        and selected_generation.startswith("hmac-sha256:")
+        and len(selected_generation) > len("hmac-sha256:"),
+        "selected-company generation is missing",
+    )
 
     status, group = request(
         args.base_url,
@@ -58,6 +65,13 @@ def main() -> int:
         None,
     )
     require(status == 200 and group.get("capabilities") == [], "group context must not publish C-01")
+    group_generation = group.get("generation")
+    require(
+        isinstance(group_generation, str)
+        and group_generation.startswith("hmac-sha256:")
+        and group_generation != selected_generation,
+        "group generation must be valid and context-bound",
+    )
 
     status, unauthorized_capabilities = request(
         args.base_url,
@@ -68,6 +82,13 @@ def main() -> int:
     require(
         status == 200 and unauthorized_capabilities.get("capabilities") == [],
         "unauthorized actor must not receive C-01 capability",
+    )
+    unauthorized_generation = unauthorized_capabilities.get("generation")
+    require(
+        isinstance(unauthorized_generation, str)
+        and unauthorized_generation.startswith("hmac-sha256:")
+        and unauthorized_generation != selected_generation,
+        "unauthorized generation must be valid and actor-bound",
     )
 
     status, page = request(
@@ -104,6 +125,9 @@ def main() -> int:
         "testedCommit": args.tested_commit,
         "authorizedCompanyId": GDC,
         "capability": CAPABILITY,
+        "selectedGenerationBound": True,
+        "groupGenerationBound": True,
+        "unauthorizedGenerationBound": True,
         "authorizedFirstPageCount": 50,
         "authorizedVisibleCount": 52,
         "groupCapabilityCount": 0,

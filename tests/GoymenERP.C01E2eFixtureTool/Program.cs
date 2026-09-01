@@ -33,7 +33,10 @@ internal static partial class C01E2eFixtureTool
             }
 
             var settings = ReadSettings();
-            var builder = ValidateDisposableConnection(settings.ConnectionString);
+            var builder = ValidateDisposableConnection(
+                settings.ConnectionString,
+                settings.RunId,
+                settings.ComposeProject);
             await using var connection = new SqlConnection(builder.ConnectionString);
             await connection.OpenAsync();
 
@@ -268,7 +271,9 @@ internal static partial class C01E2eFixtureTool
     }
 
     private static SqlConnectionStringBuilder ValidateDisposableConnection(
-        string connectionString)
+        string connectionString,
+        string runId,
+        string composeProject)
     {
         var builder = new SqlConnectionStringBuilder(connectionString);
         var server = builder.DataSource.Split(',', 2, StringSplitOptions.TrimEntries)[0];
@@ -279,10 +284,26 @@ internal static partial class C01E2eFixtureTool
                 "Fixture aracı yalnız loopback SQL Server hedefinde çalışabilir.");
         }
 
-        if (!string.Equals(builder.InitialCatalog, "GoymenErp", StringComparison.Ordinal))
+        var projectPrefix = $"goymen-c01-{runId}-";
+        var attempt = composeProject.StartsWith(projectPrefix, StringComparison.Ordinal)
+            ? composeProject[projectPrefix.Length..]
+            : string.Empty;
+        if (runId.Any(character => character is < '0' or > '9')
+            || attempt.Length == 0
+            || attempt.Any(character => character is < '0' or > '9'))
         {
             throw new InvalidOperationException(
-                "Fixture aracı yalnız disposable GoymenErp veritabanını hedefleyebilir.");
+                "Fixture runner ve compose proje kimliği birbiriyle eşleşmelidir.");
+        }
+
+        var expectedDatabase = $"GoymenErpC01_{runId}_{attempt}";
+        if (!string.Equals(
+                builder.InitialCatalog,
+                expectedDatabase,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Fixture aracı yalnız exact run'a ait disposable veritabanını hedefleyebilir.");
         }
 
         if (builder.IntegratedSecurity || string.IsNullOrWhiteSpace(builder.UserID))

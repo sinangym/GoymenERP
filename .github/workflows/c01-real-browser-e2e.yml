@@ -44,6 +44,7 @@ jobs:
           git merge-base --is-ancestor "$EXPECTED_BASE_SHA" HEAD
 
           compose_project="goymen-c01-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          database_name="GoymenErpC01_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
           sql_password="C01_$(openssl rand -hex 20)_Aa1!"
           cursor_key="$(openssl rand -base64 48 | tr -d '\n')"
           echo "::add-mask::$sql_password"
@@ -51,10 +52,11 @@ jobs:
           {
             echo "C01_E2E_TESTED_COMMIT=$actual_head"
             echo "C01_E2E_COMPOSE_PROJECT=$compose_project"
+            echo "C01_E2E_DATABASE_NAME=$database_name"
             echo "COMPOSE_PROJECT_NAME=$compose_project"
             echo "MSSQL_SA_PASSWORD=$sql_password"
             echo "C01_E2E_CURSOR_SIGNING_KEY=$cursor_key"
-            echo "GOYMEN_ERP_C01_E2E_SQLSERVER_CONNECTION=Server=127.0.0.1,${C01_E2E_SQL_PORT};Database=GoymenErp;User Id=sa;Password=${sql_password};Encrypt=True;TrustServerCertificate=True"
+            echo "GOYMEN_ERP_C01_E2E_SQLSERVER_CONNECTION=Server=127.0.0.1,${C01_E2E_SQL_PORT};Database=${database_name};User Id=sa;Password=${sql_password};Encrypt=True;TrustServerCertificate=True"
             echo "GOYMEN_ERP_C01_E2E_DISPOSABLE=CONFIRMED"
             echo "GOYMEN_ERP_C01_E2E_TESTED_COMMIT=$actual_head"
             echo "GOYMEN_ERP_C01_E2E_RUN_ID=$GITHUB_RUN_ID"
@@ -207,7 +209,7 @@ jobs:
             --no-restore \
             -- verify-readonly
 
-      - name: Capture disposable runtime logs
+      - name: Capture disposable runtime state
         if: always()
         shell: bash
         run: |
@@ -215,10 +217,16 @@ jobs:
             -p "$C01_E2E_COMPOSE_PROJECT" \
             -f "$C01_E2E_COMPOSE_FILE" \
             ps --all > artifacts/container-logs/compose-ps.txt 2>&1 || true
-          docker compose \
-            -p "$C01_E2E_COMPOSE_PROJECT" \
-            -f "$C01_E2E_COMPOSE_FILE" \
-            logs --no-color > artifacts/container-logs/compose.log 2>&1 || true
+
+      - name: Enforce artifact privacy allowlist
+        id: artifact_privacy
+        if: always()
+        run: |
+          python3 -I -S -B tools/validate_c01_e2e_contract.py privacy \
+            --root artifacts \
+            --forbidden-value "$MSSQL_SA_PASSWORD" \
+            --forbidden-value "$C01_E2E_CURSOR_SIGNING_KEY" \
+            --forbidden-value "$GOYMEN_ERP_C01_E2E_SQLSERVER_CONNECTION"
 
       - name: Remove disposable containers, network and volume
         if: always()
@@ -234,10 +242,18 @@ jobs:
           test -z "$(docker volume ls -q --filter "label=com.docker.compose.project=$C01_E2E_COMPOSE_PROJECT")"
 
       - name: Upload exact-head C-01 evidence
-        if: always()
+        if: always() && steps.artifact_privacy.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
           name: c01-e2e-${{ github.event.pull_request.head.sha || github.sha }}
-          path: artifacts/
+          path: |
+            artifacts/c01-e2e-api-preflight.json
+            artifacts/c01-e2e-evidence.json
+            artifacts/c01-e2e-fixture-evidence.json
+            artifacts/c01-e2e-junit.xml
+            artifacts/c01-e2e-network-summary.json
+            artifacts/c01-e2e-post-browser-sql-evidence.json
+            artifacts/c01-e2e-html-report/index.html
+            artifacts/container-logs/compose-ps.txt
           if-no-files-found: error
           retention-days: 7

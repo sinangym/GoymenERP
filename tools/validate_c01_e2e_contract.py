@@ -14,6 +14,11 @@ import xml.etree.ElementTree as et
 from typing import Any
 
 
+REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[1]
+SQLSERVER_IMAGE = (
+    "mcr.microsoft.com/mssql/server@"
+    "sha256:ba4c8329f48fb8f02e1416be6a930ebfd71268caee78aa985f3af4315e457c89"
+)
 FIXTURE_SHA256 = "f23551944a65fe29681d768422b181dd73d68b1bdf8216e42bc643713e4d79d7"
 FIXTURE_ID = "C01-E2E-GOLDEN-V1"
 GDC_COMPANY_ID = "10000000-0000-0000-0000-000000000001"
@@ -54,6 +59,53 @@ NETWORK_REQUEST_KEYS = {
     "outcome",
     "retryOrdinal",
 }
+ARTIFACT_UPLOAD_ALLOWLIST = (
+    "c01-e2e-api-preflight.json",
+    "c01-e2e-evidence.json",
+    "c01-e2e-fixture-evidence.json",
+    "c01-e2e-junit.xml",
+    "c01-e2e-network-summary.json",
+    "c01-e2e-post-browser-sql-evidence.json",
+    "c01-e2e-html-report/index.html",
+    "container-logs/compose-ps.txt",
+)
+ARTIFACT_FORBIDDEN_PATTERNS = (
+    (
+        "cursor query",
+        re.compile(rb"(?:\?|&(?:amp;)?)cursor\s*=", re.IGNORECASE),
+    ),
+    (
+        "authorization credential",
+        re.compile(
+            rb"\bauthorization\s*[:=]\s*(?:bearer|basic)\s+[A-Za-z0-9+/_=.\-]+",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "idempotency key",
+        re.compile(rb"\bidempotency-key\s*[:=]\s*[^\s<\"']+", re.IGNORECASE),
+    ),
+    (
+        "generated SQL password",
+        re.compile(rb"C01_[0-9a-f]{32}_Aa1!", re.IGNORECASE),
+    ),
+    (
+        "connection string with password",
+        re.compile(
+            rb"(?:server|data\s+source)=[^;\r\n]+;[^\r\n]*(?:password|pwd)=[^;\s<\"']+",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "secret configuration assignment",
+        re.compile(
+            rb"(?:MSSQL_SA_PASSWORD|C01_E2E_CURSOR_SIGNING_KEY|"
+            rb"Counterparty__CursorSigningKey|GOYMEN_ERP_C01_E2E_SQLSERVER_CONNECTION|"
+            rb"DB_CONNECTION_STRING)\s*[:=]\s*[^\s<\"']+",
+            re.IGNORECASE,
+        ),
+    ),
+)
 
 
 class ContractError(ValueError):
@@ -114,14 +166,64 @@ def validate_compose(model: dict[str, Any], expected_commit: str, expected_proje
             require(port.get("protocol") == "tcp", f"{name} port must be TCP")
 
     sql = services["sqlserver"]
-    require(sql.get("image") == "mcr.microsoft.com/mssql/server:2022-latest", "SQL image drift")
+    require(sql.get("image") == SQLSERVER_IMAGE, "SQL image digest drift")
     require(bool(sql.get("healthcheck")), "SQL healthcheck is required")
 
     api = services["api"]
+    api_build = api.get("build", {})
+    require(
+        pathlib.Path(str(api_build.get("context", ""))).resolve() == REPOSITORY_ROOT,
+        "API build context drift",
+    )
+    require(
+        api_build.get("dockerfile") == "src/backend/GoymenERP.Api/Dockerfile",
+        "API Dockerfile drift",
+    )
     api_environment = api.get("environment", {})
-    require(api_environment.get("ASPNETCORE_ENVIRONMENT") == "Development", "API environment drift")
+    require(api_environment.get("ASPNETCORE_ENVIRONMENT") == "Testing", "API environment drift")
     require(api_environment.get("DB_PROVIDER") == "SqlServer", "API DB provider drift")
-    require("Database=GoymenErp" in api_environment.get("DB_CONNECTION_STRING", ""), "API DB drift")
+    expected_database = "GoymenErpC01_" + "_".join(expected_project.split("-")[-2:])
+    require(
+        f"Database={expected_database}" in api_environment.get("DB_CONNECTION_STRING", ""),
+        "API disposable DB drift",
+    )
+    require(
+        api_environment.get("C01E2e__EnableListCapability") == "true",
+        "API disposable capability flag drift",
+    )
+    require(
+        api_environment.get("GOYMEN_ERP_C01_E2E_DISPOSABLE") == "CONFIRMED",
+        "API disposable attestation drift",
+    )
+    require(
+        api_environment.get("GOYMEN_ERP_C01_E2E_TESTED_COMMIT") == expected_commit,
+        "API disposable source SHA drift",
+    )
+    require(
+        api_environment.get("GOYMEN_ERP_C01_E2E_RUN_ID") == expected_project.split("-")[-2],
+        "API disposable run id drift",
+    )
+    require(
+        api_environment.get("GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT") == expected_project,
+        "API disposable compose project drift",
+    )
+    require(
+        api_environment.get("BootstrapIdentity__HeaderName") == "X-Development-User",
+        "API bootstrap header drift",
+    )
+    require(
+        api_environment.get("BootstrapIdentity__Users__0__UserId")
+        == "group-bootstrap-admin"
+        and api_environment.get("BootstrapIdentity__Users__0__DisplayName")
+        == "C01 E2E Group Administrator",
+        "API authorized bootstrap identity drift",
+    )
+    require(
+        api_environment.get("BootstrapIdentity__Users__1__UserId") == "company-a-user"
+        and api_environment.get("BootstrapIdentity__Users__1__DisplayName")
+        == "C01 E2E Unauthorized User",
+        "API unauthorized bootstrap identity drift",
+    )
     cursor_key = api_environment.get("Counterparty__CursorSigningKey", "")
     try:
         decoded_cursor_key = base64.b64decode(cursor_key, validate=True)
@@ -134,6 +236,10 @@ def validate_compose(model: dict[str, Any], expected_commit: str, expected_proje
         ("web-unauthorized", "company-a-user"),
     ):
         build = services[name].get("build", {})
+        require(
+            pathlib.Path(str(build.get("context", ""))).resolve() == REPOSITORY_ROOT,
+            f"{name} build context drift",
+        )
         require(build.get("dockerfile") == "src/frontend/goymen-erp-web/Dockerfile", f"{name} Dockerfile drift")
         args = build.get("args", {})
         require(args.get("VITE_BOOTSTRAP_IDENTITY_ENABLED") == "true", f"{name} bootstrap flag drift")
@@ -144,7 +250,7 @@ def validate_compose(model: dict[str, Any], expected_commit: str, expected_proje
             f"{name} image source SHA label mismatch",
         )
 
-    api_build_labels = api.get("build", {}).get("labels", {})
+    api_build_labels = api_build.get("labels", {})
     require(
         api_build_labels.get("org.opencontainers.image.revision") == expected_commit,
         "API image source SHA label mismatch",
@@ -347,6 +453,53 @@ def validate_junit(path: str) -> None:
     require(not root.findall(".//skipped"), "JUnit report contains skipped tests")
 
 
+def artifact_upload_paths(root: str | pathlib.Path) -> list[pathlib.Path]:
+    artifact_root = pathlib.Path(root).resolve()
+    require(artifact_root.is_dir(), "artifact root is missing")
+    selected: list[pathlib.Path] = []
+    for relative in ARTIFACT_UPLOAD_ALLOWLIST:
+        candidate = artifact_root / relative
+        if not candidate.exists():
+            continue
+        require(candidate.is_file(), f"artifact allowlist entry is not a file: {relative}")
+        require(not candidate.is_symlink(), f"artifact allowlist entry is a symlink: {relative}")
+        require(
+            candidate.resolve().is_relative_to(artifact_root),
+            f"artifact allowlist entry escapes root: {relative}",
+        )
+        selected.append(candidate)
+    require(selected, "artifact upload allowlist selected no files")
+    return selected
+
+
+def validate_artifact_privacy(
+    root: str | pathlib.Path,
+    forbidden_values: tuple[str, ...] | list[str] = (),
+) -> None:
+    artifact_root = pathlib.Path(root).resolve()
+    selected = artifact_upload_paths(artifact_root)
+    runtime_needles: list[bytes] = []
+    for index, value in enumerate(forbidden_values):
+        require(
+            isinstance(value, str) and len(value.encode("utf-8")) >= 8,
+            f"runtime forbidden value {index} is missing or too short",
+        )
+        runtime_needles.append(value.encode("utf-8"))
+    for path in selected:
+        content = path.read_bytes()
+        relative = path.relative_to(artifact_root).as_posix()
+        for label, pattern in ARTIFACT_FORBIDDEN_PATTERNS:
+            require(
+                pattern.search(content) is None,
+                f"artifact privacy violation ({label}): {relative}",
+            )
+        for index, needle in enumerate(runtime_needles):
+            require(
+                needle not in content,
+                f"artifact privacy violation (runtime secret {index}): {relative}",
+            )
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser()
     subparsers = result.add_subparsers(dest="command", required=True)
@@ -362,6 +515,9 @@ def parser() -> argparse.ArgumentParser:
     evidence.add_argument("--expected-commit", required=True)
     evidence.add_argument("--expected-run-id", required=True)
     evidence.add_argument("--expected-project", required=True)
+    privacy = subparsers.add_parser("privacy")
+    privacy.add_argument("--root", required=True)
+    privacy.add_argument("--forbidden-value", action="append", default=[])
     return result
 
 
@@ -374,7 +530,7 @@ def main() -> int:
                 arguments.expected_commit,
                 arguments.expected_project,
             )
-        else:
+        elif arguments.command == "evidence":
             validate_evidence(
                 load_json(arguments.evidence),
                 load_json(arguments.network),
@@ -384,6 +540,8 @@ def main() -> int:
                 arguments.expected_run_id,
                 arguments.expected_project,
             )
+        else:
+            validate_artifact_privacy(arguments.root, arguments.forbidden_value)
     except (ContractError, json.JSONDecodeError, OSError, et.ParseError) as exception:
         print(f"C-01 E2E contract validation failed: {exception}", file=sys.stderr)
         return 1
