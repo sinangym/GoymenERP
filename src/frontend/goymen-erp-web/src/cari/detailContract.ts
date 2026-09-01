@@ -24,6 +24,8 @@ import { PARTY_KIND, type PartyKind } from './contract'
 
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
 const NIL_UUID = '00000000-0000-0000-0000-000000000000'
+/** Int64.MaxValue is 19 digits; the contract pins `maxLength: 19`. */
+const MAX_VERSION_DIGITS = 19
 const ALL_ROLE_FLAGS = 1 | 2 | 4 | 8
 
 function isBoundUuid(value: unknown): value is string {
@@ -39,15 +41,20 @@ function isSafeIntish(value: unknown): value is number {
 }
 
 /**
- * An int64 row version on the wire: a decimal string, no leading zeros, minimum 1
- * (contract pattern ^[1-9][0-9]*$).
+ * An int64 row version on the wire: a decimal string, no leading zeros, minimum 1,
+ * at most 19 digits (contract: pattern ^[1-9][0-9]*$, maxLength 19 — Int64.MaxValue
+ * is 19 digits).
  *
  * Accepting a JSON number here would defeat the point. The server moved to a
  * string precisely because a version past 2^53 cannot survive an IEEE-754 double,
  * and a silently rounded concurrency token is worse than a rejected response.
  */
 function isLosslessVersion(value: unknown): value is string {
-  return typeof value === 'string' && /^[1-9][0-9]*$/.test(value)
+  return (
+    typeof value === 'string' &&
+    value.length <= MAX_VERSION_DIGITS &&
+    /^[1-9][0-9]*$/.test(value)
+  )
 }
 
 /**

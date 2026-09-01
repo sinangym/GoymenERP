@@ -215,6 +215,22 @@ describe('version is an int64 carried losslessly (contract #170)', () => {
     ).toBeNull()
   })
 
+  it('rejects a version longer than the contract allows', () => {
+    // The contract pins `maxLength: 19` because Int64.MaxValue is 19 digits.
+    // The pattern alone would accept any length, so a 20-digit value would enter
+    // the model as a version the server cannot have issued. Harmless today —
+    // version is opaque and read-only — but the decoder should accept exactly
+    // what the contract can emit, not a superset of it.
+    const maxInt64 = '9223372036854775807' // 19 digits, must still be accepted
+    expect(decodeCounterpartyDetail(detail({ version: maxInt64 }), COMPANY_A)).not.toBeNull()
+
+    const tooLong = '1'.repeat(20)
+    expect(decodeCounterpartyDetail(detail({ version: tooLong }), COMPANY_A)).toBeNull()
+    expect(
+      decodeCounterpartyDetail(detail({ companyAccounts: [account({ version: tooLong })] }), COMPANY_A),
+    ).toBeNull()
+  })
+
   it('rejects shapes the contract pattern forbids', () => {
     for (const bad of ['0', '01', '-1', '1.5', '', ' 1', '1e3', 'abc', null]) {
       expect(decodeCounterpartyDetail(detail({ version: bad }), COMPANY_A)).toBeNull()
