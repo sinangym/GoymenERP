@@ -21,10 +21,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\backend\BuildingBlocks\GoymenERP.BuildingBlocks\GoymenERP.BuildingBlocks.csproj" />
-    <ProjectReference Include="..\..\src\backend\BuildingBlocks\GoymenERP.BuildingBlocks.SqlServer\GoymenERP.BuildingBlocks.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\backend\Modules\Identity\GoymenERP.Modules.Identity.Domain\GoymenERP.Modules.Identity.Domain.csproj" />
     <ProjectReference Include="..\..\src\backend\Modules\Identity\GoymenERP.Modules.Identity.Infrastructure\GoymenERP.Modules.Identity.Infrastructure.csproj" />
-    <ProjectReference Include="..\..\tools\GoymenERP.SqlServerRcsiReadiness\GoymenERP.SqlServerRcsiReadiness.csproj" />
   </ItemGroup>
 
 </Project>

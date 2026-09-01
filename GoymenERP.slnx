@@ -38,6 +38,7 @@
     <Project Path="tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj" />
     <Project Path="tests/GoymenERP.Counterparty.UnitTests/GoymenERP.Counterparty.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.Organization.UnitTests/GoymenERP.Organization.UnitTests.csproj" />
+    <Project Path="tests/GoymenERP.SqlServerRcsiReadiness.Tests/GoymenERP.SqlServerRcsiReadiness.Tests.csproj" />
     <Project Path="tests/GoymenERP.Identity.UnitTests/GoymenERP.Identity.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.Idempotency.UnitTests/GoymenERP.Idempotency.UnitTests.csproj" />
   </Folder>

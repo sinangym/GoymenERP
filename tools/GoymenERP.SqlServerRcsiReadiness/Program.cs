@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using GoymenERP.BuildingBlocks.SqlServer;
 using Microsoft.Data.SqlClient;
@@ -6,7 +7,13 @@ return await SqlServerRcsiReadinessCli.RunAsync(
     args,
     Environment.GetEnvironmentVariable,
     Console.Out,
-    Console.Error);
+    Console.Error,
+    TimeProvider.System,
+    static (connection, binding, cancellationToken) =>
+        new SqlServerRcsiReadinessProbe().ProbeAsync(
+            connection,
+            binding,
+            cancellationToken));
 
 internal static class SqlServerRcsiReadinessCli
 {
@@ -15,18 +22,31 @@ internal static class SqlServerRcsiReadinessCli
         + "--connection-string-env <ENV_NAME> "
         + "--expected-database <DATABASE> "
         + "--target-label <LABEL> "
-        + "--expected-data-source-sha256 <SHA256> [--output <JSON_PATH>]";
+        + "--expected-logical-endpoint-sha256 <SHA256> "
+        + "[--expected-logical-endpoint-sha256 <SHA256> ...] "
+        + "--run-id <UUID> --tested-commit <40HEX> "
+        + "--timeout-seconds <POSITIVE_TECHNICAL_SECONDS> "
+        + "--output <NEW_JSON_PATH>";
 
     public static async Task<int> RunAsync(
         string[] arguments,
         Func<string, string?> getEnvironmentVariable,
         TextWriter standardOutput,
-        TextWriter standardError)
+        TextWriter standardError,
+        TimeProvider timeProvider,
+        Func<
+            SqlConnection,
+            SqlServerRcsiReadinessBinding,
+            CancellationToken,
+            Task<SqlServerRcsiReadinessEvidence>> probeAsync,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(arguments);
         ArgumentNullException.ThrowIfNull(getEnvironmentVariable);
         ArgumentNullException.ThrowIfNull(standardOutput);
         ArgumentNullException.ThrowIfNull(standardError);
+        ArgumentNullException.ThrowIfNull(timeProvider);
+        ArgumentNullException.ThrowIfNull(probeAsync);
 
         if (arguments.Length == 1
             && string.Equals(arguments[0], "--help", StringComparison.Ordinal))
@@ -35,19 +55,32 @@ internal static class SqlServerRcsiReadinessCli
             return 0;
         }
 
+        var observedAtUtc = timeProvider.GetUtcNow();
         if (!TryParse(arguments, out var options)
+            || !SqlServerRcsiReadinessRunContext.TryCreate(
+                options.RunId,
+                options.TestedCommit,
+                observedAtUtc,
+                out var runContext)
             || !SqlServerRcsiReadinessBinding.TryCreate(
                 options.TargetLabel,
                 options.ExpectedDatabase,
-                options.ExpectedDataSourceSha256,
+                options.ApprovedLogicalEndpointSha256,
                 out var binding)
             || !IsSafeEnvironmentVariableName(options.ConnectionStringEnvironmentVariable))
         {
-            return await WriteEvidenceAsync(
+            return await WriteStandardOutputOnlyAsync(
                 SqlServerRcsiReadinessPolicy.InvalidBinding(),
-                outputPath: null,
-                standardOutput,
-                standardError);
+                runContext: null,
+                standardOutput);
+        }
+
+        if (!TryGetFreshOutputPath(options.OutputPath, out var fullOutputPath))
+        {
+            return await WriteStandardOutputOnlyAsync(
+                SqlServerRcsiReadinessPolicy.EvidenceWriteFailed(),
+                runContext,
+                standardOutput);
         }
 
         var connectionString = getEnvironmentVariable(
@@ -56,7 +89,8 @@ internal static class SqlServerRcsiReadinessCli
         {
             return await WriteEvidenceAsync(
                 SqlServerRcsiReadinessPolicy.InvalidBinding(),
-                options.OutputPath,
+                runContext,
+                fullOutputPath,
                 standardOutput,
                 standardError);
         }
@@ -70,18 +104,38 @@ internal static class SqlServerRcsiReadinessCli
         {
             return await WriteEvidenceAsync(
                 SqlServerRcsiReadinessPolicy.InvalidBinding(),
-                options.OutputPath,
+                runContext,
+                fullOutputPath,
                 standardOutput,
                 standardError);
         }
 
         await using (connection)
+        using (var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(
+                   cancellationToken))
         {
-            var evidence = await new SqlServerRcsiReadinessProbe()
-                .ProbeAsync(connection, binding);
+            timeoutSource.CancelAfter(options.Timeout);
+            SqlServerRcsiReadinessEvidence evidence;
+            try
+            {
+                evidence = await probeAsync(
+                    connection,
+                    binding,
+                    timeoutSource.Token);
+            }
+            catch (OperationCanceledException) when (
+                !cancellationToken.IsCancellationRequested
+                && timeoutSource.IsCancellationRequested)
+            {
+                evidence = SqlServerRcsiReadinessPolicy.ProbeFailed(
+                    binding,
+                    TryReadConfiguredDatabase(connection));
+            }
+
             return await WriteEvidenceAsync(
                 evidence,
-                options.OutputPath,
+                runContext,
+                fullOutputPath,
                 standardOutput,
                 standardError);
         }
@@ -100,7 +154,21 @@ internal static class SqlServerRcsiReadinessCli
         {
             var name = arguments[index];
             var value = arguments[index + 1];
-            if (!seen.Add(name) || string.IsNullOrWhiteSpace(value))
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            if (string.Equals(
+                    name,
+                    "--expected-logical-endpoint-sha256",
+                    StringComparison.Ordinal))
+            {
+                options.ApprovedLogicalEndpointSha256.Add(value);
+                continue;
+            }
+
+            if (!seen.Add(name))
             {
                 return false;
             }
@@ -116,8 +184,19 @@ internal static class SqlServerRcsiReadinessCli
                 case "--target-label":
                     options.TargetLabel = value;
                     break;
-                case "--expected-data-source-sha256":
-                    options.ExpectedDataSourceSha256 = value;
+                case "--run-id":
+                    options.RunId = value;
+                    break;
+                case "--tested-commit":
+                    options.TestedCommit = value;
+                    break;
+                case "--timeout-seconds":
+                    if (!TryParseTimeout(value, out var timeout))
+                    {
+                        return false;
+                    }
+
+                    options.Timeout = timeout;
                     break;
                 case "--output":
                     options.OutputPath = value;
@@ -130,7 +209,35 @@ internal static class SqlServerRcsiReadinessCli
         return !string.IsNullOrWhiteSpace(options.ConnectionStringEnvironmentVariable)
                && !string.IsNullOrWhiteSpace(options.ExpectedDatabase)
                && !string.IsNullOrWhiteSpace(options.TargetLabel)
-               && !string.IsNullOrWhiteSpace(options.ExpectedDataSourceSha256);
+               && options.ApprovedLogicalEndpointSha256.Count > 0
+               && !string.IsNullOrWhiteSpace(options.RunId)
+               && !string.IsNullOrWhiteSpace(options.TestedCommit)
+               && options.Timeout > TimeSpan.Zero
+               && !string.IsNullOrWhiteSpace(options.OutputPath);
+    }
+
+    private static bool TryParseTimeout(string value, out TimeSpan timeout)
+    {
+        timeout = TimeSpan.Zero;
+        if (!long.TryParse(
+                value,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var seconds)
+            || seconds <= 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            timeout = TimeSpan.FromSeconds(seconds);
+            return timeout.TotalMilliseconds <= uint.MaxValue - 1;
+        }
+        catch (OverflowException)
+        {
+            return false;
+        }
     }
 
     private static bool IsSafeEnvironmentVariableName(string? value)
@@ -144,40 +251,152 @@ internal static class SqlServerRcsiReadinessCli
             char.IsAsciiLetterOrDigit(character) || character == '_');
     }
 
+    private static bool TryGetFreshOutputPath(
+        string? outputPath,
+        out string fullOutputPath)
+    {
+        fullOutputPath = string.Empty;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(outputPath))
+            {
+                return false;
+            }
+
+            fullOutputPath = Path.GetFullPath(outputPath);
+            return !File.Exists(fullOutputPath)
+                   && !Directory.Exists(fullOutputPath)
+                   && !string.IsNullOrWhiteSpace(Path.GetFileName(fullOutputPath));
+        }
+        catch (Exception exception) when (
+            exception is IOException
+            or UnauthorizedAccessException
+            or NotSupportedException
+            or ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    private static string? TryReadConfiguredDatabase(SqlConnection connection)
+    {
+        try
+        {
+            return connection.Database;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
     private static async Task<int> WriteEvidenceAsync(
         SqlServerRcsiReadinessEvidence evidence,
-        string? outputPath,
+        SqlServerRcsiReadinessRunContext runContext,
+        string fullOutputPath,
         TextWriter standardOutput,
         TextWriter standardError)
     {
-        var bytes = SqlServerRcsiReadinessEvidenceJson.SerializeUtf8(evidence);
-        if (!string.IsNullOrWhiteSpace(outputPath))
+        var bytes = SqlServerRcsiReadinessEvidenceJson.SerializeUtf8(
+            evidence,
+            runContext);
+        if (!await TryWriteNewEvidenceFileAsync(
+                fullOutputPath,
+                runContext.RunId,
+                bytes))
         {
-            try
-            {
-                var fullPath = Path.GetFullPath(outputPath);
-                var directory = Path.GetDirectoryName(fullPath);
-                if (!string.IsNullOrWhiteSpace(directory))
-                {
-                    Directory.CreateDirectory(directory);
-                }
-
-                await File.WriteAllBytesAsync(fullPath, bytes);
-            }
-            catch (Exception exception) when (
-                exception is IOException
-                or UnauthorizedAccessException
-                or NotSupportedException
-                or ArgumentException)
-            {
-                await standardError.WriteLineAsync(
-                    "RCSI readiness evidence could not be written.");
-                evidence = SqlServerRcsiReadinessPolicy.EvidenceWriteFailed();
-            }
+            await standardError.WriteLineAsync(
+                "RCSI readiness evidence could not be written to a new path.");
+            return await WriteStandardOutputOnlyAsync(
+                SqlServerRcsiReadinessPolicy.EvidenceWriteFailed(),
+                runContext,
+                standardOutput);
         }
 
-        var json = SqlServerRcsiReadinessEvidenceJson.Serialize(evidence);
-        await standardOutput.WriteLineAsync(json);
+        await standardOutput.WriteAsync(Encoding.UTF8.GetString(bytes));
+        return (int)evidence.ExitCode;
+    }
+
+    private static async Task<bool> TryWriteNewEvidenceFileAsync(
+        string fullOutputPath,
+        string runId,
+        byte[] bytes)
+    {
+        var directory = Path.GetDirectoryName(fullOutputPath);
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            return false;
+        }
+
+        var temporaryPath = Path.Combine(
+            directory,
+            $".{Path.GetFileName(fullOutputPath)}.{runId}.tmp");
+        var temporaryFileCreated = false;
+        try
+        {
+            Directory.CreateDirectory(directory);
+            if (File.Exists(fullOutputPath) || Directory.Exists(fullOutputPath))
+            {
+                return false;
+            }
+
+            await using (var stream = new FileStream(
+                             temporaryPath,
+                             FileMode.CreateNew,
+                             FileAccess.Write,
+                             FileShare.None,
+                             bufferSize: 4096,
+                             FileOptions.Asynchronous | FileOptions.WriteThrough))
+            {
+                temporaryFileCreated = true;
+                await stream.WriteAsync(bytes);
+                await stream.FlushAsync();
+                stream.Flush(flushToDisk: true);
+            }
+
+            File.Move(temporaryPath, fullOutputPath, overwrite: false);
+            temporaryFileCreated = false;
+            return true;
+        }
+        catch (Exception exception) when (
+            exception is IOException
+            or UnauthorizedAccessException
+            or NotSupportedException
+            or ArgumentException)
+        {
+            return false;
+        }
+        finally
+        {
+            if (temporaryFileCreated)
+            {
+                try
+                {
+                    File.Delete(temporaryPath);
+                }
+                catch (Exception exception) when (
+                    exception is IOException
+                    or UnauthorizedAccessException
+                    or NotSupportedException)
+                {
+                    // The tool never deletes any path except its own successfully-created temp.
+                }
+            }
+        }
+    }
+
+    private static async Task<int> WriteStandardOutputOnlyAsync(
+        SqlServerRcsiReadinessEvidence evidence,
+        SqlServerRcsiReadinessRunContext? runContext,
+        TextWriter standardOutput)
+    {
+        if (runContext is null)
+        {
+            return (int)evidence.ExitCode;
+        }
+
+        await standardOutput.WriteAsync(
+            SqlServerRcsiReadinessEvidenceJson.Serialize(evidence, runContext));
         return (int)evidence.ExitCode;
     }
 
@@ -189,7 +408,13 @@ internal static class SqlServerRcsiReadinessCli
 
         public string? TargetLabel { get; set; }
 
-        public string? ExpectedDataSourceSha256 { get; set; }
+        public List<string> ApprovedLogicalEndpointSha256 { get; } = [];
+
+        public string? RunId { get; set; }
+
+        public string? TestedCommit { get; set; }
+
+        public TimeSpan Timeout { get; set; }
 
         public string? OutputPath { get; set; }
     }

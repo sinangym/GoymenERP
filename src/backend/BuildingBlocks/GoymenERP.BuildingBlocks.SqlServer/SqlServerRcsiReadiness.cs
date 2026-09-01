@@ -1,5 +1,7 @@
+using System.Collections.ObjectModel;
 using System.Data;
 using System.Data.Common;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -13,36 +15,36 @@ public enum SqlServerRcsiReadinessExitCode
     ExpectedDatabaseMismatch = 3,
     RcsiDisabled = 4,
     ProbeFailed = 5,
-    ExpectedTargetMismatch = 6,
+    ExpectedLogicalEndpointMismatch = 6,
 }
 
-public sealed record SqlServerRcsiReadinessBinding
+public sealed class SqlServerRcsiReadinessBinding
 {
     private SqlServerRcsiReadinessBinding(
         string targetLabel,
         string expectedDatabase,
-        string expectedDataSourceSha256)
+        ReadOnlyCollection<string> approvedLogicalEndpointSha256)
     {
         TargetLabel = targetLabel;
         ExpectedDatabase = expectedDatabase;
-        ExpectedDataSourceSha256 = expectedDataSourceSha256;
+        ApprovedLogicalEndpointSha256 = approvedLogicalEndpointSha256;
     }
 
     public string TargetLabel { get; }
 
     public string ExpectedDatabase { get; }
 
-    public string ExpectedDataSourceSha256 { get; }
+    public IReadOnlyList<string> ApprovedLogicalEndpointSha256 { get; }
 
     public static SqlServerRcsiReadinessBinding Create(
         string targetLabel,
         string expectedDatabase,
-        string expectedDataSourceSha256)
+        IEnumerable<string> approvedLogicalEndpointSha256)
     {
         if (!TryCreate(
                 targetLabel,
                 expectedDatabase,
-                expectedDataSourceSha256,
+                approvedLogicalEndpointSha256,
                 out var binding))
         {
             throw new ArgumentException(
@@ -52,19 +54,23 @@ public sealed record SqlServerRcsiReadinessBinding
         return binding;
     }
 
-    public static SqlServerRcsiReadinessBinding CreateFromDataSource(
+    public static SqlServerRcsiReadinessBinding CreateFromLogicalEndpoints(
         string targetLabel,
         string expectedDatabase,
-        string expectedDataSource) =>
-        Create(
+        IEnumerable<string> approvedLogicalEndpoints)
+    {
+        ArgumentNullException.ThrowIfNull(approvedLogicalEndpoints);
+        return Create(
             targetLabel,
             expectedDatabase,
-            SqlServerDataSourceFingerprint.ComputeSha256(expectedDataSource));
+            approvedLogicalEndpoints.Select(
+                SqlServerLogicalEndpointFingerprint.ComputeSha256));
+    }
 
     public static bool TryCreate(
         string? targetLabel,
         string? expectedDatabase,
-        string? expectedDataSourceSha256,
+        IEnumerable<string>? approvedLogicalEndpointSha256,
         out SqlServerRcsiReadinessBinding binding)
     {
         binding = null!;
@@ -74,9 +80,25 @@ public sealed record SqlServerRcsiReadinessBinding
             || string.IsNullOrWhiteSpace(normalizedDatabase)
             || normalizedDatabase.Length > 128
             || normalizedDatabase.Any(char.IsControl)
-            || !SqlServerDataSourceFingerprint.TryNormalizeSha256(
-                expectedDataSourceSha256,
-                out var normalizedFingerprint))
+            || approvedLogicalEndpointSha256 is null)
+        {
+            return false;
+        }
+
+        var normalizedFingerprints = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var fingerprint in approvedLogicalEndpointSha256)
+        {
+            if (!SqlServerLogicalEndpointFingerprint.TryNormalizeSha256(
+                    fingerprint,
+                    out var normalizedFingerprint))
+            {
+                return false;
+            }
+
+            normalizedFingerprints.Add(normalizedFingerprint);
+        }
+
+        if (normalizedFingerprints.Count == 0)
         {
             return false;
         }
@@ -84,9 +106,14 @@ public sealed record SqlServerRcsiReadinessBinding
         binding = new SqlServerRcsiReadinessBinding(
             normalizedLabel!,
             normalizedDatabase!,
-            normalizedFingerprint);
+            Array.AsReadOnly(normalizedFingerprints.ToArray()));
         return true;
     }
+
+    public bool IsApprovedLogicalEndpoint(string observedLogicalEndpointSha256) =>
+        ApprovedLogicalEndpointSha256.Contains(
+            observedLogicalEndpointSha256,
+            StringComparer.Ordinal);
 
     private static bool IsSafeLabel(string? value)
     {
@@ -101,33 +128,33 @@ public sealed record SqlServerRcsiReadinessBinding
     }
 }
 
-public static class SqlServerDataSourceFingerprint
+public static class SqlServerLogicalEndpointFingerprint
 {
-    public static string ComputeSha256(string dataSource)
+    public static string ComputeSha256(string logicalEndpoint)
     {
-        if (!TryComputeSha256(dataSource, out var fingerprint))
+        if (!TryComputeSha256(logicalEndpoint, out var fingerprint))
         {
             throw new ArgumentException(
-                "SQL Server data source is invalid.",
-                nameof(dataSource));
+                "SQL Server logical endpoint is invalid.",
+                nameof(logicalEndpoint));
         }
 
         return fingerprint;
     }
 
     public static bool TryComputeSha256(
-        string? dataSource,
+        string? logicalEndpoint,
         out string fingerprint)
     {
         fingerprint = string.Empty;
-        if (string.IsNullOrWhiteSpace(dataSource)
-            || dataSource.Length > 1024
-            || dataSource.Any(char.IsControl))
+        if (string.IsNullOrWhiteSpace(logicalEndpoint)
+            || logicalEndpoint.Length > 1024
+            || logicalEndpoint.Any(char.IsControl))
         {
             return false;
         }
 
-        var normalized = dataSource
+        var normalized = logicalEndpoint
             .Trim()
             .Normalize(NormalizationForm.FormKC)
             .ToUpperInvariant();
@@ -152,12 +179,55 @@ public static class SqlServerDataSourceFingerprint
     }
 }
 
+public sealed class SqlServerRcsiReadinessRunContext
+{
+    private SqlServerRcsiReadinessRunContext(
+        string runId,
+        string testedCommit,
+        DateTimeOffset observedAtUtc)
+    {
+        RunId = runId;
+        TestedCommit = testedCommit;
+        ObservedAtUtc = observedAtUtc;
+    }
+
+    public string RunId { get; }
+
+    public string TestedCommit { get; }
+
+    public DateTimeOffset ObservedAtUtc { get; }
+
+    public static bool TryCreate(
+        string? runId,
+        string? testedCommit,
+        DateTimeOffset observedAtUtc,
+        out SqlServerRcsiReadinessRunContext context)
+    {
+        context = null!;
+        if (!Guid.TryParseExact(runId, "D", out var parsedRunId)
+            || parsedRunId == Guid.Empty
+            || testedCommit is null
+            || testedCommit.Length != 40
+            || !testedCommit.All(Uri.IsHexDigit)
+            || observedAtUtc.Offset != TimeSpan.Zero)
+        {
+            return false;
+        }
+
+        context = new SqlServerRcsiReadinessRunContext(
+            parsedRunId.ToString("D", CultureInfo.InvariantCulture),
+            testedCommit.ToLowerInvariant(),
+            observedAtUtc);
+        return true;
+    }
+}
+
 public sealed record SqlServerRcsiReadinessEvidence(
     string ContractVersion,
     string? TargetLabel,
-    string? ExpectedDataSourceSha256,
-    string? ObservedDataSourceSha256,
-    bool? DataSourceMatches,
+    IReadOnlyList<string>? ApprovedLogicalEndpointSha256,
+    string? ObservedLogicalEndpointSha256,
+    bool? LogicalEndpointMatches,
     string? ExpectedDatabase,
     string? ConfiguredDatabase,
     string? ObservedDatabase,
@@ -180,8 +250,8 @@ public static class SqlServerRcsiReadinessPolicy
     public static SqlServerRcsiReadinessEvidence InvalidBinding() =>
         CreateEvidence(
             binding: null,
-            observedDataSourceSha256: null,
-            dataSourceMatches: null,
+            observedLogicalEndpointSha256: null,
+            logicalEndpointMatches: null,
             configuredDatabase: null,
             observedDatabase: null,
             readCommittedSnapshotEnabled: null,
@@ -192,13 +262,13 @@ public static class SqlServerRcsiReadinessPolicy
     public static SqlServerRcsiReadinessEvidence ExpectedDatabaseMismatch(
         SqlServerRcsiReadinessBinding binding,
         string? configuredDatabase,
-        string? observedDataSourceSha256,
-        bool? dataSourceMatches,
+        string? observedLogicalEndpointSha256,
+        bool? logicalEndpointMatches,
         string? observedDatabase) =>
         CreateEvidence(
             binding,
-            observedDataSourceSha256,
-            dataSourceMatches,
+            observedLogicalEndpointSha256,
+            logicalEndpointMatches,
             configuredDatabase,
             observedDatabase,
             readCommittedSnapshotEnabled: null,
@@ -206,39 +276,36 @@ public static class SqlServerRcsiReadinessPolicy
             reasonCode: "EXPECTED_DATABASE_MISMATCH",
             exitCode: SqlServerRcsiReadinessExitCode.ExpectedDatabaseMismatch);
 
-    public static SqlServerRcsiReadinessEvidence ExpectedTargetMismatch(
+    public static SqlServerRcsiReadinessEvidence ExpectedLogicalEndpointMismatch(
         SqlServerRcsiReadinessBinding binding,
         string configuredDatabase,
-        string observedDataSourceSha256) =>
+        string observedLogicalEndpointSha256) =>
         CreateEvidence(
             binding,
-            observedDataSourceSha256,
-            dataSourceMatches: false,
+            observedLogicalEndpointSha256,
+            logicalEndpointMatches: false,
             configuredDatabase,
             observedDatabase: null,
             readCommittedSnapshotEnabled: null,
             status: "NOT_READY",
-            reasonCode: "EXPECTED_TARGET_MISMATCH",
-            exitCode: SqlServerRcsiReadinessExitCode.ExpectedTargetMismatch);
+            reasonCode: "EXPECTED_LOGICAL_ENDPOINT_MISMATCH",
+            exitCode: SqlServerRcsiReadinessExitCode.ExpectedLogicalEndpointMismatch);
 
     public static SqlServerRcsiReadinessEvidence Evaluate(
         SqlServerRcsiReadinessBinding binding,
         string configuredDatabase,
         string observedDatabase,
-        string observedDataSourceSha256,
+        string observedLogicalEndpointSha256,
         int readCommittedSnapshotSetting)
     {
         ArgumentNullException.ThrowIfNull(binding);
 
-        if (!string.Equals(
-                binding.ExpectedDataSourceSha256,
-                observedDataSourceSha256,
-                StringComparison.Ordinal))
+        if (!binding.IsApprovedLogicalEndpoint(observedLogicalEndpointSha256))
         {
-            return ExpectedTargetMismatch(
+            return ExpectedLogicalEndpointMismatch(
                 binding,
                 configuredDatabase,
-                observedDataSourceSha256);
+                observedLogicalEndpointSha256);
         }
 
         if (!string.Equals(
@@ -253,8 +320,8 @@ public static class SqlServerRcsiReadinessPolicy
             return ExpectedDatabaseMismatch(
                 binding,
                 configuredDatabase,
-                observedDataSourceSha256,
-                dataSourceMatches: true,
+                observedLogicalEndpointSha256,
+                logicalEndpointMatches: true,
                 observedDatabase);
         }
 
@@ -262,8 +329,8 @@ public static class SqlServerRcsiReadinessPolicy
         {
             return CreateEvidence(
                 binding,
-                observedDataSourceSha256,
-                dataSourceMatches: true,
+                observedLogicalEndpointSha256,
+                logicalEndpointMatches: true,
                 configuredDatabase,
                 observedDatabase,
                 readCommittedSnapshotEnabled: false,
@@ -274,8 +341,8 @@ public static class SqlServerRcsiReadinessPolicy
 
         return CreateEvidence(
             binding,
-            observedDataSourceSha256,
-            dataSourceMatches: true,
+            observedLogicalEndpointSha256,
+            logicalEndpointMatches: true,
             configuredDatabase,
             observedDatabase,
             readCommittedSnapshotEnabled: true,
@@ -287,12 +354,12 @@ public static class SqlServerRcsiReadinessPolicy
     public static SqlServerRcsiReadinessEvidence ProbeFailed(
         SqlServerRcsiReadinessBinding binding,
         string? configuredDatabase,
-        string? observedDataSourceSha256 = null,
-        bool? dataSourceMatches = null) =>
+        string? observedLogicalEndpointSha256 = null,
+        bool? logicalEndpointMatches = null) =>
         CreateEvidence(
             binding,
-            observedDataSourceSha256,
-            dataSourceMatches,
+            observedLogicalEndpointSha256,
+            logicalEndpointMatches,
             configuredDatabase,
             observedDatabase: null,
             readCommittedSnapshotEnabled: null,
@@ -303,8 +370,8 @@ public static class SqlServerRcsiReadinessPolicy
     public static SqlServerRcsiReadinessEvidence EvidenceWriteFailed() =>
         CreateEvidence(
             binding: null,
-            observedDataSourceSha256: null,
-            dataSourceMatches: null,
+            observedLogicalEndpointSha256: null,
+            logicalEndpointMatches: null,
             configuredDatabase: null,
             observedDatabase: null,
             readCommittedSnapshotEnabled: null,
@@ -321,8 +388,8 @@ public static class SqlServerRcsiReadinessPolicy
             SqlServerRcsiReadinessExitCode.RcsiDisabled => StartupRcsiDisabledMessage,
             SqlServerRcsiReadinessExitCode.ExpectedDatabaseMismatch =>
                 "Identity authorization snapshot SQL Server target does not match the expected database.",
-            SqlServerRcsiReadinessExitCode.ExpectedTargetMismatch =>
-                "Identity authorization snapshot SQL Server target identity does not match the expected target.",
+            SqlServerRcsiReadinessExitCode.ExpectedLogicalEndpointMismatch =>
+                "Identity authorization snapshot SQL Server logical endpoint is not approved.",
             SqlServerRcsiReadinessExitCode.InvalidBinding =>
                 "Identity authorization snapshot SQL Server readiness binding is invalid.",
             _ => "Identity authorization snapshot SQL Server RCSI readiness probe failed closed.",
@@ -331,8 +398,8 @@ public static class SqlServerRcsiReadinessPolicy
 
     private static SqlServerRcsiReadinessEvidence CreateEvidence(
         SqlServerRcsiReadinessBinding? binding,
-        string? observedDataSourceSha256,
-        bool? dataSourceMatches,
+        string? observedLogicalEndpointSha256,
+        bool? logicalEndpointMatches,
         string? configuredDatabase,
         string? observedDatabase,
         bool? readCommittedSnapshotEnabled,
@@ -342,9 +409,9 @@ public static class SqlServerRcsiReadinessPolicy
         new(
             ContractVersion,
             binding?.TargetLabel,
-            binding?.ExpectedDataSourceSha256,
-            observedDataSourceSha256,
-            dataSourceMatches,
+            binding?.ApprovedLogicalEndpointSha256,
+            observedLogicalEndpointSha256,
+            logicalEndpointMatches,
             binding?.ExpectedDatabase,
             configuredDatabase,
             observedDatabase,
@@ -392,41 +459,56 @@ public sealed class SqlServerRcsiReadinessProbe
             return SqlServerRcsiReadinessPolicy.ExpectedDatabaseMismatch(
                 binding,
                 configuredDatabase,
-                observedDataSourceSha256: null,
-                dataSourceMatches: null,
+                observedLogicalEndpointSha256: null,
+                logicalEndpointMatches: null,
                 observedDatabase: null);
         }
 
         var openedByProbe = connection.State == ConnectionState.Closed;
-        string? observedDataSourceSha256 = null;
-        bool? dataSourceMatches = null;
+        string? observedLogicalEndpointSha256 = null;
+        bool? logicalEndpointMatches = null;
         var evidence = SqlServerRcsiReadinessPolicy.ProbeFailed(
             binding,
             configuredDatabase);
         try
         {
+            if (!SqlServerLogicalEndpointFingerprint.TryComputeSha256(
+                    connection.DataSource,
+                    out observedLogicalEndpointSha256))
+            {
+                return evidence;
+            }
+
+            logicalEndpointMatches = binding.IsApprovedLogicalEndpoint(
+                observedLogicalEndpointSha256);
+            if (!logicalEndpointMatches.Value)
+            {
+                return SqlServerRcsiReadinessPolicy.ExpectedLogicalEndpointMismatch(
+                    binding,
+                    configuredDatabase,
+                    observedLogicalEndpointSha256);
+            }
+
             if (openedByProbe)
             {
                 await connection.OpenAsync(cancellationToken);
             }
 
-            if (!SqlServerDataSourceFingerprint.TryComputeSha256(
+            if (!SqlServerLogicalEndpointFingerprint.TryComputeSha256(
                     connection.DataSource,
-                    out observedDataSourceSha256))
+                    out observedLogicalEndpointSha256))
             {
                 evidence = SqlServerRcsiReadinessPolicy.ProbeFailed(
                     binding,
                     configuredDatabase);
             }
-            else if (!(dataSourceMatches = string.Equals(
-                         binding.ExpectedDataSourceSha256,
-                         observedDataSourceSha256,
-                         StringComparison.Ordinal)).Value)
+            else if (!(logicalEndpointMatches = binding.IsApprovedLogicalEndpoint(
+                         observedLogicalEndpointSha256)).Value)
             {
-                evidence = SqlServerRcsiReadinessPolicy.ExpectedTargetMismatch(
+                evidence = SqlServerRcsiReadinessPolicy.ExpectedLogicalEndpointMismatch(
                     binding,
                     configuredDatabase,
-                    observedDataSourceSha256);
+                    observedLogicalEndpointSha256);
             }
             else
             {
@@ -443,8 +525,8 @@ public sealed class SqlServerRcsiReadinessProbe
                     evidence = SqlServerRcsiReadinessPolicy.ProbeFailed(
                         binding,
                         configuredDatabase,
-                        observedDataSourceSha256,
-                        dataSourceMatches);
+                        observedLogicalEndpointSha256,
+                        logicalEndpointMatches);
                 }
                 else
                 {
@@ -455,7 +537,7 @@ public sealed class SqlServerRcsiReadinessProbe
                         binding,
                         configuredDatabase,
                         observedDatabase,
-                        observedDataSourceSha256,
+                        observedLogicalEndpointSha256,
                         rcsiSetting);
                 }
             }
@@ -465,8 +547,8 @@ public sealed class SqlServerRcsiReadinessProbe
             evidence = SqlServerRcsiReadinessPolicy.ProbeFailed(
                 binding,
                 configuredDatabase,
-                observedDataSourceSha256,
-                dataSourceMatches);
+                observedLogicalEndpointSha256,
+                logicalEndpointMatches);
         }
         finally
         {
@@ -481,8 +563,8 @@ public sealed class SqlServerRcsiReadinessProbe
                     evidence = SqlServerRcsiReadinessPolicy.ProbeFailed(
                         binding,
                         configuredDatabase,
-                        observedDataSourceSha256,
-                        dataSourceMatches);
+                        observedLogicalEndpointSha256,
+                        logicalEndpointMatches);
                 }
             }
         }
@@ -493,9 +575,12 @@ public sealed class SqlServerRcsiReadinessProbe
 
 public static class SqlServerRcsiReadinessEvidenceJson
 {
-    public static byte[] SerializeUtf8(SqlServerRcsiReadinessEvidence evidence)
+    public static byte[] SerializeUtf8(
+        SqlServerRcsiReadinessEvidence evidence,
+        SqlServerRcsiReadinessRunContext runContext)
     {
         ArgumentNullException.ThrowIfNull(evidence);
+        ArgumentNullException.ThrowIfNull(runContext);
 
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(
@@ -508,16 +593,26 @@ public static class SqlServerRcsiReadinessEvidenceJson
         {
             writer.WriteStartObject();
             writer.WriteString("contractVersion", evidence.ContractVersion);
+            writer.WriteString("runId", runContext.RunId);
+            writer.WriteString("testedCommit", runContext.TestedCommit);
+            writer.WriteString(
+                "observedAtUtc",
+                runContext.ObservedAtUtc.ToString(
+                    "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'",
+                    CultureInfo.InvariantCulture));
             WriteNullableString(writer, "targetLabel", evidence.TargetLabel);
+            WriteNullableStringArray(
+                writer,
+                "approvedLogicalEndpointSha256",
+                evidence.ApprovedLogicalEndpointSha256);
             WriteNullableString(
                 writer,
-                "expectedDataSourceSha256",
-                evidence.ExpectedDataSourceSha256);
-            WriteNullableString(
+                "observedLogicalEndpointSha256",
+                evidence.ObservedLogicalEndpointSha256);
+            WriteNullableBoolean(
                 writer,
-                "observedDataSourceSha256",
-                evidence.ObservedDataSourceSha256);
-            WriteNullableBoolean(writer, "dataSourceMatches", evidence.DataSourceMatches);
+                "logicalEndpointMatches",
+                evidence.LogicalEndpointMatches);
             WriteNullableString(writer, "expectedDatabase", evidence.ExpectedDatabase);
             WriteNullableString(writer, "configuredDatabase", evidence.ConfiguredDatabase);
             WriteNullableString(writer, "observedDatabase", evidence.ObservedDatabase);
@@ -535,8 +630,10 @@ public static class SqlServerRcsiReadinessEvidenceJson
         return stream.ToArray();
     }
 
-    public static string Serialize(SqlServerRcsiReadinessEvidence evidence) =>
-        Encoding.UTF8.GetString(SerializeUtf8(evidence));
+    public static string Serialize(
+        SqlServerRcsiReadinessEvidence evidence,
+        SqlServerRcsiReadinessRunContext runContext) =>
+        Encoding.UTF8.GetString(SerializeUtf8(evidence, runContext));
 
     private static void WriteNullableString(
         Utf8JsonWriter writer,
@@ -551,6 +648,26 @@ public static class SqlServerRcsiReadinessEvidenceJson
         {
             writer.WriteString(propertyName, value);
         }
+    }
+
+    private static void WriteNullableStringArray(
+        Utf8JsonWriter writer,
+        string propertyName,
+        IReadOnlyList<string>? values)
+    {
+        if (values is null)
+        {
+            writer.WriteNull(propertyName);
+            return;
+        }
+
+        writer.WriteStartArray(propertyName);
+        foreach (var value in values)
+        {
+            writer.WriteStringValue(value);
+        }
+
+        writer.WriteEndArray();
     }
 
     private static void WriteNullableBoolean(

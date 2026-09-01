@@ -36,10 +36,14 @@ public static class IdentityModuleExtensions
         }
 
         var connectionStringBuilder = new SqlConnectionStringBuilder(connectionString);
-        var rcsiBinding = SqlServerRcsiReadinessBinding.CreateFromDataSource(
+        var rcsiBinding = SqlServerRcsiReadinessBinding.CreateFromLogicalEndpoints(
             "identity-authorization-snapshot-startup",
             connectionStringBuilder.InitialCatalog,
-            connectionStringBuilder.DataSource);
+            new[]
+            {
+                connectionStringBuilder.DataSource,
+                connectionStringBuilder.FailoverPartner,
+            }.Where(logicalEndpoint => !string.IsNullOrWhiteSpace(logicalEndpoint)));
 
         services.Configure<IdentitySeedOptions>(
             configuration.GetSection(IdentitySeedOptions.SectionName));
