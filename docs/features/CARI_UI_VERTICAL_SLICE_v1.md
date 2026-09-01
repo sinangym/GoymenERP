@@ -99,10 +99,12 @@ Projection yoksa şirket adı uydurulmaz, ham UUID gösterilmez ve link hedefi s
 
 Static route’lar parameter route’tan önce çözülür.
 
+Shell-facing canonical screen kimliği `C-02`’dir. `create-subset`, ekran kimliğinin parçası veya alias değildir; route’un kapsam varyantı metadata’sıdır.
+
 | Route ID | Screen | Path | Context | Güvenli dönüş |
 |---|---|---|---|---|
 | `cari.list` | `C-01` | `/cari` | single veya explicit authorized multi-company read | `dashboard` |
-| `cari.create` | `C-02:create-subset` | `/cari/yeni` | single-company | `cari.list` |
+| `cari.create` | `C-02` (`scopeVariant=create-subset`) | `/cari/yeni` | single-company | `cari.list` |
 | `cari.company-link` | `CARI-LINK-WORKSPACE-001` | `/cari/sirkete-bagla` | single-target-company | `cari.list` |
 | `cari.detail` | `C-03` | `/cari/:partyId` | single veya explicit authorized multi-company read | `cari.list` |
 
