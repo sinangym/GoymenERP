@@ -11,6 +11,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router'
 import {
   fetchCounterparties,
   type AccountStateFilter,
@@ -465,7 +466,21 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
                 const account = item.companyAccounts[0]
                 return (
                   <tr key={item.id} data-inactive={!item.isActive ? 'true' : undefined}>
-                    <td>{item.code}</td>
+                    <td>
+                      {/* The code is the row's identity, so it carries the link:
+                          short, unique and stable, which makes it a better target
+                          than a long legal name that wraps to three lines on a
+                          phone. The accessible name includes the legal name so a
+                          screen-reader user hearing the link out of context knows
+                          which counterparty it opens. */}
+                      <Link
+                        className={styles.rowLink}
+                        to={`/cari/${item.id}`}
+                        aria-label={`${item.code} — ${item.legalName}`}
+                      >
+                        {item.code}
+                      </Link>
+                    </td>
                     <td>
                       <span className={styles.legalName}>{item.legalName}</span>
                       {item.tradeName !== null && item.tradeName !== item.legalName ? (

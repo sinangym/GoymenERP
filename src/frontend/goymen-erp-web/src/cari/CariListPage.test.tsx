@@ -951,3 +951,36 @@ describe('non-disclosure: a denied route and an unknown route are indistinguisha
     expect(document.body.textContent).not.toContain('Unexpected Application Error')
   })
 })
+
+describe('C-01 → C-03 navigation (spec §2.1)', () => {
+  it('the code opens that counterparty, and names it for screen readers', async () => {
+    installFetch()
+    renderAt('/cari')
+    const row = await screen.findByRole('row', { name: /C-0001/ })
+
+    const link = within(row).getByRole('link')
+    expect(link.getAttribute('href')).toBe(`/cari/${PARTY_1}`)
+    // Heard out of context, "C-0001" alone says nothing about which record it is.
+    expect(link.getAttribute('aria-label')).toBe('C-0001 — Alfa Metal Ltd. Şti.')
+  })
+
+  it('every row links to its OWN record, not a shared or first id', async () => {
+    installFetch({
+      counterparties: () =>
+        json(page({ items: [party(), party({ id: PARTY_2, code: 'C-0002' })] })),
+    })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0002/ })
+
+    const hrefs = [...document.querySelectorAll('tbody a')].map((a) => a.getAttribute('href'))
+    expect(hrefs).toEqual([`/cari/${PARTY_1}`, `/cari/${PARTY_2}`])
+    expect(new Set(hrefs).size).toBe(2)
+  })
+
+  it('without the capability there is no link, because there is no list', async () => {
+    installFetch({ capabilities: [] })
+    renderAt('/cari')
+    await findStateBlock('not-found')
+    expect(document.querySelectorAll('tbody a')).toHaveLength(0)
+  })
+})
