@@ -97,16 +97,6 @@ export interface ShellState {
    * like it worked while the user is quietly signed back in — worse than doing
    * nothing, because it is invisible (Issue #165 SAB-002).
    */
-  /**
-   * The actor the server currently authenticates, as last observed.
-   *
-   * The committed context is not enough (ChatGPT #169 P1-4). Between identity
-   * resolving as B and the actor-change effect dispatching SESSION_RESET, the
-   * context still says A — so a late 401 from A looked current and would have
-   * put B into a terminal session.  closes the RENDER in
-   * that window; it does not close the reducer.
-   */
-  readonly authenticatedActorId: string | null
   readonly sessionInvalid: boolean
   /**
    * The last business-auth security effect this reducer applied, by identity.
@@ -137,8 +127,6 @@ export type ShellEvent =
   | { type: 'SESSION_RESET' }
   /** A 401: drop everything AND refuse to bootstrap again until re-login. */
   | { type: 'SESSION_INVALIDATED' }
-  /** The identity endpoint resolved. Carries no authority; it only records who. */
-  | { type: 'IDENTITY_OBSERVED'; actorId: string | null }
   /**
    * An authenticated business read came back 401/403 (Issue #165).
    *
@@ -152,6 +140,13 @@ export type ShellEvent =
   | {
       type: 'BUSINESS_AUTH_OUTCOME'
       status: 401 | 403
+      /**
+       * The actor the server authenticates, read when the outcome was REPORTED.
+       * Carried on the event rather than kept in state: state can only be updated
+       * by an effect, and an effect is a tick too late for this decision
+       * (#169 P1-1). null = identity unresolved, which is not by itself stale.
+       */
+      authenticatedActorId: string | null
       snapshot: {
         readonly actorId: string | null
         readonly sessionEpoch: number
@@ -173,7 +168,6 @@ export const initialShellState: ShellState = {
   committedContextRevision: 0,
   sessionEpoch: 0,
   bootstrappedSessionEpoch: null,
-  authenticatedActorId: null,
   sessionInvalid: false,
   lastSecurityEffect: null,
   dirtyScopes: [],
@@ -345,11 +339,6 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
       }
     }
 
-    case 'IDENTITY_OBSERVED': {
-      if (state.authenticatedActorId === event.actorId) return state
-      return { ...state, authenticatedActorId: event.actorId }
-    }
-
     case 'BUSINESS_AUTH_OUTCOME': {
       const snap = event.snapshot
       // Current, or nothing. A late result from a departed actor or a company we
@@ -370,10 +359,9 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
         snap.sessionEpoch === state.sessionEpoch &&
         snap.companyId === (judgedAgainst?.companyId ?? null) &&
         snap.committedContextRevision === state.committedContextRevision &&
-        // ...and the actor must still be the one the server authenticates. The
-        // committed context lags identity by one effect, so trusting it alone let
-        // a departed actor's late 401 terminate the CURRENT actor (P1-4).
-        (state.authenticatedActorId === null || snap.actorId === state.authenticatedActorId)
+        // ...and the actor must still be the one the server authenticates, as of
+        // the moment this outcome was reported (P1-4).
+        (event.authenticatedActorId === null || snap.actorId === event.authenticatedActorId)
       if (!current) return state
 
       const kind = event.status === 401 ? 'session-reset' : 'capability-refence'
@@ -411,9 +399,19 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
       // not come back holding authority the server has rejected.
       const stripped = (c: CompanyContext | null) =>
         c === null ? null : { ...c, capabilityGeneration: null, capabilities: [] }
+      // The fence is the IDENTITY of the switch attempt in flight. Advancing it
+      // here made the reducer reject that attempt's own REAUTH_OK/REAUTH_FAIL —
+      // which carries the generation captured when the request started — and the
+      // shell stayed in `switching` forever (ChatGPT/Codex #169 P1-2).
+      //
+      // Stripping the capability is what closes the door. Bumping the fence was
+      // never what made a 403 safe; it just broke the transition.
       return {
         ...state,
-        requestFenceGeneration: state.requestFenceGeneration + 1,
+        requestFenceGeneration:
+          state.phase === 'switching'
+            ? state.requestFenceGeneration
+            : state.requestFenceGeneration + 1,
         activeContext: stripped(state.activeContext),
         verifiedFormerContext:
           state.phase === 'switching'
