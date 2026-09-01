@@ -31,8 +31,17 @@ export interface HeldResponse {
   /** Resolves once the real response exists and is genuinely being withheld. */
   readonly ready: Promise<void>
   readonly release: () => void
-  /** False if the page was torn down before the response could be delivered. */
+  /**
+   * True only once the PAGE observed the response.
+   *
+   * This used to report whether `route.fulfill` resolved, which proves nothing
+   * about the client: measured on the running app, a company switch ABORTS the
+   * in-flight read, fulfil still resolves, and the page never receives anything.
+   * B-C01-003 was passing on that signal while nothing was delivered.
+   */
   readonly wasDelivered: () => boolean
+  /** The transport error if the read was cancelled, e.g. `net::ERR_ABORTED`. */
+  readonly abortError: () => string | null
 }
 
 export class NetworkRecorder {
@@ -201,27 +210,40 @@ export class NetworkRecorder {
       markReady = resolve
     })
     let delivered = false
+    let abortError: string | null = null
+    let heldUrl: string | null = null
+    // Page-side observation, not interceptor-side.
+    this.page.on('response', (response) => {
+      if (heldUrl !== null && response.url() === heldUrl) delivered = true
+    })
+    this.page.on('requestfailed', (request) => {
+      if (heldUrl !== null && request.url() === heldUrl) {
+        abortError = request.failure()?.errorText ?? 'unknown'
+      }
+    })
     let used = false
     await this.page.route('**/api/v1/counterparties*', async (route: Route) => {
       if (used) return route.fallback()
       used = true
-      const url = route.request().url()
-      this.expectInjectedResponse(url)
+      heldUrl = route.request().url()
+      this.expectInjectedResponse(heldUrl)
       const response = await route.fetch()
       const body = await response.body()
       markReady()
       await held
-      this.push(redactPath(url), 'injected-delay', 0)
+      this.push(redactPath(heldUrl), 'injected-delay', 0)
       try {
         await route.fulfill({ response, body })
-        delivered = true
       } catch {
-        // The page was torn down before delivery. Recorded rather than thrown so
-        // the test can assert on it instead of passing by accident.
-        delivered = false
+        // The request was already gone; the page-side listeners are the authority.
       }
     })
-    return { ready, release: () => release(), wasDelivered: () => delivered }
+    return {
+      ready,
+      release: () => release(),
+      wasDelivered: () => delivered,
+      abortError: () => abortError,
+    }
   }
 
   /**

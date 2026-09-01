@@ -123,16 +123,30 @@ test('B-C01-002 the unauthorized profile is not told the screen exists', async (
   await context.close()
 })
 
-test('B-C01-003 a company switch cannot leak the company we left', async ({ page }, testInfo) => {
+test('B-C01-003 a company switch cancels the old read, so it cannot leak', async ({ page }, testInfo) => {
   const net = await NetworkRecorder.attach(page)
   await openList(page)
   await expect(rows(page)).toHaveCount(50)
 
-  // A GDC read is started and its REAL response is fetched and then withheld.
-  // The first version of this case slept before route.continue(), which delays
-  // the REQUEST — the response then lands in a context that never moved, so it
-  // proved nothing about stale delivery. Codex was right (#173 P1-2). Here the
-  // old company's response genuinely exists and is genuinely delivered late.
+  // PREVENTION, NOT REJECTION — and the title says so, because I had this wrong.
+  //
+  // Two corrections got this case to the truth. The first version slept before
+  // route.continue(), which delays the REQUEST, so the response landed in a
+  // context that had never moved (#173 P1-2). The second version fetched the real
+  // response and withheld it, and reported success from whether `route.fulfill`
+  // resolved. Measured on the running app, that signal is worthless:
+  //
+  //     fulfilOk=true  pageReceived=false  aborted=net::ERR_ABORTED
+  //
+  // The company switch CANCELS the in-flight read, so the stale response is never
+  // delivered at all. Fulfil resolving says only that the interceptor wrote bytes
+  // nobody was listening for. Codex's post-merge audit warned that SAB-009 could
+  // pass vacuously for exactly this reason; the warning generalises here.
+  //
+  // What this case now pins is the real, observable property: an old company's
+  // read does not survive the switch. Whether a DELIVERED stale response would be
+  // rejected is a different claim, it is not provable in this browser path, and it
+  // is proved in the reducer tests instead.
   const gdcRead = await net.holdNextCounterpartyResponse()
   await page.getByRole('button', { name: 'Daha fazla yükle' }).click()
   // Wait until the response genuinely EXISTS and is parked. Without this latch the
@@ -151,17 +165,21 @@ test('B-C01-003 a company switch cannot leak the company we left', async ({ page
   expect(duringSwitch, 'a GDC row survived the switch').not.toContain(FIRST_ROW.code)
   expect(await page.locator('body').innerText()).not.toContain(FIRST_ROW.name)
 
-  // NOW deliver the old company's response. It is not prevented, it arrives.
+  // Release the old company's response. It cannot arrive: the read is already gone.
   gdcRead.release()
   await page.waitForTimeout(1500)
   expect(
+    gdcRead.abortError(),
+    'the old company read survived the switch — this is now a delivery case, not a prevention one',
+  ).toBe('net::ERR_ABORTED')
+  expect(
     gdcRead.wasDelivered(),
-    'the stale response was never delivered, so this case proved nothing',
-  ).toBe(true)
+    'the stale response WAS delivered, so this case must assert rejection, not prevention',
+  ).toBe(false)
 
-  // It must be ignored: no GDC row, no row-count change, GSP still selected.
+  // And nothing from the departed company is on screen either way.
   const afterStale = await codesOf(page)
-  expect(afterStale, 'a delivered stale GDC response painted rows').not.toContain(FIRST_ROW.code)
+  expect(afterStale, 'a GDC row appeared after the switch').not.toContain(FIRST_ROW.code)
   expect(afterStale).toEqual(duringSwitch)
   expect(await page.locator('body').innerText()).not.toContain(FIRST_ROW.name)
   await expect(picker).toHaveValue(GSP)
