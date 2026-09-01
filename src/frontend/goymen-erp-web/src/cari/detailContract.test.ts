@@ -1,0 +1,190 @@
+import { describe, expect, it } from 'vitest'
+import { decodeCounterpartyDetail } from './detailContract'
+import { PARTY_KIND, PARTY_ROLE_FLAG, rolesFromFlags } from './contract'
+
+const COMPANY_A = 'aaaaaaaa-0000-0000-0000-000000000001'
+const COMPANY_B = 'bbbbbbbb-0000-0000-0000-000000000002'
+const PARTY_1 = '11111111-1111-1111-1111-111111111111'
+const ACCOUNT_1 = 'cccccccc-1111-1111-1111-111111111111'
+const ACCOUNT_2 = 'dddddddd-2222-2222-2222-222222222222'
+
+/** The shape the merged API actually returns, including the sensitive field. */
+function account(over: Record<string, unknown> = {}) {
+  return {
+    id: ACCOUNT_1,
+    companyId: COMPANY_A,
+    roles: PARTY_ROLE_FLAG.Customer,
+    externalIntegrationCode: 'SAP-4711',
+    isActive: true,
+    version: 1,
+    ...over,
+  }
+}
+
+function detail(over: Record<string, unknown> = {}) {
+  return {
+    id: PARTY_1,
+    code: 'CAR-000001',
+    kind: PARTY_KIND.LegalEntity,
+    legalName: 'Örnek Metal Ltd. Şti.',
+    tradeName: 'Örnek',
+    isActive: true,
+    version: 3,
+    companyAccounts: [account()],
+    ...over,
+  }
+}
+
+describe('decodeCounterpartyDetail — happy path', () => {
+  it('accepts a well-formed detail bound to the active company', () => {
+    const decoded = decodeCounterpartyDetail(detail(), COMPANY_A)
+    expect(decoded).not.toBeNull()
+    expect(decoded!.code).toBe('CAR-000001')
+    expect(decoded!.account.companyId).toBe(COMPANY_A)
+  })
+
+  it('keeps the global Party state and the account state as separate facts', () => {
+    const decoded = decodeCounterpartyDetail(
+      detail({ isActive: true, companyAccounts: [account({ isActive: false })] }),
+      COMPANY_A,
+    )
+    expect(decoded!.isActive).toBe(true)
+    expect(decoded!.account.isActive).toBe(false)
+  })
+
+  it('carries combined role flags on the one account, not a row per role', () => {
+    const decoded = decodeCounterpartyDetail(
+      detail({
+        companyAccounts: [account({ roles: PARTY_ROLE_FLAG.Customer | PARTY_ROLE_FLAG.Supplier })],
+      }),
+      COMPANY_A,
+    )
+    expect(rolesFromFlags(decoded!.account.roles)).toEqual(['Customer', 'Supplier'])
+  })
+})
+
+describe('decodeCounterpartyDetail — externalIntegrationCode stays out of the decoded model (§5.2)', () => {
+  /**
+   * The boundary these tests prove, stated precisely: the field does not enter the
+   * decoded business model, anything derived from it, or JSON.stringify(decoded).
+   *
+   * It DOES reach the browser — it is in the fetch response, in transport memory
+   * and visible in the Network panel. This is model hygiene and defense in depth.
+   * It is NOT a substitute for the real boundary: a narrow server projection that
+   * does not emit the field until a dedicated read permission and a redaction
+   * owner exist (§5.2).
+   */
+  it('is absent from the decoded account even though the server sent it', () => {
+    const decoded = decodeCounterpartyDetail(detail(), COMPANY_A)
+    // Not "not rendered" — not present. A field on the view model reaches React
+    // state, devtools, a future child component and anything that serializes it.
+    expect(Object.hasOwn(decoded!.account, 'externalIntegrationCode')).toBe(false)
+    expect(Object.keys(decoded!.account).sort()).toEqual([
+      'companyId',
+      'id',
+      'isActive',
+      'roles',
+      'version',
+    ])
+  })
+
+  it('does not survive serialization of the whole decoded object', () => {
+    // The realistic leak path: something logs or posts the decoded value.
+    const decoded = decodeCounterpartyDetail(detail(), COMPANY_A)
+    expect(JSON.stringify(decoded)).not.toContain('SAP-4711')
+    expect(JSON.stringify(decoded)).not.toContain('externalIntegrationCode')
+  })
+
+  it('is dropped whatever the server puts in it, including nested objects', () => {
+    const decoded = decodeCounterpartyDetail(
+      detail({ companyAccounts: [account({ externalIntegrationCode: { erp: 'X', ref: 'Y' } })] }),
+      COMPANY_A,
+    )
+    // Its VALUE is never validated, because it is never taken — a malformed
+    // sensitive field must not be a reason to reject an otherwise valid record.
+    expect(decoded).not.toBeNull()
+    expect(JSON.stringify(decoded)).not.toContain('erp')
+  })
+
+  it('an unknown extra field the server adds later is also left behind', () => {
+    const decoded = decodeCounterpartyDetail(
+      detail({ companyAccounts: [account({ creditLimit: 500000, riskScore: 'A' })] }),
+      COMPANY_A,
+    )
+    expect(JSON.stringify(decoded)).not.toContain('creditLimit')
+    expect(JSON.stringify(decoded)).not.toContain('riskScore')
+  })
+})
+
+describe('decodeCounterpartyDetail — company binding (§5.3)', () => {
+  it('rejects an account belonging to another company', () => {
+    expect(
+      decodeCounterpartyDetail(
+        detail({ companyAccounts: [account({ companyId: COMPANY_B })] }),
+        COMPANY_A,
+      ),
+    ).toBeNull()
+  })
+
+  it('rejects zero accounts and more than one account', () => {
+    expect(decodeCounterpartyDetail(detail({ companyAccounts: [] }), COMPANY_A)).toBeNull()
+    expect(
+      decodeCounterpartyDetail(
+        detail({ companyAccounts: [account(), account({ id: ACCOUNT_2, companyId: COMPANY_B })] }),
+        COMPANY_A,
+      ),
+    ).toBeNull()
+  })
+
+  it('rejects a caller with no bound company', () => {
+    expect(decodeCounterpartyDetail(detail(), '')).toBeNull()
+    expect(decodeCounterpartyDetail(detail(), '00000000-0000-0000-0000-000000000000')).toBeNull()
+  })
+
+  it('never returns a partial record — a bad account rejects the NAME too', () => {
+    // Rendering the legal name while rejecting the account would confirm that a
+    // record exists to a caller who may not be entitled to know it.
+    const decoded = decodeCounterpartyDetail(
+      detail({ companyAccounts: [account({ companyId: COMPANY_B })] }),
+      COMPANY_A,
+    )
+    expect(decoded).toBeNull()
+    expect(JSON.stringify(decoded)).not.toContain('Örnek Metal')
+  })
+})
+
+describe('decodeCounterpartyDetail — fails closed', () => {
+  it('rejects an out-of-range PartyKind', () => {
+    expect(decodeCounterpartyDetail(detail({ kind: 0 }), COMPANY_A)).toBeNull()
+    expect(decodeCounterpartyDetail(detail({ kind: 3 }), COMPANY_A)).toBeNull()
+  })
+
+  it('rejects role flags outside 1..15 or with unknown bits', () => {
+    for (const roles of [0, 16, 32, -1, 1.5]) {
+      expect(
+        decodeCounterpartyDetail(detail({ companyAccounts: [account({ roles })] }), COMPANY_A),
+      ).toBeNull()
+    }
+  })
+
+  it('rejects nil or malformed UUIDs', () => {
+    expect(
+      decodeCounterpartyDetail(detail({ id: '00000000-0000-0000-0000-000000000000' }), COMPANY_A),
+    ).toBeNull()
+    expect(decodeCounterpartyDetail(detail({ id: 'not-a-uuid' }), COMPANY_A)).toBeNull()
+    expect(
+      decodeCounterpartyDetail(detail({ companyAccounts: [account({ id: 'nope' })] }), COMPANY_A),
+    ).toBeNull()
+  })
+
+  it('rejects an empty code or legalName', () => {
+    expect(decodeCounterpartyDetail(detail({ code: '   ' }), COMPANY_A)).toBeNull()
+    expect(decodeCounterpartyDetail(detail({ legalName: '' }), COMPANY_A)).toBeNull()
+  })
+
+  it('rejects non-objects and a missing companyAccounts array', () => {
+    expect(decodeCounterpartyDetail(null, COMPANY_A)).toBeNull()
+    expect(decodeCounterpartyDetail('nope', COMPANY_A)).toBeNull()
+    expect(decodeCounterpartyDetail({ id: PARTY_1 }, COMPANY_A)).toBeNull()
+  })
+})
