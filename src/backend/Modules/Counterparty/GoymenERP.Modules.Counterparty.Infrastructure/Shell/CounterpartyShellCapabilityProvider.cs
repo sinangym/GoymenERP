@@ -11,6 +11,10 @@ public sealed class CounterpartyShellCapabilityProvider : IShellCapabilityProvid
     public const string ListRouteId = "cari.list";
     public const string ListRoutePath = "/cari";
     public const string ListScreenId = "C-01";
+    public const string CreateCapabilityId = "cari.parties.create";
+    public const string CreateRouteId = "cari.create";
+    public const string CreateRoutePath = "/cari/yeni";
+    public const string CreateScreenId = "C-02";
     public const string LinkCapabilityId = "cari.accounts.link";
     public const string LinkRouteId = "cari.company-link";
     public const string LinkRoutePath = "/cari/sirkete-bagla";
@@ -30,6 +34,15 @@ public sealed class CounterpartyShellCapabilityProvider : IShellCapabilityProvid
             ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
             ShellCapabilityScopeRequirement.CompanyWide,
             [ErpPermissions.CounterpartyPartiesRead],
+            ImplementationAvailable: false),
+        new ShellCapabilityDeclaration(
+            CreateCapabilityId,
+            CreateRouteId,
+            CreateRoutePath,
+            CreateScreenId,
+            ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [ErpPermissions.CounterpartyPartiesCreate],
             ImplementationAvailable: false),
         new ShellCapabilityDeclaration(
             LinkCapabilityId,

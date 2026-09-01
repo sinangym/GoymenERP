@@ -322,10 +322,16 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
                 CounterpartyShellCapabilityProvider.ListCapabilityId,
                 granted.Capabilities);
             Assert.DoesNotContain(
+                CounterpartyShellCapabilityProvider.CreateCapabilityId,
+                granted.Capabilities);
+            Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.LinkCapabilityId,
                 granted.Capabilities);
             Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.ListCapabilityId,
+                denied.Capabilities);
+            Assert.DoesNotContain(
+                CounterpartyShellCapabilityProvider.CreateCapabilityId,
                 denied.Capabilities);
             Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.LinkCapabilityId,
@@ -349,6 +355,9 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
             var revoked = await ReadSnapshotAsync(administratorClient);
             Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.ListCapabilityId,
+                revoked.Capabilities);
+            Assert.DoesNotContain(
+                CounterpartyShellCapabilityProvider.CreateCapabilityId,
                 revoked.Capabilities);
             Assert.DoesNotContain(
                 CounterpartyShellCapabilityProvider.LinkCapabilityId,

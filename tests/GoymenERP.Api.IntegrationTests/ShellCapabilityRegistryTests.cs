@@ -16,11 +16,11 @@ public sealed class ShellCapabilityRegistryTests
         var registry = new ShellCapabilityRegistry(
             [provider],
             new ShellCapabilityAuthorityCatalog(
-                [ShellCapabilityRegistryAuthorities.CounterpartyListAndLinkV15]));
+                [ShellCapabilityRegistryAuthorities.CounterpartyListCreateAndLinkV15]));
 
-        Assert.Equal(2, registry.Registrations.Count);
+        Assert.Equal(3, registry.Registrations.Count);
         Assert.Equal(
-            ShellCapabilityRegistryAuthorities.CounterpartyListAndLinkV15,
+            ShellCapabilityRegistryAuthorities.CounterpartyListCreateAndLinkV15,
             registry.Revision);
         var registration = Assert.Single(
             registry.Registrations,
@@ -52,6 +52,34 @@ public sealed class ShellCapabilityRegistryTests
             [ErpPermissions.CounterpartyPartiesRead],
             registration.Declaration.RequiredPermissions);
         Assert.False(registration.Declaration.ImplementationAvailable);
+
+        var createRegistration = Assert.Single(
+            registry.Registrations,
+            item => item.Declaration.CapabilityId
+                == CounterpartyShellCapabilityProvider.CreateCapabilityId);
+        Assert.Equal(CounterpartyShellCapabilityProvider.OwnerId, createRegistration.Owner);
+        Assert.Equal(
+            CounterpartyShellCapabilityProvider.OwnerContractVersion,
+            createRegistration.OwnerContractVersion);
+        Assert.Equal(
+            CounterpartyShellCapabilityProvider.CreateRouteId,
+            createRegistration.Declaration.RouteId);
+        Assert.Equal(
+            CounterpartyShellCapabilityProvider.CreateRoutePath,
+            createRegistration.Declaration.RoutePath);
+        Assert.Equal(
+            CounterpartyShellCapabilityProvider.CreateScreenId,
+            createRegistration.Declaration.ScreenId);
+        Assert.Equal(
+            ShellCapabilityContextRequirement.SingleCompany,
+            createRegistration.Declaration.ContextRequirement);
+        Assert.Equal(
+            ShellCapabilityScopeRequirement.CompanyWide,
+            createRegistration.Declaration.ScopeRequirement);
+        Assert.Equal(
+            [ErpPermissions.CounterpartyPartiesCreate],
+            createRegistration.Declaration.RequiredPermissions);
+        Assert.False(createRegistration.Declaration.ImplementationAvailable);
 
         var linkRegistration = Assert.Single(
             registry.Registrations,
