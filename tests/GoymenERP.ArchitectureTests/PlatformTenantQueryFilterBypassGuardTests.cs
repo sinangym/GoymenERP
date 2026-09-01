@@ -113,7 +113,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 [ReviewedSqlServerRcsiReadinessProbePath] =
                     new(
-                        "eb2dcede2f6ffa6daeb4d0dfd0e2cfd35edde94b81f45fa1d116d593abedf13e",
+                        "d9eff6e2baf5209828c674c1d602a271e97356c5914fcde42a30f99da7456cb2",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -122,7 +122,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 [ReviewedSqlServerRcsiToolProgramPath] =
                     new(
-                        "66a38d534e721c6ca8b5de6904e73498be849754a193306adac495853d29d13f",
+                        "1bd647f9c932f5d80ecf50b8a95a89fbe8c5d622d97becc9e2376e8840271448",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
@@ -308,7 +308,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             entry => entry.Key,
             entry => entry.Value,
             StringComparer.Ordinal);
-        var toolSources = ReadSqlServerRcsiToolSourceInventory(repositoryRoot);
+        var toolInventory = ReadSqlServerRcsiToolSourceInventory(repositoryRoot);
+        var toolSources = toolInventory.Sources;
+        errors.AddRange(toolInventory.DefinitionErrors);
         foreach (var (path, source) in toolSources)
         {
             directDatabaseSources[path] = source;
@@ -887,8 +889,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ReviewedSqlServerRcsiToolProjectPath.Replace(
                 '/',
                 Path.DirectorySeparatorChar)));
-        var toolSources = ReadSqlServerRcsiToolSourceInventory(repositoryRoot);
+        var toolInventory = ReadSqlServerRcsiToolSourceInventory(repositoryRoot);
+        var toolSources = toolInventory.Sources;
 
+        Assert.Empty(toolInventory.DefinitionErrors);
         Assert.Empty(ValidateReviewedSqlServerRcsiToolProject(projectSource));
         Assert.Empty(ValidateSqlServerRcsiToolMutationSurface(toolSources));
 
@@ -935,6 +939,94 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ValidateSqlServerRcsiToolMutationSurface(dangerousSources),
             error => error.Contains("ALTER DATABASE", StringComparison.Ordinal)
                      && error.Contains(dangerousPath, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void SqlServer_RCSI_tool_compile_inputs_and_ancestor_targets_are_scanned()
+    {
+        var testRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"goymen-rcsi-tool-guard-{Guid.NewGuid():N}");
+        var repositoryRoot = Path.Combine(testRoot, "repository");
+        var toolRoot = Path.Combine(
+            repositoryRoot,
+            ReviewedSqlServerRcsiToolRootPath.Replace(
+                '/',
+                Path.DirectorySeparatorChar));
+        try
+        {
+            Directory.CreateDirectory(toolRoot);
+            File.WriteAllText(Path.Combine(toolRoot, "Program.cs"), "internal class Program;");
+            File.WriteAllText(
+                Path.Combine(toolRoot, "AssemblyInfo.cs"),
+                "internal class AssemblyInfo;");
+            File.WriteAllText(
+                Path.Combine(repositoryRoot, "tools", "Dangerous.cs"),
+                "SqlConnection connection = value; connection.CreateCommand(); "
+                + "command.ExecuteNonQuery(); const string sql = \"ALTER DATABASE [X]\";");
+            File.WriteAllText(
+                Path.Combine(
+                    repositoryRoot,
+                    ReviewedSqlServerRcsiToolProjectPath.Replace(
+                        '/',
+                        Path.DirectorySeparatorChar)),
+                """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <ItemGroup>
+                    <Compile Include="..\Dangerous.cs" Link="Dangerous.cs" />
+                  </ItemGroup>
+                </Project>
+                """);
+            File.WriteAllText(
+                Path.Combine(repositoryRoot, "tools", "Directory.Build.targets"),
+                "<Project><Target Name=\"Inject\" /></Project>");
+            File.WriteAllText(
+                Path.Combine(testRoot, "Directory.Build.targets"),
+                "<Project><Target Name=\"InjectOutsideRepository\" /></Project>");
+            File.WriteAllText(
+                Path.Combine(
+                    repositoryRoot,
+                    ReviewedSqlServerRcsiToolProjectPath.Replace(
+                        '/',
+                        Path.DirectorySeparatorChar)) + ".user",
+                "<Project><Import Project=\"Injected.targets\" /></Project>");
+
+            var inventory = ReadSqlServerRcsiToolSourceInventory(repositoryRoot);
+            var dangerousPath = "tools/Dangerous.cs";
+            Assert.Contains(
+                inventory.DefinitionErrors,
+                error => error.Contains("Directory.Build.targets", StringComparison.Ordinal));
+            Assert.Contains(
+                inventory.DefinitionErrors,
+                error => error.Contains("outside the repository", StringComparison.Ordinal)
+                         && error.Contains(
+                             "Directory.Build.targets",
+                             StringComparison.Ordinal));
+            Assert.Contains(
+                inventory.DefinitionErrors,
+                error => error.Contains(".csproj.user", StringComparison.Ordinal));
+            Assert.True(inventory.Sources.ContainsKey(dangerousPath));
+            var directErrors = ValidateNoDirectDatabaseBypassCapabilities(inventory.Sources);
+            Assert.Contains(
+                directErrors,
+                error => error.Contains("CreateCommand", StringComparison.Ordinal)
+                         && error.Contains(dangerousPath, StringComparison.Ordinal));
+            Assert.Contains(
+                directErrors,
+                error => error.Contains("ExecuteNonQuery", StringComparison.Ordinal)
+                         && error.Contains(dangerousPath, StringComparison.Ordinal));
+            Assert.Contains(
+                ValidateSqlServerRcsiToolMutationSurface(inventory.Sources),
+                error => error.Contains("ALTER DATABASE", StringComparison.Ordinal)
+                         && error.Contains(dangerousPath, StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (Directory.Exists(testRoot))
+            {
+                Directory.Delete(testRoot, recursive: true);
+            }
+        }
     }
 
     [Fact]
@@ -3264,6 +3356,26 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             errors.Add(
                 "Could not enumerate automatic MSBuild ancestors from project to repository root: "
                 + NormalizeRepositoryPath(Path.GetRelativePath(repositoryRoot, projectPath)));
+            return;
+        }
+
+        current = new DirectoryInfo(repositoryRoot).Parent;
+        while (current is not null)
+        {
+            foreach (var fileName in new[]
+                     {
+                         "Directory.Build.targets",
+                         "Directory.Packages.props"
+                     })
+            {
+                var candidate = Path.Combine(current.FullName, fileName);
+                if (File.Exists(candidate))
+                {
+                    automaticDefinitionPaths.Add(candidate);
+                }
+            }
+
+            current = current.Parent;
         }
     }
 
@@ -3557,6 +3669,30 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 }
             }
 
+            if (string.Equals(
+                    normalizedPath,
+                    ReviewedSqlServerRcsiToolProgramPath,
+                    StringComparison.Ordinal))
+            {
+                var fingerprint = ComputeReviewedSourceFingerprint(source);
+                var reviewedFingerprint = ReviewedRuntimeDatabaseBypassSources[
+                    ReviewedSqlServerRcsiToolProgramPath].ReviewedFingerprint;
+                if (!string.Equals(
+                        fingerprint,
+                        reviewedFingerprint,
+                        StringComparison.Ordinal))
+                {
+                    errors.Add(
+                        "SQL Server RCSI tool reflection surface left its exact reviewed "
+                        + $"source fingerprint. Expected {reviewedFingerprint}, found "
+                        + $"{fingerprint}: {normalizedPath}");
+                }
+                else
+                {
+                    continue;
+                }
+            }
+
             var searchableSource = NormalizeExecutableIdentifiers(
                 MaskCommentsAndNonInterpolatedLiterals(source));
             foreach (Match match in ForbiddenBypassCapabilityRegex().Matches(searchableSource))
@@ -3714,22 +3850,82 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         return errors;
     }
 
-    private static IReadOnlyDictionary<string, string>
+    private static BackendSourceInventory
         ReadSqlServerRcsiToolSourceInventory(string repositoryRoot)
     {
+        var sources = new Dictionary<string, string>(StringComparer.Ordinal);
+        var errors = new List<string>();
         var toolRoot = Path.Combine(
             repositoryRoot,
             ReviewedSqlServerRcsiToolRootPath.Replace(
                 '/',
                 Path.DirectorySeparatorChar));
-        return Directory.EnumerateFiles(toolRoot, "*.cs", SearchOption.AllDirectories)
-            .Select(path => new
+        if (!Directory.Exists(toolRoot))
+        {
+            return new BackendSourceInventory(sources, [], ["RCSI tool root is missing."]);
+        }
+
+        foreach (var path in Directory.EnumerateFiles(
+                     toolRoot,
+                     "*.cs",
+                     SearchOption.AllDirectories))
+        {
+            AddPhysicalSource(repositoryRoot, path, sources, errors);
+        }
+
+        ValidateNoUnsupportedBackendInputs(repositoryRoot, toolRoot, errors);
+        var projectPath = Path.Combine(
+            repositoryRoot,
+            ReviewedSqlServerRcsiToolProjectPath.Replace(
+                '/',
+                Path.DirectorySeparatorChar));
+        var automaticDefinitions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        XDocument document;
+        try
+        {
+            document = XDocument.Load(projectPath, LoadOptions.SetLineInfo);
+        }
+        catch (Exception exception) when (
+            exception is IOException
+            or UnauthorizedAccessException
+            or System.Xml.XmlException)
+        {
+            errors.Add($"Could not parse RCSI tool project: {exception.Message}");
+            return new BackendSourceInventory(sources, [], errors);
+        }
+
+        CollectAutomaticBuildDefinitionPaths(
+            repositoryRoot,
+            projectPath,
+            automaticDefinitions,
+            errors);
+        var analysis = AnalyzeReviewedSqlServerRcsiToolProjectDefinition(document);
+        errors.AddRange(analysis.Errors);
+        AddExplicitCompileIncludes(
+            repositoryRoot,
+            projectPath,
+            analysis.CompileDirectives,
+            sources,
+            errors);
+        ValidateAutomaticBuildDefinitions(repositoryRoot, automaticDefinitions, errors);
+        ValidateGeneratedViewFiles(toolRoot, repositoryRoot, errors);
+
+        foreach (var requiredSource in new[]
+                 {
+                     ReviewedSqlServerRcsiToolProgramPath,
+                     ReviewedSqlServerRcsiToolRootPath + "/AssemblyInfo.cs",
+                 })
+        {
+            if (!sources.ContainsKey(requiredSource))
             {
-                Path = NormalizeRepositoryPath(Path.GetRelativePath(repositoryRoot, path)),
-                Source = File.ReadAllText(path),
-            })
-            .Where(file => !IsBuildOutput(file.Path))
-            .ToDictionary(file => file.Path, file => file.Source, StringComparer.Ordinal);
+                errors.Add($"Required RCSI tool compile source was not scanned: {requiredSource}");
+            }
+        }
+
+        return new BackendSourceInventory(
+            sources,
+            [ReviewedSqlServerRcsiToolProjectPath],
+            errors);
     }
 
     private static IReadOnlyList<string> ValidateSqlServerRcsiToolMutationSurface(
@@ -3750,6 +3946,47 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         }
 
         return errors;
+    }
+
+    private static ProjectDefinitionAnalysis
+        AnalyzeReviewedSqlServerRcsiToolProjectDefinition(XDocument document)
+    {
+        var reviewedDocument = new XDocument(document);
+        var exactOutputType = reviewedDocument.Descendants()
+            .Where(element => element.Name.LocalName == "OutputType")
+            .Where(element => !element.HasAttributes
+                              && !element.Elements().Any()
+                              && string.Equals(
+                                  element.Value.Trim(),
+                                  "Exe",
+                                  StringComparison.Ordinal))
+            .ToArray();
+        if (exactOutputType.Length == 1)
+        {
+            exactOutputType[0].Remove();
+        }
+
+        var exactSqlClientPackage = reviewedDocument.Descendants()
+            .Where(element => element.Name.LocalName == "PackageReference")
+            .Where(element => element.Attributes().Count() == 2
+                              && !element.Elements().Any()
+                              && string.Equals(
+                                  element.Attribute("Include")?.Value,
+                                  "Microsoft.Data.SqlClient",
+                                  StringComparison.Ordinal)
+                              && string.Equals(
+                                  element.Attribute("Version")?.Value,
+                                  "6.1.1",
+                                  StringComparison.Ordinal))
+            .ToArray();
+        if (exactSqlClientPackage.Length == 1)
+        {
+            exactSqlClientPackage[0].Remove();
+        }
+
+        return AnalyzeProjectDefinition(
+            reviewedDocument,
+            ReviewedSqlServerRcsiToolProjectPath);
     }
 
     private static IReadOnlyList<DirectDatabaseBypassOccurrence>

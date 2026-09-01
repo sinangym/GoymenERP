@@ -184,10 +184,16 @@ public sealed class SqlServerRcsiReadinessRunContext
     private SqlServerRcsiReadinessRunContext(
         string runId,
         string testedCommit,
+        string expectedToolAssemblySha256,
+        string observedToolAssemblySha256,
+        string runtimePayloadManifestSha256,
         DateTimeOffset observedAtUtc)
     {
         RunId = runId;
         TestedCommit = testedCommit;
+        ExpectedToolAssemblySha256 = expectedToolAssemblySha256;
+        ObservedToolAssemblySha256 = observedToolAssemblySha256;
+        RuntimePayloadManifestSha256 = runtimePayloadManifestSha256;
         ObservedAtUtc = observedAtUtc;
     }
 
@@ -195,11 +201,20 @@ public sealed class SqlServerRcsiReadinessRunContext
 
     public string TestedCommit { get; }
 
+    public string ExpectedToolAssemblySha256 { get; }
+
+    public string ObservedToolAssemblySha256 { get; }
+
+    public string RuntimePayloadManifestSha256 { get; }
+
     public DateTimeOffset ObservedAtUtc { get; }
 
     public static bool TryCreate(
         string? runId,
         string? testedCommit,
+        string? expectedToolAssemblySha256,
+        string? observedToolAssemblySha256,
+        string? runtimePayloadManifestSha256,
         DateTimeOffset observedAtUtc,
         out SqlServerRcsiReadinessRunContext context)
     {
@@ -209,6 +224,15 @@ public sealed class SqlServerRcsiReadinessRunContext
             || testedCommit is null
             || testedCommit.Length != 40
             || !testedCommit.All(Uri.IsHexDigit)
+            || !SqlServerLogicalEndpointFingerprint.TryNormalizeSha256(
+                expectedToolAssemblySha256,
+                out var normalizedExpectedToolAssemblySha256)
+            || !SqlServerLogicalEndpointFingerprint.TryNormalizeSha256(
+                observedToolAssemblySha256,
+                out var normalizedObservedToolAssemblySha256)
+            || !SqlServerLogicalEndpointFingerprint.TryNormalizeSha256(
+                runtimePayloadManifestSha256,
+                out var normalizedRuntimePayloadManifestSha256)
             || observedAtUtc.Offset != TimeSpan.Zero)
         {
             return false;
@@ -217,6 +241,9 @@ public sealed class SqlServerRcsiReadinessRunContext
         context = new SqlServerRcsiReadinessRunContext(
             parsedRunId.ToString("D", CultureInfo.InvariantCulture),
             testedCommit.ToLowerInvariant(),
+            normalizedExpectedToolAssemblySha256,
+            normalizedObservedToolAssemblySha256,
+            normalizedRuntimePayloadManifestSha256,
             observedAtUtc);
         return true;
     }
@@ -595,6 +622,15 @@ public static class SqlServerRcsiReadinessEvidenceJson
             writer.WriteString("contractVersion", evidence.ContractVersion);
             writer.WriteString("runId", runContext.RunId);
             writer.WriteString("testedCommit", runContext.TestedCommit);
+            writer.WriteString(
+                "expectedToolAssemblySha256",
+                runContext.ExpectedToolAssemblySha256);
+            writer.WriteString(
+                "observedToolAssemblySha256",
+                runContext.ObservedToolAssemblySha256);
+            writer.WriteString(
+                "runtimePayloadManifestSha256",
+                runContext.RuntimePayloadManifestSha256);
             writer.WriteString(
                 "observedAtUtc",
                 runContext.ObservedAtUtc.ToString(

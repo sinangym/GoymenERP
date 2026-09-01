@@ -1,6 +1,9 @@
 using System.Net;
+using System.Net.Sockets;
 using System.Diagnostics;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.SqlServer;
 using Microsoft.Data.SqlClient;
@@ -9,18 +12,28 @@ namespace GoymenERP.Api.IntegrationTests;
 
 public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
 {
+    private static readonly string[] ForbiddenRuntimeInjectionEnvironmentVariables =
+    [
+        "DOTNET_STARTUP_HOOKS", "DOTNET_ADDITIONAL_DEPS", "DOTNET_SHARED_STORE",
+        "CORECLR_ENABLE_PROFILING", "CORECLR_PROFILER", "CORECLR_PROFILER_PATH",
+        "CORECLR_PROFILER_PATH_32", "CORECLR_PROFILER_PATH_64",
+        "COR_ENABLE_PROFILING", "COR_PROFILER", "COR_PROFILER_PATH",
+    ];
     [SqlServerFact]
     public async Task RcsiOn_ProbeAndIdentityStartupUseTheSameReadyPolicy()
     {
         var baseConnectionString = GetBaseConnectionString();
         var databaseName = NewDatabaseName();
-        await CreateDatabaseAsync(baseConnectionString, databaseName, rcsiEnabled: true);
-        var factory = new SqlServerRelationalApiFactory(
-            baseConnectionString,
-            databaseName: databaseName);
+        SqlServerRelationalApiFactory? factory = null;
+        var databaseCreated = false;
 
         try
         {
+            await CreateDatabaseAsync(baseConnectionString, databaseName, rcsiEnabled: true);
+            databaseCreated = true;
+            factory = new SqlServerRelationalApiFactory(
+                baseConnectionString,
+                databaseName: databaseName);
             var evidence = await ProbeAsync(factory.DatabaseConnectionString, databaseName);
             AssertReady(evidence, databaseName);
 
@@ -35,8 +48,20 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         }
         finally
         {
-            await factory.DisposeAsync();
-            await DropDatabaseAsync(baseConnectionString, databaseName);
+            try
+            {
+                if (factory is not null)
+                {
+                    await factory.DisposeAsync();
+                }
+            }
+            finally
+            {
+                if (databaseCreated)
+                {
+                    await DropDatabaseAsync(baseConnectionString, databaseName);
+                }
+            }
         }
     }
 
@@ -45,10 +70,12 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
     {
         var baseConnectionString = GetBaseConnectionString();
         var databaseName = NewDatabaseName();
-        await CreateDatabaseAsync(baseConnectionString, databaseName, rcsiEnabled: false);
+        var databaseCreated = false;
 
         try
         {
+            await CreateDatabaseAsync(baseConnectionString, databaseName, rcsiEnabled: false);
+            databaseCreated = true;
             Assert.Equal(0, await ReadRcsiSettingAsync(baseConnectionString, databaseName));
 
             var evidence = await ProbeAsync(
@@ -63,7 +90,10 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         }
         finally
         {
-            await DropDatabaseAsync(baseConnectionString, databaseName);
+            if (databaseCreated)
+            {
+                await DropDatabaseAsync(baseConnectionString, databaseName);
+            }
         }
     }
 
@@ -72,10 +102,12 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
     {
         var baseConnectionString = GetBaseConnectionString();
         var databaseName = NewDatabaseName();
-        await CreateDatabaseAsync(baseConnectionString, databaseName, rcsiEnabled: true);
+        var databaseCreated = false;
 
         try
         {
+            await CreateDatabaseAsync(baseConnectionString, databaseName, rcsiEnabled: true);
+            databaseCreated = true;
             await using var connection = new SqlConnection(
                 BuildDatabaseConnectionString(baseConnectionString, databaseName));
             var binding = SqlServerRcsiReadinessBinding.CreateFromLogicalEndpoints(
@@ -98,7 +130,10 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         }
         finally
         {
-            await DropDatabaseAsync(baseConnectionString, databaseName);
+            if (databaseCreated)
+            {
+                await DropDatabaseAsync(baseConnectionString, databaseName);
+            }
         }
     }
 
@@ -107,10 +142,12 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
     {
         var baseConnectionString = GetBaseConnectionString();
         var databaseName = NewDatabaseName();
-        await CreateDatabaseAsync(baseConnectionString, databaseName, rcsiEnabled: true);
+        var databaseCreated = false;
 
         try
         {
+            await CreateDatabaseAsync(baseConnectionString, databaseName, rcsiEnabled: true);
+            databaseCreated = true;
             await using var connection = new SqlConnection(
                 BuildDatabaseConnectionString(baseConnectionString, databaseName));
             var binding = SqlServerRcsiReadinessBinding.CreateFromLogicalEndpoints(
@@ -136,7 +173,10 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         }
         finally
         {
-            await DropDatabaseAsync(baseConnectionString, databaseName);
+            if (databaseCreated)
+            {
+                await DropDatabaseAsync(baseConnectionString, databaseName);
+            }
         }
     }
 
@@ -145,10 +185,12 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
     {
         var baseConnectionString = GetBaseConnectionString();
         var databaseName = NewDatabaseName();
-        await CreateDatabaseAsync(baseConnectionString, databaseName, rcsiEnabled: false);
+        var databaseCreated = false;
 
         try
         {
+            await CreateDatabaseAsync(baseConnectionString, databaseName, rcsiEnabled: false);
+            databaseCreated = true;
             var disabledFactory = new SqlServerRelationalApiFactory(
                 baseConnectionString,
                 databaseName: databaseName);
@@ -206,16 +248,18 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         }
         finally
         {
-            await DropDatabaseAsync(baseConnectionString, databaseName);
+            if (databaseCreated)
+            {
+                await DropDatabaseAsync(baseConnectionString, databaseName);
+            }
         }
     }
 
     [SqlServerFact]
     public async Task CliProcess_ProducesFreshAtomicEvidenceForReadyOffMismatchAndStalePaths()
     {
-        const string testedCommit = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
         var baseConnectionString = GetBaseConnectionString();
-        var readyDatabase = NewDatabaseName();
+        var readyDatabase = NewDatabaseName("göymen_erp_rcsi");
         var offDatabase = NewDatabaseName();
         var evidenceDirectory = Path.Combine(
             Path.GetTempPath(),
@@ -230,6 +274,8 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
             readyDatabaseCreated = true;
             await CreateDatabaseAsync(baseConnectionString, offDatabase, rcsiEnabled: false);
             offDatabaseCreated = true;
+            var runtimePayload = CreateRuntimePayloadManifest(evidenceDirectory);
+            var testedCommit = runtimePayload.SourceRevisionId;
 
             var readyConnectionString = BuildDatabaseConnectionString(
                 baseConnectionString,
@@ -248,14 +294,16 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
                 [logicalEndpointSha256],
                 Path.Combine(evidenceDirectory, "ready.json"),
                 Guid.NewGuid().ToString("D"),
-                testedCommit);
+                testedCommit,
+                runtimePayload);
             AssertCliEvidence(
                 readyResult,
                 expectedExitCode: 0,
                 expectedReasonCode: "RCSI_READY",
                 logicalEndpoint,
                 new SqlConnectionStringBuilder(readyConnectionString).Password,
-                testedCommit);
+                readyDatabase,
+                runtimePayload);
 
             var offResult = await RunCliProcessAsync(
                 offConnectionString,
@@ -263,14 +311,16 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
                 [logicalEndpointSha256],
                 Path.Combine(evidenceDirectory, "off.json"),
                 Guid.NewGuid().ToString("D"),
-                testedCommit);
+                testedCommit,
+                runtimePayload);
             AssertCliEvidence(
                 offResult,
                 expectedExitCode: 4,
                 expectedReasonCode: "RCSI_DISABLED",
                 logicalEndpoint,
                 new SqlConnectionStringBuilder(offConnectionString).Password,
-                testedCommit);
+                offDatabase,
+                runtimePayload);
             Assert.Equal(0, await ReadRcsiSettingAsync(baseConnectionString, offDatabase));
 
             var wrongLogicalEndpointResult = await RunCliProcessAsync(
@@ -280,14 +330,16 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
                     "tcp:unapproved-logical-endpoint.invalid,1433")],
                 Path.Combine(evidenceDirectory, "wrong-endpoint.json"),
                 Guid.NewGuid().ToString("D"),
-                testedCommit);
+                testedCommit,
+                runtimePayload);
             AssertCliEvidence(
                 wrongLogicalEndpointResult,
                 expectedExitCode: 6,
                 expectedReasonCode: "EXPECTED_LOGICAL_ENDPOINT_MISMATCH",
                 logicalEndpoint,
                 new SqlConnectionStringBuilder(readyConnectionString).Password,
-                testedCommit);
+                readyDatabase,
+                runtimePayload);
 
             var staleOutputPath = Path.Combine(evidenceDirectory, "stale-ready.json");
             await File.WriteAllTextAsync(staleOutputPath, "pre-existing-ready-evidence");
@@ -297,7 +349,8 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
                 [logicalEndpointSha256],
                 staleOutputPath,
                 Guid.NewGuid().ToString("D"),
-                testedCommit);
+                testedCommit,
+                runtimePayload);
             Assert.Equal(5, staleResult.ExitCode);
             Assert.Equal(
                 "pre-existing-ready-evidence",
@@ -334,26 +387,64 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         }
     }
 
+    [SqlServerFact]
+    public async Task CliProcess_OverallTimeoutKillsAndAwaitsTheHungChildWithoutEvidence()
+    {
+        var evidenceDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"goymen-erp-rcsi-timeout-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(evidenceDirectory);
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        try
+        {
+            var runtimePayload = CreateRuntimePayloadManifest(evidenceDirectory);
+            var endpoint = (IPEndPoint)listener.LocalEndpoint;
+            var connectionString = new SqlConnectionStringBuilder
+            {
+                DataSource = $"127.0.0.1,{endpoint.Port}",
+                InitialCatalog = "goymen_erp_rcsi_timeout",
+                UserID = "probe",
+                Password = "timeout-secret",
+                Encrypt = false,
+                ConnectTimeout = 30,
+            }.ConnectionString;
+            var outputPath = Path.Combine(evidenceDirectory, "must-not-exist.json");
+            var acceptTask = listener.AcceptTcpClientAsync();
+            var invocation = RunCliProcessAsync(
+                connectionString,
+                "goymen_erp_rcsi_timeout",
+                [SqlServerLogicalEndpointFingerprint.ComputeSha256(
+                    new SqlConnectionStringBuilder(connectionString).DataSource)],
+                outputPath,
+                Guid.NewGuid().ToString("D"),
+                runtimePayload.SourceRevisionId,
+                runtimePayload,
+                TimeSpan.FromSeconds(1));
+
+            using var acceptedClient = await acceptTask.WaitAsync(TimeSpan.FromSeconds(10));
+            await Assert.ThrowsAsync<TimeoutException>(() => invocation);
+            Assert.False(File.Exists(outputPath));
+            Assert.Empty(Directory.GetFiles(evidenceDirectory, "*.tmp"));
+        }
+        finally
+        {
+            listener.Stop();
+            Directory.Delete(evidenceDirectory, recursive: true);
+        }
+    }
+
     private static async Task<CliProcessResult> RunCliProcessAsync(
         string connectionString,
         string expectedDatabase,
         IReadOnlyList<string> approvedLogicalEndpointSha256,
         string outputPath,
         string runId,
-        string testedCommit)
+        string testedCommit,
+        RuntimePayloadManifest runtimePayload,
+        TimeSpan? overallTimeout = null)
     {
-        var repositoryRoot = FindRepositoryRoot();
-        var configuration = new DirectoryInfo(AppContext.BaseDirectory)
-            .Parent!
-            .Name;
-        var toolAssembly = Path.Combine(
-            repositoryRoot,
-            "tools",
-            "GoymenERP.SqlServerRcsiReadiness",
-            "bin",
-            configuration,
-            "net10.0",
-            "GoymenERP.SqlServerRcsiReadiness.dll");
+        var toolAssembly = runtimePayload.ToolAssemblyPath;
         Assert.True(File.Exists(toolAssembly), $"RCSI CLI assembly is missing: {toolAssembly}");
 
         var startInfo = new ProcessStartInfo("dotnet")
@@ -379,22 +470,52 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         startInfo.ArgumentList.Add(runId);
         startInfo.ArgumentList.Add("--tested-commit");
         startInfo.ArgumentList.Add(testedCommit);
+        startInfo.ArgumentList.Add("--expected-tool-assembly-sha256");
+        startInfo.ArgumentList.Add(runtimePayload.ToolAssemblySha256);
+        startInfo.ArgumentList.Add("--runtime-payload-root");
+        startInfo.ArgumentList.Add(runtimePayload.PayloadRoot);
+        startInfo.ArgumentList.Add("--runtime-payload-manifest");
+        startInfo.ArgumentList.Add(runtimePayload.ManifestPath);
+        startInfo.ArgumentList.Add("--expected-runtime-payload-manifest-sha256");
+        startInfo.ArgumentList.Add(runtimePayload.ManifestSha256);
         startInfo.ArgumentList.Add("--timeout-seconds");
         startInfo.ArgumentList.Add("30");
         startInfo.ArgumentList.Add("--output");
         startInfo.ArgumentList.Add(outputPath);
         startInfo.Environment["GOYMEN_ERP_RCSI_PROCESS_CONNECTION"] = connectionString;
+        foreach (var variable in ForbiddenRuntimeInjectionEnvironmentVariables)
+        {
+            startInfo.Environment.Remove(variable);
+        }
 
         using var process = new Process { StartInfo = startInfo };
         var startedAtUtc = DateTimeOffset.UtcNow;
         Assert.True(process.Start());
-        var standardOutputTask = process.StandardOutput.ReadToEndAsync();
+        var standardOutputTask = ReadAllBytesAsync(process.StandardOutput.BaseStream);
         var standardErrorTask = process.StandardError.ReadToEndAsync();
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-        await process.WaitForExitAsync(timeout.Token);
-        var completedAtUtc = DateTimeOffset.UtcNow;
+        using var timeout = new CancellationTokenSource(
+            overallTimeout ?? TimeSpan.FromSeconds(60));
+        var processTimedOut = false;
+        try
+        {
+            await process.WaitForExitAsync(timeout.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync(CancellationToken.None);
+            processTimedOut = true;
+        }
+
         var standardOutput = await standardOutputTask;
         var standardError = (await standardErrorTask).TrimEnd('\r', '\n');
+        if (processTimedOut)
+        {
+            throw new TimeoutException(
+                "RCSI readiness process did not exit before the test-owned timeout.");
+        }
+
+        var completedAtUtc = DateTimeOffset.UtcNow;
         return new CliProcessResult(
             process.ExitCode,
             standardOutput,
@@ -411,20 +532,69 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         string expectedReasonCode,
         string rawLogicalEndpoint,
         string secret,
-        string testedCommit)
+        string expectedDatabase,
+        RuntimePayloadManifest runtimePayload)
     {
         Assert.Equal(expectedExitCode, result.ExitCode);
         Assert.Empty(result.StandardError);
         Assert.True(File.Exists(result.OutputPath));
-        var fileJson = File.ReadAllText(result.OutputPath);
-        Assert.Equal(fileJson, result.StandardOutput);
+        var fileBytes = File.ReadAllBytes(result.OutputPath);
+        Assert.Equal(fileBytes, result.StandardOutput);
+        Assert.False(fileBytes.AsSpan().StartsWith(new byte[] { 0xEF, 0xBB, 0xBF }));
+        var fileJson = Encoding.UTF8.GetString(fileBytes);
         Assert.DoesNotContain(rawLogicalEndpoint, fileJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(secret, fileJson, StringComparison.Ordinal);
 
-        using var document = JsonDocument.Parse(fileJson);
+        using var document = JsonDocument.Parse(fileBytes);
         var root = document.RootElement;
+        Assert.Equal(
+            "GOYMEN-ERP-SQL-RCSI-READINESS-V1",
+            root.GetProperty("contractVersion").GetString());
+        Assert.Equal(
+            expectedExitCode == 0 ? "READY" : "NOT_READY",
+            root.GetProperty("status").GetString());
+        Assert.Equal(
+            "READ_ONLY_SYS_DATABASES_CURRENT_V1",
+            root.GetProperty("queryMode").GetString());
+        Assert.Equal(
+            "relational/process-entrypoint",
+            root.GetProperty("targetLabel").GetString());
         Assert.Equal(result.RunId, root.GetProperty("runId").GetString());
-        Assert.Equal(testedCommit, root.GetProperty("testedCommit").GetString());
+        Assert.Equal(
+            runtimePayload.SourceRevisionId,
+            root.GetProperty("testedCommit").GetString());
+        Assert.Equal(
+            runtimePayload.ToolAssemblySha256,
+            root.GetProperty("expectedToolAssemblySha256").GetString());
+        Assert.Equal(
+            runtimePayload.ToolAssemblySha256,
+            root.GetProperty("observedToolAssemblySha256").GetString());
+        Assert.Equal(
+            runtimePayload.ManifestSha256,
+            root.GetProperty("runtimePayloadManifestSha256").GetString());
+        Assert.Equal(expectedDatabase, root.GetProperty("expectedDatabase").GetString());
+        Assert.Equal(expectedDatabase, root.GetProperty("configuredDatabase").GetString());
+        Assert.Equal(
+            SqlServerLogicalEndpointFingerprint.ComputeSha256(rawLogicalEndpoint),
+            root.GetProperty("observedLogicalEndpointSha256").GetString());
+        Assert.Equal(
+            expectedExitCode == 6 ? false : true,
+            root.GetProperty("logicalEndpointMatches").GetBoolean());
+        if (expectedExitCode == 6)
+        {
+            Assert.Equal(JsonValueKind.Null, root.GetProperty("observedDatabase").ValueKind);
+            Assert.Equal(
+                JsonValueKind.Null,
+                root.GetProperty("readCommittedSnapshotEnabled").ValueKind);
+        }
+        else
+        {
+            Assert.Equal(expectedDatabase, root.GetProperty("observedDatabase").GetString());
+            Assert.Equal(
+                expectedExitCode == 0,
+                root.GetProperty("readCommittedSnapshotEnabled").GetBoolean());
+        }
+
         Assert.Equal(expectedExitCode, root.GetProperty("exitCode").GetInt32());
         Assert.Equal(expectedReasonCode, root.GetProperty("reasonCode").GetString());
         Assert.True(DateTimeOffset.TryParseExact(
@@ -435,6 +605,87 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
             out var observedAtUtc));
         Assert.InRange(observedAtUtc, result.StartedAtUtc, result.CompletedAtUtc);
     }
+
+    private static RuntimePayloadManifest CreateRuntimePayloadManifest(
+        string manifestDirectory)
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var configuration = new DirectoryInfo(AppContext.BaseDirectory).Parent!.Name;
+        var payloadRoot = Path.Combine(
+            repositoryRoot,
+            "tools",
+            "GoymenERP.SqlServerRcsiReadiness",
+            "bin",
+            configuration,
+            "net10.0");
+        var toolAssemblyPath = Path.Combine(
+            payloadRoot,
+            "GoymenERP.SqlServerRcsiReadiness.dll");
+        var productVersion = FileVersionInfo.GetVersionInfo(toolAssemblyPath).ProductVersion;
+        var separatorIndex = productVersion?.LastIndexOf('+') ?? -1;
+        Assert.True(separatorIndex >= 0);
+        var sourceRevisionId = productVersion![(separatorIndex + 1)..].ToLowerInvariant();
+        Assert.Equal(40, sourceRevisionId.Length);
+        Assert.All(sourceRevisionId, character => Assert.True(Uri.IsHexDigit(character)));
+
+        var files = Directory.EnumerateFiles(payloadRoot, "*", SearchOption.AllDirectories)
+            .Select(path => new
+            {
+                Path = Path.GetRelativePath(payloadRoot, path).Replace('\\', '/'),
+                Length = new FileInfo(path).Length,
+                Sha256 = ComputeFileSha256(path),
+            })
+            .OrderBy(item => item.Path, StringComparer.Ordinal)
+            .ToArray();
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteString(
+                "contractVersion",
+                "GOYMEN-ERP-RCSI-RUNTIME-PAYLOAD-V1");
+            writer.WriteString("sourceRevisionId", sourceRevisionId);
+            writer.WriteStartArray("files");
+            foreach (var file in files)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("path", file.Path);
+                writer.WriteNumber("length", file.Length);
+                writer.WriteString("sha256", file.Sha256);
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
+        var manifestBytes = stream.ToArray();
+        var manifestPath = Path.Combine(manifestDirectory, "runtime-payload.json");
+        File.WriteAllBytes(manifestPath, manifestBytes);
+        return new RuntimePayloadManifest(
+            payloadRoot,
+            manifestPath,
+            ComputeSha256(manifestBytes),
+            toolAssemblyPath,
+            ComputeFileSha256(toolAssemblyPath),
+            sourceRevisionId);
+    }
+
+    private static async Task<byte[]> ReadAllBytesAsync(Stream stream)
+    {
+        using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer);
+        return buffer.ToArray();
+    }
+
+    private static string ComputeFileSha256(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+    }
+
+    private static string ComputeSha256(byte[] bytes) =>
+        Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
     private static string FindRepositoryRoot()
     {
@@ -454,18 +705,27 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
 
     private sealed record CliProcessResult(
         int ExitCode,
-        string StandardOutput,
+        byte[] StandardOutput,
         string StandardError,
         string OutputPath,
         string RunId,
         DateTimeOffset StartedAtUtc,
         DateTimeOffset CompletedAtUtc);
 
+    private sealed record RuntimePayloadManifest(
+        string PayloadRoot,
+        string ManifestPath,
+        string ManifestSha256,
+        string ToolAssemblyPath,
+        string ToolAssemblySha256,
+        string SourceRevisionId);
+
     private static string GetBaseConnectionString() =>
         Environment.GetEnvironmentVariable(
             SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
 
-    private static string NewDatabaseName() => $"goymen_erp_rcsi_{Guid.NewGuid():N}";
+    private static string NewDatabaseName(string prefix = "goymen_erp_rcsi") =>
+        $"{prefix}_{Guid.NewGuid():N}";
 
     private static string BuildDatabaseConnectionString(
         string baseConnectionString,
@@ -513,15 +773,31 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         string databaseName,
         bool rcsiEnabled)
     {
-        await using var connection = await OpenMasterConnectionAsync(baseConnectionString);
-        await using var command = connection.CreateCommand();
-        command.CommandText = $"""
-            CREATE DATABASE [{databaseName}];
-            ALTER DATABASE [{databaseName}]
-                SET READ_COMMITTED_SNAPSHOT {(rcsiEnabled ? "ON" : "OFF")}
-                WITH ROLLBACK IMMEDIATE;
-            """;
-        await command.ExecuteNonQueryAsync();
+        try
+        {
+            await using var connection = await OpenMasterConnectionAsync(baseConnectionString);
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"""
+                CREATE DATABASE [{databaseName}];
+                ALTER DATABASE [{databaseName}]
+                    SET READ_COMMITTED_SNAPSHOT {(rcsiEnabled ? "ON" : "OFF")}
+                    WITH ROLLBACK IMMEDIATE;
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+        catch
+        {
+            try
+            {
+                await DropDatabaseAsync(baseConnectionString, databaseName);
+            }
+            catch
+            {
+                // Preserve the creation/ALTER failure while still attempting cleanup.
+            }
+
+            throw;
+        }
     }
 
     private static async Task SetRcsiForTestAsync(

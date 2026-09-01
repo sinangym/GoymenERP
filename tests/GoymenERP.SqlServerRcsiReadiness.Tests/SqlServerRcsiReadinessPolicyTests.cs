@@ -13,6 +13,8 @@ public sealed class SqlServerRcsiReadinessPolicyTests
         "75a99409b81404222ad7347d4dad424dfab7b355844a736531e2105eb621c05f";
     private const string LogicalEndpointBSha256 =
         "f67561664930dd93b930601f71be9bcd6ce230064681b7b7f03695df0c745fe1";
+    private const string ToolAssemblySha256 =
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
     private static readonly SqlServerRcsiReadinessBinding Binding =
         SqlServerRcsiReadinessBinding.Create(
             "staging/blue",
@@ -134,6 +136,27 @@ public sealed class SqlServerRcsiReadinessPolicyTests
     }
 
     [Fact]
+    public async Task PostOpenLogicalEndpointDrift_IsRejectedBeforeCommandAndConnectionCloses()
+    {
+        var connection = new SwitchingEndpointDbConnection(
+            database: "GoymenErp",
+            configuredDataSource: LogicalEndpointA,
+            connectedDataSource: "tcp:unapproved-after-open.invalid,1433");
+
+        var evidence = await new SqlServerRcsiReadinessProbe().ProbeAsync(
+            connection,
+            Binding);
+
+        Assert.Equal(
+            SqlServerRcsiReadinessExitCode.ExpectedLogicalEndpointMismatch,
+            evidence.ExitCode);
+        Assert.Equal(1, connection.OpenCount);
+        Assert.Equal(0, connection.CreateCommandCount);
+        Assert.Equal(1, connection.CloseCount);
+        Assert.Equal(ConnectionState.Closed, connection.State);
+    }
+
+    [Fact]
     public void EmptyOrInvalidLogicalEndpointSet_IsRejected()
     {
         Assert.False(SqlServerRcsiReadinessBinding.TryCreate(
@@ -154,16 +177,25 @@ public sealed class SqlServerRcsiReadinessPolicyTests
         Assert.False(SqlServerRcsiReadinessRunContext.TryCreate(
             Guid.Empty.ToString("D"),
             new string('a', 40),
+            ToolAssemblySha256,
+            ToolAssemblySha256,
+            ToolAssemblySha256,
             DateTimeOffset.UtcNow,
             out _));
         Assert.False(SqlServerRcsiReadinessRunContext.TryCreate(
             Guid.NewGuid().ToString("D"),
             "short",
+            ToolAssemblySha256,
+            ToolAssemblySha256,
+            ToolAssemblySha256,
             DateTimeOffset.UtcNow,
             out _));
         Assert.False(SqlServerRcsiReadinessRunContext.TryCreate(
             Guid.NewGuid().ToString("D"),
             new string('a', 40),
+            ToolAssemblySha256,
+            ToolAssemblySha256,
+            ToolAssemblySha256,
             new DateTimeOffset(2026, 9, 1, 13, 0, 0, TimeSpan.FromHours(3)),
             out _));
     }
@@ -191,6 +223,9 @@ public sealed class SqlServerRcsiReadinessPolicyTests
             "{\"contractVersion\":\"GOYMEN-ERP-SQL-RCSI-READINESS-V1\","
             + "\"runId\":\"11111111-1111-1111-1111-111111111111\","
             + "\"testedCommit\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\","
+            + "\"expectedToolAssemblySha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\","
+            + "\"observedToolAssemblySha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\","
+            + "\"runtimePayloadManifestSha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\","
             + "\"observedAtUtc\":\"2026-09-01T10:20:30.1234567Z\","
             + "\"targetLabel\":\"staging/blue\","
             + "\"approvedLogicalEndpointSha256\":["
@@ -218,6 +253,9 @@ public sealed class SqlServerRcsiReadinessPolicyTests
         Assert.True(SqlServerRcsiReadinessRunContext.TryCreate(
             "11111111-1111-1111-1111-111111111111",
             new string('a', 40),
+            ToolAssemblySha256,
+            ToolAssemblySha256,
+            ToolAssemblySha256,
             new DateTimeOffset(2026, 9, 1, 10, 20, 30, TimeSpan.Zero)
                 .AddTicks(1_234_567),
             out var context));
@@ -272,5 +310,60 @@ public sealed class SqlServerRcsiReadinessPolicyTests
 
         protected override DbCommand CreateDbCommand() =>
             throw new NotSupportedException();
+    }
+
+    private sealed class SwitchingEndpointDbConnection(
+        string database,
+        string configuredDataSource,
+        string connectedDataSource) : DbConnection
+    {
+        private ConnectionState _state = ConnectionState.Closed;
+        private string _connectionString = string.Empty;
+
+        [AllowNull]
+        public override string ConnectionString
+        {
+            get => _connectionString;
+            set => _connectionString = value ?? string.Empty;
+        }
+
+        public override string Database => database;
+        public override string DataSource =>
+            _state == ConnectionState.Open ? connectedDataSource : configuredDataSource;
+        public override string ServerVersion => "test";
+        public override ConnectionState State => _state;
+        public int OpenCount { get; private set; }
+        public int CloseCount { get; private set; }
+        public int CreateCommandCount { get; private set; }
+
+        public override void ChangeDatabase(string databaseName) =>
+            throw new NotSupportedException();
+
+        public override void Close()
+        {
+            CloseCount++;
+            _state = ConnectionState.Closed;
+        }
+
+        public override void Open()
+        {
+            OpenCount++;
+            _state = ConnectionState.Open;
+        }
+
+        public override Task OpenAsync(CancellationToken cancellationToken)
+        {
+            Open();
+            return Task.CompletedTask;
+        }
+
+        protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) =>
+            throw new NotSupportedException();
+
+        protected override DbCommand CreateDbCommand()
+        {
+            CreateCommandCount++;
+            throw new NotSupportedException();
+        }
     }
 }
