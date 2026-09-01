@@ -42,8 +42,12 @@ public static class CounterpartyModuleExtensions
             configureDbContext?.Invoke(serviceProvider, options);
         });
         services.AddScoped<ICounterpartyReadService, CounterpartyReadService>();
+        services.AddScoped<ICounterpartyLinkCandidateReadService, CounterpartyLinkCandidateReadService>();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<ICounterpartyReadSqlObserver, NullCounterpartyReadSqlObserver>();
+        services.TryAddSingleton<
+            ICounterpartyLinkCandidateSqlObserver,
+            NullCounterpartyLinkCandidateSqlObserver>();
         services.AddSingleton(new CounterpartyCursorRuntimeOptions(
             allowEphemeralCursorKey,
             configuration["Counterparty:CursorSigningKey"]));

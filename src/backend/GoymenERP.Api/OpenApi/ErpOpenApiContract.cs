@@ -176,6 +176,7 @@ public static class ErpOpenApiContract
                 }
 
                 if (context.JsonTypeInfo.Type == typeof(CounterpartyDetailAccountView)
+                    || context.JsonTypeInfo.Type == typeof(CounterpartyLinkCandidateSourceAccount)
                     || context.JsonTypeInfo.Type == typeof(CounterpartyDetailView))
                 {
                     SetPositiveIntegerStringProperty(schema, "version");
@@ -501,6 +502,14 @@ public static class ErpOpenApiContract
             AddCounterpartyReadPageParameters(operation);
         }
 
+        if (string.Equals(
+                operation.OperationId,
+                "GetCounterpartyCompanyAccountLinkCandidatesV1",
+                StringComparison.Ordinal))
+        {
+            AddCounterpartyLinkCandidateParameters(operation);
+        }
+
         if (string.Equals(operation.OperationId, "GetAuditEventsV1", StringComparison.Ordinal))
         {
             SetNormalizedIntegerParameter(
@@ -781,6 +790,48 @@ public static class ErpOpenApiContract
             "includeCount",
             new OpenApiSchema { Type = JsonSchemaType.Boolean },
             "Return exact filtered authorized distinct Party count; default false.");
+
+        var querySchema = GetConcreteParameterSchema(
+            operation,
+            ParameterLocation.Query,
+            "q");
+        SetSchemaExtension(
+            querySchema,
+            CanonicalizationExtensionName,
+            JsonValue.Create("unicode-trim+nfc")!);
+    }
+
+    private static void AddCounterpartyLinkCandidateParameters(OpenApiOperation operation)
+    {
+        AddQueryParameter(
+            operation,
+            "q",
+            new OpenApiSchema
+            {
+                Type = JsonSchemaType.String,
+                MinLength = 0,
+                MaxLength = 200,
+            },
+            "Code, legalName or tradeName contains search; Unicode trim + NFC, Turkish CI/AS.");
+        AddQueryParameter(
+            operation,
+            "pageSize",
+            new OpenApiSchema
+            {
+                Type = JsonSchemaType.Integer,
+                Minimum = "1",
+                Maximum = "100",
+            },
+            "Page size; default 25.");
+        AddQueryParameter(
+            operation,
+            "cursor",
+            new OpenApiSchema
+            {
+                Type = JsonSchemaType.String,
+                MinLength = 1,
+            },
+            "Opaque authenticated cursor bound to actor, session, target company, permissions and normalized query.");
 
         var querySchema = GetConcreteParameterSchema(
             operation,
