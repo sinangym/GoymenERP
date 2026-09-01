@@ -835,3 +835,57 @@ describe('C-01 continuation failure — what must NOT be masked (Q8=A kapsam dı
     expect(alert.textContent).toContain('mevcut kayıtlar korunuyor')
   })
 })
+
+describe('C-01 continuation failure — the transport half of the allowlist', () => {
+  /**
+   * ChatGPT's #158 review: the allowlist has three entries but only
+   * `service-unavailable` was exercised, so dropping `offline` or `network-error`
+   * left every test green. Each entry needs its own proof.
+   */
+  async function loadPageOne() {
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+    await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
+  }
+
+  it('offline on the second page keeps the validated rows', async () => {
+    installFetch({
+      counterparties: (url) => {
+        if (!url.includes('cursor=next-1')) return json(page({ hasMore: true, nextCursor: 'next-1' }))
+        throw new TypeError('Failed to fetch')
+      },
+    })
+    const shellFetch = globalThis.fetch as typeof fetch
+    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('cursor=next-1')) {
+        vi.stubGlobal('navigator', { onLine: false })
+        return Promise.reject(new TypeError('Failed to fetch'))
+      }
+      return shellFetch(input, init)
+    })
+
+    await loadPageOne()
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy())
+    expect(screen.getByRole('row', { name: /C-0001/ })).toBeTruthy()
+    expect(queryStateBlock('offline')).toBeNull()
+  })
+
+  it('network-error on the second page keeps the validated rows while ONLINE', async () => {
+    installFetch({
+      counterparties: () => json(page({ hasMore: true, nextCursor: "next-1" })),
+    })
+    const shellFetch = globalThis.fetch as typeof fetch
+    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      // navigator.onLine stays true: this is the DNS/CORS/refused case, not offline.
+      if (url.includes('cursor=next-1')) return Promise.reject(new TypeError('Failed to fetch'))
+      return shellFetch(input, init)
+    })
+
+    await loadPageOne()
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy())
+    expect(screen.getByRole('row', { name: /C-0001/ })).toBeTruthy()
+    expect(queryStateBlock('network-error')).toBeNull()
+  })
+})
