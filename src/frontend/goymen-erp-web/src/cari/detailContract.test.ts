@@ -16,7 +16,7 @@ function account(over: Record<string, unknown> = {}) {
     roles: PARTY_ROLE_FLAG.Customer,
     externalIntegrationCode: 'SAP-4711',
     isActive: true,
-    version: 1,
+    version: '1',
     ...over,
   }
 }
@@ -29,7 +29,7 @@ function detail(over: Record<string, unknown> = {}) {
     legalName: 'Örnek Metal Ltd. Şti.',
     tradeName: 'Örnek',
     isActive: true,
-    version: 3,
+    version: '3',
     companyAccounts: [account()],
     ...over,
   }
@@ -63,7 +63,7 @@ describe('decodeCounterpartyDetail — happy path', () => {
   })
 })
 
-describe('decodeCounterpartyDetail — externalIntegrationCode stays out of the decoded model (§5.2)', () => {
+describe('decodeCounterpartyDetail — unknown server fields stay out of the model (§5.2)', () => {
   /**
    * The boundary these tests prove, stated precisely: the field does not enter the
    * decoded business model, anything derived from it, or JSON.stringify(decoded).
@@ -186,5 +186,54 @@ describe('decodeCounterpartyDetail — fails closed', () => {
     expect(decodeCounterpartyDetail(null, COMPANY_A)).toBeNull()
     expect(decodeCounterpartyDetail('nope', COMPANY_A)).toBeNull()
     expect(decodeCounterpartyDetail({ id: PARTY_1 }, COMPANY_A)).toBeNull()
+  })
+})
+
+
+describe('version is an int64 carried losslessly (contract #170)', () => {
+  it('keeps a value past 2^53 exactly, digit for digit', () => {
+    // 9007199254740993 is Number.MAX_SAFE_INTEGER + 2. As a JSON number it would
+    // arrive as ...992 — a concurrency token that silently equals its neighbour.
+    const huge = '9007199254740993'
+    const decoded = decodeCounterpartyDetail(
+      detail({ version: huge, companyAccounts: [account({ version: huge })] }),
+      COMPANY_A,
+    )
+    expect(decoded!.version).toBe(huge)
+    expect(decoded!.account.version).toBe(huge)
+    // and it is never turned into a number anywhere along the way
+    expect(typeof decoded!.version).toBe('string')
+    expect(Number(decoded!.version)).not.toBe(Number(huge) - 1)
+  })
+
+  it('rejects a JSON number, which is what the old contract sent', () => {
+    // Accepting one would reintroduce exactly the precision loss the string form
+    // exists to prevent.
+    expect(decodeCounterpartyDetail(detail({ version: 3 }), COMPANY_A)).toBeNull()
+    expect(
+      decodeCounterpartyDetail(detail({ companyAccounts: [account({ version: 1 })] }), COMPANY_A),
+    ).toBeNull()
+  })
+
+  it('rejects a version longer than the contract allows', () => {
+    // The contract pins `maxLength: 19` because Int64.MaxValue is 19 digits.
+    // The pattern alone would accept any length, so a 20-digit value would enter
+    // the model as a version the server cannot have issued. Harmless today —
+    // version is opaque and read-only — but the decoder should accept exactly
+    // what the contract can emit, not a superset of it.
+    const maxInt64 = '9223372036854775807' // 19 digits, must still be accepted
+    expect(decodeCounterpartyDetail(detail({ version: maxInt64 }), COMPANY_A)).not.toBeNull()
+
+    const tooLong = '1'.repeat(20)
+    expect(decodeCounterpartyDetail(detail({ version: tooLong }), COMPANY_A)).toBeNull()
+    expect(
+      decodeCounterpartyDetail(detail({ companyAccounts: [account({ version: tooLong })] }), COMPANY_A),
+    ).toBeNull()
+  })
+
+  it('rejects shapes the contract pattern forbids', () => {
+    for (const bad of ['0', '01', '-1', '1.5', '', ' 1', '1e3', 'abc', null]) {
+      expect(decodeCounterpartyDetail(detail({ version: bad }), COMPANY_A)).toBeNull()
+    }
   })
 })
