@@ -269,6 +269,46 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData(AuditDbContextPath)]
+    [InlineData(OrganizationDbContextAuditEventPath)]
+    [InlineData(CounterpartyDbContextAuditEventPath)]
+    public void Safe_filter_in_a_nested_decoy_context_cannot_hide_target_context(
+        string sourcePath)
+    {
+        var source = ReadRepositorySource(sourcePath);
+        var mutated = MutateExactAuditEventConfiguration(
+            source,
+            "x => x.CompanyId == companyContext.CompanyId",
+            "x => true");
+        const string targetMethod =
+            "    protected override void OnModelCreating(ModelBuilder modelBuilder)";
+        const string decoy =
+            "    private sealed class DecoyDbContext : DbContext\n"
+            + "    {\n"
+            + "        protected override void OnModelCreating(ModelBuilder modelBuilder)\n"
+            + "        {\n"
+            + "            modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);\n"
+            + "            modelBuilder.Entity<AuditEvent>()\n"
+            + "                .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);\n"
+            + "        }\n"
+            + "    }\n\n";
+        Assert.Equal(1, CountAuditOccurrences(mutated, targetMethod));
+        mutated = mutated.Replace(
+            targetMethod,
+            decoy + targetMethod,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            1,
+            CountAuditOccurrences(mutated, "private sealed class DecoyDbContext"));
+
+        var errors = ValidateAuditEventTenantFilter(sourcePath, mutated);
+
+        Assert.Contains(errors, error => error.Contains(
+            "declared ModelBuilder receiver",
+            StringComparison.Ordinal));
+    }
+
     [Fact]
     public void Company_context_runtime_registration_is_scoped_and_unique()
     {
@@ -342,6 +382,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     [InlineData(
         "builder.Services.TryAdd(ServiceDescriptor.Singleton<ICompanyContext, "
         + "AlternateCompanyContext>());")]
+    [InlineData(
+        "var companyContextServiceType = typeof(ICompanyContext);\n"
+        + "ServiceCollectionDescriptorExtensions.RemoveAll(builder.Services, "
+        + "companyContextServiceType);\n"
+        + "ServiceCollectionServiceExtensions.AddSingleton(builder.Services, "
+        + "companyContextServiceType, typeof(AlternateCompanyContext));")]
     public void Adding_a_later_company_context_lifetime_override_is_rejected(
         string unsafeRegistration)
     {
@@ -391,7 +437,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 + ".");
         }
 
-        if (!TryReadOnModelCreating(source, out var modelBuilderName, out var methodBody))
+        if (!TryReadOnModelCreating(
+                source,
+                contextTypeName,
+                out var modelBuilderName,
+                out var methodBody))
         {
             errors.Add(
                 "The reviewed DbContext must declare exactly one conventional "
@@ -400,6 +450,20 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         }
 
         var compactMethodBody = Regex.Replace(methodBody, @"\s+", string.Empty);
+        var expectedAuditConfiguration = modelBuilderName + ".ConfigureAuditEvent(";
+        var auditConfigurationCount = CountAuditOccurrences(
+            compactMethodBody,
+            expectedAuditConfiguration);
+        if (auditConfigurationCount != 1)
+        {
+            errors.Add(
+                "The reviewed DbContext OnModelCreating method must configure AuditEvent "
+                + "exactly once on its declared ModelBuilder receiver; found "
+                + auditConfigurationCount.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture)
+                + ".");
+        }
+
         var expectedFilter = modelBuilderName
             + ".Entity<AuditEvent>()"
             + ".HasQueryFilter(x=>x.CompanyId==companyContext.CompanyId);";
@@ -485,6 +549,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         return statement.Contains("AddScoped", StringComparison.Ordinal)
             || statement.Contains("AddSingleton", StringComparison.Ordinal)
             || statement.Contains("AddTransient", StringComparison.Ordinal)
+            || statement.Contains("typeof(", StringComparison.Ordinal)
             || statement.Contains("TryAdd", StringComparison.Ordinal)
             || statement.Contains("ServiceDescriptor", StringComparison.Ordinal)
             || statement.Contains("ServiceLifetime", StringComparison.Ordinal)
@@ -514,45 +579,88 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private static IReadOnlySet<string> DiscoverAuditEventDbContextPaths(
         IReadOnlyDictionary<string, string> sources)
     {
+        var configureAuditEventInvocation = new Regex(
+            @"\.\s*ConfigureAuditEvent\s*\(",
+            RegexOptions.CultureInvariant);
         return sources
-            .Where(file => TryReadOnModelCreating(
-                    file.Value,
-                    out _,
-                    out var methodBody)
-                && Regex.IsMatch(
-                    methodBody,
-                    @"\.\s*ConfigureAuditEvent\s*\(",
-                    RegexOptions.CultureInvariant))
+            .Where(file => configureAuditEventInvocation.IsMatch(
+                MaskCommentsAndNonInterpolatedLiterals(file.Value)))
             .Select(file => file.Key)
             .ToHashSet(StringComparer.Ordinal);
     }
 
     private static bool TryReadOnModelCreating(
         string source,
+        string contextTypeName,
         out string modelBuilderName,
         out string methodBody)
     {
-        var searchable = MaskCommentsAndNonInterpolatedLiterals(source);
-        var signature = Regex.Match(
-            searchable,
+        if (!TryReadTypeBody(source, contextTypeName, out var typeBody))
+        {
+            modelBuilderName = string.Empty;
+            methodBody = string.Empty;
+            return false;
+        }
+
+        var signatures = Regex.Matches(
+            typeBody,
             @"\bprotected\s+override\s+void\s+OnModelCreating\s*\(\s*"
             + @"ModelBuilder\s+(?<receiver>[\p{L}_][\p{L}\p{Nd}_]*)\s*\)",
-            RegexOptions.CultureInvariant);
-        if (!signature.Success)
+            RegexOptions.CultureInvariant)
+            .Where(match => GetBraceDepth(typeBody, match.Index) == 0)
+            .ToArray();
+        if (signatures.Length != 1)
         {
             modelBuilderName = string.Empty;
             methodBody = string.Empty;
             return false;
         }
 
-        var openingBrace = searchable.IndexOf('{', signature.Index + signature.Length);
+        var signature = signatures[0];
+        var openingBrace = typeBody.IndexOf('{', signature.Index + signature.Length);
+        if (openingBrace < 0
+            || !TryReadBraceDelimitedBody(typeBody, openingBrace, out methodBody))
+        {
+            modelBuilderName = string.Empty;
+            methodBody = string.Empty;
+            return false;
+        }
+
+        modelBuilderName = signature.Groups["receiver"].Value;
+        return true;
+    }
+
+    private static bool TryReadTypeBody(
+        string source,
+        string contextTypeName,
+        out string typeBody)
+    {
+        var searchable = MaskCommentsAndNonInterpolatedLiterals(source);
+        var declaration = Regex.Match(
+            searchable,
+            @"\bclass\s+" + Regex.Escape(contextTypeName) + @"(?:\s|\()",
+            RegexOptions.CultureInvariant);
+        if (!declaration.Success)
+        {
+            typeBody = string.Empty;
+            return false;
+        }
+
+        var openingBrace = searchable.IndexOf('{', declaration.Index + declaration.Length);
         if (openingBrace < 0)
         {
-            modelBuilderName = string.Empty;
-            methodBody = string.Empty;
+            typeBody = string.Empty;
             return false;
         }
 
+        return TryReadBraceDelimitedBody(searchable, openingBrace, out typeBody);
+    }
+
+    private static bool TryReadBraceDelimitedBody(
+        string searchable,
+        int openingBrace,
+        out string body)
+    {
         var depth = 0;
         for (var index = openingBrace; index < searchable.Length; index++)
         {
@@ -565,16 +673,32 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 depth--;
                 if (depth == 0)
                 {
-                    modelBuilderName = signature.Groups["receiver"].Value;
-                    methodBody = searchable[(openingBrace + 1)..index];
+                    body = searchable[(openingBrace + 1)..index];
                     return true;
                 }
             }
         }
 
-        modelBuilderName = string.Empty;
-        methodBody = string.Empty;
+        body = string.Empty;
         return false;
+    }
+
+    private static int GetBraceDepth(string source, int exclusiveEnd)
+    {
+        var depth = 0;
+        for (var index = 0; index < exclusiveEnd; index++)
+        {
+            if (source[index] == '{')
+            {
+                depth++;
+            }
+            else if (source[index] == '}')
+            {
+                depth--;
+            }
+        }
+
+        return depth;
     }
 
     private static bool IsAuditBuildOutput(string path)
