@@ -27,12 +27,27 @@ validate_repository_with_statistics = (
 )
 
 FIXTURE_SCREEN_HASH = hashlib.sha256(b"C-001").hexdigest()
-FIXTURE_DECISION_ROW = "| DEC-TST-001 | Fixture | Fixture | KILITLI |"
+FIXTURE_DECISION_ROW = (
+    "| DEC-TST-001 | Fixture | Fixture | KILITLI | K0 | Fixture source | "
+    "Fixture owner | Fixture acceptance |"
+)
 FIXTURE_DECISION_ROWS_HASH = hashlib.sha256(
     FIXTURE_DECISION_ROW.encode("utf-8")
 ).hexdigest()
-FIXTURE_OPEN_ROW = "| OPEN-001 | Fixture decision |"
-FIXTURE_OPEN_ROWS_HASH = hashlib.sha256(FIXTURE_OPEN_ROW.encode("utf-8")).hexdigest()
+FIXTURE_DECISION_ORDER_HASH = hashlib.sha256(b"DEC-TST-001").hexdigest()
+FIXTURE_ACTIVE_OPEN_ROW = (
+    "| OPEN-001 | **KISMEN** | Fixture closed | Fixture open | Fixture evidence | "
+    "Fixture code evidence |"
+)
+FIXTURE_RESOLVED_OPEN_ROW = (
+    "| OPEN-002 | **KAPANDI** | Fixture resolved | Yok | Fixture evidence | "
+    "Fixture delivery evidence |"
+)
+FIXTURE_OPEN_ROWS_HASH = hashlib.sha256(
+    "\n".join(sorted((FIXTURE_ACTIVE_OPEN_ROW, FIXTURE_RESOLVED_OPEN_ROW))).encode(
+        "utf-8"
+    )
+).hexdigest()
 FIXTURE_ACCEPTANCE_ROW = "- **AT-001:** Fixture acceptance."
 FIXTURE_ACCEPTANCE_ROWS_HASH = hashlib.sha256(
     FIXTURE_ACCEPTANCE_ROW.encode("utf-8")
@@ -64,6 +79,7 @@ FIXTURE_COVERAGE_MAPPING = {
             "depends_on": [],
             "decisions": [],
             "open": ["OPEN-001"],
+            "resolved_open_history": ["OPEN-002"],
             "acceptance": ["AT-001"],
             "acceptance_notes": [],
             "screens": ["C-001"],
@@ -102,6 +118,7 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
         self.backlog_path = self.root / "docs/backlog/DELIVERY_BACKLOG_v1.json"
         self.manifest_path = self.root / "docs/backlog/task_manifest.json"
         self.decision_registry_path = self.root / "docs/decisions/KARAR_SICILI.md"
+        self.decision_registry_csv_path = self.root / "docs/decisions/KARAR_SICILI.csv"
         self.open_decisions_path = self.root / "docs/decisions/ACIK_KARARLAR.md"
         self.acceptance_path = self.root / "docs/acceptance/ACCEPTANCE_70.md"
         self.screen_catalog_path = self.root / "docs/ui/CANONICAL_SCREEN_STATUS.csv"
@@ -125,6 +142,8 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
         self.assertEqual(1, statistics.wave_count)
         self.assertEqual(1, statistics.slice_count)
         self.assertEqual(1, statistics.manifest_task_count)
+        self.assertEqual(1, statistics.open_count)
+        self.assertEqual(1, statistics.resolved_open_history_count)
 
     def test_manifest_status_dependency_and_blocker_drift_are_rejected(self) -> None:
         cases = (
@@ -167,6 +186,83 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
                     f"incomplete manifest snapshot; missing {field}"
                 )
 
+    def test_blocked_status_cannot_bypass_gate_without_matching_open_blocker(self) -> None:
+        cases = (
+            ("empty", []),
+            ("nonmatching", ["EXTERNAL-001"]),
+        )
+
+        for case, blockers in cases:
+            with self.subTest(case=case):
+                self._build_valid_fixture()
+                manifest = self._read_json(self.manifest_path)
+                manifest["tasks"][0]["status"] = "blocked"
+                manifest["tasks"][0]["blocked_by"] = blockers
+                self._write_json(self.manifest_path, manifest)
+
+                backlog = self._read_json(self.backlog_path)
+                item = backlog["waves"][0]["slices"][0]
+                item["manifest_status"] = "blocked"
+                item["manifest_blocked_by"] = blockers
+                item.pop("production_gate")
+                self._write_json(self.backlog_path, backlog)
+
+                errors = self._validate_fixture()
+                self.assertTrue(
+                    any(
+                        "active OPEN ids without production_gate" in error
+                        and "OPEN-001" in error
+                        for error in errors
+                    ),
+                    errors,
+                )
+
+    def test_resolved_open_cannot_be_a_canonical_manifest_blocker(self) -> None:
+        manifest = self._read_json(self.manifest_path)
+        manifest["tasks"][0]["status"] = "blocked"
+        manifest["tasks"][0]["blocked_by"] = ["OPEN-002"]
+        self._write_json(self.manifest_path, manifest)
+
+        backlog = self._read_json(self.backlog_path)
+        item = backlog["waves"][0]["slices"][0]
+        item["manifest_status"] = "blocked"
+        item["manifest_blocked_by"] = ["OPEN-002"]
+        self._write_json(self.backlog_path, backlog)
+
+        errors = self._validate_fixture()
+        self.assertTrue(
+            any(
+                "manifest_blocked_by references resolved OPEN" in error
+                and "OPEN-002" in error
+                for error in errors
+            ),
+            errors,
+        )
+
+    def test_manifest_open_blocker_must_also_be_in_slice_open(self) -> None:
+        manifest = self._read_json(self.manifest_path)
+        manifest["tasks"][0]["status"] = "blocked"
+        manifest["tasks"][0]["blocked_by"] = ["OPEN-001"]
+        self._write_json(self.manifest_path, manifest)
+
+        backlog = self._read_json(self.backlog_path)
+        item = backlog["waves"][0]["slices"][0]
+        item["manifest_status"] = "blocked"
+        item["manifest_blocked_by"] = ["OPEN-001"]
+        item["open"] = []
+        self._write_json(self.backlog_path, backlog)
+
+        errors = self._validate_fixture()
+        self.assertTrue(
+            any(
+                "manifest OPEN blocker" in error
+                and "OPEN-001" in error
+                and "missing from active 'open' field" in error
+                for error in errors
+            ),
+            errors,
+        )
+
     def test_active_manifest_task_must_be_mapped_exactly_once(self) -> None:
         backlog = self._read_json(self.backlog_path)
         duplicate_mapping = copy.deepcopy(backlog["waves"][0]["slices"][0])
@@ -175,6 +271,7 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
                 "id": "SLICE-002",
                 "scope": "Duplicate manifest mapping fixture",
                 "open": [],
+                "resolved_open_history": [],
                 "acceptance": [],
                 "screens": [],
             }
@@ -218,6 +315,11 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
         cases = (
             ("decisions", "DEC-TST-999", "unknown decisions id 'DEC-TST-999'"),
             ("open", "OPEN-999", "unknown open id 'OPEN-999'"),
+            (
+                "resolved_open_history",
+                "OPEN-999",
+                "references unknown resolved_open_history id 'OPEN-999'",
+            ),
             ("acceptance", "AT-999", "unknown acceptance id 'AT-999'"),
             ("screens", "C-999", "unknown screens id 'C-999'"),
         )
@@ -235,13 +337,15 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
         cases = (
             (
                 self.decision_registry_path,
-                "| DEC-TST-002 | Missing | Fixture | KILITLI |\n",
+                "| DEC-TST-002 | Missing | Fixture | KILITLI | K1 | Fixture source | "
+                "Fixture owner | Fixture acceptance |\n",
                 "missing decision ids: DEC-TST-002",
             ),
             (
                 self.open_decisions_path,
-                "| OPEN-002 | Missing fixture decision |\n",
-                "missing open decision ids: OPEN-002",
+                "| OPEN-003 | **KISMEN** | Missing closed | Missing open | "
+                "Missing evidence | Missing code evidence |\n",
+                "missing active open decision ids: OPEN-003",
             ),
             (
                 self.acceptance_path,
@@ -264,6 +368,86 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
                 )
 
                 self.assert_fixture_error_contains(expected)
+
+    def test_resolved_open_cannot_be_referenced_as_active(self) -> None:
+        backlog = self._read_json(self.backlog_path)
+        item = backlog["waves"][0]["slices"][0]
+        item["resolved_open_history"] = []
+        item["open"].append("OPEN-002")
+        self._write_json(self.backlog_path, backlog)
+
+        self.assert_fixture_error_contains(
+            "references resolved OPEN id 'OPEN-002' in active 'open' field"
+        )
+
+    def test_active_open_cannot_be_referenced_as_resolved_history(self) -> None:
+        backlog = self._read_json(self.backlog_path)
+        item = backlog["waves"][0]["slices"][0]
+        item["open"] = []
+        item["resolved_open_history"].append("OPEN-001")
+        self._write_json(self.backlog_path, backlog)
+
+        self.assert_fixture_error_contains(
+            "references active OPEN id 'OPEN-001' in 'resolved_open_history' field"
+        )
+
+    def test_missing_resolved_open_history_is_rejected(self) -> None:
+        backlog = self._read_json(self.backlog_path)
+        backlog["waves"][0]["slices"][0]["resolved_open_history"] = []
+        self._write_json(self.backlog_path, backlog)
+
+        self.assert_fixture_error_contains(
+            "Delivery backlog is missing resolved open history ids: OPEN-002"
+        )
+
+    def test_resolved_open_history_requires_an_array_without_duplicates(self) -> None:
+        cases = (
+            (
+                "wrong_type",
+                "OPEN-002",
+                "field 'resolved_open_history' must be a JSON array",
+            ),
+            (
+                "duplicate",
+                ["OPEN-002", "OPEN-002"],
+                "field 'resolved_open_history' contains duplicate 'OPEN-002'",
+            ),
+        )
+
+        for case, value, expected in cases:
+            with self.subTest(case=case):
+                self._build_valid_fixture()
+                backlog = self._read_json(self.backlog_path)
+                backlog["waves"][0]["slices"][0]["resolved_open_history"] = value
+                self._write_json(self.backlog_path, backlog)
+
+                self.assert_fixture_error_contains(expected)
+
+    def test_open_status_cannot_be_laundered_by_the_wrong_mapping_field(self) -> None:
+        content = self.open_decisions_path.read_text(encoding="utf-8")
+        content = content.replace(
+            "| OPEN-002 | **KAPANDI** |",
+            "| OPEN-002 | **KISMEN** |",
+            1,
+        )
+        self.open_decisions_path.write_text(content, encoding="utf-8")
+
+        self.assert_fixture_error_contains(
+            "references active OPEN id 'OPEN-002' in 'resolved_open_history' field"
+        )
+
+    def test_open_id_cannot_overlap_active_and_resolved_history(self) -> None:
+        backlog = self._read_json(self.backlog_path)
+        backlog["waves"][0]["slices"][0]["open"].append("OPEN-002")
+        self._write_json(self.backlog_path, backlog)
+
+        self.assert_fixture_error_contains(
+            "references resolved OPEN id 'OPEN-002' in active 'open' field"
+        )
+        self.assert_fixture_error_contains(
+            "Delivery backlog launders OPEN status across active and resolved history: "
+            "OPEN-002"
+        )
 
     def test_catalog_and_backlog_cannot_shrink_together(self) -> None:
         self.acceptance_path.write_text("# Acceptance\n", encoding="utf-8")
@@ -314,6 +498,33 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
             "Delivery backlog coverage mapping hash drift",
             coverage_hash=expected_hash,
         )
+
+    def test_mapping_hash_rejects_resolved_history_move(self) -> None:
+        backlog = self._read_json(self.backlog_path)
+        backlog["waves"][0]["slices"].append(self._secondary_slice())
+        expected_hash = self._coverage_hash(backlog)
+        self._write_json(self.backlog_path, backlog)
+        self.assertEqual([], self._validate_fixture(expected_hash))
+
+        backlog["waves"][0]["slices"][0]["resolved_open_history"] = []
+        backlog["waves"][0]["slices"][1]["resolved_open_history"] = ["OPEN-002"]
+        self._write_json(self.backlog_path, backlog)
+
+        self.assert_fixture_error_contains(
+            "Delivery backlog coverage mapping hash drift",
+            coverage_hash=expected_hash,
+        )
+
+    def test_history_only_slice_does_not_require_a_production_gate(self) -> None:
+        backlog = self._read_json(self.backlog_path)
+        history_only = self._secondary_slice()
+        history_only["resolved_open_history"] = ["OPEN-002"]
+        backlog["waves"][0]["slices"][0]["resolved_open_history"] = []
+        backlog["waves"][0]["slices"].append(history_only)
+        expected_hash = self._coverage_hash(backlog)
+        self._write_json(self.backlog_path, backlog)
+
+        self.assertEqual([], self._validate_fixture(expected_hash))
 
     def test_semantic_mapping_hash_rejects_valid_but_unreviewed_drift(self) -> None:
         cases = (
@@ -390,7 +601,10 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
         self._write_json(self.backlog_path, backlog)
 
         first = FIXTURE_DECISION_ROW
-        second = "| DEC-TST-002 | Fixture two | Fixture | GECICI_VARSAYIM |"
+        second = (
+            "| DEC-TST-002 | Fixture two | Fixture | GECICI_VARSAYIM | K1 | "
+            "Fixture source | Fixture owner | Fixture acceptance |"
+        )
         original_rows_hash = hashlib.sha256(
             "\n".join(sorted((first, second))).encode("utf-8")
         ).hexdigest()
@@ -399,8 +613,8 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
         self._write_text(
             self.decision_registry_path,
             "# Decisions\n\n"
-            "| Kimlik | Başlık | Kapsam | Durum |\n"
-            "|---|---|---|---|\n"
+            "| ID | Alan | Karar | Durum | Öncelik | Kaynak | Sahip | Kabul kanıtı |\n"
+            "|---|---|---|---|---|---|---|---|\n"
             f"{swapped_first}\n{swapped_second}\n",
         )
 
@@ -410,7 +624,10 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
             EXPECTED_LOCKED_DECISION_COUNT=1,
             EXPECTED_TEMPORARY_DECISION_COUNT=1,
             EXPECTED_DECISION_ROWS_SHA256=original_rows_hash,
-            EXPECTED_OPEN_IDS={"OPEN-001"},
+            EXPECTED_DECISION_ORDER_SHA256=hashlib.sha256(
+                b"DEC-TST-001\nDEC-TST-002"
+            ).hexdigest(),
+            EXPECTED_OPEN_IDS={"OPEN-001", "OPEN-002"},
             EXPECTED_ACCEPTANCE_IDS={"AT-001"},
             EXPECTED_OPEN_ROWS_SHA256=FIXTURE_OPEN_ROWS_HASH,
             EXPECTED_ACCEPTANCE_ROWS_SHA256=FIXTURE_ACCEPTANCE_ROWS_HASH,
@@ -433,7 +650,7 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
             (
                 "open",
                 self.open_decisions_path,
-                "Fixture decision",
+                "Fixture open",
                 "Weakened production gate",
                 "Open decision catalog row baseline hash drift",
             ),
@@ -452,6 +669,38 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
                 content = path.read_text(encoding="utf-8").replace(old, new)
                 path.write_text(content, encoding="utf-8")
                 self.assert_fixture_error_contains(expected)
+
+    def test_acceptance_rows_in_inactive_markdown_context_are_rejected(self) -> None:
+        original = self.acceptance_path.read_text(encoding="utf-8")
+        cases = (
+            (
+                "fenced",
+                f"```markdown\n{FIXTURE_ACCEPTANCE_ROW}\n```",
+                ("inactive", "fence"),
+            ),
+            (
+                "raw_html",
+                f"<div>\n{FIXTURE_ACCEPTANCE_ROW}\n</div>",
+                ("raw html", "html"),
+            ),
+        )
+
+        for case, wrapped_row, context_terms in cases:
+            with self.subTest(case=case):
+                self._build_valid_fixture()
+                mutated = original.replace(FIXTURE_ACCEPTANCE_ROW, wrapped_row, 1)
+                self.assertNotEqual(original, mutated)
+                self.acceptance_path.write_text(mutated, encoding="utf-8")
+
+                errors = self._validate_fixture()
+                self.assertTrue(
+                    any(
+                        "acceptance" in error.casefold()
+                        and any(term in error.casefold() for term in context_terms)
+                        for error in errors
+                    ),
+                    errors,
+                )
 
     def test_decision_only_cannot_bypass_an_open_production_gate(self) -> None:
         backlog = self._read_json(self.backlog_path)
@@ -643,7 +892,8 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
             EXPECTED_LOCKED_DECISION_COUNT=1,
             EXPECTED_TEMPORARY_DECISION_COUNT=0,
             EXPECTED_DECISION_ROWS_SHA256=decision_rows_hash,
-            EXPECTED_OPEN_IDS={"OPEN-001"},
+            EXPECTED_DECISION_ORDER_SHA256=FIXTURE_DECISION_ORDER_HASH,
+            EXPECTED_OPEN_IDS={"OPEN-001", "OPEN-002"},
             EXPECTED_ACCEPTANCE_IDS={"AT-001"},
             EXPECTED_OPEN_ROWS_SHA256=FIXTURE_OPEN_ROWS_HASH,
             EXPECTED_ACCEPTANCE_ROWS_SHA256=FIXTURE_ACCEPTANCE_ROWS_HASH,
@@ -704,6 +954,7 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
                                 "depends_on": [],
                                 "decisions": [],
                                 "open": ["OPEN-001"],
+                                "resolved_open_history": ["OPEN-002"],
                                 "acceptance": ["AT-001"],
                                 "screens": ["C-001"],
                                 "production_gate": {
@@ -720,16 +971,23 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
         self._write_text(
             self.decision_registry_path,
             "# Decisions\n\n"
-            "| Kimlik | Başlık | Kapsam | Durum |\n"
-            "|---|---|---|---|\n"
+            "| ID | Alan | Karar | Durum | Öncelik | Kaynak | Sahip | Kabul kanıtı |\n"
+            "|---|---|---|---|---|---|---|---|\n"
             f"{FIXTURE_DECISION_ROW}\n",
+        )
+        self._write_text(
+            self.decision_registry_csv_path,
+            "DecisionId,Alan,Karar,Durum,Oncelik,Kaynak,Sahip,KabulKaniti\n"
+            "DEC-TST-001,Fixture,Fixture,KILITLI,K0,Fixture source,Fixture owner,"
+            "Fixture acceptance\n",
         )
         self._write_text(
             self.open_decisions_path,
             "# Open decisions\n\n"
-            "| Kimlik | Konu |\n"
-            "|---|---|\n"
-            f"{FIXTURE_OPEN_ROW}\n",
+            "| ID | Durum | Kullanıcı tarafından kapanan / kabul edilen bölüm | "
+            "Gerçekten açık kalan bölüm | Karar kanıtı | Kod / seed kanıtı |\n"
+            "|---|---|---|---|---|---|\n"
+            f"{FIXTURE_ACTIVE_OPEN_ROW}\n{FIXTURE_RESOLVED_OPEN_ROW}\n",
         )
         self._write_text(
             self.acceptance_path,
@@ -750,6 +1008,7 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
             "depends_on": [],
             "decisions": [],
             "open": [],
+            "resolved_open_history": [],
             "acceptance": [],
             "screens": [],
         }
@@ -784,6 +1043,9 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
                     "depends_on": sorted(item.get("depends_on", [])),
                     "decisions": sorted(item.get("decisions", [])),
                     "open": sorted(item.get("open", [])),
+                    "resolved_open_history": sorted(
+                        item.get("resolved_open_history", [])
+                    ),
                     "acceptance": sorted(item.get("acceptance", [])),
                     "acceptance_notes": sorted(item.get("acceptance_notes", [])),
                     "screens": sorted(item.get("screens", [])),

@@ -4,11 +4,12 @@ Kullanıcı (Sinan Göymen) `GOYMEN_ERP_HIZLI_TESLIM_v3.md` §9 sorularına verd
 Bu belge `KARAR_SICILI.md` ve `ACIK_KARARLAR.md` için **öneri** kaydıdır; merge sonrası
 `KARAR_SICILI.md` `DEC-*` ve `ACIK_KARARLAR.md` `OPEN-*` satırları buna göre güncellenir.
 
-Kaynak önceliği: bu belge = "son kullanıcı kararı" seviyesindedir (`AGENTS.md` kaynak sırası 0).
+Kaynak önceliği: bu belgedeki doğrudan kullanıcı ifadeleri ve bağlı Issue yorumları
+"son kullanıcı kararı" seviyesindedir; teknik sentez/öneri bölümleri aynı yetkiyi taşımaz.
 
 ---
 
-## 1. Şirketler — `OPEN-001` → KAPANDI (kısmi)
+## 1. Şirketler — `OPEN-001` → KISMEN
 
 Üç hukuki şirket:
 
@@ -16,7 +17,7 @@ Kaynak önceliği: bu belge = "son kullanıcı kararı" seviyesindedir (`AGENTS.
 |---|---|---|---|
 | `GDC` | Göymen Demir Çelik İnş. San. ve Tic. Ltd. Şti. | `4100046586` | GERÇEK |
 | `GSP` | Göymen Sac Profil San. ve Tic. Ltd. Şti. | `4101507252` | GERÇEK |
-| `GIN` | Göymen İnşaat | `1111111111` | **PLACEHOLDER** — tam unvan + gerçek VKN eksik |
+| `GIN` | Göymen İnşaat | `1111111111` (**TARİHSEL TEST DEĞERİ**) | **PLACEHOLDER** — tam unvan + gerçek VKN eksik |
 
 - `GDC` ve `GSP` gerçek; seed'e girilebilir.
 - `GIN` tam unvan ve gerçek VKN bekliyor → `OPEN-001-GIN` olarak açık kalır; `GIN` şirketi
@@ -24,6 +25,11 @@ Kaynak önceliği: bu belge = "son kullanıcı kararı" seviyesindedir (`AGENTS.
 - CompanyCode değerleri bu kararla üretildi (grup ön eki `G` + şirket kısaltması).
 - **Şirket ekleme/düzenleme Ayarlar sayfasından yapılabilir olmalıdır** (bkz. §5). Seed
   yalnız başlangıç verisidir; runtime CRUD Ayarlar/Organizasyon masterı üzerindendir.
+
+> **SUPERSEDED / tarihsel not:** `1111111111` gerçek VKN değildir. §9 Q1 benzersizlik
+> kararını, Issue #66 [Q1 sahip açıklaması](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-5506986884)
+> kesinleştirir. Placeholder'ın `NULL` veya geçici değer taşıması ve sonradan VKN
+> değişikliği ise `OPEN-030` kapsamında açık kalır.
 
 ## 2. Kimlik — `OPEN-013` → GECICI_VARSAYIM kabul
 
@@ -71,7 +77,7 @@ Sinan'ın §1–4 cevaplarının ortak talebi: **neredeyse her master/eşik/tole
 değeri runtime'da Ayarlar sayfasından değiştirilebilir olmalı; bir kısmı ayrıca işlem/plan
 sırasında yetkili kullanıcı tarafından override edilebilir olmalı.**
 
-Karar (`DEC-SET-001` önerisi):
+Karar (`DEC-SET-001`):
 
 1. **Ayarlar modülü** (`Settings` / `AV-01…03` + `SY-04` ekran aileleri) organizasyon
    masterı (şirket/tesis/lokasyon/iş merkezi CRUD), ortak master (birim/para/kur/vergi),
@@ -101,11 +107,122 @@ Registry çekirdeği, ilk tolerans/formül tüketen dilimden (Üretim / Kantar) 
 | Branch protection | Coordinator prosedürel kapı (GitHub plan yükseltmesi yok) |
 | Ajan modeli | 3 ajan (Codex/Claude/ChatGPT) sürekli, aynı dilimin farklı katmanında; coordinator merge |
 
-## 7. Hâlâ açık kalan `OPEN-*`
+## 7. TARİHSEL / SUPERSEDED — o tarihte açık sayılan `OPEN-*`
 
-Bloke etmeyen, dalga geldiğinde sahibiyle kesinleşecek:
+Bu liste yalnız 2026-08-31 anlık görünümüdür; güncel durum değildir. §8 ve
+`ACIK_KARARLAR.md` tarafından supersede edilmiştir.
 
 - `OPEN-001-GIN` — Göymen İnşaat tam unvan + gerçek VKN
 - `OPEN-007` değerleri — formül registry yapısı kararlı; kesin sayılar validasyon bekliyor
 - `OPEN-008`, `OPEN-011` — ertelendi (maliyet, nakit planı)
 - `OPEN-014/015/016/017/018/019/020/021` — geçici değerler kabul (v3 §9.3), production kapılarında
+
+## 8. 2026-09-01 — Yetkili uzlaştırma düzeltmesi
+
+Bu bölüm, §7'deki aşağıdaki toplu ifadeyi **SUPERSEDE eder**:
+
+```text
+OPEN-014/015/016/017/018/019/020/021 — geçici değerler kabul
+```
+
+Bu ifade Hızlı Teslim v3 §9.3'teki soruyu, verilmiş kullanıcı cevabı gibi yorumladığı için fazla geniştir. Doğru durum; aşağıdaki 2026-09-01 karar turu ve `docs/decisions/ACIK_KARARLAR.md` uzlaştırma tablosudur. Kapanmış alt bölüm yeniden sorulmaz; saha, runtime veya production kanıtı gerektiren alt bölüm açık kalır.
+
+## 9. 2026-09-01 — `DECISION-ROUND-2026-09-01-v1` cevapları
+
+### Q1 — GIN ve VKN benzersizliği: `A`
+
+- `GIN` gerçek tam unvanı ve gerçek VKN'si henüz bilinmiyor.
+- `GIN` bu değerler gelene kadar `IsPlaceholder=true`, `InvoiceCapable=false` olarak kalır.
+- Eski `1111111111` değeri gerçek VKN değildir; implementation işinde kaldırılacaktır.
+- Gerçek, `NULL` olmayan VKN aktif ve pasif bütün şirketlerde grup çapında benzersizdir.
+- SQL Server'da bu kural düz unique index ile değil, `WHERE Vkn IS NOT NULL` filtered unique index ile uygulanır; birden fazla `Vkn=NULL` placeholder şirket mümkündür.
+- Resmî fatura/e-belge, gerçek unvan ve VKN girilmeden GIN için fail-closed kalır.
+- [Issue #66 Q1 sahip açıklaması](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-5506986884)
+  grup çapı benzersizliği açıkça onaylar ve VKN'nin ilk kayıttan sonra değiştirilebilir
+  olması gereksinimini ekler.
+- Placeholder'ın `NULL` mı yoksa geçici bir değer mi taşıyacağı; VKN değiştirme
+  yetkisi/onayı/audit izi ve çakışmalı update davranışı bu kararla seçilmez,
+  `OPEN-030` kapsamında ayrıca kilitlenir.
+
+### Q2 — Veri hacmi/performance: kısmi gerçek veri + ölçülebilir varsayım
+
+- Beklenen yıllık ciro yaklaşık `5.000.000.000 TL`.
+- Ortalama ürün fiyatı yaklaşık `30.000 TL/ton`.
+- Planlama çıpası yaklaşık `166.667 ton/yıl`dır (`5 milyar / 30 bin`).
+- Faaliyet toptan/ağır malzeme ağırlıklıdır.
+- Ortalama sipariş tonajı, cari/müşteri sayısı, eşzamanlı kullanıcı, yoğun saat ve belge/OCR hacmi henüz bilinmiyor.
+- Gerçek veri gelene kadar yalnız performans testinde kullanılmak üzere `10–25 ton/sipariş` teknik varsayımıyla yaklaşık `6.700–16.700 sipariş/yıl` sentetik aralığı kullanılır; bu kullanıcı gerçeği veya production SLO değildir.
+- Production kapasite/SLO, migrasyon provası ve gerçek yük ölçümüyle yeniden kilitlenir.
+
+### Q3 — Muhasebe/e-belge/banka entegrasyonları: ilk sürümde yok
+
+- İlk sürüm muhasebe/e-belge/banka entegrasyonları olmadan çalışır.
+- Bu karar e-posta ve belge paylaşımını kapsamaz; `DEC-DOC-006/007` yürürlükte kalır.
+- İleri öncelik: `e-fatura/e-arşiv` → `Mikro muhasebe mutabakatı/kullanıcı onaylı fiş taslağı` → `banka hareketleri`.
+- Erişim seçenekleri, ilgili sağlayıcının gerçek imkânına göre adapter üzerinden dosya aktarımı, salt-okunur DB, manuel Excel/CSV veya yerel AI/OCR ile belgeyi taslağa çevirme olabilir.
+- AI/OCR doğrudan kesin kayıt veya resmî fiş yazmaz; kullanıcı doğrulaması gerekir.
+- Harici sisteme serbest/doğrudan DB yazımı yapılmaz.
+- Sağlayıcı, credential, sandbox ve kesin teknik yöntem ayrı entegrasyon işi başlayınca seçilir.
+
+### Q4 — RPO/RTO: `GECICI_VARSAYIM`
+
+- Kullanıcı kesin RPO/RTO değerini bilmediğini ve hedeflerin şirket/veri yoğunluğuna
+  bağlı olduğunu belirtmiştir.
+- `RPO=15 dakika`, `RTO=4 saat` yalnız geçici teknik hedeftir; kabul edilmiş
+  production hedefi değildir.
+- Ana çalışma on-prem/hibrid; tesis dışı şifreli yedek zorunludur.
+- Production kabulü gerçek restore tatbikatı ile DB/belge checksum mutabakatı ister.
+- Hedefler gerçek yük/restore ölçümü ve ayrıca işletme onayıyla kilitlenir; restore
+  kanıtı olmadan production açılmaz.
+
+### Q5 — Yıllık dönem mimarisi ile retention birbirinden ayrıldı
+
+**Kilitlenen işletme gereksinimi:**
+
+- Operasyonel veriler yıllık dönemler hâlinde yönetilebilir.
+- Sonraki dönemin aktif çalışma kümesinde yalnız açık işlem/kalemler kullanılabilir kalır.
+- Yetkili kullanıcı seçtiği birden fazla yılı aynı anda rapor ve AI analizinde kullanabilir.
+- Gerçek veri silmeyi yalnız en yüksek yetkili kullanıcı gerçekleştirebilmelidir.
+
+**Teknik yöntem kilitli değildir:**
+
+- Açık ve kapanmış kayıtların dönemler arası davranışı ile `carry-forward`, snapshot veya
+  başka bir temsil yöntemi; çok-yıllı okumanın derived read model veya başka mimariyle
+  kurulması bu kullanıcı cevabıyla seçilmemiştir.
+- Legal-hold, ikinci onay, audit ve otomatik purge davranışı ile belge/audit/idempotency
+  türü bazlı yasal saklama süreleri ayrı teknik/işletme kabulü gerektirir.
+- Bu yöntem başlıkları `OPEN-018/021` kapsamında ve default-deny production kapılarında
+  açık kalır.
+
+### Q6 — PDF/antet: `A` + şirket bazlı gerçek asset
+
+- Her şirketin ayrı logo ve anteti vardır.
+- Şablonlar şirket bazlı, versiyonlu ve auditlidir.
+- Açık lisanslı gömülü `Noto Sans` teknik fallback olarak kabul edildi.
+- Gerçek logo/antet dosyaları kullanıcı tarafından ayrıca sağlanacaktır; verilmeden kurumsal belge UAT tamamlanmaz.
+- Şablon yayımlama/değiştirme yetkili kullanıcı onayı ister; exact permission/rol matrisi ilgili Ayarlar/Belge diliminde kararlaştırılır.
+
+### Q7 — AI: yerel-first, sürekli erişilebilir temel UX
+
+- ERP verisi kullanıcı tarafında/on-prem kalır.
+- AI ve yerel OCR, kolay kullanımın temel ve sürekli erişilebilir bir parçası olarak tasarlanır; ertelenebilir süs özelliği değildir.
+- Buna rağmen AI yetki, onay, formül veya kesin iş doğrusu değildir; `DEC-AI-001` korunur ve AI kesintisi deterministik normal ERP akışlarını bloke etmez.
+- Yerel model/OCR ve GPU kapasitesi gerçek sunucu envanteriyle PoC'de doğrulanır.
+- Bulut AI, sağlayıcı/sözleşme/KVKK/veri sınıfı ve ayrı aktivasyon kararı olmadan default-deny kapalı kalır.
+
+### Q8 — C-01 continuation: `A`
+
+- İlk sayfa doğrulanmışsa ikinci sayfa `offline`, `network-error`, HTTP `500` veya `503` olduğunda doğrulanmış satırlar görünür kalır.
+- Hata yalnız continuation alanında gösterilir ve açık kullanıcı `Tekrar Dene` eylemi sunulur.
+- Otomatik yeniden gönderim yapılmaz.
+- Retry aynı actor/session, CompanyContext/generation, query/filter/sort ve cursor snapshot'ını kullanır; context değişirse eski retry/yanıt stale-rejected olur.
+- Hatalı sayfadan yeni satır eklenmez; başarılı retry aynı sayfayı yalnız bir kez append eder.
+- `401`, `403`, tenant-binding ihlali veya malformed response bu korumanın arkasına saklanmaz; fail-closed davranış sürer.
+
+## 10. Sicil ve uygulama etkisi
+
+Bu karar turu aşağıdaki sicil kayıtlarını üretir: `DEC-ORG-005`, `DEC-CAR-004`, `DEC-SET-001`, `DEC-PERF-001`, `DEC-INT-001`, `DEC-DATA-001`, `DEC-DOC-010`, `DEC-AI-009`.
+
+Q1 sahip açıklaması ayrıca yeni karar üretmeden `OPEN-030` aktif kalemini açar.
+
+Karar kaydı kendi başına migration, production aktivasyonu, bulut veri aktarımı, purge veya entegrasyon credential yetkisi değildir. Bu etkiler ilgili K3 implementation ve UAT kapılarında ayrı uygulanır.
