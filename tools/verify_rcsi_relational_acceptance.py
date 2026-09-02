@@ -62,6 +62,7 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.CounterpartyLinkCandidateSqlServerRelationalAcceptanceTests.CandidateRead_EnforcesVisibilityAuthorityCursorAndBoundedReadOnlySql",
     "GoymenERP.Api.IntegrationTests.CounterpartyNoOpConcurrencySqlServerRelationalAcceptanceTests.Different_key_no_op_status_commands_are_serialized",
     "GoymenERP.Api.IntegrationTests.CounterpartyReadPageSqlServerRelationalAcceptanceTests.C01ReadPage_EnforcesAuthorizationFiltersTurkishSearchKeysetAndRedaction",
+    "GoymenERP.Api.IntegrationTests.CounterpartyReadPageSqlServerRelationalAcceptanceTests.CompanyDeactivationBetweenAuthorizationAndDataRead_FailsClosed",
     "GoymenERP.Api.IntegrationTests.CounterpartySqlServerRelationalAcceptanceTests.CounterpartyMigrationConstraintsAndGroupRead_AreEnforced",
     "GoymenERP.Api.IntegrationTests.CounterpartyWriteSafetySqlServerRelationalAcceptanceTests.AuditAndIdempotencyInsertFailures_RollBackCounterpartyCreate",
     "GoymenERP.Api.IntegrationTests.CounterpartyWriteSafetySqlServerRelationalAcceptanceTests.ConcurrentCreatesAndDifferentKeyStatusWrites_AreSerialized",
@@ -95,8 +96,8 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.UnapprovedLogicalEndpoint_IsRejectedWithoutChangingDatabase",
     "GoymenERP.Api.IntegrationTests.SqlServerRelationalAcceptanceTests.MigrationSeedWriteGuardCompositeForeignKeyAndHttpIsolation_AreEnforced",
 )
-BROAD_DISCOVERY_COUNT = 54
-BROAD_EXECUTION_COUNT = 61
+BROAD_DISCOVERY_COUNT = 55
+BROAD_EXECUTION_COUNT = 62
 
 
 def verify_discovery(standard_output: str) -> None:

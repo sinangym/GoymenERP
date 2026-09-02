@@ -69,7 +69,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string SqlServerRcsiVerifierPath =
         "tools/verify_rcsi_relational_acceptance.py";
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "8832e97e6a319e82b6bbd088407d6801f79a59090c17ea752f219f12d1e4b7a0";
+        "2048acb32a6f478da2cc0e0c9b72aefdb1867d0c51a6236fba5854c5d6c76d23";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";

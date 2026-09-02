@@ -372,6 +372,104 @@ public sealed class CounterpartyReadPageSqlServerRelationalAcceptanceTests
         }
     }
 
+    [SqlServerFact]
+    public async Task CompanyDeactivationBetweenAuthorizationAndDataRead_FailsClosed()
+    {
+        var baseConnectionString = Environment.GetEnvironmentVariable(
+            SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
+        SqlServerRelationalApiFactory? factory = null;
+        var observer = new DeactivatingCounterpartyReadSqlObserver(
+            () => factory!.DatabaseConnectionString,
+            TestCompanyIds.CompanyA);
+        factory = new SqlServerRelationalApiFactory(
+            baseConnectionString,
+            services =>
+            {
+                services.RemoveAll<ICounterpartyReadSqlObserver>();
+                services.AddSingleton<ICounterpartyReadSqlObserver>(observer);
+            });
+
+        try
+        {
+            using (var healthClient = factory.CreateClient())
+            using (var healthResponse = await healthClient.GetAsync("/health/live"))
+            {
+                Assert.Equal(HttpStatusCode.OK, healthResponse.StatusCode);
+            }
+
+            await using var connection = new SqlConnection(factory.DatabaseConnectionString);
+            await connection.OpenAsync();
+            await SeedGoldenDataAsync(connection);
+
+            using var client = factory.CreateClientFor(
+                TestUsers.GroupAdmin,
+                TestCompanyIds.CompanyA);
+            using (var initialDetail = await client.GetAsync(
+                       $"/api/v1/counterparties/{CompanyAOnlyPartyId}"))
+            {
+                Assert.Equal(HttpStatusCode.OK, initialDetail.StatusCode);
+            }
+
+            observer.Arm(CounterpartyReadSqlOperation.Page);
+            using (var racedPage = await client.GetAsync(
+                       "/api/v1/counterparties?partyState=all&pageSize=10"))
+            {
+                var body = await racedPage.Content.ReadAsStringAsync();
+                await AssertProblemCodeAsync(
+                    racedPage,
+                    HttpStatusCode.Forbidden,
+                    "forbidden");
+                Assert.DoesNotContain(
+                    CompanyAOnlyPartyId.ToString("D"),
+                    body,
+                    StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain(
+                    TestCompanyIds.CompanyA.ToString("D"),
+                    body,
+                    StringComparison.OrdinalIgnoreCase);
+            }
+
+            await SetCompanyActiveAsync(connection, isActive: true);
+            using (var restoredPage = await client.GetAsync(
+                       "/api/v1/counterparties?partyState=all&pageSize=10"))
+            {
+                Assert.Equal(HttpStatusCode.OK, restoredPage.StatusCode);
+            }
+
+            observer.Arm(CounterpartyReadSqlOperation.DetailAccounts);
+            using (var racedDetail = await client.GetAsync(
+                       $"/api/v1/counterparties/{CompanyAOnlyPartyId}"))
+            {
+                var body = await racedDetail.Content.ReadAsStringAsync();
+                await AssertProblemCodeAsync(
+                    racedDetail,
+                    HttpStatusCode.NotFound,
+                    CounterpartyProblemCodesV1.NotFound);
+                Assert.DoesNotContain(
+                    CompanyAOnlyPartyId.ToString("D"),
+                    body,
+                    StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain(
+                    TestCompanyIds.CompanyA.ToString("D"),
+                    body,
+                    StringComparison.OrdinalIgnoreCase);
+            }
+
+            await SetCompanyActiveAsync(connection, isActive: true);
+            using var restoredDetail = await client.GetAsync(
+                $"/api/v1/counterparties/{CompanyAOnlyPartyId}");
+            Assert.Equal(HttpStatusCode.OK, restoredDetail.StatusCode);
+        }
+        finally
+        {
+            if (factory is not null)
+            {
+                await factory.DisposeAsync();
+                await DropDatabaseAsync(baseConnectionString, factory.DatabaseName);
+            }
+        }
+    }
+
     private static HttpClient CreateHeaderlessClient(
         SqlServerRelationalApiFactory factory,
         string userId)
@@ -453,6 +551,23 @@ public sealed class CounterpartyReadPageSqlServerRelationalAcceptanceTests
             0,
             TimeSpan.Zero));
         Assert.Equal(2, await command.ExecuteNonQueryAsync());
+    }
+
+    private static async Task SetCompanyActiveAsync(
+        SqlConnection connection,
+        bool isActive)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            UPDATE [organization].[Companies]
+            SET [IsActive] = @IsActive
+            WHERE [Id] = @CompanyId
+              AND [IsActive] <> @IsActive;
+            """;
+        command.Parameters.AddWithValue("@IsActive", isActive);
+        command.Parameters.AddWithValue("@CompanyId", TestCompanyIds.CompanyA);
+        Assert.Equal(1, await command.ExecuteNonQueryAsync());
     }
 
     private static async Task<JsonDocument> ReadPageAsync(HttpResponseMessage response)
@@ -702,6 +817,52 @@ public sealed class CounterpartyReadPageSqlServerRelationalAcceptanceTests
                 _commands.Clear();
                 _authorizationDatabaseReads = 0;
             }
+        }
+    }
+
+    private sealed class DeactivatingCounterpartyReadSqlObserver(
+        Func<string> connectionString,
+        Guid companyId) : ICounterpartyReadSqlObserver
+    {
+        private readonly Lock _gate = new();
+        private CounterpartyReadSqlOperation? _armedOperation;
+
+        public void Arm(CounterpartyReadSqlOperation operation)
+        {
+            lock (_gate)
+            {
+                Assert.Null(_armedOperation);
+                _armedOperation = operation;
+            }
+        }
+
+        public void Observe(
+            CounterpartyReadSqlOperation operation,
+            string commandText)
+        {
+            lock (_gate)
+            {
+                if (_armedOperation != operation)
+                {
+                    return;
+                }
+
+                Assert.False(string.IsNullOrWhiteSpace(commandText));
+                _armedOperation = null;
+            }
+
+            using var connection = new SqlConnection(connectionString());
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                """
+                UPDATE [organization].[Companies]
+                SET [IsActive] = 0
+                WHERE [Id] = @CompanyId
+                  AND [IsActive] = 1;
+                """;
+            command.Parameters.AddWithValue("@CompanyId", companyId);
+            Assert.Equal(1, command.ExecuteNonQuery());
         }
     }
 
