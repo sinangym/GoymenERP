@@ -26,12 +26,14 @@
  * response has landed for the current entry.
  */
 
-import { useEffect, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { useLocation } from 'react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { hasCapability } from './shellState'
 import { useShellDispatch, useShellState } from './shellContext'
 import { StateBlock } from './StateBlock'
 import { fetchShellCapabilities } from './api'
+import { resolveCapability } from './useShellOrchestrator'
 import type { CapabilityId } from './capabilities'
 
 export function CapabilityRoute({
@@ -75,28 +77,88 @@ export function CapabilityRoute({
 
   const entry = state.routeEntryGeneration
   const verified = state.verifiedEntryGeneration
+  const queryClient = useQueryClient()
 
+  // A retryable failure for a specific entry. Scoped to the entry so a stale
+  // failure cannot suppress a newer attempt.
+  const [attempt, setAttempt] = useState<
+    { readonly kind: 'idle' } | { readonly kind: 'failed'; readonly forEntry: number }
+  >({ kind: 'idle' })
+
+  // DERIVED, not reset. A failure belongs to the entry it happened on, so a newer
+  // entry simply does not match and the failure stops applying — no state update
+  // during render, which is what made the first version of this non-deterministic.
+  const failed = attempt.kind === 'failed' && attempt.forEntry === entry
+
+  const retry = useCallback(() => {
+    setAttempt({ kind: 'idle' })
+  }, [])
+
+  // Every outcome is classified by the SAME function the orchestrator uses.
+  //
+  // The first version returned early on anything that was not `ok-single`, which
+  // discarded the whole failure matrix: a 401 never reached the reducer so the
+  // dead session and its cache lived on, and a 500 left the user on the loading
+  // block forever with no error and no retry. Codex reproduced both (#192
+  // BLOCKER). Writing a second, thinner classification beside an existing one is
+  // how the two drift apart, so there is only the one.
   useEffect(() => {
-    if (companyId === null || verified >= entry) return
+    if (companyId === null || verified >= entry || failed) return
     const controller = new AbortController()
     void fetchShellCapabilities(companyId, controller.signal).then((outcome) => {
       if (controller.signal.aborted) return
-      if (outcome.type !== 'ok-single') return
+      const resolution = resolveCapability(outcome)
+
+      if (resolution.kind === 'session-invalid') {
+        // Terminal, and central: the same event and the same cache clear the
+        // orchestrator performs, so a route entry cannot become a second way to
+        // survive a dead session.
+        dispatch({ type: 'SESSION_INVALIDATED' })
+        queryClient.clear()
+        return
+      }
+
+      if (resolution.kind === 'denied') {
+        // Fail closed: verify the entry with NO capabilities, so the gate opens
+        // onto the same neutral not-found block any ungranted route gets. It must
+        // still be a verification, or the entry would hang.
+        dispatch({
+          type: 'ROUTE_ENTRY_VERIFIED',
+          forEntry: entry,
+          capabilities: [],
+          generation: '',
+        })
+        return
+      }
+
+      if (resolution.kind === 'unavailable') {
+        // Retryable and never committing. Showing loading forever is not a safe
+        // failure, it is an unusable one.
+        setAttempt({ kind: 'failed', forEntry: entry })
+        return
+      }
+
       dispatch({
         type: 'ROUTE_ENTRY_VERIFIED',
         forEntry: entry,
-        capabilities: outcome.data.capabilities,
-        generation: outcome.data.generation,
+        capabilities: resolution.capabilities,
+        generation: resolution.generation,
       })
     })
     return () => controller.abort()
-  }, [companyId, dispatch, entry, verified])
+  }, [companyId, dispatch, entry, failed, queryClient, verified])
 
   // Not yet verified for this entry: neutral loading, never cached content.
   //
   // Deliberately NOT the not-found block — a revisit that is still revalidating
   // has not been denied, and showing denial would be both wrong and a disclosure
   // of a different fact than the one we hold.
+  if (companyId !== null && failed) {
+    // The entry could not be authorized for a retryable reason. Nothing is shown
+    // and nothing is committed; the user gets a way forward instead of a spinner.
+    return <StateBlock state={{ kind: 'network-error' }} subject="sayfa" onRetry={retry} />
+  }
+
   if (companyId !== null && (pending || verified < entry)) {
     return <StateBlock state={{ kind: 'initial-loading' }} subject="sayfa" />
   }
