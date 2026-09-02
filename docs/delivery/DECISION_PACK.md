@@ -27,7 +27,12 @@ geçmez ve açık işletme politikasını kendiliğinden kabul etmez.
 - Kaynak aday:         (Issue #66 comment URL)
 ```
 
-## Bilinen OPEN-* kilitleri (Faz 0 karar sicilinden — ajanlar buraya dilim bağlar)
+## Bilinen OPEN-* kilitleri — **TARİHSEL / SUPERSEDED**
+
+> Bu tablo Faz 0 anlık görüntüsüdür ve aktif karar kuyruğu değildir.
+> `DECISION-ROUND-2026-09-01-v1` tarafından supersede edilmiştir. Güncel durum
+> ve aktif/kapalı ayrımı yalnız `docs/decisions/ACIK_KARARLAR.md` kanonik
+> tablosundan okunur.
 
 | OPEN | Konu | Geçici davranış | Kapanış kapısı |
 |---|---|---|---|
@@ -60,3 +65,109 @@ _(yalnız CHATGPT-BUSINESS derleyicisi, doğrulanmış Issue #66 adaylarını bu
 ## P0 blocker kayıtları
 
 _(yalnız güvenle azaltılamayan P0 güvenlik/veri-bütünlüğü bulguları)_
+
+## DECISION-ROUND-2026-09-01-v1 — KISMEN UZLAŞTIRILDI
+
+- Revision: `v1`
+- Status: **KISMEN UZLAŞTIRILDI — 2026-09-02**
+- Taban: `main@80c567a63da8e059ce92aa1b23dad9f4568ad2ca`
+- Karar sahibi: Sinan Göymen
+- Derleyen: `CHATGPT-BUSINESS`
+- Supersedes: bu dosyanın üstündeki tarihsel `Bilinen OPEN-* kilitleri` tablosunun terminal soru seçimi. Güncel açık-alt-karar gerçeği `docs/decisions/ACIK_KARARLAR.md` dosyasındadır.
+
+Bu tur yeni feature spec değildir. Kararların kayıt altına alınması migration, production deployment, bulut aktarımı, purge veya dış entegrasyon credential yetkisi vermez.
+
+### Q1 — GIN / VKN: `A`
+
+- GIN gerçek unvan/VKN henüz yok; placeholder kalır.
+- `IsPlaceholder=true`, `InvoiceCapable=false`; gerçek VKN gelmeden resmî belge kapalıdır.
+- Eski `1111111111` gerçek VKN değildir ve implementation işinde kaldırılacaktır.
+- Gerçek non-null VKN aktif/pasif bütün şirketlerde group-wide unique.
+- SQL Server filtered unique index: `WHERE Vkn IS NOT NULL`.
+- Kalan açık alt karar: `OPEN-001-GIN` gerçek unvan + gerçek VKN.
+- [Issue #66 Q1 sahip açıklaması](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-5506986884)
+  benzersizliği açıkça onaylamış ve VKN'nin ilk kayıttan sonra değiştirilebilir
+  olması gereksinimini eklemiştir.
+- Placeholder'ın `NULL` veya geçici değer taşıması; değişiklik yetkisi/onayı/audit
+  izi ve çakışmalı update davranışı `OPEN-030` kapsamında ayrıca kararlaştırılır.
+
+### Q2 — Hacim: kısmi gerçek veri
+
+- Yıllık ciro yaklaşık `5 milyar TL`.
+- Ortalama ürün fiyatı yaklaşık `30.000 TL/ton`.
+- Türetilmiş planlama çıpası yaklaşık `166.667 ton/yıl`.
+- Gerçek ortalama sipariş tonajı bilinmediği için yalnız sentetik performans testi için `10–25 ton/sipariş` ve yaklaşık `6.700–16.700 sipariş/yıl` geçici aralığı kullanılır.
+- Kalan: müşteri/cari sayısı, eşzamanlı kullanıcı, yoğun saat, belge/OCR hacmi ve production SLO.
+
+### Q3 — Muhasebe/e-belge/banka entegrasyonları: ilk sürümde yok
+
+İlk sürüm yalnız bu üç entegrasyon olmadan çalışır. Bu karar e-posta ve belge
+paylaşımını kapsamaz; `DEC-DOC-006/007` yürürlükte kalır.
+
+İleri öncelik:
+
+1. resmî e-fatura/e-arşiv,
+2. Mikro muhasebe mutabakatı ve kullanıcı onaylı fiş taslağı,
+3. banka hareketleri.
+
+Adapter yöntemi gerçek sağlayıcıya göre dosya, salt-okunur DB, manuel Excel/CSV veya yerel AI/OCR taslağı olabilir. Serbest doğrudan DB yazımı yoktur. Kalan: sağlayıcı, credential, sandbox ve exact erişim yöntemi.
+
+### Q4 — RPO/RTO: `GECICI_VARSAYIM`
+
+- Kullanıcı kesin değeri bilmediğini ve hedefin şirket/veri yoğunluğuna bağlı
+  olduğunu belirtmiştir.
+- `RPO=15 dakika`, `RTO=4 saat` yalnız geçici teknik hedeftir; kabul edilmiş
+  production hedefi değildir.
+- On-prem/hibrid ana çalışma ve tesis dışı şifreli yedek.
+- Production kapısı: gerçek restore tatbikatı + DB/belge checksum mutabakatı.
+- Gerçek yük/restore ölçümü ve ayrıca işletme onayıyla kilitlenir.
+
+### Q5 — Yıllık dönem + retention ayrımı
+
+- Kilitlenen gereksinim: yıllık yönetim; sonraki aktif çalışma kümesinde yalnız açık
+  işlem/kalemlerin kullanılabilir kalması; yetkili seçili çok-yıllı rapor/AI analizi;
+  gerçek silmeyi yalnız en yüksek yetkilinin gerçekleştirebilmesi.
+- Kilitlenmeyen yöntem: açık ve kapanmış kayıtların dönemler arası davranışı;
+  carry-forward/snapshot veya başka dönemler arası temsil;
+  derived read model veya başka çok-yıllı okuma mimarisi; legal-hold, ikinci onay,
+  audit ve otomatik purge davranışı.
+- Bu yöntemler ile belge/audit/idempotency türü bazlı yasal süreler
+  `OPEN-018/021` kapsamında açık ve production'da default-deny kalır.
+
+### Q6 — PDF/logo/antet: `A`
+
+- Her şirket ayrı logo/antet.
+- Şirket bazlı, versiyonlu ve auditli şablon.
+- Gömülü açık lisanslı `Noto Sans` teknik fallback.
+- Gerçek asset kullanıcı tarafından sağlanmadan kurumsal PDF UAT tamamlanmaz.
+- Kalan: asset dosyaları, varsa marka font lisansı ve exact onay permission/rolü.
+
+### Q7 — AI: yerel-first ve temel UX
+
+- Veri kullanıcı tarafında/on-prem kalır.
+- AI + yerel OCR sürekli erişilebilir temel UX olarak tasarlanır.
+- AI yetki, onay, formül veya iş doğrusu değildir; AI kesintisi normal ERP'yi bloke etmez.
+- Yerel model/GPU/OCR PoC'si sunucu envanterine bağlıdır.
+- Bulut AI sağlayıcı/KVKK/veri sınıfı ve ayrı aktivasyon olmadan default-deny kapalıdır.
+
+### Q8 — C-01 continuation: `A`
+
+- İlk doğrulanmış satırlar `offline`, `network-error`, `500`, `503` continuation hatasında kalır.
+- Continuation-level açık retry vardır; otomatik resend yoktur.
+- Aynı actor/session, CompanyContext/generation, query ve cursor snapshot'ı kullanılır.
+- Hatalı sayfa append edilmez; başarılı retry bir kez append eder.
+- `401`, `403`, tenant-binding ve malformed cevaplar maskelenmez.
+
+## Bu karar turunda ele alınan başlıklardan gerçekten açık kalan kararlar
+
+- `OPEN-001-GIN`: gerçek GIN unvanı ve VKN.
+- `OPEN-014`: gerçek sunucu/GPU/UPS/ağ/yedek envanteri.
+- `OPEN-015`: gerçek sipariş/müşteri/eşzamanlı kullanıcı/belge-OCR hacmi ve production SLO.
+- `OPEN-016`: sağlayıcı/credential/sandbox ve exact entegrasyon yöntemi.
+- `OPEN-017`: kesin RPO/RTO ve felaket topolojisi; geçici hedefler gerçek yük/restore ölçümüyle kilitlenecek.
+- `OPEN-018/021`: yasal saklama süreleri, legal hold ve partition/imha matrisi.
+- `OPEN-019`: gerçek logo/antet/font assetleri ve exact onay permission'ı.
+- `OPEN-020`: yerel model/GPU PoC; bulut sağlayıcı/KVKK/veri sınıfı/aktivasyon.
+- `OPEN-030`: VKN placeholder/değişiklik yaşam döngüsü, yetki/onay/audit ve çakışmalı update davranışı.
+
+Kapanan alt bölümler yeniden `NEEDS-SINAN` olarak sorulmaz.

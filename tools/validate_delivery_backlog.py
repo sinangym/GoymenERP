@@ -18,6 +18,7 @@ from typing import Any, NamedTuple
 BACKLOG_PATH = Path("docs/backlog/DELIVERY_BACKLOG_v1.json")
 TASK_MANIFEST_PATH = Path("docs/backlog/task_manifest.json")
 DECISION_REGISTRY_PATH = Path("docs/decisions/KARAR_SICILI.md")
+DECISION_REGISTRY_CSV_PATH = Path("docs/decisions/KARAR_SICILI.csv")
 OPEN_DECISIONS_PATH = Path("docs/decisions/ACIK_KARARLAR.md")
 ACCEPTANCE_PATH = Path("docs/acceptance/ACCEPTANCE_70.md")
 SCREEN_CATALOG_PATH = Path("docs/ui/CANONICAL_SCREEN_STATUS.csv")
@@ -30,15 +31,89 @@ EXPECTED_BACKLOG_VERSION = "1.1"
 EXPECTED_BACKLOG_STATUS = "ACTIVE_GATED"
 EXPECTED_BACKLOG_OWNER = "CHATGPT-BUSINESS"
 EXPECTED_BACKLOG_PROTOCOL = "docs/governance/GOYMEN_ERP_OTONOM_TESLIM_PLANI_v2.md"
-EXPECTED_DECISION_COUNT = 109
-EXPECTED_LOCKED_DECISION_COUNT = 107
-EXPECTED_TEMPORARY_DECISION_COUNT = 2
+EXPECTED_DECISION_COUNT = 117
+EXPECTED_LOCKED_DECISION_COUNT = 114
+EXPECTED_TEMPORARY_DECISION_COUNT = 3
 EXPECTED_DECISION_ROWS_SHA256 = (
-    "e74b882209e04b1d72016f0d48fad61f39b896cc6ca142aa6a6c5e96505fef1a"
+    "af615a1f2b3d01e8b07c8d63643e52c3a6c452b1eea8e5c4aa4bedea62bac1c9"
 )
-EXPECTED_OPEN_IDS = {f"OPEN-{number:03d}" for number in range(1, 22)}
+EXPECTED_DECISION_ORDER_SHA256 = (
+    "94c1b852e421288bb110f005bdf5e77a35046c3e9729f8eb6a044440d7da085f"
+)
+EXPECTED_OPEN_IDS = {
+    *(f"OPEN-{number:03d}" for number in range(1, 22)),
+    "OPEN-030",
+}
+# OPEN identifiers are append-only identities, not reusable sequence slots. These
+# reservations were established by canonical open-decision rows in PR #10/#11;
+# neither a closed/unmerged branch nor later catalog reconciliation releases them.
+# Reintroducing even the original subject requires an explicit reviewed promotion
+# from this hard-reserved set into EXPECTED_OPEN_IDS and the pinned baseline.
+RESERVED_OPEN_ID_METADATA = {
+    "OPEN-022": {
+        "provenance": "PR #10 / ERP-000F",
+        "subject": (
+            "Outbox, inbox ve başarısız mesaj kanıtlarının saklama, partition, "
+            "arşiv, legal hold ve yetkili imha politikası"
+        ),
+    },
+    "OPEN-023": {
+        "provenance": "PR #10 / ERP-000F",
+        "subject": (
+            "Mesaj sıralama kapsamı, ordering key ve gap/geç/out-of-order "
+            "davranışı"
+        ),
+    },
+    "OPEN-024": {
+        "provenance": "PR #10 / ERP-000F",
+        "subject": (
+            "Revocable workload kimliği ile dispatcher/consumer claim, "
+            "lease/fencing, timeout, retry/backoff, circuit-breaker, "
+            "backpressure, poison/dead-letter, belirsiz gönderim, manuel "
+            "replay/re-drive yetki/onay/audit ve alarm politikaları"
+        ),
+    },
+    "OPEN-025": {
+        "provenance": "PR #10 / ERP-000F",
+        "subject": (
+            "İlk pilot producer, server-authoritative cause, event adı/schema v1 "
+            "payload ve veri sınıfı, emission/no-change/failure koşulları, "
+            "consumer ve business/dış etki sözleşmesi"
+        ),
+    },
+    "OPEN-026": {
+        "provenance": "PR #11 / ERP-000G",
+        "subject": (
+            "Şirketler arası fiziksel blob dedup kapsamı; encryption/key sınırı; "
+            "reference ownership, son referans silme, şirket export/restore ve "
+            "hash existence-oracle politikası"
+        ),
+    },
+    "OPEN-027": {
+        "provenance": "PR #11 / ERP-000G",
+        "subject": (
+            "Upload MIME/extension/size/archive sınırları; malware scanner, "
+            "quarantine, timeout/outage/rescan ve rejected içerik politikası"
+        ),
+    },
+    "OPEN-028": {
+        "provenance": "PR #11 / ERP-000G",
+        "subject": (
+            "Signed access/export/share izinleri; TTL, tek/çok kullanım, revoke, "
+            "filename/content-disposition ve hassas veri indirme politikası"
+        ),
+    },
+    "OPEN-029": {
+        "provenance": "PR #11 / ERP-000G",
+        "subject": (
+            "İlk pilot belge türü ve owner modül; document/version/link metadata, "
+            "zorunlu sınıflama, permission–ABAC, business/security lifecycle ve "
+            "DB–object-store commit/reconciliation sözleşmesi"
+        ),
+    },
+}
 EXPECTED_ACCEPTANCE_IDS = {f"AT-{number:03d}" for number in range(1, 71)}
-EXPECTED_OPEN_ROWS_SHA256 = "70fe35057e9c06ea3ec7d3336aa54feb9eaf57a9b8ca27c3870569b6129bc815"
+EXPECTED_OPEN_ROWS_SHA256 = "2dba55e20f351209fe65b1b3eab8f16cc72004ce4ba094d6a19c2c16a24ac3d8"
 EXPECTED_ACCEPTANCE_ROWS_SHA256 = "47aff75e79336af7a7abe1a82c5ecfbef308941ee5cdda7b7239cdd6d015958f"
 EXPECTED_SCREEN_COUNT = 159
 ALLOWED_LANES = {"codex", "claude", "chatgpt", "codex+claude"}
@@ -70,6 +145,7 @@ ALLOWED_SLICE_FIELDS = {
     "scope",
     "decisions",
     "open",
+    "resolved_open_history",
     "production_gate",
     "decision_only",
     "acceptance",
@@ -89,11 +165,41 @@ MANIFEST_SNAPSHOT_FIELDS = {
 # Updated only through a reviewed K3 mapping change. This catches semantically
 # wrong moves that a global set-equality check cannot see.
 EXPECTED_COVERAGE_MAPPING_SHA256 = (
-    "ad1b2574e9878d950be88073d03d330d8a0bd96ead8a5156fb48a5ce990ef002"
+    "4454ee3f8131cda338722d06a9c5170598e09b8608a764ac598051a8aacd6cd0"
 )
 EXPECTED_CANONICAL_SCREEN_IDS_SHA256 = (
     "acd2033d4a3a9448e22b2ccd7a1e4d2d5e356f3a298da1309f1c3caa27b14aaf"
 )
+
+DECISION_FIELDS = (
+    "id",
+    "area",
+    "decision",
+    "status",
+    "priority",
+    "source",
+    "owner",
+    "acceptance_evidence",
+)
+DECISION_CSV_HEADERS = (
+    "DecisionId",
+    "Alan",
+    "Karar",
+    "Durum",
+    "Oncelik",
+    "Kaynak",
+    "Sahip",
+    "KabulKaniti",
+)
+DECISION_MARKDOWN_HEADER = (
+    "| ID | Alan | Karar | Durum | Öncelik | Kaynak | Sahip | Kabul kanıtı |"
+)
+DECISION_MARKDOWN_SEPARATOR = "|---|---|---|---|---|---|---|---|"
+OPEN_MARKDOWN_HEADER = (
+    "| ID | Durum | Kullanıcı tarafından kapanan / kabul edilen bölüm | "
+    "Gerçekten açık kalan bölüm | Karar kanıtı | Kod / seed kanıtı |"
+)
+OPEN_MARKDOWN_SEPARATOR = "|---|---|---|---|---|---|"
 
 
 class BacklogStatistics(NamedTuple):
@@ -102,9 +208,15 @@ class BacklogStatistics(NamedTuple):
     dependency_count: int
     decision_count: int
     open_count: int
+    resolved_open_count: int
     acceptance_count: int
     screen_count: int
     manifest_task_count: int
+
+    @property
+    def resolved_open_history_count(self) -> int:
+        """Backward-compatible explicit name for resolved OPEN history coverage."""
+        return self.resolved_open_count
 
 
 class DuplicateJsonKeyError(ValueError):
@@ -113,6 +225,13 @@ class DuplicateJsonKeyError(ValueError):
 
 class NonFiniteJsonNumberError(ValueError):
     pass
+
+
+class OpenDecisionCatalog(NamedTuple):
+    all_ids: set[str]
+    active_ids: set[str]
+    resolved_ids: set[str]
+    statuses: dict[str, str]
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -155,27 +274,197 @@ def _load_json(path: Path, label: str, errors: list[str]) -> dict[str, Any] | No
     return value
 
 
-def _read_decision_ids(path: Path, errors: list[str]) -> set[str]:
+def _is_in_inactive_markdown_context(lines: list[str], line_index: int) -> bool:
+    fence_char: str | None = None
+    fence_length = 0
+    opening_fence = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+    closing_fence = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*$")
+    prefix = lines[:line_index]
+    # These two governance catalogs intentionally contain no raw HTML. Reject
+    # every literal '<' before the canonical table, which fail-closes all
+    # CommonMark raw HTML/comment block types without a partial HTML parser.
+    if any("<" in line for line in prefix):
+        return True
+    for line in prefix:
+        if fence_char is not None:
+            closing_match = closing_fence.fullmatch(line)
+            if (
+                closing_match is not None
+                and closing_match.group(1)[0] == fence_char
+                and len(closing_match.group(1)) >= fence_length
+            ):
+                fence_char = None
+                fence_length = 0
+            continue
+        opening_match = opening_fence.match(line)
+        if opening_match is not None:
+            run = opening_match.group(1)
+            suffix = opening_match.group(2)
+            if run[0] != "`" or "`" not in suffix:
+                fence_char = run[0]
+                fence_length = len(run)
+                continue
+    return fence_char is not None
+
+
+def _markdown_table_candidate_id(line: str, pattern: re.Pattern[str]) -> str | None:
+    candidate = line.strip()
+    if candidate.startswith("|"):
+        candidate = candidate[1:].lstrip()
+    first_cell, separator, _ = candidate.partition("|")
+    if not separator:
+        return None
+    first_cell = first_cell.strip()
+    match = pattern.search(first_cell)
+    return match.group(0) if match is not None else None
+
+
+def _looks_like_markdown_table_row(line: str, expected_columns: int) -> bool:
+    return line.count("|") >= expected_columns - 1
+
+
+def _extract_canonical_markdown_table(
+    lines: list[str],
+    *,
+    header: str,
+    separator: str,
+    pattern: re.Pattern[str],
+    expected_columns: int,
+    label: str,
+    errors: list[str],
+) -> tuple[list[list[str]], list[str]]:
+    raw_html_lines = [index + 1 for index, line in enumerate(lines) if "<" in line]
+    if raw_html_lines:
+        errors.append(
+            f"{label.capitalize()} raw HTML/comment markup is not allowed at lines "
+            + ", ".join(str(line) for line in raw_html_lines)
+        )
+    header_indices = [index for index, line in enumerate(lines) if line == header]
+    if len(header_indices) != 1:
+        errors.append(
+            f"{label.capitalize()} must contain exactly one canonical Markdown header; "
+            f"found {len(header_indices)}"
+        )
+        return [], []
+    header_index = header_indices[0]
+    if _is_in_inactive_markdown_context(lines, header_index):
+        errors.append(
+            f"{label.capitalize()} canonical Markdown table is in an inactive "
+            "fence/comment/raw-HTML context"
+        )
+    if header_index > 0 and lines[header_index - 1].strip():
+        errors.append(
+            f"{label.capitalize()} canonical Markdown header must be preceded "
+            "by a blank line to terminate blockquote/list context"
+        )
+    if header_index + 1 >= len(lines) or lines[header_index + 1] != separator:
+        errors.append(f"{label.capitalize()} canonical Markdown separator drift")
+
+    rows: list[list[str]] = []
+    raw_rows: list[str] = []
+    row_indices: set[int] = set()
+    row_index = header_index + 2
+    while row_index < len(lines) and lines[row_index].strip():
+        line = lines[row_index]
+        if not line.startswith("|"):
+            errors.append(
+                f"{label.capitalize()} contains a non-canonical row at line {row_index + 1}"
+            )
+        else:
+            cells = [cell.strip() for cell in line.split("|")[1:-1]]
+            if not cells or pattern.fullmatch(cells[0]) is None:
+                errors.append(
+                    f"{label.capitalize()} contains a non-canonical row at "
+                    f"line {row_index + 1}"
+                )
+            else:
+                row_indices.add(row_index)
+                raw_rows.append(line.strip())
+                if len(cells) != expected_columns:
+                    errors.append(
+                        f"{label.capitalize()} row {cells[0]!r} must contain exactly "
+                        f"{expected_columns} columns, got {len(cells)}"
+                    )
+                else:
+                    rows.append(cells)
+        row_index += 1
+    if not raw_rows:
+        errors.append(f"{label.capitalize()} canonical Markdown table has no data rows")
+
+    matching_outside_table = []
+    canonical_indices = row_indices | {header_index, header_index + 1}
+    for index, line in enumerate(lines):
+        if index in canonical_indices:
+            continue
+        if (
+            _markdown_table_candidate_id(line, pattern) is not None
+            or _looks_like_markdown_table_row(line, expected_columns)
+        ):
+            matching_outside_table.append(index + 1)
+    if matching_outside_table:
+        errors.append(
+            f"{label.capitalize()} has table-shaped or matching rows outside the "
+            "canonical table at lines "
+            + ", ".join(str(line) for line in matching_outside_table)
+        )
+    return rows, raw_rows
+
+
+def _read_markdown_decision_records(
+    path: Path, errors: list[str]
+) -> tuple[list[dict[str, str]], list[str]]:
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeError) as exc:
         errors.append(f"Cannot read decision registry {path}: {exc}")
-        return set()
-    ids: list[str] = []
-    decision_rows: list[str] = []
-    statuses: Counter[str] = Counter()
-    for line in lines:
-        if not line.startswith("|"):
-            continue
-        cells = [cell.strip() for cell in line.split("|")[1:-1]]
-        if not cells or DECISION_PATTERN.fullmatch(cells[0]) is None:
-            continue
-        ids.append(cells[0])
-        decision_rows.append(line.strip())
-        if len(cells) < 4:
-            errors.append(f"Decision registry row {cells[0]!r} has no status column")
-        else:
-            statuses[cells[3]] += 1
+        return [], []
+    rows, decision_rows = _extract_canonical_markdown_table(
+        lines,
+        header=DECISION_MARKDOWN_HEADER,
+        separator=DECISION_MARKDOWN_SEPARATOR,
+        pattern=DECISION_PATTERN,
+        expected_columns=len(DECISION_FIELDS),
+        label="decision registry",
+        errors=errors,
+    )
+    records = [dict(zip(DECISION_FIELDS, cells, strict=True)) for cells in rows]
+    return records, decision_rows
+
+
+def _read_csv_decision_records(path: Path, errors: list[str]) -> list[dict[str, str]]:
+    try:
+        with path.open(encoding="utf-8-sig", newline="") as stream:
+            reader = csv.DictReader(stream)
+            if tuple(reader.fieldnames or ()) != DECISION_CSV_HEADERS:
+                errors.append(
+                    "Decision registry CSV headers must exactly equal "
+                    f"{DECISION_CSV_HEADERS!r}, got {tuple(reader.fieldnames or ())!r}: {path}"
+                )
+                return []
+            records: list[dict[str, str]] = []
+            for row_number, row in enumerate(reader, start=2):
+                if None in row:
+                    errors.append(f"Decision registry CSV row {row_number} has extra columns")
+                    continue
+                values = [(row.get(header) or "").strip() for header in DECISION_CSV_HEADERS]
+                if not any(values):
+                    continue
+                if DECISION_PATTERN.fullmatch(values[0]) is None:
+                    errors.append(
+                        f"Decision registry CSV row {row_number} has invalid id {values[0]!r}"
+                    )
+                    continue
+                records.append(dict(zip(DECISION_FIELDS, values, strict=True)))
+            return records
+    except (OSError, UnicodeError, csv.Error) as exc:
+        errors.append(f"Cannot read decision registry CSV {path}: {exc}")
+        return []
+
+
+def _read_decision_ids(path: Path, csv_path: Path, errors: list[str]) -> set[str]:
+    records, decision_rows = _read_markdown_decision_records(path, errors)
+    ids = [record["id"] for record in records]
+    statuses = Counter(record["status"] for record in records)
     _report_duplicate_ids(ids, "decision registry", errors)
     if len(ids) != EXPECTED_DECISION_COUNT:
         errors.append(
@@ -204,23 +493,111 @@ def _read_decision_ids(path: Path, errors: list[str]) -> set[str]:
             "Decision registry row baseline hash drift: "
             f"expected {EXPECTED_DECISION_ROWS_SHA256}, got {rows_digest}"
         )
+
+    order_digest = hashlib.sha256("\n".join(ids).encode("utf-8")).hexdigest()
+    if order_digest != EXPECTED_DECISION_ORDER_SHA256:
+        errors.append(
+            "Decision registry order baseline hash drift: "
+            f"expected {EXPECTED_DECISION_ORDER_SHA256}, got {order_digest}"
+        )
+
+    csv_records = _read_csv_decision_records(csv_path, errors)
+    csv_ids = [record["id"] for record in csv_records]
+    _report_duplicate_ids(csv_ids, "decision registry CSV", errors)
+    markdown_id_set = set(ids)
+    csv_id_set = set(csv_ids)
+    missing_in_csv = sorted(markdown_id_set - csv_id_set)
+    extra_in_csv = sorted(csv_id_set - markdown_id_set)
+    if missing_in_csv or extra_in_csv:
+        errors.append(
+            "Decision registry Markdown/CSV id drift: "
+            f"missing_in_csv={missing_in_csv}, extra_in_csv={extra_in_csv}"
+        )
+    if ids != csv_ids:
+        errors.append("Decision registry Markdown/CSV row order drift")
+
+    markdown_by_id: dict[str, dict[str, str]] = {}
+    csv_by_id: dict[str, dict[str, str]] = {}
+    for record in records:
+        markdown_by_id.setdefault(record["id"], record)
+    for record in csv_records:
+        csv_by_id.setdefault(record["id"], record)
+    for decision_id in sorted(markdown_id_set & csv_id_set):
+        mismatched_fields = [
+            field
+            for field in DECISION_FIELDS[1:]
+            if markdown_by_id[decision_id][field] != csv_by_id[decision_id][field]
+        ]
+        if mismatched_fields:
+            errors.append(
+                f"Decision registry Markdown/CSV semantic drift for {decision_id!r}: "
+                + ", ".join(mismatched_fields)
+            )
     return set(ids)
 
 
-def _read_open_ids(path: Path, errors: list[str]) -> set[str]:
-    ids = _read_markdown_table_ids(
-        path,
-        OPEN_PATTERN,
-        "open decision catalog",
-        errors,
-        EXPECTED_OPEN_ROWS_SHA256,
+def _read_open_ids(path: Path, errors: list[str]) -> OpenDecisionCatalog:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as exc:
+        errors.append(f"Cannot read open decision catalog {path}: {exc}")
+        return OpenDecisionCatalog(set(), set(), set(), {})
+    rows, raw_rows = _extract_canonical_markdown_table(
+        lines,
+        header=OPEN_MARKDOWN_HEADER,
+        separator=OPEN_MARKDOWN_SEPARATOR,
+        pattern=OPEN_PATTERN,
+        expected_columns=6,
+        label="open decision catalog",
+        errors=errors,
     )
-    if ids != EXPECTED_OPEN_IDS:
-        errors.append(
-            "Open decision baseline drift: expected OPEN-001..OPEN-021, got "
-            + ", ".join(sorted(ids))
+    ids = [cells[0] for cells in rows]
+    _report_duplicate_ids(ids, "open decision catalog", errors)
+    allowed_statuses = {"AÇIK", "KISMEN", "KAPANDI"}
+    statuses: dict[str, str] = {}
+    for cells in rows:
+        open_id, raw_status = cells[0], cells[1]
+        status = (
+            raw_status[2:-2]
+            if raw_status.startswith("**") and raw_status.endswith("**")
+            else ""
         )
-    return ids
+        if status not in allowed_statuses or raw_status != f"**{status}**":
+            errors.append(
+                f"Open decision catalog {open_id!r} has unsupported status "
+                f"{raw_status!r}; expected exactly **AÇIK**, **KISMEN**, or **KAPANDI**"
+            )
+            continue
+        statuses.setdefault(open_id, status)
+    rows_digest = hashlib.sha256(
+        "\n".join(sorted(raw_rows)).encode("utf-8")
+    ).hexdigest()
+    if rows_digest != EXPECTED_OPEN_ROWS_SHA256:
+        errors.append(
+            "Open decision catalog row baseline hash drift: "
+            f"expected {EXPECTED_OPEN_ROWS_SHA256}, got {rows_digest}"
+        )
+    result = set(ids)
+    for reserved_id in sorted(result & RESERVED_OPEN_ID_METADATA.keys()):
+        reservation = RESERVED_OPEN_ID_METADATA[reserved_id]
+        errors.append(
+            "Open decision catalog stable id reserved/cannot be reassigned: "
+            f"{reserved_id} is reserved by {reservation['provenance']} for "
+            f"{reservation['subject']}"
+        )
+    if result != EXPECTED_OPEN_IDS:
+        errors.append(
+            "Open decision baseline drift: expected OPEN-001..OPEN-021 plus "
+            "OPEN-030, got "
+            + ", ".join(sorted(result))
+        )
+    active_ids = {
+        open_id for open_id, status in statuses.items() if status in {"AÇIK", "KISMEN"}
+    }
+    resolved_ids = {
+        open_id for open_id, status in statuses.items() if status == "KAPANDI"
+    }
+    return OpenDecisionCatalog(result, active_ids, resolved_ids, statuses)
 
 
 def _read_acceptance_ids(path: Path, errors: list[str]) -> set[str]:
@@ -229,12 +606,24 @@ def _read_acceptance_ids(path: Path, errors: list[str]) -> set[str]:
     except (OSError, UnicodeError) as exc:
         errors.append(f"Cannot read acceptance catalog {path}: {exc}")
         return set()
+    raw_html_lines = [index + 1 for index, line in enumerate(lines) if "<" in line]
+    if raw_html_lines:
+        errors.append(
+            "Acceptance catalog raw HTML/comment markup is not allowed at lines "
+            + ", ".join(str(line) for line in raw_html_lines)
+        )
     ids: list[str] = []
     acceptance_rows: list[str] = []
     row_pattern = re.compile(r"^- \*\*(AT-[0-9]{3}):\*\*")
-    for line in lines:
+    for line_index, line in enumerate(lines):
         match = row_pattern.match(line)
         if match:
+            if _is_in_inactive_markdown_context(lines, line_index):
+                errors.append(
+                    f"Acceptance catalog canonical row {match.group(1)!r} at line "
+                    f"{line_index + 1} is in an inactive fence/comment/raw-HTML "
+                    "context"
+                )
             ids.append(match.group(1))
             acceptance_rows.append(line.strip())
     _report_duplicate_ids(ids, "acceptance catalog", errors)
@@ -253,37 +642,6 @@ def _read_acceptance_ids(path: Path, errors: list[str]) -> set[str]:
             f"expected {EXPECTED_ACCEPTANCE_ROWS_SHA256}, got {rows_digest}"
         )
     return result
-
-
-def _read_markdown_table_ids(
-    path: Path,
-    pattern: re.Pattern[str],
-    label: str,
-    errors: list[str],
-    expected_rows_hash: str,
-) -> set[str]:
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeError) as exc:
-        errors.append(f"Cannot read {label} {path}: {exc}")
-        return set()
-    ids: list[str] = []
-    rows: list[str] = []
-    for line in lines:
-        if not line.startswith("|"):
-            continue
-        cells = [cell.strip() for cell in line.split("|")[1:-1]]
-        if cells and pattern.fullmatch(cells[0]):
-            ids.append(cells[0])
-            rows.append(line.strip())
-    _report_duplicate_ids(ids, label, errors)
-    rows_digest = hashlib.sha256("\n".join(sorted(rows)).encode("utf-8")).hexdigest()
-    if rows_digest != expected_rows_hash:
-        errors.append(
-            f"{label.capitalize()} row baseline hash drift: "
-            f"expected {expected_rows_hash}, got {rows_digest}"
-        )
-    return set(ids)
 
 
 def _report_duplicate_ids(ids: list[str], label: str, errors: list[str]) -> None:
@@ -430,8 +788,14 @@ def validate_repository_with_statistics(
                     f"Delivery backlog lane {lane_key!r} must have a non-empty trimmed description"
                 )
 
-    canonical_decisions = _read_decision_ids(root / DECISION_REGISTRY_PATH, errors)
-    canonical_open = _read_open_ids(root / OPEN_DECISIONS_PATH, errors)
+    canonical_decisions = _read_decision_ids(
+        root / DECISION_REGISTRY_PATH,
+        root / DECISION_REGISTRY_CSV_PATH,
+        errors,
+    )
+    open_catalog = _read_open_ids(root / OPEN_DECISIONS_PATH, errors)
+    canonical_open = open_catalog.active_ids
+    canonical_resolved_open = open_catalog.resolved_ids
     canonical_acceptance = _read_acceptance_ids(root / ACCEPTANCE_PATH, errors)
     canonical_screens = _read_screen_ids(root / SCREEN_CATALOG_PATH, errors)
 
@@ -485,6 +849,7 @@ def validate_repository_with_statistics(
     graph: dict[str, list[str]] = {}
     used_decisions = set(global_decisions)
     used_open: set[str] = set()
+    used_resolved_open: set[str] = set()
     used_acceptance: set[str] = set(global_acceptance)
     used_screens: set[str] = set()
     manifest_slice_count = 0
@@ -565,6 +930,9 @@ def validate_repository_with_statistics(
             graph.setdefault(slice_id, dependencies)
             decisions = _string_list(item, "decisions", label, errors)
             open_ids = _string_list(item, "open", label, errors)
+            resolved_open_history = _string_list(
+                item, "resolved_open_history", label, errors
+            )
             acceptance = _string_list(item, "acceptance", label, errors, required=True)
             acceptance_notes = _string_list(item, "acceptance_notes", label, errors)
             screens = _string_list(item, "screens", label, errors, required=True)
@@ -580,6 +948,7 @@ def validate_repository_with_statistics(
                 )
             used_decisions.update(decisions)
             used_open.update(open_ids)
+            used_resolved_open.update(resolved_open_history)
             used_acceptance.update(acceptance)
             used_screens.update(screens)
             coverage_mapping["slices"][slice_id] = {
@@ -590,6 +959,7 @@ def validate_repository_with_statistics(
                 "depends_on": sorted(dependencies),
                 "decisions": sorted(decisions),
                 "open": sorted(open_ids),
+                "resolved_open_history": sorted(resolved_open_history),
                 "acceptance": sorted(acceptance),
                 "acceptance_notes": sorted(acceptance_notes),
                 "screens": sorted(screens),
@@ -646,13 +1016,34 @@ def validate_repository_with_statistics(
 
             for field, values, canonical in (
                 ("decisions", decisions, canonical_decisions),
-                ("open", open_ids, canonical_open),
                 ("acceptance", acceptance, canonical_acceptance),
                 ("screens", screens, canonical_screens),
             ):
                 for value in values:
                     if value not in canonical:
                         errors.append(f"{label} references unknown {field} id {value!r}")
+            for value in open_ids:
+                if value not in canonical_open:
+                    status = open_catalog.statuses.get(value)
+                    if status is None:
+                        errors.append(f"{label} references unknown open id {value!r}")
+                    else:
+                        errors.append(
+                            f"{label} references resolved OPEN id {value!r} "
+                            "in active 'open' field"
+                        )
+            for value in resolved_open_history:
+                if value not in canonical_resolved_open:
+                    status = open_catalog.statuses.get(value)
+                    if status is None:
+                        errors.append(
+                            f"{label} references unknown resolved_open_history id {value!r}"
+                        )
+                    else:
+                        errors.append(
+                            f"{label} references active OPEN id {value!r} "
+                            "in 'resolved_open_history' field"
+                        )
 
             task_value = item.get("task")
             if task_value is not None and (
@@ -708,15 +1099,46 @@ def validate_repository_with_statistics(
                         f"{label} manifest_blocked_by drift: backlog={snapshot_blockers!r}, "
                         f"task_manifest={expected_blockers!r}"
                     )
-                if (
-                    open_ids
-                    and item.get("manifest_status") != "blocked"
-                    and not decision_only
-                    and production_gate is None
-                ):
-                    errors.append(
-                        f"{label} has OPEN-* dependencies but no default-false production_gate"
+                blocker_values = (
+                    snapshot_blockers if isinstance(snapshot_blockers, list) else []
+                )
+                manifest_open_blockers: set[str] = set()
+                for blocker in blocker_values:
+                    if not isinstance(blocker, str) or not blocker.startswith("OPEN-"):
+                        continue
+                    if OPEN_PATTERN.fullmatch(blocker) is None or blocker not in open_catalog.all_ids:
+                        errors.append(
+                            f"{label} manifest_blocked_by references unknown OPEN "
+                            f"blocker {blocker!r}"
+                        )
+                        continue
+                    if blocker in canonical_resolved_open:
+                        errors.append(
+                            f"{label} manifest_blocked_by references resolved OPEN "
+                            f"blocker {blocker!r}"
+                        )
+                        continue
+                    manifest_open_blockers.add(blocker)
+                    if blocker not in open_ids:
+                        errors.append(
+                            f"{label} manifest OPEN blocker {blocker!r} is missing "
+                            "from active 'open' field"
+                        )
+                if open_ids and not decision_only and production_gate is None:
+                    missing_manifest_open_blockers = sorted(
+                        set(open_ids) - manifest_open_blockers
                     )
+                    if item.get("manifest_status") != "blocked":
+                        errors.append(
+                            f"{label} has OPEN-* dependencies but no default-false "
+                            "production_gate"
+                        )
+                    elif missing_manifest_open_blockers:
+                        errors.append(
+                            f"{label} has active OPEN ids without production_gate or "
+                            "matching manifest_blocked_by: "
+                            + ", ".join(missing_manifest_open_blockers)
+                        )
                 if manifest_task_id == "ERP-000F":
                     if item.get("execution_state") != "SPEC_ONLY":
                         errors.append(
@@ -768,9 +1190,17 @@ def validate_repository_with_statistics(
         for cycle in _find_cycles(graph):
             errors.append(f"Delivery backlog cycle detected: {cycle}")
 
+    status_laundering = sorted(used_open & used_resolved_open)
+    if status_laundering:
+        errors.append(
+            "Delivery backlog launders OPEN status across active and resolved history: "
+            + ", ".join(status_laundering)
+        )
+
     for label, used, canonical in (
         ("decision", used_decisions, canonical_decisions),
-        ("open decision", used_open, canonical_open),
+        ("active open decision", used_open, canonical_open),
+        ("resolved open history", used_resolved_open, canonical_resolved_open),
         ("acceptance", used_acceptance, canonical_acceptance),
         ("screen", used_screens, canonical_screens),
     ):
@@ -803,6 +1233,7 @@ def validate_repository_with_statistics(
         dependency_count=sum(len(items) for items in graph.values()),
         decision_count=len(used_decisions),
         open_count=len(used_open),
+        resolved_open_count=len(used_resolved_open),
         acceptance_count=len(used_acceptance),
         screen_count=len(used_screens),
         manifest_task_count=manifest_slice_count,
@@ -838,6 +1269,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"- dependency edges: {statistics.dependency_count}")
     print(f"- decisions covered: {statistics.decision_count}")
     print(f"- open decisions covered: {statistics.open_count}")
+    print(f"- resolved open history covered: {statistics.resolved_open_count}")
     print(f"- acceptance ids covered: {statistics.acceptance_count}")
     print(f"- canonical screens covered: {statistics.screen_count}")
     print(f"- manifest-backed slices: {statistics.manifest_task_count}")
