@@ -19,36 +19,50 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "modelBuilder.Entity<AuditEvent>()\n"
         + "            .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);";
 
-    private static readonly IReadOnlySet<string> ReviewedAuditEventDbContextPaths =
-        new HashSet<string>(StringComparer.Ordinal)
+    private static readonly IReadOnlyDictionary<string, string> ReviewedAuditEventDbContexts =
+        new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            AuditDbContextPath,
-            OrganizationDbContextAuditEventPath,
-            CounterpartyDbContextAuditEventPath,
+            [AuditDbContextPath] = "AuditDbContext",
+            [OrganizationDbContextAuditEventPath] = "OrganizationDbContext",
+            [CounterpartyDbContextAuditEventPath] = "CounterpartyDbContext",
         };
 
     [Fact]
     public void Audit_event_context_inventory_is_complete()
     {
         var repositoryRoot = FindRepositoryRoot();
-        var actualPaths = ReadBackendSources(repositoryRoot)
-            .Where(file => Regex.Replace(
-                    MaskCommentsAndNonInterpolatedLiterals(file.Value),
-                    @"\s+",
-                    string.Empty)
-                .Contains(
-                    "modelBuilder.ConfigureAuditEvent(",
-                    StringComparison.Ordinal))
-            .Select(file => file.Key)
-            .ToHashSet(StringComparer.Ordinal);
+        var actualPaths = DiscoverAuditEventDbContextPaths(
+            ReadBackendSources(repositoryRoot));
 
         Assert.True(
-            ReviewedAuditEventDbContextPaths.SetEquals(actualPaths),
+            ReviewedAuditEventDbContexts.Keys.ToHashSet(StringComparer.Ordinal)
+                .SetEquals(actualPaths),
             "AuditEvent DbContext inventory changed. Expected: "
-            + string.Join(", ", ReviewedAuditEventDbContextPaths.Order(StringComparer.Ordinal))
+            + string.Join(", ", ReviewedAuditEventDbContexts.Keys.Order(StringComparer.Ordinal))
             + "; actual: "
             + string.Join(", ", actualPaths.Order(StringComparer.Ordinal))
             + ". Every AuditEvent-owning context must receive a semantic tenant-filter review.");
+    }
+
+    [Theory]
+    [InlineData(AuditDbContextPath)]
+    [InlineData(OrganizationDbContextAuditEventPath)]
+    [InlineData(CounterpartyDbContextAuditEventPath)]
+    public void Audit_event_context_inventory_is_receiver_name_independent(string sourcePath)
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var sources = ReadBackendSources(repositoryRoot);
+        var source = sources[sourcePath];
+        const string expected = "modelBuilder.ConfigureAuditEvent(";
+        const string replacement = "alternateBuilder.ConfigureAuditEvent(";
+        Assert.Equal(1, CountAuditOccurrences(source, expected));
+        var mutated = source.Replace(expected, replacement, StringComparison.Ordinal);
+        Assert.NotEqual(source, mutated);
+        sources[sourcePath] = mutated;
+
+        var actualPaths = DiscoverAuditEventDbContextPaths(sources);
+
+        Assert.Contains(sourcePath, actualPaths);
     }
 
     [Theory]
@@ -59,7 +73,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     {
         var source = ReadRepositorySource(sourcePath);
 
-        var errors = ValidateAuditEventTenantFilter(source);
+        var errors = ValidateAuditEventTenantFilter(sourcePath, source);
 
         Assert.True(errors.Count == 0, string.Join("\n", errors));
     }
@@ -124,7 +138,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             expectedFragment,
             replacement);
 
-        var errors = ValidateAuditEventTenantFilter(mutated);
+        var errors = ValidateAuditEventTenantFilter(sourcePath, mutated);
 
         Assert.Contains(errors, error => error.Contains(
             "AuditEvent CompanyId query filter",
@@ -150,7 +164,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             2,
             CountAuditOccurrences(mutated, "modelBuilder.Entity<AuditEvent>()"));
 
-        var errors = ValidateAuditEventTenantFilter(mutated);
+        var errors = ValidateAuditEventTenantFilter(sourcePath, mutated);
 
         Assert.Contains(errors, error => error.Contains(
             "exactly one AuditEvent entity configuration",
@@ -172,10 +186,38 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         Assert.NotEqual(source, mutated);
         Assert.Equal(0, CountAuditOccurrences(mutated, expected));
 
-        var errors = ValidateAuditEventTenantFilter(mutated);
+        var errors = ValidateAuditEventTenantFilter(sourcePath, mutated);
 
         Assert.Contains(errors, error => error.Contains(
             "request-scoped ICompanyContext",
+            StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(AuditDbContextPath)]
+    [InlineData(OrganizationDbContextAuditEventPath)]
+    [InlineData(CounterpartyDbContextAuditEventPath)]
+    public void Moving_company_context_interface_to_a_dummy_method_is_rejected(
+        string sourcePath)
+    {
+        var source = ReadRepositorySource(sourcePath);
+        const string expected = "ICompanyContext companyContext";
+        Assert.Equal(1, CountAuditOccurrences(source, expected));
+        var mutated = source.Replace(
+            expected,
+            "CompanyContext companyContext",
+            StringComparison.Ordinal);
+        var finalBraceIndex = mutated.LastIndexOf('}');
+        Assert.True(finalBraceIndex >= 0);
+        mutated = mutated.Insert(
+            finalBraceIndex,
+            "\n    private static void Dummy(ICompanyContext companyContext) { }\n");
+        Assert.Equal(1, CountAuditOccurrences(mutated, expected));
+
+        var errors = ValidateAuditEventTenantFilter(sourcePath, mutated);
+
+        Assert.Contains(errors, error => error.Contains(
+            "constructor parameter",
             StringComparison.Ordinal));
     }
 
@@ -218,8 +260,28 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             StringComparison.Ordinal));
     }
 
-    [Fact]
-    public void Adding_a_later_company_context_lifetime_override_is_rejected()
+    [Theory]
+    [InlineData(
+        "builder.Services.AddSingleton<ICompanyContext, AlternateCompanyContext>();")]
+    [InlineData(
+        "builder.Services.AddSingleton(typeof(ICompanyContext), "
+        + "typeof(AlternateCompanyContext));")]
+    [InlineData(
+        "builder.Services.Replace(ServiceDescriptor.Singleton<ICompanyContext, "
+        + "AlternateCompanyContext>());")]
+    [InlineData(
+        "builder.Services.Add(ServiceDescriptor.Singleton(typeof(ICompanyContext), "
+        + "typeof(AlternateCompanyContext)));")]
+    [InlineData(
+        "builder.Services.Add(new ServiceDescriptor(typeof(ICompanyContext), "
+        + "typeof(AlternateCompanyContext), ServiceLifetime.Singleton));")]
+    [InlineData(
+        "builder.Services.Replace(ServiceDescriptor.Describe(typeof(ICompanyContext), "
+        + "typeof(AlternateCompanyContext), ServiceLifetime.Singleton));")]
+    [InlineData("builder.Services.RemoveAll<ICompanyContext>();")]
+    [InlineData("builder.Services.RemoveAll(typeof(ICompanyContext));")]
+    public void Adding_a_later_company_context_lifetime_override_is_rejected(
+        string unsafeRegistration)
     {
         var repositoryRoot = FindRepositoryRoot();
         var sources = ReadBackendSources(repositoryRoot);
@@ -230,7 +292,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         var mutated = programSource.Replace(
             safeRegistration,
             safeRegistration
-            + "\nbuilder.Services.AddSingleton<ICompanyContext, AlternateCompanyContext>();",
+            + "\n"
+            + unsafeRegistration,
             StringComparison.Ordinal);
         Assert.NotEqual(programSource, mutated);
         sources[CompanyContextRegistrationPath] = mutated;
@@ -242,19 +305,27 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             StringComparison.Ordinal));
     }
 
-    private static IReadOnlyList<string> ValidateAuditEventTenantFilter(string source)
+    private static IReadOnlyList<string> ValidateAuditEventTenantFilter(
+        string sourcePath,
+        string source)
     {
         var errors = new List<string>();
         var searchable = MaskCommentsAndNonInterpolatedLiterals(source);
         var compact = Regex.Replace(searchable, @"\s+", string.Empty);
-        const string expectedCompanyContext = "ICompanyContextcompanyContext";
-        var companyContextCount = CountAuditOccurrences(compact, expectedCompanyContext);
-        if (companyContextCount != 1)
+        var normalized = Regex.Replace(searchable, @"\s+", " ");
+        var contextTypeName = ReviewedAuditEventDbContexts[sourcePath];
+        var constructorPattern = new Regex(
+            @"\bclass\s+"
+            + Regex.Escape(contextTypeName)
+            + @"\s*\([^)]*\bICompanyContext\s+companyContext(?:\s*,|\s*\))",
+            RegexOptions.CultureInvariant);
+        var constructorParameterCount = constructorPattern.Matches(normalized).Count;
+        if (constructorParameterCount != 1)
         {
             errors.Add(
                 "An AuditEvent-owning DbContext must receive the request-scoped "
-                + "ICompanyContext through its constructor exactly once; found "
-                + companyContextCount.ToString(
+                + "ICompanyContext through its constructor parameter exactly once; found "
+                + constructorParameterCount.ToString(
                     System.Globalization.CultureInfo.InvariantCulture)
                 + ".");
         }
@@ -296,10 +367,30 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ".AddScoped<ICompanyContext,CompanyContext>();";
         var expectedCount = 0;
         var registrationCount = 0;
-        var registrationPattern = new Regex(
-            @"\.(?:Try)?Add(?:Scoped|Singleton|Transient)"
-            + @"<ICompanyContext(?:,[^>]+)?>\(",
-            RegexOptions.CultureInvariant);
+        var registrationPatterns = new[]
+        {
+            new Regex(
+                @"\.(?:Try)?Add(?:Scoped|Singleton|Transient)(?:"
+                + @"<ICompanyContext(?:,[^>]+)?>\(|"
+                + @"\(typeof\(ICompanyContext\),)",
+                RegexOptions.CultureInvariant),
+            new Regex(
+                @"ServiceDescriptor\.(?:Scoped|Singleton|Transient)(?:"
+                + @"<ICompanyContext(?:,[^>]+)?>\(|"
+                + @"\(typeof\(ICompanyContext\),)",
+                RegexOptions.CultureInvariant),
+            new Regex(
+                @"new(?:global::)?(?:[\p{L}_][\p{L}\p{Nd}_]*\.)*"
+                + @"ServiceDescriptor\(typeof\(ICompanyContext\),",
+                RegexOptions.CultureInvariant),
+            new Regex(
+                @"ServiceDescriptor\.Describe\(typeof\(ICompanyContext\),",
+                RegexOptions.CultureInvariant),
+            new Regex(
+                @"\.(?:Try)?RemoveAll(?:<ICompanyContext>\(\)|"
+                + @"\(typeof\(ICompanyContext\)\))",
+                RegexOptions.CultureInvariant),
+        };
 
         foreach (var source in sources.Values)
         {
@@ -308,7 +399,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 @"\s+",
                 string.Empty);
             expectedCount += CountAuditOccurrences(compact, expectedRegistration);
-            registrationCount += registrationPattern.Matches(compact).Count;
+            registrationCount += registrationPatterns.Sum(
+                pattern => pattern.Matches(compact).Count);
         }
 
         if (expectedCount != 1)
@@ -350,6 +442,19 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 path => Path.GetRelativePath(repositoryRoot, path).Replace('\\', '/'),
                 File.ReadAllText,
                 StringComparer.Ordinal);
+    }
+
+    private static IReadOnlySet<string> DiscoverAuditEventDbContextPaths(
+        IReadOnlyDictionary<string, string> sources)
+    {
+        var configureAuditEventInvocation = new Regex(
+            @"\.\s*ConfigureAuditEvent\s*\(",
+            RegexOptions.CultureInvariant);
+        return sources
+            .Where(file => configureAuditEventInvocation.IsMatch(
+                MaskCommentsAndNonInterpolatedLiterals(file.Value)))
+            .Select(file => file.Key)
+            .ToHashSet(StringComparer.Ordinal);
     }
 
     private static bool IsAuditBuildOutput(string path)
