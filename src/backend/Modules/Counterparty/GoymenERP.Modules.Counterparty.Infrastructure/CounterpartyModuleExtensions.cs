@@ -48,6 +48,9 @@ public static class CounterpartyModuleExtensions
         services.TryAddSingleton<
             ICounterpartyLinkCandidateSqlObserver,
             NullCounterpartyLinkCandidateSqlObserver>();
+        services.TryAddSingleton<
+            ICounterpartyActiveStateCommandProbe,
+            NullCounterpartyActiveStateCommandProbe>();
         services.AddSingleton(new CounterpartyCursorRuntimeOptions(
             allowEphemeralCursorKey,
             configuration["Counterparty:CursorSigningKey"]));
