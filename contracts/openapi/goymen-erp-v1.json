@@ -2671,14 +2671,6 @@
             }
           },
           {
-            "name": "companyId",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
             "name": "X-Correlation-Id",
             "in": "header",
             "description": "Optional client correlation identifier; the server creates one when absent.",
@@ -2756,8 +2748,7 @@
             "x-erp-problem-codes": [
               "correlation_metadata_invalid",
               "validation_failed"
-            ],
-            "x-erp-empty-body-possible": true
+            ]
           },
           "404": {
             "description": "Not Found",

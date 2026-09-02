@@ -90,7 +90,6 @@ internal sealed class CounterpartyReadService(
 
     public async Task<CounterpartyDetailView?> GetAuthorizedPartyAsync(
         Guid partyId,
-        Guid? companyId,
         CancellationToken cancellationToken = default)
     {
         if (partyId == Guid.Empty)
@@ -98,9 +97,7 @@ internal sealed class CounterpartyReadService(
             return null;
         }
 
-        var authorizedCompanyIds = await ResolveAuthorizedCompanyIdsForDetailAsync(
-            companyId,
-            cancellationToken);
+        var authorizedCompanyIds = await ResolveAuthorizedCompanyIdsForDetailAsync(cancellationToken);
         if (authorizedCompanyIds.Count == 0)
         {
             return null;
@@ -662,20 +659,11 @@ internal sealed class CounterpartyReadService(
     }
 
     private async Task<HashSet<Guid>> ResolveAuthorizedCompanyIdsForDetailAsync(
-        Guid? requestedCompanyId,
         CancellationToken cancellationToken)
     {
-        Guid? effectiveCompanyId = requestedCompanyId;
-        if (companyContext.IsResolved)
-        {
-            if (requestedCompanyId.HasValue
-                && requestedCompanyId.Value != companyContext.CompanyId)
-            {
-                return [];
-            }
-
-            effectiveCompanyId = companyContext.CompanyId;
-        }
+        var effectiveCompanyId = companyContext.IsResolved
+            ? companyContext.CompanyId
+            : (Guid?)null;
 
         var activeAuthorizedCompanyIds = await ResolveActiveAuthorizedCompanyIdsAsync(
             cancellationToken);

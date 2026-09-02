@@ -201,6 +201,37 @@ public sealed class CounterpartyReadAcceptanceTests(GoymenErpApiFactory factory)
         });
     }
 
+    [Theory]
+    [InlineData("companyId=10000000-0000-0000-0000-000000000001")]
+    [InlineData("companyId=not-a-guid")]
+    [InlineData("CompanyId=10000000-0000-0000-0000-000000000001")]
+    public async Task Detail_company_scope_query_fails_closed_without_exposing_scope_data(string query)
+    {
+        await PrepareScenarioAsync();
+        using var client = factory.CreateClientFor(TestUsers.GroupAdmin);
+
+        using var response = await client.GetAsync(
+            $"/api/v1/counterparties/{SharedPartyId}?{query}");
+
+        var body = await AssertProblemCodeAsync(
+            response,
+            HttpStatusCode.BadRequest,
+            CounterpartyProblemCodesV1.ValidationFailed);
+        AssertPrivateNoStore(response);
+        Assert.DoesNotContain(
+            SharedPartyId.ToString("D"),
+            body,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(
+            CompanyAIntegrationSecret,
+            body,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            CompanyBIntegrationSecret,
+            body,
+            StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Narrow_scope_and_missing_detail_are_indistinguishable()
     {
