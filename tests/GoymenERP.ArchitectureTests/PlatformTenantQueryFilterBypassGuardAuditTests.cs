@@ -230,7 +230,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         var mutated = programSource.Replace(
             safeRegistration,
             safeRegistration
-            + "\nbuilder.Services.AddSingleton<ICompanyContext, CompanyContext>();",
+            + "\nbuilder.Services.AddSingleton<ICompanyContext, AlternateCompanyContext>();",
             StringComparison.Ordinal);
         Assert.NotEqual(programSource, mutated);
         sources[CompanyContextRegistrationPath] = mutated;
@@ -297,7 +297,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         var expectedCount = 0;
         var registrationCount = 0;
         var registrationPattern = new Regex(
-            @"\.Add(?:Scoped|Singleton|Transient)<ICompanyContext(?:,CompanyContext)?>\(",
+            @"\.(?:Try)?Add(?:Scoped|Singleton|Transient)"
+            + @"<ICompanyContext(?:,[^>]+)?>\(",
             RegexOptions.CultureInvariant);
 
         foreach (var source in sources.Values)
