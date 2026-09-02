@@ -588,9 +588,15 @@ describe('C-01 group mode is not claimed (Codex/ChatGPT #147 P1-3)', () => {
       ),
     )
 
+    // The screen re-authorizes on entry (#146/#148), so it is briefly absent while
+    // the fresh capability lands. Waiting for it back is the point: asserting the
+    // instant the picker settles measured a frame the user never sees, and it was
+    // the source of a real flake.
+    const searchbox = await screen.findByRole('searchbox')
+
     // Carrying A's search term into B would silently filter B's list by a term the
     // user never chose for B — and the screen would look like B simply has no records.
-    expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('')
+    expect((searchbox as HTMLInputElement).value).toBe('')
     expect((screen.getByLabelText('Şirket hesabı durumu') as HTMLSelectElement).value).toBe('all')
   })
 })

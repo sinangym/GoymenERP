@@ -187,6 +187,17 @@ export interface ShellState {
    * authorization gate is worse than none.
    */
   readonly routeEntryKey: string | null
+
+  /**
+   * The committed-context revision whose capability snapshot came straight from
+   * the server and has not been spent on a route entry yet.
+   *
+   * Bootstrap and a company switch both commit a freshly fetched snapshot, so the
+   * FIRST entry after one of them is already verified — asking again buys no
+   * freshness and costs every gated route an extra round-trip. Every entry after
+   * that must ask, which is the case #146/#148 are about.
+   */
+  readonly freshCapabilityRevision: number | null
   /** Open scopes that block a silent switch (dirty form, edit workspace, approval preview). */
   readonly dirtyScopes: readonly string[]
 }
@@ -259,6 +270,7 @@ export const initialShellState: ShellState = {
   verifiedEntryGeneration: 0,
   routeEntryFence: 0,
   routeEntryKey: null,
+  freshCapabilityRevision: null,
   dirtyScopes: [],
 }
 
@@ -306,6 +318,7 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
         verifiedFormerContext: null,
         bootstrappedSessionEpoch: state.sessionEpoch,
         committedContextRevision: state.committedContextRevision + 1,
+        freshCapabilityRevision: state.committedContextRevision + 1,
       }
     }
 
@@ -331,11 +344,15 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
       // Only a committed context can have a route entry to verify.
       if (state.activeContext === null) return state
       if (state.routeEntryKey === event.key) return state
+      const generation = state.routeEntryGeneration + 1
+      const spendFresh = state.freshCapabilityRevision === state.committedContextRevision
       return {
         ...state,
-        routeEntryGeneration: state.routeEntryGeneration + 1,
+        routeEntryGeneration: generation,
         routeEntryFence: state.requestFenceGeneration,
         routeEntryKey: event.key,
+        verifiedEntryGeneration: spendFresh ? generation : state.verifiedEntryGeneration,
+        freshCapabilityRevision: spendFresh ? null : state.freshCapabilityRevision,
       }
     }
 
@@ -405,6 +422,7 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
         pendingTarget: null,
         verifiedFormerContext: null,
         committedContextRevision: state.committedContextRevision + 1,
+        freshCapabilityRevision: state.committedContextRevision + 1,
         // The server authenticated this switch, so a former-context 401 held
         // during it cannot have been about the session. Discard it.
         pendingFormerSessionFailure: null,

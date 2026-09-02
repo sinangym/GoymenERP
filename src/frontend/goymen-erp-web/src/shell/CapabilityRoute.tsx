@@ -58,7 +58,15 @@ export function CapabilityRoute({
   // close. Measured — that produced two reads per entry and the first one was
   // unauthorized-for-this-entry by construction. The open frame is the whole
   // thing this gate exists to remove, so it cannot be opened even once.
-  const entryKey = companyId === null ? null : `${companyId}|${pathname}`
+  // Keyed on the PATH only, deliberately.
+  //
+  // A company switch already re-fetches capabilities through REAUTH and commits
+  // them atomically, so re-verifying here duplicated that work — and the extra
+  // round-trip closed the gate mid-switch, which is what made
+  // `is remounted on a context change` and `is ignored after the switch` flaky.
+  // The gate exists for the case the switch machinery does NOT cover: re-entering
+  // a route inside one committed context.
+  const entryKey = companyId === null ? null : pathname
   // Read from SHARED state, not a component ref. A ref read during render breaks
   // render purity: oxlint flags it and it made three consecutive full runs
   // non-deterministic. A flaky authorization gate is worse than none.
