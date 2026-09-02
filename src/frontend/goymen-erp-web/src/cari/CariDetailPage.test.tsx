@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient } from '@tanstack/react-query'
 import { RouterProvider, createMemoryRouter } from 'react-router'
@@ -74,7 +74,11 @@ function installFetch(config: Config = {}) {
         return json({
           contractVersion: SHELL_CAPABILITY_CONTRACT_VERSION,
           generation: `gen-${companyId?.slice(-1) ?? 'x'}`,
-          capabilities: config.capabilities ?? [CAPABILITY.cariPartiesList],
+          // The detail is a separate grant (#182). The default here holds BOTH because
+          // these cases are about the screen's content; the grant matrix is exercised
+          // explicitly in the capability tests below.
+          capabilities:
+            config.capabilities ?? [CAPABILITY.cariPartiesList, CAPABILITY.cariPartiesDetail],
         })
       if (/\/counterparties\/[^?]+/.test(url))
         return (config.detail ?? (() => json(detail())))(companyId, url)
@@ -291,5 +295,69 @@ describe('C-03 accessibility', () => {
     await screen.findByRole('heading', { name: /Örnek Metal/ }, CHAIN)
     expect(factValue('Taraf durumu')).toBe('Pasif')
     expect(factValue('Şirket hesabı durumu')).toBe('Pasif')
+  })
+})
+
+describe('C-03 capability matrix — the detail is a SEPARATE grant (#182)', () => {
+  // Codex required this matrix on #172: holding the list must not imply holding
+  // the detail, and the reserved static paths must not be swallowed by the param
+  // route. Each case asserts the REQUEST COUNT as well as the render, because
+  // "did not display it" and "did not ask for it" are different guarantees and
+  // only the second one is authorization.
+
+  it('list-only: the detail route closes and no detail read is issued', async () => {
+    const { calls } = installFetch({ capabilities: [CAPABILITY.cariPartiesList] })
+    renderAt(`/cari/${PARTY}`)
+
+    expect(await findStateBlock('not-found')).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: /Cari 360/i })).toBeNull()
+    expect(
+      calls.some((c) => c.url.includes(`/counterparties/${PARTY}`)),
+      'a detail read was issued without the detail capability',
+    ).toBe(false)
+  })
+
+  it('detail-only: the detail opens even without the list grant', async () => {
+    // The two grants are independent in both directions. If the detail silently
+    // required the list, the frontend would be narrowing a grant the server made.
+    installFetch({ capabilities: [CAPABILITY.cariPartiesDetail] })
+    renderAt(`/cari/${PARTY}`)
+
+    expect(await screen.findByRole('heading', { name: /Cari 360/i })).toBeTruthy()
+  })
+
+  it('both: the detail opens', async () => {
+    installFetch({
+      capabilities: [CAPABILITY.cariPartiesList, CAPABILITY.cariPartiesDetail],
+    })
+    renderAt(`/cari/${PARTY}`)
+    expect(await screen.findByRole('heading', { name: /Cari 360/i })).toBeTruthy()
+  })
+
+  it('none: the detail route closes non-disclosingly and asks for nothing', async () => {
+    const { calls } = installFetch({ capabilities: [] })
+    renderAt(`/cari/${PARTY}`)
+
+    expect(await findStateBlock('not-found')).toBeTruthy()
+    expect(calls.some((c) => c.url.includes('/counterparties'))).toBe(false)
+  })
+
+  it('reserved static paths are not read as a party id', async () => {
+    // `/cari/yeni` and `/cari/sirkete-bagla` are declared by the server and not
+    // implemented here. Without a reserved route ahead of `:partyId`, the detail
+    // screen mounts and issues a read for a record that cannot exist.
+    for (const path of ['/cari/yeni', '/cari/sirkete-bagla']) {
+      cleanup()
+      const { calls } = installFetch({
+        capabilities: [CAPABILITY.cariPartiesList, CAPABILITY.cariPartiesDetail],
+      })
+      renderAt(path)
+
+      expect(await findStateBlock('not-found'), `${path} did not close`).toBeTruthy()
+      expect(
+        calls.some((c) => c.url.includes('/counterparties/')),
+        `${path} was read as a party id`,
+      ).toBe(false)
+    }
   })
 })

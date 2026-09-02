@@ -33,7 +33,8 @@ import {
 } from './contract'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
-import { contextKeyString, contextKey } from '../shell/shellState'
+import { contextKeyString, contextKey, hasCapability } from '../shell/shellState'
+import { CAPABILITY } from '../shell/capabilities'
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './CariListPage.module.css'
@@ -123,6 +124,8 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
    */
   // The central security boundary for every authenticated read on this screen.
   const boundary = useAuthBoundary()
+  // The detail is a SEPARATE grant (#182); holding the list does not imply it.
+  const canOpenDetail = hasCapability(shell, CAPABILITY.cariPartiesDetail)
 
   const singleCompanyContext = scopeMode === 'single' && activeCompanyId !== null
 
@@ -473,13 +476,21 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
                           phone. The accessible name includes the legal name so a
                           screen-reader user hearing the link out of context knows
                           which counterparty it opens. */}
-                      <Link
-                        className={styles.rowLink}
-                        to={`/cari/${item.id}`}
-                        aria-label={`${item.code} — ${item.legalName}`}
-                      >
-                        {item.code}
-                      </Link>
+                      {canOpenDetail ? (
+                        <Link
+                          className={styles.rowLink}
+                          to={`/cari/${item.id}`}
+                          aria-label={`${item.code} — ${item.legalName}`}
+                        >
+                          {item.code}
+                        </Link>
+                      ) : (
+                        // No detail grant: the code is still shown, but as text.
+                        // Rendering a link the route would refuse anyway offers an
+                        // action the caller is not entitled to and tells them the
+                        // screen exists. Codex caught this on #172 (P1-1).
+                        item.code
+                      )}
                     </td>
                     <td>
                       <span className={styles.legalName}>{item.legalName}</span>

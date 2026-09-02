@@ -82,7 +82,8 @@ function installFetch(config: Config = {}) {
       return json({
         contractVersion: SHELL_CAPABILITY_CONTRACT_VERSION,
         generation: companyId === B_ID ? 'gen-b' : 'gen-1',
-        capabilities: config.capabilities ?? [CAPABILITY.cariPartiesList],
+        capabilities:
+          config.capabilities ?? [CAPABILITY.cariPartiesList, CAPABILITY.cariPartiesDetail],
       })
     }
     if (url.includes('/counterparties'))
@@ -953,6 +954,23 @@ describe('non-disclosure: a denied route and an unknown route are indistinguisha
 })
 
 describe('C-01 → C-03 navigation (spec §2.1)', () => {
+  it('without the detail grant the code is TEXT, not a link', () => {
+    // Holding the list does not imply holding the detail (#182). Rendering a link
+    // the route would refuse offers an action the caller is not entitled to and
+    // tells them the screen exists. Codex caught this on #172 (P1-1).
+    //
+    // Written because making the link unconditional broke no other test: the
+    // conditional was unproven, which in an authorization path is the same as
+    // absent.
+    return (async () => {
+      installFetch({ capabilities: [CAPABILITY.cariPartiesList] })
+      renderAt('/cari')
+      const row = await screen.findByRole('row', { name: /C-0001/ })
+      expect(within(row).getByText('C-0001')).toBeTruthy()
+      expect(within(row).queryByRole('link')).toBeNull()
+    })()
+  })
+
   it('the code opens that counterparty, and names it for screen readers', async () => {
     installFetch()
     renderAt('/cari')
