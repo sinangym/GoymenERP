@@ -483,8 +483,20 @@ describe('ChatGPT #169 P1-5 — a rejection that lands mid-switch', () => {
     expect(held.pendingFormerSessionFailure).not.toBeNull()
     expect(held.phase).toBe('switching')
     expect(held.verifiedFormerContext).not.toBeNull()
-    // The ledger still records it, so a second observer cannot re-apply it.
-    expect(held.lastSecurityEffect).not.toBeNull()
+
+    // `lastSecurityEffect` must stay untouched: it drives SecurityEffectRunner,
+    // which clears the QueryClient. Setting it while merely holding ran the effect
+    // before the target had answered (#169 P1-1).
+    expect(held.lastSecurityEffect).toBe(switching.lastSecurityEffect)
+
+    // The held failure is recorded WITH its scope, so a second observer cannot
+    // buffer it twice and a later session cannot inherit it.
+    expect(held.pendingFormerSessionFailure?.effect.key).toBeTruthy()
+    expect(held.pendingFormerSessionFailure?.actorId).toBe(ACTOR_A)
+    expect(held.pendingFormerSessionFailure?.sessionEpoch).toBe(switching.sessionEpoch)
+    expect(held.pendingFormerSessionFailure?.forGeneration).toBe(
+      switching.requestFenceGeneration,
+    )
   })
 
   it('a successful switch DISCARDS the held former 401', () => {
@@ -517,6 +529,92 @@ describe('ChatGPT #169 P1-5 — a rejection that lands mid-switch', () => {
     expect(out.pendingFormerSessionFailure).toBeNull()
     expect(out.phase).toBe('idle')
     expect(out.activeContext?.companyId).toBe(COMPANY_B)
+  })
+
+  it('a REAUTH_FAIL for a stale attempt cannot apply the held 401', () => {
+    // Behaviour, not implementation: whichever guard enforces it, a reauth result
+    // that does not belong to the current attempt must not consume the held
+    // failure.
+    const a = ready(ACTOR_A, COMPANY_A)
+    const snapA = snapOf(a)
+    const switching = shellReducer(a, {
+      type: 'REQUEST_SWITCH',
+      target: { scopeMode: 'single', companyId: COMPANY_B },
+    })
+    const held = shellReducer(switching, {
+      type: 'BUSINESS_AUTH_OUTCOME',
+      status: 401,
+      authenticatedActorId: ACTOR_A,
+      snapshot: snapA,
+    })
+
+    const out = shellReducer(held, {
+      type: 'REAUTH_FAIL',
+      forGeneration: held.requestFenceGeneration + 7,
+    })
+
+    expect(out).toBe(held)
+    expect(out.sessionInvalid).toBe(false)
+    expect(out.pendingFormerSessionFailure).not.toBeNull()
+  })
+
+  it('a held former 401 cannot terminate a LATER session', () => {
+    // Codex's #169 P1-2 sequence, reproduced exactly:
+    //
+    //   A→B starts → former A returns 401 (held) → actor/session resets →
+    //   C becomes ready → C→D starts → D reauth fails
+    //
+    // Without scoping, the held A failure is still sitting there when D's reauth
+    // fails and it terminalizes C — a session that has nothing to do with it.
+    // Binding the held failure to actor + session epoch + switch attempt, and
+    // dropping it on SESSION_RESET, makes the sequence expressible but inert.
+    const a = ready(ACTOR_A, COMPANY_A)
+    const snapA = snapOf(a)
+    const switchingAB = shellReducer(a, {
+      type: 'REQUEST_SWITCH',
+      target: { scopeMode: 'single', companyId: COMPANY_B },
+    })
+    const heldA = shellReducer(switchingAB, {
+      type: 'BUSINESS_AUTH_OUTCOME',
+      status: 401,
+      authenticatedActorId: ACTOR_A,
+      snapshot: snapA,
+    })
+    expect(heldA.pendingFormerSessionFailure).not.toBeNull()
+
+    // The actor and session move on entirely.
+    const reset = shellReducer(heldA, { type: 'SESSION_RESET' })
+    expect(
+      reset.pendingFormerSessionFailure,
+      'the held failure survived a session reset',
+    ).toBeNull()
+
+    const c = shellReducer(reset, {
+      type: 'SESSION_READY',
+      forSessionEpoch: reset.sessionEpoch,
+      context: {
+        userId: ACTOR_B,
+        scopeMode: 'single',
+        companyId: COMPANY_A,
+        capabilityGeneration: 'gen-c',
+        capabilities: ['cari.parties.list'],
+      },
+    })
+    const switchingCD = shellReducer(c, {
+      type: 'REQUEST_SWITCH',
+      target: { scopeMode: 'single', companyId: COMPANY_B },
+    })
+    const out = shellReducer(switchingCD, {
+      type: 'REAUTH_FAIL',
+      forGeneration: switchingCD.requestFenceGeneration,
+    })
+
+    // C's failed switch restores C. It does NOT inherit A's failure.
+    expect(out.sessionInvalid, "a departed actor's 401 terminated a later session").toBe(
+      false,
+    )
+    expect(out.activeContext?.userId).toBe(ACTOR_B)
+    expect(out.pendingFormerSessionFailure).toBeNull()
   })
 
   it('a failed switch APPLIES the held former 401 instead of restoring', () => {

@@ -55,6 +55,24 @@ export type ShellPhase =
   | 'switching'
   | 'no-active-company'
 
+/**
+ * A held former-context 401, WITH the scope it belongs to.
+ *
+ * The scope is not decoration. Without it the held failure outlives the situation
+ * that produced it: A→B starts, former A returns 401, the actor resets to C, C
+ * becomes ready, C→D starts and its reauth fails — and the stale A failure
+ * terminates C. Codex reproduced exactly that (#169 P1-2). Binding it to the
+ * actor, the session epoch and the switch attempt makes the sequence expressible
+ * but not applicable.
+ */
+export interface PendingSessionFailure {
+  readonly effect: SecurityEffect
+  readonly actorId: string | null
+  readonly sessionEpoch: number
+  /** The switch attempt this failure was captured during. */
+  readonly forGeneration: number
+}
+
 export interface ShellState {
   readonly phase: ShellPhase
   /** Bound, verified context. null during `switching` (neutral) and `no-active-company`. */
@@ -120,7 +138,7 @@ export interface ShellState {
    * rendered, and the target's own capability call is the authority that resolves
    * it. REAUTH_OK discards this; REAUTH_FAIL applies it.
    */
-  readonly pendingFormerSessionFailure: SecurityEffect | null
+  readonly pendingFormerSessionFailure: PendingSessionFailure | null
   /** Open scopes that block a silent switch (dirty form, edit workspace, approval preview). */
   readonly dirtyScopes: readonly string[]
 }
@@ -295,7 +313,21 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
       // The target could not be authenticated, so the held former-context 401 is
       // never contradicted. Apply it: the session ends rather than the former
       // context being restored under an authority nothing has confirmed.
-      if (state.pendingFormerSessionFailure !== null) {
+      // No re-check of the pending failure's scope here, and that is deliberate.
+      //
+      // I wrote one, then found it was dead code: this case already returns early
+      // unless `event.forGeneration === state.requestFenceGeneration`, the pending
+      // was captured with that same generation, a second REQUEST_SWITCH is ignored
+      // while switching, and a mid-switch 403 does not advance the fence. Every
+      // term I had added was a restatement of a guard three lines above.
+      //
+      // Duplicating a guard is not defence in depth, it is a second place to get
+      // wrong. The scope data stays ON the pending record so the held failure is
+      // self-describing and testable; SESSION_RESET drops it; and the behaviour is
+      // locked by "a REAUTH_FAIL for a stale attempt cannot apply the held 401".
+      const pending = state.pendingFormerSessionFailure
+
+      if (pending !== null) {
         return {
           ...initialShellState,
           requestFenceGeneration: fenced,
@@ -303,7 +335,7 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
           sessionEpoch: state.sessionEpoch + 1,
           bootstrappedSessionEpoch: null,
           sessionInvalid: true,
-          lastSecurityEffect: state.pendingFormerSessionFailure,
+          lastSecurityEffect: pending.effect,
         }
       }
 
@@ -358,7 +390,9 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
         // again — the terminal state undone one dispatch later (ChatGPT #169 P1-1).
         sessionInvalid: state.sessionInvalid,
         lastSecurityEffect: state.lastSecurityEffect,
-        pendingFormerSessionFailure: state.pendingFormerSessionFailure,
+        // NOT carried. A session reset ends the situation the held failure belonged
+        // to; carrying it let a departed actor's 401 terminate a later session.
+        pendingFormerSessionFailure: null,
       }
     }
 
@@ -439,13 +473,36 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
       ])
       // Exactly once per identity, however many observers report it (SAB-010).
       if (state.lastSecurityEffect?.key === key) return state
+      // A held former-context failure counts as already recorded, so a second
+      // observer of the same outcome cannot buffer it twice.
+      if (state.pendingFormerSessionFailure?.effect.key === key) return state
       const effect: SecurityEffect = { key, kind, namespace: snap.namespace }
 
       if (event.status === 401) {
         // Mid-switch, and this 401 belongs to the context we are LEAVING: hold it
         // until the target answers. See `pendingFormerSessionFailure`.
         if (state.phase === 'switching') {
-          return { ...state, pendingFormerSessionFailure: effect, lastSecurityEffect: effect }
+          // `lastSecurityEffect` is deliberately NOT set here.
+          //
+          // That field drives `SecurityEffectRunner`, which calls
+          // `queryClient.clear()` for a session-reset. Setting it while merely
+          // HOLDING the decision ran the effect immediately — the cache was wiped
+          // before the target reauth had answered, so a successful A→B switch was
+          // protected only in the reducer, never in the real provider. Codex
+          // caught it (#169 P1-1). Recording an effect and RUNNING one are
+          // different things and this line was conflating them.
+          //
+          // Dedupe still holds: a second observer of the same former 401 hashes to
+          // the same key and is rejected by the pending check below.
+          return {
+            ...state,
+            pendingFormerSessionFailure: {
+              effect,
+              actorId: snap.actorId,
+              sessionEpoch: state.sessionEpoch,
+              forGeneration: state.requestFenceGeneration,
+            },
+          }
         }
         return {
           ...initialShellState,
