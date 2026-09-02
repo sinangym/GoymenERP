@@ -20,6 +20,7 @@ internal sealed class CounterpartyCommandService(
     ICompanyContext companyContext,
     IErpAuthorizationService authorizationService,
     IAuditEventCollector auditEventCollector,
+    ICounterpartyActiveStateCommandProbe activeStateCommandProbe,
     ILogger<CounterpartyCommandService> logger)
     : ICounterpartyCommandService
 {
@@ -187,6 +188,16 @@ internal sealed class CounterpartyCommandService(
                 concurrencyContext: null,
                 cancellationToken);
         }
+
+        await activeStateCommandProbe.AfterExpectedVersionValidatedAsync(
+            new CounterpartyActiveStateCommandObservation(
+                metadata.CompanyId,
+                partyId,
+                command.ExpectedVersion,
+                account.Version,
+                metadata.CorrelationId,
+                idempotencyKeyHash),
+            cancellationToken);
 
         var versionBefore = account.Version;
         var isActiveBefore = account.IsActive;
