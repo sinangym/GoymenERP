@@ -169,6 +169,21 @@ class EvidenceContractTests(unittest.TestCase):
         with self.assertRaisesRegex(validator.ContractError, "CASE_ID"):
             self.validate()
 
+    def test_second_case_id_in_one_name_fails(self):
+        self.junit.write_text(
+            junit_xml(
+                (
+                    "SAB-006",
+                    "SAB-007",
+                    "SAB-008",
+                    "SAB-009 also claims SAB-010",
+                )
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(validator.ContractError, "exactly one SAB ID"):
+            self.validate()
+
     def test_nonzero_root_or_suite_counter_fails(self):
         for level in ("root", "suite"):
             for index, counter in enumerate(("failures", "errors", "skipped")):

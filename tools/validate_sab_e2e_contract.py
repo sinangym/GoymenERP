@@ -22,6 +22,7 @@ SPEC_PATH = "tests/e2e/sab/sab.spec.ts"
 SOURCE_MARKERS = (CONFIG_PATH, SPEC_PATH)
 REQUIRED_PATHS = (PACKAGE_PATH, LOCKFILE_PATH, CONFIG_PATH, SPEC_PATH)
 CASE_ID_PATTERN = re.compile(r"^(SAB-\d{3})(?:\s|$)")
+ANY_CASE_ID_PATTERN = re.compile(r"(?<![A-Z0-9-])SAB-\d{3}(?![A-Z0-9-])")
 PINNED_VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
 
 
@@ -173,10 +174,15 @@ def validate_evidence(junit_path: str | pathlib.Path, html_path: str | pathlib.P
     )
     case_ids: list[str] = []
     for case in cases:
-        match = CASE_ID_PATTERN.match(case.attrib.get("name", ""))
+        name = case.attrib.get("name", "")
+        match = CASE_ID_PATTERN.match(name)
         require(
             match is not None,
             "SAB_JUNIT_CASE_ID: every testcase name must start with one SAB ID",
+        )
+        require(
+            ANY_CASE_ID_PATTERN.findall(name) == [match.group(1)],
+            "SAB_JUNIT_CASE_ID: every testcase name must contain exactly one SAB ID",
         )
         case_ids.append(match.group(1))
     require(
