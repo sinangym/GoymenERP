@@ -139,6 +139,54 @@ export interface ShellState {
    * it. REAUTH_OK discards this; REAUTH_FAIL applies it.
    */
   readonly pendingFormerSessionFailure: PendingSessionFailure | null
+
+  /**
+   * Bumped every time a capability-gated business route is ENTERED.
+   *
+   * A capability snapshot is taken at bootstrap and at company switch, and until
+   * now nothing re-took it when a route was re-entered. Combined with the global
+   * `staleTime`, that left a real hole: open /cari, leave, have the grant revoked
+   * server-side, come Back within 30 seconds, and the cached rows render with no
+   * capability call and no business read at all. Issue #165's boundary cannot
+   * help, because it can only judge a request that was actually sent.
+   *
+   * Codex traced it on both C-01 (#146) and C-03 (#148). The generation is what
+   * makes an entry addressable: business query keys carry it, so a new entry
+   * cannot be served from the previous entry's cache.
+   */
+  readonly routeEntryGeneration: number
+
+  /**
+   * The entry generation for which a FRESH capability response has landed.
+   *
+   * While this trails `routeEntryGeneration` the gate renders a neutral loading
+   * block. Rendering cached success during revalidation is exactly the frame
+   * Codex asked to close, so "stale-while-revalidate" is not available here.
+   */
+  readonly verifiedEntryGeneration: number
+
+  /**
+   * The request fence as it stood when the current entry began.
+   *
+   * A capability response is only allowed to write back if nothing security
+   * relevant happened while it was in flight. Without this, an entry
+   * verification that started BEFORE a 403 could land after it and restore the
+   * very capability the server had just refused — the entry gate undoing the
+   * boundary. Same shape as the snapshot/currentness rule everywhere else here.
+   */
+  readonly routeEntryFence: number
+
+  /**
+   * The `companyId|pathname` the current entry belongs to, or null before any
+   * entry has been registered.
+   *
+   * Derived from SHARED state rather than a component ref on purpose. The first
+   * version marked the entry with a `useRef` read during render, which closed the
+   * gate on the first paint but broke the rules of render purity — oxlint flagged
+   * it and three consecutive full runs were non-deterministic. A flaky
+   * authorization gate is worse than none.
+   */
+  readonly routeEntryKey: string | null
   /** Open scopes that block a silent switch (dirty form, edit workspace, approval preview). */
   readonly dirtyScopes: readonly string[]
 }
@@ -154,6 +202,9 @@ export type ShellEvent =
   | { type: 'REQUEST_SWITCH'; target: SwitchTarget }
   | { type: 'CONFIRM_SWITCH_DISCARD' }
   | { type: 'CONFIRM_SWITCH_STAY' }
+  | { type: 'ROUTE_ENTRY'; key: string }
+  | { type: 'ROUTE_EXIT' }
+  | { type: 'ROUTE_ENTRY_VERIFIED'; forEntry: number; capabilities: readonly string[]; generation: string }
   | { type: 'REAUTH_OK'; forGeneration: number; context: CompanyContext }
   | { type: 'REAUTH_FAIL'; forGeneration: number }
   | { type: 'CAPABILITY_REVOKED' }
@@ -204,6 +255,10 @@ export const initialShellState: ShellState = {
   sessionInvalid: false,
   lastSecurityEffect: null,
   pendingFormerSessionFailure: null,
+  routeEntryGeneration: 0,
+  verifiedEntryGeneration: 0,
+  routeEntryFence: 0,
+  routeEntryKey: null,
   dirtyScopes: [],
 }
 
@@ -272,6 +327,58 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
       return { ...state, phase: 'idle', pendingTarget: null }
     }
 
+    case 'ROUTE_ENTRY': {
+      // Only a committed context can have a route entry to verify.
+      if (state.activeContext === null) return state
+      if (state.routeEntryKey === event.key) return state
+      return {
+        ...state,
+        routeEntryGeneration: state.routeEntryGeneration + 1,
+        routeEntryFence: state.requestFenceGeneration,
+        routeEntryKey: event.key,
+      }
+    }
+
+    case 'ROUTE_EXIT': {
+      // Leaving clears the registration, so returning to the SAME path is a new
+      // entry and re-verifies. Deduping on the path alone made a revisit a no-op,
+      // which is precisely the case #146/#148 are about.
+      if (state.routeEntryKey === null) return state
+      return { ...state, routeEntryKey: null }
+    }
+
+    case 'ROUTE_ENTRY_VERIFIED': {
+      // Must answer the CURRENT entry. A response for a superseded entry proves
+      // nothing about the one being rendered now.
+      if (event.forEntry !== state.routeEntryGeneration) return state
+      if (state.activeContext === null) return state
+      // A security effect fired while this verification was in flight, so its
+      // answer predates a decision the boundary has already made. It must not
+      // write capabilities back.
+      //
+      // But dropping it silently was a bug of my own making: the gate's effect is
+      // keyed on (entry, verified), neither of which moves on a discard, so the
+      // route stayed on the loading block forever. A superseded verification
+      // therefore RE-ARMS the entry instead — new generation, new fence, new
+      // request.
+      if (state.requestFenceGeneration !== state.routeEntryFence) {
+        return {
+          ...state,
+          routeEntryGeneration: state.routeEntryGeneration + 1,
+          routeEntryFence: state.requestFenceGeneration,
+        }
+      }
+      return {
+        ...state,
+        verifiedEntryGeneration: event.forEntry,
+        activeContext: {
+          ...state.activeContext,
+          capabilityGeneration: event.generation,
+          capabilities: [...event.capabilities],
+        },
+      }
+    }
+
     case 'REAUTH_OK': {
       if (state.phase !== 'switching' || state.pendingTarget === null) return state
       // Must be the response to THIS exact transition attempt (Codex #133 P1-1/P1-3).
@@ -301,6 +408,11 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
         // The server authenticated this switch, so a former-context 401 held
         // during it cannot have been about the session. Discard it.
         pendingFormerSessionFailure: null,
+        // A new session re-enters every route from scratch.
+        routeEntryGeneration: 0,
+        verifiedEntryGeneration: 0,
+        routeEntryFence: 0,
+        routeEntryKey: null,
       }
     }
 

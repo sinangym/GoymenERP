@@ -53,6 +53,7 @@ export function CariDetailPage() {
 
 function CariDetail({ namespace }: { readonly namespace: string | null }) {
   const shell = useShellState()
+  const entryGeneration = shell.routeEntryGeneration
   const { partyId } = useParams()
   const boundary = useAuthBoundary()
   const directory = useCompanyDirectory()
@@ -67,7 +68,15 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
   )
 
   const query = useQuery({
-    queryKey: [namespace ?? 'no-context', 'counterparty-detail', partyId ?? ''],
+    queryKey: [
+      namespace ?? 'no-context',
+      // Entry-scoped for the same reason as C-01: a Back within the stale window
+      // must not paint the previous entry's record while its authorization is
+      // still being revalidated (#148).
+      entryGeneration,
+      'counterparty-detail',
+      partyId ?? '',
+    ],
     enabled: namespace !== null && singleCompanyContext && (partyId ?? '').length > 0,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
