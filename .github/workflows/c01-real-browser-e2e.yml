@@ -65,6 +65,13 @@ jobs:
           } >> "$GITHUB_ENV"
           mkdir -p artifacts/container-logs
 
+      - name: Require complete SAB source and runner contract
+        id: sab_gate
+        run: |
+          python3 -I -S -B tools/validate_sab_e2e_contract.py preflight \
+            --repository-root "$GITHUB_WORKSPACE" \
+            --github-output "$GITHUB_OUTPUT"
+
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
         with:
@@ -79,6 +86,10 @@ jobs:
         run: |
           python3 -I -S -B -m unittest discover \
             -s tests/c01_e2e_contract \
+            -p "test_*.py" \
+            -v
+          python3 -I -S -B -m unittest discover \
+            -s tests/sab_e2e_contract \
             -p "test_*.py" \
             -v
 
@@ -197,28 +208,22 @@ jobs:
         #
         # Separate config and separate JUnit on purpose: the C-01 evidence contract
         # requires exactly ten B-C01 testcases, so these must not join that report.
+        if: steps.sab_gate.outputs.enabled == 'true'
         working-directory: tests/e2e
         env:
           SAB_E2E_BASE_URL: http://127.0.0.1:15173
           SAB_E2E_ARTIFACTS_DIR: ${{ github.workspace }}/artifacts
-        run: npm run sab:ci
+          PLAYWRIGHT_JUNIT_OUTPUT_FILE: ${{ github.workspace }}/artifacts/sab-junit.xml
+          PLAYWRIGHT_HTML_OUTPUT_DIR: ${{ github.workspace }}/artifacts/sab-html-report
+          PLAYWRIGHT_HTML_OPEN: never
+        run: npm run sab:ci -- --reporter=list,junit,html
 
-      - name: Require SAB evidence with no skips
-        # A green run that skipped its way there is not acceptance, so this reads
-        # the emitted JUnit rather than trusting the exit code.
+      - name: Require exact clean SAB evidence
+        if: steps.sab_gate.outputs.enabled == 'true'
         run: |
-          set -euo pipefail
-          junit="artifacts/sab-junit.xml"
-          test -f "$junit" || { echo "::error::SAB_JUNIT_MISSING: $junit"; exit 1; }
-          cases=$(grep -c "<testcase" "$junit" || true)
-          test "$cases" -gt 0 || { echo "::error::SAB_NO_CASES"; exit 1; }
-          for tag in failure error skipped; do
-            if grep -q "<$tag" "$junit"; then
-              echo "::error::SAB_NOT_CLEAN: report contains <$tag>"
-              exit 1
-            fi
-          done
-          echo "SAB browser acceptance: $cases cases, skip=0"
+          python3 -I -S -B tools/validate_sab_e2e_contract.py evidence \
+            --junit artifacts/sab-junit.xml \
+            --html artifacts/sab-html-report/index.html
 
       - name: Validate browser and network evidence
         run: |
@@ -288,5 +293,16 @@ jobs:
             artifacts/c01-e2e-post-browser-sql-evidence.json
             artifacts/c01-e2e-html-report/index.html
             artifacts/container-logs/compose-ps.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload exact-head SAB evidence
+        if: always() && steps.sab_gate.outputs.enabled == 'true' && steps.artifact_privacy.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: sab-e2e-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/sab-junit.xml
+            artifacts/sab-html-report/index.html
           if-no-files-found: error
           retention-days: 7
