@@ -187,6 +187,39 @@ jobs:
           C01_E2E_ARTIFACTS_DIR: ${{ github.workspace }}/artifacts
         run: npm run c01:ci
 
+      - name: Run SHELL-AUTH-BOUNDARY browser acceptance
+        # Narrow extension, same disposable stack, same runner. Issue #165 requires
+        # route/focus/refetch and stale-response acceptance in a real browser;
+        # committed-but-unexecuted tests are not proof of it (Codex, #169 P1-3).
+        #
+        # The authorized web profile above is built from the PR's own source, so
+        # this exercises the shell under review rather than whatever is on main.
+        #
+        # Separate config and separate JUnit on purpose: the C-01 evidence contract
+        # requires exactly ten B-C01 testcases, so these must not join that report.
+        working-directory: tests/e2e
+        env:
+          SAB_E2E_BASE_URL: http://127.0.0.1:15173
+          SAB_E2E_ARTIFACTS_DIR: ${{ github.workspace }}/artifacts
+        run: npm run sab:ci
+
+      - name: Require SAB evidence with no skips
+        # A green run that skipped its way there is not acceptance, so this reads
+        # the emitted JUnit rather than trusting the exit code.
+        run: |
+          set -euo pipefail
+          junit="artifacts/sab-junit.xml"
+          test -f "$junit" || { echo "::error::SAB_JUNIT_MISSING: $junit"; exit 1; }
+          cases=$(grep -c "<testcase" "$junit" || true)
+          test "$cases" -gt 0 || { echo "::error::SAB_NO_CASES"; exit 1; }
+          for tag in failure error skipped; do
+            if grep -q "<$tag" "$junit"; then
+              echo "::error::SAB_NOT_CLEAN: report contains <$tag>"
+              exit 1
+            fi
+          done
+          echo "SAB browser acceptance: $cases cases, skip=0"
+
       - name: Validate browser and network evidence
         run: |
           python3 -I -S -B tools/validate_c01_e2e_contract.py evidence \

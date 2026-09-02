@@ -125,7 +125,15 @@ export function useShellOrchestrator(): ShellOrchestration {
   const seenActorId = useRef<string | null>(null)
   const [bootstrapFailure, setBootstrapFailure] = useState(false)
   const [switchFailure, setSwitchFailure] = useState(false)
-  const [sessionInvalid, setSessionInvalid] = useState(false)
+  // Terminal session-invalid now lives in the reducer so a business-read 401 and a
+  // capability 401 reach the SAME terminal state (Issue #165 SAB-006).
+  const sessionInvalid = state.sessionInvalid
+  const setSessionInvalid = useCallback(
+    (v: boolean) => {
+      if (v) dispatch({ type: 'SESSION_INVALIDATED' })
+    },
+    [dispatch],
+  )
 
   // A dead session must stop talking to the server. Without `enabled`, the P1-3
   // `clear()` below would evict these queries while their observers are still
@@ -172,7 +180,7 @@ export function useShellOrchestrator(): ShellOrchestration {
       dispatch({ type: 'SESSION_RESET' })
       queryClient.clear()
     }
-  }, [identityId, dispatch, queryClient])
+  }, [identityId, dispatch, queryClient, setSessionInvalid])
 
   // --- bootstrap -----------------------------------------------------------
   const directoryReady = directoryState.kind === 'ready'
@@ -232,6 +240,7 @@ export function useShellOrchestrator(): ShellOrchestration {
     sessionEpoch,
     dispatch,
     queryClient,
+    setSessionInvalid,
   ])
 
   // --- switch ------------------------------------------------------------
@@ -254,11 +263,14 @@ export function useShellOrchestrator(): ShellOrchestration {
         const resolution = resolveCapability(outcome)
         if (resolution.kind === 'session-invalid') {
           setSwitchFailure(false)
+          // ONE terminal event. This used to dispatch SESSION_INVALIDATED and then
+          // SESSION_RESET; the second rebuilt initialShellState and silently set
+          // sessionInvalid back to false, so the terminal state was undone one
+          // dispatch later and the shell became bootstrappable again
+          // (ChatGPT #169 P1-1). SESSION_INVALIDATED already drops everything
+          // SESSION_RESET drops.
           setSessionInvalid(true)
-          dispatch({ type: 'SESSION_RESET' })
-          // Codex #139 P1-3: SESSION_RESET drops the shell context but left every
-          // company-scoped business query sitting in the cache, ready to be served
-          // to whoever authenticates next in this tab.
+          // The session is dead; so is every read taken under it.
           queryClient.clear()
           return
         }
@@ -284,7 +296,15 @@ export function useShellOrchestrator(): ShellOrchestration {
         fail()
       })
     return () => controller.abort()
-  }, [switchCompanyId, switchScopeMode, attemptGeneration, identityId, dispatch, queryClient])
+  }, [
+    switchCompanyId,
+    switchScopeMode,
+    attemptGeneration,
+    identityId,
+    dispatch,
+    queryClient,
+    setSessionInvalid,
+  ])
 
   /**
    * The company preference mirrors the COMMITTED context, never an attempted target.

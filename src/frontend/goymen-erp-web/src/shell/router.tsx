@@ -13,6 +13,7 @@ import { ShellHome } from './ShellHome'
 import { CapabilityRoute } from './CapabilityRoute'
 import { CAPABILITY, CAPABILITY_ROUTE } from './capabilities'
 import { CariListPage } from '../cari/CariListPage'
+import { StateBlock } from './StateBlock'
 
 export const shellRoutes: RouteObject[] = [
   {
@@ -27,6 +28,24 @@ export const shellRoutes: RouteObject[] = [
             <CariListPage />
           </CapabilityRoute>
         ),
+      },
+      {
+        /**
+         * Catch-all. Without it react-router renders its own error boundary —
+         * "Unexpected Application Error! 404 Not Found" — outside the shell.
+         *
+         * That is a DISCLOSURE, not a cosmetic gap. A capability-gated route the
+         * caller is not entitled to renders the neutral not-found block INSIDE the
+         * shell; a genuinely unknown path rendered a raw framework page. The two
+         * being distinguishable tells the caller which one they hit, which is
+         * exactly what ERP-000K §10.2 non-disclosure forbids: a denied module and
+         * a nonexistent page must be indistinguishable.
+         *
+         * Found running B-C01-002-UI against the real stack with an unauthorized
+         * actor (Issue #146).
+         */
+        path: '*',
+        element: <StateBlock state={{ kind: 'not-found' }} subject="sayfa" />,
       },
     ],
   },

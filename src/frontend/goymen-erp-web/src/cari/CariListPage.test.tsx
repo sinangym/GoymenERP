@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient } from '@tanstack/react-query'
 import { RouterProvider, createMemoryRouter } from 'react-router'
@@ -310,11 +310,17 @@ describe('C-01 states', () => {
     await waitFor(() => expect(queryStateBlock('empty-filtered')).not.toBeNull())
   })
 
-  it('403 is non-disclosing and does not render a list', async () => {
+  it('403 is non-disclosing and closes the capability, not just the list', async () => {
     installFetch({ counterparties: () => json({ code: 'forbidden' }, 403) })
     renderAt('/cari')
-    expect(await findStateBlock('forbidden')).toBeTruthy()
+    // Issue #165 SAB-004/005 raised this bar. The old contract was a local
+    // 'forbidden' block over a capability that stayed usable — so a route return
+    // or a refetch could mount the feature again on the authority the server had
+    // just rejected. The capability is now re-fenced, which closes the gated
+    // route itself; the block is the same non-disclosing one an unknown page gets.
+    await waitFor(() => expect(document.querySelector('[data-state]')).not.toBeNull())
     expect(screen.queryByRole('table')).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Cari Kartlar' })).toBeNull()
   })
 
   it('a malformed page fails closed instead of rendering a partial list', async () => {
@@ -798,10 +804,14 @@ describe('C-01 continuation failure — what must NOT be masked (Q8=A kapsam dı
     // Losing the session is not a paging hiccup. Keeping rows visible would show
     // data from a session the server has already rejected.
     //
-    // NOTE what this does NOT assert: the central shell boundary. A business 401
-    // does not currently fire SESSION_RESET or clear the QueryClient — only a
-    // CAPABILITY 401 does. Naming this test "ends the session" claimed a
-    // guarantee that is not there. That gap is real and is separate shell work.
+    // SCOPE, not a gap: this asserts the LOCAL fail-closed render only. A
+    // business 401 now does also end the session centrally — that is what #169
+    // implements — but the central effect is the shell's to prove, and it is
+    // proved in `shell/authBoundaryLiveActor.test.tsx` and
+    // `cari/authBoundaryIntegration.test.tsx` against the real provider.
+    // Asserting it here too would duplicate the guarantee in a file that cannot
+    // see the reducer, which is how the earlier version of this comment ended up
+    // documenting behaviour that had already changed.
     expect(await findStateBlock('unauthenticated')).toBeTruthy()
     expect(screen.queryByRole('table')).toBeNull()
     expect(screen.queryByText('C-0001')).toBeNull()
@@ -811,9 +821,12 @@ describe('C-01 continuation failure — what must NOT be masked (Q8=A kapsam dı
     await loadThenPage2(403, 'forbidden')
     // Authorization was revoked mid-session; continuing to show the list would
     // keep rendering records the actor is no longer entitled to.
-    expect(await findStateBlock('forbidden')).toBeTruthy()
+    // The capability is re-fenced (SAB-004), so the gated route closes rather
+    // than showing a local forbidden block over still-visible rows.
+    await waitFor(() => expect(document.querySelector('[data-state]')).not.toBeNull())
     expect(screen.queryByRole('table')).toBeNull()
     expect(screen.queryByText('C-0001')).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Cari Kartlar' })).toBeNull()
   })
 
   it('a malformed second page is NOT hidden behind "rows preserved"', async () => {
@@ -892,5 +905,49 @@ describe('C-01 continuation failure — the transport half of the allowlist', ()
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy())
     expect(screen.getByRole('row', { name: /C-0001/ })).toBeTruthy()
     expect(queryStateBlock('network-error')).toBeNull()
+  })
+})
+
+describe('non-disclosure: a denied route and an unknown route are indistinguishable', () => {
+  /**
+   * B-C01-002-UI, found against the real stack with an unauthorized actor.
+   *
+   * `/cari` without the capability rendered the neutral not-found block inside the
+   * shell, while a genuinely unknown path fell through to react-router's own error
+   * boundary — "Unexpected Application Error! 404 Not Found", no shell at all.
+   *
+   * Being able to tell those apart IS the disclosure. It answers the one question
+   * non-disclosure exists to refuse: does this module exist and am I merely denied?
+   */
+  function blockHtmlAt(path: string) {
+    const el = document.querySelector('[data-state]')
+    return { path, kind: el?.getAttribute('data-state') ?? null, html: el?.outerHTML ?? null }
+  }
+
+  it('both render the same block, inside the same shell', async () => {
+    installFetch({ capabilities: [] })
+    renderAt('/cari')
+    await findStateBlock('not-found')
+    const denied = blockHtmlAt('/cari')
+    const deniedHadShell = document.querySelector('nav') !== null
+    cleanup()
+
+    installFetch({ capabilities: [] })
+    renderAt('/boyle-bir-sayfa-yok')
+    await findStateBlock('not-found')
+    const unknown = blockHtmlAt('/boyle-bir-sayfa-yok')
+
+    expect(denied.kind).toBe('not-found')
+    expect(unknown.kind).toBe('not-found')
+    expect(unknown.html).toBe(denied.html)
+    expect(deniedHadShell).toBe(true)
+    expect(document.querySelector('nav')).not.toBeNull()
+  })
+
+  it('an unknown route does not reach react-router error boundary', async () => {
+    installFetch({ capabilities: [] })
+    renderAt('/hic-olmayan/derin/yol')
+    await findStateBlock('not-found')
+    expect(document.body.textContent).not.toContain('Unexpected Application Error')
   })
 })

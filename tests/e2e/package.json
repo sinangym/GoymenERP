@@ -9,7 +9,8 @@
   },
   "scripts": {
     "c01:ci": "playwright test",
-    "c01:local": "playwright test --reporter=list"
+    "c01:local": "playwright test --reporter=list",
+    "sab:ci": "playwright test --config playwright.sab.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1"
