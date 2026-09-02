@@ -1,0 +1,195 @@
+{
+  "schemaVersion": 2,
+  "status": "DRAFT_NON_EXECUTABLE",
+  "sourceSnapshot": "main@fdcfa568488089e79b420594311adb8cde642b72",
+  "decimalEncoding": "base-10 string; no binary floating-point comparison",
+  "unitAliasNotice": "unitAlias is fixture notation only; every kind=measure input and expected measure must receive an approved registry unitId before promotion",
+  "inputKindVocabulary": ["measure", "controlledReference"],
+  "forbiddenPromotionSourcePrefixes": ["SYNTHETIC_"],
+  "promotionProvenanceRule": "every parameter source must be replaced by an approved registry/master/owner-evidence identifier; fixture provenance cannot be promoted",
+  "promotionSchema": {
+    "version": "1.0.0",
+    "validationMode": "FAIL_CLOSED",
+    "requiredStatusTransition": "DRAFT_NON_EXECUTABLE_TO_APPROVED_EXECUTABLE",
+    "fields": [
+      { "path": "formula.version", "type": "string", "nullable": false, "minLength": 1 },
+      { "path": "inputs[kind=measure].unitId", "type": "string", "nullable": false, "minLength": 1, "appliesToEveryMatch": true },
+      { "path": "inputs[kind=controlledReference].referenceId", "type": "string", "nullable": false, "minLength": 1, "minMatches": 0, "appliesToEveryMatch": true },
+      { "path": "expected.unitId", "type": "string", "nullable": false, "minLength": 1 },
+      { "path": "roundingPolicyVersion", "type": "string", "nullable": false, "minLength": 1 },
+      { "path": "tolerancePolicyVersion", "type": "string", "nullable": false, "minLength": 1 },
+      { "path": "parameterSources", "type": "array<string>", "nullable": false, "minItems": 1, "itemsMinLength": 1, "forbiddenItemPrefixes": ["SYNTHETIC_"] },
+      { "path": "packageStandardVersion", "type": "string", "nullable": false, "minLength": 1, "when": { "path": "packageStandardApplicable", "equals": true } },
+      { "path": "traceHash", "type": "string", "nullable": false, "pattern": "^sha256:[0-9a-f]{64}$" }
+    ],
+    "resolutionRule": "every path must resolve with the declared type and constraints; zero matches fail unless the field explicitly declares minMatches=0, while any present match must still satisfy non-null/type constraints; null, empty string, type coercion or an unknown path fails promotion",
+    "approvalEvidenceRule": "formula, unit, controlled-reference, policy, package and parameter-source identifiers must resolve to approved immutable records; syntactic validity alone is insufficient"
+  },
+  "measurementKindMapping": {
+    "version": "1.0.0",
+    "sourcePath": "csv.BeklenenCiktiJSON.Nitelik",
+    "targetPath": "cases[].expected.measurementKind",
+    "entries": [
+      { "csvNitelik": "FIILI_SENTETIK_FIXTURE", "measurementKind": "ACTUAL_FIXTURE" },
+      { "csvNitelik": "TEORIK", "measurementKind": "THEORETICAL" },
+      { "csvNitelik": "TEORIK_GEOMETRI", "measurementKind": "THEORETICAL_GEOMETRY" },
+      { "csvNitelik": "TEORIK_SENTETIK_FIXTURE", "measurementKind": "THEORETICAL_SYNTHETIC_FIXTURE" },
+      { "csvNitelik": "YAPISAL_SAYIM_FIXTURE", "measurementKind": "STRUCTURAL_COUNT_FIXTURE" }
+    ],
+    "canonicalization": "UTF-8 NFC; entries sorted by csvNitelik; one <csvNitelik>=<measurementKind> line per entry; LF separator and final LF required",
+    "digestAlgorithm": "SHA-256",
+    "digest": "sha256:2ea6bc1bf4e54a15410b1bc79d6428e6ab7f37ab9f0ae5934509e671f8144cf6",
+    "parityRule": "every CSV row must resolve exactly one mapping entry and equal the same-TestId manifest measurementKind; unknown, ambiguous or unmapped values fail validation and promotion"
+  },
+  "traceHashPolicy": {
+    "version": "1.0.0",
+    "algorithm": "SHA-256",
+    "format": "sha256:<64 lowercase hexadecimal characters>",
+    "canonicalization": "RFC 8785 JCS over the promoted case object with traceHash omitted",
+    "promotionRule": "traceHash must be non-null, match the declared format and equal the recomputed digest after all approved identifiers and policy versions are populated; mismatch fails promotion"
+  },
+  "cases": [
+    {
+      "testId": "GT-PRD-MAT-002-001",
+      "formula": { "id": "MAT-002", "version": null, "componentFormulaIds": [] },
+      "inputs": [
+        { "name": "Kalinlik", "kind": "measure", "value": "2", "unitAlias": "mm", "unitId": null },
+        { "name": "En", "kind": "measure", "value": "1000", "unitAlias": "mm", "unitId": null },
+        { "name": "Boy", "kind": "measure", "value": "2000", "unitAlias": "mm", "unitId": null },
+        { "name": "Yogunluk", "kind": "measure", "value": "7.85", "unitAlias": "kg/dm3", "unitId": null }
+      ],
+      "parameterSources": ["SYNTHETIC_FIXTURE"],
+      "expected": { "raw": "31.4", "unitAlias": "kg/adet", "unitId": null, "measurementKind": "THEORETICAL_SYNTHETIC_FIXTURE" },
+      "roundingPolicyVersion": null,
+      "tolerancePolicyVersion": null,
+      "packageStandardApplicable": false,
+      "packageStandardVersion": null,
+      "traceHash": null
+    },
+    {
+      "testId": "GT-PRD-MAT-002-002",
+      "formula": { "id": "MAT-002", "version": null, "componentFormulaIds": [] },
+      "inputs": [
+        { "name": "Kalinlik", "kind": "measure", "value": "3", "unitAlias": "mm", "unitId": null },
+        { "name": "En", "kind": "measure", "value": "1500", "unitAlias": "mm", "unitId": null },
+        { "name": "Boy", "kind": "measure", "value": "3000", "unitAlias": "mm", "unitId": null },
+        { "name": "Yogunluk", "kind": "measure", "value": "7.85", "unitAlias": "kg/dm3", "unitId": null }
+      ],
+      "parameterSources": ["SYNTHETIC_FIXTURE"],
+      "expected": { "raw": "105.975", "unitAlias": "kg/adet", "unitId": null, "measurementKind": "THEORETICAL_SYNTHETIC_FIXTURE" },
+      "roundingPolicyVersion": null,
+      "tolerancePolicyVersion": null,
+      "packageStandardApplicable": false,
+      "packageStandardVersion": null,
+      "traceHash": null
+    },
+    {
+      "testId": "GT-PRD-MAT-003-001",
+      "formula": { "id": "MAT-003", "version": null, "componentFormulaIds": [] },
+      "inputs": [
+        { "name": "BirimKg", "kind": "measure", "value": "31.4", "unitAlias": "kg/adet", "unitId": null },
+        { "name": "Adet", "kind": "measure", "value": "10", "unitAlias": "adet", "unitId": null }
+      ],
+      "parameterSources": ["GT-PRD-MAT-002-001", "SYNTHETIC_FIXTURE"],
+      "expected": { "raw": "314", "unitAlias": "kg", "unitId": null, "measurementKind": "THEORETICAL" },
+      "roundingPolicyVersion": null,
+      "tolerancePolicyVersion": null,
+      "packageStandardApplicable": false,
+      "packageStandardVersion": null,
+      "traceHash": null
+    },
+    {
+      "testId": "GT-PRD-MAT-004-001",
+      "formula": { "id": "MAT-004", "version": null, "componentFormulaIds": [] },
+      "inputs": [
+        { "name": "GirilenKg", "kind": "measure", "value": "314", "unitAlias": "kg", "unitId": null },
+        { "name": "BirimKg", "kind": "measure", "value": "31.4", "unitAlias": "kg/adet", "unitId": null }
+      ],
+      "parameterSources": ["SYNTHETIC_FIXTURE"],
+      "expected": { "raw": "10", "unitAlias": "adet", "unitId": null, "measurementKind": "THEORETICAL" },
+      "roundingPolicyVersion": null,
+      "tolerancePolicyVersion": null,
+      "packageStandardApplicable": false,
+      "packageStandardVersion": null,
+      "traceHash": null
+    },
+    {
+      "testId": "GT-PRD-TUB-001-001",
+      "formula": { "id": "TUB-001", "version": null, "componentFormulaIds": [] },
+      "inputs": [
+        { "name": "PaketSayisi", "kind": "measure", "value": "20", "unitAlias": "paket", "unitId": null },
+        { "name": "PaketIciAdet", "kind": "measure", "value": "50", "unitAlias": "adet/paket", "unitId": null }
+      ],
+      "parameterSources": ["SYNTHETIC_FIXTURE"],
+      "expected": { "raw": "1000", "unitAlias": "adet", "unitId": null, "measurementKind": "STRUCTURAL_COUNT_FIXTURE" },
+      "roundingPolicyVersion": null,
+      "tolerancePolicyVersion": null,
+      "packageStandardApplicable": true,
+      "packageStandardVersion": null,
+      "traceHash": null
+    },
+    {
+      "testId": "GT-PRD-TUB-002-001",
+      "formula": { "id": "TUB-002", "version": null, "componentFormulaIds": [] },
+      "inputs": [
+        { "name": "ToplamAdet", "kind": "measure", "value": "1000", "unitAlias": "adet", "unitId": null },
+        { "name": "Boy", "kind": "measure", "value": "6000", "unitAlias": "mm/adet", "unitId": null }
+      ],
+      "parameterSources": ["GT-PRD-TUB-001-001", "SYNTHETIC_FIXTURE"],
+      "expected": { "raw": "6000", "unitAlias": "m", "unitId": null, "measurementKind": "THEORETICAL" },
+      "roundingPolicyVersion": null,
+      "tolerancePolicyVersion": null,
+      "packageStandardApplicable": true,
+      "packageStandardVersion": null,
+      "traceHash": null
+    },
+    {
+      "testId": "GT-PRD-TUB-004-001",
+      "formula": { "id": "TUB-004", "version": null, "componentFormulaIds": [] },
+      "inputs": [
+        { "name": "BirimKg", "kind": "measure", "value": "8.5", "unitAlias": "kg/adet", "unitId": null },
+        { "name": "ToplamAdet", "kind": "measure", "value": "1000", "unitAlias": "adet", "unitId": null }
+      ],
+      "parameterSources": ["SYNTHETIC_VERIFIED_FIXTURE"],
+      "expected": { "raw": "8500", "unitAlias": "kg", "unitId": null, "measurementKind": "THEORETICAL_SYNTHETIC_FIXTURE" },
+      "roundingPolicyVersion": null,
+      "tolerancePolicyVersion": null,
+      "packageStandardApplicable": true,
+      "packageStandardVersion": null,
+      "traceHash": null
+    },
+    {
+      "testId": "GT-PRD-BAL-006-001",
+      "formula": { "id": "BAL-006", "version": null, "componentFormulaIds": [] },
+      "inputs": [
+        { "name": "GercekKg", "kind": "measure", "value": "8475", "unitAlias": "kg", "unitId": null },
+        { "name": "GercekAdet", "kind": "measure", "value": "1000", "unitAlias": "adet", "unitId": null }
+      ],
+      "parameterSources": ["SYNTHETIC_ACTUAL_TRANSACTION_FIXTURE"],
+      "expected": { "raw": "8.475", "unitAlias": "kg/adet", "unitId": null, "measurementKind": "ACTUAL_FIXTURE" },
+      "roundingPolicyVersion": null,
+      "tolerancePolicyVersion": null,
+      "packageStandardApplicable": false,
+      "packageStandardVersion": null,
+      "traceHash": null
+    },
+    {
+      "testId": "GT-PRD-MAT-009-001",
+      "formula": { "id": "MAT-009", "version": null, "componentFormulaIds": ["MAT-005", "MAT-008"] },
+      "inputs": [
+        { "name": "Sekil", "kind": "controlledReference", "value": "KARE", "referenceId": null },
+        { "name": "A", "kind": "measure", "value": "40", "unitAlias": "mm", "unitId": null },
+        { "name": "EtKalinligi", "kind": "measure", "value": "2", "unitAlias": "mm", "unitId": null },
+        { "name": "Boy", "kind": "measure", "value": "6000", "unitAlias": "mm", "unitId": null },
+        { "name": "Yogunluk", "kind": "measure", "value": "7.85", "unitAlias": "kg/dm3", "unitId": null }
+      ],
+      "parameterSources": ["SYNTHETIC_GEOMETRY_FIXTURE"],
+      "expected": { "raw": "14.3184", "unitAlias": "kg/adet", "unitId": null, "measurementKind": "THEORETICAL_GEOMETRY" },
+      "roundingPolicyVersion": null,
+      "tolerancePolicyVersion": null,
+      "packageStandardApplicable": false,
+      "packageStandardVersion": null,
+      "traceHash": null
+    }
+  ]
+}

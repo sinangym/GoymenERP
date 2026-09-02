@@ -1,0 +1,380 @@
+{
+  "schemaVersion": 1,
+  "authorityId": "PRODUCT-CORE-JIT-AUTHORITY-V1",
+  "sourceMainSnapshot": "main@9a7f9b0e2bc2c7664094f6cf4d0000b913169145",
+  "artifactInventory": [
+    {
+      "path": "docs/acceptance/PRODUCT_CORE_JIT_VALIDATOR_MUTATION_TEST_v1.mjs",
+      "sha256": "sha256:ee67092a381d95a34bcb687b2f5a61f6500bff314b370e7c537827e60846c81f"
+    },
+    {
+      "path": "docs/acceptance/PRODUCT_CORE_JIT_VALIDATOR_v1.mjs",
+      "sha256": "sha256:f3cf48e56af0b319453cd8f9c7965cf4d7b3c5cfa33bf78bd7a3475bf2d7bbf5"
+    },
+    {
+      "path": "docs/acceptance/PRODUCT_CORE_U01_U02_U07_U08_U09_ACCEPTANCE_v1.md",
+      "sha256": "sha256:5779b47814cb051e01c8dfcb2b74fdfc6569eda3f6093bd552847bba619302dd"
+    },
+    {
+      "path": "docs/formulas/PRODUCT_UNIT_CONVERSION_GOLDEN_v1.csv",
+      "sha256": "sha256:a4d4f3868c4ea75b8759b4a438be8cf8e6f729374148cf354fcaee68428629a3"
+    },
+    {
+      "path": "docs/formulas/PRODUCT_UNIT_CONVERSION_GOLDEN_v1.md",
+      "sha256": "sha256:88cb75924772e2e1a268059a4656bc7b591ce900fe464efda38e6382ecc4a918"
+    },
+    {
+      "path": "docs/features/PRODUCT_CORE_U01_U02_U07_U08_U09_JIT_INDEX_v1.md",
+      "sha256": "sha256:4633aaa53655b1d4a92116ed93d8c0c5bfbb7fc0f9b59e3667efb4446a56875a"
+    },
+    {
+      "path": "docs/features/PRODUCT_U01_U02_IDENTITY_LIFECYCLE_JIT_SPEC_v1.md",
+      "sha256": "sha256:9169a9b4225ade5c4bbd3e6dc9750dd680e5f0f2d0cc7fa9027633ad0fe5b50a"
+    },
+    {
+      "path": "docs/formulas/PRODUCT_UNIT_CONVERSION_GOLDEN_MANIFEST_v1.json",
+      "sha256": "sha256:c15d6b687159b6fe682275831d7b7c05833fd7052924afc6492f45e936d83c17"
+    },
+    {
+      "path": "docs/features/PRODUCT_U07_PACKAGE_STANDARDS_JIT_SPEC_v1.md",
+      "sha256": "sha256:87a9ad4e8f5a045db4e02000ae246a1afaceffe880261a725725080e6ae146d7"
+    },
+    {
+      "path": "docs/features/PRODUCT_U08_UNITS_CONVERSIONS_JIT_SPEC_v1.md",
+      "sha256": "sha256:98fc333bc46064346b3b47fdf3cb3ebd113f3b5afc8f234b233da4f96825fb49"
+    },
+    {
+      "path": "docs/features/PRODUCT_U09_TECHNICAL_TEMPLATES_JIT_SPEC_v1.md",
+      "sha256": "sha256:03d7288205e3bca25fb4934fe60a7c1df120c01bed0a0d451864b32398164914"
+    }
+  ],
+  "promotionDescriptor": {
+    "version": "1.0.0",
+    "digest": "sha256:aeb42ded5a58af0858b9258c07a89ed6231316af5950a229354b169caffb0ab3",
+    "fields": [
+      {
+        "path": "formula.version",
+        "type": "string",
+        "nullable": false,
+        "minLength": 1
+      },
+      {
+        "path": "inputs[kind=measure].unitId",
+        "type": "string",
+        "nullable": false,
+        "minLength": 1,
+        "appliesToEveryMatch": true
+      },
+      {
+        "path": "inputs[kind=controlledReference].referenceId",
+        "type": "string",
+        "nullable": false,
+        "minLength": 1,
+        "minMatches": 0,
+        "appliesToEveryMatch": true
+      },
+      {
+        "path": "expected.unitId",
+        "type": "string",
+        "nullable": false,
+        "minLength": 1
+      },
+      {
+        "path": "roundingPolicyVersion",
+        "type": "string",
+        "nullable": false,
+        "minLength": 1
+      },
+      {
+        "path": "tolerancePolicyVersion",
+        "type": "string",
+        "nullable": false,
+        "minLength": 1
+      },
+      {
+        "path": "parameterSources",
+        "type": "array<string>",
+        "nullable": false,
+        "minItems": 1,
+        "itemsMinLength": 1,
+        "forbiddenItemPrefixes": [
+          "SYNTHETIC_"
+        ]
+      },
+      {
+        "path": "packageStandardVersion",
+        "type": "string",
+        "nullable": false,
+        "minLength": 1,
+        "when": {
+          "path": "packageStandardApplicable",
+          "equals": true
+        }
+      },
+      {
+        "path": "traceHash",
+        "type": "string",
+        "nullable": false,
+        "pattern": "^sha256:[0-9a-f]{64}$"
+      }
+    ]
+  },
+  "caseToCanonicalAt": {
+    "CASE-PRD-X-001": [
+      "AT-002"
+    ],
+    "CASE-PRD-X-002": [],
+    "CASE-PRD-X-003": [],
+    "CASE-PRD-X-004": [],
+    "CASE-PRD-X-005": [],
+    "CASE-PRD-X-006": [
+      "AT-005"
+    ],
+    "CASE-PRD-X-007": [
+      "AT-003"
+    ],
+    "CASE-PRD-X-008": [],
+    "CASE-PRD-X-009": [],
+    "CASE-PRD-X-010": [
+      "AT-016"
+    ],
+    "CASE-PRD-X-011": [
+      "AT-006"
+    ],
+    "CASE-PRD-X-012": [],
+    "CASE-PRD-X-013": [],
+    "CASE-PRD-X-014": [],
+    "CASE-PRD-X-015": [],
+    "CASE-PRD-X-016": [
+      "AT-008"
+    ],
+    "CASE-PRD-X-017": [],
+    "CASE-PRD-X-018": [],
+    "CASE-PRD-U01-001": [],
+    "CASE-PRD-U01-002": [],
+    "CASE-PRD-U01-003": [],
+    "CASE-PRD-U01-004": [
+      "AT-015"
+    ],
+    "CASE-PRD-U01-005": [
+      "AT-015"
+    ],
+    "CASE-PRD-U01-006": [
+      "AT-015"
+    ],
+    "CASE-PRD-U01-007": [],
+    "CASE-PRD-U01-008": [],
+    "CASE-PRD-U01-009": [],
+    "CASE-PRD-U01-010": [],
+    "CASE-PRD-U01-011": [],
+    "CASE-PRD-U01-012": [],
+    "CASE-PRD-U01-013": [],
+    "CASE-PRD-U01-014": [
+      "AT-001"
+    ],
+    "CASE-PRD-U01-015": [],
+    "CASE-PRD-U01-016": [],
+    "CASE-PRD-U01-017": [],
+    "CASE-PRD-U02-001": [],
+    "CASE-PRD-U02-002": [],
+    "CASE-PRD-U02-003": [],
+    "CASE-PRD-U02-004": [
+      "AT-003"
+    ],
+    "CASE-PRD-U02-005": [
+      "AT-005"
+    ],
+    "CASE-PRD-U02-006": [],
+    "CASE-PRD-U02-007": [
+      "AT-015"
+    ],
+    "CASE-PRD-U02-008": [
+      "AT-015"
+    ],
+    "CASE-PRD-U02-009": [],
+    "CASE-PRD-U02-010": [],
+    "CASE-PRD-U02-011": [
+      "AT-016",
+      "AT-045"
+    ],
+    "CASE-PRD-U02-012": [
+      "AT-003"
+    ],
+    "CASE-PRD-U02-013": [],
+    "CASE-PRD-U02-014": [],
+    "CASE-PRD-U02-015": [],
+    "CASE-PRD-U02-016": [],
+    "CASE-PRD-U02-017": [
+      "AT-003"
+    ],
+    "CASE-PRD-U02-018": [],
+    "CASE-PRD-U02-019": [
+      "AT-006"
+    ],
+    "CASE-PRD-U02-020": [
+      "AT-006"
+    ],
+    "CASE-PRD-U02-021": [],
+    "CASE-PRD-U02-022": [],
+    "CASE-PRD-U02-023": [
+      "AT-003",
+      "AT-005"
+    ],
+    "CASE-PRD-U07-001": [],
+    "CASE-PRD-U07-002": [
+      "AT-001",
+      "AT-002"
+    ],
+    "CASE-PRD-U07-003": [],
+    "CASE-PRD-U07-004": [],
+    "CASE-PRD-U07-005": [
+      "AT-003"
+    ],
+    "CASE-PRD-U07-006": [],
+    "CASE-PRD-U07-007": [],
+    "CASE-PRD-U07-008": [
+      "AT-017"
+    ],
+    "CASE-PRD-U07-009": [],
+    "CASE-PRD-U07-010": [],
+    "CASE-PRD-U07-011": [
+      "AT-016"
+    ],
+    "CASE-PRD-U07-012": [
+      "AT-016",
+      "AT-045"
+    ],
+    "CASE-PRD-U07-013": [],
+    "CASE-PRD-U07-014": [
+      "AT-005"
+    ],
+    "CASE-PRD-U07-015": [
+      "AT-003"
+    ],
+    "CASE-PRD-U07-016": [],
+    "CASE-PRD-U07-017": [],
+    "CASE-PRD-U07-018": [],
+    "CASE-PRD-U07-019": [],
+    "CASE-PRD-U08-001": [
+      "AT-016"
+    ],
+    "CASE-PRD-U08-002": [
+      "AT-016"
+    ],
+    "CASE-PRD-U08-003": [
+      "AT-016",
+      "AT-045"
+    ],
+    "CASE-PRD-U08-004": [
+      "AT-016"
+    ],
+    "CASE-PRD-U08-005": [
+      "AT-016"
+    ],
+    "CASE-PRD-U08-006": [
+      "AT-016"
+    ],
+    "CASE-PRD-U08-007": [
+      "AT-016"
+    ],
+    "CASE-PRD-U08-008": [
+      "AT-016"
+    ],
+    "CASE-PRD-U08-009": [
+      "AT-016"
+    ],
+    "CASE-PRD-U08-010": [
+      "AT-016"
+    ],
+    "CASE-PRD-U08-011": [
+      "AT-016"
+    ],
+    "CASE-PRD-U08-012": [
+      "AT-016"
+    ],
+    "CASE-PRD-U08-013": [
+      "AT-016",
+      "AT-045"
+    ],
+    "CASE-PRD-U08-014": [
+      "AT-016"
+    ],
+    "CASE-PRD-U08-015": [
+      "AT-016",
+      "AT-049"
+    ],
+    "CASE-PRD-U08-016": [
+      "AT-016"
+    ],
+    "CASE-PRD-U08-017": [
+      "AT-016"
+    ],
+    "CASE-PRD-U08-018": [
+      "AT-016"
+    ],
+    "CASE-PRD-U08-019": [],
+    "CASE-PRD-U08-020": [
+      "AT-016"
+    ],
+    "CASE-PRD-U08-021": [
+      "AT-016"
+    ],
+    "CASE-PRD-U08-022": [
+      "AT-016"
+    ],
+    "CASE-PRD-U08-023": [
+      "AT-016"
+    ],
+    "CASE-PRD-U09-001": [],
+    "CASE-PRD-U09-002": [
+      "AT-016"
+    ],
+    "CASE-PRD-U09-003": [
+      "AT-016"
+    ],
+    "CASE-PRD-U09-004": [],
+    "CASE-PRD-U09-005": [
+      "AT-016"
+    ],
+    "CASE-PRD-U09-006": [],
+    "CASE-PRD-U09-007": [],
+    "CASE-PRD-U09-008": [],
+    "CASE-PRD-U09-009": [
+      "AT-016"
+    ],
+    "CASE-PRD-U09-010": [],
+    "CASE-PRD-U09-011": [
+      "AT-003"
+    ],
+    "CASE-PRD-U09-012": [],
+    "CASE-PRD-U09-013": [
+      "AT-016"
+    ],
+    "CASE-PRD-U09-014": [
+      "AT-016"
+    ],
+    "CASE-PRD-U09-015": [
+      "AT-016",
+      "AT-045"
+    ],
+    "CASE-PRD-U09-016": [],
+    "CASE-PRD-U09-017": [],
+    "CASE-PRD-U09-018": [],
+    "CASE-PRD-U09-019": [],
+    "CASE-PRD-U09-020": [
+      "AT-005"
+    ],
+    "CASE-PRD-U09-021": [],
+    "CASE-PRD-U09-022": [],
+    "CASE-PRD-U09-023": [],
+    "CASE-PRD-U09-024": [],
+    "CASE-PRD-U09-025": [
+      "AT-005"
+    ],
+    "CASE-PRD-U09-026": [],
+    "CASE-PRD-U09-027": [],
+    "CASE-PRD-U09-028": [
+      "AT-016"
+    ]
+  }
+}
