@@ -221,6 +221,54 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData(AuditDbContextPath)]
+    [InlineData(OrganizationDbContextAuditEventPath)]
+    [InlineData(CounterpartyDbContextAuditEventPath)]
+    public void Safe_filter_in_a_dummy_method_cannot_hide_unsafe_on_model_creating(
+        string sourcePath)
+    {
+        var source = ReadRepositorySource(sourcePath);
+        const string expectedSignature = "OnModelCreating(ModelBuilder modelBuilder)";
+        Assert.Equal(1, CountAuditOccurrences(source, expectedSignature));
+        var mutated = source.Replace(
+            expectedSignature,
+            "OnModelCreating(ModelBuilder alternateBuilder)",
+            StringComparison.Ordinal);
+        mutated = mutated.Replace(
+            "modelBuilder.",
+            "alternateBuilder.",
+            StringComparison.Ordinal);
+        var alternateSafeConfiguration = SafeAuditEventConfiguration.Replace(
+            "modelBuilder.",
+            "alternateBuilder.",
+            StringComparison.Ordinal);
+        Assert.Equal(1, CountAuditOccurrences(mutated, alternateSafeConfiguration));
+        mutated = mutated.Replace(
+            alternateSafeConfiguration,
+            alternateSafeConfiguration.Replace(
+                "x => x.CompanyId == companyContext.CompanyId",
+                "x => true",
+                StringComparison.Ordinal),
+            StringComparison.Ordinal);
+        var finalBraceIndex = mutated.LastIndexOf('}');
+        Assert.True(finalBraceIndex >= 0);
+        mutated = mutated.Insert(
+            finalBraceIndex,
+            "\n    private void Dummy(ModelBuilder modelBuilder)\n"
+            + "    {\n"
+            + "        modelBuilder.Entity<AuditEvent>()\n"
+            + "            .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);\n"
+            + "    }\n");
+        Assert.Equal(1, CountAuditOccurrences(mutated, SafeAuditEventConfiguration));
+
+        var errors = ValidateAuditEventTenantFilter(sourcePath, mutated);
+
+        Assert.Contains(errors, error => error.Contains(
+            "declared ModelBuilder receiver",
+            StringComparison.Ordinal));
+    }
+
     [Fact]
     public void Company_context_runtime_registration_is_scoped_and_unique()
     {
@@ -280,6 +328,20 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "typeof(AlternateCompanyContext), ServiceLifetime.Singleton));")]
     [InlineData("builder.Services.RemoveAll<ICompanyContext>();")]
     [InlineData("builder.Services.RemoveAll(typeof(ICompanyContext));")]
+    [InlineData(
+        "ServiceCollectionServiceExtensions.AddSingleton(builder.Services, "
+        + "typeof(ICompanyContext), typeof(AlternateCompanyContext));")]
+    [InlineData(
+        "ServiceCollectionDescriptorExtensions.RemoveAll<ICompanyContext>("
+        + "builder.Services);")]
+    [InlineData(
+        "builder.Services.Replace(new(typeof(ICompanyContext), "
+        + "typeof(AlternateCompanyContext), ServiceLifetime.Singleton));")]
+    [InlineData(
+        "builder.Services.TryAddSingleton<ICompanyContext, AlternateCompanyContext>();")]
+    [InlineData(
+        "builder.Services.TryAdd(ServiceDescriptor.Singleton<ICompanyContext, "
+        + "AlternateCompanyContext>());")]
     public void Adding_a_later_company_context_lifetime_override_is_rejected(
         string unsafeRegistration)
     {
@@ -311,7 +373,6 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     {
         var errors = new List<string>();
         var searchable = MaskCommentsAndNonInterpolatedLiterals(source);
-        var compact = Regex.Replace(searchable, @"\s+", string.Empty);
         var normalized = Regex.Replace(searchable, @"\s+", " ");
         var contextTypeName = ReviewedAuditEventDbContexts[sourcePath];
         var constructorPattern = new Regex(
@@ -330,21 +391,33 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 + ".");
         }
 
-        const string expectedFilter =
-            "modelBuilder.Entity<AuditEvent>()"
+        if (!TryReadOnModelCreating(source, out var modelBuilderName, out var methodBody))
+        {
+            errors.Add(
+                "The reviewed DbContext must declare exactly one conventional "
+                + "OnModelCreating(ModelBuilder ...) method.");
+            return errors;
+        }
+
+        var compactMethodBody = Regex.Replace(methodBody, @"\s+", string.Empty);
+        var expectedFilter = modelBuilderName
+            + ".Entity<AuditEvent>()"
             + ".HasQueryFilter(x=>x.CompanyId==companyContext.CompanyId);";
-        var filterCount = CountAuditOccurrences(compact, expectedFilter);
+        var filterCount = CountAuditOccurrences(compactMethodBody, expectedFilter);
         if (filterCount != 1)
         {
             errors.Add(
-                "The reviewed DbContext must contain exactly one AuditEvent CompanyId "
-                + "query filter; found "
+                "The reviewed DbContext OnModelCreating method must contain exactly one "
+                + "AuditEvent CompanyId query filter on its declared ModelBuilder receiver; "
+                + "found "
                 + filterCount.ToString(System.Globalization.CultureInfo.InvariantCulture)
                 + ".");
         }
 
-        const string entityConfiguration = "modelBuilder.Entity<AuditEvent>()";
-        var entityConfigurationCount = CountAuditOccurrences(compact, entityConfiguration);
+        var entityConfiguration = modelBuilderName + ".Entity<AuditEvent>()";
+        var entityConfigurationCount = CountAuditOccurrences(
+            compactMethodBody,
+            entityConfiguration);
         if (entityConfigurationCount != 1)
         {
             errors.Add(
@@ -367,30 +440,6 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ".AddScoped<ICompanyContext,CompanyContext>();";
         var expectedCount = 0;
         var registrationCount = 0;
-        var registrationPatterns = new[]
-        {
-            new Regex(
-                @"\.(?:Try)?Add(?:Scoped|Singleton|Transient)(?:"
-                + @"<ICompanyContext(?:,[^>]+)?>\(|"
-                + @"\(typeof\(ICompanyContext\),)",
-                RegexOptions.CultureInvariant),
-            new Regex(
-                @"ServiceDescriptor\.(?:Scoped|Singleton|Transient)(?:"
-                + @"<ICompanyContext(?:,[^>]+)?>\(|"
-                + @"\(typeof\(ICompanyContext\),)",
-                RegexOptions.CultureInvariant),
-            new Regex(
-                @"new(?:global::)?(?:[\p{L}_][\p{L}\p{Nd}_]*\.)*"
-                + @"ServiceDescriptor\(typeof\(ICompanyContext\),",
-                RegexOptions.CultureInvariant),
-            new Regex(
-                @"ServiceDescriptor\.Describe\(typeof\(ICompanyContext\),",
-                RegexOptions.CultureInvariant),
-            new Regex(
-                @"\.(?:Try)?RemoveAll(?:<ICompanyContext>\(\)|"
-                + @"\(typeof\(ICompanyContext\)\))",
-                RegexOptions.CultureInvariant),
-        };
 
         foreach (var source in sources.Values)
         {
@@ -399,8 +448,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 @"\s+",
                 string.Empty);
             expectedCount += CountAuditOccurrences(compact, expectedRegistration);
-            registrationCount += registrationPatterns.Sum(
-                pattern => pattern.Matches(compact).Count);
+            registrationCount += compact
+                .Split(';', StringSplitOptions.RemoveEmptyEntries)
+                .Count(IsCompanyContextServiceMutationStatement);
         }
 
         if (expectedCount != 1)
@@ -425,6 +475,23 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         return errors;
     }
 
+    private static bool IsCompanyContextServiceMutationStatement(string statement)
+    {
+        if (!statement.Contains("ICompanyContext", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return statement.Contains("AddScoped", StringComparison.Ordinal)
+            || statement.Contains("AddSingleton", StringComparison.Ordinal)
+            || statement.Contains("AddTransient", StringComparison.Ordinal)
+            || statement.Contains("TryAdd", StringComparison.Ordinal)
+            || statement.Contains("ServiceDescriptor", StringComparison.Ordinal)
+            || statement.Contains("ServiceLifetime", StringComparison.Ordinal)
+            || statement.Contains("RemoveAll", StringComparison.Ordinal)
+            || statement.Contains(".Replace(", StringComparison.Ordinal);
+    }
+
     private static string ReadRepositorySource(string sourcePath)
     {
         var repositoryRoot = FindRepositoryRoot();
@@ -447,14 +514,67 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private static IReadOnlySet<string> DiscoverAuditEventDbContextPaths(
         IReadOnlyDictionary<string, string> sources)
     {
-        var configureAuditEventInvocation = new Regex(
-            @"\.\s*ConfigureAuditEvent\s*\(",
-            RegexOptions.CultureInvariant);
         return sources
-            .Where(file => configureAuditEventInvocation.IsMatch(
-                MaskCommentsAndNonInterpolatedLiterals(file.Value)))
+            .Where(file => TryReadOnModelCreating(
+                    file.Value,
+                    out _,
+                    out var methodBody)
+                && Regex.IsMatch(
+                    methodBody,
+                    @"\.\s*ConfigureAuditEvent\s*\(",
+                    RegexOptions.CultureInvariant))
             .Select(file => file.Key)
             .ToHashSet(StringComparer.Ordinal);
+    }
+
+    private static bool TryReadOnModelCreating(
+        string source,
+        out string modelBuilderName,
+        out string methodBody)
+    {
+        var searchable = MaskCommentsAndNonInterpolatedLiterals(source);
+        var signature = Regex.Match(
+            searchable,
+            @"\bprotected\s+override\s+void\s+OnModelCreating\s*\(\s*"
+            + @"ModelBuilder\s+(?<receiver>[\p{L}_][\p{L}\p{Nd}_]*)\s*\)",
+            RegexOptions.CultureInvariant);
+        if (!signature.Success)
+        {
+            modelBuilderName = string.Empty;
+            methodBody = string.Empty;
+            return false;
+        }
+
+        var openingBrace = searchable.IndexOf('{', signature.Index + signature.Length);
+        if (openingBrace < 0)
+        {
+            modelBuilderName = string.Empty;
+            methodBody = string.Empty;
+            return false;
+        }
+
+        var depth = 0;
+        for (var index = openingBrace; index < searchable.Length; index++)
+        {
+            if (searchable[index] == '{')
+            {
+                depth++;
+            }
+            else if (searchable[index] == '}')
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    modelBuilderName = signature.Groups["receiver"].Value;
+                    methodBody = searchable[(openingBrace + 1)..index];
+                    return true;
+                }
+            }
+        }
+
+        modelBuilderName = string.Empty;
+        methodBody = string.Empty;
+        return false;
     }
 
     private static bool IsAuditBuildOutput(string path)
