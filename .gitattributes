@@ -2,3 +2,6 @@
 
 *.bat text eol=crlf
 *.cmd text eol=crlf
+
+# Preserve the immutable upstream PDFsharp 6.2.4 MIT license byte-for-byte.
+src/backend/DocumentGeneration/GoymenERP.DocumentGeneration.Pdf/Assets/Licenses/PDFsharp-MIT.txt whitespace=-blank-at-eol

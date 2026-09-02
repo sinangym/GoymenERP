@@ -23,6 +23,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "docs/features/CARI_MODULE_ENTRYPOINT_CONTRACT_v1.md";
     private const string ApiProjectPath =
         "src/backend/GoymenERP.Api/GoymenERP.Api.csproj";
+    private const string PdfProjectPath =
+        "src/backend/DocumentGeneration/GoymenERP.DocumentGeneration.Pdf/"
+        + "GoymenERP.DocumentGeneration.Pdf.csproj";
+    private static readonly HashSet<string> ReviewedPdfContentPaths =
+        new(StringComparer.Ordinal)
+        {
+            "Assets\\Fonts\\NotoSans-Regular.ttf",
+            "Assets\\Fonts\\OFL-1.1.txt",
+            "Assets\\Licenses\\PDFsharp-MIT.txt",
+            "Assets\\Licenses\\PDFsharp-6.2.4-PROVENANCE.md",
+            "THIRD_PARTY_NOTICES.md"
+        };
     private const string OpenApiGenerationModePath =
         "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/OpenApi/"
         + "OpenApiDocumentGenerationMode.cs";
@@ -257,7 +269,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["Microsoft.Extensions.ApiDescription.Server"] = "10.0.11",
             ["Microsoft.Extensions.Hosting.Abstractions"] = "10.0.8",
             ["Microsoft.Extensions.Options.ConfigurationExtensions"] = "10.0.8",
-            ["Microsoft.OpenApi"] = "[2.7.5]"
+            ["Microsoft.OpenApi"] = "[2.7.5]",
+            ["PDFsharp"] = "6.2.4"
         };
 
     private static readonly HashSet<string> ForbiddenGeneratedSourceItems =
@@ -373,6 +386,68 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         errors.AddRange(ValidateReviewedPlatformContextConstructions(inventory.Sources));
 
         Assert.True(errors.Count == 0, string.Join("\n\n", errors));
+    }
+
+    [Fact]
+    public void Pdfsharp_dependency_is_limited_to_the_isolated_pdf_component()
+    {
+        var errors = new List<string>();
+        ValidatePackageReference(
+            XElement.Parse("<PackageReference Include=\"PDFsharp\" Version=\"6.2.4\" />"),
+            "src/backend/BuildingBlocks/Unexpected.csproj",
+            errors);
+
+        Assert.Contains(
+            "PDFsharp is allowed only in the isolated PDF component project.",
+            errors);
+    }
+
+    [Fact]
+    public void Pdf_component_content_inventory_cannot_drop_the_font_license()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var projectPath = Path.Combine(
+            repositoryRoot,
+            PdfProjectPath.Replace('/', Path.DirectorySeparatorChar));
+        var project = XDocument.Load(projectPath);
+        project.Descendants()
+            .Single(element =>
+                element.Name.LocalName == "Content"
+                && string.Equals(
+                    element.Attribute("Include")?.Value,
+                    "Assets\\Fonts\\OFL-1.1.txt",
+                    StringComparison.Ordinal))
+            .Remove();
+
+        var analysis = AnalyzeProjectDefinition(project, PdfProjectPath);
+
+        Assert.Contains(
+            "The PDF component content inventory must match the reviewed font and license assets.",
+            analysis.Errors);
+    }
+
+    [Fact]
+    public void Pdf_component_content_inventory_rejects_duplicate_asset_routes()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var projectPath = Path.Combine(
+            repositoryRoot,
+            PdfProjectPath.Replace('/', Path.DirectorySeparatorChar));
+        var project = XDocument.Load(projectPath);
+        var itemGroup = project.Root!.Elements()
+            .First(element => element.Name.LocalName == "ItemGroup"
+                              && element.Elements().Any(item => item.Name.LocalName == "Content"));
+        itemGroup.Add(new XElement(
+            "Content",
+            new XAttribute("Include", "Assets\\Fonts\\OFL-1.1.txt"),
+            new XAttribute("CopyToOutputDirectory", "PreserveNewest"),
+            new XAttribute("CopyToPublishDirectory", "PreserveNewest")));
+
+        var analysis = AnalyzeProjectDefinition(project, PdfProjectPath);
+
+        Assert.Contains(
+            "The PDF component content inventory must match the reviewed font and license assets.",
+            analysis.Errors);
     }
 
     [Fact]
@@ -3289,7 +3364,26 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 errors);
             foreach (var item in itemGroup.Elements())
             {
-                if (!ReviewedProjectItems.Contains(item.Name.LocalName))
+                var includedContent = item.Attribute("Include")?.Value;
+                var isReviewedPdfFontContent = string.Equals(
+                        repositoryProjectPath,
+                        PdfProjectPath,
+                        StringComparison.Ordinal)
+                    && string.Equals(item.Name.LocalName, "Content", StringComparison.Ordinal)
+                    && includedContent is not null
+                    && ReviewedPdfContentPaths.Contains(includedContent)
+                    && string.Equals(
+                        item.Attribute("CopyToOutputDirectory")?.Value,
+                        "PreserveNewest",
+                        StringComparison.Ordinal)
+                    && string.Equals(
+                        item.Attribute("CopyToPublishDirectory")?.Value,
+                        "PreserveNewest",
+                        StringComparison.Ordinal)
+                    && item.Attributes().Count() == 3
+                    && !item.Elements().Any();
+                if (!ReviewedProjectItems.Contains(item.Name.LocalName)
+                    && !isReviewedPdfFontContent)
                 {
                     errors.Add(
                         $"Unreviewed project item {item.Name.LocalName} can alter compilation: "
@@ -3328,6 +3422,35 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                      .Where(element => element.Name.LocalName == "PackageReference"))
         {
             ValidatePackageReference(packageReference, repositoryProjectPath, errors);
+        }
+
+        if (string.Equals(repositoryProjectPath, PdfProjectPath, StringComparison.Ordinal))
+        {
+            var pdfsharpReferences = root.Descendants()
+                .Where(element => element.Name.LocalName == "PackageReference")
+                .Where(element => string.Equals(
+                    element.Attribute("Include")?.Value,
+                    "PDFsharp",
+                    StringComparison.Ordinal))
+                .ToArray();
+            if (pdfsharpReferences.Length != 1)
+            {
+                errors.Add("The PDF component must reference PDFsharp exactly once.");
+            }
+
+            var contentElements = root.Descendants()
+                .Where(element => element.Name.LocalName == "Content")
+                .ToArray();
+            var reviewedContent = contentElements
+                .Select(element => element.Attribute("Include")?.Value)
+                .Where(path => path is not null)
+                .ToHashSet(StringComparer.Ordinal);
+            if (contentElements.Length != ReviewedPdfContentPaths.Count
+                || reviewedContent.Count != ReviewedPdfContentPaths.Count
+                || !reviewedContent.SetEquals(ReviewedPdfContentPaths))
+            {
+                errors.Add("The PDF component content inventory must match the reviewed font and license assets.");
+            }
         }
 
 
@@ -3418,6 +3541,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             errors.Add(
                 $"Unreviewed package/source-generator route '{include ?? "<missing>"}' "
                 + $"version '{version ?? "<missing>"}': {repositoryProjectPath}");
+        }
+
+        if (string.Equals(include, "PDFsharp", StringComparison.Ordinal)
+            && !string.Equals(repositoryProjectPath, PdfProjectPath, StringComparison.Ordinal))
+        {
+            errors.Add("PDFsharp is allowed only in the isolated PDF component project.");
         }
 
         if (packageReference.Attribute("Condition") is not null
