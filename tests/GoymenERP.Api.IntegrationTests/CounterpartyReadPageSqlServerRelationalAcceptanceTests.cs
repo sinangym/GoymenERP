@@ -456,15 +456,77 @@ public sealed class CounterpartyReadPageSqlServerRelationalAcceptanceTests
             }
 
             await SetCompanyActiveAsync(connection, isActive: true);
-            using var restoredDetail = await client.GetAsync(
-                $"/api/v1/counterparties/{CompanyAOnlyPartyId}");
-            Assert.Equal(HttpStatusCode.OK, restoredDetail.StatusCode);
+            using (var restoredDetail = await client.GetAsync(
+                       $"/api/v1/counterparties/{CompanyAOnlyPartyId}"))
+            {
+                Assert.Equal(HttpStatusCode.OK, restoredDetail.StatusCode);
+            }
+
+            using (var groupClient = CreateHeaderlessClient(
+                       factory,
+                       TestUsers.GroupAdmin))
+            {
+                observer.Arm(CounterpartyReadSqlOperation.Page);
+                using (var racedGroupPage = await groupClient.GetAsync(
+                           "/api/v1/counterparties?partyState=all&pageSize=10"))
+                {
+                    var body = await racedGroupPage.Content.ReadAsStringAsync();
+                    await AssertProblemCodeAsync(
+                        racedGroupPage,
+                        HttpStatusCode.Forbidden,
+                        "forbidden");
+                    Assert.DoesNotContain(
+                        CompanyAOnlyPartyId.ToString("D"),
+                        body,
+                        StringComparison.OrdinalIgnoreCase);
+                    Assert.DoesNotContain(
+                        TestCompanyIds.CompanyA.ToString("D"),
+                        body,
+                        StringComparison.OrdinalIgnoreCase);
+                }
+
+                await SetCompanyActiveAsync(connection, isActive: true);
+                using (var restoredGroupPage = await groupClient.GetAsync(
+                           "/api/v1/counterparties?partyState=all&pageSize=10"))
+                {
+                    Assert.Equal(HttpStatusCode.OK, restoredGroupPage.StatusCode);
+                }
+
+                observer.Arm(CounterpartyReadSqlOperation.DetailAccounts);
+                using (var racedGroupDetail = await groupClient.GetAsync(
+                           $"/api/v1/counterparties/{CompanyAOnlyPartyId}"))
+                {
+                    var body = await racedGroupDetail.Content.ReadAsStringAsync();
+                    await AssertProblemCodeAsync(
+                        racedGroupDetail,
+                        HttpStatusCode.NotFound,
+                        CounterpartyProblemCodesV1.NotFound);
+                    Assert.DoesNotContain(
+                        CompanyAOnlyPartyId.ToString("D"),
+                        body,
+                        StringComparison.OrdinalIgnoreCase);
+                    Assert.DoesNotContain(
+                        TestCompanyIds.CompanyA.ToString("D"),
+                        body,
+                        StringComparison.OrdinalIgnoreCase);
+                }
+
+                await SetCompanyActiveAsync(connection, isActive: true);
+                using var restoredGroupDetail = await groupClient.GetAsync(
+                    $"/api/v1/counterparties/{CompanyAOnlyPartyId}");
+                Assert.Equal(HttpStatusCode.OK, restoredGroupDetail.StatusCode);
+            }
         }
         finally
         {
             if (factory is not null)
             {
                 await factory.DisposeAsync();
+                using (var poolKey = new SqlConnection(factory.DatabaseConnectionString))
+                {
+                    SqlConnection.ClearPool(poolKey);
+                }
+
                 await DropDatabaseAsync(baseConnectionString, factory.DatabaseName);
             }
         }
