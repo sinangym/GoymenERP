@@ -201,7 +201,42 @@ public sealed class TechnicalPdfGeneratorTests
         var pdfSyntax = Encoding.Latin1.GetString(artifact.Content);
         Assert.Contains("/FontFile2", pdfSyntax, StringComparison.Ordinal);
         Assert.Contains("/ToUnicode", pdfSyntax, StringComparison.Ordinal);
+        Assert.Contains("/Subtype/Type0", pdfSyntax, StringComparison.Ordinal);
+        Assert.Contains("/Encoding/Identity-H", pdfSyntax, StringComparison.Ordinal);
+        Assert.DoesNotContain("/Encoding/WinAnsiEncoding", pdfSyntax, StringComparison.Ordinal);
+        Assert.DoesNotContain("/Subtype/TrueType", pdfSyntax, StringComparison.Ordinal);
+        var vendoredFontPath = Path.Combine(
+            AppContext.BaseDirectory,
+            "Assets",
+            "Fonts",
+            "NotoSans-Regular.ttf");
+        var vendoredFontBytes = File.ReadAllBytes(vendoredFontPath);
+        Assert.Matches($@"/Length1\s+{vendoredFontBytes.Length}\b", pdfSyntax);
         Assert.Contains("Noto#20Sans#20Regular", pdfSyntax, StringComparison.OrdinalIgnoreCase);
+
+        using var structuralStream = new MemoryStream(artifact.Content, writable: false);
+        using var structuralPdf = PdfSharp.Pdf.IO.PdfReader.Open(
+            structuralStream,
+            PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import);
+        var structuralPage = structuralPdf.Pages[0];
+        var fonts = Assert.IsType<PdfSharp.Pdf.PdfDictionary>(
+            structuralPage.Resources.Elements.GetDictionary("/Font"));
+        var type0Font = Assert.IsType<PdfSharp.Pdf.PdfDictionary>(
+            fonts.Elements.GetDictionary(Assert.Single(fonts.Elements.Keys)));
+        Assert.Equal("/Type0", type0Font.Elements.GetName("/Subtype"));
+        Assert.Equal("/Identity-H", type0Font.Elements.GetName("/Encoding"));
+        Assert.NotNull(type0Font.Elements.GetDictionary("/ToUnicode"));
+        var descendantFonts = Assert.IsType<PdfSharp.Pdf.PdfArray>(
+            type0Font.Elements.GetArray("/DescendantFonts"));
+        Assert.Single(descendantFonts.Elements);
+        var cidFont = Assert.IsType<PdfSharp.Pdf.PdfDictionary>(
+            descendantFonts.Elements.GetDictionary(0));
+        Assert.Equal("/CIDFontType2", cidFont.Elements.GetName("/Subtype"));
+        var fontDescriptor = Assert.IsType<PdfSharp.Pdf.PdfDictionary>(
+            cidFont.Elements.GetDictionary("/FontDescriptor"));
+        var embeddedFont = Assert.IsType<PdfSharp.Pdf.PdfDictionary>(
+            fontDescriptor.Elements.GetDictionary("/FontFile2"));
+        Assert.Equal(vendoredFontBytes, embeddedFont.Stream.UnfilteredValue);
         Assert.DoesNotContain("/Subtype /Image", pdfSyntax, StringComparison.Ordinal);
         Assert.DoesNotContain("/JavaScript", pdfSyntax, StringComparison.Ordinal);
         Assert.DoesNotContain("/OpenAction", pdfSyntax, StringComparison.Ordinal);

@@ -70,7 +70,13 @@ public sealed class TechnicalPdfGenerator
 
         using (var graphics = XGraphics.FromPdfPage(page))
         {
-            var font = new XFont(NotoSansRegularFont.FamilyName, 12, XFontStyleEx.Regular);
+            var font = new XFont(
+                NotoSansRegularFont.FamilyName,
+                12,
+                XFontStyleEx.Regular,
+                new XPdfFontOptions(
+                    PdfFontEncoding.Unicode,
+                    PdfFontEmbedding.EmbedCompleteFontFile));
             for (var index = 0; index < normalizedLines.Length; index++)
             {
                 var line = normalizedLines[index];
