@@ -1,0 +1,2824 @@
+{
+  "schemaVersion": "sales-order-core-scenarios.v1",
+  "status": "TEST_DESIGN_READY_EXECUTION_GATED",
+  "version": 1,
+  "date": "2026-09-02",
+  "sourceSnapshot": "main@80c567a63da8e059ce92aa1b23dad9f4568ad2ca",
+  "specPath": "docs/features/SALES_S01_S04_ORDER_CORE_JIT_SPEC_v1.md",
+  "acceptancePath": "docs/acceptance/SALES_S01_S04_ORDER_CORE_ACCEPTANCE_v1.md",
+  "canonicalScreens": [
+    "S-01",
+    "S-02",
+    "S-03",
+    "S-04"
+  ],
+  "dependencyScreens": [
+    "S-05",
+    "S-06"
+  ],
+  "candidateUiRecords": [
+    "PRODUCT-U-06"
+  ],
+  "canonicalAcceptance": [
+    "AT-007",
+    "AT-021",
+    "AT-022",
+    "AT-023",
+    "AT-024",
+    "AT-025"
+  ],
+  "exactApiEnumsPermissionsDeclared": false,
+  "productionActivation": "NO_GO",
+  "fixturePolicy": {
+    "classification": "SYNTHETIC_CONTRACT_ONLY",
+    "productionSeed": false,
+    "businessPolicy": false,
+    "requiresOwnerPromotion": true,
+    "note": "Alias, money, limit, unit, role and threshold values exist only to make expected outcomes deterministic."
+  },
+  "aliases": {
+    "companies": [
+      "CMP-A",
+      "CMP-B"
+    ],
+    "actors": [
+      "ACT-A",
+      "ACT-AB",
+      "ACT-NONE",
+      "ACT-CREATOR",
+      "ACT-APPROVER"
+    ],
+    "customers": [
+      "CUST-A-ACTIVE",
+      "CUST-A-INACTIVE",
+      "CUST-B-FOREIGN"
+    ],
+    "products": [
+      "PRD-ACTIVE-PROFILE",
+      "PRD-DRAFT",
+      "PRD-INACTIVE"
+    ],
+    "orders": [
+      "ORDER-A-REV0",
+      "ORDER-A-REV1"
+    ],
+    "packages": [
+      "PACK-SYNTH-V1",
+      "PACK-SYNTH-V2"
+    ],
+    "registry": [
+      "TEST-TRY",
+      "TEST-TON",
+      "TEST-BOY",
+      "TEST-KG",
+      "TEST-UNIT-NON_PHYSICAL"
+    ]
+  },
+  "goldenFixtures": [
+    {
+      "id": "GOLD-SAL-PRICE-001",
+      "status": "SYNTHETIC_CONTRACT_ONLY",
+      "formulaRef": "SIM-001",
+      "inputs": {
+        "listPrice": "40000.00",
+        "currency": "TEST-TRY",
+        "priceUnit": "TEST-TON",
+        "discountPercent": "5.00",
+        "syntheticFloor": "39000.00"
+      },
+      "expected": {
+        "discountedNet": "38000.00",
+        "comparison": "BELOW_SYNTHETIC_FLOOR",
+        "businessSemantic": "APPROVAL_REQUIRED_NOT_API_ENUM"
+      },
+      "gateIds": [
+        "G-SAL-PRICE-01",
+        "G-SAL-APP-01"
+      ],
+      "atRefs": [
+        "AT-021"
+      ]
+    },
+    {
+      "id": "GOLD-SAL-RISK-001",
+      "status": "SYNTHETIC_CONTRACT_ONLY",
+      "formulaRef": "MASTER-RISK-GROSS",
+      "inputs": {
+        "currentGrossRisk": "900000.00",
+        "candidateApprovedUndispatchedDelta": "200000.00",
+        "syntheticLimit": "1000000.00",
+        "currency": "TEST-TRY"
+      },
+      "expected": {
+        "afterGrossRisk": "1100000.00",
+        "comparison": "ABOVE_SYNTHETIC_LIMIT",
+        "businessSemantic": "APPROVAL_OR_BLOCK_NOT_API_ENUM"
+      },
+      "gateIds": [
+        "G-SAL-RISK-01",
+        "G-SAL-APP-01"
+      ],
+      "atRefs": [
+        "AT-022"
+      ]
+    },
+    {
+      "id": "GOLD-SAL-CONV-001",
+      "status": "SYNTHETIC_CONTRACT_ONLY",
+      "formulaRef": "SYNTHETIC_FIXED_FACTOR",
+      "inputs": {
+        "enteredQuantity": "80",
+        "enteredUnit": "TEST-BOY",
+        "factor": "12.5",
+        "factorUnit": "TEST-KG/TEST-BOY"
+      },
+      "expected": {
+        "primaryQuantity": "1000.00",
+        "primaryUnit": "TEST-KG",
+        "snapshotFields": [
+          "enteredQuantity",
+          "enteredUnit",
+          "primaryQuantity",
+          "primaryUnit",
+          "conversionRuleVersion"
+        ]
+      },
+      "gateIds": [
+        "G-SAL-PRD-01"
+      ],
+      "atRefs": []
+    },
+    {
+      "id": "GOLD-SAL-TERM-001",
+      "status": "SYNTHETIC_CONTRACT_ONLY",
+      "formulaRef": "STRUCTURAL_SUM",
+      "inputs": {
+        "lineQuantity": "80",
+        "unit": "TEST-BOY",
+        "sliceQuantities": [
+          "30",
+          "50"
+        ]
+      },
+      "expected": {
+        "sliceTotal": "80",
+        "reconciled": true
+      },
+      "gateIds": [
+        "G-SAL-PERSIST-01"
+      ],
+      "atRefs": []
+    },
+    {
+      "id": "GOLD-SAL-REMAIN-001",
+      "status": "SYNTHETIC_CONTRACT_ONLY",
+      "formulaRef": "INV-005",
+      "inputs": {
+        "netActiveOrderQuantity": "1000",
+        "realizedQuantity": "400",
+        "cancelledQuantity": "100",
+        "unit": "TEST-KG"
+      },
+      "expected": {
+        "remainingQuantity": "500",
+        "unit": "TEST-KG"
+      },
+      "gateIds": [
+        "G-SAL-FULFILL-01"
+      ],
+      "atRefs": [
+        "AT-024"
+      ]
+    },
+    {
+      "id": "GOLD-SAL-REV-001",
+      "status": "SYNTHETIC_CONTRACT_ONLY",
+      "formulaRef": null,
+      "inputs": {
+        "baseRevision": "ORDER-A-REV0",
+        "baseApproval": "APPROVED_BUSINESS_SEMANTIC",
+        "criticalField": "unit-price",
+        "changeApplied": true
+      },
+      "expected": {
+        "baseRevisionImmutable": true,
+        "newRevision": "ORDER-A-REV1",
+        "approvalInherited": false,
+        "reapprovalRequired": true
+      },
+      "gateIds": [
+        "G-SAL-PERSIST-01",
+        "G-SAL-APP-01"
+      ],
+      "atRefs": [
+        "AT-023"
+      ]
+    },
+    {
+      "id": "GOLD-SAL-EFFECTIVE-KG-001",
+      "status": "SYNTHETIC_CONTRACT_ONLY",
+      "formulaRef": "LOCKED_DOCX_EFFECTIVE_KG_T_G",
+      "inputs": {
+        "orderAmount": "38000.00",
+        "orderTheoreticalKgT": "1000",
+        "fulfillmentAmount": "15200.00",
+        "actualDispatchKgG": "400",
+        "invoiceAmount": "7600.00",
+        "invoiceLinkedActualKgG": "200",
+        "currency": "TEST-TRY",
+        "massUnit": "TEST-KG"
+      },
+      "expected": {
+        "orderEffectiveKgPrice": "38.00",
+        "fulfillmentEffectiveKgPrice": "38.00",
+        "invoiceEffectiveKgPrice": "38.00",
+        "roundingApplied": false
+      },
+      "gateIds": [
+        "G-SAL-PRICE-01",
+        "G-SAL-FULFILL-01",
+        "G-SAL-INVOICE-01",
+        "G-SAL-FX-01"
+      ],
+      "atRefs": []
+    },
+    {
+      "id": "GOLD-SAL-UNINVOICED-001",
+      "status": "SYNTHETIC_CONTRACT_ONLY",
+      "formulaRef": "LOCKED_DOCX_UNINVOICED_COMMERCIAL_AMOUNT",
+      "inputs": {
+        "operationFulfilledTl": "15200.00",
+        "invoiceFulfilledTl": "7600.00",
+        "operationFulfilledUsd": "400.00",
+        "invoiceFulfilledUsd": "200.00",
+        "commercialRevision": "ORDER-A-REV1",
+        "fxBasis": "SYNTHETIC_PINNED_SAME_BASIS"
+      },
+      "expected": {
+        "uninvoicedFulfilledTl": "7600.00",
+        "uninvoicedFulfilledUsd": "200.00",
+        "invoiceLinkedQuantityRemainsSeparate": true
+      },
+      "gateIds": [
+        "G-SAL-FULFILL-01",
+        "G-SAL-INVOICE-01",
+        "G-SAL-FX-01"
+      ],
+      "atRefs": []
+    },
+    {
+      "id": "GOLD-SAL-ALLOC-PCT-001",
+      "status": "SYNTHETIC_CONTRACT_ONLY",
+      "formulaRef": "LOCKED_DOCX_PHYSICAL_ONLY_ALLOCATION_PERCENT",
+      "inputs": {
+        "physicalNeedKg": ["1000", "500"],
+        "physicalAllocatedKg": ["600", "300"],
+        "stocklessServiceCommercialQuantity": "5",
+        "serviceUnit": "TEST-UNIT-NON_PHYSICAL"
+      },
+      "expected": {
+        "physicalNeedDenominatorKg": "1500",
+        "physicalAllocatedNumeratorKg": "900",
+        "allocationPercentExact": "60",
+        "stocklessServiceExcluded": true
+      },
+      "gateIds": [
+        "G-SAL-SERVICE-01",
+        "G-SAL-ALLOC-01"
+      ],
+      "atRefs": []
+    }
+  ],
+  "requiredGoldenPromotionFields": [
+    "immutableUnitIds",
+    "formulaVersion",
+    "priceVersion",
+    "policyVersion",
+    "decimalScale",
+    "roundingMode",
+    "tolerance",
+    "companyScope",
+    "businessDateRule",
+    "currencyRule",
+    "ownerEvidence",
+    "fixtureProvenance",
+    "datasetContentHash",
+    "realSqlRoundTrip",
+    "businessOwnerAcceptance"
+  ],
+  "decisionGates": [
+    {
+      "id": "SAL-REQ-001",
+      "status": "OWNER_DECISION_OPEN_NO_GO",
+      "topic": "Transition guards, numbering, validity, send, customer acceptance and revision details on the single Sales record across Request, Quotation and Order stages",
+      "safeDefault": "The immutable Sales identity remains single; only S-01 read projection is available and create, send and transition writes remain closed"
+    },
+    {
+      "id": "SAL-STATE-001",
+      "status": "OWNER_DECISION_OPEN_NO_GO",
+      "topic": "Initial values and transitions for the seven independent order state axes",
+      "safeDefault": "Axes remain separate; no single status enum or automatic transition is invented"
+    },
+    {
+      "id": "SAL-NUM-001",
+      "status": "OWNER_DECISION_OPEN_NO_GO",
+      "topic": "Order, quotation and request visible-number series and gap policy",
+      "safeDefault": "Server-owned opaque draft reference; no production number policy is invented"
+    },
+    {
+      "id": "SAL-CARI-SEL-001",
+      "status": "OWNER_DECISION_OPEN_NO_GO",
+      "topic": "Customer account, address and contact snapshot requirements and CARI document gates",
+      "safeDefault": "Only an active Customer account is eligible; missing owner capabilities do not open submit"
+    },
+    {
+      "id": "SAL-PRD-ACCESS-001",
+      "status": "OWNER_DECISION_OPEN_NO_GO",
+      "topic": "Operational Product selector access under the admin-only Product master decision",
+      "safeDefault": "Non-admin selector is default-deny; no exact permission or grant is invented"
+    },
+    {
+      "id": "SAL-SERVICE-001",
+      "status": "OWNER_DECISION_OPEN_NO_GO",
+      "topic": "Service identity, scope, lifecycle, permission, price and selector composition",
+      "safeDefault": "Service result and line kind are not mounted"
+    },
+    {
+      "id": "SAL-PRICE-001",
+      "status": "OWNER_DECISION_OPEN_NO_GO",
+      "topic": "Price precedence, business date, currency/FX, VAT, discount and snapshot contract",
+      "safeDefault": "S-05 is unavailable and UI price is never authoritative"
+    },
+    {
+      "id": "SAL-MARGIN-001",
+      "status": "OWNER_DECISION_OPEN_NO_GO",
+      "topic": "Margin cost basis, formula, rounding and unavailable behavior",
+      "safeDefault": "No margin pass or amount is produced and approval cannot be bypassed"
+    },
+    {
+      "id": "SAL-RISK-001",
+      "status": "OWNER_DECISION_OPEN_NO_GO",
+      "topic": "Risk/limit projection, threshold, exception validity and approval route",
+      "safeDefault": "Risk never defaults to pass; submit and approve remain gated"
+    },
+    {
+      "id": "SAL-APP-001",
+      "status": "OWNER_DECISION_OPEN_NO_GO",
+      "topic": "Order, price and risk approval types, ordering, scope, thresholds, delegation and SoD",
+      "safeDefault": "No role or threshold is hard-coded and S-06 production behavior remains closed"
+    },
+    {
+      "id": "SAL-DUE-001",
+      "status": "OWNER_DECISION_OPEN_NO_GO",
+      "topic": "Vehicle/shipment due date and header/line due model",
+      "safeDefault": "Structural draft data may be retained but creates no financial effect"
+    },
+    {
+      "id": "SAL-TERM-001",
+      "status": "OWNER_DECISION_OPEN_NO_GO",
+      "topic": "Header default, line/slice date semantics, permission and exact reason policy",
+      "safeDefault": "Term changes remain audited without reapproval; ambiguous submit fails closed"
+    },
+    {
+      "id": "SAL-CANCEL-001",
+      "status": "OWNER_DECISION_OPEN_NO_GO",
+      "topic": "Owner-impact completeness, preview expiry/hash, compensation and partial failure",
+      "safeDefault": "Cancel stays closed when preview is incomplete; no owner record is deleted automatically"
+    },
+    {
+      "id": "SAL-CLOSE-001",
+      "status": "OWNER_DECISION_OPEN_NO_GO",
+      "topic": "Operational, commercial and financial close preconditions",
+      "safeDefault": "No automatic close transition"
+    },
+    {
+      "id": "SAL-ERR-001",
+      "status": "OWNER_DECISION_OPEN_NO_GO",
+      "topic": "Stable Sales validation, not-found and conflict code manifest",
+      "safeDefault": "Only semantic error classes are used; UI does not guess literals"
+    },
+    {
+      "id": "SAL-PERM-001",
+      "status": "OWNER_DECISION_OPEN_NO_GO",
+      "topic": "Sales screen/action permission, capability and role grants",
+      "safeDefault": "Default-deny; no role name or exact permission string is hard-coded"
+    }
+  ],
+  "gates": [
+    {
+      "id": "G-SAL-CARI-01",
+      "status": "OPEN_NO_GO",
+      "owner": "Counterparty/CARI",
+      "dependsOnDecisionGateIds": [
+        "SAL-CARI-SEL-001"
+      ],
+      "blocks": [
+        "customer selector",
+        "draft submit",
+        "current and historical customer snapshot projection"
+      ]
+    },
+    {
+      "id": "G-SAL-PRD-01",
+      "status": "OPEN_NO_GO",
+      "owner": "Product + platform",
+      "dependsOnDecisionGateIds": [],
+      "blocks": [
+        "PRODUCT-U-06 production selector",
+        "Product line submit",
+        "Product snapshot and package/unit history projection"
+      ]
+    },
+    {
+      "id": "G-SAL-PRD-ACCESS-01",
+      "status": "OPEN_NO_GO",
+      "owner": "Product/Sales/Security",
+      "dependsOnDecisionGateIds": [
+        "SAL-PRD-ACCESS-001"
+      ],
+      "blocks": [
+        "non-admin operational Product selection"
+      ]
+    },
+    {
+      "id": "G-SAL-PERSIST-01",
+      "status": "OPEN_NO_GO",
+      "owner": "Sales/Codex + platform",
+      "dependsOnDecisionGateIds": [
+        "SAL-REQ-001",
+        "SAL-STATE-001",
+        "SAL-NUM-001",
+        "SAL-DUE-001",
+        "SAL-TERM-001",
+        "SAL-CLOSE-001",
+        "SAL-ERR-001",
+        "SAL-PERM-001"
+      ],
+      "blocks": [
+        "Sales schema",
+        "migration",
+        "draft write",
+        "S-01/S-02/S-04 production read projections and routes"
+      ]
+    },
+    {
+      "id": "G-SAL-PRICE-01",
+      "status": "OPEN_NO_GO",
+      "owner": "Price/S-05",
+      "dependsOnDecisionGateIds": [
+        "SAL-PRICE-001",
+        "SAL-MARGIN-001"
+      ],
+      "blocks": [
+        "price snapshot",
+        "discount/floor evaluation",
+        "AT-021"
+      ]
+    },
+    {
+      "id": "G-SAL-RISK-01",
+      "status": "OPEN_NO_GO",
+      "owner": "Cari/Finance/S-05",
+      "dependsOnDecisionGateIds": [
+        "SAL-RISK-001"
+      ],
+      "blocks": [
+        "risk evaluation",
+        "AT-022"
+      ]
+    },
+    {
+      "id": "G-SAL-APP-01",
+      "status": "OPEN_NO_GO",
+      "owner": "Approval/S-06/SY-04",
+      "dependsOnDecisionGateIds": [
+        "SAL-APP-001"
+      ],
+      "blocks": [
+        "submit",
+        "approve/reject",
+        "approval inheritance",
+        "approval task/result projection"
+      ]
+    },
+    {
+      "id": "G-SAL-SERVICE-01",
+      "status": "OPEN_NO_GO",
+      "owner": "Service/SRV-SCOPE-001",
+      "dependsOnDecisionGateIds": [
+        "SAL-SERVICE-001"
+      ],
+      "blocks": [
+        "Service selector",
+        "Service line"
+      ]
+    },
+    {
+      "id": "G-SAL-ALLOC-01",
+      "status": "OPEN_NO_GO",
+      "owner": "Stock/Allocation",
+      "dependsOnDecisionGateIds": [],
+      "blocks": [
+        "allocation write",
+        "source axis",
+        "allocation projection"
+      ]
+    },
+    {
+      "id": "G-SAL-FULFILL-01",
+      "status": "OPEN_NO_GO",
+      "owner": "Logistics/Fulfillment",
+      "dependsOnDecisionGateIds": [
+        "SAL-DUE-001",
+        "SAL-TERM-001"
+      ],
+      "blocks": [
+        "realization projection",
+        "remaining quantity",
+        "dispatch linkage",
+        "AT-024"
+      ]
+    },
+    {
+      "id": "G-SAL-INVOICE-01",
+      "status": "OPEN_NO_GO",
+      "owner": "Finance/Invoicing",
+      "dependsOnDecisionGateIds": [],
+      "blocks": [
+        "invoice axis",
+        "invoice quantities",
+        "invoice tab projection",
+        "invoice grouping and invoice-stage price movement"
+      ]
+    },
+    {
+      "id": "G-SAL-DOC-01",
+      "status": "OPEN_NO_GO",
+      "owner": "ERP-000G/H + Document/PDF",
+      "dependsOnDecisionGateIds": [],
+      "blocks": [
+        "documents tab write",
+        "contract PDF"
+      ]
+    },
+    {
+      "id": "G-SAL-AI-01",
+      "status": "OPEN_NO_GO",
+      "owner": "ERP-000J",
+      "dependsOnDecisionGateIds": [],
+      "blocks": [
+        "AI line drafting",
+        "AI panel"
+      ]
+    },
+    {
+      "id": "G-SAL-EVENT-01",
+      "status": "OPEN_NO_GO",
+      "owner": "ERP-000F",
+      "dependsOnDecisionGateIds": [],
+      "blocks": [
+        "reliable cross-module lifecycle events"
+      ]
+    },
+    {
+      "id": "G-SAL-PURCHASE-READ-01",
+      "status": "OPEN_NO_GO",
+      "owner": "Purchasing",
+      "dependsOnDecisionGateIds": [],
+      "blocks": [
+        "linked purchase source projection",
+        "linked purchase cancel-impact completeness"
+      ]
+    },
+    {
+      "id": "G-SAL-PRODUCTION-READ-01",
+      "status": "OPEN_NO_GO",
+      "owner": "Production",
+      "dependsOnDecisionGateIds": [],
+      "blocks": [
+        "linked production source projection",
+        "linked production cancel-impact completeness"
+      ]
+    },
+    {
+      "id": "G-SAL-FINANCE-READ-01",
+      "status": "OPEN_NO_GO",
+      "owner": "Finance/Open-item/Collection",
+      "dependsOnDecisionGateIds": [],
+      "blocks": [
+        "unmatched advance or bank-receipt cancel impact",
+        "financial-close projection"
+      ]
+    },
+    {
+      "id": "G-SAL-FX-01",
+      "status": "OPEN_NO_GO",
+      "owner": "Finance/Settings/FX",
+      "dependsOnDecisionGateIds": [
+        "SAL-PRICE-001"
+      ],
+      "blocks": [
+        "dual-currency commercial amount projection",
+        "order and invoice FX snapshot evaluation"
+      ]
+    }
+  ],
+  "caseCount": 72,
+  "cases": [
+    {
+      "id": "CASE-SAL-X-001",
+      "group": "X",
+      "title": "Seçili şirket izolasyonu",
+      "screenIds": [
+        "S-01",
+        "S-02",
+        "S-03",
+        "S-04"
+      ],
+      "sourceRefs": [
+        "AGENTS",
+        "Master-Company",
+        "ADR-009"
+      ],
+      "atRefs": [
+        "AT-001"
+      ],
+      "gateIds": [
+        "G-SAL-PERSIST-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "SEC",
+        "E2E"
+      ],
+      "precondition": "ACT-A yalnız CMP-A için yetkili; CMP-B'de order/customer fixture'ı vardır.",
+      "action": "Aynı list/detail/draft yolları CMP-A ve foreign CMP-B bağlamıyla çağrılır.",
+      "expected": [
+        "CMP-A çağrısı yalnız CMP-A kayıtlarını verir.",
+        "Foreign direct reference güvenli biçimde reddedilir.",
+        "Count, badge, timing ve error shape CMP-B varlığını açıklamaz."
+      ],
+      "forbidden": [
+        "Browser şirket fan-out/union yapmaz.",
+        "Payload CompanyId ile kapsam genişlemez."
+      ]
+    },
+    {
+      "id": "CASE-SAL-X-002",
+      "group": "X",
+      "title": "Yetkisiz direct-reference non-disclosure",
+      "screenIds": [
+        "S-02",
+        "S-04"
+      ],
+      "sourceRefs": [
+        "AGENTS",
+        "ADR-009"
+      ],
+      "atRefs": [
+        "AT-001"
+      ],
+      "gateIds": [
+        "G-SAL-PERSIST-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "SEC"
+      ],
+      "precondition": "ACT-NONE authenticated fakat Sales read yetkisine sahip değildir; hedef kayıt vardır.",
+      "action": "Liste ve bilinen order ID detail doğrudan çağrılır.",
+      "expected": [
+        "Server authorization her çağrıda yeniden çalışır.",
+        "Order number, customer, revision, count veya existence bilgisi dönmez.",
+        "Business write ve audit etkisi sıfırdır."
+      ],
+      "forbidden": [
+        "UI route görünürlüğü authorization sayılmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-X-003",
+      "group": "X",
+      "title": "Geçersiz CompanyContext sıfır etki",
+      "screenIds": [
+        "S-01",
+        "S-02",
+        "S-03",
+        "S-04"
+      ],
+      "sourceRefs": [
+        "PLATFORM-HTTP",
+        "ORTAK-METADATA"
+      ],
+      "atRefs": [
+        "AT-001"
+      ],
+      "gateIds": [
+        "G-SAL-PERSIST-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "SEC"
+      ],
+      "precondition": "Authenticated actor Sales ekranına gider.",
+      "action": "CompanyContext absent, blank, multiple, comma-joined, malformed veya inaccessible gönderilir.",
+      "expected": [
+        "Platform contract'a uygun fail-closed sonuç oluşur.",
+        "Response hostile metadata'yı echo etmez.",
+        "Sales/order/audit/idempotency cardinality değişmez."
+      ],
+      "forbidden": [
+        "Default company fallback yoktur."
+      ]
+    },
+    {
+      "id": "CASE-SAL-X-004",
+      "group": "X",
+      "title": "Şirket değişiminde dirty form taşınmaz; stale cevap düşer",
+      "screenIds": [
+        "S-01",
+        "S-02",
+        "S-03",
+        "S-04"
+      ],
+      "sourceRefs": [
+        "UI-DESIGN",
+        "AGENTS"
+      ],
+      "atRefs": [
+        "AT-001",
+        "AT-008"
+      ],
+      "gateIds": [
+        "G-SAL-PERSIST-01"
+      ],
+      "evidence": [
+        "FE",
+        "E2E",
+        "SEC"
+      ],
+      "precondition": "ACT-AB CMP-A S-03 dirty draft'ındadır; CMP-A request'i geciktirilirken shell CMP-B CompanyContext'ine commit olur.",
+      "action": "Şirket değişimi tamamlanır ve gecikmiş CMP-A cevabı yeni bağlam render olduktan sonra teslim edilir.",
+      "expected": [
+        "Dirty CMP-A formu origin context'iyle korunur veya explicit return/discard akışına alınır; CMP-B formuna sessiz taşınmaz.",
+        "Gecikmiş cevap transportta görülebilir fakat yeni namespace'e commit edilmez.",
+        "Eski customer/order/title/breadcrumb/count/form state CMP-B bağlamında görünmez."
+      ],
+      "forbidden": [
+        "Stale success toast, cache resurrection veya CMP-A draft'ının CMP-B payload'ıyla kaydı yoktur."
+      ]
+    },
+    {
+      "id": "CASE-SAL-X-005",
+      "group": "X",
+      "title": "Aynı-key aynı-payload idempotent replay",
+      "screenIds": [
+        "S-03",
+        "S-04"
+      ],
+      "sourceRefs": [
+        "ADR-011",
+        "ADR-009"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-PERSIST-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "E2E"
+      ],
+      "precondition": "Yetkili actor aynı company/operation/normalized payload ile tek logical attempt hazırlar.",
+      "action": "Command aynı idempotency key ile paralel veya timeout sonrası yeniden gönderilir.",
+      "expected": [
+        "Tek business outcome, tek logical audit ve tek completed command result vardır.",
+        "Replay ancak güncel authorization sonrası güvenli terminal sonucu verir."
+      ],
+      "forbidden": [
+        "İkinci order/revision/line oluşmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-X-006",
+      "group": "X",
+      "title": "Idempotency mismatch ikinci etkiyi engeller",
+      "screenIds": [
+        "S-03",
+        "S-04"
+      ],
+      "sourceRefs": [
+        "ADR-011"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-PERSIST-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "SEC"
+      ],
+      "precondition": "Bir idempotency key için ilk request tamamlanmıştır.",
+      "action": "Aynı key farklı actor, company, operation veya normalized payload ile kullanılır.",
+      "expected": [
+        "Conflict veya non-disclosing red oluşur.",
+        "İlk stored response yetkisiz bağlama açıklanmaz.",
+        "İkinci business/audit etkisi yoktur."
+      ],
+      "forbidden": [
+        "Key değiştirilerek unknown outcome kör tekrarlanmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-X-007",
+      "group": "X",
+      "title": "Farklı-key optimistic concurrency yarışı",
+      "screenIds": [
+        "S-03",
+        "S-04"
+      ],
+      "sourceRefs": [
+        "ADR-011",
+        "DEC-SAL-002"
+      ],
+      "atRefs": [
+        "AT-005"
+      ],
+      "gateIds": [
+        "G-SAL-PERSIST-01"
+      ],
+      "evidence": [
+        "SQL",
+        "CT",
+        "FE"
+      ],
+      "precondition": "İki actor aynı current order/revision version'ını okur.",
+      "action": "Farklı keys ile çakışan update/revision command'leri eşzamanlı gönderilir.",
+      "expected": [
+        "Tek winner commit olur.",
+        "Loser expected/current farkı taşıyan safe conflict alır.",
+        "Loser formu compare/reload için korunur."
+      ],
+      "forbidden": [
+        "Last-write-wins ve otomatik overwrite yoktur."
+      ]
+    },
+    {
+      "id": "CASE-SAL-X-008",
+      "group": "X",
+      "title": "Audit/idempotency arızasında atomik rollback",
+      "screenIds": [
+        "S-03",
+        "S-04"
+      ],
+      "sourceRefs": [
+        "ADR-009",
+        "ADR-011"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-PERSIST-01"
+      ],
+      "evidence": [
+        "SQL"
+      ],
+      "precondition": "Valid Sales write command'i hazırlanır.",
+      "action": "Audit insert veya completed-command persistence failure enjekte edilir.",
+      "expected": [
+        "Order/revision/line değişikliği tamamen rollback olur.",
+        "Zorunlu outbox varsa o da aynı accepted atomic boundary'de rollback olur."
+      ],
+      "forbidden": [
+        "Business success + eksik audit sonucu yoktur."
+      ]
+    },
+    {
+      "id": "CASE-SAL-X-009",
+      "group": "X",
+      "title": "Başarısız kaydetmede form korunur",
+      "screenIds": [
+        "S-03"
+      ],
+      "sourceRefs": [
+        "UI-DESIGN",
+        "AT-006"
+      ],
+      "atRefs": [
+        "AT-006"
+      ],
+      "gateIds": [
+        "G-SAL-PERSIST-01"
+      ],
+      "evidence": [
+        "FE",
+        "E2E"
+      ],
+      "precondition": "Dirty multi-line draft vardır.",
+      "action": "Validation, offline, 500/503 veya unknown write outcome oluşur.",
+      "expected": [
+        "Kullanıcı girdisi, line stable IDs ve current attempt key korunur.",
+        "Accessible error/retry gösterilir.",
+        "Outcome unknown ise aynı key/payload ile reconcile edilir."
+      ],
+      "forbidden": [
+        "Route çıkışı ve sahte başarı toast'ı yoktur."
+      ]
+    },
+    {
+      "id": "CASE-SAL-X-010",
+      "group": "X",
+      "title": "Responsive ve erişilebilir görev tamamlama",
+      "screenIds": [
+        "S-01",
+        "S-02",
+        "S-03",
+        "S-04"
+      ],
+      "sourceRefs": [
+        "UI-DESIGN"
+      ],
+      "atRefs": [],
+      "gateIds": [],
+      "evidence": [
+        "FE",
+        "E2E",
+        "A11Y"
+      ],
+      "precondition": "Fixture contract render edilir.",
+      "action": "320px, tablet, desktop, %200 zoom, %400 reflow ve yalnız klavye/screen-reader akışları çalıştırılır.",
+      "expected": [
+        "Focus görünür ve mantıksal kalır.",
+        "Labels/errors/table headers/state names/drawer-dialog focus yönetimi doğrudur.",
+        "Renk tek işaret değildir."
+      ],
+      "forbidden": [
+        "Yatay taşma nedeniyle ana action kaybolmaz.",
+        "Drag-only veya pointer-only zorunlu işlem yoktur."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S01-001",
+      "group": "S01",
+      "title": "Talep ve Teklif aynı Sales record aşamalarıdır",
+      "screenIds": [
+        "S-01"
+      ],
+      "sourceRefs": [
+        "SALES-LOCK-DOCX",
+        "Master-7.2",
+        "Master-27.2",
+        "UI-MAP-001"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "SAL-REQ-001",
+        "G-SAL-PERSIST-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "FE",
+        "SRC"
+      ],
+      "precondition": "Aynı immutable Sales record Talep revision'ından Teklif aşamasına ilerlemiştir.",
+      "action": "S-01 havuzu ve kayıt geçmişi açılır.",
+      "expected": [
+        "Tek Sales record ID korunur; current ticari aşama ile önceki Talep/Teklif revision geçmişi ayrı ve erişilebilir gösterilir.",
+        "Approval ve operation axes ticari aşamayla birleştirilmez."
+      ],
+      "forbidden": [
+        "Talep, Teklif ve Sipariş için ayrı aggregate/duplicate identity veya ayrı ön sipariş yaratılmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S01-002",
+      "group": "S01",
+      "title": "Server filtre/count yetki kapsamını korur",
+      "screenIds": [
+        "S-01"
+      ],
+      "sourceRefs": [
+        "UI-DESIGN",
+        "Master-7.2"
+      ],
+      "atRefs": [
+        "AT-001"
+      ],
+      "gateIds": [
+        "G-SAL-PERSIST-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "SEC",
+        "FE"
+      ],
+      "precondition": "Authorized ve foreign request/quotation kayıtları vardır.",
+      "action": "Search/filter/page/count istenir.",
+      "expected": [
+        "Yalnız authorized/filter scope sonucu gelir.",
+        "Count desteklenmiyorsa sayı gösterilmez.",
+        "Filtered-empty ile true-empty ayrıdır."
+      ],
+      "forbidden": [
+        "Client-side bütün veri yükleme veya foreign count yoktur."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S01-003",
+      "group": "S01",
+      "title": "Lifecycle kararı yokken write kapalıdır",
+      "screenIds": [
+        "S-01"
+      ],
+      "sourceRefs": [
+        "Master-8.1",
+        "SAL-REQ-001"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "SAL-REQ-001"
+      ],
+      "evidence": [
+        "FE",
+        "E2E",
+        "SRC"
+      ],
+      "precondition": "Talep/teklif exact state/number/validity/convert contract'ı kabul edilmemiştir.",
+      "action": "Create, send veya convert UI'sına gidilir.",
+      "expected": [
+        "Action capability yayımlanmaz veya açık gated-state gösterir.",
+        "Read projection kullanılabilir kalır."
+      ],
+      "forbidden": [
+        "Prototip durumlarıyla production write yapılmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S01-004",
+      "group": "S01",
+      "title": "Tekliften Siparişe geçiş identity ve geçmişi korur",
+      "screenIds": [
+        "S-01",
+        "S-03",
+        "S-04"
+      ],
+      "sourceRefs": [
+        "SALES-LOCK-DOCX",
+        "Master-8.1",
+        "Master-9.1",
+        "SAL-REQ-001"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "SAL-REQ-001",
+        "G-SAL-PERSIST-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL"
+      ],
+      "precondition": "Owner-approved transition contract ve Teklif aşamasındaki Sales record vardır.",
+      "action": "Sipariş aşamasına geçiş aynı logical attempt ile çalışır.",
+      "expected": [
+        "Aynı Sales record ID Sipariş aşamasına ilerler; önceki Talep/Teklif revision'ları immutable kalır.",
+        "Replay ikinci order/identity üretmez."
+      ],
+      "forbidden": [
+        "Ayrı ön sipariş/order aggregate yaratılmaz; client-side status flip geçiş sayılmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S01-005",
+      "group": "S01",
+      "title": "Owner verisi yokken fırsat/tutar uydurulmaz",
+      "screenIds": [
+        "S-01"
+      ],
+      "sourceRefs": [
+        "Master-7.2",
+        "UI-DESIGN"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-PERSIST-01"
+      ],
+      "evidence": [
+        "FE",
+        "SRC"
+      ],
+      "precondition": "Response opportunity score, amount veya probability taşımamaktadır.",
+      "action": "Havuz listesi ve empty states render edilir.",
+      "expected": [
+        "Unsupported alan gizlenir veya unavailable olarak sunulur."
+      ],
+      "forbidden": [
+        "Sıfır tutar, fake opportunity, mock AI score veya hayalî KPI yoktur."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S02-001",
+      "group": "S02",
+      "title": "Satış siparişi listesi şirket-kapsamlıdır",
+      "screenIds": [
+        "S-02"
+      ],
+      "sourceRefs": [
+        "DEC-SAL-001",
+        "Master-27.2"
+      ],
+      "atRefs": [
+        "AT-001",
+        "AT-025"
+      ],
+      "gateIds": [
+        "G-SAL-PERSIST-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "SEC",
+        "E2E"
+      ],
+      "precondition": "CMP-A ve CMP-B Sales orders vardır; actor yalnız CMP-A scope'undadır.",
+      "action": "S-02 varsayılan liste açılır ve direct filters uygulanır.",
+      "expected": [
+        "Yalnız CMP-A Sales orders görünür.",
+        "Order/customer/revision/count foreign data içermez."
+      ],
+      "forbidden": [
+        "Purchase orders veya CMP-B kayıtları görünmez."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S02-002",
+      "group": "S02",
+      "title": "Yedi state axis ayrı gösterilir",
+      "screenIds": [
+        "S-02"
+      ],
+      "sourceRefs": [
+        "DEC-SAL-001",
+        "DURUM-MAKINELERI"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-PERSIST-01"
+      ],
+      "evidence": [
+        "CT",
+        "FE",
+        "SRC"
+      ],
+      "precondition": "Aynı lifecycle fakat farklı approval/source/fulfillment olan iki order vardır.",
+      "action": "Liste ve hızlı detay render edilir.",
+      "expected": [
+        "Her axis kendi label/value'suyla görünür.",
+        "UI summary varsa derived olduğu açıktır."
+      ],
+      "forbidden": [
+        "Tek stored renk/status diğer axes'i ezmez."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S02-003",
+      "group": "S02",
+      "title": "Kısmi gerçekleşmede kalan oracle doğru",
+      "screenIds": [
+        "S-02",
+        "S-04"
+      ],
+      "sourceRefs": [
+        "Master-28.10",
+        "AT-024"
+      ],
+      "atRefs": [
+        "AT-024"
+      ],
+      "gateIds": [
+        "G-SAL-FULFILL-01"
+      ],
+      "evidence": [
+        "UT",
+        "CT",
+        "SQL"
+      ],
+      "precondition": "Golden: net active 1000 kg, realized 400 kg, cancelled 100 kg.",
+      "action": "Owner calculator `INV-005` projection'ı üretir.",
+      "expected": [
+        "Remaining 500 kg olur.",
+        "Unit ve source/version görünür.",
+        "Order snapshot değişmez."
+      ],
+      "forbidden": [
+        "UI client-side alternatif formül çalıştırmaz.",
+        "Realization stok hareketi ilk dalga tarafından yazılmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S02-004",
+      "group": "S02",
+      "title": "Satış ve satın alma belgeleri karışmaz",
+      "screenIds": [
+        "S-02"
+      ],
+      "sourceRefs": [
+        "AT-025",
+        "Master-9.1"
+      ],
+      "atRefs": [
+        "AT-025"
+      ],
+      "gateIds": [
+        "G-SAL-PERSIST-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "E2E"
+      ],
+      "precondition": "Aynı visible number/customer/date'e sahip Sales ve Purchase fixture'ı vardır.",
+      "action": "Sales list/filter/detail açılır.",
+      "expected": [
+        "Yalnız Sales owner/discriminator kayıtları gelir.",
+        "Route/detail referansı doğru Sales aggregate'e gider."
+      ],
+      "forbidden": [
+        "Purchase row, count, label veya action karışmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S02-005",
+      "group": "S02",
+      "title": "Historical inactive customer snapshot okunur",
+      "screenIds": [
+        "S-02",
+        "S-04"
+      ],
+      "sourceRefs": [
+        "DEC-CAR-003",
+        "Master-9.2"
+      ],
+      "atRefs": [
+        "AT-013"
+      ],
+      "gateIds": [
+        "G-SAL-CARI-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "FE"
+      ],
+      "precondition": "Geçmiş order customer Party/account sonradan inactive olmuştur.",
+      "action": "Order list/detail okunur.",
+      "expected": [
+        "Sipariş anı customer snapshot'ı tarihsel olarak görünür.",
+        "Current inactive durumu ayrıca işaretlenebilir."
+      ],
+      "forbidden": [
+        "Order kaybolmaz veya current master ile sessiz yeniden adlandırılmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S02-006",
+      "group": "S02",
+      "title": "Filter/sort/company değişimi stale page'i atar",
+      "screenIds": [
+        "S-02"
+      ],
+      "sourceRefs": [
+        "UI-DESIGN",
+        "AGENTS"
+      ],
+      "atRefs": [
+        "AT-001"
+      ],
+      "gateIds": [
+        "G-SAL-PERSIST-01"
+      ],
+      "evidence": [
+        "CT",
+        "FE",
+        "E2E"
+      ],
+      "precondition": "Page/cursor açıkken filter, sort veya CompanyContext değişir.",
+      "action": "Eski continuation cevabı geç gelir.",
+      "expected": [
+        "Cursor zinciri sıfırlanır.",
+        "Eski response yeni query'ye append edilmez.",
+        "Duplicate order ID malformed kabul edilir."
+      ],
+      "forbidden": [
+        "Browser cursor üretmez/parse etmez."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S02-007",
+      "group": "S02",
+      "title": "Owner projection yoksa KPI ve miktar sıfır uydurulmaz",
+      "screenIds": [
+        "S-02"
+      ],
+      "sourceRefs": [
+        "UI-DESIGN",
+        "Master-7.2"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-ALLOC-01",
+        "G-SAL-FULFILL-01",
+        "G-SAL-INVOICE-01"
+      ],
+      "evidence": [
+        "FE",
+        "SRC"
+      ],
+      "precondition": "Allocation/fulfillment/invoice aggregate alanları response'ta yoktur.",
+      "action": "Liste özetleri render edilir.",
+      "expected": [
+        "Unsupported/hidden state gösterilir; mevcut order fields kullanılabilir kalır."
+      ],
+      "forbidden": [
+        "Allocated/realized/invoiced değerleri `0` veya fake badge olmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S03-001",
+      "group": "S03",
+      "title": "Valid minimum order taslak doğar",
+      "screenIds": [
+        "S-03"
+      ],
+      "sourceRefs": [
+        "DEC-SAL-001",
+        "Master-7.2"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-CARI-01",
+        "G-SAL-PRD-01",
+        "G-SAL-PERSIST-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "E2E"
+      ],
+      "precondition": "Eligible customer ve Product fixture'ı; S-05/S-06 kapalıdır.",
+      "action": "Minimum header+line Draft aynı logical attempt ile kaydedilir.",
+      "expected": [
+        "Order/revision Draft olarak saklanır.",
+        "Stock/allocation/risk/open-item effect sıfırdır.",
+        "Submit/approval sonucu oluşmaz."
+      ],
+      "forbidden": [
+        "Save Draft doğrudan approved/active olmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S03-002",
+      "group": "S03",
+      "title": "Protected alan mass-assignment reddedilir",
+      "screenIds": [
+        "S-03"
+      ],
+      "sourceRefs": [
+        "ORTAK-METADATA",
+        "ADR-009",
+        "ADR-011"
+      ],
+      "atRefs": [
+        "AT-001"
+      ],
+      "gateIds": [
+        "G-SAL-PERSIST-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "SEC"
+      ],
+      "precondition": "Valid draft payload'a protected metadata eklenir.",
+      "action": "Client CompanyId/orderNumber/status/approval/totals/actor/audit/formula result gönderir.",
+      "expected": [
+        "Contract fail-closed veya protected alanları kesin authority dışı tutar.",
+        "Server values değişmez.",
+        "Business/audit/idempotency effect accepted contract'a uygundur."
+      ],
+      "forbidden": [
+        "Client status/CompanyId otorite kazanmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S03-003",
+      "group": "S03",
+      "title": "Aktif Customer account seçilebilir",
+      "screenIds": [
+        "S-03"
+      ],
+      "sourceRefs": [
+        "DEC-CAR-001",
+        "DEC-CAR-002",
+        "DEC-CAR-003"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-CARI-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "E2E"
+      ],
+      "precondition": "CUST-A-ACTIVE global active, CMP-A account active ve Customer role taşır.",
+      "action": "Customer selector search eder, seçer ve server save yeniden doğrular.",
+      "expected": [
+        "Tek Party/current-company account reference ve owner version snapshot'lanır."
+      ],
+      "forbidden": [
+        "Foreign account roles union edilmez."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S03-004",
+      "group": "S03",
+      "title": "Pasif/foreign/non-Customer account seçilemez",
+      "screenIds": [
+        "S-03"
+      ],
+      "sourceRefs": [
+        "DEC-CAR-002",
+        "DEC-CAR-003",
+        "AT-013"
+      ],
+      "atRefs": [
+        "AT-013"
+      ],
+      "gateIds": [
+        "G-SAL-CARI-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "SEC",
+        "E2E"
+      ],
+      "precondition": "CUST-A-INACTIVE, CUST-B-FOREIGN, account inactive ve Customer role'süz fixture'lar vardır.",
+      "action": "Selector search ve direct-ID save/submit denenir.",
+      "expected": [
+        "Sonuçlar selector'da yoktur veya explicit inaccessible olur.",
+        "Direct reference server'da non-disclosing reddedilir."
+      ],
+      "forbidden": [
+        "Historical visibility yeni işlem eligibility sayılmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S03-005",
+      "group": "S03",
+      "title": "Active ve sellable Product seçilebilir",
+      "screenIds": [
+        "S-03"
+      ],
+      "sourceRefs": [
+        "DEC-SAL-002",
+        "PRODUCT-U-06",
+        "PRD-CORE"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-PRD-01",
+        "G-SAL-PRD-ACCESS-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "E2E"
+      ],
+      "precondition": "PRD-ACTIVE-PROFILE Active, sellable ve approved sales-unit conversion taşır; caller authorized'dır.",
+      "action": "Embedded Product selector arar ve seçim yapılır.",
+      "expected": [
+        "Product reference, master version, template/version ve selection proof line'a bağlanır."
+      ],
+      "forbidden": [
+        "Product master clone veya company-owned Product oluşmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S03-006",
+      "group": "S03",
+      "title": "Draft/Inactive Product bypass edilemez",
+      "screenIds": [
+        "S-03"
+      ],
+      "sourceRefs": [
+        "DEC-PRD-010",
+        "PRD-CORE",
+        "PRODUCT-U-06"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-PRD-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "SEC"
+      ],
+      "precondition": "PRD-DRAFT ve PRD-INACTIVE fixture'ları vardır.",
+      "action": "Selector search ve direct Product ID save/submit denenir.",
+      "expected": [
+        "İkisi de yeni işlem selector'ından çıkmaz.",
+        "Server direct reference'ı yeniden doğrular ve reddeder."
+      ],
+      "forbidden": [
+        "UI filter güvenlik sınırı değildir."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S03-007",
+      "group": "S03",
+      "title": "Product selector company-child projection sızdırmaz",
+      "screenIds": [
+        "S-03"
+      ],
+      "sourceRefs": [
+        "PRD-SCOPE-001",
+        "Master-9.2"
+      ],
+      "atRefs": [
+        "AT-001"
+      ],
+      "gateIds": [
+        "G-SAL-PRD-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "SEC",
+        "E2E"
+      ],
+      "precondition": "Global Product'ın CMP-A ve CMP-B price/package child'ları vardır; active context CMP-A'dır.",
+      "action": "Selector current-company enrichment ister.",
+      "expected": [
+        "Tek global Product identity + yalnız authorized CMP-A child özeti gelir."
+      ],
+      "forbidden": [
+        "CMP-B price/package/stock/count/timing sızıntısı yoktur."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S03-008",
+      "group": "S03",
+      "title": "Service scope yokken Service mount edilmez",
+      "screenIds": [
+        "S-03"
+      ],
+      "sourceRefs": [
+        "PRODUCT-U-06",
+        "SAL-SERVICE-001"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-SERVICE-01"
+      ],
+      "evidence": [
+        "FE",
+        "E2E",
+        "SRC"
+      ],
+      "precondition": "`SRV-SCOPE-001` ve Service API/permission contract'ı yoktur.",
+      "action": "PRODUCT-U-06 selector açılır.",
+      "expected": [
+        "Yalnız accepted Product yolu kullanılabilir veya bütün selector gate'li kalır.",
+        "Service unavailable açıkça anlaşılır."
+      ],
+      "forbidden": [
+        "Fake Service row/tab/network request yoktur."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S03-009",
+      "group": "S03",
+      "title": "Entered ve primary quantity snapshot'ı korunur",
+      "screenIds": [
+        "S-03"
+      ],
+      "sourceRefs": [
+        "DEC-PRD-006",
+        "DEC-PRD-007",
+        "Master-7.2"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-PRD-01"
+      ],
+      "evidence": [
+        "UT",
+        "CT",
+        "SQL"
+      ],
+      "precondition": "Golden conversion: 80 TEST-BOY, 12.5 kg/TEST-BOY, approved synthetic rule version.",
+      "action": "Line quantity preview/save çalışır.",
+      "expected": [
+        "Entered 80 TEST-BOY ve primary 1000 kg birlikte saklanır.",
+        "Conversion rule/formula version ve rounding trace pinned olur."
+      ],
+      "forbidden": [
+        "UI geometrik tahmini fiilî/authoritative yapmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S03-010",
+      "group": "S03",
+      "title": "Paket sürümü geçmiş satırı değiştirmez",
+      "screenIds": [
+        "S-03",
+        "S-04"
+      ],
+      "sourceRefs": [
+        "Master-7.2",
+        "AT-017"
+      ],
+      "atRefs": [
+        "AT-017"
+      ],
+      "gateIds": [
+        "G-SAL-PRD-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "E2E"
+      ],
+      "precondition": "Order line PACK-SYNTH-V1 snapshot'ı taşır; sonra PACK-SYNTH-V2 owner'da publish edilir.",
+      "action": "Eski revision ve yeni Draft line açılır.",
+      "expected": [
+        "Eski line V1 anlamını korur.",
+        "Yeni resolver policy'ye göre V2 adayını kullanabilir."
+      ],
+      "forbidden": [
+        "Latest lookup eski line'ı sessiz değiştirmez."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S03-011",
+      "group": "S03",
+      "title": "Termin dilimleri satır miktarıyla uzlaşır",
+      "screenIds": [
+        "S-03"
+      ],
+      "sourceRefs": [
+        "DEC-SAL-003",
+        "Master-7.2"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-PERSIST-01"
+      ],
+      "evidence": [
+        "UT",
+        "CT",
+        "FE"
+      ],
+      "precondition": "Line 80 TEST-BOY; slices 30 + 50 TEST-BOY.",
+      "action": "Server validation çalışır.",
+      "expected": [
+        "Toplam 80 olur; submit-ready structural validation geçer.",
+        "Her slice stable ID/date/unit/source taşır."
+      ],
+      "forbidden": [
+        "Mixed unit conversion olmadan doğrudan toplama yoktur."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S03-012",
+      "group": "S03",
+      "title": "Eksik conversion Draft'ı korur submit'i bloklar",
+      "screenIds": [
+        "S-03"
+      ],
+      "sourceRefs": [
+        "DEC-PRD-006",
+        "DEC-PRD-007"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-PRD-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "FE"
+      ],
+      "precondition": "Product sales unit'ten primary kg'ye approved deterministic path yoktur.",
+      "action": "Draft save ve submit denenir.",
+      "expected": [
+        "Draft structural data korunabilir.",
+        "Submit/evaluation/approval fail-closed olur; eksik path alanla ilişkili gösterilir."
+      ],
+      "forbidden": [
+        "UI katsayı uydurmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S03-013",
+      "group": "S03",
+      "title": "Price floor ihlali doğru owner onayına gider",
+      "screenIds": [
+        "S-03",
+        "S-05",
+        "S-06"
+      ],
+      "sourceRefs": [
+        "AT-021",
+        "Master-28.13"
+      ],
+      "atRefs": [
+        "AT-021"
+      ],
+      "gateIds": [
+        "G-SAL-PRICE-01",
+        "G-SAL-APP-01"
+      ],
+      "evidence": [
+        "UT",
+        "CT",
+        "SQL",
+        "E2E"
+      ],
+      "precondition": "Golden: 40,000 synthetic list, %5 discount, 38,000 net; synthetic floor 39,000.",
+      "action": "S-05 evaluation ve submit akışı çalıştırılır.",
+      "expected": [
+        "Deterministic evaluation approval-required semantiği ve owner-resolved approval policy/route reference üretir.",
+        "Oluşan task aynı company, current revision, price-policy ve evaluation reference'ına bağlıdır.",
+        "Order sessiz approved/active olmaz."
+      ],
+      "forbidden": [
+        "UI hard-coded floor/rol/route veya client-only net authority yoktur; foreign/stale revision task'ı oluşturulmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S03-014",
+      "group": "S03",
+      "title": "Risk limit aşımı sessiz serbest bırakmaz",
+      "screenIds": [
+        "S-03",
+        "S-05",
+        "S-06"
+      ],
+      "sourceRefs": [
+        "AT-022",
+        "Master-28.14"
+      ],
+      "atRefs": [
+        "AT-022"
+      ],
+      "gateIds": [
+        "G-SAL-RISK-01",
+        "G-SAL-APP-01"
+      ],
+      "evidence": [
+        "UT",
+        "CT",
+        "SQL",
+        "E2E"
+      ],
+      "precondition": "Golden current gross risk 900,000; candidate approved-undispatched delta 200,000; synthetic limit 1,000,000.",
+      "action": "Risk evaluation ve submit çalışır.",
+      "expected": [
+        "After-risk 1,100,000 olur ve owner policy approval/block semantiği üretir.",
+        "No-double-count inputs/version görünür."
+      ],
+      "forbidden": [
+        "Risk pass veya zero limit uydurulmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S03-015",
+      "group": "S03",
+      "title": "S-05/S-06 unavailable iken submit kapalıdır",
+      "screenIds": [
+        "S-03"
+      ],
+      "sourceRefs": [
+        "Master-8.1",
+        "S-05",
+        "S-06"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-PRICE-01",
+        "G-SAL-RISK-01",
+        "G-SAL-APP-01"
+      ],
+      "evidence": [
+        "FE",
+        "E2E"
+      ],
+      "precondition": "Draft geçerlidir fakat price/risk/approval capabilities yoktur.",
+      "action": "Submit veya approve action denenir.",
+      "expected": [
+        "Save Draft devam eder.",
+        "Gated dependency ve nedeni erişilebilir biçimde gösterilir."
+      ],
+      "forbidden": [
+        "Auto-pass, auto-approve veya inert enabled button yoktur."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S03-016",
+      "group": "S03",
+      "title": "AI kapalıyken manuel akış tamamlanabilir",
+      "screenIds": [
+        "S-03"
+      ],
+      "sourceRefs": [
+        "DEC-AI-001",
+        "MASTER3-S-05"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-AI-01"
+      ],
+      "evidence": [
+        "FE",
+        "E2E",
+        "SRC"
+      ],
+      "precondition": "ERP-000J/AI capability kapalıdır.",
+      "action": "Yeni Draft manuel alanlarla hazırlanır.",
+      "expected": [
+        "AI panel/button/placeholder/network mount edilmez.",
+        "Manuel Draft save AI olmadan çalışır."
+      ],
+      "forbidden": [
+        "AI fiyat, Product, permission veya approval uydurmaz; nihai sipariş onayı vermez."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S04-001",
+      "group": "S04",
+      "title": "Kilitli tab sırası korunur",
+      "screenIds": [
+        "S-04"
+      ],
+      "sourceRefs": [
+        "Master-7.2",
+        "UI-MAP-002"
+      ],
+      "atRefs": [],
+      "gateIds": [],
+      "evidence": [
+        "FE",
+        "E2E",
+        "SRC"
+      ],
+      "precondition": "S-04 core fixture'ı açılır.",
+      "action": "Keyboard ve direct tab navigation çalıştırılır.",
+      "expected": [
+        "Tab sırası Satırlar, Tahsis/Kaynak, Gerçekleşme/İrsaliye, Faturalar, Sözleşme/Belgeler, Revizyon/Geçmiş olur.",
+        "Source S-12 yalnız son tabı besler."
+      ],
+      "forbidden": [
+        "Yeni canonical tab/route veya source S-10 eşdeğeri üretilmez."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S04-002",
+      "group": "S04",
+      "title": "Owner capability olmayan tab fake zero göstermez",
+      "screenIds": [
+        "S-04"
+      ],
+      "sourceRefs": [
+        "Master-9.2",
+        "UI-DESIGN"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-ALLOC-01",
+        "G-SAL-FULFILL-01",
+        "G-SAL-INVOICE-01",
+        "G-SAL-DOC-01"
+      ],
+      "evidence": [
+        "FE",
+        "SRC"
+      ],
+      "precondition": "Allocation/fulfillment/invoice/document API'leri yoktur.",
+      "action": "S-04 tabları render edilir.",
+      "expected": [
+        "Tab gizlenir veya explicit unavailable state gösterir.",
+        "Core summary/Satırlar/Revizyon kullanılabilir kalır."
+      ],
+      "forbidden": [
+        "Boş liste, `0`, başarı veya owner kaydı yok iddiası yoktur."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S04-003",
+      "group": "S04",
+      "title": "Kritik header alanları yeni revision ve reapproval ister",
+      "screenIds": [
+        "S-04"
+      ],
+      "sourceRefs": [
+        "DEC-SAL-002"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-PERSIST-01",
+        "G-SAL-APP-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "E2E"
+      ],
+      "precondition": "Rev.0 current revision approved; alternate eligible customer, currency, due ve risk-exception fixture'ları vardır.",
+      "action": "Customer, currency, due ve risk-exception alanları ayrı ayrı değiştirilip change apply edilir.",
+      "expected": [
+        "Her header değişikliği ayrı yeni revision/diff üretir; Rev.0 immutable kalır.",
+        "Eski approval yeni revision'a miras kalmaz ve reapproval zorunludur."
+      ],
+      "forbidden": [
+        "Approved revision in-place update veya header değişikliğini canonical AT-023 satır kanıtı saymak yoktur."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S04-004",
+      "group": "S04",
+      "title": "Product değişikliği yeni revision ve reapproval ister",
+      "screenIds": [
+        "S-04"
+      ],
+      "sourceRefs": [
+        "DEC-SAL-002"
+      ],
+      "atRefs": [
+        "AT-023"
+      ],
+      "gateIds": [
+        "G-SAL-PRD-01",
+        "G-SAL-PERSIST-01",
+        "G-SAL-APP-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "E2E"
+      ],
+      "precondition": "Approved revision line'ında Product A vardır.",
+      "action": "Line Product B ile değiştirilir.",
+      "expected": [
+        "Yeni revision/diff/snapshot oluşur.",
+        "Önceki Product snapshot ve approval tarihsel kalır.",
+        "Yeni revision approved sayılmaz."
+      ],
+      "forbidden": [
+        "Product reference sessiz overwrite olmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S04-005",
+      "group": "S04",
+      "title": "Kritik satır miktar/fiyat/iskonto değişiklikleri aynı classifier'a uyar",
+      "screenIds": [
+        "S-04"
+      ],
+      "sourceRefs": [
+        "DEC-SAL-002"
+      ],
+      "atRefs": [
+        "AT-023"
+      ],
+      "gateIds": [
+        "G-SAL-PERSIST-01",
+        "G-SAL-APP-01"
+      ],
+      "evidence": [
+        "UT",
+        "CT",
+        "SQL"
+      ],
+      "precondition": "Approved revision fixture'ları line quantity, unit price ve discount için hazırlanır.",
+      "action": "Her kritik satır alanı tek tek değiştirilir.",
+      "expected": [
+        "Her satır değişikliği yeni revision ve reapproval gerektirir.",
+        "Server criticality sonucu diff'te görünür."
+      ],
+      "forbidden": [
+        "Client allowlist'i authority değildir."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S04-006",
+      "group": "S04",
+      "title": "Termin değişikliği auditli fakat reapproval'sızdır",
+      "screenIds": [
+        "S-04"
+      ],
+      "sourceRefs": [
+        "DEC-SAL-003"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-PERSIST-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "E2E"
+      ],
+      "precondition": "Approved current revision'da 30+50 termin slices vardır.",
+      "action": "Yetkili owner 40+40 olacak biçimde tarih/miktar dilimlerini günceller.",
+      "expected": [
+        "Termin before/after/reason/actor/correlation audit edilir.",
+        "Approval reference geçerli kalır.",
+        "Toplam line quantity ile uzlaşır."
+      ],
+      "forbidden": [
+        "Yeni approval sırf termin nedeniyle açılmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S04-007",
+      "group": "S04",
+      "title": "Non-critical allowlist uydurulmaz",
+      "screenIds": [
+        "S-04"
+      ],
+      "sourceRefs": [
+        "DEC-SAL-002",
+        "SAL-STATE-001"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "SAL-STATE-001"
+      ],
+      "evidence": [
+        "CT",
+        "FE"
+      ],
+      "precondition": "İç not/etiket açıklaması gibi kaynakta yalnız 'istemeyebilir' denilen alan vardır.",
+      "action": "Alan düzenleme UI/command contract'ı incelenir.",
+      "expected": [
+        "Owner-approved classifier yoksa action gated veya conservative revision davranışı gösterir."
+      ],
+      "forbidden": [
+        "Client alanı otomatik non-critical ilan etmez."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S04-008",
+      "group": "S04",
+      "title": "Eski revision snapshot'ı master değişiminden etkilenmez",
+      "screenIds": [
+        "S-04"
+      ],
+      "sourceRefs": [
+        "DEC-SAL-002",
+        "Master-9.2"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-PERSIST-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "E2E"
+      ],
+      "precondition": "Rev.0 Product/customer/package/price snapshots taşır; owner masterları sonra değişir.",
+      "action": "Rev.0 history açılır.",
+      "expected": [
+        "Rev.0 kayıt anındaki snapshot/version ile render edilir.",
+        "Current master değişikliği ayrı bilgi olarak sunulabilir."
+      ],
+      "forbidden": [
+        "Geçmiş total/identity/latest master ile yeniden hesaplanmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S04-009",
+      "group": "S04",
+      "title": "Cancel impact preview altı owner sınıfını kapsar",
+      "screenIds": [
+        "S-04"
+      ],
+      "sourceRefs": [
+        "DEC-SAL-005"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "SAL-CANCEL-001",
+        "G-SAL-ALLOC-01",
+        "G-SAL-FULFILL-01",
+        "G-SAL-INVOICE-01",
+        "G-SAL-EVENT-01",
+        "G-SAL-PURCHASE-READ-01",
+        "G-SAL-PRODUCTION-READ-01",
+        "G-SAL-FINANCE-READ-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "FE"
+      ],
+      "precondition": "Order; allocation, linked purchase, production, un-dispatched loading, uninvoiced dispatch ve unmatched advance fixtures'ına sahiptir.",
+      "action": "Cancel preview istenir.",
+      "expected": [
+        "Altı etki sınıfı ayrı owner source/count/reference ve unavailable bilgisiyle görünür.",
+        "Preview current revision/version'a bağlıdır."
+      ],
+      "forbidden": [
+        "Preview owner kayıtlarını değiştirmez."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S04-010",
+      "group": "S04",
+      "title": "Eksik veya stale cancel preview uygulamayı engeller",
+      "screenIds": [
+        "S-04"
+      ],
+      "sourceRefs": [
+        "DEC-SAL-005"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "SAL-CANCEL-001",
+        "G-SAL-ALLOC-01",
+        "G-SAL-FULFILL-01",
+        "G-SAL-INVOICE-01",
+        "G-SAL-EVENT-01",
+        "G-SAL-PURCHASE-READ-01",
+        "G-SAL-PRODUCTION-READ-01",
+        "G-SAL-FINANCE-READ-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "E2E"
+      ],
+      "precondition": "Bir owner unavailable veya order revision preview sonrası değişmiştir.",
+      "action": "Cancel apply aynı/eski preview reference ile denenir.",
+      "expected": [
+        "Command fail-closed olur; lifecycle değişmez.",
+        "Kullanıcı fresh preview/reconcile'a yönlenir."
+      ],
+      "forbidden": [
+        "Kısmi owner silme/tersleme yoktur."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S04-011",
+      "group": "S04",
+      "title": "Order özeti axes'ten türetilir",
+      "screenIds": [
+        "S-04"
+      ],
+      "sourceRefs": [
+        "DEC-SAL-001",
+        "DURUM-MAKINELERI"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-PERSIST-01"
+      ],
+      "evidence": [
+        "UT",
+        "CT",
+        "FE"
+      ],
+      "precondition": "Lifecycle Active, approval Approved, source Partial, realization Partial, invoicing None, financial Open fixture'ı vardır.",
+      "action": "Summary badge ve detail axes render edilir.",
+      "expected": [
+        "Özet deterministic derived presentation'dır; bütün axes ayrıca erişilebilir."
+      ],
+      "forbidden": [
+        "Özet stored truth olarak diğer axes'i overwrite etmez."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S04-012",
+      "group": "S04",
+      "title": "Kısmi gerçekleşme revision snapshot'ını değiştirmez",
+      "screenIds": [
+        "S-04"
+      ],
+      "sourceRefs": [
+        "DEC-SAL-001",
+        "Master-28.10"
+      ],
+      "atRefs": [
+        "AT-024"
+      ],
+      "gateIds": [
+        "G-SAL-FULFILL-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL"
+      ],
+      "precondition": "Approved order primary 1000 kg; owner realization 400 kg ve cancellation 100 kg.",
+      "action": "Owner projection S-04'e bağlanır.",
+      "expected": [
+        "Realization axis Partial ve remaining 500 kg olur.",
+        "Approved commercial revision/price/Product snapshots aynı kalır."
+      ],
+      "forbidden": [
+        "Sales ilk dalga fiziksel movement veya invoice yazmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-S04-013",
+      "group": "S04",
+      "title": "İptal ve ters işlem geçmişi silmez",
+      "screenIds": [
+        "S-04"
+      ],
+      "sourceRefs": [
+        "DEC-SAL-005",
+        "DEC-SAL-007",
+        "AT-007"
+      ],
+      "atRefs": [
+        "AT-007"
+      ],
+      "gateIds": [
+        "SAL-CANCEL-001",
+        "G-SAL-PERSIST-01",
+        "G-SAL-ALLOC-01",
+        "G-SAL-FULFILL-01",
+        "G-SAL-INVOICE-01",
+        "G-SAL-EVENT-01",
+        "G-SAL-PURCHASE-READ-01",
+        "G-SAL-PRODUCTION-READ-01",
+        "G-SAL-FINANCE-READ-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "E2E"
+      ],
+      "precondition": "Current revision için eksiksiz, current ve yetkili cancel preview vardır; bağlı geçmiş snapshot/revision/audit fixture'ları mevcuttur.",
+      "action": "Owner-approved cancel command aynı preview ve expected version ile uygulanır.",
+      "expected": [
+        "Yeni iptal/ters olay referansı oluşur; önceki revision, snapshot, approval ve audit kanıtı okunabilir kalır.",
+        "Downstream owner etkileri kendi referanslarıyla izlenir."
+      ],
+      "forbidden": [
+        "Order, revision, satır, snapshot veya audit hard-delete edilmez; geçmiş yeniden yazılmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-LOCK-001",
+      "group": "LOCK",
+      "title": "Üç üst display axis ve kompakt özet birlikte kalır",
+      "screenIds": ["S-03", "S-04"],
+      "sourceRefs": ["SALES-LOCK-DOCX", "DEC-SAL-001"],
+      "atRefs": [],
+      "gateIds": ["G-SAL-PERSIST-01", "G-SAL-PRICE-01", "G-SAL-ALLOC-01", "G-SAL-FULFILL-01", "G-SAL-INVOICE-01", "G-SAL-FX-01"],
+      "evidence": ["CT", "FE", "E2E", "SRC"],
+      "precondition": "Sales record için ticari aşama, approval ve operation değerleri birbirinden farklıdır.",
+      "action": "S-03/S-04 header ve kompakt Sipariş Özeti render edilir.",
+      "expected": [
+        "Üç display axis ayrı ad/değerle görünür.",
+        "Özet varsayılan olarak tek kompakt yatay satırdır; Detayı Göster ile açılır.",
+        "Özet identity, revision, customer, önemli tutar ve ana miktarları owner provenance ile toplar; aktif satırlar ve fiyat hareketleriyle birebir uzlaşır.",
+        "Sipariş Tutarı, Operasyon Gerçekleşen ve Fatura Gerçekleşen tutarları TL+USD görünür; Kalan tutar Sipariş Tutarı eksi Operasyon Gerçekleşen tutarıdır.",
+        "Mal miktarında KG ve adet ayrı kalır; adetli satırın KG karşılığı ikinci kez toplama eklenmez.",
+        "Tahsis yüzdesi kendi fiziksel owner pay/paydasını kullanır; operasyon yüzdesi mal ve hizmet için ortak gerçekleşme oranıdır; fatura yüzdesi gerçekleşen/faturalanabilir kısım üzerinden owner provenance ile hesaplanır; en yakın açık termin gecikme uyarısıyla görünür."
+      ],
+      "forbidden": [
+        "Tek stored status/renk diğer axis'leri ezmez; unsupported KPI uydurulmaz.",
+        "Kalan tutar fatura veya tahsis verisinden türetilmez; operasyon ve fatura yüzdesi kilitli basis dışında başka pay/paydaya bağlanmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-LOCK-002",
+      "group": "LOCK",
+      "title": "Önemli tutarlar TL ve USD; order ve invoice FX ayrıdır",
+      "screenIds": ["S-03", "S-04"],
+      "sourceRefs": ["SALES-LOCK-DOCX"],
+      "atRefs": [],
+      "gateIds": ["G-SAL-FX-01", "G-SAL-PRICE-01", "G-SAL-FULFILL-01", "G-SAL-INVOICE-01"],
+      "evidence": ["UT", "CT", "SQL", "FE", "E2E"],
+      "precondition": "Order ve invoice için farklı type/date/source/version FX snapshot'ları vardır.",
+      "action": "Header, satır, özet ve invoice projection tutarları render edilir.",
+      "expected": [
+        "Her önemli ticari tutarın TL ve USD karşılığı birlikte görünür; ana işlem parası ayrıca işaretlenebilir.",
+        "Order ve invoice FX snapshot'ları karışmaz."
+      ],
+      "forbidden": [
+        "Missing/stale FX `0`, last-cache veya diğer belge snapshot'ıyla tamamlanmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-LOCK-003",
+      "group": "LOCK",
+      "title": "Header teslim ve nakliye varsayılanı override provenance taşır",
+      "screenIds": ["S-03", "S-04"],
+      "sourceRefs": ["SALES-LOCK-DOCX", "DEC-SAL-003", "DEC-SAL-008"],
+      "atRefs": [],
+      "gateIds": ["SAL-DUE-001", "SAL-TERM-001", "G-SAL-PERSIST-01", "G-SAL-FULFILL-01"],
+      "evidence": ["CT", "SQL", "FE"],
+      "precondition": "Header default termin/teslim/nakliye vardır; bir satır ve bir shipment yetkili override taşır.",
+      "action": "Draft, detail ve revision diff okunur.",
+      "expected": [
+        "Her effective değer default veya override kaynağı, actor/reason/time ve version ile izlenir.",
+        "Termin-only değişiklik auditlidir ve sırf bu nedenle reapproval açmaz."
+      ],
+      "forbidden": [
+        "Sessiz kalıtım, client-only override veya finansal etki uydurulmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-LOCK-004",
+      "group": "LOCK",
+      "title": "Efektif kg fiyatı aşamaya göre T/G paydasını kullanır",
+      "screenIds": ["S-03", "S-04"],
+      "sourceRefs": ["SALES-LOCK-DOCX"],
+      "atRefs": [],
+      "gateIds": ["G-SAL-PRICE-01", "G-SAL-FULFILL-01", "G-SAL-INVOICE-01", "G-SAL-FX-01"],
+      "evidence": ["UT", "CT", "SQL"],
+      "precondition": "Sentetik order, fulfillment ve invoice tutarları ile theoretical/actual kg owner girdileri vardır.",
+      "action": "Deterministik calculator üç efektif kg sonucunu üretir.",
+      "expected": [
+        "Order amount/theoretical kg T; fulfillment amount/actual dispatch kg G; invoice amount/invoice-linked actual kg G ayrı provenance ile hesaplanır."
+      ],
+      "forbidden": [
+        "T ve G karıştırılmaz; zero/missing/stale paydada sonuç veya UI hesabı üretilmez."
+      ]
+    },
+    {
+      "id": "CASE-SAL-LOCK-005",
+      "group": "LOCK",
+      "title": "Faturalanmamış gerçekleşen ticari tutar iki para görünür",
+      "screenIds": ["S-04"],
+      "sourceRefs": ["SALES-LOCK-DOCX", "DEC-SAL-006"],
+      "atRefs": [],
+      "gateIds": ["G-SAL-FULFILL-01", "G-SAL-INVOICE-01", "G-SAL-FX-01"],
+      "evidence": ["UT", "CT", "SQL", "FE"],
+      "precondition": "Aynı commercial revision/currency basis için operation fulfilled ve invoice fulfilled TL+USD tutarları vardır.",
+      "action": "Daraltılmış tek satır doğrulanır, ardından `Detayı Göster` açılır ve owner calculator sonucu okunur.",
+      "expected": [
+        "Faturalanmamış Gerçekleşen yalnız detay açıldığında görünür.",
+        "Her para için operation fulfilled amount eksi invoice fulfilled amount hesaplanır; invoice-linked quantity ayrı UnitId/provenance olarak kalır."
+      ],
+      "forbidden": [
+        "Statik Şekil 1 gerekçe gösterilerek değer daraltılmış tek satırda zorunlu kılınmaz.",
+        "Farklı FX basis sessiz çıkarılmaz; allocation/order quantity ticari tutar yerine kullanılmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-LOCK-006",
+      "group": "LOCK",
+      "title": "Tahsis yüzdesi stockless Service'i paydaya almaz",
+      "screenIds": ["S-04"],
+      "sourceRefs": ["SALES-LOCK-DOCX", "DEC-SAL-004"],
+      "atRefs": [],
+      "gateIds": ["G-SAL-SERVICE-01", "G-SAL-ALLOC-01"],
+      "evidence": ["UT", "CT", "SQL"],
+      "precondition": "İki physical line ve bir stockless Service line vardır; physical need 1500 kg, allocated 900 kg'dır.",
+      "action": "Allocation owner summary üretir.",
+      "expected": [
+        "Physical-only allocation yüzde 60 olur; Service commercial quantity ayrı gösterilir."
+      ],
+      "forbidden": [
+        "Service `0 kg` satır olarak paydaya eklenmez; missing owner verisi tam tahsis sayılmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-LOCK-007",
+      "group": "LOCK",
+      "title": "Service/fason ticari miktar fiziksel I/O'dan ayrıdır",
+      "screenIds": ["S-03", "S-04"],
+      "sourceRefs": ["SALES-LOCK-DOCX", "DEC-SAL-004"],
+      "atRefs": [],
+      "gateIds": ["G-SAL-SERVICE-01", "G-SAL-ALLOC-01", "G-SAL-FULFILL-01"],
+      "evidence": ["CT", "SQL", "FE", "E2E"],
+      "precondition": "Owner-approved Service scope'ta multi-input/output fason fixture'ı ve uygun unreserved output stock'u vardır.",
+      "action": "S-03 line ve S-04 detay/kaynak projection'ı açılır.",
+      "expected": [
+        "Service ordered/fulfilled/remaining ticari Service quantity'dir; kısa I→O özeti ve çoklu I/O detail linki vardır.",
+        "Owner uygun görürse fason output doğrudan shipment kaynağı olabilir."
+      ],
+      "forbidden": [
+        "Service fiziksel stok üretmez; aynı Product goods line ve Service input olarak iki kez sayılmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-LOCK-008",
+      "group": "LOCK",
+      "title": "Fiyat bileşenleri ayrı provenance taşır",
+      "screenIds": ["S-03", "S-04"],
+      "sourceRefs": ["SALES-LOCK-DOCX"],
+      "atRefs": [],
+      "gateIds": ["G-SAL-PRICE-01", "G-SAL-FX-01", "G-SAL-INVOICE-01", "G-SAL-APP-01"],
+      "evidence": ["CT", "SQL", "FE"],
+      "precondition": "Owner price evaluation baz fiyat, yüzde/tutar iskonto, vade farkı, artı/eksi fiyat farkı, masraf, KDV, tevkifat ve final sonuç taşır.",
+      "action": "Satır fiyat detayı ve revision history açılır.",
+      "expected": [
+        "Her bileşen adı, girdi/sonuç, para/birim, policy/price version ve source ile ayrı görünür.",
+        "Invoice aşamasında yalnız owner-authorized apply capability fiyat hareketini uygular; direct-apply capability'siz accounting actor taslak hazırlayıp onaya gönderebilir.",
+        "Fiyat hareketi geçmişi append-only actor/time/stage/reason/audit bağıyla korunur."
+      ],
+      "forbidden": [
+        "UI sıra/vergi dahil-hariç/cost basis/rounding veya onay rolü uydurmaz; bileşenleri tek açıklamasız net tutara gömmez.",
+        "Direct-apply capability'siz actor fiyat hareketini kesinleştiremez; geçmiş fiyat hareketi silinmez veya sessiz yeniden yazılmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-LOCK-009",
+      "group": "LOCK",
+      "title": "Source preference tahsis veya stok hareketi yaratmaz",
+      "screenIds": ["S-03", "S-04"],
+      "sourceRefs": ["DEC-SAL-004", "SALES-LOCK-DOCX"],
+      "atRefs": [],
+      "gateIds": ["G-SAL-ALLOC-01", "G-SAL-PURCHASE-READ-01", "G-SAL-PRODUCTION-READ-01"],
+      "evidence": ["CT", "SQL", "E2E"],
+      "precondition": "Product line fiziksel stok, approved purchase, production, external procurement veya mixed tercihi taşır.",
+      "action": "Draft save edilir ve sonra Allocation owner değerlendirmesi gelir.",
+      "expected": [
+        "Draft yalnız source preference snapshot'ını saklar; yalnız Allocation owner sonucu source/tahsis axis'ini değiştirir."
+      ],
+      "forbidden": [
+        "Draft save rezerv, stok hareketi, purchase veya production kaydı yaratmaz; UI önerisi owner sonucu değildir."
+      ]
+    },
+    {
+      "id": "CASE-SAL-LOCK-010",
+      "group": "LOCK",
+      "title": "Allocation gerçekleşen ve kalanı değiştiremez",
+      "screenIds": ["S-02", "S-04"],
+      "sourceRefs": ["DEC-SAL-004", "SALES-LOCK-DOCX", "Master-28.10"],
+      "atRefs": [],
+      "gateIds": ["G-SAL-ALLOC-01", "G-SAL-FULFILL-01"],
+      "evidence": ["CT", "SQL", "E2E"],
+      "precondition": "Allocation owner line'ı tam kaynaklı yapar fakat Fulfillment owner olayı yoktur.",
+      "action": "S-02/S-04 projection yeniden okunur.",
+      "expected": [
+        "Source/allocation axis güncellenir; realized aynı kalır ve remaining yalnız Fulfillment owner verisiyle hesaplanır."
+      ],
+      "forbidden": [
+        "Tam tahsis otomatik gerçekleşme, sevk veya INV-005 düşümü değildir."
+      ]
+    },
+    {
+      "id": "CASE-SAL-LOCK-011",
+      "group": "LOCK",
+      "title": "Invoice grouping bütün uyum boyutlarını ister",
+      "screenIds": ["S-04"],
+      "sourceRefs": ["DEC-SAL-006", "SALES-LOCK-DOCX"],
+      "atRefs": [],
+      "gateIds": ["G-SAL-INVOICE-01", "G-SAL-FX-01"],
+      "evidence": ["CT", "SQL"],
+      "precondition": "İki dispatch candidate yalnız bazı boyutlarda eşleşir.",
+      "action": "Invoice owner grouping preview üretir.",
+      "expected": [
+        "Company, customer, currency, tax, exchange rate, terms/commercial conditions ve e-document uyumu birlikte doğrulanır; quantity net dispatch owner değeridir."
+      ],
+      "forbidden": [
+        "Eksik boyut eşit varsayılmaz; Sales ilk dalga invoice kaydı üretmez."
+      ]
+    },
+    {
+      "id": "CASE-SAL-LOCK-012",
+      "group": "LOCK",
+      "title": "Beş vade modeli ayrı ve gated kalır",
+      "screenIds": ["S-03", "S-04"],
+      "sourceRefs": ["DEC-SAL-008", "SALES-LOCK-DOCX"],
+      "atRefs": [],
+      "gateIds": ["SAL-DUE-001", "G-SAL-PERSIST-01", "G-SAL-FULFILL-01", "G-SAL-INVOICE-01", "G-SAL-FX-01"],
+      "evidence": ["CT", "SQL", "FE"],
+      "precondition": "Araç/sevkiyat, sipariş tarihli nokta, fatura, taksit ve karma model fixture'ları vardır.",
+      "action": "S-03 edit ve S-04 read projection'ları çalışır.",
+      "expected": [
+        "Seçilen model ve gerekli structural inputs kayıpsız snapshot'lanır; unsupported model açık gated olur."
+      ],
+      "forbidden": [
+        "Modeller tek due-date alanına indirilmez; tatil/time-zone/taksit/finansal effect uydurulmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-DEP-001",
+      "group": "DEP",
+      "title": "Price owner unavailable auto-pass üretmez",
+      "screenIds": [
+        "S-03",
+        "S-05"
+      ],
+      "sourceRefs": [
+        "AT-021",
+        "Master-28.13"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-PRICE-01"
+      ],
+      "evidence": [
+        "CT",
+        "FE",
+        "E2E"
+      ],
+      "precondition": "Price policy/evaluation service unavailable veya revision mismatch durumundadır.",
+      "action": "Submit/evaluation istenir.",
+      "expected": [
+        "Evaluation unavailable/stale olur ve submit/approval kapalıdır.",
+        "Draft korunur."
+      ],
+      "forbidden": [
+        "Zero floor, last cached pass veya client neti authority olmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-DEP-002",
+      "group": "DEP",
+      "title": "Risk owner unavailable auto-pass üretmez",
+      "screenIds": [
+        "S-03",
+        "S-05"
+      ],
+      "sourceRefs": [
+        "AT-022",
+        "Master-28.14"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-RISK-01"
+      ],
+      "evidence": [
+        "CT",
+        "FE",
+        "E2E"
+      ],
+      "precondition": "Risk/limit projection yok, stale veya scope mismatch durumundadır.",
+      "action": "Submit/evaluation istenir.",
+      "expected": [
+        "Risk sonucu pass sayılmaz; gated state ve retry/reconcile vardır."
+      ],
+      "forbidden": [
+        "Limit `0`, sonsuz veya foreign company cache fallback yoktur."
+      ]
+    },
+    {
+      "id": "CASE-SAL-DEP-003",
+      "group": "DEP",
+      "title": "Approval SoD self-approval'ı engeller",
+      "screenIds": [
+        "S-06",
+        "S-04"
+      ],
+      "sourceRefs": [
+        "AT-004",
+        "Master-12"
+      ],
+      "atRefs": [
+        "AT-004"
+      ],
+      "gateIds": [
+        "G-SAL-APP-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL",
+        "SEC",
+        "E2E"
+      ],
+      "precondition": "ACT-CREATOR high-risk/price-exception revision'ını oluşturmuştur ve aynı approval authority'ye adaydır; ACT-APPROVER ayrı fixture actor'dır.",
+      "action": "ACT-CREATOR kendi approval task'ını approve etmeye çalışır.",
+      "expected": [
+        "Owner matrix/SoD fail-closed uygular.",
+        "Order revision approved olmaz.",
+        "Red audit/business effects contract'a uygundur."
+      ],
+      "forbidden": [
+        "UI button gizleme tek koruma değildir."
+      ]
+    },
+    {
+      "id": "CASE-SAL-DEP-004",
+      "group": "DEP",
+      "title": "Approval sonucu exact revision'a bağlıdır",
+      "screenIds": [
+        "S-06",
+        "S-04"
+      ],
+      "sourceRefs": [
+        "DEC-SAL-002",
+        "DEC-SAL-001"
+      ],
+      "atRefs": [
+        "AT-023"
+      ],
+      "gateIds": [
+        "G-SAL-APP-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL"
+      ],
+      "precondition": "Rev.0 için approval task vardır; bu sırada Rev.1 kritik Product/quantity/price/discount satır değişikliğiyle oluşur.",
+      "action": "Rev.0 task approve/reject edilir veya replay edilir.",
+      "expected": [
+        "Sonuç yalnız Rev.0'a bağlı kalır.",
+        "Rev.1 approval inheritance yapmaz ve current state precondition yeniden doğrulanır."
+      ],
+      "forbidden": [
+        "Stale task current revision'ı approve etmez."
+      ]
+    },
+    {
+      "id": "CASE-SAL-SEL-001",
+      "group": "SEL",
+      "title": "PRODUCT-U-06 ayrı route değildir",
+      "screenIds": [
+        "S-03"
+      ],
+      "sourceRefs": [
+        "PRODUCT-U-06",
+        "UI-MAP-001"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-PRD-01"
+      ],
+      "evidence": [
+        "FE",
+        "E2E",
+        "SRC"
+      ],
+      "precondition": "Sales create/edit route contract'ı ve candidate selector fixture'ı vardır.",
+      "action": "Selector açılır/kapanır ve deep-link envanteri denetlenir.",
+      "expected": [
+        "Selector S-03 owner formunda embedded component olur.",
+        "Focus S-03'e geri döner."
+      ],
+      "forbidden": [
+        "Yeni canonical U-06 veya standalone Product route üretilmez."
+      ]
+    },
+    {
+      "id": "CASE-SAL-SEL-002",
+      "group": "SEL",
+      "title": "Selector server-side arar ve fan-out yapmaz",
+      "screenIds": [
+        "S-03"
+      ],
+      "sourceRefs": [
+        "PRODUCT-U-06",
+        "PRD-SCOPE-001"
+      ],
+      "atRefs": [
+        "AT-001"
+      ],
+      "gateIds": [
+        "G-SAL-PRD-01"
+      ],
+      "evidence": [
+        "CT",
+        "FE",
+        "E2E",
+        "SEC"
+      ],
+      "precondition": "Çok sayıda Product ve company-child fixture'ı vardır.",
+      "action": "Search/filter/page yapılır.",
+      "expected": [
+        "Server authorized global Product setini ve yalnız current-company enrichment'i döndürür.",
+        "Cursor/sort/query server-owned'dır."
+      ],
+      "forbidden": [
+        "Browser company fan-out/union veya bütün katalog preload yapmaz."
+      ]
+    },
+    {
+      "id": "CASE-SAL-SEL-003",
+      "group": "SEL",
+      "title": "Operational Product access kararı kapanmadan default-deny",
+      "screenIds": [
+        "S-03"
+      ],
+      "sourceRefs": [
+        "PRD-PERM-001",
+        "SAL-PRD-ACCESS-001"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-PRD-ACCESS-01"
+      ],
+      "evidence": [
+        "CT",
+        "SEC",
+        "FE"
+      ],
+      "precondition": "Actor business Sales kullanıcısıdır fakat accepted operational selector permission/grant yoktur.",
+      "action": "Selector route/query doğrudan çağrılır.",
+      "expected": [
+        "Default-deny ve non-disclosure uygulanır.",
+        "S-03 dependency gate açıklanır."
+      ],
+      "forbidden": [
+        "Product master admin kararından örtük Sales read türetilmez."
+      ]
+    },
+    {
+      "id": "CASE-SAL-SEL-004",
+      "group": "SEL",
+      "title": "Seçim immutable snapshot evidence üretir",
+      "screenIds": [
+        "S-03",
+        "S-04"
+      ],
+      "sourceRefs": [
+        "Master-9.2",
+        "PRODUCT-U-06"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-PRD-01",
+        "G-SAL-PERSIST-01"
+      ],
+      "evidence": [
+        "CT",
+        "SQL"
+      ],
+      "precondition": "Active Product seçilir; sonra Product name/template/unit version değişir.",
+      "action": "Order revision yeniden okunur.",
+      "expected": [
+        "Line Product ID + selection-time code/name/template/unit/conversion versions taşır.",
+        "Current Product'a navigation ayrı olabilir."
+      ],
+      "forbidden": [
+        "Historical line current master ile sessiz değişmez."
+      ]
+    },
+    {
+      "id": "CASE-SAL-SEL-005",
+      "group": "SEL",
+      "title": "Malformed/unknown Product projection fail-closed",
+      "screenIds": [
+        "S-03"
+      ],
+      "sourceRefs": [
+        "PRODUCT-U-06",
+        "AGENTS"
+      ],
+      "atRefs": [],
+      "gateIds": [
+        "G-SAL-PRD-01"
+      ],
+      "evidence": [
+        "CT",
+        "FE",
+        "SEC"
+      ],
+      "precondition": "Selector response unknown role, missing lifecycle/version, duplicate ID veya foreign child taşır.",
+      "action": "Runtime decoder/render çalışır.",
+      "expected": [
+        "Bütün malformed page güvenli hata olur; partial Product name/price render edilmez.",
+        "Retry/fresh query erişilebilir kalır."
+      ],
+      "forbidden": [
+        "Client unknown role'ü sellable saymaz."
+      ]
+    }
+  ],
+  "parity": {
+    "markdownCaseCount": 72,
+    "jsonCaseCount": 72,
+    "idPattern": "^CASE-SAL-(X|S01|S02|S03|S04|LOCK|DEP|SEL)-[0-9]{3}$",
+    "order": "markdown-and-json-identical",
+    "requiredCaseFields": [
+      "id",
+      "group",
+      "title",
+      "screenIds",
+      "sourceRefs",
+      "atRefs",
+      "gateIds",
+      "evidence",
+      "precondition",
+      "action",
+      "expected",
+      "forbidden"
+    ],
+    "requiredCanonicalAcceptanceCoverage": [
+      "AT-007",
+      "AT-021",
+      "AT-022",
+      "AT-023",
+      "AT-024",
+      "AT-025"
+    ],
+    "duplicateIdsAllowed": false,
+    "unknownTopLevelKeysAllowed": false
+  }
+}

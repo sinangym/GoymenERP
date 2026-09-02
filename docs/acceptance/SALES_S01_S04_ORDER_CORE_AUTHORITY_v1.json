@@ -1,0 +1,703 @@
+{
+  "schemaVersion": "sales-order-core-authority.v1",
+  "status": "TEST_DESIGN_AUTHORITY_READY_EXECUTION_GATED",
+  "version": 1,
+  "date": "2026-09-02",
+  "sourceSnapshot": "main@80c567a63da8e059ce92aa1b23dad9f4568ad2ca",
+  "productionActivation": "NO_GO",
+  "sharedCiGate": {
+    "id": "G-SAL-CI-01",
+    "status": "OPEN_NO_GO",
+    "validatorCommand": "node docs/acceptance/SALES_S01_S04_ORDER_CORE_VALIDATOR_v1.mjs",
+    "mutationCommand": "node --test docs/acceptance/SALES_S01_S04_ORDER_CORE_VALIDATOR_MUTATION_TEST_v1.mjs",
+    "visibleRunnerStepRequired": true,
+    "nonzeroFailurePropagationRequired": true,
+    "generalCiClosesGate": false,
+    "workflowWiringEvidence": null
+  },
+  "canonicalScreenSourceMapping": [
+    {
+      "canonicalScreenId": "S-01",
+      "sourceIds": [
+        "MASTER3-S-01"
+      ],
+      "relation": "CONFIRMED_SPLIT_MERGE_REFERENCE"
+    },
+    {
+      "canonicalScreenId": "S-02",
+      "sourceIds": [
+        "MASTER3-S-01"
+      ],
+      "relation": "CONFIRMED_SPLIT_MERGE_REFERENCE"
+    },
+    {
+      "canonicalScreenId": "S-03",
+      "sourceIds": [
+        "MASTER3-S-03",
+        "MASTER3-S-04",
+        "MASTER3-S-05",
+        "PRODUCT-U-06"
+      ],
+      "relation": "CONFIRMED_SPLIT_MERGE_REFERENCE"
+    },
+    {
+      "canonicalScreenId": "S-04",
+      "sourceIds": [
+        "MASTER3-S-02",
+        "MASTER3-S-03",
+        "MASTER3-S-04",
+        "MASTER3-S-07",
+        "MASTER3-S-09",
+        "MASTER3-S-12"
+      ],
+      "relation": "CONFIRMED_SPLIT_MERGE_REFERENCE"
+    }
+  ],
+  "externalBinarySourcePins": [
+    {
+      "path": "docs/ui/sources/sales/sales-order-detail-locked-decision-v1.0.docx",
+      "gitBlobSha": "f6c22804becf84206aa4b3bea81745cfbae771ba",
+      "sha256": "50ff7bc5286bbe353508bfd9161560b1f8ad4eae833de676223d098ed620b65f",
+      "mediaType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    }
+  ],
+  "canonicalSourceInventory": [
+    {
+      "path": "AGENTS.md",
+      "gitBlobSha": "173285d3b7f3c200fc3185f71ce65aa5e5656546",
+      "sha256": "3410917e3f08512fa3b8a02f3995304afbc785f80143a0095e43d8ff6dea9284"
+    },
+    {
+      "path": "docs/acceptance/ACCEPTANCE_70.md",
+      "gitBlobSha": "6119f84d2a59b3e0d1fdd2d8646619c0ad29e1bd",
+      "sha256": "50ff92bfc2a9c75b3837f3cbd7741bd2da586bbe02b3bbfbb1b1d24fe8de8e6b"
+    },
+    {
+      "path": "docs/formulas/FORMUL_KATALOGU.csv",
+      "gitBlobSha": "ed69cedecd33ba7d3947675f954309a3913ffca7",
+      "sha256": "523baa0cefac7a483c051dc745dc35c4fe325f4828f670f08188d92d12c7d71f"
+    },
+    {
+      "path": "docs/decisions/KARAR_SICILI.md",
+      "gitBlobSha": "e46bd3146272cb48d3d4a897e4c4c8751391b852",
+      "sha256": "90f8c75c7c3bab0203b0c51f8602e413158d90be7a2fed2ebbcc708172f7040b"
+    },
+    {
+      "path": "docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md",
+      "gitBlobSha": "54059a5805f415e1c015540f9ef0c9e474c53e98",
+      "sha256": "b636993012e7041802c5a160e48e17427c2ff6e8e5ad5418f41104fdfed0ba05"
+    },
+    {
+      "path": "docs/domain/DURUM_MAKINELERI.md",
+      "gitBlobSha": "e91e2e500501f99327657c31a7432daa62715f20",
+      "sha256": "9ca314a4e27aa29ea35a3de6107df2c6aeea6973f81fd0d842d37d780e32badb"
+    },
+    {
+      "path": "docs/domain/ORTAK_KAYIT_METADATA.md",
+      "gitBlobSha": "566f41285111327df492c506b69b7d705d795a7a",
+      "sha256": "783229c4c73aefba46aaad39d54074238645785c5558db1869104bde2ddc892c"
+    },
+    {
+      "path": "docs/features/PLATFORM_HTTP_ERROR_CONTRACT_v1.md",
+      "gitBlobSha": "0c92e1cfd41b1d54416c74c1160f5ae7522e73dd",
+      "sha256": "98adefbbead4ccd39cac7f50e8c38c0e446a210581362de493838e223a2f640f"
+    },
+    {
+      "path": "docs/adr/ADR-009-audit-and-correlation.md",
+      "gitBlobSha": "1c2b29a742b25ba20b443f14c77c20806f72f02c",
+      "sha256": "19f082c10b209c94d3c0f99671db6363f1498dd797755eb94a1cec0ff468993f"
+    },
+    {
+      "path": "docs/adr/ADR-011-idempotency-and-concurrency.md",
+      "gitBlobSha": "9f82d6bab81640fc43a2b1c44a148017ae98dc07",
+      "sha256": "2df4d5f78cb86a88fffd2bdafaf4bd169fc56dd9d144152a2641b7d1e7f90592"
+    },
+    {
+      "path": "docs/ui/CANONICAL_SCREEN_STATUS.csv",
+      "gitBlobSha": "662cdbc405b49e469c6d578580bef4766d6a4635",
+      "sha256": "7b4a6710f792eea3a1f9d2d4b64fe812686e5555f7b409e2c7c9e512e3369f2c"
+    },
+    {
+      "path": "docs/ui/SCREEN_CATALOG.csv",
+      "gitBlobSha": "4ad764683e7c98a0cfb3077d812f6d8676e55064",
+      "sha256": "6138faa0143678f42c328e25b7697977d24e33139f80c32853b7bf7bdc39eca8"
+    },
+    {
+      "path": "docs/ui/SOURCE_RECONCILIATION.md",
+      "gitBlobSha": "ae697b117e33c3408b521e6760ae5d8b4b135823",
+      "sha256": "d6f916d628cabd8e282e73d64f26770781f86d63fbf65402b9ccb7dfec1729ac"
+    },
+    {
+      "path": "docs/ui/UI_DESIGN_SYSTEM.md",
+      "gitBlobSha": "671ef0b387f1f51febfd8ae6bd291ccb933bffea",
+      "sha256": "df3d27bc37928dc8f35c6112309b0fc8130aaa9cb8e2a1ff70c73af9829b078e"
+    }
+  ],
+  "sourceReferenceCatalog": {
+    "ADR-009": "local:docs/adr/ADR-009-audit-and-correlation.md#ADR-009",
+    "ADR-011": "local:docs/adr/ADR-011-idempotency-and-concurrency.md#ADR-011",
+    "AGENTS": "local:AGENTS.md#company-authorization-and-test-policy",
+    "AT-004": "local:docs/acceptance/ACCEPTANCE_70.md#AT-004",
+    "AT-006": "local:docs/acceptance/ACCEPTANCE_70.md#AT-006",
+    "AT-007": "local:docs/acceptance/ACCEPTANCE_70.md#AT-007",
+    "AT-013": "local:docs/acceptance/ACCEPTANCE_70.md#AT-013",
+    "AT-017": "local:docs/acceptance/ACCEPTANCE_70.md#AT-017",
+    "AT-021": "local:docs/acceptance/ACCEPTANCE_70.md#AT-021",
+    "AT-022": "local:docs/acceptance/ACCEPTANCE_70.md#AT-022",
+    "AT-024": "local:docs/acceptance/ACCEPTANCE_70.md#AT-024",
+    "AT-025": "local:docs/acceptance/ACCEPTANCE_70.md#AT-025",
+    "DEC-AI-001": "local:docs/decisions/KARAR_SICILI.md#DEC-AI-001",
+    "DEC-CAR-001": "local:docs/decisions/KARAR_SICILI.md#DEC-CAR-001",
+    "DEC-CAR-002": "local:docs/decisions/KARAR_SICILI.md#DEC-CAR-002",
+    "DEC-CAR-003": "local:docs/decisions/KARAR_SICILI.md#DEC-CAR-003",
+    "DEC-PRD-006": "local:docs/decisions/KARAR_SICILI.md#DEC-PRD-006",
+    "DEC-PRD-007": "local:docs/decisions/KARAR_SICILI.md#DEC-PRD-007",
+    "DEC-PRD-010": "local:docs/decisions/KARAR_SICILI.md#DEC-PRD-010",
+    "DEC-SAL-001": "local:docs/decisions/KARAR_SICILI.md#DEC-SAL-001",
+    "DEC-SAL-002": "local:docs/decisions/KARAR_SICILI.md#DEC-SAL-002",
+    "DEC-SAL-003": "local:docs/decisions/KARAR_SICILI.md#DEC-SAL-003",
+    "DEC-SAL-004": "local:docs/decisions/KARAR_SICILI.md#DEC-SAL-004",
+    "DEC-SAL-005": "local:docs/decisions/KARAR_SICILI.md#DEC-SAL-005",
+    "DEC-SAL-006": "local:docs/decisions/KARAR_SICILI.md#DEC-SAL-006",
+    "DEC-SAL-007": "local:docs/decisions/KARAR_SICILI.md#DEC-SAL-007",
+    "DEC-SAL-008": "local:docs/decisions/KARAR_SICILI.md#DEC-SAL-008",
+    "DURUM-MAKINELERI": "local:docs/domain/DURUM_MAKINELERI.md#sales-order-axes",
+    "MASTER3-S-05": "local:docs/ui/SCREEN_CATALOG.csv#MASTER3-S-05",
+    "Master-12": "local:docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md#12",
+    "Master-27.2": "local:docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md#27.2",
+    "Master-28.10": "local:docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md#28.10",
+    "Master-28.13": "local:docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md#28.13",
+    "Master-28.14": "local:docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md#28.14",
+    "Master-7.2": "local:docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md#7.2",
+    "Master-8.1": "local:docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md#8.1",
+    "Master-9.1": "local:docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md#9.1",
+    "Master-9.2": "local:docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md#9.2",
+    "Master-Company": "local:docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md#company-context",
+    "ORTAK-METADATA": "local:docs/domain/ORTAK_KAYIT_METADATA.md#common-record-metadata",
+    "PLATFORM-HTTP": "local:docs/features/PLATFORM_HTTP_ERROR_CONTRACT_v1.md#http-error-contract",
+    "PRD-CORE": "issue:https://github.com/sinangym/GoymenERP/issues/100#decision=PRD-CORE-001;state=open;updatedAt=2026-08-30T17:29:55Z;bodySha256=sha256:5427d36c7fe1b1bb67c75157a1e8880d9993d6ade747ed6ff41dd9afe9c7ace1;title=EPIC: PRD-CORE-001 — Product & Service master end-to-end delivery;implementation=NO_GO",
+    "PRD-PERM-001": "issue:https://github.com/sinangym/GoymenERP/issues/99#decision=PRD-PERM-001=A;state=closed;updatedAt=2026-08-30T17:21:34Z;bodySha256=sha256:de8b90b0e464d571faaebc5f18a81687e1a28a8b1c8b233e092b77df28e11e2b;title=DECISION: PRD-PERM-001 — Product master role and approval matrix;exact-permission=UNRESOLVED",
+    "PRD-SCOPE-001": "issue:https://github.com/sinangym/GoymenERP/issues/98#decision=PRD-SCOPE-001=A;state=closed;updatedAt=2026-08-30T16:40:06Z;bodySha256=sha256:738b8e742a1ede01e6e7382c9ca701586ec83102aa445c8b9b6d1abcb80bc983;title=DECISION: PRD-SCOPE-001 — product identity, company scope and portability model;implementation=NO_GO",
+    "PRODUCT-U-06": "local:docs/ui/CANONICAL_SCREEN_STATUS.csv#PRODUCT-U-06-candidate-embedded-selector",
+    "S-05": "local:docs/ui/CANONICAL_SCREEN_STATUS.csv#S-05",
+    "S-06": "local:docs/ui/CANONICAL_SCREEN_STATUS.csv#S-06",
+    "SAL-PRD-ACCESS-001": "package:docs/acceptance/SALES_S01_S04_ORDER_CORE_SCENARIOS_v1.json#decisionGates/SAL-PRD-ACCESS-001",
+    "SAL-REQ-001": "package:docs/acceptance/SALES_S01_S04_ORDER_CORE_SCENARIOS_v1.json#decisionGates/SAL-REQ-001",
+    "SAL-SERVICE-001": "package:docs/acceptance/SALES_S01_S04_ORDER_CORE_SCENARIOS_v1.json#decisionGates/SAL-SERVICE-001",
+    "SAL-STATE-001": "package:docs/acceptance/SALES_S01_S04_ORDER_CORE_SCENARIOS_v1.json#decisionGates/SAL-STATE-001",
+    "SALES-LOCK-DOCX": "binary:docs/ui/sources/sales/sales-order-detail-locked-decision-v1.0.docx#locked-decision-v1.0",
+    "UI-DESIGN": "local:docs/ui/UI_DESIGN_SYSTEM.md#design-system",
+    "UI-MAP-001": "local:docs/ui/SOURCE_RECONCILIATION.md#UI-MAP-001",
+    "UI-MAP-002": "local:docs/ui/SOURCE_RECONCILIATION.md#UI-MAP-002"
+  },
+  "sourceReferenceCatalogSha256": "67787e605740b2dd8712650708ee67aeb88fd4f04ae05b138c93f16ae020b807",
+  "packageArtifactInventory": [
+    {
+      "path": "docs/features/SALES_S01_S04_ORDER_CORE_JIT_SPEC_v1.md",
+      "sha256": "4ffcb65eeb5af59891d4b370dfc126711673835a744147d0a1f0d348b0d0cdf6"
+    },
+    {
+      "path": "docs/acceptance/SALES_S01_S04_ORDER_CORE_ACCEPTANCE_v1.md",
+      "sha256": "c9cd9913b0c34bdabf731e19eaf639ba6d9f3cc0e24a263c283505fdd65caf5f"
+    },
+    {
+      "path": "docs/acceptance/SALES_S01_S04_ORDER_CORE_SCENARIOS_v1.json",
+      "sha256": "70cca7d05e960f555200b0428e481f78f419085718d724e1d6a3d6eba049d350"
+    },
+    {
+      "path": "docs/acceptance/SALES_S01_S04_ORDER_CORE_VALIDATOR_v1.mjs",
+      "sha256": "8358870ef9f733f77f8bc23e26e14ff09426fd3f621903ccd2456172488acebb"
+    },
+    {
+      "path": "docs/acceptance/SALES_S01_S04_ORDER_CORE_VALIDATOR_MUTATION_TEST_v1.mjs",
+      "sha256": "186acdee42e6624139d86c10dc7f532ca44c87bac0bac2cc286c0b374daa5535"
+    }
+  ],
+  "exactCaseToCanonicalAt": {
+    "CASE-SAL-X-001": [
+      "AT-001"
+    ],
+    "CASE-SAL-X-002": [
+      "AT-001"
+    ],
+    "CASE-SAL-X-003": [
+      "AT-001"
+    ],
+    "CASE-SAL-X-004": [
+      "AT-001",
+      "AT-008"
+    ],
+    "CASE-SAL-X-005": [],
+    "CASE-SAL-X-006": [],
+    "CASE-SAL-X-007": [
+      "AT-005"
+    ],
+    "CASE-SAL-X-008": [],
+    "CASE-SAL-X-009": [
+      "AT-006"
+    ],
+    "CASE-SAL-X-010": [],
+    "CASE-SAL-S01-001": [],
+    "CASE-SAL-S01-002": [
+      "AT-001"
+    ],
+    "CASE-SAL-S01-003": [],
+    "CASE-SAL-S01-004": [],
+    "CASE-SAL-S01-005": [],
+    "CASE-SAL-S02-001": [
+      "AT-001",
+      "AT-025"
+    ],
+    "CASE-SAL-S02-002": [],
+    "CASE-SAL-S02-003": [
+      "AT-024"
+    ],
+    "CASE-SAL-S02-004": [
+      "AT-025"
+    ],
+    "CASE-SAL-S02-005": [
+      "AT-013"
+    ],
+    "CASE-SAL-S02-006": [
+      "AT-001"
+    ],
+    "CASE-SAL-S02-007": [],
+    "CASE-SAL-S03-001": [],
+    "CASE-SAL-S03-002": [
+      "AT-001"
+    ],
+    "CASE-SAL-S03-003": [],
+    "CASE-SAL-S03-004": [
+      "AT-013"
+    ],
+    "CASE-SAL-S03-005": [],
+    "CASE-SAL-S03-006": [],
+    "CASE-SAL-S03-007": [
+      "AT-001"
+    ],
+    "CASE-SAL-S03-008": [],
+    "CASE-SAL-S03-009": [],
+    "CASE-SAL-S03-010": [
+      "AT-017"
+    ],
+    "CASE-SAL-S03-011": [],
+    "CASE-SAL-S03-012": [],
+    "CASE-SAL-S03-013": [
+      "AT-021"
+    ],
+    "CASE-SAL-S03-014": [
+      "AT-022"
+    ],
+    "CASE-SAL-S03-015": [],
+    "CASE-SAL-S03-016": [],
+    "CASE-SAL-S04-001": [],
+    "CASE-SAL-S04-002": [],
+    "CASE-SAL-S04-003": [],
+    "CASE-SAL-S04-004": [
+      "AT-023"
+    ],
+    "CASE-SAL-S04-005": [
+      "AT-023"
+    ],
+    "CASE-SAL-S04-006": [],
+    "CASE-SAL-S04-007": [],
+    "CASE-SAL-S04-008": [],
+    "CASE-SAL-S04-009": [],
+    "CASE-SAL-S04-010": [],
+    "CASE-SAL-S04-011": [],
+    "CASE-SAL-S04-012": [
+      "AT-024"
+    ],
+    "CASE-SAL-S04-013": [
+      "AT-007"
+    ],
+    "CASE-SAL-LOCK-001": [],
+    "CASE-SAL-LOCK-002": [],
+    "CASE-SAL-LOCK-003": [],
+    "CASE-SAL-LOCK-004": [],
+    "CASE-SAL-LOCK-005": [],
+    "CASE-SAL-LOCK-006": [],
+    "CASE-SAL-LOCK-007": [],
+    "CASE-SAL-LOCK-008": [],
+    "CASE-SAL-LOCK-009": [],
+    "CASE-SAL-LOCK-010": [],
+    "CASE-SAL-LOCK-011": [],
+    "CASE-SAL-LOCK-012": [],
+    "CASE-SAL-DEP-001": [],
+    "CASE-SAL-DEP-002": [],
+    "CASE-SAL-DEP-003": [
+      "AT-004"
+    ],
+    "CASE-SAL-DEP-004": [
+      "AT-023"
+    ],
+    "CASE-SAL-SEL-001": [],
+    "CASE-SAL-SEL-002": [
+      "AT-001"
+    ],
+    "CASE-SAL-SEL-003": [],
+    "CASE-SAL-SEL-004": [],
+    "CASE-SAL-SEL-005": []
+  },
+  "exactCaseToSourceRefs": {
+    "CASE-SAL-X-001": [
+      "AGENTS",
+      "Master-Company",
+      "ADR-009"
+    ],
+    "CASE-SAL-X-002": [
+      "AGENTS",
+      "ADR-009"
+    ],
+    "CASE-SAL-X-003": [
+      "PLATFORM-HTTP",
+      "ORTAK-METADATA"
+    ],
+    "CASE-SAL-X-004": [
+      "UI-DESIGN",
+      "AGENTS"
+    ],
+    "CASE-SAL-X-005": [
+      "ADR-011",
+      "ADR-009"
+    ],
+    "CASE-SAL-X-006": [
+      "ADR-011"
+    ],
+    "CASE-SAL-X-007": [
+      "ADR-011",
+      "DEC-SAL-002"
+    ],
+    "CASE-SAL-X-008": [
+      "ADR-009",
+      "ADR-011"
+    ],
+    "CASE-SAL-X-009": [
+      "UI-DESIGN",
+      "AT-006"
+    ],
+    "CASE-SAL-X-010": [
+      "UI-DESIGN"
+    ],
+    "CASE-SAL-S01-001": [
+      "SALES-LOCK-DOCX",
+      "Master-7.2",
+      "Master-27.2",
+      "UI-MAP-001"
+    ],
+    "CASE-SAL-S01-002": [
+      "UI-DESIGN",
+      "Master-7.2"
+    ],
+    "CASE-SAL-S01-003": [
+      "Master-8.1",
+      "SAL-REQ-001"
+    ],
+    "CASE-SAL-S01-004": [
+      "SALES-LOCK-DOCX",
+      "Master-8.1",
+      "Master-9.1",
+      "SAL-REQ-001"
+    ],
+    "CASE-SAL-S01-005": [
+      "Master-7.2",
+      "UI-DESIGN"
+    ],
+    "CASE-SAL-S02-001": [
+      "DEC-SAL-001",
+      "Master-27.2"
+    ],
+    "CASE-SAL-S02-002": [
+      "DEC-SAL-001",
+      "DURUM-MAKINELERI"
+    ],
+    "CASE-SAL-S02-003": [
+      "Master-28.10",
+      "AT-024"
+    ],
+    "CASE-SAL-S02-004": [
+      "AT-025",
+      "Master-9.1"
+    ],
+    "CASE-SAL-S02-005": [
+      "DEC-CAR-003",
+      "Master-9.2"
+    ],
+    "CASE-SAL-S02-006": [
+      "UI-DESIGN",
+      "AGENTS"
+    ],
+    "CASE-SAL-S02-007": [
+      "UI-DESIGN",
+      "Master-7.2"
+    ],
+    "CASE-SAL-S03-001": [
+      "DEC-SAL-001",
+      "Master-7.2"
+    ],
+    "CASE-SAL-S03-002": [
+      "ORTAK-METADATA",
+      "ADR-009",
+      "ADR-011"
+    ],
+    "CASE-SAL-S03-003": [
+      "DEC-CAR-001",
+      "DEC-CAR-002",
+      "DEC-CAR-003"
+    ],
+    "CASE-SAL-S03-004": [
+      "DEC-CAR-002",
+      "DEC-CAR-003",
+      "AT-013"
+    ],
+    "CASE-SAL-S03-005": [
+      "DEC-SAL-002",
+      "PRODUCT-U-06",
+      "PRD-CORE"
+    ],
+    "CASE-SAL-S03-006": [
+      "DEC-PRD-010",
+      "PRD-CORE",
+      "PRODUCT-U-06"
+    ],
+    "CASE-SAL-S03-007": [
+      "PRD-SCOPE-001",
+      "Master-9.2"
+    ],
+    "CASE-SAL-S03-008": [
+      "PRODUCT-U-06",
+      "SAL-SERVICE-001"
+    ],
+    "CASE-SAL-S03-009": [
+      "DEC-PRD-006",
+      "DEC-PRD-007",
+      "Master-7.2"
+    ],
+    "CASE-SAL-S03-010": [
+      "Master-7.2",
+      "AT-017"
+    ],
+    "CASE-SAL-S03-011": [
+      "DEC-SAL-003",
+      "Master-7.2"
+    ],
+    "CASE-SAL-S03-012": [
+      "DEC-PRD-006",
+      "DEC-PRD-007"
+    ],
+    "CASE-SAL-S03-013": [
+      "AT-021",
+      "Master-28.13"
+    ],
+    "CASE-SAL-S03-014": [
+      "AT-022",
+      "Master-28.14"
+    ],
+    "CASE-SAL-S03-015": [
+      "Master-8.1",
+      "S-05",
+      "S-06"
+    ],
+    "CASE-SAL-S03-016": [
+      "DEC-AI-001",
+      "MASTER3-S-05"
+    ],
+    "CASE-SAL-S04-001": [
+      "Master-7.2",
+      "UI-MAP-002"
+    ],
+    "CASE-SAL-S04-002": [
+      "Master-9.2",
+      "UI-DESIGN"
+    ],
+    "CASE-SAL-S04-003": [
+      "DEC-SAL-002"
+    ],
+    "CASE-SAL-S04-004": [
+      "DEC-SAL-002"
+    ],
+    "CASE-SAL-S04-005": [
+      "DEC-SAL-002"
+    ],
+    "CASE-SAL-S04-006": [
+      "DEC-SAL-003"
+    ],
+    "CASE-SAL-S04-007": [
+      "DEC-SAL-002",
+      "SAL-STATE-001"
+    ],
+    "CASE-SAL-S04-008": [
+      "DEC-SAL-002",
+      "Master-9.2"
+    ],
+    "CASE-SAL-S04-009": [
+      "DEC-SAL-005"
+    ],
+    "CASE-SAL-S04-010": [
+      "DEC-SAL-005"
+    ],
+    "CASE-SAL-S04-011": [
+      "DEC-SAL-001",
+      "DURUM-MAKINELERI"
+    ],
+    "CASE-SAL-S04-012": [
+      "DEC-SAL-001",
+      "Master-28.10"
+    ],
+    "CASE-SAL-S04-013": [
+      "DEC-SAL-005",
+      "DEC-SAL-007",
+      "AT-007"
+    ],
+    "CASE-SAL-LOCK-001": [
+      "SALES-LOCK-DOCX",
+      "DEC-SAL-001"
+    ],
+    "CASE-SAL-LOCK-002": [
+      "SALES-LOCK-DOCX"
+    ],
+    "CASE-SAL-LOCK-003": [
+      "SALES-LOCK-DOCX",
+      "DEC-SAL-003",
+      "DEC-SAL-008"
+    ],
+    "CASE-SAL-LOCK-004": [
+      "SALES-LOCK-DOCX"
+    ],
+    "CASE-SAL-LOCK-005": [
+      "SALES-LOCK-DOCX",
+      "DEC-SAL-006"
+    ],
+    "CASE-SAL-LOCK-006": [
+      "SALES-LOCK-DOCX",
+      "DEC-SAL-004"
+    ],
+    "CASE-SAL-LOCK-007": [
+      "SALES-LOCK-DOCX",
+      "DEC-SAL-004"
+    ],
+    "CASE-SAL-LOCK-008": [
+      "SALES-LOCK-DOCX"
+    ],
+    "CASE-SAL-LOCK-009": [
+      "DEC-SAL-004",
+      "SALES-LOCK-DOCX"
+    ],
+    "CASE-SAL-LOCK-010": [
+      "DEC-SAL-004",
+      "SALES-LOCK-DOCX",
+      "Master-28.10"
+    ],
+    "CASE-SAL-LOCK-011": [
+      "DEC-SAL-006",
+      "SALES-LOCK-DOCX"
+    ],
+    "CASE-SAL-LOCK-012": [
+      "DEC-SAL-008",
+      "SALES-LOCK-DOCX"
+    ],
+    "CASE-SAL-DEP-001": [
+      "AT-021",
+      "Master-28.13"
+    ],
+    "CASE-SAL-DEP-002": [
+      "AT-022",
+      "Master-28.14"
+    ],
+    "CASE-SAL-DEP-003": [
+      "AT-004",
+      "Master-12"
+    ],
+    "CASE-SAL-DEP-004": [
+      "DEC-SAL-002",
+      "DEC-SAL-001"
+    ],
+    "CASE-SAL-SEL-001": [
+      "PRODUCT-U-06",
+      "UI-MAP-001"
+    ],
+    "CASE-SAL-SEL-002": [
+      "PRODUCT-U-06",
+      "PRD-SCOPE-001"
+    ],
+    "CASE-SAL-SEL-003": [
+      "PRD-PERM-001",
+      "SAL-PRD-ACCESS-001"
+    ],
+    "CASE-SAL-SEL-004": [
+      "Master-9.2",
+      "PRODUCT-U-06"
+    ],
+    "CASE-SAL-SEL-005": [
+      "PRODUCT-U-06",
+      "AGENTS"
+    ]
+  },
+  "scenarioMetadataContractSha256": "7a6e179741042851031442b0aa1e54ce7b42c917c6e8f91bae8329e669207e77",
+  "caseSemanticContractSha256": "330ed8378b3305f3e100c90637cec24013f607817344c5d32a77b73aa096c924",
+  "goldenFixtureContractSha256": "47aa79f5582562de848adb9d2deb44a6e186d2218cd772d7bc922bb9bb068bf7",
+  "ownerDecisionGateContractSha256": "c1d775c7e916660fee46f1f2785f47a8e82e22cdaa2bbb7a55431a9900dea4d9",
+  "implementationGateContractSha256": "5f18bb1df23c6a458a66f4dbc129f3e6a668758622290e6ffa7d1a0d5a49e31b",
+  "requiredGoldenPromotionDescriptor": [
+    "immutableUnitIds",
+    "formulaVersion",
+    "priceVersion",
+    "policyVersion",
+    "decimalScale",
+    "roundingMode",
+    "tolerance",
+    "companyScope",
+    "businessDateRule",
+    "currencyRule",
+    "ownerEvidence",
+    "fixtureProvenance",
+    "datasetContentHash",
+    "realSqlRoundTrip",
+    "businessOwnerAcceptance"
+  ],
+  "ownerDecisionGateIds": [
+    "SAL-REQ-001",
+    "SAL-STATE-001",
+    "SAL-NUM-001",
+    "SAL-CARI-SEL-001",
+    "SAL-PRD-ACCESS-001",
+    "SAL-SERVICE-001",
+    "SAL-PRICE-001",
+    "SAL-MARGIN-001",
+    "SAL-RISK-001",
+    "SAL-APP-001",
+    "SAL-DUE-001",
+    "SAL-TERM-001",
+    "SAL-CANCEL-001",
+    "SAL-CLOSE-001",
+    "SAL-ERR-001",
+    "SAL-PERM-001"
+  ],
+  "implementationGateIds": [
+    "G-SAL-CARI-01",
+    "G-SAL-PRD-01",
+    "G-SAL-PRD-ACCESS-01",
+    "G-SAL-PERSIST-01",
+    "G-SAL-PRICE-01",
+    "G-SAL-RISK-01",
+    "G-SAL-APP-01",
+    "G-SAL-SERVICE-01",
+    "G-SAL-ALLOC-01",
+    "G-SAL-FULFILL-01",
+    "G-SAL-INVOICE-01",
+    "G-SAL-DOC-01",
+    "G-SAL-AI-01",
+    "G-SAL-EVENT-01",
+    "G-SAL-PURCHASE-READ-01",
+    "G-SAL-PRODUCTION-READ-01",
+    "G-SAL-FINANCE-READ-01",
+    "G-SAL-FX-01"
+  ],
+  "nonClaims": [
+    "NO_SCHEMA_API_UI_IMPLEMENTATION_GO",
+    "NO_PERMISSION_ROLE_CAPABILITY_DECLARATION",
+    "NO_PRODUCTION_GOLDEN_OR_SEED",
+    "NO_SHARED_CI_WIRING",
+    "NO_CANONICAL_AT_CLOSURE"
+  ]
+}
