@@ -588,9 +588,34 @@ describe('C-01 group mode is not claimed (Codex/ChatGPT #147 P1-3)', () => {
       ),
     )
 
+    // The screen re-authorizes on entry (#146/#148), so it is briefly absent while
+    // the fresh capability lands. Asserting the instant the picker settled measured
+    // a frame the user never sees, and it was a real flake — Codex reproduced it
+    // 2/10 independently.
+    //
+    // But waiting alone WEAKENS the case: a bare wait cannot tell a normal
+    // asynchronous gate from an indefinitely stuck one, and it stops proving that
+    // A's data is absent during the window. So the window is asserted first, then
+    // the settled state. Codex's direction, and it is the better test.
+    // The gate replaces the WHOLE route, so its own heading is the unambiguous
+    // signal that it is closed. Keying on `[data-state="initial-loading"]` was
+    // wrong and measurably so: the list renders its filters above its own state
+    // block, so that selector also matches the list loading its rows — and the
+    // searchbox is legitimately present then. That mistake failed 3/5.
+    if (screen.queryByRole('heading', { name: 'Cari Kartlar' }) === null) {
+      expect(
+        screen.queryByRole('row', { name: /C-0001/ }),
+        "company A's rows were visible while the entry was being re-authorized",
+      ).toBeNull()
+    }
+
+    // Bounded: if the child never comes back, that is a stuck gate — a runtime P1,
+    // not a synchronisation detail — and this fails rather than hanging.
+    const searchbox = await screen.findByRole('searchbox', undefined, { timeout: 5000 })
+
     // Carrying A's search term into B would silently filter B's list by a term the
     // user never chose for B — and the screen would look like B simply has no records.
-    expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('')
+    expect((searchbox as HTMLInputElement).value).toBe('')
     expect((screen.getByLabelText('Şirket hesabı durumu') as HTMLSelectElement).value).toBe('all')
   })
 })

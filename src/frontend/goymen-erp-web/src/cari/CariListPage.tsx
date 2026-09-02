@@ -126,6 +126,9 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
   const boundary = useAuthBoundary()
   // The detail is a SEPARATE grant (#182); holding the list does not imply it.
   const canOpenDetail = hasCapability(shell, CAPABILITY.cariPartiesDetail)
+  // See CapabilityRoute: the entry generation makes a revisit addressable, so it
+  // cannot be served from the previous entry's cache (#146).
+  const entryGeneration = shell.routeEntryGeneration
 
   const singleCompanyContext = scopeMode === 'single' && activeCompanyId !== null
 
@@ -141,6 +144,11 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
     // never surface another company's page.
     queryKey: [
       namespace ?? 'no-context',
+      // ENTRY-SCOPED. A route entry gets its own cache namespace, so a revisit
+      // cannot be served from the previous entry's rows while its authorization
+      // is being revalidated. Paging and sorting inside one entry still cache
+      // normally, because the generation only moves when the route is entered.
+      entryGeneration,
       'counterparties',
       { q, kind, roles, roleMatch, partyState, accountState, sort, direction, cursor },
     ],

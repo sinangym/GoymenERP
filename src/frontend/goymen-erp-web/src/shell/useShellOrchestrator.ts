@@ -57,7 +57,7 @@ function directoryOf(outcome: ViewOutcome<CompanySummary> | undefined): readonly
 }
 
 /** How a capability fetch should be handled by the caller. */
-type CapabilityResolution =
+export type CapabilityResolution =
   | {
       readonly kind: 'ready'
       readonly generation: string
@@ -67,7 +67,7 @@ type CapabilityResolution =
   | { readonly kind: 'denied' } // 403 / 404
   | { readonly kind: 'unavailable' } // 5xx / offline / malformed — retryable, never commits
 
-function resolveCapability(outcome: ViewOutcome<ShellCapabilitySnapshot>): CapabilityResolution {
+export function resolveCapability(outcome: ViewOutcome<ShellCapabilitySnapshot>): CapabilityResolution {
   const state = classifyOutcome(outcome)
   switch (state.kind) {
     case 'ready':
