@@ -1,0 +1,463 @@
+{
+  "schemaVersion": "product-remaining-jit-authority/v1",
+  "sourceSnapshot": {
+    "repository": "sinangym/GoymenERP",
+    "baseRef": "main",
+    "baseSha": "80c567a63da8e059ce92aa1b23dad9f4568ad2ca",
+    "capturedDate": "2026-09-02"
+  },
+  "decision": "PREPARATION_READY_IMPLEMENTATION_NO_GO",
+  "implementationDecision": "NO_GO",
+  "productCore181AssumedClosed": false,
+  "canonicalAcceptance": {
+    "path": "docs/acceptance/ACCEPTANCE_70.md",
+    "exactTexts": {
+      "AT-001": "Kullanıcı yalnız yetkili şirket, şube ve depo kayıtlarını görür.",
+      "AT-003": "Kritik değişiklik önce/sonra, neden, kullanıcı, rol ve korelasyonla audit üretir.",
+      "AT-005": "Eşzamanlı değişiklikte ikinci kullanıcıya çatışma ve fark gösterilir.",
+      "AT-006": "Başarısız kaydetme kullanıcının form verisini kaybettirmez.",
+      "AT-008": "Şirket kapsamı değişikliği açık formu sessizce başka şirkete taşımaz.",
+      "AT-018": "Fiyat sürümü para, birim, KDV, kanal ve geçerlilik bağlamını korur.",
+      "AT-019": "Excel içe aktarma eşleme/önizleme/onay olmadan kayıt yazmaz.",
+      "AT-020": "Aynı Excel dosyasının tekrarı mükerrer kalıcı kayıt üretmez."
+    }
+  },
+  "sourceDescriptor": {
+    "screenMappings": {
+      "U-03": {
+        "name": "Hizmetler liste + detay",
+        "canonicalReferenceStatus": "CANDIDATE_EXACT_REFERENCE",
+        "sourceMappings": [
+          {
+            "id": "PRODUCT-H-01",
+            "status": "CANDIDATE_EXACT"
+          }
+        ]
+      },
+      "U-04": {
+        "name": "Yeni/Düzenle Hizmet",
+        "canonicalReferenceStatus": "CANDIDATE_EXACT_REFERENCE",
+        "sourceMappings": [
+          {
+            "id": "PRODUCT-H-02",
+            "status": "CANDIDATE_EXACT"
+          },
+          {
+            "id": "PRODUCT-H-03",
+            "status": "CANDIDATE_MERGE"
+          }
+        ]
+      },
+      "U-05": {
+        "name": "Fiyatlar",
+        "canonicalReferenceStatus": "CANDIDATE_EXACT_REFERENCE",
+        "sourceMappings": [
+          {
+            "id": "PRODUCT-PRICE-01",
+            "status": "CANDIDATE_EXACT"
+          },
+          {
+            "id": "PRODUCT-PRICE-04",
+            "status": "CANDIDATE_MERGE"
+          }
+        ]
+      },
+      "U-06": {
+        "name": "Fiyat Simülasyonu / Toplu Güncelleme",
+        "canonicalReferenceStatus": "CANDIDATE_EXACT_REFERENCE",
+        "sourceMappings": [
+          {
+            "id": "PRODUCT-PRICE-02",
+            "status": "CANDIDATE_EXACT"
+          }
+        ]
+      },
+      "U-10": {
+        "name": "Excel İçe Aktarma",
+        "canonicalReferenceStatus": "CANDIDATE_EXACT_REFERENCE",
+        "sourceMappings": [
+          {
+            "id": "PRODUCT-PRICE-03",
+            "status": "CANDIDATE_EXACT"
+          }
+        ]
+      }
+    },
+    "collisionRules": [
+      "PRODUCT-U-03_IS_CANONICAL_U02_NOT_U03",
+      "PRODUCT-U-04_DUPLICATE_COMPARE_UNRESOLVED_U02_R04_NOT_U04",
+      "PRODUCT-U-05_IS_CANONICAL_U07_NOT_U05",
+      "PRODUCT-U-06_IS_EMBEDDED_S03_P04_NOT_U06",
+      "PRODUCT-PRICE-03_IS_PRICE_IMPORT_ONLY_NOT_GENERAL_PRODUCT_IMPORT"
+    ],
+    "bindingSources": [
+      "github-issue:100",
+      "github-issue:104",
+      "docs/decisions/KARAR_SICILI.md",
+      "docs/decisions/SINAN_KARARLARI_2026-08-31.md",
+      "docs/decisions/ACIK_KARARLAR.md",
+      "docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md",
+      "docs/acceptance/ACCEPTANCE_70.md",
+      "docs/ui/CANONICAL_SCREEN_STATUS.csv",
+      "docs/ui/SCREEN_CATALOG.csv",
+      "docs/ui/sources/product-service/product-service-design-spec-v1.0.pdf"
+    ],
+    "sourcePins": [
+      {
+        "path": "docs/decisions/KARAR_SICILI.md",
+        "gitBlobSha": "e46bd3146272cb48d3d4a897e4c4c8751391b852",
+        "sha256": "sha256:90f8c75c7c3bab0203b0c51f8602e413158d90be7a2fed2ebbcc708172f7040b"
+      },
+      {
+        "path": "docs/decisions/SINAN_KARARLARI_2026-08-31.md",
+        "gitBlobSha": "f39277202c2aedbce87d6c3ef1b77ffd3564efd0",
+        "sha256": "sha256:4cff6ef670f34df408cfdc410fd4a29c59a1da9cdbda5d15d2ff03935af4f8f8"
+      },
+      {
+        "path": "docs/decisions/ACIK_KARARLAR.md",
+        "gitBlobSha": "0135e01d1ae57e4075c9285d0f0de7422ed6191d",
+        "sha256": "sha256:f1a1160dea86146728dcc7b55014adfd6a6289207a97d2199f33e9745c1c9eeb"
+      },
+      {
+        "path": "docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md",
+        "gitBlobSha": "54059a5805f415e1c015540f9ef0c9e474c53e98",
+        "sha256": "sha256:b636993012e7041802c5a160e48e17427c2ff6e8e5ad5418f41104fdfed0ba05"
+      },
+      {
+        "path": "docs/acceptance/ACCEPTANCE_70.md",
+        "gitBlobSha": "6119f84d2a59b3e0d1fdd2d8646619c0ad29e1bd",
+        "sha256": "sha256:50ff92bfc2a9c75b3837f3cbd7741bd2da586bbe02b3bbfbb1b1d24fe8de8e6b"
+      },
+      {
+        "path": "docs/ui/CANONICAL_SCREEN_STATUS.csv",
+        "gitBlobSha": "662cdbc405b49e469c6d578580bef4766d6a4635",
+        "sha256": "sha256:7b4a6710f792eea3a1f9d2d4b64fe812686e5555f7b409e2c7c9e512e3369f2c"
+      },
+      {
+        "path": "docs/ui/SCREEN_CATALOG.csv",
+        "gitBlobSha": "4ad764683e7c98a0cfb3077d812f6d8676e55064",
+        "sha256": "sha256:6138faa0143678f42c328e25b7697977d24e33139f80c32853b7bf7bdc39eca8"
+      },
+      {
+        "path": "docs/ui/sources/product-service/product-service-design-spec-v1.0.pdf",
+        "gitBlobSha": "d199c68449caa910f3744645300289da6b94bc34",
+        "sha256": "sha256:a80be4c47b4ec136105b655628feac847712c7db54e2d1c429d8f2ff671cd1b9"
+      }
+    ],
+    "issuePins": [
+      {
+        "source": "github-issue:100",
+        "url": "https://github.com/sinangym/GoymenERP/issues/100",
+        "title": "EPIC: PRD-CORE-001 — Product & Service master end-to-end delivery",
+        "updatedAt": "2026-08-30T17:29:55Z",
+        "bodySha256": "sha256:5427d36c7fe1b1bb67c75157a1e8880d9993d6ade747ed6ff41dd9afe9c7ace1"
+      },
+      {
+        "source": "github-issue:104",
+        "url": "https://github.com/sinangym/GoymenERP/issues/104",
+        "title": "PLATFORM CONTRACT: group-shared Product master boundary for PRD-SCOPE-001=A",
+        "updatedAt": "2026-08-30T17:25:10Z",
+        "bodySha256": "sha256:7aa969ac9aa2e4ade731510523b483da6307f717982ee905612d99d62b8076c5"
+      }
+    ],
+    "openDecisionPins": {
+      "OPEN-007": "Formül sahibi, kesin yoğunluk/hız/kerf/kaplama/yuvarlama/tolerans değerleri"
+    }
+  },
+  "pilotRolePolicy": {
+    "source": "github-issue:100#PRD-PERM-001=A",
+    "productServiceMasterReadInitialWriteRole": "SYSTEM_ADMINISTRATOR",
+    "u10PilotApplyRole": "SYSTEM_ADMINISTRATOR",
+    "allOtherRoles": "DEFAULT_DENY",
+    "priceReadManageSimulateApprove": "OUT_OF_SCOPE_DEFAULT_DENY",
+    "exactPermissionStrings": null,
+    "permissionGate": "G-PRD-REMAIN-PERM-01",
+    "permissionGateStatus": "OPEN",
+    "supersedes": "DEC-PRD-010_STOCK_PLANNING_IMPORT_APPROVER_NOTE_FOR_PILOT"
+  },
+  "ownerGates": [
+    {
+      "id": "SRV-SCOPE-001",
+      "status": "OPEN",
+      "closureEvidence": null
+    },
+    {
+      "id": "PRD-PRICE-001",
+      "status": "OPEN",
+      "closureEvidence": null
+    },
+    {
+      "id": "PRD-IMPORT-001",
+      "status": "OPEN",
+      "closureEvidence": null
+    },
+    {
+      "id": "OPEN-007",
+      "status": "OPEN",
+      "closureEvidence": null
+    },
+    {
+      "id": "G-PRD-REMAIN-BASE-01",
+      "status": "OPEN",
+      "closureEvidence": null
+    },
+    {
+      "id": "G-PRD-REMAIN-PLATFORM-01",
+      "status": "OPEN",
+      "closureEvidence": null
+    },
+    {
+      "id": "G-PRD-REMAIN-CARI-01",
+      "status": "OPEN",
+      "closureEvidence": null
+    },
+    {
+      "id": "G-PRD-REMAIN-PERM-01",
+      "status": "OPEN",
+      "closureEvidence": null
+    },
+    {
+      "id": "G-PRD-REMAIN-DATA-01",
+      "status": "OPEN",
+      "closureEvidence": null
+    },
+    {
+      "id": "G-PRD-REMAIN-AUDIT-01",
+      "status": "OPEN",
+      "closureEvidence": null
+    },
+    {
+      "id": "G-PRD-REMAIN-IDEMPOTENCY-01",
+      "status": "OPEN",
+      "closureEvidence": null
+    },
+    {
+      "id": "G-PRD-REMAIN-CONCURRENCY-01",
+      "status": "OPEN",
+      "closureEvidence": null
+    },
+    {
+      "id": "G-PRD-REMAIN-CALC-01",
+      "status": "OPEN",
+      "closureEvidence": null
+    },
+    {
+      "id": "G-PRD-REMAIN-DOC-01",
+      "status": "OPEN",
+      "closureEvidence": null
+    },
+    {
+      "id": "G-PRD-REMAIN-AI-01",
+      "status": "OPEN",
+      "closureEvidence": null
+    },
+    {
+      "id": "G-PRD-REMAIN-UI-01",
+      "status": "OPEN",
+      "closureEvidence": null
+    },
+    {
+      "id": "G-PRD-REMAIN-CI-01",
+      "status": "OPEN",
+      "closureEvidence": null
+    }
+  ],
+  "artifactInventory": [
+    {
+      "path": "docs/features/PRODUCT_REMAINING_U03_U04_U05_U06_U10_JIT_INDEX_v1.md",
+      "sha256": "sha256:cc7340c2aae6858be24cd38c0e1cd77aade96d4bb4c64105d74082f15c957f33"
+    },
+    {
+      "path": "docs/features/PRODUCT_U03_U04_SERVICE_JIT_SPEC_v1.md",
+      "sha256": "sha256:ceadb35ab77d12cfbede50f72395957a6b5b5183a57aa13b065ecf79a194866c"
+    },
+    {
+      "path": "docs/features/PRODUCT_U05_U06_PRICE_LIFECYCLE_SIMULATION_JIT_SPEC_v1.md",
+      "sha256": "sha256:53f797d857821b5cf6746feb021348644415177fcf565df72617957a56c45f04"
+    },
+    {
+      "path": "docs/features/PRODUCT_U10_EXCEL_IMPORT_JIT_SPEC_v1.md",
+      "sha256": "sha256:cf0e472ba51364a81a83af5ff2df6314095fe52449f3575f784a3bbe9aeba6e3"
+    },
+    {
+      "path": "docs/acceptance/PRODUCT_REMAINING_U03_U04_U05_U06_U10_ACCEPTANCE_v1.md",
+      "sha256": "sha256:901a362c424872e03a07aad445eb5ac7994a404ab3a8f8e810bc291402310442"
+    },
+    {
+      "path": "docs/acceptance/PRODUCT_REMAINING_U03_U04_U05_U06_U10_SCENARIOS_v1.json",
+      "sha256": "sha256:09c4803158638868cd1a3c49ec4513db7c1569a2bf5f2251862c3548ba427cec"
+    },
+    {
+      "path": "docs/formulas/PRODUCT_PRICE_SIMULATION_GOLDEN_v1.md",
+      "sha256": "sha256:654f91bc68d30721d5d8754f3c2d90d3ee951edacf1e88ab53c43553d25d3fc6"
+    },
+    {
+      "path": "docs/formulas/PRODUCT_PRICE_SIMULATION_GOLDEN_v1.csv",
+      "sha256": "sha256:130291a54eb6c938de7c23746430b97179c2a05f4fc4c770c9f9834ce5da724d"
+    },
+    {
+      "path": "docs/formulas/PRODUCT_PRICE_SIMULATION_GOLDEN_MANIFEST_v1.json",
+      "sha256": "sha256:c7545bc66cecadba4b9fe17a7e96f51178cca2fe1730a1d384e7969cf58f2025"
+    },
+    {
+      "path": "docs/acceptance/PRODUCT_REMAINING_JIT_VALIDATOR_v1.mjs",
+      "sha256": "sha256:13fbf3dc246b25ceedd33d31d7436acc71fa2b23d9fa9a80ba3f9a992137f340"
+    },
+    {
+      "path": "docs/acceptance/PRODUCT_REMAINING_JIT_VALIDATOR_MUTATION_TEST_v1.mjs",
+      "sha256": "sha256:b0fd238916a3f7c44b2b101bfa16988e95f9310699fc64b816d0ebf07559601a"
+    }
+  ],
+  "markdownContract": {
+    "algorithm": "sha256/raw-utf8",
+    "pins": {
+      "docs/features/PRODUCT_REMAINING_U03_U04_U05_U06_U10_JIT_INDEX_v1.md": "sha256:cc7340c2aae6858be24cd38c0e1cd77aade96d4bb4c64105d74082f15c957f33",
+      "docs/features/PRODUCT_U03_U04_SERVICE_JIT_SPEC_v1.md": "sha256:ceadb35ab77d12cfbede50f72395957a6b5b5183a57aa13b065ecf79a194866c",
+      "docs/features/PRODUCT_U05_U06_PRICE_LIFECYCLE_SIMULATION_JIT_SPEC_v1.md": "sha256:53f797d857821b5cf6746feb021348644415177fcf565df72617957a56c45f04",
+      "docs/features/PRODUCT_U10_EXCEL_IMPORT_JIT_SPEC_v1.md": "sha256:cf0e472ba51364a81a83af5ff2df6314095fe52449f3575f784a3bbe9aeba6e3",
+      "docs/acceptance/PRODUCT_REMAINING_U03_U04_U05_U06_U10_ACCEPTANCE_v1.md": "sha256:901a362c424872e03a07aad445eb5ac7994a404ab3a8f8e810bc291402310442",
+      "docs/formulas/PRODUCT_PRICE_SIMULATION_GOLDEN_v1.md": "sha256:654f91bc68d30721d5d8754f3c2d90d3ee951edacf1e88ab53c43553d25d3fc6"
+    }
+  },
+  "scenarioContract": {
+    "caseCount": 62,
+    "seriesCounts": {
+      "X": 10,
+      "U03": 10,
+      "U04": 10,
+      "U05": 10,
+      "U06": 10,
+      "U10": 12
+    },
+    "caseToCanonicalAT": {
+      "CASE-PRD-REM-X-001": [
+        "AT-001"
+      ],
+      "CASE-PRD-REM-X-002": [
+        "AT-003"
+      ],
+      "CASE-PRD-REM-X-003": [
+        "AT-005"
+      ],
+      "CASE-PRD-REM-X-004": [
+        "AT-006"
+      ],
+      "CASE-PRD-REM-X-005": [
+        "AT-008"
+      ],
+      "CASE-PRD-REM-X-006": [],
+      "CASE-PRD-REM-X-007": [],
+      "CASE-PRD-REM-X-008": [],
+      "CASE-PRD-REM-X-009": [],
+      "CASE-PRD-REM-X-010": [],
+      "CASE-PRD-REM-U03-001": [],
+      "CASE-PRD-REM-U03-002": [],
+      "CASE-PRD-REM-U03-003": [],
+      "CASE-PRD-REM-U03-004": [],
+      "CASE-PRD-REM-U03-005": [],
+      "CASE-PRD-REM-U03-006": [],
+      "CASE-PRD-REM-U03-007": [],
+      "CASE-PRD-REM-U03-008": [],
+      "CASE-PRD-REM-U03-009": [],
+      "CASE-PRD-REM-U03-010": [],
+      "CASE-PRD-REM-U04-001": [],
+      "CASE-PRD-REM-U04-002": [],
+      "CASE-PRD-REM-U04-003": [],
+      "CASE-PRD-REM-U04-004": [],
+      "CASE-PRD-REM-U04-005": [],
+      "CASE-PRD-REM-U04-006": [],
+      "CASE-PRD-REM-U04-007": [],
+      "CASE-PRD-REM-U04-008": [],
+      "CASE-PRD-REM-U04-009": [],
+      "CASE-PRD-REM-U04-010": [],
+      "CASE-PRD-REM-U05-001": [
+        "AT-018"
+      ],
+      "CASE-PRD-REM-U05-002": [],
+      "CASE-PRD-REM-U05-003": [],
+      "CASE-PRD-REM-U05-004": [],
+      "CASE-PRD-REM-U05-005": [],
+      "CASE-PRD-REM-U05-006": [],
+      "CASE-PRD-REM-U05-007": [],
+      "CASE-PRD-REM-U05-008": [],
+      "CASE-PRD-REM-U05-009": [],
+      "CASE-PRD-REM-U05-010": [],
+      "CASE-PRD-REM-U06-001": [],
+      "CASE-PRD-REM-U06-002": [],
+      "CASE-PRD-REM-U06-003": [],
+      "CASE-PRD-REM-U06-004": [
+        "AT-018"
+      ],
+      "CASE-PRD-REM-U06-005": [],
+      "CASE-PRD-REM-U06-006": [],
+      "CASE-PRD-REM-U06-007": [],
+      "CASE-PRD-REM-U06-008": [],
+      "CASE-PRD-REM-U06-009": [],
+      "CASE-PRD-REM-U06-010": [],
+      "CASE-PRD-REM-U10-001": [
+        "AT-019"
+      ],
+      "CASE-PRD-REM-U10-002": [],
+      "CASE-PRD-REM-U10-003": [],
+      "CASE-PRD-REM-U10-004": [],
+      "CASE-PRD-REM-U10-005": [
+        "AT-020"
+      ],
+      "CASE-PRD-REM-U10-006": [],
+      "CASE-PRD-REM-U10-007": [],
+      "CASE-PRD-REM-U10-008": [],
+      "CASE-PRD-REM-U10-009": [],
+      "CASE-PRD-REM-U10-010": [],
+      "CASE-PRD-REM-U10-011": [],
+      "CASE-PRD-REM-U10-012": []
+    },
+    "caseSemanticSha256": "sha256:36cb2024c514ce1910e69922f98ca29f30842272ece2d2f5eb44b67bea12184c"
+  },
+  "promotionDescriptor": {
+    "descriptorVersion": "product-price-simulation-promotion/v1",
+    "status": "BLOCKED",
+    "promotionReady": false,
+    "scope": "SYNTHETIC_PREVIEW_DELTA_PERCENT_ONLY",
+    "requiredPins": {
+      "priceCalculationPolicyVersion": null,
+      "roundingPolicyVersion": null,
+      "taxPolicyVersion": null,
+      "fxPolicyVersion": null,
+      "permissionManifestVersion": null
+    },
+    "blockers": [
+      "PRD-PRICE-001",
+      "OPEN-007",
+      "G-PRD-REMAIN-CALC-01",
+      "G-PRD-REMAIN-PERM-01",
+      "G-PRD-REMAIN-CI-01"
+    ],
+    "forbiddenClaims": [
+      "PRODUCTION_PRICE",
+      "PRODUCTION_ROUNDING",
+      "TAX_RESULT",
+      "FX_RESULT",
+      "PERMISSION_APPROVAL"
+    ]
+  },
+  "requiredCommands": [
+    "node docs/acceptance/PRODUCT_REMAINING_JIT_VALIDATOR_v1.mjs --standalone",
+    "node docs/acceptance/PRODUCT_REMAINING_JIT_VALIDATOR_v1.mjs",
+    "node --test docs/acceptance/PRODUCT_REMAINING_JIT_VALIDATOR_MUTATION_TEST_v1.mjs"
+  ],
+  "sharedCiWiring": {
+    "gate": "G-PRD-REMAIN-CI-01",
+    "status": "OPEN",
+    "visibleRunnerStepRequired": true,
+    "nonzeroFailurePropagationRequired": true,
+    "githubWorkflowEditedByThisPackage": false
+  },
+  "forbiddenImplementationClaims": [
+    "SCHEMA_GO",
+    "API_GO",
+    "UI_GO",
+    "PRODUCTION_PRICE",
+    "PRODUCTION_IMPORT",
+    "PRODUCT_CORE_181_PROMOTED"
+  ]
+}

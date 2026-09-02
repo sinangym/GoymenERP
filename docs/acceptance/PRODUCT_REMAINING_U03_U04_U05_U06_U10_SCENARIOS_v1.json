@@ -1,0 +1,659 @@
+{
+  "schemaVersion": "product-remaining-scenarios/v1",
+  "sourceSnapshot": {
+    "repository": "sinangym/GoymenERP",
+    "baseRef": "main",
+    "baseSha": "80c567a63da8e059ce92aa1b23dad9f4568ad2ca",
+    "capturedDate": "2026-09-02"
+  },
+  "decision": "PREPARATION_READY_IMPLEMENTATION_NO_GO",
+  "caseCount": 62,
+  "seriesCounts": {
+    "X": 10,
+    "U03": 10,
+    "U04": 10,
+    "U05": 10,
+    "U06": 10,
+    "U10": 12
+  },
+  "cases": [
+    {
+      "id": "CASE-PRD-REM-X-001",
+      "screen": "X",
+      "kind": "positive-or-boundary",
+      "title": "Yetkisiz şirket verisi hiçbir sonuç, sayaç veya öneride sızmaz.",
+      "expected": "Kullanıcı yalnız yetkili şirket, şube ve depo kayıtlarını görür; istemci şirket kimliği kapsam otoritesi sayılmaz.",
+      "canonicalAT": [
+        "AT-001"
+      ],
+      "ownerGate": "G-PRD-REMAIN-PLATFORM-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-X-002",
+      "screen": "X",
+      "kind": "positive-or-boundary",
+      "title": "Kritik değişiklik denemesi audit bağlamını korur.",
+      "expected": "Önce/sonra, neden, kullanıcı, rol, zaman ve korelasyon kimliği audit kanıtında yer alır.",
+      "canonicalAT": [
+        "AT-003"
+      ],
+      "ownerGate": "G-PRD-REMAIN-AUDIT-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-X-003",
+      "screen": "X",
+      "kind": "positive-or-boundary",
+      "title": "Stale sürümle kaydetme çatışma üretir.",
+      "expected": "İkinci yazar sessizce ezmez; fark ve yenileme yolu gösterilir.",
+      "canonicalAT": [
+        "AT-005"
+      ],
+      "ownerGate": "G-PRD-REMAIN-CONCURRENCY-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-X-004",
+      "screen": "X",
+      "kind": "positive-or-boundary",
+      "title": "Başarısız kaydetme kullanıcı girdisini kaybettirmez.",
+      "expected": "Form değerleri korunur ve güvenli yeniden deneme yolu sunulur.",
+      "canonicalAT": [
+        "AT-006"
+      ],
+      "ownerGate": "G-PRD-REMAIN-PLATFORM-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-X-005",
+      "screen": "X",
+      "kind": "positive-or-boundary",
+      "title": "Kirli form varken şirket kapsamı değişimi sessiz olmaz.",
+      "expected": "Kullanıcı açıkça uyarılır; kayıt başka şirkete taşınmaz.",
+      "canonicalAT": [
+        "AT-008"
+      ],
+      "ownerGate": "G-PRD-REMAIN-PLATFORM-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-X-006",
+      "screen": "X",
+      "kind": "negative-or-resilience",
+      "title": "Yetkisiz derin bağlantı varlık bilgisini sızdırmaz.",
+      "expected": "Yetkisiz ve kapsam dışı kayıtlar fail-closed işlenir.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-PERM-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-X-007",
+      "screen": "X",
+      "kind": "negative-or-resilience",
+      "title": "Stale referans sürümüyle komut kabul edilmez.",
+      "expected": "Değişmiş referans için güncel fark gösterilir ve yeniden doğrulama istenir.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-CONCURRENCY-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-X-008",
+      "screen": "X",
+      "kind": "negative-or-resilience",
+      "title": "Başarı ve hata sonucu korelasyon kimliği taşır.",
+      "expected": "Operasyonel iz kullanıcıya güvenli biçimde gösterilir ve audit ile bağlanır.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-AUDIT-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-X-009",
+      "screen": "X",
+      "kind": "negative-or-resilience",
+      "title": "AI servisi yokken çekirdek akış deterministik kalır.",
+      "expected": "AI yalnız öneri üretir; kayıt, onay veya aktivasyon yapmaz.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-AI-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-X-010",
+      "screen": "X",
+      "kind": "negative-or-resilience",
+      "title": "Açık kapılar production davranışı üretmez.",
+      "expected": "Schema, API, UI ve veri yazma kararları bütün owner kapıları kapanana kadar NO_GO kalır.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-BASE-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U03-001",
+      "screen": "U03",
+      "kind": "positive-or-boundary",
+      "title": "Hizmet listesi stoktan bağımsızdır.",
+      "expected": "Liste stok, lot, etiket, paket veya rezervasyon miktarı üretmez.",
+      "canonicalAT": [],
+      "ownerGate": "SRV-SCOPE-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U03-002",
+      "screen": "U03",
+      "kind": "positive-or-boundary",
+      "title": "Gerçek boş durum filtre boşluğundan ayrılır.",
+      "expected": "İlk kullanım ve filtre sonucu yok durumları farklı mesaj ve eylem sunar.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-UI-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U03-003",
+      "screen": "U03",
+      "kind": "positive-or-boundary",
+      "title": "Hizmet kartı ticari kimliği gösterir.",
+      "expected": "Kod, ad, grup, kullanım yönü, birim, fiyat durumu ve aktiflik görünür; stok alanları görünmez.",
+      "canonicalAT": [],
+      "ownerGate": "SRV-SCOPE-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U03-004",
+      "screen": "U03",
+      "kind": "positive-or-boundary",
+      "title": "Operasyon profili yalnız ilgili hizmette görünür.",
+      "expected": "Operasyon sahipliği ve ücret bazı, hizmet türü gerektiriyorsa bağlanır; fiziksel stok sahipliği türetilmez.",
+      "canonicalAT": [],
+      "ownerGate": "SRV-SCOPE-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U03-005",
+      "screen": "U03",
+      "kind": "positive-or-boundary",
+      "title": "Alt yüklenici bağlantıları fiziksel hareket yaratmaz.",
+      "expected": "Girdi/çıktı ilişkileri yalnız referans olarak gösterilir; stok hareketi başka modülün sahibi olarak kalır.",
+      "canonicalAT": [],
+      "ownerGate": "SRV-SCOPE-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U03-006",
+      "screen": "U03",
+      "kind": "negative-or-resilience",
+      "title": "Fiyat bağlantısı U-05 bağlamına gider.",
+      "expected": "Hizmetten fiyat görünümüne geçiş bağlamı korur; burada fiyat kaydı yazılmaz.",
+      "canonicalAT": [],
+      "ownerGate": "PRD-PRICE-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U03-007",
+      "screen": "U03",
+      "kind": "negative-or-resilience",
+      "title": "Owner policy kullanım uygunluğunu kapattığında geçmiş hizmet bağları bozulmaz.",
+      "expected": "Geçmiş işlem referansları okunabilir kalır; yeni kullanım yalnız owner-pinned lifecycle politikasıyla engellenir.",
+      "canonicalAT": [],
+      "ownerGate": "SRV-SCOPE-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U03-008",
+      "screen": "U03",
+      "kind": "negative-or-resilience",
+      "title": "Hizmet detayında dar yetki görünümü fail-closed kalır.",
+      "expected": "Gizli alan ve eylemler sayaç, sekme veya hata metniyle sızmaz.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-PERM-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U03-009",
+      "screen": "U03",
+      "kind": "negative-or-resilience",
+      "title": "Stale hizmet detayı sessiz güncellenmez.",
+      "expected": "Güncel sürüm farkı gösterilir; kullanıcı yenilemeden yazma yapamaz.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-CONCURRENCY-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U03-010",
+      "screen": "U03",
+      "kind": "negative-or-resilience",
+      "title": "AI hizmet sınıflandırmasını yalnız önerir.",
+      "expected": "Grup, birim ve operasyon önerisi kullanıcı onayı olmadan kalıcı olmaz.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-AI-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U04-001",
+      "screen": "U04",
+      "kind": "positive-or-boundary",
+      "title": "Yeni hizmet formu stok alanı üretmez.",
+      "expected": "Lot, etiket, paket, depo ve fiziksel miktar alanları hiçbir varyantta görünmez.",
+      "canonicalAT": [],
+      "ownerGate": "SRV-SCOPE-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U04-002",
+      "screen": "U04",
+      "kind": "positive-or-boundary",
+      "title": "Hizmet kullanım yönü açık seçilir.",
+      "expected": "Satış, satın alma veya her iki yön kararı ayrı ve auditlenebilir bir seçimdir.",
+      "canonicalAT": [],
+      "ownerGate": "SRV-SCOPE-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U04-003",
+      "screen": "U04",
+      "kind": "positive-or-boundary",
+      "title": "Ticari birim kontrollü referanstır.",
+      "expected": "Serbest metinle yeni birim icat edilmez; UnitId sözleşmesi owner kapısına bağlıdır.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-DATA-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U04-004",
+      "screen": "U04",
+      "kind": "positive-or-boundary",
+      "title": "Alt yüklenici operasyon profili eksikse aktivasyon kapanır.",
+      "expected": "Gerekli sahiplik ve ücret bazı çözülmeden yalnız taslak korunabilir.",
+      "canonicalAT": [],
+      "ownerGate": "SRV-SCOPE-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U04-005",
+      "screen": "U04",
+      "kind": "positive-or-boundary",
+      "title": "Taslak kaydetme aktivasyon değildir.",
+      "expected": "Kaydetme, onay ve aktivasyon ayrı niyetlerdir; açık owner kapısı otomatik geçilmez.",
+      "canonicalAT": [],
+      "ownerGate": "SRV-SCOPE-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U04-006",
+      "screen": "U04",
+      "kind": "negative-or-resilience",
+      "title": "Kapsam kararı olmadan hizmet aktive edilmez.",
+      "expected": "SRV-SCOPE-001 açıkken schema/API aktivasyon davranışı NO_GO kalır.",
+      "canonicalAT": [],
+      "ownerGate": "SRV-SCOPE-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U04-007",
+      "screen": "U04",
+      "kind": "negative-or-resilience",
+      "title": "Sahiplik veya maliyet kuralı değişikliği etki önizlemesi ister.",
+      "expected": "Bağlı operasyon ve fiyat referansları gösterilmeden kritik değişiklik uygulanmaz.",
+      "canonicalAT": [],
+      "ownerGate": "SRV-SCOPE-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U04-008",
+      "screen": "U04",
+      "kind": "negative-or-resilience",
+      "title": "Geçmiş ve bağlantılar değişmez kanıt taşır.",
+      "expected": "Kim, ne zaman, neden ve önce/sonra bağlamı okunabilir kalır.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-AUDIT-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U04-009",
+      "screen": "U04",
+      "kind": "negative-or-resilience",
+      "title": "Doğrulama hatası alan bağlamında gösterilir.",
+      "expected": "Girdi korunur; ilk hataya odak ve erişilebilir hata özeti sağlanır.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-UI-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U04-010",
+      "screen": "U04",
+      "kind": "negative-or-resilience",
+      "title": "AI açıklama ve operasyon önerisini uygulatmaz.",
+      "expected": "Öneri diff olarak sunulur; kullanıcı seçimi ve owner kapıları olmadan yazılmaz.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-AI-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U05-001",
+      "screen": "U05",
+      "kind": "positive-or-boundary",
+      "title": "Fiyat sürümü tam ticari bağlamı korur.",
+      "expected": "Para birimi, fiyat birimi, vergi bağlamı, kanal ve geçerlilik sürümle birlikte saklanır.",
+      "canonicalAT": [
+        "AT-018"
+      ],
+      "ownerGate": "PRD-PRICE-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U05-002",
+      "screen": "U05",
+      "kind": "positive-or-boundary",
+      "title": "Aktif, planlı ve geçmiş sürümler ayrıdır.",
+      "expected": "Zaman çizelgesi eski sürümü değiştirmeden statüyü ve geçerlilik aralığını gösterir.",
+      "canonicalAT": [],
+      "ownerGate": "PRD-PRICE-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U05-003",
+      "screen": "U05",
+      "kind": "positive-or-boundary",
+      "title": "Fiyat birimi işlem miktarı biriminden bağımsızdır.",
+      "expected": "Görüntüleme iki birimi açıkça ayırır; dönüşüm politikası olmadan tutar türetmez.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-CALC-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U05-004",
+      "screen": "U05",
+      "kind": "positive-or-boundary",
+      "title": "Kanal görünümü yalnız ilgili sütunları gösterir.",
+      "expected": "Satış ve satın alma bağlamları tek tabloda anlamsız biçimde istiflenmez.",
+      "canonicalAT": [],
+      "ownerGate": "PRD-PRICE-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U05-005",
+      "screen": "U05",
+      "kind": "positive-or-boundary",
+      "title": "Çakışan geçerlilik deterministik çözüm bekler.",
+      "expected": "PRD-PRICE-001 kapanmadan fiyat önceliği icat edilmez ve aktivasyon fail-closed kalır.",
+      "canonicalAT": [],
+      "ownerGate": "PRD-PRICE-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U05-006",
+      "screen": "U05",
+      "kind": "negative-or-resilience",
+      "title": "Minimum fiyat ve marj eşiği yalnız yetkili bağlamda görünür.",
+      "expected": "Eksik policy ile geç/kal sonucu üretilmez.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-CALC-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U05-007",
+      "screen": "U05",
+      "kind": "negative-or-resilience",
+      "title": "Şirket ve müşteri kapsamı server tarafından çözülür.",
+      "expected": "Customer ve customer-group kimlikleri Cari authority kaynağından referanslanır, kopyalanmaz; capability yoksa fiyat kararı fail-closed kalır.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-CARI-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U05-008",
+      "screen": "U05",
+      "kind": "negative-or-resilience",
+      "title": "Fiyat geçmişi değiştirilemez ve karşılaştırılabilir kalır.",
+      "expected": "İptal veya sona ermiş sürüm dahil kim/ne zaman/neden ve alan farkı korunur.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-AUDIT-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U05-009",
+      "screen": "U05",
+      "kind": "negative-or-resilience",
+      "title": "Pasif veya planlı fiyat yanlışlıkla aktif sayılmaz.",
+      "expected": "Lifecycle geçişi ve tarih kararı owner politikası olmadan türetilmez.",
+      "canonicalAT": [],
+      "ownerGate": "PRD-PRICE-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U05-010",
+      "screen": "U05",
+      "kind": "negative-or-resilience",
+      "title": "AI fiyat anomalisi ve özetini yalnız önerir.",
+      "expected": "Minimum fiyat, marj, vergi veya kur sonucunu kendi başına onaylamaz.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-AI-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U06-001",
+      "screen": "U06",
+      "kind": "positive-or-boundary",
+      "title": "Toplu değişiklik önce kapsam seçimini sabitler.",
+      "expected": "Tüm eşleşen kayıtlar dahil seçimi açıkça gösterilir; gizli seçim yoktur.",
+      "canonicalAT": [],
+      "ownerGate": "PRD-PRICE-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U06-002",
+      "screen": "U06",
+      "kind": "positive-or-boundary",
+      "title": "Uygulama öncesi eski-yeni diff zorunludur.",
+      "expected": "Önizleme olmadan fiyat revizyonu oluşturulmaz.",
+      "canonicalAT": [],
+      "ownerGate": "PRD-PRICE-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U06-003",
+      "screen": "U06",
+      "kind": "positive-or-boundary",
+      "title": "Simülasyon etki özetini deterministik gösterir.",
+      "expected": "Etkilenen kayıt, uyarı ve engel sayıları aynı giriş için aynı sonucu verir.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-CALC-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U06-004",
+      "screen": "U06",
+      "kind": "positive-or-boundary",
+      "title": "Toplu uygulama yeni fiyat sürümü oluşturur.",
+      "expected": "Mevcut sürüm overwrite edilmez; para birimi, fiyat birimi, KDV, kanal ve geçerlilik bağlamı yeni sürümde birlikte korunur.",
+      "canonicalAT": [
+        "AT-018"
+      ],
+      "ownerGate": "PRD-PRICE-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U06-005",
+      "screen": "U06",
+      "kind": "positive-or-boundary",
+      "title": "Onaylı sipariş fiyat snapshotı değişmez.",
+      "expected": "Yeni fiyat sürümü geçmiş veya onaylı siparişin ticari bağlamını geriye dönük değiştirmez.",
+      "canonicalAT": [],
+      "ownerGate": "PRD-PRICE-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U06-006",
+      "screen": "U06",
+      "kind": "negative-or-resilience",
+      "title": "Açık taslaklar güncel fiyat uyarısı alır.",
+      "expected": "Sistem sessiz fiyat değişikliği yapmaz; kullanıcı karşılaştırmayı seçer.",
+      "canonicalAT": [],
+      "ownerGate": "PRD-PRICE-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U06-007",
+      "screen": "U06",
+      "kind": "negative-or-resilience",
+      "title": "Yuvarlama politikası yoksa uygulama kapanır.",
+      "expected": "Sentetik önizleme gösterilebilir; production fiyat değeri üretilemez.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-CALC-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U06-008",
+      "screen": "U06",
+      "kind": "negative-or-resilience",
+      "title": "Vergi ve kur politikası yoksa sonuç türetilmez.",
+      "expected": "Fixture kapsamı dışındaki vergi/FX hesapları açıkça unresolved kalır.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-CALC-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U06-009",
+      "screen": "U06",
+      "kind": "negative-or-resilience",
+      "title": "Exact izin tanımı olmadan Apply açılmaz.",
+      "expected": "Rol adı veya UI görünürlüğü yetki kanıtı sayılmaz.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-PERM-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U06-010",
+      "screen": "U06",
+      "kind": "negative-or-resilience",
+      "title": "AI toplu komutu yapılandırır fakat uygulamaz.",
+      "expected": "Önerilen kapsam ve yöntem kullanıcı diff/onayı olmadan kalıcı olmaz.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-AI-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U10-001",
+      "screen": "U10",
+      "kind": "positive-or-boundary",
+      "title": "Dosya yükleme kalıcı kayıt yazmaz.",
+      "expected": "Eşleme, önizleme ve onay tamamlanmadan yükleme hiçbir kalıcı kayıt yazmaz; yalnız güvenli batch taslağı üretir.",
+      "canonicalAT": [
+        "AT-019"
+      ],
+      "ownerGate": "PRD-IMPORT-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U10-002",
+      "screen": "U10",
+      "kind": "positive-or-boundary",
+      "title": "Kolon eşleme tamamlanmadan yazma olmaz.",
+      "expected": "Zorunlu alanlar çözülene kadar yalnız mapping taslağı saklanır.",
+      "canonicalAT": [],
+      "ownerGate": "PRD-IMPORT-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U10-003",
+      "screen": "U10",
+      "kind": "positive-or-boundary",
+      "title": "Önizleme ve doğrulama olmadan onay açılamaz.",
+      "expected": "Exact, belirsiz ve eşleşmeyen satır özetleri kullanıcıya gösterilir.",
+      "canonicalAT": [],
+      "ownerGate": "PRD-IMPORT-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U10-004",
+      "screen": "U10",
+      "kind": "positive-or-boundary",
+      "title": "Çözülmemiş satır bulk apply işlemini engeller.",
+      "expected": "Kullanıcı seç, atla veya yeni taslak yolunu açıkça belirlemeden yazma yapılmaz.",
+      "canonicalAT": [],
+      "ownerGate": "PRD-IMPORT-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U10-005",
+      "screen": "U10",
+      "kind": "positive-or-boundary",
+      "title": "Aynı dosya ve aynı niyet replay edilince mükerrer kayıt oluşmaz.",
+      "expected": "Aynı Excel dosyasının tekrarı mükerrer kalıcı kayıt üretmez; önceki batch sonucuna bağlanır veya güvenli çatışma verir.",
+      "canonicalAT": [
+        "AT-020"
+      ],
+      "ownerGate": "G-PRD-REMAIN-IDEMPOTENCY-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U10-006",
+      "screen": "U10",
+      "kind": "negative-or-resilience",
+      "title": "İçerik kimliği değişmeden dosya adı değişmesi duplicate korumasını aşmaz.",
+      "expected": "İdempotency owner sözleşmesi içerik ve normalize edilmiş niyeti birlikte değerlendirir.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-IDEMPOTENCY-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U10-007",
+      "screen": "U10",
+      "kind": "negative-or-resilience",
+      "title": "Satır hatası ve batch atomicity politikası görünürdür.",
+      "expected": "Policy sahibi karar vermeden kısmi yazma davranışı icat edilmez.",
+      "canonicalAT": [],
+      "ownerGate": "PRD-IMPORT-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U10-008",
+      "screen": "U10",
+      "kind": "negative-or-resilience",
+      "title": "Yeni ürün ihtiyacı U-02 taslağına yönlenir.",
+      "expected": "Import akışı Product core lifecycle veya kodlama kapılarını atlamaz.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-BASE-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U10-009",
+      "screen": "U10",
+      "kind": "negative-or-resilience",
+      "title": "Fiyat importu ayrı simülasyon ve onay ister.",
+      "expected": "Eşleme tamamlanması fiyat revizyonu değildir; U-06 diff/onay zinciri ayrıca geçilir.",
+      "canonicalAT": [],
+      "ownerGate": "PRD-PRICE-001",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U10-010",
+      "screen": "U10",
+      "kind": "negative-or-resilience",
+      "title": "Import kanıtı audit, replay ve rapor bağını korur.",
+      "expected": "Document Vault sahibi ve saklama politikası kapanmadan production write NO_GO kalır.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-DOC-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U10-011",
+      "screen": "U10",
+      "kind": "negative-or-resilience",
+      "title": "Unsupported, makrolu veya güvenlik taramasından geçmeyen dosya zero-write kalır.",
+      "expected": "Dosya parse, formül veya makro çalıştırmadan reddedilir; hiçbir kalıcı business kayıt yazılmaz ve güvenli hata kanıtı üretilir.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-DOC-01",
+      "implementationDecision": "NO_GO"
+    },
+    {
+      "id": "CASE-PRD-REM-U10-012",
+      "screen": "U10",
+      "kind": "negative-or-resilience",
+      "title": "Dışa aktarılan hata raporu spreadsheet formula injection çalıştırmaz.",
+      "expected": "Formül tetikleyen hücre önekleri güvenlik owner kuralıyla etkisizleştirilir; rapor açıldığında hücre komutu yürütülmez.",
+      "canonicalAT": [],
+      "ownerGate": "G-PRD-REMAIN-DOC-01",
+      "implementationDecision": "NO_GO"
+    }
+  ]
+}

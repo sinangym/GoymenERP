@@ -1,0 +1,172 @@
+{
+  "schemaVersion": "product-price-simulation-golden/v1",
+  "sourceSnapshot": {
+    "repository": "sinangym/GoymenERP",
+    "baseRef": "main",
+    "baseSha": "80c567a63da8e059ce92aa1b23dad9f4568ad2ca",
+    "capturedDate": "2026-09-02"
+  },
+  "decision": "PREPARATION_READY_IMPLEMENTATION_NO_GO",
+  "csvPath": "docs/formulas/PRODUCT_PRICE_SIMULATION_GOLDEN_v1.csv",
+  "fixtureCount": 8,
+  "operation": "PREVIEW_DELTA_PERCENT_ONLY",
+  "arithmetic": "exact-base10-rational",
+  "exclusions": [
+    "tax",
+    "fx-conversion",
+    "rounding",
+    "discount-composition",
+    "tier-selection",
+    "permission-decision",
+    "persistence"
+  ],
+  "promotionDescriptor": {
+    "descriptorVersion": "product-price-simulation-promotion/v1",
+    "status": "BLOCKED",
+    "promotionReady": false,
+    "scope": "SYNTHETIC_PREVIEW_DELTA_PERCENT_ONLY",
+    "requiredPins": {
+      "priceCalculationPolicyVersion": null,
+      "roundingPolicyVersion": null,
+      "taxPolicyVersion": null,
+      "fxPolicyVersion": null,
+      "permissionManifestVersion": null
+    },
+    "blockers": [
+      "PRD-PRICE-001",
+      "OPEN-007",
+      "G-PRD-REMAIN-CALC-01",
+      "G-PRD-REMAIN-PERM-01",
+      "G-PRD-REMAIN-CI-01"
+    ],
+    "forbiddenClaims": [
+      "PRODUCTION_PRICE",
+      "PRODUCTION_ROUNDING",
+      "TAX_RESULT",
+      "FX_RESULT",
+      "PERMISSION_APPROVAL"
+    ]
+  },
+  "fixtures": [
+    {
+      "fixtureId": "PRD-PRICE-SIM-001",
+      "operation": "PREVIEW_DELTA_PERCENT_ONLY",
+      "oldAmount": "100",
+      "newAmount": "110",
+      "expectedDelta": "10",
+      "expectedPercentExact": "10",
+      "currencyContext": "SYNTHETIC-CURRENCY",
+      "unitContext": "SYNTHETIC-PRICE-UNIT",
+      "roundingPolicyVersion": "UNRESOLVED",
+      "taxPolicyVersion": "UNRESOLVED",
+      "fxPolicyVersion": "UNRESOLVED",
+      "permissionManifestVersion": "UNRESOLVED",
+      "promotionStatus": "BLOCKED"
+    },
+    {
+      "fixtureId": "PRD-PRICE-SIM-002",
+      "operation": "PREVIEW_DELTA_PERCENT_ONLY",
+      "oldAmount": "250",
+      "newAmount": "237.5",
+      "expectedDelta": "-12.5",
+      "expectedPercentExact": "-5",
+      "currencyContext": "SYNTHETIC-CURRENCY",
+      "unitContext": "SYNTHETIC-PRICE-UNIT",
+      "roundingPolicyVersion": "UNRESOLVED",
+      "taxPolicyVersion": "UNRESOLVED",
+      "fxPolicyVersion": "UNRESOLVED",
+      "permissionManifestVersion": "UNRESOLVED",
+      "promotionStatus": "BLOCKED"
+    },
+    {
+      "fixtureId": "PRD-PRICE-SIM-003",
+      "operation": "PREVIEW_DELTA_PERCENT_ONLY",
+      "oldAmount": "0",
+      "newAmount": "10",
+      "expectedDelta": "10",
+      "expectedPercentExact": "UNDEFINED",
+      "currencyContext": "SYNTHETIC-CURRENCY",
+      "unitContext": "SYNTHETIC-PRICE-UNIT",
+      "roundingPolicyVersion": "UNRESOLVED",
+      "taxPolicyVersion": "UNRESOLVED",
+      "fxPolicyVersion": "UNRESOLVED",
+      "permissionManifestVersion": "UNRESOLVED",
+      "promotionStatus": "BLOCKED"
+    },
+    {
+      "fixtureId": "PRD-PRICE-SIM-004",
+      "operation": "PREVIEW_DELTA_PERCENT_ONLY",
+      "oldAmount": "99.99",
+      "newAmount": "99.99",
+      "expectedDelta": "0",
+      "expectedPercentExact": "0",
+      "currencyContext": "SYNTHETIC-CURRENCY",
+      "unitContext": "SYNTHETIC-PRICE-UNIT",
+      "roundingPolicyVersion": "UNRESOLVED",
+      "taxPolicyVersion": "UNRESOLVED",
+      "fxPolicyVersion": "UNRESOLVED",
+      "permissionManifestVersion": "UNRESOLVED",
+      "promotionStatus": "BLOCKED"
+    },
+    {
+      "fixtureId": "PRD-PRICE-SIM-005",
+      "operation": "PREVIEW_DELTA_PERCENT_ONLY",
+      "oldAmount": "1200",
+      "newAmount": "1260",
+      "expectedDelta": "60",
+      "expectedPercentExact": "5",
+      "currencyContext": "SYNTHETIC-CURRENCY",
+      "unitContext": "SYNTHETIC-PRICE-UNIT",
+      "roundingPolicyVersion": "UNRESOLVED",
+      "taxPolicyVersion": "UNRESOLVED",
+      "fxPolicyVersion": "UNRESOLVED",
+      "permissionManifestVersion": "UNRESOLVED",
+      "promotionStatus": "BLOCKED"
+    },
+    {
+      "fixtureId": "PRD-PRICE-SIM-006",
+      "operation": "PREVIEW_DELTA_PERCENT_ONLY",
+      "oldAmount": "0.125",
+      "newAmount": "0.150",
+      "expectedDelta": "0.025",
+      "expectedPercentExact": "20",
+      "currencyContext": "SYNTHETIC-CURRENCY",
+      "unitContext": "SYNTHETIC-PRICE-UNIT",
+      "roundingPolicyVersion": "UNRESOLVED",
+      "taxPolicyVersion": "UNRESOLVED",
+      "fxPolicyVersion": "UNRESOLVED",
+      "permissionManifestVersion": "UNRESOLVED",
+      "promotionStatus": "BLOCKED"
+    },
+    {
+      "fixtureId": "PRD-PRICE-SIM-007",
+      "operation": "PREVIEW_DELTA_PERCENT_ONLY",
+      "oldAmount": "1000000",
+      "newAmount": "999999.99",
+      "expectedDelta": "-0.01",
+      "expectedPercentExact": "-0.000001",
+      "currencyContext": "SYNTHETIC-CURRENCY",
+      "unitContext": "SYNTHETIC-PRICE-UNIT",
+      "roundingPolicyVersion": "UNRESOLVED",
+      "taxPolicyVersion": "UNRESOLVED",
+      "fxPolicyVersion": "UNRESOLVED",
+      "permissionManifestVersion": "UNRESOLVED",
+      "promotionStatus": "BLOCKED"
+    },
+    {
+      "fixtureId": "PRD-PRICE-SIM-008",
+      "operation": "PREVIEW_DELTA_PERCENT_ONLY",
+      "oldAmount": "7.5",
+      "newAmount": "8.25",
+      "expectedDelta": "0.75",
+      "expectedPercentExact": "10",
+      "currencyContext": "SYNTHETIC-CURRENCY",
+      "unitContext": "SYNTHETIC-PRICE-UNIT",
+      "roundingPolicyVersion": "UNRESOLVED",
+      "taxPolicyVersion": "UNRESOLVED",
+      "fxPolicyVersion": "UNRESOLVED",
+      "permissionManifestVersion": "UNRESOLVED",
+      "promotionStatus": "BLOCKED"
+    }
+  ]
+}
