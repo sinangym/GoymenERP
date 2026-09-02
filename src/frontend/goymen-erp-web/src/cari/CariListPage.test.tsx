@@ -82,7 +82,8 @@ function installFetch(config: Config = {}) {
       return json({
         contractVersion: SHELL_CAPABILITY_CONTRACT_VERSION,
         generation: companyId === B_ID ? 'gen-b' : 'gen-1',
-        capabilities: config.capabilities ?? [CAPABILITY.cariPartiesList],
+        capabilities:
+          config.capabilities ?? [CAPABILITY.cariPartiesList, CAPABILITY.cariPartiesDetail],
       })
     }
     if (url.includes('/counterparties'))
@@ -949,5 +950,55 @@ describe('non-disclosure: a denied route and an unknown route are indistinguisha
     renderAt('/hic-olmayan/derin/yol')
     await findStateBlock('not-found')
     expect(document.body.textContent).not.toContain('Unexpected Application Error')
+  })
+})
+
+describe('C-01 → C-03 navigation (spec §2.1)', () => {
+  it('without the detail grant the code is TEXT, not a link', () => {
+    // Holding the list does not imply holding the detail (#182). Rendering a link
+    // the route would refuse offers an action the caller is not entitled to and
+    // tells them the screen exists. Codex caught this on #172 (P1-1).
+    //
+    // Written because making the link unconditional broke no other test: the
+    // conditional was unproven, which in an authorization path is the same as
+    // absent.
+    return (async () => {
+      installFetch({ capabilities: [CAPABILITY.cariPartiesList] })
+      renderAt('/cari')
+      const row = await screen.findByRole('row', { name: /C-0001/ })
+      expect(within(row).getByText('C-0001')).toBeTruthy()
+      expect(within(row).queryByRole('link')).toBeNull()
+    })()
+  })
+
+  it('the code opens that counterparty, and names it for screen readers', async () => {
+    installFetch()
+    renderAt('/cari')
+    const row = await screen.findByRole('row', { name: /C-0001/ })
+
+    const link = within(row).getByRole('link')
+    expect(link.getAttribute('href')).toBe(`/cari/${PARTY_1}`)
+    // Heard out of context, "C-0001" alone says nothing about which record it is.
+    expect(link.getAttribute('aria-label')).toBe('C-0001 — Alfa Metal Ltd. Şti.')
+  })
+
+  it('every row links to its OWN record, not a shared or first id', async () => {
+    installFetch({
+      counterparties: () =>
+        json(page({ items: [party(), party({ id: PARTY_2, code: 'C-0002' })] })),
+    })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0002/ })
+
+    const hrefs = [...document.querySelectorAll('tbody a')].map((a) => a.getAttribute('href'))
+    expect(hrefs).toEqual([`/cari/${PARTY_1}`, `/cari/${PARTY_2}`])
+    expect(new Set(hrefs).size).toBe(2)
+  })
+
+  it('without the capability there is no link, because there is no list', async () => {
+    installFetch({ capabilities: [] })
+    renderAt('/cari')
+    await findStateBlock('not-found')
+    expect(document.querySelectorAll('tbody a')).toHaveLength(0)
   })
 })
