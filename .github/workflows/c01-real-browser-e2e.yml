@@ -1,0 +1,259 @@
+name: C-01 real-browser E2E
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: c01-real-browser-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  c01-real-browser-e2e:
+    name: C-01 real-browser E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      C01_E2E_COMPOSE_FILE: infra/docker-compose.c01-e2e.yml
+      C01_E2E_SQL_PORT: "11433"
+      C01_E2E_API_PORT: "15080"
+      C01_E2E_AUTHORIZED_WEB_PORT: "15173"
+      C01_E2E_UNAUTHORIZED_WEB_PORT: "15174"
+      EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      EXPECTED_BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+    steps:
+      - name: Checkout exact source head
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact source and disposable run secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_head="$(git rev-parse HEAD)"
+          test "$actual_head" = "$EXPECTED_HEAD_SHA"
+          git merge-base --is-ancestor "$EXPECTED_BASE_SHA" HEAD
+
+          compose_project="goymen-c01-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          database_name="GoymenErpC01_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          sql_password="C01_$(openssl rand -hex 20)_Aa1!"
+          cursor_key="$(openssl rand -base64 48 | tr -d '\n')"
+          echo "::add-mask::$sql_password"
+          echo "::add-mask::$cursor_key"
+          {
+            echo "C01_E2E_TESTED_COMMIT=$actual_head"
+            echo "C01_E2E_COMPOSE_PROJECT=$compose_project"
+            echo "C01_E2E_DATABASE_NAME=$database_name"
+            echo "COMPOSE_PROJECT_NAME=$compose_project"
+            echo "MSSQL_SA_PASSWORD=$sql_password"
+            echo "C01_E2E_CURSOR_SIGNING_KEY=$cursor_key"
+            echo "GOYMEN_ERP_C01_E2E_SQLSERVER_CONNECTION=Server=127.0.0.1,${C01_E2E_SQL_PORT};Database=${database_name};User Id=sa;Password=${sql_password};Encrypt=True;TrustServerCertificate=True"
+            echo "GOYMEN_ERP_C01_E2E_DISPOSABLE=CONFIRMED"
+            echo "GOYMEN_ERP_C01_E2E_TESTED_COMMIT=$actual_head"
+            echo "GOYMEN_ERP_C01_E2E_RUN_ID=$GITHUB_RUN_ID"
+            echo "GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT=$compose_project"
+            echo "GOYMEN_ERP_C01_E2E_FIXTURE_EVIDENCE=$GITHUB_WORKSPACE/artifacts/c01-e2e-fixture-evidence.json"
+          } >> "$GITHUB_ENV"
+          mkdir -p artifacts/container-logs
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Validate E2E contract tooling
+        run: |
+          python3 -I -S -B -m unittest discover \
+            -s tests/c01_e2e_contract \
+            -p "test_*.py" \
+            -v
+
+      - name: Validate loopback-only compose model
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose version
+          docker compose \
+            -p "$C01_E2E_COMPOSE_PROJECT" \
+            -f "$C01_E2E_COMPOSE_FILE" \
+            config --format json \
+            | python3 -I -S -B tools/validate_c01_e2e_contract.py compose \
+                --input - \
+                --expected-commit "$C01_E2E_TESTED_COMMIT" \
+                --expected-project "$C01_E2E_COMPOSE_PROJECT"
+
+      - name: Restore fixture materializer
+        run: |
+          dotnet restore \
+            tests/GoymenERP.C01E2eFixtureTool/GoymenERP.C01E2eFixtureTool.csproj \
+            -noAutoResponse \
+            --configfile NuGet.Config
+
+      - name: Build and start disposable SQL/API
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose \
+            -p "$C01_E2E_COMPOSE_PROJECT" \
+            -f "$C01_E2E_COMPOSE_FILE" \
+            up -d --build sqlserver api
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent --show-error \
+              "http://127.0.0.1:${C01_E2E_API_PORT}/health/live" >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose \
+            -p "$C01_E2E_COMPOSE_PROJECT" \
+            -f "$C01_E2E_COMPOSE_FILE" ps
+          exit 1
+
+      - name: Materialize and verify canonical C-01 fixture
+        run: |
+          dotnet run \
+            --project tests/GoymenERP.C01E2eFixtureTool/GoymenERP.C01E2eFixtureTool.csproj \
+            --configuration Release \
+            --no-restore \
+            -- materialize
+
+      - name: Verify real capability/API/SQL preflight
+        run: |
+          python3 -I -S -B tools/verify_c01_e2e_api.py \
+            --base-url "http://127.0.0.1:${C01_E2E_API_PORT}" \
+            --tested-commit "$C01_E2E_TESTED_COMMIT" \
+            --output artifacts/c01-e2e-api-preflight.json
+
+      - name: Build and start authorized and unauthorized web profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose \
+            -p "$C01_E2E_COMPOSE_PROJECT" \
+            -f "$C01_E2E_COMPOSE_FILE" \
+            up -d --build web-authorized web-unauthorized
+          for port in "$C01_E2E_AUTHORIZED_WEB_PORT" "$C01_E2E_UNAUTHORIZED_WEB_PORT"; do
+            ready=false
+            for attempt in $(seq 1 90); do
+              if curl --fail --silent --show-error "http://127.0.0.1:${port}/" >/dev/null; then
+                ready=true
+                break
+              fi
+              sleep 2
+            done
+            test "$ready" = true
+          done
+
+      - name: Require Claude-owned browser suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f tests/e2e/package.json || {
+            echo "::error::C01_BROWSER_SUITE_MISSING: tests/e2e/package.json";
+            exit 1;
+          }
+          test -f tests/e2e/package-lock.json || {
+            echo "::error::C01_BROWSER_LOCKFILE_MISSING: tests/e2e/package-lock.json";
+            exit 1;
+          }
+
+      - name: Install pinned browser runner
+        working-directory: tests/e2e
+        run: |
+          npm ci
+          npm audit --audit-level=high
+          ./node_modules/.bin/playwright install --with-deps chromium
+
+      - name: Run B-C01-001 through B-C01-010
+        working-directory: tests/e2e
+        env:
+          C01_E2E_AUTHORIZED_BASE_URL: http://127.0.0.1:15173
+          C01_E2E_UNAUTHORIZED_BASE_URL: http://127.0.0.1:15174
+          C01_E2E_API_BASE_URL: http://127.0.0.1:15080
+          C01_E2E_ARTIFACTS_DIR: ${{ github.workspace }}/artifacts
+        run: npm run c01:ci
+
+      - name: Validate browser and network evidence
+        run: |
+          python3 -I -S -B tools/validate_c01_e2e_contract.py evidence \
+            --evidence artifacts/c01-e2e-evidence.json \
+            --network artifacts/c01-e2e-network-summary.json \
+            --junit artifacts/c01-e2e-junit.xml \
+            --html artifacts/c01-e2e-html-report/index.html \
+            --expected-commit "$C01_E2E_TESTED_COMMIT" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-project "$C01_E2E_COMPOSE_PROJECT"
+
+      - name: Verify post-browser SQL remains read-only
+        env:
+          GOYMEN_ERP_C01_E2E_BASELINE_EVIDENCE: ${{ github.workspace }}/artifacts/c01-e2e-fixture-evidence.json
+          GOYMEN_ERP_C01_E2E_FIXTURE_EVIDENCE: ${{ github.workspace }}/artifacts/c01-e2e-post-browser-sql-evidence.json
+        run: |
+          dotnet run \
+            --project tests/GoymenERP.C01E2eFixtureTool/GoymenERP.C01E2eFixtureTool.csproj \
+            --configuration Release \
+            --no-restore \
+            -- verify-readonly
+
+      - name: Capture disposable runtime state
+        if: always()
+        shell: bash
+        run: |
+          docker compose \
+            -p "$C01_E2E_COMPOSE_PROJECT" \
+            -f "$C01_E2E_COMPOSE_FILE" \
+            ps --all > artifacts/container-logs/compose-ps.txt 2>&1 || true
+
+      - name: Enforce artifact privacy allowlist
+        id: artifact_privacy
+        if: always()
+        run: |
+          python3 -I -S -B tools/validate_c01_e2e_contract.py privacy \
+            --root artifacts \
+            --forbidden-value "$MSSQL_SA_PASSWORD" \
+            --forbidden-value "$C01_E2E_CURSOR_SIGNING_KEY" \
+            --forbidden-value "$GOYMEN_ERP_C01_E2E_SQLSERVER_CONNECTION"
+
+      - name: Remove disposable containers, network and volume
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose \
+            -p "$C01_E2E_COMPOSE_PROJECT" \
+            -f "$C01_E2E_COMPOSE_FILE" \
+            down -v --remove-orphans
+          test -z "$(docker ps -aq --filter "label=com.docker.compose.project=$C01_E2E_COMPOSE_PROJECT")"
+          test -z "$(docker network ls -q --filter "label=com.docker.compose.project=$C01_E2E_COMPOSE_PROJECT")"
+          test -z "$(docker volume ls -q --filter "label=com.docker.compose.project=$C01_E2E_COMPOSE_PROJECT")"
+
+      - name: Upload exact-head C-01 evidence
+        if: always() && steps.artifact_privacy.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: c01-e2e-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/c01-e2e-api-preflight.json
+            artifacts/c01-e2e-evidence.json
+            artifacts/c01-e2e-fixture-evidence.json
+            artifacts/c01-e2e-junit.xml
+            artifacts/c01-e2e-network-summary.json
+            artifacts/c01-e2e-post-browser-sql-evidence.json
+            artifacts/c01-e2e-html-report/index.html
+            artifacts/container-logs/compose-ps.txt
+          if-no-files-found: error
+          retention-days: 7

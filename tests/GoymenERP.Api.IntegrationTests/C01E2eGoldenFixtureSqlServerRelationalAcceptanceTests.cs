@@ -63,6 +63,13 @@ public sealed class C01E2eGoldenFixtureSqlServerRelationalAcceptanceTests
             using var artifact = C01E2eGoldenFixture.Load();
             await C01E2eGoldenFixture.ApplyAsync(connection, artifact);
 
+            var reusableEvidence =
+                await C01E2eGoldenFixtureDatabaseVerifier.VerifyAsync(connection);
+            Assert.Equal(54, reusableEvidence.PartyCount);
+            Assert.Equal(55, reusableEvidence.AccountCount);
+            Assert.Equal(55, reusableEvidence.Sequence.CurrentValue);
+            Assert.Null(reusableEvidence.Sequence.LastUsedValue);
+
             var secondApply = await Assert.ThrowsAsync<SqlException>(
                 () => C01E2eGoldenFixture.ApplyAsync(connection, artifact));
             Assert.Equal(51021, secondApply.Number);
@@ -70,6 +77,9 @@ public sealed class C01E2eGoldenFixtureSqlServerRelationalAcceptanceTests
 
             await AssertRelationalCardinalitiesAsync(connection);
             await AssertSpecialRowsAsync(connection);
+            await AssertArbitraryRowMutationFailsCanonicalFixtureCheckAsync(
+                connection,
+                artifact);
 
             using var gdcClient = factory.CreateClientFor(TestUsers.GroupAdmin, GdcCompanyId);
             using var gspClient = factory.CreateClientFor(TestUsers.GroupAdmin, GspCompanyId);
@@ -152,6 +162,41 @@ public sealed class C01E2eGoldenFixtureSqlServerRelationalAcceptanceTests
                 WHERE [a].[CompanyId] = @CompanyId AND [p].[IsActive] = 1;
                 """,
                 new SqlParameter("@CompanyId", GdcCompanyId)));
+    }
+
+    private static async Task AssertArbitraryRowMutationFailsCanonicalFixtureCheckAsync(
+        SqlConnection connection,
+        C01E2eGoldenFixtureArtifact artifact)
+    {
+        const string code = "CAR-000010";
+        var originalLegalName = await ScalarAsync<string>(
+            connection,
+            "SELECT [LegalName] FROM [counterparty].[Parties] WHERE [Code] = @Code;",
+            new SqlParameter("@Code", code));
+
+        await ExecuteAsync(
+            connection,
+            "UPDATE [counterparty].[Parties] SET [LegalName] = N'MUTATED' WHERE [Code] = @Code;",
+            new SqlParameter("@Code", code));
+        try
+        {
+            var rowDriftApply = await Assert.ThrowsAsync<SqlException>(
+                () => C01E2eGoldenFixture.ApplyAsync(connection, artifact));
+            Assert.Equal(51022, rowDriftApply.Number);
+            Assert.Contains("c01_fixture_conflict", rowDriftApply.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            await ExecuteAsync(
+                connection,
+                "UPDATE [counterparty].[Parties] SET [LegalName] = @LegalName WHERE [Code] = @Code;",
+                new SqlParameter("@LegalName", originalLegalName),
+                new SqlParameter("@Code", code));
+        }
+
+        var restoredApply = await Assert.ThrowsAsync<SqlException>(
+            () => C01E2eGoldenFixture.ApplyAsync(connection, artifact));
+        Assert.Equal(51021, restoredApply.Number);
     }
 
     private static async Task AssertSpecialRowsAsync(SqlConnection connection)
@@ -392,6 +437,17 @@ public sealed class C01E2eGoldenFixtureSqlServerRelationalAcceptanceTests
         command.CommandText = commandText;
         command.Parameters.AddRange(parameters);
         return Assert.IsType<T>(await command.ExecuteScalarAsync());
+    }
+
+    private static async Task ExecuteAsync(
+        SqlConnection connection,
+        string commandText,
+        params SqlParameter[] parameters)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = commandText;
+        command.Parameters.AddRange(parameters);
+        await command.ExecuteNonQueryAsync();
     }
 
     private static async Task DropDatabaseAsync(

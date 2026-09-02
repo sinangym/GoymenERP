@@ -1,0 +1,161 @@
+using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+
+namespace GoymenERP.Api.Shell;
+
+internal static class C01E2eShellCapabilityActivation
+{
+    internal const string EnableConfigurationKey =
+        "C01E2e:EnableListCapability";
+    internal const string DisposableConfirmationConfigurationKey =
+        "GOYMEN_ERP_C01_E2E_DISPOSABLE";
+    internal const string TestedCommitConfigurationKey =
+        "GOYMEN_ERP_C01_E2E_TESTED_COMMIT";
+    internal const string RunIdConfigurationKey =
+        "GOYMEN_ERP_C01_E2E_RUN_ID";
+    internal const string ComposeProjectConfigurationKey =
+        "GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT";
+
+    internal static string Configure(
+        IServiceCollection services,
+        IHostEnvironment environment,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(environment);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        if (!IsActivationRequested(configuration))
+        {
+            return ShellCapabilityRegistryAuthorities
+                .CounterpartyListCreateLinkAndDetailV15;
+        }
+
+        ValidateActivationEnvelope(environment, configuration);
+        ReplaceExactCounterpartyProvider(services);
+        return ShellCapabilityRegistryAuthorities.C01DisposableListOnlyV1;
+    }
+
+    private static bool IsActivationRequested(IConfiguration configuration) =>
+        ConfigurationKeys.Any(key => configuration[key] is not null);
+
+    private static void ValidateActivationEnvelope(
+        IHostEnvironment environment,
+        IConfiguration configuration)
+    {
+        if (!environment.IsEnvironment("Testing"))
+        {
+            throw new InvalidOperationException(
+                "C-01 disposable capability yalnız Testing ortamında etkinleştirilebilir.");
+        }
+
+        RequireExact(configuration, EnableConfigurationKey, "true");
+        RequireExact(
+            configuration,
+            DisposableConfirmationConfigurationKey,
+            "CONFIRMED");
+
+        var testedCommit = Required(configuration, TestedCommitConfigurationKey);
+        if (testedCommit.Length != 40
+            || testedCommit.Any(character =>
+                character is not (>= '0' and <= '9')
+                and not (>= 'a' and <= 'f')))
+        {
+            throw new InvalidOperationException(
+                "C-01 disposable capability exact lowercase Git SHA gerektirir.");
+        }
+
+        var runId = Required(configuration, RunIdConfigurationKey);
+        if (runId.Any(character => character is < '0' or > '9'))
+        {
+            throw new InvalidOperationException(
+                "C-01 disposable capability sayısal runner kimliği gerektirir.");
+        }
+
+        var composeProject = Required(configuration, ComposeProjectConfigurationKey);
+        var expectedPrefix = $"goymen-c01-{runId}-";
+        var attempt = composeProject.StartsWith(expectedPrefix, StringComparison.Ordinal)
+            ? composeProject[expectedPrefix.Length..]
+            : string.Empty;
+        if (attempt.Length == 0
+            || attempt.Any(character => character is < '0' or > '9'))
+        {
+            throw new InvalidOperationException(
+                "C-01 disposable capability runner ile bağlı compose project kimliği gerektirir.");
+        }
+    }
+
+    private static void ReplaceExactCounterpartyProvider(IServiceCollection services)
+    {
+        var providers = services
+            .Where(descriptor => descriptor.ServiceType == typeof(IShellCapabilityProvider))
+            .ToArray();
+        if (providers.Length != 1
+            || providers[0].Lifetime != ServiceLifetime.Singleton
+            || providers[0].ImplementationType
+                != typeof(CounterpartyShellCapabilityProvider))
+        {
+            throw new InvalidOperationException(
+                "C-01 disposable capability beklenmeyen shell provider setini değiştiremez.");
+        }
+
+        services.Remove(providers[0]);
+        services.AddSingleton<IShellCapabilityProvider, C01E2eShellCapabilityProvider>();
+    }
+
+    private static void RequireExact(
+        IConfiguration configuration,
+        string key,
+        string expected)
+    {
+        if (!string.Equals(configuration[key], expected, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"C-01 disposable capability '{key}' exact değerini gerektirir.");
+        }
+    }
+
+    private static string Required(IConfiguration configuration, string key)
+    {
+        var value = configuration[key];
+        if (string.IsNullOrEmpty(value)
+            || !string.Equals(value, value.Trim(), StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"C-01 disposable capability '{key}' değerini gerektirir.");
+        }
+
+        return value;
+    }
+
+    private static readonly string[] ConfigurationKeys =
+    [
+        EnableConfigurationKey,
+        DisposableConfirmationConfigurationKey,
+        TestedCommitConfigurationKey,
+        RunIdConfigurationKey,
+        ComposeProjectConfigurationKey,
+    ];
+}
+
+internal sealed class C01E2eShellCapabilityProvider : IShellCapabilityProvider
+{
+    private readonly CounterpartyShellCapabilityProvider _source = new();
+
+    public string Owner => _source.Owner;
+
+    public string ContractVersion => _source.ContractVersion;
+
+    public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
+        Array.AsReadOnly(_source.GetDeclarations()
+            .Select(declaration => declaration.CapabilityId
+                == CounterpartyShellCapabilityProvider.ListCapabilityId
+                ? declaration with
+                {
+                    ContextRequirement = ShellCapabilityContextRequirement.SingleCompany,
+                    ImplementationAvailable = true,
+                }
+                : declaration)
+            .ToArray());
+}
