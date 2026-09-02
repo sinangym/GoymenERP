@@ -194,12 +194,27 @@ class ComposeContractTests(unittest.TestCase):
             "actions/upload-artifact@v7",
             "id: artifact_privacy",
             "steps.artifact_privacy.outcome == 'success'",
+            "tools/validate_sab_e2e_contract.py preflight",
+            "npm run sab:ci -- --reporter=list,junit,html",
+            "tools/validate_sab_e2e_contract.py evidence",
+            "PLAYWRIGHT_HTML_OUTPUT_DIR",
         ):
             self.assertIn(required, workflow)
         self.assertNotIn("pull_request_target", workflow)
         self.assertNotIn("secrets.", workflow)
         self.assertNotIn("compose.log", workflow)
         self.assertNotIn("path: artifacts/", workflow)
+        sab_run = workflow.index("npm run sab:ci -- --reporter=list,junit,html")
+        self.assertLess(workflow.index("npm ci"), sab_run)
+        self.assertLess(
+            workflow.index("playwright install --with-deps chromium"), sab_run
+        )
+        self.assertLess(
+            workflow.index("tools/validate_sab_e2e_contract.py preflight"), sab_run
+        )
+        self.assertLess(
+            sab_run, workflow.index("tools/validate_sab_e2e_contract.py evidence")
+        )
         for relative in validator.ARTIFACT_UPLOAD_ALLOWLIST:
             self.assertIn(f"artifacts/{relative}", workflow)
         upload = workflow.split("      - name: Upload exact-head C-01 evidence", 1)[1]
@@ -211,7 +226,20 @@ class ComposeContractTests(unittest.TestCase):
             for line in path_block.splitlines()
             if line.strip()
         }
-        self.assertEqual(uploaded, set(validator.ARTIFACT_UPLOAD_ALLOWLIST))
+        self.assertEqual(uploaded, set(validator.C01_ARTIFACT_UPLOAD_ALLOWLIST))
+
+        sab_upload = workflow.split("      - name: Upload exact-head SAB evidence", 1)[1]
+        sab_condition = sab_upload.splitlines()[1]
+        self.assertIn("steps.sab_gate.outputs.enabled == 'true'", sab_condition)
+        sab_path_block = sab_upload.split("          path: |", 1)[1].split(
+            "          if-no-files-found:", 1
+        )[0]
+        sab_uploaded = {
+            line.strip().removeprefix("artifacts/")
+            for line in sab_path_block.splitlines()
+            if line.strip()
+        }
+        self.assertEqual(sab_uploaded, set(validator.SAB_ARTIFACT_UPLOAD_ALLOWLIST))
 
 
 class ArtifactPrivacyTests(unittest.TestCase):
@@ -227,6 +255,24 @@ class ArtifactPrivacyTests(unittest.TestCase):
 
     def test_safe_allowlisted_artifact_passes(self):
         validator.validate_artifact_privacy(self.root)
+
+    def test_sab_artifacts_are_allowlisted_and_privacy_scanned(self):
+        junit = self.root / "sab-junit.xml"
+        html = self.root / "sab-html-report" / "index.html"
+        html.parent.mkdir(parents=True)
+        junit.write_text("<testsuites />", encoding="utf-8")
+        html.write_text("<html>SAB</html>", encoding="utf-8")
+        selected = {
+            path.relative_to(self.root).as_posix()
+            for path in validator.artifact_upload_paths(self.root)
+        }
+        self.assertIn("sab-junit.xml", selected)
+        self.assertIn("sab-html-report/index.html", selected)
+        validator.validate_artifact_privacy(self.root)
+
+        html.write_text("<html>?cursor=SIGNED-CURSOR</html>", encoding="utf-8")
+        with self.assertRaisesRegex(validator.ContractError, "cursor query"):
+            validator.validate_artifact_privacy(self.root)
 
     def test_raw_compose_log_is_not_uploadable(self):
         raw_log = self.root / "container-logs" / "compose.log"

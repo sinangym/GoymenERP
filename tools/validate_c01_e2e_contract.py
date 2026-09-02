@@ -59,7 +59,7 @@ NETWORK_REQUEST_KEYS = {
     "outcome",
     "retryOrdinal",
 }
-ARTIFACT_UPLOAD_ALLOWLIST = (
+C01_ARTIFACT_UPLOAD_ALLOWLIST = (
     "c01-e2e-api-preflight.json",
     "c01-e2e-evidence.json",
     "c01-e2e-fixture-evidence.json",
@@ -68,6 +68,13 @@ ARTIFACT_UPLOAD_ALLOWLIST = (
     "c01-e2e-post-browser-sql-evidence.json",
     "c01-e2e-html-report/index.html",
     "container-logs/compose-ps.txt",
+)
+SAB_ARTIFACT_UPLOAD_ALLOWLIST = (
+    "sab-junit.xml",
+    "sab-html-report/index.html",
+)
+ARTIFACT_UPLOAD_ALLOWLIST = (
+    C01_ARTIFACT_UPLOAD_ALLOWLIST + SAB_ARTIFACT_UPLOAD_ALLOWLIST
 )
 ARTIFACT_FORBIDDEN_PATTERNS = (
     (
