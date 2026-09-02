@@ -1,6 +1,7 @@
 using System.Data;
 using System.Net;
 using System.Text.Json;
+using GoymenERP.Modules.Counterparty.Application.Contracts;
 using Microsoft.Data.SqlClient;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -268,18 +269,11 @@ public sealed class CounterpartySqlServerRelationalAcceptanceTests
 
         using var explicitCompanyDetailResponse = await groupClient.GetAsync(
             $"/api/v1/counterparties/{partyId}?companyId={TestCompanyIds.CompanyA:D}");
-        Assert.Equal(HttpStatusCode.OK, explicitCompanyDetailResponse.StatusCode);
-        using var explicitCompanyDetail = JsonDocument.Parse(
-            await explicitCompanyDetailResponse.Content.ReadAsStringAsync());
-        var explicitCompanyAccount = Assert.Single(
-            explicitCompanyDetail.RootElement.GetProperty("companyAccounts").EnumerateArray());
-        Assert.Equal(
-            TestCompanyIds.CompanyA,
-            explicitCompanyAccount.GetProperty("companyId").GetGuid());
+        await AssertValidationFailedAsync(explicitCompanyDetailResponse, partyId);
 
         using var conflictingDetailResponse = await companyClient.GetAsync(
             $"/api/v1/counterparties/{partyId}?companyId={TestCompanyIds.CompanyB:D}");
-        await AssertNotFoundAsync(conflictingDetailResponse, partyId);
+        await AssertValidationFailedAsync(conflictingDetailResponse, partyId);
 
         using var narrowClient = factory.CreateClientFor(
             TestUsers.CompanyAViewer,
@@ -339,6 +333,24 @@ public sealed class CounterpartySqlServerRelationalAcceptanceTests
         var body = await response.Content.ReadAsStringAsync();
         using var problem = JsonDocument.Parse(body);
         Assert.Equal("not_found", problem.RootElement.GetProperty("code").GetString());
+        Assert.DoesNotContain(
+            hiddenPartyId.ToString("D"),
+            body,
+            StringComparison.OrdinalIgnoreCase);
+        AssertRedacted(body);
+    }
+
+    private static async Task AssertValidationFailedAsync(
+        HttpResponseMessage response,
+        Guid hiddenPartyId)
+    {
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        AssertPrivateNoStore(response);
+        var body = await response.Content.ReadAsStringAsync();
+        using var problem = JsonDocument.Parse(body);
+        Assert.Equal(
+            CounterpartyProblemCodesV1.ValidationFailed,
+            problem.RootElement.GetProperty("code").GetString());
         Assert.DoesNotContain(
             hiddenPartyId.ToString("D"),
             body,

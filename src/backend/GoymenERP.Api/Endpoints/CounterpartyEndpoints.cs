@@ -136,15 +136,20 @@ public static class CounterpartyEndpoints
 
         group.MapGet("/{partyId:guid}", async (
             Guid partyId,
-            Guid? companyId,
             ICounterpartyReadService service,
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
             SetPrivateNoStore(httpContext.Response.Headers);
+            if (httpContext.Request.Query.ContainsKey("companyId"))
+            {
+                return ValidationProblem(
+                    "Cari detay isteği geçersiz.",
+                    "Cari detay kapsamı sunucu tarafından belirlenir; companyId sorgu parametresi kabul edilmez.");
+            }
+
             var party = await service.GetAuthorizedPartyAsync(
                 partyId,
-                companyId,
                 cancellationToken);
             return party is null
                 ? NotFound()
@@ -154,7 +159,6 @@ public static class CounterpartyEndpoints
             .WithName("GetCounterpartyV1")
             .Produces<CounterpartyDetailView>(StatusCodes.Status200OK)
             .ProducesErpBadRequest(CounterpartyProblemCodesV1.ValidationFailed)
-            .AllowsEmptyErpBadRequestBody()
             .ProducesErpNotFound(CounterpartyProblemCodesV1.NotFound)
             .ProducesErpAuthenticatedProblems();
 

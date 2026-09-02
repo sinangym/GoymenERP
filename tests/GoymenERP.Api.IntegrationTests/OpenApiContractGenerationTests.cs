@@ -97,7 +97,6 @@ public sealed class OpenApiContractGenerationTests
             ParameterValues:
             [
                 "path:partyId:true:type:string;format:uuid",
-                "query:companyId:false:type:string;format:uuid",
             ]),
         new("post", "/api/v1/counterparties/{partyId}/company-account", "CreateCounterpartyCompanyAccountV1",
             AuthenticatedResponses("201:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:"),
@@ -196,7 +195,6 @@ public sealed class OpenApiContractGenerationTests
     [
         "GetAuditEventsV1",
         "GetOrganizationLocationsV1",
-        "GetCounterpartyV1",
         "SetOrganizationLocationActiveStateV1",
         "CreateCounterpartyV1",
         "CreateCounterpartyCompanyAccountV1",
@@ -624,14 +622,11 @@ public sealed class OpenApiContractGenerationTests
         using var scopedAdminClient = factory.CreateClientFor(
             TestUsers.GroupAdmin,
             TestCompanyIds.CompanyA);
-        using var groupClient = factory.CreateClientFor(TestUsers.GroupAdmin);
-        var partyId = Guid.Parse("30000000-0000-0000-0000-000000000001");
         var probes = new[]
         {
             (Client: scopedAdminClient, Path: "/api/v1/audit/events?pageSize=not-an-integer"),
             (Client: scopedAdminClient, Path: "/api/v1/organization/locations?page=not-an-integer"),
             (Client: scopedAdminClient, Path: "/api/v1/organization/locations?pageSize=not-an-integer"),
-            (Client: groupClient, Path: $"/api/v1/counterparties/{partyId}?companyId=not-a-guid"),
         };
 
         foreach (var (client, path) in probes)

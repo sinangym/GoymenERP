@@ -8,6 +8,5 @@ public interface ICounterpartyReadService
 
     Task<CounterpartyDetailView?> GetAuthorizedPartyAsync(
         Guid partyId,
-        Guid? companyId,
         CancellationToken cancellationToken = default);
 }
