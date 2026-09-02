@@ -8,6 +8,7 @@ public static class PdfVisibleFileName
     private const char SafeSeparator = '_';
     private const string PdfExtension = ".pdf";
     private const string ForbiddenCharacters = "<>:\"/\\|?*";
+    private const string WindowsSuperscriptDeviceSuffixes = "\u00B9\u00B2\u00B3";
     private const int MaximumPortableFileNameUnits = 255;
 
     private static readonly HashSet<string> ReservedDeviceNames = CreateReservedDeviceNames();
@@ -47,6 +48,8 @@ public static class PdfVisibleFileName
 
     public static string Normalize(string requestedVisibleFileName)
     {
+        ArgumentNullException.ThrowIfNull(requestedVisibleFileName);
+        EnsureRawInputLength(requestedVisibleFileName, nameof(requestedVisibleFileName));
         ArgumentException.ThrowIfNullOrWhiteSpace(requestedVisibleFileName);
 
         var normalized = requestedVisibleFileName.Normalize(NormalizationForm.FormC);
@@ -116,6 +119,8 @@ public static class PdfVisibleFileName
 
     private static string NormalizeComponent(string value, string parameterName)
     {
+        ArgumentNullException.ThrowIfNull(value, parameterName);
+        EnsureRawInputLength(value, parameterName);
         ArgumentException.ThrowIfNullOrWhiteSpace(value, parameterName);
 
         var normalized = value.Normalize(NormalizationForm.FormC);
@@ -138,7 +143,7 @@ public static class PdfVisibleFileName
             }
 
             sanitized.Append(character);
-            hasUsableInput |= character != '.';
+            hasUsableInput |= character is not ('.' or SafeSeparator);
         }
 
         if (separatorPending || sanitized.Length > 0 && sanitized[^1] == '.')
@@ -218,6 +223,16 @@ public static class PdfVisibleFileName
         }
     }
 
+    private static void EnsureRawInputLength(string value, string parameterName)
+    {
+        if (value.Length > MaximumPortableFileNameUnits)
+        {
+            throw new ArgumentException(
+                "The raw PDF file-name input exceeds the portable 255-unit limit.",
+                parameterName);
+        }
+    }
+
     private static HashSet<string> CreateReservedDeviceNames()
     {
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -229,6 +244,12 @@ public static class PdfVisibleFileName
         };
 
         for (var suffix = 1; suffix <= 9; suffix++)
+        {
+            names.Add($"COM{suffix}");
+            names.Add($"LPT{suffix}");
+        }
+
+        foreach (var suffix in WindowsSuperscriptDeviceSuffixes)
         {
             names.Add($"COM{suffix}");
             names.Add($"LPT{suffix}");

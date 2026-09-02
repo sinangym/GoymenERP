@@ -17,6 +17,9 @@
     <Content Include="Assets\Fonts\OFL-1.1.txt"
              CopyToOutputDirectory="PreserveNewest"
              CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets\Fonts\PROVENANCE.md"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
     <Content Include="Assets\Licenses\PDFsharp-MIT.txt"
              CopyToOutputDirectory="PreserveNewest"
              CopyToPublishDirectory="PreserveNewest" />

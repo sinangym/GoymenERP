@@ -31,6 +31,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         {
             "Assets\\Fonts\\NotoSans-Regular.ttf",
             "Assets\\Fonts\\OFL-1.1.txt",
+            "Assets\\Fonts\\PROVENANCE.md",
             "Assets\\Licenses\\PDFsharp-MIT.txt",
             "Assets\\Licenses\\PDFsharp-6.2.4-PROVENANCE.md",
             "THIRD_PARTY_NOTICES.md"
@@ -416,6 +417,30 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 && string.Equals(
                     element.Attribute("Include")?.Value,
                     "Assets\\Fonts\\OFL-1.1.txt",
+                    StringComparison.Ordinal))
+            .Remove();
+
+        var analysis = AnalyzeProjectDefinition(project, PdfProjectPath);
+
+        Assert.Contains(
+            "The PDF component content inventory must match the reviewed font and license assets.",
+            analysis.Errors);
+    }
+
+    [Fact]
+    public void Pdf_component_content_inventory_cannot_drop_the_font_provenance()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var projectPath = Path.Combine(
+            repositoryRoot,
+            PdfProjectPath.Replace('/', Path.DirectorySeparatorChar));
+        var project = XDocument.Load(projectPath);
+        project.Descendants()
+            .Single(element =>
+                element.Name.LocalName == "Content"
+                && string.Equals(
+                    element.Attribute("Include")?.Value,
+                    "Assets\\Fonts\\PROVENANCE.md",
                     StringComparison.Ordinal))
             .Remove();
 

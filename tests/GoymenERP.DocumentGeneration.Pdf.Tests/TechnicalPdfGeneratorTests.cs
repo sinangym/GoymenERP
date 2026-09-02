@@ -64,6 +64,18 @@ public sealed class TechnicalPdfGeneratorTests
     [InlineData("CON")]
     [InlineData("prn.report")]
     [InlineData("LPT9.pdf")]
+    [InlineData("COM\u00B9")]
+    [InlineData("com\u00B9.pdf")]
+    [InlineData("COM\u00B2")]
+    [InlineData("com\u00B2.pdf")]
+    [InlineData("COM\u00B3")]
+    [InlineData("com\u00B3.pdf")]
+    [InlineData("LPT\u00B9")]
+    [InlineData("lpt\u00B9.pdf")]
+    [InlineData("LPT\u00B2")]
+    [InlineData("lpt\u00B2.pdf")]
+    [InlineData("LPT\u00B3")]
+    [InlineData("lpt\u00B3.pdf")]
     public void Visible_file_name_rejects_reserved_device_stems(string requestedName)
     {
         Assert.Throws<ArgumentException>(() => PdfVisibleFileName.Normalize(requestedName));
@@ -125,6 +137,27 @@ public sealed class TechnicalPdfGeneratorTests
             PdfVisibleFileName.Normalize(string.Concat(new string('A', 252), ".pdf")));
         Assert.Throws<ArgumentException>(() =>
             PdfVisibleFileName.Normalize(string.Concat(new string('İ', 126), ".pdf")));
+    }
+
+    [Fact]
+    public void Visible_file_name_rejects_oversized_raw_input_before_unsafe_runs_can_collapse()
+    {
+        var requestedName = string.Concat("A", new string('*', 255));
+
+        var exception = Assert.Throws<ArgumentException>(() => PdfVisibleFileName.Normalize(requestedName));
+
+        Assert.Equal("requestedVisibleFileName", exception.ParamName);
+        Assert.Contains("raw PDF file-name input", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Structured_file_name_rejects_separator_only_mandatory_component()
+    {
+        var parts = CreateFileNameParts() with { DocumentType = "___" };
+
+        var exception = Assert.Throws<ArgumentException>(() => PdfVisibleFileName.Build(parts));
+
+        Assert.Equal("DocumentType", exception.ParamName);
     }
 
     [Fact]
@@ -204,6 +237,16 @@ public sealed class TechnicalPdfGeneratorTests
             "0DAB92D0544F7B233403F14B84A663BDBFA746982EDA629E7F4F9FFE1B036FEB",
             Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(licensePath))));
 
+        var fontProvenancePath = Path.Combine(
+            AppContext.BaseDirectory,
+            "Assets",
+            "Fonts",
+            "PROVENANCE.md");
+        Assert.True(File.Exists(fontProvenancePath));
+        Assert.Equal(
+            "D17541D4B00CBC1171A49755B2DE010240A8B5E66D51ED4DA88B44C278C46759",
+            Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(fontProvenancePath))));
+
         var noticesPath = Path.Combine(AppContext.BaseDirectory, "THIRD_PARTY_NOTICES.md");
         Assert.True(File.Exists(noticesPath));
         Assert.Contains("PDFsharp 6.2.4", File.ReadAllText(noticesPath), StringComparison.Ordinal);
@@ -271,7 +314,22 @@ public sealed class TechnicalPdfGeneratorTests
             CreateFileNameParts(),
             Enumerable.Repeat("Teknik satır", 100).ToArray());
 
-        Assert.Throws<ArgumentException>(() => new TechnicalPdfGenerator().Generate(request));
+        var exception = Assert.Throws<ArgumentException>(() => new TechnicalPdfGenerator().Generate(request));
+
+        Assert.Contains("does not fit", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generation_rejects_excessive_line_count_before_element_access_or_enumeration()
+    {
+        var request = new PdfGenerationRequest(
+            Guid.NewGuid(),
+            CreateFileNameParts(),
+            new CountOnlyReadOnlyList(100));
+
+        var exception = Assert.Throws<ArgumentException>(() => new TechnicalPdfGenerator().Generate(request));
+
+        Assert.Contains("does not fit", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -282,7 +340,23 @@ public sealed class TechnicalPdfGeneratorTests
             CreateFileNameParts(),
             [new string('İ', 1_000)]);
 
-        Assert.Throws<ArgumentException>(() => new TechnicalPdfGenerator().Generate(request));
+        var exception = Assert.Throws<ArgumentException>(() => new TechnicalPdfGenerator().Generate(request));
+
+        Assert.Contains("wider", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generation_rejects_enormous_raw_line_before_normalization_or_font_shaping()
+    {
+        const int firstRejectedRawLineLength = 4_097;
+        var request = new PdfGenerationRequest(
+            Guid.NewGuid(),
+            CreateFileNameParts(),
+            [new string('A', firstRejectedRawLineLength)]);
+
+        var exception = Assert.Throws<ArgumentException>(() => new TechnicalPdfGenerator().Generate(request));
+
+        Assert.Contains("raw input limit", exception.Message, StringComparison.Ordinal);
     }
 
     private static PdfDocumentFileNameParts CreateFileNameParts() => new(
@@ -292,4 +366,22 @@ public sealed class TechnicalPdfGeneratorTests
         new DateOnly(2026, 8, 25),
         1,
         "Onaylı");
+
+    private sealed class CountOnlyReadOnlyList : IReadOnlyList<string>
+    {
+        public CountOnlyReadOnlyList(int count)
+        {
+            Count = count;
+        }
+
+        public int Count { get; }
+
+        public string this[int index] =>
+            throw new InvalidOperationException("The line-count guard must run before element access.");
+
+        public IEnumerator<string> GetEnumerator() =>
+            throw new InvalidOperationException("The line-count guard must run before enumeration.");
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
 }
