@@ -42,10 +42,17 @@ public sealed class CounterpartyCompanyLinkSqlServerRelationalAcceptanceTests
                 linkCommand);
             Assert.Equal(HttpStatusCode.Created, firstLink.StatusCode);
             Assert.False(firstLink.Headers.Contains("Idempotency-Replayed"));
-            using var firstLinkJson = JsonDocument.Parse(
-                await firstLink.Content.ReadAsStringAsync());
+            var firstLinkBody = await firstLink.Content.ReadAsStringAsync();
+            using var firstLinkJson = JsonDocument.Parse(firstLinkBody);
             Assert.Equal(created.PartyId, firstLinkJson.RootElement.GetProperty("id").GetGuid());
             Assert.Equal(created.Code, firstLinkJson.RootElement.GetProperty("code").GetString());
+            Assert.Equal(
+                JsonValueKind.String,
+                firstLinkJson.RootElement.GetProperty("version").ValueKind);
+            Assert.DoesNotContain(
+                "externalIntegrationCode",
+                firstLinkBody,
+                StringComparison.Ordinal);
             var targetAccounts = firstLinkJson.RootElement
                 .GetProperty("companyAccounts")
                 .EnumerateArray()
@@ -54,6 +61,9 @@ public sealed class CounterpartyCompanyLinkSqlServerRelationalAcceptanceTests
             Assert.Equal(
                 TestCompanyIds.CompanyB,
                 targetAccounts[0].GetProperty("companyId").GetGuid());
+            Assert.Equal(
+                JsonValueKind.String,
+                targetAccounts[0].GetProperty("version").ValueKind);
 
             var replayCorrelation = $"cari-link-replay-{Guid.NewGuid():N}";
             SetRequestIdentity(targetClient, linkKey, replayCorrelation);
@@ -68,6 +78,7 @@ public sealed class CounterpartyCompanyLinkSqlServerRelationalAcceptanceTests
                 firstCorrelation,
                 Assert.Single(replay.Headers.GetValues(
                     "Idempotency-Original-Correlation-Id")));
+            Assert.Equal(firstLinkBody, await replay.Content.ReadAsStringAsync());
 
             SetRequestIdentity(
                 targetClient,
@@ -140,6 +151,13 @@ public sealed class CounterpartyCompanyLinkSqlServerRelationalAcceptanceTests
                 1,
                 await ScalarAsync<int>(
                     connection,
+                    "SELECT COUNT(*) FROM [counterparty].[CompanyPartyAccounts] WHERE [CompanyId] = @CompanyId AND [PartyId] = @PartyId AND [ExternalIntegrationCode] IS NULL;",
+                    new SqlParameter("@CompanyId", TestCompanyIds.CompanyB),
+                    new SqlParameter("@PartyId", created.PartyId)));
+            Assert.Equal(
+                1,
+                await ScalarAsync<int>(
+                    connection,
                     "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [CompanyId] = @CompanyId AND [CorrelationId] = @CorrelationId AND [EventType] = N'counterparty.company-account.created.v1';",
                     new SqlParameter("@CompanyId", TestCompanyIds.CompanyB),
                     new SqlParameter("@CorrelationId", firstCorrelation)));
@@ -157,6 +175,136 @@ public sealed class CounterpartyCompanyLinkSqlServerRelationalAcceptanceTests
                     "SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [CompanyId] = @CompanyId AND [CommandName] = N'counterparty.company-account.create.v1' AND [IdempotencyKeyHash] = @KeyHash AND [Outcome] = N'AlreadyLinked';",
                     new SqlParameter("@CompanyId", TestCompanyIds.CompanyB),
                     new SqlParameter("@KeyHash", IdempotencyHash.ComputeKey(duplicateKey))));
+        }
+        finally
+        {
+            await factory.DisposeAsync();
+            await DropDatabaseAsync(baseConnectionString, factory.DatabaseName);
+        }
+    }
+
+    [SqlServerFact]
+    public async Task DurableCreatedReplay_FailsClosedForUnknownSchemaOrForeignAccountRelationship()
+    {
+        var baseConnectionString = Environment.GetEnvironmentVariable(
+            SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
+        var factory = new SqlServerRelationalApiFactory(baseConnectionString);
+
+        try
+        {
+            using var healthClient = factory.CreateClient();
+            using var healthResponse = await healthClient.GetAsync("/health/live");
+            Assert.Equal(HttpStatusCode.OK, healthResponse.StatusCode);
+
+            await using var connection = new SqlConnection(factory.DatabaseConnectionString);
+            await connection.OpenAsync();
+
+            var firstParty = await CreatePartyAsync(factory, "Replay Bütünlük Cari Bir A.Ş.");
+            var secondParty = await CreatePartyAsync(factory, "Replay Bütünlük Cari İki A.Ş.");
+            using var targetClient = factory.CreateClientFor(
+                TestUsers.GroupAdmin,
+                TestCompanyIds.CompanyB);
+            var roles = PartyRole.Supplier | PartyRole.Service;
+            var linkCommand = new CreateCompanyPartyAccount(roles);
+            var firstLinkKey = $"cari-link-integrity-one-{Guid.NewGuid():N}";
+            var secondLinkKey = $"cari-link-integrity-two-{Guid.NewGuid():N}";
+
+            SetRequestIdentity(
+                targetClient,
+                firstLinkKey,
+                $"cari-link-integrity-one-corr-{Guid.NewGuid():N}");
+            using var firstLink = await targetClient.PostAsJsonAsync(
+                $"/api/v1/counterparties/{firstParty.PartyId}/company-account",
+                linkCommand);
+            Assert.Equal(HttpStatusCode.Created, firstLink.StatusCode);
+            using var firstLinkJson = JsonDocument.Parse(
+                await firstLink.Content.ReadAsStringAsync());
+            var firstAccountId = Assert.Single(
+                    firstLinkJson.RootElement.GetProperty("companyAccounts").EnumerateArray())
+                .GetProperty("id")
+                .GetGuid();
+
+            SetRequestIdentity(
+                targetClient,
+                secondLinkKey,
+                $"cari-link-integrity-two-corr-{Guid.NewGuid():N}");
+            using var secondLink = await targetClient.PostAsJsonAsync(
+                $"/api/v1/counterparties/{secondParty.PartyId}/company-account",
+                linkCommand);
+            Assert.Equal(HttpStatusCode.Created, secondLink.StatusCode);
+            using var secondLinkJson = JsonDocument.Parse(
+                await secondLink.Content.ReadAsStringAsync());
+            var secondAccountId = Assert.Single(
+                    secondLinkJson.RootElement.GetProperty("companyAccounts").EnumerateArray())
+                .GetProperty("id")
+                .GetGuid();
+            Assert.NotEqual(firstAccountId, secondAccountId);
+
+            var unknownSchemaKey = $"cari-link-unknown-schema-{Guid.NewGuid():N}";
+            await CloneCommandExecutionAsync(
+                connection,
+                TestCompanyIds.CompanyB,
+                firstLinkKey,
+                unknownSchemaKey,
+                $"cari-link-unknown-schema-corr-{Guid.NewGuid():N}",
+                schemaVersion: 2,
+                responseJson: null);
+            var beforeUnknownSchemaReplay = await ReadEffectCountsAsync(connection);
+
+            SetRequestIdentity(
+                targetClient,
+                unknownSchemaKey,
+                $"cari-link-unknown-schema-request-{Guid.NewGuid():N}");
+            using var unknownSchemaReplay = await targetClient.PostAsJsonAsync(
+                $"/api/v1/counterparties/{firstParty.PartyId}/company-account",
+                linkCommand);
+            await AssertInternalErrorWithoutReplayHeadersAsync(unknownSchemaReplay);
+            Assert.Equal(
+                beforeUnknownSchemaReplay,
+                await ReadEffectCountsAsync(connection));
+
+            var durableJson = await ScalarAsync<string>(
+                connection,
+                "SELECT [ResponseJson] FROM [idempotency].[CommandExecutions] WHERE [CompanyId] = @CompanyId AND [CommandName] = N'counterparty.company-account.create.v1' AND [IdempotencyKeyHash] = @KeyHash;",
+                new SqlParameter("@CompanyId", TestCompanyIds.CompanyB),
+                new SqlParameter("@KeyHash", IdempotencyHash.ComputeKey(firstLinkKey)));
+            var durableResponse = JsonSerializer.Deserialize<CounterpartyCommandResponse>(
+                durableJson)
+                ?? throw new InvalidOperationException("Kalıcı link yanıtı okunamadı.");
+            var durableResource = durableResponse.Resource
+                ?? throw new InvalidOperationException("Kalıcı link kaynağı bulunamadı.");
+            var durableAccount = Assert.Single(durableResource.CompanyAccounts);
+            Assert.Equal(firstAccountId, durableAccount.Id);
+            var forgedResponseJson = JsonSerializer.Serialize(durableResponse with
+            {
+                Resource = durableResource with
+                {
+                    CompanyAccounts = [durableAccount with { Id = secondAccountId }],
+                },
+            });
+            var forgedRelationshipKey =
+                $"cari-link-forged-relationship-{Guid.NewGuid():N}";
+            await CloneCommandExecutionAsync(
+                connection,
+                TestCompanyIds.CompanyB,
+                firstLinkKey,
+                forgedRelationshipKey,
+                $"cari-link-forged-relationship-corr-{Guid.NewGuid():N}",
+                schemaVersion: 1,
+                responseJson: forgedResponseJson);
+            var beforeForgedRelationshipReplay = await ReadEffectCountsAsync(connection);
+
+            SetRequestIdentity(
+                targetClient,
+                forgedRelationshipKey,
+                $"cari-link-forged-relationship-request-{Guid.NewGuid():N}");
+            using var forgedRelationshipReplay = await targetClient.PostAsJsonAsync(
+                $"/api/v1/counterparties/{firstParty.PartyId}/company-account",
+                linkCommand);
+            await AssertInternalErrorWithoutReplayHeadersAsync(forgedRelationshipReplay);
+            Assert.Equal(
+                beforeForgedRelationshipReplay,
+                await ReadEffectCountsAsync(connection));
         }
         finally
         {
@@ -577,6 +725,73 @@ public sealed class CounterpartyCompanyLinkSqlServerRelationalAcceptanceTests
         await command.ExecuteNonQueryAsync();
     }
 
+    private static async Task CloneCommandExecutionAsync(
+        SqlConnection connection,
+        Guid companyId,
+        string sourceIdempotencyKey,
+        string targetIdempotencyKey,
+        string originalCorrelationId,
+        int schemaVersion,
+        string? responseJson)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO [idempotency].[CommandExecutions]
+                ([Id], [CompanyId], [CommandName], [IdempotencyKeyHash],
+                 [RequestHash], [ActorId], [Outcome], [HttpStatusCode],
+                 [ResponseJson], [OriginalCorrelationId], [CompletedAtUtc], [SchemaVersion])
+            SELECT NEWID(), [CompanyId], [CommandName], @TargetKeyHash,
+                   [RequestHash], [ActorId], [Outcome], [HttpStatusCode],
+                   COALESCE(@ResponseJson, [ResponseJson]), @OriginalCorrelationId,
+                   SYSUTCDATETIME(), @SchemaVersion
+            FROM [idempotency].[CommandExecutions]
+            WHERE [CompanyId] = @CompanyId
+              AND [CommandName] = N'counterparty.company-account.create.v1'
+              AND [IdempotencyKeyHash] = @SourceKeyHash;
+            """;
+        command.Parameters.AddRange(
+        [
+            new SqlParameter("@CompanyId", companyId),
+            new SqlParameter(
+                "@SourceKeyHash",
+                IdempotencyHash.ComputeKey(sourceIdempotencyKey)),
+            new SqlParameter(
+                "@TargetKeyHash",
+                IdempotencyHash.ComputeKey(targetIdempotencyKey)),
+            new SqlParameter("@OriginalCorrelationId", originalCorrelationId),
+            new SqlParameter("@SchemaVersion", schemaVersion),
+            new SqlParameter("@ResponseJson", (object?)responseJson ?? DBNull.Value),
+        ]);
+        Assert.Equal(1, await command.ExecuteNonQueryAsync());
+    }
+
+    private static async Task AssertInternalErrorWithoutReplayHeadersAsync(
+        HttpResponseMessage response)
+    {
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.False(response.Headers.Contains("Idempotency-Replayed"));
+        Assert.False(response.Headers.Contains("Idempotency-Original-Correlation-Id"));
+        Assert.Equal(
+            "application/problem+json",
+            response.Content.Headers.ContentType?.MediaType);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("internal_error", document.RootElement.GetProperty("code").GetString());
+    }
+
+    private static async Task<PersistenceCounts> ReadEffectCountsAsync(
+        SqlConnection connection)
+    {
+        return new PersistenceCounts(
+            await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM [counterparty].[Parties];"),
+            await ScalarAsync<int>(
+                connection,
+                "SELECT COUNT(*) FROM [counterparty].[CompanyPartyAccounts];"),
+            await ScalarAsync<int>(connection, "SELECT COUNT(*) FROM [audit].[AuditEvents];"),
+            await ScalarAsync<int>(
+                connection,
+                "SELECT COUNT(*) FROM [idempotency].[CommandExecutions];"));
+    }
+
     private static async Task DropDatabaseAsync(
         string baseConnectionString,
         string databaseName)
@@ -599,4 +814,10 @@ public sealed class CounterpartyCompanyLinkSqlServerRelationalAcceptanceTests
     }
 
     private sealed record CreatedParty(Guid PartyId, string Code);
+
+    private sealed record PersistenceCounts(
+        int PartyCount,
+        int AccountCount,
+        int AuditCount,
+        int ExecutionCount);
 }

@@ -245,6 +245,12 @@ internal sealed class CounterpartyCompanyAccountLinkService(
                 metadata.CorrelationId);
         }
 
+        if (execution.SchemaVersion != CommandExecutionSchemaVersion)
+        {
+            throw new InvalidOperationException(
+                "Kalıcı cari şirket-bağlama sonucu bilinmeyen şema sürümü taşıyor.");
+        }
+
         var response = JsonSerializer.Deserialize<CounterpartyCommandResponse>(
             execution.ResponseJson);
         if (response is null

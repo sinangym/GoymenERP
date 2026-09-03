@@ -1,3 +1,4 @@
+using GoymenERP.Api.Contracts;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.Shell;
@@ -165,6 +166,7 @@ public static class CounterpartyEndpoints
         group.MapPost("/", async (
                 CreateCounterparty command,
                 ICounterpartyCommandService service,
+                ICounterpartyMutationRelationshipVerifier relationshipVerifier,
                 ICurrentUser currentUser,
                 ICompanyContext companyContext,
                 ICorrelationContext correlationContext,
@@ -192,14 +194,20 @@ public static class CounterpartyEndpoints
                 command,
                 metadata,
                 cancellationToken);
+            var result = await ToPartyCreateHttpResultAsync(
+                execution.Response,
+                companyContext.CompanyId,
+                command,
+                relationshipVerifier,
+                cancellationToken);
             ApplyReplayHeaders(httpContext, execution);
-            return ToHttpResult(execution.Response);
+            return result;
         }).RequireCompanyContext()
             .RequireAuthorization(ErpPermissions.CounterpartyPartiesCreate)
             .WithIdempotencyContract(StatusCodes.Status201Created)
             .WithName("CreateCounterpartyV1")
             .Accepts<CreateCounterparty>("application/json")
-            .Produces<PartyCoreView>(StatusCodes.Status201Created)
+            .Produces<CounterpartyMutationView>(StatusCodes.Status201Created)
             .ProducesErpBadRequest(
                 CounterpartyProblemCodesV1.ValidationFailed,
                 CounterpartyProblemCodesV1.CommandMetadataInvalid)
@@ -211,6 +219,7 @@ public static class CounterpartyEndpoints
                 Guid partyId,
                 CreateCompanyPartyAccount command,
                 ICounterpartyCompanyAccountLinkService service,
+                ICounterpartyMutationRelationshipVerifier relationshipVerifier,
                 ICurrentUser currentUser,
                 ICompanyContext companyContext,
                 ICorrelationContext correlationContext,
@@ -239,8 +248,15 @@ public static class CounterpartyEndpoints
                 command,
                 metadata,
                 cancellationToken);
+            var result = await ToCompanyAccountCreateHttpResultAsync(
+                execution.Response,
+                companyContext.CompanyId,
+                partyId,
+                command,
+                relationshipVerifier,
+                cancellationToken);
             ApplyReplayHeaders(httpContext, execution);
-            return ToHttpResult(execution.Response);
+            return result;
         }).RequireCompanyContext()
             .RequireAuthorization(ErpPermissions.CounterpartyAccountsCreate)
             .RequireAuthorization(ErpPermissions.CounterpartyPartiesRead)
@@ -251,7 +267,7 @@ public static class CounterpartyEndpoints
                 StatusCodes.Status409Conflict)
             .WithName("CreateCounterpartyCompanyAccountV1")
             .Accepts<CreateCompanyPartyAccount>("application/json")
-            .Produces<PartyCoreView>(StatusCodes.Status201Created)
+            .Produces<CounterpartyMutationView>(StatusCodes.Status201Created)
             .ProducesErpBadRequest(
                 CounterpartyProblemCodesV1.ValidationFailed,
                 CounterpartyProblemCodesV1.CommandMetadataInvalid)
@@ -297,8 +313,9 @@ public static class CounterpartyEndpoints
                 command,
                 metadata,
                 cancellationToken);
+            var result = ToHttpResult(execution.Response);
             ApplyReplayHeaders(httpContext, execution);
-            return ToHttpResult(execution.Response);
+            return result;
         }).RequireCompanyContext()
             .RequireAuthorization(ErpPermissions.CounterpartyAccountsStatusUpdate)
             .RequiresNonEmptyGuidPathParameter("partyId")
@@ -454,15 +471,6 @@ public static class CounterpartyEndpoints
 
     private static IResult ToHttpResult(CounterpartyCommandResponse response)
     {
-        if (response.Result == CounterpartyCommandResult.Created
-            && response.StatusCode == StatusCodes.Status201Created
-            && response.Resource is not null)
-        {
-            return Results.Created(
-                $"/api/v1/counterparties/{response.Resource.Id}",
-                response.Resource);
-        }
-
         if (response.Result == CounterpartyCommandResult.Succeeded
             && response.StatusCode == StatusCodes.Status204NoContent)
         {
@@ -482,6 +490,86 @@ public static class CounterpartyEndpoints
             response.Title,
             response.Detail,
             response.Conflict);
+    }
+
+    private static async Task<IResult> ToPartyCreateHttpResultAsync(
+        CounterpartyCommandResponse response,
+        Guid activeCompanyId,
+        CreateCounterparty submittedCommand,
+        ICounterpartyMutationRelationshipVerifier relationshipVerifier,
+        CancellationToken cancellationToken)
+    {
+        if (response.Result == CounterpartyCommandResult.Created
+            && response.StatusCode == StatusCodes.Status201Created
+            && response.Resource is not null
+            && response.Title is null
+            && response.Detail is null
+            && response.Conflict is null)
+        {
+            var resource = CounterpartyMutationViewProjector.ProjectPartyCreate(
+                response.Resource,
+                activeCompanyId,
+                submittedCommand);
+            await RequireVerifiedMutationRelationshipAsync(
+                resource,
+                relationshipVerifier,
+                cancellationToken);
+            return Results.Created(
+                $"/api/v1/counterparties/{resource.Id}",
+                resource);
+        }
+
+        return ToHttpResult(response);
+    }
+
+    private static async Task<IResult> ToCompanyAccountCreateHttpResultAsync(
+        CounterpartyCommandResponse response,
+        Guid activeCompanyId,
+        Guid expectedPartyId,
+        CreateCompanyPartyAccount submittedCommand,
+        ICounterpartyMutationRelationshipVerifier relationshipVerifier,
+        CancellationToken cancellationToken)
+    {
+        if (response.Result == CounterpartyCommandResult.Created
+            && response.StatusCode == StatusCodes.Status201Created
+            && response.Resource is not null
+            && response.Title is null
+            && response.Detail is null
+            && response.Conflict is null)
+        {
+            var resource = CounterpartyMutationViewProjector.ProjectCompanyAccountCreate(
+                response.Resource,
+                activeCompanyId,
+                expectedPartyId,
+                submittedCommand);
+            await RequireVerifiedMutationRelationshipAsync(
+                resource,
+                relationshipVerifier,
+                cancellationToken);
+            return Results.Created(
+                $"/api/v1/counterparties/{resource.Id}",
+                resource);
+        }
+
+        return ToHttpResult(response);
+    }
+
+    private static async Task RequireVerifiedMutationRelationshipAsync(
+        CounterpartyMutationView resource,
+        ICounterpartyMutationRelationshipVerifier relationshipVerifier,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(relationshipVerifier);
+        var account = resource.CompanyAccounts.Single();
+        if (!await relationshipVerifier.IsAccountOwnedByPartyAsync(
+                resource.Id,
+                account.Id,
+                account.CompanyId,
+                cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "Cari işlem sonucu kalıcı hesap ilişkisiyle eşleşmiyor.");
+        }
     }
 
     private static bool HasValidTerminalProblemShape(

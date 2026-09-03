@@ -1,3 +1,4 @@
+using GoymenERP.Api.Contracts;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.Errors;
 using GoymenERP.Modules.Audit.Application.Contracts;
@@ -177,9 +178,16 @@ public static class ErpOpenApiContract
 
                 if (context.JsonTypeInfo.Type == typeof(CounterpartyDetailAccountView)
                     || context.JsonTypeInfo.Type == typeof(CounterpartyLinkCandidateSourceAccount)
-                    || context.JsonTypeInfo.Type == typeof(CounterpartyDetailView))
+                    || context.JsonTypeInfo.Type == typeof(CounterpartyDetailView)
+                    || context.JsonTypeInfo.Type == typeof(CounterpartyMutationAccountView)
+                    || context.JsonTypeInfo.Type == typeof(CounterpartyMutationView))
                 {
                     SetPositiveIntegerStringProperty(schema, "version");
+                }
+
+                if (context.JsonTypeInfo.Type == typeof(CounterpartyMutationView))
+                {
+                    SetExactSingleItemArrayProperty(schema, "companyAccounts");
                 }
 
                 if (context.JsonTypeInfo.Type == typeof(PageResult<LocationSummary>))
@@ -1021,6 +1029,21 @@ public static class ErpOpenApiContract
         concreteProperty.MinLength = 1;
         concreteProperty.MaxLength = 19;
         concreteProperty.Pattern = PositiveIntegerStringPattern;
+    }
+
+    private static void SetExactSingleItemArrayProperty(
+        OpenApiSchema schema,
+        string propertyName)
+    {
+        if (schema.Properties?.TryGetValue(propertyName, out var property) != true
+            || property is not OpenApiSchema concreteProperty)
+        {
+            throw new InvalidOperationException(
+                $"OpenAPI property '{propertyName}' is not a concrete schema.");
+        }
+
+        concreteProperty.MinItems = 1;
+        concreteProperty.MaxItems = 1;
     }
 
     private static void SetSchemaExtension(

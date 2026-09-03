@@ -367,6 +367,12 @@ internal sealed class CounterpartyCommandService(
                 metadata.CorrelationId);
         }
 
+        if (execution.SchemaVersion != CommandExecutionSchemaVersion)
+        {
+            throw new InvalidOperationException(
+                "Kalıcı cari idempotency sonucu bilinmeyen şema sürümü taşıyor.");
+        }
+
         var response = JsonSerializer.Deserialize<CounterpartyCommandResponse>(
             execution.ResponseJson);
         if (response is null
