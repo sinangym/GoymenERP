@@ -451,6 +451,46 @@ describe('C-01 paging', () => {
     release()
   })
 
+  it('a retry that worked is announced, because a vanishing alert is silent', async () => {
+    // #146 C01-AC-007. Until this existed, a screen-reader user pressed
+    // "Yeniden dene" and heard nothing: the only signal was the error alert
+    // disappearing, which is not announced.
+    let continuationAttempts = 0
+    installFetch({
+      counterparties: (url) => {
+        if (!url.includes('cursor=')) return json(page({ hasMore: true, nextCursor: 'c1' }))
+        continuationAttempts += 1
+        if (continuationAttempts === 1) return json({ title: 'Sunucu hatası', status: 500 }, 500)
+        return json(page({ items: [party({ id: PARTY_2, code: 'C-0002' })] }))
+      },
+    })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
+    const alert = await screen.findByRole('alert')
+    expect(screen.getByRole('status').textContent).not.toContain('Liste güncellendi')
+
+    await userEvent.click(within(alert).getByRole('button'))
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toContain('kalan kayıtlar yüklendi'),
+    )
+  })
+
+  it('an ordinary load-more is not announced, because it would be chatter', async () => {
+    installFetch({
+      counterparties: (url) =>
+        url.includes('cursor=')
+          ? json(page({ items: [party({ id: PARTY_2, code: 'C-0002' })] }))
+          : json(page({ hasMore: true, nextCursor: 'c1' })),
+    })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+    await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
+    await screen.findByRole('row', { name: /C-0002/ })
+    expect(screen.getByRole('status').textContent).not.toContain('Liste güncellendi')
+  })
+
   it('invalid_cursor falls back to the first page instead of stranding the user', async () => {
     installFetch({
       counterparties: (url) =>

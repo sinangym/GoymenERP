@@ -325,6 +325,33 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
 
   const cursorRecovered = recovery?.settled === true
 
+  /**
+   * A retry that WORKED is a change the user must be told about (#146
+   * C01-AC-007). Until now the only signal was the error alert disappearing,
+   * which a screen reader does not announce -- so a keyboard or screen-reader
+   * user pressed "Yeniden dene" and heard nothing at all, with no way to know
+   * the rest of the list had arrived.
+   *
+   * Scoped to a retry AFTER a failure: an ordinary "load more" is a user-driven
+   * action whose result is already on screen, and announcing every page would be
+   * chatter rather than information.
+   */
+  const hadFailure = useRef(false)
+  const [continuationRecovered, setContinuationRecovered] = useState(false)
+  useEffect(() => {
+    if (continuationFailed) {
+      hadFailure.current = true
+      // oxlint-disable-next-line react/set-state-in-effect -- clears on a new failure
+      setContinuationRecovered(false)
+      return
+    }
+    if (hadFailure.current && page !== null && cursor !== undefined) {
+      hadFailure.current = false
+      // oxlint-disable-next-line react/set-state-in-effect -- announces a server result
+      setContinuationRecovered(true)
+    }
+  }, [continuationFailed, page, cursor])
+
   const ariaSort = (field: SortField): 'ascending' | 'descending' | 'none' =>
     sort !== field ? 'none' : direction === 'asc' ? 'ascending' : 'descending'
 
@@ -347,7 +374,11 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
       <h1 id="cari-list-heading">Cari Kartlar</h1>
 
       <div role="status" aria-live="polite" className={styles.announce}>
-        {cursorRecovered ? 'Liste güncellendi; ilk sayfaya dönüldü.' : ''}
+        {cursorRecovered
+          ? 'Liste güncellendi; ilk sayfaya dönüldü.'
+          : continuationRecovered
+            ? 'Liste güncellendi; kalan kayıtlar yüklendi.'
+            : ''}
       </div>
 
       <div className={styles.filters} role="search">

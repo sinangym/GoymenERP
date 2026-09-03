@@ -11,7 +11,7 @@
  * exactly ten unique `B-C01-\d{3}` prefixes.
  */
 
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { readEnv } from '../src/contract.js'
 import { NetworkRecorder } from '../src/networkRecorder.js'
 
@@ -43,6 +43,87 @@ function rows(page: Page) {
 
 async function codesOf(page: Page): Promise<string[]> {
   return rows(page).locator('td:first-child').allInnerTexts()
+}
+
+/**
+ * Focus that a KEYBOARD user can actually see (#146 C01-AC-007).
+ *
+ * `toBeFocused` alone is not the claim: an element can hold focus with no
+ * indicator at all, which is precisely the failure WCAG 2.4.7 describes. So the
+ * element must match `:focus-visible` -- the state the UA enters for keyboard
+ * navigation and not for a mouse click -- and something must actually be drawn.
+ */
+async function expectVisibleFocus(target: Locator, what: string): Promise<void> {
+  await expect(target, `${what} did not take focus`).toBeFocused()
+  const indicator = await target.evaluate((element) => {
+    const style = getComputedStyle(element)
+    return {
+      focusVisible: element.matches(':focus-visible'),
+      outlineStyle: style.outlineStyle,
+      boxShadow: style.boxShadow,
+    }
+  })
+  expect(indicator.focusVisible, `${what} is focused but not :focus-visible`).toBe(true)
+  expect(
+    indicator.outlineStyle !== 'none' || indicator.boxShadow !== 'none',
+    `${what} has focus with no visible indicator (outline=${indicator.outlineStyle}, ` +
+      `box-shadow=${indicator.boxShadow})`,
+  ).toBe(true)
+}
+
+/**
+ * Count what a screen reader would actually be told (#146 C01-AC-007).
+ *
+ * Counts DOM MUTATIONS of any live region, not distinct strings, because the
+ * failure being ruled out is the same message being announced twice after a
+ * re-render, a focus change or a cache update -- a screen reader speaks that
+ * second mutation even though the text did not change.
+ *
+ * One observer callback is one batch, and a batch touching one region counts
+ * once: `childList` and `characterData` records for the same update are one
+ * announcement, not two.
+ */
+async function watchAnnouncements(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = window as unknown as { __announced?: string[] }
+    w.__announced = []
+    const selector = '[role="status"], [role="alert"], [aria-live]'
+    new MutationObserver((records) => {
+      const hosts = new Set<Element>()
+      for (const record of records) {
+        const node = record.target
+        const element = node instanceof Element ? node : node.parentElement
+        const host = element?.closest(selector)
+        if (host) hosts.add(host)
+      }
+      for (const host of hosts) {
+        const text = (host.textContent ?? '').trim()
+        if (text !== '') w.__announced!.push(text)
+      }
+    }).observe(document.body, { childList: true, subtree: true, characterData: true })
+  })
+}
+
+async function announcedSince(page: Page, from: number): Promise<string[]> {
+  const all = await page.evaluate(
+    () => (window as unknown as { __announced?: string[] }).__announced ?? [],
+  )
+  return all.slice(from)
+}
+
+async function announcedCount(page: Page): Promise<number> {
+  return (await page.evaluate(
+    () => (window as unknown as { __announced?: string[] }).__announced ?? [],
+  )).length
+}
+
+/** Reach a control using nothing but Tab, or fail saying it is unreachable. */
+async function tabTo(page: Page, target: Locator, what: string, limit = 40): Promise<void> {
+  for (let press = 0; press < limit; press += 1) {
+    if (await target.evaluate((element) => element === document.activeElement)) return
+    await page.keyboard.press('Tab')
+  }
+  throw new Error(`${what} was not reachable by keyboard within ${limit} tabs`)
 }
 
 test.describe.configure({ mode: 'serial' })
@@ -209,7 +290,88 @@ test('B-C01-004 sorting is done by the server, and focus survives it', async ({
   // descending by code puts the highest visible GDC code first.
   await expect(rows(page).first().locator('td').nth(0)).toHaveText('CAR-000052')
   // Focus must stay on the control the user actuated, across a full re-render.
-  await expect(sortButton).toBeFocused()
+  await expectVisibleFocus(sortButton, 'the sort control')
+
+  // ---- #146 C01-AC-007: the whole filter set, keyboard only ----------------
+  //
+  // The owner audit called the previous version PARTIAL because it proved one
+  // control. Being "in the tab order" is not the claim either: each control has
+  // to be REACHABLE by Tab, show a focus indicator a keyboard user can see,
+  // produce a real server query when actuated with the keyboard, and still hold
+  // focus after the re-render that answer causes.
+  const reads: URLSearchParams[] = []
+  page.on('request', (request) => {
+    if (!request.url().includes('/api/v1/counterparties')) return
+    reads.push(new URL(request.url()).searchParams)
+  })
+
+  /** Actuate, then wait for the read it must cause -- never for a timeout. */
+  async function actuate(what: string, act: () => Promise<void>): Promise<URLSearchParams> {
+    const before = reads.length
+    await act()
+    await expect
+      .poll(() => reads.length, { message: `${what} issued no server read`, timeout: 20_000 })
+      .toBeGreaterThan(before)
+    return reads[reads.length - 1]
+  }
+
+  const search = page.getByRole('searchbox', { name: 'Ara' })
+  await tabTo(page, search, 'the search box')
+  await expectVisibleFocus(search, 'the search box')
+  const searched = await actuate('typing in search', async () => {
+    await page.keyboard.type('CAR-00001')
+  })
+  expect(searched.get('q')).toBe('CAR-00001')
+  await expectVisibleFocus(search, 'the search box after its own result landed')
+  await actuate('clearing search', async () => {
+    await page.keyboard.press('Control+A')
+    await page.keyboard.press('Backspace')
+  })
+
+  const kind = page.getByRole('combobox', { name: 'Tür' })
+  await tabTo(page, kind, 'the kind filter')
+  await expectVisibleFocus(kind, 'the kind filter')
+  const kinded = await actuate('choosing a kind with the keyboard', async () => {
+    await page.keyboard.press('ArrowDown')
+  })
+  expect(kinded.get('kind')).toBeTruthy()
+  await expectVisibleFocus(kind, 'the kind filter after its result landed')
+
+  // All four roles, each with Space, and the roleMatch control that only exists
+  // once two are selected.
+  for (const role of ['Müşteri', 'Tedarikçi', 'Fason', 'Hizmet']) {
+    const box = page.getByRole('checkbox', { name: role })
+    await tabTo(page, box, `the ${role} role filter`)
+    await expectVisibleFocus(box, `the ${role} role filter`)
+    const applied = await actuate(`selecting ${role} with Space`, async () => {
+      await page.keyboard.press('Space')
+    })
+    expect(applied.getAll('role').length, `${role} did not reach the query`).toBeGreaterThan(0)
+    await expectVisibleFocus(box, `the ${role} role filter after its result landed`)
+  }
+
+  const roleMatch = page.getByRole('combobox', { name: 'Rol eşleşmesi' })
+  await expect(roleMatch, 'roleMatch never appeared with four roles selected').toBeVisible()
+  await tabTo(page, roleMatch, 'the role match control')
+  await expectVisibleFocus(roleMatch, 'the role match control')
+  const matched = await actuate('changing role match with the keyboard', async () => {
+    await page.keyboard.press('ArrowDown')
+  })
+  expect(matched.get('roleMatch')).toBe('all')
+
+  for (const [name, key] of [
+    ['Taraf durumu', 'partyState'],
+    ['Şirket hesabı durumu', 'accountState'],
+  ] as const) {
+    const control = page.getByRole('combobox', { name })
+    await tabTo(page, control, `the ${name} filter`)
+    await expectVisibleFocus(control, `the ${name} filter`)
+    const applied = await actuate(`changing ${name} with the keyboard`, async () => {
+      await page.keyboard.press('ArrowDown')
+    })
+    expect(applied.get(key), `${name} did not reach the query`).toBeTruthy()
+    await expectVisibleFocus(control, `the ${name} filter after its result landed`)
+  }
 
   await net.detach(testInfo)
 })
@@ -237,6 +399,61 @@ test('B-C01-005 the page reflows without a horizontal scrollbar', async ({ page 
     await expect(page.getByRole('region', { name: 'Cari listesi tablosu' })).toBeVisible()
   }
 
+  // ---- #146 C01-AC-007: the task, completed at the two hard sizes ----------
+  //
+  // Measuring overflow says the layout did not break. It does not say the user
+  // could still DO anything, which is what the owner audit called PARTIAL. So at
+  // mobile and at the 200%-zoom equivalent the whole task runs: search, change a
+  // filter, read the result, and come back from the empty result.
+  for (const size of ['390x844', '640x900']) {
+    const [width, height] = size.split('x').map(Number)
+    await page.setViewportSize({ width, height })
+    await openList(page)
+
+    const search = page.getByRole('searchbox', { name: 'Ara' })
+    await expect(search, `search is unreachable at ${size}`).toBeVisible()
+    await search.fill(SPLIT_STATE_ROW)
+    await expect
+      .poll(async () => (await codesOf(page)).length, { timeout: 20_000 })
+      .toBeLessThan(50)
+    expect(await codesOf(page), `search lost its result at ${size}`).toContain(SPLIT_STATE_ROW)
+
+    const accountState = page.getByRole('combobox', { name: 'Şirket hesabı durumu' })
+    await expect(accountState, `the account-state filter is unreachable at ${size}`).toBeVisible()
+    await accountState.selectOption('active')
+    // The party's account is passive here, so this must empty the result -- and
+    // the screen has to SAY it is empty rather than showing nothing at all.
+    //
+    // Asserted on the STABLE state attribute, not the Turkish copy: the first
+    // version of this line invented a string that does not exist in the app.
+    await expect(page.locator('[data-state="empty-filtered"]')).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByText('Filtreye uyan kayıt bulunamadı.')).toBeVisible()
+
+    // And the user can get back out of it, which is the half a static overflow
+    // check can never see.
+    await accountState.selectOption('all')
+    await expect
+      .poll(async () => (await codesOf(page)).includes(SPLIT_STATE_ROW), { timeout: 20_000 })
+      .toBe(true)
+
+    // Nothing was pushed off-screen or buried by another control while doing it.
+    for (const control of [search, accountState]) {
+      const box = await control.boundingBox()
+      expect(box, `a control vanished at ${size}`).not.toBeNull()
+      expect(box!.width, `a control collapsed at ${size}`).toBeGreaterThan(0)
+      expect(box!.x, `a control sits off the left edge at ${size}`).toBeGreaterThanOrEqual(0)
+      expect(box!.x + box!.width, `a control overflows the viewport at ${size}`).toBeLessThanOrEqual(
+        width + 1,
+      )
+    }
+    const stillNoOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+    )
+    expect(stillNoOverflow, `the page scrolled horizontally mid-task at ${size}`).toBe(false)
+
+    await search.fill('')
+  }
+
   await page.setViewportSize({ width: 1600, height: 900 })
   await net.detach(testInfo)
 })
@@ -260,6 +477,24 @@ test('B-C01-006 the accessible structure is the one screen readers need', async 
   const shown = await page.locator('body').innerText()
   expect(shown).not.toContain('filtered-authorized-visible-parties')
   expect(shown.toLowerCase()).not.toContain('capability')
+
+  // ---- #146 C01-AC-007: the empty-filter transition is announced ONCE ------
+  //
+  // The presence of a live region is not the claim -- that is asserted above.
+  // The claim is what a screen reader is TOLD, and the failure being ruled out
+  // is the same message spoken twice because a re-render, a focus change or a
+  // cache update touched the region again.
+  await watchAnnouncements(page)
+  const before = await announcedCount(page)
+  await page.getByRole('searchbox', { name: 'Ara' }).fill('ZZZ-NO-SUCH-RECORD')
+  await expect(page.locator('[data-state="empty-filtered"]')).toBeVisible({ timeout: 20_000 })
+  // Settle: anything spoken after this point would still be a second telling.
+  await page.waitForTimeout(1_500)
+  const spoken = await announcedSince(page, before)
+  expect(
+    spoken.length,
+    `the empty-filter transition was announced ${spoken.length} times: ${JSON.stringify(spoken)}`,
+  ).toBe(1)
 
   await net.detach(testInfo)
 })
@@ -297,12 +532,25 @@ test('B-C01-008 a failed continuation keeps the verified rows and offers a retry
   // scoped retry — the load-more control is GONE, not merely disabled. That is the
   // shape DEC-CAR-004 asks for (explicit user retry, no automatic resend), so every
   // fault after the first is driven through the retry button.
+  // #146 C01-AC-007: both transitions below are counted, because the failure
+  // being ruled out is the same message reaching a screen reader twice.
+  await watchAnnouncements(page)
+  const beforeError = await announcedCount(page)
+
   const used500 = await net.failNextCounterpartyRead('injected-500')
   await page.getByRole('button', { name: 'Daha fazla yükle' }).click()
   await expect.poll(used500, { timeout: 20_000 }).toBe(true)
   await expect(alert, 'no continuation error after injected-500').toBeVisible({ timeout: 30_000 })
   await expect(rows(page), 'rows were dropped on injected-500').toHaveCount(50)
   await expect(page.getByRole('button', { name: 'Daha fazla yükle' })).toHaveCount(0)
+
+  await page.waitForTimeout(1_500)
+  const errorSpoken = await announcedSince(page, beforeError)
+  expect(
+    errorSpoken.length,
+    `the continuation error was announced ${errorSpoken.length} times: ` +
+      JSON.stringify(errorSpoken),
+  ).toBe(1)
 
   for (const fault of ['injected-503', 'injected-abort'] as const) {
     const used = await net.failNextCounterpartyRead(fault)
@@ -329,10 +577,23 @@ test('B-C01-008 a failed continuation keeps the verified rows and offers a retry
   // same cursor rather than advancing it.
   // The recovery is OBSERVED, not asserted in advance: the recorder only writes
   // retry-200 when a real 200 actually arrives for this read.
+  const beforeRecovery = await announcedCount(page)
   net.expectRetrySuccess(1)
   await retry.click()
   await expect(rows(page)).toHaveCount(GDC_ACTIVE_VISIBLE, { timeout: 30_000 })
   expect(new Set(await codesOf(page)).size).toBe(GDC_ACTIVE_VISIBLE)
+
+  // A retry that WORKED has to be spoken, exactly once. Before this the only
+  // signal was the alert disappearing, which a screen reader does not announce:
+  // the user pressed the button and heard nothing at all.
+  await page.waitForTimeout(1_500)
+  const recoverySpoken = await announcedSince(page, beforeRecovery)
+  expect(
+    recoverySpoken.length,
+    `the successful retry was announced ${recoverySpoken.length} times: ` +
+      JSON.stringify(recoverySpoken),
+  ).toBe(1)
+  expect(recoverySpoken[0]).toContain('kalan kayıtlar yüklendi')
 
   await net.detach(testInfo)
 })
@@ -360,6 +621,8 @@ test('B-C01-009 a tampered cursor is refused with a stable code', async ({ page 
     if (!request.url().includes('/api/v1/counterparties')) return
     reads.push({ cursor: new URL(request.url()).searchParams.get('cursor') })
   })
+  await watchAnnouncements(page)
+  const spokenBefore = await announcedCount(page)
 
   let tamperedOnce = false
   await page.route('**/api/v1/counterparties*', async (route) => {
@@ -413,6 +676,16 @@ test('B-C01-009 a tampered cursor is refused with a stable code', async ({ page 
   // is the claim, and a tautological second assertion would only make the case
   // look stronger than it is.
 
+  // #146 C01-AC-007: the recovery is spoken exactly once. The fresh page landing
+  // is a re-render of the same region, which is precisely how a second telling
+  // gets in.
+  await page.waitForTimeout(1_500)
+  const spokenAfter = await announcedSince(page, spokenBefore)
+  expect(
+    spokenAfter.length,
+    `the recovery was announced ${spokenAfter.length} times: ${JSON.stringify(spokenAfter)}`,
+  ).toBe(1)
+
   await net.detach(testInfo)
 })
 
@@ -432,6 +705,74 @@ test('B-C01-010 party state and account state are separate facts', async ({ page
 
   // A globally inactive party is hidden by the default filter.
   expect(await codesOf(page)).not.toContain(GLOBAL_INACTIVE_ROW)
+
+  // ---- #146 C01-AC-002: the matrix, proven by three REAL server reads --------
+  //
+  // The two states being separate columns is a rendering claim. That they are
+  // separate FILTERS is a server claim, and the owner audit called the previous
+  // version PARTIAL for asserting only the first. CAR-000002 is the fixture's
+  // only party that is globally active with a passive account in GDC, so it
+  // appears, disappears and reappears across the three account-state values --
+  // a result client-side filtering of one response could imitate, which is why
+  // each step is bound to its own request.
+  const reads: { url: string; company: string | null }[] = []
+  page.on('request', (request) => {
+    if (!request.url().includes('/api/v1/counterparties')) return
+    reads.push({ url: request.url(), company: request.headers()['x-company-id'] ?? null })
+  })
+
+  const accountState = page.getByRole('combobox', { name: 'Şirket hesabı durumu' })
+  const partyState = page.getByRole('combobox', { name: 'Taraf durumu' })
+  await expect(partyState).toHaveValue('active')
+
+  /** Change one filter and wait for the read it causes, not for a timeout. */
+  async function applyAccountState(value: string): Promise<void> {
+    const before = reads.length
+    await accountState.selectOption(value)
+    await expect.poll(() => reads.length, { timeout: 20_000 }).toBeGreaterThan(before)
+    await expect(page.locator('[data-state="initial-loading"]')).toHaveCount(0, {
+      timeout: 20_000,
+    })
+  }
+
+  await applyAccountState('all')
+  expect(await codesOf(page), 'accountState=all hid the split-state party').toContain(
+    SPLIT_STATE_ROW,
+  )
+
+  await applyAccountState('active')
+  expect(
+    await codesOf(page),
+    'accountState=active still showed a party whose account here is passive',
+  ).not.toContain(SPLIT_STATE_ROW)
+
+  await applyAccountState('inactive');
+  {
+    const codes = await codesOf(page)
+    expect(codes, 'accountState=inactive lost the only passive account').toContain(SPLIT_STATE_ROW)
+    // The fixture has exactly one, so this also proves the server applied the
+    // filter rather than the page hiding rows it had already been given.
+    expect(codes).toHaveLength(1)
+  }
+
+  // Every read was a real, correctly bound, cursorless page-1 request. The
+  // company header matters as much as the query: a filter proven under the wrong
+  // tenant proves nothing.
+  const matrix = reads.slice(-3).map((read) => new URL(read.url).searchParams)
+  expect(matrix[0].get('accountState')).toBe('all')
+  expect(matrix[1].get('accountState')).toBe('active')
+  expect(matrix[2].get('accountState')).toBe('inactive')
+  for (const [index, params] of matrix.entries()) {
+    expect(params.get('partyState'), 'party state drifted while account state changed').toBe(
+      'active',
+    )
+    // A filter change restarts paging; carrying the old cursor would page
+    // through a result set that no longer exists.
+    expect(params.get('cursor'), `read ${index} carried a stale cursor`).toBeNull()
+  }
+  for (const read of reads.slice(-3)) {
+    expect(read.company, 'a read was issued without the active company binding').toBe(GDC)
+  }
 
   await net.detach(testInfo)
 })
