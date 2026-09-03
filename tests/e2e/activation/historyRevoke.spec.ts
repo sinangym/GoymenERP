@@ -53,10 +53,27 @@ interface CapabilityObservation {
   readonly readable: boolean
 }
 
+interface AuthorizedRead {
+  readonly at: number
+  readonly url: string
+  readonly status: number
+}
+
 interface Traffic {
   /** Counted on REQUEST, not response. */
   businessRequests: string[]
   capability: CapabilityObservation[]
+  /**
+   * The FIRST successful authorized read, and when it was observed.
+   *
+   * The stale window starts here, not when the row became visible. Codex traced
+   * why that distinction is load-bearing (#199 P1-2): the cache is written when
+   * the response lands, so measuring from visibility silently omits the
+   * request-to-paint interval. A return could therefore be judged inside the
+   * 30s window while the cache it reused was already older than that -- the
+   * assertion would hold and prove nothing.
+   */
+  authorizedRead: AuthorizedRead | null
 }
 
 /**
@@ -68,13 +85,24 @@ interface Traffic {
  * shape of false green this case exists to rule out (#196 P1-5).
  */
 function observe(page: Page): Traffic {
-  const traffic: Traffic = { businessRequests: [], capability: [] }
+  const traffic: Traffic = { businessRequests: [], capability: [], authorizedRead: null }
   page.on('request', (request) => {
     if (request.url().includes('/api/v1/counterparties')) {
       traffic.businessRequests.push(request.url())
     }
   })
   page.on('response', (response) => {
+    if (
+      traffic.authorizedRead === null &&
+      response.url().includes('/api/v1/counterparties') &&
+      response.status() === 200
+    ) {
+      traffic.authorizedRead = {
+        at: Date.now(),
+        url: response.url(),
+        status: response.status(),
+      }
+    }
     if (!response.url().includes('/api/v1/shell/capabilities')) return
     const status = response.status()
     void response
@@ -149,9 +177,15 @@ test('C01A-HISTORY-REVOKE-forward a revoked grant closes the route and issues no
     'the first entry issued no business read',
   ).toBeGreaterThan(0)
 
-  // The clock starts when the authorized entry was served: the return has to land
-  // inside the stale window, or it is a cache-expiry refetch and proves nothing.
-  const authorizedAt = Date.now()
+  // The clock starts when the authorized read was SERVED, not when its row
+  // appeared. Fail closed if it was never observed: an unmeasured start would
+  // make every timing assertion below meaningless rather than merely weaker.
+  const authorizedRead = traffic.authorizedRead
+  expect(
+    authorizedRead,
+    'no successful authorized counterparties response was observed',
+  ).not.toBeNull()
+  const authorizedAt = (authorizedRead as AuthorizedRead).at
 
   // 2. Leave the route without reloading.
   await page.goBack()
@@ -171,7 +205,22 @@ test('C01A-HISTORY-REVOKE-forward a revoked grant closes the route and issues no
     await expect(page.locator('[data-state="not-found"]')).toBeVisible({ timeout: 40_000 })
     await page.waitForTimeout(1_500)
 
-    const elapsed = Date.now() - authorizedAt
+    const returnAt = Date.now()
+    const elapsed = returnAt - authorizedAt
+
+    // Carry the measurement in the report itself, so the gate can re-check it
+    // rather than take a green exit code as proof (#199 P1-2). Playwright emits
+    // annotations as <property> inside the testcase, which is the one activation
+    // artifact that is already allowlisted and privacy-scanned -- verified
+    // against @playwright/test 1.62, not assumed.
+    const read = authorizedRead as AuthorizedRead
+    test.info().annotations.push(
+      { type: 'activation.authorizedResponseAt', description: String(authorizedAt) },
+      { type: 'activation.returnAt', description: String(returnAt) },
+      { type: 'activation.elapsedMs', description: String(elapsed) },
+      { type: 'activation.authorizedResponseUrl', description: read.url },
+      { type: 'activation.authorizedResponseStatus', description: String(read.status) },
+    )
     expect(
       elapsed,
       `the return landed ${elapsed}ms after the authorized read, outside the ` +

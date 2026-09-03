@@ -237,18 +237,27 @@ jobs:
             --expected-project "$C01_E2E_COMPOSE_PROJECT"
 
       - name: Require the activation history/revoke suite
-        id: activation_gate
+        # MANDATORY, not conditional. The version this replaces set an output and
+        # made the run/assert/upload steps depend on it, so a head that simply
+        # DELETED the suite went green with the evidence never produced. Codex
+        # named it (#199 P1-1) and was right: an evidence gate with a skip path
+        # is not a gate. The sources are on main now; missing means red.
         run: |
           set -euo pipefail
-          enabled=true
-          test -f tests/e2e/playwright.activation.config.ts || enabled=false
-          test -f tests/e2e/activation/historyRevoke.spec.ts || enabled=false
-          test -f tests/e2e/activation/revokeGrant.ts || enabled=false
-          if [ "$enabled" = true ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-          fi
+          for required in tests/e2e/playwright.activation.config.ts tests/e2e/activation/historyRevoke.spec.ts tests/e2e/activation/revokeGrant.ts tests/e2e/activation/validateEvidence.mjs; do
+            if [ ! -f "$required" ]; then
+              echo "::error::ACTIVATION_SOURCE_MISSING: $required"
+              exit 1
+            fi
+          done
+
+      - name: Self-test the activation evidence gate
+        # The gate is only worth what its own negative cases prove. Runs before the
+        # evidence it will judge, so a gate broken into accept-anything is caught
+        # here rather than by silently passing a bad report.
+        working-directory: tests/e2e
+        run: npm run activation:selftest
+
 
       - name: Run C-01A activation history/revoke evidence
         # Placed HERE, between the C-01/SAB evidence validation and the read-only
@@ -265,7 +274,6 @@ jobs:
         # case under a different run identity than the C-01/SAB evidence #184
         # requires it to share. Sharing the job makes the identity one thing and
         # gets the residue check for free. Saying so rather than quietly choosing.
-        if: steps.activation_gate.outputs.enabled == 'true'
         working-directory: tests/e2e
         env:
           ACTIVATION_E2E_BASE_URL: http://127.0.0.1:15173
@@ -276,23 +284,11 @@ jobs:
         run: npm run activation:ci
 
       - name: Require exact clean activation evidence
-        # Reads the emitted JUnit rather than trusting the exit code: a run that
-        # skipped or retried its way to green is not evidence, and #184 disqualifies
-        # a series containing either.
-        if: steps.activation_gate.outputs.enabled == 'true'
-        run: |
-          set -euo pipefail
-          junit="artifacts/activation-junit.xml"
-          test -f "$junit" || { echo "::error::ACTIVATION_JUNIT_MISSING: $junit"; exit 1; }
-          cases=$(grep -c "<testcase" "$junit" || true)
-          test "$cases" -gt 0 || { echo "::error::ACTIVATION_NO_CASES"; exit 1; }
-          for tag in failure error skipped; do
-            if grep -q "<$tag" "$junit"; then
-              echo "::error::ACTIVATION_NOT_CLEAN: report contains <$tag>"
-              exit 1
-            fi
-          done
-          echo "C-01A activation evidence: $cases case(s), skip=0"
+        # Delegates to a validator with its own mutation tests instead of grepping.
+        # The grep version accepted a renamed case, an extra case, and a suite that
+        # only DECLARED a failure without inlining one (#199 P1-1).
+        working-directory: tests/e2e
+        run: npm run activation:verify -- "$GITHUB_WORKSPACE/artifacts/activation-junit.xml"
 
       - name: Verify post-browser SQL remains read-only
         env:
@@ -359,7 +355,7 @@ jobs:
         # exactly ONE allowlist. Stuffing this into the C-01 step broke the guard
         # that pins that step to C01_ARTIFACT_UPLOAD_ALLOWLIST -- the guard was
         # right and the first attempt was sloppy.
-        if: always() && steps.activation_gate.outputs.enabled == 'true' && steps.artifact_privacy.outcome == 'success'
+        if: always() && steps.artifact_privacy.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
           name: activation-e2e-${{ github.event.pull_request.head.sha || github.sha }}

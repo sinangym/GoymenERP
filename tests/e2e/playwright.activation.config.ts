@@ -26,6 +26,10 @@ export default defineConfig({
   testDir: './activation',
   fullyParallel: false,
   workers: 1,
+  // Only the evidence case. Without this, Playwright collects the validator's own
+  // node:test file and EXECUTES it at import time -- observed, not theorised.
+  // The evidence run must contain exactly one thing.
+  testMatch: /historyRevoke\.spec\.ts$/,
   retries: 0,
   forbidOnly: true,
   timeout: 120_000,
