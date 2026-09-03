@@ -45,6 +45,15 @@ export const IDENTITY = {
   composeProject: 'activation.composeProject',
 }
 
+/**
+ * Server-assigned request identities (#184 section 2.1/7).
+ *
+ * The exactly-once match against the API's structured record is Codex's
+ * surface; what is enforced here is that this side produced something worth
+ * matching.
+ */
+export const CORRELATIONS = 'activation.requestCorrelations'
+
 class EvidenceError extends Error {}
 
 function fail(code, detail) {
@@ -329,6 +338,50 @@ export function validateActivationEvidence(xml, expected = null) {
     }
   }
 
+  // The parsed reader hands these back already entity-decoded, so the JSON
+  // arrives intact rather than as `{&quot;kind&quot;:...}`.
+  let correlations
+  try {
+    correlations = JSON.parse(properties.get(CORRELATIONS) ?? 'null')
+  } catch {
+    fail('ACTIVATION_CORRELATIONS_MALFORMED', 'the correlation record is not JSON')
+  }
+  if (!Array.isArray(correlations) || correlations.length === 0) {
+    fail('ACTIVATION_CORRELATIONS_MISSING', 'the report records no request correlations')
+  }
+  const seen = new Set()
+  let capabilityCount = 0
+  let businessCount = 0
+  for (const entry of correlations) {
+    if (entry === null || typeof entry !== 'object') {
+      fail('ACTIVATION_CORRELATIONS_MALFORMED', 'a correlation entry is not an object')
+    }
+    if (entry.kind !== 'capability' && entry.kind !== 'business') {
+      fail('ACTIVATION_CORRELATIONS_MALFORMED', `unknown correlation kind ${entry.kind}`)
+    }
+    if (typeof entry.correlationId !== 'string' || entry.correlationId === '') {
+      fail(
+        'ACTIVATION_CORRELATION_UNIDENTIFIED',
+        `a ${entry.kind} response carried no server correlation id`,
+      )
+    }
+    if (seen.has(entry.correlationId)) {
+      fail(
+        'ACTIVATION_CORRELATION_DUPLICATE',
+        `correlation ${entry.correlationId} appears more than once`,
+      )
+    }
+    seen.add(entry.correlationId)
+    if (entry.kind === 'capability') capabilityCount += 1
+    else businessCount += 1
+  }
+  if (capabilityCount === 0) {
+    fail('ACTIVATION_CORRELATIONS_INCOMPLETE', 'no capability response was correlated')
+  }
+  if (businessCount === 0) {
+    fail('ACTIVATION_CORRELATIONS_INCOMPLETE', 'no business response was correlated')
+  }
+
   if (properties.get(TIMING.status) !== '200') {
     fail('ACTIVATION_RESPONSE_NOT_OK', `the bound authorized response was ${properties.get(TIMING.status)}`)
   }
@@ -336,7 +389,16 @@ export function validateActivationEvidence(xml, expected = null) {
     fail('ACTIVATION_RESPONSE_UNBOUND', 'the timing is not bound to a counterparties read')
   }
 
-  return { caseName: name, elapsed, authorizedAt, returnAt, properties }
+  return {
+    caseName: name,
+    elapsed,
+    authorizedAt,
+    returnAt,
+    properties,
+    correlations: correlations.length,
+    capabilityCount,
+    businessCount,
+  }
 }
 
 if (process.argv[1] && process.argv[1].endsWith('validateEvidence.mjs')) {
@@ -369,7 +431,9 @@ if (process.argv[1] && process.argv[1].endsWith('validateEvidence.mjs')) {
     })
     console.log(
       `C-01A activation evidence: ${result.caseName} — 1 case, skip=0, ` +
-        `${result.elapsed}ms after the authorized response`,
+        `${result.elapsed}ms after the authorized response, ` +
+        `${result.correlations} server-correlated requests ` +
+        `(${result.capabilityCount} capability, ${result.businessCount} business)`,
     )
   } catch (error) {
     console.error(`::error::${error.message}`)

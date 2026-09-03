@@ -53,6 +53,26 @@ interface CapabilityObservation {
   readonly readable: boolean
 }
 
+/**
+ * One server-assigned request identity, as OBSERVED from the response.
+ *
+ * #184 section 2.1/7 requires every capability and business request in the
+ * browser artifact to match the API's own structured record exactly once, and is
+ * explicit that a client-written label is not a trust source. So this is read
+ * from the `X-Correlation-Id` RESPONSE header, which
+ * `CorrelationContextMiddleware` sets on every response -- the browser reports
+ * what the server assigned rather than asserting an identity of its own.
+ *
+ * The server-side half of the match is Codex's surface. This side's job is to
+ * produce a list that is worth matching against.
+ */
+interface RequestCorrelation {
+  readonly kind: 'capability' | 'business'
+  readonly url: string
+  readonly status: number
+  readonly correlationId: string
+}
+
 interface AuthorizedRead {
   readonly at: number
   readonly url: string
@@ -74,6 +94,7 @@ interface Traffic {
    * assertion would hold and prove nothing.
    */
   authorizedRead: AuthorizedRead | null
+  correlations: RequestCorrelation[]
 }
 
 /**
@@ -85,13 +106,32 @@ interface Traffic {
  * shape of false green this case exists to rule out (#196 P1-5).
  */
 function observe(page: Page): Traffic {
-  const traffic: Traffic = { businessRequests: [], capability: [], authorizedRead: null }
+  const traffic: Traffic = {
+    businessRequests: [],
+    capability: [],
+    authorizedRead: null,
+    correlations: [],
+  }
   page.on('request', (request) => {
     if (request.url().includes('/api/v1/counterparties')) {
       traffic.businessRequests.push(request.url())
     }
   })
   page.on('response', (response) => {
+    const url = response.url()
+    const isCapability = url.includes('/api/v1/shell/capabilities')
+    const isBusiness = url.includes('/api/v1/counterparties')
+    if (isCapability || isBusiness) {
+      // Recorded even when the header is absent, as an empty string. Dropping
+      // such a response would let a request that never reached the attested API
+      // disappear from the artifact instead of failing the gate.
+      traffic.correlations.push({
+        kind: isCapability ? 'capability' : 'business',
+        url,
+        status: response.status(),
+        correlationId: (response.headers()['x-correlation-id'] ?? '').trim(),
+      })
+    }
     if (
       traffic.authorizedRead === null &&
       response.url().includes('/api/v1/counterparties') &&
@@ -221,6 +261,10 @@ test('C01A-HISTORY-REVOKE-forward a revoked grant closes the route and issues no
       { type: 'activation.authorizedResponseUrl', description: read.url },
       { type: 'activation.authorizedResponseStatus', description: String(read.status) },
       // Run identity, baked in so the artifact cannot be replayed elsewhere.
+      {
+        type: 'activation.requestCorrelations',
+        description: JSON.stringify(traffic.correlations),
+      },
       { type: 'activation.testedCommit', description: required('GOYMEN_ERP_C01_E2E_TESTED_COMMIT') },
       { type: 'activation.runId', description: required('GOYMEN_ERP_C01_E2E_RUN_ID') },
       {

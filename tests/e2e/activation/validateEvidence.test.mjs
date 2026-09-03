@@ -8,6 +8,17 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { validateActivationEvidence, EXPECTED_CASE_ID } from './validateEvidence.mjs'
 
+/** Escape the way a real JUnit attribute does -- measured, not guessed. */
+function xml(value) {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
+}
+
+const CORRELATIONS = JSON.stringify([
+  { kind: 'capability', url: 'http://a/api/v1/shell/capabilities', status: 200, correlationId: 'c1' },
+  { kind: 'business', url: 'http://a/api/v1/counterparties', status: 200, correlationId: 'b1' },
+  { kind: 'capability', url: 'http://a/api/v1/shell/capabilities', status: 200, correlationId: 'c2' },
+])
+
 const PROPS = `<properties>
 <property name="activation.authorizedResponseAt" value="1000"></property>
 <property name="activation.returnAt" value="6000"></property>
@@ -17,6 +28,7 @@ const PROPS = `<properties>
 <property name="activation.testedCommit" value="abc1234"></property>
 <property name="activation.runId" value="42"></property>
 <property name="activation.composeProject" value="goymen-c01-42-1"></property>
+<property name="activation.requestCorrelations" value="${xml(CORRELATIONS)}"></property>
 </properties>`
 
 function report({ cases = 1, name = `${EXPECTED_CASE_ID} a revoked grant closes the route`,
@@ -188,4 +200,45 @@ test('an unclosed element is refused', () => {
 test('a timing value that is not a plain integer is refused', () => {
   const props = PROPS.replace('name="activation.elapsedMs" value="5000"', 'name="activation.elapsedMs" value="5e3"')
   assert.throws(() => validateActivationEvidence(report({ props })), /ACTIVATION_TIMING_MALFORMED/)
+})
+
+test('a report with no request correlations is refused', () => {
+  const corrProp = /<property name="activation.requestCorrelations"[^>]*><\/property>/
+  assert.throws(
+    () => validateActivationEvidence(report({ props: PROPS.replace(corrProp, '') }), THIS_RUN),
+    /ACTIVATION_CORRELATIONS_MISSING/,
+  )
+})
+
+test('a response with no server correlation id is refused', () => {
+  // The shape a request that never reached the attested API would have.
+  const props = PROPS.replace('correlationId&quot;:&quot;b1&quot;', 'correlationId&quot;:&quot;&quot;')
+  assert.throws(
+    () => validateActivationEvidence(report({ props }), THIS_RUN),
+    /ACTIVATION_CORRELATION_UNIDENTIFIED/,
+  )
+})
+
+test('a repeated correlation id is refused', () => {
+  const props = PROPS.replace('correlationId&quot;:&quot;c2&quot;', 'correlationId&quot;:&quot;c1&quot;')
+  assert.throws(
+    () => validateActivationEvidence(report({ props }), THIS_RUN),
+    /ACTIVATION_CORRELATION_DUPLICATE/,
+  )
+})
+
+test('a run that correlated no business response is refused', () => {
+  const props = PROPS.replace('kind&quot;:&quot;business&quot;', 'kind&quot;:&quot;capability&quot;')
+  assert.throws(
+    () => validateActivationEvidence(report({ props }), THIS_RUN),
+    /no business response was correlated/,
+  )
+})
+
+test('a correlation entry with an unknown kind is refused', () => {
+  const props = PROPS.replace('kind&quot;:&quot;business&quot;', 'kind&quot;:&quot;telemetry&quot;')
+  assert.throws(
+    () => validateActivationEvidence(report({ props }), THIS_RUN),
+    /ACTIVATION_CORRELATIONS_MALFORMED/,
+  )
 })
