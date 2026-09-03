@@ -53,6 +53,7 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.CounterpartyCompanyLinkReviewGapSqlServerRelationalAcceptanceTests.SameKeyDifferentActor_ReturnsConflictWithoutSecondEffect",
     "GoymenERP.Api.IntegrationTests.CounterpartyCompanyLinkSecurityBoundarySqlServerRelationalAcceptanceTests.PermissionInputAndHeaderBoundaries_AreFailClosedAndDoNotPoisonValidRetry",
     "GoymenERP.Api.IntegrationTests.CounterpartyCompanyLinkSqlServerRelationalAcceptanceTests.AuditOrIdempotencyFailure_RollsBackOnlyNewCompanyLink",
+    "GoymenERP.Api.IntegrationTests.CounterpartyCompanyLinkSqlServerRelationalAcceptanceTests.DurableCreatedReplay_FailsClosedForUnknownSchemaOrForeignAccountRelationship",
     "GoymenERP.Api.IntegrationTests.CounterpartyCompanyLinkSqlServerRelationalAcceptanceTests.ExistingParty_CanBeLinkedToSecondAuthorizedCompany_WithoutDuplicatingParty",
     "GoymenERP.Api.IntegrationTests.CounterpartyCompanyLinkSqlServerRelationalAcceptanceTests.SameAndDifferentKeyLinkRaces_ProduceOneAccountAndNoServerError",
     "GoymenERP.Api.IntegrationTests.CounterpartyCompanyLinkSqlServerRelationalAcceptanceTests.TargetAuthorizedActor_CannotLinkPartyThatIsNotVisibleThroughAnyAllowedRelationship",
@@ -96,8 +97,8 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.UnapprovedLogicalEndpoint_IsRejectedWithoutChangingDatabase",
     "GoymenERP.Api.IntegrationTests.SqlServerRelationalAcceptanceTests.MigrationSeedWriteGuardCompositeForeignKeyAndHttpIsolation_AreEnforced",
 )
-BROAD_DISCOVERY_COUNT = 55
-BROAD_EXECUTION_COUNT = 62
+BROAD_DISCOVERY_COUNT = 56
+BROAD_EXECUTION_COUNT = 63
 
 
 def verify_discovery(standard_output: str) -> None:
