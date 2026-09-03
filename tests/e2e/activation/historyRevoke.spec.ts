@@ -1,36 +1,39 @@
 /**
- * C-01A activation evidence — `success → leave → server-side revoke → Back/Forward`.
+ * C-01A activation evidence — `success → leave → server-side revoke → Forward`.
  *
- * This is the one functional case #184 §2.1 leaves open for C-01A, and it is
- * written to that contract rather than to what is convenient:
+ * The one functional case #184 §2.1 leaves open for C-01A, written to that
+ * contract rather than to what is convenient.
  *
- *  - the history move is NATIVE (`page.goBack()` / `page.goForward()`), because a
- *    synthetic router navigation proves nothing about a real back/forward and is
- *    explicitly excluded as evidence;
- *  - the two directions are one parameterized scenario, each in its own run;
- *  - both stay inside the 30 second cache window, so the return is served from a
- *    cache that is still fresh — expiry-then-refetch is not the case under test;
- *  - the grant is revoked SERVER-SIDE, in `[identity].[RolePermissions]`. Intercepting
- *    `/shell/capabilities` in the browser would test the interceptor, not the
- *    server;
- *  - a `MutationObserver` is installed BEFORE the history move. A final-state
- *    assertion cannot see a row that appeared for one frame and vanished, and one
- *    frame of another company's data is the whole thing being ruled out.
+ * WHY ONLY `Forward`. #184 asks for Back and Forward as one parameterized
+ * scenario. Forward is expressible today; Back is not, and the reason is in the
+ * app rather than the gate: for Back to be the RETURN move, `/cari` has to sit
+ * BEHIND the current history entry, which needs a client-side route reachable
+ * from it. The shell has one gated route and no link away from it, so the only way
+ * to manufacture that entry is `history.pushState` — the synthetic navigation
+ * #184 excludes as evidence.
+ *
+ * An earlier version shipped a Back case that threw unconditionally. Codex was
+ * right that this is worse than not shipping it (#196 P1-2): a test that can never
+ * be green makes the five-consecutive-clean-runs series impossible by
+ * construction, so it corrupts the very thing it was meant to feed. The gap is
+ * recorded on #184 instead, and the case arrives when C-03 gives `/cari` a
+ * successor route.
  *
  * WHAT A RUN OF THIS FILE IS NOT. Under the disposable C-01 override this proves
- * the behaviour; it is NOT the activation evidence. #184 requires the scenario to
- * run on an activation-candidate head whose NORMAL provider publishes
- * `cari.parties.list` with `ImplementationAvailable=true`, five consecutive clean
- * remote runs on one immutable identity. That head does not exist yet.
+ * the behaviour; it is NOT the activation evidence. #184 requires an
+ * activation-candidate head whose NORMAL provider publishes `cari.parties.list`
+ * with `ImplementationAvailable=true`, five consecutive clean remote runs on one
+ * immutable identity.
  */
 
 import { expect, test, type Page } from '@playwright/test'
-import sql from 'mssql'
+import { revokeReadGrant } from './revokeGrant.js'
 
-const READ_PERMISSION = 'counterparty.parties.read'
 const LIST_CAPABILITY = 'cari.parties.list'
 /** The row the canonical fixture puts first under GDC. */
 const FIXTURE_ROW = 'CAR-000001'
+/** The window the production QueryClient keeps a read fresh for. */
+const STALE_WINDOW_MS = 30_000
 
 function required(name: string): string {
   const value = process.env[name]
@@ -43,81 +46,67 @@ function required(name: string): string {
   return value.trim()
 }
 
-interface RevokedGrant {
-  readonly restore: () => Promise<void>
-  readonly rowsRemoved: number
+interface CapabilityObservation {
+  readonly status: number
+  readonly generation: unknown
+  readonly capabilities: unknown
+  readonly readable: boolean
+}
+
+interface Traffic {
+  /** Counted on REQUEST, not response. */
+  businessRequests: string[]
+  capability: CapabilityObservation[]
 }
 
 /**
- * Remove the read grant for real, and hand back the undo.
+ * Observe both endpoints.
  *
- * `[identity]` is bracketed because `identity` is a reserved word in T-SQL — the
- * unbracketed form fails with "Incorrect syntax near the keyword 'identity'".
- *
- * Scoped to `[identity].[RolePermissions]` on purpose: the workflow verifies after the
- * browser run that the Counterparty fixture, `AuditEvent` and `CommandExecution`
- * are untouched, and this touches none of them.
+ * Business reads are counted on the `request` event on purpose. Counting them on
+ * `response` misses a read that was SENT and then aborted — so "no read after the
+ * revoke" could hold while a read had in fact been attempted, which is the exact
+ * shape of false green this case exists to rule out (#196 P1-5).
  */
-async function revokeReadGrant(connectionString: string): Promise<RevokedGrant> {
-  const pool = await new sql.ConnectionPool(connectionString).connect()
-  const removed = await pool
-    .request()
-    .input('code', sql.NVarChar, READ_PERMISSION)
-    .query(
-      'SELECT RoleId, PermissionCode FROM [identity].[RolePermissions] WHERE PermissionCode = @code',
-    )
-  const rows = removed.recordset as { RoleId: string; PermissionCode: string }[]
-  if (rows.length === 0) {
-    await pool.close()
-    throw new Error(
-      `no ${READ_PERMISSION} grant found to revoke — the fixture is not what this case assumes`,
-    )
-  }
-  await pool
-    .request()
-    .input('code', sql.NVarChar, READ_PERMISSION)
-    .query('DELETE FROM [identity].[RolePermissions] WHERE PermissionCode = @code')
-
-  return {
-    rowsRemoved: rows.length,
-    restore: async () => {
-      for (const row of rows) {
-        await pool
-          .request()
-          .input('roleId', sql.UniqueIdentifier, row.RoleId)
-          .input('code', sql.NVarChar, row.PermissionCode)
-          .query(
-            'IF NOT EXISTS (SELECT 1 FROM [identity].[RolePermissions] WHERE RoleId = @roleId AND PermissionCode = @code) ' +
-              'INSERT INTO [identity].[RolePermissions] (RoleId, PermissionCode) VALUES (@roleId, @code)',
-          )
-      }
-      await pool.close()
-    },
-  }
-}
-
-interface Counters {
-  capability: number
-  business: number
-  capabilityBodies: string[]
-}
-
-function countRequests(page: Page): Counters {
-  const counters: Counters = { capability: 0, business: 0, capabilityBodies: [] }
-  page.on('response', (response) => {
-    const url = response.url()
-    if (url.includes('/api/v1/shell/capabilities')) {
-      counters.capability += 1
-      void response
-        .text()
-        .then((body) => counters.capabilityBodies.push(body))
-        .catch(() => {
-          /* a body we cannot read is recorded as absent, never as containing the grant */
-        })
+function observe(page: Page): Traffic {
+  const traffic: Traffic = { businessRequests: [], capability: [] }
+  page.on('request', (request) => {
+    if (request.url().includes('/api/v1/counterparties')) {
+      traffic.businessRequests.push(request.url())
     }
-    if (url.includes('/api/v1/counterparties')) counters.business += 1
   })
-  return counters
+  page.on('response', (response) => {
+    if (!response.url().includes('/api/v1/shell/capabilities')) return
+    const status = response.status()
+    void response
+      .json()
+      .then((body: Record<string, unknown>) => {
+        traffic.capability.push({
+          status,
+          generation: body.generation,
+          capabilities: body.capabilities,
+          readable: true,
+        })
+      })
+      .catch(() => {
+        // An unreadable body is recorded as UNREADABLE, never as "no capability".
+        // Treating it as absence would let a 403 or a malformed answer satisfy the
+        // assertion that the grant is gone.
+        traffic.capability.push({
+          status,
+          generation: undefined,
+          capabilities: undefined,
+          readable: false,
+        })
+      })
+  })
+  return traffic
+}
+
+/** Mark this document so a full reload is detectable rather than assumed. */
+async function markSession(page: Page, token: string): Promise<void> {
+  await page.evaluate((value) => {
+    ;(window as unknown as { __sessionToken?: string }).__sessionToken = value
+  }, token)
 }
 
 /**
@@ -128,114 +117,109 @@ async function watchForStaleRow(page: Page, row: string): Promise<void> {
   await page.evaluate((needle) => {
     const w = window as unknown as { __staleRowSeen?: boolean }
     w.__staleRowSeen = document.body.textContent?.includes(needle) ?? false
-    const observer = new MutationObserver(() => {
+    new MutationObserver(() => {
       if (document.body.textContent?.includes(needle)) w.__staleRowSeen = true
-    })
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true })
+    }).observe(document.body, { childList: true, subtree: true, characterData: true })
   }, row)
 }
 
-async function staleRowWasSeen(page: Page): Promise<boolean> {
-  return page.evaluate(
-    () => (window as unknown as { __staleRowSeen?: boolean }).__staleRowSeen === true,
-  )
-}
-
-/**
- * Return to `/cari` with a NATIVE history move.
- *
- * `forward` is fully expressible: the session goes `/` → `/cari` → back to `/`,
- * and the return is a real `goForward()`.
- *
- * `back` is NOT, and this says so instead of faking it. For Back to be the return
- * move, `/cari` has to sit BEHIND the current entry — which needs a second
- * client-side route reachable from it. The shell has exactly one gated route and
- * no link away from it, so no such entry can be created without
- * `history.pushState`, and a synthetic entry is precisely what #184 excludes.
- *
- * This is a gap in the app's reachable routes, not in the gate. When C-03 is
- * granted, a row link makes `/cari → /cari/:id → Back` a genuine sequence and this
- * helper becomes a two-line change.
- */
-async function returnToRoute(page: Page, direction: 'back' | 'forward'): Promise<void> {
-  if (direction === 'forward') {
-    await page.goForward()
-    return
+test('C01A-HISTORY-REVOKE-forward a revoked grant closes the route and issues no read', async ({
+  page,
+}) => {
+  test.setTimeout(120_000)
+  const target = {
+    connectionString: required('ACTIVATION_E2E_SQL_CONNECTION'),
+    database: required('ACTIVATION_E2E_DATABASE'),
+    actorId: required('ACTIVATION_E2E_ACTOR'),
   }
-  throw new Error(
-    'C01A-HISTORY-REVOKE-back cannot be produced yet: returning to /cari with Back ' +
-      'requires a client-side route AFTER it, and the shell has none. Do not satisfy ' +
-      'this with history.pushState — #184 excludes synthetic navigation as evidence.',
-  )
-}
+  const sessionToken = `session-${Date.now()}`
+  const traffic = observe(page)
 
-for (const direction of ['back', 'forward'] as const) {
-  test(`C01A-HISTORY-REVOKE-${direction} a revoked grant closes the route and issues no read`, async ({
-    page,
-  }) => {
-    test.setTimeout(120_000)
-    const connectionString = required('ACTIVATION_E2E_SQL_CONNECTION')
-
-    const counters = countRequests(page)
-
-    // 1. Authorized entry. The session starts with ONE full load, then everything
-    //    else is client-side — a second `page.goto` would reload and discard the
-    //    warm cache this case exists to interrogate.
-    await page.goto('/')
-    await page.getByRole('link', { name: 'Cari Kartlar' }).click()
-    await expect(page.getByRole('row', { name: new RegExp(FIXTURE_ROW) })).toBeVisible({
-      timeout: 40_000,
-    })
-    expect(counters.business, 'the first entry issued no business read').toBeGreaterThan(0)
-
-    // 2. Leave the route WITHOUT reloading. `page.goto` would be a full load and
-    //    would destroy the SPA session and its warm cache — which is the whole
-    //    condition under test, so it cannot be used to get off the route.
-    await page.goBack()
-    await expect(page.getByRole('table')).toHaveCount(0)
-
-    // 3. Revoke server-side while the user is off the route.
-    const grant = await revokeReadGrant(connectionString)
-    try {
-      const businessBeforeReturn = counters.business
-      const capabilityBeforeReturn = counters.capability
-
-      // 4. Watch for the stale row BEFORE moving, so a one-frame flash counts.
-      await watchForStaleRow(page, FIXTURE_ROW)
-
-      // 5. Native history move, inside the 30s window.
-      await returnToRoute(page, direction)
-
-      // 6. The route closes, non-disclosingly.
-      await expect(page.locator('[data-state="not-found"]')).toBeVisible({ timeout: 40_000 })
-      await page.waitForTimeout(2_000)
-
-      // A fresh capability snapshot was taken, and it does not carry the grant.
-      expect(
-        counters.capability,
-        'the return reused the cached capability snapshot instead of asking again',
-      ).toBeGreaterThan(capabilityBeforeReturn)
-      const latest = counters.capabilityBodies[counters.capabilityBodies.length - 1] ?? ''
-      expect(
-        latest.includes(LIST_CAPABILITY),
-        'the fresh snapshot still carried the revoked capability',
-      ).toBe(false)
-
-      // No business read was attempted after the revoke. "Did not display it" and
-      // "did not ask for it" are different guarantees; this is the second.
-      expect(
-        counters.business - businessBeforeReturn,
-        'a counterparty read was issued after the grant was revoked',
-      ).toBe(0)
-
-      // And the old row never appeared, not even for one frame.
-      expect(
-        await staleRowWasSeen(page),
-        'the previous entry’s row was painted while the return was unauthorized',
-      ).toBe(false)
-      expect(await page.locator('body').innerText()).not.toContain(FIXTURE_ROW)
-    } finally {
-      await grant.restore()
-    }
+  // 1. Authorized entry. ONE full load starts the session; everything after is
+  //    client-side, because a second `page.goto` would reload and discard the warm
+  //    cache this case exists to interrogate.
+  await page.goto('/')
+  await markSession(page, sessionToken)
+  await page.getByRole('link', { name: 'Cari Kartlar' }).click()
+  await expect(page.getByRole('row', { name: new RegExp(FIXTURE_ROW) })).toBeVisible({
+    timeout: 40_000,
   })
-}
+  expect(
+    traffic.businessRequests.length,
+    'the first entry issued no business read',
+  ).toBeGreaterThan(0)
+
+  // The clock starts when the authorized entry was served: the return has to land
+  // inside the stale window, or it is a cache-expiry refetch and proves nothing.
+  const authorizedAt = Date.now()
+
+  // 2. Leave the route without reloading.
+  await page.goBack()
+  await expect(page.getByRole('table')).toHaveCount(0)
+
+  // 3. Revoke server-side while the user is off the route.
+  const grant = await revokeReadGrant(target)
+  try {
+    const businessBeforeReturn = traffic.businessRequests.length
+    const capabilityBeforeReturn = traffic.capability.length
+
+    // 4. Watch for the stale row BEFORE moving, so a one-frame flash counts.
+    await watchForStaleRow(page, FIXTURE_ROW)
+
+    // 5. Native forward, inside the window.
+    await page.goForward()
+    await expect(page.locator('[data-state="not-found"]')).toBeVisible({ timeout: 40_000 })
+    await page.waitForTimeout(1_500)
+
+    const elapsed = Date.now() - authorizedAt
+    expect(
+      elapsed,
+      `the return landed ${elapsed}ms after the authorized read, outside the ` +
+        `${STALE_WINDOW_MS}ms window — a refetch would be expected anyway`,
+    ).toBeLessThan(STALE_WINDOW_MS)
+
+    // Same document: measured, not assumed. A full reload would clear the token,
+    // and would make every other assertion here mean something different.
+    expect(
+      await page.evaluate(
+        () => (window as unknown as { __sessionToken?: string }).__sessionToken,
+      ),
+      'the SPA session was reloaded',
+    ).toBe(sessionToken)
+
+    // A fresh capability snapshot was taken, and it is a VALID one that does not
+    // carry the grant. An unreadable or non-200 answer fails here rather than
+    // counting as "the capability is gone".
+    const fresh = traffic.capability.slice(capabilityBeforeReturn)
+    expect(fresh.length, 'the return reused the cached capability snapshot').toBeGreaterThan(0)
+    const last = fresh[fresh.length - 1]
+    expect(last.readable, 'the fresh capability response could not be parsed').toBe(true)
+    expect(last.status, 'the fresh capability response was not a 200').toBe(200)
+    expect(
+      typeof last.generation === 'string' && last.generation.length > 0,
+      'the fresh snapshot carried no generation',
+    ).toBe(true)
+    expect(Array.isArray(last.capabilities), 'the snapshot carried no capability array').toBe(true)
+    expect(
+      (last.capabilities as string[]).includes(LIST_CAPABILITY),
+      'the fresh snapshot still carried the revoked capability',
+    ).toBe(false)
+
+    // No business read was ATTEMPTED after the revoke.
+    expect(
+      traffic.businessRequests.length - businessBeforeReturn,
+      'a counterparty read was issued after the grant was revoked',
+    ).toBe(0)
+
+    // And the old row never appeared, not even for one frame.
+    expect(
+      await page.evaluate(
+        () => (window as unknown as { __staleRowSeen?: boolean }).__staleRowSeen === true,
+      ),
+      'the previous entry row was painted while the return was unauthorized',
+    ).toBe(false)
+    expect(await page.locator('body').innerText()).not.toContain(FIXTURE_ROW)
+  } finally {
+    await grant.restore()
+  }
+})
