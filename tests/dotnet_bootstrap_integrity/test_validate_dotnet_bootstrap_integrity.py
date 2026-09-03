@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -803,6 +804,32 @@ class WorkflowOrderingTests(unittest.TestCase):
         self.assertIn("--no-restore", vulnerable_step)
         self.assertIn("--configfile NuGet.Config", vulnerable_step)
 
+    def test_tool_restore_runs_immediately_after_fresh_preflight(self) -> None:
+        backend = self.job_body("backend")
+        restore_step = self.step_body(backend, "Restore tools and packages")
+        validator_command = (
+            "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py"
+        )
+        tool_restore_command = (
+            "dotnet tool restore --tool-manifest dotnet-tools.json "
+            "--configfile NuGet.Config"
+        )
+        solution_restore_command = (
+            "dotnet restore GoymenERP.slnx -noAutoResponse "
+            "--configfile NuGet.Config"
+        )
+
+        active_lines = self.read_active_step_lines(restore_step)
+        self.assertEqual(
+            active_lines,
+            [
+                validator_command,
+                tool_restore_command,
+                validator_command,
+                solution_restore_command,
+            ],
+        )
+
     def test_unsupported_dotnet_boundaries_repeat_preflight_fail_closed(self) -> None:
         backend = self.job_body("backend")
         validator_command = (
@@ -851,7 +878,13 @@ class WorkflowOrderingTests(unittest.TestCase):
         for step_name, command in backend_boundaries.items():
             with self.subTest(step=step_name):
                 step = self.step_body(backend, step_name)
-                self.assertEqual(step.count(validator_command), 1)
+                expected_preflight_count = (
+                    2 if step_name == "Restore tools and packages" else 1
+                )
+                self.assertEqual(
+                    step.count(validator_command),
+                    expected_preflight_count,
+                )
                 self.assertLess(step.index(validator_command), step.index(command))
 
         relational_restore_step = self.step_body(
@@ -881,12 +914,233 @@ class WorkflowOrderingTests(unittest.TestCase):
         )
         self.assertEqual(verifier_source.count("run_bootstrap_preflight(repository_root)"), 2)
 
-    def test_container_dotnet_surface_depends_on_both_preflight_jobs(self) -> None:
+    def test_container_surface_depends_on_every_required_gate(self) -> None:
         body = self.job_body("containers")
         needs_block = re.search(r"(?ms)^    needs:\n(.*?)(?=^    [A-Za-z0-9_-]+:)", body)
         self.assertIsNotNone(needs_block, "Container job must have an explicit needs gate.")
         dependencies = set(re.findall(r"^      - ([A-Za-z0-9_-]+)$", needs_block.group(1), re.M))
-        self.assertTrue({"backend", "relational"}.issubset(dependencies))
+        self.assertTrue(
+            {"backend", "frontend", "relational", "contract-drift"}.issubset(
+                dependencies
+            )
+        )
+
+    def test_required_upstream_jobs_cannot_be_skipped_or_soft_failed(self) -> None:
+        expected_job_keys = {
+            "backend": ["    name:", "    runs-on:", "    steps:"],
+            "frontend": [
+                "    name:",
+                "    runs-on:",
+                "    defaults:",
+                "    steps:",
+            ],
+            "relational": [
+                "    name:",
+                "    runs-on:",
+                "    env:",
+                "    services:",
+                "    steps:",
+            ],
+            "contract-drift": ["    name:", "    runs-on:", "    steps:"],
+        }
+        for job_name, expected_keys in expected_job_keys.items():
+            with self.subTest(job=job_name):
+                body = self.job_body(job_name)
+                keys = [
+                    re.sub(r"^    ([^:]+):.*$", r"    \1:", line)
+                    for line in re.findall(r"^    \S.*$", body, re.M)
+                ]
+                self.assertEqual(keys, expected_keys)
+
+        frontend_defaults = re.search(
+            r"(?ms)^    defaults:\n(.*?)(?=^    \S)",
+            self.job_body("frontend"),
+        )
+        self.assertIsNotNone(frontend_defaults)
+        self.assertEqual(
+            frontend_defaults.group(1),
+            "      run:\n"
+            "        working-directory: src/frontend/goymen-erp-web\n",
+        )
+
+        relational_env = re.search(
+            r"(?ms)^    env:\n(.*?)(?=^    \S)",
+            self.job_body("relational"),
+        )
+        self.assertIsNotNone(relational_env)
+        self.assertEqual(
+            relational_env.group(1),
+            "      GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: >-\n"
+            "        Server=localhost,1433;Database=master;User Id=sa;"
+            "Password=Ci_Relational_Only_2026;Encrypt=True;"
+            "TrustServerCertificate=True\n",
+        )
+
+    def test_required_upstream_jobs_match_reviewed_exact_contracts(self) -> None:
+        expected_job_fingerprints = {
+            "backend": (
+                "65b8ee8fa2e5b2fc197b059a77414d0652673eac1d467e0a50cee8bcd3aa0c1c"
+            ),
+            "frontend": (
+                "35f367ca26c395da8b82562519f4532ed750792a453d5840584ec082917f0895"
+            ),
+            "relational": (
+                "f080843a625a6a846529e76232d124851d864983e71701cec5fbdd20a623cd61"
+            ),
+            "contract-drift": (
+                "067e1d19ce60a40f11e34e4dba7bae591e33c3ef06d271a8a557ca9226fffcea"
+            ),
+        }
+
+        for job_name, expected_fingerprint in expected_job_fingerprints.items():
+            with self.subTest(job=job_name):
+                normalized_body = "\n".join(
+                    line.rstrip() for line in self.job_body(job_name).splitlines()
+                ).rstrip("\n") + "\n"
+                actual_fingerprint = hashlib.sha256(
+                    normalized_body.encode("utf-8")
+                ).hexdigest()
+                self.assertEqual(actual_fingerprint, expected_fingerprint)
+
+    def test_required_upstream_preflights_and_frontend_commands_are_exact(self) -> None:
+        validator_command = (
+            "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py"
+        )
+        bootstrap_suite_command = (
+            "python3 -I -S -B -m unittest discover "
+            '-s tests/dotnet_bootstrap_integrity -p "test_*.py" -v'
+        )
+
+        for job_name in ("backend", "relational"):
+            with self.subTest(job=job_name):
+                preflight = self.step_body(
+                    self.job_body(job_name), ".NET bootstrap integrity preflight"
+                )
+                self.assertEqual(
+                    self.read_step_lines(preflight),
+                    ["run: |", validator_command, bootstrap_suite_command],
+                )
+
+        contract_preflight = self.step_body(
+            self.job_body("contract-drift"),
+            ".NET bootstrap and drift validator preflight",
+        )
+        self.assertEqual(
+            self.read_step_lines(contract_preflight),
+            [
+                "run: |",
+                validator_command,
+                bootstrap_suite_command,
+                "python3 -I -S -B -m unittest discover "
+                '-s tests/openapi_contract_drift -p "test_*.py" -v',
+            ],
+        )
+
+        frontend_run_steps = re.findall(
+            r"^      - run: (.+)$", self.job_body("frontend"), re.M
+        )
+        self.assertEqual(
+            frontend_run_steps,
+            [
+                "npm ci",
+                "npm audit --audit-level=high",
+                "npm run lint",
+                "npm test",
+                "npm run build",
+            ],
+        )
+
+    def test_container_runner_validates_its_own_checkout_before_compose(self) -> None:
+        body = self.job_body("containers")
+        checkout_step = "      - uses: actions/checkout@v7"
+        preflight_step = "      - name: .NET bootstrap integrity preflight"
+        compose_step = "      - name: Validate compose model"
+        build_step = "      - name: Build application images"
+        validator_command = (
+            "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py"
+        )
+
+        self.assertEqual(
+            re.findall(r"^\S.*$", self.workflow, re.M),
+            ["name: CI", "on:", "permissions:", "concurrency:", "jobs:"],
+        )
+        self.assertEqual(
+            body,
+            (
+                "    name: Container build\n"
+                "    needs:\n"
+                "      - backend\n"
+                "      - frontend\n"
+                "      - relational\n"
+                "      - contract-drift\n"
+                "    runs-on: ubuntu-latest\n"
+                "    env:\n"
+                "      MSSQL_SA_PASSWORD: Local_Only_Strong_Password_123!\n"
+                "    steps:\n"
+                "      - uses: actions/checkout@v7\n"
+                "\n"
+                "      - name: .NET bootstrap integrity preflight\n"
+                "        run: |\n"
+                f"          {validator_command}\n"
+                "\n"
+                "      - name: Validate compose model\n"
+                "        run: docker compose -f infra/docker-compose.yml config --quiet\n"
+                "\n"
+                "      - name: Build application images\n"
+                "        run: docker compose -f infra/docker-compose.yml build api web\n"
+            ),
+        )
+        self.assertEqual(
+            re.findall(r"^    \S.*$", body, re.M),
+            [
+                "    name: Container build",
+                "    needs:",
+                "    runs-on: ubuntu-latest",
+                "    env:",
+                "    steps:",
+            ],
+        )
+        self.assertNotIn("continue-on-error:", body)
+        self.assertRegex(
+            body,
+            re.escape(checkout_step) + r"\n\n" + re.escape(preflight_step),
+        )
+        preflight = self.step_body(body, ".NET bootstrap integrity preflight")
+        self.assertEqual(
+            self.read_step_lines(preflight),
+            ["run: |", validator_command],
+        )
+        self.assertEqual(
+            self.read_step_lines(self.step_body(body, "Validate compose model")),
+            ["run: docker compose -f infra/docker-compose.yml config --quiet"],
+        )
+        self.assertEqual(
+            self.read_step_lines(self.step_body(body, "Build application images")),
+            ["run: docker compose -f infra/docker-compose.yml build api web"],
+        )
+
+        preflight_index = body.index(preflight_step)
+        compose_index = body.index(compose_step)
+        build_index = body.index(build_step)
+        boundary = body[preflight_index:compose_index]
+        self.assertEqual(
+            re.findall(r"^      - (?:name:|uses:|run:).*$", boundary, re.M),
+            [preflight_step],
+        )
+        self.assertLess(preflight_index, compose_index)
+        self.assertLess(compose_index, build_index)
+
+    @staticmethod
+    def read_step_lines(step: str) -> list[str]:
+        return [
+            line.strip()
+            for line in step.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+
+    @classmethod
+    def read_active_step_lines(cls, step: str) -> list[str]:
+        return cls.read_step_lines(step)[1:]
 
     def test_backend_container_disables_auto_response_for_build_commands(self) -> None:
         dockerfile = (

@@ -39,6 +39,7 @@ jobs:
 
       - name: Restore tools and packages
         run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
           dotnet tool restore --tool-manifest dotnet-tools.json --configfile NuGet.Config
           python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
           dotnet restore GoymenERP.slnx -noAutoResponse --configfile NuGet.Config
@@ -242,6 +243,10 @@ jobs:
       MSSQL_SA_PASSWORD: Local_Only_Strong_Password_123!
     steps:
       - uses: actions/checkout@v7
+
+      - name: .NET bootstrap integrity preflight
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
 
       - name: Validate compose model
         run: docker compose -f infra/docker-compose.yml config --quiet
