@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -973,6 +974,80 @@ class WorkflowOrderingTests(unittest.TestCase):
             "        Server=localhost,1433;Database=master;User Id=sa;"
             "Password=Ci_Relational_Only_2026;Encrypt=True;"
             "TrustServerCertificate=True\n",
+        )
+
+    def test_required_upstream_jobs_match_reviewed_exact_contracts(self) -> None:
+        expected_job_fingerprints = {
+            "backend": (
+                "65b8ee8fa2e5b2fc197b059a77414d0652673eac1d467e0a50cee8bcd3aa0c1c"
+            ),
+            "frontend": (
+                "35f367ca26c395da8b82562519f4532ed750792a453d5840584ec082917f0895"
+            ),
+            "relational": (
+                "f080843a625a6a846529e76232d124851d864983e71701cec5fbdd20a623cd61"
+            ),
+            "contract-drift": (
+                "067e1d19ce60a40f11e34e4dba7bae591e33c3ef06d271a8a557ca9226fffcea"
+            ),
+        }
+
+        for job_name, expected_fingerprint in expected_job_fingerprints.items():
+            with self.subTest(job=job_name):
+                normalized_body = "\n".join(
+                    line.rstrip() for line in self.job_body(job_name).splitlines()
+                ).rstrip("\n") + "\n"
+                actual_fingerprint = hashlib.sha256(
+                    normalized_body.encode("utf-8")
+                ).hexdigest()
+                self.assertEqual(actual_fingerprint, expected_fingerprint)
+
+    def test_required_upstream_preflights_and_frontend_commands_are_exact(self) -> None:
+        validator_command = (
+            "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py"
+        )
+        bootstrap_suite_command = (
+            "python3 -I -S -B -m unittest discover "
+            '-s tests/dotnet_bootstrap_integrity -p "test_*.py" -v'
+        )
+
+        for job_name in ("backend", "relational"):
+            with self.subTest(job=job_name):
+                preflight = self.step_body(
+                    self.job_body(job_name), ".NET bootstrap integrity preflight"
+                )
+                self.assertEqual(
+                    self.read_step_lines(preflight),
+                    ["run: |", validator_command, bootstrap_suite_command],
+                )
+
+        contract_preflight = self.step_body(
+            self.job_body("contract-drift"),
+            ".NET bootstrap and drift validator preflight",
+        )
+        self.assertEqual(
+            self.read_step_lines(contract_preflight),
+            [
+                "run: |",
+                validator_command,
+                bootstrap_suite_command,
+                "python3 -I -S -B -m unittest discover "
+                '-s tests/openapi_contract_drift -p "test_*.py" -v',
+            ],
+        )
+
+        frontend_run_steps = re.findall(
+            r"^      - run: (.+)$", self.job_body("frontend"), re.M
+        )
+        self.assertEqual(
+            frontend_run_steps,
+            [
+                "npm ci",
+                "npm audit --audit-level=high",
+                "npm run lint",
+                "npm test",
+                "npm run build",
+            ],
         )
 
     def test_container_runner_validates_its_own_checkout_before_compose(self) -> None:
