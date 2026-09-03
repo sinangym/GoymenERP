@@ -4,8 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import codecs
 import json
+import stat
 import sys
+import unicodedata
 from collections import Counter
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -44,19 +47,110 @@ def _reject_non_finite_json_number(value: str) -> None:
     raise NonFiniteJsonNumberError(value)
 
 
+def _escape_diagnostic_controls(value: str) -> str:
+    """Render one diagnostic record without terminal or line-forging controls."""
+
+    escaped: list[str] = []
+    for character in value:
+        codepoint = ord(character)
+        category = unicodedata.category(character)
+        if character == "\n":
+            escaped.append(r"\n")
+        elif character == "\r":
+            escaped.append(r"\r")
+        elif character == "\t":
+            escaped.append(r"\t")
+        elif category in {"Cc", "Cf", "Cs"} or character in {"\u2028", "\u2029"}:
+            if codepoint <= 0xFF:
+                escaped.append(f"\\x{codepoint:02x}")
+            elif codepoint <= 0xFFFF:
+                escaped.append(f"\\u{codepoint:04x}")
+            else:
+                escaped.append(f"\\U{codepoint:08x}")
+        else:
+            escaped.append(character)
+    return "".join(escaped)
+
+
+def _safe_diagnostics(errors: list[str]) -> list[str]:
+    return [_escape_diagnostic_controls(error) for error in errors]
+
+
+def _resolve_manifest_path(repo_root: Path, errors: list[str]) -> Path | None:
+    try:
+        root_mode = repo_root.lstat().st_mode
+    except (OSError, RuntimeError) as exc:
+        errors.append(f"Cannot inspect repository root {repo_root}: {exc}")
+        return None
+
+    if stat.S_ISLNK(root_mode):
+        errors.append(f"Repository root must not be a symlink: {repo_root}")
+        return None
+    if not stat.S_ISDIR(root_mode):
+        errors.append(f"Repository root must be a directory: {repo_root}")
+        return None
+
+    try:
+        resolved_root = repo_root.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        errors.append(f"Cannot resolve repository root {repo_root}: {exc}")
+        return None
+
+    candidate = resolved_root / MANIFEST_RELATIVE_PATH
+    try:
+        resolved_manifest = candidate.resolve(strict=True)
+    except FileNotFoundError:
+        errors.append(f"Missing task manifest: {candidate}")
+        return None
+    except (OSError, RuntimeError) as exc:
+        errors.append(f"Cannot resolve task manifest {candidate}: {exc}")
+        return None
+
+    try:
+        resolved_manifest.relative_to(resolved_root)
+    except ValueError:
+        errors.append(f"Task manifest resolves outside repository root: {candidate}")
+        return None
+
+    try:
+        manifest_mode = candidate.lstat().st_mode
+    except OSError as exc:
+        errors.append(f"Cannot inspect task manifest {candidate}: {exc}")
+        return None
+
+    if not stat.S_ISREG(manifest_mode):
+        errors.append(f"Task manifest must be a regular file: {candidate}")
+        return None
+
+    return resolved_manifest
+
+
 def _load_manifest(path: Path, errors: list[str]) -> dict[str, Any] | None:
     try:
-        raw_value = json.loads(
-            path.read_text(encoding="utf-8"),
-            object_pairs_hook=_reject_duplicate_json_keys,
-            parse_constant=_reject_non_finite_json_number,
-        )
+        raw_bytes = path.read_bytes()
     except FileNotFoundError:
         errors.append(f"Missing task manifest: {path}")
         return None
-    except (OSError, UnicodeError) as exc:
+    except OSError as exc:
         errors.append(f"Cannot read task manifest {path}: {exc}")
         return None
+
+    if raw_bytes.startswith(codecs.BOM_UTF8):
+        errors.append(f"Task manifest must not contain a UTF-8 BOM: {path}")
+        return None
+
+    try:
+        raw_text = raw_bytes.decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        errors.append(f"Task manifest is not valid UTF-8: {path}")
+        return None
+
+    try:
+        raw_value = json.loads(
+            raw_text,
+            object_pairs_hook=_reject_duplicate_json_keys,
+            parse_constant=_reject_non_finite_json_number,
+        )
     except json.JSONDecodeError as exc:
         errors.append(
             f"Invalid JSON in task manifest {path}:{exc.lineno}:{exc.colno}: "
@@ -65,6 +159,12 @@ def _load_manifest(path: Path, errors: list[str]) -> dict[str, Any] | None:
         return None
     except (DuplicateJsonKeyError, NonFiniteJsonNumberError) as exc:
         errors.append(f"Invalid JSON in task manifest {path}: {exc}")
+        return None
+    except RecursionError:
+        errors.append(f"JSON nesting exceeds parser capacity: {path}")
+        return None
+    except ValueError:
+        errors.append(f"JSON numeric value exceeds parser capacity: {path}")
         return None
 
     if not isinstance(raw_value, dict):
@@ -251,11 +351,15 @@ def validate_repository_with_statistics(
     """Return structural errors and statistics from the same parsed snapshot."""
 
     errors: list[str] = []
-    manifest = _load_manifest(repo_root / MANIFEST_RELATIVE_PATH, errors)
+    manifest_path = _resolve_manifest_path(repo_root, errors)
+    if manifest_path is None:
+        return _safe_diagnostics(errors), None
+
+    manifest = _load_manifest(manifest_path, errors)
     if manifest is None:
-        return errors, None
+        return _safe_diagnostics(errors), None
     statistics = _validate_manifest(manifest, errors)
-    return errors, statistics
+    return _safe_diagnostics(errors), statistics
 
 
 def validate_repository(repo_root: Path) -> list[str]:
@@ -274,9 +378,8 @@ def main(argv: list[str] | None = None) -> int:
         help="Repository root containing docs/backlog/task_manifest.json",
     )
     args = parser.parse_args(argv)
-    repo_root = args.root.resolve()
 
-    errors, statistics = validate_repository_with_statistics(repo_root)
+    errors, statistics = validate_repository_with_statistics(args.root)
     if errors:
         print("Task manifest validation FAILED", file=sys.stderr)
         for error in errors:
