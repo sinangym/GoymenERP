@@ -69,12 +69,23 @@ C01_ARTIFACT_UPLOAD_ALLOWLIST = (
     "c01-e2e-html-report/index.html",
     "container-logs/compose-ps.txt",
 )
+# CROSS-LANE ADDITION (Claude/K2), mirroring the SAB entry Codex added in #188.
+# Needed for SAFETY, not convenience: validate_artifact_privacy scans ONLY the
+# files this allowlist selects, so an activation report uploaded without an entry
+# here would ship unscanned — and that report is produced by the one suite that
+# holds the disposable SQL connection string. Additive: a missing file is skipped.
+ACTIVATION_ARTIFACT_UPLOAD_ALLOWLIST = (
+    "activation-junit.xml",
+)
+
 SAB_ARTIFACT_UPLOAD_ALLOWLIST = (
     "sab-junit.xml",
     "sab-html-report/index.html",
 )
 ARTIFACT_UPLOAD_ALLOWLIST = (
-    C01_ARTIFACT_UPLOAD_ALLOWLIST + SAB_ARTIFACT_UPLOAD_ALLOWLIST
+    C01_ARTIFACT_UPLOAD_ALLOWLIST
+    + SAB_ARTIFACT_UPLOAD_ALLOWLIST
+    + ACTIVATION_ARTIFACT_UPLOAD_ALLOWLIST
 )
 ARTIFACT_FORBIDDEN_PATTERNS = (
     (

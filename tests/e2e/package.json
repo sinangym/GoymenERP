@@ -10,9 +10,11 @@
   "scripts": {
     "c01:ci": "playwright test",
     "c01:local": "playwright test --reporter=list",
-    "sab:ci": "playwright test --config playwright.sab.config.ts"
+    "sab:ci": "playwright test --config playwright.sab.config.ts",
+    "activation:ci": "playwright test --config playwright.activation.config.ts"
   },
   "devDependencies": {
-    "@playwright/test": "1.62.1"
+    "@playwright/test": "1.62.1",
+    "mssql": "11.0.1"
   }
 }
