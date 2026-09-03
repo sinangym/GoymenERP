@@ -347,11 +347,24 @@ jobs:
             artifacts/c01-e2e-evidence.json
             artifacts/c01-e2e-fixture-evidence.json
             artifacts/c01-e2e-junit.xml
-            artifacts/activation-junit.xml
             artifacts/c01-e2e-network-summary.json
             artifacts/c01-e2e-post-browser-sql-evidence.json
             artifacts/c01-e2e-html-report/index.html
             artifacts/container-logs/compose-ps.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload exact-head activation evidence
+        # Its own step, mirroring the SAB one, because each upload step must map to
+        # exactly ONE allowlist. Stuffing this into the C-01 step broke the guard
+        # that pins that step to C01_ARTIFACT_UPLOAD_ALLOWLIST -- the guard was
+        # right and the first attempt was sloppy.
+        if: always() && steps.activation_gate.outputs.enabled == 'true' && steps.artifact_privacy.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: activation-e2e-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/activation-junit.xml
           if-no-files-found: error
           retention-days: 7
 
