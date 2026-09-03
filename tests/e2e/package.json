@@ -13,7 +13,7 @@
     "sab:ci": "playwright test --config playwright.sab.config.ts",
     "activation:ci": "playwright test --config playwright.activation.config.ts",
     "activation:verify": "node activation/validateEvidence.mjs",
-    "activation:selftest": "node --test activation/validateEvidence.test.mjs"
+    "activation:selftest": "node --test activation/validateEvidence.test.mjs activation/grantStore.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",

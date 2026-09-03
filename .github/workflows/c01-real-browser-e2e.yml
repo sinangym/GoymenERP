@@ -244,7 +244,7 @@ jobs:
         # is not a gate. The sources are on main now; missing means red.
         run: |
           set -euo pipefail
-          for required in tests/e2e/playwright.activation.config.ts tests/e2e/activation/historyRevoke.spec.ts tests/e2e/activation/revokeGrant.ts tests/e2e/activation/validateEvidence.mjs; do
+          for required in tests/e2e/playwright.activation.config.ts tests/e2e/activation/historyRevoke.spec.ts tests/e2e/activation/revokeGrant.ts tests/e2e/activation/grantStore.mjs tests/e2e/activation/grantCleanup.mjs tests/e2e/activation/validateEvidence.mjs; do
             if [ ! -f "$required" ]; then
               echo "::error::ACTIVATION_SOURCE_MISSING: $required"
               exit 1
@@ -282,6 +282,31 @@ jobs:
           ACTIVATION_E2E_ACTOR: group-bootstrap-admin
           ACTIVATION_E2E_SQL_CONNECTION: ${{ env.GOYMEN_ERP_C01_E2E_SQLSERVER_CONNECTION }}
         run: npm run activation:ci
+
+      - name: Restore the activation grant even if the run was killed
+        # always(), because the test's own `finally` does not run when the process
+        # is killed -- and the outer cleanup only tore the containers down, so a
+        # revoked grant simply vanished with the stack instead of being put back
+        # and checked (#199 P1-3). Reads the durable preimage, never memory.
+        #
+        # A no-op when nothing was revoked: without a preimage there is nothing to
+        # restore, so this stays quiet on runs that failed before the mutation.
+        if: always()
+        working-directory: tests/e2e
+        env:
+          ACTIVATION_E2E_ARTIFACTS_DIR: ${{ github.workspace }}/artifacts
+          ACTIVATION_E2E_SQL_CONNECTION: ${{ env.GOYMEN_ERP_C01_E2E_SQLSERVER_CONNECTION }}
+        run: node activation/grantCleanup.mjs restore
+
+      - name: Verify the activation grant matches its preimage
+        # "The rows are back" is not the claim; "the rows are exactly what they
+        # were" is. A restore that left one missing, or added one, fails here.
+        working-directory: tests/e2e
+        env:
+          ACTIVATION_E2E_ARTIFACTS_DIR: ${{ github.workspace }}/artifacts
+          ACTIVATION_E2E_ACTOR: group-bootstrap-admin
+          ACTIVATION_E2E_SQL_CONNECTION: ${{ env.GOYMEN_ERP_C01_E2E_SQLSERVER_CONNECTION }}
+        run: node activation/grantCleanup.mjs verify
 
       - name: Require exact clean activation evidence
         # Delegates to a validator with its own mutation tests instead of grepping.
