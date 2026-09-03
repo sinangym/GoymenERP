@@ -346,18 +346,20 @@ test('B-C01-004 sorting is done by the server, and focus survives it', async ({
     (params) => params.get('q') === QUERY,
   )
   await expectVisibleFocus(search, 'the search box after its own result landed')
-  await actuate(
-    'clearing search',
-    async () => {
-      // Backspace per character, not Control+A: the select-all did not take in
-      // the real browser, so exactly one character was deleted and the box never
-      // emptied. Still keyboard-only, and deterministic.
-      for (let index = 0; index < QUERY.length; index += 1) {
-        await page.keyboard.press('Backspace')
-      }
-    },
-    (params) => (params.get('q') ?? '') === '',
-  )
+  // Clearing the box is setup for the steps below, not a claim -- and asserting
+  // a read for it was WRONG twice over. Control+A did not take in the real
+  // browser, so only one character was deleted; and once that was fixed, an
+  // empty query returns to exactly the key this test opened with, which React
+  // Query still holds fresh under the shell's 30s staleTime. Issuing no request
+  // there is correct behaviour, so the assertion was demanding a defect.
+  //
+  // Backspace per character keeps it keyboard-only, and the list coming back is
+  // what the following steps actually depend on.
+  for (let index = 0; index < QUERY.length; index += 1) {
+    await page.keyboard.press('Backspace')
+  }
+  await expect(search).toHaveValue('')
+  await expect(rows(page)).toHaveCount(50, { timeout: 20_000 })
 
   const kind = page.getByRole('combobox', { name: 'Tür' })
   await tabTo(page, kind, 'the kind filter')
