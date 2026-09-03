@@ -935,6 +935,36 @@ class WorkflowOrderingTests(unittest.TestCase):
         )
 
         self.assertEqual(
+            re.findall(r"^\S.*$", self.workflow, re.M),
+            ["name: CI", "on:", "permissions:", "concurrency:", "jobs:"],
+        )
+        self.assertEqual(
+            body,
+            (
+                "    name: Container build\n"
+                "    needs:\n"
+                "      - backend\n"
+                "      - frontend\n"
+                "      - relational\n"
+                "      - contract-drift\n"
+                "    runs-on: ubuntu-latest\n"
+                "    env:\n"
+                "      MSSQL_SA_PASSWORD: Local_Only_Strong_Password_123!\n"
+                "    steps:\n"
+                "      - uses: actions/checkout@v7\n"
+                "\n"
+                "      - name: .NET bootstrap integrity preflight\n"
+                "        run: |\n"
+                f"          {validator_command}\n"
+                "\n"
+                "      - name: Validate compose model\n"
+                "        run: docker compose -f infra/docker-compose.yml config --quiet\n"
+                "\n"
+                "      - name: Build application images\n"
+                "        run: docker compose -f infra/docker-compose.yml build api web\n"
+            ),
+        )
+        self.assertEqual(
             re.findall(r"^    \S.*$", body, re.M),
             [
                 "    name: Container build",
