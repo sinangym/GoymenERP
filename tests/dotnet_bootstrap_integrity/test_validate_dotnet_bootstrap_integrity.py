@@ -924,6 +924,57 @@ class WorkflowOrderingTests(unittest.TestCase):
             )
         )
 
+    def test_required_upstream_jobs_cannot_be_skipped_or_soft_failed(self) -> None:
+        expected_job_keys = {
+            "backend": ["    name:", "    runs-on:", "    steps:"],
+            "frontend": [
+                "    name:",
+                "    runs-on:",
+                "    defaults:",
+                "    steps:",
+            ],
+            "relational": [
+                "    name:",
+                "    runs-on:",
+                "    env:",
+                "    services:",
+                "    steps:",
+            ],
+            "contract-drift": ["    name:", "    runs-on:", "    steps:"],
+        }
+        for job_name, expected_keys in expected_job_keys.items():
+            with self.subTest(job=job_name):
+                body = self.job_body(job_name)
+                keys = [
+                    re.sub(r"^    ([^:]+):.*$", r"    \1:", line)
+                    for line in re.findall(r"^    \S.*$", body, re.M)
+                ]
+                self.assertEqual(keys, expected_keys)
+
+        frontend_defaults = re.search(
+            r"(?ms)^    defaults:\n(.*?)(?=^    \S)",
+            self.job_body("frontend"),
+        )
+        self.assertIsNotNone(frontend_defaults)
+        self.assertEqual(
+            frontend_defaults.group(1),
+            "      run:\n"
+            "        working-directory: src/frontend/goymen-erp-web\n",
+        )
+
+        relational_env = re.search(
+            r"(?ms)^    env:\n(.*?)(?=^    \S)",
+            self.job_body("relational"),
+        )
+        self.assertIsNotNone(relational_env)
+        self.assertEqual(
+            relational_env.group(1),
+            "      GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: >-\n"
+            "        Server=localhost,1433;Database=master;User Id=sa;"
+            "Password=Ci_Relational_Only_2026;Encrypt=True;"
+            "TrustServerCertificate=True\n",
+        )
+
     def test_container_runner_validates_its_own_checkout_before_compose(self) -> None:
         body = self.job_body("containers")
         checkout_step = "      - uses: actions/checkout@v7"
