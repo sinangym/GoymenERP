@@ -595,8 +595,15 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
             /* Scoped to the continuation, not the list. Retry re-issues the SAME
                cursor request — it does not reset paging, so the rows above stay
                exactly where they are. */
-            <div className={styles.continuationError} role="alert">
-              <span>Daha fazla kayıt yüklenemedi; mevcut kayıtlar korunuyor.</span>
+            /* The alert carries the MESSAGE only. The retry button used to live
+               inside it, and its label flips between "Tekrar dene" and
+               "Yükleniyor…" -- every flip re-announced the whole error, so a
+               screen-reader user who pressed retry heard the failure read out
+               twice more before learning the outcome. Measured in the real
+               browser: four announcements for one retry (#146 C01-AC-007).
+               The button is a control, not part of what is announced. */
+            <div className={styles.continuationError} data-continuation-error="">
+              <span role="alert">Daha fazla kayıt yüklenemedi; mevcut kayıtlar korunuyor.</span>
               <button type="button" onClick={() => void query.refetch()} disabled={query.isFetching}>
                 {query.isFetching ? 'Yükleniyor…' : 'Tekrar dene'}
               </button>

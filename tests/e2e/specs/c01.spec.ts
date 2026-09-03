@@ -629,7 +629,10 @@ test('B-C01-008 a failed continuation keeps the verified rows and offers a retry
   await expect(rows(page)).toHaveCount(50)
 
   const alert = page.getByRole('alert')
-  const retry = alert.getByRole('button')
+  // The retry button sits BESIDE the alert, not inside it: its label flips while
+  // loading, and inside an assertive region every flip re-announced the whole
+  // error -- four announcements for one retry, measured here.
+  const retry = page.locator('[data-continuation-error]').getByRole('button')
 
   // Once a continuation has failed, the screen replaces "Daha fazla yükle" with a
   // scoped retry — the load-more control is GONE, not merely disabled. That is the

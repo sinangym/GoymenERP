@@ -468,10 +468,15 @@ describe('C-01 paging', () => {
     await screen.findByRole('row', { name: /C-0001/ })
 
     await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
-    const alert = await screen.findByRole('alert')
+    await screen.findByRole('alert')
     expect(screen.getByRole('status').textContent).not.toContain('Liste güncellendi')
 
-    await userEvent.click(within(alert).getByRole('button'))
+    // The retry button is a sibling of the alert, not inside it: its label flips
+    // while loading, and inside an assertive region every flip re-announced the
+    // whole error.
+    const errorBlock = document.querySelector<HTMLElement>('[data-continuation-error]')
+    expect(errorBlock).not.toBeNull()
+    await userEvent.click(within(errorBlock!).getByRole('button'))
     await waitFor(() =>
       expect(screen.getByRole('status').textContent).toContain('kalan kayıtlar yüklendi'),
     )
