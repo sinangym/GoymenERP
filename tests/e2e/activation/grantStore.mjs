@@ -55,14 +55,53 @@ const defaultDeps = {
   Request: sql.Request,
 }
 
+/**
+ * Canonical connection-string parse (#203 review P1-1).
+ *
+ * The version this replaces read only the literal `server` and `database` keys.
+ * The pinned `mssql` driver also honours `Data Source` and `Initial Catalog`,
+ * and resolves them LATER -- so a string carrying loopback `Server` plus the
+ * expected `Database`, and also `Data Source=prod.example.com` and
+ * `Initial Catalog=master`, passed the guard while the driver connected
+ * somewhere else entirely. A guard that reads a different string than the
+ * driver does is not a guard.
+ *
+ * The answer here is not to imitate the driver's precedence -- that is a race
+ * to track someone else's parser. It is to REFUSE ambiguity: any repeated key,
+ * and any two different aliases for the same concept, is a hard failure before
+ * anything connects.
+ */
+const SERVER_ALIASES = new Set(['server', 'data source', 'addr', 'address', 'network address'])
+const DATABASE_ALIASES = new Set(['database', 'initial catalog'])
+
 function parse(connectionString) {
-  const parts = new Map()
+  const seen = new Map()
   for (const segment of connectionString.split(';')) {
+    if (segment.trim() === '') continue
     const index = segment.indexOf('=')
-    if (index <= 0) continue
-    parts.set(segment.slice(0, index).trim().toLowerCase(), segment.slice(index + 1).trim())
+    if (index <= 0) {
+      throw new Error(`refusing to mutate grants: unparsable connection segment ${segment.trim()}`)
+    }
+    const key = segment.slice(0, index).trim().toLowerCase()
+    if (seen.has(key)) {
+      throw new Error(`refusing to mutate grants: connection string repeats ${key}`)
+    }
+    seen.set(key, segment.slice(index + 1).trim())
   }
-  return parts
+  const resolve = (aliases, label) => {
+    const present = [...aliases].filter((alias) => seen.has(alias))
+    if (present.length === 0) {
+      throw new Error(`refusing to mutate grants: connection string declares no ${label}`)
+    }
+    if (present.length > 1) {
+      throw new Error(
+        `refusing to mutate grants: connection string declares ${label} twice as ` +
+          `${present.join(' and ')}; the driver would pick one and this guard the other`,
+      )
+    }
+    return seen.get(present[0])
+  }
+  return { server: resolve(SERVER_ALIASES, 'server'), database: resolve(DATABASE_ALIASES, 'database') }
 }
 
 function required(name) {
@@ -90,7 +129,16 @@ export function runIdentity() {
   if (!NUMERIC.test(attempt)) {
     throw new Error('refusing to mutate grants: compose project has no numeric attempt')
   }
-  return { runId, attempt, composeProject }
+  // Derived, never caller-supplied. The workflow builds both from the same two
+  // values, so deriving them here removes the caller's ability to point the
+  // mutation at another database by passing different metadata (#203 review
+  // P1-1).
+  return {
+    runId,
+    attempt,
+    composeProject,
+    database: `GoymenErpC01_${runId}_${attempt}`,
+  }
 }
 
 /**
@@ -111,25 +159,44 @@ export function assertDisposable(target) {
   if (!target || typeof target.connectionString !== 'string' || target.connectionString === '') {
     throw new Error('refusing to mutate grants: no connection string')
   }
-  if (typeof target.database !== 'string' || target.database === '') {
-    throw new Error('refusing to mutate grants: no target database')
-  }
   if (typeof target.actorId !== 'string' || target.actorId === '') {
     throw new Error('refusing to mutate grants: no target actor')
   }
-  const parts = parse(target.connectionString)
-  const server = (parts.get('server') ?? '').split(',')[0].trim()
-  if (!LOOPBACK.has(server)) {
-    throw new Error(`refusing to mutate grants on a non-loopback server: ${server || '(none)'}`)
-  }
-  const database = parts.get('database') ?? ''
-  if (database !== target.database) {
+  const identity = runIdentity()
+
+  // The database is DERIVED from the run, and a caller-supplied one may only
+  // agree with it. Previously the caller named the database and the guard
+  // merely checked the connection string agreed with the caller -- two inputs
+  // an attacker controls, checked against each other.
+  if (typeof target.database === 'string' && target.database !== identity.database) {
     throw new Error(
-      `refusing to mutate grants: connection targets ${database || '(none)'} but the ` +
-        `disposable run declares ${target.database}.`,
+      `refusing to mutate grants: caller declares database ${target.database} but run ` +
+        `${identity.runId}/${identity.attempt} derives ${identity.database}`,
     )
   }
-  return runIdentity()
+
+  const parts = parse(target.connectionString)
+  const [host, port] = parts.server.split(',').map((piece) => piece.trim())
+  if (!LOOPBACK.has(host)) {
+    throw new Error(`refusing to mutate grants on a non-loopback server: ${host || '(none)'}`)
+  }
+  const expectedPort = process.env.C01_E2E_SQL_PORT?.trim()
+  if (!expectedPort || !NUMERIC.test(expectedPort)) {
+    throw new Error('refusing to mutate grants: C01_E2E_SQL_PORT is not a numeric port')
+  }
+  if (port !== expectedPort) {
+    throw new Error(
+      `refusing to mutate grants: connection targets port ${port ?? '(default)'} but the ` +
+        `disposable stack publishes ${expectedPort}`,
+    )
+  }
+  if (parts.database !== identity.database) {
+    throw new Error(
+      `refusing to mutate grants: connection targets ${parts.database || '(none)'} but the ` +
+        `disposable run derives ${identity.database}.`,
+    )
+  }
+  return identity
 }
 
 /**
@@ -146,7 +213,7 @@ export function assertPreimageMatches(preimage, target, identity) {
     ['runId', identity.runId],
     ['attempt', identity.attempt],
     ['composeProject', identity.composeProject],
-    ['database', target.database],
+    ['database', identity.database],
     ['actorId', target.actorId],
   ]
   for (const [field, expected] of expectations) {
@@ -188,6 +255,37 @@ function scopedQuery(pool, actorId) {
       INNER JOIN [identity].[ExternalIdentities] ei ON ei.UserId = ra.UserId
       WHERE rp.PermissionCode = @code AND ei.Subject = @actor
     `)
+}
+
+/** The roles this actor actually holds, regardless of what permissions remain. */
+function actorRoles(pool, actorId) {
+  return pool.request().input('actor', sql.NVarChar, actorId).query(`
+      SELECT DISTINCT ra.RoleId
+      FROM [identity].[RoleAssignments] ra
+      INNER JOIN [identity].[ExternalIdentities] ei ON ei.UserId = ra.UserId
+      WHERE ei.Subject = @actor
+    `)
+}
+
+/**
+ * Prove every preimage role belongs to this actor before granting anything.
+ *
+ * A syntactically valid GUID is not authority. Without this, a tampered preimage
+ * could name any role at all and the restore would hand it
+ * `counterparty.parties.read` -- turning a cleanup tool into a privilege-
+ * granting one (#203 review P1-1).
+ */
+async function assertRolesBelongToActor(pool, rows, actorId) {
+  const held = await actorRoles(pool, actorId)
+  const allowed = new Set(held.recordset.map((row) => String(row.RoleId).toLowerCase()))
+  for (const row of rows) {
+    if (!allowed.has(String(row.RoleId).toLowerCase())) {
+      throw new Error(
+        `refusing to restore: role ${row.RoleId} is not assigned to ${actorId}; a preimage ` +
+          'cannot widen the blast radius beyond the actor it was taken from',
+      )
+    }
+  }
 }
 
 function preimagePath(artifactsDir) {
@@ -248,7 +346,9 @@ export async function revokeReadGrant(target, deps = defaultDeps) {
           runId: identity.runId,
           attempt: identity.attempt,
           composeProject: identity.composeProject,
-          database: target.database,
+          // Derived, matching what the guard now enforces. Writing the caller's
+          // value here made the preimage unreadable by its own validator.
+          database: identity.database,
           actorId: target.actorId,
           revokedAt: new Date().toISOString(),
           rows: removed.map((row) => ({
@@ -312,6 +412,7 @@ export async function restoreFromPreimage(target, artifactsDir, deps = defaultDe
   assertPreimageMatches(preimage, target, identity)
   const pool = await deps.createPool(target.connectionString)
   try {
+    await assertRolesBelongToActor(pool, preimage.rows, target.actorId)
     await applyRestore(pool, preimage.rows, deps)
     return { restored: preimage.rows.length, reason: 'restored from preimage' }
   } finally {

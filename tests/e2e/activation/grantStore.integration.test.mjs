@@ -36,6 +36,7 @@ function env({ disposable = 'CONFIRMED', runId = '42', project = 'goymen-c01-42-
   process.env.GOYMEN_ERP_C01_E2E_DISPOSABLE = disposable
   process.env.GOYMEN_ERP_C01_E2E_RUN_ID = runId
   process.env.GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT = project
+  process.env.C01_E2E_SQL_PORT = '11433'
 }
 
 function preimage(overrides = {}) {
@@ -55,7 +56,11 @@ function preimage(overrides = {}) {
  * A pool that records what was asked of it, and can be told to throw on the Nth
  * write so a half-applied mutation becomes reproducible.
  */
-function fakeDeps({ rows = [{ RoleId: ROLE, PermissionCode: READ_PERMISSION }], throwOnWrite = 0 } = {}) {
+function fakeDeps({
+  rows = [{ RoleId: ROLE, PermissionCode: READ_PERMISSION }],
+  throwOnWrite = 0,
+  actorRoleIds = [ROLE],
+} = {}) {
   const log = { pools: 0, queries: [], commits: 0, rollbacks: 0, closed: 0 }
   let writes = 0
   const chain = (sink) => {
@@ -68,6 +73,9 @@ function fakeDeps({ rows = [{ RoleId: ROLE, PermissionCode: READ_PERMISSION }], 
           if (throwOnWrite !== 0 && writes === throwOnWrite) {
             throw new Error('injected write failure')
           }
+        }
+        if (/FROM \[identity\]\.\[RoleAssignments\]/.test(text) && !/RolePermissions/.test(text)) {
+          return { recordset: actorRoleIds.map((RoleId) => ({ RoleId })) }
         }
         return { recordset: /SELECT/.test(text) ? rows : [] }
       },
@@ -256,5 +264,68 @@ test('with no preimage both paths are quiet no-ops', async () => {
   assert.equal((await restoreFromPreimage(TARGET, dir, deps)).restored, 0)
   assert.equal((await verifyAgainstPreimage(TARGET, dir, deps)).verified, 0)
   assert.equal(deps.log.pools, 0)
+  rmSync(dir, { recursive: true, force: true })
+})
+
+test('restore refuses a preimage naming a role this actor does not hold', async () => {
+  // A syntactically valid GUID is not authority. Without this the restore would
+  // hand counterparty.parties.read to whatever role a tampered file named.
+  writePreimage(preimage())
+  const deps = fakeDeps({ actorRoleIds: ['00000000-2222-3333-4444-555555555555'] })
+  await assert.rejects(
+    () => restoreFromPreimage(TARGET, dir, deps),
+    /is not assigned to group-bootstrap-admin/,
+  )
+  assert.equal(deps.log.commits, 0, 'it granted before proving membership')
+  rmSync(dir, { recursive: true, force: true })
+})
+
+test('a killed process still leaves a restorable, correctly ordered preimage', async () => {
+  // #203 review P1-4. Everything above runs in one process; this one does not.
+  const { spawnSync } = await import('node:child_process')
+  const { readFileSync, existsSync } = await import('node:fs')
+
+  writeFileSync(
+    join(dir, 'fake-sql-state.json'),
+    JSON.stringify({
+      connectionString: TARGET.connectionString,
+      actorId: TARGET.actorId,
+      rows: [{ RoleId: ROLE, PermissionCode: READ_PERMISSION }],
+      actorRoles: [ROLE],
+    }),
+    'utf8',
+  )
+
+  const child = spawnSync(
+    process.execPath,
+    [join('activation', 'killHarness.mjs'), dir, 'kill'],
+    { env: { ...process.env }, encoding: 'utf8' },
+  )
+
+  // It must have died, not returned. A clean exit would mean the kill never
+  // happened and every assertion below would be measuring the wrong thing.
+  assert.notEqual(child.status, 0, `the harness exited cleanly: ${child.stderr}`)
+
+  const order = JSON.parse(readFileSync(join(dir, 'fake-sql-order.json'), 'utf8'))
+  assert.equal(order.deletes.length, 1, 'the child never issued the delete')
+  assert.equal(
+    order.deletes[0].preimageExisted,
+    true,
+    'the DELETE ran before the preimage was durable -- a real kill here would lose it',
+  )
+  assert.equal(order.commits, 1, 'the delete was not committed before the kill')
+
+  // The dead process restored nothing; the file is what survives.
+  assert.equal(existsSync(join(dir, PREIMAGE_FILENAME)), true, 'no durable preimage survived')
+
+  // An INDEPENDENT process (this one) restores from it, and a second restore is
+  // a no-op rather than a conflicting write.
+  const cleanup = fakeDeps()
+  const first = await restoreFromPreimage(TARGET, dir, cleanup)
+  assert.equal(first.restored, 1)
+  const again = await restoreFromPreimage(TARGET, dir, fakeDeps())
+  assert.equal(again.restored, 1)
+  assert.match(cleanup.log.queries.join(' '), /IF NOT EXISTS/)
+
   rmSync(dir, { recursive: true, force: true })
 })

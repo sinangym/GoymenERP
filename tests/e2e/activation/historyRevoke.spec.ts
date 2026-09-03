@@ -220,6 +220,13 @@ test('C01A-HISTORY-REVOKE-forward a revoked grant closes the route and issues no
       { type: 'activation.elapsedMs', description: String(elapsed) },
       { type: 'activation.authorizedResponseUrl', description: read.url },
       { type: 'activation.authorizedResponseStatus', description: String(read.status) },
+      // Run identity, baked in so the artifact cannot be replayed elsewhere.
+      { type: 'activation.testedCommit', description: required('GOYMEN_ERP_C01_E2E_TESTED_COMMIT') },
+      { type: 'activation.runId', description: required('GOYMEN_ERP_C01_E2E_RUN_ID') },
+      {
+        type: 'activation.composeProject',
+        description: required('GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT'),
+      },
     )
     expect(
       elapsed,

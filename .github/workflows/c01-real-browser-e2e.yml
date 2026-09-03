@@ -244,7 +244,7 @@ jobs:
         # is not a gate. The sources are on main now; missing means red.
         run: |
           set -euo pipefail
-          for required in tests/e2e/playwright.activation.config.ts tests/e2e/activation/historyRevoke.spec.ts tests/e2e/activation/revokeGrant.ts tests/e2e/activation/grantStore.mjs tests/e2e/activation/grantCleanup.mjs tests/e2e/activation/validateEvidence.mjs tests/e2e/activation/validateEvidence.test.mjs tests/e2e/activation/grantStore.test.mjs tests/e2e/activation/grantStore.integration.test.mjs; do
+          for required in tests/e2e/playwright.activation.config.ts tests/e2e/activation/historyRevoke.spec.ts tests/e2e/activation/revokeGrant.ts tests/e2e/activation/grantStore.mjs tests/e2e/activation/grantCleanup.mjs tests/e2e/activation/validateEvidence.mjs tests/e2e/activation/validateEvidence.test.mjs tests/e2e/activation/grantStore.test.mjs tests/e2e/activation/grantStore.integration.test.mjs tests/e2e/activation/killHarness.mjs; do
             if [ ! -f "$required" ]; then
               echo "::error::ACTIVATION_SOURCE_MISSING: $required"
               exit 1

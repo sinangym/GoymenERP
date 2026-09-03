@@ -22,6 +22,7 @@ function env({ disposable = 'CONFIRMED', runId = '42', project = 'goymen-c01-42-
   process.env.GOYMEN_ERP_C01_E2E_DISPOSABLE = disposable
   process.env.GOYMEN_ERP_C01_E2E_RUN_ID = runId
   process.env.GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT = project
+  process.env.C01_E2E_SQL_PORT = '11433'
 }
 
 beforeEach(() => env())
@@ -42,12 +43,45 @@ test('a non-loopback server is refused', () => {
   assert.throws(() => assertDisposable(target), /non-loopback server/)
 })
 
-test('a database the run did not declare is refused', () => {
-  // A confirmation token left in the environment must not authorize a database
-  // it was not issued for.
+test('a caller-supplied database that disagrees with the run is refused', () => {
+  // The database is DERIVED from run/attempt now; a caller may only agree with
+  // it. Before, two attacker-controlled inputs were checked against each other.
   assert.throws(
     () => assertDisposable({ ...GOOD, database: 'GoymenErpC01_99_1' }),
-    /but the disposable run declares/,
+    /caller declares database GoymenErpC01_99_1 but run 42\/1 derives/,
+  )
+})
+
+test('a connection string aliasing the target elsewhere is refused', () => {
+  // The mssql driver honours `Data Source` and `Initial Catalog`; the old hand
+  // parser read only `Server`/`Database`, so this string looked local and
+  // connected remote.
+  assert.throws(
+    () =>
+      assertDisposable({
+        ...GOOD,
+        connectionString:
+          `${GOOD.connectionString};Data Source=prod.example.com;Initial Catalog=master`,
+      }),
+    /declares server twice|declares database twice/,
+  )
+})
+
+test('a repeated key is refused rather than resolved', () => {
+  assert.throws(
+    () => assertDisposable({ ...GOOD, connectionString: `${GOOD.connectionString};Database=master` }),
+    /repeats database/,
+  )
+})
+
+test('a connection on the wrong port is refused', () => {
+  assert.throws(
+    () =>
+      assertDisposable({
+        ...GOOD,
+        connectionString: GOOD.connectionString.replace('11433', '1433'),
+      }),
+    /publishes 11433/,
   )
 })
 

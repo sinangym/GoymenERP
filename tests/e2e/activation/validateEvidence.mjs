@@ -1,24 +1,25 @@
 /**
- * The activation evidence gate (#199 P1-1, P1-2).
+ * The activation evidence gate (#199 P1-1/P1-2, #203 review P1-2/P1-3).
  *
- * The version this replaces counted `<testcase` occurrences and looked for the
- * absence of failure/error/skipped tags. Codex was right that this is not a gate:
- * it accepts a renamed case, an extra case, and a report produced by a run of
- * something else entirely. Worse, the workflow made the whole activation block
- * conditional on the source files existing, so DELETING the suite turned the job
- * green. An evidence gate with a skip path is not a gate.
+ * HOW THIS GOT HERE, because each step was a real defect:
  *
- * What is asserted here is the exact shape of one specific run:
+ *  1. The first version counted `<testcase` occurrences and looked for the
+ *     absence of failure/error/skipped tags, and the workflow made the whole
+ *     activation block conditional on the sources existing -- so DELETING the
+ *     suite turned the job green.
+ *  2. Then it matched the case id with `includes`, which accepted
+ *     `RENAMED-<id>-LOOKALIKE`.
+ *  3. Then it was still regex over the raw text, so a `<testcase` written inside
+ *     a comment or a `system-out` CDATA counted, truncated XML parsed fine, and
+ *     a root element declaring `failures="1"` passed while an inner suite said
+ *     zero.
+ *  4. And the report named no run, so an artifact from one run validated
+ *     unchanged in another.
  *
- *   - exactly one testcase, no more and no fewer;
- *   - its name carries the exact case id;
- *   - zero failures, errors and skips, counted from BOTH the suite attributes
- *     and the element bodies, because either alone can be made to lie;
- *   - the timing evidence #199 P1-2 requires, bound to an observed authorized
- *     response rather than to when a row happened to become visible.
- *
- * Playwright emits test annotations as <property> under <properties>; that was
- * verified against @playwright/test 1.62 rather than assumed.
+ * So the text is now actually PARSED, the structure is checked rather than
+ * pattern-matched, and the evidence carries the identity of the run that
+ * produced it. A gate that reads its input differently from the thing that
+ * produced it is not a gate; that lesson cost four rounds.
  */
 
 export const EXPECTED_CASE_ID = 'C01A-HISTORY-REVOKE-forward'
@@ -32,47 +33,228 @@ export const TIMING = {
   status: 'activation.authorizedResponseStatus',
 }
 
+/**
+ * Run identity baked into the evidence itself (#203 review P1-3).
+ *
+ * The report must name the run that produced it, and that name must be the run
+ * doing the checking.
+ */
+export const IDENTITY = {
+  testedCommit: 'activation.testedCommit',
+  runId: 'activation.runId',
+  composeProject: 'activation.composeProject',
+}
+
 class EvidenceError extends Error {}
 
 function fail(code, detail) {
   throw new EvidenceError(`${code}: ${detail}`)
 }
 
-function attr(tag, name) {
-  const match = new RegExp(`\\b${name}="([^"]*)"`).exec(tag)
-  return match === null ? null : match[1]
+function decode(value) {
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
 }
 
-/** Sum a numeric attribute across every element of a tag, absent counting as a lie. */
-function sumAttribute(xml, tagName, attribute) {
-  let total = 0
-  for (const tag of xml.match(new RegExp(`<${tagName}\\b[^>]*>`, 'g')) ?? []) {
-    const raw = attr(tag, attribute)
-    if (raw === null || !/^\d+$/.test(raw)) {
-      fail('ACTIVATION_REPORT_MALFORMED', `<${tagName}> has no numeric ${attribute}`)
-    }
-    total += Number(raw)
+/**
+ * A deliberately small, deliberately strict XML reader.
+ *
+ * It understands exactly what a JUnit report needs and REFUSES everything else,
+ * which is the point: comments and CDATA are consumed and discarded rather than
+ * scanned, so text shaped like a testcase inside them cannot be mistaken for
+ * one. Anything unbalanced, truncated, or trailing the root element throws.
+ *
+ * No dependency, on purpose. Adding an XML parser to this package would change
+ * the pinned lockfile that Codex's package contract validates, which is a
+ * supply-chain conversation this fix does not need to have.
+ */
+export function parseXml(text) {
+  let index = 0
+  const stack = []
+  let root = null
+
+  const skipWhitespace = () => {
+    while (index < text.length && /\s/.test(text[index])) index += 1
   }
-  return total
+  const consume = (token) => {
+    if (!text.startsWith(token, index)) return false
+    index += token.length
+    return true
+  }
+  const consumeUntil = (token, what) => {
+    const end = text.indexOf(token, index)
+    if (end === -1) fail('ACTIVATION_REPORT_MALFORMED', `unterminated ${what}`)
+    const body = text.slice(index, end)
+    index = end + token.length
+    return body
+  }
+
+  skipWhitespace()
+  while (index < text.length) {
+    if (text[index] !== '<') {
+      // Character data between elements. Never inspected for structure.
+      const next = text.indexOf('<', index)
+      index = next === -1 ? text.length : next
+      continue
+    }
+    if (consume('<?')) {
+      consumeUntil('?>', 'processing instruction')
+      continue
+    }
+    if (consume('<!--')) {
+      consumeUntil('-->', 'comment')
+      continue
+    }
+    if (consume('<![CDATA[')) {
+      consumeUntil(']]>', 'CDATA section')
+      continue
+    }
+    if (consume('<!')) {
+      consumeUntil('>', 'declaration')
+      continue
+    }
+    if (consume('</')) {
+      const name = consumeUntil('>', 'closing tag').trim()
+      const open = stack.pop()
+      if (open === undefined || open.name !== name) {
+        fail(
+          'ACTIVATION_REPORT_MALFORMED',
+          `closing tag ${name} does not match ${open === undefined ? '(nothing)' : open.name}`,
+        )
+      }
+      if (stack.length === 0) {
+        // The root closed; nothing but whitespace may follow.
+        skipWhitespace()
+        if (index < text.length) {
+          fail('ACTIVATION_REPORT_MALFORMED', 'content follows the root element')
+        }
+      }
+      continue
+    }
+    if (!consume('<')) fail('ACTIVATION_REPORT_MALFORMED', 'unexpected input')
+
+    const raw = consumeUntil('>', 'element')
+    const selfClosing = raw.endsWith('/')
+    const body = selfClosing ? raw.slice(0, -1) : raw
+    const match = /^([A-Za-z_][\w.:-]*)([\s\S]*)$/.exec(body.trim())
+    if (match === null) fail('ACTIVATION_REPORT_MALFORMED', `unparsable element <${body.trim()}>`)
+    const node = { name: match[1], attrs: {}, children: [] }
+
+    const attributes = /([A-Za-z_][\w.:-]*)\s*=\s*"([^"]*)"/g
+    let attribute
+    while ((attribute = attributes.exec(match[2])) !== null) {
+      if (Object.hasOwn(node.attrs, attribute[1])) {
+        fail('ACTIVATION_REPORT_MALFORMED', `<${node.name}> repeats attribute ${attribute[1]}`)
+      }
+      node.attrs[attribute[1]] = decode(attribute[2])
+    }
+
+    if (stack.length === 0) {
+      if (root !== null) fail('ACTIVATION_REPORT_MALFORMED', 'more than one root element')
+      root = node
+    } else {
+      stack[stack.length - 1].children.push(node)
+    }
+    if (!selfClosing) stack.push(node)
+    else if (stack.length === 0) {
+      skipWhitespace()
+      if (index < text.length) {
+        fail('ACTIVATION_REPORT_MALFORMED', 'content follows the root element')
+      }
+    }
+  }
+
+  if (stack.length > 0) {
+    fail('ACTIVATION_REPORT_MALFORMED', `unclosed <${stack[stack.length - 1].name}>`)
+  }
+  if (root === null) fail('ACTIVATION_REPORT_MALFORMED', 'the report has no root element')
+  return root
 }
 
-export function validateActivationEvidence(xml) {
+function descendants(node, name, found = []) {
+  for (const child of node.children) {
+    if (child.name === name) found.push(child)
+    descendants(child, name, found)
+  }
+  return found
+}
+
+/** Absent counts as a lie, not as zero. */
+function counter(node, attribute) {
+  const raw = node.attrs[attribute]
+  if (raw === undefined || !/^\d+$/.test(raw)) {
+    fail('ACTIVATION_REPORT_MALFORMED', `<${node.name}> has no numeric ${attribute}`)
+  }
+  return Number(raw)
+}
+
+/**
+ * @param xml the report
+ * @param expected the identity THIS run declares; the report must match it
+ */
+export function validateActivationEvidence(xml, expected = null) {
   if (typeof xml !== 'string' || xml.trim() === '') {
     fail('ACTIVATION_REPORT_EMPTY', 'the report is empty')
   }
+  const root = parseXml(xml)
+  if (root.name !== 'testsuites') {
+    fail('ACTIVATION_REPORT_STRUCTURE', `the root element is <${root.name}>, expected <testsuites>`)
+  }
 
-  const cases = xml.match(/<testcase\b[^>]*>/g) ?? []
+  const suites = root.children.filter((child) => child.name === 'testsuite')
+  if (suites.length === 0) {
+    fail('ACTIVATION_REPORT_STRUCTURE', 'the root carries no <testsuite>')
+  }
+  for (const child of root.children) {
+    if (child.name !== 'testsuite') {
+      fail('ACTIVATION_REPORT_STRUCTURE', `unexpected <${child.name}> under the root`)
+    }
+  }
+
+  // Counters on the ROOT as well as each suite. Checking only one lets the other
+  // declare a failure the gate never sees.
+  for (const node of [root, ...suites]) {
+    for (const attribute of ['failures', 'errors', 'skipped']) {
+      const value = counter(node, attribute)
+      if (value !== 0) {
+        fail('ACTIVATION_NOT_CLEAN', `<${node.name}> declares ${attribute}=${value}`)
+      }
+    }
+  }
+  const rootTests = counter(root, 'tests')
+  if (rootTests !== 1) {
+    fail('ACTIVATION_RETRY_OR_EXTRA', `the root declares tests=${rootTests}, expected 1`)
+  }
+  const suiteTests = suites.reduce((total, suite) => total + counter(suite, 'tests'), 0)
+  if (suiteTests !== 1) {
+    fail('ACTIVATION_RETRY_OR_EXTRA', `the suites declare tests=${suiteTests}, expected 1`)
+  }
+
+  // Structural, not textual: a <failure> anywhere in the tree is real, and one
+  // written inside a comment or CDATA never became a node at all.
+  for (const tag of ['failure', 'error', 'skipped']) {
+    if (descendants(root, tag).length > 0) {
+      fail('ACTIVATION_NOT_CLEAN', `the report contains a <${tag}> element`)
+    }
+  }
+
+  const cases = descendants(root, 'testcase')
   if (cases.length !== 1) {
     fail('ACTIVATION_CASE_COUNT', `expected exactly 1 testcase, found ${cases.length}`)
   }
+  const testcase = cases[0]
+  if (!suites.some((suite) => suite.children.includes(testcase))) {
+    fail('ACTIVATION_REPORT_STRUCTURE', 'the testcase is not a direct child of a testsuite')
+  }
 
   // EXACT leading token, not a substring. `includes` accepted
-  // `RENAMED-C01A-HISTORY-REVOKE-forward-LOOKALIKE`, so the rename mutation
-  // #199 P1-1 asked to be locked was not actually locked -- Codex found it.
-  // Playwright names a testcase `<case id> <title>`, so the id is the first
-  // whitespace-delimited token and nothing else.
-  const name = attr(cases[0], 'name')
-  const leading = name === null ? null : name.trim().split(/\s+/)[0]
+  // `RENAMED-C01A-HISTORY-REVOKE-forward-LOOKALIKE`.
+  const name = testcase.attrs.name
+  const leading = typeof name === 'string' ? name.trim().split(/\s+/)[0] : null
   if (leading !== EXPECTED_CASE_ID) {
     fail(
       'ACTIVATION_CASE_IDENTITY',
@@ -80,69 +262,81 @@ export function validateActivationEvidence(xml) {
     )
   }
 
-  // Both sources. A body-only check misses a suite that declares failures it did
-  // not inline; an attribute-only check misses an inlined <failure>.
-  for (const [tag, attribute] of [
-    ['failure', 'failures'],
-    ['error', 'errors'],
-    ['skipped', 'skipped'],
-  ]) {
-    if (new RegExp(`<${tag}\\b`).test(xml)) {
-      fail('ACTIVATION_NOT_CLEAN', `report contains <${tag}>`)
-    }
-    const declared = sumAttribute(xml, 'testsuite', attribute)
-    if (declared !== 0) {
-      fail('ACTIVATION_NOT_CLEAN', `testsuite declares ${attribute}=${declared}`)
-    }
-  }
-
-  // Retries surface as additional testcases, so the count check above already
-  // rejects them; this names the condition rather than leaving it implied.
-  const suiteTests = sumAttribute(xml, 'testsuite', 'tests')
-  if (suiteTests !== 1) {
-    fail('ACTIVATION_RETRY_OR_EXTRA', `testsuite declares tests=${suiteTests}, expected 1`)
-  }
-
+  // Properties must be owned by THAT testcase, not merely present somewhere.
   const properties = new Map()
-  for (const tag of xml.match(/<property\b[^>]*>/g) ?? []) {
-    const key = attr(tag, 'name')
-    if (key !== null) properties.set(key, attr(tag, 'value'))
+  for (const container of testcase.children.filter((child) => child.name === 'properties')) {
+    for (const property of container.children) {
+      if (property.name !== 'property') {
+        fail('ACTIVATION_REPORT_STRUCTURE', `unexpected <${property.name}> under <properties>`)
+      }
+      const key = property.attrs.name
+      if (typeof key !== 'string' || key === '') {
+        fail('ACTIVATION_REPORT_MALFORMED', 'a <property> has no name')
+      }
+      if (properties.has(key)) {
+        fail('ACTIVATION_REPORT_MALFORMED', `<properties> repeats ${key}`)
+      }
+      properties.set(key, property.attrs.value ?? null)
+    }
   }
 
   for (const key of Object.values(TIMING)) {
-    if (!properties.has(key) || properties.get(key) === null || properties.get(key) === '') {
+    const value = properties.get(key)
+    if (value === undefined || value === null || value === '') {
       fail('ACTIVATION_TIMING_MISSING', `the report carries no ${key}`)
     }
   }
 
-  const elapsed = Number(properties.get(TIMING.elapsed))
-  const authorizedAt = Number(properties.get(TIMING.authorizedAt))
-  const returnAt = Number(properties.get(TIMING.returnAt))
-  if (!Number.isFinite(elapsed) || !Number.isFinite(authorizedAt) || !Number.isFinite(returnAt)) {
-    fail('ACTIVATION_TIMING_MALFORMED', 'a timing value is not a number')
+  // Strict formats. A timing value that is merely "a number" invites a float, an
+  // exponent or a sign that reads differently downstream.
+  const integer = (key) => {
+    const raw = properties.get(key)
+    if (!/^\d+$/.test(raw)) {
+      fail('ACTIVATION_TIMING_MALFORMED', `${key} is ${raw}, expected a non-negative integer`)
+    }
+    return Number(raw)
   }
+  const authorizedAt = integer(TIMING.authorizedAt)
+  const returnAt = integer(TIMING.returnAt)
+  const elapsed = integer(TIMING.elapsed)
   if (elapsed !== returnAt - authorizedAt) {
     fail(
       'ACTIVATION_TIMING_INCONSISTENT',
       `elapsed ${elapsed} does not equal ${returnAt} - ${authorizedAt}`,
     )
   }
-  if (elapsed < 0 || elapsed >= STALE_WINDOW_MS) {
+  if (elapsed >= STALE_WINDOW_MS) {
     fail(
       'ACTIVATION_OUTSIDE_STALE_WINDOW',
       `the return landed ${elapsed}ms after the authorized response`,
     )
   }
 
-  const status = properties.get(TIMING.status)
-  if (status !== '200') {
-    fail('ACTIVATION_RESPONSE_NOT_OK', `the bound authorized response was ${status}`)
+  for (const key of Object.values(IDENTITY)) {
+    const value = properties.get(key)
+    if (value === undefined || value === null || value === '') {
+      fail('ACTIVATION_IDENTITY_MISSING', `the report carries no ${key}`)
+    }
+  }
+  if (expected !== null) {
+    for (const [field, key] of Object.entries(IDENTITY)) {
+      if (properties.get(key) !== expected[field]) {
+        fail(
+          'ACTIVATION_IDENTITY_MISMATCH',
+          `${key} is ${properties.get(key)} but this run declares ${expected[field]}`,
+        )
+      }
+    }
+  }
+
+  if (properties.get(TIMING.status) !== '200') {
+    fail('ACTIVATION_RESPONSE_NOT_OK', `the bound authorized response was ${properties.get(TIMING.status)}`)
   }
   if (!/\/api\/v1\/counterparties/.test(properties.get(TIMING.url) ?? '')) {
     fail('ACTIVATION_RESPONSE_UNBOUND', 'the timing is not bound to a counterparties read')
   }
 
-  return { caseName: name, elapsed, authorizedAt, returnAt }
+  return { caseName: name, elapsed, authorizedAt, returnAt, properties }
 }
 
 if (process.argv[1] && process.argv[1].endsWith('validateEvidence.mjs')) {
@@ -159,8 +353,20 @@ if (process.argv[1] && process.argv[1].endsWith('validateEvidence.mjs')) {
     console.error(`::error::ACTIVATION_JUNIT_MISSING: ${target}`)
     process.exit(1)
   }
+  const expect = (name) => {
+    const value = process.env[name]
+    if (!value || !value.trim()) {
+      console.error(`::error::ACTIVATION_EXPECTED_IDENTITY_MISSING: ${name}`)
+      process.exit(1)
+    }
+    return value.trim()
+  }
   try {
-    const result = validateActivationEvidence(xml)
+    const result = validateActivationEvidence(xml, {
+      testedCommit: expect('GOYMEN_ERP_C01_E2E_TESTED_COMMIT'),
+      runId: expect('GOYMEN_ERP_C01_E2E_RUN_ID'),
+      composeProject: expect('GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT'),
+    })
     console.log(
       `C-01A activation evidence: ${result.caseName} — 1 case, skip=0, ` +
         `${result.elapsed}ms after the authorized response`,
