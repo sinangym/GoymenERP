@@ -334,22 +334,27 @@ test('B-C01-004 sorting is done by the server, and focus survives it', async ({
     return found as URLSearchParams
   }
 
+  const QUERY = 'CAR-00001'
   const search = page.getByRole('searchbox', { name: 'Ara' })
   await tabTo(page, search, 'the search box')
   await expectVisibleFocus(search, 'the search box')
   await actuate(
     'typing in search',
     async () => {
-      await page.keyboard.type('CAR-00001')
+      await page.keyboard.type(QUERY)
     },
-    (params) => params.get('q') === 'CAR-00001',
+    (params) => params.get('q') === QUERY,
   )
   await expectVisibleFocus(search, 'the search box after its own result landed')
   await actuate(
     'clearing search',
     async () => {
-      await page.keyboard.press('Control+A')
-      await page.keyboard.press('Backspace')
+      // Backspace per character, not Control+A: the select-all did not take in
+      // the real browser, so exactly one character was deleted and the box never
+      // emptied. Still keyboard-only, and deterministic.
+      for (let index = 0; index < QUERY.length; index += 1) {
+        await page.keyboard.press('Backspace')
+      }
     },
     (params) => (params.get('q') ?? '') === '',
   )
