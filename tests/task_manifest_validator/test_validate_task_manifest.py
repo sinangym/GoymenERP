@@ -6,7 +6,7 @@ import json
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -81,10 +81,166 @@ class TaskManifestValidatorTests(unittest.TestCase):
 
         self.assert_error_contains("Missing task manifest")
 
+    def test_repository_root_must_be_a_directory(self) -> None:
+        repository_file = self.root / "not-a-repository"
+        repository_file.write_text("not a directory", encoding="utf-8")
+
+        errors = validate_repository(repository_file)
+
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("Repository root must be a directory", errors[0])
+
+    def test_symlink_repository_root_is_rejected(self) -> None:
+        symlink_root = self.root.parent / f"{self.root.name}-symlink"
+        try:
+            symlink_root.symlink_to(self.root, target_is_directory=True)
+        except OSError as exc:
+            self.skipTest(f"Directory symlinks are unavailable: {exc}")
+
+        try:
+            errors = validate_repository(symlink_root)
+        finally:
+            symlink_root.unlink(missing_ok=True)
+
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("must not be a symlink", errors[0])
+
+    def test_manifest_must_resolve_to_a_regular_file(self) -> None:
+        self.manifest_path.unlink()
+        self.manifest_path.mkdir()
+
+        self.assert_error_contains("must be a regular file")
+
+    def test_manifest_symlink_outside_repository_root_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as outside_directory:
+            outside_manifest = Path(outside_directory) / "task_manifest.json"
+            outside_manifest.write_text(
+                '{"tasks":[{"id":"ERP-001","depends_on":[]}]}\n',
+                encoding="utf-8",
+            )
+            self.manifest_path.unlink()
+            try:
+                self.manifest_path.symlink_to(outside_manifest)
+            except OSError as exc:
+                self.skipTest(f"File symlinks are unavailable: {exc}")
+
+            self.assert_error_contains("resolves outside repository root")
+
+    def test_manifest_symlink_to_regular_file_inside_root_is_rejected(self) -> None:
+        alternate_manifest = self.manifest_path.parent / "alternate_manifest.json"
+        alternate_manifest.write_text(
+            '{"tasks":[{"id":"ERP-001","depends_on":[]}]}\n',
+            encoding="utf-8",
+        )
+        self.manifest_path.unlink()
+        try:
+            self.manifest_path.symlink_to(alternate_manifest)
+        except OSError as exc:
+            self.skipTest(f"File symlinks are unavailable: {exc}")
+
+        self.assert_error_contains("must be a regular file")
+
+    def test_invalid_utf8_is_rejected_deterministically(self) -> None:
+        self.manifest_path.write_bytes(b'{"tasks":[\xff]}\n')
+
+        errors = validate_repository(self.root)
+
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("Task manifest is not valid UTF-8", errors[0])
+
+    def test_utf8_bom_is_rejected_deterministically(self) -> None:
+        self.manifest_path.write_bytes(
+            b"\xef\xbb\xbf" + b'{"tasks":[{"id":"ERP-001","depends_on":[]}]}\n'
+        )
+
+        errors = validate_repository(self.root)
+
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("must not contain a UTF-8 BOM", errors[0])
+
     def test_invalid_json_is_rejected(self) -> None:
         self.manifest_path.write_text('{"tasks": [', encoding="utf-8")
 
         self.assert_error_contains("Invalid JSON in task manifest")
+
+    def test_json_recursion_error_is_a_controlled_validation_failure(self) -> None:
+        with mock.patch.object(
+            VALIDATOR_MODULE.json,
+            "loads",
+            side_effect=RecursionError("adversarial nesting"),
+        ):
+            errors = validate_repository(self.root)
+
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("JSON nesting exceeds parser capacity", errors[0])
+
+    def test_deeply_nested_json_is_a_controlled_validation_failure(self) -> None:
+        nesting_depth = sys.getrecursionlimit() * 5
+        self.manifest_path.write_text(
+            '{"tasks":' + ("[" * nesting_depth) + ("]" * nesting_depth) + "}\n",
+            encoding="utf-8",
+        )
+
+        errors = validate_repository(self.root)
+
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("JSON nesting exceeds parser capacity", errors[0])
+
+    def test_json_integer_limit_value_error_is_a_controlled_failure(self) -> None:
+        with mock.patch.object(
+            VALIDATOR_MODULE.json,
+            "loads",
+            side_effect=ValueError("integer string conversion limit exceeded"),
+        ):
+            errors = validate_repository(self.root)
+
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("JSON numeric value exceeds parser capacity", errors[0])
+
+    def test_python_integer_digit_limit_is_a_controlled_validation_failure(
+        self,
+    ) -> None:
+        get_limit = getattr(sys, "get_int_max_str_digits", None)
+        if get_limit is None or get_limit() == 0:
+            self.skipTest("Python integer digit limiting is disabled")
+
+        digit_count = get_limit() + 1
+        self.manifest_path.write_text(
+            '{"tasks":[{"id":"ERP-001","depends_on":[]}],"value":'
+            + ("1" * digit_count)
+            + "}\n",
+            encoding="utf-8",
+        )
+
+        errors = validate_repository(self.root)
+
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("JSON numeric value exceeds parser capacity", errors[0])
+
+    def test_cli_returns_nonzero_for_parser_capacity_failures(self) -> None:
+        cases = (
+            (
+                RecursionError("adversarial nesting"),
+                "JSON nesting exceeds parser capacity",
+            ),
+            (
+                ValueError("integer string conversion limit exceeded"),
+                "JSON numeric value exceeds parser capacity",
+            ),
+        )
+        for exception, expected_diagnostic in cases:
+            with self.subTest(exception=type(exception).__name__):
+                standard_error = io.StringIO()
+                with mock.patch.object(
+                    VALIDATOR_MODULE.json,
+                    "loads",
+                    side_effect=exception,
+                ):
+                    with redirect_stderr(standard_error):
+                        exit_code = main(["--root", str(self.root)])
+
+                self.assertEqual(1, exit_code)
+                self.assertIn(expected_diagnostic, standard_error.getvalue())
 
     def test_duplicate_json_object_key_is_rejected(self) -> None:
         self.manifest_path.write_text(
@@ -182,6 +338,65 @@ class TaskManifestValidatorTests(unittest.TestCase):
 
         self.assert_error_contains("depends on unknown task 'ERP-404'")
 
+    def test_control_characters_in_read_errors_are_escaped(self) -> None:
+        with mock.patch.object(
+            Path,
+            "read_bytes",
+            side_effect=OSError("read failed\r\n- FORGED\t\x1b"),
+        ):
+            errors = validate_repository(self.root)
+
+        self.assertEqual(1, len(errors), errors)
+        self.assertNotIn("\r", errors[0])
+        self.assertNotIn("\n", errors[0])
+        self.assertNotIn("\t", errors[0])
+        self.assertNotIn("\x1b", errors[0])
+        self.assertIn(r"read failed\r\n- FORGED\t\x1b", errors[0])
+
+    def test_format_control_characters_in_diagnostics_are_escaped(self) -> None:
+        hostile_dependency = "ERP-404\u202eFORGED\u2028NEXT"
+        self._write_manifest(
+            {
+                "tasks": [
+                    {"id": "ERP-001", "depends_on": [hostile_dependency]}
+                ]
+            }
+        )
+
+        errors = validate_repository(self.root)
+
+        self.assertTrue(errors)
+        self.assertTrue(
+            all("\u202e" not in error and "\u2028" not in error for error in errors),
+            errors,
+        )
+        self.assertTrue(
+            any(r"\u202eFORGED\u2028NEXT" in error for error in errors),
+            errors,
+        )
+
+    def test_control_characters_in_paths_are_escaped(self) -> None:
+        hostile_root = self.root / "repo\r\n- FORGED"
+
+        errors = validate_repository(hostile_root)
+
+        self.assertEqual(1, len(errors), errors)
+        self.assertNotIn("\r", errors[0])
+        self.assertNotIn("\n", errors[0])
+        self.assertIn(r"repo\r\n- FORGED", errors[0])
+
+    def test_cli_path_resolution_failure_is_controlled_and_log_safe(self) -> None:
+        hostile_root = self.root / "repo\r\n- FORGED"
+        standard_error = io.StringIO()
+
+        with redirect_stderr(standard_error):
+            exit_code = main(["--root", str(hostile_root)])
+
+        rendered_error = standard_error.getvalue()
+        self.assertEqual(1, exit_code)
+        self.assertEqual(2, len(rendered_error.splitlines()), rendered_error)
+        self.assertIn(r"repo\r\n- FORGED", rendered_error)
+
     def test_self_dependency_is_rejected(self) -> None:
         self._write_manifest(
             {"tasks": [{"id": "ERP-001", "depends_on": ["ERP-001"]}]}
@@ -215,6 +430,27 @@ class TaskManifestValidatorTests(unittest.TestCase):
             "Dependency cycle detected: ERP-001 -> ERP-002 -> ERP-003 -> ERP-001"
         )
 
+    def test_cycle_diagnostic_escapes_control_characters(self) -> None:
+        first_task_id = "ERP-1\nFORGED\x1bEND"
+        second_task_id = "ERP-2\r\t\u202e\u2028END"
+        self._write_manifest(
+            {
+                "tasks": [
+                    {"id": first_task_id, "depends_on": [second_task_id]},
+                    {"id": second_task_id, "depends_on": [first_task_id]},
+                ]
+            }
+        )
+
+        errors = validate_repository(self.root)
+
+        self.assertEqual(1, len(errors), errors)
+        self.assertTrue(errors[0].startswith("Dependency cycle detected:"), errors)
+        for control in ("\n", "\r", "\t", "\x1b", "\u202e", "\u2028"):
+            self.assertNotIn(control, errors[0])
+        self.assertIn(r"ERP-1\nFORGED\x1bEND", errors[0])
+        self.assertIn(r"ERP-2\r\t\u202e\u2028END", errors[0])
+
     def test_deep_acyclic_chain_is_validated_without_recursion_failure(self) -> None:
         tasks = [{"id": "ERP-0000", "depends_on": []}]
         for index in range(1, 2500):
@@ -229,19 +465,19 @@ class TaskManifestValidatorTests(unittest.TestCase):
         self.assertEqual([], validate_repository(self.root))
 
     def test_cli_reads_once_and_reports_validated_snapshot_statistics(self) -> None:
-        original_read_text = Path.read_text
+        original_read_bytes = Path.read_bytes
         manifest_reads = 0
 
-        def read_text_once(path: Path, *args: Any, **kwargs: Any) -> str:
+        def read_bytes_once(path: Path, *args: Any, **kwargs: Any) -> bytes:
             nonlocal manifest_reads
             if path.resolve() == self.manifest_path.resolve():
                 manifest_reads += 1
                 if manifest_reads > 1:
                     raise AssertionError("Manifest was read more than once")
-            return original_read_text(path, *args, **kwargs)
+            return original_read_bytes(path, *args, **kwargs)
 
         output = io.StringIO()
-        with mock.patch.object(Path, "read_text", new=read_text_once):
+        with mock.patch.object(Path, "read_bytes", new=read_bytes_once):
             with redirect_stdout(output):
                 exit_code = main(["--root", str(self.root)])
 
