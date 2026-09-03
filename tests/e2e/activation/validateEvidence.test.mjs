@@ -81,3 +81,25 @@ test('a non-200 bound response is refused', () => {
     'name="activation.authorizedResponseStatus" value="403"')
   assert.throws(() => validateActivationEvidence(report({ props })), /ACTIVATION_RESPONSE_NOT_OK/)
 })
+
+test('a name that merely CONTAINS the case id is refused', () => {
+  // The exact mutation Codex named: `includes` accepted this.
+  assert.throws(
+    () => validateActivationEvidence(report({ name: `RENAMED-${EXPECTED_CASE_ID}-LOOKALIKE runs` })),
+    /ACTIVATION_CASE_IDENTITY/,
+  )
+})
+
+test('a case id with a suffix glued on is refused', () => {
+  assert.throws(
+    () => validateActivationEvidence(report({ name: `${EXPECTED_CASE_ID}-LOOKALIKE runs` })),
+    /ACTIVATION_CASE_IDENTITY/,
+  )
+})
+
+test('a case id used as a later word is refused', () => {
+  assert.throws(
+    () => validateActivationEvidence(report({ name: `something ${EXPECTED_CASE_ID}` })),
+    /ACTIVATION_CASE_IDENTITY/,
+  )
+})

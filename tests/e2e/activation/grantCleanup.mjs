@@ -1,13 +1,19 @@
 /**
  * Out-of-process grant cleanup and verification (#199 P1-3).
  *
- * The workflow calls `restore` from an `always()` step and `verify` from the
- * post-browser check. Both read the durable preimage rather than any in-memory
- * state, which is the whole point: if the test process was killed, its `finally`
- * never ran and nothing in memory survives to tell us what to put back.
+ * The workflow calls `restore` from an `always()` step and `verify` from a step
+ * that also runs on `always()`, because the kill/failure path is exactly the one
+ * #199 asked to be proven -- verifying only on the happy path proves the case
+ * that never needed proving.
  *
- * `restore` is idempotent, so running it after a clean test -- which already
- * restored -- is a no-op rather than a second, conflicting write.
+ * Both read the durable preimage rather than any in-memory state: if the test
+ * process was killed, its `finally` never ran and nothing in memory survives to
+ * say what to put back. `restore` is idempotent, so running it after a clean
+ * test -- which already restored -- is a no-op, not a second conflicting write.
+ *
+ * Every identity the revoke path required is required here too. This path
+ * INSERTs, and Codex was right that guarding only the DELETE left a wrong
+ * connection string able to write preimage rows into another database.
  */
 
 import { restoreFromPreimage, verifyAgainstPreimage } from './grantStore.mjs'
@@ -27,16 +33,19 @@ if (command !== 'restore' && command !== 'verify') {
   process.exit(2)
 }
 
-const connectionString = required('ACTIVATION_E2E_SQL_CONNECTION')
+const target = {
+  connectionString: required('ACTIVATION_E2E_SQL_CONNECTION'),
+  database: required('ACTIVATION_E2E_DATABASE'),
+  actorId: required('ACTIVATION_E2E_ACTOR'),
+}
 const artifactsDir = required('ACTIVATION_E2E_ARTIFACTS_DIR')
 
 try {
   if (command === 'restore') {
-    const result = await restoreFromPreimage(connectionString, artifactsDir)
+    const result = await restoreFromPreimage(target, artifactsDir)
     console.log(`activation grant cleanup: ${result.reason} (${result.restored} row(s))`)
   } else {
-    const actorId = required('ACTIVATION_E2E_ACTOR')
-    const result = await verifyAgainstPreimage(connectionString, artifactsDir, actorId)
+    const result = await verifyAgainstPreimage(target, artifactsDir)
     console.log(`activation grant verification: ${result.reason} (${result.verified} row(s))`)
   }
   process.exit(0)

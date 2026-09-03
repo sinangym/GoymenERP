@@ -8,26 +8,33 @@
  * matching what the test did. So the implementation lives here, in plain ESM,
  * and both the spec and the CLI import it.
  *
- * WHAT CHANGED AFTER #199 P1-3. The previous version held the preimage only in
- * process memory and restored it in a `finally`. If the process was killed the
- * `finally` never ran, the outer cleanup only did `docker compose down -v`, and
- * nothing ever checked that the grant came back. The bindings were also weaker
- * than the API's own: loopback plus database name, but nothing tying the
- * mutation to THIS run.
+ * WHAT CHANGED AFTER #199 P1-3. The version before this held the preimage only
+ * in process memory and restored it in a `finally`. Kill the process and the
+ * `finally` never runs; the outer cleanup only did `docker compose down -v`, so
+ * a revoked grant vanished with the stack instead of being put back and checked.
  *
- * Five bindings now stand between a caller and a DELETE:
+ * WHAT CHANGED AFTER CODEX'S REVIEW OF #203. The bindings guarded the DELETE
+ * and nothing else. `restoreFromPreimage` INSERTs into `RolePermissions`, and it
+ * checked only that the preimage named this compose project -- no confirmation
+ * token, no loopback check, no database check -- so a wrong or corrupted
+ * `ACTIVATION_E2E_SQL_CONNECTION` could have written preimage rows into another
+ * database entirely. That is the same hole I had already closed on the revoke
+ * path and failed to carry across. Every entry point now runs the SAME validator
+ * BEFORE it connects, and the preimage must additionally match the target it is
+ * being applied to.
+ *
+ * Six bindings now stand between a caller and any write:
  *
  *  1. `GOYMEN_ERP_C01_E2E_DISPOSABLE` must literally be `CONFIRMED`.
  *  2. The server must be on loopback.
  *  3. The database name must match the disposable run's.
  *  4. The compose project must be `goymen-c01-<runId>-<attempt>` -- the same
  *     envelope `C01E2eShellCapabilityActivation` validates before it will serve
- *     the overridden capability. A confirmation token left in the environment
- *     therefore cannot authorize a mutation against a different run.
+ *     the overridden capability.
  *  5. Only the roles the test actor actually holds are touched.
- *
- * The preimage is written OUTSIDE the process before the first DELETE, redacted
- * to role ids and permission codes -- never the connection string.
+ *  6. On restore and verify, the preimage's own run/attempt/project/database/
+ *     actor must equal the target's, and its rows must carry only the expected
+ *     permission code.
  */
 
 import sql from 'mssql'
@@ -39,6 +46,14 @@ export const PREIMAGE_FILENAME = 'activation-grant-preimage.json'
 const DISPOSABLE_TOKEN = 'CONFIRMED'
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1'])
 const NUMERIC = /^[0-9]+$/
+const GUID = /^[0-9a-fA-F-]{36}$/
+
+/** Injectable so the failure paths can be tested without a live SQL Server. */
+const defaultDeps = {
+  createPool: (connectionString) => new sql.ConnectionPool(connectionString).connect(),
+  Transaction: sql.Transaction,
+  Request: sql.Request,
+}
 
 function parse(connectionString) {
   const parts = new Map()
@@ -78,6 +93,12 @@ export function runIdentity() {
   return { runId, attempt, composeProject }
 }
 
+/**
+ * The one validator. Every entry point that writes calls this before it opens a
+ * connection -- a binding that only fails after connecting has already told a
+ * caller the server is reachable, and one that fails after the first write is
+ * not a binding at all.
+ */
 export function assertDisposable(target) {
   const confirmation = process.env.GOYMEN_ERP_C01_E2E_DISPOSABLE
   const trimmed = typeof confirmation === 'string' ? confirmation.trim() : undefined
@@ -86,6 +107,15 @@ export function assertDisposable(target) {
       `refusing to mutate grants: GOYMEN_ERP_C01_E2E_DISPOSABLE is ${trimmed ?? 'unset'}, ` +
         `not ${DISPOSABLE_TOKEN}. Only the disposable compose stack sets this.`,
     )
+  }
+  if (!target || typeof target.connectionString !== 'string' || target.connectionString === '') {
+    throw new Error('refusing to mutate grants: no connection string')
+  }
+  if (typeof target.database !== 'string' || target.database === '') {
+    throw new Error('refusing to mutate grants: no target database')
+  }
+  if (typeof target.actorId !== 'string' || target.actorId === '') {
+    throw new Error('refusing to mutate grants: no target actor')
   }
   const parts = parse(target.connectionString)
   const server = (parts.get('server') ?? '').split(',')[0].trim()
@@ -102,8 +132,49 @@ export function assertDisposable(target) {
   return runIdentity()
 }
 
-async function connect(connectionString) {
-  return new sql.ConnectionPool(connectionString).connect()
+/**
+ * A preimage may only be applied to the exact target it was taken from.
+ *
+ * Checked before connecting, and before anything from the file reaches SQL: the
+ * file is durable state a previous process wrote, so it is input, not truth.
+ */
+export function assertPreimageMatches(preimage, target, identity) {
+  if (preimage === null || typeof preimage !== 'object') {
+    throw new Error('refusing to apply a preimage that is not an object')
+  }
+  const expectations = [
+    ['runId', identity.runId],
+    ['attempt', identity.attempt],
+    ['composeProject', identity.composeProject],
+    ['database', target.database],
+    ['actorId', target.actorId],
+  ]
+  for (const [field, expected] of expectations) {
+    if (preimage[field] !== expected) {
+      throw new Error(
+        `refusing to apply a preimage from a different target: ${field} is ` +
+          `${String(preimage[field])}, this run declares ${expected}`,
+      )
+    }
+  }
+  if (!Array.isArray(preimage.rows) || preimage.rows.length === 0) {
+    throw new Error('refusing to apply a preimage with no rows')
+  }
+  for (const row of preimage.rows) {
+    if (row === null || typeof row !== 'object') {
+      throw new Error('refusing to apply a preimage row that is not an object')
+    }
+    if (typeof row.RoleId !== 'string' || !GUID.test(row.RoleId)) {
+      throw new Error(`refusing to apply a preimage row with role id ${String(row.RoleId)}`)
+    }
+    if (row.PermissionCode !== READ_PERMISSION) {
+      throw new Error(
+        `refusing to apply a preimage row for ${String(row.PermissionCode)}; this tool only ` +
+          `handles ${READ_PERMISSION}`,
+      )
+    }
+  }
+  return preimage
 }
 
 function scopedQuery(pool, actorId) {
@@ -123,13 +194,13 @@ function preimagePath(artifactsDir) {
   return `${artifactsDir}/${PREIMAGE_FILENAME}`
 }
 
-/** Idempotent, and atomic. Safe to call after a killed process, and safe twice. */
-async function applyRestore(pool, rows) {
-  const transaction = new sql.Transaction(pool)
+/** Idempotent, and atomic. Safe after a killed process, and safe twice. */
+async function applyRestore(pool, rows, deps) {
+  const transaction = new deps.Transaction(pool)
   await transaction.begin()
   try {
     for (const row of rows) {
-      await new sql.Request(transaction)
+      await new deps.Request(transaction)
         .input('roleId', sql.UniqueIdentifier, row.RoleId)
         .input('code', sql.NVarChar, row.PermissionCode)
         .query(
@@ -153,10 +224,10 @@ async function applyRestore(pool, rows) {
  * one transaction: a half-applied revoke is not a state anything downstream has
  * to reason about.
  */
-export async function revokeReadGrant(target) {
+export async function revokeReadGrant(target, deps = defaultDeps) {
   const identity = assertDisposable(target)
   const artifactsDir = target.artifactsDir ?? required('ACTIVATION_E2E_ARTIFACTS_DIR')
-  const pool = await connect(target.connectionString)
+  const pool = await deps.createPool(target.connectionString)
   try {
     const scoped = await scopedQuery(pool, target.actorId)
     const removed = scoped.recordset
@@ -191,11 +262,11 @@ export async function revokeReadGrant(target) {
       'utf8',
     )
 
-    const transaction = new sql.Transaction(pool)
+    const transaction = new deps.Transaction(pool)
     await transaction.begin()
     try {
       for (const row of removed) {
-        await new sql.Request(transaction)
+        await new deps.Request(transaction)
           .input('roleId', sql.UniqueIdentifier, row.RoleId)
           .input('code', sql.NVarChar, row.PermissionCode)
           .query(
@@ -204,6 +275,8 @@ export async function revokeReadGrant(target) {
       }
       await transaction.commit()
     } catch (error) {
+      // Rollback, so a DELETE that failed halfway leaves the grant whole rather
+      // than partially removed with a preimage claiming otherwise.
       await transaction.rollback()
       throw error
     }
@@ -211,7 +284,7 @@ export async function revokeReadGrant(target) {
     return {
       removed,
       restore: async () => {
-        await applyRestore(pool, removed)
+        await applyRestore(pool, removed, deps)
       },
     }
   } catch (error) {
@@ -226,22 +299,20 @@ export function readPreimage(artifactsDir) {
   return JSON.parse(readFileSync(path, 'utf8'))
 }
 
-/** Restore from the durable preimage. Used by the workflow's always() cleanup. */
-export async function restoreFromPreimage(connectionString, artifactsDir) {
+/**
+ * Restore from the durable preimage. Used by the workflow's always() cleanup,
+ * and safe to call after a clean run that already restored.
+ */
+export async function restoreFromPreimage(target, artifactsDir, deps = defaultDeps) {
+  const identity = assertDisposable(target)
   const preimage = readPreimage(artifactsDir)
   if (preimage === null) {
     return { restored: 0, reason: 'no preimage -- nothing was revoked' }
   }
-  const identity = runIdentity()
-  if (preimage.composeProject !== identity.composeProject) {
-    throw new Error(
-      `refusing to restore: preimage belongs to ${preimage.composeProject}, this run is ` +
-        `${identity.composeProject}`,
-    )
-  }
-  const pool = await connect(connectionString)
+  assertPreimageMatches(preimage, target, identity)
+  const pool = await deps.createPool(target.connectionString)
   try {
-    await applyRestore(pool, preimage.rows)
+    await applyRestore(pool, preimage.rows, deps)
     return { restored: preimage.rows.length, reason: 'restored from preimage' }
   } finally {
     await pool.close()
@@ -251,17 +322,19 @@ export async function restoreFromPreimage(connectionString, artifactsDir) {
 /**
  * Exact equality against the preimage.
  *
- * "The rows are back" is not the claim; "the rows are exactly what they were" is.
- * A restore that left one missing, or added one, fails here.
+ * "The rows are back" is not the claim; "the rows are exactly what they were"
+ * is. A restore that left one missing, or added one, fails here.
  */
-export async function verifyAgainstPreimage(connectionString, artifactsDir, actorId) {
+export async function verifyAgainstPreimage(target, artifactsDir, deps = defaultDeps) {
+  const identity = assertDisposable(target)
   const preimage = readPreimage(artifactsDir)
   if (preimage === null) {
     return { verified: 0, reason: 'no preimage -- nothing was revoked' }
   }
-  const pool = await connect(connectionString)
+  assertPreimageMatches(preimage, target, identity)
+  const pool = await deps.createPool(target.connectionString)
   try {
-    const scoped = await scopedQuery(pool, actorId)
+    const scoped = await scopedQuery(pool, target.actorId)
     const key = (row) => `${String(row.RoleId).toLowerCase()}|${row.PermissionCode}`
     const now = new Set(scoped.recordset.map(key))
     const before = new Set(preimage.rows.map(key))

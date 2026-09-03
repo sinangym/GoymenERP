@@ -14,6 +14,7 @@ export {
   READ_PERMISSION,
   PREIMAGE_FILENAME,
   assertDisposable,
+  assertPreimageMatches,
   revokeReadGrant,
   readPreimage,
   restoreFromPreimage,

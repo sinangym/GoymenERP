@@ -45,12 +45,16 @@ export declare function runIdentity(): RunIdentity
 export declare function assertDisposable(target: RevokeTarget): RunIdentity
 export declare function revokeReadGrant(target: RevokeTarget): Promise<RevokedGrant>
 export declare function readPreimage(artifactsDir: string): Preimage | null
+export declare function assertPreimageMatches(
+  preimage: unknown,
+  target: RevokeTarget,
+  identity: RunIdentity,
+): Preimage
 export declare function restoreFromPreimage(
-  connectionString: string,
+  target: RevokeTarget,
   artifactsDir: string,
 ): Promise<{ restored: number; reason: string }>
 export declare function verifyAgainstPreimage(
-  connectionString: string,
+  target: RevokeTarget,
   artifactsDir: string,
-  actorId: string,
 ): Promise<{ verified: number; reason: string }>

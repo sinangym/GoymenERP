@@ -244,7 +244,7 @@ jobs:
         # is not a gate. The sources are on main now; missing means red.
         run: |
           set -euo pipefail
-          for required in tests/e2e/playwright.activation.config.ts tests/e2e/activation/historyRevoke.spec.ts tests/e2e/activation/revokeGrant.ts tests/e2e/activation/grantStore.mjs tests/e2e/activation/grantCleanup.mjs tests/e2e/activation/validateEvidence.mjs; do
+          for required in tests/e2e/playwright.activation.config.ts tests/e2e/activation/historyRevoke.spec.ts tests/e2e/activation/revokeGrant.ts tests/e2e/activation/grantStore.mjs tests/e2e/activation/grantCleanup.mjs tests/e2e/activation/validateEvidence.mjs tests/e2e/activation/validateEvidence.test.mjs tests/e2e/activation/grantStore.test.mjs tests/e2e/activation/grantStore.integration.test.mjs; do
             if [ ! -f "$required" ]; then
               echo "::error::ACTIVATION_SOURCE_MISSING: $required"
               exit 1
@@ -295,15 +295,24 @@ jobs:
         working-directory: tests/e2e
         env:
           ACTIVATION_E2E_ARTIFACTS_DIR: ${{ github.workspace }}/artifacts
+          ACTIVATION_E2E_DATABASE: ${{ env.C01_E2E_DATABASE_NAME }}
+          ACTIVATION_E2E_ACTOR: group-bootstrap-admin
           ACTIVATION_E2E_SQL_CONNECTION: ${{ env.GOYMEN_ERP_C01_E2E_SQLSERVER_CONNECTION }}
         run: node activation/grantCleanup.mjs restore
 
       - name: Verify the activation grant matches its preimage
         # "The rows are back" is not the claim; "the rows are exactly what they
         # were" is. A restore that left one missing, or added one, fails here.
+        #
+        # always(), for the reason Codex gave: without it this ran only when the
+        # job was already succeeding, so the kill/failure path -- the one #199
+        # actually asked to be proven -- skipped the proof. Verifying only the
+        # happy path proves the case that never needed proving.
+        if: always()
         working-directory: tests/e2e
         env:
           ACTIVATION_E2E_ARTIFACTS_DIR: ${{ github.workspace }}/artifacts
+          ACTIVATION_E2E_DATABASE: ${{ env.C01_E2E_DATABASE_NAME }}
           ACTIVATION_E2E_ACTOR: group-bootstrap-admin
           ACTIVATION_E2E_SQL_CONNECTION: ${{ env.GOYMEN_ERP_C01_E2E_SQLSERVER_CONNECTION }}
         run: node activation/grantCleanup.mjs verify

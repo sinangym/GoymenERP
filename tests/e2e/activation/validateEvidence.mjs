@@ -66,9 +66,18 @@ export function validateActivationEvidence(xml) {
     fail('ACTIVATION_CASE_COUNT', `expected exactly 1 testcase, found ${cases.length}`)
   }
 
+  // EXACT leading token, not a substring. `includes` accepted
+  // `RENAMED-C01A-HISTORY-REVOKE-forward-LOOKALIKE`, so the rename mutation
+  // #199 P1-1 asked to be locked was not actually locked -- Codex found it.
+  // Playwright names a testcase `<case id> <title>`, so the id is the first
+  // whitespace-delimited token and nothing else.
   const name = attr(cases[0], 'name')
-  if (name === null || !name.includes(EXPECTED_CASE_ID)) {
-    fail('ACTIVATION_CASE_IDENTITY', `expected ${EXPECTED_CASE_ID}, found ${name ?? '(unnamed)'}`)
+  const leading = name === null ? null : name.trim().split(/\s+/)[0]
+  if (leading !== EXPECTED_CASE_ID) {
+    fail(
+      'ACTIVATION_CASE_IDENTITY',
+      `expected the name to begin with exactly ${EXPECTED_CASE_ID}, found ${leading ?? '(unnamed)'}`,
+    )
   }
 
   // Both sources. A body-only check misses a suite that declares failures it did
