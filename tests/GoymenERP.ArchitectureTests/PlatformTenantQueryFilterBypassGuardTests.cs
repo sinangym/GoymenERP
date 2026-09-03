@@ -90,7 +90,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "d883bf2fe132b2c6ae62a520c4ad5c78d789beff9c4209142a6e4c9f9ea6894f";
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
-        "2485e3a3e23235bc13c3c68d6baca91106e752e3451f4bb228538ad8192234e2";
+        "41df4def318fe83265e0a14d8eeeec6ccf894c0b36668b20fa5d5d5de8eaef0f";
     private const string ReviewedSeederFingerprint =
         "b9de3d52d72f20ffc6279f32b9cc4b1b646aa3b3f03c6a12fd2fa8d1d4c4c450";
 
