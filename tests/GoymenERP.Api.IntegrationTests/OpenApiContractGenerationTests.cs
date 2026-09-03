@@ -129,9 +129,9 @@ public sealed class OpenApiContractGenerationTests
             ["GetCounterpartiesV1"] = "ref:CounterpartyPage",
             ["GetCounterpartyCompanyAccountLinkCandidatesV1"] =
                 "ref:CounterpartyLinkCandidatePage",
-            ["CreateCounterpartyV1"] = "ref:PartyCoreView",
+            ["CreateCounterpartyV1"] = "ref:CounterpartyMutationView",
             ["GetCounterpartyV1"] = "ref:CounterpartyDetailView",
-            ["CreateCounterpartyCompanyAccountV1"] = "ref:PartyCoreView",
+            ["CreateCounterpartyCompanyAccountV1"] = "ref:CounterpartyMutationView",
             ["SetCounterpartyCompanyAccountActiveStateV1"] = "none",
             ["GetShellCapabilitiesV1"] = "ref:ShellCapabilitySnapshot",
         };
@@ -286,14 +286,6 @@ public sealed class OpenApiContractGenerationTests
                 ["CompanyContextResponse"] = ObjectSchema(
                     ["companyId"],
                     ("companyId", "type:string;format:uuid")),
-                ["CompanyPartyAccountView"] = ObjectSchema(
-                    ["id", "companyId", "roles", "externalIntegrationCode", "isActive", "version"],
-                    ("id", "type:string;format:uuid"),
-                    ("companyId", "type:string;format:uuid"),
-                    ("roles", "ref:PartyRole"),
-                    ("externalIntegrationCode", "type:null|string"),
-                    ("isActive", "type:boolean"),
-                    ("version", "type:integer;format:int64")),
                 ["CounterpartyDetailAccountView"] = ObjectSchema(
                     ["id", "companyId", "roles", "isActive", "version"],
                     ("id", "type:string;format:uuid"),
@@ -349,6 +341,23 @@ public sealed class OpenApiContractGenerationTests
                     ("items", "type:array;items:ref:CounterpartyLinkCandidateItem"),
                     ("nextCursor", "type:null|string"),
                     ("hasMore", "type:boolean")),
+                ["CounterpartyMutationAccountView"] = ObjectSchema(
+                    ["id", "companyId", "roles", "isActive", "version"],
+                    ("id", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("roles", "ref:PartyRole"),
+                    ("isActive", "type:boolean"),
+                    ("version", "type:string")),
+                ["CounterpartyMutationView"] = ObjectSchema(
+                    ["id", "code", "kind", "legalName", "tradeName", "isActive", "version", "companyAccounts"],
+                    ("id", "type:string;format:uuid"),
+                    ("code", "type:string"),
+                    ("kind", "ref:PartyKind"),
+                    ("legalName", "type:string"),
+                    ("tradeName", "type:null|string"),
+                    ("isActive", "type:boolean"),
+                    ("version", "type:string"),
+                    ("companyAccounts", "type:array;items:ref:CounterpartyMutationAccountView")),
                 ["CounterpartyPage"] = ObjectSchema(
                     ["items", "nextCursor", "hasMore", "totalCount", "countScope"],
                     ("items", "type:array;items:ref:CounterpartyListItem"),
@@ -383,16 +392,6 @@ public sealed class OpenApiContractGenerationTests
                     ("page", "type:integer;format:int32"),
                     ("pageSize", "type:integer;format:int32"),
                     ("totalCount", "type:integer;format:int32")),
-                ["PartyCoreView"] = ObjectSchema(
-                    ["id", "code", "kind", "legalName", "tradeName", "isActive", "version", "companyAccounts"],
-                    ("id", "type:string;format:uuid"),
-                    ("code", "type:string"),
-                    ("kind", "ref:PartyKind"),
-                    ("legalName", "type:string"),
-                    ("tradeName", "type:null|string"),
-                    ("isActive", "type:boolean"),
-                    ("version", "type:integer;format:int64"),
-                    ("companyAccounts", "type:array;items:ref:CompanyPartyAccountView")),
                 ["PartyKind"] = ScalarSchema("type:integer"),
                 ["PartyRole"] = ScalarSchema("type:integer"),
                 ["ShellCapabilitySnapshot"] = ObjectSchema(
@@ -688,7 +687,9 @@ public sealed class OpenApiContractGenerationTests
                 .EnumerateArray(),
             account => account.GetProperty("companyId").GetGuid()
                 == TestCompanyIds.CompanyA);
-        var accountVersion = companyAccount.GetProperty("version").GetInt64();
+        var accountVersion = long.Parse(
+            companyAccount.GetProperty("version").GetString()!,
+            CultureInfo.InvariantCulture);
 
         var invalidCounterpartyCommands = new[]
         {
@@ -1015,7 +1016,7 @@ public sealed class OpenApiContractGenerationTests
             if (expected.OperationId == "CreateCounterpartyCompanyAccountV1")
             {
                 Assert.Equal(
-                    "#/components/schemas/PartyCoreView",
+                    "#/components/schemas/CounterpartyMutationView",
                     actual.Value.GetProperty("responses")
                         .GetProperty("201")
                         .GetProperty("content")
@@ -1250,6 +1251,12 @@ public sealed class OpenApiContractGenerationTests
         var schemas = root.GetProperty("components").GetProperty("schemas");
         AssertSchemaSemantics(schemas);
         AssertSuccessComponentSchemas(schemas);
+        var mutationAccounts = schemas
+            .GetProperty("CounterpartyMutationView")
+            .GetProperty("properties")
+            .GetProperty("companyAccounts");
+        Assert.Equal(1, mutationAccounts.GetProperty("minItems").GetInt32());
+        Assert.Equal(1, mutationAccounts.GetProperty("maxItems").GetInt32());
     }
 
     private static IReadOnlyList<OpenApiOperationSnapshot> ReadOperations(JsonElement paths)
@@ -1596,6 +1603,8 @@ public sealed class OpenApiContractGenerationTests
     {
         AssertComponentSchemaMatrix(schemas, ExpectedRequestComponentSchemas);
         AssertComponentSchemaMatrix(schemas, ExpectedProblemComponentSchemas);
+        AssertPositiveIntegerStringVersion(schemas, "CounterpartyMutationAccountView");
+        AssertPositiveIntegerStringVersion(schemas, "CounterpartyMutationView");
         AssertPositiveIntegerStringVersion(schemas, "CounterpartyDetailAccountView");
         AssertPositiveIntegerStringVersion(schemas, "CounterpartyDetailView");
         AssertPositiveIntegerStringVersion(

@@ -2276,7 +2276,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PartyCoreView"
+                  "$ref": "#/components/schemas/CounterpartyMutationView"
                 }
               }
             }
@@ -2960,7 +2960,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PartyCoreView"
+                  "$ref": "#/components/schemas/CounterpartyMutationView"
                 }
               }
             }
@@ -3848,43 +3848,6 @@
           }
         }
       },
-      "CompanyPartyAccountView": {
-        "required": [
-          "id",
-          "companyId",
-          "roles",
-          "externalIntegrationCode",
-          "isActive",
-          "version"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "companyId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "roles": {
-            "$ref": "#/components/schemas/PartyRole"
-          },
-          "externalIntegrationCode": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "isActive": {
-            "type": "boolean"
-          },
-          "version": {
-            "type": "integer",
-            "format": "int64"
-          }
-        }
-      },
       "CompanySummary": {
         "required": [
           "id",
@@ -4162,6 +4125,89 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/CounterpartyListAccount"
+            }
+          }
+        }
+      },
+      "CounterpartyMutationAccountView": {
+        "required": [
+          "id",
+          "companyId",
+          "roles",
+          "isActive",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "roles": {
+            "$ref": "#/components/schemas/PartyRole"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "version": {
+            "maxLength": 19,
+            "minLength": 1,
+            "pattern": "^[1-9][0-9]*$",
+            "type": "string"
+          }
+        }
+      },
+      "CounterpartyMutationView": {
+        "required": [
+          "id",
+          "code",
+          "kind",
+          "legalName",
+          "tradeName",
+          "isActive",
+          "version",
+          "companyAccounts"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/PartyKind"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "tradeName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "version": {
+            "maxLength": 19,
+            "minLength": 1,
+            "pattern": "^[1-9][0-9]*$",
+            "type": "string"
+          },
+          "companyAccounts": {
+            "maxItems": 1,
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CounterpartyMutationAccountView"
             }
           }
         }
@@ -4445,53 +4491,6 @@
           "totalCount": {
             "type": "integer",
             "format": "int32"
-          }
-        }
-      },
-      "PartyCoreView": {
-        "required": [
-          "id",
-          "code",
-          "kind",
-          "legalName",
-          "tradeName",
-          "isActive",
-          "version",
-          "companyAccounts"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "code": {
-            "type": "string"
-          },
-          "kind": {
-            "$ref": "#/components/schemas/PartyKind"
-          },
-          "legalName": {
-            "type": "string"
-          },
-          "tradeName": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "isActive": {
-            "type": "boolean"
-          },
-          "version": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "companyAccounts": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/CompanyPartyAccountView"
-            }
           }
         }
       },

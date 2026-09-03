@@ -57,6 +57,9 @@ public static class CounterpartyModuleExtensions
         services.AddSingleton<ICounterpartyCursorCodec, CounterpartyCursorCodec>();
         services.AddScoped<ICounterpartyCommandService, CounterpartyCommandService>();
         services.AddScoped<ICounterpartyCompanyAccountLinkService, CounterpartyCompanyAccountLinkService>();
+        services.AddScoped<
+            ICounterpartyMutationRelationshipVerifier,
+            CounterpartyMutationRelationshipVerifier>();
         services.AddSingleton<IShellCapabilityProvider, CounterpartyShellCapabilityProvider>();
 
         return services;

@@ -89,11 +89,23 @@ public sealed class CounterpartyWriteSqlServerRelationalAcceptanceTests
                 createCommand);
             Assert.Equal(HttpStatusCode.Created, firstCreate.StatusCode);
             Assert.False(firstCreate.Headers.Contains("Idempotency-Replayed"));
-            using var firstCreateJson = JsonDocument.Parse(
-                await firstCreate.Content.ReadAsStringAsync());
+            var firstCreateBody = await firstCreate.Content.ReadAsStringAsync();
+            using var firstCreateJson = JsonDocument.Parse(firstCreateBody);
             var partyId = firstCreateJson.RootElement.GetProperty("id").GetGuid();
             var partyCode = firstCreateJson.RootElement.GetProperty("code").GetString();
             Assert.False(string.IsNullOrWhiteSpace(partyCode));
+            Assert.Equal(
+                JsonValueKind.String,
+                firstCreateJson.RootElement.GetProperty("version").ValueKind);
+            var firstAccount = Assert.Single(
+                firstCreateJson.RootElement.GetProperty("companyAccounts").EnumerateArray());
+            Assert.Equal(
+                JsonValueKind.String,
+                firstAccount.GetProperty("version").ValueKind);
+            Assert.DoesNotContain(
+                "externalIntegrationCode",
+                firstCreateBody,
+                StringComparison.Ordinal);
 
             var afterCreate = await ReadEffectCountsAsync(connection);
             var directMissingPartyId = Guid.NewGuid();
@@ -122,8 +134,9 @@ public sealed class CounterpartyWriteSqlServerRelationalAcceptanceTests
                 createCorrelation,
                 Assert.Single(replayCreate.Headers.GetValues(
                     "Idempotency-Original-Correlation-Id")));
-            using var replayCreateJson = JsonDocument.Parse(
-                await replayCreate.Content.ReadAsStringAsync());
+            var replayCreateBody = await replayCreate.Content.ReadAsStringAsync();
+            Assert.Equal(firstCreateBody, replayCreateBody);
+            using var replayCreateJson = JsonDocument.Parse(replayCreateBody);
             Assert.Equal(
                 partyId,
                 replayCreateJson.RootElement.GetProperty("id").GetGuid());
@@ -169,6 +182,37 @@ public sealed class CounterpartyWriteSqlServerRelationalAcceptanceTests
                     "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [CompanyId] = @CompanyId AND [CorrelationId] = @CorrelationId AND [EventType] = N'counterparty.party.created.v1';",
                     new SqlParameter("@CompanyId", TestCompanyIds.CompanyA),
                     new SqlParameter("@CorrelationId", createCorrelation)));
+
+            var unknownSchemaKey = $"cari-create-unknown-schema-{Guid.NewGuid():N}";
+            var unknownSchemaCorrelation =
+                $"cari-create-unknown-schema-corr-{Guid.NewGuid():N}";
+            await CloneCommandExecutionAsync(
+                connection,
+                TestCompanyIds.CompanyA,
+                "counterparty.party.create.v1",
+                createKey,
+                unknownSchemaKey,
+                unknownSchemaCorrelation,
+                schemaVersion: 2);
+            var beforeUnknownSchemaReplay = await ReadEffectCountsAsync(connection);
+
+            SetRequestIdentity(
+                createClient,
+                unknownSchemaKey,
+                unknownSchemaCorrelation);
+            using var unknownSchemaReplay = await createClient.PostAsJsonAsync(
+                "/api/v1/counterparties",
+                createCommand);
+            await AssertProblemCodeAsync(
+                unknownSchemaReplay,
+                HttpStatusCode.InternalServerError,
+                "internal_error");
+            Assert.False(unknownSchemaReplay.Headers.Contains("Idempotency-Replayed"));
+            Assert.False(unknownSchemaReplay.Headers.Contains(
+                "Idempotency-Original-Correlation-Id"));
+            Assert.Equal(
+                beforeUnknownSchemaReplay,
+                await ReadEffectCountsAsync(connection));
 
             var statusKey = $"cari-status-{Guid.NewGuid():N}";
             var statusCorrelation = $"cari-status-first-{Guid.NewGuid():N}";
@@ -334,6 +378,45 @@ public sealed class CounterpartyWriteSqlServerRelationalAcceptanceTests
         command.Parameters.AddRange(parameters);
         var value = await command.ExecuteScalarAsync();
         return Assert.IsType<T>(value);
+    }
+
+    private static async Task CloneCommandExecutionAsync(
+        SqlConnection connection,
+        Guid companyId,
+        string commandName,
+        string sourceIdempotencyKey,
+        string targetIdempotencyKey,
+        string originalCorrelationId,
+        int schemaVersion)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO [idempotency].[CommandExecutions]
+                ([Id], [CompanyId], [CommandName], [IdempotencyKeyHash],
+                 [RequestHash], [ActorId], [Outcome], [HttpStatusCode],
+                 [ResponseJson], [OriginalCorrelationId], [CompletedAtUtc], [SchemaVersion])
+            SELECT NEWID(), [CompanyId], [CommandName], @TargetKeyHash,
+                   [RequestHash], [ActorId], [Outcome], [HttpStatusCode],
+                   [ResponseJson], @OriginalCorrelationId, SYSUTCDATETIME(), @SchemaVersion
+            FROM [idempotency].[CommandExecutions]
+            WHERE [CompanyId] = @CompanyId
+              AND [CommandName] = @CommandName
+              AND [IdempotencyKeyHash] = @SourceKeyHash;
+            """;
+        command.Parameters.AddRange(
+        [
+            new SqlParameter("@CompanyId", companyId),
+            new SqlParameter("@CommandName", commandName),
+            new SqlParameter(
+                "@SourceKeyHash",
+                IdempotencyHash.ComputeKey(sourceIdempotencyKey)),
+            new SqlParameter(
+                "@TargetKeyHash",
+                IdempotencyHash.ComputeKey(targetIdempotencyKey)),
+            new SqlParameter("@OriginalCorrelationId", originalCorrelationId),
+            new SqlParameter("@SchemaVersion", schemaVersion),
+        ]);
+        Assert.Equal(1, await command.ExecuteNonQueryAsync());
     }
 
     private static async Task<PersistenceCounts> ReadEffectCountsAsync(

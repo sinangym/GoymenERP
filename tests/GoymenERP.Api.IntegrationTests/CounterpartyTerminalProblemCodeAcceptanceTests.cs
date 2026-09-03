@@ -29,6 +29,13 @@ public sealed class CounterpartyTerminalProblemCodeAcceptanceTests
         var responses = new[]
         {
             new CounterpartyCommandResponse(
+                CounterpartyCommandResult.Created,
+                StatusCodes.Status201Created,
+                null,
+                null,
+                resource,
+                null),
+            new CounterpartyCommandResponse(
                 unknownResult,
                 StatusCodes.Status201Created,
                 "Bilinmeyen sonuç.",
