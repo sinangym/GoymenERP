@@ -4,6 +4,7 @@ using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using System.Linq.Expressions;
 
 namespace GoymenERP.Counterparty.UnitTests;
 
@@ -12,7 +13,8 @@ public sealed class CounterpartyPersistenceModelTests
     [Fact]
     public void Model_UsesExpectedSchemaAndTenantSafeIndexes()
     {
-        using var dbContext = CreateContext();
+        var companyId = Guid.NewGuid();
+        using var dbContext = CreateContext(ResolvedCompanyContext(companyId));
         var partyEntity = dbContext.Model.FindEntityType(typeof(Party));
         var accountEntity = dbContext.Model.FindEntityType(typeof(CompanyPartyAccount));
         var auditEntity = dbContext.Model.FindEntityType(typeof(AuditEvent));
@@ -26,7 +28,10 @@ public sealed class CounterpartyPersistenceModelTests
         Assert.Equal("CompanyPartyAccounts", accountEntity.GetTableName());
         Assert.Equal("audit", auditEntity!.GetSchema());
         Assert.Equal("AuditEvents", auditEntity.GetTableName());
-        Assert.NotEmpty(auditEntity.GetDeclaredQueryFilters());
+        var queryFilter = Assert.Single(auditEntity.GetDeclaredQueryFilters());
+        var expression = Assert.IsAssignableFrom<Expression<Func<AuditEvent, bool>>>(
+            queryFilter.Expression);
+        AssertCompanyScopedAuditFilter(expression, typeof(CounterpartyDbContext));
 
         Assert.Contains(
             partyEntity.GetIndexes(),
@@ -117,13 +122,50 @@ public sealed class CounterpartyPersistenceModelTests
         Assert.Contains("fiziksel", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static CounterpartyDbContext CreateContext()
+    private static CounterpartyDbContext CreateContext(ICompanyContext? companyContext = null)
     {
         var options = new DbContextOptionsBuilder<CounterpartyDbContext>()
             .UseSqlServer(
                 "Server=(localdb)\\mssqllocaldb;Database=GoymenErpCounterpartyTests;Trusted_Connection=True;")
             .Options;
-        return new CounterpartyDbContext(options, new UnresolvedCompanyContext());
+        return new CounterpartyDbContext(
+            options,
+            companyContext ?? new UnresolvedCompanyContext());
+    }
+
+    private static void AssertCompanyScopedAuditFilter(
+        Expression<Func<AuditEvent, bool>> expression,
+        Type contextType)
+    {
+        var comparison = Assert.IsAssignableFrom<BinaryExpression>(expression.Body);
+        Assert.Equal(ExpressionType.Equal, comparison.NodeType);
+
+        var entityCompanyId = Assert.IsAssignableFrom<MemberExpression>(comparison.Left);
+        Assert.Same(expression.Parameters[0], entityCompanyId.Expression);
+        Assert.Equal(nameof(AuditEvent.CompanyId), entityCompanyId.Member.Name);
+
+        var contextCompanyId = Assert.IsAssignableFrom<MemberExpression>(comparison.Right);
+        Assert.Equal(nameof(ICompanyContext.CompanyId), contextCompanyId.Member.Name);
+        Assert.Equal(typeof(ICompanyContext), contextCompanyId.Member.DeclaringType);
+        Assert.True(IsCapturedFromContext(contextCompanyId.Expression, contextType));
+    }
+
+    private static bool IsCapturedFromContext(Expression? expression, Type contextType)
+    {
+        while (expression is MemberExpression memberExpression)
+        {
+            expression = memberExpression.Expression;
+        }
+
+        return expression is ConstantExpression constantExpression
+            && contextType.IsAssignableFrom(constantExpression.Type);
+    }
+
+    private static CompanyContext ResolvedCompanyContext(Guid companyId)
+    {
+        var companyContext = new CompanyContext();
+        companyContext.Set(companyId);
+        return companyContext;
     }
 
     private sealed class UnresolvedCompanyContext : ICompanyContext

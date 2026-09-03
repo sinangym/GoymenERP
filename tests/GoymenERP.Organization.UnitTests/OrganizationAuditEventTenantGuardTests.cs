@@ -4,19 +4,24 @@ using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using System.Linq.Expressions;
 
 namespace GoymenERP.Organization.UnitTests;
 
 public sealed class OrganizationAuditEventTenantGuardTests
 {
     [Fact]
-    public void Model_HasCompanyScopedAuditEventQueryFilter()
+    public void FinalModel_AppliesCompanyScopedAuditEventQueryFilter()
     {
-        using var dbContext = CreateDbContext(ResolvedCompanyContext(Guid.NewGuid()));
+        var companyId = Guid.NewGuid();
+        using var dbContext = CreateDbContext(ResolvedCompanyContext(companyId));
         var auditEntity = dbContext.Model.FindEntityType(typeof(AuditEvent));
 
         Assert.NotNull(auditEntity);
-        Assert.NotEmpty(auditEntity!.GetDeclaredQueryFilters());
+        var queryFilter = Assert.Single(auditEntity!.GetDeclaredQueryFilters());
+        var expression = Assert.IsAssignableFrom<Expression<Func<AuditEvent, bool>>>(
+            queryFilter.Expression);
+        AssertCompanyScopedAuditFilter(expression, typeof(OrganizationDbContext));
     }
 
     [Fact]
@@ -89,6 +94,34 @@ public sealed class OrganizationAuditEventTenantGuardTests
             options,
             companyContext,
             new OrganizationBootstrapWriteScope());
+    }
+
+    private static void AssertCompanyScopedAuditFilter(
+        Expression<Func<AuditEvent, bool>> expression,
+        Type contextType)
+    {
+        var comparison = Assert.IsAssignableFrom<BinaryExpression>(expression.Body);
+        Assert.Equal(ExpressionType.Equal, comparison.NodeType);
+
+        var entityCompanyId = Assert.IsAssignableFrom<MemberExpression>(comparison.Left);
+        Assert.Same(expression.Parameters[0], entityCompanyId.Expression);
+        Assert.Equal(nameof(AuditEvent.CompanyId), entityCompanyId.Member.Name);
+
+        var contextCompanyId = Assert.IsAssignableFrom<MemberExpression>(comparison.Right);
+        Assert.Equal(nameof(ICompanyContext.CompanyId), contextCompanyId.Member.Name);
+        Assert.Equal(typeof(ICompanyContext), contextCompanyId.Member.DeclaringType);
+        Assert.True(IsCapturedFromContext(contextCompanyId.Expression, contextType));
+    }
+
+    private static bool IsCapturedFromContext(Expression? expression, Type contextType)
+    {
+        while (expression is MemberExpression memberExpression)
+        {
+            expression = memberExpression.Expression;
+        }
+
+        return expression is ConstantExpression constantExpression
+            && contextType.IsAssignableFrom(constantExpression.Type);
     }
 
     private static CompanyContext ResolvedCompanyContext(Guid companyId)
