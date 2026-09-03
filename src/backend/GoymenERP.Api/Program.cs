@@ -129,6 +129,8 @@ if (!isOpenApiDocumentGeneration
     await app.Services.InitializeCounterpartyModuleAsync();
 }
 
+await NormalProviderRuntimeAttestation.WriteIfRequestedAsync(app.Services);
+
 await app.RunAsync();
 
 public partial class Program;
