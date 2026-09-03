@@ -117,7 +117,16 @@ async function watchAnnouncements(page: Page): Promise<void> {
       }
       for (const region of inserted) {
         const text = (region.textContent ?? '').trim()
-        if (text !== '') w.__announced!.push({ kind: 'inserted', text })
+        if (text === '') continue
+        // An inserted `role="alert"` IS announced -- that is the ARIA alert
+        // pattern, which works by adding the element to the DOM. An inserted
+        // POLITE region is not, because assistive technology has to be watching
+        // it before its content changes. Counting them the same way is what made
+        // this instrument report a working announcement as silence.
+        const assertive =
+          region.getAttribute('role') === 'alert' ||
+          region.getAttribute('aria-live') === 'assertive'
+        w.__announced!.push({ kind: assertive ? 'updated' : 'inserted-polite', text })
       }
     }).observe(document.body, { childList: true, subtree: true, characterData: true })
   })
@@ -132,15 +141,19 @@ async function allAnnouncements(page: Page): Promise<{ kind: string; text: strin
 /**
  * What a screen reader is actually TOLD.
  *
- * Only updates to regions that already existed count. A live region INSERTED
- * already carrying its text is not reliably announced -- assistive technology
- * has to be observing the region before its content changes -- so counting an
- * insertion would over-claim. The real browser proved the distinction matters:
- * the empty-filter state renders such an inserted region, and it was announced
- * zero times until the permanent region carried the message instead.
+ * Two things count: an update to a region that already existed, and an inserted
+ * `role="alert"`. The second is the ARIA alert pattern, which works precisely by
+ * adding the element to the DOM, and every major screen reader speaks it.
  *
- * Insertions are still recorded, and surfaced in failures, so a zero here can be
- * told apart from nothing having happened at all.
+ * An inserted POLITE region does not count: assistive technology has to be
+ * observing it before its content changes, so a region that appears already
+ * populated is unreliable. Those are recorded as `inserted-polite` and surfaced
+ * in failures, so a zero can be told apart from nothing having happened.
+ *
+ * Getting this wrong cost a wrong conclusion: the first version counted every
+ * insertion as silence, reported the empty-filter state as never announced, and
+ * I changed the app on that premise. It was announced all along -- the block is
+ * a `role="alert"`.
  */
 async function announcedSince(page: Page, from: number): Promise<string[]> {
   const all = (await allAnnouncements(page)).slice(from)

@@ -451,33 +451,6 @@ describe('C-01 paging', () => {
     release()
   })
 
-  it('an empty filtered result is announced through the region that already exists', async () => {
-    // #146 C01-AC-007. StateBlock is itself a live region, but it is INSERTED
-    // already carrying its text, and a region that appears already populated is
-    // not reliably announced. The real browser measured zero announcements for
-    // this transition. The permanent status region has been in the DOM since
-    // first render, so an update to it is spoken.
-    installFetch({
-      counterparties: (url) =>
-        url.includes('q=') ? json(page({ items: [] })) : json(page()),
-    })
-    renderAt('/cari')
-    await screen.findByRole('row', { name: /C-0001/ })
-    expect(screen.getByRole('status').textContent).not.toContain('bulunamadı')
-
-    await userEvent.type(screen.getByRole('searchbox', { name: 'Ara' }), 'zzz')
-    await waitFor(() =>
-      expect(screen.getByRole('status').textContent).toContain('Filtreye uyan kayıt bulunamadı.'),
-    )
-  })
-
-  it('an empty result with no filter is not announced as a filter miss', async () => {
-    installFetch({ counterparties: () => json(page({ items: [] })) })
-    renderAt('/cari')
-    await waitFor(() => expect(queryStateBlock('empty-no-data')).not.toBeNull())
-    expect(screen.getByRole('status').textContent).not.toContain('bulunamadı')
-  })
-
   it('a retry that worked is announced, because a vanishing alert is silent', async () => {
     // #146 C01-AC-007. Until this existed, a screen-reader user pressed
     // "Yeniden dene" and heard nothing: the only signal was the error alert
