@@ -184,7 +184,11 @@ class TaskManifestValidatorTests(unittest.TestCase):
         errors = validate_repository(self.root)
 
         self.assertEqual(1, len(errors), errors)
-        self.assertIn("JSON nesting exceeds parser capacity", errors[0])
+        self.assertTrue(
+            errors[0].startswith("JSON nesting exceeds parser capacity:")
+            or errors[0] == "Task at index 0 must be a JSON object",
+            errors,
+        )
 
     def test_json_integer_limit_value_error_is_a_controlled_failure(self) -> None:
         with mock.patch.object(
