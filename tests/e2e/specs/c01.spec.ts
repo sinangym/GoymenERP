@@ -512,8 +512,11 @@ test('B-C01-005 the page reflows without a horizontal scrollbar', async ({ page 
     //
     // Asserted on the STABLE state attribute, not the Turkish copy: the first
     // version of this line invented a string that does not exist in the app.
-    await expect(page.locator('[data-state="empty-filtered"]')).toBeVisible({ timeout: 20_000 })
-    await expect(page.getByText('Filtreye uyan kayıt bulunamadı.')).toBeVisible()
+    const emptyBlock = page.locator('[data-state="empty-filtered"]')
+    await expect(emptyBlock).toBeVisible({ timeout: 20_000 })
+    // Scoped to the block: the same sentence is now also carried by the page's
+    // permanent live region, so an unscoped text query matches twice.
+    await expect(emptyBlock.getByText('Filtreye uyan kayıt bulunamadı.')).toBeVisible()
 
     // And the user can get back out of it, which is the half a static overflow
     // check can never see.
