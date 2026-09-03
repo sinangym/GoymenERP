@@ -107,6 +107,17 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
   const [direction, setDirection] = useState<SortDirection>('asc')
   const [cursor, setCursor] = useState<string | undefined>(undefined)
   const [loaded, setLoaded] = useState<readonly CounterpartyListItem[]>([])
+  /**
+   * A cursor the server refused, and the state of recovering from it.
+   *
+   * `attempt` goes into the query key so the recovery is a real request rather
+   * than a cache read; `settled` is what the live region speaks from, and it
+   * only becomes true once that request has actually returned a page.
+   */
+  const [recovery, setRecovery] = useState<
+    { readonly attempt: number; readonly settled: boolean } | null
+  >(null)
+  const recoveryAttempt = recovery?.attempt ?? 0
 
   const activeCompanyId = shell.activeContext?.companyId ?? null
   const scopeMode = shell.activeContext?.scopeMode ?? 'single'
@@ -151,6 +162,12 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
       entryGeneration,
       'counterparties',
       { q, kind, roles, roleMatch, partyState, accountState, sort, direction, cursor },
+      // Recovery attempt, so a cursor the server refused is followed by a
+      // GENUINELY NEW page-1 request. Dropping `cursor` alone returns to a key
+      // React Query still holds fresh under staleTime: the screen recovered from
+      // CACHE and no request was ever issued, so nothing re-checked that page 1
+      // is still what the server would serve (#146 C01-AC-005).
+      recoveryAttempt,
     ],
     enabled: namespace !== null && singleCompanyContext,
     /**
@@ -280,18 +297,33 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
   // the query key back and forth forever (bad cursor -> page 1 -> valid -> bad cursor).
   // The ref makes recovery happen at most once per rejected cursor.
   const recoveredCursor = useRef<string | null>(null)
-  const [cursorRecovered, setCursorRecovered] = useState(false)
   // oxlint-disable-next-line react/set-state-in-effect -- see the note above
   useEffect(() => {
     if (isInvalidCursor && cursor !== undefined && recoveredCursor.current !== cursor) {
       recoveredCursor.current = cursor
       setCursor(undefined)
       setLoaded([])
-      // The list silently jumping back to page 1 is a change the user must be told
-      // about, not a repair to hide (Codex/ChatGPT #147 P2).
-      setCursorRecovered(true)
+      // A new attempt number, not merely a cleared cursor: this is what makes the
+      // recovery an actual request rather than a cache read.
+      setRecovery((current) => ({ attempt: (current?.attempt ?? 0) + 1, settled: false }))
     }
   }, [isInvalidCursor, cursor])
+
+  /**
+   * The recovery is only ANNOUNCED once its fresh page has actually arrived.
+   *
+   * Saying "we went back to the first page" while that page is still in flight
+   * states an outcome we do not have yet; if the fresh request then fails, the
+   * user has been told about a recovery that did not happen (#146 C01-AC-005).
+   */
+  useEffect(() => {
+    if (recovery !== null && !recovery.settled && cursor === undefined && page !== null) {
+      // oxlint-disable-next-line react/set-state-in-effect -- settles on a server result
+      setRecovery({ attempt: recovery.attempt, settled: true })
+    }
+  }, [recovery, cursor, page])
+
+  const cursorRecovered = recovery?.settled === true
 
   const ariaSort = (field: SortField): 'ascending' | 'descending' | 'none' =>
     sort !== field ? 'none' : direction === 'asc' ? 'ascending' : 'descending'

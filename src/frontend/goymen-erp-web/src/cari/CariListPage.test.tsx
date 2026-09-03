@@ -63,7 +63,7 @@ function page(over: Record<string, unknown> = {}) {
 
 interface Config {
   capabilities?: readonly string[]
-  counterparties?: (url: string, companyId: string | null) => Response
+  counterparties?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** Awaited before the capability call for this company answers — pins a switch in flight. */
   holdCapabilityFor?: { companyId: string; gate: Promise<void> }
 }
@@ -111,10 +111,23 @@ function queryStateBlock(kind: string): HTMLElement | null {
   return document.querySelector<HTMLElement>(`[data-state="${kind}"]`)
 }
 
-function renderAt(path: string) {
+/**
+ * @param productionCache use the shell's real staleTime/gcTime.
+ *
+ * The default here is `gcTime: 0` with staleTime 0, which is fine for tests
+ * about rendering but makes a cache READ impossible: every return to a key
+ * refetches. A test about whether the app re-asks the server therefore proves
+ * nothing under it -- verified by mutation, the assertion survived removing the
+ * fix entirely. Cases that turn on caching must opt into the real settings.
+ */
+function renderAt(path: string, productionCache = false) {
   const router = createMemoryRouter(shellRoutes, { initialEntries: [path] })
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    defaultOptions: {
+      queries: productionCache
+        ? { retry: false, staleTime: 30_000, refetchOnWindowFocus: false }
+        : { retry: false, gcTime: 0 },
+    },
   })
   render(
     <ShellProvider queryClient={queryClient}>
@@ -373,6 +386,69 @@ describe('C-01 paging', () => {
     await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
     await waitFor(() => expect(screen.getByRole('row', { name: /C-0002/ })).toBeTruthy())
     expect(screen.getAllByRole('row', { name: /C-0001/ })).toHaveLength(1)
+  })
+
+  it('recovery from invalid_cursor is a real page-1 request, not a cache read', async () => {
+    // #146 C01-AC-005. Dropping the cursor alone returns to a query key React
+    // Query still holds fresh under staleTime: the screen recovered from CACHE
+    // and no request was ever issued, so nothing re-checked that page 1 is still
+    // what the server would serve. The network ORDER is the claim here, not the
+    // rows -- a DOM-only assertion passes against the cache-read version.
+    const { calls } = installFetch({
+      counterparties: (url) =>
+        url.includes('cursor=')
+          ? json({ code: 'invalid_cursor', title: 'İmleç geçersiz', status: 400 }, 400)
+          : json(page({ hasMore: true, nextCursor: 'stale-cursor' })),
+    })
+    const reads = () => calls.filter((call) => call.url.includes('/counterparties'))
+    renderAt('/cari', true)
+    await screen.findByRole('row', { name: /C-0001/ })
+    expect(reads()).toHaveLength(1)
+    expect(reads()[0].url).not.toContain('cursor=')
+
+    await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
+
+    await waitFor(() => expect(reads().length).toBe(3))
+    expect(reads()[1].url, 'the continuation carried no cursor').toContain('cursor=')
+    expect(
+      reads()[2].url,
+      'the recovery replayed the refused cursor instead of asking for page 1',
+    ).not.toContain('cursor=')
+
+    // And the recovery is only ANNOUNCED once that fresh page has arrived.
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toContain('ilk sayfaya dönüldü'),
+    )
+  })
+
+  it('the recovery is not announced while its fresh page is still in flight', async () => {
+    // Saying "we went back to the first page" while that page is in flight states
+    // an outcome we do not have yet.
+    let release: () => void = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let pageReads = 0
+    installFetch({
+      counterparties: async (url) => {
+        if (url.includes('cursor=')) {
+          return json({ code: 'invalid_cursor', title: 'İmleç geçersiz', status: 400 }, 400)
+        }
+        pageReads += 1
+        if (pageReads === 2) await held
+        return json(page({ hasMore: true, nextCursor: 'stale-cursor' }))
+      },
+    })
+    renderAt('/cari', true)
+    await screen.findByRole('row', { name: /C-0001/ })
+    await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
+
+    await waitFor(() => expect(pageReads).toBe(2))
+    expect(
+      screen.getByRole('status').textContent,
+      'the recovery was announced before its page arrived',
+    ).not.toContain('ilk sayfaya dönüldü')
+    release()
   })
 
   it('invalid_cursor falls back to the first page instead of stranding the user', async () => {

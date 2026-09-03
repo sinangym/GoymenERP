@@ -349,6 +349,18 @@ test('B-C01-009 a tampered cursor is refused with a stable code', async ({ page 
   // answers 401 and the case proves nothing about cursor validation. Rewriting
   // the app's own request keeps every header, so what comes back is the server
   // refusing a tampered token from an otherwise legitimate caller.
+  // The ORDINAL sequence, recorded on the request so an attempt that was sent
+  // and then aborted still counts. #146 C01-AC-005 is about the ORDER --
+  // `page1 200 -> invalid_cursor 400 -> fresh cursorless page1 200` -- because
+  // the version this replaces recovered from React Query's cache and issued no
+  // third request at all: nothing re-checked that page 1 is still what the
+  // server would serve.
+  const reads: { cursor: string | null }[] = []
+  page.on('request', (request) => {
+    if (!request.url().includes('/api/v1/counterparties')) return
+    reads.push({ cursor: new URL(request.url()).searchParams.get('cursor') })
+  })
+
   let tamperedOnce = false
   await page.route('**/api/v1/counterparties*', async (route) => {
     const url = new URL(route.request().url())
@@ -384,6 +396,22 @@ test('B-C01-009 a tampered cursor is refused with a stable code', async ({ page 
     timeout: 20_000,
   })
   await expect(rows(page)).toHaveCount(50)
+
+  // Exactly three reads, in exactly this shape.
+  await expect
+    .poll(() => reads.length, { timeout: 20_000 })
+    .toBe(3)
+  expect(reads[0].cursor, 'the first read carried a cursor').toBeNull()
+  expect(reads[1].cursor, 'the continuation carried no cursor to tamper with').not.toBeNull()
+  expect(
+    reads[2].cursor,
+    'the recovery replayed a cursor instead of asking for page 1 afresh',
+  ).toBeNull()
+
+  // Deliberately NOT asserting a row count here as well: 50 rows would also hold
+  // if the recovery had silently re-rendered the cache. The read sequence above
+  // is the claim, and a tautological second assertion would only make the case
+  // look stronger than it is.
 
   await net.detach(testInfo)
 })
