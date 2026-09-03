@@ -44,6 +44,16 @@ internal sealed class CounterpartyCompanyAccountLinkService(
             ErpPermissions.CounterpartyPartiesRead,
             cancellationToken);
 
+        var sourceCompanyIds = await ResolveCompanyWideSourceCompanyIdsAsync(
+            cancellationToken);
+        if (sourceCompanyIds.Length == 0)
+        {
+            return new CounterpartyCommandExecution(
+                Responses.NotFound(),
+                false,
+                metadata.CorrelationId);
+        }
+
         var idempotencyKeyHash = IdempotencyHash.ComputeKey(metadata.IdempotencyKey);
         var requestHash = IdempotencyHash.ComputePayload(new CreateCompanyAccountFingerprint(
             partyId,
@@ -58,6 +68,7 @@ internal sealed class CounterpartyCompanyAccountLinkService(
 
         if (!await IsVisibleThroughAuthorizedExistingAccountAsync(
                 partyId,
+                sourceCompanyIds,
                 cancellationToken))
         {
             return await CompleteCommandAsync(
@@ -271,34 +282,44 @@ internal sealed class CounterpartyCompanyAccountLinkService(
             execution.OriginalCorrelationId);
     }
 
-    private async Task<bool> IsVisibleThroughAuthorizedExistingAccountAsync(
-        Guid partyId,
+    private async Task<Guid[]> ResolveCompanyWideSourceCompanyIdsAsync(
         CancellationToken cancellationToken)
     {
-        var readableCompanyIds = new HashSet<Guid>();
-        foreach (var allowedCompanyId in currentUser.AllowedCompanyIds.Distinct())
+        cancellationToken.ThrowIfCancellationRequested();
+        var authorizedCompanyIds = new List<Guid>();
+        var targetCompanyId = companyContext.CompanyId;
+        foreach (var allowedCompanyId in currentUser.AllowedCompanyIds
+                     .Where(id => id != Guid.Empty && id != targetCompanyId)
+                     .Distinct()
+                     .Order())
         {
-            if (allowedCompanyId == Guid.Empty)
+            var snapshot = await authorizationService.GetAuthorizationSnapshotAsync(
+                allowedCompanyId,
+                [ErpPermissions.CounterpartyPartiesRead],
+                cancellationToken);
+            if (!snapshot.AllowedCompanyIds.Contains(allowedCompanyId)
+                || !snapshot.PermissionScopes.TryGetValue(
+                    ErpPermissions.CounterpartyPartiesRead,
+                    out var readScope)
+                || !readScope.IsGranted
+                || !readScope.IsCompanyWide)
             {
                 continue;
             }
 
-            if (await authorizationService.HasPermissionAsync(
-                    ErpPermissions.CounterpartyPartiesRead,
-                    allowedCompanyId,
-                    cancellationToken))
-            {
-                readableCompanyIds.Add(allowedCompanyId);
-            }
+            authorizedCompanyIds.Add(allowedCompanyId);
         }
 
-        if (readableCompanyIds.Count == 0)
-        {
-            return false;
-        }
+        return authorizedCompanyIds.ToArray();
+    }
 
-        var companyIdArray = readableCompanyIds.ToArray();
-        return await dbContext.CompanyPartyAccounts
+    private Task<bool> IsVisibleThroughAuthorizedExistingAccountAsync(
+        Guid partyId,
+        IReadOnlyCollection<Guid> sourceCompanyIds,
+        CancellationToken cancellationToken)
+    {
+        var companyIdArray = sourceCompanyIds.ToArray();
+        return dbContext.CompanyPartyAccounts
             .AsNoTracking()
             .AnyAsync(
                 x => x.PartyId == partyId

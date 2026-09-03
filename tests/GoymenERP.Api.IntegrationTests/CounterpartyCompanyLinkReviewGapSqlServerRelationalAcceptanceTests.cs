@@ -175,6 +175,10 @@ public sealed class CounterpartyCompanyLinkReviewGapSqlServerRelationalAcceptanc
                 factory,
                 TestUsers.CompanyB,
                 TestCompanyIds.CompanyB);
+            await GrantSystemAdministratorAsync(
+                factory,
+                TestUsers.CompanyB,
+                TestCompanyIds.CompanyA);
             var party = await CreatePartyAsync(
                 factory,
                 "SQL Actor Mismatch Cari A.Ş.");
