@@ -85,36 +85,74 @@ async function expectVisibleFocus(target: Locator, what: string): Promise<void> 
  */
 async function watchAnnouncements(page: Page): Promise<void> {
   await page.evaluate(() => {
-    const w = window as unknown as { __announced?: string[] }
+    const w = window as unknown as { __announced?: { kind: string; text: string }[] }
     w.__announced = []
     const selector = '[role="status"], [role="alert"], [aria-live]'
+    const known = new WeakSet<Element>()
+    for (const region of document.querySelectorAll(selector)) known.add(region)
+
     new MutationObserver((records) => {
-      const hosts = new Set<Element>()
+      const updated = new Set<Element>()
+      const inserted = new Set<Element>()
       for (const record of records) {
-        const node = record.target
-        const element = node instanceof Element ? node : node.parentElement
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element)) continue
+          const regions = node.matches(selector)
+            ? [node]
+            : [...node.querySelectorAll(selector)]
+          for (const region of regions) {
+            if (!known.has(region)) {
+              known.add(region)
+              inserted.add(region)
+            }
+          }
+        }
+        const element = record.target instanceof Element ? record.target : record.target.parentElement
         const host = element?.closest(selector)
-        if (host) hosts.add(host)
+        if (host && known.has(host) && !inserted.has(host)) updated.add(host)
       }
-      for (const host of hosts) {
-        const text = (host.textContent ?? '').trim()
-        if (text !== '') w.__announced!.push(text)
+      for (const region of updated) {
+        const text = (region.textContent ?? '').trim()
+        if (text !== '') w.__announced!.push({ kind: 'updated', text })
+      }
+      for (const region of inserted) {
+        const text = (region.textContent ?? '').trim()
+        if (text !== '') w.__announced!.push({ kind: 'inserted', text })
       }
     }).observe(document.body, { childList: true, subtree: true, characterData: true })
   })
 }
 
-async function announcedSince(page: Page, from: number): Promise<string[]> {
-  const all = await page.evaluate(
-    () => (window as unknown as { __announced?: string[] }).__announced ?? [],
+async function allAnnouncements(page: Page): Promise<{ kind: string; text: string }[]> {
+  return page.evaluate(
+    () => (window as unknown as { __announced?: { kind: string; text: string }[] }).__announced ?? [],
   )
-  return all.slice(from)
+}
+
+/**
+ * What a screen reader is actually TOLD.
+ *
+ * Only updates to regions that already existed count. A live region INSERTED
+ * already carrying its text is not reliably announced -- assistive technology
+ * has to be observing the region before its content changes -- so counting an
+ * insertion would over-claim. The real browser proved the distinction matters:
+ * the empty-filter state renders such an inserted region, and it was announced
+ * zero times until the permanent region carried the message instead.
+ *
+ * Insertions are still recorded, and surfaced in failures, so a zero here can be
+ * told apart from nothing having happened at all.
+ */
+async function announcedSince(page: Page, from: number): Promise<string[]> {
+  const all = (await allAnnouncements(page)).slice(from)
+  return all.filter((entry) => entry.kind === 'updated').map((entry) => entry.text)
+}
+
+async function announcedDetail(page: Page, from: number): Promise<string> {
+  return JSON.stringify((await allAnnouncements(page)).slice(from))
 }
 
 async function announcedCount(page: Page): Promise<number> {
-  return (await page.evaluate(
-    () => (window as unknown as { __announced?: string[] }).__announced ?? [],
-  )).length
+  return (await allAnnouncements(page)).length
 }
 
 /** Reach a control using nothing but Tab, or fail saying it is unreachable. */
@@ -541,7 +579,8 @@ test('B-C01-006 the accessible structure is the one screen readers need', async 
   const spoken = await announcedSince(page, before)
   expect(
     spoken.length,
-    `the empty-filter transition was announced ${spoken.length} times: ${JSON.stringify(spoken)}`,
+    `the empty-filter transition was announced ${spoken.length} times; ` +
+      `all live-region activity: ${await announcedDetail(page, before)}`,
   ).toBe(1)
 
   await net.detach(testInfo)

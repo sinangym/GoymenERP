@@ -336,6 +336,26 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
    * action whose result is already on screen, and announcing every page would be
    * chatter rather than information.
    */
+  /**
+   * An empty filtered result, announced through the PERMANENT region.
+   *
+   * `StateBlock` is itself a live region, but it is INSERTED already carrying
+   * its text -- and a live region that appears already populated is not
+   * reliably announced, because the assistive technology has to be observing it
+   * before its content changes. The real browser run measured exactly that:
+   * zero announcements for the empty-filter transition (#146 C01-AC-007).
+   *
+   * The region below has been in the DOM since first render, so an update to it
+   * is spoken. Scoped to the TRANSITION, so re-renders and cache updates that
+   * leave the result empty do not repeat it.
+   */
+  const filteredEmpty = state.kind === 'ready' && items.length === 0 && filterActive
+  const [emptyAnnounced, setEmptyAnnounced] = useState(false)
+  useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- announces a server result
+    setEmptyAnnounced(filteredEmpty)
+  }, [filteredEmpty])
+
   const hadFailure = useRef(false)
   const [continuationRecovered, setContinuationRecovered] = useState(false)
   useEffect(() => {
@@ -378,7 +398,9 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
           ? 'Liste güncellendi; ilk sayfaya dönüldü.'
           : continuationRecovered
             ? 'Liste güncellendi; kalan kayıtlar yüklendi.'
-            : ''}
+            : emptyAnnounced
+              ? 'Filtreye uyan kayıt bulunamadı.'
+              : ''}
       </div>
 
       <div className={styles.filters} role="search">
