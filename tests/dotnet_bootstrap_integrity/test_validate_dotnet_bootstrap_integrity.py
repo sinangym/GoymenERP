@@ -913,12 +913,16 @@ class WorkflowOrderingTests(unittest.TestCase):
         )
         self.assertEqual(verifier_source.count("run_bootstrap_preflight(repository_root)"), 2)
 
-    def test_container_dotnet_surface_depends_on_both_preflight_jobs(self) -> None:
+    def test_container_surface_depends_on_every_required_gate(self) -> None:
         body = self.job_body("containers")
         needs_block = re.search(r"(?ms)^    needs:\n(.*?)(?=^    [A-Za-z0-9_-]+:)", body)
         self.assertIsNotNone(needs_block, "Container job must have an explicit needs gate.")
         dependencies = set(re.findall(r"^      - ([A-Za-z0-9_-]+)$", needs_block.group(1), re.M))
-        self.assertTrue({"backend", "relational"}.issubset(dependencies))
+        self.assertTrue(
+            {"backend", "frontend", "relational", "contract-drift"}.issubset(
+                dependencies
+            )
+        )
 
     def test_container_runner_validates_its_own_checkout_before_compose(self) -> None:
         body = self.job_body("containers")
@@ -929,13 +933,17 @@ class WorkflowOrderingTests(unittest.TestCase):
         validator_command = (
             "python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py"
         )
-        tests_command = (
-            "python3 -I -S -B -m unittest discover "
-            "-s tests/dotnet_bootstrap_integrity "
-            '-p "test_*.py" -v'
-        )
 
-        self.assertNotRegex(body, r"(?m)^    if:")
+        self.assertEqual(
+            re.findall(r"^    \S.*$", body, re.M),
+            [
+                "    name: Container build",
+                "    needs:",
+                "    runs-on: ubuntu-latest",
+                "    env:",
+                "    steps:",
+            ],
+        )
         self.assertNotIn("continue-on-error:", body)
         self.assertRegex(
             body,
@@ -943,8 +951,16 @@ class WorkflowOrderingTests(unittest.TestCase):
         )
         preflight = self.step_body(body, ".NET bootstrap integrity preflight")
         self.assertEqual(
-            self.read_active_step_lines(preflight),
-            [tests_command, validator_command],
+            self.read_step_lines(preflight),
+            ["run: |", validator_command],
+        )
+        self.assertEqual(
+            self.read_step_lines(self.step_body(body, "Validate compose model")),
+            ["run: docker compose -f infra/docker-compose.yml config --quiet"],
+        )
+        self.assertEqual(
+            self.read_step_lines(self.step_body(body, "Build application images")),
+            ["run: docker compose -f infra/docker-compose.yml build api web"],
         )
 
         preflight_index = body.index(preflight_step)
@@ -959,12 +975,16 @@ class WorkflowOrderingTests(unittest.TestCase):
         self.assertLess(compose_index, build_index)
 
     @staticmethod
-    def read_active_step_lines(step: str) -> list[str]:
+    def read_step_lines(step: str) -> list[str]:
         return [
             line.strip()
             for line in step.splitlines()
             if line.strip() and not line.lstrip().startswith("#")
-        ][1:]
+        ]
+
+    @classmethod
+    def read_active_step_lines(cls, step: str) -> list[str]:
+        return cls.read_step_lines(step)[1:]
 
     def test_backend_container_disables_auto_response_for_build_commands(self) -> None:
         dockerfile = (

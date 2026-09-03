@@ -246,7 +246,6 @@ jobs:
 
       - name: .NET bootstrap integrity preflight
         run: |
-          python3 -I -S -B -m unittest discover -s tests/dotnet_bootstrap_integrity -p "test_*.py" -v
           python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
 
       - name: Validate compose model
