@@ -935,16 +935,28 @@ class WorkflowOrderingTests(unittest.TestCase):
             '-p "test_*.py" -v'
         )
 
+        self.assertNotRegex(body, r"(?m)^    if:")
+        self.assertNotIn("continue-on-error:", body)
         self.assertRegex(
             body,
             re.escape(checkout_step) + r"\n\n" + re.escape(preflight_step),
         )
         preflight = self.step_body(body, ".NET bootstrap integrity preflight")
-        self.assertEqual(preflight.count(validator_command), 1)
-        self.assertEqual(preflight.count(tests_command), 1)
-        self.assertLess(preflight.index(validator_command), preflight.index(tests_command))
-        self.assertLess(body.index(preflight_step), body.index(compose_step))
-        self.assertLess(body.index(preflight_step), body.index(build_step))
+        self.assertEqual(
+            self.read_active_step_lines(preflight),
+            [tests_command, validator_command],
+        )
+
+        preflight_index = body.index(preflight_step)
+        compose_index = body.index(compose_step)
+        build_index = body.index(build_step)
+        boundary = body[preflight_index:compose_index]
+        self.assertEqual(
+            re.findall(r"^      - (?:name:|uses:|run:).*$", boundary, re.M),
+            [preflight_step],
+        )
+        self.assertLess(preflight_index, compose_index)
+        self.assertLess(compose_index, build_index)
 
     @staticmethod
     def read_active_step_lines(step: str) -> list[str]:
