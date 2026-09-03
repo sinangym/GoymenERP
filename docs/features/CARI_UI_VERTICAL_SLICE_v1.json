@@ -6,7 +6,7 @@
   "implementationReadiness": "blocked",
   "productionActivation": "no_go",
   "eventDeliveryMode": "synchronous_transaction",
-  "reviewedMainSha": "8795bceb9838572f101238162d926f586d452ec8",
+  "reviewedMainSha": "75c783ba1ca0ab78432398f57c67e12b8c3177d2",
   "tracking": "Issue-78",
   "owners": {
     "businessAndCariFeature": "CHATGPT-BUSINESS/CARI",
@@ -15,6 +15,7 @@
     "singleWriterRequired": true
   },
   "currentMain": {
+    "snapshotScope": "reviewedMainSha",
     "companyLink": {
       "pr": 106,
       "sourcePr": 77,
@@ -30,8 +31,76 @@
       "sourcePr": 102,
       "status": "merged"
     },
-    "erp000kRuntime": "blocked",
-    "productionUi": "no_go"
+    "erp000kRuntime": "normal-provider-staged-capabilities-unavailable",
+    "productionUi": "no_go",
+    "mergedRuntimeEvidence": [
+      "PR-127",
+      "PR-141",
+      "PR-169",
+      "PR-170",
+      "PR-174",
+      "PR-183",
+      "PR-185",
+      "PR-186",
+      "PR-187",
+      "PR-188",
+      "PR-189",
+      "PR-192"
+    ],
+    "mergedNonActivationCariEvidence": [
+      {
+        "pr": "PR-191",
+        "scope": "CARI-LINK-no-op-concurrency-acceptance",
+        "status": "merged",
+        "normalRuntimeActivationCredit": false
+      },
+      {
+        "pr": "PR-196",
+        "scope": "C01A-history-revoke-forward-disposable-behavior",
+        "status": "merged",
+        "finalHeadSha": "7e284c7833e2a3130adc84d9c53efbdfc08f08ce",
+        "mergeSha": "3fceea9e191907f370bf9e240b3b80cb8974b2d6",
+        "browserRunId": 33721831760,
+        "casesPassed": 1,
+        "skipped": 0,
+        "forwardOnly": true,
+        "normalProviderUsed": false,
+        "normalRuntimeActivationCredit": false,
+        "blockedBy": [
+          "Issue-199",
+          "native-back",
+          "normal-provider-origin-attestation",
+          "five-run-series"
+        ]
+      },
+      {
+        "pr": "PR-201",
+        "scope": "C02-and-company-link-mutation-response-boundary-hardening",
+        "status": "merged",
+        "normalRuntimeActivationCredit": false
+      },
+      {
+        "pr": "PR-206",
+        "scope": "company-link-company-wide-source-authority-hardening",
+        "status": "merged",
+        "normalRuntimeActivationCredit": false
+      }
+    ],
+    "mergedInfrastructureEvidence": [
+      "PR-197",
+      "PR-198"
+    ],
+    "openNormalRuntimeActivationBlockers": [
+      "Issue-146-C01-AC-002-005-007-acceptance-gaps",
+      "Issue-148-c03-acceptance-and-independent-normal-provider-activation",
+      "C03-post-main-green-before-C01-evidence-base-pin",
+      "Issue-199-activation-source-junit-window-and-crash-safe-restore",
+      "Issue-204-disposable-key-free-normal-provider-activation-profile",
+      "normal-provider-origin-attestation-independent-of-declaration-revision",
+      "C01-native-back-forward-user-reachable-topology",
+      "C03-and-C01-five-consecutive-clean-full-run-series"
+    ],
+    "openNormalRuntimeActivationBlockersScope": "reviewed-main-sha"
   },
   "screenScope": {
     "included": [
@@ -67,16 +136,883 @@
     ]
   },
   "routeContractInvariants": {
+    "cari.list": {
+      "routeId": "cari.list",
+      "screen": "C-01",
+      "path": "/cari",
+      "capability": "cari.parties.list",
+      "currentNormalRuntime": {
+        "provider": "CounterpartyShellCapabilityProvider",
+        "routeContext": "single-or-authorized-multi-company-read",
+        "contextRequirement": "SingleOrAuthorizedMultiCompanyRead",
+        "scopeRequirement": "CompanyWide",
+        "implementationAvailable": false
+      },
+      "acceptedActivationTarget": {
+        "variant": "C-01A",
+        "routeContext": "single-company",
+        "contextRequirement": "SingleCompany",
+        "shellContext": "SingleCompany",
+        "permission": "counterparty.parties.read",
+        "permissionScope": "company-wide",
+        "implementationAvailable": true,
+        "runtime": "normal-pre-production"
+      },
+      "groupVariant": {
+        "variant": "C-01B",
+        "rendererAvailable": false,
+        "implementationAvailable": false,
+        "activation": "closed"
+      },
+      "activationImplementationStartEligible": true,
+      "activationImplementationStartBlockedBy": [],
+      "activationCandidate": {
+        "routeExclusive": true,
+        "mustBeCreatedFromOperationTimeMainAfterPr192Merge": true,
+        "mustDescendFromAcceptedPr192MergeSha": true,
+        "ancestryMustBeRecordedInExactHeadArtifact": true,
+        "evidenceBaseSnapshotImplementationAvailable": false,
+        "proposedCandidateImplementationAvailable": true,
+        "evidenceBaseSnapshotRuntimeActivationGo": false,
+        "proposedCandidateRuntimeActivationGo": true,
+        "candidateMayChangeDetailRuntimeFields": false,
+        "detailRuntimeFieldsMustEqualPinnedBase": true,
+        "c03IndependentActivationRequiredBeforeEvidenceBasePin": true,
+        "c03MayActivateWhileC01Unavailable": true,
+        "c03BlocksImplementationStart": false,
+        "c03BlocksEvidenceIdentityPin": true,
+        "c03BlocksFiveRunStreakStart": true,
+        "c03BlocksRuntimeActivationGo": true,
+        "pinnedBaseMustContainIndependentlyActiveC03AndProductionRowLinkRouteTopology": true,
+        "candidateMustProveRealUserReachabilityAfterListEnabled": true,
+        "authoritativeFieldsRequiredOnFirstEvidenceBearingHead": {
+          "CounterpartyShellCapabilityProvider.List.ContextRequirement": "SingleCompany",
+          "CounterpartyShellCapabilityProvider.List.ImplementationAvailable": true,
+          "routeContractInvariants.cari.list.currentNormalRuntime.routeContext": "single-company",
+          "routeContractInvariants.cari.list.currentNormalRuntime.contextRequirement": "SingleCompany",
+          "routeContractInvariants.cari.list.currentNormalRuntime.implementationAvailable": true,
+          "routes[id=cari.list].context": "single-company",
+          "capabilities[id=cari.parties.list].scope": "company-wide",
+          "routeContractInvariants.cari.list.runtimeActivationGo": true,
+          "routeContractInvariants.cari.list.runtimeActivationGoBlockedBy": []
+        },
+        "implementationStartFieldsAlreadyOpenedByOwnerSource": {
+          "routeContractInvariants.cari.list.activationImplementationStartEligible": true,
+          "routeContractInvariants.cari.list.activationImplementationStartBlockedBy": [],
+          "activationImplementationStartBlockedBy.cari.list": []
+        },
+        "publicationRequiresSameExactHeadEvidenceAndMerge": true,
+        "headChangeInvalidatesEvidenceAndReviews": true
+      },
+      "runtimeActivationGo": false,
+      "runtimeActivationGoBlockedBy": [
+        "Issue-146-C01-AC-002-005-007-acceptance-gaps",
+        "Issue-148-c03-independent-activation-and-post-main-green",
+        "Issue-199-activation-evidence-hardening",
+        "normal-provider-origin-attestation-independent-of-declaration-revision",
+        "real-user-reachable-native-back-forward-topology-from-cari",
+        "normal-provider-real-browser-success-leave-revoke-back-forward-before-cache-expiry",
+        "five-consecutive-clean-full-activation-evidence-runs",
+        "fresh-activation-head-standard-ci",
+        "two-independent-exact-head-k3-reviews"
+      ]
+    },
+    "cari.detail": {
+      "routeId": "cari.detail",
+      "screen": "C-03",
+      "path": "/cari/:partyId",
+      "capability": "cari.parties.detail",
+      "currentNormalRuntime": {
+        "provider": "CounterpartyShellCapabilityProvider",
+        "routeContext": "single-or-authorized-multi-company-read",
+        "contextRequirement": "SingleOrAuthorizedMultiCompanyRead",
+        "scopeRequirement": "CompanyWide",
+        "implementationAvailable": false
+      },
+      "acceptedActivationTarget": {
+        "routeContext": "single-company",
+        "contextRequirement": "SingleCompany",
+        "shellContext": "SingleCompany",
+        "permission": "counterparty.parties.read",
+        "permissionScope": "company-wide",
+        "implementationAvailable": true,
+        "runtime": "normal-pre-production"
+      },
+      "groupVariant": {
+        "rendererAvailable": false,
+        "implementationAvailable": false,
+        "activation": "closed"
+      },
+      "activationImplementationStartEligible": true,
+      "activationImplementationStartBlockedBy": [],
+      "activationCandidate": {
+        "routeExclusive": true,
+        "evidenceBaseSnapshotImplementationAvailable": false,
+        "proposedCandidateImplementationAvailable": true,
+        "evidenceBaseSnapshotRuntimeActivationGo": false,
+        "proposedCandidateRuntimeActivationGo": true,
+        "mustCloseIssue148Findings": [
+          "invalid-malformed-or-nil-party-id-makes-no-detail-business-call",
+          "route-party-id-and-response-party-id-bind-exactly",
+          "detail-only-mode-does-not-render-unavailable-cari-list-link",
+          "verified-success-uses-exact-request-and-company-header",
+          "delayed-a-to-b-response-is-rejected-as-stale",
+          "complete-c03-browser-and-accessibility-matrix",
+          "401-terminal-session-and-cache-clear",
+          "403-404-neutral-fail-closed",
+          "malformed-offline-5xx-and-retry",
+          "actor-session-company-entry-generation-fence"
+        ],
+        "normalProviderContextRequirement": "SingleCompany",
+        "normalProviderImplementationAvailable": true,
+        "mustPreserveListCreateAndLinkDeclarations": true,
+        "authoritativeFieldsRequiredOnFirstEvidenceBearingHead": {
+          "CounterpartyShellCapabilityProvider.Detail.ContextRequirement": "SingleCompany",
+          "CounterpartyShellCapabilityProvider.Detail.ImplementationAvailable": true,
+          "routeContractInvariants.cari.detail.currentNormalRuntime.routeContext": "single-company",
+          "routeContractInvariants.cari.detail.currentNormalRuntime.contextRequirement": "SingleCompany",
+          "routeContractInvariants.cari.detail.currentNormalRuntime.implementationAvailable": true,
+          "routes[id=cari.detail].context": "single-company",
+          "capabilities[id=cari.parties.detail].scope": "company-wide",
+          "routeContractInvariants.cari.detail.runtimeActivationGo": true,
+          "routeContractInvariants.cari.detail.runtimeActivationGoBlockedBy": []
+        },
+        "implementationStartFieldsAlreadyOpenedByOwnerSource": {
+          "routeContractInvariants.cari.detail.activationImplementationStartEligible": true,
+          "routeContractInvariants.cari.detail.activationImplementationStartBlockedBy": [],
+          "activationImplementationStartBlockedBy.cari.detail": []
+        },
+        "publicationRequiresSameExactHeadEvidenceAndMerge": true,
+        "headChangeInvalidatesEvidenceAndReviews": true,
+        "normalProviderOriginAttestationRequired": true,
+        "minimumConsecutiveCleanFullRemoteRuns": 5,
+        "freshExactHeadStandardCiRequired": true,
+        "twoIndependentExactHeadK3ReviewsRequired": true,
+        "mergeTreeMustEqualTestedTree": true,
+        "postMainGreenRequiredBeforeC01EvidenceBasePin": true
+      },
+      "runtimeActivationGo": false,
+      "runtimeActivationGoBlockedBy": [
+        "Issue-148-c03-contract-and-route-entry-findings",
+        "exact-head-c03-normal-provider-sql-browser-evidence",
+        "normal-provider-origin-attestation-independent-of-declaration-revision",
+        "five-consecutive-clean-full-c03-evidence-runs",
+        "fresh-exact-head-standard-ci-container-and-ui-golden",
+        "two-independent-exact-head-k3-reviews"
+      ]
+    },
     "cari.create": {
       "routeId": "cari.create",
       "screen": "C-02",
       "scopeVariant": "create-subset",
       "path": "/cari/yeni",
       "capability": "cari.parties.create",
+      "currentNormalRuntime": {
+        "provider": "CounterpartyShellCapabilityProvider",
+        "contextRequirement": "SingleCompany",
+        "scopeRequirement": "CompanyWide",
+        "implementationAvailable": false
+      },
+      "acceptedActivationTarget": {
+        "scopeVariant": "create-subset",
+        "contextRequirement": "SingleCompany",
+        "permission": "counterparty.parties.create",
+        "permissionScope": "company-wide",
+        "implementationAvailable": true,
+        "runtime": "normal-pre-production"
+      },
+      "activationImplementationStartEligible": false,
+      "activationImplementationStartBlockedBy": [
+        "C01-normal-runtime-activation-merge-and-post-main-green"
+      ],
+      "runtimeActivationGo": false,
+      "runtimeActivationGoBlockedBy": [
+        "C03-normal-runtime-detail-activation-or-owner-approved-success-destination-revision",
+        "all-existing-C02-CLINK-UX-cases-mapped-and-green",
+        "five-consecutive-clean-full-c02-link-evidence-runs",
+        "fresh-exact-head-standard-ci",
+        "two-independent-exact-head-k3-reviews"
+      ],
       "forbiddenScreenLiterals": [
         "C-02:create-subset"
       ]
+    },
+    "cari.company-link": {
+      "routeId": "cari.company-link",
+      "screen": "CARI-LINK-WORKSPACE-001",
+      "path": "/cari/sirkete-bagla",
+      "capability": "cari.accounts.link",
+      "currentNormalRuntime": {
+        "provider": "CounterpartyShellCapabilityProvider",
+        "contextRequirement": "SingleCompany",
+        "scopeRequirement": "CompanyWide",
+        "implementationAvailable": false
+      },
+      "acceptedActivationTarget": {
+        "contextRequirement": "SingleCompany",
+        "permissions": [
+          "counterparty.accounts.create",
+          "counterparty.parties.read"
+        ],
+        "permissionScope": "both-company-wide-on-target",
+        "implementationAvailable": true,
+        "runtime": "normal-pre-production"
+      },
+      "activationImplementationStartEligible": false,
+      "activationImplementationStartBlockedBy": [
+        "C01-normal-runtime-activation-merge-and-post-main-green"
+      ],
+      "runtimeActivationGo": false,
+      "runtimeActivationGoBlockedBy": [
+        "C03-normal-runtime-detail-activation-or-owner-approved-success-destination-revision",
+        "all-existing-C02-CLINK-UX-cases-mapped-and-green",
+        "five-consecutive-clean-full-c02-link-evidence-runs",
+        "fresh-exact-head-standard-ci",
+        "two-independent-exact-head-k3-reviews"
+      ]
     }
+  },
+  "normalRuntimeActivationGate": {
+    "routeEvidenceIsIndependent": true,
+    "pr192MergedSuiteRequiredOutcomes": [
+      "ok-single",
+      "401-central-session-and-cache-effect",
+      "403-404-neutral-fail-closed",
+      "malformed",
+      "offline-network",
+      "5xx",
+      "retry",
+      "actor-session-company-entry-generation-fence"
+    ],
+    "acceptedPrerequisiteEvidenceAfterPr192Merge": {
+      "routeEntryFreshness": "PR-192-final-head-c7410fa0151118e9f9976ae6bd1b5f4e06bb5c82-merged-as-68aa15c81c049330e5ff08bf75b25a9ec6217f82-coordinator-recorded-five-times-218-of-218-visible-remote-seven-of-seven-fresh-review-waived",
+      "c01Browser": "PR-183-B-C01-001-through-010-10-of-10-skip-zero-remote",
+      "sabBrowser": "SAB-006-through-009-4-of-4-skip-zero-remote"
+    },
+    "pr192CompletionProvenance": {
+      "finalHeadSha": "c7410fa0151118e9f9976ae6bd1b5f4e06bb5c82",
+      "prBaseSha": "d628bc74725303396cd41c90914af971342b172a",
+      "mergeSha": "68aa15c81c049330e5ff08bf75b25a9ec6217f82",
+      "coordinatorRecordedConsecutiveFullRuns": 5,
+      "testsPassedPerRecordedRun": 218,
+      "individualRemoteRunIdsPublishedForFiveRunSeries": false,
+      "streakIndependentlyReconstructible": false,
+      "observableFinalHeadRemoteWorkflowJobsPassed": 7,
+      "observableFinalHeadRemoteWorkflowJobsTotal": 7,
+      "observableRemoteFrontendTestsPassed": 218,
+      "freshCodexExactHeadReviewWaived": true,
+      "realBrowserBackForwardRevocationEvidenceWaived": true,
+      "waiverProvidesNormalRuntimeActivationCredit": false
+    },
+    "pr196BehaviorEvidence": {
+      "finalHeadSha": "7e284c7833e2a3130adc84d9c53efbdfc08f08ce",
+      "prBaseSha": "1150edb92a323eefde0f0b0b6ab913d5f5c9dab8",
+      "mergeSha": "3fceea9e191907f370bf9e240b3b80cb8974b2d6",
+      "uiRunId": 33721831787,
+      "browserRunId": 33721831760,
+      "ciRunId": 33721831774,
+      "workflowJobsPassed": 7,
+      "workflowJobsTotal": 7,
+      "browserCase": "C01A-HISTORY-REVOKE-forward",
+      "browserCasesPassed": 1,
+      "browserSkipped": 0,
+      "disposableOverrideKey": "C01E2e__EnableListCapability",
+      "disposableOverrideValue": true,
+      "normalProviderUsed": false,
+      "nativeBackCovered": false,
+      "fiveRunSeriesCovered": false,
+      "normalRuntimeActivationCredit": false,
+      "blockedByIssue": "Issue-199"
+    },
+    "issue199ActivationEvidenceHardening": {
+      "requiredBeforeActivationCredit": true,
+      "openFindings": [
+        "activation-source-and-exact-junit-case-count-gate-must-fail-closed",
+        "thirty-second-window-must-start-at-first-successful-business-response",
+        "revoke-and-restore-must-be-crash-safe-transactional-and-prove-exact-preimage-restoration"
+      ]
+    },
+    "issue146CompletionDecision": {
+      "status": "open",
+      "ownerAuditComment": "https://github.com/sinangym/GoymenERP/issues/146#issuecomment-5521747972",
+      "result": {
+        "pass": 4,
+        "partial": 2,
+        "fail": 1
+      },
+      "passed": [
+        "C01-AC-001",
+        "C01-AC-003",
+        "C01-AC-004",
+        "C01-AC-006"
+      ],
+      "remaining": {
+        "C01-AC-002": "active-filter-must-prove-inactive-account-row-absence-and-active-inactive-all-matrix",
+        "C01-AC-005": "invalid-cursor-recovery-must-issue-a-fresh-cursorless-page-one-get-instead-of-reusing-react-query-cache",
+        "C01-AC-007": "all-filter-and-continuation-keyboard-visible-focus-mobile-200-percent-task-and-exactly-once-live-announcement-evidence"
+      },
+      "newAcceptanceIdentifiersRequired": false,
+      "mustCloseBeforeC01RuntimeActivationGo": true
+    },
+    "registryAuthorityAttestation": {
+      "currentNormalAllFalseRevision": "sha256:3GiwcHV6aVuN1Y-wBzElxLJLCok2bblGc6pRruhqTx4",
+      "currentDisposableListOnlyRevision": "sha256:SXjogFbPGJiI4BxV5pC3wL7ywOTKV1fdsWR-nb5kreg",
+      "revisionAloneProvesProviderOrigin": false,
+      "generationAloneProvesProviderOrigin": false,
+      "activatedNormalAndDisposableProvidersMayShareDeclarationRevision": true,
+      "clientPayloadProviderOriginRequired": false,
+      "requiredProviderOrigin": "normal",
+      "originAttestationMustBeRuntimeGenerated": true,
+      "originAttestationMustBeDeclarationRevisionIndependent": true,
+      "originDerivationSource": "running-api-post-di-exact-provider-type-and-count",
+      "requiredResolvedProviderCount": 1,
+      "exactProviderTypeOriginMap": {
+        "GoymenERP.Modules.Counterparty.Infrastructure.Shell.CounterpartyShellCapabilityProvider": "normal",
+        "GoymenERP.Api.Shell.C01E2eShellCapabilityProvider": "c01-disposable"
+      },
+      "unknownMissingOrMultipleProviderSelectionFailsClosed": true,
+      "configureReturnedAuthorityMayDetermineOrigin": false,
+      "workflowInputOrArtifactLabelMayDetermineOrigin": false,
+      "processEmittedAttestationMustInclude": [
+        "resolved-provider-count",
+        "exact-runtime-provider-type",
+        "derived-source-channel",
+        "api-process-instance-id"
+      ],
+      "exactDiProviderSelectionTestRequired": true,
+      "emptyDisposableActivationEnvelopeMustResolveCanonicalProvider": true,
+      "runningApiProcessEffectiveConfigurationMustExclude": [
+        "C01E2e:EnableListCapability",
+        "GOYMEN_ERP_C01_E2E_DISPOSABLE",
+        "GOYMEN_ERP_C01_E2E_TESTED_COMMIT",
+        "GOYMEN_ERP_C01_E2E_RUN_ID",
+        "GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT"
+      ],
+      "configurationAbsenceCheckScope": "api-IConfiguration-in-the-running-process",
+      "runnerOrJobEnvironmentAbsenceRequired": false,
+      "ociRevisionMustEqualCandidateHeadSha": true,
+      "sameApiContainerAndProcessMustProduceOriginConfigRegistryAndEndpointEvidence": true,
+      "everyCountedBrowserCapabilityAndBusinessRequestMustBindToAttestedApiProcess": true,
+      "browserRequestProcessBinding": {
+        "browserNetworkArtifactMustRecordRunBoundRequestCorrelation": true,
+        "runningApiMustEmitCorrelationWithContainerAndProcessInstance": true,
+        "serverAttachedContainerAndProcessIdentityIsAuthoritative": true,
+        "clientSuppliedOriginLabelIsAuthoritative": false,
+        "everyCapabilityAndBusinessRequestMustMatchExactlyOneServerRecord": true,
+        "allMatchedServerRecordsMustUseAttestedContainerAndProcessInstance": true
+      },
+      "singleAtomicCiArtifactMustBind": [
+        "workflow-run-id-and-attempt",
+        "base-main-sha",
+        "candidate-head-sha",
+        "tested-integration-tree-sha",
+        "workflow-and-test-source-sha",
+        "running-api-container-id",
+        "running-api-image-id-or-digest",
+        "running-image-oci-revision",
+        "api-process-instance-id",
+        "resolved-provider-count-and-exact-type",
+        "provider-origin",
+        "registry-revision",
+        "effective-disposable-config-absence",
+        "shell-capability-endpoint-result",
+        "browser-network-request-correlations",
+        "server-request-correlation-container-and-process-bindings",
+        "exact-junit-case-and-count"
+      ],
+      "negativeMutationsMustFail": [
+        "missing-provider-origin",
+        "disposable-provider-origin",
+        "disposable-provider-selected-but-normal-origin-label",
+        "unknown-missing-or-multiple-provider-selection",
+        "effective-config-override-present",
+        "origin-config-registry-or-endpoint-from-different-container-or-process",
+        "browser-request-missing-duplicate-or-unmatched-server-correlation",
+        "browser-request-served-by-non-attested-container-or-process",
+        "normal-attestation-combined-with-disposable-browser-traffic",
+        "oci-revision-head-mismatch",
+        "registry-revision-artifact-mismatch",
+        "missing-or-wrong-junit-case-count"
+      ],
+      "deliveryTracking": "Issue-204"
+    },
+    "testingDisposableEvidenceRole": "prerequisite-baseline-only",
+    "testingDisposableEvidenceSufficientForNormalProviderActivation": false,
+    "freshRouteEntryRequiredFor": [
+      "initial-entry",
+      "deep-link",
+      "refresh",
+      "new-tab",
+      "same-spa-back-forward"
+    ],
+    "backForwardRevocationWindowSecondsMaximum": 30,
+    "backForwardRevocationMustRunBeforeCacheExpiry": true,
+    "cachedSuccessVisibleBeforeFreshAuthorization": false,
+    "capabilityRevokedBusinessRequestCount": 0,
+    "business401403BoundaryCoveredBy": "SAB-006-through-009",
+    "nativeBackReentryTopology": {
+      "reviewedMainAvailable": false,
+      "observedBy": "PR-184-comment-5517860727-from-PR-196-implementation-measurement",
+      "blocksC01ImplementationStart": false,
+      "blocksC01EvidenceIdentityPin": true,
+      "blocksC01FiveRunStreakStart": true,
+      "blocksC01RuntimeActivationGo": true,
+      "c03MayActivateWhileC01Unavailable": true,
+      "requiredPinnedBaseFacts": [
+        "c03-is-independently-active-under-normal-provider",
+        "c03-merge-tree-equals-tested-tree",
+        "c03-post-main-ci-is-green",
+        "production-row-link-and-detail-route-topology-exist"
+      ],
+      "requiredC01CandidateFacts": [
+        "list-is-enabled-by-normal-provider",
+        "production-cari-row-renders-user-clickable-detail-link",
+        "user-click-creates-cari-to-cari-detail-history-entry",
+        "native-back-and-native-forward-reenter-cari-under-revocation"
+      ],
+      "directionSetups": {
+        "C01A-HISTORY-REVOKE-back": [
+          "bootstrap-on-production-shell",
+          "click-production-cari-navigation-and-observe-successful-business-response",
+          "click-production-cari-row-link-to-detail",
+          "revoke-server-read-grant",
+          "page-go-back-to-cari"
+        ],
+        "C01A-HISTORY-REVOKE-forward": [
+          "bootstrap-on-production-shell",
+          "click-production-cari-navigation-and-observe-successful-business-response",
+          "page-go-back-to-shell",
+          "revoke-server-read-grant",
+          "page-go-forward-to-cari"
+        ]
+      },
+      "exactDirectionCaseCount": 2,
+      "candidateMayChangeDetailRuntimeFields": false,
+      "candidateMustPreservePinnedBaseDetailRuntimeFields": true,
+      "afterInitialBootstrapForbidden": [
+        "page-goto",
+        "history-push-state",
+        "history-replace-state",
+        "direct-history-api",
+        "test-invoked-router-navigation",
+        "test-only-route",
+        "test-only-link",
+        "disposable-capability-override"
+      ],
+      "historyEntryMustBeCreatedByProductionUiClick": true,
+      "returnMustUse": [
+        "page-go-back",
+        "page-go-forward"
+      ],
+      "forwardDirectionStillRequired": true,
+      "backDirectionStillRequired": true
+    },
+    "remainingC01ActivationEvidence": [
+      "Issue-146-C01-AC-002-005-007-closed-on-existing-identifiers",
+      "Issue-199-closed-with-fail-closed-source-junit-window-and-crash-safe-restore",
+      "Issue-204-disposable-key-free-normal-provider-activation-profile",
+      "C03-independently-activated-and-post-main-green-before-C01-evidence-base-pin",
+      "normal-provider-origin-attestation-independent-of-declaration-revision",
+      "normal-provider-real-browser-success-leave-server-read-grant-revoke-native-back-forward-before-cache-expiry",
+      "five-consecutive-clean-full-C01-activation-runs-on-one-immutable-identity"
+    ],
+    "remainingC01FunctionalEvidenceAssertions": [
+      "unmerged-normal-provider-candidate-is-single-company-and-implementation-available",
+      "pinned-base-contains-independently-active-C03-and-production-row-link-detail-route-topology",
+      "candidate-head-makes-production-row-link-user-reachable-by-enabling-list",
+      "exact-C01A-HISTORY-REVOKE-back-and-forward-cases-use-their-direction-specific-production-navigation-setups",
+      "single-artifact-attests-normal-provider-origin-effective-config-image-and-registry-revision",
+      "every-browser-capability-and-business-request-correlation-matches-the-attested-api-container-and-process",
+      "existing-CASE-C03-009-list-available-branch-proves-keyboard-return-link",
+      "fresh-shell-capability-request-excludes-cari-parties-list",
+      "post-revoke-counterparty-business-request-count-zero",
+      "pre-navigation-mutation-observer-records-zero-cached-cari-row-frames",
+      "neutral-non-disclosing-route-state",
+      "exact-sha-request-counts-junit-network-artifact",
+      "five-consecutive-clean-full-remote-activation-evidence-runs-on-one-immutable-tuple"
+    ],
+    "issue146BothRequestsRepeatInterpretation": {
+      "grantRetainedRouteEntry": "fresh-capability-and-business-requests-repeat-in-PR-192-merged-suite",
+      "grantRevokedRouteEntry": "fresh-capability-rejects-and-post-revoke-business-request-count-is-zero"
+    },
+    "activationCandidateSequence": [
+      "C01-implementation-work-may-start-without-C03",
+      "close-Issue-146-C01-AC-002-005-007-on-existing-identifiers",
+      "close-Issue-199-with-fail-closed-evidence-mechanics",
+      "complete-Issue-204-disposable-key-free-normal-provider-activation-profile",
+      "close-Issue-148-and-create-C03-normal-provider-activation-candidate",
+      "C03-candidate-completes-five-clean-runs-two-reviews-merge-and-post-main-green",
+      "pin-C01-evidence-base-to-that-post-C03-main",
+      "create-C01-candidate-that-enables-only-list-and-preserves-pinned-base-detail-fields",
+      "same-candidate-attests-normal-provider-origin-effective-config-image-and-registry-revision",
+      "same-candidate-runs-native-back-and-forward-revocation-evidence",
+      "same-immutable-identity-completes-five-clean-runs-fresh-CI-and-two-reviews",
+      "only-then-merge-C01-candidate-to-unchanged-pinned-main"
+    ],
+    "postEvidenceActivationToggleCommitAllowed": false,
+    "headChangeInvalidatesAllEvidenceAndReviews": true,
+    "baseChangeInvalidatesAllEvidenceAndReviews": true,
+    "evidenceIdentity": [
+      "base-main-sha",
+      "candidate-head-sha",
+      "tested-integration-tree-sha",
+      "workflow-and-test-source-sha",
+      "running-image-oci-revision",
+      "resolved-provider-count-and-exact-type",
+      "provider-origin",
+      "registry-revision",
+      "accepted-PR-192-merge-sha-ancestry"
+    ],
+    "perRunEvidenceBinding": [
+      "workflow-run-id-and-attempt",
+      "running-api-container-id",
+      "running-api-image-id-or-digest",
+      "api-process-instance-id"
+    ],
+    "mergePublication": {
+      "targetMainMustStillEqualPinnedBaseSha": true,
+      "resultTreeMustEqualTestedIntegrationTreeSha": true,
+      "mergeMethodIsNotEvidenceIdentity": true
+    },
+    "requiredChecksMustBeCompletedSuccess": true,
+    "requiredChecksSkippedOrCancelledAllowed": false,
+    "c03ActivationGate": {
+      "tracking": "Issue-148",
+      "mayActivateWhileC01Unavailable": true,
+      "requiredFindingsClosed": [
+        "invalid-malformed-or-nil-party-id-makes-no-detail-business-call",
+        "route-party-id-and-response-party-id-bind-exactly",
+        "detail-only-mode-does-not-render-unavailable-cari-list-link",
+        "verified-success-uses-exact-request-and-company-header",
+        "delayed-a-to-b-response-is-rejected-as-stale",
+        "complete-c03-browser-and-accessibility-matrix",
+        "401-terminal-session-and-cache-clear",
+        "403-404-neutral-fail-closed",
+        "malformed-offline-5xx-and-retry",
+        "actor-session-company-entry-generation-fence"
+      ],
+      "requiredCaseManifest": [
+        "CASE-C03-001",
+        "CASE-C03-002",
+        "CASE-C03-003",
+        "CASE-C03-004",
+        "CASE-C03-005",
+        "CASE-C03-006",
+        "CASE-C03-007",
+        "CASE-C03-008",
+        "CASE-C03-009@list-unavailable"
+      ],
+      "exactCaseCountPerRun": 9,
+      "junitMustMatchExactCaseManifest": true,
+      "caseC03009VariantIsNotANewCaseIdentifier": true,
+      "normalProviderTarget": {
+        "capability": "cari.parties.detail",
+        "contextRequirement": "SingleCompany",
+        "implementationAvailable": true
+      },
+      "mustPreserveCapabilities": [
+        "cari.parties.list",
+        "cari.parties.create",
+        "cari.accounts.link"
+      ],
+      "normalProviderOriginAttestationRequired": true,
+      "minimumConsecutiveCleanFullRemoteRuns": 5,
+      "eachRunMustUseDistinctWorkflowRunId": true,
+      "eachRunMustBeFirstAttempt": true,
+      "retryQuarantineSkipCancelOrTimeoutAllowed": false,
+      "freshExactHeadChecksRequired": [
+        "standard-ci",
+        "container",
+        "ui-golden",
+        "sql",
+        "real-browser",
+        "accessibility"
+      ],
+      "twoIndependentExactHeadK3ReviewsRequired": true,
+      "headBaseOriginOrRevisionChangeResetsStreak": true,
+      "mergeTreeMustEqualTestedTree": true,
+      "postMainGreenRequiredBeforeC01EvidenceBasePin": true
+    },
+    "stabilityGate": {
+      "minimumConsecutiveCleanRuns": 5,
+      "appliesIndependentlyTo": [
+        "cari.parties.detail",
+        "cari.parties.list"
+      ],
+      "pr192PrerequisiteStreakRecordedAtMerge": true,
+      "pr192AcceptedStreakEvidence": "coordinator-recorded-five-consecutive-full-runs-218-of-218-plus-final-head-remote-seven-of-seven",
+      "pr192FiveRunSeriesHasDistinctPublishedRemoteRunIds": false,
+      "pr192StreakIndependentlyReconstructible": false,
+      "pr192StreakIdentity": [
+        "base-sha",
+        "pr-head-sha",
+        "tested-tree-sha",
+        "workflow-and-test-source-sha"
+      ],
+      "activationCandidateBrowserSuiteMustMeetOwnStreakBeforeRuntimeGo": true,
+      "activationCandidateStreakIdentity": [
+        "base-main-sha",
+        "candidate-head-sha",
+        "tested-integration-tree-sha",
+        "workflow-and-test-source-sha",
+        "running-image-oci-revision",
+        "resolved-provider-count-and-exact-type",
+        "provider-origin",
+        "registry-revision"
+      ],
+      "activationCandidatePerRunBinding": [
+        "workflow-run-id-and-attempt",
+        "running-api-container-id",
+        "running-api-image-id-or-digest",
+        "api-process-instance-id"
+      ],
+      "perRunContainerImageAndProcessIdentifiersMustBeNonempty": true,
+      "perRunContainerImageAndProcessIdentifiersMayDifferAcrossRuns": true,
+      "perRunImageMustDeclareCandidateHeadAsOciRevision": true,
+      "streaksAreIndependentAndCannotBeCreditedToEachOther": true,
+      "pr192JsdomCannotSubstituteForRealBrowserStreak": true,
+      "pr196DisposableForwardRunCannotSubstituteForEitherActivationStreak": true,
+      "historicalMergedPr183AndSabEvidenceRequireNoRetroactiveStreak": true,
+      "eachActivationCandidateCountedRunMustBeFreshIndependentWorkflowExecution": true,
+      "activationCandidateDistinctWorkflowRunIdsRequired": true,
+      "eachActivationCandidateCountedRunMustBeFirstAttempt": true,
+      "sameActivationCandidateStreakIdentityRequiredAcrossAllRuns": true,
+      "eachCountedRunMustAssertNormalProviderOrigin": true,
+      "eachRouteActivationRunMustExecute": {
+        "cari.parties.detail": [
+          "real-chromium-api-sql",
+          "CASE-C03-001-through-008-plus-CASE-C03-009@list-unavailable-exact-nine-case-manifest",
+          "complete-c03-accessibility-matrix",
+          "all-contract-assertions",
+          "all-required-jobs"
+        ],
+        "cari.parties.list": [
+          "real-chromium-api-sql",
+          "C01A-HISTORY-REVOKE-back",
+          "C01A-HISTORY-REVOKE-forward",
+          "CASE-C03-009@list-available",
+          "all-contract-assertions",
+          "all-required-jobs"
+        ]
+      },
+      "routeLocalExactCaseCounts": {
+        "cari.parties.detail": 9,
+        "cari.parties.list": 3
+      },
+      "caseC03009VariantsAreBranchesOfExistingCaseNotNewIdentifiers": true,
+      "testRunnerRetryOrFlakyQuarantineAllowed": false,
+      "applicationLevel5xxRetryBehaviorRemainsRequired": true,
+      "eachRunMustBeCompletedSuccess": true,
+      "eachRequiredJobMustBeCompletedSuccess": true,
+      "skippedCancelledTimedOutOrNeutralAllowed": false,
+      "activationCandidateNonSuccessOrIdentityChangeResetsStreakToZero": true,
+      "activationCandidateSelectiveRerunAfterFailureCountsTowardInterruptedStreak": false,
+      "activationCandidateGreenRunsMayBeSelectedAcrossNonSuccess": false,
+      "activationCandidateArtifactMustRecordOrderedRunIdsAttemptsIdentitiesResultsAndUrls": true
+    },
+    "requiredEvidence": [
+      "PR-192-c7410fa-merged-as-68aa15c-coordinator-recorded-five-times-218-of-218-plus-visible-remote-seven-of-seven-under-fresh-review-waiver",
+      "PR-183-B-C01-001-through-010-10-of-10-skip-zero-remote",
+      "SAB-006-through-009-4-of-4-skip-zero-remote",
+      "PR-196-forward-disposable-behavior-only-with-zero-normal-runtime-activation-credit",
+      "Issue-146-C01-AC-002-005-007-closed-with-fresh-exact-tree-evidence",
+      "Issue-199-closed-with-fail-closed-source-junit-window-and-crash-safe-restore",
+      "Issue-204-disposable-key-free-normal-provider-activation-profile",
+      "Issue-148-closed-and-C03-normal-provider-activated-with-five-clean-runs-reviews-merge-and-post-main-green",
+      "runtime-generated-normal-provider-origin-attestation-bound-to-effective-config-image-registry-and-endpoint",
+      "browser-capability-and-business-request-correlations-bound-to-the-attested-api-container-and-process",
+      "candidate-user-reachable-production-row-link-and-native-back-forward-without-synthetic-history",
+      "existing-CASE-C03-009-list-unavailable-and-list-available-branches-proven-in-their-route-local-series",
+      "five-consecutive-normal-provider-real-browser-success-leave-revoke-native-back-forward-runs-before-cache-expiry",
+      "fresh-activation-head-standard-ci",
+      "two-independent-exact-head-k3-p0-p1-zero"
+    ],
+    "implementationAvailableDoesNotMeanProductionActivation": true,
+    "productionDeploymentCutover": "no_go"
+  },
+  "c02CompanyLinkFullStackGate": {
+    "tracking": "Issue-78",
+    "state": "frozen-until-c01-normal-runtime-activation-merge-and-post-main-green",
+    "sourceAcceptance": "docs/acceptance/CARI_C02_LINK_ACCEPTANCE_v1.md",
+    "newCaseAcceptanceOrDecisionIdsCreated": false,
+    "currentMainTruth": {
+      "createBackend": "implemented-hardened-via-PR-201",
+      "companyLinkBackend": "implemented-via-PR-106-hardened-via-PR-201-and-PR-206",
+      "linkCandidateBackend": "implemented-via-PR-174",
+      "createFrontend": "not-implemented-neutral-route-reservation",
+      "companyLinkFrontend": "not-implemented-neutral-route-reservation",
+      "createNormalProviderImplementationAvailable": false,
+      "companyLinkNormalProviderImplementationAvailable": false
+    },
+    "implementationStartAfter": [
+      "C01-normal-runtime-activation-merged",
+      "post-merge-current-main-ci-completed-success"
+    ],
+    "caseSources": [
+      "C02-AC-001-through-014",
+      "CLINK-AC-001-through-020",
+      "UX-AC-001-through-004"
+    ],
+    "requiredMappedCaseCount": 38,
+    "existingCanonicalAcceptance": [
+      "AT-001",
+      "AT-003",
+      "AT-005",
+      "AT-006",
+      "AT-008",
+      "AT-010",
+      "AT-013"
+    ],
+    "doesNotComplete": [
+      "AT-009",
+      "AT-011",
+      "AT-012",
+      "AT-014"
+    ],
+    "existingDecisionSources": [
+      "DEC-CAR-001",
+      "DEC-CAR-002",
+      "DEC-CAR-003",
+      "DEC-TEC-012",
+      "DEC-TEC-013",
+      "DEC-TST-001",
+      "DEC-TST-002"
+    ],
+    "createSubset": {
+      "acceptedFields": [
+        "kind",
+        "legalName",
+        "tradeName-optional",
+        "roles"
+      ],
+      "companySource": "server-resolved-X-Company-Id",
+      "partyCodeSource": "server-generated",
+      "vknTcknOrDuplicateEngineIncluded": false,
+      "at009RemainsOpen": true
+    },
+    "combinedEvidenceBundleRequired": true,
+    "firstEvidenceBearingHeadMustContain": [
+      "real-cari-create-route-and-component",
+      "real-cari-company-link-route-and-component",
+      "generated-client-and-runtime-decoders",
+      "all-tests-workflow-and-evidence-contract",
+      "owner-json-and-provider-parity",
+      "cari-parties-create-implementation-available-true",
+      "cari-accounts-link-implementation-available-true",
+      "top-level-cari-create-implementation-start-blockers-empty",
+      "top-level-cari-company-link-implementation-start-blockers-empty",
+      "cari-create-owner-runtime-activation-go-true-and-blockers-empty",
+      "cari-company-link-owner-runtime-activation-go-true-and-blockers-empty",
+      "c02-company-link-full-stack-gate-state-unmerged-activation-evidence-candidate",
+      "c02-company-link-full-stack-gate-runtime-activation-go-true"
+    ],
+    "firstEvidenceBearingCandidateTarget": {
+      "routeContractInvariants.cari.create": {
+        "currentNormalRuntime.implementationAvailable": true,
+        "activationImplementationStartEligible": true,
+        "activationImplementationStartBlockedBy": [],
+        "runtimeActivationGo": true,
+        "runtimeActivationGoBlockedBy": []
+      },
+      "routeContractInvariants.cari.company-link": {
+        "currentNormalRuntime.implementationAvailable": true,
+        "activationImplementationStartEligible": true,
+        "activationImplementationStartBlockedBy": [],
+        "runtimeActivationGo": true,
+        "runtimeActivationGoBlockedBy": []
+      },
+      "activationImplementationStartBlockedBy.cari.create": [],
+      "activationImplementationStartBlockedBy.cari.company-link": [],
+      "c02CompanyLinkFullStackGate.state": "unmerged-activation-evidence-candidate",
+      "c02CompanyLinkFullStackGate.runtimeActivationGo": true
+    },
+    "successDestinationDependency": {
+      "existingCases": [
+        "C02-AC-001",
+        "CLINK-AC-011"
+      ],
+      "destination": "target-scoped-C03",
+      "runtimeGoRequires": "cari.parties.detail-implementation-available-true-or-owner-approved-success-destination-revision",
+      "silentRedirectToC01Allowed": false
+    },
+    "requiredEvidence": [
+      "all-38-existing-cases-mapped-to-named-tests-and-artifacts",
+      "real-sql-and-api-cardinality",
+      "normal-provider-real-chromium-create-and-link",
+      "permission-context-error-replay-race-and-non-disclosure",
+      "dirty-company-switch-stale-response-and-unknown-outcome-fences",
+      "keyboard-focus-live-region-responsive-zoom-and-reflow",
+      "five-consecutive-clean-full-remote-runs",
+      "fresh-exact-head-standard-ci-container-and-ui-golden",
+      "two-independent-exact-head-k3-p0-p1-zero"
+    ],
+    "registryAuthorityAttestation": {
+      "reuses": "normalRuntimeActivationGate.registryAuthorityAttestation",
+      "requiredProviderOrigin": "normal",
+      "originDerivationSource": "running-api-post-di-exact-provider-type-and-count",
+      "requiredResolvedProviderCount": 1,
+      "requiredResolvedProviderType": "GoymenERP.Modules.Counterparty.Infrastructure.Shell.CounterpartyShellCapabilityProvider",
+      "runningApiEffectiveDisposableActivationKeysMustBeAbsent": true,
+      "revisionConfigureResultClientWorkflowOrArtifactLabelMayDetermineOrigin": false,
+      "sameApiContainerAndProcessMustProduceOriginConfigRegistryEndpointAndAllBrowserBusinessEvidence": true,
+      "everyBrowserCapabilityAndBusinessRequestMustMatchExactlyOneServerRecordForAttestedContainerAndProcess": true,
+      "normalAttestationCombinedWithDisposableBrowserTrafficMustFail": true
+    },
+    "evidenceIdentity": [
+      "base-main-sha",
+      "candidate-head-sha",
+      "tested-integration-tree-sha",
+      "workflow-and-test-source-sha",
+      "running-image-oci-revision",
+      "resolved-provider-count-and-exact-type",
+      "provider-origin",
+      "registry-revision"
+    ],
+    "artifactAlsoRecords": [
+      "ordered-run-ids",
+      "run-attempts",
+      "running-api-container-id",
+      "running-api-image-id-or-digest",
+      "api-process-instance-id",
+      "effective-disposable-config-absence",
+      "browser-network-request-correlations",
+      "server-request-correlation-container-and-process-bindings",
+      "results",
+      "artifact-urls"
+    ],
+    "stabilityGate": {
+      "minimumConsecutiveCleanRuns": 5,
+      "eachRunMustBeFreshIndependentWorkflowExecution": true,
+      "distinctWorkflowRunIdsRequired": true,
+      "eachCountedRunMustBeFirstAttempt": true,
+      "sameEvidenceIdentityRequiredAcrossAllRuns": true,
+      "eachCountedRunMustAssertNormalProviderOrigin": true,
+      "perRunContainerImageAndProcessIdentifiersMustBeNonempty": true,
+      "perRunContainerImageAndProcessIdentifiersMayDifferAcrossRuns": true,
+      "requiredMappedCasesPerRun": 38,
+      "testRunnerRetryOrFlakyQuarantineAllowed": false,
+      "eachRunMustBeCompletedSuccess": true,
+      "eachRequiredJobMustBeCompletedSuccess": true,
+      "skippedCancelledTimedOutOrNeutralAllowed": false,
+      "nonSuccessOrIdentityChangeResetsStreakToZero": true,
+      "selectiveRerunAfterFailureCountsTowardInterruptedStreak": false
+    },
+    "postEvidenceActivationToggleCommitAllowed": false,
+    "headChangeInvalidatesEvidenceAndReviews": true,
+    "baseChangeInvalidatesEvidenceAndReviews": true,
+    "mergePublication": {
+      "targetMainMustStillEqualPinnedBaseSha": true,
+      "resultTreeMustEqualTestedIntegrationTreeSha": true,
+      "mergeMethodIsNotEvidenceIdentity": true
+    },
+    "runtimeActivationGo": false,
+    "outOfScope": [
+      "cari-accounts-status-update",
+      "group-variants",
+      "vkn-tckn-lifecycle-and-duplicate-engine",
+      "production-deployment-cutover"
+    ],
+    "productionDeploymentCutover": "no_go"
   },
   "routes": [
     {
@@ -212,7 +1148,7 @@
   "readPage": {
     "contract": "CARI-READ-PAGE-001",
     "issue": 94,
-    "status": "accepted_implementation_queued",
+    "status": "main-via-PR-141",
     "qMax": 200,
     "pageSize": {
       "default": 50,
@@ -244,7 +1180,7 @@
   "linkCandidates": {
     "contract": "CARI-LINK-CANDIDATE-001",
     "issue": 95,
-    "status": "accepted_implementation_queued",
+    "status": "main-via-PR-174",
     "method": "GET",
     "path": "/api/v1/counterparties/company-account-link-candidates",
     "targetCompany": "server-resolved X-Company-Id only",
@@ -294,19 +1230,19 @@
       "codes": {
         "validation_failed": {
           "http": 400,
-          "status": "pending"
+          "status": "read-main-via-PR-141"
         },
         "command_metadata_invalid": {
           "http": 400,
-          "status": "pending"
+          "status": "main-via-PR-127"
         },
         "invalid_cursor": {
           "http": 400,
-          "status": "pending-with-94-95"
+          "status": "main-via-PR-141-and-174"
         },
         "not_found": {
           "http": 404,
-          "status": "normalization-pending",
+          "status": "detail-main-via-PR-170-and-187",
           "nonDisclosing": true
         },
         "already_linked": {
@@ -315,7 +1251,7 @@
         },
         "version_conflict": {
           "http": 409,
-          "status": "normalization-pending"
+          "status": "main-via-PR-127"
         },
         "idempotency_conflict": {
           "http": 409,
@@ -354,17 +1290,33 @@
     "PR-106",
     "PR-107",
     "PR-108",
+    "PR-127-stable-cari-problem-codes",
+    "PR-141-C01-read",
+    "PR-169-business-read-auth-boundary",
+    "PR-170-C03-detail-contract",
+    "PR-174-link-candidate-read",
+    "PR-183-C01-real-browser-evidence",
+    "PR-185-company-deactivation-fence",
+    "PR-186-group-read-deactivation-race",
+    "PR-187-C03-server-scope",
+    "PR-188-durable-SAB-browser-evidence",
+    "PR-189-C03-UI",
+    "PR-191-CARI-LINK-no-op-concurrency-acceptance-no-activation-credit",
+    "PR-192-route-entry-freshness-c7410fa-merged-as-68aa15c-coordinator-recorded-five-times-218-of-218-visible-remote-seven-of-seven-fresh-review-waived",
+    "PR-201-C02-and-company-link-mutation-response-boundary-hardening-no-activation-credit",
+    "PR-206-company-link-company-wide-source-authority-hardening-no-activation-credit",
     "Issues-93-94-95-observable-contracts"
   ],
-  "startBlockedBy": [
-    "ERP-000K runtime feature mount/route registry/query-cache/CompanyContext fence",
-    "server-backed capability provider",
-    "Issue-93 remaining producers and tests",
-    "Issue-94 cursor-paged read API",
-    "Issue-95 target-company candidate API",
-    "ORGANIZATION-COMPANY-DIRECTORY-V1 owner version",
-    "frontend single-writer runtime handoff"
-  ],
+  "activationImplementationStartBlockedBy": {
+    "cari.list": [],
+    "cari.detail": [],
+    "cari.create": [
+      "C-01 normal-runtime activation merge and post-main green"
+    ],
+    "cari.company-link": [
+      "C-01 normal-runtime activation merge and post-main green"
+    ]
+  },
   "completionGates": [
     "C-01/C-02/C-03/link workspace",
     "real SQL and API contract acceptance",

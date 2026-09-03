@@ -5,9 +5,9 @@
 - İş ve kabul sahibi: `CHATGPT-BUSINESS`
 - Backend/API yazarı: `CODEX`
 - Frontend/browser yazarı: `CLAUDE-FRONTEND`
-- İncelenen taban: `main@4cd05d8983786f2eb1a512ae7d3da7e303ec6ba8`
+- İncelenen taban: `main@75c783ba1ca0ab78432398f57c67e12b8c3177d2`
 - Üst kapsam: Issues `#78`, `#146`, `#148`
-- Backend kaynakları: merged PR `#141`, `GET /api/v1/counterparties`, `GET /api/v1/counterparties/{partyId}`
+- Backend kaynakları: merged PR `#141` (C-01 list), PR `#170/#187` (C-03 detail), PR `#191` (CARI-LINK no-op concurrency acceptance; activation kredisi yok), `GET /api/v1/counterparties`, `GET /api/v1/counterparties/{partyId}`
 - Production activation: **NO-GO**
 
 Bu belge readiness paketi veya yeni governance değildir. C-01/C-03 implementation PR’larının alan, durum, hata, tenant ve kabul girdisidir. Kaynakta bulunmayan bakiye, risk, açık kalem, stok, sipariş, belge veya AI verisi eklemez.
@@ -57,6 +57,18 @@ Kullanıcı seçili Cari için:
 görür.
 
 C-03A; risk, bakiye, açık kalem, sipariş, stok, belge, banka/vergi/sicil, zaman çizgisi veya AI ekranı değildir. Bu alanların owner API’si oluşmadan sıfır değer, boş kart, inert sekme veya sahte KPI gösterilmez.
+
+### 2.3 Normal-runtime declaration durumu
+
+Normal `CounterpartyShellCapabilityProvider` bugün list/detail için `SingleOrAuthorizedMultiCompanyRead`, create/link için `SingleCompany` yayımlar; dört declaration'ın da `ImplementationAvailable=false` değeri korunur. Testing/disposable C-01 override'ı bu gerçeği değiştirmez.
+
+Kabul edilen normal/pre-production açılış hedefi route bazında ve bağımsızdır:
+
+- C-01A: `cari.list + C-01 + /cari + cari.parties.list + SingleCompany + CompanyWide + counterparty.parties.read + true`.
+- C-03: `cari.detail + C-03 + /cari/:partyId + cari.parties.detail + SingleCompany + CompanyWide + counterparty.parties.read + true`.
+- C-01B/group ve group detail renderer/implementation kapalıdır.
+
+Bu hedef activation GO değildir. PR #192 birleştiği için list ve detail activation implementation başlangıç uygunluğu `true`dır. Issue #148'in kalan bulguları C-03 candidate'ında kapanır; detail runtime GO'yu kanıt tamamlanana kadar bloke eder, implementation başlangıcını değil. `runtimeActivationGo` iki route için ayrıca `false`tır. Ayrı C-03 SQL/browser paketi olmadan detail provider'da `true` yayımlanamaz. Bir route'un kanıtı diğerine taşınmaz; production deployment/cutover `NO-GO` kalır.
 
 ## 3. C-01 HTTP sözleşmesi
 
@@ -257,6 +269,10 @@ Aksi durumda bütün cevap malformed sayılır; partial Cari adı veya yabancı 
 ### C-01 ve C-03 ortak
 
 - `initial-loading`: önceki şirket verisi yok.
+- Initial entry, deep-link, refresh, yeni sekme ve aynı SPA oturumundaki Back/Forward dönüşü her seferinde taze capability doğrulaması ister.
+- Revoke→Back/Forward regresyonu mevcut `30 saniye` cache penceresi dolmadan çalıştırılır; expiry sonrası doğal refetch geçerli kanıt değildir.
+- Cache'te eski başarı bulunsa bile taze capability doğrulanmadan ve capability izin veriyorsa ilgili business GET tamamlanmadan Cari satırı/adı/title/breadcrumb tek kare gösterilmez.
+- Capability kaldırılmışsa business GET oluşmaz; capability sürerken server permission reddedilmişse taze business GET/`403` görülür ve eski veri gösterilmez.
 - `401 authentication_required`: shell session-ended; business cache temizlenir.
 - `403 forbidden`: isim, count, account sayısı veya probing bilgisi yok.
 - `500/503/offline`: blocking retry; foreign/stale veri yok.
@@ -332,11 +348,51 @@ Bu read akışları:
 ### Merge
 
 ```text
-PR #139 shell foundation accepted + merged + fresh new-main green
-→ C-01 decoder dar restack
-→ C-01 gerçek ekran + browser/a11y + exact-head review
-→ C-03 backend daraltma/acceptance
-→ C-03 gerçek ekran + exact-head review
+PR #192 final head c7410fa… → merge/main 68aa15c…
+→ tamamlanmış önkoşul: full-outcome route-entry jsdom/mutasyon suite'i
+  coordinator kayıtlı beş ardışık tam 218/218 + görünür uzak 7/7
+  (beş ayrı uzak run kimliği yayımlanmadı; taze Codex exact-head review waive edildi)
+  + PR #183 B-C01 10/10 + SAB 4/4 skip=0
+→ PR #196 head 7e284c… → merge 3fceea9… → browser run 33721831760
+  yalnız disposable Forward 1/1, skip=0; activation kredisi yok
+→ Issue #199 üç P1 kapanışı
+→ Issue #204 disposable-key-free normal-provider profil teslimi
+→ Issue #148 + C-03 normal-provider detail candidate
+  normal-origin attestation + C-03 SQL/browser/a11y + beşli temiz uzak seri
+  + fresh CI + iki bağımsız exact-head K3 → merge + post-main yeşil
+→ bu C-03 sonrası main C-01 evidence base'i olarak pinlenir
+→ C-01 candidate yalnız LIST'i SingleCompany + true yapar; detail base'den korunur
+→ running API normal-origin + registry revision + override absence + OCI/head bağı
+→ gerçek UI entry'leriyle native Back ve native Forward history/revoke vakaları
+→ aynı immutable üçlüde beş ardışık temiz tam uzak activation-evidence koşumu
+→ fresh activation-head CI + iki bağımsız exact-head K3 P0/P1=0
+→ ancak sonra main merge; production deployment yok
 ```
 
-P0/P1 açıkken veya remote CI kırmızıyken merge yapılmaz.
+C-01 gerçek-browser dönüşü sentetik router navigation kullanmaz. İlk başarı business GET'ini ve fixture satırını gösterir; server-side `counterparty.parties.read` grantı route dışında kaldırılır. History dönüşünde taze capability snapshot'ı `cari.parties.list` içermez, post-revoke business GET sayısı `0` kalır, history öncesinde kurulan sayfa içi `MutationObserver` eski satırı hiç kaydetmez ve route nötr non-disclosing state'e kapanır. İlk başarılı business response'tan dönüşe ölçülen `elapsedMilliseconds` değeri `30000`'den küçük olur. Grant revoke/restore run/attempt/project/database'e bağlı, transaction'lı ve process-kill sonrası dış cleanup ile tekrar çalışabilir olur; post-check `RolePermissions` preimage exact eşitliğini doğrular.
+
+PR #196 final head `7e284c7833e2a3130adc84d9c53efbdfc08f08ce`, merge `3fceea9e191907f370bf9e240b3b80cb8974b2d6` ve browser run `33721831760` yalnız `C01A-HISTORY-REVOKE-forward` vakasını `1/1`, `skip=0` çalıştırmıştır. `C01E2e__EnableListCapability=true` kullandığı için normal-provider veya aktivasyon kanıtı değildir. Native Back yoktur; Issue #199'un fail-open source/JUnit, cache-age ve crash-safe restore P1'leri de açıktır. Issue #204 disposable-key-free normal-provider profili teslim edilmeden beşli seri başlayamaz.
+
+C-03 C-01 implementation başlangıcını engellemez; C-01 evidence identity pinini, beşli seri başlangıcını ve runtime GO'yu engeller. Pinli base #148'i kapatmış, C-03'ü bağımsız normal-provider candidate ile aktive etmiş ve post-main yeşil almış olmalıdır; LIST kapalı base gerçek `/cari` erişilebilirliği iddia etmez. C-01 candidate exact iki history/direction vakası taşır; route-local manifest ayrıca mevcut `CASE-C03-009@list-available` dalıyla `3/3` olur. Back setup: shell → production Cari click'i → ilk başarılı response/satır → production row click ile detail → revoke → `page.goBack()` ile `/cari`. Forward setup: shell → production Cari click'i → ilk başarılı response/satır → `page.goBack()` ile shell → revoke → `page.goForward()` ile `/cari`. İlk bootstrap sonrasında `page.goto`, `window.history.pushState/replaceState`, doğrudan History API, test-invoked router navigation ve test-only route/link yasaktır.
+
+Issue #146'daki “iki istek de tekrarlar” şartı fail-closed dallarıyla uygulanır: grant korunmuş dönüşte iki request PR #192'nin merge edilmiş suite'inde tekrarlar; grant kaldırılmış gerçek-browser dönüşünde taze capability reddinden sonra business GET tekrar etmez. Forced business `403` ikinci bir C-01 aktivasyon varyantı değildir; bu sınır tamamlanmış SAB kümesiyle izlenir.
+
+Issue #146 bu alt kapıyla kapanmaz. [Owner denetimi](https://github.com/sinangym/GoymenERP/issues/146#issuecomment-5521747972) `4 PASS / 2 PARTIAL / 1 FAIL` vermiştir: `C01-AC-002` active/inactive/all filtresi ve inactive-row yokluğunu, `C01-AC-005` `invalid_cursor` sonrasında fresh cursor'sız page-1 GET'i, `C01-AC-007` tüm filtre/continuation keyboard-visible-focus, mobil/%200 görev tamamlama ve exactly-once live announcement kanıtını mevcut kimliklerinde tamamlamalıdır. Üçü kapanmadan C-01 runtime GO yoktur.
+
+PR #192'nin merge edilen suite'i başarılı giriş ile `401`, `403/404`, malformed, offline/network, `5xx`, retry ve actor/session/company/entry-generation fence sonuçlarını kapsar. Tamamlanma kaydı final head `c7410fa…`, merge `68aa15c…`, coordinator kayıtlı beş ardışık `218/218` ve görünür uzak `7/7` sonucudur; beş ayrı uzak run kimliği yoktur. C-01 candidate işlem-anı C-03 sonrası main'den oluşturulur. #184 owner source'unda `true/[]` yapılmış implementation-start alanları korunur; provider değişikliği, authoritative LIST current-runtime/context/scope alanları, proposed `runtimeActivationGo=true`, boş route-local runtime-GO blocker dizisi, normal-origin attestation, kanıt sözleşmesi ve testler ilk candidate SHA'da birlikte bulunur. Candidate detail alanlarını değiştirmez ve pinli base değerini aynen korur.
+
+Normal-provider origin yalnız capability listesi veya registry revision'dan çıkarılmaz. Current normal `sha256:3Giw…` ve disposable `sha256:SXjo…` bugünkü declaration kümelerini ayırır; registry hash'i provider type/source channel içermediği için eş declaration'larda çakışabilir. Origin'in tek kaynağı running API process'inin DI sonrası resolved provider count ve exact runtime type'ıdır: tek exact `CounterpartyShellCapabilityProvider` `normal`, tek exact `C01E2eShellCapabilityProvider` `c01-disposable`; eksik/çoklu/bilinmeyen fail-closed. Workflow/artifact etiketi veya `Configure` authority/revision dönüşü origin üretemez. Process-emitted attestation count/type/source channel/process-instance ile aynı process'in registry revision'ını bağlar. Empty override envelope normal provider'ı korur; API process `IConfiguration` görünümünde beş disposable anahtar yoktur, fakat bu yokluk job/runner ortamına uygulanmaz. Bu çalıştırılabilir profile delivery bağı Issue #204'tür. API container ID, image ID/digest ve OCI revision kaydedilir; revision head'e eşittir. HTTP `generation` origin kanıtı değildir.
+
+Her run artifact'ı `(base SHA, head SHA, tested tree SHA, workflow/test SHA, run ID, attempt, API container ID, image ID/digest, OCI revision, process-instance ID, resolved provider count/type, provider origin, registry revision, API overrideKeysPresent=[], capability tuple, browser request correlations, server request bindings)` ile attestation/config/endpoint ve browser/request/cache/DOM/SQL sonuçlarını aynı container/process identity'sine bağlar. Her browser capability/business request correlation'ı aynı attested API process'inin structured request kaydında server-attached container/process-instance ile exact bir kez eşleşir; client origin etiketi otorite değildir. Origin omit/spoof/disposable, disposable-selected+normal-label, eksik/çoklu/bilinmeyen provider, farklı container/process, eksik/çift/eşleşmeyen correlation, normal attestation+disposable browser traffic, API override, image/head drift ve direction case silme negatif mutasyonlarda kırmızıdır; artifact elle yazılmış değere güvenmez.
+
+PR #192 jsdom serisi ve #196 disposable Forward koşumu normal-provider serisine mahsup edilmez. C-03 ve C-01 kendi immutable `(base/head/tested-tree/workflow-test-source/OCI-revision/provider-origin/registry-revision)` kimliğinde beş ayrı tam uzak run'ı ardışık `completed/success` üretir. Run ID/attempt, API container ID, image ID/digest ve process-instance ID run'a özgü atomik bağdır; dolu olmalı, run'lar arasında değişebilir ve streak kimliği diye eşitlenmez. Her run normal origin, farklı run ID, `attempt=1`, retry/quarantine kapalı ve required `skipped/cancelled/timeout=0` taşır. C-01 her run'da exact Back+Forward ve mevcut `CASE-C03-009@list-available` dallarını (`3/3`); C-03 her run'da `CASE-C03-001…008 + CASE-C03-009@list-unavailable` manifestini (`9/9`) ve tam SQL/browser/a11y kümesini çalıştırır; suffix'ler yeni CASE kimliği değildir. Failure veya invariant base/head/tree/source/OCI/origin/revision değişimi seriyi sıfırlar; selective rerun sayılmaz.
+
+Branch-protection işleri, fresh CI/container/UI-golden ve iki bağımsız exact-head K3 aynı üçlüde tamamlanır; merge tree tested tree ile eşittir ve kanıttan sonra toggle commit'i yoktur. C-03 candidate'ın ilk evidence-bearing head'i normal provider detail declaration'ını `SingleCompany + CompanyWide + true` yaparken owner detail current-runtime/context/scope, implementation-start `true/[]`, proposed `runtimeActivationGo=true` ve blocker `[]` alanlarını exact eşler; list/create/link'i base değerinde tutar. Aynı head #148'in invalid/nil no-call, route/response id binding, detail-only list-link non-disclosure, verified request/header, delayed A→B response ve browser/a11y bulgularını kapatır; her run `CASE-C03-001…008 + CASE-C03-009@list-unavailable` exact JUnit manifestini `9/9`, eksik/fazla/skip `0` doğrular. P0/P1 açıkken, beşli seri eksikken veya CI kırmızıyken merge yapılmaz. `ImplementationAvailable=true` production activation değildir.
+
+### Aktivasyon sonrası Issue #78 C-02 + company-link kapısı
+
+#78 implementation'ı C-01A normal-runtime activation merge'i ve post-main yeşilinden sonra başlar. Yeni vaka/AT/DEC üretilmez: `CARI_C02_LINK_ACCEPTANCE_v1.md` içindeki `C02-AC-001…014`, `CLINK-AC-001…020`, `UX-AC-001…004` toplam `38/38` vaka ve mevcut `AT-001/003/005/006/008/010/013`, `DEC-CAR-001…003`, `DEC-TEC-012/013`, `DEC-TST-001/002` bağları kullanılır. Create alt kümesi yalnız `kind`, `legalName`, opsiyonel `tradeName`, `roles` alır; şirket server-resolved `X-Company-Id`, Cari kodu server üretimidir. VKN/TCKN, duplicate motoru, adres/kişi/banka/vergi/sicil/belge/risk/bakiye yoktur; `C02-AC-014` bu yokluğu kanıtlayan zorunlu negatif vaka olarak `38/38` içinde geçer, yalnız global `AT-009` açık kalır.
+
+İlk kanıt-bearing combined exact head, `/cari/yeni` ve `/cari/sirkete-bagla` gerçek route/component'lerini, generated client/runtime decoder'ları, test/workflow/evidence kaynağını, owner JSON/provider parity'sini ve iki capability için `SingleCompany + CompanyWide + ImplementationAvailable=true` değerini birlikte taşır. Aynı head'de iki route'un `activationImplementationStartEligible=true`, route-local ve üst `activationImplementationStartBlockedBy=[]`, `runtimeActivationGo=true`, `runtimeActivationGoBlockedBy=[]` alanları ve üst C-02/link kapısının `state=unmerged-activation-evidence-candidate`, `runtimeActivationGo=true` değerleri bulunur; reviewed main'de availability/GO `false`, üst başlangıç blocker'ları dolu ve kapı frozen kalır. Create/link aynı combined evidence bundle'ında kanıtlanır ve kanıttan sonra toggle commit'i yoktur. Mevcut başarılı create/link vakaları target-scoped C-03'e bir kez yönlendiğinden, C-03 normal runtime `true` olmadan veya owner bu hedefi açıkça revize etmeden full-stack GO yoktur; C-01'e sessiz redirect yapılmaz.
+
+Gerçek SQL/API cardinality, idempotency/replay/race/unknown-outcome, permission/context/non-disclosure ve normal-provider gerçek-browser route/form/context-fence/a11y kanıtları `38/38`, `skip=0` eşlenir. #78, C-01/C-03 registry authority attestation'ını aynen yeniden kullanır: origin çalışan API'nin post-DI `count=1` + exact `GoymenERP.Modules.Counterparty.Infrastructure.Shell.CounterpartyShellCapabilityProvider` tipinden türetilir; API `IConfiguration` disposable activation anahtarlarını içermez; revision/`Configure`/client-workflow-artifact etiketi otorite değildir. Origin/config/registry/endpoint ve her browser capability/business request'i aynı attested API container/process'ine server-side correlation ile exact bir kez bağlanır; normal attestation + disposable trafik kırmızıdır. Aynı immutable `(base main SHA, candidate head SHA, tested integration tree SHA, workflow/test source SHA, OCI revision=head, resolved provider count/type, provider origin, registry revision)` kimliğinde beş ardışık tam uzak koşum; distinct run ID, `attempt=1`, retry/quarantine kapalı ve required `skipped/cancelled/timeout=0` zorunludur. API container ID, image ID/digest ve process-instance ID koşuma özgü dolu bağlardır, koşumlar arasında değişebilir. Her koşum `providerOrigin=normal` taşır; non-success veya invariant kimlik/origin değişikliği seriyi sıfırlar, selective rerun sayılmaz. Aynı exact head tam CI/container/UI-golden ve iki bağımsız K3 `P0=0/P1=0` alır; merge tree test edilmiş tree ile aynı olmalıdır. Account status update, group modları ve production cutover kapsam dışıdır.
