@@ -305,59 +305,96 @@ test('B-C01-004 sorting is done by the server, and focus survives it', async ({
     reads.push(new URL(request.url()).searchParams)
   })
 
-  /** Actuate, then wait for the read it must cause -- never for a timeout. */
-  async function actuate(what: string, act: () => Promise<void>): Promise<URLSearchParams> {
-    const before = reads.length
+  /**
+   * Actuate, then wait for the read that CARRIES THE EXPECTED CHANGE.
+   *
+   * "A new read arrived" is a weaker claim and it raced: the search box issues a
+   * read per keystroke, so the newest read at any instant is the one for the
+   * prefix typed so far. The real run caught this asserting `q=CAR-0000`
+   * against the `CAR-00001` that was typed. Matching on the value removes the
+   * race instead of papering over it with a longer wait.
+   */
+  async function actuate(
+    what: string,
+    act: () => Promise<void>,
+    carries: (params: URLSearchParams) => boolean,
+  ): Promise<URLSearchParams> {
+    const from = reads.length
     await act()
+    let found: URLSearchParams | undefined
     await expect
-      .poll(() => reads.length, { message: `${what} issued no server read`, timeout: 20_000 })
-      .toBeGreaterThan(before)
-    return reads[reads.length - 1]
+      .poll(
+        () => {
+          found = reads.slice(from).find(carries)
+          return found !== undefined
+        },
+        { message: `${what} produced no server read carrying the change`, timeout: 20_000 },
+      )
+      .toBe(true)
+    return found as URLSearchParams
   }
 
   const search = page.getByRole('searchbox', { name: 'Ara' })
   await tabTo(page, search, 'the search box')
   await expectVisibleFocus(search, 'the search box')
-  const searched = await actuate('typing in search', async () => {
-    await page.keyboard.type('CAR-00001')
-  })
-  expect(searched.get('q')).toBe('CAR-00001')
+  await actuate(
+    'typing in search',
+    async () => {
+      await page.keyboard.type('CAR-00001')
+    },
+    (params) => params.get('q') === 'CAR-00001',
+  )
   await expectVisibleFocus(search, 'the search box after its own result landed')
-  await actuate('clearing search', async () => {
-    await page.keyboard.press('Control+A')
-    await page.keyboard.press('Backspace')
-  })
+  await actuate(
+    'clearing search',
+    async () => {
+      await page.keyboard.press('Control+A')
+      await page.keyboard.press('Backspace')
+    },
+    (params) => (params.get('q') ?? '') === '',
+  )
 
   const kind = page.getByRole('combobox', { name: 'Tür' })
   await tabTo(page, kind, 'the kind filter')
   await expectVisibleFocus(kind, 'the kind filter')
-  const kinded = await actuate('choosing a kind with the keyboard', async () => {
-    await page.keyboard.press('ArrowDown')
-  })
-  expect(kinded.get('kind')).toBeTruthy()
+  await actuate(
+    'choosing a kind with the keyboard',
+    async () => {
+      await page.keyboard.press('ArrowDown')
+    },
+    (params) => (params.get('kind') ?? '') !== '',
+  )
   await expectVisibleFocus(kind, 'the kind filter after its result landed')
 
   // All four roles, each with Space, and the roleMatch control that only exists
   // once two are selected.
+  let selected = 1
   for (const role of ['Müşteri', 'Tedarikçi', 'Fason', 'Hizmet']) {
     const box = page.getByRole('checkbox', { name: role })
     await tabTo(page, box, `the ${role} role filter`)
     await expectVisibleFocus(box, `the ${role} role filter`)
-    const applied = await actuate(`selecting ${role} with Space`, async () => {
-      await page.keyboard.press('Space')
-    })
-    expect(applied.getAll('role').length, `${role} did not reach the query`).toBeGreaterThan(0)
+    await actuate(
+      `selecting ${role} with Space`,
+      async () => {
+        await page.keyboard.press('Space')
+      },
+      (params) => params.getAll('role').length === selected,
+    )
     await expectVisibleFocus(box, `the ${role} role filter after its result landed`)
+    selected += 1
   }
 
   const roleMatch = page.getByRole('combobox', { name: 'Rol eşleşmesi' })
   await expect(roleMatch, 'roleMatch never appeared with four roles selected').toBeVisible()
   await tabTo(page, roleMatch, 'the role match control')
   await expectVisibleFocus(roleMatch, 'the role match control')
-  const matched = await actuate('changing role match with the keyboard', async () => {
-    await page.keyboard.press('ArrowDown')
-  })
-  expect(matched.get('roleMatch')).toBe('all')
+  await actuate(
+    'changing role match with the keyboard',
+    async () => {
+      await page.keyboard.press('ArrowDown')
+    },
+    (params) => params.get('roleMatch') === 'all',
+  )
 
   for (const [name, key] of [
     ['Taraf durumu', 'partyState'],
@@ -366,10 +403,14 @@ test('B-C01-004 sorting is done by the server, and focus survives it', async ({
     const control = page.getByRole('combobox', { name })
     await tabTo(page, control, `the ${name} filter`)
     await expectVisibleFocus(control, `the ${name} filter`)
-    const applied = await actuate(`changing ${name} with the keyboard`, async () => {
-      await page.keyboard.press('ArrowDown')
-    })
-    expect(applied.get(key), `${name} did not reach the query`).toBeTruthy()
+    const was = await control.inputValue()
+    await actuate(
+      `changing ${name} with the keyboard`,
+      async () => {
+        await page.keyboard.press('ArrowDown')
+      },
+      (params) => (params.get(key) ?? '') !== '' && params.get(key) !== was,
+    )
     await expectVisibleFocus(control, `the ${name} filter after its result landed`)
   }
 
