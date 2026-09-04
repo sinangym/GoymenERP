@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0",
+  "run_id": "GOYMENERP-KNOWLEDGE-V4-01",
+  "provider": "chatgpt",
+  "source_id": "chatgpt-erp-analizi-plani-45d59712c9aa",
+  "conversation_id": "chatgpt-erp-analizi-plani",
+  "conversation_title": "ERP Analizi Planı",
+  "coverage": "complete",
+  "inaccessible": [],
+  "status": "complete",
+  "privacy_review": {
+    "secret_scan": "passed",
+    "pii_review": "passed",
+    "redactions": 0
+  },
+  "source_snapshot_sha256": "45d59712c9aaebe4bf5d2775a630a6ded41eaef3edf523bca104b37f71768035",
+  "content_fingerprint_sha256": "6c5a6b91bf39609d51cce493f7549e6f807da2bc96c9d9fe7a0411af00ddbd8c",
+  "files": [
+    {
+      "path": "KNOWLEDGE.md",
+      "bytes": 4283,
+      "sha256": "a43d3831fa53d10ac8a2054e3daa4a1dbdebf169087db25599dfb4daed9fda27"
+    },
+    {
+      "path": "NORMALIZED_ITEMS.ndjson",
+      "bytes": 85093,
+      "sha256": "6c5a6b91bf39609d51cce493f7549e6f807da2bc96c9d9fe7a0411af00ddbd8c"
+    },
+    {
+      "path": "CONFLICT_CANDIDATES.md",
+      "bytes": 1384,
+      "sha256": "789211daf521e18471b91d5b71ec16cdf565bc23dad415244953b673014c8be7"
+    },
+    {
+      "path": "ATTACHMENT_INDEX.md",
+      "bytes": 3419,
+      "sha256": "52358ae68ae7a995a8bf106110bda4160bb1d5f637e938a48297fb64afd0a656"
+    },
+    {
+      "path": "EXPORT_REPORT.md",
+      "bytes": 3186,
+      "sha256": "93a8c2c756b15cb69aef9c40ad3d7a6a8375075dd5e65e6e67879e066d7fc103"
+    }
+  ],
+  "counts": {
+    "items": 124,
+    "attachments": 9,
+    "conflicts": 0
+  }
+}
