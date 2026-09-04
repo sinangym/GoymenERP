@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0",
+  "run_id": "GOYMENERP-KNOWLEDGE-V4-01",
+  "provider": "codex",
+  "source_id": "codex-goymen-erp-cari-contract-activation-reconciliation-c955c55c215b",
+  "conversation_id": "codex-derived-aec7c686e4620cb2e8dfd2c5",
+  "conversation_title": "Göymen ERP Cari sözleşmesi ve normal-runtime aktivasyon uzlaştırması",
+  "coverage": "visible_only",
+  "inaccessible": [
+    "Bağlı konuşma dışa aktarımı 58. mesajdan önce kırpılmıştır; bu önceki içerik erişilebilir değildir.",
+    "Platform kararlı konuşma kimliği, gerçek konuşma başlığı ve tekil mesaj zamanları sağlamamıştır; kimlik görünür içerikten deterministik türetilmiştir.",
+    "Diğer Göymen ERP Codex, Claude ve ChatGPT konuşmaları ile bunların ekleri bu oturumdan erişilebilir değildir."
+  ],
+  "status": "partial",
+  "privacy_review": {
+    "secret_scan": "passed",
+    "pii_review": "passed",
+    "redactions": 0
+  },
+  "source_snapshot_sha256": "c955c55c215bc6bc5d5236818b531644d6e17b02abf2e3ef6eb55ba5e27c0515",
+  "content_fingerprint_sha256": "1905e904dae6fb692c27d4311db36f083b18ee1a61b60c965d26cd875d2eb17a",
+  "files": [
+    {
+      "path": "ATTACHMENT_INDEX.md",
+      "bytes": 249,
+      "sha256": "7f0f8dfda0fdccd1cb394f02c2025bbf0182a352af4fb12dc35a6ad0c536c207"
+    },
+    {
+      "path": "CONFLICT_CANDIDATES.md",
+      "bytes": 868,
+      "sha256": "f34c8f261fb61b4a6a3d4236eb3efe73a7de5e3fecad8e882a2f34ab92afbe9c"
+    },
+    {
+      "path": "EXPORT_REPORT.md",
+      "bytes": 2314,
+      "sha256": "23c05dc7d4d97a72707174a7488ef0b877cc2e76debaee78063ecebb3e7b9a83"
+    },
+    {
+      "path": "KNOWLEDGE.md",
+      "bytes": 2323,
+      "sha256": "a0b0419d6d9544e1e8e119bd37a3d86d13157178184379eadf07929473fdc81b"
+    },
+    {
+      "path": "NORMALIZED_ITEMS.ndjson",
+      "bytes": 23549,
+      "sha256": "1905e904dae6fb692c27d4311db36f083b18ee1a61b60c965d26cd875d2eb17a"
+    }
+  ],
+  "counts": {
+    "items": 26,
+    "attachments": 0,
+    "conflicts": 0
+  }
+}
