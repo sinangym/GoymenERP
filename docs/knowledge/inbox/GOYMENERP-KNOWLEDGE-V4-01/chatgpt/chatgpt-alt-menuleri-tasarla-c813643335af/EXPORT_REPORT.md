@@ -9,19 +9,29 @@ Conversation: `Alt Menüleri Tasarla`
 
 Bu kaynak paketi, bu konuşmada gerçekten görülebilen Göymen ERP Cari analiz/tasarım bilgisini normatif olmayan aday kayıtlar olarak taşır. Ham konuşma Git'e eklenmemiştir. Paket yalnız kendi inbox dizinini değiştirir; karar sicili, Master Rapor v3, governance, backlog, delivery, source registry ve production source değiştirilmemiştir.
 
+## Kaynak kimliği ve snapshot doğrulaması
+
+- Conversation identity: `chatgpt-alt-menuleri-tasarla-e78c95efc7f74669`
+- Conversation title: `Alt Menüleri Tasarla`
+- Source snapshot SHA-256: `c813643335af2dca44a44706c89509303652b0888c43c30d7a70adc908d78a29`
+- Source-ID suffix: `c813643335af` — snapshot'ın ilk 12 hanesiyle birebir.
+- PR #215 sonrasında eklenen arşiv/knowledge-export/PR bakım talimatları operasyon talimatıdır; source snapshot girdisine dahil edilmez ve yeni proje anlamı üretmez.
+- Sonuç: mevcut konuşma #215 manifestindeki kaynakla aynıdır; yeni source_id/PR üretilmemiştir.
+
 ## Kaynak kapsamı
 
 - Coverage: `visible_only`
 - Paket durumu: `complete`
 - Görünmeyen kapsam: kullanıcının renk/tasarım referansı verdiği ayrı `Şirket içi ChatGPT kullanımı` konuşması bu kaynak snapshot'ında erişilebilir değildi.
-- Repository evidence base: `188c792900e35d3e2ed6a9ba4734dc9ad596fc97`
-- Repository doğrulaması yalnız görülebilen güncel main kodu/spec/karar kanıtı için kullanıldı; repo içeriği kaynak konuşma mesajı gibi snapshot'a kopyalanmadı, yalnız base SHA kaydı kullanıldı.
+- Repository evidence base captured in source snapshot: `188c792900e35d3e2ed6a9ba4734dc9ad596fc97`
+- Branch maintenance sync base: `9f5b9bfdef249b9c8e89c6668f66b6aa55c34602`
+- Branch'in güncel main ile eşitlenmesi provenance snapshot'ını yeniden yazmaz; normalize current-state kanıtları snapshot sırasında kullanılan repository base'e bağlı kalır.
 
 ## Paket sayımları
 
 - Normalize kayıt: 31
 - Ek indeksi: 38
-- Çatışma adayı: 1
+- Çözümsüz normalize conflict: 0
 - Redaksiyon: 4
 
 ## Privacy review
@@ -35,28 +45,16 @@ Elle PII incelemesi; gerçek kişi adı, e-posta/telefon, vergi kimliği/VKN, IB
 ## Durum ayrımı
 
 - Konuşmadaki ekran/prototipler `PROTOTYPE_ONLY` veya hedef gereksinim/proposal olarak işlendi; çalışan ürün kanıtı sayılmadı.
-- Güncel main'de gerçekten görülen Counterparty backend/frontend yüzeyleri ancak repo kanıtıyla `SOURCE_VERIFIED`/`VERIFIED_IMPLEMENTED` ayrımında işlendi.
+- Snapshot sırasında main'de gerçekten görülen Counterparty backend/frontend yüzeyleri repo kanıtıyla `SOURCE_VERIFIED` olarak işlendi.
 - Cari 360, finansal özet, sipariş, ekstre, risk/limit/teminat, stok/tahsis, belge/sicil ve yeni-cari workspace tasarımlarının tamamı mevcut runtime'a uygulanmış kabul edilmedi.
 
-## Çatışma adayı
+## Çatışma düzeltmesi
 
-Konuşma tasarımları Cari içi daha geniş hedef ekran ailesi önerirken, güncel `CARI_UI_VERTICAL_SLICE_v1.json` ilk runtime diliminde C-01/C-02/C-03/CARI-LINK dışında bakiye, açık kalem, risk, limit, banka/vergi/sicil, belgeler, siparişler, stok ve tahsis için mock truth'ı açıkça yasaklar. Bu durum hedef tasarım ile doğrulanmış mevcut ilk-dilim kapsamı arasında current-vs-target farkıdır; kanonik karar sessizce değiştirilmemiştir.
+Önceki manifest `conflicts=1` taşıyordu; ancak 31 normalize kaydın tamamı yeniden kontrol edildiğinde `status=CONFLICT` sayısı `0` çıktı. Önceki `CONFLICT_CANDIDATES.md` içindeki `%80 amber / %100 kırmızı` satırı gerçek unresolved conflict değil, zaten `PROPOSED` olarak normalize edilmiş geri alınabilir UX önerisidir. Current-vs-target kapsam farkı ve Mikro entegrasyon zamanlaması da çelişki değildir. Çatışma uydurulmadan manifest sayısı `0` olarak düzeltilmiştir.
 
-## Doğrulama kanıtı
+## Doğrulama
 
-Paket oluşturulurken aşağıdaki denetimler PASS oldu:
-
-- JSON/NDJSON parse.
-- Exact zorunlu alan sözleşmesi.
-- Deterministik item ID yeniden hesaplama.
-- Manifest dosya byte/SHA-256 parity.
-- `Attachment-Count` ile `## ATTACHMENT N` başlık sayısı/sırası parity.
-- UTF-8 BOM yokluğu ve LF-sonlu dosya kontrolü.
-- 8 MiB dosya ve 256 KiB NDJSON satır sınırları.
-- Secret scan ve normalize PII kontrolü.
-- GitHub compare: yalnız bu source paket dizinindeki altı dosya değişti.
-
-Canonical validator komutları repository kökünde şöyledir:
+Resmî doğrulama hedefleri:
 
 ```text
 py -3 -I -S -B -m unittest discover -s tests/knowledge_package_validator -p "test_*.py" -v
@@ -64,17 +62,15 @@ py -3 -I -S -B tools/validate_knowledge_packages.py
 git diff --cached --check
 ```
 
-Bu ChatGPT ortamında authenticated tam repo worktree bulunmadığından bu üç canonical komutun local exact çalıştırıldığı iddia edilmez. GitHub Actions genel CI, C-01 real-browser ve UI catalog golden kontrolleri PR exact head'i için ayrıca izlenir. Bu workflow'lar source-package validator komutlarının birebir yerini aldığı iddiası değildir; final Codex entegratörü canonical checkout üzerinde knowledge validatorü yeniden çalıştırmalıdır.
+Bu dosya kendi commit SHA'sını self-reference ederek sabitlemez. Exact final head, resmî validator/test sonucu, diff-check ve fresh GitHub CI sonucu PR #215 ve Issue #208 koordinasyon kaydında tutulur.
 
-## Git/PR kanıtı
+## Git/PR
 
 - Branch: `chatgpt/knowledge-import/chatgpt-alt-menuleri-tasarla-c813643335af`
-- Base main: `188c792900e35d3e2ed6a9ba4734dc9ad596fc97`
 - Draft PR: `#215`
-- Final exact head ve fresh CI run kimlikleri PR/Issue #208 koordinasyon kaydından okunur; dosya kendi commit SHA'sını self-reference ederek sabitlemez.
-- Independent exact-head review: kaynak paket oluşturma anında henüz yok.
+- Branch güncel `origin/main@9f5b9bfdef249b9c8e89c6668f66b6aa55c34602` ile non-force merge/sync edilmiştir.
 - Merge: yapılmaz; kaynak ajan kendi PR'ını merge etmez.
 
 ## Sonraki adım
 
-Final Codex entegratörü PR #215 paketini canonical checkout'a alıp exact knowledge validator/test/diff-check çalıştırmalı, registry tek-yazar akışında source'u doğrulamalı ve diğer ilan edilmiş Codex/Claude/ChatGPT kaynaklarıyla birlikte yalnız final entegrasyon aşamasında değerlendirmelidir.
+Final Codex entegratörü PR #215 paketini canonical checkout'a alıp registry tek-yazar akışında diğer ilan edilmiş Codex/Claude/ChatGPT kaynaklarıyla birlikte değerlendirmelidir. Kaynak PR Draft kalır.
