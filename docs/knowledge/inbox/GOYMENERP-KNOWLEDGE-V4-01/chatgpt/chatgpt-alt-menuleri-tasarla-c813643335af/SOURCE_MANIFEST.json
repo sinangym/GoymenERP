@@ -20,8 +20,8 @@
   "files": [
     {
       "path": "KNOWLEDGE.md",
-      "bytes": 7943,
-      "sha256": "d3fef483483e8c464c9076f1fb2c6797cf1556d1fbaf3e6e0fb773ab52359748"
+      "bytes": 7931,
+      "sha256": "d4585e5e9473f37ad41c7dbd80ebca04105c86ea0154ec1788f23b7cf7b75f7b"
     },
     {
       "path": "NORMALIZED_ITEMS.ndjson",
