@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0",
+  "run_id": "GOYMENERP-KNOWLEDGE-V4-01",
+  "provider": "codex",
+  "source_id": "codex-goymenerp-canli-kapilar-263a4ba06b2e",
+  "conversation_id": "codex-goymenerp-canli-kapilar",
+  "conversation_title": "GöymenERP canlı kapılar",
+  "coverage": "visible_only",
+  "inaccessible": [
+    "Konuşmanın platform tarafından açıkça kesilmiş veya özetlenmiş önceki bölümü bu aktarımda görünür değildir."
+  ],
+  "status": "partial",
+  "privacy_review": {
+    "secret_scan": "passed",
+    "pii_review": "passed",
+    "redactions": 0
+  },
+  "source_snapshot_sha256": "263a4ba06b2eb8c3b95e05296247b579ba79be936b255fba3c786d2a4ee6c9f4",
+  "content_fingerprint_sha256": "83dbe303a86963871c18007818360421477e6baef1c8eaf07f36d775e73419d4",
+  "files": [
+    {
+      "path": "ATTACHMENT_INDEX.md",
+      "bytes": 699,
+      "sha256": "02753ffcf9637cb6989a155b56bb2f746e478a43471efd75ee7c2ba181706ba2"
+    },
+    {
+      "path": "CONFLICT_CANDIDATES.md",
+      "bytes": 531,
+      "sha256": "e0bf1f5781969dc869363c9fbe31a24f8b10d4d92e86e99c8554cc208d0f8dfe"
+    },
+    {
+      "path": "EXPORT_REPORT.md",
+      "bytes": 2296,
+      "sha256": "2dbf79ab79221eac9f895340d20ebeb60f4dc945555967fde1f9a8c144a7110e"
+    },
+    {
+      "path": "KNOWLEDGE.md",
+      "bytes": 3338,
+      "sha256": "15457e741f9b0f39d699dfed67027a87572fa4907ba92a24b89a8916d8e7a16c"
+    },
+    {
+      "path": "NORMALIZED_ITEMS.ndjson",
+      "bytes": 26152,
+      "sha256": "83dbe303a86963871c18007818360421477e6baef1c8eaf07f36d775e73419d4"
+    }
+  ],
+  "counts": {
+    "items": 37,
+    "attachments": 1,
+    "conflicts": 0
+  }
+}
