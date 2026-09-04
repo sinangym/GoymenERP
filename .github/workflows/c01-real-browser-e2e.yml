@@ -185,8 +185,30 @@ jobs:
       - name: Install pinned browser runner
         working-directory: tests/e2e
         run: |
+          set -euo pipefail
           npm ci
-          npm audit --audit-level=high
+          # The audit gate is unchanged: --audit-level=high must still PASS, and a
+          # real vulnerability still fails the job. What is retried is npm's audit
+          # SERVICE being unavailable, which took out two of four runs with
+          # "audit endpoint returned an error" while the same command passed
+          # locally with 0 vulnerabilities.
+          #
+          # Deliberately not `|| true`, not a lowered level, and not a skip: an
+          # outage must not become a way to land unaudited dependencies, so if
+          # every attempt fails the job still fails.
+          audited=false
+          for attempt in 1 2 3; do
+            if npm audit --audit-level=high; then
+              audited=true
+              break
+            fi
+            echo "npm audit attempt ${attempt} failed; retrying"
+            sleep $((attempt * 15))
+          done
+          if [ "$audited" != true ]; then
+            echo "::error::NPM_AUDIT_FAILED: three attempts, see the output above"
+            exit 1
+          fi
           ./node_modules/.bin/playwright install --with-deps chromium
 
       - name: Run B-C01-001 through B-C01-010
