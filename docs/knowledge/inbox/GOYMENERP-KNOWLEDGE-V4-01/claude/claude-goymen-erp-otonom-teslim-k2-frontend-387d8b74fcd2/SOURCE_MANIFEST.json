@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0",
+  "run_id": "GOYMENERP-KNOWLEDGE-V4-01",
+  "provider": "claude",
+  "source_id": "claude-goymen-erp-otonom-teslim-k2-frontend-387d8b74fcd2",
+  "conversation_id": "claude-goymen-erp-otonom-teslim-k2-frontend",
+  "conversation_title": "Göymen ERP otonom teslim — K2 koordinatör ve frontend şeridi",
+  "coverage": "visible_only",
+  "inaccessible": [
+    "Bağlam sıkıştırması nedeniyle görünmeyen erken konuşma turlarının ham metni",
+    "Diğer Claude konuşmalarının içerikleri",
+    "Codex ve ChatGPT sağlayıcılarındaki ayrı konuşmaların ham içerikleri",
+    "Kullanıcı tarafından doğrulanmış tam kaynak envanteri ve inventory attestation",
+    "Repository knowledge doğrulayıcısı (tools/validate_knowledge_packages.py) main üzerinde mevcut değil"
+  ],
+  "status": "partial",
+  "privacy_review": {
+    "secret_scan": "passed",
+    "pii_review": "passed",
+    "redactions": 0
+  },
+  "source_snapshot_sha256": "387d8b74fcd2cb8f3205eef721a6d551b6fc4d855ee632cbe992f27cf1468c3d",
+  "content_fingerprint_sha256": "3b655234105b549ada7ad34790096619043a421b2627b2c2d8f3ac98a027c8aa",
+  "files": [
+    {
+      "path": "ATTACHMENT_INDEX.md",
+      "bytes": 290,
+      "sha256": "577f639dfa29dd38905be2710c4311ed11250a06cadc9941c4ff2ac8e070d5c8"
+    },
+    {
+      "path": "CONFLICT_CANDIDATES.md",
+      "bytes": 703,
+      "sha256": "3e8a4207cb471810808ad46a68ff578659947e8971c97bbb368e2139a7fc2599"
+    },
+    {
+      "path": "EXPORT_REPORT.md",
+      "bytes": 2063,
+      "sha256": "b3e5c36c5ecca9a21b76632698c3dff651b3d6902a2092006d1ee66402966857"
+    },
+    {
+      "path": "KNOWLEDGE.md",
+      "bytes": 12730,
+      "sha256": "3bb1191eb1a5d72f923eb2391dd54093eaa5e42f7b1b763086ceacbccbfc0cc1"
+    },
+    {
+      "path": "NORMALIZED_ITEMS.ndjson",
+      "bytes": 32921,
+      "sha256": "3b655234105b549ada7ad34790096619043a421b2627b2c2d8f3ac98a027c8aa"
+    }
+  ],
+  "counts": {
+    "items": 48,
+    "attachments": 0,
+    "conflicts": 0
+  }
+}
