@@ -435,6 +435,38 @@ describe('C-01 paging', () => {
     )
   })
 
+  it('a refused cursor is never drawn as an error on the way to recovering', async () => {
+    // #146 C01-AC-005/007. The error block is a `role="alert"`, so a single
+    // frame of it is spoken -- the user was told about a failure that was
+    // already being repaired. Recorded at mutation granularity because one
+    // frame is exactly what this is about.
+    const seen: string[] = []
+    const observer = new MutationObserver(() => {
+      for (const node of document.querySelectorAll('[data-state]')) {
+        const kind = node.getAttribute('data-state') ?? ''
+        if (seen[seen.length - 1] !== kind) seen.push(kind)
+      }
+    })
+    installFetch({
+      counterparties: (url) =>
+        url.includes('cursor=')
+          ? json({ code: 'invalid_cursor', title: 'İmleç geçersiz', status: 400 }, 400)
+          : json(page({ hasMore: true, nextCursor: 'stale-cursor' })),
+    })
+    renderAt('/cari', true)
+    await screen.findByRole('row', { name: /C-0001/ })
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true })
+
+    await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
+    await waitFor(() => expect(announcer().textContent).toContain('ilk sayfaya dönüldü'))
+    observer.disconnect()
+
+    expect(
+      seen.filter((kind) => kind !== 'initial-loading'),
+      'a state block other than loading was drawn while recovering',
+    ).toEqual([])
+  })
+
   it('the recovery is not announced while its fresh page is still in flight', async () => {
     // Saying "we went back to the first page" while that page is in flight states
     // an outcome we do not have yet.

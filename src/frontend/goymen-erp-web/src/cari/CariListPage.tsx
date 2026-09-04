@@ -209,6 +209,22 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
   })
 
   const outcome = query.data
+
+  // An expired or otherwise invalid cursor must not strand the user on a broken
+  // page: fall back to the first page. Branches on the STABLE code, never the
+  // localized text.
+  //
+  // Computed HERE, before the view state, because the recovery has to be visible
+  // during THIS render. Deriving it from the effect that starts the recovery was
+  // one render too late: the refused cursor was classified as an error and drawn
+  // -- and that block is a `role="alert"`, so it was announced -- before the
+  // effect could say a recovery was under way. The real browser measured the
+  // stale error arriving first, twice over (#146 C01-AC-005/007).
+  const isInvalidCursor =
+    outcome?.type === 'http' &&
+    outcome.status === 400 &&
+    problemCodeOf(outcome.body) === PROBLEM_CODE.invalidCursor
+
   const classified = (
     query.isPending
       ? { kind: 'initial-loading' }
@@ -226,7 +242,8 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
    * real browser measured it: two announcements for one recovery, the first
    * being "Sunucu yanıtı beklenen biçimde değil" (#146 C01-AC-005/007).
    */
-  const recovering = recovery !== null && !recovery.settled
+  const recovering =
+    (recovery !== null && !recovery.settled) || (isInvalidCursor && cursor !== undefined)
   const state = recovering
     ? ({ kind: 'initial-loading' } as RemoteViewState<CounterpartyPage>)
     : classified
@@ -298,13 +315,6 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
     setLoaded(items)
     setCursor(page.nextCursor)
   }
-
-  // An expired or otherwise invalid cursor must not strand the user on a broken page:
-  // fall back to the first page. Branches on the STABLE code, never the localized text.
-  const isInvalidCursor =
-    outcome?.type === 'http' &&
-    outcome.status === 400 &&
-    problemCodeOf(outcome.body) === PROBLEM_CODE.invalidCursor
 
   // An effect is the right tool here: the trigger is the SERVER rejecting our cursor,
   // not a user action, and it cannot be derived during render — deriving it would flip
