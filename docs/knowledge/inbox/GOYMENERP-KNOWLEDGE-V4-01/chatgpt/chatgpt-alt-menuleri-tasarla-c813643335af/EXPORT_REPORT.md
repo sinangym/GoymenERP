@@ -64,17 +64,16 @@ py -3 -I -S -B tools/validate_knowledge_packages.py
 git diff --cached --check
 ```
 
-Bu ChatGPT ortamında authenticated tam repo worktree bulunmadığından bu üç canonical komutun local exact çalıştırıldığı iddia edilmez. Exact-head GitHub Actions doğrulaması ayrıca tamamlandı: genel CI `33870962381` SUCCESS, C-01 real-browser E2E `33870962346` SUCCESS ve UI catalog golden `33870962429` SUCCESS. Bu workflow'lar source-package validator komutlarının birebir yerini aldığı iddiası değildir; final Codex entegratörü canonical checkout üzerinde knowledge validatorü yeniden çalıştırmalıdır.
+Bu ChatGPT ortamında authenticated tam repo worktree bulunmadığından bu üç canonical komutun local exact çalıştırıldığı iddia edilmez. GitHub Actions genel CI, C-01 real-browser ve UI catalog golden kontrolleri PR exact head'i için ayrıca izlenir. Bu workflow'lar source-package validator komutlarının birebir yerini aldığı iddiası değildir; final Codex entegratörü canonical checkout üzerinde knowledge validatorü yeniden çalıştırmalıdır.
 
 ## Git/PR kanıtı
 
 - Branch: `chatgpt/knowledge-import/chatgpt-alt-menuleri-tasarla-c813643335af`
 - Base main: `188c792900e35d3e2ed6a9ba4734dc9ad596fc97`
-- Exact head: `41238ca893b41d797e7614580e7eb1af1063d8e6`
 - Draft PR: `#215`
-- CI: SUCCESS — runs `33870962381`, `33870962346`, `33870962429`
-- Independent exact-head review: henüz yok
-- Merge: yapılmadı; kaynak ajan kendi PR'ını merge etmez.
+- Final exact head ve fresh CI run kimlikleri PR/Issue #208 koordinasyon kaydından okunur; dosya kendi commit SHA'sını self-reference ederek sabitlemez.
+- Independent exact-head review: kaynak paket oluşturma anında henüz yok.
+- Merge: yapılmaz; kaynak ajan kendi PR'ını merge etmez.
 
 ## Sonraki adım
 
