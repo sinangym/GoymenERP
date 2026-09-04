@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0",
+  "run_id": "GOYMENERP-KNOWLEDGE-V4-01",
+  "provider": "codex",
+  "source_id": "codex-pr-181-k3-takibi-1ddb47fa532a",
+  "conversation_id": "codex-pr-181-k3-takibi",
+  "conversation_title": "PR 181 K3 Takibi",
+  "coverage": "visible_only",
+  "inaccessible": [
+    "Otomatik özetlerde atlanmış veya kısaltılmış eski ham konuşma turları",
+    "Diğer Codex konuşmalarının ham içerikleri",
+    "Claude ve ChatGPT sağlayıcılarındaki ayrı konuşmaların ham içerikleri",
+    "Kullanıcı tarafından doğrulanmış tam kaynak envanteri ve inventory attestation"
+  ],
+  "status": "partial",
+  "privacy_review": {
+    "secret_scan": "passed",
+    "pii_review": "passed",
+    "redactions": 0
+  },
+  "source_snapshot_sha256": "1ddb47fa532aa31b994559adf70ea3d36221cb29595ae3ef81c01d1f36b47aba",
+  "content_fingerprint_sha256": "15f18f3b860d96a7a1472379bd4babbe0c46cb38c9fd33918c7024373757ed63",
+  "files": [
+    {
+      "path": "ATTACHMENT_INDEX.md",
+      "bytes": 366,
+      "sha256": "81e4516ed95b096c2e18b840adc143f02b5fcf0107602a68b9c353d815e10d70"
+    },
+    {
+      "path": "CONFLICT_CANDIDATES.md",
+      "bytes": 883,
+      "sha256": "3456978fa246e4cadcc08617d792076510a010b89a7388a174c7a1c06d69d2ed"
+    },
+    {
+      "path": "EXPORT_REPORT.md",
+      "bytes": 1886,
+      "sha256": "29316380163f34d27aa6ce344e19623c0c45968a4670b1d19dd3475c645e606a"
+    },
+    {
+      "path": "KNOWLEDGE.md",
+      "bytes": 3350,
+      "sha256": "e41ecb8ac99fc38185d334f322734eaccf7d8ed98cf491d9efba8dd13942efae"
+    },
+    {
+      "path": "NORMALIZED_ITEMS.ndjson",
+      "bytes": 19571,
+      "sha256": "15f18f3b860d96a7a1472379bd4babbe0c46cb38c9fd33918c7024373757ed63"
+    }
+  ],
+  "counts": {
+    "items": 27,
+    "attachments": 0,
+    "conflicts": 0
+  }
+}
