@@ -706,6 +706,17 @@ test('B-C01-008 a failed continuation keeps the verified rows and offers a retry
 
 test('B-C01-009 a tampered cursor is refused with a stable code', async ({ page }, testInfo) => {
   const net = await NetworkRecorder.attach(page)
+
+  // Attached BEFORE the page opens. Registered after `openList` it missed the
+  // first read entirely, so the real run saw two reads where the sequence has
+  // three -- and the shortfall looked like the recovery never firing when in
+  // fact the measurement started late.
+  const reads: { cursor: string | null }[] = []
+  page.on('request', (request) => {
+    if (!request.url().includes('/api/v1/counterparties')) return
+    reads.push({ cursor: new URL(request.url()).searchParams.get('cursor') })
+  })
+
   await openList(page)
 
   // The APPLICATION's own continuation request is intercepted and its real cursor
@@ -716,17 +727,12 @@ test('B-C01-009 a tampered cursor is refused with a stable code', async ({ page 
   // answers 401 and the case proves nothing about cursor validation. Rewriting
   // the app's own request keeps every header, so what comes back is the server
   // refusing a tampered token from an otherwise legitimate caller.
-  // The ORDINAL sequence, recorded on the request so an attempt that was sent
-  // and then aborted still counts. #146 C01-AC-005 is about the ORDER --
-  // `page1 200 -> invalid_cursor 400 -> fresh cursorless page1 200` -- because
-  // the version this replaces recovered from React Query's cache and issued no
-  // third request at all: nothing re-checked that page 1 is still what the
-  // server would serve.
-  const reads: { cursor: string | null }[] = []
-  page.on('request', (request) => {
-    if (!request.url().includes('/api/v1/counterparties')) return
-    reads.push({ cursor: new URL(request.url()).searchParams.get('cursor') })
-  })
+  // The ORDINAL sequence above is the #146 C01-AC-005 claim:
+  // `page1 200 -> invalid_cursor 400 -> fresh cursorless page1 200`. The version
+  // this replaces recovered from React Query's cache and issued no third request
+  // at all, so nothing re-checked that page one is still what the server would
+  // serve. Recorded on the REQUEST, so an attempt that was sent and then aborted
+  // still counts.
   await watchAnnouncements(page)
   const spokenBefore = await announcedCount(page)
 
