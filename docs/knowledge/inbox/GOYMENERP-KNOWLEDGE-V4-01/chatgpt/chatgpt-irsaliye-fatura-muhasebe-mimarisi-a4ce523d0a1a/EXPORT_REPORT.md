@@ -36,7 +36,7 @@ Bu nedenle paket tam **görünür snapshot** olsa da `coverage=visible_only` ola
 ## Kimlikler ve sayımlar
 
 - source_snapshot_sha256: `a4ce523d0a1a475f09fe20ae5e15371fdabb9eb76afa367dcb19bd6d310ca4cc`
-- content_fingerprint_sha256: `7924d0e3d76af97718dfad1a0e1572eb88258886c89e6b60cdfc088ab31c0406`
+- content_fingerprint_sha256: `7f7129dc9a5e5e9c584cb661122e07eb947a2a3d8e7d2b9be26ea9fcb05cc62e`
 - items: 16
 - attachments: 0
 - conflicts: 0
