@@ -10,9 +10,9 @@
   "coverage": "partial",
   "files": [
     {
-      "bytes": 6383,
+      "bytes": 9438,
       "path": "KNOWLEDGE.md",
-      "sha256": "7cfa65131da02a54b3a74cb4f4fdfa8077e3392d774bcc81c0449993903bd80e"
+      "sha256": "bfcada6a01d68c41c8c87657638255c7ea0aec6662be924bc362ead7d0379e3e"
     },
     {
       "bytes": 31839,
@@ -37,7 +37,7 @@
   ],
   "inaccessible": [
     "Earlier conversation turns represented only as 'Skipped N messages' in the active model context; raw message bodies were unavailable.",
-    "Earlier uploaded images/documents/archives referenced by prior turns were not mounted or byte-acccessible in this run.",
+    "Earlier uploaded images/documents/archives referenced by prior turns were not mounted or byte-accessible in this run.",
     "No platform transcript-export or stable conversation-id API was available; conversation_id was deterministically derived from visible project context."
   ],
   "privacy_review": {

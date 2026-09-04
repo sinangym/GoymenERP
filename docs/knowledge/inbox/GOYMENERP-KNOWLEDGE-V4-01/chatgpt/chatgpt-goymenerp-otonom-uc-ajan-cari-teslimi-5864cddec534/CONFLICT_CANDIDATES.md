@@ -9,7 +9,7 @@ Bu dosya normatif karar vermez; yalnız kaynaklar arasında açık uzlaştırma 
 - Repository current-state kaydı: `KN-F16538EBD7217D299BA8FAF1`
 - Konuşma anlamı: kullanıcı v3/üç-ajan otonom çalışma modeline açık tam onay vermiştir.
 - Repository kanıtı: export tabanında `docs/governance/GOYMEN_ERP_HIZLI_TESLIM_v3.md`
-  başlığD� halâb `KULLANICI ONAYI BEKLİYOR` demektedir.
+  başlığı hâlâ `KULLANICI ONAYI BEKLİYOR` demektedir.
 - Disposition: **promotion gerektiren normatif çelişki adayı**. Knowledge import tek başına
   governance dosyasını veya karar sicilini değiştirmez.
 

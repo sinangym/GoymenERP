@@ -55,7 +55,7 @@ alphabetic-key, compact UTF-8 JSON Lines temsilinden hesaplandı.
 1. Aktif model bağlamında `Skipped N messages` ile temsil edilen önceki kullanıcı/asistan
    turlarının ham metni.
 2. Bu run sırasında mount edilmemiş eski ekran görüntüleri, ZIP/PDF/DOCX ve diğer önceki
-   konuşma eklerinin byte hçerikleri.
+   konuşma eklerinin byte içerikleri.
 3. Platform tarafından sunulmayan gerçek conversation-id/transcript-export API'si; bu
    nedenle conversation_id başlık + görünür proje bağlamından deterministik türetildi.
 4. Görünmeyen önceki asistan özel muhakemesi; kaynak olarak kullanılmadı.

@@ -10,70 +10,143 @@
 
 Bu paket ham sohbet dÃ¶kÃ¼mÃ¼ deÄŸildir. Aktif model baÄŸlamÄ±nda gerÃ§ekten gÃ¶rÃ¼nÃ¼r olan GÃ¶ymen ERP
 mesajlarÄ±ndan ve canlÄ± canonical repository'de doÄŸrulanabilen ilgili kanÄ±tlardan atomik proje
-bilgisi Ã§Ä±karÄ±r. `Skipped N messages` olarak temsil edilen veya bu oturumda mount edilmemiÅŸ
+bilgisi Ã§Ä±karÄ±r. `Skipped N messages` olarak temsil edilen veya bu oturumda mount edilmeyen
 eski iÃ§erik yeniden kurulmamÄ±ÅŸtÄ±r.
 
 ## Ana hedef ve Ã§alÄ±ÅŸma modeli
 
-- KullanÄ±cÄ± ERP'nin bÃ¼tÃ¼n modÃ¼llerinin uÃ§tan uca Ã§alÄ±ÅŸÄ±r hÃ¢le getirilmesini ve yalnÄ±z
-  readiness/platform Ã§Ä±ktÄ±larÄ± yerine Ã§alÄ±ÅŸan dikey dilimlerle hÄ±zlÄ± teslimi istemektedir.
-- Codex backend/endpoint/gerÃ§ek-SQL/OpenAPI; Claude frontend/browser/a11y; ChatGPT iÅŸ
-  spec/acceptance/golden/backlog/hakemlik ÅŸeridinde Ã§alÄ±ÅŸÄ±r. GitHub exact SHA/PR/CI ortak
-  gerÃ§ek kaynaÄŸD±dÄ±r; coordinator merge eder.
-- Normal P2 metin/test-sayÄ±sÄ± bulgularÄ± yeni inceleme turu aÃ§mamalÄ±; P0/P1 davranÄ±ÅŸ ve
-  gÃ¼venlik kusurlarÄ± ayrÄ± blocker olarak ele alÄ±nmalÄ±dÄ±r.
-- K3 kuyruÄŸunda yalnÄ±z gerÃ§ekten READY zincir freeze baÅŸlatmalÄ±; blocked/Draft/NO_GO K3
-  normal K2'leri sÃ¼resiz tutmamalÄ±dÄ±r.
+KullanÄ±cÄ± ERP'nin bÃ¼tÃ¼n modÃ¼llerinin uÃ§tan uca Ã§alÄ±ÅŸÄ±r hÃ¢le getirilmesini; yatay platform
+hazÄ±rlÄ±ÄŸÄ±nÄ±n kendi kendini besleyen bir dÃ¶ngÃ¼ye dÃ¶nÃ¼ÅŸmemesini; Codex, Claude ve ChatGPT'nin
+aynÄ± GitHub gerÃ§eÄŸi Ã¼zerinde aynÄ± dikey dilimin farklÄ± katmanlarÄ±nda paralel ilerlemesini
+istemiÅŸtir. Codex backend/endpoint/gerÃ§ek-SQL/OpenAPI, Claude frontend/browser/a11y, ChatGPT
+iÅŸ spec/acceptance/golden/backlog/hakemlik, ayrÄ± coordinator ise merge rolÃ¼ndedir.
+
+GitHub exact SHA, PR diff, CI ve repository kararlarÄ± ortak gerÃ§ek kaynaÄŸÄ±dÄ±r. Ã‡alÄ±ÅŸma
+farklÄ± proje konuÅŸmalarÄ±na bÃ¶lÃ¼nebilir; fakat dosya sahipliÄŸi ve exact-head review kurallarÄ±
+aynÄ± kalmalÄ±dÄ±r. DavranÄ±ÅŸ/gÃ¼venlik P0/P1 bulgularÄ± blocker'dÄ±r. Metin/test sayÄ±sÄ± gibi P2
+kanÄ±t tutarsÄ±zlÄ±klarÄ± tek baÅŸÄ±na yeni inceleme turu aÃ§mamalÄ±, bir sonraki anlamlÄ± incelemeye
+eklenmelidir. READY K3 zincirleri Ã¶nce, normal K2 merge'leri batch olarak ilerleyebilir;
+Draft/NO_GO/P1-blocked K3 main'i sÃ¼resiz kilitlememelidir.
 
 ## ÃœrÃ¼n ve ÅŸirket kapsamÄ±
 
-- ÃœrÃ¼n kartÄ± ÅŸirketler arasÄ±nda ortak kimliktir; etiket/lot bazlÄ± fiziksel Ã¼rÃ¼n kayÄ±tlarÄ±
-  ÅŸirket ayrÄ±mÄ± taÅŸÄ±r ve varsayÄ±lan ÅŸirket sipariÅŸin aÃ§Ä±ldÄ±ÄŸÄ± ÅŸirkettir.
-- GDC ve GSP gerÃ§ek ÅŸirketlerdir; GIN gerÃ§ek hukuki unvan/VKN gelene kadar placeholder ve
-  resmÃ® belge Ã¼retimine kapalÄ± kalÄ±r. GerÃ§ek non-null VKN grup Ã§apÄ±nda benzersiz olacak ve
-  SQL Server'da filtered unique index yaklaÅŸÄ±mÄ± kullanÄ±lacaktÄ±r.
-- Osmaniye Hol-0â€¦7 ve Gaziantep iÃ§ lokasyon, BaÅŸtuÄŸ/SelimoÄŸlu/Alya/Åadiler/TosÃ§elik/
-  DoÄŸruluk harici tedarikÃ§i depolarÄ± olarak deÄŸerlendirilmiÅŸtir.
+KullanÄ±cÄ± Ã¼rÃ¼n kartÄ±nÄ±n hukuki ÅŸirketler arasÄ±nda ortak kimlik olmasÄ±nÄ±, ÅŸirket baÅŸÄ±na
+ayrÄ± Ã¼rÃ¼n kartÄ± aÃ§Ä±lmamasÄ±nÄ± belirtmiÅŸtir. Etiket/lot bazlÄ± fiziksel kayÄ±tlar ÅŸirket
+ayrÄ±mÄ± taÅŸÄ±r ve varsayÄ±lan ÅŸirket sipariÅŸin aÃ§Ä±ldÄ±ÄŸÄ± ÅŸirkettir.
+
+GDC ve GSP gerÃ§ek ÅŸirketlerdir. GIN gerÃ§ek hukuki unvan ve gerÃ§ek VKN gelene kadar
+placeholder ve resmÃ® belge Ã¼retimine kapalÄ± kalÄ±r. GerÃ§ek, non-null VKN aktif/pasif bÃ¼tÃ¼n
+ÅŸirketlerde grup Ã§apÄ±nda benzersiz olmalÄ± ve SQL Server tarafÄ±nda filtered unique index
+ile uygulanmalÄ±dÄ±r. GerÃ§ek VKN deÄŸerleri privacy nedeniyle bu knowledge paketine
+aktarÄ±lmamÄ±ÅŸtÄ±r.
+
+Osmaniye Hol-0â€¦7 ve Gaziantep baÅŸlangÄ±Ã§ta GÃ¶ymen iÃ§ lokasyonlarÄ±dÄ±r. BaÅŸtuÄŸ, SelimoÄŸlu,
+Alya, Åadiler, TosÃ§elik ve DoÄŸruluk harici tedarikÃ§i depolarÄ±dÄ±r.
 
 ## Cari / Counterparty
 
-- Bir hukuki karÅŸÄ± taraf tek Party'dir; ÅŸirket iliÅŸkileri CompanyPartyAccount ile ayrÄ±lÄ±r.
-  MÃ¼ÅŸteri/tedarikÃ§i/fason/hizmet rolleri hesap iÃ§indeki rol bitleridir.
-- `counterparty.accounts.create` yalnÄ±z `SYSTEM_ADMINISTRATOR` iÃ§in kabul edilmiÅŸtir;
-  diÄŸer roller default-deny'dir. Åirkete baÄŸlama iÅŸleminde kullanÄ±cÄ± gerekÃ§esi zorunlu deÄŸildir.
-- C-01A selected-company `SingleCompany` dilimidir; C-01B multi-company renderer ayrÄ± gelecek
-  dilimdir. Global Party aktifliÄŸi ile ÅŸirket hesabÄ± aktifliÄŸi ayrÄ± gÃ¶sterilir.
-- C-01 continuation sÄ±rasÄ±nda offline/network/500/503 igin doÄŸrulanmÄ±sh satÄ±rlarÄ± korunur ve
-  kullanÄ±cÄ± kontrollÃ¼ retry sunulur; 401/403/malformed/tenant ihlalleri maskelenmez.
-- C-02 create/link idempotency anahtarÄ± immutable submitted logical attempt'a baÄŸlanÄ±r.
-- C-03'te `externalIntegrationCode` decoded modele girmemeli; nihai tercih dar server
-  projection'dÄ±r. Int64 version deÄŸrileri kayÄ±psÄ±z decimal string olarak taÅŸÄ±nmalÄ±dÄ±r.
+Bir hukuki karÅŸÄ± taraf tek `Party` kimliÄŸidir. Her GÃ¶ymen ÅŸirketiyle iliÅŸki ayrÄ±
+`CompanyPartyAccount` kaydÄ±dÄ±r; mÃ¼ÅŸteri, tedarikÃ§i, fason ve hizmet rolleri aynÄ± ÅŸirket
+hesabÄ±ndaki rol bitleriyle taÅŸÄ±nÄ±r. Global Party aktifliÄŸi ile ÅŸirket hesabÄ± aktifliÄŸi ayrÄ±
+iÅŸ olgularÄ±dÄ±r.
+
+`counterparty.accounts.create` yalnÄ±z `SYSTEM_ADMINISTRATOR` rolÃ¼ne verilir; diÄŸer roller
+default-deny'dir. Åirkete baÄŸlama iÅŸleminde kullanÄ±cÄ± gerekÃ§esi zorunlu deÄŸildir. Hedef
+ÅŸirket body/query'den seÃ§ilmez; shell tarafÄ±ndan doÄŸrulanmÄ±ÅŸ aktif `X-Company-Id`
+baÄŸlamÄ±ndan gelir. Kaynak ÅŸirket hesabÄ±nÄ±n rolleri hedefe sessizce kopyalanmaz.
+
+C-01A selected-company `SingleCompany` dilimidir; authorized multi-company gÃ¶rÃ¼nÃ¼m ayrÄ±
+C-01B renderer/acceptance iÅŸidir. C-01'de `partyState` ve `accountState` ayrÄ±dÄ±r,
+Ã§oklu rol seÃ§iminde `roleMatch=any|all` kullanÄ±labilir; count yalnÄ±z yetkili filtre
+kapsamÄ±nÄ± ifade eden exact scope ile kabul edilir. Selected-company response aktif
+CompanyContext ile eÅŸleÅŸen exactly-one account taÅŸÄ±malÄ±dÄ±r.
+
+Ä°kinci sayfa `offline`, `network-error`, `500` veya `503` ile baÅŸarÄ±sÄ±zsa Ã¶nceki doÄŸrulanmÄ±ÅŸ
+satÄ±rlar korunur, yeni satÄ±r eklenmez ve kullanÄ±cÄ± kontrollÃ¼ retry sunulur. `401`, `403`,
+malformed veya tenant ihlali bu davranÄ±ÅŸÄ±n arkasÄ±na gizlenmez.
+
+C-02A ilk create diliminde Party tÃ¼rÃ¼, hukuki unvan, opsiyonel ticari unvan, roller ve
+salt-okunur aktif ÅŸirket bulunur. Cari kodunu server Ã¼retir. Mevcut command'da olmayan
+VKN/TCKN, banka, adres, vergi/sicil, risk veya bakiye alanÄ± UI tarafÄ±ndan uydurulmaz.
+Idempotency anahtarÄ± bir immutable submitted logical attempt snapshot'Ä±na baÄŸlÄ±dÄ±r;
+double-click, timeout ve unknown-outcome retry aynÄ± key'i kullanÄ±r.
+
+C-02 iÃ§in canonical shell screen kimliÄŸini `C-02`, `create-subset` deÄŸerini ayrÄ±
+`scopeVariant` olarak kullanma yÃ¶nÃ¼ konuÅŸmada ChatGPT spec-owner Ã¶nerisi olarak yer alÄ±r;
+bu kaynak paketi bunu kullanÄ±cÄ± kararÄ± diye promote etmez, `PROPOSED` olarak tutar.
+
+C-03 detay modelinde `externalIntegrationCode` decoded business modele taÅŸÄ±nmamalÄ±;
+tercih edilen nihai sÄ±nÄ±r dar server projection'dÄ±r. Int64 version deÄŸerleri kayÄ±psÄ±z
+opaque decimal string olarak taÅŸÄ±nmalÄ±dÄ±r. Owner API'si olmayan bakiye/risk/stok/belge/AI
+alanlarÄ± uydurulmamalÄ±dÄ±r.
 
 ## Shell gÃ¼venlik sÄ±nÄ±rÄ±
 
-Authenticated business-read `401/403` sonuÃ§larÄ± yalnÄ±z feature-local hata deÄŸildir.
-Reducer/provider dÃ¼zeyinde request-start snapshot'a gÃ¶re current/stale kararÄ±, terminal 401,
-403 capability re-fence, stale actor/company korumasÄ± ve exactly-once gÃ¼venlik etkisi gerekir.
-Abort gÃ¼venli bir sonuÃ§tur fakat teslim edilmis istale yanÄ±tÄ±n reddedildiÄŸini tek baÅŸÄ±na kanÄ±tlamaz.
+Authenticated business-read `401/403` yalnÄ±z component-local hata olarak kalamaz. Ä°stek
+baÅŸlangÄ±cÄ±ndaki immutable actor/session/company/committed-revision snapshot'Ä± provider /
+reducer seviyesinde authoritative current state ile karÅŸÄ±laÅŸtÄ±rÄ±lmalÄ±dÄ±r.
+
+Current business `401` terminal session invalidation, bir kez epoch ilerlemesi ve business
+cache temizliÄŸi Ã¼retmeli; focus/reconnect/refetch eski veriyi diriltememelidir. Current
+business `403` oturumu kapatmadan ilgili capability ve namespace'i fail-closed re-fence
+etmeli; fresh capability olmadan route yeniden mount olmamalÄ±dÄ±r.
+
+GeÃ§ kalan Actor A `401` veya Company A `403` yeni Actor/Company B baÄŸlamÄ±nÄ± etkileyemez.
+AynÄ± gÃ¼venlik sonucu birden fazla observer tarafÄ±ndan gÃ¶rÃ¼lse de effect exactly-once
+uygulanmalÄ±dÄ±r. Request abort gÃ¼venli bir sonuÃ§tur fakat gerÃ§ekten teslim edilmiÅŸ stale
+response'un merkezÃ® fence tarafÄ±ndan reddedildiÄŸini tek baÅŸÄ±na kanÄ±tlamaz.
 
 ## Karar turu Q1â€“Q8
 
-- Q1: GIN placeholder; gerÃ§ek non-null VKN group-wide unique; gerÃ§ek GIN deÄŸerleri aÃ§Ä±k.
-- Q2: yaklaÅŸÄ±k 5 milyar TL/yÄ±l ve 30.000 TL/ton â†’ yaklaÅŸÄ±k 166.667 ton/yÄ±l planlama Ã§Ä±pasÄ±;
-  gerÃ§ek sipariÅŸ/mÃ¼ÅŸteri/eÅŸzamanlÄ± kullanÄ±cÄ± hacmi aÃ§Ä±k.
-- Q3: ilk sÃ¼rÃ¼mde entegrasyon yok; ileride e-belge â†’ Mikro mutabakat/taslak â†’ banka.
-- Q4: RPO 15 dk / RTO 4 saat yalnÄ±z geÃ§ici varsayÄ±m.
-- Q5: yÄ±llÄ±k dÃ¶nem, aÃ§Ä±k kayÄ±tlarÄ±n sonraki Ã§alÄ±ÅŸma kÃ¼mesinde kullanÄ±labilir kalmaÄ± ve
-  Ã§ok-yÄ±llÄ± rapor/AI hedefi; retention/legal-hold ve teknik dÃ¶nem yÃ¶ntemi aÃ§Ä±k.
-- Q6: ÅŸirket bazlÄ± versiyonlu logo/antet, Noto Sans teknik fallback.
-- Q7: veri on-prem; yerel-first AI/OCR temel UX; AI yetki/onay/formÃ¼l otoritesi deÄŸildir.
-- Q8: continuation satÄ±rlarÄ± korunur + manuel retry, otomatik resend yok.
+- Q1: GIN placeholder kalÄ±r; gerÃ§ek non-null VKN group-wide unique; gerÃ§ek GIN bilgileri aÃ§Ä±k.
+- Q2: yaklaÅŸÄ±k 5 milyar TL/yÄ±l ve 30.000 TL/ton girdisi yaklaÅŸÄ±k 166.667 ton/yÄ±l planlama
+  Ã§Ä±pasÄ± verir. GerÃ§ek sipariÅŸ/mÃ¼ÅŸteri/eÅŸzamanlÄ± kullanÄ±cÄ± hacmi aÃ§Ä±k kalÄ±r.
+- Q3: ilk sÃ¼rÃ¼mde e-belge/Mikro/banka entegrasyonu yok; ileride sÄ±ra e-belge â†’ Mikro
+  mutabakat/onaylÄ± fiÅŸ taslaÄŸÄ± â†’ banka hareketidir; serbest doÄŸrudan DB yazÄ±mÄ± yoktur.
+- Q4: RPO 15 dakika / RTO 4 saat yalnÄ±z geÃ§ici varsayÄ±mdÄ±r, production hedefi deÄŸildir.
+- Q5: yÄ±llÄ±k dÃ¶nem ve aÃ§Ä±k kayÄ±tlarÄ±n aktif Ã§alÄ±ÅŸma kÃ¼mesinde kalmasÄ± hedeflenir; Ã§ok-yÄ±llÄ±
+  rapor/AI mÃ¼mkÃ¼n olmalÄ±dÄ±r. Yasal retention/legal-hold ve teknik dÃ¶nem temsili aÃ§Ä±ktÄ±r.
+- Q6: her ÅŸirket ayrÄ± logo/antet, ÅŸirket bazlÄ± versiyonlu ÅŸablon ve Noto Sans teknik
+  fallback kullanÄ±r; gerÃ§ek marka assetleri olmadan kurumsal PDF UAT bitmez.
+- Q7: veri on-prem/kullanÄ±cÄ± tarafÄ±nda, yerel-first AI/OCR temel UX; AI yetki, onay,
+  deterministik formÃ¼l veya iÅŸ doÄŸrusu deÄŸildir. Bulut AI/KVKK seÃ§imi aÃ§Ä±k ve default-deny.
+- Q8: doÄŸrulanmÄ±ÅŸ satÄ±rlarÄ± koru + manual continuation retry; otomatik resend yok.
 
 ## Kabul ve E2E
 
-- C-01 browser matrisi gerÃ§ek capabilityâ†’routeâ†’APIâ†’SQL, non-disclosure, stale company switch,
-  keyboard/focus/sort, responsive/reflow, accessibility, continuation, invalid cursor ve
-  Party/account durum ayrÄ±mÄ± kanÄ±tlarÄ±nÄ± ister.
-- Yetkili/yetkisiz browser profilleri aynÄ± exact-SHA workflow run, tek fresh SQL/API/fixture yÄ±Ä‘,[±,H[1,[™H^\±,Hœ›İÜÙ\ˆÛÛ^Ü›ØÙ\ÜÈ[H0éØ[1,qdK,KÆÖÌKLK"à¢ÒFVÆ—fW&VB×7FÆR6Væ'–öF4E&W7öç6R×7FvR–çFW&6WF–öâvW,:vV²&W7öç6R&öG’~(	–¢F\IöœY÷F—&ÖVFVâ–ÆìK¢FW6Æ–Ò¦ÖìKìKvV6–·F—&ÖVÆ–F—"à¢Ò3ÔS$RÔtôÄDTâÕcFWFW&Ö–æ—7F–²FW7BÖöæÇ’f—‡GW&Rœ:v–â¶öç\YöÖFFìKÖÆæâ6æöæ–6À¢'F–f7B†6‚v’æ÷&ÖÆ—¦VBWf–FVæ6R¶–LKæF¶÷'Væ×\Y÷GW"à¢Ò"3s26öç&<KæFÖW&vVBFW7G2öS&Rò¢¦f&ÌKIôKFV²&YüKæ'&÷w6W"66WFæ6R6œKÆÖÖÌK¢YöV¶Æ–æFR÷7BÖÖW&vR&—6²¶–LKöÇ\Y÷GW'VÆ×\Y÷GW#²|;Ææ6VÂf–æÂVçFVw&L;g"'RF&–‡6VÂ–FF–œK¢6æÌKÖ–â¶ìKLK–Æ–Væ–FVâF\IöW&ÆVæF—&ÖVÆ–F—"à ¢22:|K²¶&&Æ"ò&—6¶ÆW  ¢Òt”âvW,:vV²‡V·V¶’VçfâfRd´âà¢ÒvW,:vV²W&f÷&Öç2†6Ö’fR&öGV7F–öâ4Äòà¢Ò&öGV7F–öâ54òôÔdÂvW,:vV²7VçV7RôuRfR¶W6–â%òõ%Dòà¢ÒVçFVw&7–öâ6IöÆœK<Kö7&VFVçF–Â÷6æF&÷‚à¢Ò–6Â&WFVçF–öâöÆVvÂÖ†öÆB÷'F—F–öâÖ–Ö†ÖG&—6’à¢ÒvW,:vV²ÆövòöçFWBöföçB76WFÆW&’à¢Ò'VÇWB’6IöÆœK<Kôµd´²÷fW&’<KìKlK·F—f7–öçRà¢Ò7W'&VçBc2v÷fW&ææ6RF÷7–<KæF¶’µTÄÄä”4’ôä”’$T´ÌK”õ&&YöÌKIÄÏÄ¥±”­½¹×}µ…‘…­¤(€‡ŸÅ¬­Õ±±…»ÅÄ½¹…çÄ…É…ÏÅ¹‘„½¹™±¥Ğ…¹‘¥‘…Ñ”‰Õ±Õ¹µ…­Ñ…“ÅÈì‰ÔÁ…­•Ğ¹½Éµ…Ñ¥˜ƒŸÙëñ´å…Áµ…è¸((ŒŒñ¹•°É•Á½Í¥Ñ½Éä­…»ÅÓÄ()áÁ½ÉĞÏÅÉ…ÏÅ¹‘„…¹½¹¥…°É•Á½Í¥Ñ½ÉäAI%YQ€½±…É…¬‘¿}ÉÕ±…¹·ÅÏ}ÓÅÈ¸µ…¥¹€•á…ĞM!)€ÄàáŒÜäÈäÀÁ”ÌÕÍ”É•Ù„å‰„ĞÜÌÑ‘Œå…ÔäÙ™Œäİ€Í•Ù¥å•Í¥¹‘•‘¥È¸‘½Ì½­¹½İ±•‘”½€…±Ñå…ÃÅÏÄµ•ÙÕÑÑÕÈÙ”)M=UI}I%MQId¹©Í½¹€£‰³ˆ½±±•Ñ¥¹€‘ÕÉÕµÕ¹‘„°Í½ÕÉ”±¥ÍÑ•±•É¤‰…Ÿ olarak okunmuÅŸtur.
-Bu kaynak PR'sÄ± registry'yi deÄŸiÅŸtirmez; final Codex entegratÃ¶rÃ¼ tek-yazar olarak registry'ye
-ekler.
+C-01 kabul matrisi gerÃ§ek capabilityâ†’routeâ†’APIâ†’SQL zinciri, non-disclosure, stale ÅŸirket
+switch, keyboard/focus/sort, responsive/reflow, accessibility, continuation, invalid cursor
+ve Party/account durum ayrÄ±mÄ±nÄ± gerÃ§ek browser ortamÄ±nda kanÄ±tlamalÄ±dÄ±r.
+
+Yetkili ve yetkisiz browser profillerinin tek workflow run, tek exact SHA, tek fresh
+SQL/API/fixture yÄ±ÄŸÄ±nÄ± Ã¼zerinde ayrÄ± browser context/process ile Ã§alÄ±ÅŸmasÄ± istenmiÅŸtir.
+Delivered-stale senaryoda CDP response-stage interception gerÃ§ek response body'sini
+deÄŸiÅŸtirmeden yalnÄ±z teslim zamanÄ±nÄ± geciktirmelidir.
+
+`C01-E2E-GOLDEN-V1` test-only fixture 54 Party ve 55 CompanyPartyAccount ile tanÄ±mlanmÄ±ÅŸ,
+29.817 byte canonical artifact ve SHA-256
+`f23551944a65fe29681d768422b181dd73d68b1bdf8216e42bc643713e4d79d7`
+olarak konuÅŸmada gerÃ§ek yÄ±ÄŸÄ±nda doÄŸrulanmÄ±ÅŸtÄ±r.
+
+PR #173 ile `tests/e2e/**` main'e girmiÅŸ olsa da post-merge audit nedeniyle bunun tek
+baÅŸÄ±na browser acceptance sayÄ±lmamasÄ± gerektiÄŸi kayda geÃ§irilmiÅŸtir. Final entegratÃ¶r bu
+tarihsel iddiayÄ± gÃ¼ncel main ve browser workflow kanÄ±tÄ±yla yeniden sÄ±nÄ±flandÄ±rmalÄ±dÄ±r.
+
+## AÃ§Ä±k kararlar / riskler
+
+BaÅŸlÄ±ca aÃ§Ä±k alanlar: GIN gerÃ§ek hukuki unvan/VKN; gerÃ§ek performans hacmi ve production
+SLO; production SSO/MFA; gerÃ§ek sunucu/GPU/yedek envanteri; kesin RPO/RTO; entegrasyon
+saÄŸlayÄ±cÄ±/credential/sandbox; legal retention/legal-hold/partition-imha; gerÃ§ek
+logo/antet/font assetleri; bulut AI saÄŸlayÄ±cÄ±/KVKK/veri sÄ±nÄ±fÄ± aktivasyonu.
+
+Current repo HÄ±zlÄ± Teslim v3 belgesinin baÅŸlÄ±ÄŸÄ± `KULLANICI ONAYI BEKLÄ°YOR` durumunu
+taÅŸÄ±rken kullanÄ±cÄ± bu konuÅŸmada Ã¼Ã§-ajan v3/otonomi modeline aÃ§Ä±k tam onay vermiÅŸtir.
+Knowledge import bu normatif Ã§eliÅŸkiyi sessizce Ã§Ã¶zmez.
+
+## GÃ¼ncel repository kanÄ±tÄ±
+
+Export sÄ±rasÄ±nda canonical repository `PRIVATE` olarak doÄŸrulanmÄ±ÅŸtÄ±r. Exact main
+`188c792900e35d3e2ed6a9ba4734dc9ad596fc97` seviyesindedir. `docs/knowledge/**`
+altyapÄ±sÄ± mevcuttur; `SOURCE_REGISTRY.json` hÃ¢lÃ¢ `collecting` durumunda ve kaynak listeleri
+boÅŸtur. Bu kaynak PR'Ä± registry'yi deÄŸiÅŸtirmez; final Codex entegratÃ¶rÃ¼ tek-yazar olarak
+registry'ye ekler.
