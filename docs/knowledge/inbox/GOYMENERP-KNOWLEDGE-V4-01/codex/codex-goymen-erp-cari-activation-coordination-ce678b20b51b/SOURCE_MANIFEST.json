@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0",
+  "run_id": "GOYMENERP-KNOWLEDGE-V4-01",
+  "provider": "codex",
+  "source_id": "codex-goymen-erp-cari-activation-coordination-ce678b20b51b",
+  "conversation_id": "codex-derived-584a1e09c8b19787d1369b7c",
+  "conversation_title": "Göymen ERP PR #161–#207 koordinasyonu ve C-01/C-03 aktivasyon kanıtı",
+  "coverage": "visible_only",
+  "inaccessible": [
+    "Önceki asistan yanıtlarının tamamı ham metin olarak görünür değildi; yalnız görünür kullanıcı mesajları ve açıkça sağlanan konuşma kesitleri işlendi.",
+    "Platform kararlı bir konuşma kimliği sağlamadı; conversation_id sağlayıcı, görünür başlık ve ilk proje mesajından deterministik olarak türetildi.",
+    "Diğer Codex, Claude ve ChatGPT konuşmaları bu oturumdan erişilebilir değildir."
+  ],
+  "status": "partial",
+  "privacy_review": {
+    "secret_scan": "passed",
+    "pii_review": "passed",
+    "redactions": 0
+  },
+  "source_snapshot_sha256": "ce678b20b51b614be3e7d2565ef9b9c975f22e9e54743d501a8971489c238bee",
+  "content_fingerprint_sha256": "798bed606fa42b24c00435f62b66148efbedba98194239d5a02be69d0426a258",
+  "files": [
+    {
+      "path": "ATTACHMENT_INDEX.md",
+      "bytes": 228,
+      "sha256": "993d13a9e0ea8c5d4522e915d3eddb8767a33079cbae3b44c4e4cc33792a9049"
+    },
+    {
+      "path": "CONFLICT_CANDIDATES.md",
+      "bytes": 911,
+      "sha256": "cd28131559d919c47258e2b9b49dc53e087047ac1a494c74346032ffe4afa8f1"
+    },
+    {
+      "path": "EXPORT_REPORT.md",
+      "bytes": 2121,
+      "sha256": "c54e84bce2ad1666bb1ef7c98d749a7a32a6a74b85f78a83697b51a10fb007e9"
+    },
+    {
+      "path": "KNOWLEDGE.md",
+      "bytes": 2057,
+      "sha256": "9d278f4138220bbdadd65be2c6fc0d8c42bc84c058344331603ab34571507a6f"
+    },
+    {
+      "path": "NORMALIZED_ITEMS.ndjson",
+      "bytes": 25974,
+      "sha256": "798bed606fa42b24c00435f62b66148efbedba98194239d5a02be69d0426a258"
+    }
+  ],
+  "counts": {
+    "items": 35,
+    "attachments": 0,
+    "conflicts": 0
+  }
+}
