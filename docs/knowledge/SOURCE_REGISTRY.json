@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "run_id": "GOYMENERP-KNOWLEDGE-V4-01",
+  "canonical_repository": "https://github.com/sinangym/GoymenERP.git",
+  "default_branch": "main",
+  "state": "collecting",
+  "source_inventory_attestation": {
+    "status": "pending",
+    "attested_by": null,
+    "attested_at": null,
+    "evidence_locator": null,
+    "scope_note": null
+  },
+  "required_providers": [
+    "codex",
+    "claude",
+    "chatgpt"
+  ],
+  "expected_sources": [],
+  "sources": []
+}
