@@ -851,8 +851,13 @@ test('B-C01-010 party state and account state are separate facts', async ({ page
     })
   }
 
-  await applyAccountState('all')
-  expect(await codesOf(page), 'accountState=all hid the split-state party').toContain(
+  // `all` is the DEFAULT, so the page already opened with it: selecting it first
+  // changes nothing and issues no request, which is what the real run measured
+  // as zero reads. The cycle therefore starts by moving AWAY from the default,
+  // and returns to it at the end -- three genuine changes, three genuine reads,
+  // and the same appears / disappears / reappears claim.
+  await expect(accountState).toHaveValue('all')
+  expect(await codesOf(page), 'the default view hid the split-state party').toContain(
     SPLIT_STATE_ROW,
   )
 
@@ -866,18 +871,23 @@ test('B-C01-010 party state and account state are separate facts', async ({ page
   {
     const codes = await codesOf(page)
     expect(codes, 'accountState=inactive lost the only passive account').toContain(SPLIT_STATE_ROW)
-    // The fixture has exactly one, so this also proves the server applied the
+    // The fixture has exactly one, so this also proves the SERVER applied the
     // filter rather than the page hiding rows it had already been given.
     expect(codes).toHaveLength(1)
   }
+
+  await applyAccountState('all')
+  expect(await codesOf(page), 'returning to accountState=all lost the party').toContain(
+    SPLIT_STATE_ROW,
+  )
 
   // Every read was a real, correctly bound, cursorless page-1 request. The
   // company header matters as much as the query: a filter proven under the wrong
   // tenant proves nothing.
   const matrix = reads.slice(-3).map((read) => new URL(read.url).searchParams)
-  expect(matrix[0].get('accountState')).toBe('all')
-  expect(matrix[1].get('accountState')).toBe('active')
-  expect(matrix[2].get('accountState')).toBe('inactive')
+  expect(matrix[0].get('accountState')).toBe('active')
+  expect(matrix[1].get('accountState')).toBe('inactive')
+  expect(matrix[2].get('accountState')).toBe('all')
   for (const [index, params] of matrix.entries()) {
     expect(params.get('partyState'), 'party state drifted while account state changed').toBe(
       'active',
