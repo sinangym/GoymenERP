@@ -20,8 +20,8 @@
   "files": [
     {
       "path": "KNOWLEDGE.md",
-      "bytes": 6974,
-      "sha256": "db1d8efa833efa9a8d907e4c8359f8bf6d980055d216c1f09f70c64343c5349c"
+      "bytes": 7943,
+      "sha256": "d3fef483483e8c464c9076f1fb2c6797cf1556d1fbaf3e6e0fb773ab52359748"
     },
     {
       "path": "NORMALIZED_ITEMS.ndjson",
@@ -30,8 +30,8 @@
     },
     {
       "path": "CONFLICT_CANDIDATES.md",
-      "bytes": 1798,
-      "sha256": "2112e0fbe7f2dadc7abb1b456679f1ac664b0f28da6af44a10355caf626194ea"
+      "bytes": 1680,
+      "sha256": "10770e2432f7e649daf00488cfabb7f6545ed0da680ea6588f07742c3da972e8"
     },
     {
       "path": "ATTACHMENT_INDEX.md",
@@ -40,13 +40,13 @@
     },
     {
       "path": "EXPORT_REPORT.md",
-      "bytes": 4701,
-      "sha256": "073eaeb3e193e65ceabdf4a42b5a11d57f07e14731d34f2ea3ef0da75eb788b3"
+      "bytes": 4333,
+      "sha256": "d72f51b4903591aa57319319f6c5f6803e78da9bf63ea3c32fcc0e3d85c7b322"
     }
   ],
   "counts": {
     "items": 31,
     "attachments": 38,
-    "conflicts": 1
+    "conflicts": 0
   }
 }
