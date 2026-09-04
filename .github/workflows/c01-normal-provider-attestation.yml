@@ -1,0 +1,107 @@
+name: C-01 normal-provider attestation
+
+on:
+  pull_request:
+    paths:
+      - .dockerignore
+      - .github/workflows/c01-normal-provider-attestation.yml
+      - infra/docker-compose.c01-normal-provider-e2e.yml
+      - src/backend/**
+      - tests/c01_normal_provider_contract/**
+      - tests/c01_normal_provider_runner/**
+      - tools/run_c01_normal_provider_attestation.py
+      - tools/validate_c01_normal_provider_contract.py
+  push:
+    branches:
+      - main
+    paths:
+      - .dockerignore
+      - .github/workflows/c01-normal-provider-attestation.yml
+      - infra/docker-compose.c01-normal-provider-e2e.yml
+      - src/backend/**
+      - tests/c01_normal_provider_contract/**
+      - tests/c01_normal_provider_runner/**
+      - tools/run_c01_normal_provider_attestation.py
+      - tools/validate_c01_normal_provider_contract.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: c01-normal-provider-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  normal-provider-attestation:
+    name: Normal-provider Docker attestation
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      EXPECTED_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+      COMPOSE_PROJECT: >-
+        goymen-c01-normal-${{ github.run_id }}-${{ github.run_attempt }}
+      EVIDENCE_PATH: >-
+        artifacts/c01-normal-provider-${{ github.run_id }}-${{ github.run_attempt }}.json
+
+    steps:
+      - name: Checkout exact tested commit
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: ${{ env.EXPECTED_COMMIT }}
+
+      - name: Require exact clean source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT"
+          test -z "$(git status --porcelain=v1 --untracked-files=all --ignore-submodules=none)"
+
+      - name: Validate attestation and compose contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -I -S -B -m unittest discover \
+            -s tests/c01_normal_provider_contract \
+            -p "test_*.py" \
+            -v
+
+      - name: Validate fail-closed runner contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -I -S -B -m unittest discover \
+            -s tests/c01_normal_provider_runner \
+            -p "test_*.py" \
+            -v
+
+      - name: Run exact-head normal-provider Docker attestation
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          python3 -I -S -B tools/run_c01_normal_provider_attestation.py \
+            --expected-commit "$EXPECTED_COMMIT" \
+            --run-id "${{ github.run_id }}" \
+            --run-attempt "${{ github.run_attempt }}" \
+            --output "$EVIDENCE_PATH"
+          test -s "$EVIDENCE_PATH"
+
+      - name: Require zero project residue
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(docker ps -aq --filter "label=com.docker.compose.project=$COMPOSE_PROJECT")"
+          test -z "$(docker network ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT")"
+          test -z "$(docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT")"
+
+      - name: Upload exact-head normal-provider evidence
+        if: success()
+        uses: actions/upload-artifact@v6
+        with:
+          name: >-
+            c01-normal-provider-${{ env.EXPECTED_COMMIT }}-${{ github.run_attempt }}
+          path: ${{ env.EVIDENCE_PATH }}
+          if-no-files-found: error
