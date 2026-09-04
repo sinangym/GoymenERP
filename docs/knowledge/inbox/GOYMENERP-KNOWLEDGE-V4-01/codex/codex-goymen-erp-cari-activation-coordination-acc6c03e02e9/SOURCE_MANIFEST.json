@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0",
+  "run_id": "GOYMENERP-KNOWLEDGE-V4-01",
+  "provider": "codex",
+  "source_id": "codex-goymen-erp-cari-activation-coordination-acc6c03e02e9",
+  "conversation_id": "codex-derived-584a1e09c8b19787d1369b7c",
+  "conversation_title": "Göymen ERP PR #161–#207 koordinasyonu ve C-01/C-03 aktivasyon kanıtı",
+  "coverage": "partial",
+  "inaccessible": [
+    "Kullanıcının tam döküm olarak bildirdiği ayrı konuşma dosyası bu oturumun dosya yüzeyinde görünmedi; erişilebilen metin yüklemeleri yalnız operasyon talimatının kopyalarıydı.",
+    "Önceki asistan yanıtlarının tamamı ham metin olarak görünür değildi; yalnız görünür kullanıcı mesajları ve görünür bir asistan durum mesajı işlendi.",
+    "Platform kararlı bir konuşma kimliği sağlamadı; conversation_id sağlayıcı, görünür başlık ve ilk proje mesajından deterministik olarak türetildi."
+  ],
+  "status": "partial",
+  "privacy_review": {
+    "secret_scan": "passed",
+    "pii_review": "passed",
+    "redactions": 0
+  },
+  "source_snapshot_sha256": "acc6c03e02e9972a541b16f2e10d4a09dcad97fc419612e5b2313596d7115355",
+  "content_fingerprint_sha256": "909807d689d21c81f6fc1deb3538e3470aa95b441540d8a371c3892bdeed542c",
+  "files": [
+    {
+      "path": "ATTACHMENT_INDEX.md",
+      "bytes": 375,
+      "sha256": "03239dea0469c1b9c103ba887ea977b30f5f20a94f128cc31543774cf5247594"
+    },
+    {
+      "path": "CONFLICT_CANDIDATES.md",
+      "bytes": 911,
+      "sha256": "cd28131559d919c47258e2b9b49dc53e087047ac1a494c74346032ffe4afa8f1"
+    },
+    {
+      "path": "EXPORT_REPORT.md",
+      "bytes": 2769,
+      "sha256": "06f78e5858aef8a80ed1528b750ba783e7b6f53ce349b0dd278e6442d1cc8d47"
+    },
+    {
+      "path": "KNOWLEDGE.md",
+      "bytes": 2208,
+      "sha256": "be5084f6c864931df81fdd35055ad51bf89bfd64d2cdd3ad4ccf893c90cecdec"
+    },
+    {
+      "path": "NORMALIZED_ITEMS.ndjson",
+      "bytes": 25978,
+      "sha256": "909807d689d21c81f6fc1deb3538e3470aa95b441540d8a371c3892bdeed542c"
+    }
+  ],
+  "counts": {
+    "items": 35,
+    "attachments": 0,
+    "conflicts": 0
+  }
+}
