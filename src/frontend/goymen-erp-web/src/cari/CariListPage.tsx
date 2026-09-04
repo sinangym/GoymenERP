@@ -209,13 +209,27 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
   })
 
   const outcome = query.data
-  const state = (
+  const classified = (
     query.isPending
       ? { kind: 'initial-loading' }
       : classifyOutcome(outcome ?? { type: 'malformed' })
   ) as RemoteViewState<CounterpartyPage>
 
-  const page = state.kind === 'ready' ? state.data : null
+  const page = classified.kind === 'ready' ? classified.data : null
+
+  /**
+   * While a cursor recovery is in flight, the outcome still in hand is the
+   * cursor the server just refused -- which we have already acted on.
+   *
+   * Classifying it renders an error block, and that block is a `role="alert"`,
+   * so the user was told about a failure that was already being repaired. The
+   * real browser measured it: two announcements for one recovery, the first
+   * being "Sunucu yanıtı beklenen biçimde değil" (#146 C01-AC-005/007).
+   */
+  const recovering = recovery !== null && !recovery.settled
+  const state = recovering
+    ? ({ kind: 'initial-loading' } as RemoteViewState<CounterpartyPage>)
+    : classified
 
   /**
    * While `keepPreviousData` is showing, `page` is the page we ALREADY have, not the
@@ -317,11 +331,20 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
    * user has been told about a recovery that did not happen (#146 C01-AC-005).
    */
   useEffect(() => {
-    if (recovery !== null && !recovery.settled && cursor === undefined && page !== null) {
+    // `!isPlaceholderData` is load-bearing: with keepPreviousData the previous
+    // page is in hand the instant the key changes, so without it the recovery
+    // would settle -- and announce -- before its own request had answered.
+    if (
+      recovery !== null &&
+      !recovery.settled &&
+      cursor === undefined &&
+      page !== null &&
+      !query.isPlaceholderData
+    ) {
       // oxlint-disable-next-line react/set-state-in-effect -- settles on a server result
       setRecovery({ attempt: recovery.attempt, settled: true })
     }
-  }, [recovery, cursor, page])
+  }, [recovery, cursor, page, query.isPlaceholderData])
 
   const cursorRecovered = recovery?.settled === true
 
@@ -373,7 +396,7 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
     <section aria-labelledby="cari-list-heading" className={styles.page}>
       <h1 id="cari-list-heading">Cari Kartlar</h1>
 
-      <div role="status" aria-live="polite" className={styles.announce}>
+      <div role="status" aria-live="polite" data-list-announcer="" className={styles.announce}>
         {cursorRecovered
           ? 'Liste güncellendi; ilk sayfaya dönüldü.'
           : continuationRecovered

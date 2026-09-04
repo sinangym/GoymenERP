@@ -569,7 +569,10 @@ test('B-C01-006 the accessible structure is the one screen readers need', async 
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
   await expect(page.getByRole('navigation')).toHaveCount(1)
   await expect(page.locator('th[scope="col"]')).toHaveCount(6)
-  await expect(page.getByRole('status')).toHaveAttribute('aria-live', 'polite')
+  // The PERMANENT announcer, not whichever status region happens to be mounted:
+  // a loading StateBlock is also role="status", so an unscoped query is
+  // ambiguous. Only a region present from first render can announce at all.
+  await expect(page.locator('[data-list-announcer]')).toHaveAttribute('aria-live', 'polite')
   await expect(page.getByRole('region', { name: 'Cari listesi tablosu' })).toBeVisible()
   await expect(page.getByRole('search')).toBeVisible()
   // A settled table must say so; a stuck aria-busy makes a screen reader wait
@@ -767,9 +770,10 @@ test('B-C01-009 a tampered cursor is refused with a stable code', async ({ page 
   // That was invented; the case definition says nothing about it, and the measured
   // behaviour is better than what I assumed. Asserting the announcement pins the
   // recovery that actually exists.
-  await expect(page.getByRole('status')).toHaveText('Liste güncellendi; ilk sayfaya dönüldü.', {
-    timeout: 20_000,
-  })
+  await expect(page.locator('[data-list-announcer]')).toHaveText(
+    'Liste güncellendi; ilk sayfaya dönüldü.',
+    { timeout: 20_000 },
+  )
   await expect(rows(page)).toHaveCount(50)
 
   // Exactly three reads, in exactly this shape.

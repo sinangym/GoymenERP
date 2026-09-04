@@ -50,6 +50,20 @@ function party(over: Record<string, unknown> = {}) {
   }
 }
 
+/**
+ * The page's permanent announcer.
+ *
+ * `getByRole('status')` is ambiguous now: while a cursor recovery is in flight
+ * the loading StateBlock is also a status region. The permanent one is the only
+ * element that has been in the DOM since first render, which is what makes its
+ * updates announceable at all.
+ */
+function announcer(): HTMLElement {
+  const node = document.querySelector<HTMLElement>('[data-list-announcer]')
+  if (node === null) throw new Error('the permanent announcer is missing')
+  return node
+}
+
 function page(over: Record<string, unknown> = {}) {
   return {
     items: [party()],
@@ -417,7 +431,7 @@ describe('C-01 paging', () => {
 
     // And the recovery is only ANNOUNCED once that fresh page has arrived.
     await waitFor(() =>
-      expect(screen.getByRole('status').textContent).toContain('ilk sayfaya dönüldü'),
+      expect(announcer().textContent).toContain('ilk sayfaya dönüldü'),
     )
   })
 
@@ -445,7 +459,7 @@ describe('C-01 paging', () => {
 
     await waitFor(() => expect(pageReads).toBe(2))
     expect(
-      screen.getByRole('status').textContent,
+      announcer().textContent,
       'the recovery was announced before its page arrived',
     ).not.toContain('ilk sayfaya dönüldü')
     release()
@@ -469,7 +483,7 @@ describe('C-01 paging', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
     await screen.findByRole('alert')
-    expect(screen.getByRole('status').textContent).not.toContain('Liste güncellendi')
+    expect(announcer().textContent).not.toContain('Liste güncellendi')
 
     // The retry button is a sibling of the alert, not inside it: its label flips
     // while loading, and inside an assertive region every flip re-announced the
@@ -478,7 +492,7 @@ describe('C-01 paging', () => {
     expect(errorBlock).not.toBeNull()
     await userEvent.click(within(errorBlock!).getByRole('button'))
     await waitFor(() =>
-      expect(screen.getByRole('status').textContent).toContain('kalan kayıtlar yüklendi'),
+      expect(announcer().textContent).toContain('kalan kayıtlar yüklendi'),
     )
   })
 
@@ -493,7 +507,7 @@ describe('C-01 paging', () => {
     await screen.findByRole('row', { name: /C-0001/ })
     await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
     await screen.findByRole('row', { name: /C-0002/ })
-    expect(screen.getByRole('status').textContent).not.toContain('Liste güncellendi')
+    expect(announcer().textContent).not.toContain('Liste güncellendi')
   })
 
   it('invalid_cursor falls back to the first page instead of stranding the user', async () => {
