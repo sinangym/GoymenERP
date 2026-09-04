@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0",
+  "run_id": "GOYMENERP-KNOWLEDGE-V4-01",
+  "provider": "chatgpt",
+  "source_id": "chatgpt-alt-menuleri-tasarla-c813643335af",
+  "conversation_id": "chatgpt-alt-menuleri-tasarla-e78c95efc7f74669",
+  "conversation_title": "Alt Menüleri Tasarla",
+  "coverage": "visible_only",
+  "inaccessible": [
+    "Kullanıcının tasarım/rengi için referans verdiği 'Şirket içi ChatGPT kullanımı' adlı ayrı GöymenERP konuşması bu kaynak aktarımında görünür değildir; yalnız bu konuşmadaki referans talimatı işlenmiştir."
+  ],
+  "status": "complete",
+  "privacy_review": {
+    "secret_scan": "passed",
+    "pii_review": "passed",
+    "redactions": 4
+  },
+  "source_snapshot_sha256": "c813643335af2dca44a44706c89509303652b0888c43c30d7a70adc908d78a29",
+  "content_fingerprint_sha256": "cda3daada5abafbeeabc0c5006b2d038db5c6c487d724694b4bcbd1c3259b82c",
+  "files": [
+    {
+      "path": "KNOWLEDGE.md",
+      "bytes": 6974,
+      "sha256": "db1d8efa833efa9a8d907e4c8359f8bf6d980055d216c1f09f70c64343c5349c"
+    },
+    {
+      "path": "NORMALIZED_ITEMS.ndjson",
+      "bytes": 24367,
+      "sha256": "cda3daada5abafbeeabc0c5006b2d038db5c6c487d724694b4bcbd1c3259b82c"
+    },
+    {
+      "path": "CONFLICT_CANDIDATES.md",
+      "bytes": 1798,
+      "sha256": "2112e0fbe7f2dadc7abb1b456679f1ac664b0f28da6af44a10355caf626194ea"
+    },
+    {
+      "path": "ATTACHMENT_INDEX.md",
+      "bytes": 9684,
+      "sha256": "8d5f7220eeaa87e9697321bf9c97107887f3bd856134e4b814b005a8ef882fdf"
+    },
+    {
+      "path": "EXPORT_REPORT.md",
+      "bytes": 4051,
+      "sha256": "1a410fff43ffb3773c521e0dd8077a5796193a07732d4b77222c857b0062fd01"
+    }
+  ],
+  "counts": {
+    "items": 31,
+    "attachments": 38,
+    "conflicts": 1
+  }
+}
