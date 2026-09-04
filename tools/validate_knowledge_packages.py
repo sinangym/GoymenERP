@@ -565,28 +565,24 @@ def _is_valid_tr_iban(value: str) -> bool:
 
 
 def _scan_pii(text: str, label: str, errors: list[str]) -> None:
-    pii_scan_text = ITEM_ID_TOKEN_PATTERN.sub("[KN-ID]", text)
-
-    for match in EMAIL_PATTERN.finditer(pii_scan_text):
+    for match in EMAIL_PATTERN.finditer(text):
         domain = match.group("domain").casefold()
         if domain not in EXAMPLE_EMAIL_DOMAINS and not domain.endswith(".example"):
             errors.append(f"{label} contains a possible personal email address")
             break
 
-    digest_masked = HEX_DIGEST_PATTERN.sub("[HASH]", pii_scan_text)
+    digit_scan_text = ITEM_ID_TOKEN_PATTERN.sub("[KN-ID]", text)
+    digest_masked = HEX_DIGEST_PATTERN.sub("[HASH]", digit_scan_text)
     if TURKISH_MOBILE_PATTERN.search(digest_masked):
         errors.append(f"{label} contains a possible Turkish mobile phone number")
 
     if any(
         _is_valid_tckn(match.group(0))
-        for match in DIGIT_SEQUENCE_PATTERN.finditer(pii_scan_text)
+        for match in DIGIT_SEQUENCE_PATTERN.finditer(digit_scan_text)
     ):
         errors.append(f"{label} contains a possible valid TCKN")
 
-    if any(
-        _is_valid_tr_iban(match.group(0))
-        for match in TR_IBAN_PATTERN.finditer(pii_scan_text)
-    ):
+    if any(_is_valid_tr_iban(match.group(0)) for match in TR_IBAN_PATTERN.finditer(text)):
         errors.append(f"{label} contains a possible valid TR IBAN")
 
 

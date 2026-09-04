@@ -845,6 +845,22 @@ class KnowledgePackageValidatorTests(unittest.TestCase):
             "Only an exact KN-[0-9A-F]{24} token may be exempt from PII scanning",
         )
 
+    def test_kn_item_id_does_not_hide_a_personal_email_address(self) -> None:
+        cases = (
+            "KN-81638205586EE7C601CF7AC9@private-domain.test",
+            "person@KN-81638205586EE7C601CF7AC9.test",
+        )
+        for content in cases:
+            with self.subTest(content=content):
+                errors: list[str] = []
+
+                VALIDATOR_MODULE._scan_pii(content, "knowledge markdown", errors)
+
+                self.assertTrue(
+                    any("possible personal email address" in error for error in errors),
+                    "KN item ID digit masking must not weaken email scanning",
+                )
+
     def test_documentation_examples_and_hashes_are_not_reported_as_pii(self) -> None:
         package = self._create_package("codex")
         (package / "KNOWLEDGE.md").write_text(
