@@ -277,6 +277,7 @@ class FakeDocker:
         image_revision: str = EXPECTED_COMMIT,
         change_container_after_copy: bool = False,
         copy_fails: bool = False,
+        runtime_export: str | None = None,
         residue: bool = False,
         git_head: str = EXPECTED_COMMIT,
         git_status: str = "",
@@ -285,6 +286,7 @@ class FakeDocker:
         self.image_revision = image_revision
         self.change_container_after_copy = change_container_after_copy
         self.copy_fails = copy_fails
+        self.runtime_export = runtime_export
         self.residue = residue
         self.git_head = git_head
         self.git_status = git_status
@@ -323,7 +325,22 @@ class FakeDocker:
                 )
                 return self._completed(arguments, container_id + "\n", stderr)
             if "run" in arguments:
-                mutation = arguments[arguments.index("--env") + 1]
+                environment_arguments = [
+                    arguments[index + 1]
+                    for index, token in enumerate(arguments[:-1])
+                    if token == "--env"
+                ]
+                mutations = [
+                    value
+                    for value in environment_arguments
+                    if value.split("=", 1)[0]
+                    in runner.DISPOSABLE_CONFIGURATION_KEYS
+                ]
+                if len(mutations) != 1:
+                    raise AssertionError(
+                        "negative start must contain one disposable mutation"
+                    )
+                mutation = mutations[0]
                 configuration_key = mutation.split("=", 1)[0]
                 negative_id = NEGATIVE_CONTAINER_IDS[len(self.negative_containers)]
                 self.negative_containers[negative_id] = configuration_key
@@ -367,14 +384,24 @@ class FakeDocker:
                 json.dumps(valid_image_inspect(self.image_revision)),
                 stderr,
             )
-        if arguments[:2] == ["docker", "cp"]:
-            source_container = arguments[2].split(":", 1)[0]
+        if arguments[:3] == ["docker", "container", "exec"]:
+            source_container = arguments[3]
             if source_container in self.negative_containers:
                 return self._completed(arguments, "", stderr, returncode=1)
             if self.copy_fails:
                 return self._completed(arguments, "", stderr, returncode=1)
-            pathlib.Path(arguments[-1]).write_bytes(self.runtime_bytes)
-            return self._completed(arguments, "", stderr)
+            return self._completed(
+                arguments,
+                self.runtime_export
+                if self.runtime_export is not None
+                else base64.b64encode(self.runtime_bytes).decode("ascii"),
+                stderr,
+            )
+        if arguments[:2] == ["docker", "cp"]:
+            source_container = arguments[2].split(":", 1)[0]
+            if source_container in self.negative_containers:
+                return self._completed(arguments, "", stderr, returncode=1)
+            return self._completed(arguments, "", stderr, returncode=1)
         if arguments[:3] in (
             ["docker", "container", "ls"],
             ["docker", "network", "ls"],
@@ -518,15 +545,34 @@ class NormalProviderRunnerTests(unittest.TestCase):
             self.assertNotIn(SQL_SECRET, on_disk)
             self.assertNotIn(CURSOR_SECRET, on_disk)
 
-        copy_commands = [
+        export_commands = [
             command
-            for command in fake.command_with("cp")
-            if command[2].startswith(CONTAINER_ID + ":")
+            for command in fake.command_with("exec")
+            if command[:4] == ["docker", "container", "exec", CONTAINER_ID]
         ]
-        self.assertEqual(len(copy_commands), 1)
+        self.assertEqual(len(export_commands), 1)
         self.assertEqual(
-            copy_commands[0][2],
-            f"{CONTAINER_ID}:{runner.RUNTIME_ATTESTATION_PATH}",
+            export_commands[0],
+            [
+                "docker",
+                "container",
+                "exec",
+                CONTAINER_ID,
+                "base64",
+                "-w",
+                "0",
+                runner.RUNTIME_ATTESTATION_PATH,
+            ],
+        )
+        negative_copy_commands = fake.command_with("cp")
+        self.assertEqual(len(negative_copy_commands), 5)
+        self.assertTrue(
+            all(
+                command[2].endswith(
+                    ":" + runner.NEGATIVE_RUNTIME_ATTESTATION_PATH
+                )
+                for command in negative_copy_commands
+            )
         )
         down_commands = fake.command_with("down")
         self.assertEqual(len(down_commands), 1)
@@ -607,7 +653,7 @@ class NormalProviderRunnerTests(unittest.TestCase):
                 )
             self.assertFalse(output.exists())
 
-        self.assertFalse(fake.command_with("cp"))
+        self.assertFalse(fake.command_with("exec"))
         self.assertEqual(len(fake.command_with("down")), 1)
 
     def test_container_replacement_after_copy_fails_closed_and_cleans(self) -> None:
@@ -723,7 +769,7 @@ class NormalProviderRunnerTests(unittest.TestCase):
             self.assertNotIn(CURSOR_SECRET, diagnostics)
             self.assertFalse(output.exists())
 
-        self.assertEqual(len(fake.command_with("cp")), 20)
+        self.assertEqual(len(fake.command_with("exec")), 20)
         self.assertEqual(len(fake.command_with("down")), 1)
         self.assertEqual(
             len(
@@ -735,6 +781,20 @@ class NormalProviderRunnerTests(unittest.TestCase):
             ),
             6,
         )
+
+    def test_malformed_runtime_export_fails_closed_and_cleans(self) -> None:
+        fake = FakeDocker(runtime_export="not-valid-base64!?")
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output = pathlib.Path(temporary_directory) / "evidence.json"
+            with self.assertRaisesRegex(
+                runner.RunnerError,
+                "RUNTIME_ARTIFACT_COPY_FAILED",
+            ):
+                self.run_with_fake(fake, output)
+            self.assertFalse(output.exists())
+
+        self.assertEqual(len(fake.command_with("exec")), 20)
+        self.assertEqual(len(fake.command_with("down")), 1)
 
     def test_cleanup_residue_fails_closed_and_suppresses_evidence(self) -> None:
         fake = FakeDocker(residue=True)
@@ -859,6 +919,13 @@ class NormalProviderRunnerTests(unittest.TestCase):
                 )
                 self.assertEqual(command[-1], "api")
                 self.assertIn("--no-deps", command)
+                self.assertIn(
+                    (
+                        "NormalProviderAttestation__OutputPath="
+                        f"{runner.NEGATIVE_RUNTIME_ATTESTATION_PATH}"
+                    ),
+                    command,
+                )
                 self.assertEqual(
                     contract.expected_outcome,
                     "startup-must-fail-before-attestation",

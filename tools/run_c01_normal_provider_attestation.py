@@ -38,6 +38,7 @@ REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[1]
 COMPOSE_FILE = REPOSITORY_ROOT / "infra" / "docker-compose.c01-normal-provider-e2e.yml"
 COMPOSE_FILE_EVIDENCE_PATH = "infra/docker-compose.c01-normal-provider-e2e.yml"
 RUNTIME_ATTESTATION_PATH = "/run/goymen-attestation/runtime.json"
+NEGATIVE_RUNTIME_ATTESTATION_PATH = "/tmp/goymen-normal-provider-negative.json"
 LIVENESS_PATH = "/health/live"
 
 SUITE_ID = "C01-NORMAL-PROVIDER-ATTESTATION-V1"
@@ -70,6 +71,7 @@ _RUN_NUMBER_PATTERN = re.compile(r"^[1-9][0-9]{0,19}$")
 _CONTAINER_ID_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _IMAGE_ID_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 _HEX_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_BASE64_PATTERN = re.compile(r"^[A-Za-z0-9+/]+={0,2}$")
 _DISPOSABLE_KEY_CASEFOLDS = frozenset(
     key.casefold() for key in DISPOSABLE_CONFIGURATION_KEYS
 )
@@ -399,6 +401,11 @@ def build_negative_start_command(
         "--no-deps",
         "--name",
         container_name,
+        "--env",
+        (
+            "NormalProviderAttestation__OutputPath="
+            f"{NEGATIVE_RUNTIME_ATTESTATION_PATH}"
+        ),
         "--env",
         f"{contract.configuration_key}={contract.injected_value}",
         "api",
@@ -884,7 +891,7 @@ def _run_negative_start(
                     [
                         "docker",
                         "cp",
-                        f"{container_id}:{RUNTIME_ATTESTATION_PATH}",
+                        f"{container_id}:{NEGATIVE_RUNTIME_ATTESTATION_PATH}",
                         str(negative_artifact),
                     ],
                     environment,
@@ -975,25 +982,52 @@ def _copy_runtime_artifact(
     destination: pathlib.Path,
     environment: Mapping[str, str],
 ) -> None:
+    """Export the tmpfs-backed runtime artifact without Docker's archive API.
+
+    Docker Desktop on Windows can execute and health-check a file mounted on a
+    Linux tmpfs while ``docker cp`` reports that same file as missing.  Read a
+    Base64 representation inside the container instead, then strictly decode
+    and persist the exact bytes on the host.  The command contains no shell and
+    the fixed artifact path cannot be influenced by caller input.
+    """
+
     for attempt in range(20):
         completed = _run_raw(
             [
                 "docker",
-                "cp",
-                f"{container_id}:{RUNTIME_ATTESTATION_PATH}",
-                str(destination),
+                "container",
+                "exec",
+                container_id,
+                "base64",
+                "-w",
+                "0",
+                RUNTIME_ATTESTATION_PATH,
             ],
             environment,
             "RUNTIME_ARTIFACT_COPY_FAILED",
             60,
         )
-        if (
-            completed.returncode == 0
-            and destination.is_file()
-            and not destination.is_symlink()
-            and 0 < destination.stat().st_size <= 65_536
-        ):
-            return
+        if completed.returncode == 0:
+            encoded = completed.stdout
+            try:
+                artifact_bytes = (
+                    base64.b64decode(encoded, validate=True)
+                    if len(encoded) % 4 == 0
+                    and _BASE64_PATTERN.fullmatch(encoded) is not None
+                    else b""
+                )
+            except (ValueError, binascii.Error):
+                artifact_bytes = b""
+            if 0 < len(artifact_bytes) <= 65_536:
+                try:
+                    with destination.open("xb") as stream:
+                        stream.write(artifact_bytes)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                except OSError as exception:
+                    raise RunnerError("RUNTIME_ARTIFACT_COPY_FAILED") from exception
+                if destination.is_file() and not destination.is_symlink():
+                    return
         if attempt < 19:
             time.sleep(0.5)
     raise RunnerError("RUNTIME_ARTIFACT_COPY_FAILED")
