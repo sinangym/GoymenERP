@@ -31,7 +31,7 @@ Bu nedenle paket tam **görünür snapshot** olsa da `coverage=visible_only` ola
 
 - Konuşmadaki ekran ve akışlar `TARGET`, `PROPOSED` veya `PROTOTYPE_ONLY` olarak işaretlendi.
 - Canonical repo dokümanlarından gelen karar/target doğrulamaları `SOURCE_VERIFIED` olarak kaydedildi.
-- Bu export, İrsaliye & Fatura veya Muhasebe/Finans ekranarının `VERIFIED_IMPLEMENTED` olduğunu iddia etmez; bu konuşma için kod/test/browser kanıtı kullanılmadı.
+- Bu export, İrsaliye & Fatura veya Muhasebe/Finans ekranlarının `VERIFIED_IMPLEMENTED` olduğunu iddia etmez; bu konuşma için kod/test/browser kanıtı kullanılmadı.
 
 ## Kimlikler ve sayımlar
 
@@ -41,6 +41,12 @@ Bu nedenle paket tam **görünür snapshot** olsa da `coverage=visible_only` ola
 - attachments: 0
 - conflicts: 0
 
-## Doğrulama notu
+## Kaynak kimliği doğrulaması
 
-Bu ChatGPT ortamında canonical Windows worktree ve `py -3` Git çalışma ağacı doğrudan erişilebilir değildir. Paket dosyaları schema sözleşmesine göre yerel olarak byte/hash/count/ID biçimi açısından üretildi; GitHub branch'i exact main parent SHA üzerinden oluşturulacaktır. Draft PR sonrasında GitHub CI/validator sonucu ayrıca kontrol edilmeden merge edilmeyecektir.
+Provider gerçek çalışma sağlayıcısı `chatgpt`tir. Platform-native conversation title/UUID bu araç yüzeyinde doğrudan sunulmadığı için `İrsaliye Fatura Muhasebe Mimarisi` ve `chatgpt-irsaliye-fatura-muhasebe-mimarisi-5365b941` deterministik export fallback kimliğidir. Paket içeriği isim benzerliğiyle değil, görünür mesaj sırası ve ayırt edici kararlarla doğrulanmıştır: Satış/Alış `İrsaliye & Fatura`; ayrı İade/Red önerisinin supersede edilmesi; Muhasebe ve Finansın ayrı olması; ana Cari'nin ayrı kalması; `Muhasebe > Cari Hesaplar` altında aynı cari master üzerinden ekstre görünümü.
+
+## Doğrulama sonucu
+
+Mevcut kaynak branch'i PR #214 altında güncel `main` ile güvenli biçimde senkronize edilmiştir. Current official `tools/validate_knowledge_packages.py` validatorü exact güncel blob üzerinden çalıştırılmış ve **PASS** alınmıştır: registry `collecting`, 1 source package, 16 normalized item; package field/path/hash/reference ve otomatik credential/PII pattern kontrolleri geçmiştir.
+
+Yalnız bu source paketinin tam altı dosyası staged iken `git diff --cached --check` **PASS** olmuştur. Final head için GitHub PR CI sonuçları PR gövdesinde ayrıca exact run kimlikleriyle kaydedilir; CI geçmeden merge edilmez. Kaynak ajan bu PR'ı merge etmez.
