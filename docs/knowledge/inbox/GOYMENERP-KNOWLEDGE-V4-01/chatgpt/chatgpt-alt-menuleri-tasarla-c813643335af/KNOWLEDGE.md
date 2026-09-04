@@ -6,17 +6,23 @@ Source-ID: `chatgpt-alt-menuleri-tasarla-c813643335af`
 Conversation: `Alt Menüleri Tasarla`  
 Coverage: visible_only  
 Normative status: NON_NORMATIVE_CANDIDATE  
-Repository base used for current-state verification: `188c792900e35d3e2ed6a9ba4734dc9ad596fc97`
+Repository evidence base captured in source snapshot: `188c792900e35d3e2ed6a9ba4734dc9ad596fc97`
 
 ## Kaynak sınırı
 
-Bu paket, bu konuşmada kullanıcıya görünür Mesaj 1–14 arasındaki Göymen ERP Cari analiz/tasarım çalışmasını, konuşmada üretilen erişilebilir Cari prototip varlıklarının güvenli indeksini ve güncel kanonik repository'den doğrulanan ilgili Cari/Counterparty kanıtını normalize eder. Önceki arşiv oluşturma talebi ve bu evrensel aktarım promptu proje bilgisi olarak içe alınmamıştır.
+Bu paket, bu konuşmada kullanıcıya görünür Mesaj 1–14 arasındaki Göymen ERP Cari analiz/tasarım çalışmasını, konuşmada üretilen erişilebilir Cari prototip varlıklarının güvenli indeksini ve o snapshot sırasında kanonik repository'den doğrulanan ilgili Cari/Counterparty kanıtını normalize eder. Önceki arşiv oluşturma talebi, evrensel aktarım promptu ve sonraki knowledge-export/PR bakım talimatları proje bilgisi olarak içe alınmamıştır.
 
 Görünmeyen kapsam:
 
 - Kullanıcının tasarım/rengi için referans verdiği 'Şirket içi ChatGPT kullanımı' adlı ayrı GöymenERP konuşması bu kaynak aktarımında görünür değildir; yalnız bu konuşmadaki referans talimatı işlenmiştir.
 
 Ham konuşma Git'e eklenmez. Bu dosya ve `NORMALIZED_ITEMS.ndjson` yalnız proje anlamını, karar adaylarını, prototip durumunu ve doğrulanmış repo durumunu taşır.
+
+## Kaynak kimliği doğrulaması
+
+Manifestteki conversation identity `chatgpt-alt-menuleri-tasarla-e78c95efc7f74669`, bu thread'in `Alt Menüleri Tasarla` konuşma kimliğiyle aynıdır. Manifestteki `source_snapshot_sha256` değeri `c813643335af2dca44a44706c89509303652b0888c43c30d7a70adc908d78a29` ve `source_id` son eki bunun ilk 12 hanesi olan `c813643335af` değeridir.
+
+PR #215 oluşturulduktan sonra bu thread'e eklenen arşiv/knowledge-export/PR bakım mesajları operasyon talimatıdır ve üst aktarım sözleşmesi gereği source snapshot girdisine katılmaz. Yeni Göymen ERP ürün kararı veya proje anlamı eklenmediği için kaynak snapshot/source_id değiştirilmemiştir.
 
 ## Bu konuşmadaki nihai kullanıcı yönü
 
@@ -76,7 +82,7 @@ Kullanıcı, ekranların Göymen ERP'nin ortak görsel diline bağlı kalmasın�
 
 Konuşmada v1 Cari 360 Özet, v2 tam Cari çalışma alanı ve v3 düzeltme paketi üretilmiştir. `ATTACHMENT_INDEX.md` 38 doğrudan konuşma varlığını hash'leriyle listeler. Bu HTML/PNG/ZIP varlıkları prototip kanıtıdır; production frontend/backend kabul kanıtı değildir.
 
-## Güncel repository kanıtı
+## Snapshot sırasında doğrulanan repository kanıtı
 
 `main@188c792900e35d3e2ed6a9ba4734dc9ad596fc97` üzerinde:
 
@@ -89,15 +95,18 @@ Konuşmada v1 Cari 360 Özet, v2 tam Cari çalışma alanı ve v3 düzeltme pake
 
 Bu nedenle konuşmadaki geniş v3 Cari 360 prototipi hedef tasarım bilgisidir; repository'de bulunmayan finans/risk/belge/sipariş/stok verisini çalışıyor gibi göstermemelidir.
 
-## Çelişki / dikkat gerektiren aday
+## Çelişki değerlendirmesi
 
-Tek gerçek politika çelişkisi adayı, analiz sırasında önerilen yaklaşık `%80 amber / %100 kırmızı` limit kullanım rengi eşiğidir. Kanonik repository risk/onay eşiklerini dinamik politika olarak ele alır. Bu sayı yalnız UX önerisi olarak tutulmalı ve işletme/risk politikası biçiminde hard-code edilmemelidir.
+Normalize kayıtların tamamı yeniden kontrol edildi ve `status=CONFLICT` taşıyan kayıt bulunmadı. Dolayısıyla çözümsüz normalize çatışma sayısı `0`'dır.
 
-Mikro mutabakat ekranı ve geniş Cari 360 sekmeleri ise doğrudan çelişki değildir: bunlar hedef/prototip kapsamıdır; ilk sürüm entegrasyon ve mevcut vertical-slice kapıları kapanmadan production current-state olarak sunulamaz.
+Analiz sırasında önerilen yaklaşık `%80 amber / %100 kırmızı` limit kullanım rengi, `NORMALIZED_ITEMS.ndjson` içinde `PROPOSED` ve `MEDIUM` güvenle UX önerisi olarak tutulmaktadır. Kanonik risk/onay politikasını değiştirmez ve hard-code edilmemelidir; bu nedenle sözleşme anlamında `CONFLICT` değildir.
+
+Mikro mutabakat ekranı ve geniş Cari 360 sekmeleri de doğrudan çelişki değildir: bunlar hedef/prototip kapsamıdır; ilk sürüm entegrasyon ve mevcut vertical-slice kapıları kapanmadan production current-state olarak sunulamaz.
 
 ## Normalize kayıt özeti
 
 - Toplam kayıt: 31
+- Çözümsüz normalize conflict: 0
 - Source snapshot SHA-256: `c813643335af2dca44a44706c89509303652b0888c43c30d7a70adc908d78a29`
 - NORMALIZED_ITEMS SHA-256: `cda3daada5abafbeeabc0c5006b2d038db5c6c487d724694b4bcbd1c3259b82c`
 - İlişkiler, gerçek hedef item kimliği bilinmediği yerlerde bilinçli olarak boş bırakılmıştır.
