@@ -10,8 +10,7 @@
     "Bağlam sıkıştırması nedeniyle görünmeyen erken konuşma turlarının ham metni",
     "Diğer Claude konuşmalarının içerikleri",
     "Codex ve ChatGPT sağlayıcılarındaki ayrı konuşmaların ham içerikleri",
-    "Kullanıcı tarafından doğrulanmış tam kaynak envanteri ve inventory attestation",
-    "Repository knowledge doğrulayıcısı (tools/validate_knowledge_packages.py) main üzerinde mevcut değil"
+    "Kullanıcı tarafından doğrulanmış tam kaynak envanteri ve inventory attestation"
   ],
   "status": "partial",
   "privacy_review": {
@@ -34,8 +33,8 @@
     },
     {
       "path": "EXPORT_REPORT.md",
-      "bytes": 2063,
-      "sha256": "b3e5c36c5ecca9a21b76632698c3dff651b3d6902a2092006d1ee66402966857"
+      "bytes": 2702,
+      "sha256": "6b620b13e35243f3506ab39f8d00a367075a189f61e2925049687609aea2c657"
     },
     {
       "path": "KNOWLEDGE.md",

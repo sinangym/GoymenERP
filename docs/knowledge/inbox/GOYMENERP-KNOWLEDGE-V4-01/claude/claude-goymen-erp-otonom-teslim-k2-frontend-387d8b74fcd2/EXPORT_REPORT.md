@@ -18,11 +18,31 @@ Secret taraması ve elle PII incelemesi yapılmıştır; redaksiyon sayısı 0'd
 
 Otomatik taramanın bütün PII'yi kanıtlayamayacağı kabul edilir; bu paketteki kayıtlar kişisel veri değil, süreç ve mimari ifadeleridir.
 
-## Doğrulama durumu — açık boşluk
+## Doğrulama
 
-Promptun zorunlu tuttuğu `tools/validate_knowledge_packages.py` ve `tests/knowledge_package_validator` dosyaları `main@188c792900e3` üzerinde **mevcut değildir**; açık kaynak paketi PR'larının hiçbiri de bunları getirmemektedir. Bu nedenle repository doğrulayıcısı çalıştırılamamıştır ve çalıştırıldığı iddia edilmez.
+Repository doğrulayıcıları bu paket üzerinde koşturuldu ve geçti:
 
-Bunun yerine paket, promptta yazılı sözleşmeye karşı ayrı bir öz-denetimle doğrulanmıştır: kimlik türetimi, alan kümesi ve enum değerleri, tek satırlık string kuralı, dosya boyut/hash değerleri, `content_fingerprint_sha256` eşitliği ve `Attachment-Count` tutarlılığı. Bu öz-denetim repository doğrulayıcısının yerine geçmez.
+```
+py -3 -I -S -B -m unittest discover -s tests/knowledge_package_validator -p "test_*.py"
+  Ran 59 tests — OK
+
+py -3 -I -S -B tools/validate_knowledge_packages.py
+  Knowledge package validation PASSED
+```
+
+**Bu paketin ilk sürümü burada yanlış bir şey söylüyordu.** `tools/validate_knowledge_packages.py`
+ve `tests/knowledge_package_validator/` dosyalarının `main` üzerinde bulunmadığını yazmıştım.
+İkisi de mevcuttur. Hata ölçümdeydi: kontrol, knowledge altyapısının girmesinden önceki bir
+main tabanına dayanan bir çalışma ağacında yapılmıştı. Yanlış ifade paket dosyalarından
+kaldırılmıştır; kaydın kendisi düzeltilmeden yalnızca PR açıklamasında düzeltme yapmak,
+arşivlenen kaynağı yanlış bırakırdı.
+
+Resmî doğrulayıcıya ek olarak paket, promptta yazılı sözleşmeye karşı ayrı bir öz-denetimden
+de geçirilmiştir: kimliğin kendi içeriğinden yeniden türetilmesi, alan kümesi ve enum
+değerleri, tek satırlık string kuralı, dosya boyut/hash değerleri, `content_fingerprint_sha256`
+eşitliği, `Attachment-Count` tutarlılığı, `CONFLICT`/`INFERRED` kısıtları ve secret deseni
+taraması. Öz-denetimin kendisi mutasyonla sınanmıştır. Bu ek bant resmî doğrulayıcının yerine
+geçmez, yanında durur.
 
 ## Normatiflik
 
