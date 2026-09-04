@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0",
+  "run_id": "GOYMENERP-KNOWLEDGE-V4-01",
+  "provider": "codex",
+  "source_id": "codex-erp-konusmalarini-analiz-et-535d67ef72e6",
+  "conversation_id": "01a032bf-5d43-7520-a488-8b6080a0449b",
+  "conversation_title": "ERP konuşmalarını analiz et",
+  "coverage": "visible_only",
+  "inaccessible": [
+    "İlk mesajdaki altı canlı ChatGPT share sayfası mevcut web aracıyla içerik döndürmedi; kullanıcı arşiv ZIP'leri erişilebilir ve işlendi.",
+    "İlan edilmiş eski temp ekran görüntüsü artık dosya sisteminde bulunmuyor; görünür mesajdaki ekran tarifi kaynak olarak korundu.",
+    "Bu görev dışındaki Codex, Claude ve ChatGPT konuşmalarının tamamı otomatik olarak görünür değildir; ayrı provider paketleri gerekir."
+  ],
+  "status": "partial",
+  "privacy_review": {
+    "secret_scan": "passed",
+    "pii_review": "passed",
+    "redactions": 48
+  },
+  "source_snapshot_sha256": "535d67ef72e6a699f5825df0f3c57d7a3ae88050479d6e20f79eef7ffb6a1356",
+  "content_fingerprint_sha256": "419cdf04cd08423063c2103ba30defcc976091e9495c5a9a678c6726ade638cd",
+  "files": [
+    {
+      "path": "ATTACHMENT_INDEX.md",
+      "bytes": 15134,
+      "sha256": "32bf8b365071a889e9cdb0420d26937560aff972f6bacdae1758fb4c2038ddaf"
+    },
+    {
+      "path": "CONFLICT_CANDIDATES.md",
+      "bytes": 1674,
+      "sha256": "bec60ac3cdfae9aa6d7b3a1943bd9c1876d2c66280e01af72037c6503fb465a4"
+    },
+    {
+      "path": "EXPORT_REPORT.md",
+      "bytes": 2399,
+      "sha256": "69e3d900bfc64187e66b9d316cf17bef404cabf8473a4a3a5bcdf91c2a2cf565"
+    },
+    {
+      "path": "KNOWLEDGE.md",
+      "bytes": 2257,
+      "sha256": "743f6c502329b51e6cf24c5ed3cdc3099898da3a83abf26852206855f279c203"
+    },
+    {
+      "path": "NORMALIZED_ITEMS.ndjson",
+      "bytes": 164261,
+      "sha256": "419cdf04cd08423063c2103ba30defcc976091e9495c5a9a678c6726ade638cd"
+    }
+  ],
+  "counts": {
+    "items": 243,
+    "attachments": 38,
+    "conflicts": 1
+  }
+}
