@@ -1,11 +1,11 @@
 # Göymen ERP — ChatGPT Kaynak Bilgi Paketi
 
-Run-ID: GOYMENERP-KNOWLEDGE-V4-01  
-Provider: chatgpt  
-Source-ID: `chatgpt-alt-menuleri-tasarla-c813643335af`  
-Conversation: `Alt Menüleri Tasarla`  
-Coverage: visible_only  
-Normative status: NON_NORMATIVE_CANDIDATE  
+Run-ID: GOYMENERP-KNOWLEDGE-V4-01
+Provider: chatgpt
+Source-ID: `chatgpt-alt-menuleri-tasarla-c813643335af`
+Conversation: `Alt Menüleri Tasarla`
+Coverage: visible_only
+Normative status: NON_NORMATIVE_CANDIDATE
 Repository evidence base captured in source snapshot: `188c792900e35d3e2ed6a9ba4734dc9ad596fc97`
 
 ## Kaynak sınırı
