@@ -15,7 +15,7 @@ Package-Status: partial
 - Kullanıcıya görünür proje mesajları: 25 (`message-001`…`message-025`).
 - Kaynak snapshot'a katılan doğrudan erişilebilir proje varlığı: 85.
 - Attachment index toplamı: 87; türetilmiş arşiv ve operasyon promptu proje snapshot anlamından hariç tutulmuştur.
-- Normalize atomik kayıt: 79.
+- Normalize atomik kayıt: 97.
 - Conflict kayıt: 1.
 - Canonical repository görünürlüğü `PRIVATE` doğrulandı; base main SHA `188c792900e35d3e2ed6a9ba4734dc9ad596fc97`.
 
