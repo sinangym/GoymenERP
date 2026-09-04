@@ -19,7 +19,7 @@ public sealed class C01E2eActivationBoundaryTests
     }
 
     [Fact]
-    public void BackendActivationSeam_IsRestrictedToProgramAndExactAdapter()
+    public void BackendActivationSeam_IsRestrictedToProgramAdapterAndNormalAttestation()
     {
         var backendRoot = Path.Combine(FindRepositoryRoot(), "src", "backend");
         var references = Directory
@@ -34,6 +34,7 @@ public sealed class C01E2eActivationBoundaryTests
             [
                 "src/backend/GoymenERP.Api/Program.cs",
                 "src/backend/GoymenERP.Api/Shell/C01E2eShellCapabilityActivation.cs",
+                "src/backend/GoymenERP.Api/Shell/NormalProviderRuntimeAttestation.cs",
             ],
             references);
     }

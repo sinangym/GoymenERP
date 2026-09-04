@@ -41,8 +41,7 @@ internal static class NormalProviderRuntimeAttestation
         }
 
         var provider = providerArray[0];
-        if (provider is null
-            || provider.GetType() != typeof(CounterpartyShellCapabilityProvider))
+        if (provider is not CounterpartyShellCapabilityProvider)
         {
             throw new InvalidOperationException(
                 "Normal provider runtime attestation yalnız exact normal shell "
@@ -62,7 +61,7 @@ internal static class NormalProviderRuntimeAttestation
                 + "provider setini eşleyemedi.");
         }
 
-        var resolvedProviderType = provider.GetType().FullName
+        var resolvedProviderType = typeof(CounterpartyShellCapabilityProvider).FullName
             ?? throw new InvalidOperationException(
                 "Normal provider runtime attestation provider tip adını çözemedi.");
 
