@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0",
+  "run_id": "GOYMENERP-KNOWLEDGE-V4-01",
+  "provider": "chatgpt",
+  "source_id": "chatgpt-irsaliye-fatura-muhasebe-mimarisi-a4ce523d0a1a",
+  "conversation_id": "chatgpt-irsaliye-fatura-muhasebe-mimarisi-5365b941",
+  "conversation_title": "İrsaliye Fatura Muhasebe Mimarisi",
+  "coverage": "visible_only",
+  "inaccessible": [
+    "Referenced prior conversation “Şirket içi ChatGPT kullanımı” is not directly available as a complete raw conversation in this source session; only the current conversation’s visible references and canonical repository evidence are available."
+  ],
+  "status": "complete",
+  "privacy_review": {
+    "secret_scan": "passed",
+    "pii_review": "passed",
+    "redactions": 0
+  },
+  "source_snapshot_sha256": "a4ce523d0a1a475f09fe20ae5e15371fdabb9eb76afa367dcb19bd6d310ca4cc",
+  "content_fingerprint_sha256": "7f7129dc9a5e5e9c584cb661122e07eb947a2a3d8e7d2b9be26ea9fcb05cc62e",
+  "files": [
+    {
+      "path": "KNOWLEDGE.md",
+      "bytes": 2885,
+      "sha256": "ce3b09533de12ec2d6b60e36f9a458dc0fb6bcd7d480ac785bb2c85d224033cb"
+    },
+    {
+      "path": "NORMALIZED_ITEMS.ndjson",
+      "bytes": 11953,
+      "sha256": "7f7129dc9a5e5e9c584cb661122e07eb947a2a3d8e7d2b9be26ea9fcb05cc62e"
+    },
+    {
+      "path": "CONFLICT_CANDIDATES.md",
+      "bytes": 1035,
+      "sha256": "070940d7ad109214aa94213a7a3f966435d6e4e251241d4069051dde94553d5c"
+    },
+    {
+      "path": "ATTACHMENT_INDEX.md",
+      "bytes": 597,
+      "sha256": "af5ee7e52c34a65e410d558984687bb0d3e7249935f02ad3fe9926786e6a8802"
+    },
+    {
+      "path": "EXPORT_REPORT.md",
+      "bytes": 2871,
+      "sha256": "94355dca46bc831b6c26f937e2261f1f5a3b148439f9a24db756198d7b938f1a"
+    }
+  ],
+  "counts": {
+    "items": 16,
+    "attachments": 0,
+    "conflicts": 0
+  }
+}
