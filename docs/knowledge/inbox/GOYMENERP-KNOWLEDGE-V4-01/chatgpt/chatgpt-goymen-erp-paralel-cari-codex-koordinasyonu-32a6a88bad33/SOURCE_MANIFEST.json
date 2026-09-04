@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0",
+  "run_id": "GOYMENERP-KNOWLEDGE-V4-01",
+  "provider": "chatgpt",
+  "source_id": "chatgpt-goymen-erp-paralel-cari-codex-koordinasyonu-32a6a88bad33",
+  "conversation_id": "chatgpt-goymen-erp-paralel-cari-ve-codex-koordinasyonu",
+  "conversation_title": "Göymen ERP proje durumu, paralel Cari geliştirme ve Codex koordinasyonu",
+  "coverage": "partial",
+  "inaccessible": [
+    "Lossless raw transcript export is unavailable in this runtime; the snapshot uses only project messages visibly available to this ChatGPT turn.",
+    "Hidden system/developer instructions, private reasoning, tool internals, and non-visible earlier history are excluded.",
+    "The attached universal operational prompt is excluded from project source evidence by its own instruction."
+  ],
+  "status": "partial",
+  "privacy_review": {
+    "secret_scan": "passed",
+    "pii_review": "passed",
+    "redactions": 0
+  },
+  "source_snapshot_sha256": "32a6a88bad33035679473c09c086bdb79ebdd6d5f1bb97acf31d999c7e9740ce",
+  "content_fingerprint_sha256": "662c86eb978fa347b6a542192107b5190222575c5e853665c56c1d8691111395",
+  "files": [
+    {
+      "path": "ATTACHMENT_INDEX.md",
+      "bytes": 688,
+      "sha256": "fc9fac2d324866b28da5e7553f11c7e1abdc0ecc691e899b180d3644b871e743"
+    },
+    {
+      "path": "CONFLICT_CANDIDATES.md",
+      "bytes": 1471,
+      "sha256": "dc71b61006e42fce28a5d498ef4f6c0e48713c3120b7961a31d44626598a0c83"
+    },
+    {
+      "path": "EXPORT_REPORT.md",
+      "bytes": 2998,
+      "sha256": "8ccac7f095b83351f1a38ff374eb3514de2b53020d46d6debacc719907b223eb"
+    },
+    {
+      "path": "KNOWLEDGE.md",
+      "bytes": 4300,
+      "sha256": "98f7a50acb227185c8fc974155e681934541b29d3c901837e3fc9b2128e721bd"
+    },
+    {
+      "path": "NORMALIZED_ITEMS.ndjson",
+      "bytes": 14675,
+      "sha256": "662c86eb978fa347b6a542192107b5190222575c5e853665c56c1d8691111395"
+    }
+  ],
+  "counts": {
+    "items": 20,
+    "attachments": 1,
+    "conflicts": 1
+  }
+}
