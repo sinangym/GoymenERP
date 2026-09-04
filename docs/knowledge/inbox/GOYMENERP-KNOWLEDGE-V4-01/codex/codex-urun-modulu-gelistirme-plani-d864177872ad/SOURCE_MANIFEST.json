@@ -1,0 +1,54 @@
+{
+  "content_fingerprint_sha256": "dbadb0e02bdc620ce6024316a8424d7a7033e822a6b8272d332ba57d3176dacb",
+  "conversation_id": "codex-urun-modulu-gelistirme-plani",
+  "conversation_title": "Ürün Modülü Geliştirme Planı",
+  "counts": {
+    "attachments": 0,
+    "conflicts": 0,
+    "items": 48
+  },
+  "coverage": "visible_only",
+  "files": [
+    {
+      "bytes": 257,
+      "path": "ATTACHMENT_INDEX.md",
+      "sha256": "884fb058033dab487684311d26909e7401425a5ecad372d0c859940b23a4c057"
+    },
+    {
+      "bytes": 284,
+      "path": "CONFLICT_CANDIDATES.md",
+      "sha256": "69361f9bc0a4ad4cd0b7fb189245c0562067e4661533a8942a20a03c2a5dcb2c"
+    },
+    {
+      "bytes": 1709,
+      "path": "EXPORT_REPORT.md",
+      "sha256": "0e1b82526445da970450fb178182858a604b0d76b52458f3d67d95c18c67f054"
+    },
+    {
+      "bytes": 1817,
+      "path": "KNOWLEDGE.md",
+      "sha256": "f6cee7d9dc5400d19c9271d7639be28d958328b0488833bd2b58ce5e757dc9b8"
+    },
+    {
+      "bytes": 32961,
+      "path": "NORMALIZED_ITEMS.ndjson",
+      "sha256": "dbadb0e02bdc620ce6024316a8424d7a7033e822a6b8272d332ba57d3176dacb"
+    }
+  ],
+  "inaccessible": [
+    "Bu konuşmanın görünür özeti dışında kalan ve conversation too long ile kesilmiş ham mesajlar erişilemedi.",
+    "Diğer Codex, Claude ve ChatGPT konuşmalarının ham içerikleri bu kaynakta erişilebilir değildir.",
+    "Önceki konuşmalardaki eklerin özgün baytları bu kaynak kapsamında erişilebilir değildir."
+  ],
+  "privacy_review": {
+    "pii_review": "passed",
+    "redactions": 0,
+    "secret_scan": "passed"
+  },
+  "provider": "codex",
+  "run_id": "GOYMENERP-KNOWLEDGE-V4-01",
+  "schema_version": "1.0",
+  "source_id": "codex-urun-modulu-gelistirme-plani-d864177872ad",
+  "source_snapshot_sha256": "d864177872adccd420531338cb8ed03008d5fa16512f3169f8db78c36178aa10",
+  "status": "partial"
+}
