@@ -228,6 +228,9 @@ INVENTORY_ATTESTATION_STATUS_VALUES = frozenset(
 RUN_COMPONENT_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9-]{2,63}$")
 SOURCE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{2,95}$")
 ITEM_ID_PATTERN = re.compile(r"^KN-[0-9A-F]{24}$")
+ITEM_ID_TOKEN_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9_-])KN-[0-9A-F]{24}(?![A-Za-z0-9_-])"
+)
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 SAFE_OUTPUT_COMPONENT_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 SOURCE_DATE_PATTERN = re.compile(
@@ -568,11 +571,15 @@ def _scan_pii(text: str, label: str, errors: list[str]) -> None:
             errors.append(f"{label} contains a possible personal email address")
             break
 
-    digest_masked = HEX_DIGEST_PATTERN.sub("[HASH]", text)
+    digit_scan_text = ITEM_ID_TOKEN_PATTERN.sub("[KN-ID]", text)
+    digest_masked = HEX_DIGEST_PATTERN.sub("[HASH]", digit_scan_text)
     if TURKISH_MOBILE_PATTERN.search(digest_masked):
         errors.append(f"{label} contains a possible Turkish mobile phone number")
 
-    if any(_is_valid_tckn(match.group(0)) for match in DIGIT_SEQUENCE_PATTERN.finditer(text)):
+    if any(
+        _is_valid_tckn(match.group(0))
+        for match in DIGIT_SEQUENCE_PATTERN.finditer(digit_scan_text)
+    ):
         errors.append(f"{label} contains a possible valid TCKN")
 
     if any(_is_valid_tr_iban(match.group(0)) for match in TR_IBAN_PATTERN.finditer(text)):

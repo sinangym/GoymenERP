@@ -784,6 +784,83 @@ class KnowledgePackageValidatorTests(unittest.TestCase):
 
                 self._remove_package(package)
 
+    def test_kn_item_id_with_tckn_shaped_digits_is_not_reported_as_pii(self) -> None:
+        errors: list[str] = []
+
+        VALIDATOR_MODULE._scan_pii(
+            '{"id":"KN-81638205586EE7C601CF7AC9"}', "normalized item", errors
+        )
+
+        self.assertEqual([], errors)
+
+    def test_kn_item_ids_with_phone_shaped_digits_are_not_reported_as_pii(self) -> None:
+        errors: list[str] = []
+
+        VALIDATOR_MODULE._scan_pii(
+            "Items: `KN-5438272044D96B2FEAD4A615`, "
+            "KN-0DA8C8D5459685170E0AE5E6.",
+            "knowledge markdown",
+            errors,
+        )
+
+        self.assertEqual([], errors)
+
+    def test_valid_tckn_remains_rejected_next_to_kn_item_id(self) -> None:
+        package = self._create_package("codex")
+        item = self._valid_item("codex")
+        item["statement"] = "Customer TCKN: 10000000146"
+        item["id"] = self._deterministic_item_id(item)
+        self._write_items(package, [item])
+
+        errors = validate_repository(self.root)
+
+        self.assertTrue(
+            any("possible valid TCKN" in error for error in errors),
+            "A real valid TCKN in statement must remain detectable",
+        )
+
+    def test_turkish_mobile_remains_rejected_next_to_kn_item_id(self) -> None:
+        package = self._create_package("codex")
+        item = self._valid_item("codex")
+        item["source_locator"] = "Mobile: +90 555 123 45 67"
+        item["id"] = self._deterministic_item_id(item)
+        self._write_items(package, [item])
+
+        errors = validate_repository(self.root)
+
+        self.assertTrue(
+            any("possible Turkish mobile phone number" in error for error in errors),
+            "A real Turkish mobile number in source_locator must remain detectable",
+        )
+
+    def test_non_exact_kn_item_id_shape_is_not_exempt_from_pii_scan(self) -> None:
+        errors: list[str] = []
+
+        VALIDATOR_MODULE._scan_pii(
+            "KN-5438272044D96B2FEAD4A615A", "knowledge markdown", errors
+        )
+
+        self.assertTrue(
+            any("possible Turkish mobile phone number" in error for error in errors),
+            "Only an exact KN-[0-9A-F]{24} token may be exempt from PII scanning",
+        )
+
+    def test_kn_item_id_does_not_hide_a_personal_email_address(self) -> None:
+        cases = (
+            "KN-81638205586EE7C601CF7AC9@private-domain.test",
+            "person@KN-81638205586EE7C601CF7AC9.test",
+        )
+        for content in cases:
+            with self.subTest(content=content):
+                errors: list[str] = []
+
+                VALIDATOR_MODULE._scan_pii(content, "knowledge markdown", errors)
+
+                self.assertTrue(
+                    any("possible personal email address" in error for error in errors),
+                    "KN item ID digit masking must not weaken email scanning",
+                )
+
     def test_documentation_examples_and_hashes_are_not_reported_as_pii(self) -> None:
         package = self._create_package("codex")
         (package / "KNOWLEDGE.md").write_text(
