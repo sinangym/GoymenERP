@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sinangym/GoymenERP/docs/knowledge/schema/normalized-item-v1.schema.json",
+  "title": "Göymen ERP normalized knowledge item v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "source_id",
+    "type",
+    "module",
+    "statement",
+    "current_or_target",
+    "status",
+    "priority",
+    "source_provider",
+    "conversation_id",
+    "source_locator",
+    "source_date",
+    "confidence",
+    "supersedes",
+    "conflicts_with",
+    "related_items"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "id": { "type": "string", "pattern": "^KN-[0-9A-F]{24}$" },
+    "source_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,95}$" },
+    "type": {
+      "enum": [
+        "requirement",
+        "decision",
+        "rejection",
+        "proposal",
+        "business_rule",
+        "formula",
+        "screen",
+        "workflow",
+        "data_rule",
+        "integration",
+        "architecture",
+        "acceptance_criterion",
+        "risk",
+        "open_question",
+        "current_state",
+        "evidence"
+      ]
+    },
+    "module": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "statement": { "type": "string", "minLength": 1, "maxLength": 20000 },
+    "current_or_target": { "enum": ["CURRENT", "TARGET", "BOTH", "NOT_APPLICABLE"] },
+    "status": {
+      "enum": [
+        "EXPLICIT_USER_DECISION",
+        "USER_REQUIREMENT",
+        "USER_REJECTION",
+        "SOURCE_VERIFIED",
+        "VERIFIED_IMPLEMENTED",
+        "PROTOTYPE_ONLY",
+        "PROPOSED",
+        "INFERRED",
+        "MISSING",
+        "CONFLICT",
+        "SUPERSEDED"
+      ]
+    },
+    "priority": { "enum": ["P0", "P1", "P2", "P3", "UNSPECIFIED"] },
+    "source_provider": { "enum": ["codex", "claude", "chatgpt"] },
+    "conversation_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "source_locator": { "type": "string", "minLength": 1, "maxLength": 1024 },
+    "source_date": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}(?:T\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,6})?)?(?:Z|[+-]\\d{2}:\\d{2})?)?$"
+        }
+      ]
+    },
+    "confidence": { "enum": ["HIGH", "MEDIUM", "LOW"] },
+    "supersedes": { "$ref": "#/$defs/relations" },
+    "conflicts_with": { "$ref": "#/$defs/relations" },
+    "related_items": { "$ref": "#/$defs/relations" }
+  },
+  "$defs": {
+    "relations": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^KN-[0-9A-F]{24}$" }
+    }
+  }
+}
