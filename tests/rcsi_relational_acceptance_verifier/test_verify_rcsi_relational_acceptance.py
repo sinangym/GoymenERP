@@ -58,6 +58,20 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "exact"):
             VERIFIER.verify_broad_discovery("\n".join(substituted))
 
+    def test_broad_inventory_requires_cari_journey_and_rejects_its_omission(self) -> None:
+        journey = (
+            "GoymenERP.Api.IntegrationTests."
+            "CounterpartyJourneySqlServerRelationalAcceptanceTests."
+            "CreateFindDetailAndLinkSecondCompany_PreserveIdentityVisibilityAndExactlyOnceEffects"
+        )
+        self.assertIn(journey, VERIFIER.BROAD_EXPECTED_TESTS)
+        self.assertEqual(58, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(58, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(65, VERIFIER.BROAD_EXECUTION_COUNT)
+        without_journey = [name for name in VERIFIER.BROAD_EXPECTED_TESTS if name != journey]
+        with self.assertRaisesRegex(RuntimeError, "exact"):
+            VERIFIER.verify_broad_discovery("\n".join(without_journey))
+
     def test_main_repeats_bootstrap_preflight_before_each_dotnet_boundary(self) -> None:
         calls: list[tuple[str, ...]] = []
 
