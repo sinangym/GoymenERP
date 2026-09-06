@@ -1,0 +1,49 @@
+name: Cari C02 and link controlled acceptance
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  cari-c02-link-windows:
+    name: Cari SDK tests and controlled Chromium
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      # Explicit project and controlled T suite only: no live API/SQL or lifecycle CLI.
+      - name: Build and verify the checked-out candidate
+        run: >-
+          ./tools/ci/cari-c02-link.ps1 -Mode Verify
+          -OutputParent "${{ runner.temp }}/cari-c02-link-${{ github.run_id }}-${{ github.run_attempt }}"
+      - name: Scan final evidence before uploading
+        id: scan
+        if: always()
+        run: >-
+          node tests/e2e/cari-acceptance-009/scan-evidence.mjs
+          "${{ runner.temp }}/cari-c02-link-${{ github.run_id }}-${{ github.run_attempt }}/scan.json"
+          "${{ runner.temp }}/cari-c02-link-${{ github.run_id }}-${{ github.run_attempt }}"
+      - name: Preserve scanned results, including failed runs
+        if: ${{ always() && steps.scan.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: cari-c02-link-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/cari-c02-link-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 14

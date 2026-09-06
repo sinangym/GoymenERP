@@ -8,11 +8,13 @@
  * (DEC-GOV-007). Company switch is fenced by the reducer + orchestrator.
  */
 
+import { useEffect, useRef } from 'react'
 import { NavLink, Outlet } from 'react-router'
 import { capabilityFailClosed, hasCapability } from './shellState'
 import { useShellDispatch, useShellState } from './shellContext'
 import { useShellOrchestrator } from './useShellOrchestrator'
 import { StateBlock } from './StateBlock'
+import { SwitchConfirmDialog } from './SwitchConfirmDialog'
 import {
   CAPABILITY,
   CAPABILITY_NAV_LABEL,
@@ -22,7 +24,11 @@ import {
 import styles from './AppShell.module.css'
 
 /** Every capability the frontend can actually mount, in nav order. */
-const NAV_CAPABILITIES: readonly CapabilityId[] = [CAPABILITY.cariPartiesList]
+const NAV_CAPABILITIES: readonly CapabilityId[] = [
+  CAPABILITY.cariPartiesList,
+  CAPABILITY.cariPartiesCreate,
+  CAPABILITY.cariAccountsLink,
+]
 
 export function AppShell() {
   const state = useShellState()
@@ -39,6 +45,20 @@ export function AppShell() {
     actorMismatch,
     retry,
   } = useShellOrchestrator()
+
+  // Focus lands somewhere safe when the dirty-switch dialog closes (ERP-000K
+  // §13.8): back on the company picker when the user stays, on the main region
+  // when the switch proceeds and the picker is disabled for its duration.
+  const companySelectRef = useRef<HTMLSelectElement>(null)
+  const mainRef = useRef<HTMLElement>(null)
+  const previousPhaseRef = useRef(state.phase)
+  useEffect(() => {
+    const previous = previousPhaseRef.current
+    previousPhaseRef.current = state.phase
+    if (previous !== 'confirming-switch' || state.phase === 'confirming-switch') return
+    if (state.phase === 'idle') companySelectRef.current?.focus()
+    else mainRef.current?.focus()
+  }, [state.phase])
 
   // 401 anywhere — session is dead. Terminal (no login flow yet).
   if (sessionInvalid || identityState.kind === 'unauthenticated') {
@@ -84,7 +104,11 @@ export function AppShell() {
     return <StateBlock state={{ kind: 'initial-loading' }} subject="şirket bağlamı" />
   }
 
-  const switching = state.phase === 'switching' || state.phase === 'confirming-switch'
+  const switching = state.phase === 'switching'
+  // Asking is not switching: the verified context is unchanged while the user
+  // decides, so the outlet — and the dirty form in it — stays mounted underneath
+  // the dialog. Unmounting here would destroy the very state "Kal" preserves.
+  const confirming = state.phase === 'confirming-switch'
   const featuresClosed = capabilityFailClosed(state)
   const navItems = NAV_CAPABILITIES.filter((capability) =>
     hasCapability(state, capability),
@@ -131,6 +155,7 @@ export function AppShell() {
           <label className={styles.companyPicker}>
             <span className={styles.companyPickerLabel}>Şirket</span>
             <select
+              ref={companySelectRef}
               value={state.activeContext?.companyId ?? ''}
               disabled={switching || state.phase !== 'idle'}
               onChange={(event) => {
@@ -168,7 +193,18 @@ export function AppShell() {
           </div>
         ) : null}
 
-        <main id="main-content" className={styles.main} tabIndex={-1}>
+        {confirming ? (
+          <SwitchConfirmDialog
+            targetCompanyLabel={
+              directory.find((company) => company.id === state.pendingTarget?.companyId)
+                ?.legalName ?? null
+            }
+            onStay={() => dispatch({ type: 'CONFIRM_SWITCH_STAY' })}
+            onDiscard={() => dispatch({ type: 'CONFIRM_SWITCH_DISCARD' })}
+          />
+        ) : null}
+
+        <main id="main-content" className={styles.main} tabIndex={-1} ref={mainRef}>
           {switching ? (
             <StateBlock
               state={{ kind: 'initial-loading' }}

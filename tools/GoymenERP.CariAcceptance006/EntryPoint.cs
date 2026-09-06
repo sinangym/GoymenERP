@@ -1,0 +1,153 @@
+using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+
+namespace GoymenERP.CariAcceptance006;
+
+public static class Evidence
+{
+    public static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
+    public const string ResumeEvidence = @"C:\Users\LAPTOP\Documents\ChatGPT\GoymenERP-orchestration\evidence\C-DESKTOP-012";
+
+    public static string ValidateResumeRecord(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        var record = document.RootElement;
+        if (record.GetProperty("task_id").GetString() != "C-DESKTOP-012"
+            || record.GetProperty("resourceRunId").GetString() != RunSettings.ExpectedRun
+            || record.GetProperty("instanceId").GetString() != RunSettings.ExpectedInstance
+            || record.GetProperty("status").GetString() != "in_progress")
+            throw new InvalidOperationException("C006 resume record identity mismatch.");
+        var execution = record.GetProperty("executionRunId").GetString() ?? "";
+        if (!Regex.IsMatch(execution, "\\Ac012-[0-9a-f]{12}\\z", RegexOptions.CultureInvariant))
+            throw new InvalidOperationException("C006 resume execution ID mismatch.");
+        return execution;
+    }
+
+    public static string ResumeRunId() => ValidateResumeRecord(File.ReadAllText(Path.Combine(ResumeEvidence, "started.json")));
+
+    public static void RequireFreshResume()
+    {
+        _ = ResumeRunId();
+        foreach (var name in new[] { "host-started.json", "ENV_READY.json", "report.json" })
+            if (File.Exists(Path.Combine(ResumeEvidence, name)))
+                throw new InvalidOperationException("C006 resume already started or released; no duplicate.");
+    }
+
+    public static void Write(string name, object value, bool resume = false)
+    {
+        var path = Path.Combine(resume ? ResumeEvidence : RunSettings.ApprovedEvidence, name);
+        if (File.Exists(path)) throw new InvalidOperationException("Existing C006 evidence is preserved: " + name);
+        var temporary = path + ".tmp";
+        File.WriteAllText(temporary, JsonSerializer.Serialize(value, Json));
+        File.Move(temporary, path, overwrite: false);
+    }
+}
+
+public static class EntryPoint
+{
+    public static async Task<int> Main(string[] args)
+    {
+        try
+        {
+            if (args.Length == 0) throw new InvalidOperationException("Use serve | start-check <launched-pid> | smoke | snapshot | verify [expected-new-parties] | stop | release-check.");
+            var identity = RunSettings.Load();
+            var exitCode = 0;
+            switch (args[0])
+            {
+                case "serve":
+                case "serve-resume":
+                    var resume = args[0] == "serve-resume";
+                    if (args.Length != 1) throw new InvalidOperationException("C006 unexpected serve arguments.");
+                    if (resume) Evidence.RequireFreshResume();
+                    var executionRunId = resume ? Evidence.ResumeRunId() : identity.RunId;
+                    var startupDiskArtifacts = Directory.GetFiles(AppContext.BaseDirectory, "GoymenERP*.dll")
+                        .Order(StringComparer.Ordinal).Select(file => new
+                        {
+                            path = Path.GetRelativePath(RunSettings.ApprovedRoot, file).Replace('\\', '/'),
+                            sha256 = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(file)))
+                        }).ToArray();
+                    await using (var factory = new AcceptanceFactory(identity))
+                    {
+                        factory.StartLoopback();
+                        var process = Process.GetCurrentProcess();
+                        Evidence.Write("host-started.json", new { identity.RunId, identity.InstanceId, identity.ApiBaseUrl,
+                            pid = process.Id, startTimeUtc = process.StartTime.ToUniversalTime(),
+                            observedAtUtc = DateTimeOffset.UtcNow, server = "Kestrel", capabilityRevision = AcceptanceProfile.Revision,
+                            executionRunId, startupDiskArtifacts,
+                            artifactEvidenceMeaning = "Disk hashes captured before Kestrel startup; not memory-image attestation." }, resume);
+                        Console.WriteLine("C006 exact-instance Kestrel started on " + identity.ApiBaseUrl);
+                        await Task.Delay(Timeout.InfiniteTimeSpan);
+                    }
+                    break;
+                case "start-check":
+                case "start-check-resume":
+                    var resumeStart = args[0] == "start-check-resume";
+                    if (args.Length != 2) throw new InvalidOperationException("C006 start check needs exactly the launched process id.");
+                    if (resumeStart) _ = Evidence.ResumeRunId();
+                    var startFolder = resumeStart ? Evidence.ResumeEvidence : RunSettings.ApprovedEvidence;
+                    var launchedPid = int.Parse(args[1], System.Globalization.CultureInfo.InvariantCulture);
+                    var startOutcome = Lifecycle.AwaitStart(() => Lifecycle.ReadHostIdentity(startFolder, identity), launchedPid,
+                        TimeSpan.FromSeconds(Lifecycle.StartTimeoutSeconds), OsProbe.Real);
+                    Console.WriteLine(JsonSerializer.Serialize(new { startOutcome.Started, state = startOutcome.State.ToString(),
+                        startOutcome.WaitedMs, startOutcome.Message, folder = startFolder, launchedPid,
+                        recordedPid = startOutcome.Host?.Pid, recordedStartTimeUtc = startOutcome.Host?.StartTimeUtc }, Evidence.Json));
+                    exitCode = startOutcome.ExitCode;
+                    break;
+                case "stop":
+                case "stop-resume":
+                    var resumeStop = args[0] == "stop-resume";
+                    if (args.Length != 1) throw new InvalidOperationException("C006 unexpected stop arguments.");
+                    if (resumeStop) _ = Evidence.ResumeRunId();
+                    var stopFolder = resumeStop ? Evidence.ResumeEvidence : RunSettings.ApprovedEvidence;
+                    var stopOutcome = Lifecycle.Stop(Lifecycle.ReadHostIdentity(stopFolder, identity), OsProbe.Real);
+                    Console.WriteLine(JsonSerializer.Serialize(new { stopOutcome.Stopped, state = stopOutcome.State.ToString(),
+                        stopOutcome.Message, folder = stopFolder }, Evidence.Json));
+                    exitCode = stopOutcome.ExitCode;
+                    break;
+                case "release-check":
+                    if (args.Length != 1) throw new InvalidOperationException("C006 unexpected release check arguments.");
+                    var recordedHosts = new (string Folder, HostIdentity? Host)[]
+                    {
+                        (RunSettings.ApprovedEvidence, Lifecycle.ReadHostIdentity(RunSettings.ApprovedEvidence, identity)),
+                        (Evidence.ResumeEvidence, Lifecycle.ReadHostIdentity(Evidence.ResumeEvidence, identity)),
+                    };
+                    var releaseOutcome = Lifecycle.PlanRelease(recordedHosts, OsProbe.Real);
+                    Console.WriteLine(JsonSerializer.Serialize(new { releaseOutcome.Allowed, releaseOutcome.Message,
+                        hosts = releaseOutcome.Hosts.Select(host => new { host.Folder, host.Pid, state = host.State.ToString() }) }, Evidence.Json));
+                    exitCode = releaseOutcome.ExitCode;
+                    break;
+                case "smoke":
+                    await LiveSmoke.RunAsync(identity);
+                    Console.WriteLine("C006 live HTTP/SQL smoke PASS; baseline.json and smoke.json written.");
+                    break;
+                case "snapshot":
+                    Console.WriteLine(JsonSerializer.Serialize(await DatabaseEvidence.ReadAsync(identity), Evidence.Json));
+                    break;
+                case "verify":
+                case "verify-resume":
+                    var resumeVerify = args[0] == "verify-resume";
+                    if (resumeVerify) _ = Evidence.ResumeRunId();
+                    var count = args.Length == 2 ? int.Parse(args[1], System.Globalization.CultureInfo.InvariantCulture) : 1;
+                    var baseline = JsonSerializer.Deserialize<DatabaseSnapshot>(File.ReadAllText(
+                        Path.Combine(resumeVerify ? Evidence.ResumeEvidence : RunSettings.ApprovedEvidence, "baseline.json")))!;
+                    var current = await DatabaseEvidence.ReadAsync(identity);
+                    DatabaseEvidence.VerifyBrowserJourney(identity, baseline, current, count);
+                    Console.WriteLine(JsonSerializer.Serialize(new { passed = true, expectedNewParties = count, baseline, current }, Evidence.Json));
+                    break;
+                default: throw new InvalidOperationException("Unknown C006 operation.");
+            }
+            return exitCode;
+        }
+        catch (Exception error)
+        {
+            // Connection strings/secrets and arbitrary exception payloads never enter logs.
+            Console.Error.WriteLine("C006 operation failed: " + error.GetType().Name);
+            if (error is Microsoft.Data.SqlClient.SqlException sql) Console.Error.WriteLine("SQL error number: " + sql.Number);
+            if (error is InvalidOperationException && error.Message.StartsWith("C006", StringComparison.Ordinal))
+                Console.Error.WriteLine(error.Message);
+            return 1;
+        }
+    }
+}
