@@ -4,7 +4,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -15,14 +15,32 @@ import {
 const here = path.dirname(fileURLToPath(import.meta.url))
 const ownershipUrl = pathToFileURL(path.join(here, 'run-ownership.ts')).href
 
-/** A fresh fixture tree: <root>/evidence/desktop-FIXTURE (evidence root), <root>/tmp, <root>/repo, historical folder. */
+/**
+ * A fresh fixture tree: <root>/evidence/desktop-FIXTURE (evidence root), <root>/tmp, <root>/repo,
+ * historical folder.
+ *
+ * C020-P2-001: os.tmpdir() may hand back a temp root in a spelling that is not the one the file
+ * system reports for that directory — on a Windows hosted runner it is the 8.3 alias
+ * (its user component is RUNNER~1) of the long name (whose user component is runneradmin).
+ * The identity helper stores the canonical spelling, so a fixture that keeps the alias compares
+ * two spellings of one directory and fails on a runner while passing locally. The root is
+ * therefore canonicalized here by the file system itself, with realpathSync.native on the
+ * directory that was just created, and every expected run and cache path is derived from that
+ * canonical root. This is an independent resolution: the module under test is never used to
+ * produce an expectation, no alias text is rewritten, no pattern is matched, and the comparisons
+ * below stay strict equality between two spellings of the SAME directory: two different
+ * directories are still never treated as equal.
+ */
 function fixture() {
-  const root = mkdtempSync(path.join(os.tmpdir(), 'c010-ownership-'))
+  const created = mkdtempSync(path.join(os.tmpdir(), 'c010-ownership-'))
+  const root = realpathSync.native(created)
   const evidenceRoot = path.join(root, 'evidence', 'desktop-FIXTURE')
   const historical = path.join(root, 'evidence', 'C-DESKTOP-010')
   const repo = path.join(root, 'repo')
   const tmp = path.join(root, 'tmp')
   for (const dir of [evidenceRoot, historical, repo, tmp]) mkdirSync(dir, { recursive: true })
+  // The derived expectations must already be canonical: resolving them again changes nothing.
+  for (const dir of [evidenceRoot, historical, repo, tmp]) assert.equal(realpathSync.native(dir), dir)
   writeFileSync(path.join(historical, 'report.json'), '{"historical":true}\n')
   writeFileSync(path.join(root, 'package.json'), '{"type":"module"}\n')
   const options = { historicalRoots: [historical], forbiddenCacheParents: [repo], tmpdir: tmp }
@@ -157,9 +175,10 @@ test('concurrent starters with the same run id: exactly one claim succeeds', asy
   // A loser is refused either by the static run-directory check / the atomic mkdir
   // (RUN_EXISTS) or, when it checked the run directory just before the winner created it,
   // by the winner's freshly created cache (CACHE_EXISTS). Both refusals happen before any
-  // work and neither writes into the winner's directories.
+  // work and neither writes into the winner's directories. Which gate stops which loser is
+  // scheduling, not contract: the requirement is one winner, five losers, and a valid refusal
+  // with a nonzero exit for every one of them, so no distribution over the two codes is asserted.
   assert.ok(losers.every((r) => (r.code === 'RUN_EXISTS' || r.code === 'CACHE_EXISTS') && r.exitCode === 1), JSON.stringify(losers))
-  assert.ok(losers.some((r) => r.code === 'RUN_EXISTS'), 'at least one loser saw the taken run directory')
   const record = readOwnerRecord(path.join(fx.evidenceRoot, 'runs', 'race'))
   assert.equal(record.status, 'claimed')
   assert.equal(record.claimId, winners[0].claimId)
