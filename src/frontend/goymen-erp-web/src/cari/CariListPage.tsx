@@ -44,6 +44,7 @@ import { contextKeyString, contextKey, hasCapability } from '../shell/shellState
 import { CAPABILITY } from '../shell/capabilities'
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
+import { allowed, isRendered, notEntitled, type ActionGate } from './actionGating'
 import {
   clearedFilters,
   DEFAULT_CARI_LIST_VIEW,
@@ -213,8 +214,17 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
    */
   // The central security boundary for every authenticated read on this screen.
   const boundary = useAuthBoundary()
-  // The detail is a SEPARATE grant (#182); holding the list does not imply it.
-  const canOpenDetail = hasCapability(shell, CAPABILITY.cariPartiesDetail)
+  /**
+   * Opening a record is a SEPARATE grant (#182); holding the list does not imply it.
+   *
+   * Stated as a gate rather than a boolean so the reason it is hidden — rather than
+   * disabled with an explanation — is carried by the value itself. See
+   * actionGating.ts: this is the `not-entitled` half of the rule, and the type has
+   * nowhere to put a message precisely so that no one can add one here later.
+   */
+  const detailGate: ActionGate = hasCapability(shell, CAPABILITY.cariPartiesDetail)
+    ? allowed
+    : notEntitled
   // See CapabilityRoute: the entry generation makes a revisit addressable, so it
   // cannot be served from the previous entry's cache (#146).
   const entryGeneration = shell.routeEntryGeneration
@@ -712,7 +722,7 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
                           phone. The accessible name includes the legal name so a
                           screen-reader user hearing the link out of context knows
                           which counterparty it opens. */}
-                      {canOpenDetail ? (
+                      {isRendered(detailGate) ? (
                         <Link
                           className={styles.rowLink}
                           to={`/cari/${item.id}`}
@@ -721,10 +731,12 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
                           {item.code}
                         </Link>
                       ) : (
-                        // No detail grant: the code is still shown, but as text.
-                        // Rendering a link the route would refuse anyway offers an
-                        // action the caller is not entitled to and tells them the
-                        // screen exists. Codex caught this on #172 (P1-1).
+                        // No detail grant: the code is still shown, but as text —
+                        // no link, no disabled link, no explanation. Rendering a
+                        // link the route would refuse anyway offers an action the
+                        // caller is not entitled to and tells them the screen
+                        // exists. Codex caught this on #172 (P1-1); actionGating.ts
+                        // now states it as the general rule.
                         item.code
                       )}
                     </td>
