@@ -132,7 +132,29 @@ spec'i, o yazar kim olursa olsun devredilebilir.
 
 ---
 
-## 4. `AppShell` iki kırmızı testi — sahibi: SHELL şeridi (ERP-000K)
+## 4. `AppShell` iki kırmızı testi — **ÇÖZÜLDÜ: yanlış Node sürümü**
+
+> **KAPANIŞ (11 Eylül).** Bu bir depo hatası değil, **yerel çalıştırma hatasıydı**.
+> Depo Node **24** pinliyor (`.github/workflows/ci.yml:130`, `tests/e2e/package.json`
+> `engines.node >= 24`). Ölçüm:
+>
+> | Runtime | `'localStorage' in globalThis` | `vitest run` |
+> |---|---|---|
+> | Node **v26.7.0** (yereldeki varsayılan) | `true` | 264/266, 2 kırmızı |
+> | Node **v24.20.0** (depo pinli, `GoymenERP-Tools/node24`) | `false` | **266/266 PASS** |
+>
+> Yani iki kırmızı yalnız Node 26'da çıkıyor ve **CI'da yok** — PR #230'un exact-head
+> kanıtında "Frontend lint, test and build" SUCCESS olarak geçiyor. Aşağıdaki kök
+> neden analizi doğru; tek düzeltme, pinli runtime ile çalıştırmaktır.
+>
+> **Kural:** bu depoda frontend testleri `GoymenERP-Tools/node24` ile çalıştırılır.
+> Yerel ortam hatası CI hatası gibi raporlanmaz.
+>
+> İsteğe bağlı sertleştirme (SHELL şeridi, zorunlu değil): `.nvmrc` veya
+> `package.json` `engines` ile sürümü yerelde de sabitlemek, böylece yanlış runtime
+> sessizce iki testi düşürmek yerine baştan uyarır.
+
+### Kök neden (Node 26'da neden oluyor)
 
 `src/shell/AppShell.test.tsx` içindeki iki test bu dalda kırmızı. **Cari işiyle
 ilgisiz** ve bu turda koda dokunulmadı (yazma sınırı: `src/shell/**` bu şeridin değil).
@@ -176,11 +198,8 @@ kopyalanmıyor. Ardından `populateGlobal` `global.window = global` yapıyor —
 ile yutuyor ("tercih okuması shell'i bloke etmez"), `AppShell.test.tsx:100` de
 temizlemeyi. Yani tercih hiç yazılmıyor; sadece onu **assert eden** iki test düşüyor.
 
-**CI'da da kırmızı mı:** bilinmiyor. `.github/workflows/ci.yml:130` Node **24**
-pinliyor; Node 24'ün `globalThis`'inde aynı accessor'ın tanımlı olup olmadığı burada
-ölçülemedi. Ölçüm tek satır:
-
-    node -e "console.log('localStorage' in globalThis)"
+**CI'da kırmızı değil:** ölçüldü — Node 24'te `'localStorage' in globalThis` `false`,
+dolayısıyla vitest jsdom'unkini global'e kopyalıyor ve iki test geçiyor.
 
 **Önerilen yön (uygulanmadı):** Node sürümünü `.nvmrc`/`engines` ile sabitlemek, veya
 `src/test/setup.ts` içinde jsdom'un `localStorage`'ını global'e bağlamak. İkisi de
