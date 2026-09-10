@@ -1772,9 +1772,7 @@ describe('C-01 returning to a record that was on a later page', () => {
       id: PARTY_3,
       code: 'C-0003',
       legalName: 'Gama Boru A.Ş.',
-      companyAccounts: [
-        { id: ACC_3, companyId: A_ID, roles: 0, isActive: true, version: 1 },
-      ],
+      companyAccounts: [{ id: ACC_3, companyId: A_ID, roles: 0, isActive: true, version: 1 }],
     })
   }
 
@@ -1791,97 +1789,122 @@ describe('C-01 returning to a record that was on a later page', () => {
     }
   }
 
-  function installPaged() {
+  /**
+   * Two pages, and the FIRST-page cursor changes after the visit.
+   *
+   * That difference is the whole point: `CUR-1` is the token the user's original
+   * paging minted, `CUR-2` is the one the post-return read hands back. A walk that
+   * replayed what it remembered would ask for `CUR-1`.
+   */
+  function installPaged(over: { readonly recordLeavesTheSet?: boolean } = {}) {
+    let listReads = 0
+    let cursorReads = 0
     return installFetch({
       counterparties: (url) => {
         if (url.includes(PARTY_3) && !url.includes('pageSize')) return json(detailBody())
-        if (url.includes('cursor=')) return json(page({ items: [pageTwoParty()] }))
-        return json(page({ nextCursor: 'CUR-1', hasMore: true }))
+        if (url.includes('cursor=')) {
+          cursorReads += 1
+          // The record is there when the user opens it. With `recordLeavesTheSet` it
+          // is gone by the time they come back — passivated, renamed out of the
+          // filter, re-scoped; the screen cannot tell which.
+          const gone = over.recordLeavesTheSet === true && cursorReads > 1
+          return json(page({ items: gone ? [] : [pageTwoParty()] }))
+        }
+        listReads += 1
+        // First visit hands out CUR-1; every read after that hands out CUR-2.
+        return json(page({ nextCursor: listReads === 1 ? 'CUR-1' : 'CUR-2', hasMore: true }))
       },
     })
   }
 
-  it('re-reads the FIRST page only — a remembered cursor chain is never replayed', async () => {
+  async function openPageTwoRecordAndReturn(router: ReturnType<typeof renderRouterAt>) {
+    await screen.findByRole('row', { name: /C-0001/ })
+    await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
+    const row = await screen.findByRole('row', { name: /C-0003/ })
+    await userEvent.click(within(row).getByRole('link'))
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/cari/${PARTY_3}`))
+    await act(async () => {
+      await router.navigate(-1)
+    })
+    await screen.findByRole('row', { name: /C-0001/ }, { timeout: 5000 })
+  }
+
+  it('reads forward with FRESH cursors — the remembered chain is never replayed', async () => {
     const { calls } = installPaged()
     const router = renderRouterAt('/cari')
     await screen.findByRole('row', { name: /C-0001/ })
     await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
     const row = await screen.findByRole('row', { name: /C-0003/ })
-
     await userEvent.click(within(row).getByRole('link'))
     await waitFor(() => expect(router.state.location.pathname).toBe(`/cari/${PARTY_3}`))
     const before = calls.filter((c) => c.url.includes('/counterparties')).length
     await act(async () => {
       await router.navigate(-1)
     })
-    await screen.findByRole('row', { name: /C-0001/ }, { timeout: 5000 })
+    await screen.findByRole('row', { name: /C-0003/ }, { timeout: 5000 })
 
-    // Replaying the chain would rebuild the view out of cursors minted under the
-    // PREVIOUS route entry's authorization — the frame the entry generation exists
-    // to close (#146/#148). Every row after a return is a freshly authorized row.
     const after = calls.filter((c) => c.url.includes('/counterparties')).slice(before)
-    expect(after.length).toBeGreaterThan(0)
-    expect(after.every((c) => !c.url.includes('cursor='))).toBe(true)
-    expect(screen.queryByRole('row', { name: /C-0003/ })).toBeNull()
+    const cursors = after
+      .map((c) => new URLSearchParams(c.url.split('?')[1] ?? '').get('cursor'))
+      .filter((v): v is string => v !== null)
+
+    // It DOES page forward — that is how the position comes back.
+    expect(cursors.length).toBeGreaterThan(0)
+    // …but only with the token the post-return read just handed us. Replaying CUR-1
+    // would rebuild the view out of a token minted under the PREVIOUS route entry's
+    // authorization, which is the frame the entry generation exists to close.
+    expect(cursors).not.toContain('CUR-1')
+    expect(cursors).toContain('CUR-2')
   })
 
-  it('says where the user is instead of silently losing their place', async () => {
+  it('restores the position and says it did, when the record is within reach', async () => {
     installPaged()
+    const router = renderRouterAt('/cari')
+    await openPageTwoRecordAndReturn(router)
+
+    const back = await screen.findByRole('row', { name: /C-0003/ }, { timeout: 5000 })
+    await waitFor(() => expect(document.activeElement).toBe(within(back).getByRole('link')))
+
+    // Announced, because arriving a page deep without being told reads as the screen
+    // acting on its own.
+    const status = document.querySelector('[role="status"]') as HTMLElement
+    await waitFor(() => expect(status.textContent).toContain('Ayrıldığınız kayda dönüldü'))
+  })
+
+  it('says the record was not found when reading forward does not reach it', async () => {
+    // The record left the result set while the user was away: page two comes back
+    // empty, so there is nothing to return to.
+    installPaged({ recordLeavesTheSet: true })
+    const router = renderRouterAt('/cari')
+    await openPageTwoRecordAndReturn(router)
+
+    const status = document.querySelector('[role="status"]') as HTMLElement
+    await waitFor(() => expect(status.textContent).toContain('bulunamadı'), { timeout: 5000 })
+    // It says where the user IS. It does not claim to know what happened to the
+    // record — "further down than we looked" and "passivated while you were away"
+    // are indistinguishable from here.
+    expect(status.textContent).toContain('ilk sayfadan yeniden okundu')
+  })
+
+  it('stops walking the moment the user takes over', async () => {
+    installPaged({ recordLeavesTheSet: true })
     const router = renderRouterAt('/cari')
     await screen.findByRole('row', { name: /C-0001/ })
     await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
     const row = await screen.findByRole('row', { name: /C-0003/ })
-
     await userEvent.click(within(row).getByRole('link'))
     await waitFor(() => expect(router.state.location.pathname).toBe(`/cari/${PARTY_3}`))
     await act(async () => {
       await router.navigate(-1)
     })
-    await screen.findByRole('row', { name: /C-0001/ }, { timeout: 5000 })
-
-    // Announced, not just drawn: the whole point is that a keyboard or screen-reader
-    // user learns the position could not be restored.
-    const status = document.querySelector('[role="status"]') as HTMLElement
-    await waitFor(() =>
-      expect(status.textContent).toContain('Ayrıldığınız kayıt ilk sayfada değil'),
-    )
-  })
-
-  it('still returns focus when the record IS on the first page', async () => {
-    // The notice must not fire for the case that works, or it would train the user
-    // to ignore it.
-    installFetch({
-      counterparties: (url) =>
-        url.includes(PARTY_1) && !url.includes('pageSize')
-          ? json({
-              id: PARTY_1,
-              code: 'C-0001',
-              kind: 1,
-              legalName: 'Alfa Metal Ltd. Şti.',
-              tradeName: 'Alfa',
-              isActive: true,
-              version: '1',
-              companyAccounts: [
-                { id: ACC_1, companyId: A_ID, roles: PARTY_ROLE_FLAG.Customer, isActive: true, version: '1' },
-              ],
-            })
-          : json(page()),
-    })
-    const router = renderRouterAt('/cari')
-    const row = await screen.findByRole('row', { name: /C-0001/ })
-    await userEvent.click(within(row).getByRole('link'))
-    await waitFor(() => expect(router.state.location.pathname).toBe(`/cari/${PARTY_1}`))
-    await act(async () => {
-      await router.navigate(-1)
-    })
     await screen.findByRole('searchbox', undefined, { timeout: 5000 })
 
-    await waitFor(() => {
-      const back = within(screen.getByRole('row', { name: /C-0001/ })).getByRole('link')
-      expect(document.activeElement).toBe(back)
-    })
-    expect((document.querySelector('[role="status"]') as HTMLElement).textContent).not.toContain(
-      'ilk sayfada değil',
+    // A search means the user is no longer asking for the list they left, so the
+    // walk is abandoned and its notice is dropped rather than describing a list that
+    // no longer exists.
+    await userEvent.type(screen.getByRole('searchbox'), 'zzz')
+    await waitFor(() =>
+      expect((document.querySelector('[role="status"]') as HTMLElement).textContent).toBe(''),
     )
   })
 })

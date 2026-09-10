@@ -77,6 +77,16 @@ const ACCOUNT_STATE_LABEL: Record<AccountStateFilter, string> = {
 }
 
 /**
+ * How many EXTRA pages a return may read forward before giving up.
+ *
+ * A budget rather than "until found": the remembered record may have left the result
+ * set, and an unbounded walk would page through the whole company to prove a negative
+ * — on a screen the user is waiting to look at. Four extra pages covers the realistic
+ * case (a record opened a page or two down) at a bounded number of reads.
+ */
+const RETURN_PAGE_WALK_LIMIT = 4
+
+/**
  * What the number in the caption counts (UX review §8.7/65: "toplam kapsamı").
  *
  * ASSUMPTION-CARI-001. `filtered-authorized-visible-parties` is the ONLY scope the
@@ -205,6 +215,7 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
    */
   const [returnToId] = useState<string | null>(() => takeOpenedRecord(namespace))
   const returnHandled = useRef(false)
+  const returnPagesWalked = useRef(0)
 
   const activeCompanyId = shell.activeContext?.companyId ?? null
   const scopeMode = shell.activeContext?.scopeMode ?? 'single'
@@ -364,6 +375,14 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
   function resetPaging() {
     setCursor(undefined)
     setLoaded([])
+    /**
+     * The user changed what they are looking at, so the record they left is no longer
+     * what they are asking for. Abandon the return walk rather than fighting them for
+     * the cursor, and drop the notice, which would now describe a list that no longer
+     * exists.
+     */
+    returnHandled.current = true
+    setReturnNotice(null)
   }
 
   function toggleRole(role: RoleFilter) {
@@ -425,8 +444,8 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
   // The ref makes recovery happen at most once per rejected cursor.
   const recoveredCursor = useRef<string | null>(null)
   const [cursorRecovered, setCursorRecovered] = useState(false)
-  /** Set when a return could not be honoured — see the effect above. */
-  const [returnNotice, setReturnNotice] = useState(false)
+  /** How a return ended. See the effect below. */
+  const [returnNotice, setReturnNotice] = useState<'restored' | 'not-found' | null>(null)
   // oxlint-disable-next-line react/set-state-in-effect -- see the note above
   useEffect(() => {
     if (isInvalidCursor && cursor !== undefined && recoveredCursor.current !== cursor) {
@@ -453,6 +472,15 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
     if (returnToId === null || returnHandled.current) return
     // Nothing has been read back yet; there is no page to look in.
     if (state.kind !== 'ready') return
+    /**
+     * Decide nothing while data is moving.
+     *
+     * `keepPreviousData` means an in-flight walk shows the page we already had, so
+     * "the row is not here" is not yet an answer — it is the question still being
+     * asked. Without this the first walk step declared its own fetch a failure and
+     * announced "not found" over a record that arrived a moment later.
+     */
+    if (query.isFetching) return
 
     // Matched by reading the attribute rather than by interpolating the id into a
     // selector: an id in a selector needs escaping, and `CSS.escape` is not
@@ -460,42 +488,72 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
     const link = [...document.querySelectorAll<HTMLAnchorElement>('[data-row-link]')].find(
       (candidate) => candidate.dataset.rowLink === returnToId,
     )
-    returnHandled.current = true
     if (link !== undefined) {
+      returnHandled.current = true
       link.focus()
+      /**
+       * Announced ONLY when the row was not already on the first page. Landing back on
+       * page one is what the user expects and needs no narration; arriving three pages
+       * deep without being told is the case that reads as the screen acting on its own.
+       */
+      if (returnPagesWalked.current > 0) {
+        // oxlint-disable-next-line react/set-state-in-effect -- see the note below
+        setReturnNotice('restored')
+      }
       return
     }
 
     /**
-     * The record is not in what was re-read.
+     * The record is not in what has been read back so far — the ordinary case for a
+     * record opened from a continuation page, because coming back re-reads the FIRST
+     * page only.
      *
-     * This is the ORDINARY case for a record opened from a continuation page: coming
-     * back re-reads the FIRST page only, deliberately. Replaying the remembered
-     * cursor chain would re-issue N reads per entry and — the part that matters —
-     * would rebuild a view out of tokens minted under the previous route entry's
-     * authorization, which is the exact frame `CapabilityRoute` bumps the entry
-     * generation to close (#146/#148). The rows a user sees after coming back are
-     * always freshly authorized rows.
+     * WALK FORWARD, WITH FRESH READS. What is never replayed is the REMEMBERED cursor
+     * chain: those tokens were minted under the previous route entry's authorization,
+     * and rebuilding a view out of them is the exact frame `CapabilityRoute` bumps the
+     * entry generation to close (#146/#148). The cursor used below is a different
+     * thing — it comes out of the response just received, under the CURRENT entry
+     * generation, and every page it fetches is authorized again on arrival. The
+     * position is restored by reading forward, not by trusting anything old.
      *
-     * So the position genuinely cannot be restored, and the screen says so instead of
-     * silently doing nothing. Before this, focus stayed on <body> and the list looked
-     * as if it had simply forgotten where the user was.
-     *
-     * It can also mean the record left the result set entirely — passivated, renamed
-     * out of the search, re-scoped. We do not claim to know which: the message says
-     * where the user IS, not what happened to the record.
+     * BOUNDED, because "walk until found" is a promise this screen cannot keep: the
+     * record may have left the result set entirely, and an unbounded walk would then
+     * page through the whole company to prove a negative while the user waits.
      */
+    if (
+      page !== null &&
+      page.hasMore &&
+      page.nextCursor !== null &&
+      returnPagesWalked.current < RETURN_PAGE_WALK_LIMIT
+    ) {
+      returnPagesWalked.current += 1
+      setLoaded(items)
+      setCursor(page.nextCursor)
+      return
+    }
+
     /**
-     * Not derivable during render: the trigger is whether the freshly-read page
-     * CONTAINS the row, which is the same question this effect already had to ask the
-     * DOM in order to move focus. Deriving it during render would mean answering it
-     * twice, from two different sources.
+     * Out of pages, or out of budget. Say where the user IS — not what happened to the
+     * record, because we cannot tell "further down than we looked" from "passivated
+     * while you were away".
+     *
+     * Not derivable during render: the trigger is whether the freshly-read pages
+     * CONTAIN the row, which is the same question this effect already had to ask the
+     * DOM in order to move focus. Deriving it during render would answer it twice,
+     * from two different sources.
      */
+    returnHandled.current = true
     // oxlint-disable-next-line react/set-state-in-effect -- see the note above
-    setReturnNotice(true)
-    // The trigger is "rows are on screen", which is what the count expresses. The
-    // array itself is rebuilt every render and would re-run this on each one.
-  }, [returnToId, items.length, state.kind])
+    setReturnNotice('not-found')
+    /**
+     * The triggers are the count of rows on screen, the page we just received and
+     * whether a read is in flight. `items` itself is deliberately NOT a trigger: it is
+     * rebuilt on every render, so listing it would re-run this on every render — and
+     * it is only READ here, for accumulation, where the closure already holds the
+     * current value.
+     */
+    // oxlint-disable-next-line exhaustive-deps -- see the note above
+  }, [returnToId, items.length, state.kind, page, query.isFetching])
 
   const ariaSort = (field: SortField): 'ascending' | 'descending' | 'none' =>
     sort !== field ? 'none' : direction === 'asc' ? 'ascending' : 'descending'
@@ -521,9 +579,11 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
       <div role="status" aria-live="polite" className={styles.announce}>
         {cursorRecovered
           ? 'Liste güncellendi; ilk sayfaya dönüldü.'
-          : returnNotice
-            ? 'Ayrıldığınız kayıt ilk sayfada değil; liste ilk sayfadan yeniden okundu.'
-            : ''}
+          : returnNotice === 'restored'
+            ? 'Ayrıldığınız kayda dönüldü; sonraki sayfalar yeniden okundu.'
+            : returnNotice === 'not-found'
+              ? 'Ayrıldığınız kayıt okunan sayfalarda bulunamadı; liste ilk sayfadan yeniden okundu.'
+              : ''}
       </div>
 
       <div className={styles.filters} role="search">
