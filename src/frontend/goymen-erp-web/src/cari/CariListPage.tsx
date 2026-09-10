@@ -39,6 +39,7 @@ import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import {
   clearedFilters,
+  DEFAULT_CARI_LIST_VIEW,
   isFiltered,
   readCariListView,
   writeCariListView,
@@ -99,10 +100,10 @@ function activeFilterLabels(view: CariListView): readonly string[] {
         : `Rol: ${names}`,
     )
   }
-  if (view.partyState !== 'active') {
+  if (view.partyState !== DEFAULT_CARI_LIST_VIEW.partyState) {
     labels.push(`Taraf durumu: ${PARTY_STATE_LABEL[view.partyState]}`)
   }
-  if (view.accountState !== 'all') {
+  if (view.accountState !== DEFAULT_CARI_LIST_VIEW.accountState) {
     labels.push(`Şirket hesabı durumu: ${ACCOUNT_STATE_LABEL[view.accountState]}`)
   }
   return labels
@@ -189,7 +190,7 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
     [q, kind, roles, roleMatch, partyState, accountState, sort, direction],
   )
   const filterActive = isFiltered(view)
-  const filterLabels = activeFilterLabels(view)
+  const filterLabels = useMemo(() => activeFilterLabels(view), [view])
 
   /**
    * Remember the query the user chose, so leaving for a record and coming back does
@@ -298,8 +299,6 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
     loaded.length > 0 &&
     !crossPageDuplicate &&
     CONTINUATION_SURVIVABLE.has(state.kind)
-
-
 
   function resetPaging() {
     setCursor(undefined)
