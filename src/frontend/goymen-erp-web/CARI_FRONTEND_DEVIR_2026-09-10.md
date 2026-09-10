@@ -80,21 +80,35 @@ karşılığıdır ve sessiz birleştirmeyi yapısal olarak imkânsız kılar.
 
 ## 3. Codex'e devir soruları (backend / sözleşme şeridi)
 
-### CODEX-01 — `PartyRole` minimum değeri (öncelikli)
+### CODEX-01 — `PartyRole` sözleşmesi · **KAPANDI (PR #230)**
 
-Frontend decoder'ları artık `roles = 0`'ı çözümlüyor (`contract.ts`,
-`detailContract.ts`). `ILK_DILIM` §6'nın istediği sıra budur: **önce** `0` ve eski
-1..15'i birlikte okuyabilen consumer, **sonra** rol-yok yazıları.
+> **DÜZELTME (11 Eylül).** Bu maddenin ilk hâli, yanıttaki `roles` için `0` / `null` /
+> alanın hiç gelmemesi seçeneklerini **açık** göstermişti. Bu yanlıştı. PR #230
+> (`d97f8ee9`, `contracts/openapi/goymen-erp-v1.json`) konuyu kapattı ve sözleşme
+> yanıtta **sayısal değeri zorunlu tutuyor**. Aşağısı ölçülmüş güncel durumdur.
 
-Kabul edilmiş sözleşme hâlâ `PartyRole: {"minimum": 1, "maximum": 15}`
-(`contracts/openapi/goymen-erp-v1.json`, `ErpOpenApiContract.cs:143`). Yani bugün
-decoder, sunucunun henüz üretemediği bir değeri kabul ediyor — sıralamanın amacı bu,
-açığı değil.
+**İstek tarafı — `roles` opsiyonel:**
 
-**Gereken karar:** `minimum` 0'a mı inecek, yoksa `0` ayrı bir temsil mi olacak
-(`roles: null` veya alanın tamamen opsiyonel olması)? `ILK_DILIM` §4.1 üçünü de açık
-bırakıyor. Frontend şu an `null` veya eksik alanı **kabul etmiyor**; sözleşme o yöne
-giderse decoder ayrıca güncellenmeli. `contracts/**` bu turda hiç açılmadı.
+- `CreateCounterparty.required = ["kind", "legalName"]` — `roles` **listede yok**.
+- `CreateCompanyPartyAccount.required = []` — `roles` **listede yok**.
+- Gönderilirse `PartyRole`, yani tamsayı **0..15**.
+
+**Yanıt tarafı — `roles` zorunlu ve sayısal:**
+
+- `CounterpartyListAccount`, `CounterpartyDetailAccountView`,
+  `CounterpartyMutationAccountView`, `CounterpartyLinkCandidateSourceAccount`:
+  dördünde de `required` listesi `roles` içeriyor ve tip `PartyRole` = tamsayı 0..15.
+- `PartyRole.minimum` artık **0**; açıklaması: *"Optional legacy trade classification.
+  Zero means no specified classification."*
+
+Yani **`null` ve eksik alan geçerli yanıt değildir**; "ticari sınıflandırma yok" tel
+üzerinde yalnız **`0` sayısı** olarak taşınır. `contract.ts` ve `detailContract.ts`
+ikisini de reddediyor ve bu artık teste bağlı ("rejects a NULL or absent roles").
+İkisini `0`'a normalleştirmek, sunucunun hangisini kastettiğini tahmin etmek olurdu;
+tahmin edilmiş bir `0` ise kayıt hakkında yetkimiz olmayan bir iddiadır.
+
+Frontend decoder'ları kabul edilmiş sözleşmeyle **uyumludur**; bu maddede Codex'ten
+beklenen bir iş kalmadı.
 
 ### CODEX-02 — liste `version` int64 temsili
 
@@ -244,6 +258,135 @@ bu turda **başlatılmadı** (başka şeridin paylaşılan altyapısı).
 | 4 | `/olmayan-sayfa` aç | 2 ve 3 ile **ayırt edilemez** blok (non-disclosure) |
 | 5 | Sol menü | "Cari Kartlar" girişi **yok** (capability yok → menü yok) |
 
-Cari ekranlarının kendisi ancak `CounterpartyShellCapabilityProvider` dört
-capability'yi `ImplementationAvailable: true` yayımladıktan sonra açılır. Bu, backend
-şeridinin ve ayrı bir insan aktivasyon kapısının işidir; frontend'den yapılamaz.
+### Normal aktivasyonun kapalı olması ile tarayıcı testi ayrı şeylerdir
+
+> **DÜZELTME (11 Eylül).** Bu bölümün ilk hâli "Cari ekranları tarayıcıda
+> doğrulanamaz" izlenimi veriyordu. Bu yanlıştı ve iki ayrı şeyi birbirine
+> karıştırıyordu.
+
+**Doğru olan:** `CounterpartyShellCapabilityProvider` dört capability'yi de
+`ImplementationAvailable: false` yayımladığı için, **normal/paylaşılan** ortamda
+(`goymen-erp-pc2` yığını, seed dev kullanıcıları) `GET /shell/capabilities` boş liste
+döner ve `/cari` nötr not-found gösterir. Ölçüldü. Hiçbir seed kullanıcı bunu açamaz;
+bu bir provider kapısıdır, permission kapısı değildir.
+
+**Yanlış olan:** bundan "tarayıcı testi yapılamaz" sonucunu çıkarmak. Depoda **izole
+tek kullanımlık ortamda çalışan gerçek tarayıcı hattı zaten var**:
+
+- `.github/workflows/c01-real-browser-e2e.yml` — `infra/docker-compose.c01-e2e.yml`
+  ile ayrı SQL + API ayağa kaldırır, `GoymenERP.C01E2eFixtureTool` ile fixture yazar,
+  `tests/e2e/specs/c01.spec.ts` içindeki B-C01-001..010'u Playwright ile koşturur ve
+  kanıtı `tools/validate_c01_e2e_contract.py` ile doğrular.
+- `tests/e2e/playwright.activation.config.ts` + `tests/e2e/activation/historyRevoke.spec.ts`
+  — aktivasyon/revoke senaryosunu ayrı config ile koşturur.
+- PR #228 ayrıca `.github/workflows/cari-c02-link-acceptance.yml` ekliyor.
+
+Yani aktivasyon **izole ortamda kabul amaçlı** açılabilir; kapalı olan **production
+ve paylaşılan ortam** aktivasyonudur ve o insan kapısındadır. "Aktivasyon kapalı"
+cümlesi bir kanıt üretmeme gerekçesi olarak kullanılamaz.
+
+**Ön koşullar (yerelde koşmak için):** Docker + .NET 10 SDK, `tests/e2e` içinde
+`npm ci` ve Playwright chromium indirmesi, `C01_E2E_AUTHORIZED_BASE_URL`,
+`C01_E2E_UNAUTHORIZED_BASE_URL`, `C01_E2E_API_BASE_URL`, `C01_E2E_TESTED_COMMIT`,
+`C01_E2E_COMPOSE_PROJECT`, `GITHUB_RUN_ID` (`tests/e2e/src/contract.ts:84-94`).
+`.github/**` bu şeridin yazma yüzeyi değildir; mevcut hattı **kullanmak** ayrı,
+**değiştirmek** ayrıdır.
+
+---
+
+## 7. PR #228'e exact-commit handoff — C-02 create / link (11 Eylül)
+
+**Sahiplik:** CODEX-ORCHESTRATOR'ın [10 Eylül 17:52 kaydı](https://github.com/sinangym/GoymenERP/issues/66)
+şunu diyor: *"Takip koordinatörü #227/#228 sahipleriyle kapsamı uzlaştırmalı"* ve
+CLAUDE-FRONTEND'e düşen iş *"list/detail/mutation/link-candidate consumer'larında 0 ve
+legacy 1..15 desteği … için exact-commit handoff vermeli"*.
+
+Yani **create/link ekranlarının yazarlığı bana devredilmedi**. PR #228 (`d46f7f81`)
+`src/cari/**` altında bu ekranların **tam bir uygulamasını** zaten içeriyor:
+`CariCreatePage`, `CariLinkWorkspacePage`, `CariRoleFieldset`, `commandApi`,
+`commandAttempt`, `useCommandAttempt`, `mutationContract`, `candidateContract`,
+`createForm`, `linkForm`, `wireGuards`, `CommandAttemptNotice`, `cariCommandText`.
+İkinci bir uygulama açmak `ILK_DILIM` §6.3'ün tek-yazar kuralını ihlal eder ve mevcut
+şirket/idempotency/dirty-form/a11y emeğini çöpe atar. **Yazılmadı.**
+
+Bunun yerine, #228'in kabul edilmiş sözleşmeye (`PR #230`, `d97f8ee9`) uyması için
+gereken **kesin değişiklik listesi** aşağıdadır. Beşi de küçük ve birbirinden bağımsız.
+
+### 7.1 `wireGuards.ts:48-55` — `isKnownRoleFlags` yanıtta `0`'ı reddediyor
+
+```ts
+export function isKnownRoleFlags(value: unknown): value is number {
+  return (
+    isSafeIntish(value) &&
+    value >= 1 &&                       // ← sözleşme artık 0..15
+    value <= ALL_ROLE_FLAGS &&
+    (value & ~ALL_ROLE_FLAGS) === 0
+  )
+}
+```
+
+`value >= 1` → `value >= 0`. Etkisi iki yerde birden: `mutationContract.ts:106` ve
+`candidateContract.ts:70`. Bugün, rolü olmayan bir cari yaratıldığında **201 yanıtı
+malformed sayılır** — yani yazma başarılı olur, ekran hata gösterir. `null` ve eksik
+alan reddi **aynen kalmalı** (`isSafeIntish` bunu zaten yapıyor); sözleşme yanıtta
+sayısal değeri zorunlu tutar.
+
+Karşılığı bu şeritte: `contract.ts` / `detailContract.ts` içindeki aynı düzeltme,
+commit `48373f9`, testleri `contract.test.ts` + `detailContract.test.ts`
+("resolves roles=0", "still rejects unknown bits", "rejects a NULL or absent roles").
+
+### 7.2 `createForm.ts:60` — zorunlu rol seçimi
+
+```ts
+if (values.roles < 1 || values.roles > ALL_ROLE_FLAGS || (values.roles & ~ALL_ROLE_FLAGS) !== 0) {
+  errors.roles = CARI_CREATE_TEXT.validation.roles   // "En az bir rol seçin."
+}
+```
+
+Bu, 10 Eylül kararının **kaldırdığı ön koşulun ta kendisi**. `values.roles < 1` koşulu
+kalkmalı; `0` geçerli bir gönderim olmalı. Bilinmeyen bit / aralık dışı reddi kalır.
+
+`CreateCounterparty.required` artık `["kind","legalName"]` — `roles` **opsiyonel**.
+İki seçenek var ve ikisi de sözleşmeye uygun: `roles: 0` göndermek, veya alanı hiç
+göndermemek. Backend ikisini de aynı normalleştiriyor (PR #230 açıklaması: *"Missing
+and zero Roles normalize to None"*). Alanı hiç göndermemek daha dürüst: kullanıcı bir
+sınıflandırma seçmedi, `0` da bir seçim gibi görünebilir.
+
+### 7.3 `linkForm.ts:31` — aynı zorunluluk, bağlama akışında
+
+Aynı düzeltme. `CreateCompanyPartyAccount.required = []`.
+
+Ek olarak `linkForm.ts:35`'teki yorum korunmalı: *"No reason, no company, no version,
+no copy of the source roles."* — `visibleSourceAccounts` yetki kanıtı değildir ve
+hedefe kopyalanmaz (`ILK_DILIM` §3.1).
+
+### 7.4 `cariCommandText.ts:42, 92` — validasyon metinleri
+
+`"En az bir rol seçin."` ve `"Hedef şirket için en az bir rol seçin."` artık
+uygulanmayan bir kuralı anlatıyor; kaldırılmalı.
+
+`CariRoleFieldset`'in **legend'ı** da bu şeritteki `ASSUMPTION-CARI-002` ile
+hizalanmalı: rol artık zorunlu bir alan değil, **geçmiş sınıflandırma**. Liste ve detay
+"Geçmiş ticari sınıflandırma" diyor; create/link formunun onu zorunlu bir alan gibi
+sunması iki ekran arasında çelişki üretir.
+
+Rolsüz kaydın **görüntüsü** için `roleText.ts` hazır ve paylaşılabilir:
+`rolesText(flags, NO_COMMERCIAL_ROLE_LIST | NO_COMMERCIAL_ROLE_DETAIL)`. Mutation
+yanıtındaki hesabı gösteren her yer aynı metni kullanmalı ki boş hücre "bilinmiyor"
+gibi okunmasın (`ILK_DILIM` §7).
+
+### 7.5 Aksiyon engelleme kuralı
+
+`actionGating.ts` (commit `91e4c91`) bu şeritte yazıldı ve create/link için hazır:
+
+- `cari.parties.create` / `cari.accounts.link` yoksa → `not-entitled`, **hiç render
+  etme** (ERP-000K §10.2; tipte sebep alanı yok).
+- Zaten bağlı aday → `blocked('Bu cari bu şirkete zaten bağlı.')`, yani gizlenmez,
+  **başlatılamaz** kılınır (UX incelemesi §12/10).
+
+### 7.6 Bu şeridin dokunmadıkları
+
+`commandAttempt.ts` / `useCommandAttempt.ts` içindeki idempotency ve güvenli tekrar
+deneme davranışı, dirty-form/şirket fence'i ve `CommandAttemptNotice` **korunmalıdır**;
+bu handoff onlara dokunmuyor. Değişmesi gereken tek şey rol zorunluluğu ve `0`'ın
+yanıtta kabulü.
