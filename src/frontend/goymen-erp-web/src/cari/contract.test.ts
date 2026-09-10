@@ -191,8 +191,20 @@ describe('decodeCounterpartyPage — fails closed', () => {
     expect(decodeCounterpartyPage(page({ items: [item({ kind: 0 })] }), SINGLE_A)).toBeNull()
   })
 
-  it('rejects PartyRole flags outside 1..15 or with unknown bits', () => {
-    for (const roles of [0, 16, 32, -1, 1.5]) {
+  it('resolves roles=0 — "no commercial classification" is an ordinary account', () => {
+    // Not a relaxation of the range check: it is the range the 10 September decision
+    // defines. Rejecting 0 made one role-less counterparty reject the WHOLE page.
+    const decoded = decodeCounterpartyPage(
+      page({ items: [item({ companyAccounts: [account({ roles: 0 })] })] }),
+      SINGLE_A,
+    )
+    expect(decoded).not.toBeNull()
+    expect(decoded!.items[0].companyAccounts[0].roles).toBe(0)
+    expect(rolesFromFlags(decoded!.items[0].companyAccounts[0].roles)).toEqual([])
+  })
+
+  it('still rejects unknown bits, negatives and non-integers', () => {
+    for (const roles of [16, 32, -1, 1.5]) {
       expect(
         decodeCounterpartyPage(
           page({ items: [item({ companyAccounts: [account({ roles })] })] }),

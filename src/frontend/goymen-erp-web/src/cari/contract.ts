@@ -20,6 +20,9 @@ export type PartyKind = (typeof PARTY_KIND)[keyof typeof PARTY_KIND]
  * `PartyRole` is a BIT FLAG integer (1|2|4|8, max 15) — one account can carry several
  * roles at once. Codex #145 review: there is NOT a separate account row per role for
  * the same (CompanyId, PartyId); it is one account with combined flags.
+ *
+ * `0` carries no bit and means "no commercial classification". As of the 10 September
+ * decision that is an ordinary account, not an unfinished one.
  */
 export const PARTY_ROLE_FLAG = {
   Customer: 1,
@@ -30,7 +33,10 @@ export const PARTY_ROLE_FLAG = {
 export type PartyRoleName = keyof typeof PARTY_ROLE_FLAG
 const ALL_ROLE_FLAGS = 1 | 2 | 4 | 8
 
-/** Decompose the flag integer into role names. Order is stable (declaration order). */
+/**
+ * Decompose the flag integer into role names. Order is stable (declaration order).
+ * `0` yields an empty list — see `roleText.ts` for how a view is allowed to say that.
+ */
 export function rolesFromFlags(flags: number): PartyRoleName[] {
   return (Object.keys(PARTY_ROLE_FLAG) as PartyRoleName[]).filter(
     (name) => (flags & PARTY_ROLE_FLAG[name]) !== 0,
@@ -117,8 +123,24 @@ function decodeAccount(raw: unknown): CounterpartyListAccount | null {
   if (typeof raw !== 'object' || raw === null) return null
   const a = raw as Record<string, unknown>
   if (!isBoundUuid(a.id) || !isBoundUuid(a.companyId)) return null
-  // Flags must be inside the declared range and carry at least one known bit.
-  if (!isSafeIntish(a.roles) || a.roles < 1 || a.roles > ALL_ROLE_FLAGS) return null
+  /**
+   * Flags must be inside the declared range and carry no unknown bit.
+   *
+   * `0` is VALID and means "no commercial classification" (SINAN_KARARLARI_2026-09-10
+   * §2, ILK_DILIM §3.1/§4.1). It used to be rejected, which made an ordinary
+   * role-less counterparty poison the WHOLE page — one such record and the operator
+   * saw `malformed-response` instead of a list.
+   *
+   * This is the forward-compatible consumer read ILK_DILIM §6 asks for FIRST: every
+   * live consumer must be able to read `0` alongside the legacy 1..15 before any
+   * role-less record can be written. The accepted wire contract still pins
+   * `PartyRole minimum: 1`, so today this decoder accepts a value the server cannot
+   * yet emit — that is the point of the ordering, not a gap in it.
+   *
+   * What does NOT relax: unknown bits, negatives, non-integers and the company
+   * binding are all still rejected (§7). Moving one bound is not loosening the rest.
+   */
+  if (!isSafeIntish(a.roles) || a.roles < 0 || a.roles > ALL_ROLE_FLAGS) return null
   if ((a.roles & ~ALL_ROLE_FLAGS) !== 0) return null
   if (typeof a.isActive !== 'boolean') return null
   if (!isSafeIntish(a.version) || a.version < 0) return null
