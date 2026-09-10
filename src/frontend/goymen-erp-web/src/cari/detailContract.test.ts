@@ -177,6 +177,20 @@ describe('decodeCounterpartyDetail — fails closed', () => {
     }
   })
 
+  it('rejects a NULL or absent roles — the response contract requires the number', () => {
+    // Same rule as the list decoder: PR #230 keeps `roles` required in every account
+    // view as integer 0..15. Zero is the wire form of "no commercial classification";
+    // null and a missing property are neither, and are not normalised into one.
+    expect(
+      decodeCounterpartyDetail(detail({ companyAccounts: [account({ roles: null })] }), COMPANY_A),
+    ).toBeNull()
+
+    const { roles: _dropped, ...withoutRoles } = account()
+    expect(
+      decodeCounterpartyDetail(detail({ companyAccounts: [withoutRoles] }), COMPANY_A),
+    ).toBeNull()
+  })
+
   it('rejects nil or malformed UUIDs', () => {
     expect(
       decodeCounterpartyDetail(detail({ id: '00000000-0000-0000-0000-000000000000' }), COMPANY_A),

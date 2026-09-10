@@ -214,6 +214,28 @@ describe('decodeCounterpartyPage — fails closed', () => {
     }
   })
 
+  it('rejects a NULL or absent roles — the response contract requires the number', () => {
+    // PR #230 settled this: `roles` is optional in the REQUEST and stays REQUIRED in
+    // every account view, as `PartyRole` = integer 0..15. So "no commercial
+    // classification" travels back as the number 0 and never as null or an absent
+    // property. Accepting either would mean guessing which of the two a server meant,
+    // and a guessed 0 is a claim about the record we are not entitled to make.
+    expect(
+      decodeCounterpartyPage(
+        page({ items: [item({ companyAccounts: [account({ roles: null })] })] }),
+        SINGLE_A,
+      ),
+    ).toBeNull()
+
+    const { roles: _dropped, ...withoutRoles } = account()
+    expect(
+      decodeCounterpartyPage(
+        page({ items: [item({ companyAccounts: [withoutRoles] })] }),
+        SINGLE_A,
+      ),
+    ).toBeNull()
+  })
+
   it('rejects a nil or malformed UUID', () => {
     expect(
       decodeCounterpartyPage(
