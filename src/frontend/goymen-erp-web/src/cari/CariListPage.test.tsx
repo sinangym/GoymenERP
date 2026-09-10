@@ -565,12 +565,15 @@ describe('C-01 filter contract (Codex/ChatGPT #147 P1-4)', () => {
     )
   })
 
-  it('never asks for a count it will not label, so no raw scope token can reach the UI', async () => {
+  it('asks for the count it can label, and never shows the raw scope token', async () => {
     const { calls } = installFetch()
     renderAt('/cari')
     await screen.findByRole('row', { name: /C-0001/ })
-    // includeCount defaults to false; the decoder rejects a count we did not request.
-    expect(calls.every((c) => !c.url.includes('includeCount=true'))).toBe(true)
+    // The count is requested now that the screen has a sentence for what it covers
+    // (§8.7/65). The decoder still binds the two directions: a count that arrives
+    // unrequested is malformed, and so is one that arrives without its scope.
+    expect(calls.some((c) => c.url.includes('includeCount=true'))).toBe(true)
+    // The machine token itself stays out of the UI.
     expect(screen.queryByText(/filtered-authorized-visible-parties/)).toBeNull()
   })
 })
@@ -1482,5 +1485,110 @@ describe('C-01 a counterparty with no commercial role (ILK_DILIM §7)', () => {
     renderAt('/cari')
 
     expect(await findStateBlock('malformed-response')).toBeTruthy()
+  })
+})
+
+describe('C-01 page size and the meaning of the total (UX review §8.7/65)', () => {
+  function counted(total: string, over: Record<string, unknown> = {}) {
+    return page({
+      totalCount: total,
+      countScope: 'filtered-authorized-visible-parties',
+      ...over,
+    })
+  }
+
+  it('offers a controlled set of sizes and asks the server for the chosen one', async () => {
+    const { calls } = installFetch({ counterparties: () => json(counted('7')) })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    const select = screen.getByLabelText('Sayfa boyutu') as HTMLSelectElement
+    expect([...select.options].map((o) => o.value)).toEqual(['10', '25', '50', '100'])
+    expect(select.value).toBe('50')
+
+    await userEvent.selectOptions(select, '25')
+    await waitFor(() =>
+      expect(calls.filter((c) => c.url.includes('/counterparties')).at(-1)?.url).toContain(
+        'pageSize=25',
+      ),
+    )
+  })
+
+  it('says what the total counts, so the number is not read as "all counterparties"', async () => {
+    installFetch({ counterparties: () => json(counted('128')) })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    const caption = document.querySelector('caption') as HTMLElement
+    expect(caption.textContent).toContain('128 kayıt')
+    expect(caption.textContent).toContain('Filtrelenmiş, yetkili ve görünür cariler')
+    // The count and what is on screen are stated separately: the difference between
+    // them is the whole point of a cursor-paged list.
+    expect(caption.textContent).toContain('1 tanesi yüklendi')
+  })
+
+  it('carries a count past the JS safe-integer range verbatim', async () => {
+    // int64. Parsing it into a Number would round it silently; it is displayed, never
+    // computed with.
+    installFetch({ counterparties: () => json(counted('9007199254740993')) })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    expect((document.querySelector('caption') as HTMLElement).textContent).toContain(
+      '9007199254740993 kayıt',
+    )
+  })
+
+  it('restarts paging when the size changes, so two page lengths cannot interleave', async () => {
+    const { calls } = installFetch({
+      counterparties: (url) =>
+        json(
+          url.includes('cursor=')
+            ? counted('4', { items: [party({ id: PARTY_2, code: 'C-0002' })] })
+            : counted('4', { nextCursor: 'CUR-1', hasMore: true }),
+        ),
+    })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+    await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
+    await screen.findByRole('row', { name: /C-0002/ })
+
+    await userEvent.selectOptions(screen.getByLabelText('Sayfa boyutu'), '10')
+
+    await waitFor(() => {
+      const latest = calls.filter((c) => c.url.includes('/counterparties')).at(-1)
+      expect(latest?.url).toContain('pageSize=10')
+      // The cursor was issued for the OLD size; continuing it would splice a
+      // 50-row page onto a 10-row one.
+      expect(latest?.url).not.toContain('cursor=')
+    })
+  })
+
+  it('falls back to what is loaded when the server sends no count', async () => {
+    // `totalCount: null` with `countScope: null` is a legitimate response shape.
+    installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    const caption = document.querySelector('caption') as HTMLElement
+    expect(caption.textContent).toContain('1 kayıt yüklendi')
+    expect(caption.textContent).not.toContain('Filtrelenmiş, yetkili ve görünür cariler')
+  })
+
+  it('keeps the chosen size when the filters are cleared — size is not a filter', async () => {
+    const { calls } = installFetch({ counterparties: () => json(counted('3')) })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    await userEvent.selectOptions(screen.getByLabelText('Sayfa boyutu'), '100')
+    await userEvent.type(screen.getByRole('searchbox'), 'alfa')
+    await userEvent.click(screen.getByRole('button', { name: /Filtreleri temizle/i }))
+
+    expect((screen.getByLabelText('Sayfa boyutu') as HTMLSelectElement).value).toBe('100')
+    await waitFor(() =>
+      expect(calls.filter((c) => c.url.includes('/counterparties')).at(-1)?.url).toContain(
+        'pageSize=100',
+      ),
+    )
   })
 })

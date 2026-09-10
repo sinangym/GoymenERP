@@ -50,6 +50,8 @@ export interface CariListView {
   readonly accountState: AccountStateFilter
   readonly sort: SortField
   readonly direction: SortDirection
+  /** How many rows one read returns. See `PAGE_SIZE_OPTIONS`. */
+  readonly pageSize: number
 }
 
 /**
@@ -70,7 +72,18 @@ export const DEFAULT_CARI_LIST_VIEW: CariListView = {
   accountState: 'all',
   sort: 'code',
   direction: 'asc',
+  pageSize: 50,
 }
+
+/**
+ * The offered page sizes (UX review §8.7/65).
+ *
+ * A controlled set rather than a free number: the server bounds `pageSize` at 200,
+ * and a text field would invite a value the read has to reject. 50 stays the
+ * default — it is what the screen shipped with, and changing what an untouched
+ * list asks for is a separate decision from making the size choosable.
+ */
+export const PAGE_SIZE_OPTIONS: readonly number[] = [10, 25, 50, 100]
 
 /**
  * Whether the view narrows the list.
@@ -90,12 +103,19 @@ export function isFiltered(view: CariListView): boolean {
   )
 }
 
-/** Clears every filter and keeps the sort the user chose. */
+/**
+ * Clears every filter and keeps the sort AND page size the user chose.
+ *
+ * Neither is a filter: both change how the same matching records are presented,
+ * never which records match. Resetting them would undo a choice the user did not
+ * ask to undo.
+ */
 export function clearedFilters(view: CariListView): CariListView {
   return {
     ...DEFAULT_CARI_LIST_VIEW,
     sort: view.sort,
     direction: view.direction,
+    pageSize: view.pageSize,
   }
 }
 

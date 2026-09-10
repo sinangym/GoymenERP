@@ -24,6 +24,7 @@ import {
   type SortField,
 } from './api'
 import {
+  COUNT_SCOPE_FILTERED_AUTHORIZED,
   PARTY_KIND,
   PROBLEM_CODE,
   problemCodeOf,
@@ -47,6 +48,7 @@ import {
   clearedFilters,
   DEFAULT_CARI_LIST_VIEW,
   isFiltered,
+  PAGE_SIZE_OPTIONS,
   readCariListView,
   writeCariListView,
   type CariListView,
@@ -71,7 +73,24 @@ const ACCOUNT_STATE_LABEL: Record<AccountStateFilter, string> = {
   inactive: 'Pasif',
 }
 
-const DEFAULT_PAGE_SIZE = 50
+/**
+ * What the number in the caption counts (UX review §8.7/65: "toplam kapsamı").
+ *
+ * ASSUMPTION-CARI-001. `filtered-authorized-visible-parties` is the ONLY scope the
+ * C-01 slice accepts, and it is a machine token — printing it tells an operator
+ * nothing, which is why the count was previously not requested at all. This is the
+ * Turkish reading of the token's three parts, chosen rather than asked: the count
+ * covers the records the current FILTERS match, that this user is AUTHORIZED for,
+ * and that are VISIBLE in the active company.
+ *
+ * It matters because the alternative reading — "the company has 128 counterparties"
+ * — is a claim about data the caller may not be entitled to see. Reversible text
+ * decision; the token it labels is contract-fixed and is asserted against the
+ * decoder's constant, so a new scope cannot silently inherit this sentence.
+ */
+const COUNT_SCOPE_LABEL: Record<string, string> = {
+  [COUNT_SCOPE_FILTERED_AUTHORIZED]: 'Filtrelenmiş, yetkili ve görünür cariler',
+}
 
 /**
  * What the user has narrowed the list by, in their own words.
@@ -164,6 +183,7 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
   const [accountState, setAccountState] = useState<AccountStateFilter>(restored.accountState)
   const [sort, setSort] = useState<SortField>(restored.sort)
   const [direction, setDirection] = useState<SortDirection>(restored.direction)
+  const [pageSize, setPageSize] = useState<number>(restored.pageSize)
   /**
    * Whether the legacy-classification block is open.
    *
@@ -202,8 +222,8 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
   const singleCompanyContext = scopeMode === 'single' && activeCompanyId !== null
 
   const view: CariListView = useMemo(
-    () => ({ q, kind, roles, roleMatch, partyState, accountState, sort, direction }),
-    [q, kind, roles, roleMatch, partyState, accountState, sort, direction],
+    () => ({ q, kind, roles, roleMatch, partyState, accountState, sort, direction, pageSize }),
+    [q, kind, roles, roleMatch, partyState, accountState, sort, direction, pageSize],
   )
   const filterActive = isFiltered(view)
   const filterLabels = useMemo(() => activeFilterLabels(view), [view])
@@ -227,7 +247,7 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
       // normally, because the generation only moves when the route is entered.
       entryGeneration,
       'counterparties',
-      { q, kind, roles, roleMatch, partyState, accountState, sort, direction, cursor },
+      { q, kind, roles, roleMatch, partyState, accountState, sort, direction, pageSize, cursor },
     ],
     enabled: namespace !== null && singleCompanyContext,
     /**
@@ -252,7 +272,14 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
           accountState,
           sort,
           direction,
-          pageSize: DEFAULT_PAGE_SIZE,
+          pageSize,
+          /**
+           * ASK for the count (§8.7/65). The decoder binds the response to this
+           * flag in both directions — a count that arrives unrequested is still
+           * malformed — so the number on screen is always one we asked for and
+           * can label.
+           */
+          includeCount: true,
           cursor,
         },
         signal,
@@ -336,6 +363,7 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
     setRoleMatch(cleared.roleMatch)
     setPartyState(cleared.partyState)
     setAccountState(cleared.accountState)
+    // Page size is not a filter and survives, like the sort.
     // Nothing legacy is applied any more, so the block goes back to being a place
     // you open on purpose rather than a control standing open over an empty state.
     setLegacyOpen(false)
@@ -478,6 +506,26 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
             <option value="inactive">Pasif</option>
           </select>
         </label>
+
+        {/* Changing the size restarts paging: the cursor already handed out was
+            issued for the OLD size, and continuing it would silently mix two page
+            lengths into one accumulated list. */}
+        <label className={styles.field}>
+          <span>Sayfa boyutu</span>
+          <select
+            value={String(pageSize)}
+            onChange={(event) => {
+              setPageSize(Number(event.target.value))
+              resetPaging()
+            }}
+          >
+            {PAGE_SIZE_OPTIONS.map((size) => (
+              <option key={size} value={String(size)}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {/*
@@ -602,11 +650,30 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
           >
           <table className={styles.table} aria-busy={query.isFetching}>
             <caption className={styles.caption}>
-              {/* The scope is VALIDATED, not displayed: `filtered-authorized-visible-parties`
-                  is a machine token, and printing it tells the user nothing. */}
-              {page?.totalCount != null
-                ? `${page.totalCount} kayıt`
-                : `${items.length} kayıt yüklendi`}
+              {/*
+                The total and WHAT IT COVERS, together (§8.7/65).
+
+                A bare "128 kayıt" over a filtered, authorization-scoped read invites
+                the one reading we are not entitled to offer — "this company has 128
+                counterparties". The scope sentence is not decoration; it is the
+                difference between a number and a claim.
+
+                `totalCount` is carried as a STRING all the way here: it is an int64
+                that can exceed the JS safe range, and it is displayed, never math'd.
+                That is also why "loaded" is stated separately instead of being
+                subtracted from it.
+              */}
+              <span className={styles.countValue}>
+                {page?.totalCount != null
+                  ? `${page.totalCount} kayıt`
+                  : `${items.length} kayıt yüklendi`}
+              </span>
+              {page?.totalCount != null && items.length > 0 ? (
+                <span className={styles.countLoaded}>{` · ${items.length} tanesi yüklendi`}</span>
+              ) : null}
+              {page?.countScope != null && COUNT_SCOPE_LABEL[page.countScope] !== undefined ? (
+                <span className={styles.countScope}>{COUNT_SCOPE_LABEL[page.countScope]}</span>
+              ) : null}
             </caption>
             <thead>
               <tr>
