@@ -40,6 +40,8 @@ EXPECTED_TESTS = tuple(
     )
 )
 BROAD_EXPECTED_TESTS = (
+    "GoymenERP.Api.IntegrationTests.CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests.ClientContractGate_BlocksUnnegotiatedWritesAndPreservesSameKeyRetry",
+    "GoymenERP.Api.IntegrationTests.CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests.ClientContractGate_WithholdsRolelessReadsWithoutLeakingForeignCompanyState",
     "GoymenERP.Api.IntegrationTests.CounterpartyCompanyLinkSqlServerRelationalAcceptanceTests.ExistingParty_CanBeLinkedWithNoRole",
     "GoymenERP.Api.IntegrationTests.CounterpartyWriteSqlServerRelationalAcceptanceTests.CanCreateCounterpartyWithoutRole",
     "GoymenERP.Api.IntegrationTests.CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests.MissingAndZeroRoles_CreateAndLinkShareReplayAndRejectInvalidJson",
@@ -68,6 +70,7 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.CounterpartyCompanyScopedIdempotencySqlServerRelationalAcceptanceTests.SameIdempotencyKey_InDifferentCompanies_IsIndependent",
     "GoymenERP.Api.IntegrationTests.CounterpartyIdempotencyHeaderBoundarySqlServerRelationalAcceptanceTests.ExactMaximumLengthPaddedKey_IsAcceptedAndTrimmedReplayAddsNoEffects",
     "GoymenERP.Api.IntegrationTests.CounterpartyIdempotencyHeaderBoundarySqlServerRelationalAcceptanceTests.InvalidIdempotencyHeader_IsRejectedBeforeCreateOrStatusPersistence",
+    "GoymenERP.Api.IntegrationTests.CounterpartyJourneySqlServerRelationalAcceptanceTests.CreateFindDetailAndLinkSecondCompany_PreserveIdentityVisibilityAndExactlyOnceEffects",
     "GoymenERP.Api.IntegrationTests.CounterpartyLinkCandidateSqlServerRelationalAcceptanceTests.CandidateRead_EnforcesVisibilityAuthorityCursorAndBoundedReadOnlySql",
     "GoymenERP.Api.IntegrationTests.CounterpartyLinkCandidateSqlServerRelationalAcceptanceTests.NarrowSourceScope_OmitsCandidateAndKnownIdLinkHasNoEffect_ThenSameKeySucceedsAfterCompanyWidePromotion",
     "GoymenERP.Api.IntegrationTests.CounterpartyNoOpConcurrencySqlServerRelationalAcceptanceTests.Different_key_no_op_status_commands_are_serialized",
@@ -106,8 +109,8 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.UnapprovedLogicalEndpoint_IsRejectedWithoutChangingDatabase",
     "GoymenERP.Api.IntegrationTests.SqlServerRelationalAcceptanceTests.MigrationSeedWriteGuardCompositeForeignKeyAndHttpIsolation_AreEnforced",
 )
-BROAD_DISCOVERY_COUNT = 65
-BROAD_EXECUTION_COUNT = 72
+BROAD_DISCOVERY_COUNT = 68
+BROAD_EXECUTION_COUNT = 75
 
 
 def verify_discovery(standard_output: str) -> None:

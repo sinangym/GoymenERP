@@ -20,6 +20,8 @@ public static class CounterpartyEndpoints
         var group = endpoints.MapGroup("/api/v1/counterparties")
             .RequireAuthorization()
             .AddEndpointFilter(ResolveOptionalCompanyContextAsync)
+            .AddEndpointFilter<CounterpartyClientContractFilter>()
+            .WithMetadata(new CounterpartyClientContractMetadata())
             .WithTags("Counterparty");
 
         group.MapGet("/", async (
@@ -71,6 +73,9 @@ public static class CounterpartyEndpoints
             .UsesOptionalCompanyContext()
             .WithName("GetCounterpartiesV1")
             .Produces<CounterpartyPage>(StatusCodes.Status200OK)
+            .ProducesErpConflict(
+                CounterpartyClientContract.RequiredCode,
+                CounterpartyClientContract.UnsupportedCode)
             .ProducesErpBadRequest(
                 CounterpartyProblemCodesV1.ValidationFailed,
                 CounterpartyProblemCodesV1.InvalidCursor)
@@ -129,6 +134,9 @@ public static class CounterpartyEndpoints
             .RequireAuthorization(ErpPermissions.CounterpartyPartiesRead)
             .WithName("GetCounterpartyCompanyAccountLinkCandidatesV1")
             .Produces<CounterpartyLinkCandidatePage>(StatusCodes.Status200OK)
+            .ProducesErpConflict(
+                CounterpartyClientContract.RequiredCode,
+                CounterpartyClientContract.UnsupportedCode)
             .ProducesErpBadRequest(
                 CounterpartyProblemCodesV1.ValidationFailed,
                 CounterpartyProblemCodesV1.InvalidCursor)
@@ -159,6 +167,9 @@ public static class CounterpartyEndpoints
             .UsesOptionalCompanyContext()
             .WithName("GetCounterpartyV1")
             .Produces<CounterpartyDetailView>(StatusCodes.Status200OK)
+            .ProducesErpConflict(
+                CounterpartyClientContract.RequiredCode,
+                CounterpartyClientContract.UnsupportedCode)
             .ProducesErpBadRequest(CounterpartyProblemCodesV1.ValidationFailed)
             .ProducesErpNotFound(CounterpartyProblemCodesV1.NotFound)
             .ProducesErpAuthenticatedProblems();
@@ -212,7 +223,10 @@ public static class CounterpartyEndpoints
                 CounterpartyProblemCodesV1.ValidationFailed,
                 CounterpartyProblemCodesV1.CommandMetadataInvalid)
             .ProducesErpUnsupportedMediaType()
-            .ProducesErpConflict(CounterpartyProblemCodesV1.IdempotencyConflict)
+            .ProducesErpConflict(
+                CounterpartyProblemCodesV1.IdempotencyConflict,
+                CounterpartyClientContract.RequiredCode,
+                CounterpartyClientContract.UnsupportedCode)
             .ProducesErpAuthenticatedProblems();
 
         group.MapPost("/{partyId:guid}/company-account", async (
@@ -275,7 +289,9 @@ public static class CounterpartyEndpoints
             .ProducesErpNotFound(CounterpartyProblemCodesV1.NotFound)
             .ProducesErpConflict(
                 CounterpartyProblemCodesV1.AlreadyLinked,
-                CounterpartyProblemCodesV1.IdempotencyConflict)
+                CounterpartyProblemCodesV1.IdempotencyConflict,
+                CounterpartyClientContract.RequiredCode,
+                CounterpartyClientContract.UnsupportedCode)
             .ProducesErpAuthenticatedProblems();
 
         group.MapPut("/{partyId:guid}/company-account/active-state", async (
@@ -333,7 +349,9 @@ public static class CounterpartyEndpoints
             .ProducesErpNotFound(CounterpartyProblemCodesV1.NotFound)
             .ProducesErpConflict(
                 CounterpartyProblemCodesV1.VersionConflict,
-                CounterpartyProblemCodesV1.IdempotencyConflict)
+                CounterpartyProblemCodesV1.IdempotencyConflict,
+                CounterpartyClientContract.RequiredCode,
+                CounterpartyClientContract.UnsupportedCode)
             .ProducesErpAuthenticatedProblems();
 
         return endpoints;

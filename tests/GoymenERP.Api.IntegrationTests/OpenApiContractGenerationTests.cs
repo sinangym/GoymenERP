@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using GoymenERP.Api.OpenApi;
+using GoymenERP.Api.Contracts;
 using GoymenERP.BuildingBlocks.OpenApi;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
@@ -62,6 +63,7 @@ public sealed class OpenApiContractGenerationTests
             AuthenticatedResponses(
                 "200:application/json",
                 "400:application/problem+json",
+                "409:application/problem+json",
                 "503:application/problem+json"),
             ParameterValues:
             [
@@ -82,6 +84,7 @@ public sealed class OpenApiContractGenerationTests
             AuthenticatedResponses(
                 "200:application/json",
                 "400:application/problem+json",
+                "409:application/problem+json",
                 "503:application/problem+json"),
             ParameterValues:
             [
@@ -93,7 +96,7 @@ public sealed class OpenApiContractGenerationTests
             AuthenticatedResponses("201:application/json", "400:application/problem+json", "409:application/problem+json", "415:"),
             "#/components/schemas/CreateCounterparty"),
         new("get", "/api/v1/counterparties/{partyId}", "GetCounterpartyV1",
-            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json"),
             ParameterValues:
             [
                 "path:partyId:true:type:string;format:uuid",
@@ -218,22 +221,27 @@ public sealed class OpenApiContractGenerationTests
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
             ["GetCounterpartiesV1:400"] = ["invalid_cursor", "validation_failed"],
+            ["GetCounterpartiesV1:409"] = ["client_contract_required", "client_contract_unsupported"],
+            ["GetCounterpartyV1:409"] = ["client_contract_required", "client_contract_unsupported"],
+            ["GetCounterpartyCompanyAccountLinkCandidatesV1:409"] =
+                ["client_contract_required", "client_contract_unsupported"],
             ["GetCounterpartyCompanyAccountLinkCandidatesV1:400"] =
                 ["invalid_cursor", "validation_failed"],
             ["GetCounterpartyV1:400"] = ["validation_failed"],
             ["GetCounterpartyV1:404"] = ["not_found"],
             ["CreateCounterpartyV1:400"] = ["command_metadata_invalid", "validation_failed"],
-            ["CreateCounterpartyV1:409"] = ["idempotency_conflict"],
+            ["CreateCounterpartyV1:409"] =
+                ["client_contract_required", "client_contract_unsupported", "idempotency_conflict"],
             ["CreateCounterpartyCompanyAccountV1:400"] =
                 ["command_metadata_invalid", "validation_failed"],
             ["CreateCounterpartyCompanyAccountV1:404"] = ["not_found"],
             ["CreateCounterpartyCompanyAccountV1:409"] =
-                ["already_linked", "idempotency_conflict"],
+                ["already_linked", "client_contract_required", "client_contract_unsupported", "idempotency_conflict"],
             ["SetCounterpartyCompanyAccountActiveStateV1:400"] =
                 ["command_metadata_invalid", "validation_failed"],
             ["SetCounterpartyCompanyAccountActiveStateV1:404"] = ["not_found"],
             ["SetCounterpartyCompanyAccountActiveStateV1:409"] =
-                ["idempotency_conflict", "version_conflict"],
+                ["client_contract_required", "client_contract_unsupported", "idempotency_conflict", "version_conflict"],
             ["GetShellCapabilitiesV1:400"] = ["company_context_invalid"],
         };
 
@@ -1088,6 +1096,14 @@ public sealed class OpenApiContractGenerationTests
                 "X-Correlation-Id",
                 "X-Causation-Id",
             };
+            var isCounterparty = operation.Path.StartsWith("/api/v1/counterparties", StringComparison.Ordinal);
+            if (isCounterparty)
+            {
+                expectedHeaderNames.Add(CounterpartyClientContract.HeaderName);
+                AssertHeaderSchema(parameters, CounterpartyClientContract.HeaderName,
+                    required: operation.Method != "get", type: "string",
+                    pattern: CounterpartyClientContract.VersionPattern);
+            }
             if (RequiredCompanyOperations.Contains(operation.OperationId)
                 || OptionalCompanyOperations.Contains(operation.OperationId))
             {
@@ -1187,6 +1203,15 @@ public sealed class OpenApiContractGenerationTests
                 var numericStatusCode = int.Parse(
                     response.Name,
                     CultureInfo.InvariantCulture);
+                var acknowledgmentExpected = isCounterparty && numericStatusCode is >= 200 and < 300;
+                Assert.Equal(acknowledgmentExpected, responseHeaders.TryGetProperty(
+                    CounterpartyClientContract.HeaderName, out _));
+                if (acknowledgmentExpected)
+                {
+                    AssertResponseHeaderSchema(responseHeaders,
+                        CounterpartyClientContract.HeaderName, "string",
+                        pattern: CounterpartyClientContract.VersionPattern);
+                }
                 var replayHeadersExpected = ReplayableResponseStatuses
                     .GetValueOrDefault(operation.OperationId, [])
                     .Contains(numericStatusCode);

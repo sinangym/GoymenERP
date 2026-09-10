@@ -1916,6 +1916,15 @@
             }
           },
           {
+            "name": "X-ERP-Counterparty-Contract",
+            "in": "header",
+            "description": "Exact client compatibility declaration. Required for every command and for reads containing zero-role accounts. Before enabling commands, require the matching server acknowledgment on a successful GET bound to the current actor/session/company generation.",
+            "schema": {
+              "pattern": "^optional-trade-roles-v1$",
+              "type": "string"
+            }
+          },
+          {
             "name": "q",
             "in": "query",
             "description": "Code, legalName or tradeName contains search; Unicode trim + NFC, Turkish CI/AS.",
@@ -2034,6 +2043,13 @@
           "200": {
             "description": "OK",
             "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Server acknowledgment, present only when the request declares this exact supported contract. Absence is not compatibility.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
               "X-Correlation-Id": {
                 "description": "Server-resolved correlation identifier.",
                 "schema": {
@@ -2051,6 +2067,31 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Conflict",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "client_contract_required",
+              "client_contract_unsupported"
+            ]
           },
           "400": {
             "description": "Bad Request",
@@ -2221,6 +2262,16 @@
             }
           },
           {
+            "name": "X-ERP-Counterparty-Contract",
+            "in": "header",
+            "description": "Exact client compatibility declaration. Required for every command and for reads containing zero-role accounts. Before enabling commands, require the matching server acknowledgment on a successful GET bound to the current actor/session/company generation.",
+            "required": true,
+            "schema": {
+              "pattern": "^optional-trade-roles-v1$",
+              "type": "string"
+            }
+          },
+          {
             "name": "Idempotency-Key",
             "in": "header",
             "description": "Unique command key; one non-empty value with at most 128 canonical characters.",
@@ -2248,6 +2299,13 @@
           "201": {
             "description": "Created",
             "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Server acknowledgment, present only when the request declares this exact supported contract. Absence is not compatibility.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
               "X-Correlation-Id": {
                 "description": "Server-resolved correlation identifier.",
                 "schema": {
@@ -2344,6 +2402,8 @@
               }
             },
             "x-erp-problem-codes": [
+              "client_contract_required",
+              "client_contract_unsupported",
               "idempotency_conflict"
             ]
           },
@@ -2468,6 +2528,15 @@
             }
           },
           {
+            "name": "X-ERP-Counterparty-Contract",
+            "in": "header",
+            "description": "Exact client compatibility declaration. Required for every command and for reads containing zero-role accounts. Before enabling commands, require the matching server acknowledgment on a successful GET bound to the current actor/session/company generation.",
+            "schema": {
+              "pattern": "^optional-trade-roles-v1$",
+              "type": "string"
+            }
+          },
+          {
             "name": "q",
             "in": "query",
             "description": "Code, legalName or tradeName contains search; Unicode trim + NFC, Turkish CI/AS.",
@@ -2505,6 +2574,13 @@
           "200": {
             "description": "OK",
             "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Server acknowledgment, present only when the request declares this exact supported contract. Absence is not compatibility.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
               "X-Correlation-Id": {
                 "description": "Server-resolved correlation identifier.",
                 "schema": {
@@ -2522,6 +2598,31 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Conflict",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "client_contract_required",
+              "client_contract_unsupported"
+            ]
           },
           "400": {
             "description": "Bad Request",
@@ -2701,12 +2802,28 @@
               "format": "uuid",
               "x-erp-non-empty-uuid": true
             }
+          },
+          {
+            "name": "X-ERP-Counterparty-Contract",
+            "in": "header",
+            "description": "Exact client compatibility declaration. Required for every command and for reads containing zero-role accounts. Before enabling commands, require the matching server acknowledgment on a successful GET bound to the current actor/session/company generation.",
+            "schema": {
+              "pattern": "^optional-trade-roles-v1$",
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
             "description": "OK",
             "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Server acknowledgment, present only when the request declares this exact supported contract. Absence is not compatibility.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
               "X-Correlation-Id": {
                 "description": "Server-resolved correlation identifier.",
                 "schema": {
@@ -2724,6 +2841,31 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Conflict",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "client_contract_required",
+              "client_contract_unsupported"
+            ]
           },
           "400": {
             "description": "Bad Request",
@@ -2905,6 +3047,16 @@
             }
           },
           {
+            "name": "X-ERP-Counterparty-Contract",
+            "in": "header",
+            "description": "Exact client compatibility declaration. Required for every command and for reads containing zero-role accounts. Before enabling commands, require the matching server acknowledgment on a successful GET bound to the current actor/session/company generation.",
+            "required": true,
+            "schema": {
+              "pattern": "^optional-trade-roles-v1$",
+              "type": "string"
+            }
+          },
+          {
             "name": "Idempotency-Key",
             "in": "header",
             "description": "Unique command key; one non-empty value with at most 128 canonical characters.",
@@ -2932,6 +3084,13 @@
           "201": {
             "description": "Created",
             "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Server acknowledgment, present only when the request declares this exact supported contract. Absence is not compatibility.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
               "X-Correlation-Id": {
                 "description": "Server-resolved correlation identifier.",
                 "schema": {
@@ -3083,6 +3242,8 @@
             },
             "x-erp-problem-codes": [
               "already_linked",
+              "client_contract_required",
+              "client_contract_unsupported",
               "idempotency_conflict"
             ]
           },
@@ -3217,6 +3378,16 @@
             }
           },
           {
+            "name": "X-ERP-Counterparty-Contract",
+            "in": "header",
+            "description": "Exact client compatibility declaration. Required for every command and for reads containing zero-role accounts. Before enabling commands, require the matching server acknowledgment on a successful GET bound to the current actor/session/company generation.",
+            "required": true,
+            "schema": {
+              "pattern": "^optional-trade-roles-v1$",
+              "type": "string"
+            }
+          },
+          {
             "name": "Idempotency-Key",
             "in": "header",
             "description": "Unique command key; one non-empty value with at most 128 canonical characters.",
@@ -3244,6 +3415,13 @@
           "204": {
             "description": "No Content",
             "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Server acknowledgment, present only when the request declares this exact supported contract. Absence is not compatibility.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
               "X-Correlation-Id": {
                 "description": "Server-resolved correlation identifier.",
                 "schema": {
@@ -3387,6 +3565,8 @@
               }
             },
             "x-erp-problem-codes": [
+              "client_contract_required",
+              "client_contract_unsupported",
               "idempotency_conflict",
               "version_conflict"
             ]
@@ -4354,7 +4534,7 @@
             "type": "string"
           },
           "code": {
-            "pattern": "^(authentication_required|company_context_invalid|correlation_metadata_invalid|forbidden|internal_error|service_unavailable|validation_failed|command_metadata_invalid|invalid_cursor|not_found|already_linked|version_conflict|idempotency_conflict)$",
+            "pattern": "^(authentication_required|company_context_invalid|correlation_metadata_invalid|forbidden|internal_error|service_unavailable|validation_failed|command_metadata_invalid|invalid_cursor|not_found|already_linked|version_conflict|idempotency_conflict|client_contract_required|client_contract_unsupported)$",
             "type": "string"
           },
           "correlationId": {

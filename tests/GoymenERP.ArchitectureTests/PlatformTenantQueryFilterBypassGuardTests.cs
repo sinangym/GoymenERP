@@ -42,7 +42,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string OpenApiStartupPath =
         "src/backend/GoymenERP.Api/Program.cs";
     private const string ReviewedOpenApiStartupFingerprint =
-        "3f18dc31ca0ea8ff156e39357af780b6d3d308ad556a6f76989dcb90cf70a34b";
+        "54c46ec882dd2930da8994ec6a669be4388524811e294daa1c40d2e5304125eb";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -82,12 +82,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string SqlServerRcsiVerifierPath =
         "tools/verify_rcsi_relational_acceptance.py";
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "e06b97b7e17a7c9dcdbeb07532a3e6dd0b4540565bd16399522255a493c2ff97";
+        "85885aba278dc6a4a8ba5df8c845f7a92acc5160887c9436f41a535dbf732e14";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "ae19fc50fb61cb671b2f7013820534bfbdd8dd189f52ab5a28f94e41002cd71d";
+        "e31215c91351361ef115f79ebf5df496cfa8beb882cd488633942fe810d03af1";
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "91a665e6e8982e5a9b66f5d16a14d9fc4d7f98d63775de959a8cc6b2dea2b018";

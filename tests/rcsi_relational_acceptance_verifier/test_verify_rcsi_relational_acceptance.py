@@ -68,6 +68,8 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
         }
         optional_prefix = prefix + "CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests."
         required.update(optional_prefix + name for name in (
+            "ClientContractGate_BlocksUnnegotiatedWritesAndPreservesSameKeyRetry",
+            "ClientContractGate_WithholdsRolelessReadsWithoutLeakingForeignCompanyState",
             "MissingAndZeroRoles_CreateAndLinkShareReplayAndRejectInvalidJson",
             "PreviousSchemaUpgradeAndSafeDown_PreserveLegacyRolesAndDurableReplays",
             "RolelessRows_BlockDownBeforeSchemaChanges_AndAllowForwardReapply",
@@ -76,9 +78,9 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             "RolelessAuditAndIdempotencyFailures_RollBackAndPermitSameKeyRetry",
         ))
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
-        self.assertEqual(65, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(65, len(VERIFIER.BROAD_EXPECTED_TESTS))
-        self.assertEqual(72, VERIFIER.BROAD_EXECUTION_COUNT)
+        self.assertEqual(68, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(68, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(75, VERIFIER.BROAD_EXECUTION_COUNT)
         for omitted in required:
             with self.subTest(omitted=omitted):
                 discovery = "\n".join(
@@ -86,6 +88,20 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
                 )
                 with self.assertRaisesRegex(RuntimeError, "exact"):
                     VERIFIER.verify_broad_discovery(discovery)
+
+    def test_broad_inventory_requires_cari_journey_and_rejects_its_omission(self) -> None:
+        journey = (
+            "GoymenERP.Api.IntegrationTests."
+            "CounterpartyJourneySqlServerRelationalAcceptanceTests."
+            "CreateFindDetailAndLinkSecondCompany_PreserveIdentityVisibilityAndExactlyOnceEffects"
+        )
+        self.assertIn(journey, VERIFIER.BROAD_EXPECTED_TESTS)
+        self.assertEqual(68, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(68, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(75, VERIFIER.BROAD_EXECUTION_COUNT)
+        without_journey = [name for name in VERIFIER.BROAD_EXPECTED_TESTS if name != journey]
+        with self.assertRaisesRegex(RuntimeError, "exact"):
+            VERIFIER.verify_broad_discovery("\n".join(without_journey))
 
     def test_main_repeats_bootstrap_preflight_before_each_dotnet_boundary(self) -> None:
         calls: list[tuple[str, ...]] = []

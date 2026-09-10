@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using GoymenERP.Api.Contracts;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
@@ -32,7 +33,166 @@ public sealed class CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests
         PartyRole.Customer | PartyRole.Supplier | PartyRole.Tolling | PartyRole.Service;
 
     // SQL facts deliberately integrate their input matrices in one disposable database.
-    // There are six discovered executions, with no InlineData expansion.
+    // There are eight discovered executions, with no InlineData expansion.
+    [SqlServerFact]
+    public async Task ClientContractGate_BlocksUnnegotiatedWritesAndPreservesSameKeyRetry()
+    {
+        await WithDatabaseAsync(async (factory, connection) =>
+        {
+            using var source = factory.CreateClientFor(TestUsers.GroupAdmin, TestCompanyIds.CompanyA);
+            using var target = factory.CreateClientFor(TestUsers.GroupAdmin, TestCompanyIds.CompanyB);
+            var key = NewIdentity();
+            var before = await ReadSnapshotAsync(connection);
+            source.DefaultRequestHeaders.Remove(CounterpartyClientContract.HeaderName);
+            foreach (var roles in new string?[] { null, "0", "15" })
+            {
+                using var rejected = await PostJsonAsync(source, PartiesUrl,
+                    CreateJson("Contract gate create", roles), key);
+                await AssertProblemAsync(rejected, HttpStatusCode.Conflict,
+                    CounterpartyClientContract.RequiredCode);
+                Assert.False(rejected.Headers.Contains(CounterpartyClientContract.HeaderName));
+                Assert.False(rejected.Headers.Contains("Idempotency-Replayed"));
+                Assert.Equal(before, await ReadSnapshotAsync(connection));
+            }
+
+            source.DefaultRequestHeaders.Add(CounterpartyClientContract.HeaderName,
+                CounterpartyClientContract.Version);
+            using (var handshake = await source.GetAsync(PartiesUrl))
+            {
+                Assert.Equal(HttpStatusCode.OK, handshake.StatusCode);
+                Assert.Equal(CounterpartyClientContract.Version,
+                    Assert.Single(handshake.Headers.GetValues(CounterpartyClientContract.HeaderName)));
+            }
+            var created = await CreateReceiptAsync(source, TestCompanyIds.CompanyA, PartiesUrl,
+                CreateJson("Contract gate create"), key, PartyRole.None);
+            var afterCreate = await ReadSnapshotAsync(connection);
+
+            // Simulate a lost successful response followed by a stale-client retry.
+            source.DefaultRequestHeaders.Remove(CounterpartyClientContract.HeaderName);
+            using (var rejectedReplay = await PostJsonAsync(source, PartiesUrl, created.Json, key))
+            {
+                await AssertProblemAsync(rejectedReplay, HttpStatusCode.Conflict,
+                    CounterpartyClientContract.RequiredCode);
+                Assert.False(rejectedReplay.Headers.Contains("Idempotency-Replayed"));
+            }
+            Assert.Equal(afterCreate, await ReadSnapshotAsync(connection));
+            source.DefaultRequestHeaders.Add(CounterpartyClientContract.HeaderName,
+                CounterpartyClientContract.Version);
+            await AssertReplayAsync(source, created, CreateJson("Contract gate create", "0"));
+            Assert.Equal(afterCreate, await ReadSnapshotAsync(connection));
+
+            target.DefaultRequestHeaders.Remove(CounterpartyClientContract.HeaderName);
+            var linkKey = NewIdentity();
+            using (var rejectedLink = await PostJsonAsync(target, LinkUrl(created.PartyId), "{}", linkKey))
+            {
+                await AssertProblemAsync(rejectedLink, HttpStatusCode.Conflict,
+                    CounterpartyClientContract.RequiredCode);
+            }
+            using (var status = new HttpRequestMessage(HttpMethod.Put,
+                       LinkUrl(created.PartyId) + "/active-state"))
+            {
+                source.DefaultRequestHeaders.Remove(CounterpartyClientContract.HeaderName);
+                status.Content = new StringContent(
+                    "{\"isActive\":false,\"expectedVersion\":1,\"reason\":\"Contract gate\"}",
+                    Encoding.UTF8, "application/json");
+                using var rejectedStatus = await source.SendAsync(status);
+                await AssertProblemAsync(rejectedStatus, HttpStatusCode.Conflict,
+                    CounterpartyClientContract.RequiredCode);
+            }
+            Assert.Equal(afterCreate, await ReadSnapshotAsync(connection));
+
+            target.DefaultRequestHeaders.Add(CounterpartyClientContract.HeaderName,
+                CounterpartyClientContract.Version);
+            var linked = await CreateReceiptAsync(target, TestCompanyIds.CompanyB,
+                LinkUrl(created.PartyId), "{}", linkKey, PartyRole.None);
+            await AssertReplayAsync(target, linked, "{\"roles\":0}");
+            await AssertSingleCreatedEffectAsync(connection, linked, PartyRole.None);
+            var afterLink = await ReadSnapshotAsync(connection);
+
+            using var wrongCompany = factory.CreateClientFor(TestUsers.CompanyA, TestCompanyIds.CompanyB);
+            using (var forbidden = await PostJsonAsync(wrongCompany, PartiesUrl, created.Json, key))
+                Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+            using var viewer = factory.CreateClientFor(TestUsers.CompanyAViewer, TestCompanyIds.CompanyA);
+            using (var forbiddenReplay = await PostJsonAsync(viewer, PartiesUrl, created.Json, key))
+                Assert.Equal(HttpStatusCode.Forbidden, forbiddenReplay.StatusCode);
+            using var loggedOut = factory.CreateClient();
+            loggedOut.DefaultRequestHeaders.Add("X-Company-Id", TestCompanyIds.CompanyA.ToString());
+            using (var unauthenticated = await PostJsonAsync(loggedOut, PartiesUrl, created.Json, key))
+                Assert.Equal(HttpStatusCode.Unauthorized, unauthenticated.StatusCode);
+            Assert.Equal(afterLink, await ReadSnapshotAsync(connection));
+        });
+    }
+
+    [SqlServerFact]
+    public async Task ClientContractGate_WithholdsRolelessReadsWithoutLeakingForeignCompanyState()
+    {
+        await WithDatabaseAsync(async (factory, connection) =>
+        {
+            using var compatible = factory.CreateClientFor(TestUsers.GroupAdmin, TestCompanyIds.CompanyA);
+            var legacy = await CreateReceiptAsync(compatible, TestCompanyIds.CompanyA, PartiesUrl,
+                CreateJson("Contract legacy fifteen", "15"), NewIdentity(), AllRoles);
+            var roleless = await CreateReceiptAsync(compatible, TestCompanyIds.CompanyA, PartiesUrl,
+                CreateJson("Contract roleless"), NewIdentity(), PartyRole.None);
+            using var oldReader = factory.CreateClientFor(TestUsers.GroupAdmin, TestCompanyIds.CompanyA);
+            oldReader.DefaultRequestHeaders.Remove(CounterpartyClientContract.HeaderName);
+            using var oldTarget = factory.CreateClientFor(TestUsers.GroupAdmin, TestCompanyIds.CompanyB);
+            oldTarget.DefaultRequestHeaders.Remove(CounterpartyClientContract.HeaderName);
+            var before = await ReadSnapshotAsync(connection);
+
+            foreach (var url in new[] { PartiesUrl, $"{PartiesUrl}/{roleless.PartyId}" })
+            {
+                using var rejected = await oldReader.GetAsync(url);
+                await AssertProblemAsync(rejected, HttpStatusCode.Conflict,
+                    CounterpartyClientContract.RequiredCode);
+                Assert.DoesNotContain(roleless.PartyId.ToString(),
+                    await rejected.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
+                Assert.True(rejected.Headers.CacheControl?.NoStore);
+            }
+            using (var candidates = await oldTarget.GetAsync(CandidatesUrl))
+                await AssertProblemAsync(candidates, HttpStatusCode.Conflict,
+                    CounterpartyClientContract.RequiredCode);
+            using (var legacyDetail = await oldReader.GetAsync($"{PartiesUrl}/{legacy.PartyId}"))
+                Assert.Equal(HttpStatusCode.OK, legacyDetail.StatusCode);
+            using (var foreignScope = await oldTarget.GetAsync(PartiesUrl))
+                Assert.Equal(HttpStatusCode.OK, foreignScope.StatusCode);
+
+            oldReader.DefaultRequestHeaders.Add(CounterpartyClientContract.HeaderName,
+                "optional-trade-roles-v2");
+            using (var unsupported = await oldReader.GetAsync($"{PartiesUrl}/{legacy.PartyId}"))
+                await AssertProblemAsync(unsupported, HttpStatusCode.Conflict,
+                    CounterpartyClientContract.UnsupportedCode);
+
+            using var unauthorizedReader = factory.CreateClientFor(
+                TestUsers.CompanyAViewer, TestCompanyIds.CompanyA);
+            foreach (var declaration in new string?[] { null, "optional-trade-roles-v2" })
+            {
+                unauthorizedReader.DefaultRequestHeaders.Remove(CounterpartyClientContract.HeaderName);
+                if (declaration is not null)
+                    unauthorizedReader.DefaultRequestHeaders.Add(CounterpartyClientContract.HeaderName, declaration);
+                using var forbidden = await unauthorizedReader.GetAsync(PartiesUrl);
+                Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+                Assert.False(forbidden.Headers.Contains(CounterpartyClientContract.HeaderName));
+                var body = await forbidden.Content.ReadAsStringAsync();
+                Assert.DoesNotContain(roleless.PartyId.ToString(), body, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain(legacy.PartyId.ToString(), body, StringComparison.OrdinalIgnoreCase);
+            }
+
+            using (var invalidFilter = await compatible.GetAsync(PartiesUrl + "?role=0"))
+                Assert.Equal(HttpStatusCode.BadRequest, invalidFilter.StatusCode);
+            using (var detail = await compatible.GetAsync($"{PartiesUrl}/{roleless.PartyId}"))
+            {
+                Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
+                Assert.Equal(CounterpartyClientContract.Version,
+                    Assert.Single(detail.Headers.GetValues(CounterpartyClientContract.HeaderName)));
+                using var document = JsonDocument.Parse(await detail.Content.ReadAsStringAsync());
+                var account = Assert.Single(document.RootElement.GetProperty("companyAccounts").EnumerateArray());
+                Assert.Equal(0, account.GetProperty("roles").GetInt32());
+                Assert.Equal("1", account.GetProperty("version").GetString());
+            }
+            Assert.Equal(before, await ReadSnapshotAsync(connection));
+        });
+    }
+
     [SqlServerFact]
     public async Task MissingAndZeroRoles_CreateAndLinkShareReplayAndRejectInvalidJson()
     {
@@ -46,7 +206,8 @@ public sealed class CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests
 
             // Both numeric and named JSON strings must be rejected, as well as null,
             // negative masks and the first unknown bit. Each rejected key stays reusable.
-            string[] invalidRoles = ["-1", "null", "\"0\"", "\"Customer\"", "16"];
+            string[] invalidRoles =
+                ["-1", "null", "\"0\"", "\"Customer\"", "16", "17", "0.0", "0.5", "15.5", "false"];
             var beforeCreate = await ReadSnapshotAsync(connection);
             foreach (var rolesJson in invalidRoles)
             {

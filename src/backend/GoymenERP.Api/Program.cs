@@ -1,3 +1,4 @@
+using GoymenERP.Api.Contracts;
 using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.Errors;
 using GoymenERP.Api.Multitenancy;
@@ -59,6 +60,7 @@ builder.Configuration.AddJsonFile(
 
 builder.Services.AddErpProblemDetails();
 builder.Services.AddErpOpenApi();
+builder.Services.AddLocalization(options => options.ResourcesPath = "Resources");
 builder.Services.AddHealthChecks();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICompanyContext, CompanyContext>();
@@ -98,6 +100,7 @@ builder.Services.AddCors(options =>
     options.AddDefaultPolicy(policy =>
         policy.WithOrigins(allowedOrigins)
             .AllowAnyHeader()
+            .WithExposedHeaders(CounterpartyClientContract.HeaderName)
             .AllowAnyMethod()));
 
 var app = builder.Build();

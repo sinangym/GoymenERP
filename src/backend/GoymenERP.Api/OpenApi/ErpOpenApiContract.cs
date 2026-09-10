@@ -65,7 +65,8 @@ public static class ErpOpenApiContract
         "^(authentication_required|company_context_invalid|correlation_metadata_invalid|"
         + "forbidden|internal_error|service_unavailable|validation_failed|"
         + "command_metadata_invalid|invalid_cursor|not_found|already_linked|"
-        + "version_conflict|idempotency_conflict)$";
+        + "version_conflict|idempotency_conflict|client_contract_required|"
+        + "client_contract_unsupported)$";
 
     public static IServiceCollection AddErpOpenApi(this IServiceCollection services)
     {
@@ -427,6 +428,8 @@ public static class ErpOpenApiContract
     {
         cancellationToken.ThrowIfCancellationRequested();
         var endpointMetadata = context.Description.ActionDescriptor.EndpointMetadata;
+        var hasCounterpartyClientContract = endpointMetadata
+            .OfType<CounterpartyClientContractMetadata>().Any();
         var problemCodesByStatus = endpointMetadata
             .OfType<ErpProblemCodeMetadata>()
             .GroupBy(metadata => metadata.StatusCode)
@@ -499,6 +502,18 @@ public static class ErpOpenApiContract
             .OfType<IdempotentCommandMetadata>()
             .SingleOrDefault();
         var isIdempotentCommand = idempotentCommand is not null;
+        if (hasCounterpartyClientContract)
+        {
+            AddHeaderParameter(
+                operation,
+                CounterpartyClientContract.HeaderName,
+                required: !HttpMethods.IsGet(context.Description.HttpMethod ?? string.Empty),
+                "Exact client compatibility declaration. Required for every command and "
+                    + "for reads containing zero-role accounts. Before enabling commands, "
+                    + "require the matching server acknowledgment on a successful GET "
+                    + "bound to the current actor/session/company generation.",
+                pattern: CounterpartyClientContract.VersionPattern);
+        }
         if (isIdempotentCommand)
         {
             AddHeaderParameter(
@@ -606,6 +621,21 @@ public static class ErpOpenApiContract
                 out var numericStatusCode);
             concreteResponse.Headers ??=
                 new Dictionary<string, IOpenApiHeader>(StringComparer.Ordinal);
+            if (hasCounterpartyClientContract && hasNumericStatusCode
+                && numericStatusCode >= 200 && numericStatusCode < 300)
+            {
+                concreteResponse.Headers[CounterpartyClientContract.HeaderName] =
+                    new OpenApiHeader
+                    {
+                        Description = "Server acknowledgment, present only when the request "
+                            + "declares this exact supported contract. Absence is not compatibility.",
+                        Schema = new OpenApiSchema
+                        {
+                            Type = JsonSchemaType.String,
+                            Pattern = CounterpartyClientContract.VersionPattern,
+                        },
+                    };
+            }
             concreteResponse.Headers[CorrelationHeaderName] = CorrelationHeader(
                 "Server-resolved correlation identifier.");
             if (hasNumericStatusCode
