@@ -542,13 +542,16 @@ describe('C-01 filter contract (Codex/ChatGPT #147 P1-4)', () => {
     const { calls } = installFetch()
     renderAt('/cari')
     await screen.findByRole('row', { name: /C-0001/ })
+    // The legacy markers live one fold in now (ILK_DILIM §4.1) — reach them the
+    // way a user does.
+    await userEvent.click(screen.getByText('Geçmiş sınıflandırma'))
 
     // One role: `any` and `all` are the same query, so no control is offered.
     await userEvent.click(screen.getByRole('checkbox', { name: 'Müşteri' }))
-    expect(screen.queryByLabelText('Rol eşleşmesi')).toBeNull()
+    expect(screen.queryByLabelText('İşaret eşleşmesi')).toBeNull()
 
     await userEvent.click(screen.getByRole('checkbox', { name: 'Tedarikçi' }))
-    await userEvent.selectOptions(screen.getByLabelText('Rol eşleşmesi'), 'all')
+    await userEvent.selectOptions(screen.getByLabelText('İşaret eşleşmesi'), 'all')
 
     await waitFor(() =>
       expect(
@@ -1163,13 +1166,16 @@ describe('C-01 what narrowed the list, and the way out (UX-CARI-001 #2)', () => 
     await screen.findByRole('row', { name: /C-0001/ })
 
     await userEvent.type(screen.getByRole('searchbox'), 'alfa')
+    await userEvent.click(screen.getByText('Geçmiş sınıflandırma'))
     await userEvent.click(screen.getByRole('checkbox', { name: 'Müşteri' }))
     await userEvent.selectOptions(screen.getByLabelText('Taraf durumu'), 'inactive')
 
     const summary = await screen.findByText(/Etkin filtreler/i)
     const row = summary.parentElement as HTMLElement
     expect(within(row).getByText('Arama: “alfa”')).toBeTruthy()
-    expect(within(row).getByText('Rol: Müşteri')).toBeTruthy()
+    // Named as history: the chip is often the only place the applied role filter
+    // is visible at all.
+    expect(within(row).getByText('Geçmiş rol: Müşteri')).toBeTruthy()
     expect(within(row).getByText('Taraf durumu: Pasif')).toBeTruthy()
     // The account-state filter is untouched, so naming it would make the default
     // look like something the user chose.
@@ -1271,5 +1277,113 @@ describe('C-01 what narrowed the list, and the way out (UX-CARI-001 #2)', () => 
 
     release()
     await waitFor(() => expect(screen.getByRole('row', { name: /C-0001/ })).toBeTruthy())
+  })
+})
+
+describe('C-01 the role filter is a LEGACY surface (ILK_DILIM §4.1, §7)', () => {
+  /** The C-03 shape: `version` is an opaque decimal STRING here, unlike the list. */
+  function detailBody() {
+    return {
+      id: PARTY_1,
+      code: 'C-0001',
+      kind: 1,
+      legalName: 'Alfa Metal Ltd. Şti.',
+      tradeName: 'Alfa',
+      isActive: true,
+      version: '1',
+      companyAccounts: [
+        { id: ACC_1, companyId: A_ID, roles: PARTY_ROLE_FLAG.Customer, isActive: true, version: '1' },
+      ],
+    }
+  }
+
+  /**
+   * Addressed through its own summary. `<details>` has no stable mapped role across
+   * the versions in play, and guessing one would make this suite assert about the
+   * accessibility mapping rather than about the behaviour it is here to pin.
+   */
+  function legacyBlock() {
+    return screen.getByText('Geçmiş sınıflandırma').closest('details') as HTMLDetailsElement
+  }
+
+  it('is collapsed by default, so it is not offered as the way to find a counterparty', async () => {
+    installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    // The decision removed the mandatory commercial role. A role filter sitting in
+    // the first row of controls, equal to search, teaches the operator that the
+    // classification is still how you find a customer — the exact precondition
+    // that was removed.
+    expect(legacyBlock().open).toBe(false)
+  })
+
+  it('says the markers are historical rather than the current work direction', async () => {
+    installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    await userEvent.click(screen.getByText('Geçmiş sınıflandırma'))
+    expect(legacyBlock().open).toBe(true)
+    expect(within(legacyBlock()).getByText(/eski kayıtlardan gelir/i)).toBeTruthy()
+    // And it warns about the one effect that is easy to miss: an applied role
+    // filter drops every record that carries no classification at all.
+    expect(within(legacyBlock()).getByText(/ticari rolü olmayan cariler/i)).toBeTruthy()
+  })
+
+  it('names an applied role filter as a PAST classification in the summary', async () => {
+    installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    await userEvent.click(screen.getByText('Geçmiş sınıflandırma'))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Müşteri' }))
+
+    const summary = await screen.findByText(/Etkin filtreler/i)
+    expect(within(summary.parentElement as HTMLElement).getByText('Geçmiş rol: Müşteri')).toBeTruthy()
+  })
+
+  it('re-opens itself when a restored view carries a role filter', async () => {
+    installFetch({
+      counterparties: (url) => (url.includes(PARTY_1) ? json(detailBody()) : json(page())),
+    })
+    const router = renderRouterAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    await userEvent.click(screen.getByText('Geçmiş sınıflandırma'))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Müşteri' }))
+
+    await userEvent.click(
+      within(await screen.findByRole('row', { name: /C-0001/ })).getByRole('link'),
+    )
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/cari/${PARTY_1}`))
+    await act(async () => {
+      await router.navigate(-1)
+    })
+    await screen.findByRole('searchbox', undefined, { timeout: 5000 })
+
+    // A filter that is APPLIED but folded away is the §4.1 failure exactly: the
+    // list looks like every counterparty while it is silently missing the ones
+    // that carry no classification. Restoring the query has to restore its
+    // visibility with it.
+    expect(legacyBlock().open).toBe(true)
+    expect((screen.getByRole('checkbox', { name: 'Müşteri' }) as HTMLInputElement).checked).toBe(
+      true,
+    )
+  })
+
+  it('is collapsed again after the filters are cleared', async () => {
+    installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    await userEvent.click(screen.getByText('Geçmiş sınıflandırma'))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Müşteri' }))
+    await userEvent.click(screen.getByRole('button', { name: /Filtreleri temizle/i }))
+
+    expect((screen.getByRole('checkbox', { name: 'Müşteri' }) as HTMLInputElement).checked).toBe(
+      false,
+    )
+    expect(legacyBlock().open).toBe(false)
   })
 })
