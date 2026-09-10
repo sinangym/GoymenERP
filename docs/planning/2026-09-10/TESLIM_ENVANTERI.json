@@ -1,0 +1,424 @@
+{
+  "version": "1.0",
+  "status": "PROPOSAL_NOT_EXECUTION_AUTHORITY",
+  "base_sha": "9f5b9bfdef249b9c8e89c6668f66b6aa55c34602",
+  "notes": [
+    "10 Eylül 2026 teknik hazırlık envanteridir. Son kullanıcı kararları tarihli kararlar, KARAR_SICILI, Master, feature spec ve donör kaynaklardan üstündür. Bu dosya kanonik DELIVERY_BACKLOG_v1.json veya task_manifest.json yerine geçmez; onların durumunu, çalışma sırasını veya fiziksel giriş kapılarını değiştirmez.",
+    "PKG kimlikleri yalnız bu envantere aittir; yeni kanonik görev, OPEN veya AT kimliği değildir. depends_on önerilen teslim bağımlılığıdır; yürütülebilir backlog, production aktivasyonu, merge veya lane dışı yazma yetkisi değildir. Bir paket kendi içinde tam-zamanında daha küçük dikey dilimlere bölünebilir.",
+    "owners tasarım/backend/frontend iş bölümünü gösterir: ChatGPT iş sözleşmesi ve kabul/golden, Codex backend/SQL/OpenAPI/calculator, Claude arayüz/generated-client/browser. Merge ve nihai kabul mevcut ayrı koordinatör/insan kapılarında kalır.",
+    "38 hedef teslim paketi ve 2 DEFERRED kapsam grubu vardır. Bu sayı ile tarihsel 159 ekran veya 70 kabul senaryosu başarı yüzdesi oluşturulmaz. Kabul, normal yetkili kullanıcının çalışan ekrandan gerçek kayıt ve hata akışını tamamlamasıyla ölçülür.",
+    "EXISTING_CANDIDATE_RECONCILE tamamlanmış demek değildir. Ana dalda platform ve dar Cari temeli vardır; normal Cari yetenek bildirimi ve bütün route etkinliği ayrıca doğrulanacaktır. V5/V6 incelemesindeki PR #227/#228 adayları merged veya kullanıcı kabulü verilmiş sayılmaz; güncel exact-head inceleme olmadan yeniden yazma ya da üzerine bağımlılık kurma önerilmez.",
+    "Kanonik manifestte ERP-000A..E done, F/G/H/I ready, J/K/L/M/N/O blocked görünür. F ayrıca SPEC_ONLY fiziksel sözleşme kapısını taşır. Manifest ready durumunun veya mevcut PoC'nin bütün işlev için done/accepted olduğu varsayılmaz. Kanonik kapılar bu öneri DAG'ından bağımsız olarak korunur.",
+    "SPEC_REQUIRED iş sözleşmesi ve kabul eşlemesi gerekir demektir. INPUT_GATED yalnız ilgili gerçek değer, erişim veya saha kanıtıyla etkinleşecek etkiyi sınırlar; tüm ERP hazırlığını bloke etmez. DEFERRED bu teslim hedefinin aktif tamamlanma paydasına girmez.",
+    "acceptance_refs mevcut AT veya gerçek kaynak dosya referanslarıdır; geçilmiş test iddiası değildir. Eski AT-010 zorunlu cari rolü/ayrı hesap, AT-035/AT-051 kalite kapısı, AT-004 genel self-approval yorumu ve AT-067 kör gönderimle çelişebilecek dosya indirme beklentisi son kararlara göre yeniden eşlenmelidir; eski metinler sırf sayıyı tamamlamak için çalıştırılıp kabul sayılamaz.",
+    "open_refs yalnız kanonik kaydın halen gerçek değer, teknik temsil, erişim veya etkinleştirme gerektiren alt kapsamına işarettir. Son kullanıcıyla kapanmış parçalar yeniden sorulmaz. OPEN-002/003/006 aktif açık olarak taşınmaz; OPEN-016'nın eski bütün entegrasyon ertelemesi seçilmiş Mikro/TTSG hedefini engelleyen güncel karar sayılmaz.",
+    "Son kapanan tercihler: F01-A eksik son teslim kalanı yetkili gerekçeli kapatana kadar açık; KUL-01-B hareketli sayım; KUL-02-B merkezi ERP erişilemezken yeni ERP-onaylı fiziksel başlangıç/sevk bekler. Sadece internet veya AI/Mikro erişim kaybı merkezi ERP kaybıyla aynı değildir. KUL kimlikleri rapor içidir, OPEN değildir.",
+    "Q01/Q02 başlangıçta B'dir; ileri aşama bilinçli sürümlü aktivasyonla açılır. İleri Q01 müşteri kaşeli yazısı ister, sözlü teyit yetmez. Yetkili sipariş oluşturucu kendi siparişini ilgili şirket/işlem kapsamında onaylayabilir; kritik AccessGrant ve diğer görev ayrılığı kuralları bundan muaf değildir.",
+    "Bütün etkin yazmalarda backend CompanyId/yetki, expected version, idempotency, audit ve correlation; dış etkilerde outbox/inbox; bir fiziksel/ticari/finansal olayın tek kaydı korunur. Ortak Party kimliği, kayıt başına tek hukuki şirket ve mal sahibi ayrı eksenlerdir.",
+    "Kalite sınıfı/kusur metadata'sı kullanılabilirlik kapısı değildir. Talep ilgisi stok ayırmaz. İngilizce export invoice yalnız proformadır; finans/stock/e-belge olayı yaratmaz. Müşteri malı kendiliğinden şirket malı olmaz.",
+    "Eski veri aktarımı bu tur kapsam dışıdır; yeni sistemin günlük Excel master bakımı, yeni kayıt üretmesi, yıllık çalışma ve yalnız seçili şirketi temiz ortamda geri yüklemesi kapsamda kalır. Geçmiş migrasyon kararı kalıcı iptal edilmez.",
+    "13.4 uzlaştırma yönleri kabul edilmiştir; 13.5 gerçek değerler ilgili işlevin etkin kabulünden önce toplanır. Sayısal tolerans, rol/tutar matrisi, saklama süresi, RPO/RTO ve üretim formülü burada tahmin edilmez. Piyasa verisi/fiyat karşılaştırması veya çerçeve sözleşme bu envanterle yeni politika/kapsam onayı kazanmaz."
+  ],
+  "packages": [
+    {
+      "id": "PKG-01", "title": "Güvenilir komut, olay ve SQL temeli",
+      "outcome": "Kullanıcı kaydı bir kez oluşur; tekrar, eşzamanlılık ve yarım dış iş görünür biçimde yönetilir.",
+      "owners": ["Codex", "ChatGPT"],
+      "existing_slices": ["W0-OUTBOX", "W0-SQLPOC", "W0-CICD"], "depends_on": [],
+      "scope": ["Mevcut Organization/Identity/Audit/Idempotency temelini yeniden yazmadan değerlendirme", "Outbox/inbox, sürümlü API, expected version, transaction sınırı ve modül sahipliği", "Gerçek SQL constraint/concurrency, migration sırası/geri dönüş, OpenAPI contract drift ve yayın kanıtı; mevcut manifest kapıları korunur"],
+      "acceptance_refs": ["AT-001", "AT-003", "AT-005", "AT-007"],
+      "open_refs": ["OPEN-014", "OPEN-015", "OPEN-017"], "readiness": "EXISTING_CANDIDATE_RECONCILE",
+      "evidence_required": ["Exact-head mevcut kod/CI ve eksik davranış ayrımı", "Commit sonrası kesinti, tekrar teslim ve eşzamanlı command gerçek SQL testleri", "Kritik etkide tek kayıt ve çapraz şirket negatif testleri"]
+    },
+    {
+      "id": "PKG-02", "title": "Çalışan kabuk, arama ve iş bildirimleri",
+      "outcome": "Kullanıcı yetkili şirketinde doğru sayfayı açar, kayda iner ve hata/boş/çakışma durumunda işini kaybetmez.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W0-SHELL", "W0-SEARCH"], "depends_on": ["PKG-01"],
+      "scope": ["Mevcut shell/router/capability mount ve adayların uzlaştırılması; sahte çalışan menü yok", "Tek şirket yazma, açık yetkili çok şirket okuma, şirket değişiminde form/cache/stale-response sınırı", "Global arama, görev/bildirim kaynak bağlantısı, klavye/tablet/barkod akışı ve form durumu koruma"],
+      "acceptance_refs": ["AT-001", "AT-002", "AT-006", "AT-008", "AT-069"],
+      "open_refs": ["OPEN-015"], "readiness": "EXISTING_CANDIDATE_RECONCILE",
+      "evidence_required": ["Gerçek endpoint ile yetenek bildirimi ve route açılışı", "Browser/a11y şirket değişimi, yetkisiz arama/sayı ve stale yanıt testleri", "Ölçülmüş arama yükü; temsilî sayıların gerçek veri diye sunulmaması"]
+    },
+    {
+      "id": "PKG-03", "title": "Şirket, tesis, depo ve iş merkezi Ayarları",
+      "outcome": "Yetkili kişi organizasyonu normal ekranlardan kurar ve geçmiş kayıtları bozmadan yönetir.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W1-ORG", "W1-SETTINGS"], "depends_on": ["PKG-01", "PKG-02"],
+      "scope": ["Şirket/tesis/depo/lokasyon/iş merkezi yaşam döngüsü, iç ve dış gözetim/işleten bağları", "Kendi şirket VKN düzeltmesinde hazırlayan dışında başka yetkili tek onay; gerçek VKN grup benzersizliği", "Başlangıç dosyasına bağımlı olmayan yönetim; eski belge şirket bilgisi snapshot'ı korunur"],
+      "acceptance_refs": ["AT-001", "AT-003", "AT-005", "AT-008"],
+      "open_refs": ["OPEN-001", "OPEN-030"], "readiness": "EXISTING_CANDIDATE_RECONCILE",
+      "evidence_required": ["Gerçek SQL kimlik/benzersizlik ve pasiflik testleri", "GDC/GSP mevcut verisi ile GIN eksik kimlik ayrımı; yeni gerçek değer uydurmama", "VKN değişimi, çakışma ve tarihsel belge korunması browser kabulü"]
+    },
+    {
+      "id": "PKG-04", "title": "Merkezi kullanıcı, yetki ve onay yönetimi",
+      "outcome": "Merkezi yöneticiler sayfa, işlem, onay ve fiyat/tutar görünürlüğünü güvenli biçimde yönetir.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W1-YETKI"], "depends_on": ["PKG-01", "PKG-02", "PKG-03"],
+      "scope": ["Kişisel ERP aktörü, şirket/veri kapsamı, vekâlet ve yetki iptali; ortak portal hesabı ayrı kavram", "Normal sipariş hazırlayan için yetkili onay; ilgili sipariş onay yetkili oluşturucunun self-approval'ı", "Kritik AccessGrant maker-checker korunur; UI/API/export/arama/eski sürüm alan yetkisi; AI taslağı PKG-34 ile bağlanır"],
+      "acceptance_refs": ["AT-001", "AT-003", "AT-004", "AT-008", "AT-068"],
+      "open_refs": ["OPEN-013"], "readiness": "EXISTING_CANDIDATE_RECONCILE",
+      "evidence_required": ["Kritik AccessGrant ile normal sipariş onayını ayıran pozitif/negatif test", "İzin iptali, bekleyen komut ve fiyat yan kanal testleri", "Gerçek kullanıcı matrisi ve production giriş/MFA kabulü; mevcut kimlik iskeleti tam Ayarlar ekranı sayılmaz"]
+    },
+    {
+      "id": "PKG-05", "title": "Sürümlü politika ve deterministik hesap sözleşmesi",
+      "outcome": "Ayar değişikliği geçmişi değiştirmez; ekran, belge ve rapor aynı backend sonucunu kullanır.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W1-SETTINGS"], "depends_on": ["PKG-03", "PKG-04"],
+      "scope": ["Şirket kapsamlı sürüm, yürürlük, onaylı override ve kullanılan değer snapshot'ı", "Miktar/para/birim/kur/tarih/yuvarlama semantiği ve tek calculator", "Eksik işletme değerinde ilgili etki kapalı; ilk aşama finans hard-gate ve ileri Q01/Q02 aktivasyonu tahmin edilmez"],
+      "acceptance_refs": ["AT-003", "AT-016", "AT-049", "AT-061", "AT-062"],
+      "open_refs": ["OPEN-004", "OPEN-005", "OPEN-007", "OPEN-009", "OPEN-010", "OPEN-012"], "readiness": "INPUT_GATED",
+      "evidence_required": ["Sürüm/override yetkisi ve geçmiş snapshot testleri", "Saha golden girdileri; eski yüzde veya sayıları nihai onay diye kullanmama", "Aynı girdinin UI/API/PDF/raporda aynı birim ve sonucu üretmesi"]
+    },
+    {
+      "id": "PKG-06", "title": "Tek cari kimliği ve şirket hesabı",
+      "outcome": "Aynı tarafla mal/hizmet alış ve satış zorunlu ticari rol seçmeden yapılabilir.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W1-CARI"], "depends_on": ["PKG-02", "PKG-03", "PKG-04"],
+      "scope": ["Grup tek Party ve şirket başına CompanyPartyAccount; hukuki tip ile ticari yön ve kullanıcı rolü ayrı", "Liste/oluştur/detail/link adayları korunur; zorunlu PartyRole domain/SQL/client kuralı birlikte uzlaştırılır", "Adres/kişi/banka/vergi/sicil, mükerrer inceleme/birleştirme, pasiflik ve kritik cari değişikliği onayı", "Ayrı takip alt dilimi: ilk yetkili iş komutunda gereken şirket hesabını atomik/idempotent oluşturma hedefi; GET sıfır yazma, pasif hesabı sessiz açmama ve mevcut izinleri genişletmeme. Dar rol kaldırma diliminde bitmiş sayılmaz; ilk sipariş tüketicisiyle ayrı sözleşme kabulü gerekir"],
+      "acceptance_refs": ["AT-009", "AT-011", "AT-012", "AT-013", "AT-014"],
+      "open_refs": [], "readiness": "EXISTING_CANDIDATE_RECONCILE",
+      "evidence_required": ["PR #227/#228 güncel durum/exact-head ve mevcut main farkı; merged varsayılmaması", "Zorunlu rolün yalnız UI'dan gizlenmediğini kanıtlayan SQL/API/client testi", "Şirket hesabı, kimlik, pasiflik ve belge bağlarının gerçek ekran yolculuğu", "İlk iş hesabı ayrı alt diliminde iki eşzamanlı komutta tek hesap, başarısız işte yarım ilişki olmaması, GET sıfır yazma ve pasif/izin sınırı testleri"]
+    },
+    {
+      "id": "PKG-07", "title": "Ürün ve hizmet kartları",
+      "outcome": "Ürün ailesine uygun nitelikler tek kartta tutulur; hizmet satırı hayalî fiziksel stok üretmez.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W1-URUN"], "depends_on": ["PKG-03", "PKG-04"],
+      "scope": ["Ürün UUID/kod/alias ve aileye bağlı nitelik şablonları", "Tek ürün çok ticari kullanım; hammadde/ara mamul/mamul ve hizmet fiziksel etkisinin ayrımı", "Arama, oluşturma, düzenleme, pasifleştirme ve geçmiş kayıtta doğru ürün sürümü"],
+      "acceptance_refs": ["AT-015", "AT-003", "AT-005"],
+      "open_refs": [], "readiness": "SPEC_REQUIRED",
+      "evidence_required": ["Ürün ailesi, hizmet ve kod çakışması gerçek SQL testi", "Aileye uygun form/boş/hata/validasyon browser kabulü", "Geçmiş sipariş ve fiziksel stok bağını koruyan değişiklik testi"]
+    },
+    {
+      "id": "PKG-08", "title": "Birim, paket standardı ve miktar dönüşümleri",
+      "outcome": "Kg/adet/metre/paket ile fiyat birimi birbirine karıştırılmadan çalışır.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W1-URUN", "W1-SETTINGS"], "depends_on": ["PKG-05", "PKG-07"],
+      "scope": ["Birim registry, sürümlü ürün bazlı dönüşüm ve paket standardı", "Teorik, fiilî, beyan ve dağıtılmış miktar kaynağını ayrı saklama", "Paket standardı değişince eski sipariş/paketin miktarı değişmez"],
+      "acceptance_refs": ["AT-016", "AT-017", "AT-049"],
+      "open_refs": ["OPEN-007"], "readiness": "INPUT_GATED",
+      "evidence_required": ["Boy/adet/kg/paket dönüşümü ve yuvarlama golden örnekleri", "Geçmiş standardın yeniden hesaplanmadığı sürüm testi", "Ölçülmüş ve dağıtılmış kg'nin aynı etiketle gösterilmediği UI testi"]
+    },
+    {
+      "id": "PKG-09", "title": "Fiyat koşulları ve değişiklik simülasyonu",
+      "outcome": "Yetkili kullanıcı ürün/cari/şirket fiyatını geçerlilik ve miktar kademesiyle yönetir.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W1-URUN", "W2-SATIS"], "depends_on": ["PKG-05", "PKG-06", "PKG-07", "PKG-08"],
+      "scope": ["Para, fiyat birimi, vergi, geçerlilik, kademe, iskonto ve yetkili alt fiyat politikası", "Toplu fiyat değişikliğinin önce simülasyonu, sonra onayı ve sürümlü yayını", "Eksik maliyetten kesin marj/kârlılık üretilmez; piyasa gözlemi fiziksel stok veya otomatik güvenilir fiyat sayılmaz"],
+      "acceptance_refs": ["AT-018", "AT-021", "AT-003"],
+      "open_refs": [], "readiness": "SPEC_REQUIRED",
+      "evidence_required": ["Fiyat birimi/para/geçerlilik çakışması calculator testleri", "Yetkisiz fiyat ve geçmiş sürüm sızıntısı negatif testleri", "Simülasyonun kalıcı fiyat değiştirmediği ve onaylı sürümün siparişte snapshot olduğu kabul"]
+    },
+    {
+      "id": "PKG-10", "title": "Günlük Excel master bakımı ve kontrollü toplu işlemler",
+      "outcome": "Kullanıcı ürün/fiyat gibi izinli günlük toplu veriyi eşleme ve önizlemeyle işler.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W1-URUN"], "depends_on": ["PKG-06", "PKG-07", "PKG-08", "PKG-09"],
+      "scope": ["Dosya/kolon eşleme, satır validasyonu, fark önizlemesi, onay ve sonuç raporu", "Dosya tekrarında dedup; aynı işin tekrar gönderiminde ikinci kayıt yok", "Bu paket tarihsel StokERP veri taşıması değildir; izinli günlük master bakımını kapsar"],
+      "acceptance_refs": ["AT-019", "AT-020", "AT-005"],
+      "open_refs": [], "readiness": "SPEC_REQUIRED",
+      "evidence_required": ["Hatalı satır/çakışan kod/tekrar dosya testleri", "Kısmi hata sonucunun ve yeniden denenecek payın açık raporu", "Yetkisiz şirket/fiyat kolonunun yazılamadığı browser ve SQL kabulü"]
+    },
+    {
+      "id": "PKG-11", "title": "Aynı çalışma alanında Talep ve satış siparişi",
+      "outcome": "Talep normal siparişte aşama olarak izlenir; kesin sipariş ve onay ayrı görünür.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W2-SATIS"], "depends_on": ["PKG-04", "PKG-06", "PKG-08", "PKG-09"],
+      "scope": ["Ayrı önsipariş ekranı yok; başlık/satır, termin dilimi, vade ve ticari koşullar", "Q01 başlangıçta iç onay yeterli; müşteri teyidi ayrı eksen, ileri kaşeli yazı kuralı henüz etkin değil", "Talep ilgisi renk/sütunla görünür, stok tahsisi veya kesin işi bloke eden hak değildir"],
+      "acceptance_refs": ["AT-021", "AT-022", "AT-024", "AT-025"],
+      "open_refs": [], "readiness": "SPEC_REQUIRED",
+      "evidence_required": ["Talep oluşturma/dönüştürme sırasında otomatik tahsis veya fiziksel hareket oluşmaması", "Oluşturma/onay yetkisi farklı ve aynı yetkili aktör örnekleri", "Fiyat/para/termin ve kısmi sipariş ekranı gerçek kayıt kabulü"]
+    },
+    {
+      "id": "PKG-12", "title": "Satın alma talebi ve sipariş",
+      "outcome": "İhtiyaç, teklif ve alış siparişi beklenen teslim ile gerçek mal kabulünden ayrılır.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W2-SATINALMA"], "depends_on": ["PKG-04", "PKG-06", "PKG-08", "PKG-09"],
+      "scope": ["İhtiyaç havuzu, karşılaştırma, alış siparişi ve termin/miktar dilimleri", "Alış siparişi kalanı gelecek arz olarak görünür; mal kabul öncesi fiziksel/serbest stok değildir", "Tedarikçi farkları ve kısmi kabul kaynak bağıyla; bağımsız fatura için sahte sipariş zorunluluğu yok"],
+      "acceptance_refs": ["AT-025", "AT-026", "AT-027", "AT-064"],
+      "open_refs": [], "readiness": "SPEC_REQUIRED",
+      "evidence_required": ["Beklenen 10 ton/fiilî 6 ton kabul ayrı miktar örneği", "Tekliften onaylı siparişe doğru şirket/para/birim yolculuğu", "Siparişsiz fatura yolunun bu sipariş doğrulamasına hapsedilmediği contract testi"]
+    },
+    {
+      "id": "PKG-13", "title": "İki yönlü fason ve hizmet siparişi",
+      "outcome": "Hizmet satışı ve hizmet alışı sahiplik, fiziksel gidiş/dönüş ve bedel açısından izlenir.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W2-SATIS", "W2-SATINALMA", "W2-IRSALIYE", "W3-STOK"], "depends_on": ["PKG-11", "PKG-12", "PKG-05"],
+      "scope": ["Hizmet satışı: müşteri malı giriş/işleme/çıkış; hizmet alışı: ilgili malın dış fasona çıkış/işleme/dönüşü", "Her siparişe özgü girdi/işlenen/çıktı bedel bazı; Q03 teslim/sevk oldukça ilgili hizmet payı faturaya uygun", "Müşteri malında dış işleme açık izin; gidiş/geliş irsaliyesi başlık+satır ve miktarlı çoktan çoğa kaynak bağları", "Kendi hurdamız kendi stok; müşteri hurdası açık sözleşme yoksa müşteri mülkiyetinde iade; fiziksel kayıp ayrı"],
+      "acceptance_refs": ["AT-029", "AT-030", "AT-031", "AT-028"],
+      "open_refs": [], "readiness": "SPEC_REQUIRED",
+      "evidence_required": ["Hizmet alış ve satışının iki bağımsız gerçek SQL/browser örneği", "8 ton işlenen/5 ton teslimde yalnız teslim ilişkili ücret payı", "Doğrudan dış teslim, kısmi dönüş, scrap ve ücret bazında çifte stok/fatura etkisi olmaması"]
+    },
+    {
+      "id": "PKG-14", "title": "Sipariş revizyonu, iade amacı ve gerekçeli kalan kapama",
+      "outcome": "Kullanıcı geçmişi silmeden revize eder; iade amacı ve F01-A kapanışı doğru kalan üretir.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W2-SATIS", "W2-SATINALMA", "W2-IRSALIYE"], "depends_on": ["PKG-11", "PKG-12", "PKG-13", "PKG-26", "PKG-29"],
+      "scope": ["Q02 başlangıçta eski onaylı sürümle devam; yeni onayda aradaki gerçekleşmeler uzlaştırılır", "İleri aşamada yalnız etkilenen gelecek işi bekletme; hafif termin/iç not kuralı ve eski sürümler korunur", "Q04 iade amacı/pay seçimi; Q05 ihtilaflı faturada yetkili vaka kararı", "F01-A: eksik kalan açık, yalnız yetkili gerekçeli kapama; bağlı tahsis/plan/tedarik etkileri önizlenir, gerçek miktar/finans değişmez"],
+      "acceptance_refs": ["AT-007", "AT-023", "AT-024", "AT-027", "AT-028"],
+      "open_refs": [], "readiness": "SPEC_REQUIRED",
+      "evidence_required": ["7 ton revizyon taslağı beklerken eski sürümle 8 ton gerçekleşme çakışması", "Kısmi ikame/kısmi bedel düzeltme, eski yıl kaynağına bugünkü iade", "10 ton sipariş/9,9 ton teslim/0,1 ton yetkili kapama; tekrar ve eşzamanlı sevkte tek etki"]
+    },
+    {
+      "id": "PKG-15", "title": "Tek fiziksel stok ve gelecek arz görünümü",
+      "outcome": "Stok satırı sahibini, konumunu, sorumluluğunu ve gerçek kullanılabilir payını açıklar.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W3-STOK"], "depends_on": ["PKG-01", "PKG-03", "PKG-08"],
+      "scope": ["Sahiplik/gözetim/konum/ticari bağ ayrı ve dinamik; bağımsız hareket izinli yolunda yapay sipariş yok", "Fiziksel, yolda, alış ve beklenen üretim kaynak türleri ayrı; hayalî fiziksel stok yok", "Kaynak kayda inen hareket zaman çizgisi; ölçülen/beyan/dağıtılmış miktar ve sebep izleri"],
+      "acceptance_refs": ["AT-029", "AT-030", "AT-031", "AT-040", "AT-063", "AT-064"],
+      "open_refs": [], "readiness": "SPEC_REQUIRED",
+      "evidence_required": ["Sahiplik ve negatif/mükerrer hareket gerçek SQL testleri", "Stok satırından tahsis/üretim/yükleme doğru bağlamla açılması", "Gelecek arz görünümünün fiziksel toplama karışmadığı kabul"]
+    },
+    {
+      "id": "PKG-16", "title": "Etiket, soy ağacı ve kalite/kusur metadata'sı",
+      "outcome": "Her fiziksel paket benzersizdir; bölme/birleştirme ve kısmi kusur geçmişi izlenir.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W3-ETIKET", "W3-KALITE"], "depends_on": ["PKG-15", "PKG-08"],
+      "scope": ["Fiziksel bölme/birleştirmede yeni kimlik ve miktarlı genealogy; yeniden basım yeni stok değildir", "Teknik kalite ile ticari sınıf standard/ikinci kalite ve kırıklı/dalgalı/çapak gibi çoklu kusur ayrımı; uçbaş/kullanılabilir artık ayrı çıktı türüdür, otomatik kusur veya hurda değildir", "Kusur yalnız etkilenen alt miktara; farklı sahipli fiziksel paketler ayrı; izinli teknik karışım sahiplik karışımı değildir", "Kalite bilgisi zorunlu kullanılabilirlik/serbest bırakma kapısı veya ileri CAPA modülü olmaz"],
+      "acceptance_refs": ["AT-038", "AT-039", "AT-050"],
+      "open_refs": [], "readiness": "SPEC_REQUIRED",
+      "evidence_required": ["10 tonun 6+4 bölünmesi, uygun aynı sahipli birleşme ve tekrar basım", "Kısmi kusurun bütün lota yayılmaması ve eski etiket ilişkisi", "Farklı mal sahibi birleştirme yasağı; eski AT-051 kalite kapısını geri getirmeyen kabul"]
+    },
+    {
+      "id": "PKG-17", "title": "Kesin tahsis, yükleme tutma ve bağlayıcı olmayan Talep ilgisi",
+      "outcome": "Kesin iş kaynak alabilir; aynı miktar iki kez ayrılmaz ve Talep ilgisi serbest miktarı azaltmaz.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W3-TAHSIS"], "depends_on": ["PKG-11", "PKG-12", "PKG-15", "PKG-16"],
+      "scope": ["Fiziksel/gelecek kaynaklara miktarlı çoktan çoğa tahsis; atomik sınır ve kısmi öneri", "Talep ilgisi hard reserve değil; siparişe dönüşte kendiliğinden stok hakkı yaratmaz", "Satış tahsisi, üretim tahsisi ve yükleme tutma geçişinde aynı pay serbest miktardan iki kez düşmez", "Süre dolunca sessiz serbest bırakma yok; gerekçe, sürüm ve yetkiyle revizyon"],
+      "acceptance_refs": ["AT-032", "AT-033", "AT-034", "AT-036", "AT-040"],
+      "open_refs": [], "readiness": "SPEC_REQUIRED",
+      "evidence_required": ["10 fiziksel/4 kesin/8 Talep ilgisi: 6 serbest; yeni 5 kesin sonrası 1 serbest", "İki kullanıcı aynı payı ayırırken gerçek SQL yarış testi", "Tahsis→yükleme tutma ve iptal/serbest bırakma projeksiyon testleri"]
+    },
+    {
+      "id": "PKG-18", "title": "Hareketli sayım ve stok farkı düzeltmesi",
+      "outcome": "Sayım sürerken hareket devam eder; sayım anıyla hareketler uzlaşır ve sahte fark oluşmaz.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W3-STOK"], "depends_on": ["PKG-15", "PKG-16", "PKG-04"],
+      "scope": ["KUL-01-B: sayım hareketleri durdurmaz; kapsam, gözlem zamanı ve aradaki hareket kaynakları kayıtlı", "Sebep/yetki/onaylı fark; aynı fiziksel çıkış hem sevk hem sayım eksiği olamaz", "Müşteri malı farkı başka sahipten düşülmez; eski hareket silinmez"],
+      "acceptance_refs": ["AT-037", "AT-029", "AT-007"],
+      "open_refs": [], "readiness": "SPEC_REQUIRED",
+      "evidence_required": ["10 ton kayıt, sayım sırasında 2 ton sevk, 8 ton gözlem: ek 2 ton fark oluşmaması", "Tekrar sayım/iki sayımcı/sonradan gelen hareket uzlaştırma testleri", "Kısmi alan/paket, müşteri malı ve onay öncesi yeni hareket browser kabulü"]
+    },
+    {
+      "id": "PKG-19", "title": "Ortak üretim planı ve kısmi gerçekleşme kabuğu",
+      "outcome": "Planlayıcı beklenen çıktıyla önceden plan kurar; operatör gerçek payı bir kez tüketip üretir.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W3-URETIM"], "depends_on": ["PKG-05", "PKG-15", "PKG-16", "PKG-17"],
+      "scope": ["Plan/takvim/kuyruk, kaynak, expected output, actual output ve kullanılan formül snapshot'ı", "Düğmesiz deterministik önizleme; eksik girdide eski sonuç güncel görünmez", "İyi/ikinci sınıf kullanılabilir çıktı, fiziksel artık/hurda, kayıp ve devam eden iş ayrı", "Asgari parti ve kalite serbest bırakma kapısı yok; gerçek tüketim mevcut kaynağı aşamaz"],
+      "acceptance_refs": ["AT-041", "AT-042", "AT-048", "AT-049", "AT-052", "AT-061", "AT-062"],
+      "open_refs": ["OPEN-005", "OPEN-007"], "readiness": "SPEC_REQUIRED",
+      "evidence_required": ["Ön planlama ile fiilî başlama kaynak şartının ayrıldığı test", "Kısmi duruş/devamda eski girdi tekrar tüketilmez; WIP dengesi", "Formül değişimi ve gerçekleşme düzeltmesinin geçmişi koruması"]
+    },
+    {
+      "id": "PKG-20", "title": "Dilme motoru",
+      "outcome": "Operatör bobin/dilme planını hesaplar ve dilinmiş çıktıları etiketleriyle gerçekleştirir.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W3-URETIM"], "depends_on": ["PKG-19", "PKG-08"],
+      "scope": ["Genişlik kombinasyonu, kenar fire, boy/kg ve gerçek çıktı payları", "Kısmi bobin/çoklu kaynak, sahiplik ve genealogy", "Hat formül/tolerans değerleri saha golden verisiyle; donör sabitini kör kopyalama yok"],
+      "acceptance_refs": ["AT-044", "AT-042", "AT-050", "AT-061", "AT-062"],
+      "open_refs": ["OPEN-005", "OPEN-007"], "readiness": "INPUT_GATED",
+      "evidence_required": ["Dilme kombinasyonu ve fire golden seti", "Normal/kısmi/iptal-düzeltme SQL ve browser kanıtı", "Çıktı etiketi ile kaynak bobin ve gerçek kütle uzlaştırması"]
+    },
+    {
+      "id": "PKG-21", "title": "Soğuk hadde motoru",
+      "outcome": "Hadde giriş/çıkış ve proses kaybı gerçek ölçü ve sürümlü hesapla izlenir.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W3-URETIM"], "depends_on": ["PKG-19", "PKG-08"],
+      "scope": ["Haddeye uygun kalınlık/en/uzunluk/kg dönüşümü ve hat ayarları", "Kısmi çalışma, duruş/devam ve fiziksel çıktı–kayıp ayrımı", "Mülkiyet, kaynak ve formül sürümü korunur"],
+      "acceptance_refs": ["AT-047", "AT-042", "AT-049", "AT-050"],
+      "open_refs": ["OPEN-005", "OPEN-007"], "readiness": "INPUT_GATED",
+      "evidence_required": ["Hadde dönüşüm/kütle ve yuvarlama golden örnekleri", "Kısmi girdi devamında mükerrer tüketim olmaması", "Gerçek ekran ve kaynak etikete geri izleme kabulü"]
+    },
+    {
+      "id": "PKG-22", "title": "Boru ve profil motoru",
+      "outcome": "Satırlar kısmi gerçekleşir; hazır gerçek profil payı üst program bitmeden boyaya geçebilir.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W3-URETIM"], "depends_on": ["PKG-19", "PKG-08"],
+      "scope": ["Kesit/boy/adet/kg, paket ve fiilî çıktı hesabı", "Aynı malzemenin profil ve boya planlarının önceden birlikte bulunması", "Kısmi çıktının alt plana bağlanması; bütün program bitişini bekleme yok"],
+      "acceptance_refs": ["AT-045", "AT-042", "AT-050", "AT-061", "AT-062"],
+      "open_refs": ["OPEN-005", "OPEN-007"], "readiness": "INPUT_GATED",
+      "evidence_required": ["Boru/profil boy-adet-kg golden seti", "İki satırdan bir kısmın tamamlanıp boyaya ayrılması", "Beklenen ve gerçek paket miktarının ayrıldığı SQL/browser kabulü"]
+    },
+    {
+      "id": "PKG-23", "title": "Boyama motoru ve net kg farkı",
+      "outcome": "Boyanmış ürün gerçek ambalajsız net kg ile kaydedilir; fark görünür fakat hayalî boya miktarı üretilmez.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W3-URETIM", "W3-KALITE"], "depends_on": ["PKG-19", "PKG-08"],
+      "scope": ["Fiilî boyalı net kg, girdi/çıktı farkı ve mevcut gerçek fiziksel paylar", "Ayrı boya gramı/kaplama kg/sarf satırı girişi zorunlu değil; farkın tamamı boya veya negatif fire sayılmaz", "Kısmi boyama ve yeniden işleme; kalite sınıfı/kusur metadata'sı yeni release kapısı değil"],
+      "acceptance_refs": ["AT-046", "AT-048", "AT-049", "AT-050"],
+      "open_refs": ["OPEN-005", "OPEN-007"], "readiness": "INPUT_GATED",
+      "evidence_required": ["Saha girdi/çıktı/adet/tartım hassasiyeti örnekleri", "Pozitif/negatif fark, kısmi boyama ve yeniden işlemede tek stok etkisi", "Boya gramı zorunluluğu veya kalite kapısı eklemeyen browser kabulü"]
+    },
+    {
+      "id": "PKG-24", "title": "Boy kesme motoru",
+      "outcome": "Levha/boy kesme çıktısı, yeniden kullanılabilir artık ve kayıp girdiye bağlanır.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W3-URETIM"], "depends_on": ["PKG-19", "PKG-08"],
+      "scope": ["Boy/en/adet/kg ve kesim payı hesabı", "İyi/ikinci sınıf çıktı, artık, hurda ve proses kaybının fiziksel ayrımı", "Mevcut tek motor golden/PoC kanıtı varsa kullanılır; beş motorun kabulü sayılmaz"],
+      "acceptance_refs": ["AT-043", "AT-042", "AT-050", "AT-052"],
+      "open_refs": ["OPEN-005", "OPEN-007"], "readiness": "INPUT_GATED",
+      "evidence_required": ["Boy kesme kütle/birim/kerf golden seti", "Artığın yeniden kullanımında kök girdi ve sahiplik korunması", "Kısmi ve tüketilmiş çıktı sonrası düzeltme SQL/browser kabulü"]
+    },
+    {
+      "id": "PKG-25", "title": "Dokuz rota ve iç/dış zincir uzlaştırması",
+      "outcome": "Beş motor tekil veya zincir çalışır; planlayıcı eksik çıktıyı paylaştırır ve yalnız etkilenen geleceği revize eder.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W3-URETIM", "W3-TAHSIS", "W3-STOK"], "depends_on": ["PKG-13", "PKG-20", "PKG-21", "PKG-22", "PKG-23", "PKG-24", "PKG-27"],
+      "scope": ["Dilme → Boru/Profil → Boyama", "Dilme → Hadde → Boru/Profil → Boyama", "Boru/Profil → Boyama", "Dilme → Boy Kesme", "Yalnız Dilme, yalnız Hadde, yalnız Boru/Profil, yalnız Boyama, yalnız Boy Kesme", "Beklenen çıktı bağları gerçek stok değildir; kısmi actual payı alt iş tüketebilir", "Eksik çıktı payını planlayıcı seçer; etki önizlemeli revizyon ve iç/dış adım, doğrudan teslim, yeniden işleme", "Paket/uygulama sırası fiziksel üretim rotası değildir; bütün öncül program bitişi şartı yok"],
+      "acceptance_refs": ["AT-041", "AT-042", "AT-049", "AT-050", "AT-052"],
+      "open_refs": ["OPEN-005", "OPEN-007"], "readiness": "SPEC_REQUIRED",
+      "evidence_required": ["Dokuz rotanın her birinde normal ve kısmi E2E", "Bir kaynağa bağlı iki alt plan ve eksik çıktı insan paylaştırması", "Tüketilmiş/sevk edilmiş üst işlem düzeltmesi; hayalî stok ve kök sarf tekrarı olmaması"]
+    },
+    {
+      "id": "PKG-26", "title": "Yükleme, kantar ve fiilî sevk",
+      "outcome": "Planlanan yük ve gerçek sevk ayrılır; eksi/artı tolerans sipariş toplamını gizlice aşmaz.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W3-LOJISTIK", "W2-IRSALIYE"], "depends_on": ["PKG-11", "PKG-12", "PKG-15", "PKG-16", "PKG-17", "PKG-05"],
+      "scope": ["Yükleme talimatı, araç/sürücü/kapı, gerçek etiketler, manuel kantar brüt/dara/net", "Siparişe kabul edilmiş ayrı +/- sınırlar, referans birim ve kümülatif teslim kontrolü; sayılar açık girdi", "Q08 uygun/homojen gruba toplam tartımdan öneri+yetkili dağıtım; ölçülmüş diye etiketleme yok", "Normal kısmi sevk son teslim değildir; tek araç farklı cari/sahip/belge ilişkilerini birleştirmez"],
+      "acceptance_refs": ["AT-053", "AT-054", "AT-055", "AT-024"],
+      "open_refs": ["OPEN-004"], "readiness": "INPUT_GATED",
+      "evidence_required": ["Tekrarlı araç yüklerinde kümülatif üst sınır testi", "10 ton talimat/9,9 ton actual; gerçek miktarın 10 yazılmaması", "Karışık araç ve homojen dağıtım grubu, kaynak ölçü/audit/browser testleri"]
+    },
+    {
+      "id": "PKG-27", "title": "Mal kabul, transfer ve dış konum",
+      "outcome": "Mal çıkış/yolda/hedef kabul bacaklarıyla izlenir; bağımsız transfer irsaliyesi faturaya dönüşmez.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W3-STOK", "W3-LOJISTIK", "W2-IRSALIYE"], "depends_on": ["PKG-12", "PKG-13", "PKG-15", "PKG-16", "PKG-26"],
+      "scope": ["Kısmi kabul, beyan/fiilî/fark, fiziksel hasarlı mal ve araştırılan eksik pay ayrımı", "Siparişsiz yalnız transfer irsaliyesi; sahiplik korunur, satış/finans olayı yok", "Fasona gidiş/dönüş ve dış depodan doğrudan müşteri teslimi; yapay merkez depo bacağı yok"],
+      "acceptance_refs": ["AT-026", "AT-029", "AT-030", "AT-031", "AT-055"],
+      "open_refs": ["OPEN-004"], "readiness": "INPUT_GATED",
+      "evidence_required": ["10 ton çıkış/8 sağlam+1 hasarlı hedef kabul/1 araştırılan fark", "Kısmi dönüş ve tekrar hedef kabulde tek hareket", "Siparişsiz transfer ve dış fason doğrudan teslim E2E"]
+    },
+    {
+      "id": "PKG-28", "title": "Belge kasası, şablonlar ve değişmez sözleşmeler",
+      "outcome": "Aynı siparişten seçili belgeler üretilir; özgün ve eski gönderilmiş sürümler silinmeden bulunur.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W0-DOCVAULT", "W0-PDF", "W2-BELGE"], "depends_on": ["PKG-01", "PKG-03", "PKG-04", "PKG-11", "PKG-12"],
+      "scope": ["Blob/mantıksal belge/sürüm/link, hash/anahtar mükerrer kontrolü, güvenlik taraması ve yarım iş kurtarma", "Şirket anteti ve karışık Word/Excel/PDF/görsel şablonların onaylı deterministik çıktısı", "Sözleşme, proforma ve yalnız İngilizce export proforma; hiçbir proforma stok/finans/e-belge oluşturmaz", "Eski sipariş/sözleşme/gönderilmiş/imzalı özgün sürüm korunur; antet değişimi geçmişi değiştirmez", "Normal paylaşım ile fiyat gizli dar kör gönderim farklı yetki/kanal; sabit onaylı içerik-alıcı-sürüm"],
+      "acceptance_refs": ["AT-056", "AT-057", "AT-065", "AT-066", "AT-067"],
+      "open_refs": ["OPEN-019", "OPEN-018"], "readiness": "EXISTING_CANDIDATE_RECONCILE",
+      "evidence_required": ["Tek sayfalı PDF PoC ile tam şablon/çok sayfa/arşiv motoru kapsam farkı", "Karışık şablon gerçek örnekleri, Türkçe font/dosya adı ve render kabulü", "Kısmi belge üretimi tekrarında başarılı sürüm çoğalmaz; kör gönderimde kullanıcı dosya/URL/fiyat edinemez"]
+    },
+    {
+      "id": "PKG-29", "title": "İrsaliye/fatura merkezi ve siparişsiz faturalar",
+      "outcome": "Başlık ve satır paylarıyla gelen/giden faturalar izlenir; fiziksel kabul ve finans aynı olay sanılmaz.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W2-IRSALIYE", "W2-BELGE", "W2-ACIKKALEM"], "depends_on": ["PKG-11", "PKG-12", "PKG-13", "PKG-26", "PKG-27", "PKG-28"],
+      "scope": ["Mal/hizmet/karma satırlar ve uyumlu şirket/cari/para/vergi/kur/vade gruplaması", "Siparişsiz gerçek alış/satış faturası; sonradan kaynak ilişkilendirmede yeniden stok/finans yok", "Hizmette teslimle ilişkili ücret payı, önce faturalanmış miktarın tekrar alınmaması", "Q05 belge aslı/fiilî stok/finans ihtilaf yolu ayrı; fatura miktarı otomatik gerçek stok kabulü değil", "Tutar odaklı doğrudan belge ile ürün satırlı fatura ayrımı; genel zorunlu üçlü kontrol veya kalite kapısı yok"],
+      "acceptance_refs": ["AT-024", "AT-025", "AT-027", "AT-028", "AT-055", "AT-065"],
+      "open_refs": ["OPEN-012"], "readiness": "SPEC_REQUIRED",
+      "evidence_required": ["Siparişsiz iki yön fatura ve sonradan eşleştirme gerçek SQL/browser kabulü", "Gerçek belge 10 ton/fiilî kabul 9 ton yetkili ihtilaf senaryosu", "Kısmi çoktan çoğa kaynak payı; farklı fiyat/kur sahte miktar kalanı yaratmaz"]
+    },
+    {
+      "id": "PKG-30", "title": "Manuel kasa/banka, açık kalem ve dağıtım",
+      "outcome": "Tahsilat/ödeme bir kez kaydedilir; avans ve çoktan çoğa fatura dağıtımı ayrı izlenir.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W2-ACIKKALEM", "W4-FINANS"], "depends_on": ["PKG-29", "PKG-04", "PKG-05"],
+      "scope": ["Manuel hesap/hareket, kasa, virman, açık kalem/ekstre ve kaynak referansı", "Avans/dağıtılmamış bakiye/kısmi dağıtım; kaynak veya fatura açık tutarı aşılmaz", "Yanlış cari/yanlış dağıtım/fazla ödeme iadesi ters kaynak ve onayla; para kaynağı çoğalmaz", "İşlem, kayıt, vade, valör, dağıtım ve mutabakat tarihleri ayrı; banka entegrasyonu bu pakette yok"],
+      "acceptance_refs": ["AT-058", "AT-003", "AT-007", "docs/ui/sources/finance/v3/06_KABUL_SENARYOLARI.md"],
+      "open_refs": ["OPEN-009", "OPEN-012"], "readiness": "SPEC_REQUIRED",
+      "evidence_required": ["500.000 kaynağın 300.000+200.000 dağıtımında ikinci banka/cari hareketi yok", "Fazla dağıtım, yanlış cari, kısmi ödeme, sipariş avansı ve dövizli kapama testleri", "Gerçek finans onay matrisi, dönem ve SQL/browser negatif kabulü"]
+    },
+    {
+      "id": "PKG-31", "title": "Ödeme araçları ve kontrollü grup finansı",
+      "outcome": "Çek/senet/POS/kart/DBS durumları açık kalem, nakit ve risk açısından ayrı izlenir.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W4-ODEMEARAC", "W4-GRUPFINANS"], "depends_on": ["PKG-30", "PKG-05"],
+      "scope": ["Çek/senet portföy/ciro/teminat/tahsil/karşılıksız/iade-protesto kaynak izleri", "Müşteri POS brüt kapama/net banka/komisyon; tedarikçi POS yok; kart slip/ekstre/ödeme ayrı", "DBS güvencesi nakit değil; banka ödeme kaydı gelmeden tahsilat yaratmaz", "Grup içi işlem karşı bacakları ve yetkili mahsup/eliminasyon görünümü; şirketler arası otomatik netting yok"],
+      "acceptance_refs": ["AT-011", "AT-058", "docs/ui/sources/finance/v3/04_IS_KURALLARI_DURUM_ETKI_MATRISI.md"],
+      "open_refs": ["OPEN-009", "OPEN-010", "OPEN-012"], "readiness": "SPEC_REQUIRED",
+      "evidence_required": ["Karşılıksız çek ve POS chargeback'te orijinal vade/bağlı kapama tersleri", "DBS red ve tahsilat sonrası çift nakit veya risk azaltma olmaması", "İki şirket bacağı atomiklik/uzlaştırma ve yetkisiz netleştirme negatif testleri"]
+    },
+    {
+      "id": "PKG-32", "title": "Cari risk, limit, teminat ve finansman takibi",
+      "outcome": "Riskin kaynağı görülür; para araçları ve onaylı limit/teminat politikası çifte sayılmaz.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W4-RISK", "W2-ACIKKALEM"], "depends_on": ["PKG-30", "PKG-31", "PKG-05"],
+      "scope": ["Açık alacak/faturalanmamış sevk/sevk edilmemiş onaylı kalan risk geçişleri", "DBS güvenceli/teminatsız/nakit ayrımı; kredi, limit, teminat/covenant ve vade kayıtlarının manuel izlenmesi", "Sipariş uyarısı/sevk kontrolü yalnız kabul edilmiş dinamik politika ile; başlangıç hard-gate ve haircut sayısı tahmin edilmez", "13 haftalık kaynak önceliği/nakit tamponu ve banka bağlantısı bu pakete zorunlu bağımlılık değildir"],
+      "acceptance_refs": ["AT-022", "AT-011", "docs/ui/sources/finance/v3/06_KABUL_SENARYOLARI.md"],
+      "open_refs": ["OPEN-009", "OPEN-010", "OPEN-012"], "readiness": "INPUT_GATED",
+      "evidence_required": ["Sipariş→sevk→fatura geçişinde aynı riskin iki kez sayılmaması", "Sözleşmeye dayalı limit/teminat/vade ve insan onaylı istisna golden örnekleri", "Onaysız değer/kur/haircut etkinleşmemesi; rapor ve kontrol aynı calculator"]
+    },
+    {
+      "id": "PKG-33", "title": "Muhasebe kontrolü, mutabakat ve dönem davranışı",
+      "outcome": "ERP operasyonel defterini resmî sistemle uzlaştırır; dönem düzeltmeleri geçmişi sessizce değiştirmez.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W4-MUHASEBE", "W4-FINANS"], "depends_on": ["PKG-28", "PKG-30", "PKG-31", "PKG-32"],
+      "scope": ["Belge kontrolü, hesap/boyut eşleme, deterministik kullanıcı onaylı fiş taslağı ve kaynak farkı inceleme", "Resmî yasal defter/e-belge dış sistemde; operasyonel açık kalem Göymen'de; iki bağımsız serbest düzenlenen SoT yok", "Dönem kilidi, yetkili yeniden açma, gerçek tarih/kayıt zamanı/dönem ayrımı; bugünkü iade eski kaynağa bağlanır", "Maliyet muhasebesi/değerleme ve tam muhasebe entegrasyonu ertelenir; Mikro e-belge işi PKG-35'te ayrıdır"],
+      "acceptance_refs": ["AT-058", "AT-007", "AT-003", "docs/ui/sources/finance/v3/06_KABUL_SENARYOLARI.md"],
+      "open_refs": ["OPEN-009", "OPEN-012", "OPEN-018"], "readiness": "SPEC_REQUIRED",
+      "evidence_required": ["Kapalı döneme normal yazma red, yetkili yeniden açma ve yeniden kapama izi", "Ödenmiş eski yıl faturası iadesi, ayrı gerçek para iadesi ve dönem uzlaştırması", "Taslak fişin resmî kayıt veya ikinci açık kalem sayılmadığı kabul"]
+    },
+    {
+      "id": "PKG-34", "title": "AI, iş hafızası, görsel/OCR ve geçici ses",
+      "outcome": "AI doğru sayfa/işlem taslağını kaynak ve belirsizliğiyle önerir; yetkili kullanıcı onayıyla şemalı araçlar çalışır.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W5-AIGATEWAY", "W2-BELGE", "W1-YETKI"], "depends_on": ["PKG-01", "PKG-02", "PKG-04", "PKG-05", "PKG-28"],
+      "scope": ["Onaylı iş sözlüğü/karar/hafıza retrieval; otomatik doğru kabulü veya model yeniden eğitimi vaadi yok", "Görsel/OCR/ses/metinden alan/kayıt/sayfa önerisi; belirsizlik ve ham kaynak, kullanıcı düzeltmesi", "Kalıcı taslak dahil yazma yetkisi; tool şeması, preview/onay/reauth/idempotency; AI SQL/DB veya kendi onayı yok", "Geniş iş verisi bulut hedefi güvenli veri sınıflarıyla; ses geçici, doğrulanmış gerekli metin/audit kalır; manuel fallback"],
+      "acceptance_refs": ["AT-056", "AT-059", "AT-060", "AT-068"],
+      "open_refs": ["OPEN-020", "OPEN-018", "OPEN-021"], "readiness": "INPUT_GATED",
+      "evidence_required": ["Tek belirsiz görselden yanlış şirkete/işleme kesin geçiş yapmayan eval seti", "Prompt injection, yetkisiz fiyat/şirket, eski onay ve tool argüman testleri", "Ses iptal/çökme temizliği, sağlayıcı veri politikası ve AI kesilince normal ERP kabulü"]
+    },
+    {
+      "id": "PKG-35", "title": "Mikro e-belge, portal işleri ve ticaret sicili",
+      "outcome": "Onaylı portal/e-belge işleri sonucu doğrulanarak yürür; sicil arşivi haftalık ve istek üzerine izlenir.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W2-BELGE", "W4-MUHASEBE", "W5-AIGATEWAY", "W1-CARI"], "depends_on": ["PKG-34", "PKG-29", "PKG-28", "PKG-06"],
+      "scope": ["Seçilmiş Mikro e-belge taslak/önizleme/onay/gönderim/geri statü ve belge senkronu; tam muhasebe veya banka entegrasyonu değildir", "API zorunlu tek yöntem değil; izinli portal/tarayıcı yolu gerçek kanıtla, ortak şirket hesabında ERP aktörü ve iş izolasyonu", "Belirsiz gönderimde önce mutabakat; alıcı/içerik/şirket/sürüm değişince eski onay geçmez; MFA/CAPTCHA insan devri", "Ticaret sicili kaynak ilan/dosya/tarih arşivi, haftalık+ondemand sorgu, değişiklik uyarısı ve AI önerisi; erişim hatası yeni ilan yok değildir", "Aktif/pasif bütün carilerin yetkili kontrol durumu; ortak kimlikte gereksiz kaynak sorgusu yok; kimlik eksik/kapsam dışı/çelişkili eşleşme ilan yok sayılmaz; yabancı firmanın Türkiye sicilli şubesi yalnız ülke alanıyla atlanmaz"],
+      "acceptance_refs": ["AT-056", "AT-057", "AT-059", "AT-060", "AT-065"],
+      "open_refs": ["OPEN-016", "OPEN-020", "OPEN-018"], "readiness": "INPUT_GATED",
+      "evidence_required": ["Gerçek yetkili test erişimi, şirket seçimi, kontrollü gönderim ve sonuç kanıtı", "İki portal işi arası oturum/şirket sızıntısı ve timeout sonrası mükerrer gönderim testleri", "Eski yayımlanmış/yeni bulunmuş ilan ayrımı, aynı ilan dedup ve başarısız sorgu kabulü", "Pasif, kimlik eksik, kapsam dışı, çelişkili eşleşen ve Türkiye sicilli yabancı şubeli cari fixture'larının görünür sonuçları; tek kimlik çok şirket sorgu dedup"]
+    },
+    {
+      "id": "PKG-36", "title": "Cari 360, kurumsal rapor ve kaynak kayda iniş",
+      "outcome": "Kullanıcı seçili şirketlerin sipariş, stok, belge ve finans durumunu aynı gerçek kaynaklardan görür.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W1-CARI", "W2-ACIKKALEM", "W5-RAPOR"], "depends_on": ["PKG-06", "PKG-14", "PKG-15", "PKG-25", "PKG-29", "PKG-30", "PKG-31", "PKG-32", "PKG-33"],
+      "scope": ["Mevcut Cari 360 sekmeleri altında tüm/açık/kapalı sipariş, kalan, irsaliye/fatura/dekont/ekstre/firma/stok/belge-sicil bağlantıları", "Yetkili çok şirket seçimi, şirket ve döviz kırılımı; aynı dövizde izinli grup özeti, otomatik netting veya kur çevrimi yok", "Alan raporları/global arama/iş uyarıları salt-okunur projeksiyon; gecikme ve kaynak zamanı görünür", "Hat işlem toplamı nihai fiziksel stok toplamı sayılmaz; eksik maliyetten kârlılık üretilmez"],
+      "acceptance_refs": ["AT-001", "AT-002", "AT-011", "AT-040", "AT-065", "AT-069"],
+      "open_refs": ["OPEN-015", "OPEN-018"], "readiness": "SPEC_REQUIRED",
+      "evidence_required": ["Özet→sekme→belge→kaynak hareket arasında miktar/tutar eşitliği", "Şirket/döviz/yıl yetkisi ve stale projeksiyon kabulü", "Cari içinden işi tamamlayıp filtreye geri dönme ve export alan yetkisi browser testi"]
+    },
+    {
+      "id": "PKG-37", "title": "İşletim, kesinti B ve temiz tek şirket restore",
+      "outcome": "Sistem arızası fark edilir; seçili şirket kendi DB/belge/audit bağımlılıklarıyla bağımsız ayağa kalkar.",
+      "owners": ["Codex", "Claude", "ChatGPT"],
+      "existing_slices": ["W0-RESTORE", "W0-OBSERV", "W0-CICD", "W5-IDEMPOTENCY-RETENTION"], "depends_on": ["PKG-01", "PKG-02", "PKG-03", "PKG-04", "PKG-28"],
+      "scope": ["KUL-02-B: merkezi ERP yokken yeni ERP-onaylı fiziksel başlangıç/sevk bekler; salt internet/AI/Mikro kesintisi ayrı", "Çalışan makineye otomatik dur komutu yok; gerçekleşen olay kaybolmaz, kontrollü saha taslağı dönüşte tekrar yetki/sürüm doğrular", "DB/obje/audit/idempotency/outbox/inbox ve gerekli anahtarlarla yalnız seçili şirket temiz restore; UI'da diğer şirketi gizleme veya mevcut şirkete merge değil", "Seçili şirketin başka şirketle karşı taraf geçmişi korunur; diğer şirketin kendi defteri taşınmaz; eski dış işler mutabakat olmadan tekrar gönderilmez", "İzleme/alarm/sorumlu/runbook, güncelleme/geri dönüş; saklama sınıfları onaylanmadan purge yok, korunan sipariş/sözleşme silinmez"],
+      "acceptance_refs": ["AT-001", "AT-003", "AT-005", "AT-070"],
+      "open_refs": ["OPEN-013", "OPEN-014", "OPEN-015", "OPEN-017", "OPEN-018", "OPEN-021"], "readiness": "INPUT_GATED",
+      "evidence_required": ["ERP/LAN/SQL kesintisi ile sadece dış internet kesintisinin ayrı saha provası", "Gerçek SQL+obje restore, hash/miktar/belge/audit/şirket izolasyonu ve dış iş mutabakatı", "Ölçülmüş RPO/RTO, yedek alarmı ve clean kurulum/güncelleme geri dönüş kanıtı"]
+    },
+    {
+      "id": "PKG-38", "title": "Çapraz modül günlük iş kabulü ve teslim kanıtı",
+      "outcome": "Tam hedef günlük işler normal kullanıcıyla çalışır; kapalı veya mocksuz olmayan yol bitmiş sayılmaz.",
+      "owners": ["ChatGPT", "Codex", "Claude"],
+      "existing_slices": ["W5-DECISIONPACK", "W5-RAPOR"], "depends_on": ["PKG-10", "PKG-14", "PKG-18", "PKG-25", "PKG-27", "PKG-33", "PKG-35", "PKG-36", "PKG-37"],
+      "scope": ["Karar→işlev→gerçek test→ekran→kanıt eşlemesi; eski çelişkili AT beklentilerini izli uzlaştırma", "Normal/kısmi/iade/iptal/ters/eşzamanlı/şirket-yetki/kesinti/restore günlük iş provaları", "Masaüstü/tablet/barkod/yazıcı/çok sayfalı PDF ve erişilebilirlik; kullanıcı formu kaybolmaz", "Paketlere bölerek geliştirme eksik çekirdeği erken production'a almak değildir; nihai kabul kullanıcıda"],
+      "acceptance_refs": ["docs/acceptance/ACCEPTANCE_70.md", "docs/acceptance/DEFINITION_READY_DONE.md"],
+      "open_refs": ["OPEN-013", "OPEN-014", "OPEN-015", "OPEN-017", "OPEN-019", "OPEN-020"], "readiness": "INPUT_GATED",
+      "evidence_required": ["Her hedef paket için exact-head API/SQL/browser ve hata yolu kanıtı; skipped/flag-closed yol ayrı", "Dokuz rota, iki fason yönü, F01-A, hareketli sayım B ve kesinti B saha kabulü", "Gerçek değer ve yetki matrislerinin ilgili kabul öncesi tamamlanması; P0/P1 ve production insan onayı"]
+    },
+    {
+      "id": "PKG-39", "title": "Bilinçli ertelenen maliyet, entegrasyon ve ileri kapsam",
+      "outcome": "Ertelenen işler görünür kalır fakat mevcut hedefe gizli zorunluluk veya tamamlanmışlık eklenmez.",
+      "owners": ["Sinan Göymen", "ChatGPT"],
+      "existing_slices": ["W4-MUHASEBE", "W4-NAKIT", "W4-RISK", "W5-RAPOR"], "depends_on": [],
+      "scope": ["Stok değerleme/ayrıntılı üretim maliyeti ve maliyet muhasebesi", "Tam muhasebe entegrasyonu, banka entegrasyonu ve ileri otomatik ödeme talimatı", "Minimum nakit tamponu ve 13 haftalık plan kaynak önceliği/ilgili ileri plan aktivasyonu", "İK/bordro, bakım, ileri kalite/CAPA, sabit kıymet, ileri CRM, proje/maliyet, genel hukuk/uyum ve İSG", "Genişleme bağları ve gerekli ham kaynaklar korunur; çekirdek manuel finans, fiyat, temel nitelik ve seçilmiş Mikro e-belge/TTSG bu ertelemeye girmez"],
+      "acceptance_refs": [],
+      "open_refs": ["OPEN-008", "OPEN-011", "OPEN-016"], "readiness": "DEFERRED",
+      "evidence_required": ["Aktif paketlerde ertelenen iş için gizli hard dependency olmaması", "Gelecekte etkinleştirme öncesi açık kapsam/işletme kararı ve ilgili sözleşme", "Eksik maliyet/kur/limit verisinden sahte kesin hesap üretmeme"]
+    },
+    {
+      "id": "PKG-40", "title": "Bu tur hariç tarihsel veri aktarımı",
+      "outcome": "Eski veri taşıma işi ayrı izlenir; yeni ERP günlük kullanılabilirlik kabulüyle karıştırılmaz.",
+      "owners": ["Sinan Göymen", "ChatGPT", "Codex"],
+      "existing_slices": ["W5-MIGRASYON"], "depends_on": [],
+      "scope": ["Eski cari/stok/sipariş/finans/belge geçmişi aktarımı, açılış ve cutover veri mutabakatı bu çalışmada yapılmaz", "Geçmiş migrasyon/prova/final delta/rollback kararı kalıcı iptal edilmez; yürütme ayrı kapsam ve izin ister", "Günlük Excel master bakımı PKG-10 ve yeni sistemin kendi şirket yedeği/restore'u PKG-37 kapsam içidir"],
+      "acceptance_refs": [],
+      "open_refs": [], "readiness": "DEFERRED",
+      "evidence_required": ["Hiçbir bu-tur kabul iddiasının gerçek tarihsel migrasyon yapıldığına dayanmaması", "İleride ayrı veri envanteri, prova, kaynak kimliği ve sayı/kg/tutar/hash mutabakat kanıtı", "Kanonik geçmiş migrasyon kararının sessiz silinmemesi"]
+    }
+  ]
+}

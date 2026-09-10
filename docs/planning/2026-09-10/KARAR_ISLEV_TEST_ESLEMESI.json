@@ -1,0 +1,1999 @@
+{
+  "version": "1.0",
+  "status": "PROPOSAL_NOT_EXECUTION_AUTHORITY",
+  "notes": [
+    "REQ/SCN kimlikleri bu pakete ait önerilen izlenebilirlik kimlikleridir; kanonik DEC/AT/OPEN değildir.",
+    "Her satır en az bir iş senaryosu ve olumsuz sınır taşır. Bu test kodu veya geçmiş test başarısı değil; dilim şartnamesinde testlere dönüştürülecek kabul paketidir.",
+    "legacy_acceptance_refs ilişki/bağlam gösterir, mevcut AT metninin yeni kararla birebir uyumlu veya geçilmiş olduğunu söylemez. Aşağıdaki uzlaştırma listesi eski çelişkili beklentileri işaretler.",
+    "Sentetik sayı örnekleri işletme toleransı/yuvarlama/para politikası seçmez. Gerçek değerler ilgili kabul kapısında onaylanır.",
+    "RISK-03 eski önizleme ve outbox risklerini; CORE-PlanDuzeltme üretim düzeltmesini; F01 finansal olmayan kalanı; CORE-Restore şirket kurtarmayı kapsar. Böylece §13.4'ün 14 riski yeni numaralarla eksilmiş sayılmaz."
+  ],
+  "legacy_reconciliation": [
+    {
+      "refs": [
+        "AT-010"
+      ],
+      "reason": "Zorunlu ticari rol ve günlük ayrı hesap bağlama beklentisi yeni cari kararıyla uzlaştırılmalı."
+    },
+    {
+      "refs": [
+        "AT-035",
+        "AT-051"
+      ],
+      "reason": "Normal kalite kullanılabilirlik/serbest bırakma kapısı geri getirilmemeli."
+    },
+    {
+      "refs": [
+        "AT-004"
+      ],
+      "reason": "Sipariş yetkilisinin kendi sipariş onayı kritik erişim self-approval yasağından ayrılmalı."
+    },
+    {
+      "refs": [
+        "AT-067"
+      ],
+      "reason": "Kör gönderimde fiyat gizli kullanıcıya dosya/URL açılmamalı; normal yetkili paylaşım korunmalı."
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "decision_key": "Q01",
+      "title": "Başlangıç iç onayı ve gelecekte kaşeli müşteri teyidi",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-11",
+        "PKG-12",
+        "PKG-04"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-021",
+        "AT-022",
+        "AT-024",
+        "AT-025",
+        "AT-026",
+        "AT-027",
+        "AT-064",
+        "AT-001",
+        "AT-003",
+        "AT-004",
+        "AT-008",
+        "AT-068"
+      ],
+      "scenario": {
+        "id": "SCN-001",
+        "given": "Başlangıç B politikası ve yetkili iç onaylı sipariş vardır.",
+        "when": "İlgili sipariş işlemi başlatılır; sonraki A politikasının henüz etkin olmadığı doğrulanır.",
+        "then": "B'de müşteri kaşesi zorunlu değildir; ileride A etkinleştiğinde siparişe bağlı fiziksel iş için kaşeli yazı gerekir.",
+        "negative_boundary": "Sözlü teyit A kanıtı olamaz; siparişsiz stok üretimine müşteri teyidi kapısı eklenmez.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-002",
+      "decision_key": "Q02",
+      "title": "Bekleyen revizyon ve gerçekleşmiş kayıtların korunması",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-14",
+        "PKG-11"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-007",
+        "AT-023",
+        "AT-024",
+        "AT-027",
+        "AT-028",
+        "AT-021",
+        "AT-022",
+        "AT-025"
+      ],
+      "scenario": {
+        "id": "SCN-002",
+        "given": "Onaylı eski sürüm ve miktarı azaltan bekleyen revizyon vardır.",
+        "when": "Eski sürümle kısmi teslim yapılır, yeni revizyon onaylanmak istenir.",
+        "then": "Yeni onay güncel gerçekleşmeleri denetler; uyumsuz miktarı sessiz kabul etmez; başlangıç B eski sürümü sürdürür.",
+        "negative_boundary": "Gelecekte A yalnız etkilenen gerçekleşmemiş payı bekletir; eski sevkler yeniden yazılmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-003",
+      "decision_key": "Q03",
+      "title": "İşlenip teslim edilen hizmet payı",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-13",
+        "PKG-29"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-029",
+        "AT-030",
+        "AT-031",
+        "AT-028",
+        "AT-024",
+        "AT-025",
+        "AT-027",
+        "AT-055",
+        "AT-065"
+      ],
+      "scenario": {
+        "id": "SCN-003",
+        "given": "Sentetik örnekte 8 ton işlenmiş, bunun 5 tonu teslim edilmiştir; hizmet bedel esası siparişte tanımlıdır.",
+        "when": "Hizmet satışında fatura taslağına kaynak seçilir; hizmet alışında geri geliş/doğrudan teslim karşılığı da denenir.",
+        "then": "Yalnız teslimle ilişkili uygun hizmet payı adaydır; önceden faturalanmış pay düşülür.",
+        "negative_boundary": "Üretimden çıkmış ama teslim edilmemiş 3 ton sırf üretildi diye faturalanabilir teslim sayılmaz; resmî gönderim kendiliğinden yapılmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-004",
+      "decision_key": "Q04",
+      "title": "İadenin amacı ve miktarlı ayrımı",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-14",
+        "PKG-29",
+        "PKG-30"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-007",
+        "AT-023",
+        "AT-024",
+        "AT-027",
+        "AT-028",
+        "AT-025",
+        "AT-055",
+        "AT-065",
+        "AT-058",
+        "AT-003",
+        "docs/ui/sources/finance/v3/06_KABUL_SENARYOLARI.md"
+      ],
+      "scenario": {
+        "id": "SCN-004",
+        "given": "Aynı kaynak teslim için kısmi geri gelen mal vardır.",
+        "when": "İadenin bir kısmı ikame, bir kısmı ticari kapatma amaçlı girilir.",
+        "then": "Amaç/miktar ve fiziksel–belgesel–finansal ilişkiler ayrı izlenir.",
+        "negative_boundary": "Otomatik para iadesi veya yeni üretim başlatılmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-005",
+      "decision_key": "Q05",
+      "title": "İhtilaflı faturada yetkili vaka kararı",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-29",
+        "PKG-33"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-024",
+        "AT-025",
+        "AT-027",
+        "AT-028",
+        "AT-055",
+        "AT-065",
+        "AT-058",
+        "AT-007",
+        "AT-003",
+        "docs/ui/sources/finance/v3/06_KABUL_SENARYOLARI.md"
+      ],
+      "scenario": {
+        "id": "SCN-005",
+        "given": "Belge miktarı ile fiilî kabul arasında ihtilaf vardır.",
+        "when": "Yetkili kanıt ve gerekçeyle inceleme kararı kaydeder.",
+        "then": "Belge aslı, fiilî kabul ve ihtilaf çözümü ayrı ve auditli kalır.",
+        "negative_boundary": "Belge miktarına uysun diye stok yeniden yazılmaz; yetkisiz kişi karar veremez.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-006",
+      "decision_key": "Q06",
+      "title": "İç ve dış operasyon, müşteri malına açık iş izni",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-13",
+        "PKG-25",
+        "PKG-27"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-029",
+        "AT-030",
+        "AT-031",
+        "AT-028",
+        "AT-041",
+        "AT-042",
+        "AT-049",
+        "AT-050",
+        "AT-052",
+        "AT-026",
+        "AT-055"
+      ],
+      "scenario": {
+        "id": "SCN-006",
+        "given": "Müşteri malına bağlı zincirde bir dış operasyon tasarlanır.",
+        "when": "İş bazında dış işleme izni yokken ve sonra izin varken fiziksel komut denenir.",
+        "then": "İzinli kapsamda dış işleme yapılır, sahiplik ve kaynak zinciri korunur.",
+        "negative_boundary": "Planlama görünümü tek başına fiziksel dış sevk yetkisi değildir; GET izin yaratmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-007",
+      "decision_key": "Q07",
+      "title": "Ortak araç/hat, ayrı mal sahibi paketleri",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-16",
+        "PKG-26"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-038",
+        "AT-039",
+        "AT-050",
+        "AT-053",
+        "AT-054",
+        "AT-055",
+        "AT-024"
+      ],
+      "scenario": {
+        "id": "SCN-007",
+        "given": "İki mal sahibinin paketleri aynı araçta/hatta işlenecektir.",
+        "when": "Yükleme ve fiziksel paket birleştirme denenir.",
+        "then": "Ortak araç mümkündür; her paket kendi sahibine bağlıdır.",
+        "negative_boundary": "Farklı sahipleri tek fiziksel paket/etikette birleştirme reddedilir.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-008",
+      "decision_key": "Q08",
+      "title": "Homojen grup tartımı ve dağıtım kökeni",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-08",
+        "PKG-26"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-016",
+        "AT-017",
+        "AT-049",
+        "AT-053",
+        "AT-054",
+        "AT-055",
+        "AT-024"
+      ],
+      "scenario": {
+        "id": "SCN-008",
+        "given": "Homojen gruba ait tek ham tartı ve ürün/pay bilgileri vardır.",
+        "when": "Dağıtım önerisi hazırlanır ve yetkili onaylar.",
+        "then": "Ham ölçüm korunur; paylar dağıtılmış değer olarak işaretlenir ve toplam uzlaşır.",
+        "negative_boundary": "Heterojen gruba sessiz dağıtım veya hesaplanan payı gerçek tekil ölçüm diye sunma olmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-009",
+      "decision_key": "Q09",
+      "title": "Boya gramı zorunlu ayrıştırılmadan net kg",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-23",
+        "PKG-08"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-046",
+        "AT-048",
+        "AT-049",
+        "AT-050",
+        "AT-016",
+        "AT-017"
+      ],
+      "scenario": {
+        "id": "SCN-009",
+        "given": "Boya giriş/çıkış ambalajsız gerçek net tartıları vardır; boya gramı ölçülmemiştir.",
+        "when": "Kısmi boya gerçekleşmesi ve fark kaydedilir.",
+        "then": "Net kg ve giriş–çıkış farkı görünür; boya gramı zorunlu alan değildir.",
+        "negative_boundary": "Fark otomatik negatif fire/tamamen boya olmaz; ölçülmeyen veriyle tam kütle dengesi kanıtı üretilmez.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-010",
+      "decision_key": "Q10",
+      "title": "Ayrı ve artı/eksi yükleme toleransları",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-05",
+        "PKG-26"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-003",
+        "AT-016",
+        "AT-049",
+        "AT-061",
+        "AT-062",
+        "AT-053",
+        "AT-054",
+        "AT-055",
+        "AT-024"
+      ],
+      "scenario": {
+        "id": "SCN-010",
+        "given": "Testte açıkça sentetik onaylı sınırlar ve kümülatif teslim geçmişi vardır.",
+        "when": "Birden fazla kısmi yükleme ve sınırın iki tarafı denenir.",
+        "then": "Plan sapması, toplam sipariş teslim sınırı ve üretim dengelemesi ayrı kontrol edilir.",
+        "negative_boundary": "Bir yükleme tolerans içinde diye kümülatif aşım geçmez; test sayısı production ayarı olamaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-011",
+      "decision_key": "Q11",
+      "title": "Fiyat gizliyken dar kör gönderim",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-04",
+        "PKG-28",
+        "PKG-34"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-001",
+        "AT-003",
+        "AT-004",
+        "AT-008",
+        "AT-068",
+        "AT-056",
+        "AT-057",
+        "AT-065",
+        "AT-066",
+        "AT-067",
+        "AT-059",
+        "AT-060"
+      ],
+      "scenario": {
+        "id": "SCN-011",
+        "given": "Fiyatı göremeyen fakat kör gönderime yetkili kullanıcı, sabit onaylı belge ve gerçek alıcı vardır.",
+        "when": "Gönderim, alıcı/CC/BCC/kanal değişimi ve izin iptali denenir.",
+        "then": "Gönderimde yetki ve hedef doğrulanır; belge yalnız izinli gerçek alıcıya gider.",
+        "negative_boundary": "Kullanıcı/AI dosya byte'ı, önizleme veya URL alamaz; adres değişimiyle kendine yönlendiremez; desteklemeyen kanal yetkiliye devredilir.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-012",
+      "decision_key": "Q12",
+      "title": "Geçici ses, doğrulanmış metin",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-34",
+        "PKG-37"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-056",
+        "AT-059",
+        "AT-060",
+        "AT-068",
+        "AT-001",
+        "AT-003",
+        "AT-005",
+        "AT-070"
+      ],
+      "scenario": {
+        "id": "SCN-012",
+        "given": "Sesli taslak oturumu ve doğrulanan/henüz doğrulanmayan metin vardır.",
+        "when": "Başarı, iptal, hata ve çökme sonrası toparlanma denenir.",
+        "then": "Gerekli doğrulanmış metin/audit ayrı korunur; ham ses temizlenir ve kalıcı yedeğe girmez.",
+        "negative_boundary": "Kesin TTL/saklama süresi uydurulmaz; doğrulanmamış ses yorumu otomatik iş gerçeği olmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-013",
+      "decision_key": "Q13",
+      "title": "Kendi şirket VKN değişimi",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-03",
+        "PKG-04",
+        "PKG-28"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-001",
+        "AT-003",
+        "AT-005",
+        "AT-008",
+        "AT-004",
+        "AT-068",
+        "AT-056",
+        "AT-057",
+        "AT-065",
+        "AT-066",
+        "AT-067"
+      ],
+      "scenario": {
+        "id": "SCN-013",
+        "given": "Kendi şirketi ve eski antetli belgeler vardır.",
+        "when": "Bir kullanıcı VKN değişikliği hazırlar, farklı tek yetkili onaylar.",
+        "then": "Kimlik/benzersizlik denetlenir; eski belge dosyaları değişmez.",
+        "negative_boundary": "Hazırlayan kendisi onaylayamaz; gereksiz iki onaycı zorunluluğu eklenmez.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-014",
+      "decision_key": "F01",
+      "title": "Eksik son teslim kalanı gerekçeli kapanır",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-14",
+        "PKG-17",
+        "PKG-26",
+        "PKG-30"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-007",
+        "AT-023",
+        "AT-024",
+        "AT-027",
+        "AT-028",
+        "AT-032",
+        "AT-033",
+        "AT-034",
+        "AT-036",
+        "AT-040",
+        "AT-053",
+        "AT-054",
+        "AT-055",
+        "AT-058",
+        "AT-003",
+        "docs/ui/sources/finance/v3/06_KABUL_SENARYOLARI.md"
+      ],
+      "scenario": {
+        "id": "SCN-014",
+        "given": "10 birim siparişin 9,9'u teslim edilmiştir; örnek sayılar tolerans seçimi değildir.",
+        "when": "Önce kalan görüntülenir, sonra yetkili 0,1'i gerekçeyle kapatır.",
+        "then": "Kapatmadan önce kalan açıktır; kapanış sonrası fiilî teslim 9,9 kalır, operasyonel kapama 0,1 ayrıdır.",
+        "negative_boundary": "Yeni stock/fatura/para veya alacak affı oluşmaz; stale sürüm ve başka siparişe bağlı plan toplu kapanmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-015",
+      "decision_key": "KUL-01",
+      "title": "Hareketli sayım B",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-18",
+        "PKG-15"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-037",
+        "AT-029",
+        "AT-007",
+        "AT-030",
+        "AT-031",
+        "AT-040",
+        "AT-063",
+        "AT-064"
+      ],
+      "scenario": {
+        "id": "SCN-015",
+        "given": "Kayıtta 10 ton vardır; sayım sırasında 2 ton sevk ve sevk sonrasında 8 ton gözlem oluşur.",
+        "when": "Zaman/kaynak hareketleriyle sayım uzlaştırılır; eşzamanlı ikinci hareket de denenir.",
+        "then": "Sevk zaten kayıtlı olduğundan ek 2 ton sayım eksiği doğmaz; fark onayı güncel durumu denetler.",
+        "negative_boundary": "Aynı sayım/retry ikinci stok farkı yazamaz; yanlış mal sahibinden düşüş olmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-016",
+      "decision_key": "KUL-02",
+      "title": "ERP erişilemezken yeni fiziksel başlangıç/sevk bekler",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-37",
+        "PKG-19",
+        "PKG-26"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-001",
+        "AT-003",
+        "AT-005",
+        "AT-070",
+        "AT-041",
+        "AT-042",
+        "AT-048",
+        "AT-049",
+        "AT-052",
+        "AT-061",
+        "AT-062",
+        "AT-053",
+        "AT-054",
+        "AT-055",
+        "AT-024"
+      ],
+      "scenario": {
+        "id": "SCN-016",
+        "given": "ERP erişim kaybı ile yalnız dış internet/AI/Mikro kaybı ayrı senaryolardır.",
+        "when": "Yeni başlangıç/sevk denenir; erişim geri gelir.",
+        "then": "ERP erişimi yokken yeni fiziksel başlangıç/sevk bekler; dönüşte güncel yetki/sürümle devam edilir. Yalnız dış internet/AI/Mikro kesik fakat ERP erişilebilir ise bunlara bağımlı olmayan normal ERP işleri devam eder.",
+        "negative_boundary": "Çalışan makineye model otomatik dur komutu göndermez; çevrimdışı taslak gerçek ERP hareketi sayılmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-017",
+      "decision_key": "CORE-Talep",
+      "title": "Ayrı ön sipariş yok; Talep stok bloke etmez",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-11",
+        "PKG-17"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-021",
+        "AT-022",
+        "AT-024",
+        "AT-025",
+        "AT-032",
+        "AT-033",
+        "AT-034",
+        "AT-036",
+        "AT-040"
+      ],
+      "scenario": {
+        "id": "SCN-017",
+        "given": "10 fiziksel, 4 kesin ayrılmış ve 8 Talep ilgisi bulunan sentetik stok vardır.",
+        "when": "Yeni 5 birim kesin tahsis ve Talep→Sipariş dönüşümü denenir.",
+        "then": "Talep öncesi/sonrası serbest miktar 6'dır; yeni kesin 5 sonrası 1 kalır; dönüşüm kendi başına tahsis yapmaz.",
+        "negative_boundary": "Ayrı ön sipariş sayfası ve yalnız renge bağlı anlaşılmaz durum eklenmez; Talep kesin işi engellemez.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-018",
+      "decision_key": "CORE-Cari",
+      "title": "Tek hukukî taraf, zorunlu ticaret rolü yok",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-06",
+        "PKG-11",
+        "PKG-12"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-009",
+        "AT-011",
+        "AT-012",
+        "AT-013",
+        "AT-014",
+        "AT-021",
+        "AT-022",
+        "AT-024",
+        "AT-025",
+        "AT-026",
+        "AT-027",
+        "AT-064"
+      ],
+      "scenario": {
+        "id": "SCN-018",
+        "given": "Mevcut rol değerleri ve yeni rolesiz cari akışı vardır.",
+        "when": "Aynı tarafla mal/hizmet alış ve satış yapılmak üzere cari hazırlanır.",
+        "then": "Ticaret rolü önkoşulu kalkar; eski kayıt/audit korunur; Firma/Kişi ve güvenlik rolleri ayrı kalır.",
+        "negative_boundary": "Yalnız UI gizlenip SQL/API reddi bırakılmaz; izinler otomatik genişlemez.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-019",
+      "decision_key": "CORE-Sirket",
+      "title": "Yetkili çok şirket okuma, tek şirket yazma",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-02",
+        "PKG-04",
+        "PKG-06",
+        "PKG-36"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-001",
+        "AT-002",
+        "AT-006",
+        "AT-008",
+        "AT-069",
+        "AT-003",
+        "AT-004",
+        "AT-068",
+        "AT-009",
+        "AT-011",
+        "AT-012",
+        "AT-013",
+        "AT-014",
+        "AT-040",
+        "AT-065"
+      ],
+      "scenario": {
+        "id": "SCN-019",
+        "given": "Demir ve Sac verileri, farklı yetkili kullanıcılar ve para birimleri vardır.",
+        "when": "Birden fazla şirket seçilir; yazma, export, cache ve arama denenir.",
+        "then": "İzinli şirketler birlikte okunur; her yazma tek açık şirkette gerçekleşir; şirket/currency kırılımı korunur.",
+        "negative_boundary": "Yetkisiz şirket/fiyat yan kanalı ve otomatik mahsup/kur çevrimi olmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-020",
+      "decision_key": "CORE-Cari360",
+      "title": "Cari günlük iş merkezi",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-06",
+        "PKG-36"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-009",
+        "AT-011",
+        "AT-012",
+        "AT-013",
+        "AT-014",
+        "AT-001",
+        "AT-002",
+        "AT-040",
+        "AT-065",
+        "AT-069"
+      ],
+      "scenario": {
+        "id": "SCN-020",
+        "given": "Cari ile ilişkili sipariş, kalan, irsaliye, fatura, dekont, ekstre ve belge örnekleri vardır.",
+        "when": "Cari sekmesinden kaynak kayda gidilip filtreli listeye geri dönülür.",
+        "then": "Tüm/açık/kapalı ve kalan bilgileri gerçek kaynakla tutarlı; filtre/konum korunur.",
+        "negative_boundary": "Uygulanmamış sekme/düğme çalışıyor veya sahte tutar gerçek bakiye gibi sunulmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-021",
+      "decision_key": "CORE-IlkIsHesabi",
+      "title": "İlk yetkili iş işleminde şirket hesabı hedefi",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-06",
+        "PKG-11",
+        "PKG-12"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-009",
+        "AT-011",
+        "AT-012",
+        "AT-013",
+        "AT-014",
+        "AT-021",
+        "AT-022",
+        "AT-024",
+        "AT-025",
+        "AT-026",
+        "AT-027",
+        "AT-064"
+      ],
+      "scenario": {
+        "id": "SCN-021",
+        "given": "Ortak Party var; şirkette hesabı yok; mevcut link izinleri korunur.",
+        "when": "Ayrıntılı yeni komut sözleşmesi onaylandıktan sonra eşzamanlı ilk iş işlemi denenir.",
+        "then": "Yetkili iş komutu kapsamında gerekiyorsa hesap atomik/idempotent oluşur; iki eşzamanlı ilk işlemde tek hesap kalır, iş başarısızsa yarım ilişki bırakılmaz.",
+        "negative_boundary": "Liste/GET/arama hesap yaratamaz; pasif hesap sessiz etkinleşmez, mevcut izin genişlemez; bu ayrı sözleşme ilk dar rol diliminde bitmiş sayılmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-022",
+      "decision_key": "CORE-Sahiplik",
+      "title": "Sahiplik ve ticari/hizmet seçim siparişten gelir",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-11",
+        "PKG-12",
+        "PKG-13",
+        "PKG-15"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-021",
+        "AT-022",
+        "AT-024",
+        "AT-025",
+        "AT-026",
+        "AT-027",
+        "AT-064",
+        "AT-029",
+        "AT-030",
+        "AT-031",
+        "AT-028",
+        "AT-040",
+        "AT-063"
+      ],
+      "scenario": {
+        "id": "SCN-022",
+        "given": "Aynı cariyle farklı mal/hizmet ve sahibi farklı siparişler vardır.",
+        "when": "Siparişten mal kabul/üretim/sevk kaynakları kurulur.",
+        "then": "Yön, nitelik ve mal sahibi ilgili siparişten izlenir; yanlış cari sabit rolünden türetilmez.",
+        "negative_boundary": "Ticari belge ilişkisi kendi başına mülkiyet devri değildir; şirket ile mal sahibi karışmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-023",
+      "decision_key": "CORE-FasonBelge",
+      "title": "Fason alış ve satışta satırlı giriş/çıkış belgeleri",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-13",
+        "PKG-27",
+        "PKG-29"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-029",
+        "AT-030",
+        "AT-031",
+        "AT-028",
+        "AT-026",
+        "AT-055",
+        "AT-024",
+        "AT-025",
+        "AT-027",
+        "AT-065"
+      ],
+      "scenario": {
+        "id": "SCN-023",
+        "given": "Bir hizmet siparişine ait birden fazla giriş/çıkış irsaliyesi ve kısmi satırlar vardır.",
+        "when": "Her iki hizmet yönünde belge/satır miktarları bağlanır ve kalan izlenir.",
+        "then": "Başlık ve satırdan çift yönlü kaynağa inilir; çoktan çoğa paylar doğru uzlaşır.",
+        "negative_boundary": "Aynı belgeyi tekrar bağlamak yeni fiziksel hareket/fatura payı yaratmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-024",
+      "decision_key": "CORE-Transfer",
+      "title": "Siparişsiz transfer irsaliyesi",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-15",
+        "PKG-27"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-029",
+        "AT-030",
+        "AT-031",
+        "AT-040",
+        "AT-063",
+        "AT-064",
+        "AT-026",
+        "AT-055"
+      ],
+      "scenario": {
+        "id": "SCN-024",
+        "given": "Sadece konum değiştirecek mal vardır; satış/hizmet siparişi yoktur.",
+        "when": "Transfer irsaliyesi, kısmi çıkış/yolda/kabul akışı kaydedilir.",
+        "then": "Sahiplik korunur, gerçek bacaklar bir kez kaydedilir ve irsaliye takip edilir.",
+        "negative_boundary": "Sahte sipariş, otomatik fatura veya para olayı yaratılmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-025",
+      "decision_key": "CORE-SiparissizFatura",
+      "title": "Bağımsız gerçek faturalar",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-29",
+        "PKG-30"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-024",
+        "AT-025",
+        "AT-027",
+        "AT-028",
+        "AT-055",
+        "AT-065",
+        "AT-058",
+        "AT-003",
+        "AT-007",
+        "docs/ui/sources/finance/v3/06_KABUL_SENARYOLARI.md"
+      ],
+      "scenario": {
+        "id": "SCN-025",
+        "given": "Siparişsiz gelen ve giden gerçek belge örnekleri vardır.",
+        "when": "Faturalar kaydedilir; biri sonradan uygun sipariş/kaynakla ilişkilendirilir.",
+        "then": "İki yön de desteklenir; sonradan bağlama mevcut belge/finans gerçeğini korur.",
+        "negative_boundary": "Fatura fiziksel mal kabulü sayılmaz; ikinci finans/stock olayı oluşturulmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-026",
+      "decision_key": "CORE-Hurda",
+      "title": "Mal sahibine göre hurda ve kullanılabilir artık",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-15",
+        "PKG-19",
+        "PKG-24",
+        "PKG-27"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-029",
+        "AT-030",
+        "AT-031",
+        "AT-040",
+        "AT-063",
+        "AT-064",
+        "AT-041",
+        "AT-042",
+        "AT-048",
+        "AT-049",
+        "AT-052",
+        "AT-061",
+        "AT-062",
+        "AT-043",
+        "AT-050",
+        "AT-026",
+        "AT-055"
+      ],
+      "scenario": {
+        "id": "SCN-026",
+        "given": "Şirket ve müşteri malı ayrı kaynaklarda işlenir.",
+        "when": "Çıktı, kullanılabilir artan, hurda ve gerçek kayıp kaydedilir.",
+        "then": "Fiziksel hurda sahibinin stoğunda kalır; müşteri hurdası iade edilebilir; genealogy korunur.",
+        "negative_boundary": "Müşteri hurdası açık devir olmadan şirket malı olmaz; gerçek kayıp fiziksel hurda değildir.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-027",
+      "decision_key": "CORE-Nitelik",
+      "title": "Etiket bazlı kalite ve kusur metadata'sı",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-07",
+        "PKG-16"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-015",
+        "AT-003",
+        "AT-005",
+        "AT-038",
+        "AT-039",
+        "AT-050"
+      ],
+      "scenario": {
+        "id": "SCN-027",
+        "given": "Bir lotun sadece bir alt miktarı kırıklı/dalgalıdır; bir diğerinin sınıfı bilinmiyordur.",
+        "when": "Bölme/etiket ve nitelik işlemleri yapılır.",
+        "then": "Teknik kalite, ticari sınıf ve çoklu kusur doğru fiziksel alt miktarda korunur.",
+        "negative_boundary": "Bilinmeyen standart olmaz; uçbaş/kullanılabilir artık otomatik kusur veya hurda değildir; normal kalite serbest bırakma kapısı geri gelmez.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-028",
+      "decision_key": "CORE-DokuzRota",
+      "title": "Beş motor ve dokuz rota",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-19",
+        "PKG-20",
+        "PKG-21",
+        "PKG-22",
+        "PKG-23",
+        "PKG-24",
+        "PKG-25"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-041",
+        "AT-042",
+        "AT-048",
+        "AT-049",
+        "AT-052",
+        "AT-061",
+        "AT-062",
+        "AT-044",
+        "AT-050",
+        "AT-047",
+        "AT-045",
+        "AT-046",
+        "AT-043"
+      ],
+      "scenario": {
+        "id": "SCN-028",
+        "given": "D→P→B, D→H→P→B, P→B, D→K ve yalnız D/H/P/K/B fixture'ları vardır.",
+        "when": "Her rotada normal ve kısmi gerçekleşme işletilir.",
+        "then": "Planlanan alt iş önceden kurulabilir; her ara adımdan gerçek kısmi çıktı sonraki adıma geçer.",
+        "negative_boundary": "Üst programın tamamını bitirme şartı yoktur; beklenen çıktı fiziksel stok veya ikinci kök tüketim değildir.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-029",
+      "decision_key": "CORE-PlanDuzeltme",
+      "title": "Üst plan değişikliği ve kısmi gerçekleşme",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-19",
+        "PKG-25",
+        "PKG-17"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-041",
+        "AT-042",
+        "AT-048",
+        "AT-049",
+        "AT-052",
+        "AT-061",
+        "AT-062",
+        "AT-050",
+        "AT-032",
+        "AT-033",
+        "AT-034",
+        "AT-036",
+        "AT-040"
+      ],
+      "scenario": {
+        "id": "SCN-029",
+        "given": "Bir beklenen çıktıya iki alt plan bağlı; bir kısım üretilmiş/tüketilmiş/sevk edilmiştir.",
+        "when": "Üst miktar azaltılır ve etki önizlenir.",
+        "then": "Planlayıcı kalan uygun payı seçer; etkilenen gelecek işler görünür; gerçekleşmiş soy ağacı korunur.",
+        "negative_boundary": "Alt gerçek tüketim silinmez; pay başka siparişten sessiz alınmaz; hayalî stock doğmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-030",
+      "decision_key": "CORE-Proforma",
+      "title": "Aynı siparişten sözleşme ve İngilizce proforma",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-28",
+        "PKG-29"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-056",
+        "AT-057",
+        "AT-065",
+        "AT-066",
+        "AT-067",
+        "AT-024",
+        "AT-025",
+        "AT-027",
+        "AT-028",
+        "AT-055"
+      ],
+      "scenario": {
+        "id": "SCN-030",
+        "given": "Onaylı bir sipariş sürümü ve şirket antet şablonları vardır.",
+        "when": "Sözleşme, Türkçe ve İngilizce ihracat proforması birlikte üretilir.",
+        "then": "Her çıktı aynı kaynak sürüme bağlıdır; başarısız belge yeniden denenirken başarılı çıktı kopyalanmaz.",
+        "negative_boundary": "İngilizce proforma resmî invoice/e-belge, stock veya açık kalem yaratmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-031",
+      "decision_key": "CORE-BelgeSurum",
+      "title": "Silinmez eski sözleşmeler ve özgün byte'lar",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-14",
+        "PKG-28",
+        "PKG-37"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-007",
+        "AT-023",
+        "AT-024",
+        "AT-027",
+        "AT-028",
+        "AT-056",
+        "AT-057",
+        "AT-065",
+        "AT-066",
+        "AT-067",
+        "AT-001",
+        "AT-003",
+        "AT-005",
+        "AT-070"
+      ],
+      "scenario": {
+        "id": "SCN-031",
+        "given": "Bir siparişin eski sözleşmesi, sonra revizyon ve yeni anteti vardır.",
+        "when": "Eski sürüm açılır; normal yönetici silmeyi dener; restore yapılır.",
+        "then": "Eski özgün byte/hash ve o zamanki içerik erişilebilir kalır; yeni belge ayrı sürümdür.",
+        "negative_boundary": "Güncel cari/antetle geçmiş sessiz yeniden üretilmez; yasal retention/imha süresi tahmin edilmez.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-032",
+      "decision_key": "CORE-Sablon",
+      "title": "Karışık şablon ve onaylı alan kataloğu",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-28",
+        "PKG-34"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-056",
+        "AT-057",
+        "AT-065",
+        "AT-066",
+        "AT-067",
+        "AT-059",
+        "AT-060",
+        "AT-068"
+      ],
+      "scenario": {
+        "id": "SCN-032",
+        "given": "Word/Excel/PDF/görsel şablonlar ve belirsiz OCR alanları vardır.",
+        "when": "AI eşleme önerir; yetkili düzeltip yayımlar; belge doldurulur.",
+        "then": "İzinli typed alan kataloğundan deterministik doldurulur; sürüm/şirket/antet ilişkisi nettir.",
+        "negative_boundary": "AI ham SQL seçemez; dosyadaki gizli talimat yetki/alan sınırını değiştiremez.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-033",
+      "decision_key": "CORE-Yetki",
+      "title": "Merkezi ayarlar ve işlem bazlı yetki",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-04",
+        "PKG-34"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-001",
+        "AT-003",
+        "AT-004",
+        "AT-008",
+        "AT-068",
+        "AT-056",
+        "AT-059",
+        "AT-060"
+      ],
+      "scenario": {
+        "id": "SCN-033",
+        "given": "Merkez yönetici, normal kullanıcı ve sipariş onay yetkilisi vardır.",
+        "when": "AI yardımıyla izin taslağı, kritik erişim onayı ve sipariş onayı denenir.",
+        "then": "Kullanıcı–şirket–işlem–onay–fiyat–çıktı izinleri ayrı uygulanır; yetkili siparişini onaylayabilir.",
+        "negative_boundary": "AI kendine izin veremez; kritik erişimde maker/hedef kendi yükseltmesini onaylayamaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-034",
+      "decision_key": "CORE-AI",
+      "title": "Sistemi bilen fakat sınırlı yetkili AI",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-34",
+        "PKG-02"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-056",
+        "AT-059",
+        "AT-060",
+        "AT-068",
+        "AT-001",
+        "AT-002",
+        "AT-006",
+        "AT-008",
+        "AT-069"
+      ],
+      "scenario": {
+        "id": "SCN-034",
+        "given": "Yetkili veri kaynakları, yanlış/belirsiz görsel ve iş sözlüğü vardır.",
+        "when": "Görsel/sesle doğru sayfa ve işlem önerisi istenir; AI kesilir.",
+        "then": "Kaynak/belirsizlik gösterilir; izinli araçlar üzerinden preview/onaylı komut oluşur; normal ERP AI'siz çalışır.",
+        "negative_boundary": "Sınırsız AGI/otomatik doğru öğrenme vaadi ve ham DB/SQL erişimi yoktur; yetkisiz şirket/fiyat verilmez.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-035",
+      "decision_key": "CORE-PortalHesap",
+      "title": "Şirket ortak portal hesabı ve güvenli devir",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-35",
+        "PKG-34"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-056",
+        "AT-057",
+        "AT-059",
+        "AT-060",
+        "AT-065",
+        "AT-068"
+      ],
+      "scenario": {
+        "id": "SCN-035",
+        "given": "Şirket ortak hesabı sır kasasındadır; iki ERP aktörü portal işini çalıştırır.",
+        "when": "Oturum kaybı, şirket değişimi ve MFA/CAPTCHA denenir.",
+        "then": "ERP aktörü/şirket audit'i ve iş izolasyonu korunur; gerektiğinde insan devri yapılır.",
+        "negative_boundary": "Sır modele/loga/git'e yazılmaz; CAPTCHA atlatma veya değişen sayfadan etkilenmeme garantisi yoktur.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-036",
+      "decision_key": "CORE-Mikro",
+      "title": "Taslak–onay–gönderim–arşiv ve belirsiz sonuç",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-35",
+        "PKG-26",
+        "PKG-29"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-056",
+        "AT-057",
+        "AT-059",
+        "AT-060",
+        "AT-065",
+        "AT-053",
+        "AT-054",
+        "AT-055",
+        "AT-024",
+        "AT-025",
+        "AT-027",
+        "AT-028"
+      ],
+      "scenario": {
+        "id": "SCN-036",
+        "given": "Fiilî yükleme ve onaylı dış belge taslağı vardır; gönderimde timeout oluşur.",
+        "when": "Durum uzlaştırılır; gelen irsaliye ayrıca işlenir.",
+        "then": "Dış sonuç bulunur; tek gönderim ve kaynaklı PDF/status arşivi korunur; gelen belge öneri/uyarıdır.",
+        "negative_boundary": "Sonucu bilinmeyen gönderim kör tekrar edilmez; gelen belge otomatik mal kabulü yaratmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-037",
+      "decision_key": "CORE-Sicil",
+      "title": "Haftalık ve anlık Ticaret Sicili",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-35",
+        "PKG-36"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-056",
+        "AT-057",
+        "AT-059",
+        "AT-060",
+        "AT-065",
+        "AT-001",
+        "AT-002",
+        "AT-011",
+        "AT-040",
+        "AT-069"
+      ],
+      "scenario": {
+        "id": "SCN-037",
+        "given": "Aktif/pasif, kimlik eksik, kapsam dışı ve Türkiye sicilli yabancı şubeli cariler; ortak kimliğin çok şirket ilişkisi ve eski ilanlar vardır.",
+        "when": "Planlı ve tek tuş sorgu aynı ilanı bulur; erişim hatası da denenir.",
+        "then": "Bütün carilerin yetkili kontrol durumu görünür; kimlik/kaynak/yayın ve sorgu tarihi tutulur; aynı kaynak sorgusu ve ilan uyarısı gereksiz çoğalmaz.",
+        "negative_boundary": "Pasif cari sessiz atlanmaz; kimlik eksik/kapsam dışı/çelişkili eşleşme veya sorgu hatası değişiklik yok sayılmaz; yalnız ülke alanı şubeyi dışlamaz; AI kritik cari bilgisini kendiliğinden değiştirmez.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-038",
+      "decision_key": "CORE-Restore",
+      "title": "Temiz hedefe yalnız seçilen şirket",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-37",
+        "PKG-03",
+        "PKG-36"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-001",
+        "AT-003",
+        "AT-005",
+        "AT-070",
+        "AT-008",
+        "AT-002",
+        "AT-011",
+        "AT-040",
+        "AT-065",
+        "AT-069"
+      ],
+      "scenario": {
+        "id": "SCN-038",
+        "given": "Demir+Sac bulunan sistemin şirket bazlı DB/dosya/audit yedekleri vardır.",
+        "when": "Temiz aktif hedefe yalnız Demir restore edilir; indeks/oturum/kuyruklar toparlanır.",
+        "then": "Yalnız Demir'in kayıtları ve kullanılan/izinli ortak master referanslarının gerekli alt kümesi vardır: Party, ürün/hizmet, birim, politika/sürüm ve diğer zorunlu kaynak bağları. Demir'in Sac'la kendi ticareti kalır.",
+        "negative_boundary": "Sac'ın defteri/stock'u taşınmaz; dolu hedef sessiz silinmez/birleştirilmez; eski dış işler tekrar gönderilmez.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-039",
+      "decision_key": "RISK-01",
+      "title": "Eski karar/spec/kod uzlaştırması",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-01",
+        "PKG-06",
+        "PKG-38"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-001",
+        "AT-003",
+        "AT-005",
+        "AT-007",
+        "AT-009",
+        "AT-011",
+        "AT-012",
+        "AT-013",
+        "AT-014",
+        "docs/acceptance/ACCEPTANCE_70.md",
+        "docs/acceptance/DEFINITION_READY_DONE.md"
+      ],
+      "scenario": {
+        "id": "SCN-039",
+        "given": "Eski AT/role/kalite veya approval beklentisi yeni kararla çelişir.",
+        "when": "Kaynaklar öncelik ve tarih ile karşılaştırılır.",
+        "then": "Fark açık kayıtla yeni kabul beklentisine bağlanır; kanonik sahibin uzlaştırması istenir.",
+        "negative_boundary": "Eski kabul sırf geçti diye yeni iş kabulü sayılmaz; açık politika sessiz kapanmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-040",
+      "decision_key": "RISK-02",
+      "title": "Tek etki ve eşzamanlı komut",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-01",
+        "PKG-17",
+        "PKG-30"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-001",
+        "AT-003",
+        "AT-005",
+        "AT-007",
+        "AT-032",
+        "AT-033",
+        "AT-034",
+        "AT-036",
+        "AT-040",
+        "AT-058",
+        "docs/ui/sources/finance/v3/06_KABUL_SENARYOLARI.md"
+      ],
+      "scenario": {
+        "id": "SCN-040",
+        "given": "Aynı stock/para kaynağına iki eşzamanlı komut ve yinelenen idempotency anahtarı gelir.",
+        "when": "Gerçek SQL yarış/retry testleri yürütülür.",
+        "then": "En fazla izinli tek etki, sürüm conflict ve aynı istek replay sonucu görülür.",
+        "negative_boundary": "Aynı anahtarla farklı payload kabul edilmez; UI kontrolü tek koruma değildir.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-041",
+      "decision_key": "RISK-03",
+      "title": "Kısmi dış etki ve stale önizleme",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-01",
+        "PKG-28",
+        "PKG-35"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-001",
+        "AT-003",
+        "AT-005",
+        "AT-007",
+        "AT-056",
+        "AT-057",
+        "AT-065",
+        "AT-066",
+        "AT-067",
+        "AT-059",
+        "AT-060"
+      ],
+      "scenario": {
+        "id": "SCN-041",
+        "given": "Commit olmuş outbox işi ve önizleme sonrası değişmiş kaynak/izin vardır.",
+        "when": "Worker commit sonrası çöker; retry ve eski preview apply denenir.",
+        "then": "İç tüketiciler inbox/dedup ile tek etkiyi korur; dış sağlayıcıda varsa idempotency/sonuç sorgusu doğrulanır, yoksa belirsiz iş bekletilip uzlaştırılır. Stale uygulama reddedilir veya yeni onay ister.",
+        "negative_boundary": "Yerel outbox/inbox tek başına dış portalda exactly-once garantisi değildir; belirsiz gönderim kör tekrar edilmez. Modül başka modül tablosuna doğrudan yazmaz; eski onay yeni alıcı/içeriği kapsamaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-042",
+      "decision_key": "RISK-04",
+      "title": "Tek calculator ve sürümlü ayarlar",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-05",
+        "PKG-08",
+        "PKG-09",
+        "PKG-19"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-003",
+        "AT-016",
+        "AT-049",
+        "AT-061",
+        "AT-062",
+        "AT-017",
+        "AT-018",
+        "AT-021",
+        "AT-041",
+        "AT-042",
+        "AT-048",
+        "AT-052"
+      ],
+      "scenario": {
+        "id": "SCN-042",
+        "given": "Aynı kg/adet/fiyat/golden girdisi farklı ekran ve raporlara gider.",
+        "when": "UI/API/PDF/AI hesap sonucu ve eski policy sürümü karşılaştırılır.",
+        "then": "Tek backend calculator eşit sonuç ve açık birim/kaynak verir; geçmiş snapshot değişmez.",
+        "negative_boundary": "Frontend ayrı formül yazamaz; eksik gerçek sayısal değer production varsayılanı olamaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-043",
+      "decision_key": "RISK-05",
+      "title": "Dosya–metadata tutarlılığı",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-28",
+        "PKG-37"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-056",
+        "AT-057",
+        "AT-065",
+        "AT-066",
+        "AT-067",
+        "AT-001",
+        "AT-003",
+        "AT-005",
+        "AT-070"
+      ],
+      "scenario": {
+        "id": "SCN-043",
+        "given": "Upload'ın dosya ve metadata adımları arasında hata/eksik blob oluşur.",
+        "when": "Retry, finalize ve restore doğrulaması işletilir.",
+        "then": "Yarım iş görünür; referans verilen değişmez sürümün hash/erişimi doğrulanır.",
+        "negative_boundary": "Dosya yokken belge hazır sayılmaz; retry eski başarılı sürümü çoğaltmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-044",
+      "decision_key": "RISK-06",
+      "title": "Şirket ve fiyat yan kanalları",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-02",
+        "PKG-04",
+        "PKG-28",
+        "PKG-34",
+        "PKG-36"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-001",
+        "AT-002",
+        "AT-006",
+        "AT-008",
+        "AT-069",
+        "AT-003",
+        "AT-004",
+        "AT-068",
+        "AT-056",
+        "AT-057",
+        "AT-065",
+        "AT-066",
+        "AT-067",
+        "AT-059",
+        "AT-060",
+        "AT-011",
+        "AT-040"
+      ],
+      "scenario": {
+        "id": "SCN-044",
+        "given": "Sınırlı kullanıcı ve şirket/fiyat gizli kayıtlar vardır.",
+        "when": "Liste/detay/search/count/export/log/file/AI yüzeyleri sorgulanır.",
+        "then": "Her çıkış aynı veri kapsamını uygular; cache ve stale yanıt şirket değişiminde temizlenir.",
+        "negative_boundary": "Sadece buton gizleme güvenlik sayılmaz; fiyatlı dosyaya doğrudan URL açılmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-045",
+      "decision_key": "RISK-07",
+      "title": "Eski yıl ve ödenmiş fatura iadesi",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-14",
+        "PKG-29",
+        "PKG-30",
+        "PKG-31",
+        "PKG-33"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-007",
+        "AT-023",
+        "AT-024",
+        "AT-027",
+        "AT-028",
+        "AT-025",
+        "AT-055",
+        "AT-065",
+        "AT-058",
+        "AT-003",
+        "docs/ui/sources/finance/v3/06_KABUL_SENARYOLARI.md",
+        "AT-011",
+        "docs/ui/sources/finance/v3/04_IS_KURALLARI_DURUM_ETKI_MATRISI.md"
+      ],
+      "scenario": {
+        "id": "SCN-045",
+        "given": "Geçmiş kapalı yıldaki ödenmiş fatura ve başarısız ödeme aracı örnekleri vardır.",
+        "when": "Bugün iade/düzeltme ve gerektiğinde ayrı para iadesi kaydedilir.",
+        "then": "Geçmiş salt okunur kaynak bulunur; yeni dönem fiziksel/belgesel/finansal etkiler ayrıdır.",
+        "negative_boundary": "Eski ödeme silinmez; iade otomatik nakit iadesi veya dönem kilidi bypass'ı olmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-046",
+      "decision_key": "RISK-08",
+      "title": "İşletim, temiz kurulum ve güvenli geri dönüş",
+      "source_refs": [
+        "docs/decisions/SINAN_KARARLARI_2026-09-10.md"
+      ],
+      "package_ids": [
+        "PKG-01",
+        "PKG-37",
+        "PKG-38"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-001",
+        "AT-003",
+        "AT-005",
+        "AT-007",
+        "AT-070",
+        "docs/acceptance/ACCEPTANCE_70.md",
+        "docs/acceptance/DEFINITION_READY_DONE.md"
+      ],
+      "scenario": {
+        "id": "SCN-046",
+        "given": "Temiz test ortamı ve DB/file/queue/backup hata örnekleri vardır.",
+        "when": "Kurulum, yükseltme, forward-fix/geri dönüş ve yedek alarmı provası yapılır.",
+        "then": "Hata ve sorumlu görünür; ölçülmüş kurtarma kanıtı bulunur; veri/sır sızmaz.",
+        "negative_boundary": "Sadece geliştirici bilgisayarında açılma ürün kabulü sayılmaz; production otomatik açılmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-047",
+      "decision_key": "BASE-UrunExcel",
+      "title": "Ürün/hizmet, fiyat ve günlük toplu bakım",
+      "source_refs": [
+        "docs/planning/2026-09-10/SON_RAPOR_VE_BASLANGIC_PLANI.md"
+      ],
+      "package_ids": [
+        "PKG-07",
+        "PKG-08",
+        "PKG-09",
+        "PKG-10"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-015",
+        "AT-003",
+        "AT-005",
+        "AT-016",
+        "AT-017",
+        "AT-049",
+        "AT-018",
+        "AT-021",
+        "AT-019",
+        "AT-020"
+      ],
+      "scenario": {
+        "id": "SCN-047",
+        "given": "Ürün aileleri, hizmet kartı, fiyat birimi ve yinelenen dosya fixture'ı vardır.",
+        "when": "Kart/fiyat yönetimi ve eşleme–önizleme–onaylı Excel toplu işlem yürütülür.",
+        "then": "Aile alanları ve izinli kolonlar doğrulanır; hatalı satır/tekrar dosya raporlanır; geçmiş sürüm korunur.",
+        "negative_boundary": "Hizmet stok yaratmaz; daily Excel tarihsel veri taşıma sayılmaz; fiyat görünürlüğü bypass olmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-048",
+      "decision_key": "BASE-Finans",
+      "title": "Manuel finans ve ödeme araçları mevcut kapsamdadır",
+      "source_refs": [
+        "docs/planning/2026-09-10/SON_RAPOR_VE_BASLANGIC_PLANI.md"
+      ],
+      "package_ids": [
+        "PKG-30",
+        "PKG-31",
+        "PKG-32",
+        "PKG-33"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-058",
+        "AT-003",
+        "AT-007",
+        "docs/ui/sources/finance/v3/06_KABUL_SENARYOLARI.md",
+        "AT-011",
+        "docs/ui/sources/finance/v3/04_IS_KURALLARI_DURUM_ETKI_MATRISI.md",
+        "AT-022"
+      ],
+      "scenario": {
+        "id": "SCN-048",
+        "given": "Sentetik tahsilat, avans, çek/POS/DBS ve farklı şirket para birimleri vardır.",
+        "when": "Dağıtım, ters kayıt ve riskin sipariş→sevk→fatura geçişi yürütülür.",
+        "then": "Tek para kaynağı ve açık kalem payları izlenir; nakit/teminat/risk ayrı; kontrol onaylı politikadan gelir.",
+        "negative_boundary": "Dağıtım ikinci banka hareketi yaratmaz; DBS nakit sayılmaz; tam muhasebe entegrasyonu gerekmeden manuel çekirdek çalışır.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-049",
+      "decision_key": "BASE-Girdiler",
+      "title": "§13.5 girdileri doğru kabul kapısına bağlama",
+      "source_refs": [
+        "docs/planning/2026-09-10/SON_RAPOR_VE_BASLANGIC_PLANI.md"
+      ],
+      "package_ids": [
+        "PKG-03",
+        "PKG-05",
+        "PKG-08",
+        "PKG-26",
+        "PKG-34",
+        "PKG-35",
+        "PKG-37",
+        "PKG-38"
+      ],
+      "legacy_acceptance_refs": [
+        "AT-001",
+        "AT-003",
+        "AT-005",
+        "AT-008",
+        "AT-016",
+        "AT-049",
+        "AT-061",
+        "AT-062",
+        "AT-017",
+        "AT-053",
+        "AT-054",
+        "AT-055",
+        "AT-024",
+        "AT-056",
+        "AT-059",
+        "AT-060",
+        "AT-068",
+        "AT-057",
+        "AT-065",
+        "AT-070",
+        "docs/acceptance/ACCEPTANCE_70.md",
+        "docs/acceptance/DEFINITION_READY_DONE.md"
+      ],
+      "scenario": {
+        "id": "SCN-049",
+        "given": "Bazı gerçek formül/tolerans/şablon/cihaz/sır/restore girdileri eksiktir.",
+        "when": "DoR ve kabul/canlı kapıları değerlendirilir.",
+        "then": "Yapı şimdi kurulur; ilgili işlev etkinleşmeden kendi gerçek girdisi alınır; bağımsız çalışma sürer.",
+        "negative_boundary": "Her şey sona bırakılmaz; genel tüm geliştirme bloke edilmez; sentetik değer production'a taşınmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-050",
+      "decision_key": "BASE-KapsamSiniri",
+      "title": "Bilinçli ertelenen kapsam ve veri hariç teslim",
+      "source_refs": [
+        "docs/planning/2026-09-10/SON_RAPOR_VE_BASLANGIC_PLANI.md"
+      ],
+      "package_ids": [
+        "PKG-39",
+        "PKG-40"
+      ],
+      "legacy_acceptance_refs": [],
+      "scenario": {
+        "id": "SCN-050",
+        "given": "Maliyet/değerleme, dış banka/tam muhasebe entegrasyonu ve tarihsel veri taşıma kayıtları vardır.",
+        "when": "Aktif teslim paydası ve bağımlılıkları değerlendirilir.",
+        "then": "Bu gruplar görünür DEFERRED kalır; manuel finans, günlük Excel, Mikro e-belge ve restore aktif kapsamdan düşmez.",
+        "negative_boundary": "Tarihsel veri taşındı veya ertelenen iş tamamlandı denmez; geçmiş karar kalıcı iptal edilmez.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "Scope/dependency review"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    },
+    {
+      "id": "REQ-051",
+      "decision_key": "BASE-UctanUca",
+      "title": "Çalışan dilim ve ölçülü kanıt",
+      "source_refs": [
+        "docs/planning/2026-09-10/SON_RAPOR_VE_BASLANGIC_PLANI.md"
+      ],
+      "package_ids": [
+        "PKG-38",
+        "PKG-02",
+        "PKG-36"
+      ],
+      "legacy_acceptance_refs": [
+        "docs/acceptance/ACCEPTANCE_70.md",
+        "docs/acceptance/DEFINITION_READY_DONE.md",
+        "AT-001",
+        "AT-002",
+        "AT-006",
+        "AT-008",
+        "AT-069",
+        "AT-011",
+        "AT-040",
+        "AT-065"
+      ],
+      "scenario": {
+        "id": "SCN-051",
+        "given": "Gerçek backend'e bağlı ekran ve temsilî sentetik kayıtlarla tamamlanan bir dilim vardır.",
+        "when": "Happy-path, hata/yetki ve ilgili risk testleri; bağımsız exact-head review ve zorunlu CI yürütülür.",
+        "then": "Komut/HEAD/sonuç/artifact kaydıyla biten işten sonraki gerçekten hazır işe geçilir.",
+        "negative_boundary": "Değişmeyen tüm analizi/testi sonsuz tekrarlama olmaz; zorunlu CI veya K3 review atlanmaz; NOT_RUN test PASSED sayılmaz.",
+        "execution_status": "NOT_RUN"
+      },
+      "required_evidence": [
+        "İlgili dilimde exact-head sözleşme ve yeni davranış testi",
+        "Etkisine göre gerçek SQL/concurrency, browser/alan yetkisi ve hata yolu kanıtı"
+      ],
+      "status": "PROPOSED_ACCEPTANCE_NOT_RUN"
+    }
+  ]
+}
