@@ -425,6 +425,8 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
   // The ref makes recovery happen at most once per rejected cursor.
   const recoveredCursor = useRef<string | null>(null)
   const [cursorRecovered, setCursorRecovered] = useState(false)
+  /** Set when a return could not be honoured — see the effect above. */
+  const [returnNotice, setReturnNotice] = useState(false)
   // oxlint-disable-next-line react/set-state-in-effect -- see the note above
   useEffect(() => {
     if (isInvalidCursor && cursor !== undefined && recoveredCursor.current !== cursor) {
@@ -449,18 +451,44 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
    */
   useEffect(() => {
     if (returnToId === null || returnHandled.current) return
+    // Nothing has been read back yet; there is no page to look in.
+    if (state.kind !== 'ready') return
+
     // Matched by reading the attribute rather than by interpolating the id into a
     // selector: an id in a selector needs escaping, and `CSS.escape` is not
     // guaranteed to exist in every environment this renders in.
     const link = [...document.querySelectorAll<HTMLAnchorElement>('[data-row-link]')].find(
       (candidate) => candidate.dataset.rowLink === returnToId,
     )
-    if (link === undefined) return
     returnHandled.current = true
-    link.focus()
+    if (link !== undefined) {
+      link.focus()
+      return
+    }
+
+    /**
+     * The record is not in what was re-read.
+     *
+     * This is the ORDINARY case for a record opened from a continuation page: coming
+     * back re-reads the FIRST page only, deliberately. Replaying the remembered
+     * cursor chain would re-issue N reads per entry and — the part that matters —
+     * would rebuild a view out of tokens minted under the previous route entry's
+     * authorization, which is the exact frame `CapabilityRoute` bumps the entry
+     * generation to close (#146/#148). The rows a user sees after coming back are
+     * always freshly authorized rows.
+     *
+     * So the position genuinely cannot be restored, and the screen says so instead of
+     * silently doing nothing. Before this, focus stayed on <body> and the list looked
+     * as if it had simply forgotten where the user was.
+     *
+     * It can also mean the record left the result set entirely — passivated, renamed
+     * out of the search, re-scoped. We do not claim to know which: the message says
+     * where the user IS, not what happened to the record.
+     */
+    setReturnNotice(true)
     // The trigger is "rows are on screen", which is what the count expresses. The
     // array itself is rebuilt every render and would re-run this on each one.
-  }, [returnToId, items.length])
+  }, [returnToId, items.length, state.kind])
 
   const ariaSort = (field: SortField): 'ascending' | 'descending' | 'none' =>
     sort !== field ? 'none' : direction === 'asc' ? 'ascending' : 'descending'
@@ -484,7 +512,11 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
       <h1 id="cari-list-heading">Cari Kartlar</h1>
 
       <div role="status" aria-live="polite" className={styles.announce}>
-        {cursorRecovered ? 'Liste güncellendi; ilk sayfaya dönüldü.' : ''}
+        {cursorRecovered
+          ? 'Liste güncellendi; ilk sayfaya dönüldü.'
+          : returnNotice
+            ? 'Ayrıldığınız kayıt ilk sayfada değil; liste ilk sayfadan yeniden okundu.'
+            : ''}
       </div>
 
       <div className={styles.filters} role="search">
