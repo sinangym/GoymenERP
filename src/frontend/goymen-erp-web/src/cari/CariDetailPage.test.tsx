@@ -146,7 +146,7 @@ describe('C-03 core summary (spec §5.1)', () => {
     expect(factValue('Hukuki unvan')).toBe('Örnek Metal Sanayi ve Ticaret A.Ş.')
     expect(factValue('Ticari unvan')).toBe('Örnek Metal')
     expect(factValue('Tür')).toBe('Tüzel kişi')
-    expect(factValue('Bu şirketteki roller')).toBe('Müşteri, Tedarikçi')
+    expect(factValue('Geçmiş ticari sınıflandırma')).toBe('Müşteri, Tedarikçi')
 
     // The company is named from the shell DIRECTORY, not from the record — the
     // response carries only an id. That is a second query, so it can resolve after

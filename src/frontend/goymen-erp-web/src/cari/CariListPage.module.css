@@ -293,3 +293,37 @@ td[data-account-state='inactive'] {
   outline: 2px solid #1f5fd0;
   outline-offset: 2px;
 }
+
+/* The legacy commercial classification: one fold away from the primary filters,
+   and visually subordinate to them, because it is history rather than the way a
+   counterparty is found today (ILK_DILIM §4.1). */
+.legacy {
+  border: 1px solid #d5dbe6;
+  border-radius: 6px;
+  background: #fbfcfe;
+  padding: 8px 14px;
+}
+.legacySummary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #55607a;
+  /* The marker is the affordance; keep it. */
+  list-style: revert;
+}
+.legacySummary:focus-visible {
+  outline: 2px solid #2f5bd7;
+  outline-offset: 2px;
+}
+.legacyNote {
+  margin: 8px 0 10px;
+  font-size: 0.82rem;
+  color: #55607a;
+  max-width: 62ch;
+}
+.legacyControls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-end;
+  padding-bottom: 6px;
+}

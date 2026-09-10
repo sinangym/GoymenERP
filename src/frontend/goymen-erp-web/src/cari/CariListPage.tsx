@@ -27,10 +27,16 @@ import {
   PARTY_KIND,
   PROBLEM_CODE,
   problemCodeOf,
-  rolesFromFlags,
   type CounterpartyListItem,
   type CounterpartyPage,
 } from './contract'
+import {
+  LEGACY_ROLE_FILTER_HEADING,
+  LEGACY_ROLE_HEADING,
+  NO_COMMERCIAL_ROLE_LIST,
+  ROLE_LABEL,
+  rolesText,
+} from './roleText'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
 import { contextKeyString, contextKey, hasCapability } from '../shell/shellState'
@@ -50,13 +56,6 @@ import styles from './CariListPage.module.css'
 const KIND_LABEL: Record<number, string> = {
   [PARTY_KIND.LegalEntity]: 'Tüzel kişi',
   [PARTY_KIND.NaturalPerson]: 'Gerçek kişi',
-}
-
-const ROLE_LABEL: Record<string, string> = {
-  Customer: 'Müşteri',
-  Supplier: 'Tedarikçi',
-  Tolling: 'Fason',
-  Service: 'Hizmet',
 }
 
 const ROLE_OPTIONS: readonly RoleFilter[] = ['Customer', 'Supplier', 'Tolling', 'Service']
@@ -93,11 +92,19 @@ function activeFilterLabels(view: CariListView): readonly string[] {
   if (view.kind !== '') labels.push(`Tür: ${KIND_LABEL[PARTY_KIND[view.kind]]}`)
   if (view.roles.length > 0) {
     const names = view.roles.map((role) => ROLE_LABEL[role]).join(', ')
-    // The match mode only changes the query with 2+ roles, so it is only named there.
+    /**
+     * "Geçmiş rol", not "Rol". The chip is often the ONLY place an applied role
+     * filter is visible — the control itself lives in a block that can be folded
+     * away — so it is the place that has to say what the filter actually selects:
+     * a classification recorded earlier, not today's commercial direction
+     * (ILK_DILIM §4.1).
+     *
+     * The match mode only changes the query with 2+ roles, so it is only named there.
+     */
     labels.push(
       view.roles.length > 1 && view.roleMatch === 'all'
-        ? `Rol (hepsi birden): ${names}`
-        : `Rol: ${names}`,
+        ? `Geçmiş rol (hepsi birden): ${names}`
+        : `Geçmiş rol: ${names}`,
     )
   }
   if (view.partyState !== DEFAULT_CARI_LIST_VIEW.partyState) {
@@ -157,6 +164,15 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
   const [accountState, setAccountState] = useState<AccountStateFilter>(restored.accountState)
   const [sort, setSort] = useState<SortField>(restored.sort)
   const [direction, setDirection] = useState<SortDirection>(restored.direction)
+  /**
+   * Whether the legacy-classification block is open.
+   *
+   * Seeded from the RESTORED view, not from a constant: coming back to a list that
+   * still carries a role filter must not present a folded block over a silently
+   * narrowed list. A filter the user cannot see is the §4.1 failure whether it was
+   * just applied or restored from two screens ago.
+   */
+  const [legacyOpen, setLegacyOpen] = useState(restored.roles.length > 0)
   const [cursor, setCursor] = useState<string | undefined>(undefined)
   const [loaded, setLoaded] = useState<readonly CounterpartyListItem[]>([])
   const searchRef = useRef<HTMLInputElement>(null)
@@ -320,6 +336,9 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
     setRoleMatch(cleared.roleMatch)
     setPartyState(cleared.partyState)
     setAccountState(cleared.accountState)
+    // Nothing legacy is applied any more, so the block goes back to being a place
+    // you open on purpose rather than a control standing open over an empty state.
+    setLegacyOpen(false)
     // Sort is not a filter and is deliberately left alone (see listViewState.ts).
     resetPaging()
     /**
@@ -427,38 +446,6 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
           </select>
         </label>
 
-        <fieldset className={styles.roles}>
-          <legend>Rol</legend>
-          {ROLE_OPTIONS.map((role) => (
-            <label key={role}>
-              <input
-                type="checkbox"
-                checked={roles.includes(role)}
-                onChange={() => toggleRole(role)}
-              />
-              {ROLE_LABEL[role]}
-            </label>
-          ))}
-        </fieldset>
-
-        {/* Only meaningful with 2+ roles — with one role `any` and `all` are the same
-            query, so offering the choice would imply a distinction that does not exist. */}
-        {roles.length > 1 ? (
-          <label className={styles.field}>
-            <span>Rol eşleşmesi</span>
-            <select
-              value={roleMatch}
-              onChange={(event) => {
-                setRoleMatch(event.target.value as RoleMatch)
-                resetPaging()
-              }}
-            >
-              <option value="any">Herhangi biri</option>
-              <option value="all">Hepsi birden</option>
-            </select>
-          </label>
-        ) : null}
-
         {/* Two INDEPENDENT facts, two filters. A Party can be globally active while its
             account in the selected company is passive, and the reverse never happens —
             collapsing them into one control would hide that (DEC-CAR-002). */}
@@ -492,6 +479,66 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
           </select>
         </label>
       </div>
+
+      {/*
+        The legacy commercial classification (ILK_DILIM §4.1, §7).
+
+        DEMOTED, not removed. The 10 September decision removes the mandatory
+        commercial role, so a role filter presented as a peer of the search box
+        would keep teaching the operator that classification is how you find a
+        counterparty. The recorded 1..15 markers still exist and still deserve a
+        way to be queried, so the surface stays — one fold away, and labelled as
+        history.
+
+        A native <details> rather than a bespoke toggle: the open/closed state, the
+        keyboard behaviour and the screen-reader announcement all come from the
+        element, and there is no way for our own aria-expanded to disagree with what
+        is actually rendered.
+      */}
+      <details
+        className={styles.legacy}
+        open={legacyOpen}
+        onToggle={(event) => setLegacyOpen(event.currentTarget.open)}
+      >
+        <summary className={styles.legacySummary}>{LEGACY_ROLE_FILTER_HEADING}</summary>
+        <p className={styles.legacyNote}>
+          Bu işaretler eski kayıtlardan gelir; ticari rol seçmek zorunlu değildir. Bir
+          işaret seçtiğinizde, ticari rolü olmayan cariler listeden düşer.
+        </p>
+        <div className={styles.legacyControls}>
+          <fieldset className={styles.roles}>
+            <legend>Kayıtlı işaret</legend>
+            {ROLE_OPTIONS.map((role) => (
+              <label key={role}>
+                <input
+                  type="checkbox"
+                  checked={roles.includes(role)}
+                  onChange={() => toggleRole(role)}
+                />
+                {ROLE_LABEL[role]}
+              </label>
+            ))}
+          </fieldset>
+
+          {/* Only meaningful with 2+ roles — with one role `any` and `all` are the same
+              query, so offering the choice would imply a distinction that does not exist. */}
+          {roles.length > 1 ? (
+            <label className={styles.field}>
+              <span>İşaret eşleşmesi</span>
+              <select
+                value={roleMatch}
+                onChange={(event) => {
+                  setRoleMatch(event.target.value as RoleMatch)
+                  resetPaging()
+                }}
+              >
+                <option value="any">Herhangi biri</option>
+                <option value="all">Hepsi birden</option>
+              </select>
+            </label>
+          ) : null}
+        </div>
+      </details>
 
       {/* The way OUT of a narrowed list, and the way to see what narrowed it. Rendered
           only when something is actually applied, so an untouched screen carries no
@@ -574,7 +621,10 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
                   </button>
                 </th>
                 <th scope="col">Tür</th>
-                <th scope="col">Bu şirketteki roller</th>
+                {/* Named as history, for the same reason the filter is: a column
+                    called "Bu şirketteki roller" states the classification as the
+                    counterparty's current commercial direction (ILK_DILIM §7). */}
+                <th scope="col">{LEGACY_ROLE_HEADING}</th>
                 <th scope="col">Taraf durumu</th>
                 <th scope="col">Şirket hesabı durumu</th>
               </tr>
@@ -618,10 +668,12 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
                       ) : null}
                     </td>
                     <td>{KIND_LABEL[item.kind]}</td>
-                    <td>
-                      {rolesFromFlags(account.roles)
-                        .map((role) => ROLE_LABEL[role])
-                        .join(', ')}
+                    {/* An empty cell here would read exactly like the "unknown" the
+                        two state columns below were written to avoid. A counterparty
+                        with no commercial classification is an ordinary record as of
+                        the 10 September decision, and the cell says so. */}
+                    <td data-roles={account.roles === 0 ? 'none' : 'legacy'}>
+                      {rolesText(account.roles, NO_COMMERCIAL_ROLE_LIST)}
                     </td>
                     {/* AT-013 + DEC-CAR-002: two separate facts, both stated explicitly.
                         Showing only the passive one would leave "active" as an absence,

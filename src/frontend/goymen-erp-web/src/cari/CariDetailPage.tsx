@@ -15,7 +15,8 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
 import { fetchCounterpartyDetail } from './detailApi'
-import { rolesFromFlags, PARTY_KIND } from './contract'
+import { PARTY_KIND } from './contract'
+import { LEGACY_ROLE_HEADING, NO_COMMERCIAL_ROLE_DETAIL, rolesText } from './roleText'
 import type { CounterpartyDetail } from './detailContract'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
@@ -28,13 +29,6 @@ import styles from './CariDetailPage.module.css'
 const KIND_LABEL: Record<number, string> = {
   [PARTY_KIND.LegalEntity]: 'Tüzel kişi',
   [PARTY_KIND.NaturalPerson]: 'Gerçek kişi',
-}
-
-const ROLE_LABEL: Record<string, string> = {
-  Customer: 'Müşteri',
-  Supplier: 'Tedarikçi',
-  Tolling: 'Fason',
-  Service: 'Hizmet',
 }
 
 /**
@@ -125,7 +119,6 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
 
   const detail = state.data
   const account = detail.account
-  const roles = rolesFromFlags(account.roles)
 
   return (
     <section aria-labelledby="cari-detail-heading" className={styles.page}>
@@ -160,9 +153,13 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
           value={account.isActive ? 'Aktif' : 'Pasif'}
           data-account-state={account.isActive ? 'active' : 'inactive'}
         />
+        {/* Named as history and STATED when absent (ILK_DILIM §7). The record's own
+            screen has room to say the second half out loud: a counterparty with no
+            commercial classification is not a record someone forgot to finish. */}
         <Fact
-          label="Bu şirketteki roller"
-          value={roles.map((r) => ROLE_LABEL[r]).join(', ')}
+          label={LEGACY_ROLE_HEADING}
+          value={rolesText(account.roles, NO_COMMERCIAL_ROLE_DETAIL)}
+          data-roles={account.roles === 0 ? 'none' : 'legacy'}
         />
       </dl>
     </section>
