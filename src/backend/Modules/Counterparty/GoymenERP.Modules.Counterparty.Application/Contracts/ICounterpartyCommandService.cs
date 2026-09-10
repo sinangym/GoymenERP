@@ -31,11 +31,11 @@ public interface ICounterpartyCompanyAccountLinkService
 public sealed record CreateCounterparty(
     PartyKind Kind,
     string LegalName,
-    string? TradeName,
-    PartyRole Roles);
+    string? TradeName = null,
+    PartyRole Roles = PartyRole.None);
 
 public sealed record CreateCompanyPartyAccount(
-    PartyRole Roles);
+    PartyRole Roles = PartyRole.None);
 
 public sealed record SetCompanyPartyAccountActiveState(
     [property: JsonRequired] bool IsActive,

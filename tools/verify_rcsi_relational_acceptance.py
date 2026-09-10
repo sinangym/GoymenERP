@@ -40,6 +40,14 @@ EXPECTED_TESTS = tuple(
     )
 )
 BROAD_EXPECTED_TESTS = (
+    "GoymenERP.Api.IntegrationTests.CounterpartyCompanyLinkSqlServerRelationalAcceptanceTests.ExistingParty_CanBeLinkedWithNoRole",
+    "GoymenERP.Api.IntegrationTests.CounterpartyWriteSqlServerRelationalAcceptanceTests.CanCreateCounterpartyWithoutRole",
+    "GoymenERP.Api.IntegrationTests.CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests.MissingAndZeroRoles_CreateAndLinkShareReplayAndRejectInvalidJson",
+    "GoymenERP.Api.IntegrationTests.CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests.PreviousSchemaUpgradeAndSafeDown_PreserveLegacyRolesAndDurableReplays",
+    "GoymenERP.Api.IntegrationTests.CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests.RolelessRows_BlockDownBeforeSchemaChanges_AndAllowForwardReapply",
+    "GoymenERP.Api.IntegrationTests.CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests.RolelessReads_RespectReadOnlyAuthorizationAndCompanyIsolationWithoutCreatingAccounts",
+    "GoymenERP.Api.IntegrationTests.CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests.RolelessDifferentKeyLinkRace_CreatesOneAccountAndOneAudit",
+    "GoymenERP.Api.IntegrationTests.CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests.RolelessAuditAndIdempotencyFailures_RollBackAndPermitSameKeyRetry",
     "GoymenERP.Api.IntegrationTests.C01E2eGoldenFixtureSqlServerRelationalAcceptanceTests.Fixture_MaterializesOnceAndProvesC01HttpSqlAndSequenceContract",
     "GoymenERP.Api.IntegrationTests.C01E2eGoldenFixtureSqlServerRelationalAcceptanceTests.FixtureArtifact_IsTheExactCanonicalContract",
     "GoymenERP.Api.IntegrationTests.CompanyDirectorySqlServerRelationalAcceptanceTests.Directory_EnforcesAssignmentIsolationActiveFilteringAndReadOnlyBehavior",
@@ -98,8 +106,8 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.UnapprovedLogicalEndpoint_IsRejectedWithoutChangingDatabase",
     "GoymenERP.Api.IntegrationTests.SqlServerRelationalAcceptanceTests.MigrationSeedWriteGuardCompositeForeignKeyAndHttpIsolation_AreEnforced",
 )
-BROAD_DISCOVERY_COUNT = 57
-BROAD_EXECUTION_COUNT = 64
+BROAD_DISCOVERY_COUNT = 65
+BROAD_EXECUTION_COUNT = 72
 
 
 def verify_discovery(standard_output: str) -> None:

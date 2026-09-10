@@ -85,10 +85,6 @@ public sealed class CounterpartyMutationViewProjectorTests
             },
             ValidResource() with
             {
-                CompanyAccounts = [ValidAccount() with { Roles = PartyRole.None }],
-            },
-            ValidResource() with
-            {
                 CompanyAccounts = [ValidAccount() with { Roles = (PartyRole)16 }],
             },
             ValidResource() with
@@ -174,7 +170,7 @@ public sealed class CounterpartyMutationViewProjectorTests
                 CompanyId,
                 Guid.NewGuid(),
                 new CreateCompanyPartyAccount(PartyRole.Customer | PartyRole.Supplier)));
-        Assert.Throws<InvalidOperationException>(() =>
+            Assert.Throws<InvalidOperationException>(() =>
             CounterpartyMutationViewProjector.ProjectCompanyAccountCreate(
                 source,
                 CompanyId,
@@ -189,6 +185,24 @@ public sealed class CounterpartyMutationViewProjectorTests
                 CompanyId,
                 source.Id,
                 new CreateCompanyPartyAccount(PartyRole.Customer | PartyRole.Supplier)));
+    }
+
+    [Fact]
+    public void CanProjectAccountWithNoRole()
+    {
+        var source = ValidResource() with
+        {
+            CompanyAccounts = [ValidAccount(PartyRole.None)],
+        };
+
+        var result = CounterpartyMutationViewProjector.ProjectCompanyAccountCreate(
+            source,
+            CompanyId,
+            source.Id,
+            new CreateCompanyPartyAccount(PartyRole.None));
+
+        var account = Assert.Single(result.CompanyAccounts);
+        Assert.Equal(PartyRole.None, account.Roles);
     }
 
     [Fact]
@@ -270,10 +284,15 @@ public sealed class CounterpartyMutationViewProjectorTests
 
     private static CompanyPartyAccountView ValidAccount()
     {
+        return ValidAccount(PartyRole.Customer | PartyRole.Supplier);
+    }
+
+    private static CompanyPartyAccountView ValidAccount(PartyRole roles)
+    {
         return new CompanyPartyAccountView(
             Guid.Parse("30000000-0000-0000-0000-000000000001"),
             CompanyId,
-            PartyRole.Customer | PartyRole.Supplier,
+            roles,
             null,
             true,
             1);

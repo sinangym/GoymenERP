@@ -421,13 +421,13 @@ public sealed class OpenApiContractGenerationTests
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
                 ["CreateCounterparty"] = ObjectSchema(
-                    ["kind", "legalName", "roles"],
+                    ["kind", "legalName"],
                     ("kind", "ref:PartyKind"),
                     ("legalName", "type:string"),
                     ("tradeName", "type:null|string"),
                     ("roles", "ref:PartyRole")),
                 ["CreateCompanyPartyAccount"] = ObjectSchema(
-                    ["roles"],
+                    [],
                     ("roles", "ref:PartyRole")),
                 ["SetCompanyPartyAccountActiveState"] = ObjectSchema(
                     ["isActive", "expectedVersion", "reason"],
@@ -1669,12 +1669,12 @@ public sealed class OpenApiContractGenerationTests
 
         AssertRequestSchema(
             schemas.GetProperty("CreateCounterparty"),
-            ["kind", "legalName", "roles"],
+            ["kind", "legalName"],
             ["tradeName"],
             ["kind", "legalName", "tradeName", "roles"]);
         AssertRequestSchema(
             schemas.GetProperty("CreateCompanyPartyAccount"),
-            ["roles"],
+            [],
             [],
             ["roles"]);
         AssertRequestSchema(
@@ -1697,7 +1697,7 @@ public sealed class OpenApiContractGenerationTests
                 .EnumerateArray()
                 .Select(value => value.GetInt32()));
         var partyRole = schemas.GetProperty("PartyRole");
-        Assert.Equal(1, partyRole.GetProperty("minimum").GetInt32());
+        Assert.Equal(0, partyRole.GetProperty("minimum").GetInt32());
         Assert.Equal(15, partyRole.GetProperty("maximum").GetInt32());
         Assert.Equal(
             [1, 2, 4, 8],
@@ -1796,12 +1796,12 @@ public sealed class OpenApiContractGenerationTests
         IReadOnlyList<string> nullableProperties,
         IReadOnlyList<string> expectedProperties)
     {
+        var actualRequiredProperties = schema.TryGetProperty("required", out var required)
+            ? required.EnumerateArray().Select(item => item.GetString()!).ToArray()
+            : [];
         Assert.Equal(
             requiredProperties.Order(StringComparer.Ordinal),
-            schema.GetProperty("required")
-                .EnumerateArray()
-                .Select(item => item.GetString())
-                .Order(StringComparer.Ordinal));
+            actualRequiredProperties.Order(StringComparer.Ordinal));
         var properties = schema.GetProperty("properties");
         Assert.Equal(
             expectedProperties.Order(StringComparer.Ordinal),

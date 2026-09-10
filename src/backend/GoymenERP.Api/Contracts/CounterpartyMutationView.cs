@@ -125,7 +125,6 @@ internal static class CounterpartyMutationViewProjector
         if (account.Id == Guid.Empty
             || account.CompanyId == Guid.Empty
             || account.CompanyId != activeCompanyId
-            || account.Roles == PartyRole.None
             || (account.Roles & ~KnownRoles) != 0
             || account.Roles != expectedRoles
             || !account.IsActive

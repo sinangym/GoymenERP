@@ -58,6 +58,35 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "exact"):
             VERIFIER.verify_broad_discovery("\n".join(substituted))
 
+    def test_optional_roles_regressions_are_mandatory_in_broad_inventory(self) -> None:
+        prefix = "GoymenERP.Api.IntegrationTests."
+        required = {
+            prefix + "CounterpartyCompanyLinkSqlServerRelationalAcceptanceTests."
+            "ExistingParty_CanBeLinkedWithNoRole",
+            prefix + "CounterpartyWriteSqlServerRelationalAcceptanceTests."
+            "CanCreateCounterpartyWithoutRole",
+        }
+        optional_prefix = prefix + "CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests."
+        required.update(optional_prefix + name for name in (
+            "MissingAndZeroRoles_CreateAndLinkShareReplayAndRejectInvalidJson",
+            "PreviousSchemaUpgradeAndSafeDown_PreserveLegacyRolesAndDurableReplays",
+            "RolelessRows_BlockDownBeforeSchemaChanges_AndAllowForwardReapply",
+            "RolelessReads_RespectReadOnlyAuthorizationAndCompanyIsolationWithoutCreatingAccounts",
+            "RolelessDifferentKeyLinkRace_CreatesOneAccountAndOneAudit",
+            "RolelessAuditAndIdempotencyFailures_RollBackAndPermitSameKeyRetry",
+        ))
+        self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
+        self.assertEqual(65, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(65, len(VERIFIER.BROAD_EXPECTED_TESTS))
+        self.assertEqual(72, VERIFIER.BROAD_EXECUTION_COUNT)
+        for omitted in required:
+            with self.subTest(omitted=omitted):
+                discovery = "\n".join(
+                    name for name in VERIFIER.BROAD_EXPECTED_TESTS if name != omitted
+                )
+                with self.assertRaisesRegex(RuntimeError, "exact"):
+                    VERIFIER.verify_broad_discovery(discovery)
+
     def test_main_repeats_bootstrap_preflight_before_each_dotnet_boundary(self) -> None:
         calls: list[tuple[str, ...]] = []
 

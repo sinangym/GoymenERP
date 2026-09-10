@@ -4255,9 +4255,6 @@
         }
       },
       "CreateCompanyPartyAccount": {
-        "required": [
-          "roles"
-        ],
         "type": "object",
         "properties": {
           "roles": {
@@ -4268,8 +4265,7 @@
       "CreateCounterparty": {
         "required": [
           "kind",
-          "legalName",
-          "roles"
+          "legalName"
         ],
         "type": "object",
         "properties": {
@@ -4505,8 +4501,9 @@
       },
       "PartyRole": {
         "maximum": 15,
-        "minimum": 1,
+        "minimum": 0,
         "type": "integer",
+        "description": "Optional legacy trade classification. Zero means no specified classification; values 1 through 15 retain their stored flags. This value does not grant user permissions or restrict buying and selling.",
         "x-erp-allowed-flags": [
           1,
           2,

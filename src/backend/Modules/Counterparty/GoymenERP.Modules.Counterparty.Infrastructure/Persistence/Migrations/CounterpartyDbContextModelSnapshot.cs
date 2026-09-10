@@ -219,7 +219,7 @@ partial class CounterpartyDbContextModelSnapshot : ModelSnapshot
             {
                 t.HasCheckConstraint(
                     "CK_CompanyPartyAccounts_Roles",
-                    "[Roles] BETWEEN 1 AND 15");
+                    "[Roles] BETWEEN 0 AND 15");
 
                 t.HasCheckConstraint(
                     "CK_CompanyPartyAccounts_Version",

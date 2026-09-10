@@ -230,7 +230,7 @@ public static class CounterpartyEndpoints
             {
                 return ValidationProblem(
                     "Cari şirket ilişkisi geçersiz.",
-                    "Geçerli cari kimliği ve en az bir bilinen ticari rol zorunludur.");
+                    "Cari kimliği veya ticari sınıflandırma değeri geçersiz.");
             }
 
             if (!TryReadCommandMetadata(
@@ -401,7 +401,7 @@ public static class CounterpartyEndpoints
 
         if (!IsValidRoles(command.Roles))
         {
-            validationDetail = "Cari en az bir bilinen ticari rol taşımalıdır.";
+            validationDetail = "Ticari sınıflandırma değeri geçersiz.";
             return false;
         }
 
@@ -413,7 +413,7 @@ public static class CounterpartyEndpoints
     {
         const PartyRole knownRoles =
             PartyRole.Customer | PartyRole.Supplier | PartyRole.Tolling | PartyRole.Service;
-        return roles != PartyRole.None && (roles & ~knownRoles) == 0;
+        return (roles & ~knownRoles) == 0;
     }
 
     private static bool TryReadCommandMetadata(

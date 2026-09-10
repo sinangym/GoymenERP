@@ -8,7 +8,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "src/backend/Modules/Counterparty/"
         + "GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyDbContext.cs";
     private const string ReviewedCounterpartyDbContextFingerprint =
-        "6ae88f8647e89cad8ecccf58ed14fc4b3165ddd03501f41f01f89e2472256ab2";
+        "5e710ed2c08927ef9eb2fbbacd7b122e74089bc051abfcef972c471b255e2db2";
 
     [Fact]
     public void Counterparty_command_execution_filter_and_no_bypass_surface_are_locked()

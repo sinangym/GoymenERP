@@ -95,6 +95,7 @@ public static class ErpOpenApiContract
                 if (context.JsonTypeInfo.Type == typeof(CreateCounterparty))
                 {
                     schema.Required?.Remove("tradeName");
+                    schema.Required?.Remove("roles");
                     AddCanonicalLengthContract(
                         schema,
                         "legalName",
@@ -105,6 +106,11 @@ public static class ErpOpenApiContract
                         "tradeName",
                         minimumLength: null,
                         maximumLength: 200);
+                }
+
+                if (context.JsonTypeInfo.Type == typeof(CreateCompanyPartyAccount))
+                {
+                    schema.Required?.Remove("roles");
                 }
 
                 if (context.JsonTypeInfo.Type == typeof(SetCompanyPartyAccountActiveState))
@@ -142,7 +148,10 @@ public static class ErpOpenApiContract
 
                 if (context.JsonTypeInfo.Type == typeof(PartyRole))
                 {
-                    schema.Minimum = "1";
+                    schema.Description = "Optional legacy trade classification. Zero means no specified "
+                        + "classification; values 1 through 15 retain their stored flags. "
+                        + "This value does not grant user permissions or restrict buying and selling.";
+                    schema.Minimum = "0";
                     schema.Maximum = "15";
                     var allowedFlags = new JsonArray(
                         (int)PartyRole.Customer,
