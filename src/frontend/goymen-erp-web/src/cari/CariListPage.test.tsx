@@ -1592,3 +1592,135 @@ describe('C-01 page size and the meaning of the total (UX review §8.7/65)', () 
     )
   })
 })
+
+describe('C-01 coming back lands where you left (UX review §8.7/65 — dönüş pozisyonu)', () => {
+  function detailBody(id = PARTY_1, code = 'C-0001') {
+    return {
+      id,
+      code,
+      kind: 1,
+      legalName: 'Alfa Metal Ltd. Şti.',
+      tradeName: 'Alfa',
+      isActive: true,
+      version: '1',
+      companyAccounts: [
+        { id: ACC_1, companyId: A_ID, roles: PARTY_ROLE_FLAG.Customer, isActive: true, version: '1' },
+      ],
+    }
+  }
+
+  function twoRows() {
+    return page({
+      items: [party(), party({ id: PARTY_2, code: 'C-0002', companyAccounts: [
+        { id: ACC_2, companyId: A_ID, roles: PARTY_ROLE_FLAG.Supplier, isActive: true, version: 1 },
+      ] })],
+    })
+  }
+
+  it('returns focus to the row that was opened, not to the top of the document', async () => {
+    installFetch({
+      counterparties: (url) =>
+        url.includes(PARTY_2) ? json(detailBody(PARTY_2, 'C-0002')) : json(twoRows()),
+    })
+    const router = renderRouterAt('/cari')
+    const row = await screen.findByRole('row', { name: /C-0002/ })
+    const link = within(row).getByRole('link')
+
+    await userEvent.click(link)
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/cari/${PARTY_2}`))
+    await act(async () => {
+      await router.navigate(-1)
+    })
+    await screen.findByRole('searchbox', undefined, { timeout: 5000 })
+
+    // Without this the keyboard lands on <body> and the row being worked through is
+    // somewhere below, reachable only by walking the table again.
+    await waitFor(() => {
+      const back = within(screen.getByRole('row', { name: /C-0002/ })).getByRole('link')
+      expect(document.activeElement).toBe(back)
+    })
+  })
+
+  it('does not move focus on a first visit', async () => {
+    installFetch({ counterparties: () => json(twoRows()) })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    // A screen that moves focus for no reason the user can perceive is worse than
+    // one that never moves it.
+    const active = document.activeElement
+    expect(active === document.body || active === null).toBe(true)
+  })
+
+  it('leaves focus alone when the remembered row is no longer in the list', async () => {
+    let filtered = false
+    installFetch({
+      counterparties: (url) => {
+        if (url.includes(PARTY_2) && !url.includes('q=')) return json(detailBody(PARTY_2, 'C-0002'))
+        if (filtered) return json(page({ items: [party()] }))
+        return json(twoRows())
+      },
+    })
+    const router = renderRouterAt('/cari')
+    const row = await screen.findByRole('row', { name: /C-0002/ })
+    await userEvent.click(within(row).getByRole('link'))
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/cari/${PARTY_2}`))
+
+    // The record dropped out of the result set while the user was away.
+    filtered = true
+    await act(async () => {
+      await router.navigate(-1)
+    })
+    await screen.findByRole('searchbox', undefined, { timeout: 5000 })
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    expect(screen.queryByRole('row', { name: /C-0002/ })).toBeNull()
+    // No row to return to: nothing is focused, and nothing throws.
+    expect(document.activeElement === document.body || document.activeElement === null).toBe(true)
+  })
+})
+
+describe('C-01 the remembered view is bound to its company too', () => {
+  it('a search typed under company A is not restored under company B', async () => {
+    const { calls } = installFetch({
+      counterparties: (_url, companyId) =>
+        json(
+          companyId === A_ID
+            ? page()
+            : page({
+                items: [
+                  party({
+                    id: PARTY_2,
+                    code: 'C-0002',
+                    legalName: 'Beta Sac A.Ş.',
+                    companyAccounts: [
+                      { id: ACC_2, companyId: B_ID, roles: PARTY_ROLE_FLAG.Supplier, isActive: true, version: 1 },
+                    ],
+                  }),
+                ],
+              }),
+        ),
+    })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    await userEvent.type(screen.getByRole('searchbox'), 'alfa')
+    await userEvent.selectOptions(screen.getByLabelText('Taraf durumu'), 'inactive')
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.includes('q=alfa') && c.companyId === A_ID)).toBe(true),
+    )
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Şirket' }), B_ID)
+    await screen.findByRole('row', { name: /C-0002/ }, { timeout: 5000 })
+
+    // A search term can name a real counterparty. Carrying it into another company
+    // would both restore a query the user never made there and state, in the search
+    // box, something they may not be entitled to know about company B.
+    expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText('Taraf durumu') as HTMLSelectElement).value).toBe('active')
+    expect(screen.queryByText(/Etkin filtreler/i)).toBeNull()
+    const forB = calls.filter((c) => c.url.includes('/counterparties') && c.companyId === B_ID)
+    expect(forB.length).toBeGreaterThan(0)
+    expect(forB.every((c) => !c.url.includes('q=alfa'))).toBe(true)
+  })
+})
