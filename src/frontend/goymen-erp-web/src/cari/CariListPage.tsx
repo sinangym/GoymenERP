@@ -51,6 +51,8 @@ import {
   isFiltered,
   PAGE_SIZE_OPTIONS,
   readCariListView,
+  rememberOpenedRecord,
+  takeOpenedRecord,
   writeCariListView,
   type CariListView,
 } from './listViewState'
@@ -197,6 +199,12 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
   const [cursor, setCursor] = useState<string | undefined>(undefined)
   const [loaded, setLoaded] = useState<readonly CounterpartyListItem[]>([])
   const searchRef = useRef<HTMLInputElement>(null)
+  /**
+   * The row to return to, read ONCE at mount for the same reason the view is: this
+   * component is remounted per context, so "once per mount" is "once per return".
+   */
+  const [returnToId] = useState<string | null>(() => takeOpenedRecord(namespace))
+  const returnHandled = useRef(false)
 
   const activeCompanyId = shell.activeContext?.companyId ?? null
   const scopeMode = shell.activeContext?.scopeMode ?? 'single'
@@ -428,6 +436,31 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
       setCursorRecovered(true)
     }
   }, [isInvalidCursor, cursor])
+
+  /**
+   * Put the keyboard back where it was.
+   *
+   * Runs after the rows exist, which is why it is an effect and not a render-time
+   * decision: on return the list re-reads, so at first paint there is no row to
+   * focus. The ref makes it happen at most once — a focus move the user cannot
+   * account for is worse than none — and a marker whose row is no longer in the
+   * page (filtered out, or on a page that was not re-accumulated) simply finds
+   * nothing and leaves focus alone.
+   */
+  useEffect(() => {
+    if (returnToId === null || returnHandled.current) return
+    // Matched by reading the attribute rather than by interpolating the id into a
+    // selector: an id in a selector needs escaping, and `CSS.escape` is not
+    // guaranteed to exist in every environment this renders in.
+    const link = [...document.querySelectorAll<HTMLAnchorElement>('[data-row-link]')].find(
+      (candidate) => candidate.dataset.rowLink === returnToId,
+    )
+    if (link === undefined) return
+    returnHandled.current = true
+    link.focus()
+    // The trigger is "rows are on screen", which is what the count expresses. The
+    // array itself is rebuilt every render and would re-run this on each one.
+  }, [returnToId, items.length])
 
   const ariaSort = (field: SortField): 'ascending' | 'descending' | 'none' =>
     sort !== field ? 'none' : direction === 'asc' ? 'ascending' : 'descending'
@@ -726,7 +759,9 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
                         <Link
                           className={styles.rowLink}
                           to={`/cari/${item.id}`}
+                          data-row-link={item.id}
                           aria-label={`${item.code} — ${item.legalName}`}
+                          onClick={() => rememberOpenedRecord(namespace, item.id)}
                         >
                           {item.code}
                         </Link>

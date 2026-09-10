@@ -142,9 +142,47 @@ export function writeCariListView(namespace: string | null, view: CariListView):
 }
 
 /**
+ * The record the user opened FROM the list, held until they come back to it.
+ *
+ * WHY. Restoring the query without restoring the position leaves a keyboard user at
+ * the top of the document after every record: the row they were working through is
+ * somewhere below, and there is no way back to it except by walking the table again.
+ * Sighted users have the same problem in a smaller form — the list looks identical,
+ * so "where was I" is answered by re-reading it.
+ *
+ * Only the id is kept, and only until it is read once. It is not a second view slot:
+ * it says where the user LEFT, not what they were shown, and a stale marker simply
+ * finds no matching row and does nothing.
+ */
+let openedRecord: { readonly namespace: string; readonly partyId: string } | null = null
+
+export function rememberOpenedRecord(namespace: string | null, partyId: string): void {
+  if (namespace === null) return
+  openedRecord = { namespace, partyId }
+}
+
+/**
+ * The record to return to, cleared by the read.
+ *
+ * Read-and-clear on purpose: returning to the list is a one-time event. Leaving the
+ * marker behind would move focus again on an unrelated later visit — and a screen
+ * that moves focus for no reason the user can perceive is worse than one that never
+ * moves it.
+ */
+export function takeOpenedRecord(namespace: string | null): string | null {
+  if (namespace === null || openedRecord === null || openedRecord.namespace !== namespace) {
+    return null
+  }
+  const { partyId } = openedRecord
+  openedRecord = null
+  return partyId
+}
+
+/**
  * Drops the saved view. Tests call this between cases; the module slot outlives a
  * single render, which is the whole point of it, so it has to be cleared explicitly.
  */
 export function resetCariListView(): void {
   slot = null
+  openedRecord = null
 }
