@@ -140,7 +140,24 @@ export function decodeCounterpartyDetail(
 
   if (!isBoundUuid(a.id) || !isBoundUuid(a.companyId)) return null
   if (a.companyId !== activeCompanyId) return null
-  if (!isSafeIntish(a.roles) || a.roles < 1 || a.roles > ALL_ROLE_FLAGS) return null
+  /**
+   * Flags must be inside the declared range and carry no unknown bit.
+   *
+   * `0` is VALID and means "no commercial classification" (SINAN_KARARLARI_2026-09-10
+   * §2, ILK_DILIM §3.1/§4.1). It used to be rejected, which made an ordinary
+   * role-less counterparty poison the WHOLE page — one such record and the operator
+   * saw `malformed-response` instead of a list.
+   *
+   * This is the forward-compatible consumer read ILK_DILIM §6 asks for FIRST: every
+   * live consumer must be able to read `0` alongside the legacy 1..15 before any
+   * role-less record can be written. The accepted wire contract still pins
+   * `PartyRole minimum: 1`, so today this decoder accepts a value the server cannot
+   * yet emit — that is the point of the ordering, not a gap in it.
+   *
+   * What does NOT relax: unknown bits, negatives, non-integers and the company
+   * binding are all still rejected (§7). Moving one bound is not loosening the rest.
+   */
+  if (!isSafeIntish(a.roles) || a.roles < 0 || a.roles > ALL_ROLE_FLAGS) return null
   if ((a.roles & ~ALL_ROLE_FLAGS) !== 0) return null
   if (typeof a.isActive !== 'boolean') return null
   if (!isLosslessVersion(a.version)) return null

@@ -159,8 +159,18 @@ describe('decodeCounterpartyDetail — fails closed', () => {
     expect(decodeCounterpartyDetail(detail({ kind: 3 }), COMPANY_A)).toBeNull()
   })
 
-  it('rejects role flags outside 1..15 or with unknown bits', () => {
-    for (const roles of [0, 16, 32, -1, 1.5]) {
+  it('resolves roles=0 — a role-less counterparty has a readable record', () => {
+    const decoded = decodeCounterpartyDetail(
+      detail({ companyAccounts: [account({ roles: 0 })] }),
+      COMPANY_A,
+    )
+    expect(decoded).not.toBeNull()
+    expect(decoded!.account.roles).toBe(0)
+    expect(rolesFromFlags(decoded!.account.roles)).toEqual([])
+  })
+
+  it('still rejects unknown bits, negatives and non-integers', () => {
+    for (const roles of [16, 32, -1, 1.5]) {
       expect(
         decodeCounterpartyDetail(detail({ companyAccounts: [account({ roles })] }), COMPANY_A),
       ).toBeNull()

@@ -1387,3 +1387,100 @@ describe('C-01 the role filter is a LEGACY surface (ILK_DILIM §4.1, §7)', () =
     expect(legacyBlock().open).toBe(false)
   })
 })
+
+describe('C-01 a counterparty with no commercial role (ILK_DILIM §7)', () => {
+  it('is an ordinary row — it does not reject the page it arrives in', async () => {
+    installFetch({
+      counterparties: () =>
+        json(
+          page({
+            items: [
+              party({
+                companyAccounts: [
+                  { id: ACC_1, companyId: A_ID, roles: 0, isActive: true, version: 1 },
+                ],
+              }),
+            ],
+          }),
+        ),
+    })
+    renderAt('/cari')
+
+    // Before this, one role-less record made the WHOLE page malformed: the operator
+    // saw an error block instead of a list.
+    const row = await screen.findByRole('row', { name: /C-0001/ })
+    expect(queryStateBlock('malformed-response')).toBeNull()
+    expect(within(row).getByText('Ticari rol yok')).toBeTruthy()
+  })
+
+  it('says the absence rather than leaving the cell blank', async () => {
+    installFetch({
+      counterparties: () =>
+        json(
+          page({
+            items: [
+              party({
+                companyAccounts: [
+                  { id: ACC_1, companyId: A_ID, roles: 0, isActive: true, version: 1 },
+                ],
+              }),
+            ],
+          }),
+        ),
+    })
+    renderAt('/cari')
+
+    const row = await screen.findByRole('row', { name: /C-0001/ })
+    const cell = within(row).getByText('Ticari rol yok')
+    expect(cell.textContent?.trim()).not.toBe('')
+    // …and it is not dressed up as a defect. The record is complete.
+    expect(row.textContent).not.toMatch(/eksik|belirtilmemiş|sınıflandırılmamış|yetkisiz/i)
+    // The state columns are untouched by it: no role is not passive.
+    expect(within(row).getAllByText('Aktif').length).toBe(2)
+  })
+
+  it('a role-less account does not become passive or unauthorized', async () => {
+    installFetch({
+      counterparties: () =>
+        json(
+          page({
+            items: [
+              party({
+                isActive: true,
+                companyAccounts: [
+                  { id: ACC_1, companyId: A_ID, roles: 0, isActive: true, version: 1 },
+                ],
+              }),
+            ],
+          }),
+        ),
+    })
+    renderAt('/cari')
+
+    const row = await screen.findByRole('row', { name: /C-0001/ })
+    expect(row.getAttribute('data-inactive')).toBeNull()
+    // The link is still offered: the detail grant is what decides that, never a
+    // commercial classification.
+    expect(within(row).getByRole('link')).toBeTruthy()
+  })
+
+  it('unknown role bits are STILL malformed — one bound moved, not the rest', async () => {
+    installFetch({
+      counterparties: () =>
+        json(
+          page({
+            items: [
+              party({
+                companyAccounts: [
+                  { id: ACC_1, companyId: A_ID, roles: 16, isActive: true, version: 1 },
+                ],
+              }),
+            ],
+          }),
+        ),
+    })
+    renderAt('/cari')
+
+    expect(await findStateBlock('malformed-response')).toBeTruthy()
+  })
+})
