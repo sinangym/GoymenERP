@@ -37,6 +37,13 @@ import { contextKeyString, contextKey, hasCapability } from '../shell/shellState
 import { CAPABILITY } from '../shell/capabilities'
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
+import {
+  clearedFilters,
+  isFiltered,
+  readCariListView,
+  writeCariListView,
+  type CariListView,
+} from './listViewState'
 import styles from './CariListPage.module.css'
 
 const KIND_LABEL: Record<number, string> = {
@@ -53,16 +60,53 @@ const ROLE_LABEL: Record<string, string> = {
 
 const ROLE_OPTIONS: readonly RoleFilter[] = ['Customer', 'Supplier', 'Tolling', 'Service']
 
-/**
- * NEEDS-SINAN (via ChatGPT C-01 spec): the default party-state filter. `active` is used
- * here because DEC-CAR-003 keeps used records visible but inactive, and an operator
- * listing counterparties normally works with active ones. Passives remain reachable via
- * the filter (AT-013).
- */
-const DEFAULT_PARTY_STATE: PartyStateFilter = 'active'
-/** Contract default. The company-account state is filtered independently of the Party. */
-const DEFAULT_ACCOUNT_STATE: AccountStateFilter = 'all'
+const PARTY_STATE_LABEL: Record<PartyStateFilter, string> = {
+  active: 'Aktif',
+  inactive: 'Pasif',
+  all: 'Hepsi',
+}
+const ACCOUNT_STATE_LABEL: Record<AccountStateFilter, string> = {
+  all: 'Hepsi',
+  active: 'Aktif',
+  inactive: 'Pasif',
+}
+
 const DEFAULT_PAGE_SIZE = 50
+
+/**
+ * What the user has narrowed the list by, in their own words.
+ *
+ * A filter the user cannot see is a filter they cannot undo: the UX walkthrough hit
+ * an "empty" list whose cause — a party-state left on Pasif two records ago — was
+ * three controls away and looked exactly like having no counterparties at all.
+ * Naming each active filter makes the cause of an empty result readable without
+ * inspecting every control.
+ *
+ * Defaults are deliberately absent from this list. Announcing "Taraf durumu: Aktif"
+ * on a screen nobody has touched would make the normal state look like something the
+ * user did.
+ */
+function activeFilterLabels(view: CariListView): readonly string[] {
+  const labels: string[] = []
+  if (view.q.trim().length > 0) labels.push(`Arama: “${view.q.trim()}”`)
+  if (view.kind !== '') labels.push(`Tür: ${KIND_LABEL[PARTY_KIND[view.kind]]}`)
+  if (view.roles.length > 0) {
+    const names = view.roles.map((role) => ROLE_LABEL[role]).join(', ')
+    // The match mode only changes the query with 2+ roles, so it is only named there.
+    labels.push(
+      view.roles.length > 1 && view.roleMatch === 'all'
+        ? `Rol (hepsi birden): ${names}`
+        : `Rol: ${names}`,
+    )
+  }
+  if (view.partyState !== 'active') {
+    labels.push(`Taraf durumu: ${PARTY_STATE_LABEL[view.partyState]}`)
+  }
+  if (view.accountState !== 'all') {
+    labels.push(`Şirket hesabı durumu: ${ACCOUNT_STATE_LABEL[view.accountState]}`)
+  }
+  return labels
+}
 
 /**
  * The ONLY failures a continuation may survive: the request did not get through, or
@@ -97,16 +141,24 @@ export function CariListPage() {
 
 function CariList({ namespace }: { readonly namespace: string | null }) {
   const shell = useShellState()
-  const [q, setQ] = useState('')
-  const [kind, setKind] = useState<KindFilter | ''>('')
-  const [roles, setRoles] = useState<readonly RoleFilter[]>([])
-  const [roleMatch, setRoleMatch] = useState<RoleMatch>('any')
-  const [partyState, setPartyState] = useState<PartyStateFilter>(DEFAULT_PARTY_STATE)
-  const [accountState, setAccountState] = useState<AccountStateFilter>(DEFAULT_ACCOUNT_STATE)
-  const [sort, setSort] = useState<SortField>('code')
-  const [direction, setDirection] = useState<SortDirection>('asc')
+  /**
+   * Read ONCE, at mount. This component is remounted whenever the namespace changes
+   * (see the `key` above), so "once per mount" is exactly "once per context" — and a
+   * view saved under another actor or company is unreachable rather than merely
+   * unused.
+   */
+  const [restored] = useState<CariListView>(() => readCariListView(namespace))
+  const [q, setQ] = useState(restored.q)
+  const [kind, setKind] = useState<KindFilter | ''>(restored.kind)
+  const [roles, setRoles] = useState<readonly RoleFilter[]>(restored.roles)
+  const [roleMatch, setRoleMatch] = useState<RoleMatch>(restored.roleMatch)
+  const [partyState, setPartyState] = useState<PartyStateFilter>(restored.partyState)
+  const [accountState, setAccountState] = useState<AccountStateFilter>(restored.accountState)
+  const [sort, setSort] = useState<SortField>(restored.sort)
+  const [direction, setDirection] = useState<SortDirection>(restored.direction)
   const [cursor, setCursor] = useState<string | undefined>(undefined)
   const [loaded, setLoaded] = useState<readonly CounterpartyListItem[]>([])
+  const searchRef = useRef<HTMLInputElement>(null)
 
   const activeCompanyId = shell.activeContext?.companyId ?? null
   const scopeMode = shell.activeContext?.scopeMode ?? 'single'
@@ -132,12 +184,20 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
 
   const singleCompanyContext = scopeMode === 'single' && activeCompanyId !== null
 
-  const filterActive =
-    q.trim().length > 0 ||
-    kind !== '' ||
-    roles.length > 0 ||
-    partyState !== DEFAULT_PARTY_STATE ||
-    accountState !== DEFAULT_ACCOUNT_STATE
+  const view: CariListView = useMemo(
+    () => ({ q, kind, roles, roleMatch, partyState, accountState, sort, direction }),
+    [q, kind, roles, roleMatch, partyState, accountState, sort, direction],
+  )
+  const filterActive = isFiltered(view)
+  const filterLabels = activeFilterLabels(view)
+
+  /**
+   * Remember the query the user chose, so leaving for a record and coming back does
+   * not silently drop their search. The DATA is not remembered — see listViewState.ts.
+   */
+  useEffect(() => {
+    writeCariListView(namespace, view)
+  }, [namespace, view])
 
   const query = useQuery({
     // INV-NS: the company context owns the cache namespace, so a company switch can
@@ -253,6 +313,26 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
     resetPaging()
   }
 
+  function clearFilters() {
+    const cleared = clearedFilters(view)
+    setQ(cleared.q)
+    setKind(cleared.kind)
+    setRoles(cleared.roles)
+    setRoleMatch(cleared.roleMatch)
+    setPartyState(cleared.partyState)
+    setAccountState(cleared.accountState)
+    // Sort is not a filter and is deliberately left alone (see listViewState.ts).
+    resetPaging()
+    /**
+     * The button that was just activated is the LAST filter, so it unmounts with the
+     * summary and focus would fall to <body> — a keyboard user would be returned to
+     * the top of the document with no idea where they are. Hand focus to the search
+     * box: it is the control this row is about, and it is where a re-narrowed search
+     * starts.
+     */
+    searchRef.current?.focus()
+  }
+
   function toggleSort(field: SortField) {
     if (sort === field) setDirection((d) => (d === 'asc' ? 'desc' : 'asc'))
     else {
@@ -322,6 +402,7 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
         <label className={styles.field}>
           <span>Ara</span>
           <input
+            ref={searchRef}
             type="search"
             value={q}
             placeholder="Kod, unvan veya ticari unvan"
@@ -413,6 +494,25 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
         </label>
       </div>
 
+      {/* The way OUT of a narrowed list, and the way to see what narrowed it. Rendered
+          only when something is actually applied, so an untouched screen carries no
+          control that would do nothing. */}
+      {filterActive ? (
+        <div className={styles.activeFilters}>
+          <span className={styles.activeFiltersLabel}>Etkin filtreler:</span>
+          <ul className={styles.chips}>
+            {filterLabels.map((label) => (
+              <li key={label} className={styles.chip}>
+                {label}
+              </li>
+            ))}
+          </ul>
+          <button type="button" className={styles.clear} onClick={clearFilters}>
+            Filtreleri temizle
+          </button>
+        </div>
+      ) : null}
+
       {(state.kind !== 'ready' && !continuationFailed) || crossPageDuplicate ? (
         <StateBlock
           state={crossPageDuplicate ? { kind: 'malformed-response' } : state}
@@ -423,10 +523,22 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
           }}
         />
       ) : items.length === 0 ? (
-        <StateBlock
-          state={{ kind: filterActive ? 'empty-filtered' : 'empty-no-data' }}
-          subject="cari"
-        />
+        /**
+         * `keepPreviousData` hands back the PREVIOUS page while the new query is in
+         * flight, so an empty result that is still being replaced is not evidence
+         * about the filters now on screen. Labelling it anyway produced a real wrong
+         * message: clearing the last filter showed "Kayıt yok — bu görünümde henüz
+         * kayıt yok" over a company that has counterparties, for as long as the
+         * refetch took. Say what is true instead: this is still loading.
+         */
+        query.isPlaceholderData ? (
+          <StateBlock state={{ kind: 'initial-loading' }} subject="cari listesi" />
+        ) : (
+          <StateBlock
+            state={{ kind: filterActive ? 'empty-filtered' : 'empty-no-data' }}
+            subject="cari"
+          />
+        )
       ) : (
         <>
           {/* The rows below are the last VALIDATED set. While a refetch is in flight

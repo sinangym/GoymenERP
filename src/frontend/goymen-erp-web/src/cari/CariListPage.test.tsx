@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient } from '@tanstack/react-query'
 import { RouterProvider, createMemoryRouter } from 'react-router'
@@ -8,6 +8,7 @@ import { shellRoutes } from '../shell/router'
 import { SHELL_CAPABILITY_CONTRACT_VERSION } from '../shell/api'
 import { CAPABILITY } from '../shell/capabilities'
 import { PARTY_ROLE_FLAG } from './contract'
+import { resetCariListView } from './listViewState'
 
 const A_ID = 'aaaaaaaa-0000-0000-0000-000000000001'
 const B_ID = 'bbbbbbbb-0000-0000-0000-000000000002'
@@ -124,12 +125,30 @@ function renderAt(path: string) {
   return queryClient
 }
 
+/** Same render, but hands back the router so a test can leave the list and come back. */
+function renderRouterAt(path: string) {
+  const router = createMemoryRouter(shellRoutes, { initialEntries: [path] })
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  })
+  render(
+    <ShellProvider queryClient={queryClient}>
+      <RouterProvider router={router} />
+    </ShellProvider>,
+  )
+  return router
+}
+
 beforeEach(() => {
   try {
     window.localStorage.clear()
   } catch {
     // ignore
   }
+  // The remembered list view is module state — it outlives a render on purpose, which
+  // is exactly why it has to be cleared between cases. Without this a search typed in
+  // one test is restored into the next one.
+  resetCariListView()
   vi.stubGlobal('navigator', { onLine: true })
 })
 afterEach(() => {
@@ -1025,5 +1044,232 @@ describe('C-01 → C-03 navigation (spec §2.1)', () => {
     renderAt('/cari')
     await findStateBlock('not-found')
     expect(document.querySelectorAll('tbody a')).toHaveLength(0)
+  })
+})
+
+describe('C-01 the view survives a visit to a record (UX-CARI-001 #1)', () => {
+  /** The C-03 shape: `version` is an opaque decimal STRING here, unlike the list. */
+  function detailBody() {
+    return {
+      id: PARTY_1,
+      code: 'C-0001',
+      kind: 1,
+      legalName: 'Alfa Metal Ltd. Şti.',
+      tradeName: 'Alfa',
+      isActive: true,
+      version: '1',
+      companyAccounts: [
+        {
+          id: ACC_1,
+          companyId: A_ID,
+          roles: PARTY_ROLE_FLAG.Customer,
+          isActive: true,
+          version: '1',
+        },
+      ],
+    }
+  }
+
+  /** List calls only — the detail read hits the same prefix with the id in the path. */
+  function listCalls(calls: readonly { url: string; companyId: string | null }[]) {
+    return calls.filter((c) => c.url.includes('/counterparties') && !c.url.includes(PARTY_1))
+  }
+
+  it('restores the search and filters, and RE-READS the rows rather than restoring them', async () => {
+    const { calls } = installFetch({
+      counterparties: (url) => (url.includes(PARTY_1) ? json(detailBody()) : json(page())),
+    })
+    const router = renderRouterAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    await userEvent.type(screen.getByRole('searchbox'), 'alfa')
+    await userEvent.selectOptions(screen.getByLabelText('Şirket hesabı durumu'), 'inactive')
+    await waitFor(() =>
+      expect(
+        listCalls(calls).some(
+          (c) => c.url.includes('q=alfa') && c.url.includes('accountState=inactive'),
+        ),
+      ).toBe(true),
+    )
+
+    // Open the record the way a user does, from the row.
+    const row = await screen.findByRole('row', { name: /C-0001/ })
+    await userEvent.click(within(row).getByRole('link'))
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/cari/${PARTY_1}`))
+    expect(screen.queryByRole('searchbox')).toBeNull()
+
+    const before = listCalls(calls).length
+    await act(async () => {
+      await router.navigate(-1)
+    })
+
+    // Back on the list: what the user asked for is still what the screen is asking.
+    const searchbox = await screen.findByRole('searchbox', undefined, { timeout: 5000 })
+    expect((searchbox as HTMLInputElement).value).toBe('alfa')
+    expect((screen.getByLabelText('Şirket hesabı durumu') as HTMLSelectElement).value).toBe(
+      'inactive',
+    )
+
+    // And the ROWS were fetched again. This is the half that keeps the entry gate
+    // meaningful (#146/#148): a revisit re-authorizes and re-reads, so remembering
+    // the query cannot become a way to repaint records read under an older grant.
+    await waitFor(() => expect(listCalls(calls).length).toBeGreaterThan(before))
+    const latest = listCalls(calls).at(-1)
+    expect(latest?.url).toContain('q=alfa')
+    expect(latest?.url).toContain('accountState=inactive')
+    expect(latest?.companyId).toBe(A_ID)
+  })
+
+  it('restores the sort as well, so the order is not silently reset', async () => {
+    const { calls } = installFetch({
+      counterparties: (url) => (url.includes(PARTY_1) ? json(detailBody()) : json(page())),
+    })
+    const router = renderRouterAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    const codeHeader = screen.getByRole('columnheader', { name: /Kod/ })
+    await userEvent.click(within(codeHeader).getByRole('button'))
+    await waitFor(() => expect(codeHeader.getAttribute('aria-sort')).toBe('descending'))
+
+    await userEvent.click(within(await screen.findByRole('row', { name: /C-0001/ })).getByRole('link'))
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/cari/${PARTY_1}`))
+    const before = listCalls(calls).length
+    await act(async () => {
+      await router.navigate(-1)
+    })
+
+    await screen.findByRole('searchbox', undefined, { timeout: 5000 })
+    expect(
+      screen.getByRole('columnheader', { name: /Kod/ }).getAttribute('aria-sort'),
+    ).toBe('descending')
+    await waitFor(() => expect(listCalls(calls).length).toBeGreaterThan(before))
+    expect(listCalls(calls).at(-1)?.url).toContain('direction=desc')
+  })
+})
+
+describe('C-01 what narrowed the list, and the way out (UX-CARI-001 #2)', () => {
+  it('shows no summary and no clear control on an untouched screen', async () => {
+    installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+    // A control that would do nothing is worse than absent: it implies state exists.
+    expect(screen.queryByRole('button', { name: /Filtreleri temizle/i })).toBeNull()
+    expect(screen.queryByText(/Etkin filtreler/i)).toBeNull()
+  })
+
+  it('names each active filter, so an empty list explains itself', async () => {
+    installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    await userEvent.type(screen.getByRole('searchbox'), 'alfa')
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Müşteri' }))
+    await userEvent.selectOptions(screen.getByLabelText('Taraf durumu'), 'inactive')
+
+    const summary = await screen.findByText(/Etkin filtreler/i)
+    const row = summary.parentElement as HTMLElement
+    expect(within(row).getByText('Arama: “alfa”')).toBeTruthy()
+    expect(within(row).getByText('Rol: Müşteri')).toBeTruthy()
+    expect(within(row).getByText('Taraf durumu: Pasif')).toBeTruthy()
+    // The account-state filter is untouched, so naming it would make the default
+    // look like something the user chose.
+    expect(within(row).queryByText(/Şirket hesabı durumu/)).toBeNull()
+  })
+
+  it('clears every filter in one action and asks the server again without them', async () => {
+    const { calls } = installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    await userEvent.type(screen.getByRole('searchbox'), 'alfa')
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Müşteri' }))
+    await userEvent.selectOptions(screen.getByLabelText('Şirket hesabı durumu'), 'inactive')
+    await userEvent.selectOptions(screen.getByLabelText('Taraf durumu'), 'all')
+
+    await userEvent.click(screen.getByRole('button', { name: /Filtreleri temizle/i }))
+
+    expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('')
+    expect((screen.getByRole('checkbox', { name: 'Müşteri' }) as HTMLInputElement).checked).toBe(
+      false,
+    )
+    expect((screen.getByLabelText('Şirket hesabı durumu') as HTMLSelectElement).value).toBe('all')
+    expect((screen.getByLabelText('Taraf durumu') as HTMLSelectElement).value).toBe('active')
+    expect(screen.queryByRole('button', { name: /Filtreleri temizle/i })).toBeNull()
+
+    await waitFor(() => {
+      const latest = calls.filter((c) => c.url.includes('/counterparties')).at(-1)
+      expect(latest?.url).not.toContain('q=alfa')
+      expect(latest?.url).not.toContain('role=Customer')
+      expect(latest?.url).toContain('accountState=all')
+      expect(latest?.url).toContain('partyState=active')
+    })
+  })
+
+  it('clearing filters leaves the chosen sort alone — order is not a filter', async () => {
+    const { calls } = installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    const codeHeader = screen.getByRole('columnheader', { name: /Kod/ })
+    await userEvent.click(within(codeHeader).getByRole('button'))
+    await waitFor(() => expect(codeHeader.getAttribute('aria-sort')).toBe('descending'))
+    await userEvent.type(screen.getByRole('searchbox'), 'alfa')
+
+    await userEvent.click(screen.getByRole('button', { name: /Filtreleri temizle/i }))
+
+    expect(codeHeader.getAttribute('aria-sort')).toBe('descending')
+    await waitFor(() =>
+      expect(calls.filter((c) => c.url.includes('/counterparties')).at(-1)?.url).toContain(
+        'direction=desc',
+      ),
+    )
+  })
+
+  it('clearing moves focus to the search box instead of dropping it on <body>', async () => {
+    installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+    await userEvent.type(screen.getByRole('searchbox'), 'alfa')
+
+    await userEvent.click(screen.getByRole('button', { name: /Filtreleri temizle/i }))
+
+    // The button unmounts with the last filter it cleared. Without an explicit move
+    // a keyboard user is returned to the top of the document with no idea where.
+    expect(document.activeElement).toBe(screen.getByRole('searchbox'))
+  })
+
+  it('an empty result still being replaced is not labelled "no records"', async () => {
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let unfiltered = 0
+    installFetch({
+      counterparties: (url) => {
+        if (url.includes('q=zzz')) return json(page({ items: [] }))
+        unfiltered += 1
+        // First unfiltered read: the company genuinely has nothing yet.
+        if (unfiltered === 1) return json(page({ items: [] }))
+        // The read issued by "clear filters" — held open so its in-flight window
+        // is observable.
+        return gate.then(() => json(page())) as unknown as Response
+      },
+    })
+    renderAt('/cari')
+    expect(await findStateBlock('empty-no-data')).toBeTruthy()
+
+    await userEvent.type(screen.getByRole('searchbox'), 'zzz')
+    await waitFor(() => expect(queryStateBlock('empty-filtered')).not.toBeNull())
+
+    await userEvent.click(screen.getByRole('button', { name: /Filtreleri temizle/i }))
+
+    // `keepPreviousData` still holds the FILTERED empty page. Labelling it by the
+    // filters now on screen said "Kayıt yok" over a company that has records.
+    await waitFor(() => expect(queryStateBlock('initial-loading')).not.toBeNull())
+    expect(queryStateBlock('empty-no-data')).toBeNull()
+    expect(queryStateBlock('empty-filtered')).toBeNull()
+
+    release()
+    await waitFor(() => expect(screen.getByRole('row', { name: /C-0001/ })).toBeTruthy())
   })
 })
