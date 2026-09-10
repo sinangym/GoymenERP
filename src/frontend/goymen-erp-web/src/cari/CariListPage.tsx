@@ -485,6 +485,13 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
      * out of the search, re-scoped. We do not claim to know which: the message says
      * where the user IS, not what happened to the record.
      */
+    /**
+     * Not derivable during render: the trigger is whether the freshly-read page
+     * CONTAINS the row, which is the same question this effect already had to ask the
+     * DOM in order to move focus. Deriving it during render would mean answering it
+     * twice, from two different sources.
+     */
+    // oxlint-disable-next-line react/set-state-in-effect -- see the note above
     setReturnNotice(true)
     // The trigger is "rows are on screen", which is what the count expresses. The
     // array itself is rebuilt every render and would re-run this on each one.
