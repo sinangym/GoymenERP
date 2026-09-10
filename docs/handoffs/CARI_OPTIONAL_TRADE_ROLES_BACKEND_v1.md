@@ -21,7 +21,9 @@ unchanged 1..15 for stored legacy flags. Neither value grants permissions or def
 whether a party can buy or sell. `Party.Kind`, account/party active states, immutable
 party codes and company-account identity remain independent. Clearing classification
 does not reactivate an account. Existing role query parameters still filter legacy
-stored flags; query `role=0` means no role filter, not a roleless-only search.
+stored flags. Omit the HTTP `role` query parameter for an unfiltered request;
+the query parser accepts named legacy roles, not numeric `role=0`. Missing/zero
+normalization applies to command payloads, not the HTTP role filter.
 
 Existing v1 command routes and stable errors remain. Create/link require the existing
 company-wide permissions and resolved active company, with server-side authorization
@@ -73,3 +75,19 @@ relevant SQL evidence precede coordinator consideration. CODEX-BACKEND does not 
 its PR. The separate CODEX-ORCHESTRATOR receives the exact commit, test evidence and
 open consumer gates through the PR/Issue #66; the existing progress owner records them.
 Browser/mixed-version deployment and production activation remain NOT_RUN here.
+
+## Required validation tooling correction
+
+The existing RCSI evidence publisher must admit exactly one winner per output path.
+On Unix, `File.Move(overwrite: false)` can perform a destination existence check
+followed by replacing rename. The mandatory concurrent publisher test exposed two
+successful writers. Publication now uses native `link` on the fully flushed,
+same-directory temporary file, which cannot replace an existing destination;
+cleanup unlinks only the caller's temporary name. Unsupported linking fails closed
+with the existing evidence-write-failed outcome. Windows publication is unchanged.
+The existing concurrent/stale-output tests remain strict; the concurrent target now
+also exercises UTF-8 filename marshalling. The reviewed tool fingerprint is refreshed.
+This enforces the existing evidence contract and changes no deployment or SQL authority.
+
+Sources: [.NET Unix move implementation](https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.Private.CoreLib/src/System/IO/FileSystem.Unix.cs),
+[link atomic destination semantics](https://man7.org/linux/man-pages/man2/link.2.html).

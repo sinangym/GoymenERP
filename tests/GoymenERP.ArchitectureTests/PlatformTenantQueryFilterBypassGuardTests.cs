@@ -165,7 +165,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 [ReviewedSqlServerRcsiToolProgramPath] =
                     new(
-                        "ca87896160c49d8b09bcd9e471d8d40d393902a463892f580f279419529841dc",
+                        "5da18330229e541cd90e9463a181c88ce72bb821c43449f44673f761faabaf04",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
