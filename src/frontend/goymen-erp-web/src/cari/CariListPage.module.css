@@ -327,3 +327,19 @@ td[data-account-state='inactive'] {
   align-items: flex-end;
   padding-bottom: 6px;
 }
+
+/* The total, and the sentence that says what it counts. The scope sits on its own
+   line: it qualifies the number, it is not a second number. */
+.countValue {
+  font-weight: 600;
+  color: #1a2233;
+}
+.countLoaded {
+  color: #55607a;
+}
+.countScope {
+  display: block;
+  font-weight: 400;
+  font-size: 0.78rem;
+  color: #55607a;
+}
