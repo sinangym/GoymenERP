@@ -79,6 +79,8 @@ export interface CommandAttemptController<P, R> {
   readonly retry: (revalidate?: () => Promise<boolean>) => void
   /** True while that pre-retry check is running. */
   readonly revalidating: boolean
+  /** Withdraw a pending retry check: the answer it is waiting for no longer applies. */
+  readonly invalidateRetry: () => void
   /**
    * Explicitly leave the current attempt. A definite failure or a completion is
    * closed (`idle`); an UNKNOWN outcome becomes `abandoned` — unfrozen, but its
@@ -183,6 +185,16 @@ export function useCommandAttempt<P, R>(): CommandAttemptController<P, R> {
   /** True while the pre-retry re-check is running; the notice shows it as busy. */
   const revalidatingRef = useRef(false)
   const [revalidating, setRevalidating] = useState(false)
+  /**
+   * Which retry the pending re-check belongs to.
+   *
+   * The check is asynchronous, so the user can act while it runs — and the action
+   * that matters most is leaving the attempt. Without this, "İşlemi bırak" during a
+   * pending check was overtaken by the check's own success and a POST went out after
+   * the user had said to stop. The last decision has to win, so anything that
+   * supersedes a retry bumps this and the continuation checks it before sending.
+   */
+  const retryGenerationRef = useRef(0)
 
   const retry = useCallback(
     (revalidate?: () => Promise<boolean>) => {
@@ -191,6 +203,7 @@ export function useCommandAttempt<P, R>(): CommandAttemptController<P, R> {
       if (inFlightRef.current || senderRef.current === null) return
       const sender = senderRef.current
       const snapshot = current.snapshot
+      const generation = ++retryGenerationRef.current
 
       if (revalidate === undefined) {
         stateRef.current = retryAttempt(current)
@@ -206,6 +219,10 @@ export function useCommandAttempt<P, R>(): CommandAttemptController<P, R> {
           revalidatingRef.current = false
           if (disposedRef.current) return
           setRevalidating(false)
+          // Superseded: the user abandoned the attempt, started another retry, or
+          // changed what the screen is asking for while this check was in flight.
+          // A check that finishes after that answers a question already withdrawn.
+          if (retryGenerationRef.current !== generation) return
           if (!ok) return
           // Re-read the state: the context may have moved while the check ran.
           const latest = stateRef.current
@@ -223,15 +240,30 @@ export function useCommandAttempt<P, R>(): CommandAttemptController<P, R> {
     [dispatchSend],
   )
 
+  /**
+   * Withdraw any pending retry check.
+   *
+   * Called by `abandon`, and by a screen whose own state moved under the check — a
+   * changed search, a new query — because a re-check bound to what the user WAS
+   * looking at cannot license a write for what they are looking at now.
+   */
+  const invalidateRetry = useCallback(() => {
+    retryGenerationRef.current += 1
+    revalidatingRef.current = false
+    setRevalidating(false)
+  }, [])
+
   const abandon = useCallback(() => {
     if (inFlightRef.current) return
+    // The user's last decision wins over a check that is still running.
+    invalidateRetry()
     const next = abandonAttempt(stateRef.current)
     // The sender outlives the attempt only while its snapshot may still be
     // retried under its own key (unresolved); a closed attempt drops it.
     if (next.phase !== 'abandoned') senderRef.current = null
     stateRef.current = next
     setState(next)
-  }, [])
+  }, [invalidateRetry])
 
-  return { state, submit, retry, abandon, revalidating }
+  return { state, submit, retry, abandon, invalidateRetry, revalidating }
 }

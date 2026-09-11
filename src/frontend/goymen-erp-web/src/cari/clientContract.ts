@@ -138,6 +138,25 @@ let grant: { readonly key: string; readonly ready: boolean } | null = null
 let issuedKey: string | null = null
 
 /**
+ * How many reads have actually been RECORDED.
+ *
+ * A revalidation needs to prove that a fresh read landed, and "the refetch promise
+ * resolved" does not prove that: a query can settle from cache, or be cancelled and
+ * reverted, and still resolve. Counting recorded observations gives a caller
+ * something it can compare across the await — if this has not moved, nothing was
+ * read, whatever the promise said.
+ *
+ * Late and foreign observations do not count, for the same reason they do not grant:
+ * they are not answers about the context being checked.
+ */
+let readSeq = 0
+
+/** The number of reads recorded so far. Only ever compared, never interpreted. */
+export function contractReadSeq(): number {
+  return readSeq
+}
+
+/**
  * Declare that a read is being issued for this context.
  *
  * Called by the transports before the request goes out, so that whatever comes back
@@ -171,6 +190,8 @@ export function recordContractRead(
 
   const ready =
     observation.status === 200 && observation.bodyValidated && observation.ack !== null
+
+  readSeq += 1
 
   if (ready) {
     grant = { key, ready: true }
@@ -225,6 +246,7 @@ export function isCommandContractReady(context: ContractContext | null): boolean
 export function resetContractReadiness(): void {
   grant = null
   issuedKey = null
+  readSeq = 0
 }
 
 /**

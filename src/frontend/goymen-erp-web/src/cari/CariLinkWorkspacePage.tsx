@@ -37,7 +37,7 @@ import { CARI_LINK_TEXT as TEXT, CARI_KIND_LABEL, CARI_ROLE_LABEL } from './cari
 import { classifyOutcome, type RemoteViewState, type ViewOutcome } from '../shell/uiState'
 import { useShellDispatch, useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
-import { API_BASE, isCommandContractReady } from './clientContract'
+import { API_BASE, contractReadSeq, isCommandContractReady } from './clientContract'
 import { CAPABILITY } from '../shell/capabilities'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { useCompanyDirectory } from '../shell/useShellOrchestrator'
@@ -252,6 +252,12 @@ function CariLinkWorkspace({ namespace }: { readonly namespace: string | null })
   function commitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (frozen) return
+    /**
+     * A pending retry check was bound to the candidate query the user WAS looking
+     * at. Changing the search withdraws that question: its answer — even a
+     * successful one — cannot license a write for the list they are looking at now.
+     */
+    attempt.invalidateRetry()
     setQ(qDraft.trim())
     resetPaging()
   }
@@ -716,9 +722,18 @@ function CariLinkWorkspace({ namespace }: { readonly namespace: string | null })
           state={attempt.state}
           onRetry={() =>
             attempt.retry(async () => {
+              /**
+               * The retry stands on its OWN completed read, not on a resolved
+               * promise. TanStack can settle a refetch from cached data, or cancel
+               * and revert it when the query key changes — in both cases the promise
+               * resolves and nothing was read. The recorded-read counter moving is
+               * what distinguishes them.
+               */
+              const before = contractReadSeq()
               await query.refetch()
-              return isCommandContractReady(
-                namespace === null ? null : { origin: API_BASE, namespace },
+              return (
+                contractReadSeq() > before &&
+                isCommandContractReady(namespace === null ? null : { origin: API_BASE, namespace })
               )
             })
           }

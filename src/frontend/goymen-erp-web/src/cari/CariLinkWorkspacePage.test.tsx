@@ -1221,3 +1221,64 @@ describe('CARI-LINK the submit follows current readiness (spec §4.2)', () => {
     expect(document.body.textContent).toContain('Seçili aday: CAR-000001')
   })
 })
+
+describe('CARI-LINK a pending retry check cannot outlive what it was asked about', () => {
+  async function unknownLinkAttempt(user: ReturnType<typeof userEvent.setup>, candidates: () => Response | Promise<Response>) {
+    const fetchLog = installFetch({ candidates, link: () => jsonWithoutAck(linkedView(), 201) })
+    renderAt(ROUTE)
+    await openWorkspace()
+    await findRow('CAR-000001')
+    await user.click(radioFor('CAR-000001'))
+    await user.click(submitButton())
+    await screen.findByText(/Sunucu bu işlemi onaylamadı/)
+    return fetchLog
+  }
+
+  it('changing the candidate search withdraws it: no POST on the late answer', async () => {
+    const user = userEvent.setup()
+    const recheck = held()
+    let reads = 0
+    const fetchLog = await unknownLinkAttempt(user, () => {
+      reads += 1
+      return reads === 1 ? json(candidatePage([candidate()])) : recheck.promise
+    })
+
+    /**
+     * From ABANDONED, which is the state in which the search is reachable at all:
+     * while the attempt is still `unknown` the workspace is frozen, so the sequence
+     * the review describes starts by leaving the attempt.
+     */
+    await user.click(screen.getByRole('button', { name: 'İşlemi bırak' }))
+    await user.click(screen.getByRole('button', { name: 'Önceki işlemi yeniden dene' }))
+    // The user changes what the list is asking for while the check is in flight.
+    await user.type(screen.getByRole('searchbox'), 'beta')
+    await user.click(screen.getByRole('button', { name: 'Ara' }))
+
+    /**
+     * Even if the held re-check now resolves — and TanStack can resolve it from
+     * cache or by cancelling and reverting it — the question it answered was about
+     * the previous query. A write for the list the user is looking at NOW cannot be
+     * licensed by it.
+     */
+    recheck.release(json(candidatePage([candidate()])))
+    await settle(250)
+    expect(fetchLog.links()).toHaveLength(1)
+  })
+
+  it('abandoning during the check sends no second link', async () => {
+    const user = userEvent.setup()
+    const recheck = held()
+    let reads = 0
+    const fetchLog = await unknownLinkAttempt(user, () => {
+      reads += 1
+      return reads === 1 ? json(candidatePage([candidate()])) : recheck.promise
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Aynı işlemi yeniden dene' }))
+    await user.click(screen.getByRole('button', { name: 'İşlemi bırak' }))
+
+    recheck.release(json(candidatePage([candidate()])))
+    await settle(250)
+    expect(fetchLog.links()).toHaveLength(1)
+  })
+})

@@ -36,7 +36,12 @@ import { CariBackLink } from './CariBackLink'
 import { CARI_CREATE_TEXT as TEXT, CARI_KIND_LABEL, CARI_ROLE_LABEL } from './cariCommandText'
 import { useShellDispatch, useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
-import { API_BASE, isCommandContractReady, type ContractContext } from './clientContract'
+import {
+  API_BASE,
+  contractReadSeq,
+  isCommandContractReady,
+  type ContractContext,
+} from './clientContract'
 import { fetchCounterparties } from './api'
 import { CAPABILITY } from '../shell/capabilities'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
@@ -138,6 +143,13 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
    * still being asked, not an answer, and showing the incompatibility notice then
    * would accuse a server that has not spoken yet.
    */
+  /**
+   * An attempt that is still unresolved — unknown, or abandoned while unknown. Its
+   * existence changes what every other warning on this screen is allowed to say.
+   */
+  const unresolvedAttempt =
+    attempt.state.phase === 'unknown' || attempt.state.phase === 'abandoned'
+
   const probeAnswered = !probe.isPending && !probe.isFetching
   const writeReady = isCommandContractReady(contractContext)
 
@@ -353,10 +365,28 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
           <p>
             <strong>Uyumlu istemci gerekli</strong>
           </p>
-          <p>
-            Bu cari işlemi desteklenen istemci sözleşmesi ile yeniden açılmalıdır. Sayfayı
-            yenileyin; form kapalıdır ve hiçbir istek gönderilmedi.
-          </p>
+          {/*
+            TWO DIFFERENT SITUATIONS, and one sentence cannot serve both.
+
+            With nothing pending, the form simply never opened and "no request was
+            sent" is true. But once an attempt is unresolved, that sentence is FALSE
+            — a request went out and may have been processed — and "reload the page"
+            is actively harmful: the attempt and its idempotency key live in this
+            screen's memory, so a reload drops them and the next submit could mint a
+            new key for a command the server may already hold.
+          */}
+          {unresolvedAttempt ? (
+            <p>
+              Daha önce gönderilen işlemin sonucu belirsiz kaldı ve bu ekranda korunuyor.
+              Sayfayı yenilemeyin; aşağıdaki “Aynı işlemi yeniden dene” düğmesini kullanın —
+              aynı işlem anahtarı korunur.
+            </p>
+          ) : (
+            <p>
+              Bu cari işlemi desteklenen istemci sözleşmesi ile yeniden açılmalıdır. Sayfayı
+              yenileyin; form kapalıdır ve hiçbir istek gönderilmedi.
+            </p>
+          )}
         </div>
       ) : null}
 
@@ -461,10 +491,16 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
           state={attempt.state}
           onRetry={() =>
             attempt.retry(async () => {
-              // A fresh, authorized, acknowledged read in THIS context — not the
-              // grant the first send rode on.
+              /**
+               * A fresh, authorized, acknowledged read in THIS context — not the
+               * grant the first send rode on, and not merely a promise that
+               * resolved. A refetch can settle from cache or be cancelled and
+               * reverted and still resolve, so the recorded-read counter has to
+               * have MOVED: that is the only evidence a read actually landed.
+               */
+              const before = contractReadSeq()
               await probe.refetch()
-              return isCommandContractReady(contractContext)
+              return contractReadSeq() > before && isCommandContractReady(contractContext)
             })
           }
           onAbandon={attempt.abandon}

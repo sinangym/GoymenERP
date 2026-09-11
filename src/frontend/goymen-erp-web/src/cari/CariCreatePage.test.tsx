@@ -852,3 +852,70 @@ describe('C-02 an unknown attempt is re-validated before it is re-sent (spec §4
     expect(fetchLog.creates()[1].headers['Idempotency-Key']).toBe(fetchLog.creates()[0].headers['Idempotency-Key'])
   })
 })
+
+describe('C-02 a pending retry check loses to the user (spec §4.5)', () => {
+  it('abandoning while the re-check is in flight sends NO second POST', async () => {
+    const user = userEvent.setup()
+    // The probe is held open so the re-check is genuinely pending when the user acts.
+    const probe = held()
+    let probeCalls = 0
+    const fetchLog = installFetch({
+      create: () => jsonWithoutAck(mutationView(), 201),
+      counterparties: () => {
+        probeCalls += 1
+        return probeCalls === 1
+          ? json({ items: [], nextCursor: null, hasMore: false, totalCount: null, countScope: null })
+          : probe.promise
+      },
+    })
+    renderAt('/cari/yeni')
+    await screen.findByLabelText('Taraf türü')
+    await fillValid(user)
+    await user.click(submitButton())
+    await screen.findByText(/Sunucu bu işlemi onaylamadı/)
+
+    await user.click(screen.getByRole('button', { name: 'Aynı işlemi yeniden dene' }))
+    // …the check has not answered yet, and the user leaves the attempt.
+    await user.click(screen.getByRole('button', { name: 'İşlemi bırak' }))
+
+    // The late success must not revive a retry the user withdrew.
+    probe.release(json({ items: [], nextCursor: null, hasMore: false, totalCount: null, countScope: null }))
+    await settle(250)
+    expect(fetchLog.creates()).toHaveLength(1)
+  })
+
+  it('the compatibility warning never says "no request was sent" once one was', async () => {
+    const user = userEvent.setup()
+    let probeCalls = 0
+    installFetch({
+      create: () => jsonWithoutAck(mutationView(), 201),
+      counterparties: () => {
+        probeCalls += 1
+        // The first probe acknowledges (so the form opens); afterwards the server
+        // goes silent, which is what makes the compatibility warning appear.
+        return probeCalls === 1
+          ? json({ items: [], nextCursor: null, hasMore: false, totalCount: null, countScope: null })
+          : jsonWithoutAck({ items: [], nextCursor: null, hasMore: false, totalCount: null, countScope: null })
+      },
+    })
+    renderAt('/cari/yeni')
+    await screen.findByLabelText('Taraf türü')
+    await fillValid(user)
+    await user.click(submitButton())
+    await screen.findByText(/Sunucu bu işlemi onaylamadı/)
+
+    // Force the probe to re-run and find the silent server.
+    await user.click(screen.getByRole('button', { name: 'Aynı işlemi yeniden dene' }))
+    const warning = await waitFor(() => query('[data-state="client-contract"]'))
+
+    /**
+     * A request WAS sent and its outcome is unknown. Saying "no request was sent"
+     * would be false, and "reload the page" would drop the attempt and its key out
+     * of this screen's memory — after a POST the server may already have processed.
+     */
+    expect(warning.textContent).not.toContain('hiçbir istek gönderilmedi')
+    expect(warning.textContent).not.toMatch(/Sayfayı yenileyin/)
+    expect(warning.textContent).toContain('Sayfayı yenilemeyin')
+    expect(screen.getByRole('button', { name: 'Aynı işlemi yeniden dene' })).toBeTruthy()
+  })
+})
