@@ -153,3 +153,47 @@ evidence only after they actually complete; this document does not claim results
 
 Sources: [.NET Unix move implementation](https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.Private.CoreLib/src/System/IO/FileSystem.Unix.cs),
 [link atomic destination semantics](https://man7.org/linux/man-pages/man2/link.2.html).
+
+### Conditional error acknowledgment (11 September P2 clarification)
+
+`X-ERP-Counterparty-Contract` is an **optional response header**, including on
+documented error responses. OpenAPI header metadata describes a possible header;
+it does not require its presence on every error or success response.
+
+- The existing filter sets the owned acknowledgment after accepting the exact
+  supported request declaration and before invoking the handler. Consequently,
+  some handler-generated errors carry it, including an invalid role query's 400
+  and the authorized-context read service's permission-denied 403.
+- Authentication, company resolution, body binding and other failures before
+  that filter can omit it even when the client sent the supported declaration.
+  Compatibility rejections also do not acknowledge an unsupported declaration.
+  An absent header on an error is therefore not proof of an old server.
+- An acknowledgment on an error is **not command success or client readiness**.
+  Only a fresh, successful, validated GET with the matching acknowledgment can
+  establish readiness, bound to API origin, actor/session, selected company and
+  generation. Neither a failed GET nor any command response establishes readiness.
+- Preserve error status and existing unknown-outcome/attempt-key rules. The
+  acknowledgment is never a receipt that a business transaction committed.
+  This clarification changes no runtime filter, CORS origin, permission, SQL,
+  idempotency, concurrency or version behavior.
+
+### Retained evidence provenance
+
+The following evidence belongs to `080e7a1d24f74975b45546c5277f0529c13f06d1`,
+not automatically to a later documentation commit. On 11 September 2026 (+03),
+all seven mandatory checks passed. The actual SQL results in
+[CI run 34538870747](https://github.com/sinangym/GoymenERP/actions/runs/34538870747)
+were 75/75 broad tests, zero skipped (10 September 2026, 22:49:00 UTC), and
+10/10 exact RCSI tests, zero skipped (22:50:32 UTC). Existing C-01 browser
+regression and UI catalog runs were
+[34538870738](https://github.com/sinangym/GoymenERP/actions/runs/34538870738) and
+[34538870853](https://github.com/sinangym/GoymenERP/actions/runs/34538870853).
+Local final-source evidence was 36 protocol/OpenAPI, 253 related architecture
+and two real-SQL protocol tests, all passing.
+
+[Ampere's review](https://github.com/sinangym/GoymenERP/pull/230#issuecomment-5626479091)
+accepted that exact source; [James's review](https://github.com/sinangym/GoymenERP/pull/230#issuecomment-5626479297)
+retained the error-header documentation P2 and was **not unconditional approval**.
+This narrow clarification requires final-commit P2 review confirmation and fresh
+mandatory CI, while preserving accepted unchanged scope and its dated evidence.
+Frontend new-protocol/CR-10 acceptance remains separate from those earlier tests.

@@ -200,6 +200,47 @@ public sealed class CounterpartyClientContractTests
         }
     }
 
+    [Theory]
+    [InlineData("handler-validation", HttpStatusCode.BadRequest, true)]
+    [InlineData("handler-permission", HttpStatusCode.Forbidden, true)]
+    [InlineData("before-filter-authentication", HttpStatusCode.Unauthorized, false)]
+    [InlineData("before-filter-json", HttpStatusCode.BadRequest, false)]
+    public async Task ErrorAcknowledgment_IsConditionalAndDoesNotChangeFailureStatus(
+        string scenario, HttpStatusCode expectedStatus, bool acknowledgmentExpected)
+    {
+        await using var factory = new GoymenErpApiFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Company-Id", TestCompanyIds.CompanyA.ToString());
+        if (scenario != "before-filter-authentication")
+        {
+            client.DefaultRequestHeaders.Add("X-Development-User",
+                scenario == "handler-permission" ? TestUsers.CompanyAViewer : TestUsers.GroupAdmin);
+        }
+
+        var malformedBody = scenario == "before-filter-json";
+        using var request = new HttpRequestMessage(malformedBody ? HttpMethod.Post : HttpMethod.Get,
+            "/api/v1/counterparties" + (scenario == "handler-validation" ? "?role=0" : string.Empty));
+        if (malformedBody)
+        {
+            request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString("N"));
+            request.Content = new StringContent("{", System.Text.Encoding.UTF8, "application/json");
+        }
+
+        // The supported declaration is sent in every case by the factory. A
+        // pre-filter error can omit the acknowledgment despite that declaration.
+        using var response = await client.SendAsync(request);
+        Assert.Equal(expectedStatus, response.StatusCode);
+        Assert.False(response.IsSuccessStatusCode);
+        Assert.Equal(acknowledgmentExpected,
+            response.Headers.TryGetValues(CounterpartyClientContract.HeaderName, out var values));
+        if (acknowledgmentExpected)
+        {
+            Assert.Equal(CounterpartyClientContract.Version, Assert.Single(values!));
+        }
+        Assert.DoesNotContain("\"companyAccounts\"", await response.Content.ReadAsStringAsync(),
+            StringComparison.Ordinal);
+    }
+
     private static CounterpartyClientContractFilter Filter() =>
         new(NullLogger<CounterpartyClientContractFilter>.Instance, new TestLocalizer());
 

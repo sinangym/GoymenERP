@@ -1203,7 +1203,7 @@ public sealed class OpenApiContractGenerationTests
                 var numericStatusCode = int.Parse(
                     response.Name,
                     CultureInfo.InvariantCulture);
-                var acknowledgmentExpected = isCounterparty && numericStatusCode is >= 200 and < 300;
+                var acknowledgmentExpected = isCounterparty;
                 Assert.Equal(acknowledgmentExpected, responseHeaders.TryGetProperty(
                     CounterpartyClientContract.HeaderName, out _));
                 if (acknowledgmentExpected)
@@ -1211,6 +1211,17 @@ public sealed class OpenApiContractGenerationTests
                     AssertResponseHeaderSchema(responseHeaders,
                         CounterpartyClientContract.HeaderName, "string",
                         pattern: CounterpartyClientContract.VersionPattern);
+                    var acknowledgment = responseHeaders.GetProperty(CounterpartyClientContract.HeaderName);
+                    Assert.False(acknowledgment.TryGetProperty("required", out var required)
+                        && required.GetBoolean());
+                    var description = acknowledgment.GetProperty("description").GetString();
+                    Assert.Contains("handler-generated errors", description, StringComparison.Ordinal);
+                    Assert.Contains("errors before the filter", description, StringComparison.Ordinal);
+                    Assert.Contains("may omit it", description, StringComparison.Ordinal);
+                    Assert.Contains("not command success or client readiness", description, StringComparison.Ordinal);
+                    Assert.Contains("fresh, successful, validated GET", description, StringComparison.Ordinal);
+                    Assert.Contains("Absence on an error is not proof of an old server", description,
+                        StringComparison.Ordinal);
                 }
                 var replayHeadersExpected = ReplayableResponseStatuses
                     .GetValueOrDefault(operation.OperationId, [])

@@ -510,8 +510,9 @@ public static class ErpOpenApiContract
                 required: !HttpMethods.IsGet(context.Description.HttpMethod ?? string.Empty),
                 "Exact client compatibility declaration. Required for every command and "
                     + "for reads containing zero-role accounts. Before enabling commands, "
-                    + "require the matching server acknowledgment on a successful GET "
-                    + "bound to the current actor/session/company generation.",
+                    + "require the matching server acknowledgment on a fresh, successful, "
+                    + "validated GET bound to the current API origin, actor/session, "
+                    + "selected company and generation. An error response never establishes readiness.",
                 pattern: CounterpartyClientContract.VersionPattern);
         }
         if (isIdempotentCommand)
@@ -621,14 +622,20 @@ public static class ErpOpenApiContract
                 out var numericStatusCode);
             concreteResponse.Headers ??=
                 new Dictionary<string, IOpenApiHeader>(StringComparer.Ordinal);
-            if (hasCounterpartyClientContract && hasNumericStatusCode
-                && numericStatusCode >= 200 && numericStatusCode < 300)
+            if (hasCounterpartyClientContract)
             {
                 concreteResponse.Headers[CounterpartyClientContract.HeaderName] =
                     new OpenApiHeader
                     {
-                        Description = "Server acknowledgment, present only when the request "
-                            + "declares this exact supported contract. Absence is not compatibility.",
+                        Required = false,
+                        Description = "Optional server acknowledgment, present only after the "
+                            + "client-contract filter accepts the exact request declaration. "
+                            + "It can accompany handler-generated errors; errors before the filter "
+                            + "(including authentication, company resolution and body binding) may omit it. "
+                            + "Its presence on an error is not command success or client readiness. "
+                            + "Readiness requires a fresh, successful, validated GET with the matching "
+                            + "acknowledgment bound to the current API origin, actor/session, selected "
+                            + "company and generation. Absence on an error is not proof of an old server.",
                         Schema = new OpenApiSchema
                         {
                             Type = JsonSchemaType.String,
