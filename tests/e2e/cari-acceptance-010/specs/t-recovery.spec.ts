@@ -41,13 +41,21 @@ for (const variant of ['invalid-cursor', 'malformed'] as const) {
       await expect(page.getByRole('radio')).toHaveCount(0)
       await expect.poll(() => selection(page)).not.toBe('fresh')
       await expect(page.getByRole('status').getByText(/Aday listesi yenilendi/)).toHaveCount(0)
-      await submit(page).click()
+      // The write gate is closed while no fresh successful read stands, so the submit
+      // is DISABLED rather than merely ineffective. Clicking it is how this case used
+      // to show "nothing was POSTed"; the button state now says it earlier, and the
+      // POST count still says it too.
+      await expect(submit(page)).toBeDisabled()
       expect(lane.of('link')).toHaveLength(0)
       failureGate.release()
       await expect(page.locator('[data-state="service-unavailable"]')).toBeVisible()
       await expect(page.getByRole('radio')).toHaveCount(0)
       await expect.poll(() => selection(page)).not.toBe('fresh')
-      await submit(page).click()
+      // The write gate is closed while no fresh successful read stands, so the submit
+      // is DISABLED rather than merely ineffective. Clicking it is how this case used
+      // to show "nothing was POSTed"; the button state now says it earlier, and the
+      // POST count still says it too.
+      await expect(submit(page)).toBeDisabled()
       expect(lane.of('link')).toHaveLength(0)
       await expect(page.getByRole('status').getByText(/Aday listesi yenilendi/)).toHaveCount(0)
       stage = 'fresh'

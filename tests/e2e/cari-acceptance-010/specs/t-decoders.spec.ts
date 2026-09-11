@@ -60,8 +60,13 @@ test('ME-004 candidate decoder missing source/version/continuation branches reje
     await expect(page.getByRole('radio')).toHaveCount(0)
     await expect(page.getByRole('row', { name: /CAR-000001/ })).toHaveCount(0)
     await page.getByRole('checkbox', { name: 'Tedarikçi' }).check()
-    await submit(page).click()
-    await expect(page.locator('#cari-link-selection-error')).toBeVisible()
+    /**
+     * A rejected page leaves no fresh successful read standing, so the write gate is
+     * closed and the submit is DISABLED — the selection error can no longer be
+     * provoked by clicking, because the click never reaches a handler. The fact this
+     * case is about is unchanged and still asserted: nothing was POSTed.
+     */
+    await expect(submit(page)).toBeDisabled()
     expect(lane.of('link')).toHaveLength(0)
     measured.push({ name: item.name, pageRejected: true, selectionCount: 0, posts: 0 })
   }

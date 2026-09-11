@@ -15,10 +15,20 @@ export interface Record010 {
   company: string | null; key: string | null; roles: number | null; payloadKeys: string[]; payloadSha256: string | null;
   status: number | null; transport: string; browserFinished: boolean; browserCancelled: boolean
   fixture: string | null; responseSha256: string | null; replayedHeader: boolean | null; originalCorrelationPresent: boolean | null
+  /** The handshake, both directions. The acceptance turns on it, so the evidence carries it. */
+  contractDeclaration: string | null; contractAck: string | null
 }
 export interface Request010 { url: URL; company: string | null; nth: number; roles: number | null; key: string | null }
+/** The client-contract handshake, mirrored from the backend filter. */
+export const CONTRACT_HEADER = 'x-erp-counterparty-contract'
+export const CONTRACT_VERSION = 'optional-trade-roles-v1'
+/** Sentinel for a single reply that must arrive WITHOUT the acknowledgment. */
+export const NO_ACK = '__silent__'
+
 export interface LaneOptions {
   slug: string; company: string;
+  /** Model an OLD node: valid bodies, never an acknowledgment. */
+  silentServer?: boolean;
   identity?: () => unknown;
   candidates?: (request: Request010) => Reply | Promise<Reply>;
   link?: (request: Request010) => Reply | Promise<Reply>;
@@ -94,6 +104,7 @@ export class Lane {
       q: url.searchParams.get('q'), company, key, roles, payloadKeys, payloadSha256, status: null, transport: 'pending',
       browserFinished: false, browserCancelled: false,
       fixture: null, responseSha256: null, replayedHeader: null, originalCorrelationPresent: null,
+      contractDeclaration: request.headers()[CONTRACT_HEADER] ?? null, contractAck: null,
     }
     this.records.push(row)
     this.requests.set(request, row)
@@ -114,7 +125,25 @@ export class Lane {
         row.status = reply.status
         row.fixture = reply.fixture ?? null
         row.responseSha256 = createHash('sha256').update(JSON.stringify(reply.body)).digest('hex')
-        await route.fulfill({ status: reply.status, contentType: 'application/json', headers: reply.headers,
+        /**
+         * A COMPATIBLE controlled server acknowledges, because that is what the real
+         * one does: the client-contract filter echoes the declaration on every
+         * exchange it accepts (PR #230 `080e7a1`). Without this the write gate never
+         * opens and every controlled link is refused before it is sent — these lanes
+         * would then be measuring the gate instead of the behaviour they describe.
+         *
+         * A lane that wants an OLD node says so with `silentServer`, and a single
+         * reply can opt out with `NO_ACK`. Both are explicit; silence is never the
+         * accident.
+         */
+        const acknowledged = reply.headers?.[CONTRACT_HEADER] === NO_ACK || this.options.silentServer === true
+          ? undefined
+          : CONTRACT_VERSION
+        const headers = { ...reply.headers }
+        if (headers[CONTRACT_HEADER] === NO_ACK) delete headers[CONTRACT_HEADER]
+        if (acknowledged !== undefined) headers[CONTRACT_HEADER] = acknowledged
+        row.contractAck = headers[CONTRACT_HEADER] ?? null
+        await route.fulfill({ status: reply.status, contentType: 'application/json', headers,
           body: JSON.stringify(reply.body) })
         row.transport = 'route-fulfilled'
       }
