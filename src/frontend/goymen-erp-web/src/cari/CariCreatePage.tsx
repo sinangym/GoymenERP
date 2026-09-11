@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router'
 import { createCounterparty, type CreateCounterpartyPayload } from './commandApi'
 import type { CounterpartyMutationResult } from './mutationContract'
@@ -36,6 +36,8 @@ import { CariBackLink } from './CariBackLink'
 import { CARI_CREATE_TEXT as TEXT, CARI_KIND_LABEL, CARI_ROLE_LABEL } from './cariCommandText'
 import { useShellDispatch, useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
+import { API_BASE, isCommandContractReady, type ContractContext } from './clientContract'
+import { fetchCounterparties } from './api'
 import { CAPABILITY } from '../shell/capabilities'
 import { useCompanyDirectory } from '../shell/useShellOrchestrator'
 import { StateBlock } from '../shell/StateBlock'
@@ -81,6 +83,46 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
   const companyLabel =
     activeCompany === null ? TEXT.activeCompanyUnknown : `${activeCompany.legalName} (${activeCompany.code})`
 
+  /**
+   * THE COMPATIBILITY PROBE (spec §4.2).
+   *
+   * No Cari write opens until a fresh, successful, decoder-valid Cari GET in THIS
+   * context has come back with the server's acknowledgment. This form issues no read
+   * of its own otherwise, so without this probe it could only ever have discovered
+   * an incompatible server by writing to it — which is the one thing the protocol
+   * exists to prevent.
+   *
+   * A single row is enough and is what the handoff's own example asks for: this is a
+   * compatibility question, not a data one. It is entry-scoped like every other Cari
+   * read, so returning to the form re-proves compatibility rather than trusting a
+   * boolean from a previous visit.
+   */
+  const contractContext: ContractContext | null = useMemo(
+    () => (namespace === null ? null : { origin: API_BASE, namespace }),
+    [namespace],
+  )
+  const probe = useQuery({
+    queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'cari-contract-probe'],
+    enabled: namespace !== null && singleCompanyContext,
+    queryFn: async ({ signal }) =>
+      await fetchCounterparties(
+        { mode: 'single', companyId: activeCompanyId },
+        { pageSize: 1 },
+        signal,
+        contractContext,
+      ),
+  })
+
+  /**
+   * Writing is possible only once the probe has actually answered. `probe.isFetching`
+   * matters as much as the readiness flag: mid-flight, "not ready" is the question
+   * still being asked, not an answer, and showing the incompatibility notice then
+   * would accuse a server that has not spoken yet.
+   */
+  const probeAnswered = !probe.isPending && !probe.isFetching
+  const writeReady = isCommandContractReady(contractContext)
+  const incompatibleServer = probeAnswered && !writeReady
+
   const [values, setValues] = useState<CreateFormValues>(EMPTY_CREATE_FORM)
   const [showErrors, setShowErrors] = useState(false)
   // Focus targets: the validation summary (UX-AC-001: it — not the first invalid
@@ -93,8 +135,12 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
 
   const phase = attempt.state.phase
   const frozen = isAttemptFrozen(attempt.state)
-  // A new attempt may start from `idle` or from an ABANDONED (unfrozen) one.
-  const canSubmit = canBeginAttempt(attempt.state)
+  /**
+   * A new attempt may start from `idle` or from an ABANDONED (unfrozen) one — and
+   * only once compatibility has been proven here. `writeReady` is checked again in
+   * the transport; this one is so the button never invites a submit that cannot go.
+   */
+  const canSubmit = canBeginAttempt(attempt.state) && writeReady
   const completed = attempt.state.phase === 'completed' ? attempt.state : null
   const failure = attempt.state.phase === 'failed' ? attempt.state.failure : null
 
@@ -150,7 +196,7 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
     const payload = result.payload
     const companyId = activeCompanyId
     const outcome = attempt.submit(CREATE_OPERATION, payload, (idempotencyKey, signal) =>
-      createCounterparty({ companyId, idempotencyKey }, payload, signal),
+      createCounterparty({ companyId, idempotencyKey, contract: { origin: API_BASE, namespace: namespace ?? '' } }, payload, signal),
     )
     // The unchanged payload of an abandoned, unresolved attempt: nothing was sent
     // and no key was minted. The explanation is already on screen; focus lands on
@@ -250,6 +296,22 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
       <div role="status" aria-live="polite" className={styles.announce}>
         {announcement}
       </div>
+
+      {/* The server on the other end cannot represent a role-less counterparty, so
+          the form is closed rather than left to discover that by writing (spec §4.2).
+          Stated only once the probe has answered — mid-flight silence is not a
+          verdict. */}
+      {incompatibleServer ? (
+        <div role="alert" data-state="client-contract" className={styles.contractBlocked}>
+          <p>
+            <strong>Uyumlu istemci gerekli</strong>
+          </p>
+          <p>
+            Bu cari işlemi desteklenen istemci sözleşmesi ile yeniden açılmalıdır. Sayfayı
+            yenileyin; form kapalıdır ve hiçbir istek gönderilmedi.
+          </p>
+        </div>
+      ) : null}
 
       <form
         className={styles.form}

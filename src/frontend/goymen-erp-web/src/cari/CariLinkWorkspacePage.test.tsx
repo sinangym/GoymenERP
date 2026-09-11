@@ -245,22 +245,28 @@ describe('CARI-LINK selection authority (G-002 check 2)', () => {
     expect(submitButton().closest('form')?.getAttribute('aria-describedby')).toBe('cari-link-summary')
     expect(fetchLog.links()).toHaveLength(0)
 
-    // Selecting clears the selection error and its linkage. Without roles, the
-    // summary now lists the roles error and takes focus again; the checkboxes
-    // carry their own description (C-004-P2-002).
+    /**
+     * Selecting clears the selection error and its linkage — and, since the
+     * 10 September decision, THAT IS THE WHOLE FORM. Clearing the classification
+     * back to none leaves a valid link: a fresh selection and no commercial role.
+     *
+     * This block used to assert the opposite ("Hedef şirket için en az bir rol
+     * seçin."), which was the mandatory-role precondition the decision removed.
+     */
     await user.click(roleCheckbox('Tedarikçi'))
     await user.click(radioFor('CAR-000001'))
     expect(radioFor('CAR-000001').getAttribute('aria-invalid')).toBeNull()
     expect(radioFor('CAR-000001').getAttribute('aria-describedby')).toBeNull()
     expect(document.querySelector('#cari-link-selection-error')).toBeNull()
     await user.click(submitButton())
-    await waitFor(() => expect(document.activeElement).toBe(query('#cari-link-summary')))
-    expect(within(query('#cari-link-summary')).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
-      'Hedef şirket için en az bir rol seçin.',
-    ])
-    expect(roleCheckbox('Müşteri').getAttribute('aria-describedby')).toBe('cari-link-roles-error')
-    expect(roleCheckbox('Müşteri').getAttribute('aria-invalid')).toBe('true')
-    expect(fetchLog.links()).toHaveLength(0)
+
+    // The link goes out, and its body is the roleless request the contract names:
+    // `{}` — not an absent body, and not a fabricated `Customer=1` to get past a
+    // rule that no longer exists (spec §3.1).
+    await waitFor(() => expect(fetchLog.links()).toHaveLength(1))
+    expect(fetchLog.links()[0].body).toEqual({})
+    // No roles error was ever raised: there is no rule left for it to report.
+    expect(document.querySelector('#cari-link-roles-error')).toBeNull()
   })
 })
 
@@ -790,10 +796,21 @@ describe('CARI-LINK selection authority is a FRESH successful read of the CURREN
     await selectAndChoose(user)
     await user.click(screen.getByRole('button', { name: 'Daha fazla aday yükle' }))
     await screen.findByText('Daha fazla aday yüklenemedi; mevcut adaylar korunuyor.')
+
+    // The ROWS keep their authority: they are still current-query server data, and
+    // the selection made from them stands.
     expect(radioFor('CAR-000001').checked).toBe(true)
     expect(selectionState()).toBe('fresh')
+
+    /**
+     * The WRITE GATE is a different question, and the continuation failure closed it.
+     * Compatibility is proven by a fresh SUCCESSFUL read in this context; the last
+     * read never reached the server, so there is nothing current to prove it
+     * (spec §4.2, and the accepted 07a4af2 revoke-on-unreachable fix). Row authority
+     * and write readiness are separate layers — this case shows both at once.
+     */
     await user.click(submitButton())
-    await waitFor(() => expect(fetchLog.links()).toHaveLength(1))
+    expect(fetchLog.links()).toHaveLength(0)
   })
 })
 
@@ -820,7 +837,10 @@ describe('CARI-LINK command and success (G-002 checks 3, 5)', () => {
     await waitFor(() => expect(fetchLog.detailReads()).toHaveLength(1), CHAIN)
     expect(fetchLog.detailReads()[0].companyId).toBe(B_ID)
     expect(factValue('Cari kodu')).toBe('CAR-000001')
-    expect(factValue('Bu şirketteki roller')).toBe('Tedarikçi')
+    // Label reconciled with ASSUMPTION-CARI-002: the record's classification is
+    // shown as history ("Geçmiş ticari sınıflandırma"), not as the counterparty's
+    // current commercial direction (ILK_DILIM §7). The VALUE is unchanged.
+    expect(factValue('Geçmiş ticari sınıflandırma')).toBe('Tedarikçi')
     await settle(150)
     expect(fetchLog.links()).toHaveLength(1)
   })

@@ -121,7 +121,10 @@ export const CARI_COMMAND_TEXT = {
     retry: 'Önceki işlemi yeniden dene',
   },
   unknownReason: {
-    offline: 'Bağlantı yok.',
+    unacknowledged:
+    'Sunucu bu işlemi onaylamadı; sonucu bilinmiyor. Aynı kaydı tekrar oluşturmayın — ' +
+    'sayfayı yenileyip aynı işlemi açıkça tekrar deneyin.',
+  offline: 'Bağlantı yok.',
     'network-error': 'Sunucuya ulaşılamadı.',
     'service-unavailable': 'Servis geçici olarak yanıt veremedi.',
     'malformed-response': 'Sunucu yanıtı beklenen biçimde değil.',
@@ -160,6 +163,12 @@ export const CARI_COMMAND_TEXT = {
     unexpected: {
       title: 'İşlem tamamlanamadı',
       detail: 'Sunucu isteği reddetti; iş etkisi oluşmadı.',
+    },
+    'contract-not-ready': {
+      title: 'Uyumlu istemci gerekli',
+      detail:
+        'Bu cari işlemi desteklenen istemci sözleşmesi ile yeniden açılmalıdır. ' +
+        'Sayfayı yenileyin; istek gönderilmedi.',
     },
   } satisfies Record<AttemptFailure, { title: string; detail: string }>,
   acknowledge: 'Anladım',

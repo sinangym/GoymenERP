@@ -122,6 +122,21 @@ describe('decodeLinkCandidatePage — the candidate DTO is not the list DTO (han
 
   it('rejects unknown role bits, duplicate Party ids and inconsistent paging', () => {
     expect(decodeLinkCandidatePage(page([item({ visibleSourceAccounts: [source({ roles: 16 })] })]), TARGET_B)).toBeNull()
+    // …but 0 and 15 are inside the accepted range. A source account with no legacy
+    // classification is an ordinary candidate, not a malformed page.
+    for (const roles of [0, 15]) {
+      expect(
+        decodeLinkCandidatePage(page([item({ visibleSourceAccounts: [source({ roles })] })]), TARGET_B),
+        `roles=${roles}`,
+      ).not.toBeNull()
+    }
+    // Null and a missing property stay invalid: the response contract requires the number.
+    for (const roles of [null, undefined]) {
+      expect(
+        decodeLinkCandidatePage(page([item({ visibleSourceAccounts: [source({ roles })] })]), TARGET_B),
+        `roles=${String(roles)}`,
+      ).toBeNull()
+    }
     expect(decodeLinkCandidatePage(page([item(), item()]), TARGET_B)).toBeNull()
     expect(decodeLinkCandidatePage(page([item(), item({ id: PARTY_2 })]), TARGET_B)!.items).toHaveLength(2)
     expect(decodeLinkCandidatePage(page([item()], { hasMore: true }), TARGET_B)).toBeNull()

@@ -37,6 +37,7 @@ import { CARI_LINK_TEXT as TEXT, CARI_KIND_LABEL, CARI_ROLE_LABEL } from './cari
 import { classifyOutcome, type RemoteViewState, type ViewOutcome } from '../shell/uiState'
 import { useShellDispatch, useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
+import { API_BASE } from './clientContract'
 import { CAPABILITY } from '../shell/capabilities'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { useCompanyDirectory } from '../shell/useShellOrchestrator'
@@ -162,6 +163,9 @@ function CariLinkWorkspace({ namespace }: { readonly namespace: string | null })
         targetCompanyId ?? '',
         { q: q.length > 0 ? q : undefined, cursor },
         signal,
+        // The candidate read IS the fresh, target-company exchange that proves
+        // compatibility for the link about to be written (spec §4.2).
+        namespace === null ? null : { origin: API_BASE, namespace },
       )
       if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) {
         boundary.report(outcome.status, snapshot)
@@ -370,7 +374,7 @@ function CariLinkWorkspace({ namespace }: { readonly namespace: string | null })
     const payload = result.payload
     const companyId = targetCompanyId
     const outcome = attempt.submit(`${LINK_OPERATION_PREFIX}${partyId}`, payload, (idempotencyKey, signal) =>
-      linkCompanyAccount({ companyId, idempotencyKey }, partyId, payload, signal),
+      linkCompanyAccount({ companyId, idempotencyKey, contract: { origin: API_BASE, namespace: namespace ?? '' } }, partyId, payload, signal),
     )
     // The unchanged payload of an abandoned, unresolved attempt: nothing was sent
     // and no key was minted; focus lands on the explanation already on screen.

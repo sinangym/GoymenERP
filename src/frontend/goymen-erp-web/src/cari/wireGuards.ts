@@ -44,11 +44,28 @@ export function isLosslessVersion(value: unknown): value is string {
   )
 }
 
-/** Role flags inside the declared range with at least one known bit. */
+/**
+ * Role flags inside the declared response range: a required integer 0..15.
+ *
+ * `0` is VALID and means "no commercial classification" — the 10 September decision
+ * removed the mandatory trade role, and the accepted contract (PR #230 `080e7a1`)
+ * pins `PartyRole` at 0..15 in every account projection. `15` is valid too: it is the
+ * value adjacent to the first REJECTED one, so it is the end where an off-by-one
+ * hides.
+ *
+ * Rejecting `0` here was not a display bug. It ran through `mutationContract` and
+ * `candidateContract`, so a role-less create returned 201 and the SCREEN reported a
+ * malformed response: the write succeeded and the user was told it had not.
+ *
+ * What does NOT relax, because the request being permissive says nothing about the
+ * response: `null`, a missing property, a string, a fraction, a negative and any
+ * unknown bit are all still rejected. There is no fallback that reads them as 0 —
+ * a guessed 0 is a claim about the record we are not entitled to make.
+ */
 export function isKnownRoleFlags(value: unknown): value is number {
   return (
     isSafeIntish(value) &&
-    value >= 1 &&
+    value >= 0 &&
     value <= ALL_ROLE_FLAGS &&
     (value & ~ALL_ROLE_FLAGS) === 0
   )

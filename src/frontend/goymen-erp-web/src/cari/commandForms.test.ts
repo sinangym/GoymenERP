@@ -47,14 +47,16 @@ describe('validateCreateForm — C-02A', () => {
     expect(none.ok && none.payload.tradeName).toBeNull()
   })
 
-  it('the empty form fails on kind, legal name and roles — with the localized messages', () => {
+  it('the empty form fails on kind and legal name — NOT on roles', () => {
+    // The 10 September decision removed the mandatory trade role, so an untouched
+    // picker is a complete answer. Listing it as an error told the user they had
+    // left something out when they had not.
     const result = validateCreateForm(EMPTY_CREATE_FORM)
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.errors).toEqual({
       kind: CARI_CREATE_TEXT.validation.kind,
       legalName: CARI_CREATE_TEXT.validation.legalNameRequired,
-      roles: CARI_CREATE_TEXT.validation.roles,
     })
     expect(isCreateFormPristine(EMPTY_CREATE_FORM)).toBe(true)
     expect(isCreateFormPristine({ ...EMPTY_CREATE_FORM, legalName: ' ' })).toBe(false)
@@ -74,11 +76,13 @@ describe('validateCreateForm — C-02A', () => {
     expect(!longTrade.ok && longTrade.errors.tradeName).toBe(CARI_CREATE_TEXT.validation.tradeNameTooLong)
   })
 
-  it('roles: at least one known bit (1–15), nothing outside the flag range', () => {
-    for (const roles of [1, 2, 4, 8, 15, 10]) {
+  it('roles: optional (0) through the full flag range, nothing outside it', () => {
+    // 0 is now a valid submission — "no commercial classification" — and 15 is the
+    // valid value adjacent to the first rejected one.
+    for (const roles of [0, 1, 2, 4, 8, 15, 10]) {
       expect(validateCreateForm({ ...VALID, roles }).ok, `roles=${roles}`).toBe(true)
     }
-    for (const roles of [0, 16, 17, 32, -1]) {
+    for (const roles of [16, 17, 32, -1]) {
       const result = validateCreateForm({ ...VALID, roles })
       expect(!result.ok && result.errors.roles, `roles=${roles}`).toBe(CARI_CREATE_TEXT.validation.roles)
     }
@@ -102,14 +106,21 @@ describe('validateLinkForm — CARI-LINK', () => {
     expect(result.payload.roles).toBe(10)
   })
 
-  it('a hint or a stale row is not a selection; roles must carry a known bit', () => {
+  it('a hint or a stale row is not a selection; a missing classification is fine', () => {
     const noSelection = validateLinkForm({ hasFreshSelection: false, roles: 2 })
     expect(!noSelection.ok && noSelection.errors).toEqual({ selection: CARI_LINK_TEXT.validation.selection })
-    const noRoles = validateLinkForm({ hasFreshSelection: true, roles: 0 })
-    expect(!noRoles.ok && noRoles.errors).toEqual({ roles: CARI_LINK_TEXT.validation.roles })
+
+    // Linking WITHOUT a classification is the point of the decision: a fresh
+    // selection and no roles is a valid link, and its body is `{}`.
+    const roleless = validateLinkForm({ hasFreshSelection: true, roles: 0 })
+    expect(roleless.ok).toBe(true)
+    expect(roleless.ok && roleless.payload).toEqual({ roles: 0 })
+
     const outOfRange = validateLinkForm({ hasFreshSelection: true, roles: 16 })
     expect(!outOfRange.ok && outOfRange.errors.roles).toBe(CARI_LINK_TEXT.validation.roles)
-    const both = validateLinkForm({ hasFreshSelection: false, roles: 0 })
-    expect(!both.ok && Object.keys(both.errors)).toEqual(['selection', 'roles'])
+
+    // The selection is still required on its own.
+    const onlySelection = validateLinkForm({ hasFreshSelection: false, roles: 0 })
+    expect(!onlySelection.ok && Object.keys(onlySelection.errors)).toEqual(['selection'])
   })
 })

@@ -16,6 +16,13 @@ import {
 } from './commandApi'
 import { PROBLEM_CODE } from './contract'
 import {
+  API_BASE,
+  COUNTERPARTY_CONTRACT_HEADER,
+  COUNTERPARTY_CONTRACT_VERSION,
+  recordContractRead,
+  resetContractReadiness,
+} from './clientContract'
+import {
   A_ID,
   B_ID,
   PARTY,
@@ -24,6 +31,8 @@ import {
   candidate,
   candidatePage,
   json,
+  jsonWithoutAck,
+  NO_ACK_MARKER,
   linkedView,
   mutationView,
   problem,
@@ -41,7 +50,20 @@ function stubFetch(respond: (url: string, init?: RequestInit) => Response | Prom
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString()
       captured.push({ url, init })
-      return respond(url, init)
+      const response = await respond(url, init)
+      /**
+       * A compatible server acknowledges every exchange it accepts, and these cases
+       * were written before the protocol existed. Modelling the acknowledging server
+       * here keeps them about what they are about; the cases that need a SILENT
+       * server say so explicitly and strip it.
+       */
+      if (
+        !response.headers.has(COUNTERPARTY_CONTRACT_HEADER) &&
+        !response.headers.has(NO_ACK_MARKER)
+      ) {
+        response.headers.set(COUNTERPARTY_CONTRACT_HEADER, COUNTERPARTY_CONTRACT_VERSION)
+      }
+      return response
     }),
   )
   return captured
@@ -56,15 +78,40 @@ function bodyOf(call: Captured): unknown {
 }
 
 const KEY = 'f'.repeat(32)
-const CONTEXT = { companyId: A_ID, idempotencyKey: KEY }
+/**
+ * Every command now carries the context its write permission was earned in. The
+ * transport refuses to send without it, which is the point.
+ */
+const CONTRACT_A = { origin: API_BASE, namespace: 'actor-a single company-a gen-1' }
+const CONTRACT_B = { origin: API_BASE, namespace: 'actor-a single company-b gen-1' }
+const CONTEXT = { companyId: A_ID, idempotencyKey: KEY, contract: CONTRACT_A }
+
+/** Stand in for the fresh, validated, acknowledged GET that opens the write gate. */
+const CONTRACT_B_GATE = CONTRACT_B
+const TARGET_FOR_GATE = { companyId: B_ID, idempotencyKey: KEY, contract: CONTRACT_B }
+
+function openWriteGate(contract = CONTRACT_A) {
+  recordContractRead(contract, {
+    status: 200,
+    bodyValidated: true,
+    ack: COUNTERPARTY_CONTRACT_VERSION,
+  })
+}
 const PAYLOAD: CreateCounterpartyPayload = { kind: 1, legalName: 'Örnek Metal Sanayi ve Ticaret A.Ş.', tradeName: null, roles: 3 }
 
 beforeEach(() => {
   vi.stubGlobal('navigator', { onLine: true })
+  // These cases are about the command transport, not about the gate; the gate has
+  // its own cases below and in contractTransport.test.ts.
+  resetContractReadiness()
+  // ONE slot, on purpose: readiness is bound to a single current context, so the
+  // link cases open their own target-company gate rather than sharing this one.
+  openWriteGate()
 })
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
+  resetContractReadiness()
 })
 
 describe('createCounterparty — POST /api/v1/counterparties', () => {
@@ -156,7 +203,16 @@ describe('createCounterparty — POST /api/v1/counterparties', () => {
 })
 
 describe('linkCompanyAccount — POST /api/v1/counterparties/{partyId}/company-account', () => {
-  const TARGET = { companyId: B_ID, idempotencyKey: KEY }
+  const TARGET = { companyId: B_ID, idempotencyKey: KEY, contract: CONTRACT_B }
+
+  /**
+   * The link writes into the TARGET company, so the write gate must have been opened
+   * there. Readiness earned in company A does not open a write to company B — the
+   * contract says so, and the single slot makes it structural.
+   */
+  beforeEach(() => {
+    openWriteGate(CONTRACT_B)
+  })
 
   it('carries roles only, under the TARGET company, and binds the 201 to the path Party', async () => {
     const calls = stubFetch(() => json(linkedView(), 201))
@@ -244,5 +300,69 @@ describe('fetchLinkCandidates — GET /api/v1/counterparties/company-account-lin
       throw new DOMException('aborted', 'AbortError')
     })
     expect(await fetchLinkCandidates(B_ID, {}, controller.signal)).toEqual({ type: 'fence-stale' })
+  })
+})
+
+describe('the write gate (spec §4.2)', () => {
+  it('sends NOTHING when compatibility has not been proven in this context', async () => {
+    // An old node answers a GET with 200 and a valid body and never acknowledges.
+    // Posting to it is how a role-less record reaches a server that cannot represent
+    // one, so the refusal happens before the request exists.
+    resetContractReadiness()
+    const calls = stubFetch(() => json(mutationView(), 201))
+    const outcome = await createCounterparty(CONTEXT, PAYLOAD)
+
+    expect(outcome).toEqual({ type: 'contract-not-ready' })
+    expect(calls).toHaveLength(0)
+  })
+
+  it('does not spend readiness earned in ANOTHER company', async () => {
+    // Readiness in A never opens a write to B: the link writes into the target
+    // company and must be proven there.
+    resetContractReadiness()
+    openWriteGate(CONTRACT_A)
+    const calls = stubFetch(() => json(linkedView(), 201))
+    const outcome = await linkCompanyAccount(TARGET_FOR_GATE, PARTY, { roles: 0 })
+
+    expect(outcome).toEqual({ type: 'contract-not-ready' })
+    expect(calls).toHaveLength(0)
+  })
+
+  it('declares the contract on the command itself, exactly once', async () => {
+    openWriteGate()
+    const calls = stubFetch(() => json(mutationView(), 201))
+    await createCounterparty(CONTEXT, PAYLOAD)
+
+    const sent = calls[0].init?.headers as Record<string, string>
+    expect(sent[COUNTERPARTY_CONTRACT_HEADER]).toBe(COUNTERPARTY_CONTRACT_VERSION)
+  })
+
+  it('a 201 the server did not acknowledge is UNKNOWN, never created', async () => {
+    // The acknowledgment is written before the handler runs, so a genuine 201 from a
+    // compatible node always carries it. Without it we cannot tell which node
+    // answered — and "created" is the one reading that must not happen.
+    openWriteGate()
+    stubFetch(() => jsonWithoutAck(mutationView(), 201))
+    const outcome = await createCounterparty(CONTEXT, PAYLOAD)
+
+    expect(outcome).toEqual({ type: 'unacknowledged', status: 201 })
+  })
+
+  it('omits roles entirely when no classification was chosen', async () => {
+    openWriteGate()
+    const calls = stubFetch(() => json(mutationView(), 201))
+    await createCounterparty(CONTEXT, { ...PAYLOAD, roles: 0 })
+
+    expect(calls[0].init?.body).toBe(
+      JSON.stringify({ kind: PAYLOAD.kind, legalName: PAYLOAD.legalName, tradeName: PAYLOAD.tradeName }),
+    )
+  })
+
+  it('sends `{}` for a roleless link — not an absent body', async () => {
+    openWriteGate(CONTRACT_B_GATE)
+    const calls = stubFetch(() => json(linkedView(), 201))
+    await linkCompanyAccount(TARGET_FOR_GATE, PARTY, { roles: 0 })
+
+    expect(calls[0].init?.body).toBe('{}')
   })
 })

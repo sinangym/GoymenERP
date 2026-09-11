@@ -135,10 +135,11 @@ describe('C-02 client validation (G-002 check 4; UX-AC-001)', () => {
     const summary = await waitFor(() => query('#cari-create-summary'))
     expect(summary.getAttribute('role')).toBe('alert')
     expect(summary.getAttribute('tabindex')).toBe('-1')
+    // Two, not three: the classification is optional since the 10 September decision,
+    // so an untouched picker is no longer listed as something the user left out.
     expect(within(summary).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
       'Taraf türü seçin.',
       'Hukuki ad zorunludur.',
-      'En az bir rol seçin.',
     ])
     expect(legalNameInput().closest('form')?.getAttribute('aria-describedby')).toBe('cari-create-summary')
     // UX-AC-001: the summary takes focus on the first invalid submit — not the first invalid field.
@@ -152,32 +153,38 @@ describe('C-02 client validation (G-002 check 4; UX-AC-001)', () => {
     expect(query('#cari-create-legal-name-error').textContent).toBe('Hukuki ad zorunludur.')
     expect(tradeNameInput().getAttribute('aria-invalid')).toBeNull()
     expect(tradeNameInput().getAttribute('aria-describedby')).toBe('cari-create-trade-name-hint')
+    // The classification picker is NOT marked invalid and carries no error: leaving
+    // it untouched is a complete answer, so flagging it would accuse the user of an
+    // omission that is not one.
     const customer = screen.getByRole('checkbox', { name: 'Müşteri' })
-    expect(customer.getAttribute('aria-invalid')).toBe('true')
-    expect(customer.getAttribute('aria-describedby')).toBe('cari-create-roles-error')
-    expect(query('#cari-create-roles-error').textContent).toBe('En az bir rol seçin.')
+    expect(customer.getAttribute('aria-invalid')).toBeNull()
+    expect(customer.getAttribute('aria-describedby')).toBeNull()
+    expect(document.querySelector('#cari-create-roles-error')).toBeNull()
     expect(fetchLog.creates()).toHaveLength(0)
 
     // The summary precedes the fields: Tab from it reaches the first control to fix.
     await user.tab()
     expect(document.activeElement).toBe(kindSelect())
 
-    // Only the roles still missing: the summary lists that one error and takes focus
-    // again; the corrected controls lose their error linkage.
+    /**
+     * Correcting the two REQUIRED fields completes the form. The classification is
+     * still untouched, and that is now a finished answer, not a remaining error —
+     * this block used to assert "En az bir rol seçin.", the precondition the
+     * 10 September decision removed.
+     */
     await user.selectOptions(kindSelect(), '1')
     await user.type(legalNameInput(), 'X')
     await user.click(submitButton())
-    await waitFor(() => expect(document.activeElement).toBe(query('#cari-create-summary')))
-    expect(within(query('#cari-create-summary')).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
-      'En az bir rol seçin.',
-    ])
-    expect(kindSelect().getAttribute('aria-invalid')).toBeNull()
-    expect(kindSelect().getAttribute('aria-describedby')).toBeNull()
-    expect(legalNameInput().getAttribute('aria-invalid')).toBeNull()
-    expect(legalNameInput().getAttribute('aria-describedby')).toBe('cari-create-legal-name-hint')
-    expect(customer.getAttribute('aria-describedby')).toBe('cari-create-roles-error')
-    expect(fetchLog.creates()).toHaveLength(0)
-    expect(screen.getByRole('link', { name: /listesine dön/ }).getAttribute('href')).toBe('/cari')
+
+    await waitFor(() => expect(fetchLog.creates()).toHaveLength(1))
+    // `roles` is OMITTED rather than sent as a fabricated classification. Absent and
+    // numeric 0 are the same normalized payload; absence is what "the user chose
+    // none" looks like (spec §3.1).
+    expect(fetchLog.creates()[0].body).toEqual({ kind: 1, legalName: 'X', tradeName: null })
+    // The form is replaced by the success state, so the summary and the roles error
+    // are gone — there is nothing left to correct.
+    expect(document.querySelector('#cari-create-summary')).toBeNull()
+    expect(document.querySelector('#cari-create-roles-error')).toBeNull()
   })
 })
 
@@ -223,7 +230,10 @@ describe('C-02 success (G-002 checks 1, 10)', () => {
     expect(fetchLog.detailReads()[0].companyId).toBe(A_ID)
     expect(fetchLog.detailReads()[0].url).toContain(`/counterparties/${PARTY}`)
     expect(factValue('Cari kodu')).toBe('CAR-000001')
-    expect(factValue('Bu şirketteki roller')).toBe('Müşteri, Tedarikçi')
+    // Label reconciled with ASSUMPTION-CARI-002: the record's classification is
+    // shown as history ("Geçmiş ticari sınıflandırma"), not as the counterparty's
+    // current commercial direction (ILK_DILIM §7). The VALUE is unchanged.
+    expect(factValue('Geçmiş ticari sınıflandırma')).toBe('Müşteri, Tedarikçi')
     await settle(150)
     expect(fetchLog.creates()).toHaveLength(1)
     expect(fetchLog.detailReads()).toHaveLength(1)

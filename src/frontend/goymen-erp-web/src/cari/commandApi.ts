@@ -21,6 +21,16 @@
 import { decodeCounterpartyMutation, type CounterpartyMutationResult } from './mutationContract'
 import { decodeLinkCandidatePage, type LinkCandidatePage } from './candidateContract'
 import { problemCodeOf, type PartyKind, type ProblemCode } from './contract'
+import {
+  beginContractRead,
+  commandAckOutcome,
+  contractAckOf,
+  contractRequestHeader,
+  isCommandContractReady,
+  recordContractRead,
+  recordContractReadFailure,
+  type ContractContext,
+} from './clientContract'
 import type { ViewOutcome } from '../shell/uiState'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
@@ -55,6 +65,16 @@ export interface LinkCompanyAccountPayload {
  *    processed, so the same logical attempt is retried with the SAME key.
  */
 export type CommandOutcome<T> =
+  /**
+   * The compatibility gate refused before any request existed. No handler ran, no key
+   * was consumed, nothing is uncertain — this is a definite non-event.
+   */
+  | { readonly type: 'contract-not-ready' }
+  /**
+   * A response arrived without the server's acknowledgment, so we cannot tell what
+   * contract answered. Unknown, never success.
+   */
+  | { readonly type: 'unacknowledged'; readonly status: number }
   | {
       readonly type: 'created'
       readonly data: T
@@ -75,6 +95,15 @@ export interface CommandContext {
   readonly companyId: string
   /** The attempt's single key. Created once per snapshot, never per click. */
   readonly idempotencyKey: string
+  /**
+   * The API origin + shell namespace this attempt is authorized under.
+   *
+   * The write gate reads it: a command may only go out where a fresh, successful,
+   * body-validated, acknowledged GET has already been seen for THIS origin, actor,
+   * session, company and generation (spec §4.2). Readiness earned in company A never
+   * opens a write to company B.
+   */
+  readonly contract: ContractContext
 }
 
 function readReplayed(headers: Headers): boolean {
@@ -93,8 +122,21 @@ async function postCommand<T>(
   decode: (raw: unknown) => T | null,
   signal?: AbortSignal,
 ): Promise<CommandOutcome<T>> {
+  /**
+   * THE WRITE GATE. Nothing leaves the client until compatibility has been proven in
+   * this exact context.
+   *
+   * An old server answers a GET with 200 and a valid body and simply never
+   * acknowledges; posting to it is how a role-less record reaches a node that cannot
+   * represent one. So the refusal happens HERE, before the request exists — no
+   * handler runs, no key is consumed, and there is nothing to be uncertain about
+   * afterwards. That is why this is a failure and not an unknown outcome.
+   */
+  if (!isCommandContractReady(context.contract)) return { type: 'contract-not-ready' }
+
   const headers: Record<string, string> = {
     ...devHeaders(),
+    ...contractRequestHeader(),
     'Content-Type': 'application/json',
     'X-Company-Id': context.companyId,
     'Idempotency-Key': context.idempotencyKey,
@@ -129,6 +171,19 @@ async function postCommand<T>(
     return { type: 'http', status: response.status, code: problemCodeOf(parsed), body: parsed }
   }
 
+  /**
+   * A 201 the server did not acknowledge is NOT success.
+   *
+   * The acknowledgment is written by the compatibility filter before the handler
+   * runs, so a genuine 201 from a compatible node always carries it. Its absence on
+   * a 201 means we cannot tell which node answered or under which contract — and the
+   * one reading that must never happen is "created". Unknown keeps the same key and
+   * forbids an automatic re-send (spec §4.5).
+   */
+  if (commandAckOutcome(response) === 'unknown-outcome') {
+    return { type: 'unacknowledged', status: response.status }
+  }
+
   const data = decode(parsed)
   if (data === null) return { type: 'malformed' }
   return {
@@ -147,11 +202,19 @@ export function createCounterparty(
 ): Promise<CommandOutcome<CounterpartyMutationResult>> {
   // Built explicitly so the wire body is exactly the four contract fields, whatever
   // else a caller's object might carry.
+  /**
+   * `roles` is OMITTED when the user chose no classification.
+   *
+   * The contract makes absent and numeric 0 the same normalized payload (spec §3.1),
+   * and absence is the more honest of the two: the user did not pick a
+   * classification, and 0 reads like a value they selected. The two must stay
+   * interchangeable for the SAME attempt — see `normalizedRolesForFingerprint`.
+   */
   const body = {
     kind: payload.kind,
     legalName: payload.legalName,
     tradeName: payload.tradeName,
-    roles: payload.roles,
+    ...(payload.roles === 0 ? {} : { roles: payload.roles }),
   }
   return postCommand(
     '/counterparties',
@@ -173,7 +236,9 @@ export function linkCompanyAccount(
   payload: LinkCompanyAccountPayload,
   signal?: AbortSignal,
 ): Promise<CommandOutcome<CounterpartyMutationResult>> {
-  const body = { roles: payload.roles }
+  // `{}` is the roleless link request the contract names (spec §3.1). An absent HTTP
+  // body is NOT the same thing, and is never what this sends.
+  const body = payload.roles === 0 ? {} : { roles: payload.roles }
   return postCommand(
     `/counterparties/${encodeURIComponent(partyId)}/company-account`,
     context,
@@ -210,8 +275,21 @@ export async function fetchLinkCandidates(
   targetCompanyId: string,
   query: LinkCandidateQuery,
   signal?: AbortSignal,
+  /**
+   * The TARGET company's context. A candidate read is a full Cari GET, so it is also
+   * the exchange that can open the write gate for the company the link will be
+   * written into — which is exactly the company readiness must be proven in
+   * (spec §4.2: "A şirketindeki teyit B'ye link yazmasını açmaz").
+   */
+  contractContext?: ContractContext | null,
 ): Promise<ViewOutcome<LinkCandidatePage>> {
-  const headers: Record<string, string> = { ...devHeaders(), 'X-Company-Id': targetCompanyId }
+  const headers: Record<string, string> = {
+    ...devHeaders(),
+    ...contractRequestHeader(),
+    'X-Company-Id': targetCompanyId,
+  }
+
+  beginContractRead(contractContext ?? null)
 
   let response: Response
   try {
@@ -220,7 +298,11 @@ export async function fetchLinkCandidates(
       { headers, signal },
     )
   } catch {
-    if (signal?.aborted) return { type: 'fence-stale' }
+    if (signal?.aborted) {
+      recordContractReadFailure(contractContext ?? null, 'aborted')
+      return { type: 'fence-stale' }
+    }
+    recordContractReadFailure(contractContext ?? null, 'unreachable')
     if (!navigator.onLine) return { type: 'offline' }
     return { type: 'network-error' }
   }
@@ -229,12 +311,44 @@ export async function fetchLinkCandidates(
   try {
     body = await response.json()
   } catch {
+    // Our own cancellation cut the body; see api.ts.
+    if (signal?.aborted) {
+      recordContractReadFailure(contractContext ?? null, 'aborted')
+      return { type: 'fence-stale' }
+    }
     body = null
   }
 
-  if (response.status !== 200) return { type: 'http', status: response.status, body }
+  const ack = contractAckOf(response)
+
+  if (response.status !== 200) {
+    recordContractRead(contractContext ?? null, {
+      status: response.status,
+      bodyValidated: false,
+      ack,
+    })
+    return { type: 'http', status: response.status, body }
+  }
 
   const page = decodeLinkCandidatePage(body, targetCompanyId)
+  recordContractRead(contractContext ?? null, {
+    status: response.status,
+    bodyValidated: page !== null,
+    ack,
+  })
   if (page === null) return { type: 'malformed' }
   return { type: 'ok-single', data: page }
+}
+
+/**
+ * How `roles` enters an attempt's payload fingerprint.
+ *
+ * Absent and numeric 0 are one payload on the wire, so they must be one payload to
+ * the retry rule as well. If they were not, a user who left the picker untouched and
+ * a user who explicitly cleared it would produce two different fingerprints for the
+ * same command — and an explicit same-key retry would then look like a different
+ * attempt and be refused (spec §4.5).
+ */
+export function normalizedRolesForFingerprint(roles: number): number {
+  return roles === 0 ? 0 : roles
 }

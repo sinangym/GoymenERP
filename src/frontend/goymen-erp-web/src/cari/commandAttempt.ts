@@ -33,6 +33,12 @@ import { PROBLEM_CODE } from './contract'
 
 /** A definite, non-success answer from the server, by stable code. */
 export type AttemptFailure =
+  /**
+   * Compatibility was not proven in this context, so nothing was sent. Retryable once
+   * a fresh acknowledged read succeeds here — under the SAME key, because the attempt
+   * never left the client.
+   */
+  | 'contract-not-ready'
   | 'validation'
   | 'metadata'
   | 'unauthenticated'
@@ -44,6 +50,8 @@ export type AttemptFailure =
 
 /** Why an outcome is unknown. Every one of these is retryable with the SAME key. */
 export type AttemptUnknownReason =
+  /** A response arrived, but without the acknowledgment that says which contract answered. */
+  | 'unacknowledged'
   | 'offline'
   | 'network-error'
   | 'service-unavailable'
@@ -124,6 +132,11 @@ export type CommandResolution<R> =
  */
 export function classifyCommandOutcome<R>(outcome: CommandOutcome<R>): CommandResolution<R> {
   switch (outcome.type) {
+    case 'contract-not-ready':
+      // Nothing was sent, so this is definite: not an unknown outcome.
+      return { kind: 'failed', failure: 'contract-not-ready' }
+    case 'unacknowledged':
+      return { kind: 'unknown', reason: 'unacknowledged' }
     case 'created':
       return { kind: 'completed', result: outcome.data, replayed: outcome.replayed }
     case 'offline':

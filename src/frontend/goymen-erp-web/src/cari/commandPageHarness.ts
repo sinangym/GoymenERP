@@ -38,10 +38,38 @@ export const DIRECTORY = [
 export const LEGAL_NAME = 'Örnek Metal Sanayi ve Ticaret A.Ş.'
 export const TRADE_NAME = 'Örnek Metal'
 
+/**
+ * A response from a COMPATIBLE server.
+ *
+ * The acknowledgment is included by default because that is what the server these
+ * cases describe actually does: the compatibility filter echoes the declaration on
+ * every exchange it accepts. A case that needs a SILENT server — an old node — says
+ * so by passing the header explicitly as an empty value via `headers`.
+ */
 export function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json', ...headers },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-ERP-Counterparty-Contract': 'optional-trade-roles-v1',
+      ...headers,
+    },
+  })
+}
+
+/**
+ * The marker that says "this response is deliberately silent".
+ *
+ * A harness that adds the acknowledgment by default needs a way to express its
+ * absence; without one, the old-node case cannot be written at all.
+ */
+export const NO_ACK_MARKER = 'X-Test-Silent-Server'
+
+/** The same body from an OLD node: no acknowledgment, so no write may follow. */
+export function jsonWithoutAck(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json', [NO_ACK_MARKER]: 'true' },
   })
 }
 

@@ -81,8 +81,21 @@ describe('decodeCounterpartyMutation — C-02 create (spec §3.3)', () => {
     ).toBeNull()
   })
 
-  it('rejects an unknown role bit, zero roles and out-of-range flags', () => {
-    for (const roles of [0, 16, 3.5, -1, '3', 31]) {
+  it('resolves roles=0 and roles=15 — the mutation view carries the whole 0..15 range', () => {
+    // A role-less create answers 201 with roles=0. Rejecting it here made the write
+    // succeed while the SCREEN reported a malformed response.
+    for (const roles of [0, 15]) {
+      const decoded = decodeCounterpartyMutation(
+        view({ companyAccounts: [account({ roles })] }),
+        { activeCompanyId: COMPANY_A },
+      )
+      expect(decoded, `roles=${String(roles)}`).not.toBeNull()
+      expect(decoded!.account.roles).toBe(roles)
+    }
+  })
+
+  it('rejects an unknown role bit, non-integers, negatives, strings and null', () => {
+    for (const roles of [16, 3.5, -1, '3', 31, null, undefined]) {
       expect(
         decodeCounterpartyMutation(view({ companyAccounts: [account({ roles })] }), { activeCompanyId: COMPANY_A }),
         `roles=${String(roles)}`,

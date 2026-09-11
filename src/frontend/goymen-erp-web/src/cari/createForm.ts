@@ -57,7 +57,14 @@ export function validateCreateForm(values: CreateFormValues): CreateFormValidati
   const tradeName = values.tradeName.trim()
   if (tradeName.length > TRADE_NAME_MAX) errors.tradeName = CARI_CREATE_TEXT.validation.tradeNameTooLong
 
-  if (values.roles < 1 || values.roles > ALL_ROLE_FLAGS || (values.roles & ~ALL_ROLE_FLAGS) !== 0) {
+  /**
+   * No mandatory trade role. The 10 September decision removed the precondition, so
+   * an untouched picker — `roles === 0` — is a complete form, not an unfinished one.
+   *
+   * The range is still enforced: a value outside 0..15, or one carrying an unknown
+   * bit, is a payload this client must not send.
+   */
+  if (values.roles < 0 || values.roles > ALL_ROLE_FLAGS || (values.roles & ~ALL_ROLE_FLAGS) !== 0) {
     errors.roles = CARI_CREATE_TEXT.validation.roles
   }
 

@@ -28,7 +28,8 @@ export type LinkFormValidation =
 export function validateLinkForm(values: LinkFormValues): LinkFormValidation {
   const errors: { -readonly [K in keyof LinkFormErrors]: LinkFormErrors[K] } = {}
   if (!values.hasFreshSelection) errors.selection = CARI_LINK_TEXT.validation.selection
-  if (values.roles < 1 || values.roles > ALL_ROLE_FLAGS || (values.roles & ~ALL_ROLE_FLAGS) !== 0) {
+  // Same rule as create: a classification is optional, its range is not.
+  if (values.roles < 0 || values.roles > ALL_ROLE_FLAGS || (values.roles & ~ALL_ROLE_FLAGS) !== 0) {
     errors.roles = CARI_LINK_TEXT.validation.roles
   }
   if (Object.keys(errors).length > 0) return { ok: false, errors }

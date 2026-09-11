@@ -209,3 +209,20 @@
   white-space: nowrap;
   border: 0;
 }
+
+/* The compatibility refusal. Not styled like a validation error: nothing the user
+   typed is wrong, and the action it asks for is a reload, not a correction. */
+.contractBlocked {
+  border: 1px solid #d9a441;
+  background: #fdf7ec;
+  border-radius: 6px;
+  padding: 12px 14px;
+  color: #4a3a1a;
+  max-width: 70ch;
+}
+.contractBlocked p {
+  margin: 0 0 6px;
+}
+.contractBlocked p:last-child {
+  margin-bottom: 0;
+}
