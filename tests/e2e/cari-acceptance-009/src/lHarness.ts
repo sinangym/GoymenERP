@@ -23,12 +23,24 @@ import type { APIRequestContext, APIResponse, Page, TestInfo } from '@playwright
 export interface LiveRecord {
   seq: number
   /**
-   * A single monotonic counter stamped when the request goes out and again when its
-   * response is parsed, so "this GET had ANSWERED before that POST was issued" is a
-   * comparison rather than an inference from wall-clock timestamps that can tie.
+   * A single monotonic counter stamped at each stage of the exchange, so "this GET had
+   * FINISHED before that POST was issued" is a comparison rather than an inference from
+   * wall-clock timestamps that can tie.
+   *
+   * The three stages are kept apart because they are not the same event. Playwright's
+   * `response` is the arrival of HEADERS; `requestfinished` is the body being fully
+   * received. A read whose headers said 200 while its body was still coming is NOT a
+   * completed read, and treating it as one would let a write go out on a pre-check that
+   * had not actually answered — and would let the quiescent barrier report zero
+   * outstanding while bytes were still on the wire.
    */
   requestTick: number
-  responseTick: number | null
+  headersTick: number | null
+  /** Terminal: the body finished, or the request failed. Never stamped before then. */
+  settledTick: number | null
+  outcome: 'pending' | 'finished' | 'failed'
+  /** Whether the response body was actually captured. A failed read has no body. */
+  bodyState: 'pending' | 'complete' | 'unavailable'
   at: string
   method: string
   path: string
@@ -151,6 +163,29 @@ export function readManifest(): EnvironmentManifest {
   return manifest
 }
 
+/**
+ * A read that actually ANSWERED: it reached a terminal finished state, its body was
+ * captured, it succeeded and it was acknowledged. Headers alone are not an answer.
+ */
+export function isCompletedRead(record: LiveRecord, contractVersion = CLIENT_CONTRACT_VERSION): boolean {
+  return (
+    record.outcome === 'finished' &&
+    record.bodyState === 'complete' &&
+    record.status === 200 &&
+    record.contractAck === contractVersion
+  )
+}
+
+/** A page payload the reader could actually use — not merely 200 with something in it. */
+export function isCandidatePagePayload(body: unknown): body is { items: { id?: string; code?: string }[] } {
+  return typeof body === 'object' && body !== null && Array.isArray((body as { items?: unknown }).items)
+}
+
+/** A completed read whose body is a usable page. This is what a pre-check must be. */
+export function isCompletedPageRead(record: LiveRecord, contractVersion = CLIENT_CONTRACT_VERSION): boolean {
+  return isCompletedRead(record, contractVersion) && isCandidatePagePayload(record.responseBody)
+}
+
 export class LiveRecorder {
   readonly records: LiveRecord[] = []
   private seq = 0
@@ -187,7 +222,10 @@ export class LiveRecorder {
       const record: LiveRecord = {
         seq: ++recorder.seq,
         requestTick: ++recorder.tick,
-        responseTick: null,
+        headersTick: null,
+        settledTick: null,
+        outcome: 'pending',
+        bodyState: 'pending',
         at: new Date().toISOString(),
         method: request.method().toUpperCase(),
         path: url.pathname,
@@ -213,7 +251,7 @@ export class LiveRecorder {
       const record = recorder.byRequest.get(request)
       if (!record) return
       record.status = response.status()
-      record.responseTick = ++recorder.tick
+      record.headersTick = ++recorder.tick
       const headers = response.headers()
       record.contractAck = headers['x-erp-counterparty-contract'] ?? null
       for (const name of CAPTURED_RESPONSE_HEADERS) {
@@ -222,13 +260,30 @@ export class LiveRecorder {
       try {
         const text = await response.text()
         record.responseBody = text.length > 0 ? safeJson(text) : null
+        record.bodyState = 'complete'
       } catch {
+        // The body could not be read — a navigation or a cancellation took it. That is
+        // not a completed read, and it must never be able to become one.
         record.responseBody = null
+        record.bodyState = 'unavailable'
       }
+      recorder.settle(record)
+    })
+    page.on('requestfinished', (request) => {
+      const record = recorder.byRequest.get(request)
+      if (!record) return
+      record.outcome = 'finished'
+      recorder.settle(record)
     })
     page.on('requestfailed', (request) => {
       const record = recorder.byRequest.get(request)
-      if (record) record.failure = request.failure()?.errorText ?? 'unknown'
+      if (!record) return
+      record.failure = request.failure()?.errorText ?? 'unknown'
+      record.outcome = 'failed'
+      // A failed exchange has no body to wait for; leaving it pending would keep the
+      // quiescent barrier from ever draining.
+      if (record.bodyState === 'pending') record.bodyState = 'unavailable'
+      recorder.settle(record)
     })
     return recorder
   }
@@ -258,14 +313,27 @@ export class LiveRecorder {
     return this.of((r) => r.method === 'GET' && r.path === '/api/v1/counterparties')
   }
 
+  /** Stamps the terminal tick once BOTH the transfer and the body capture have settled. */
+  private settle(record: LiveRecord): void {
+    if (record.settledTick === null && record.outcome !== 'pending' && record.bodyState !== 'pending') {
+      record.settledTick = ++this.tick
+    }
+  }
+
   /** The event counter as it stands now — the instant a test action happened. */
   currentTick(): number {
     return this.tick
   }
 
-  /** Requests this recorder has seen go out and not yet seen finish, either way. */
+  /**
+   * Requests still in flight — measured on the TERMINAL stage, not on headers.
+   *
+   * `status !== null` only means headers arrived; a body can still be streaming behind
+   * it. Draining on that would let the barrier report zero outstanding while bytes were
+   * still on the wire, which is exactly what the snapshot it brackets cannot tolerate.
+   */
   inFlight(): LiveRecord[] {
-    return this.records.filter((r) => r.status === null && r.failure === null)
+    return this.records.filter((r) => r.settledTick === null)
   }
 
   /**
@@ -316,7 +384,17 @@ export class LiveRecorder {
       lane: 'L',
       slug,
       title: testInfo.title,
-      status: testInfo.status ?? 'unknown',
+      /**
+       * The MEASUREMENT phase, not the verdict.
+       *
+       * `TestInfo.status` is only available after the test has finished, and this runs
+       * inside the body — so it was always `undefined` and every record claimed the run
+       * status was "unknown". The final result belongs to the runner's own report
+       * (`results.json` / `junit.xml`); nothing here invents a PASS.
+       */
+      phase: 'measurement',
+      finalTestResult: 'not available inside the test body; see the runner report',
+      statusAtWrite: testInfo.status ?? null,
       browserVersion: this.page.context().browser()?.version() ?? null,
       redaction: 'authorization/cookie headers never copied; query values dropped (keys only)',
       records: this.records,
@@ -602,6 +680,12 @@ export interface ActorProbeRecord {
    * "checked and clean" on a probe nobody checked.
    */
   readonly disclosedForbiddenText: boolean | null
+  /**
+   * The stable ProblemDetails code. An authorization refusal and a business conflict are
+   * different answers, and "some 4xx" cannot tell them apart — a 409 already_linked
+   * would otherwise pass as proof that the authorization boundary held.
+   */
+  readonly problemCode: string | null
   readonly createdPartyId: string | null
 }
 
@@ -639,9 +723,11 @@ export class ActorProbe {
         : await this.request.post(options.path, { headers, data: options.data ?? {}, failOnStatusCode: false })
     const text = await response.text().catch(() => '')
     let createdPartyId: string | null = null
+    let problemCode: string | null = null
     try {
-      const parsed = JSON.parse(text) as { id?: unknown }
+      const parsed = JSON.parse(text) as { id?: unknown; code?: unknown }
       if (response.status() < 300 && typeof parsed.id === 'string') createdPartyId = parsed.id
+      if (typeof parsed.code === 'string') problemCode = parsed.code
     } catch {
       createdPartyId = null
     }
@@ -657,6 +743,7 @@ export class ActorProbe {
       companyId: options.companyId,
       status: response.status(),
       contractAck: response.headers()['x-erp-counterparty-contract'] ?? null,
+      problemCode,
       disclosedForbiddenText:
         options.mustNotDisclose === undefined || options.mustNotDisclose.length === 0
           ? null

@@ -33,6 +33,8 @@ import {
   ActorProbe,
   DeliveryWithholder,
   LiveRecorder,
+  isCompletedPageRead,
+  isCompletedRead,
   lShot,
   readManifest,
   writeLJson,
@@ -73,6 +75,20 @@ function factValue(page: Page, label: string) {
   return page.locator('dt', { hasText: label }).locator('xpath=following-sibling::dd[1]')
 }
 
+/**
+ * The ids a completed page read actually carried — evidence independent of the DOM.
+ *
+ * No search narrowing accompanies this, deliberately. The C006 fixture is a single
+ * Party with two accounts after the smoke, so after this journey's create company A
+ * lists at most two rows and B offers at most one candidate: the record is always on
+ * the first page, and adding a filter step would be scope for a scale this environment
+ * does not have.
+ */
+function payloadIds(record: LiveRecord): string[] {
+  const body = record.responseBody as { items?: { id?: string }[] } | null
+  return (body?.items ?? []).map((item) => item?.id).filter((id): id is string => typeof id === 'string')
+}
+
 /** The in-app return to the list. A distinct name from the nav item, on purpose. */
 function backToList(page: Page) {
   return page.getByRole('link', { name: /Cari Kartlar listesine dön/ })
@@ -82,8 +98,13 @@ function backToList(page: Page) {
  * The fresh, successful, ACKNOWLEDGED reads that were BOTH issued after `afterTick` and
  * had already answered before `post` went out — the recheck the retry stands on.
  *
- * Both halves matter: a read that started earlier but answered later proves nothing,
- * which is why the recorder stamps a tick on the response as well as on the request.
+ * "Answered" means the body FINISHED and parsed into a usable page — not that headers
+ * arrived. A 200 whose body was still streaming when the POST went out is not a
+ * pre-check, and `isCompletedPageRead` is what draws that line.
+ *
+ * Both halves matter: a read that started earlier but settled later proves nothing,
+ * which is why the recorder stamps a tick at the request and again at the terminal
+ * stage.
  * `afterTick` is taken at the retry click, so a read that was already in flight before
  * the user asked for the recheck cannot stand in for it. What this establishes is
  * ordering, not causality: it says a qualifying read had answered first, not that the
@@ -92,11 +113,10 @@ function backToList(page: Page) {
 function revalidatingRead(reads: LiveRecord[], afterTick: number, post: LiveRecord): LiveRecord[] {
   return reads.filter(
     (r) =>
-      r.status === 200 &&
-      r.contractAck === CONTRACT &&
+      isCompletedPageRead(r, CONTRACT) &&
       r.requestTick > afterTick &&
-      r.responseTick !== null &&
-      r.responseTick < post.requestTick,
+      r.settledTick !== null &&
+      r.settledTick < post.requestTick,
   )
 }
 
@@ -279,13 +299,26 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; f
 
   // ---- B: invisible before the link; detail closes 404 ------------------------------
   await switchCompany(page, B)
+  const tickBeforeBListVisit = net.currentTick()
   await page.goto('/cari')
   await expect(page.getByRole('heading', { level: 1, name: 'Cari Kartlar' })).toBeVisible({ timeout: 60_000 })
   await expect(page.getByRole('combobox', { name: 'Şirket', exact: true })).toHaveValue(B)
-  // A SUCCESSFUL read: a 403 or 500 also renders no row, and "the screen did not list it"
-  // would then be recorded from a screen that never listed anything.
-  await expect.poll(() => net.listReads().filter((r) => r.companyId === B && r.status === 200).length).toBeGreaterThanOrEqual(1)
+  /**
+   * THIS visit's own completed read decides it.
+   *
+   * A count taken against an earlier baseline can be satisfied by a read from before the
+   * visit, and then `toHaveCount(0)` runs against a table that is still loading — where
+   * no row is present for the ordinary reason that nothing has been drawn yet. The read
+   * must belong to this visit, must have FINISHED with a usable body, and the screen
+   * must be in a terminal state rather than mid-flight.
+   */
+  const bListVisitReads = () =>
+    net.listReads().filter((r) => r.companyId === B && r.requestTick > tickBeforeBListVisit && isCompletedPageRead(r, CONTRACT))
+  await expect.poll(() => bListVisitReads().length, { timeout: 60_000 }).toBeGreaterThanOrEqual(1)
+  await expect(page.locator('[data-state="initial-loading"]')).toHaveCount(0)
   await expect(page.getByRole('row', { name: new RegExp(code) })).toHaveCount(0)
+  const bListBeforeLink = bListVisitReads().at(-1)!
+  expect(payloadIds(bListBeforeLink)).not.toContain(partyId)
   await lShot(page, slug, '05-B-list-before-link')
   await page.goto(`/cari/${partyId}`)
   await expect(page.locator('[data-state="not-found"]')).toBeVisible({ timeout: 30_000 })
@@ -315,19 +348,24 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; f
   await expect(unknownAfterLink).toBeVisible({ timeout: 60_000 })
   const linkUnknownUrl = page.url()
   expect(linkUnknownUrl).toMatch(/\/cari\/sirkete-bagla$/)
-  await expect(page.locator('[data-outcome]')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Anladım' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Şirkete bağla' })).toBeDisabled()
   await page.waitForTimeout(500)
   await expect(page.locator(UNKNOWN_NOTICE)).toBeVisible()
-  await expect(page.locator('[data-outcome]')).toHaveCount(0)
   expect(page.url()).toBe(linkUnknownUrl)
   // Counted, not asserted-then-declared: the numbers written to the evidence are the
   // ones the page actually reported at this moment.
   const duringLinkUnknown = {
     url: linkUnknownUrl,
     urlUnchanged: page.url() === linkUnknownUrl,
-    successDomCount: await page.locator('[data-outcome]').count(),
+    /**
+     * NOT APPLICABLE on this screen for this actor, and recorded as such rather than as
+     * a passing zero: the link workspace only renders `[data-outcome]` when the actor
+     * cannot open the detail (`CariLinkWorkspacePage.tsx:473`), and this actor can — a
+     * success here is a navigation. The URL, attempt and acknowledge checks below are
+     * what actually bear weight.
+     */
+    successDomCount: 'not applicable — success on this screen is a navigation for an actor with detail access',
     acknowledgeButtonCount: await page.getByRole('button', { name: 'Anladım' }).count(),
     unknownNoticeCount: await page.locator(UNKNOWN_NOTICE).count(),
     submitDisabled: await page.getByRole('button', { name: 'Şirkete bağla' }).isDisabled(),
@@ -437,11 +475,31 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; f
     .toBe(partyId)
   await lShot(page, slug, '11-B-return-focus-on-record')
 
-  // It is no longer a candidate.
+  /**
+   * It is no longer a candidate — decided by THIS visit's own read, not by a counter.
+   *
+   * The previous shape compared the candidate-read count against a baseline captured
+   * before the link; the retry's own revalidating read had already pushed it past that,
+   * so the poll returned on its first tick and the row assertion then ran against a
+   * loading or errored screen, where the row is absent for the wrong reason. A run that
+   * navigated away and cancelled the request would have recorded the same "false".
+   */
+  const tickBeforeFinalCandidateVisit = net.currentTick()
   await page.goto('/cari/sirkete-bagla')
   await expect(page.getByRole('heading', { level: 1, name: 'Cariyi Şirkete Bağla' })).toBeVisible({ timeout: 60_000 })
-  await expect.poll(() => okCandidateReads().length).toBeGreaterThan(candidateReadsBeforeLink.length)
+  const finalCandidateReads = () =>
+    net
+      .candidateReads()
+      .filter((r) => r.companyId === B && r.requestTick > tickBeforeFinalCandidateVisit && isCompletedPageRead(r, CONTRACT))
+  await expect.poll(() => finalCandidateReads().length, { timeout: 60_000 }).toBeGreaterThanOrEqual(1)
+  const finalCandidateRead = finalCandidateReads().at(-1)!
+  // Terminal, not mid-flight and not an error: "Sonuç yok" is a real answer, a spinner
+  // and a failure are not.
+  await expect(page.locator('[data-state="initial-loading"]')).toHaveCount(0)
+  await expect(page.locator('[data-state="service-unavailable"], [data-state="malformed-response"], [data-state="forbidden"], [data-state="unauthenticated"]')).toHaveCount(0)
   await expect(page.getByRole('row', { name: new RegExp(code) })).toHaveCount(0)
+  // And the read's own body says so too, independently of what was drawn.
+  expect(payloadIds(finalCandidateRead)).not.toContain(partyId)
   await lShot(page, slug, '12-B-candidates-after-link')
 
   // ---- A: the account, its roles and its version are unchanged ---------------------
@@ -449,8 +507,15 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; f
   await page.goto(`/cari/${partyId}`)
   await expect(page.getByRole('heading', { level: 1, name: LEGAL_NAME })).toBeVisible({ timeout: 30_000 })
   await expect(factValue(page, LEGACY_ROLE_LABEL)).toHaveText(NO_ROLE_DETAIL)
-  await expect.poll(() => net.detailReads(partyId).filter((r) => r.companyId === A && r.status === 200).length).toBeGreaterThanOrEqual(2)
-  const aDetailAfter = net.detailReads(partyId).filter((r) => r.companyId === A && r.status === 200).at(-1)!.responseBody as {
+  /**
+   * COMPLETED reads, not merely answered ones. Polling on status alone is satisfied the
+   * instant headers arrive, and dereferencing the body a moment later throws a
+   * TypeError on a `null` — losing the "A version preserved" check to a race instead of
+   * to a real difference.
+   */
+  const aDetailReads = () => net.detailReads(partyId).filter((r) => r.companyId === A && isCompletedRead(r, CONTRACT))
+  await expect.poll(() => aDetailReads().length, { timeout: 60_000 }).toBeGreaterThanOrEqual(2)
+  const aDetailAfter = aDetailReads().at(-1)!.responseBody as {
     companyAccounts: { companyId: string; roles: number; version: string; isActive: boolean }[]
   }
   expect(aDetailAfter.companyAccounts).toHaveLength(1)
@@ -471,6 +536,9 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; f
    *
    * None of them may write: a refused write that still created a Party would break
    * ExpectedNewParties 1, and a refusal that names the record it is hiding would leak it.
+   * Each refusal must be an AUTHORIZATION refusal — 403, with a problem code that is not
+   * a business conflict. A 409 or a 422 means the request reached the logic behind the
+   * boundary, which is the opposite of what these probes exist to show.
    */
   const probe = new ActorProbe(request, CONTRACT)
   const viewerList = await probe.send({
@@ -486,8 +554,7 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; f
     actor: 'company-a-user', method: 'GET', path: '/api/v1/counterparties?pageSize=1', companyId: B,
     mustNotDisclose: [LEGAL_NAME, code, partyId],
   })
-  expect(crossCompanyRead.status).toBeGreaterThanOrEqual(400)
-  expect(crossCompanyRead.status).toBeLessThan(500)
+  expect(crossCompanyRead.status).toBe(403)
   expect(crossCompanyRead.disclosedForbiddenText).toBe(false)
 
   const crossCompanyWrite = await probe.send({
@@ -496,8 +563,17 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; f
     data: {}, idempotencyKey: negativeKey('ff'),
     mustNotDisclose: [LEGAL_NAME, code],
   })
-  expect(crossCompanyWrite.status).toBeGreaterThanOrEqual(400)
-  expect(crossCompanyWrite.status).toBeLessThan(500)
+  /**
+   * An authorization refusal, not a business conflict.
+   *
+   * This Party is already linked to B, so a request that got PAST the authorization
+   * boundary would come back 409 `already_linked` — which is a 4xx, and under a generic
+   * "some 4xx" check would have passed as proof that the boundary held. It proves the
+   * opposite: it proves the request was authorized enough to be evaluated. The source
+   * tells 403 and 409 apart, so this does too.
+   */
+  expect(crossCompanyWrite.status).toBe(403)
+  expect(crossCompanyWrite.problemCode).not.toBe('already_linked')
   expect(crossCompanyWrite.disclosedForbiddenText).toBe(false)
   expect(crossCompanyWrite.createdPartyId).toBeNull()
 
@@ -508,8 +584,8 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; f
     idempotencyKey: negativeKey('ee'),
     mustNotDisclose: [LEGAL_NAME],
   })
-  expect(viewerWrite.status).toBeGreaterThanOrEqual(400)
-  expect(viewerWrite.status).toBeLessThan(500)
+  expect(viewerWrite.status).toBe(403)
+  expect(viewerWrite.problemCode).not.toBe('validation_failed')
   expect(viewerWrite.disclosedForbiddenText).toBe(false)
   expect(viewerWrite.createdPartyId).toBeNull()
 
@@ -560,9 +636,9 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; f
     })),
     passedThroughCommands: withholder.passedThrough,
     recheckBeforeResend: {
-      create: { path: createRecheck.path, status: createRecheck.status, ack: createRecheck.contractAck, qualifyingReads: createRechecks.length, answeredBeforeResend: createRecheck.responseTick !== null && createRecheck.responseTick < retriedCreate.requestTick },
-      link: { path: linkRecheck.path, status: linkRecheck.status, ack: linkRecheck.contractAck, qualifyingReads: linkRechecks.length, answeredBeforeResend: linkRecheck.responseTick !== null && linkRecheck.responseTick < retriedLink.requestTick },
-      note: 'Ordering, not causality: a qualifying read answered after the retry click and before the resend. It is not asserted that the click is what produced it.',
+      create: { path: createRecheck.path, status: createRecheck.status, ack: createRecheck.contractAck, bodyState: createRecheck.bodyState, outcome: createRecheck.outcome, qualifyingReads: createRechecks.length, settledBeforeResend: createRecheck.settledTick! < retriedCreate.requestTick },
+      link: { path: linkRecheck.path, status: linkRecheck.status, ack: linkRecheck.contractAck, bodyState: linkRecheck.bodyState, outcome: linkRecheck.outcome, qualifyingReads: linkRechecks.length, settledBeforeResend: linkRecheck.settledTick! < retriedLink.requestTick },
+      note: 'Ordering, not causality: a read that FINISHED (body captured, valid page) after the retry click and before the resend. It is not asserted that the click is what produced it.',
     },
     candidateStillListedAfterCommit,
     /**
@@ -609,6 +685,18 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; f
     bCandidateAfterLinkContainedParty: false,
     returnedToRecordByAppNavigation: true,
     expectedImmutableEffect: '+1 Party / +2 company accounts (roles=0) / +1 create audit / +1 link audit / +1 create execution / +1 link execution',
+    /**
+     * The order this journey is written to be run in, recorded so the snapshot that
+     * brackets it is read against the right thing: L-02 runs FIRST as its own serial
+     * invocation (workers 1, retries 0) between an owned source-check/snapshot pair, and
+     * L-01 runs after it as the single-Party journey.
+     *
+     * The intermediate state between this journey's post-commit point and its retry is
+     * NOT measured at the database. The run-level delta does not cover it and must not be
+     * written as if it did.
+     */
+    executionOrder: { thisStep: 'L-01', runsAfter: 'L-02 (separate serial invocation)', workers: 1, retries: 0 },
+    postCommitToRetryIntervalSqlSnapshot: 'NOT_MEASURED',
     browserBarrier: barrier,
     /**
      * How a snapshot must be read against this journey.

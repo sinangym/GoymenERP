@@ -27,7 +27,7 @@
  * complete against the real API — no status, body or header is ever synthesised.
  */
 import { expect, test, type Page } from '@playwright/test'
-import { LiveRecorder, lShot, readManifest, writeLJson } from '../src/lHarness.js'
+import { LiveRecorder, isCompletedRead, lShot, readManifest, writeLJson } from '../src/lHarness.js'
 
 const manifest = readManifest()
 const A = manifest.companyAId
@@ -41,6 +41,19 @@ async function switchCompany(page: Page, companyId: string): Promise<void> {
   const dialog = page.getByRole('dialog')
   if (await dialog.count()) await dialog.getByRole('button', { name: 'Değişiklikleri bırak' }).click()
   await expect(picker).toHaveValue(companyId, { timeout: 30_000 })
+}
+
+/**
+ * The selection marker, read without waiting.
+ *
+ * `actionTimeout` is 0 in this lane, so a bare `getAttribute` on an element that is not
+ * there blocks until the whole test times out. If company B renders the workspace closed
+ * there is no marker to read, and "absent" is the honest answer.
+ */
+async function selectionState(page: Page): Promise<string | null> {
+  const marker = page.locator('[data-selection]')
+  if ((await marker.count()) === 0) return null
+  return marker.first().getAttribute('data-selection')
 }
 
 test('L-02 CRO-AC-010: a company change while a preparation read is pending — the late answer does not open the new context, and nothing is written', async ({ browser }, testInfo) => {
@@ -110,7 +123,7 @@ test('L-02 CRO-AC-010: a company change while a preparation read is pending — 
     const selectionMeasured = (await page.getByRole('radio').count()) > 0
     if (selectionMeasured) {
       await page.getByRole('radio').first().check()
-      await expect.poll(() => page.locator('[data-selection]').getAttribute('data-selection')).toBe('fresh')
+      await expect.poll(() => selectionState(page)).toBe('fresh')
     }
     const readsBeforeHold = net.candidateReads().filter((r) => r.status === 200).length
     await lShot(page, slug, '01-A-selection-fresh')
@@ -137,6 +150,18 @@ test('L-02 CRO-AC-010: a company change while a preparation read is pending — 
     expect(pending.contractDeclaration).toBe(CONTRACT)
     await lShot(page, slug, '02-A-read-pending')
 
+    /**
+     * The state at the instant BEFORE the transition, captured rather than assumed.
+     *
+     * Committing the search already suspends the selection in company A: a new query key
+     * with `keepPreviousData` makes the rows non-authoritative, so `data-selection`
+     * becomes "suspended" twenty lines before any company changes
+     * (`CariLinkWorkspacePage.tsx:231-239,697`). Recording "fresh before the switch"
+     * would then credit the company change with something the pending search had already
+     * done.
+     */
+    const selectionBeforeSwitch = await selectionState(page)
+
     // ---- the context moves while that read is still in flight ----------------------
     const switchTick = net.currentTick()
     await switchCompany(page, B)
@@ -145,33 +170,52 @@ test('L-02 CRO-AC-010: a company change while a preparation read is pending — 
      * The selection does not survive the move. It was authority granted by a read in the
      * previous context, and the new context has not read anything yet.
      */
-    if (selectionMeasured) {
-      await expect.poll(() => page.locator('[data-selection]').getAttribute('data-selection')).not.toBe('fresh')
-    }
-    const selectionAfterSwitch = await page.locator('[data-selection]').getAttribute('data-selection')
+    // The new context presents no fresh selection. Whether the switch or the pending
+    // search produced that is decided by the pair of readings, not by this assertion.
+    await expect.poll(() => selectionState(page)).not.toBe('fresh')
+    const selectionAfterSwitch = await selectionState(page)
     await lShot(page, slug, '03-B-after-switch')
 
-    // ---- the old answer arrives, into a context that has moved on ------------------
+    /**
+     * ---- the held request is released, and what happens to it is MEASURED -----------
+     *
+     * It is not going to be a late 200, and demanding one would be demanding that the
+     * application behave worse. The workspace is keyed on the context namespace
+     * (`CariLinkWorkspacePage.tsx:83`), so the switch unmounts it; the query's `queryFn`
+     * consumed the abort signal and passed it to the real fetch, so query-core cancels
+     * the read when its last observer goes. The browser therefore aborts this request
+     * while it is still paused in the route handler.
+     *
+     * That IS the fence working. So the outcome is measured and named — delivered, or
+     * cancelled — exactly as the sibling t-04 does for the same transition, and an abort
+     * is never written down as a late delivery. Everything the step must establish
+     * (POST 0, no previous-context content in the new one, the terminal state, the
+     * snapshot bracket) holds either way.
+     */
     release()
-    await expect.poll(() => net.records.find((r) => r.seq === pending.seq)?.status, { timeout: 30_000 }).toBe(200)
+    await expect
+      .poll(() => net.records.find((r) => r.seq === pending.seq)?.outcome, { timeout: 30_000 })
+      .not.toBe('pending')
     const late = net.records.find((r) => r.seq === pending.seq)!
-    // It really was a late, successful, acknowledged answer from the PREVIOUS company —
-    // the strongest possible thing to hand the new context, and it still grants nothing.
     expect(late.companyId).toBe(A)
-    expect(late.status).toBe(200)
-    expect(late.contractAck).toBe(CONTRACT)
+    const heldDelivered = late.outcome === 'finished' && late.bodyState === 'complete'
+    const heldOutcome = heldDelivered
+      ? isCompletedRead(late, CONTRACT)
+        ? 'delivered-complete-acknowledged'
+        : 'delivered-complete-other'
+      : late.outcome === 'failed'
+        ? 'cancelled-by-application'
+        : 'delivered-without-body'
+    // A cancelled request carries no answer at all — and must never be presented as one.
+    if (!heldDelivered) expect(late.responseBody).toBeNull()
     const firstBRead = net.candidateReads().find((r) => r.companyId === B)
-    if (firstBRead !== undefined) {
-      expect(late.responseTick).not.toBeNull()
-      expect(late.responseTick!).toBeGreaterThan(firstBRead.requestTick)
-    }
+    const settledAfterContextChange =
+      firstBRead !== undefined && late.settledTick !== null ? late.settledTick > firstBRead.requestTick : null
 
     // Give it every chance to do something it should not.
     await page.waitForTimeout(1500)
     await expect(page.getByRole('combobox', { name: 'Şirket', exact: true })).toHaveValue(B)
-    if (selectionMeasured) {
-      await expect.poll(() => page.locator('[data-selection]').getAttribute('data-selection')).not.toBe('fresh')
-    }
+    await expect.poll(() => selectionState(page)).not.toBe('fresh')
     await expect(page.locator('[data-outcome]')).toHaveCount(0)
     await expect(page.locator('[data-attempt]')).toHaveCount(0)
     /**
@@ -186,6 +230,13 @@ test('L-02 CRO-AC-010: a company change while a preparation read is pending — 
     const bodyText = await page.locator('body').innerText()
     const leakedCodes = lateItems.filter((item) => bodyText.includes(item.code)).map((item) => item.code)
     expect(leakedCodes, 'a row from the previous context must not be rendered into this one').toEqual([])
+    /**
+     * The leak check only means something when there was an answer to leak. When the
+     * application cancelled the read there is no body, `lateItems` is empty and the
+     * assertion above is vacuous — so which of the two happened is recorded, and the
+     * check is not counted as evidence in the cancelled case.
+     */
+    const leakCheckApplicable = heldDelivered && lateItems.length > 0
     /**
      * The write gate in the new context stands on the new context's own reads. Either it
      * is shut, or a B-scoped acknowledged read has answered since the switch — never on
@@ -207,6 +258,10 @@ test('L-02 CRO-AC-010: a company change while a preparation read is pending — 
       .filter((r) => r.companyId === B && r.status === 200 && r.contractAck === CONTRACT && r.requestTick > switchTick)
     expect(submitEnabled === false || bReadsAfterSwitch.length > 0).toBe(true)
     await lShot(page, slug, '04-B-late-answer-granted-nothing')
+
+    // The new context reached a terminal state of its own — not still loading, which is
+    // when "no row of A is here" would be true for the wrong reason.
+    await expect(page.locator('[data-state="initial-loading"]')).toHaveCount(0)
 
     // ---- nothing was written, in either context ------------------------------------
     expect(net.creates()).toHaveLength(0)
@@ -232,14 +287,28 @@ test('L-02 CRO-AC-010: a company change while a preparation read is pending — 
         declaredContract: pending.contractDeclaration,
         heldWhileContextChanged: true,
       },
-      lateAnswer: {
-        companyId: late.companyId,
+      heldRequest: {
+        /**
+         * The measured outcome, named. The expected one in this application is
+         * `cancelled-by-application`: the switch unmounts the namespace-keyed workspace
+         * and query-core aborts the read whose signal was consumed. That cancellation is
+         * the fence doing its job — it is recorded as a cancellation, never as a late
+         * delivery.
+         */
+        outcome: heldOutcome,
+        transferOutcome: late.outcome,
+        bodyState: late.bodyState,
+        failure: late.failure,
         status: late.status,
         ack: late.contractAck,
-        arrivedAfterContextChange: firstBRead !== undefined ? late.responseTick! > firstBRead.requestTick : null,
+        settledAfterContextChange,
+      },
+      lateAnswer: {
+        companyId: late.companyId,
         /** Only stated where the sub-case actually ran. */
         grantedSelection: selectionMeasured ? false : 'not measured — company A offered no candidate to select',
-        /** Measured: none of the codes the late answer carried is rendered on this screen. */
+        /** Measured only when there was an answer to leak; vacuous otherwise, and said so. */
+        leakCheckApplicable,
         rowsCarried: lateItems.length,
         rowsRenderedIntoNewContext: leakedCodes.length,
         /**
@@ -248,7 +317,15 @@ test('L-02 CRO-AC-010: a company change while a preparation read is pending — 
          */
         writeGate: { submitEnabled, bScopedAcknowledgedReadsAfterSwitch: bReadsAfterSwitch.length, causalityEstablished: false },
       },
-      selection: { measured: selectionMeasured, beforeSwitch: selectionMeasured ? 'fresh' : 'no candidate offered under A; selection sub-case not measured', afterSwitch: selectionAfterSwitch, afterLateAnswer: await page.locator('[data-selection]').getAttribute('data-selection') },
+      selection: {
+        measured: selectionMeasured,
+        /** Read at the instant before the transition, not assumed from an earlier one. */
+        afterSelecting: selectionMeasured ? 'fresh' : 'no candidate offered under A; selection sub-case not measured',
+        beforeSwitch: selectionBeforeSwitch,
+        suspendedByPendingSearchBeforeSwitch: selectionBeforeSwitch === 'suspended',
+        droppedByTheSwitch: selectionBeforeSwitch === 'fresh' && selectionAfterSwitch !== 'fresh',
+        afterSwitch: selectionAfterSwitch, afterHeldSettled: await selectionState(page),
+      },
       cursorAndGeneration: {
         candidateQueryKeys: [...new Set(net.candidateReads().flatMap((r) => r.queryKeys))],
         readsBeforeHold,
@@ -262,6 +339,14 @@ test('L-02 CRO-AC-010: a company change while a preparation read is pending — 
       snapshotBoundary: {
         reference: 'PRE_DISPATCH',
         postsIssued: 0,
+        /**
+         * This step is written to run FIRST, as its own serial invocation (workers 1,
+         * retries 0), between the environment owner's source-check and snapshot pair —
+         * so the bracket below contains this step and nothing else. L-01's single-Party
+         * journey runs afterwards.
+         */
+        executionOrder: { thisStep: 'L-02', runsBefore: 'L-01', separateSerialInvocation: true, workers: 1, retries: 0 },
+        expectedEffectInWiderInvocationInterval: 0,
         /**
          * A per-step delta needs a bracket, and only the environment owner can take one.
          * These two instants are the bracket this step offers; the run-level
