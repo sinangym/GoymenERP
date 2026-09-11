@@ -6,7 +6,7 @@
 - Dosya: `docs/features/CARI_ROLE_OPTIONAL_RECONCILIATION_SPEC_v1.md`
 - Mevcut PR: **#232**; yeni belge veya paralel şartname değildir.
 - Hazırlık tabanı: `main@060da63f2644cb271d78d9eab8b7a6985d544ad1`
-- Önceki belge revizyonları: `1299a6ee9f817c552ee08bbe385d4cb12c11bb8e` → `4e063e26f2c5848f7330891016d99a82088efa7b`. Bu güncelleme mevcut 4e063e2 içeriğinin devamıdır.
+- Önceki belge revizyonları: `1299a6ee9f817c552ee08bbe385d4cb12c11bb8e` → `4e063e26f2c5848f7330891016d99a82088efa7b`. Bu güncelleme mevcut içeriğin devamıdır.
 - Öncelikli transport kaynağı: [#233 / 5626451657](https://github.com/sinangym/GoymenERP/pull/233#issuecomment-5626451657), backend `080e7a1d24f74975b45546c5277f0529c13f06d1`.
 - Koşullu hata başlığı düzeltmesi: [#230 / 5630622096](https://github.com/sinangym/GoymenERP/pull/230#issuecomment-5630622096), backend `880cae838e5d2f01a988f1e4a89afbe67858f48c`.
 
@@ -193,9 +193,9 @@ Paket kaynağı: [#229 exact ilk dilim](https://github.com/sinangym/GoymenERP/bl
 | — | CRO-AC-011 | Geçersiz wire/transport |
 | — | CRO-AC-012 | Başarı/detail/list dönüşü |
 
-İlk sohbet taslağının CR'leri paket CR'leri değildir: sohbet01→CRO001; sohbet02/06/09→CRO008; sohbet03→CRO002 kısmi; sohbet04→CRO003; sohbet05→CRO004 kısmi; sohbet07→CRO006 kısmi; sohbet08→CRO005. Paket CR07/09/10'un tamamı bu eski sohbet karşılıklarıyla kanıtlanmış sayılmaz.
+İlk sohbet taslağının CR'leri paket CR'leri değildir: sohbet CR-01→CRO-AC-001; sohbet CR-02/CR-06/CR-09→CRO-AC-008; sohbet CR-03→CRO-AC-002 kısmi; sohbet CR-04→CRO-AC-003; sohbet CR-05→CRO-AC-004 kısmi; sohbet CR-07→CRO-AC-006 kısmi; sohbet CR-08→CRO-AC-005. Paket CR-07/CR-09/CR-10'un tamamı bu eski sohbet karşılıklarıyla kanıtlanmış sayılmaz.
 
-Sohbet CR10'daki gelecekte alış+satış siparişinde aynı Cari kullanımı `FUT-CARI-ORDER-001 / FUTURE / NOT_IMPLEMENTED / NOT_RUN` olarak ayrıdır. Yeni transport alt senaryoları aşağıdaki aynı CRO maddelerine bağlanır; yeni kimlik sistemi/görev sistemi açılmaz.
+Sohbet CR-10'daki gelecekte alış+satış siparişinde aynı Cari kullanımı `FUT-CARI-ORDER-001 / FUTURE / NOT_IMPLEMENTED / NOT_RUN` olarak ayrıdır. Yeni transport alt senaryoları aşağıdaki aynı CRO maddelerine bağlanır; yeni kimlik sistemi/görev sistemi açılmaz.
 
 ## 8. Kanıt sınıfları
 
@@ -296,7 +296,7 @@ Aşağıdaki CB/CF/CO/GB etiketleri mevcut #232 görev satırlarıdır; yeni iss
 
 **CB-1 — P2 kanıtı güncellendi.** Kaynak: §4.4 ve §9.1. 880'de beş dosyalık düzeltme, James/Ampere delta kapanışı ve yeni CI/SQL kanıtı mevcuttur. Aynı P2 veya eski main conflict'leri yeniden açılmaz. Daha yeni backend commit gelirse yalnız ona ait fresh CI/review/SQL kanıtı istenir; 880 sonucu taşınmaz.
 
-**CB-2 — bütünleşik protocol sözleşmesini koru.** Kaynak:5626451657 ve5630622096. Headerless/unsupported commands sıfır etkiyle ayrılan409; legacy authorized GET, koşullu error-ack, CORS allowlist, GET no-write, durable same-key, migration ve #227 mandatory journey korunmalı. Ölçülebilir bitiş: seçilen integrated backend/schema SHA'sında mevcut inventory/negative tests ve uygun fresh kapılar; CRO009 roleless stale-version alt testinin exact bağı veya dürüst açık kaydı.
+**CB-2 — bütünleşik protocol sözleşmesini koru.** Kaynak:5626451657 ve5630622096. Headerless/unsupported commands sıfır etkiyle ayrılan409; legacy authorized GET, koşullu error-ack, CORS allowlist, GET no-write, durable same-key, migration ve #227 mandatory journey korunmalı. Ölçülebilir bitiş: seçilen integrated backend/schema SHA'sında mevcut inventory/negative tests ve uygun fresh kapılar; CRO-AC-009 roleless stale-version alt testinin exact bağı veya dürüst açık kaydı.
 
 **CB-3 — mevcut izole kabul altyapısını değerlendir/devret.** Kaynak: koordinatörün mevcut altyapı sırası. P2 sonrası yayımlanmış donor lifecycle/fixture kullanılmalı; ikinci altyapı veya paylaşılan servis restart'ı açılmaz. Bitiş: tek kullanımlık, owner/run/commit/company/permission-bound ortamda gereken create/detail/link capability'leri ve teardown kanıtı; normal/production provider aktivasyonu değildir.
 
@@ -306,9 +306,9 @@ Aşağıdaki CB/CF/CO/GB etiketleri mevcut #232 görev satırlarıdır; yeni iss
 
 **CF-2 — donor release sonrası dört reader/form.** Kaynak: mevcut #228 donor/recipient devri. Recipient makbuzu tekrar istenmez; donor release olmadan shared yüzey yazılmaz. Release sonrası mevcut create/link/router/attempt kodu alınır; mutation/candidate>=1 ve mandatory role kaldırılır, tüm eski ProblemCode'lar iki yeni code ile birlikte korunur. Bitiş: dört decoder için0/15 pozitif, null/missing/16 ve şirket/version negatifleri; roles eksik/0 form submit sözleşmesi.
 
-**CF-3 — readiness component varyantları.** Kaynak:CRO001/003/004/008/010/011. Taze valid GET+ack; old server200/no-ack→POST0; error400/403+ack→hazır değil;401/binding400-no-ack→eski server iddiası yok; actor/session/company/API/generation ve late response. Bitiş: her varyantta gönderilen command sayısı ve readiness durumu assert edilen gerçek component koşumu; önceki267 bunun yerine kullanılmaz.
+**CF-3 — readiness component varyantları.** Kaynak:CRO-AC-001/003/004/008/010/011. Taze valid GET+ack; old server200/no-ack→POST0; error400/403+ack→hazır değil;401/binding400-no-ack→eski server iddiası yok; actor/session/company/API/generation ve late response. Bitiş: her varyantta gönderilen command sayısı ve readiness durumu assert edilen gerçek component koşumu; önceki267 bunun yerine kullanılmaz.
 
-**CF-4 — belirsiz attempt.** Kaynak:CRO005/007/012. Timeout/malformed/ack eksik→unknown; later409'da aynı attempt; fresh GET+ack sonrası açık same-key retry. Bitiş: command key/path/payload/company eşliği, yeni otomatik key/request olmadığı ve stale success/navigation olmadığı testli.
+**CF-4 — belirsiz attempt.** Kaynak:CRO-AC-005/007/012. Timeout/malformed/ack eksik→unknown; later409'da aynı attempt; fresh GET+ack sonrası açık same-key retry. Bitiş: command key/path/payload/company eşliği, yeni otomatik key/request olmadığı ve stale success/navigation olmadığı testli.
 
 **CF-5 — gerçek bütünleşik browser.** Kaynak: aynı CRO seti, yeni kimlik yok. Pinli backend/frontend/schema/fixture ile roleless create→list→detail→B link; wrong-company/permission; old-client/new-server ve new-client/old-server; pending/logout/unknown/retry. Bitiş: gerçekten çalışmış browser+API+SQL kayıt sayıları, skip ayrımı ve teardown. C-01 list10/10 veya controlled17/17 bunun yerine geçmez. Dönüş walk/gerçek zoom/screen-reader ayrı ölçülür; çalışmayan PASS değildir.
 
@@ -328,7 +328,7 @@ Aşağıdaki CB/CF/CO/GB etiketleri mevcut #232 görev satırlarıdır; yeni iss
 
 **GB-1.** Yalnız mevcut #232 dosyası ve kendi PR açıklaması exact-source kanıtla güncellenir; kanonik/shared ilerleme kaydına paralel yazılmaz.
 
-**GB-2.** CRO001…012 ve eski CR eşlemesi korunur; protokol varyantları bunlara bağlanır.
+**GB-2.** CRO-AC-001…012 ve eski CR eşlemesi korunur; protokol varyantları bunlara bağlanır.
 
 **GB-3.** Hemen sonraki hazır iş mevcut bütünleşik Cari kabulüdür. Aşağıdaki otomatik şirket ilişkisi yalnız önceden hazırlanmış bir sonraki pre-spec olarak korunur; implementation sırası/permission kararı onaylanmış sayılmaz. Bunun ötesinde sipariş veya genel ERP analizi açılmaz.
 
