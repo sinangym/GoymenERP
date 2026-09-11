@@ -131,7 +131,17 @@ public static class SourceBinding
                     || !Regex.IsMatch(item.Value, "\\A[0-9a-f]{64}\\z", RegexOptions.CultureInvariant)))
                 throw new InvalidOperationException("C006 source/run/build/fixture binding is not the exact preparation candidate.");
         }
-        if (JsonSerializer.Serialize(recorded, Evidence.Json) != JsonSerializer.Serialize(current, Evidence.Json))
+        // JSON deserialization recreates SortedDictionary with the current-culture comparer.
+        // Canonicalize ordering only; every source field, DLL name and hash still must match.
+        var recordedCanonical = recorded with
+        {
+            DiskArtifacts = new(recorded.DiskArtifacts, StringComparer.Ordinal),
+        };
+        var currentCanonical = current with
+        {
+            DiskArtifacts = new(current.DiskArtifacts, StringComparer.Ordinal),
+        };
+        if (JsonSerializer.Serialize(recordedCanonical, Evidence.Json) != JsonSerializer.Serialize(currentCanonical, Evidence.Json))
             throw new InvalidOperationException("C006 source or build changed since binding; preserve the previous run.");
     }
 

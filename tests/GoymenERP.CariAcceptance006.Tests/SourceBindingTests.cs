@@ -1,10 +1,86 @@
 using System.Diagnostics;
+using System.Globalization;
+using System.Text.Json;
 using GoymenERP.CariAcceptance006;
 
 namespace GoymenERP.CariAcceptance006.Tests;
 
 public sealed class SourceBindingTests
 {
+    [Theory]
+    [InlineData("tr-TR")]
+    [InlineData("en-US")]
+    [InlineData("")]
+    public void JsonRoundTrip_CultureSortedArtifactsPreserveExactBinding(string culture)
+    {
+        var current = WithPrefixArtifacts();
+        var recorded = RoundTrip(current, culture);
+        Assert.False(recorded.DiskArtifacts.Keys.SequenceEqual(current.DiskArtifacts.Keys, StringComparer.Ordinal));
+        Assert.NotEqual(JsonSerializer.Serialize(recorded, Evidence.Json), JsonSerializer.Serialize(current, Evidence.Json));
+
+        SourceBinding.Validate(recorded, current);
+        SourceBinding.Validate(current, recorded);
+    }
+
+    [Theory]
+    [InlineData("hash")]
+    [InlineData("missing")]
+    [InlineData("renamed")]
+    [InlineData("extra")]
+    public void JsonRoundTrip_ArtifactDriftStillRejectsBothDirections(string change)
+    {
+        var current = WithPrefixArtifacts();
+        var recorded = RoundTrip(current, "tr-TR");
+        var changed = current with { DiskArtifacts = new(current.DiskArtifacts, StringComparer.Ordinal) };
+        const string name = "GoymenERP.BuildingBlocks.dll";
+        switch (change)
+        {
+            case "hash":
+                changed.DiskArtifacts[name] = new string('d', 64);
+                break;
+            case "missing":
+                changed.DiskArtifacts.Remove(name);
+                break;
+            case "renamed":
+                changed.DiskArtifacts.Remove(name);
+                changed.DiskArtifacts["GoymenERP.BuildingBlocks.Renamed.dll"] = current.DiskArtifacts[name];
+                break;
+            case "extra":
+                changed.DiskArtifacts["GoymenERP.Extra.dll"] = new string('e', 64);
+                break;
+            default:
+                throw new InvalidOperationException("Unknown artifact drift fixture.");
+        }
+
+        Assert.Throws<InvalidOperationException>(() => SourceBinding.Validate(recorded, changed));
+        Assert.Throws<InvalidOperationException>(() => SourceBinding.Validate(changed, recorded));
+    }
+
+    private static SourceSnapshot WithPrefixArtifacts() => Valid() with
+    {
+        DiskArtifacts = new(StringComparer.Ordinal)
+        {
+            ["GoymenERP.CariAcceptance006.dll"] = new string('c', 64),
+            ["GoymenERP.BuildingBlocks.SqlServer.dll"] = new string('a', 64),
+            ["GoymenERP.BuildingBlocks.dll"] = new string('b', 64),
+        },
+    };
+
+    private static SourceSnapshot RoundTrip(SourceSnapshot source, string culture)
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(culture);
+            return JsonSerializer.Deserialize<SourceSnapshot>(JsonSerializer.Serialize(source, Evidence.Json))
+                ?? throw new InvalidOperationException("Round-trip fixture did not deserialize.");
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
     [Theory]
     [InlineData("src/backend/GoymenERP.Api/Injected.cs")]
     [InlineData("src/backend/GoymenERP.Api/Injected.local.cs")]
