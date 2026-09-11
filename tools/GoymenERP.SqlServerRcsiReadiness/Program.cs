@@ -622,15 +622,29 @@ internal static class SqlServerRcsiReadinessCli
                 stream.Flush(flushToDisk: true);
             }
 
-            File.Move(temporaryPath, fullOutputPath, overwrite: false);
-            temporaryFileCreated = false;
+            if (OperatingSystem.IsWindows())
+            {
+                File.Move(temporaryPath, fullOutputPath, overwrite: false);
+                temporaryFileCreated = false;
+            }
+            else if (LinkNewEvidenceFile(temporaryPath, fullOutputPath) != 0)
+            {
+                // Unix File.Move may race between lstat and rename even with overwrite:false.
+                // link atomically claims a new name for the fully flushed inode and never
+                // replaces an existing destination. Unsupported filesystems fail closed.
+                return false;
+            }
+
+            // On Unix the finally block removes only our temporary name, not the winner.
             return true;
         }
         catch (Exception exception) when (
             exception is IOException
             or UnauthorizedAccessException
             or NotSupportedException
-            or ArgumentException)
+            or ArgumentException
+            or DllNotFoundException
+            or EntryPointNotFoundException)
         {
             return false;
         }
@@ -652,6 +666,11 @@ internal static class SqlServerRcsiReadinessCli
             }
         }
     }
+
+    [DllImport("libc", EntryPoint = "link", SetLastError = true)]
+    private static extern int LinkNewEvidenceFile(
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string existingPath,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string newPath);
 
     private static async Task<int> WriteStandardOutputOnlyAsync(
         SqlServerRcsiReadinessEvidence evidence,

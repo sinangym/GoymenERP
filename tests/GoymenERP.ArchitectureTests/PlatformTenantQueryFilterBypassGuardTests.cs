@@ -42,7 +42,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string OpenApiStartupPath =
         "src/backend/GoymenERP.Api/Program.cs";
     private const string ReviewedOpenApiStartupFingerprint =
-        "3f18dc31ca0ea8ff156e39357af780b6d3d308ad556a6f76989dcb90cf70a34b";
+        "54c46ec882dd2930da8994ec6a669be4388524811e294daa1c40d2e5304125eb";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -82,12 +82,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string SqlServerRcsiVerifierPath =
         "tools/verify_rcsi_relational_acceptance.py";
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "77e4d07dbe9ab5d01ca765ab1464af776350ce34a83c71d11c1da678239f4a23";
+        "85885aba278dc6a4a8ba5df8c845f7a92acc5160887c9436f41a535dbf732e14";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "05c69c3326bf08a708b49e713df109ca79b32cf82bfeaba9b642f49b32741727";
+        "e31215c91351361ef115f79ebf5df496cfa8beb882cd488633942fe810d03af1";
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "91a665e6e8982e5a9b66f5d16a14d9fc4d7f98d63775de959a8cc6b2dea2b018";
@@ -165,7 +165,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 [ReviewedSqlServerRcsiToolProgramPath] =
                     new(
-                        "ca87896160c49d8b09bcd9e471d8d40d393902a463892f580f279419529841dc",
+                        "5da18330229e541cd90e9463a181c88ce72bb821c43449f44673f761faabaf04",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1,

@@ -1134,6 +1134,16 @@ internal sealed class SqlServerRelationalApiFactory : WebApplicationFactory<Prog
 
     public string DatabaseConnectionString => _databaseConnectionString;
 
+    protected override void ConfigureClient(HttpClient client)
+    {
+        base.ConfigureClient(client);
+        // Protocol-negative SQL probes remove this explicitly; all existing
+        // domain/authorization/replay assertions still execute against the real API.
+        client.DefaultRequestHeaders.Add(
+            GoymenERP.Api.Contracts.CounterpartyClientContract.HeaderName,
+            GoymenERP.Api.Contracts.CounterpartyClientContract.Version);
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");

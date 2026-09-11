@@ -20,6 +20,16 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
 {
     private readonly string _databaseName = $"goymen-erp-tests-{Guid.NewGuid():N}";
 
+    protected override void ConfigureClient(HttpClient client)
+    {
+        base.ConfigureClient(client);
+        // Existing application tests are compatible-client tests. Legacy-client
+        // acceptance explicitly removes this declaration and verifies fail-closed behavior.
+        client.DefaultRequestHeaders.Add(
+            GoymenERP.Api.Contracts.CounterpartyClientContract.HeaderName,
+            GoymenERP.Api.Contracts.CounterpartyClientContract.Version);
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
