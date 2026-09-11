@@ -98,13 +98,16 @@ function backToList(page: Page) {
  * The fresh, successful, ACKNOWLEDGED reads that were BOTH issued after `afterTick` and
  * had already answered before `post` went out — the recheck the retry stands on.
  *
- * "Answered" means the body FINISHED and parsed into a usable page — not that headers
- * arrived. A 200 whose body was still streaming when the POST went out is not a
- * pre-check, and `isCompletedPageRead` is what draws that line.
+ * Two separate conditions, deliberately, because they answer different questions.
  *
- * Both halves matter: a read that started earlier but settled later proves nothing,
- * which is why the recorder stamps a tick at the request and again at the terminal
- * stage.
+ * ORDER is taken from the TRANSFER end: the GET's bytes were fully received before the
+ * POST went out. That is the sequence the application actually saw. The recorder's copy
+ * of that body is a second round trip of its own, and it may well resolve after the POST
+ * — ordering on it would report a perfectly correct sequence as a violation.
+ *
+ * COMPLETENESS is taken from `isCompletedPageRead`: 200, acknowledged, body captured,
+ * and a payload that parses as a page. A read whose body never arrived is not a
+ * pre-check no matter when its transfer ended. Both must hold; neither substitutes.
  * `afterTick` is taken at the retry click, so a read that was already in flight before
  * the user asked for the recheck cannot stand in for it. What this establishes is
  * ordering, not causality: it says a qualifying read had answered first, not that the
@@ -115,8 +118,8 @@ function revalidatingRead(reads: LiveRecord[], afterTick: number, post: LiveReco
     (r) =>
       isCompletedPageRead(r, CONTRACT) &&
       r.requestTick > afterTick &&
-      r.settledTick !== null &&
-      r.settledTick < post.requestTick,
+      r.transferTick !== null &&
+      r.transferTick < post.requestTick,
   )
 }
 
@@ -636,9 +639,9 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; f
     })),
     passedThroughCommands: withholder.passedThrough,
     recheckBeforeResend: {
-      create: { path: createRecheck.path, status: createRecheck.status, ack: createRecheck.contractAck, bodyState: createRecheck.bodyState, outcome: createRecheck.outcome, qualifyingReads: createRechecks.length, settledBeforeResend: createRecheck.settledTick! < retriedCreate.requestTick },
-      link: { path: linkRecheck.path, status: linkRecheck.status, ack: linkRecheck.contractAck, bodyState: linkRecheck.bodyState, outcome: linkRecheck.outcome, qualifyingReads: linkRechecks.length, settledBeforeResend: linkRecheck.settledTick! < retriedLink.requestTick },
-      note: 'Ordering, not causality: a read that FINISHED (body captured, valid page) after the retry click and before the resend. It is not asserted that the click is what produced it.',
+      create: { path: createRecheck.path, status: createRecheck.status, ack: createRecheck.contractAck, transferOutcome: createRecheck.transferOutcome, bodyState: createRecheck.bodyState, qualifyingReads: createRechecks.length, transferEndedBeforeResend: createRecheck.transferTick! < retriedCreate.requestTick, bodyCapturedAfterResend: createRecheck.captureTick! > retriedCreate.requestTick },
+      link: { path: linkRecheck.path, status: linkRecheck.status, ack: linkRecheck.contractAck, transferOutcome: linkRecheck.transferOutcome, bodyState: linkRecheck.bodyState, qualifyingReads: linkRechecks.length, transferEndedBeforeResend: linkRecheck.transferTick! < retriedLink.requestTick, bodyCapturedAfterResend: linkRecheck.captureTick! > retriedLink.requestTick },
+      note: 'Ordering is the TRANSFER end (the bytes the app saw), completeness is the captured body. The recorder copy may settle after the resend; that is its own latency, not the application order. Ordering, not causality: it is not asserted that the click produced the read. It is not asserted that the click is what produced it.',
     },
     candidateStillListedAfterCommit,
     /**

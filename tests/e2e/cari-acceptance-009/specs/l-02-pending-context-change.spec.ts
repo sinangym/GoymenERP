@@ -44,6 +44,23 @@ async function switchCompany(page: Page, companyId: string): Promise<void> {
 }
 
 /**
+ * A failed transfer, named by what was observed at the network layer.
+ *
+ * `net::ERR_ABORTED` is an abort — it is not, by itself, evidence of WHO aborted. A
+ * timeout, a reset or anything else is a different failure with a different meaning, and
+ * calling all of them "cancelled by the application" would assert a causality nothing
+ * here measured. Proving the cause would need instrumentation this step has no business
+ * adding, so the unproven cases stay explicitly indeterminate.
+ */
+function classifyTransferFailure(errorText: string | null): string {
+  if (errorText === null) return 'failed-cause-not-observed'
+  if (/ERR_ABORTED/i.test(errorText)) return 'transfer-aborted (cause not established by this observation)'
+  if (/TIMED_OUT|TIMEOUT/i.test(errorText)) return 'transfer-timed-out'
+  if (/CONNECTION_RESET|CONNECTION_CLOSED|CONNECTION_REFUSED|EMPTY_RESPONSE/i.test(errorText)) return 'transfer-connection-failure'
+  return 'transfer-failed-other'
+}
+
+/**
  * The selection marker, read without waiting.
  *
  * `actionTimeout` is 0 in this lane, so a bare `getAttribute` on an element that is not
@@ -186,31 +203,44 @@ test('L-02 CRO-AC-010: a company change while a preparation read is pending — 
      * the read when its last observer goes. The browser therefore aborts this request
      * while it is still paused in the route handler.
      *
-     * That IS the fence working. So the outcome is measured and named — delivered, or
-     * cancelled — exactly as the sibling t-04 does for the same transition, and an abort
-     * is never written down as a late delivery. Everything the step must establish
-     * (POST 0, no previous-context content in the new one, the terminal state, the
-     * snapshot bracket) holds either way.
+     * That IS the fence working. So the outcome is measured and NAMED — delivered, or a
+     * named failure class — exactly as the sibling t-04 does for the same transition, and
+     * an abort is never written down as a late delivery.
+     *
+     * Named by what is observed, though, not by what is expected: `net::ERR_ABORTED` says
+     * the transfer was aborted, not who aborted it, and a timeout or a reset is a
+     * different fact entirely. Everything the step must establish (POST 0, no
+     * previous-context content in the new one, the terminal state, the snapshot bracket)
+     * holds under any of them.
      */
     release()
+    /**
+     * Wait for BOTH ends before classifying anything.
+     *
+     * `settledTick` is stamped only once the transfer is terminal AND the recorder's own
+     * body copy has resolved. Classifying on the transfer alone would read a body that
+     * was still being copied as "delivered without a body", and could skip a leak check
+     * that was in fact applicable. One reading, taken once, decides all three fields.
+     */
     await expect
-      .poll(() => net.records.find((r) => r.seq === pending.seq)?.outcome, { timeout: 30_000 })
-      .not.toBe('pending')
+      .poll(() => net.records.find((r) => r.seq === pending.seq)?.settledTick, { timeout: 30_000 })
+      .not.toBeNull()
     const late = net.records.find((r) => r.seq === pending.seq)!
     expect(late.companyId).toBe(A)
-    const heldDelivered = late.outcome === 'finished' && late.bodyState === 'complete'
+    const heldDelivered = late.transferOutcome === 'finished'
+    const heldBodyReadable = heldDelivered && late.bodyState === 'complete'
     const heldOutcome = heldDelivered
-      ? isCompletedRead(late, CONTRACT)
-        ? 'delivered-complete-acknowledged'
-        : 'delivered-complete-other'
-      : late.outcome === 'failed'
-        ? 'cancelled-by-application'
-        : 'delivered-without-body'
-    // A cancelled request carries no answer at all — and must never be presented as one.
+      ? heldBodyReadable
+        ? isCompletedRead(late, CONTRACT)
+          ? 'delivered-complete-acknowledged'
+          : 'delivered-complete-other'
+        : 'delivered-without-readable-body'
+      : classifyTransferFailure(late.failure)
+    // A transfer that failed carries no answer at all — never present it as one.
     if (!heldDelivered) expect(late.responseBody).toBeNull()
     const firstBRead = net.candidateReads().find((r) => r.companyId === B)
-    const settledAfterContextChange =
-      firstBRead !== undefined && late.settledTick !== null ? late.settledTick > firstBRead.requestTick : null
+    const transferEndedAfterContextChange =
+      firstBRead !== undefined && late.transferTick !== null ? late.transferTick > firstBRead.requestTick : null
 
     // Give it every chance to do something it should not.
     await page.waitForTimeout(1500)
@@ -236,7 +266,7 @@ test('L-02 CRO-AC-010: a company change while a preparation read is pending — 
      * assertion above is vacuous — so which of the two happened is recorded, and the
      * check is not counted as evidence in the cancelled case.
      */
-    const leakCheckApplicable = heldDelivered && lateItems.length > 0
+    const leakCheckApplicable = heldBodyReadable && lateItems.length > 0
     /**
      * The write gate in the new context stands on the new context's own reads. Either it
      * is shut, or a B-scoped acknowledged read has answered since the switch — never on
@@ -289,19 +319,24 @@ test('L-02 CRO-AC-010: a company change while a preparation read is pending — 
       },
       heldRequest: {
         /**
-         * The measured outcome, named. The expected one in this application is
-         * `cancelled-by-application`: the switch unmounts the namespace-keyed workspace
-         * and query-core aborts the read whose signal was consumed. That cancellation is
-         * the fence doing its job — it is recorded as a cancellation, never as a late
-         * delivery.
+         * The measured outcome, named for what was OBSERVED and nothing more.
+         *
+         * The expected shape here is an abort: the switch unmounts the namespace-keyed
+         * workspace and query-core cancels the read whose signal was consumed. But what
+         * this recorder sees is `net::ERR_ABORTED` at the network layer — it does not see
+         * WHO aborted, and a timeout or a reset is not an application cancellation. So
+         * the field names the observed failure class and leaves the cause to the reader,
+         * rather than asserting a causality no instrumentation here established.
          */
         outcome: heldOutcome,
-        transferOutcome: late.outcome,
+        transferOutcome: late.transferOutcome,
+        failureErrorText: late.failure,
+        causeEstablished: false,
         bodyState: late.bodyState,
-        failure: late.failure,
         status: late.status,
         ack: late.contractAck,
-        settledAfterContextChange,
+        transferEndedAfterContextChange,
+        bodyCaptureIsRecorderLatency: true,
       },
       lateAnswer: {
         companyId: late.companyId,

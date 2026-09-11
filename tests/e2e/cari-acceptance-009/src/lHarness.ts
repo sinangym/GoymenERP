@@ -36,11 +36,25 @@ export interface LiveRecord {
    */
   requestTick: number
   headersTick: number | null
-  /** Terminal: the body finished, or the request failed. Never stamped before then. */
-  settledTick: number | null
-  outcome: 'pending' | 'finished' | 'failed'
+  /**
+   * The real end of the network TRANSFER — `requestfinished`, or `requestfailed`.
+   *
+   * This is the one to order against. The recorder's own body copy is a second, separate
+   * round trip (`response.text()` → `Network.getResponseBody`), and its latency belongs
+   * to the recorder, not to the application: the honest sequence
+   *   GET transfer ends → the app validates it → the same-key POST goes out
+   *   → the recorder's copy of that GET body finally resolves
+   * is perfectly ordinary, and ordering on the copy would report it as the POST having
+   * overtaken its own pre-check.
+   */
+  transferTick: number | null
+  transferOutcome: 'pending' | 'finished' | 'failed'
+  /** When the recorder's own body copy settled. Never used to order against the app. */
+  captureTick: number | null
   /** Whether the response body was actually captured. A failed read has no body. */
   bodyState: 'pending' | 'complete' | 'unavailable'
+  /** Both the transfer and the capture are terminal. This is what quiescence drains on. */
+  settledTick: number | null
   at: string
   method: string
   path: string
@@ -164,12 +178,16 @@ export function readManifest(): EnvironmentManifest {
 }
 
 /**
- * A read that actually ANSWERED: it reached a terminal finished state, its body was
- * captured, it succeeded and it was acknowledged. Headers alone are not an answer.
+ * A read that actually ANSWERED: its TRANSFER finished, the recorder's copy of its body
+ * was taken, it succeeded and it was acknowledged. Headers alone are not an answer.
+ *
+ * Note what this does NOT do: it does not order anything. Use `transferTick` for that —
+ * the capture is the recorder's own second round trip and may legitimately land after
+ * the write the read authorised.
  */
 export function isCompletedRead(record: LiveRecord, contractVersion = CLIENT_CONTRACT_VERSION): boolean {
   return (
-    record.outcome === 'finished' &&
+    record.transferOutcome === 'finished' &&
     record.bodyState === 'complete' &&
     record.status === 200 &&
     record.contractAck === contractVersion
@@ -223,9 +241,11 @@ export class LiveRecorder {
         seq: ++recorder.seq,
         requestTick: ++recorder.tick,
         headersTick: null,
-        settledTick: null,
-        outcome: 'pending',
+        transferTick: null,
+        transferOutcome: 'pending',
+        captureTick: null,
         bodyState: 'pending',
+        settledTick: null,
         at: new Date().toISOString(),
         method: request.method().toUpperCase(),
         path: url.pathname,
@@ -262,27 +282,31 @@ export class LiveRecorder {
         record.responseBody = text.length > 0 ? safeJson(text) : null
         record.bodyState = 'complete'
       } catch {
-        // The body could not be read — a navigation or a cancellation took it. That is
+        // The copy could not be taken — a navigation or a cancellation took it. That is
         // not a completed read, and it must never be able to become one.
         record.responseBody = null
         record.bodyState = 'unavailable'
       }
+      record.captureTick = ++recorder.tick
       recorder.settle(record)
     })
     page.on('requestfinished', (request) => {
       const record = recorder.byRequest.get(request)
       if (!record) return
-      record.outcome = 'finished'
+      record.transferOutcome = 'finished'
+      record.transferTick = ++recorder.tick
       recorder.settle(record)
     })
     page.on('requestfailed', (request) => {
       const record = recorder.byRequest.get(request)
       if (!record) return
-      record.failure = request.failure()?.errorText ?? 'unknown'
-      record.outcome = 'failed'
-      // A failed exchange has no body to wait for; leaving it pending would keep the
-      // quiescent barrier from ever draining.
+      record.failure = request.failure()?.errorText ?? null
+      record.transferOutcome = 'failed'
+      record.transferTick = ++recorder.tick
+      // A failed exchange has no body to wait for; leaving the capture pending would keep
+      // the quiescent barrier from ever draining.
       if (record.bodyState === 'pending') record.bodyState = 'unavailable'
+      if (record.captureTick === null) record.captureTick = ++recorder.tick
       recorder.settle(record)
     })
     return recorder
@@ -313,9 +337,15 @@ export class LiveRecorder {
     return this.of((r) => r.method === 'GET' && r.path === '/api/v1/counterparties')
   }
 
-  /** Stamps the terminal tick once BOTH the transfer and the body capture have settled. */
+  /**
+   * Stamps the terminal tick once BOTH the transfer and the body capture have settled.
+   *
+   * Quiescence drains on this and on nothing weaker: a transfer that ended while the
+   * recorder was still copying its body is not a finished exchange for the purpose of
+   * bracketing a snapshot.
+   */
   private settle(record: LiveRecord): void {
-    if (record.settledTick === null && record.outcome !== 'pending' && record.bodyState !== 'pending') {
+    if (record.settledTick === null && record.transferTick !== null && record.captureTick !== null) {
       record.settledTick = ++this.tick
     }
   }
