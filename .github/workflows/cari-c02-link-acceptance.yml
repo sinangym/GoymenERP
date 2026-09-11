@@ -23,7 +23,7 @@ jobs:
       # Existing frontend-owned scanner at an immutable source, not browser PASS evidence.
       - uses: actions/checkout@v7
         with:
-          ref: 8f8e241db68b8f071e52d37a33c2176980eed1e8
+          ref: 6bfc21eec43f02f3c8f2e0d86fd124c0f387bff4
           path: artifacts/c006-frontend-scanner
           persist-credentials: false
           sparse-checkout: tests/e2e/cari-acceptance-009

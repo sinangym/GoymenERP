@@ -9,14 +9,17 @@ a normal-provider change, production activation, or completed Cari acceptance.
 - published-source-manifest.json records ORIGINAL raw blobs and original working copies,
   not the subsequently adapted sources. Old WIP, DPAPI and evidence are not transferred.
 - Backend dependency: 880cae838e5d2f01a988f1e4a89afbe67858f48c. Closed P2 is unchanged.
-- PROVISIONAL frontend: 8f8e241db68b8f071e52d37a33c2176980eed1e8, owned by Claude/#233.
-  Coordinator reported open P1 findings. Publisher explicitly refuses ENV_READY for this head.
-  Final source pins/run binding must be renewed after Claude's corrected exact-head review.
+- Approved frontend source: 6bfc21eec43f02f3c8f2e0d86fd124c0f387bff4, owned by Claude/#233.
+  Coordinator accepted its seven CI checks and independent exact-head source reviews:
+  https://github.com/sinangym/GoymenERP/pull/233#issuecomment-5639080159
+  https://github.com/sinangym/GoymenERP/pull/233#issuecomment-5639080364
+  Source acceptance is not live browser/ERP acceptance. The publisher's explicit refusal
+  of obsolete frontend 8f8e241db68b8f071e52d37a33c2176980eed1e8 remains unchanged.
 - OpenAPI SHA256: 062c06175916295bc97a438adea6fd01cdb608413c58501aa62208f87038a829.
 - Migration source-manifest SHA256: 1ec8222d998cb59891f437fc1ce4f62f954203508f3b2cffd4a00d97b1933e44.
-- Frontend diff SHA256: 0f00a0b6072b58b85c186b8aeac4498088d7a9732bbcb43c30c6bafc9cd864cc.
+- Frontend diff SHA256: b9e9354e971da26bbd5a0743dcefc78c2f3b4a7e4cbb6d59d74793c7c3b25c11 (1053010 raw bytes).
   Method: git diff --binary --full-index --no-color --no-ext-diff --no-textconv
-  060da63f2644cb271d78d9eab8b7a6985d544ad1 8f8e241db68b8f071e52d37a33c2176980eed1e8
+  060da63f2644cb271d78d9eab8b7a6985d544ad1 6bfc21eec43f02f3c8f2e0d86fd124c0f387bff4
   -- src/frontend/goymen-erp-web tests/e2e.
 - Runtime source-binding.json binds the clean acceptance commit, compile-time SourceRevisionId,
   output DLL disk hashes, fixture source hash and exact run/resource identities.
@@ -67,7 +70,13 @@ when needed, not security changes or safe.directory exceptions.
    Source/build/run/process/listener/container/SQL and fresh acknowledged GETs are rechecked.
    Error acknowledgment is not success or readiness.
 
-6. Claude runs its existing frontend/browser harness using environment.json. After one journey:
+6. Claude runs its existing frontend/browser harness using environment.json. Run only L02
+   first in a separate serial invocation (workers1/retries0), bracketed by actual source-check
+   and typed snapshots. Compare the whole invocation's six Effects counters and Rows for zero
+   change; browser timestamps are not retroactive snapshots. Run L01 separately afterwards.
+   Its intermediate postcommit-to-retry SQL intervals remain NOT_MEASURED; no checkpoint
+   helper is added. Actual same-key HTTP replay and the global journey delta are separate evidence.
+   After the one L01 journey:
    ./tools/cari-acceptance-006/control.ps1 -Action verify -ExpectedNewParties 1
    Expected delta: one Party, two roles0 accounts, one create/link audit and execution each.
    Do not substitute C01 fixed counters.

@@ -25,7 +25,7 @@ public sealed record RunSettings
     public string RunId { get; init; } = ExpectedRun;
     public string InstanceId { get; init; } = ExpectedInstance;
     public string BackendHead { get; init; } = ExpectedHead;
-    public string FrontendDiffSha256 { get; init; } = "0f00a0b6072b58b85c186b8aeac4498088d7a9732bbcb43c30c6bafc9cd864cc";
+    public string FrontendDiffSha256 { get; init; } = "b9e9354e971da26bbd5a0743dcefc78c2f3b4a7e4cbb6d59d74793c7c3b25c11";
     public string ComposeProject { get; init; } = ExpectedProject;
     public string DatabaseName { get; init; } = ExpectedDatabase;
     public string EnvironmentName { get; init; } = "Testing";
@@ -66,7 +66,7 @@ public sealed record RunSettings
             || CompanyBId != "10000000-0000-0000-0000-000000000002"
             || Actor != "group-bootstrap-admin"
             || SmokePrefix != "C006-SMOKE-303760997c6f" || BrowserPrefix != "CARI-JOURNEY-303760997c6f"
-            || FrontendDiffSha256 != "0f00a0b6072b58b85c186b8aeac4498088d7a9732bbcb43c30c6bafc9cd864cc")
+            || FrontendDiffSha256 != "b9e9354e971da26bbd5a0743dcefc78c2f3b4a7e4cbb6d59d74793c7c3b25c11")
         {
             throw new InvalidOperationException("C006 requires the exact approved Testing/run/instance/SHA/loopback/database identity.");
         }
