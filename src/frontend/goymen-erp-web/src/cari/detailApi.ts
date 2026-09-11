@@ -11,6 +11,7 @@ import {
   API_BASE,
   contractAckOf,
   contractRequestHeader,
+  beginContractRead,
   recordContractRead,
   recordContractReadFailure,
   type ContractContext,
@@ -40,6 +41,13 @@ export async function fetchCounterpartyDetail(
     : { ...contractRequestHeader() }
   headers['X-Company-Id'] = activeCompanyId
 
+  /**
+   * Mark this context current BEFORE the request goes out, so a response that lands
+   * after the client has moved on can be recognised as late — including a successful
+   * one.
+   */
+  beginContractRead(contractContext ?? null)
+
   let response: Response
   try {
     response = await fetch(`${API_BASE}/counterparties/${encodeURIComponent(partyId)}`, {
@@ -64,6 +72,19 @@ export async function fetchCounterpartyDetail(
   try {
     body = await response.json()
   } catch {
+    /**
+     * The headers arrived, so the transport-level abort branch above never ran — but
+     * the body can still be cut off mid-stream when the shell cancels this read.
+     *
+     * That is our own cancellation, exactly like an abort before the response. Letting
+     * it fall through as "unreadable body" revoked a grant the server never withdrew.
+     * A body that genuinely will not parse still does, which is the difference this
+     * branch draws.
+     */
+    if (signal?.aborted) {
+      recordContractReadFailure(contractContext ?? null, 'aborted')
+      return { type: 'fence-stale' }
+    }
     body = null
   }
 

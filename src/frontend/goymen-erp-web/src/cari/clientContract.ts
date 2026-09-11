@@ -120,6 +120,35 @@ export interface ReadObservation {
 let grant: { readonly key: string; readonly ready: boolean } | null = null
 
 /**
+ * The context whose read was issued most recently.
+ *
+ * WHY A SECOND VARIABLE. The slot alone cannot tell a CURRENT answer from a LATE one.
+ * A read issued under the previous namespace can land after the user has moved and a
+ * new read has already succeeded — and because the recording happens inside the
+ * transport, it lands before any caller-side fence can discard it. Its body is valid
+ * and acknowledged, so it looks like good news; it simply answers a question nobody is
+ * asking any more.
+ *
+ * Recording the context at ISSUE time gives every observation something to be measured
+ * against. Note this guards the SUCCESS side as much as the failure side: a stale
+ * success that re-points the slot at an abandoned namespace takes readiness away from
+ * the context the user is actually in, which is the same defect wearing the opposite
+ * sign.
+ */
+let issuedKey: string | null = null
+
+/**
+ * Declare that a read is being issued for this context.
+ *
+ * Called by the transports before the request goes out, so that whatever comes back
+ * can be checked for currency rather than trusted for arriving.
+ */
+export function beginContractRead(context: ContractContext | null): void {
+  if (context === null) return
+  issuedKey = contractContextKey(context)
+}
+
+/**
  * Record what a read observed, for the context it was issued in.
  *
  * Every read writes the slot, including the ones that REVOKE readiness: a server that
@@ -131,6 +160,15 @@ export function recordContractRead(
 ): void {
   if (context === null) return
   const key = contractContextKey(context)
+
+  /**
+   * A LATE observation speaks for nobody.
+   *
+   * If a newer read has since been issued for a different context, this response is
+   * about a namespace the client has left. It may not grant, and it may not revoke.
+   */
+  if (issuedKey !== null && issuedKey !== key) return
+
   const ready =
     observation.status === 200 && observation.bodyValidated && observation.ack !== null
 
@@ -186,6 +224,7 @@ export function isCommandContractReady(context: ContractContext | null): boolean
 /** Drops the recorded grant. Tests call this; the slot outlives a render on purpose. */
 export function resetContractReadiness(): void {
   grant = null
+  issuedKey = null
 }
 
 /**

@@ -312,3 +312,154 @@ describe('a transport failure must not leave the gate open', () => {
     expect(isCommandContractReady(NEW)).toBe(true)
   })
 })
+
+describe('a LATE response must not speak for a context that has moved on', () => {
+  const OLD: ContractContext = { origin: API_BASE, namespace: 'actor-a single company-a gen-1' }
+  const NEW: ContractContext = { origin: API_BASE, namespace: 'actor-a single company-b gen-2' }
+
+  it('a late OLD success does not take readiness away from the NEW context', async () => {
+    // The dangerous shape is the SUCCESS side, not the failure side: the old request
+    // comes back valid and acknowledged, so it looks like good news — and writes the
+    // single slot under the namespace the user already left. The recording happens
+    // inside the transport, before any caller-side fence can discard the result.
+    let releaseOld: (r: Response) => void = () => {}
+    const oldResponse = new Promise<Response>((resolve) => {
+      releaseOld = resolve
+    })
+
+    let nth = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        nth += 1
+        return nth === 1 ? await oldResponse : respond(listBody())
+      }),
+    )
+
+    const oldRead = fetchCounterparties(
+      { mode: 'single', companyId: COMPANY },
+      {},
+      undefined,
+      OLD,
+    )
+
+    // The context moves and the new read completes first.
+    await fetchCounterparties({ mode: 'single', companyId: COMPANY }, {}, undefined, NEW)
+    expect(isCommandContractReady(NEW)).toBe(true)
+
+    releaseOld(respond(listBody()))
+    await oldRead
+
+    expect(isCommandContractReady(NEW)).toBe(true)
+    expect(isCommandContractReady(OLD)).toBe(false)
+  })
+
+  it('the same holds for the detail read', async () => {
+    let releaseOld: (r: Response) => void = () => {}
+    const oldResponse = new Promise<Response>((resolve) => {
+      releaseOld = resolve
+    })
+    let nth = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        nth += 1
+        return nth === 1 ? await oldResponse : respond(detailBody())
+      }),
+    )
+
+    const oldRead = fetchCounterpartyDetail(PARTY, COMPANY, undefined, OLD)
+    await fetchCounterpartyDetail(PARTY, COMPANY, undefined, NEW)
+    expect(isCommandContractReady(NEW)).toBe(true)
+
+    releaseOld(respond(detailBody()))
+    await oldRead
+
+    expect(isCommandContractReady(NEW)).toBe(true)
+  })
+})
+
+describe('an abort while the BODY is streaming is still our own cancellation', () => {
+  /** Headers arrived; the body read is what gets cut off. */
+  function respondThenAbortBody(): Response {
+    return {
+      status: 200,
+      headers: new Headers({
+        'Content-Type': 'application/json',
+        [COUNTERPARTY_CONTRACT_HEADER]: COUNTERPARTY_CONTRACT_VERSION,
+      }),
+      json: async () => {
+        throw new DOMException('The user aborted a request.', 'AbortError')
+      },
+    } as unknown as Response
+  }
+
+  it('does not revoke readiness on the list read', async () => {
+    // The fetch itself resolved, so the transport-level abort branch never ran. The
+    // body failure then fell through as "unreadable body", which revoked a grant the
+    // server never withdrew.
+    installFetch(() => respond(listBody()))
+    await fetchCounterparties({ mode: 'single', companyId: COMPANY }, {}, undefined, CTX)
+    expect(isCommandContractReady(CTX)).toBe(true)
+
+    const controller = new AbortController()
+    controller.abort()
+    vi.stubGlobal('fetch', vi.fn(async () => respondThenAbortBody()))
+    const outcome = await fetchCounterparties(
+      { mode: 'single', companyId: COMPANY },
+      {},
+      controller.signal,
+      CTX,
+    )
+
+    expect(outcome.type).toBe('fence-stale')
+    expect(isCommandContractReady(CTX)).toBe(true)
+  })
+
+  it('does not revoke readiness on the detail read', async () => {
+    installFetch(() => respond(detailBody()))
+    await fetchCounterpartyDetail(PARTY, COMPANY, undefined, CTX)
+    expect(isCommandContractReady(CTX)).toBe(true)
+
+    const controller = new AbortController()
+    controller.abort()
+    vi.stubGlobal('fetch', vi.fn(async () => respondThenAbortBody()))
+    const outcome = await fetchCounterpartyDetail(PARTY, COMPANY, controller.signal, CTX)
+
+    expect(outcome.type).toBe('fence-stale')
+    expect(isCommandContractReady(CTX)).toBe(true)
+  })
+
+  it('a genuinely unreadable body — not aborted — still revokes', async () => {
+    // The fix must not turn every broken body into a no-op.
+    installFetch(() => respond(listBody()))
+    await fetchCounterparties({ mode: 'single', companyId: COMPANY }, {}, undefined, CTX)
+    expect(isCommandContractReady(CTX)).toBe(true)
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          ({
+            status: 200,
+            headers: new Headers({
+              'Content-Type': 'application/json',
+              [COUNTERPARTY_CONTRACT_HEADER]: COUNTERPARTY_CONTRACT_VERSION,
+            }),
+            json: async () => {
+              throw new SyntaxError('Unexpected end of JSON input')
+            },
+          }) as unknown as Response,
+      ),
+    )
+    const outcome = await fetchCounterparties(
+      { mode: 'single', companyId: COMPANY },
+      {},
+      undefined,
+      CTX,
+    )
+
+    expect(outcome.type).toBe('malformed')
+    expect(isCommandContractReady(CTX)).toBe(false)
+  })
+})
