@@ -429,13 +429,23 @@ export class LiveRecorder {
       // invisible to a reading taken before, and the barrier would have returned anyway.
       if (markedBusy || this.inFlight().length > 0) lastBusyAt = Date.now()
       const settledFor = Date.now() - lastBusyAt
+      const quietWindowHeld = settledFor >= settleMs
       const timedOut = Date.now() - started > timeoutMs
-      if (settledFor >= settleMs || timedOut) {
+      if (quietWindowHeld || timedOut) {
         const outstanding = this.outstanding()
         if (outstanding.length > 0 && !timedOut) {
           lastBusyAt = Date.now()
           continue
         }
+        /**
+         * ACCEPTANCE NEEDS ALL THREE, and a timeout is never one of them.
+         *
+         * The previous shape returned `accepted: outstanding.length === 0` from the
+         * timeout arm too — so a run that expired with a busy DOM, or before the quiet
+         * window had ever elapsed, was reported as quiet merely because nothing happened
+         * to be outstanding at that instant. A timeout is a diagnostic, not a pass.
+         */
+        const accepted = quietWindowHeld && !markedBusy && outstanding.length === 0
         /**
          * Returned, never thrown.
          *
@@ -450,8 +460,11 @@ export class LiveRecorder {
          * it finished, still less that the server has nothing in flight for it.
          */
         return {
-          accepted: outstanding.length === 0,
+          accepted,
           timedOut,
+          quietWindowHeld,
+          markedBusyAtDecision: markedBusy,
+          requiredQuietMs: settleMs,
           observedAtUtc: new Date().toISOString(),
           settledForMs: settledFor,
           inFlightAtBarrier: outstanding.length,
@@ -480,13 +493,45 @@ export class LiveRecorder {
    *
    * `sinceTick` must be taken BEFORE the user action that triggers the reads. Taking it
    * afterwards would leave the action's own requests outside the interval.
+   *
+   * AN EMPTY PENDING SET IS NOT AN ANSWER. The previous shape returned immediately when
+   * nothing was pending, which is exactly the state at the first instant after a click:
+   * the picker already holds its new value while the shell's capability chain has not yet
+   * issued the scoped read, so "nothing pending" meant "nothing has started yet" and the
+   * collision it was meant to prevent stayed wide open. `expectStarted` + `minimumStarted`
+   * demand POSITIVE evidence that the read this wait exists for actually began; only then
+   * does an empty pending set mean it also finished.
    */
-  async settleSince(sinceTick: number, { timeoutMs = 15_000 }: { timeoutMs?: number } = {}): Promise<{ settled: boolean; outstanding: OutstandingRecord[] }> {
+  async settleSince(
+    sinceTick: number,
+    {
+      timeoutMs = 15_000,
+      expectStarted,
+      minimumStarted = 0,
+    }: { timeoutMs?: number; expectStarted?: (record: LiveRecord) => boolean; minimumStarted?: number } = {},
+  ): Promise<SettleSinceResult> {
     const started = Date.now()
     for (;;) {
-      const pending = this.records.filter((r) => r.requestTick > sinceTick && r.settledTick === null)
-      if (pending.length === 0) return { settled: true, outstanding: [] }
-      if (Date.now() - started > timeoutMs) return { settled: false, outstanding: pending.map((r) => this.describe(r)) }
+      const since = this.records.filter((r) => r.requestTick > sinceTick)
+      const matched = expectStarted === undefined ? [] : since.filter(expectStarted)
+      const pending = since.filter((r) => r.settledTick === null)
+      const enoughStarted = matched.length >= minimumStarted
+      if (enoughStarted && pending.length === 0) {
+        return {
+          settled: true,
+          startedExpected: enoughStarted,
+          matched: matched.map((r) => ({ seq: r.seq, method: r.method, path: r.path, companyId: r.companyId, status: r.status })),
+          outstanding: [],
+        }
+      }
+      if (Date.now() - started > timeoutMs) {
+        return {
+          settled: false,
+          startedExpected: enoughStarted,
+          matched: matched.map((r) => ({ seq: r.seq, method: r.method, path: r.path, companyId: r.companyId, status: r.status })),
+          outstanding: pending.map((r) => this.describe(r)),
+        }
+      }
       await this.page.waitForTimeout(100)
     }
   }
@@ -913,9 +958,48 @@ export interface OutstandingRecord {
   readonly diagnosis: string
 }
 
+/**
+ * Which failure a run should report when both the barrier and the evidence write can fail.
+ *
+ * The two must not mask each other. A failed barrier is what the run is FOR, so it stays
+ * primary and the write error rides along as a secondary diagnosis. But a barrier that
+ * held does not license losing the evidence either: a mandatory write that failed is then
+ * itself the failure, and the test must not pass merely because the browser went quiet.
+ *
+ * Pure on purpose, so both specs share one decision and it can be exercised directly.
+ */
+export function failurePriority(
+  barrierAccepted: boolean,
+  evidenceError: unknown,
+): { primary: 'barrier' | 'evidence' | null; secondary: 'evidence' | null } {
+  const wrote = evidenceError === null || evidenceError === undefined
+  if (!barrierAccepted) return { primary: 'barrier', secondary: wrote ? null : 'evidence' }
+  return { primary: wrote ? null : 'evidence', secondary: null }
+}
+
+/** A short, safe rendering of an evidence-write failure for an assertion message. */
+export function evidenceErrorText(evidenceError: unknown): string {
+  if (evidenceError === null || evidenceError === undefined) return ''
+  return String((evidenceError as { message?: string })?.message ?? evidenceError).slice(0, 300)
+}
+
+export interface SettleSinceResult {
+  /** Everything issued in the interval reached a terminal transfer AND a settled capture. */
+  readonly settled: boolean
+  /** The read this wait exists for was actually observed to start. */
+  readonly startedExpected: boolean
+  readonly matched: { seq: number; method: string; path: string; companyId: string | null; status: number | null }[]
+  readonly outstanding: OutstandingRecord[]
+}
+
 export interface QuiescentBarrier {
+  /** True only when the quiet window held, nothing was busy, and nothing was outstanding. */
   readonly accepted: boolean
+  /** Diagnostic. A timeout never contributes to `accepted`. */
   readonly timedOut: boolean
+  readonly quietWindowHeld: boolean
+  readonly markedBusyAtDecision: boolean
+  readonly requiredQuietMs: number
   readonly observedAtUtc: string
   readonly settledForMs: number
   /** Re-read at return time. A literal zero here would be a declaration, not a barrier. */

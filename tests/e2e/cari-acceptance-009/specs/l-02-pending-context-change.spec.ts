@@ -27,7 +27,7 @@
  * complete against the real API — no status, body or header is ever synthesised.
  */
 import { expect, test, type Page } from '@playwright/test'
-import { LiveRecorder, isCompletedRead, lShot, readManifest, writeLJson } from '../src/lHarness.js'
+import { LiveRecorder, evidenceErrorText, failurePriority, isCompletedRead, lShot, readManifest, writeLJson } from '../src/lHarness.js'
 
 const manifest = readManifest()
 const A = manifest.companyAId
@@ -88,7 +88,7 @@ test.afterEach(async (_fixtures, testInfo) => {
       observedEvents: recorder.observedEvents(),
       outstanding: recorder.outstanding(),
       records: recorder.records,
-      meaning: 'Raw recorder state captured after a failed run, from an afterEach hook.',
+      meaning: 'RAW RECORDER STATE ONLY, captured after a failed run from an afterEach hook. Not the full record: the measurement file is written by the main path, and its absence here does not mean it was preserved.',
     })
   } catch {
     // The run already has a real failure and it owns the report.
@@ -325,6 +325,10 @@ test('L-02 CRO-AC-010: a company change while a preparation read is pending — 
 
     const barrier = await net.quiesce()
 
+    // Same rule as L-01: the barrier verdict and the mandatory evidence write must not
+    // mask each other.
+    let evidenceError: unknown = null
+    try {
     writeLJson('measurements', `${slug}.json`, {
       runId: manifest.runId,
       instanceId: manifest.instanceId,
@@ -425,21 +429,28 @@ test('L-02 CRO-AC-010: a company change while a preparation read is pending — 
       ],
     })
     await net.finish(testInfo, slug, { case: 'CRO-AC-010 pending read + context change', postsIssued: 0, browserBarrier: barrier })
+    } catch (error) {
+      evidenceError = error
+    }
 
     /**
-     * Asserted after the evidence is written, for the same reason L-01 does it: the
-     * barrier reports rather than throws, so a barrier failure can no longer take the
-     * records of the run that produced it.
+     * Asserted after the evidence has been attempted, for the same reason L-01 does it:
+     * neither the barrier verdict nor the evidence write may hide the other.
      *
      * This step deliberately holds a read across a context change, and the application
      * cancels it — that cancellation IS a terminal transfer event, so it settles and the
      * barrier drains. Nothing here is discounted to make that true.
      */
+    const priority = failurePriority(barrier.accepted, evidenceError)
+    const secondary = priority.secondary === 'evidence' ? ` — SECONDARY: the evidence write also failed: ${evidenceErrorText(evidenceError)}` : ''
     expect(
       barrier.outstanding,
-      `the browser did not go quiet; ${barrier.outstanding.length} request(s) unaccounted for: ${JSON.stringify(barrier.outstanding, null, 1)}`,
+      `the browser did not go quiet; ${barrier.outstanding.length} request(s) unaccounted for: ${JSON.stringify(barrier.outstanding, null, 1)}${secondary}`,
     ).toEqual([])
-    expect(barrier.accepted).toBe(true)
+    expect(barrier.accepted, `the barrier was not accepted${secondary}`).toBe(true)
+    if (priority.primary === 'evidence') {
+      throw new Error(`the barrier held but the mandatory evidence write failed: ${evidenceErrorText(evidenceError)}`)
+    }
   } finally {
     await context.close()
   }

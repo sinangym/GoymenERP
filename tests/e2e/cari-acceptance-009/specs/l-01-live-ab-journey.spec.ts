@@ -33,6 +33,8 @@ import {
   ActorProbe,
   DeliveryWithholder,
   LiveRecorder,
+  evidenceErrorText,
+  failurePriority,
   isCompletedPageRead,
   isCompletedRead,
   lShot,
@@ -87,11 +89,30 @@ async function switchCompany(page: Page, net: LiveRecorder, companyId: string): 
   const dialog = page.getByRole('dialog')
   if (await dialog.count()) await dialog.getByRole('button', { name: 'Değişiklikleri bırak' }).click()
   await expect(picker).toHaveValue(companyId, { timeout: 30_000 })
-  const settled = await net.settleSince(beforeAction, { timeoutMs: 15_000 })
+  /**
+   * Positive evidence, both halves.
+   *
+   * The picker holding its new value does not mean the shell's capability chain has
+   * issued the new company's scoped read yet — at that instant nothing is pending because
+   * nothing has started, and an empty outstanding set would wave the wait straight
+   * through into the very `goto` collision it exists to prevent. So this states what it
+   * expects to see begin: a counterparties read bound to the company just switched to.
+   * Then, and only then, does an empty pending set mean that read also finished.
+   */
+  const settled = await net.settleSince(beforeAction, {
+    timeoutMs: 15_000,
+    expectStarted: (r) => r.companyId === companyId && r.path.startsWith('/api/v1/counterparties'),
+    minimumStarted: 1,
+  })
+  expect(
+    settled.startedExpected,
+    `the switch to ${companyId} must actually issue its scoped counterparties read before the journey navigates: ${JSON.stringify(settled.matched)}`,
+  ).toBe(true)
   expect(
     settled.outstanding,
     `the reads this company switch issued must finish before the journey navigates away from them: ${JSON.stringify(settled.outstanding)}`,
   ).toEqual([])
+  expect(settled.settled).toBe(true)
 }
 
 function factValue(page: Page, label: string) {
@@ -182,7 +203,7 @@ test.afterEach(async (_fixtures, testInfo) => {
       outstanding: recorder.outstanding(),
       records: recorder.records,
       meaning:
-        'Raw recorder state captured after a failed run. Written from an afterEach hook so a failure anywhere in the journey still leaves the request/capture state on disk.',
+        'RAW RECORDER STATE ONLY, captured after a failed run from an afterEach hook so a failure anywhere in the journey still leaves the request/capture state on disk. This is NOT the full record: the measurement file, the withheld-upstream entries and the negative-actor probe results are written by the main path, and their absence here does not mean they were preserved.',
     })
   } catch {
     // Deliberately swallowed: the run already has a real failure and it owns the report.
@@ -689,6 +710,16 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; f
    */
   const barrier = await net.quiesce()
 
+  /**
+   * The mandatory evidence write, and the barrier verdict, must not mask each other.
+   *
+   * Previously these writes sat between the barrier and its assertion: if a write threw,
+   * the assertion was never reached and a FAILED barrier disappeared behind an IO error.
+   * The write is now caught, the barrier stays primary, and a write failure survives as a
+   * secondary diagnosis — or, when the barrier held, becomes the failure itself.
+   */
+  let evidenceError: unknown = null
+  try {
   writeLJson('measurements', `${slug}.json`, {
     runId: manifest.runId,
     instanceId: manifest.instanceId,
@@ -827,17 +858,26 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; f
     negativeActors: probe.records,
     browserBarrier: barrier,
   })
+  } catch (error) {
+    evidenceError = error
+  }
 
   /**
-   * The verdict, asserted AFTER the evidence is on disk.
+   * The verdict, asserted AFTER the evidence has been attempted.
    *
-   * The barrier no longer throws from inside itself; it reports. That ordering is the
-   * whole point: the first live run threw here and took the network and measurement
-   * records of a journey that had already written to the database with it.
+   * The barrier reports rather than throws, so a barrier failure can no longer take the
+   * records of the run that produced it — and now an evidence-write failure can no longer
+   * take the barrier verdict either.
    */
+  const priority = failurePriority(barrier.accepted, evidenceError)
+  const secondary = priority.secondary === 'evidence' ? ` — SECONDARY: the evidence write also failed: ${evidenceErrorText(evidenceError)}` : ''
   expect(
     barrier.outstanding,
-    `the browser did not go quiet; ${barrier.outstanding.length} request(s) unaccounted for: ${JSON.stringify(barrier.outstanding, null, 1)}`,
+    `the browser did not go quiet; ${barrier.outstanding.length} request(s) unaccounted for: ${JSON.stringify(barrier.outstanding, null, 1)}${secondary}`,
   ).toEqual([])
-  expect(barrier.accepted).toBe(true)
+  expect(barrier.accepted, `the barrier was not accepted${secondary}`).toBe(true)
+  // The barrier held — so a mandatory evidence write that failed IS the failure.
+  if (priority.primary === 'evidence') {
+    throw new Error(`the barrier held but the mandatory evidence write failed: ${evidenceErrorText(evidenceError)}`)
+  }
 })
