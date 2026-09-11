@@ -1,0 +1,55 @@
+name: Cari C006 backend envelope acceptance
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  cari-c006-backend:
+    name: Cari C006 backend envelope
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # Existing frontend-owned scanner at an immutable source, not browser PASS evidence.
+      - uses: actions/checkout@v7
+        with:
+          ref: 8f8e241db68b8f071e52d37a33c2176980eed1e8
+          path: artifacts/c006-frontend-scanner
+          persist-credentials: false
+          sparse-checkout: tests/e2e/cari-acceptance-009
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Build and verify backend source and lifecycle
+        run: >-
+          ./tools/ci/cari-c02-link.ps1 -Mode BackendVerify
+          -OutputParent "${{ runner.temp }}/cari-c006-${{ github.run_id }}-${{ github.run_attempt }}"
+      - name: Scan final evidence before uploading
+        id: scan
+        if: always()
+        run: >-
+          node artifacts/c006-frontend-scanner/tests/e2e/cari-acceptance-009/scan-evidence.mjs
+          "${{ runner.temp }}/cari-c006-${{ github.run_id }}-${{ github.run_attempt }}/scan.json"
+          "${{ runner.temp }}/cari-c006-${{ github.run_id }}-${{ github.run_attempt }}"
+      - name: Preserve scanned results, including failed runs
+        if: ${{ always() && steps.scan.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: cari-c006-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/cari-c006-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 14

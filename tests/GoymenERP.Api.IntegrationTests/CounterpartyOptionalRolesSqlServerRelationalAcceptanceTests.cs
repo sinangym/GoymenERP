@@ -33,7 +33,7 @@ public sealed class CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests
         PartyRole.Customer | PartyRole.Supplier | PartyRole.Tolling | PartyRole.Service;
 
     // SQL facts deliberately integrate their input matrices in one disposable database.
-    // There are eight discovered executions, with no InlineData expansion.
+    // There are nine discovered executions, with no InlineData expansion.
     [SqlServerFact]
     public async Task ClientContractGate_BlocksUnnegotiatedWritesAndPreservesSameKeyRetry()
     {
@@ -615,6 +615,99 @@ public sealed class CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests
 
             Assert.Equal(2, await CountAsync(connection, "[counterparty].[Parties]"));
             Assert.Equal(4, await CountAsync(connection, "[counterparty].[CompanyPartyAccounts]"));
+        });
+    }
+
+    [SqlServerFact]
+    [Trait("AcceptanceId", "CRO-AC-009")]
+    public async Task RolelessInactiveAccount_StaleVersionAndPermissionGatesRemainEnforced()
+    {
+        await WithDatabaseAsync(async (factory, connection) =>
+        {
+            await GrantReadOnlyCompanyAccessAsync(factory);
+            using var writer = factory.CreateClientFor(TestUsers.GroupAdmin, TestCompanyIds.CompanyA);
+            using var reader = factory.CreateClientFor(TestUsers.CompanyAViewer, TestCompanyIds.CompanyA);
+            using var foreign = factory.CreateClientFor(TestUsers.CompanyA, TestCompanyIds.CompanyB);
+            var created = await CreateReceiptAsync(writer, TestCompanyIds.CompanyA, PartiesUrl,
+                CreateJson("CRO-AC-009 roleless inactive", "0"), NewIdentity(), PartyRole.None);
+            var statusUrl = LinkUrl(created.PartyId) + "/active-state";
+            async Task<HttpResponseMessage> PutAsync(HttpClient client, bool active, long version, string key, string correlation)
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Put, statusUrl);
+                request.Headers.Add("Idempotency-Key", key);
+                request.Headers.Add("X-Correlation-Id", correlation);
+                request.Content = new StringContent(JsonSerializer.Serialize(
+                    new { isActive = active, expectedVersion = version, reason = "CRO-AC-009" }),
+                    Encoding.UTF8, "application/json");
+                return await client.SendAsync(request);
+            }
+
+            var auditsBefore = await CountAsync(connection, "[audit].[AuditEvents]");
+            using (var inactive = await PutAsync(writer, false, 1, NewIdentity(), NewIdentity()))
+                Assert.Equal(HttpStatusCode.NoContent, inactive.StatusCode);
+            Assert.Equal(auditsBefore + 1, await CountAsync(connection, "[audit].[AuditEvents]"));
+            Assert.Equal(1, await ScalarAsync<int>(connection,
+                """
+                SELECT COUNT(*) FROM [counterparty].[CompanyPartyAccounts]
+                WHERE [Id]=@AccountId AND [CompanyId]=@CompanyId AND [Roles]=0 AND [IsActive]=0 AND [Version]=2;
+                """, new SqlParameter("@AccountId", created.AccountId),
+                new SqlParameter("@CompanyId", TestCompanyIds.CompanyA)));
+            var afterInactive = await ReadSnapshotAsync(connection);
+            var staleKey = NewIdentity();
+            var staleCorrelation = NewIdentity();
+            using (var stale = await PutAsync(writer, true, 1, staleKey, staleCorrelation))
+            {
+                await AssertProblemAsync(stale, HttpStatusCode.Conflict, CounterpartyProblemCodesV1.VersionConflict);
+                using var problem = JsonDocument.Parse(await stale.Content.ReadAsStringAsync());
+                Assert.Equal(1, problem.RootElement.GetProperty("conflict").GetProperty("expectedVersion").GetInt64());
+                Assert.Equal(2, problem.RootElement.GetProperty("conflict").GetProperty("currentVersion").GetInt64());
+                Assert.False(stale.Headers.Contains("Idempotency-Replayed"));
+            }
+            var afterStale = await ReadSnapshotAsync(connection);
+            // The terminal 409 is durable; only its idempotency execution is allowed to change.
+            Assert.Equal(afterInactive.Parties, afterStale.Parties);
+            Assert.Equal(afterInactive.Accounts, afterStale.Accounts);
+            Assert.Equal(afterInactive.Audits, afterStale.Audits);
+            using (var replay = await PutAsync(writer, true, 1, staleKey, NewIdentity()))
+            {
+                await AssertProblemAsync(replay, HttpStatusCode.Conflict, CounterpartyProblemCodesV1.VersionConflict);
+                AssertReplayHeaders(replay, staleCorrelation);
+            }
+            Assert.Equal(afterStale, await ReadSnapshotAsync(connection));
+
+            foreach (var client in new[] { reader, foreign })
+            {
+                foreach (var version in new long[] { 1, 2 })
+                {
+                    using var denied = await PutAsync(client, true, version, NewIdentity(), NewIdentity());
+                    Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+                    var body = await denied.Content.ReadAsStringAsync();
+                    Assert.DoesNotContain("currentVersion", body, StringComparison.OrdinalIgnoreCase);
+                    Assert.DoesNotContain(created.AccountId.ToString("D"), body, StringComparison.OrdinalIgnoreCase);
+                    Assert.False(denied.Headers.Contains("Idempotency-Replayed"));
+                }
+            }
+            // A previously recorded key cannot bypass reauthorization.
+            using (var deniedReplay = await PutAsync(reader, true, 1, staleKey, NewIdentity()))
+                Assert.Equal(HttpStatusCode.Forbidden, deniedReplay.StatusCode);
+            using (var detail = await GetJsonAsync(reader, $"{PartiesUrl}/{created.PartyId:D}"))
+            {
+                var account = Assert.Single(detail.RootElement.GetProperty("companyAccounts").EnumerateArray());
+                Assert.Equal(0, account.GetProperty("roles").GetInt32());
+                Assert.False(account.GetProperty("isActive").GetBoolean());
+                Assert.Equal("2", account.GetProperty("version").GetString());
+            }
+            Assert.Equal(afterStale, await ReadSnapshotAsync(connection));
+
+            using (var active = await PutAsync(writer, true, 2, NewIdentity(), NewIdentity()))
+                Assert.Equal(HttpStatusCode.NoContent, active.StatusCode);
+            Assert.Equal(1, await ScalarAsync<int>(connection,
+                """
+                SELECT COUNT(*) FROM [counterparty].[CompanyPartyAccounts]
+                WHERE [Id]=@AccountId AND [CompanyId]=@CompanyId AND [Roles]=0 AND [IsActive]=1 AND [Version]=3;
+                """, new SqlParameter("@AccountId", created.AccountId),
+                new SqlParameter("@CompanyId", TestCompanyIds.CompanyA)));
+            Assert.Equal(auditsBefore + 2, await CountAsync(connection, "[audit].[AuditEvents]"));
         });
     }
 

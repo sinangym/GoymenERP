@@ -1,0 +1,23 @@
+{
+  "ContractId": "CARI-AB-20260905-006-009",
+  "TaskId": "C-DESKTOP-006",
+  "RunId": "c006-303760997c6f",
+  "InstanceId": "3a6f9f42-2d52-4874-95d0-7cff415aaf15",
+  "BackendHead": "880cae838e5d2f01a988f1e4a89afbe67858f48c",
+  "FrontendDiffSha256": "0f00a0b6072b58b85c186b8aeac4498088d7a9732bbcb43c30c6bafc9cd864cc",
+  "ComposeProject": "goymen-cari-c006-303760997c6f",
+  "DatabaseName": "GoymenCariC006_303760997c6f",
+  "EnvironmentName": "Testing",
+  "SqlEndpoint": "127.0.0.1,25433",
+  "SqlPort": 25433,
+  "ApiBaseUrl": "http://127.0.0.1:25080",
+  "ApiPort": 25080,
+  "CompanyAId": "10000000-0000-0000-0000-000000000001",
+  "CompanyBId": "10000000-0000-0000-0000-000000000002",
+  "Actor": "group-bootstrap-admin",
+  "SmokePrefix": "C006-SMOKE-303760997c6f",
+  "BrowserPrefix": "CARI-JOURNEY-303760997c6f",
+  "ContainerName": "goymen-cari-c006-303760997c6f-sql",
+  "VolumeName": "goymen-cari-c006-303760997c6f-data",
+  "SqlImage": "mcr.microsoft.com/mssql/server@sha256:ba4c8329f48fb8f02e1416be6a930ebfd71268caee78aa985f3af4315e457c89"
+}

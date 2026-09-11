@@ -1,0 +1,201 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/sinangym/GoymenERP",
+  "publishedSourceCommit": "d46f7f819456fc578a25cdcabf5c98ad6f634456",
+  "backendDependency": "880cae838e5d2f01a988f1e4a89afbe67858f48c",
+  "worktree": "C:\\src\\GoymenERP-cari-acceptance-envelope-20260911",
+  "branch": "codex/cari-acceptance-envelope-backend-20260911",
+  "generatedAtUtc": "2026-09-11T12:47:22.4191762Z",
+  "fileCount": 17,
+  "allRawBytesMatch": true,
+  "provenanceScope": "Published source blobs and current working-copy raw bytes only. No donor identity, unpublished WIP, DPAPI material, running resource or earlier acceptance evidence is transferred.",
+  "files": [
+    {
+      "sourceCommit": "d46f7f819456fc578a25cdcabf5c98ad6f634456",
+      "path": ".github/workflows/cari-c02-link-acceptance.yml",
+      "gitMode": "100644",
+      "gitBlob": "9f910700c2ae1c81d869c5f0fdab6392f21e402f",
+      "sourceRawSha256": "5a4a569d1fb516b63059b72567e53b427d5a930d9d42fbb4dffe12649469435c",
+      "sourceBytes": 1709,
+      "workingCopyRawSha256": "5a4a569d1fb516b63059b72567e53b427d5a930d9d42fbb4dffe12649469435c",
+      "workingCopyBytes": 1709,
+      "rawBytesMatch": true
+    },
+    {
+      "sourceCommit": "d46f7f819456fc578a25cdcabf5c98ad6f634456",
+      "path": "tests/GoymenERP.CariAcceptance006.Tests/GoymenERP.CariAcceptance006.Tests.csproj",
+      "gitMode": "100644",
+      "gitBlob": "691794234bdafc05618b448990d037aee6855e97",
+      "sourceRawSha256": "f48919c11d87752018ef8e300260bd4b5ea62866b8a5e4ff78d692a1b5d20652",
+      "sourceBytes": 627,
+      "workingCopyRawSha256": "f48919c11d87752018ef8e300260bd4b5ea62866b8a5e4ff78d692a1b5d20652",
+      "workingCopyBytes": 627,
+      "rawBytesMatch": true
+    },
+    {
+      "sourceCommit": "d46f7f819456fc578a25cdcabf5c98ad6f634456",
+      "path": "tests/GoymenERP.CariAcceptance006.Tests/LifecycleTests.cs",
+      "gitMode": "100644",
+      "gitBlob": "26b9a1c65c963faf3108e55e0243c9574d50b90f",
+      "sourceRawSha256": "2368205055a5ddbe8e5ad02d125c5c51f495d6da2f0ab7dac1866abf6a253b40",
+      "sourceBytes": 37128,
+      "workingCopyRawSha256": "2368205055a5ddbe8e5ad02d125c5c51f495d6da2f0ab7dac1866abf6a253b40",
+      "workingCopyBytes": 37128,
+      "rawBytesMatch": true
+    },
+    {
+      "sourceCommit": "d46f7f819456fc578a25cdcabf5c98ad6f634456",
+      "path": "tests/GoymenERP.CariAcceptance006.Tests/ProfileTests.cs",
+      "gitMode": "100644",
+      "gitBlob": "1301ef1c2d7a6134f90ff4a804e34e0971800d4c",
+      "sourceRawSha256": "37d4a30ad9e981547052e5280d25d66fe34f8a71c7bb3e3c15da3254375246d3",
+      "sourceBytes": 3707,
+      "workingCopyRawSha256": "37d4a30ad9e981547052e5280d25d66fe34f8a71c7bb3e3c15da3254375246d3",
+      "workingCopyBytes": 3707,
+      "rawBytesMatch": true
+    },
+    {
+      "sourceCommit": "d46f7f819456fc578a25cdcabf5c98ad6f634456",
+      "path": "tests/GoymenERP.CariAcceptance006.Tests/ResumeRecordTests.cs",
+      "gitMode": "100644",
+      "gitBlob": "ca161a4d0eac1082368e589510be3dcc5aff2d36",
+      "sourceRawSha256": "c1f16273b86576e1a60178641f265c31ffd651acf226c18a0ded5e8af369ae17",
+      "sourceBytes": 1953,
+      "workingCopyRawSha256": "c1f16273b86576e1a60178641f265c31ffd651acf226c18a0ded5e8af369ae17",
+      "workingCopyBytes": 1953,
+      "rawBytesMatch": true
+    },
+    {
+      "sourceCommit": "d46f7f819456fc578a25cdcabf5c98ad6f634456",
+      "path": "tools/GoymenERP.CariAcceptance006/AcceptanceFactory.cs",
+      "gitMode": "100644",
+      "gitBlob": "d802c34a244e79cdab22351ea59c41088e53c42d",
+      "sourceRawSha256": "6031b6062eabf3f2ffd2b7ea23796f5a301e88b9db33163da1acecb83fd1f9ca",
+      "sourceBytes": 3270,
+      "workingCopyRawSha256": "6031b6062eabf3f2ffd2b7ea23796f5a301e88b9db33163da1acecb83fd1f9ca",
+      "workingCopyBytes": 3270,
+      "rawBytesMatch": true
+    },
+    {
+      "sourceCommit": "d46f7f819456fc578a25cdcabf5c98ad6f634456",
+      "path": "tools/GoymenERP.CariAcceptance006/AcceptanceProfile.cs",
+      "gitMode": "100644",
+      "gitBlob": "a2d639672bcbe59193dfa37e60f2cdec069ad4a5",
+      "sourceRawSha256": "02fe16991af7e38f1ecfdba55191e61491da7f1900b266d8e1a0892e0b130fb5",
+      "sourceBytes": 6288,
+      "workingCopyRawSha256": "02fe16991af7e38f1ecfdba55191e61491da7f1900b266d8e1a0892e0b130fb5",
+      "workingCopyBytes": 6288,
+      "rawBytesMatch": true
+    },
+    {
+      "sourceCommit": "d46f7f819456fc578a25cdcabf5c98ad6f634456",
+      "path": "tools/GoymenERP.CariAcceptance006/DatabaseEvidence.cs",
+      "gitMode": "100644",
+      "gitBlob": "93b51c321739a51246a87ad5327f6a7fd19c106d",
+      "sourceRawSha256": "bafb45f486026253c1d6777f99eba55508a812f9773f26dfb20e9de3fc9e59ca",
+      "sourceBytes": 4910,
+      "workingCopyRawSha256": "bafb45f486026253c1d6777f99eba55508a812f9773f26dfb20e9de3fc9e59ca",
+      "workingCopyBytes": 4910,
+      "rawBytesMatch": true
+    },
+    {
+      "sourceCommit": "d46f7f819456fc578a25cdcabf5c98ad6f634456",
+      "path": "tools/GoymenERP.CariAcceptance006/EntryPoint.cs",
+      "gitMode": "100644",
+      "gitBlob": "4d900fffb4067b3767406e8bbc6172ddbaee6a48",
+      "sourceRawSha256": "09a4cf302ac7e44e438fc521f43d6397e7fd8e0d631aa0b867d421c2486571a0",
+      "sourceBytes": 9585,
+      "workingCopyRawSha256": "09a4cf302ac7e44e438fc521f43d6397e7fd8e0d631aa0b867d421c2486571a0",
+      "workingCopyBytes": 9585,
+      "rawBytesMatch": true
+    },
+    {
+      "sourceCommit": "d46f7f819456fc578a25cdcabf5c98ad6f634456",
+      "path": "tools/GoymenERP.CariAcceptance006/GoymenERP.CariAcceptance006.csproj",
+      "gitMode": "100644",
+      "gitBlob": "832a208e021e22818010b2a9aab2c103201836f6",
+      "sourceRawSha256": "64c05ea61b073b191dee27a0d571a5f438c7ad54cfc5303e0e120bbe4359b52e",
+      "sourceBytes": 588,
+      "workingCopyRawSha256": "64c05ea61b073b191dee27a0d571a5f438c7ad54cfc5303e0e120bbe4359b52e",
+      "workingCopyBytes": 588,
+      "rawBytesMatch": true
+    },
+    {
+      "sourceCommit": "d46f7f819456fc578a25cdcabf5c98ad6f634456",
+      "path": "tools/GoymenERP.CariAcceptance006/Lifecycle.cs",
+      "gitMode": "100644",
+      "gitBlob": "d80b76b93d9b60fcda28f37f86eb393adee7512b",
+      "sourceRawSha256": "61df9613742b5d2342e4f2201ccbe043b9de64ac96ba7d6ce17ad97d9d528ddc",
+      "sourceBytes": 18337,
+      "workingCopyRawSha256": "61df9613742b5d2342e4f2201ccbe043b9de64ac96ba7d6ce17ad97d9d528ddc",
+      "workingCopyBytes": 18337,
+      "rawBytesMatch": true
+    },
+    {
+      "sourceCommit": "d46f7f819456fc578a25cdcabf5c98ad6f634456",
+      "path": "tools/GoymenERP.CariAcceptance006/LiveSmoke.cs",
+      "gitMode": "100644",
+      "gitBlob": "a6cd82f3dd0f1cec8960aa8465e0d465233c4d00",
+      "sourceRawSha256": "c7f86def6a22454bd66df153ba6d0cbf45902040f368511703a50c88f20da444",
+      "sourceBytes": 9634,
+      "workingCopyRawSha256": "c7f86def6a22454bd66df153ba6d0cbf45902040f368511703a50c88f20da444",
+      "workingCopyBytes": 9634,
+      "rawBytesMatch": true
+    },
+    {
+      "sourceCommit": "d46f7f819456fc578a25cdcabf5c98ad6f634456",
+      "path": "tools/cari-acceptance-006/README.md",
+      "gitMode": "100644",
+      "gitBlob": "d2e1cf1b12bd404915b168dd57774ba79895c7c9",
+      "sourceRawSha256": "ae78351ee5f534a6315abcc383c4d99077eb69e0a2fe62dc3b7a4f49c6dd3703",
+      "sourceBytes": 4290,
+      "workingCopyRawSha256": "ae78351ee5f534a6315abcc383c4d99077eb69e0a2fe62dc3b7a4f49c6dd3703",
+      "workingCopyBytes": 4290,
+      "rawBytesMatch": true
+    },
+    {
+      "sourceCommit": "d46f7f819456fc578a25cdcabf5c98ad6f634456",
+      "path": "tools/cari-acceptance-006/control.ps1",
+      "gitMode": "100644",
+      "gitBlob": "4686dab26f66a244cd5a80083f0759fc2fe7f5fa",
+      "sourceRawSha256": "192ea281df138f206ff004d8264718297248b9fa4bd6f425039c2be5a722e029",
+      "sourceBytes": 7235,
+      "workingCopyRawSha256": "192ea281df138f206ff004d8264718297248b9fa4bd6f425039c2be5a722e029",
+      "workingCopyBytes": 7235,
+      "rawBytesMatch": true
+    },
+    {
+      "sourceCommit": "d46f7f819456fc578a25cdcabf5c98ad6f634456",
+      "path": "tools/cari-acceptance-006/publish.py",
+      "gitMode": "100644",
+      "gitBlob": "a6d3169dd3058c3913df94b16de38b8c48eac992",
+      "sourceRawSha256": "e6602f6f09a59b997bb201a92e14e306a308de70ec101633c360af2dc36162b7",
+      "sourceBytes": 10636,
+      "workingCopyRawSha256": "e6602f6f09a59b997bb201a92e14e306a308de70ec101633c360af2dc36162b7",
+      "workingCopyBytes": 10636,
+      "rawBytesMatch": true
+    },
+    {
+      "sourceCommit": "d46f7f819456fc578a25cdcabf5c98ad6f634456",
+      "path": "tools/cari-acceptance-006/setup.ps1",
+      "gitMode": "100644",
+      "gitBlob": "77bd98027091b4036eb866f28228d68066e70152",
+      "sourceRawSha256": "1c1038df05f0b9e558ad16377108f439ab8b9936d6cf5af63c3865df09c646dd",
+      "sourceBytes": 4925,
+      "workingCopyRawSha256": "1c1038df05f0b9e558ad16377108f439ab8b9936d6cf5af63c3865df09c646dd",
+      "workingCopyBytes": 4925,
+      "rawBytesMatch": true
+    },
+    {
+      "sourceCommit": "d46f7f819456fc578a25cdcabf5c98ad6f634456",
+      "path": "tools/ci/cari-c02-link.ps1",
+      "gitMode": "100644",
+      "gitBlob": "05b4cd78567ad6ae5a4fe381ad96e616be826aa8",
+      "sourceRawSha256": "3091d4e2fd31f83b1d7d96147514be5bcfb3999afc8a47be5fc0064001f721e0",
+      "sourceBytes": 10632,
+      "workingCopyRawSha256": "3091d4e2fd31f83b1d7d96147514be5bcfb3999afc8a47be5fc0064001f721e0",
+      "workingCopyBytes": 10632,
+      "rawBytesMatch": true
+    }
+  ]
+}
