@@ -61,14 +61,37 @@ const LEGACY_ROLE_LABEL = 'Geçmiş ticari sınıflandırma'
  */
 const negativeKey = (tag: string): string => `${tag}${RUN_TOKEN}`.padEnd(32, 'a').slice(0, 32)
 const UNKNOWN_NOTICE = '[data-attempt="unknown"]'
+const SLUG = 'l01-live-ab-journey'
+/** Set by the test so the afterEach hook can reach the recorder of the run that failed. */
+let activeRecorder: LiveRecorder | null = null
 const RETRY_BUTTON = 'Aynı işlemi yeniden dene'
 
-async function switchCompany(page: Page, companyId: string): Promise<void> {
+/**
+ * Switch company, and wait for what that switch set in motion.
+ *
+ * A committed switch makes the shell read for the new company. In the first live run the
+ * journey called `page.goto` immediately afterwards, abandoning those reads mid-flight:
+ * the browser never heard about them again — no response, no terminal transfer event —
+ * and the barrier at the end could never drain. Two requests were lost that way, a B list
+ * read and an A candidate read, each immediately before a `goto`.
+ *
+ * The fix is to owe them the wait rather than to excuse them later. The interval starts
+ * BEFORE the user action, so the action's own requests are inside it; if they do not
+ * settle within the bound the run fails, because a request nobody can account for is
+ * exactly what must not be waved through.
+ */
+async function switchCompany(page: Page, net: LiveRecorder, companyId: string): Promise<void> {
+  const beforeAction = net.currentTick()
   const picker = page.getByRole('combobox', { name: 'Şirket', exact: true })
   await picker.selectOption(companyId)
   const dialog = page.getByRole('dialog')
   if (await dialog.count()) await dialog.getByRole('button', { name: 'Değişiklikleri bırak' }).click()
   await expect(picker).toHaveValue(companyId, { timeout: 30_000 })
+  const settled = await net.settleSince(beforeAction, { timeoutMs: 15_000 })
+  expect(
+    settled.outstanding,
+    `the reads this company switch issued must finish before the journey navigates away from them: ${JSON.stringify(settled.outstanding)}`,
+  ).toEqual([])
 }
 
 function factValue(page: Page, label: string) {
@@ -139,9 +162,36 @@ function awaitingCapture(reads: LiveRecord[], afterTick: number, post: LiveRecor
   return reads.filter((r) => inTransferWindow(r, afterTick, post) && r.captureTick === null)
 }
 
+/**
+ * Evidence survives failure — including a failure in this very hook.
+ *
+ * When the journey throws before its own writers run, the raw request and capture state
+ * is exactly what is needed to explain the failure, and it was exactly what the first
+ * live run lost. Every write here is guarded on its own: a diagnostic that cannot be
+ * written must never replace the real error with its own.
+ */
+test.afterEach(async (_fixtures, testInfo) => {
+  if (testInfo.status === 'passed') return
+  const recorder = activeRecorder
+  if (recorder === null) return
+  try {
+    writeLJson('pending-state', `${SLUG}-outstanding.json`, {
+      testStatus: testInfo.status ?? null,
+      testError: testInfo.error?.message ?? null,
+      observedEvents: recorder.observedEvents(),
+      outstanding: recorder.outstanding(),
+      records: recorder.records,
+      meaning:
+        'Raw recorder state captured after a failed run. Written from an afterEach hook so a failure anywhere in the journey still leaves the request/capture state on disk.',
+    })
+  } catch {
+    // Deliberately swallowed: the run already has a real failure and it owns the report.
+  }
+})
+
 test('L-01 A create → list → detail; B invisible + detail 404 before link; fresh candidate → link → list → detail; both commands survive a real lost reply and a real same-key retry; A account preserved', async ({ page, request }, testInfo) => {
   test.setTimeout(360_000)
-  const slug = 'l01-live-ab-journey'
+  const slug = SLUG
   // An acceptance case that passes on a second attempt has not shown the behaviour it
   // claims — and a command journey that re-ran would write a second Party.
   expect(testInfo.retry).toBe(0)
@@ -153,6 +203,7 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; f
     if (window.localStorage.getItem('goymen-company-id') === null) window.localStorage.setItem('goymen-company-id', id)
   }, A)
   const net = LiveRecorder.attach(page)
+  activeRecorder = net
   /**
    * Exactly two deliveries are withheld in the whole journey: the first create POST
    * under A and the first link POST under B. Every other request — the retries
@@ -321,7 +372,7 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; f
   await lShot(page, slug, '04-A-list-shows-new-party')
 
   // ---- B: invisible before the link; detail closes 404 ------------------------------
-  await switchCompany(page, B)
+  await switchCompany(page, net, B)
   const tickBeforeBListVisit = net.currentTick()
   await page.goto('/cari')
   await expect(page.getByRole('heading', { level: 1, name: 'Cari Kartlar' })).toBeVisible({ timeout: 60_000 })
@@ -528,7 +579,7 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; f
   await lShot(page, slug, '12-B-candidates-after-link')
 
   // ---- A: the account, its roles and its version are unchanged ---------------------
-  await switchCompany(page, A)
+  await switchCompany(page, net, A)
   await page.goto(`/cari/${partyId}`)
   await expect(page.getByRole('heading', { level: 1, name: LEGAL_NAME })).toBeVisible({ timeout: 30_000 })
   await expect(factValue(page, LEGACY_ROLE_LABEL)).toHaveText(NO_ROLE_DETAIL)
@@ -774,5 +825,19 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; f
     party: { id: partyId, code },
     upstreamWithheld: withholder.withheld,
     negativeActors: probe.records,
+    browserBarrier: barrier,
   })
+
+  /**
+   * The verdict, asserted AFTER the evidence is on disk.
+   *
+   * The barrier no longer throws from inside itself; it reports. That ordering is the
+   * whole point: the first live run threw here and took the network and measurement
+   * records of a journey that had already written to the database with it.
+   */
+  expect(
+    barrier.outstanding,
+    `the browser did not go quiet; ${barrier.outstanding.length} request(s) unaccounted for: ${JSON.stringify(barrier.outstanding, null, 1)}`,
+  ).toEqual([])
+  expect(barrier.accepted).toBe(true)
 })

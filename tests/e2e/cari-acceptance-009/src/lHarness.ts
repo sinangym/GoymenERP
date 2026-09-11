@@ -219,6 +219,10 @@ export class LiveRecorder {
    * stands on.
    */
   private readonly byRequest = new WeakMap<object, LiveRecord>()
+  /** Raw counts of the page events actually received — observed, never inferred. */
+  private readonly events = { request: 0, response: 0, requestFinished: 0, requestFailed: 0 }
+  /** Ticks at which the main frame committed a navigation. Diagnostic material only. */
+  private readonly navigationTicks: number[] = []
 
   private constructor(private readonly page: Page) {}
 
@@ -263,6 +267,7 @@ export class LiveRecorder {
         responseBody: null,
         failure: null,
       }
+      recorder.events.request += 1
       recorder.records.push(record)
       recorder.byRequest.set(request, record)
     })
@@ -270,6 +275,7 @@ export class LiveRecorder {
       const request = response.request()
       const record = recorder.byRequest.get(request)
       if (!record) return
+      recorder.events.response += 1
       record.status = response.status()
       record.headersTick = ++recorder.tick
       const headers = response.headers()
@@ -293,6 +299,7 @@ export class LiveRecorder {
     page.on('requestfinished', (request) => {
       const record = recorder.byRequest.get(request)
       if (!record) return
+      recorder.events.requestFinished += 1
       record.transferOutcome = 'finished'
       record.transferTick = ++recorder.tick
       recorder.settle(record)
@@ -300,6 +307,7 @@ export class LiveRecorder {
     page.on('requestfailed', (request) => {
       const record = recorder.byRequest.get(request)
       if (!record) return
+      recorder.events.requestFailed += 1
       record.failure = request.failure()?.errorText ?? null
       record.transferOutcome = 'failed'
       record.transferTick = ++recorder.tick
@@ -308,6 +316,12 @@ export class LiveRecorder {
       if (record.bodyState === 'pending') record.bodyState = 'unavailable'
       if (record.captureTick === null) record.captureTick = ++recorder.tick
       recorder.settle(record)
+    })
+    page.on('framenavigated', (frame) => {
+      // Main frame only: a committed navigation replaces the document, which is why a
+      // request issued by the old one may never be heard from again. Recorded as a tick
+      // so an outstanding record can SAY that, without it counting for anything.
+      if (frame === page.mainFrame()) recorder.navigationTicks.push(++recorder.tick)
     })
     return recorder
   }
@@ -350,6 +364,38 @@ export class LiveRecorder {
     }
   }
 
+  /**
+   * What was observed about a record that never settled. Description, not a verdict.
+   */
+  private describe(record: LiveRecord): OutstandingRecord {
+    const parts: string[] = []
+    if (record.headersTick === null) parts.push('no response headers observed')
+    else parts.push('headers observed')
+    if (record.transferTick === null) parts.push('no terminal transfer event (requestfinished/requestfailed) observed')
+    if (record.bodyState === 'pending') parts.push('body capture not settled')
+    if (this.navigationTicks.some((t) => t > record.requestTick)) {
+      parts.push(
+        'a committed main-frame navigation was observed after this request started — DIAGNOSTIC ONLY: it does not establish that the request terminated, and says nothing about work the server may still have in flight',
+      )
+    }
+    return {
+      seq: record.seq, method: record.method, path: record.path, companyId: record.companyId,
+      requestTick: record.requestTick, headersTick: record.headersTick, transferTick: record.transferTick,
+      captureTick: record.captureTick, transferOutcome: record.transferOutcome, bodyState: record.bodyState,
+      status: record.status, failure: record.failure, diagnosis: parts.join('; '),
+    }
+  }
+
+  /** The page events actually received, as counts. Observed, never inferred. */
+  observedEvents(): { request: number; response: number; requestFinished: number; requestFailed: number } {
+    return { ...this.events }
+  }
+
+  /** Raw state of everything still unaccounted for — safe to call at any time. */
+  outstanding(): OutstandingRecord[] {
+    return this.inFlight().map((r) => this.describe(r))
+  }
+
   /** The event counter as it stands now — the instant a test action happened. */
   currentTick(): number {
     return this.tick
@@ -383,26 +429,64 @@ export class LiveRecorder {
       // invisible to a reading taken before, and the barrier would have returned anyway.
       if (markedBusy || this.inFlight().length > 0) lastBusyAt = Date.now()
       const settledFor = Date.now() - lastBusyAt
-      if (settledFor >= settleMs) {
-        const outstanding = this.inFlight().length
-        if (outstanding > 0) {
+      const timedOut = Date.now() - started > timeoutMs
+      if (settledFor >= settleMs || timedOut) {
+        const outstanding = this.outstanding()
+        if (outstanding.length > 0 && !timedOut) {
           lastBusyAt = Date.now()
           continue
         }
+        /**
+         * Returned, never thrown.
+         *
+         * The first live run threw here, which killed the evidence writer that ran after
+         * it — the network and measurement records for a journey that had already written
+         * to the database were simply lost. The verdict belongs to the caller's
+         * assertion; this method's job is to report, and to report completely.
+         *
+         * `accepted` is false whenever anything is outstanding. Nothing is discounted:
+         * a request whose document was navigated away from is described in `diagnosis`
+         * and still counted, because "we stopped hearing about it" is not evidence that
+         * it finished, still less that the server has nothing in flight for it.
+         */
         return {
-          accepted: true,
+          accepted: outstanding.length === 0,
+          timedOut,
           observedAtUtc: new Date().toISOString(),
           settledForMs: settledFor,
-          inFlightAtBarrier: outstanding,
+          inFlightAtBarrier: outstanding.length,
+          outstanding,
+          observedEvents: { ...this.events },
           totalApiRecords: this.records.length,
           pageWritesIssued: this.records.filter((r) => r.method === 'POST').length,
           meaning:
             'Browser quiescence only: no PAGE-originated /api/v1 request outstanding and nothing marked busy for the settle window. Requests issued on a separate APIRequestContext are not visible here. NOT a claim about database state, which the environment snapshot measures.',
         }
       }
-      if (Date.now() - started > timeoutMs) {
-        throw new BarrierNotReached(`the browser did not go quiet within ${timeoutMs} ms; ${this.inFlight().length} request(s) still outstanding`)
-      }
+      await this.page.waitForTimeout(100)
+    }
+  }
+
+  /**
+   * Bounded wait for everything issued since `sinceTick` to reach a terminal transfer AND
+   * a settled capture.
+   *
+   * This is what a test owes a navigation it is about to perform. In the first live run
+   * the journey switched company — which makes the shell issue scoped reads for the new
+   * company — and then immediately called `page.goto`, abandoning those reads mid-flight;
+   * the browser never heard about them again and the barrier at the end could never
+   * drain. Waiting for them BEFORE navigating is the honest fix: it neither invents a
+   * terminal event nor narrows the scenario.
+   *
+   * `sinceTick` must be taken BEFORE the user action that triggers the reads. Taking it
+   * afterwards would leave the action's own requests outside the interval.
+   */
+  async settleSince(sinceTick: number, { timeoutMs = 15_000 }: { timeoutMs?: number } = {}): Promise<{ settled: boolean; outstanding: OutstandingRecord[] }> {
+    const started = Date.now()
+    for (;;) {
+      const pending = this.records.filter((r) => r.requestTick > sinceTick && r.settledTick === null)
+      if (pending.length === 0) return { settled: true, outstanding: [] }
+      if (Date.now() - started > timeoutMs) return { settled: false, outstanding: pending.map((r) => this.describe(r)) }
       await this.page.waitForTimeout(100)
     }
   }
@@ -797,12 +881,49 @@ export class ActorProbe {
  * It states quiescence and nothing else. A quiet browser is not evidence of a server
  * effect or of its absence — that claim belongs to the snapshot, not here.
  */
+/**
+ * One request the barrier could not account for, with the raw state it was in.
+ *
+ * This exists because the first live run lost exactly this: the barrier threw, the
+ * evidence writer never ran, and answering "which two requests?" took an excavation of
+ * the Playwright trace. Every unsettled record is now written out with its own ticks.
+ */
+export interface OutstandingRecord {
+  readonly seq: number
+  readonly method: string
+  readonly path: string
+  readonly companyId: string | null
+  readonly requestTick: number
+  readonly headersTick: number | null
+  readonly transferTick: number | null
+  readonly captureTick: number | null
+  readonly transferOutcome: 'pending' | 'finished' | 'failed'
+  readonly bodyState: 'pending' | 'complete' | 'unavailable'
+  readonly status: number | null
+  readonly failure: string | null
+  /**
+   * DIAGNOSTIC ONLY — describes what was observed, and is never subtracted from the
+   * outstanding count.
+   *
+   * In particular, "a committed navigation was observed after this request started" does
+   * NOT establish that the request terminated, and says nothing at all about whether the
+   * server still has work in flight for it. A barrier that discounted these would be
+   * manufacturing an acceptance out of an absence of evidence.
+   */
+  readonly diagnosis: string
+}
+
 export interface QuiescentBarrier {
   readonly accepted: boolean
+  readonly timedOut: boolean
   readonly observedAtUtc: string
   readonly settledForMs: number
   /** Re-read at return time. A literal zero here would be a declaration, not a barrier. */
   readonly inFlightAtBarrier: number
+  /** Every record still unaccounted for, in full. Empty exactly when accepted. */
+  readonly outstanding: OutstandingRecord[]
+  /** Raw counts of the page events this recorder actually received. */
+  readonly observedEvents: { request: number; response: number; requestFinished: number; requestFailed: number }
   readonly totalApiRecords: number
   /**
    * PAGE-originated writes only. A separate APIRequestContext (the negative-actor probes)

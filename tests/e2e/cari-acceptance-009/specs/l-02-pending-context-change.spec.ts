@@ -34,6 +34,9 @@ const A = manifest.companyAId
 const B = manifest.companyBId
 const CONTRACT = manifest.clientContractVersion
 const CANDIDATES = '/api/v1/counterparties/company-account-link-candidates'
+const SLUG = 'l02-pending-context-change'
+/** Set by the test so the afterEach hook can reach the recorder of the run that failed. */
+let activeRecorder: LiveRecorder | null = null
 
 async function switchCompany(page: Page, companyId: string): Promise<void> {
   const picker = page.getByRole('combobox', { name: 'Şirket', exact: true })
@@ -73,9 +76,28 @@ async function selectionState(page: Page): Promise<string | null> {
   return marker.first().getAttribute('data-selection')
 }
 
+/** Evidence survives failure here too; a diagnostic that cannot be written stays silent. */
+test.afterEach(async (_fixtures, testInfo) => {
+  if (testInfo.status === 'passed') return
+  const recorder = activeRecorder
+  if (recorder === null) return
+  try {
+    writeLJson('pending-state', `${SLUG}-outstanding.json`, {
+      testStatus: testInfo.status ?? null,
+      testError: testInfo.error?.message ?? null,
+      observedEvents: recorder.observedEvents(),
+      outstanding: recorder.outstanding(),
+      records: recorder.records,
+      meaning: 'Raw recorder state captured after a failed run, from an afterEach hook.',
+    })
+  } catch {
+    // The run already has a real failure and it owns the report.
+  }
+})
+
 test('L-02 CRO-AC-010: a company change while a preparation read is pending — the late answer does not open the new context, and nothing is written', async ({ browser }, testInfo) => {
   test.setTimeout(240_000)
-  const slug = 'l02-pending-context-change'
+  const slug = SLUG
   expect(testInfo.retry).toBe(0)
 
   /**
@@ -95,6 +117,7 @@ test('L-02 CRO-AC-010: a company change while a preparation read is pending — 
     if (window.localStorage.getItem('goymen-company-id') === null) window.localStorage.setItem('goymen-company-id', id)
   }, A)
   const net = LiveRecorder.attach(page)
+  activeRecorder = net
 
   try {
     /**
@@ -402,6 +425,21 @@ test('L-02 CRO-AC-010: a company change while a preparation read is pending — 
       ],
     })
     await net.finish(testInfo, slug, { case: 'CRO-AC-010 pending read + context change', postsIssued: 0, browserBarrier: barrier })
+
+    /**
+     * Asserted after the evidence is written, for the same reason L-01 does it: the
+     * barrier reports rather than throws, so a barrier failure can no longer take the
+     * records of the run that produced it.
+     *
+     * This step deliberately holds a read across a context change, and the application
+     * cancels it — that cancellation IS a terminal transfer event, so it settles and the
+     * barrier drains. Nothing here is discounted to make that true.
+     */
+    expect(
+      barrier.outstanding,
+      `the browser did not go quiet; ${barrier.outstanding.length} request(s) unaccounted for: ${JSON.stringify(barrier.outstanding, null, 1)}`,
+    ).toEqual([])
+    expect(barrier.accepted).toBe(true)
   } finally {
     await context.close()
   }
