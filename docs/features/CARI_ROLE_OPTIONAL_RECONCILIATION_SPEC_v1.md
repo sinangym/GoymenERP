@@ -372,4 +372,4 @@ Mevcut roleless/transport Cari düzeltmesi için yeni işletme kararı gerekmiyo
 
 Kaynak olarak [tarihli kullanıcı kararları](https://github.com/sinangym/GoymenERP/blob/e1fd69da69df36a72e559ea07163fb3f359b3c61/docs/decisions/SINAN_KARARLARI_2026-09-10.md), `docs/decisions/KARAR_SICILI.md`, `docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md`, mevcut Cari JIT/yetki sözleşmeleri ve öncelikli iki protocol handoff birlikte okunur. Eski #227 headerless örnekleri yeni contract'a aynen çalıştırılmaz; tarihsel kanıt olarak korunur.
 
-#229 ve #232 insan review/acceptance kapıları açık kalır. Bu dosyanın güncellenmesi diğer ajana uygulama gönderildiği, onların çalıştırdığı, merge edildiği, runtime açıldığı veya ERP'nin kabul edildiği anlamına gelmez.
+#229 ve #232 insan review/acceptance kapıları açık kalır. Bu dosyanın güncellenmesi diğer ajana uygulama gönderildiği, onların çalıştırdığı, merge edildiği, runtime açıldığı veya ERP'nin kabul edildiği anlamına gelmez. Bu teslim kaynak okuma ve şartname güncellemesidir; ürün testleri CHATGPT-BUSINESS tarafından yeniden çalıştırılmamıştır.
