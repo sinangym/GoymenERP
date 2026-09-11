@@ -39,7 +39,9 @@ import { contextKey, contextKeyString, hasCapability } from '../shell/shellState
 import { API_BASE, isCommandContractReady, type ContractContext } from './clientContract'
 import { fetchCounterparties } from './api'
 import { CAPABILITY } from '../shell/capabilities'
+import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { useCompanyDirectory } from '../shell/useShellOrchestrator'
+import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { StateBlock } from '../shell/StateBlock'
 import styles from './CariCreatePage.module.css'
 
@@ -101,16 +103,33 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
     () => (namespace === null ? null : { origin: API_BASE, namespace }),
     [namespace],
   )
+  // The same central security boundary every other Cari read goes through.
+  const boundary = useAuthBoundary()
   const probe = useQuery({
     queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'cari-contract-probe'],
     enabled: namespace !== null && singleCompanyContext,
-    queryFn: async ({ signal }) =>
-      await fetchCounterparties(
+    queryFn: async ({ signal }) => {
+      /**
+       * Captured BEFORE the request, exactly as in api.ts/detailApi.ts. Deriving the
+       * bindings at response time would let a slow 401 from a departed actor reset
+       * the session of whoever is here now — and a probe is the easiest read to
+       * forget, because nothing on screen depends on its rows.
+       */
+      const security = boundary.capture()
+      const outcome = await fetchCounterparties(
         { mode: 'single', companyId: activeCompanyId },
         { pageSize: 1 },
         signal,
         contractContext,
-      ),
+      )
+      if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) {
+        // 401 invalidates the session and clears the cache; 403 re-fences the
+        // capability. Storing the result and showing a compatibility warning
+        // instead would leave the old shell authority standing.
+        boundary.report(outcome.status, security)
+      }
+      return outcome
+    },
   })
 
   /**
@@ -121,7 +140,28 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
    */
   const probeAnswered = !probe.isPending && !probe.isFetching
   const writeReady = isCommandContractReady(contractContext)
-  const incompatibleServer = probeAnswered && !writeReady
+
+  /**
+   * What the probe actually found, by TYPE.
+   *
+   * Calling every probe failure "incompatible client" was wrong twice over: it
+   * mislabels a 500, an offline browser or a malformed body as a version problem,
+   * and it diagnoses an old server from the absence of an acknowledgment on an
+   * ERROR — which the contract says proves nothing, since failures raised before
+   * the compatibility filter carry no acknowledgment either.
+   *
+   * So only a SUCCESSFUL, decoder-valid read that came back without the
+   * acknowledgment is evidence of an incompatible server. Everything else is
+   * reported as what it is.
+   */
+  const probeState = (
+    probe.isPending
+      ? { kind: 'initial-loading' }
+      : classifyOutcome(probe.data ?? { type: 'malformed' })
+  ) as RemoteViewState<unknown>
+  const probeSucceeded = probeState.kind === 'ready'
+  const probeFailed = probeAnswered && !probeSucceeded
+  const incompatibleServer = probeAnswered && probeSucceeded && !writeReady
 
   const [values, setValues] = useState<CreateFormValues>(EMPTY_CREATE_FORM)
   const [showErrors, setShowErrors] = useState(false)
@@ -301,6 +341,13 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
           the form is closed rather than left to discover that by writing (spec §4.2).
           Stated only once the probe has answered — mid-flight silence is not a
           verdict. */}
+      {/* A probe that FAILED is not a version verdict: it is a 401, a 403, a 503, an
+          offline browser or a body we could not read, and it says so. The form stays
+          closed either way, because compatibility is unproven in both cases. */}
+      {probeFailed ? (
+        <StateBlock state={probeState} subject="cari yazma uyumluluğu" onRetry={() => void probe.refetch()} />
+      ) : null}
+
       {incompatibleServer ? (
         <div role="alert" data-state="client-contract" className={styles.contractBlocked}>
           <p>
@@ -412,7 +459,14 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
 
         <CommandAttemptNotice
           state={attempt.state}
-          onRetry={attempt.retry}
+          onRetry={() =>
+            attempt.retry(async () => {
+              // A fresh, authorized, acknowledged read in THIS context — not the
+              // grant the first send rode on.
+              await probe.refetch()
+              return isCommandContractReady(contractContext)
+            })
+          }
           onAbandon={attempt.abandon}
           onAcknowledge={attempt.abandon}
           repeatsUnresolved={repeatsUnresolved}

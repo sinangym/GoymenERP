@@ -122,8 +122,9 @@ export const CARI_COMMAND_TEXT = {
   },
   unknownReason: {
     unacknowledged:
-    'Sunucu bu işlemi onaylamadı; sonucu bilinmiyor. Aynı kaydı tekrar oluşturmayın — ' +
-    'sayfayı yenileyip aynı işlemi açıkça tekrar deneyin.',
+    'Sunucu bu işlemi onaylamadı; sonucu bilinmiyor. İşlem sunucuya ulaşmış olabilir. ' +
+    'Aynı kaydı ikinci kez oluşturmayın — aşağıdaki “Aynı işlemi yeniden dene” ' +
+    'düğmesini kullanın; aynı işlem anahtarı korunur.',
   offline: 'Bağlantı yok.',
     'network-error': 'Sunucuya ulaşılamadı.',
     'service-unavailable': 'Servis geçici olarak yanıt veremedi.',

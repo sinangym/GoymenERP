@@ -69,8 +69,16 @@ export interface CommandAttemptController<P, R> {
    * when the payload repeats an abandoned attempt that is still unresolved.
    */
   readonly submit: (operation: string, payload: P, send: CommandSender<R>) => SubmitResult
-  /** Resend the kept snapshot with the SAME key. Only from `unknown` or `abandoned`. */
-  readonly retry: () => void
+  /**
+   * Resend the kept snapshot with the SAME key. Only from `unknown` or `abandoned`.
+   *
+   * `revalidate` is the caller's fresh authorized + acknowledged GET in this
+   * context; it is required before a second POST, and a failed check sends nothing
+   * while leaving the attempt exactly as it was.
+   */
+  readonly retry: (revalidate?: () => Promise<boolean>) => void
+  /** True while that pre-retry check is running. */
+  readonly revalidating: boolean
   /**
    * Explicitly leave the current attempt. A definite failure or a completion is
    * closed (`idle`); an UNKNOWN outcome becomes `abandoned` — unfrozen, but its
@@ -158,14 +166,62 @@ export function useCommandAttempt<P, R>(): CommandAttemptController<P, R> {
     [dispatchSend, shell],
   )
 
-  const retry = useCallback(() => {
-    const current = stateRef.current
-    if (current.phase !== 'unknown' && current.phase !== 'abandoned') return
-    if (inFlightRef.current || senderRef.current === null) return
-    stateRef.current = retryAttempt(current)
-    setState(stateRef.current)
-    dispatchSend(current.snapshot, senderRef.current)
-  }, [dispatchSend])
+  /**
+   * Re-send the SAME attempt, after proving the ground it stands on is still there.
+   *
+   * `revalidate` is the caller's fresh, authorized, decoder-valid, acknowledged GET
+   * in this context. It is REQUIRED before a second POST, because a command failure
+   * does not revoke readiness: without it the retry would ride a grant earned before
+   * the first send and post again to a server we have not re-checked (§4.2).
+   *
+   * If it does not pass, nothing is sent and the attempt stays exactly as it was —
+   * same key, same payload, same uncertainty. A failed re-check is not an answer
+   * about the first request either.
+   *
+   * Never automatic. This runs only from the user's explicit retry.
+   */
+  /** True while the pre-retry re-check is running; the notice shows it as busy. */
+  const revalidatingRef = useRef(false)
+  const [revalidating, setRevalidating] = useState(false)
+
+  const retry = useCallback(
+    (revalidate?: () => Promise<boolean>) => {
+      const current = stateRef.current
+      if (current.phase !== 'unknown' && current.phase !== 'abandoned') return
+      if (inFlightRef.current || senderRef.current === null) return
+      const sender = senderRef.current
+      const snapshot = current.snapshot
+
+      if (revalidate === undefined) {
+        stateRef.current = retryAttempt(current)
+        setState(stateRef.current)
+        dispatchSend(snapshot, sender)
+        return
+      }
+
+      revalidatingRef.current = true
+      setRevalidating(true)
+      void revalidate()
+        .then((ok) => {
+          revalidatingRef.current = false
+          if (disposedRef.current) return
+          setRevalidating(false)
+          if (!ok) return
+          // Re-read the state: the context may have moved while the check ran.
+          const latest = stateRef.current
+          if (latest.phase !== 'unknown' && latest.phase !== 'abandoned') return
+          if (latest.snapshot.key !== snapshot.key) return
+          stateRef.current = retryAttempt(latest)
+          setState(stateRef.current)
+          dispatchSend(latest.snapshot, sender)
+        })
+        .catch(() => {
+          revalidatingRef.current = false
+          if (!disposedRef.current) setRevalidating(false)
+        })
+    },
+    [dispatchSend],
+  )
 
   const abandon = useCallback(() => {
     if (inFlightRef.current) return
@@ -177,5 +233,5 @@ export function useCommandAttempt<P, R>(): CommandAttemptController<P, R> {
     setState(next)
   }, [])
 
-  return { state, submit, retry, abandon }
+  return { state, submit, retry, abandon, revalidating }
 }

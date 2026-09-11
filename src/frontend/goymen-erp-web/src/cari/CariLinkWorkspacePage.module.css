@@ -353,3 +353,16 @@
     align-items: stretch;
   }
 }
+
+/* Why the submit is closed. Quiet, because it is a state of the connection rather
+   than a mistake the user made. */
+.notReady {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+  color: #4a3a1a;
+  background: #fdf7ec;
+  border: 1px solid #d9a441;
+  border-radius: 6px;
+  padding: 8px 10px;
+  max-width: 70ch;
+}

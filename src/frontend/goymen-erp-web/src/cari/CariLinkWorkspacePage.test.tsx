@@ -32,6 +32,7 @@ import {
   held,
   installFetch,
   json,
+  jsonWithoutAck,
   linkedView,
   preferCompany,
   problem,
@@ -366,8 +367,14 @@ describe('CARI-LINK selection authority is a FRESH successful read of the CURREN
     await user.click(submitButton())
     await settle(150)
     expect(fetchLog.links(), 'no POST after a non-survivable read').toHaveLength(0)
-    await waitFor(() => expect(document.activeElement).toBe(query('#cari-link-summary')))
-    expect(query('#cari-link-selection-error').textContent).toBe('Güncel aday listesinden bir cari seçin.')
+    /**
+     * The submit is CLOSED, not merely ineffective: a failed read leaves write
+     * compatibility unproven here, and a button that stayed enabled would invite a
+     * submit that cannot go and burn an attempt to say so. It carries its reason,
+     * because a disabled control that explains nothing is worse than an enabled one.
+     */
+    expect(submitButton().disabled).toBe(true)
+    expect(query('#cari-link-not-ready').textContent).toContain('yazma uyumu şu an doğrulanmadı')
 
     // A fresh successful first page that contains the Party restores authority.
     // "Tekrar dene" leaves the chain and reads the first page — cursorless, not a
@@ -430,8 +437,11 @@ describe('CARI-LINK selection authority is a FRESH successful read of the CURREN
     await user.click(submitButton())
     await settle(150)
     expect(fetchLog.links(), 'no POST before the recovery succeeds').toHaveLength(0)
-    await waitFor(() => expect(document.activeElement).toBe(query('#cari-link-summary')))
-    expect(query('#cari-link-selection-error').textContent).toBe('Güncel aday listesinden bir cari seçin.')
+    // The gate is closed while the recovery read is still in flight: compatibility
+    // is proven by a read that has LANDED, so the submit carries its reason instead
+    // of a validation summary about a selection the user did make.
+    expect(submitButton().disabled).toBe(true)
+    expect(query('#cari-link-not-ready').textContent).toContain('yazma uyumu şu an doğrulanmadı')
     expect(fetchLog.candidateReads()).toHaveLength(3)
 
     // The fresh page lands and contains the Party: authority is restored by IT —
@@ -484,9 +494,11 @@ describe('CARI-LINK selection authority is a FRESH successful read of the CURREN
     await user.click(submitButton())
     await settle(150)
     expect(fetchLog.links(), 'no POST from a page read before the break').toHaveLength(0)
-    await waitFor(() => expect(document.activeElement).toBe(query('#cari-link-summary')))
-    expect(query('#cari-link-selection-error').textContent).toBe('Güncel aday listesinden bir cari seçin.')
-    expect(radioFor('CAR-000001').getAttribute('aria-describedby')).toBe('cari-link-selection-error')
+    // Nothing was READ after the break, so nothing proved compatibility after it
+    // either: the submit is closed and says so, and the suspended selection keeps
+    // its own separate explanation above.
+    expect(submitButton().disabled).toBe(true)
+    expect(query('#cari-link-not-ready').textContent).toContain('yazma uyumu şu an doğrulanmadı')
 
     // A read ISSUED after the break — here a search — is authority once it lands.
     await user.type(screen.getByRole('searchbox', { name: 'Aday ara' }), 'Örnek')
@@ -1171,5 +1183,41 @@ describe('CARI-LINK dirty workspace and target switch (G-002 check 9)', () => {
     expect(fetchLog.detailReads()).toHaveLength(0)
     expect(fetchLog.links()).toHaveLength(1)
     expect(companySelect().value).toBe(A_ID)
+  })
+})
+
+describe('CARI-LINK the submit follows current readiness (spec §4.2)', () => {
+  it('an UNACKNOWLEDGED candidate read leaves the button closed, with its reason', async () => {
+    // Decoder-valid rows from an old node: the list is usable, the write is not.
+    // The transport would refuse the POST anyway; a button left enabled invites a
+    // submit that cannot go and burns an attempt to say so.
+    const user = userEvent.setup()
+    const fetchLog = installFetch({ candidates: () => jsonWithoutAck(candidatePage([candidate()])) })
+    renderAt(ROUTE)
+    await openWorkspace()
+    await findRow('CAR-000001')
+
+    await user.click(radioFor('CAR-000001'))
+    expect(selectionState()).toBe('fresh')
+    expect(submitButton().disabled).toBe(true)
+    expect(query('#cari-link-not-ready').textContent).toContain('yazma uyumu şu an doğrulanmadı')
+
+    await user.click(submitButton())
+    await settle(150)
+    expect(fetchLog.links()).toHaveLength(0)
+  })
+
+  it('the rows and the selection survive that — only the write is closed', async () => {
+    const user = userEvent.setup()
+    installFetch({ candidates: () => jsonWithoutAck(candidatePage([candidate()])) })
+    renderAt(ROUTE)
+    await openWorkspace()
+    await findRow('CAR-000001')
+    await user.click(radioFor('CAR-000001'))
+
+    // Row authority and write readiness are separate layers: the candidate rows are
+    // still server data for the current query.
+    expect(radioFor('CAR-000001').checked).toBe(true)
+    expect(document.body.textContent).toContain('Seçili aday: CAR-000001')
   })
 })

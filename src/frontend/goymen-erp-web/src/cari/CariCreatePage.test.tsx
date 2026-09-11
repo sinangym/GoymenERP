@@ -26,6 +26,7 @@ import {
   held,
   installFetch,
   json,
+  jsonWithoutAck,
   linkedView,
   mutationView,
   problem,
@@ -698,5 +699,156 @@ describe('C-02 dirty form and company switch (G-002 check 9)', () => {
     expect(fetchLog.creates()).toHaveLength(1)
     expect(fetchLog.creates().filter((c) => c.companyId === B_ID)).toHaveLength(0)
     expect(submitButton().disabled).toBe(false)
+  })
+})
+
+describe('C-02 the write gate in the real form (spec §4.2, §4.5)', () => {
+  /** An OLD node: the probe read succeeds and is valid, but never acknowledges. */
+  function silentServer() {
+    return installFetch({
+      counterparties: () =>
+        jsonWithoutAck({ items: [], nextCursor: null, hasMore: false, totalCount: null, countScope: null }),
+    })
+  }
+
+  it('an unacknowledged server closes the form and NO create is sent', async () => {
+    const user = userEvent.setup()
+    const fetchLog = silentServer()
+    renderAt('/cari/yeni')
+    await screen.findByText('Uyumlu istemci gerekli')
+
+    await fillValid(user)
+    expect(submitButton().disabled).toBe(true)
+    await user.click(submitButton())
+    await settle(150)
+    expect(fetchLog.creates()).toHaveLength(0)
+  })
+
+  it('a probe 403 is a capability failure, not a version problem', async () => {
+    // Every probe failure used to read as "incompatible client". A 403 is an
+    // authorization fact and must reach the central boundary, not be relabelled.
+    installFetch({ counterparties: () => problem(403, PROBLEM_CODE.forbidden) })
+    renderAt('/cari/yeni')
+
+    // The central boundary re-fences the capability, so the route itself closes —
+    // non-disclosingly, the same way it would for a screen that does not exist.
+    // Before this the probe's 403 was stored as a query result and the screen said
+    // "incompatible client" while the old shell authority stayed standing.
+    await findStateBlock('not-found')
+    expect(screen.queryByText('Uyumlu istemci gerekli')).toBeNull()
+  })
+
+  it('a probe 503 shows the service failure, not a compatibility verdict', async () => {
+    installFetch({ counterparties: () => problem(503, PROBLEM_CODE.serviceUnavailable) })
+    renderAt('/cari/yeni')
+
+    await findStateBlock('service-unavailable')
+    expect(screen.queryByText('Uyumlu istemci gerekli')).toBeNull()
+  })
+
+  it('a probe 401 ends the session instead of blaming the client version', async () => {
+    installFetch({ counterparties: () => problem(401, PROBLEM_CODE.authenticationRequired) })
+    renderAt('/cari/yeni')
+
+    // The central boundary owns this: the shell reports the ended session.
+    await screen.findByText(/Oturum sonlandı/)
+    expect(screen.queryByText('Uyumlu istemci gerekli')).toBeNull()
+  })
+
+  it('an unacknowledged 201 keeps the attempt in the screen — the recovery never says "reload"', async () => {
+    const user = userEvent.setup()
+    installFetch({ create: () => jsonWithoutAck(mutationView(), 201) })
+    renderAt('/cari/yeni')
+    await screen.findByLabelText('Taraf türü')
+    await fillValid(user)
+    await user.click(submitButton())
+
+    // Unknown, not created — and the recovery offered is the same-key retry that
+    // lives on this screen. Telling the user to reload would drop the attempt and
+    // its key out of memory, and the next submit could mint a new one.
+    const notice = await screen.findByText(/Sunucu bu işlemi onaylamadı/)
+    expect(notice.textContent).not.toMatch(/yenile/i)
+    expect(screen.getByRole('button', { name: 'Aynı işlemi yeniden dene' })).toBeTruthy()
+  })
+})
+
+describe('C-02 an unknown attempt is re-validated before it is re-sent (spec §4.2, §4.5)', () => {
+  async function unknownAttempt(user: ReturnType<typeof userEvent.setup>, config = {}) {
+    const fetchLog = installFetch({ create: () => jsonWithoutAck(mutationView(), 201), ...config })
+    renderAt('/cari/yeni')
+    await screen.findByLabelText('Taraf türü')
+    await fillValid(user)
+    await user.click(submitButton())
+    await screen.findByText(/Sunucu bu işlemi onaylamadı/)
+    return fetchLog
+  }
+
+  it('re-reads before the second POST — a cached grant is not enough', async () => {
+    const user = userEvent.setup()
+    const fetchLog = await unknownAttempt(user)
+    const readsBefore = fetchLog.calls.filter((c) => c.method === 'GET' && /\/counterparties(\?|$)/.test(c.url)).length
+
+    await user.click(screen.getByRole('button', { name: 'Aynı işlemi yeniden dene' }))
+    await waitFor(() => expect(fetchLog.creates()).toHaveLength(2))
+
+    // A command failure does not revoke readiness, so without this the retry would
+    // ride the grant the FIRST send earned and post to a server nobody re-checked.
+    const readsAfter = fetchLog.calls.filter((c) => c.method === 'GET' && /\/counterparties(\?|$)/.test(c.url)).length
+    expect(readsAfter).toBeGreaterThan(readsBefore)
+    // Same attempt, same key.
+    expect(fetchLog.creates()[1].headers['Idempotency-Key']).toBe(fetchLog.creates()[0].headers['Idempotency-Key'])
+  })
+
+  it('sends NOTHING when the re-validation fails, and keeps the attempt', async () => {
+    const user = userEvent.setup()
+    let silent = false
+    const fetchLog = await unknownAttempt(user, {
+      counterparties: () =>
+        silent
+          ? jsonWithoutAck({ items: [], nextCursor: null, hasMore: false, totalCount: null, countScope: null })
+          : json({ items: [], nextCursor: null, hasMore: false, totalCount: null, countScope: null }),
+    })
+
+    // The server stops acknowledging between the first send and the retry.
+    silent = true
+    await user.click(screen.getByRole('button', { name: 'Aynı işlemi yeniden dene' }))
+    await settle(200)
+
+    expect(fetchLog.creates()).toHaveLength(1)
+    // The uncertainty — and the key that belongs to it — survive the failed check.
+    expect(screen.getByText(/Sunucu bu işlemi onaylamadı/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Aynı işlemi yeniden dene' })).toBeTruthy()
+  })
+
+  it('a compatibility 409 on the retry does NOT let a new key be minted', async () => {
+    const user = userEvent.setup()
+    let firstSend = true
+    const fetchLog = installFetch({
+      create: () => {
+        if (firstSend) {
+          firstSend = false
+          return jsonWithoutAck(mutationView(), 201)
+        }
+        return problem(409, 'client_contract_unsupported')
+      },
+    })
+    renderAt('/cari/yeni')
+    await screen.findByLabelText('Taraf türü')
+    await fillValid(user)
+    await user.click(submitButton())
+    await screen.findByText(/Sunucu bu işlemi onaylamadı/)
+
+    await user.click(screen.getByRole('button', { name: 'Aynı işlemi yeniden dene' }))
+    await waitFor(() => expect(fetchLog.creates()).toHaveLength(2))
+
+    /**
+     * The 409 describes the SECOND request. The first may already have been written,
+     * so the attempt stays unresolved under its own key: there is no "Anladım" that
+     * clears it to idle and lets the same payload go out under a new one.
+     */
+    await settle(150)
+    expect(screen.getByText(/Sunucu bu işlemi onaylamadı/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Anladım' })).toBeNull()
+    expect(fetchLog.creates()[1].headers['Idempotency-Key']).toBe(fetchLog.creates()[0].headers['Idempotency-Key'])
   })
 })

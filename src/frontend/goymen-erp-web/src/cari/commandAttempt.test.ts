@@ -182,7 +182,14 @@ describe('abandoned attempt — the unresolved identity is kept (§4.3, C02-AC-0
   it('the abandoned snapshot can still be retried under its OWN key and completes exactly once', () => {
     const abandoned = abandonAttempt(settleAttempt(beginAttempt<Payload, string>(SNAPSHOT), { type: 'offline' }))
     const retried = retryAttempt(abandoned)
-    expect(retried).toEqual({ phase: 'submitting', snapshot: SNAPSHOT, resends: 1 })
+    // The re-send carries the original reason so a rejection of THIS request cannot
+    // be mistaken for an answer about the first one.
+    expect(retried).toEqual({
+      phase: 'submitting',
+      snapshot: SNAPSHOT,
+      resends: 1,
+      unresolvedSince: 'offline',
+    })
     expect(retried.phase === 'submitting' && retried.snapshot.key).toBe(SNAPSHOT.key)
     const completed = settleAttempt(retried, created(true))
     expect(completed).toEqual({ phase: 'completed', snapshot: SNAPSHOT, result: 'record', replayed: true })
@@ -219,5 +226,65 @@ describe('abandoned attempt — the unresolved identity is kept (§4.3, C02-AC-0
     expect(samePayload(null, null)).toBe(true)
     expect(samePayload(null, {})).toBe(false)
     expect(samePayload('3', 3)).toBe(false)
+  })
+})
+
+describe('a later rejection cannot answer an earlier unknown (spec §4.5)', () => {
+  const contractRejection = { type: 'http', status: 409, code: 'client_contract_unsupported', body: null } as const
+
+  function unknownThenRetry() {
+    // First send processed, response lost.
+    const unknown = settleAttempt(beginAttempt<Payload, string>(SNAPSHOT), { type: 'network-error' })
+    expect(unknown.phase).toBe('unknown')
+    return retryAttempt(unknown)
+  }
+
+  it('a compatibility 409 on the RE-SEND leaves the attempt unresolved', () => {
+    // The 409 describes the second request. The first may already have been
+    // written, and closing the attempt here would let the same payload go out
+    // again under a NEW key.
+    const settled = settleAttempt(unknownThenRetry(), contractRejection)
+    expect(settled.phase).toBe('unknown')
+    expect(settled.phase === 'unknown' && settled.snapshot.key).toBe(SNAPSHOT.key)
+    expect(settled.phase === 'unknown' && settled.reason).toBe('network-error')
+  })
+
+  it('a local contract-not-ready on the RE-SEND leaves it unresolved too', () => {
+    // Nothing left the client this time — which says nothing at all about the
+    // request that did.
+    const settled = settleAttempt(unknownThenRetry(), { type: 'contract-not-ready' })
+    expect(settled.phase).toBe('unknown')
+    expect(settled.phase === 'unknown' && settled.snapshot.key).toBe(SNAPSHOT.key)
+  })
+
+  it('an acknowledged 500, a timeout and a malformed body on the RE-SEND all leave it unresolved', () => {
+    for (const outcome of [
+      { type: 'http', status: 500, code: null, body: null },
+      { type: 'network-error' },
+      { type: 'malformed' },
+      { type: 'unacknowledged', status: 201 },
+    ] as const) {
+      const settled = settleAttempt(unknownThenRetry(), outcome)
+      expect(settled.phase, JSON.stringify(outcome)).toBe('unknown')
+      expect(settled.phase === 'unknown' && settled.snapshot.key).toBe(SNAPSHOT.key)
+    }
+  })
+
+  it('only a validated definite result closes it — and a replay counts', () => {
+    const settled = settleAttempt(unknownThenRetry(), created(true))
+    expect(settled.phase).toBe('completed')
+    expect(settled.phase === 'completed' && settled.replayed).toBe(true)
+  })
+
+  it('a definite failure on a FIRST send is still a failure', () => {
+    // The rule is about re-sends. A first attempt refused before anything happened
+    // has no earlier uncertainty to protect.
+    const settled = settleAttempt(beginAttempt<Payload, string>(SNAPSHOT), {
+      type: 'http',
+      status: 400,
+      code: 'validation_failed',
+      body: null,
+    })
+    expect(settled.phase).toBe('failed')
   })
 })

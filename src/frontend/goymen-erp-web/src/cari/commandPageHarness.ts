@@ -158,6 +158,13 @@ export interface HarnessConfig {
   create?: Responder
   link?: Responder
   candidates?: Responder
+  /**
+   * The plain list read — which is also the create form's compatibility probe.
+   * Configurable because "what the probe found" is now a behaviour worth testing:
+   * an old node, a 403, a 503 and a malformed body must each produce a different
+   * screen, not one shared "incompatible client" verdict.
+   */
+  counterparties?: Responder
   detail?: Responder
 }
 
@@ -229,7 +236,10 @@ export function installFetch(config: HarnessConfig = {}) {
         return (config.detail ?? (() => json(mutationView())))(call)
       }
       if (url.includes('/counterparties')) {
-        return json({ items: [], nextCursor: null, hasMore: false, totalCount: null, countScope: null })
+        return (
+          config.counterparties ??
+          (() => json({ items: [], nextCursor: null, hasMore: false, totalCount: null, countScope: null }))
+        )(call)
       }
       throw new Error(`unexpected fetch: ${method} ${url}`)
     }),

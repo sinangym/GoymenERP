@@ -37,7 +37,7 @@ import { CARI_LINK_TEXT as TEXT, CARI_KIND_LABEL, CARI_ROLE_LABEL } from './cari
 import { classifyOutcome, type RemoteViewState, type ViewOutcome } from '../shell/uiState'
 import { useShellDispatch, useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
-import { API_BASE } from './clientContract'
+import { API_BASE, isCommandContractReady } from './clientContract'
 import { CAPABILITY } from '../shell/capabilities'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { useCompanyDirectory } from '../shell/useShellOrchestrator'
@@ -129,8 +129,21 @@ function CariLinkWorkspace({ namespace }: { readonly namespace: string | null })
 
   const phase = attempt.state.phase
   const frozen = isAttemptFrozen(attempt.state)
-  // A new attempt may start from `idle` or from an ABANDONED (unfrozen) one.
-  const canSubmit = canBeginAttempt(attempt.state)
+  /**
+   * A new attempt may start from `idle` or from an ABANDONED (unfrozen) one — and
+   * only while compatibility is currently proven for this target company.
+   *
+   * The transport refuses a write without readiness either way, but a button that
+   * stays enabled invites a submit that cannot go and burns an attempt to say so.
+   * Readiness can lapse under the user: a candidate read that came back valid but
+   * UNACKNOWLEDGED never opened the gate, and a later continuation that failed on
+   * the network closes it. The rows and the selection survive both — they are still
+   * server data — so only the button changes.
+   */
+  const writeReady = isCommandContractReady(
+    namespace === null ? null : { origin: API_BASE, namespace },
+  )
+  const canSubmit = canBeginAttempt(attempt.state) && writeReady
   const completed = attempt.state.phase === 'completed' ? attempt.state : null
   const failure = attempt.state.phase === 'failed' ? attempt.state.failure : null
   const failedSnapshot = attempt.state.phase === 'failed' ? attempt.state.snapshot : null
@@ -701,7 +714,14 @@ function CariLinkWorkspace({ namespace }: { readonly namespace: string | null })
 
         <CommandAttemptNotice
           state={attempt.state}
-          onRetry={attempt.retry}
+          onRetry={() =>
+            attempt.retry(async () => {
+              await query.refetch()
+              return isCommandContractReady(
+                namespace === null ? null : { origin: API_BASE, namespace },
+              )
+            })
+          }
           onAbandon={attempt.abandon}
           onAcknowledge={attempt.abandon}
           repeatsUnresolved={repeatsUnresolved}
@@ -718,6 +738,16 @@ function CariLinkWorkspace({ namespace }: { readonly namespace: string | null })
         />
 
         <div className={styles.actions}>
+          {/* A disabled control has to say why (UX review §8.7/64, §12/10): the gate is
+              closed because compatibility is not currently proven here, which is a fact
+              about the connection, not about the selection the user made. */}
+          {!writeReady ? (
+            <p id="cari-link-not-ready" className={styles.notReady} role="status">
+              Bu şirkette yazma uyumu şu an doğrulanmadı. Aday listesini yeniden okuyun;
+              seçiminiz korunur.
+            </p>
+          ) : null}
+
           <button
             type="submit"
             className={styles.primary}

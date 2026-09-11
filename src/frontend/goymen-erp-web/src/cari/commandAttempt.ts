@@ -70,7 +70,17 @@ export interface AttemptSnapshot<P> {
 
 export type AttemptState<P, R> =
   | { readonly phase: 'idle' }
-  | { readonly phase: 'submitting'; readonly snapshot: AttemptSnapshot<P>; readonly resends: number }
+  | {
+      readonly phase: 'submitting'
+      readonly snapshot: AttemptSnapshot<P>
+      readonly resends: number
+      /**
+       * Set when this send is a RE-send of an attempt whose outcome was already
+       * unknown. Carrying the original reason through the request is what lets a
+       * rejection of the re-send leave the first send's uncertainty standing.
+       */
+      readonly unresolvedSince?: AttemptUnknownReason
+    }
   | {
       readonly phase: 'unknown'
       readonly snapshot: AttemptSnapshot<P>
@@ -197,7 +207,17 @@ export function beginAttempt<P, R>(snapshot: AttemptSnapshot<P>): AttemptState<P
  */
 export function retryAttempt<P, R>(state: AttemptState<P, R>): AttemptState<P, R> {
   if (state.phase !== 'unknown' && state.phase !== 'abandoned') return state
-  return { phase: 'submitting', snapshot: state.snapshot, resends: state.resends + 1 }
+  /**
+   * The re-send remembers WHY the attempt was unresolved, because that fact has to
+   * outlive the new request. A retry can only ever add information: if it does not
+   * come back with a definite, validated result, what we knew before still stands.
+   */
+  return {
+    phase: 'submitting',
+    snapshot: state.snapshot,
+    resends: state.resends + 1,
+    unresolvedSince: state.reason,
+  }
 }
 
 /**
@@ -277,6 +297,29 @@ export function settleAttempt<P, R>(state: AttemptState<P, R>, outcome: CommandO
     case 'unknown':
       return { phase: 'unknown', snapshot: state.snapshot, reason: resolution.reason, resends: state.resends }
     case 'failed':
+      /**
+       * A REJECTION OF THE RE-SEND DOES NOT ANSWER THE FIRST SEND.
+       *
+       * The dangerous sequence is: the first POST is processed, its response is lost
+       * (unknown) → the user retries under the same key → the retry is refused with a
+       * compatibility 409, or never leaves the client at all because readiness has
+       * since closed. Both say something about the SECOND request. Neither says the
+       * first one did not happen.
+       *
+       * Before this, that rejection became `failed`, "Anladım" cleared it to `idle`,
+       * and the same payload could then be submitted under a NEW key — duplicating a
+       * record the server may already hold. The attempt therefore stays unresolved,
+       * with its original reason, key, path, Party, context and normalized payload
+       * intact. Only a validated definite result or its replay closes it (§4.5).
+       */
+      if (state.unresolvedSince !== undefined) {
+        return {
+          phase: 'unknown',
+          snapshot: state.snapshot,
+          reason: state.unresolvedSince,
+          resends: state.resends,
+        }
+      }
       return { phase: 'failed', snapshot: state.snapshot, failure: resolution.failure }
     default:
       return state
