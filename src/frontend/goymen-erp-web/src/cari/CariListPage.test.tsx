@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient } from '@tanstack/react-query'
 import { RouterProvider, createMemoryRouter } from 'react-router'
@@ -8,6 +8,7 @@ import { shellRoutes } from '../shell/router'
 import { SHELL_CAPABILITY_CONTRACT_VERSION } from '../shell/api'
 import { CAPABILITY } from '../shell/capabilities'
 import { PARTY_ROLE_FLAG } from './contract'
+import { resetCariListView } from './listViewState'
 
 const A_ID = 'aaaaaaaa-0000-0000-0000-000000000001'
 const B_ID = 'bbbbbbbb-0000-0000-0000-000000000002'
@@ -69,12 +70,12 @@ interface Config {
 }
 
 function installFetch(config: Config = {}) {
-  const calls: { url: string; companyId: string | null }[] = []
+  const calls: { url: string; companyId: string | null; contract: string | null }[] = []
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString()
-    const companyId =
-      (init?.headers as Record<string, string> | undefined)?.['X-Company-Id'] ?? null
-    calls.push({ url, companyId })
+    const sent = init?.headers as Record<string, string> | undefined
+    const companyId = sent?.['X-Company-Id'] ?? null
+    calls.push({ url, companyId, contract: sent?.['X-ERP-Counterparty-Contract'] ?? null })
     if (url.includes('/identity/me')) return json(IDENTITY)
     if (url.includes('/organization/companies')) return json(DIRECTORY)
     if (url.includes('/shell/capabilities')) {
@@ -124,12 +125,30 @@ function renderAt(path: string) {
   return queryClient
 }
 
+/** Same render, but hands back the router so a test can leave the list and come back. */
+function renderRouterAt(path: string) {
+  const router = createMemoryRouter(shellRoutes, { initialEntries: [path] })
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  })
+  render(
+    <ShellProvider queryClient={queryClient}>
+      <RouterProvider router={router} />
+    </ShellProvider>,
+  )
+  return router
+}
+
 beforeEach(() => {
   try {
     window.localStorage.clear()
   } catch {
     // ignore
   }
+  // The remembered list view is module state — it outlives a render on purpose, which
+  // is exactly why it has to be cleared between cases. Without this a search typed in
+  // one test is restored into the next one.
+  resetCariListView()
   vi.stubGlobal('navigator', { onLine: true })
 })
 afterEach(() => {
@@ -523,13 +542,16 @@ describe('C-01 filter contract (Codex/ChatGPT #147 P1-4)', () => {
     const { calls } = installFetch()
     renderAt('/cari')
     await screen.findByRole('row', { name: /C-0001/ })
+    // The legacy markers live one fold in now (ILK_DILIM §4.1) — reach them the
+    // way a user does.
+    await userEvent.click(screen.getByText('Geçmiş sınıflandırma'))
 
     // One role: `any` and `all` are the same query, so no control is offered.
     await userEvent.click(screen.getByRole('checkbox', { name: 'Müşteri' }))
-    expect(screen.queryByLabelText('Rol eşleşmesi')).toBeNull()
+    expect(screen.queryByLabelText('İşaret eşleşmesi')).toBeNull()
 
     await userEvent.click(screen.getByRole('checkbox', { name: 'Tedarikçi' }))
-    await userEvent.selectOptions(screen.getByLabelText('Rol eşleşmesi'), 'all')
+    await userEvent.selectOptions(screen.getByLabelText('İşaret eşleşmesi'), 'all')
 
     await waitFor(() =>
       expect(
@@ -543,12 +565,15 @@ describe('C-01 filter contract (Codex/ChatGPT #147 P1-4)', () => {
     )
   })
 
-  it('never asks for a count it will not label, so no raw scope token can reach the UI', async () => {
+  it('asks for the count it can label, and never shows the raw scope token', async () => {
     const { calls } = installFetch()
     renderAt('/cari')
     await screen.findByRole('row', { name: /C-0001/ })
-    // includeCount defaults to false; the decoder rejects a count we did not request.
-    expect(calls.every((c) => !c.url.includes('includeCount=true'))).toBe(true)
+    // The count is requested now that the screen has a sentence for what it covers
+    // (§8.7/65). The decoder still binds the two directions: a count that arrives
+    // unrequested is malformed, and so is one that arrives without its scope.
+    expect(calls.some((c) => c.url.includes('includeCount=true'))).toBe(true)
+    // The machine token itself stays out of the UI.
     expect(screen.queryByText(/filtered-authorized-visible-parties/)).toBeNull()
   })
 })
@@ -1026,4 +1051,933 @@ describe('C-01 → C-03 navigation (spec §2.1)', () => {
     await findStateBlock('not-found')
     expect(document.querySelectorAll('tbody a')).toHaveLength(0)
   })
+})
+
+describe('C-01 the view survives a visit to a record (UX-CARI-001 #1)', () => {
+  /** The C-03 shape: `version` is an opaque decimal STRING here, unlike the list. */
+  function detailBody() {
+    return {
+      id: PARTY_1,
+      code: 'C-0001',
+      kind: 1,
+      legalName: 'Alfa Metal Ltd. Şti.',
+      tradeName: 'Alfa',
+      isActive: true,
+      version: '1',
+      companyAccounts: [
+        {
+          id: ACC_1,
+          companyId: A_ID,
+          roles: PARTY_ROLE_FLAG.Customer,
+          isActive: true,
+          version: '1',
+        },
+      ],
+    }
+  }
+
+  /** List calls only — the detail read hits the same prefix with the id in the path. */
+  function listCalls(calls: readonly { url: string; companyId: string | null }[]) {
+    return calls.filter((c) => c.url.includes('/counterparties') && !c.url.includes(PARTY_1))
+  }
+
+  it('restores the search and filters, and RE-READS the rows rather than restoring them', async () => {
+    const { calls } = installFetch({
+      counterparties: (url) => (url.includes(PARTY_1) ? json(detailBody()) : json(page())),
+    })
+    const router = renderRouterAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    await userEvent.type(screen.getByRole('searchbox'), 'alfa')
+    await userEvent.selectOptions(screen.getByLabelText('Şirket hesabı durumu'), 'inactive')
+    await waitFor(() =>
+      expect(
+        listCalls(calls).some(
+          (c) => c.url.includes('q=alfa') && c.url.includes('accountState=inactive'),
+        ),
+      ).toBe(true),
+    )
+
+    // Open the record the way a user does, from the row.
+    const row = await screen.findByRole('row', { name: /C-0001/ })
+    await userEvent.click(within(row).getByRole('link'))
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/cari/${PARTY_1}`))
+    expect(screen.queryByRole('searchbox')).toBeNull()
+
+    const before = listCalls(calls).length
+    await act(async () => {
+      await router.navigate(-1)
+    })
+
+    // Back on the list: what the user asked for is still what the screen is asking.
+    const searchbox = await screen.findByRole('searchbox', undefined, { timeout: 5000 })
+    expect((searchbox as HTMLInputElement).value).toBe('alfa')
+    expect((screen.getByLabelText('Şirket hesabı durumu') as HTMLSelectElement).value).toBe(
+      'inactive',
+    )
+
+    // And the ROWS were fetched again. This is the half that keeps the entry gate
+    // meaningful (#146/#148): a revisit re-authorizes and re-reads, so remembering
+    // the query cannot become a way to repaint records read under an older grant.
+    await waitFor(() => expect(listCalls(calls).length).toBeGreaterThan(before))
+    const latest = listCalls(calls).at(-1)
+    expect(latest?.url).toContain('q=alfa')
+    expect(latest?.url).toContain('accountState=inactive')
+    expect(latest?.companyId).toBe(A_ID)
+  })
+
+  it('restores the sort as well, so the order is not silently reset', async () => {
+    const { calls } = installFetch({
+      counterparties: (url) => (url.includes(PARTY_1) ? json(detailBody()) : json(page())),
+    })
+    const router = renderRouterAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    const codeHeader = screen.getByRole('columnheader', { name: /Kod/ })
+    await userEvent.click(within(codeHeader).getByRole('button'))
+    await waitFor(() => expect(codeHeader.getAttribute('aria-sort')).toBe('descending'))
+
+    await userEvent.click(within(await screen.findByRole('row', { name: /C-0001/ })).getByRole('link'))
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/cari/${PARTY_1}`))
+    const before = listCalls(calls).length
+    await act(async () => {
+      await router.navigate(-1)
+    })
+
+    await screen.findByRole('searchbox', undefined, { timeout: 5000 })
+    expect(
+      screen.getByRole('columnheader', { name: /Kod/ }).getAttribute('aria-sort'),
+    ).toBe('descending')
+    await waitFor(() => expect(listCalls(calls).length).toBeGreaterThan(before))
+    expect(listCalls(calls).at(-1)?.url).toContain('direction=desc')
+  })
+})
+
+describe('C-01 what narrowed the list, and the way out (UX-CARI-001 #2)', () => {
+  it('shows no summary and no clear control on an untouched screen', async () => {
+    installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+    // A control that would do nothing is worse than absent: it implies state exists.
+    expect(screen.queryByRole('button', { name: /Filtreleri temizle/i })).toBeNull()
+    expect(screen.queryByText(/Etkin filtreler/i)).toBeNull()
+  })
+
+  it('names each active filter, so an empty list explains itself', async () => {
+    installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    await userEvent.type(screen.getByRole('searchbox'), 'alfa')
+    await userEvent.click(screen.getByText('Geçmiş sınıflandırma'))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Müşteri' }))
+    await userEvent.selectOptions(screen.getByLabelText('Taraf durumu'), 'inactive')
+
+    const summary = await screen.findByText(/Etkin filtreler/i)
+    const row = summary.parentElement as HTMLElement
+    expect(within(row).getByText('Arama: “alfa”')).toBeTruthy()
+    // Named as history: the chip is often the only place the applied role filter
+    // is visible at all.
+    expect(within(row).getByText('Geçmiş rol: Müşteri')).toBeTruthy()
+    expect(within(row).getByText('Taraf durumu: Pasif')).toBeTruthy()
+    // The account-state filter is untouched, so naming it would make the default
+    // look like something the user chose.
+    expect(within(row).queryByText(/Şirket hesabı durumu/)).toBeNull()
+  })
+
+  it('clears every filter in one action and asks the server again without them', async () => {
+    const { calls } = installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    await userEvent.type(screen.getByRole('searchbox'), 'alfa')
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Müşteri' }))
+    await userEvent.selectOptions(screen.getByLabelText('Şirket hesabı durumu'), 'inactive')
+    await userEvent.selectOptions(screen.getByLabelText('Taraf durumu'), 'all')
+
+    await userEvent.click(screen.getByRole('button', { name: /Filtreleri temizle/i }))
+
+    expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('')
+    expect((screen.getByRole('checkbox', { name: 'Müşteri' }) as HTMLInputElement).checked).toBe(
+      false,
+    )
+    expect((screen.getByLabelText('Şirket hesabı durumu') as HTMLSelectElement).value).toBe('all')
+    expect((screen.getByLabelText('Taraf durumu') as HTMLSelectElement).value).toBe('active')
+    expect(screen.queryByRole('button', { name: /Filtreleri temizle/i })).toBeNull()
+
+    await waitFor(() => {
+      const latest = calls.filter((c) => c.url.includes('/counterparties')).at(-1)
+      expect(latest?.url).not.toContain('q=alfa')
+      expect(latest?.url).not.toContain('role=Customer')
+      expect(latest?.url).toContain('accountState=all')
+      expect(latest?.url).toContain('partyState=active')
+    })
+  })
+
+  it('clearing filters leaves the chosen sort alone — order is not a filter', async () => {
+    const { calls } = installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    const codeHeader = screen.getByRole('columnheader', { name: /Kod/ })
+    await userEvent.click(within(codeHeader).getByRole('button'))
+    await waitFor(() => expect(codeHeader.getAttribute('aria-sort')).toBe('descending'))
+    await userEvent.type(screen.getByRole('searchbox'), 'alfa')
+
+    await userEvent.click(screen.getByRole('button', { name: /Filtreleri temizle/i }))
+
+    expect(codeHeader.getAttribute('aria-sort')).toBe('descending')
+    await waitFor(() =>
+      expect(calls.filter((c) => c.url.includes('/counterparties')).at(-1)?.url).toContain(
+        'direction=desc',
+      ),
+    )
+  })
+
+  it('clearing moves focus to the search box instead of dropping it on <body>', async () => {
+    installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+    await userEvent.type(screen.getByRole('searchbox'), 'alfa')
+
+    await userEvent.click(screen.getByRole('button', { name: /Filtreleri temizle/i }))
+
+    // The button unmounts with the last filter it cleared. Without an explicit move
+    // a keyboard user is returned to the top of the document with no idea where.
+    expect(document.activeElement).toBe(screen.getByRole('searchbox'))
+  })
+
+  it('an empty result still being replaced is not labelled "no records"', async () => {
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let unfiltered = 0
+    installFetch({
+      counterparties: (url) => {
+        if (url.includes('q=zzz')) return json(page({ items: [] }))
+        unfiltered += 1
+        // First unfiltered read: the company genuinely has nothing yet.
+        if (unfiltered === 1) return json(page({ items: [] }))
+        // The read issued by "clear filters" — held open so its in-flight window
+        // is observable.
+        return gate.then(() => json(page())) as unknown as Response
+      },
+    })
+    renderAt('/cari')
+    expect(await findStateBlock('empty-no-data')).toBeTruthy()
+
+    await userEvent.type(screen.getByRole('searchbox'), 'zzz')
+    await waitFor(() => expect(queryStateBlock('empty-filtered')).not.toBeNull())
+
+    await userEvent.click(screen.getByRole('button', { name: /Filtreleri temizle/i }))
+
+    // `keepPreviousData` still holds the FILTERED empty page. Labelling it by the
+    // filters now on screen said "Kayıt yok" over a company that has records.
+    await waitFor(() => expect(queryStateBlock('initial-loading')).not.toBeNull())
+    expect(queryStateBlock('empty-no-data')).toBeNull()
+    expect(queryStateBlock('empty-filtered')).toBeNull()
+
+    release()
+    await waitFor(() => expect(screen.getByRole('row', { name: /C-0001/ })).toBeTruthy())
+  })
+})
+
+describe('C-01 the role filter is a LEGACY surface (ILK_DILIM §4.1, §7)', () => {
+  /** The C-03 shape: `version` is an opaque decimal STRING here, unlike the list. */
+  function detailBody() {
+    return {
+      id: PARTY_1,
+      code: 'C-0001',
+      kind: 1,
+      legalName: 'Alfa Metal Ltd. Şti.',
+      tradeName: 'Alfa',
+      isActive: true,
+      version: '1',
+      companyAccounts: [
+        { id: ACC_1, companyId: A_ID, roles: PARTY_ROLE_FLAG.Customer, isActive: true, version: '1' },
+      ],
+    }
+  }
+
+  /**
+   * Addressed through its own summary. `<details>` has no stable mapped role across
+   * the versions in play, and guessing one would make this suite assert about the
+   * accessibility mapping rather than about the behaviour it is here to pin.
+   */
+  function legacyBlock() {
+    return screen.getByText('Geçmiş sınıflandırma').closest('details') as HTMLDetailsElement
+  }
+
+  it('is collapsed by default, so it is not offered as the way to find a counterparty', async () => {
+    installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    // The decision removed the mandatory commercial role. A role filter sitting in
+    // the first row of controls, equal to search, teaches the operator that the
+    // classification is still how you find a customer — the exact precondition
+    // that was removed.
+    expect(legacyBlock().open).toBe(false)
+  })
+
+  it('says the markers are historical rather than the current work direction', async () => {
+    installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    await userEvent.click(screen.getByText('Geçmiş sınıflandırma'))
+    expect(legacyBlock().open).toBe(true)
+    expect(within(legacyBlock()).getByText(/eski kayıtlardan gelir/i)).toBeTruthy()
+    // And it warns about the one effect that is easy to miss: an applied role
+    // filter drops every record that carries no classification at all.
+    expect(within(legacyBlock()).getByText(/ticari rolü olmayan cariler/i)).toBeTruthy()
+  })
+
+  it('names an applied role filter as a PAST classification in the summary', async () => {
+    installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    await userEvent.click(screen.getByText('Geçmiş sınıflandırma'))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Müşteri' }))
+
+    const summary = await screen.findByText(/Etkin filtreler/i)
+    expect(within(summary.parentElement as HTMLElement).getByText('Geçmiş rol: Müşteri')).toBeTruthy()
+  })
+
+  it('re-opens itself when a restored view carries a role filter', async () => {
+    installFetch({
+      counterparties: (url) => (url.includes(PARTY_1) ? json(detailBody()) : json(page())),
+    })
+    const router = renderRouterAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    await userEvent.click(screen.getByText('Geçmiş sınıflandırma'))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Müşteri' }))
+
+    await userEvent.click(
+      within(await screen.findByRole('row', { name: /C-0001/ })).getByRole('link'),
+    )
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/cari/${PARTY_1}`))
+    await act(async () => {
+      await router.navigate(-1)
+    })
+    await screen.findByRole('searchbox', undefined, { timeout: 5000 })
+
+    // A filter that is APPLIED but folded away is the §4.1 failure exactly: the
+    // list looks like every counterparty while it is silently missing the ones
+    // that carry no classification. Restoring the query has to restore its
+    // visibility with it.
+    expect(legacyBlock().open).toBe(true)
+    expect((screen.getByRole('checkbox', { name: 'Müşteri' }) as HTMLInputElement).checked).toBe(
+      true,
+    )
+  })
+
+  it('is collapsed again after the filters are cleared', async () => {
+    installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    await userEvent.click(screen.getByText('Geçmiş sınıflandırma'))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Müşteri' }))
+    await userEvent.click(screen.getByRole('button', { name: /Filtreleri temizle/i }))
+
+    expect((screen.getByRole('checkbox', { name: 'Müşteri' }) as HTMLInputElement).checked).toBe(
+      false,
+    )
+    expect(legacyBlock().open).toBe(false)
+  })
+})
+
+describe('C-01 a counterparty with no commercial role (ILK_DILIM §7)', () => {
+  it('is an ordinary row — it does not reject the page it arrives in', async () => {
+    installFetch({
+      counterparties: () =>
+        json(
+          page({
+            items: [
+              party({
+                companyAccounts: [
+                  { id: ACC_1, companyId: A_ID, roles: 0, isActive: true, version: 1 },
+                ],
+              }),
+            ],
+          }),
+        ),
+    })
+    renderAt('/cari')
+
+    // Before this, one role-less record made the WHOLE page malformed: the operator
+    // saw an error block instead of a list.
+    const row = await screen.findByRole('row', { name: /C-0001/ })
+    expect(queryStateBlock('malformed-response')).toBeNull()
+    expect(within(row).getByText('Ticari rol yok')).toBeTruthy()
+  })
+
+  it('says the absence rather than leaving the cell blank', async () => {
+    installFetch({
+      counterparties: () =>
+        json(
+          page({
+            items: [
+              party({
+                companyAccounts: [
+                  { id: ACC_1, companyId: A_ID, roles: 0, isActive: true, version: 1 },
+                ],
+              }),
+            ],
+          }),
+        ),
+    })
+    renderAt('/cari')
+
+    const row = await screen.findByRole('row', { name: /C-0001/ })
+    const cell = within(row).getByText('Ticari rol yok')
+    expect(cell.textContent?.trim()).not.toBe('')
+    // …and it is not dressed up as a defect. The record is complete.
+    expect(row.textContent).not.toMatch(/eksik|belirtilmemiş|sınıflandırılmamış|yetkisiz/i)
+    // The state columns are untouched by it: no role is not passive.
+    expect(within(row).getAllByText('Aktif').length).toBe(2)
+  })
+
+  it('a role-less account does not become passive or unauthorized', async () => {
+    installFetch({
+      counterparties: () =>
+        json(
+          page({
+            items: [
+              party({
+                isActive: true,
+                companyAccounts: [
+                  { id: ACC_1, companyId: A_ID, roles: 0, isActive: true, version: 1 },
+                ],
+              }),
+            ],
+          }),
+        ),
+    })
+    renderAt('/cari')
+
+    const row = await screen.findByRole('row', { name: /C-0001/ })
+    expect(row.getAttribute('data-inactive')).toBeNull()
+    // The link is still offered: the detail grant is what decides that, never a
+    // commercial classification.
+    expect(within(row).getByRole('link')).toBeTruthy()
+  })
+
+  it('unknown role bits are STILL malformed — one bound moved, not the rest', async () => {
+    installFetch({
+      counterparties: () =>
+        json(
+          page({
+            items: [
+              party({
+                companyAccounts: [
+                  { id: ACC_1, companyId: A_ID, roles: 16, isActive: true, version: 1 },
+                ],
+              }),
+            ],
+          }),
+        ),
+    })
+    renderAt('/cari')
+
+    expect(await findStateBlock('malformed-response')).toBeTruthy()
+  })
+})
+
+describe('C-01 page size and the meaning of the total (UX review §8.7/65)', () => {
+  function counted(total: string, over: Record<string, unknown> = {}) {
+    return page({
+      totalCount: total,
+      countScope: 'filtered-authorized-visible-parties',
+      ...over,
+    })
+  }
+
+  it('offers a controlled set of sizes and asks the server for the chosen one', async () => {
+    const { calls } = installFetch({ counterparties: () => json(counted('7')) })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    const select = screen.getByLabelText('Sayfa boyutu') as HTMLSelectElement
+    expect([...select.options].map((o) => o.value)).toEqual(['10', '25', '50', '100'])
+    expect(select.value).toBe('50')
+
+    await userEvent.selectOptions(select, '25')
+    await waitFor(() =>
+      expect(calls.filter((c) => c.url.includes('/counterparties')).at(-1)?.url).toContain(
+        'pageSize=25',
+      ),
+    )
+  })
+
+  it('says what the total counts, so the number is not read as "all counterparties"', async () => {
+    installFetch({ counterparties: () => json(counted('128')) })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    const caption = document.querySelector('caption') as HTMLElement
+    expect(caption.textContent).toContain('128 kayıt')
+    expect(caption.textContent).toContain('Filtrelenmiş, yetkili ve görünür cariler')
+    // The count and what is on screen are stated separately: the difference between
+    // them is the whole point of a cursor-paged list.
+    expect(caption.textContent).toContain('1 tanesi yüklendi')
+  })
+
+  it('carries a count past the JS safe-integer range verbatim', async () => {
+    // int64. Parsing it into a Number would round it silently; it is displayed, never
+    // computed with.
+    installFetch({ counterparties: () => json(counted('9007199254740993')) })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    expect((document.querySelector('caption') as HTMLElement).textContent).toContain(
+      '9007199254740993 kayıt',
+    )
+  })
+
+  it('restarts paging when the size changes, so two page lengths cannot interleave', async () => {
+    const { calls } = installFetch({
+      counterparties: (url) =>
+        json(
+          url.includes('cursor=')
+            ? counted('4', { items: [party({ id: PARTY_2, code: 'C-0002' })] })
+            : counted('4', { nextCursor: 'CUR-1', hasMore: true }),
+        ),
+    })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+    await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
+    await screen.findByRole('row', { name: /C-0002/ })
+
+    await userEvent.selectOptions(screen.getByLabelText('Sayfa boyutu'), '10')
+
+    await waitFor(() => {
+      const latest = calls.filter((c) => c.url.includes('/counterparties')).at(-1)
+      expect(latest?.url).toContain('pageSize=10')
+      // The cursor was issued for the OLD size; continuing it would splice a
+      // 50-row page onto a 10-row one.
+      expect(latest?.url).not.toContain('cursor=')
+    })
+  })
+
+  it('falls back to what is loaded when the server sends no count', async () => {
+    // `totalCount: null` with `countScope: null` is a legitimate response shape.
+    installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    const caption = document.querySelector('caption') as HTMLElement
+    expect(caption.textContent).toContain('1 kayıt yüklendi')
+    expect(caption.textContent).not.toContain('Filtrelenmiş, yetkili ve görünür cariler')
+  })
+
+  it('keeps the chosen size when the filters are cleared — size is not a filter', async () => {
+    const { calls } = installFetch({ counterparties: () => json(counted('3')) })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    await userEvent.selectOptions(screen.getByLabelText('Sayfa boyutu'), '100')
+    await userEvent.type(screen.getByRole('searchbox'), 'alfa')
+    await userEvent.click(screen.getByRole('button', { name: /Filtreleri temizle/i }))
+
+    expect((screen.getByLabelText('Sayfa boyutu') as HTMLSelectElement).value).toBe('100')
+    await waitFor(() =>
+      expect(calls.filter((c) => c.url.includes('/counterparties')).at(-1)?.url).toContain(
+        'pageSize=100',
+      ),
+    )
+  })
+})
+
+describe('C-01 coming back lands where you left (UX review §8.7/65 — dönüş pozisyonu)', () => {
+  function detailBody(id = PARTY_1, code = 'C-0001') {
+    return {
+      id,
+      code,
+      kind: 1,
+      legalName: 'Alfa Metal Ltd. Şti.',
+      tradeName: 'Alfa',
+      isActive: true,
+      version: '1',
+      companyAccounts: [
+        { id: ACC_1, companyId: A_ID, roles: PARTY_ROLE_FLAG.Customer, isActive: true, version: '1' },
+      ],
+    }
+  }
+
+  function twoRows() {
+    return page({
+      items: [party(), party({ id: PARTY_2, code: 'C-0002', companyAccounts: [
+        { id: ACC_2, companyId: A_ID, roles: PARTY_ROLE_FLAG.Supplier, isActive: true, version: 1 },
+      ] })],
+    })
+  }
+
+  it('returns focus to the row that was opened, not to the top of the document', async () => {
+    installFetch({
+      counterparties: (url) =>
+        url.includes(PARTY_2) ? json(detailBody(PARTY_2, 'C-0002')) : json(twoRows()),
+    })
+    const router = renderRouterAt('/cari')
+    const row = await screen.findByRole('row', { name: /C-0002/ })
+    const link = within(row).getByRole('link')
+
+    await userEvent.click(link)
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/cari/${PARTY_2}`))
+    await act(async () => {
+      await router.navigate(-1)
+    })
+    await screen.findByRole('searchbox', undefined, { timeout: 5000 })
+
+    // Without this the keyboard lands on <body> and the row being worked through is
+    // somewhere below, reachable only by walking the table again.
+    await waitFor(() => {
+      const back = within(screen.getByRole('row', { name: /C-0002/ })).getByRole('link')
+      expect(document.activeElement).toBe(back)
+    })
+  })
+
+  it('does not move focus on a first visit', async () => {
+    installFetch({ counterparties: () => json(twoRows()) })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    // A screen that moves focus for no reason the user can perceive is worse than
+    // one that never moves it.
+    const active = document.activeElement
+    expect(active === document.body || active === null).toBe(true)
+  })
+
+  it('leaves focus alone when the remembered row is no longer in the list', async () => {
+    let filtered = false
+    installFetch({
+      counterparties: (url) => {
+        if (url.includes(PARTY_2) && !url.includes('q=')) return json(detailBody(PARTY_2, 'C-0002'))
+        if (filtered) return json(page({ items: [party()] }))
+        return json(twoRows())
+      },
+    })
+    const router = renderRouterAt('/cari')
+    const row = await screen.findByRole('row', { name: /C-0002/ })
+    await userEvent.click(within(row).getByRole('link'))
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/cari/${PARTY_2}`))
+
+    // The record dropped out of the result set while the user was away.
+    filtered = true
+    await act(async () => {
+      await router.navigate(-1)
+    })
+    await screen.findByRole('searchbox', undefined, { timeout: 5000 })
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    expect(screen.queryByRole('row', { name: /C-0002/ })).toBeNull()
+    // No row to return to: nothing is focused, and nothing throws.
+    expect(document.activeElement === document.body || document.activeElement === null).toBe(true)
+  })
+})
+
+describe('C-01 the remembered view is bound to its company too', () => {
+  it('a search typed under company A is not restored under company B', async () => {
+    const { calls } = installFetch({
+      counterparties: (_url, companyId) =>
+        json(
+          companyId === A_ID
+            ? page()
+            : page({
+                items: [
+                  party({
+                    id: PARTY_2,
+                    code: 'C-0002',
+                    legalName: 'Beta Sac A.Ş.',
+                    companyAccounts: [
+                      { id: ACC_2, companyId: B_ID, roles: PARTY_ROLE_FLAG.Supplier, isActive: true, version: 1 },
+                    ],
+                  }),
+                ],
+              }),
+        ),
+    })
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    await userEvent.type(screen.getByRole('searchbox'), 'alfa')
+    await userEvent.selectOptions(screen.getByLabelText('Taraf durumu'), 'inactive')
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.includes('q=alfa') && c.companyId === A_ID)).toBe(true),
+    )
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Şirket' }), B_ID)
+    await screen.findByRole('row', { name: /C-0002/ }, { timeout: 5000 })
+
+    // A search term can name a real counterparty. Carrying it into another company
+    // would both restore a query the user never made there and state, in the search
+    // box, something they may not be entitled to know about company B.
+    expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText('Taraf durumu') as HTMLSelectElement).value).toBe('active')
+    expect(screen.queryByText(/Etkin filtreler/i)).toBeNull()
+    const forB = calls.filter((c) => c.url.includes('/counterparties') && c.companyId === B_ID)
+    expect(forB.length).toBeGreaterThan(0)
+    expect(forB.every((c) => !c.url.includes('q=alfa'))).toBe(true)
+  })
+})
+
+describe('C-01 the role query is sent only when the user asked for it', () => {
+  it('an unfiltered read carries no role and no roleMatch', async () => {
+    const { calls } = installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    // A `role` parameter the user never chose would silently drop every counterparty
+    // that carries no legacy classification — the §4.1 failure, issued by the client
+    // rather than by a control the user can see.
+    const reads = calls.filter((c) => c.url.includes('/counterparties'))
+    expect(reads.length).toBeGreaterThan(0)
+    expect(reads.every((c) => !c.url.includes('role='))).toBe(true)
+    expect(reads.every((c) => !c.url.includes('roleMatch='))).toBe(true)
+  })
+
+  it('sends roleMatch only once a second role makes the two modes differ', async () => {
+    const { calls } = installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+    await userEvent.click(screen.getByText('Geçmiş sınıflandırma'))
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Müşteri' }))
+    await waitFor(() => {
+      const latest = calls.filter((c) => c.url.includes('/counterparties')).at(-1)
+      expect(latest?.url).toContain('role=Customer')
+      expect(latest?.url).not.toContain('roleMatch=')
+    })
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Tedarikçi' }))
+    await waitFor(() => {
+      const latest = calls.filter((c) => c.url.includes('/counterparties')).at(-1)
+      expect(latest?.url).toContain('role=Customer')
+      expect(latest?.url).toContain('role=Supplier')
+      expect(latest?.url).toContain('roleMatch=any')
+    })
+  })
+})
+
+describe('C-01 returning to a record that was on a later page', () => {
+  const PARTY_3 = '33333333-3333-3333-3333-333333333333'
+  const ACC_3 = 'eeeeeeee-3333-3333-3333-333333333333'
+
+  function pageTwoParty() {
+    return party({
+      id: PARTY_3,
+      code: 'C-0003',
+      legalName: 'Gama Boru A.Ş.',
+      companyAccounts: [{ id: ACC_3, companyId: A_ID, roles: 0, isActive: true, version: 1 }],
+    })
+  }
+
+  function detailBody() {
+    return {
+      id: PARTY_3,
+      code: 'C-0003',
+      kind: 1,
+      legalName: 'Gama Boru A.Ş.',
+      tradeName: null,
+      isActive: true,
+      version: '1',
+      companyAccounts: [{ id: ACC_3, companyId: A_ID, roles: 0, isActive: true, version: '1' }],
+    }
+  }
+
+  /**
+   * Two pages, and the FIRST-page cursor changes after the visit.
+   *
+   * That difference is the whole point: `CUR-1` is the token the user's original
+   * paging minted, `CUR-2` is the one the post-return read hands back. A walk that
+   * replayed what it remembered would ask for `CUR-1`.
+   */
+  function installPaged(over: { readonly recordLeavesTheSet?: boolean } = {}) {
+    let listReads = 0
+    let cursorReads = 0
+    return installFetch({
+      counterparties: (url) => {
+        if (url.includes(PARTY_3) && !url.includes('pageSize')) return json(detailBody())
+        if (url.includes('cursor=')) {
+          cursorReads += 1
+          // The record is there when the user opens it. With `recordLeavesTheSet` it
+          // is gone by the time they come back — passivated, renamed out of the
+          // filter, re-scoped; the screen cannot tell which.
+          const gone = over.recordLeavesTheSet === true && cursorReads > 1
+          return json(page({ items: gone ? [] : [pageTwoParty()] }))
+        }
+        listReads += 1
+        // First visit hands out CUR-1; every read after that hands out CUR-2.
+        return json(page({ nextCursor: listReads === 1 ? 'CUR-1' : 'CUR-2', hasMore: true }))
+      },
+    })
+  }
+
+  async function openPageTwoRecordAndReturn(router: ReturnType<typeof renderRouterAt>) {
+    await screen.findByRole('row', { name: /C-0001/ })
+    await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
+    const row = await screen.findByRole('row', { name: /C-0003/ })
+    await userEvent.click(within(row).getByRole('link'))
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/cari/${PARTY_3}`))
+    await act(async () => {
+      await router.navigate(-1)
+    })
+    await screen.findByRole('row', { name: /C-0001/ }, { timeout: 5000 })
+  }
+
+  it('reads forward with FRESH cursors — the remembered chain is never replayed', async () => {
+    const { calls } = installPaged()
+    const router = renderRouterAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+    await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
+    const row = await screen.findByRole('row', { name: /C-0003/ })
+    await userEvent.click(within(row).getByRole('link'))
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/cari/${PARTY_3}`))
+    const before = calls.filter((c) => c.url.includes('/counterparties')).length
+    await act(async () => {
+      await router.navigate(-1)
+    })
+    await screen.findByRole('row', { name: /C-0003/ }, { timeout: 5000 })
+
+    const after = calls.filter((c) => c.url.includes('/counterparties')).slice(before)
+    const cursors = after
+      .map((c) => new URLSearchParams(c.url.split('?')[1] ?? '').get('cursor'))
+      .filter((v): v is string => v !== null)
+
+    // It DOES page forward — that is how the position comes back.
+    expect(cursors.length).toBeGreaterThan(0)
+    // …but only with the token the post-return read just handed us. Replaying CUR-1
+    // would rebuild the view out of a token minted under the PREVIOUS route entry's
+    // authorization, which is the frame the entry generation exists to close.
+    expect(cursors).not.toContain('CUR-1')
+    expect(cursors).toContain('CUR-2')
+  })
+
+  it('restores the position and says it did, when the record is within reach', async () => {
+    installPaged()
+    const router = renderRouterAt('/cari')
+    await openPageTwoRecordAndReturn(router)
+
+    const back = await screen.findByRole('row', { name: /C-0003/ }, { timeout: 5000 })
+    await waitFor(() => expect(document.activeElement).toBe(within(back).getByRole('link')))
+
+    // Announced, because arriving a page deep without being told reads as the screen
+    // acting on its own.
+    const status = document.querySelector('[role="status"]') as HTMLElement
+    await waitFor(() => expect(status.textContent).toContain('Ayrıldığınız kayda dönüldü'))
+  })
+
+  it('says the record was not found when reading forward does not reach it', async () => {
+    // The record left the result set while the user was away: page two comes back
+    // empty, so there is nothing to return to.
+    installPaged({ recordLeavesTheSet: true })
+    const router = renderRouterAt('/cari')
+    await openPageTwoRecordAndReturn(router)
+
+    const status = document.querySelector('[role="status"]') as HTMLElement
+    await waitFor(() => expect(status.textContent).toContain('bulunamadı'), { timeout: 5000 })
+    // It says where the user IS. It does not claim to know what happened to the
+    // record — "further down than we looked" and "passivated while you were away"
+    // are indistinguishable from here.
+    expect(status.textContent).toContain('ilk sayfadan yeniden okundu')
+  })
+
+  it('stops walking the moment the user takes over', async () => {
+    installPaged({ recordLeavesTheSet: true })
+    const router = renderRouterAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+    await userEvent.click(screen.getByRole('button', { name: /Daha fazla yükle/i }))
+    const row = await screen.findByRole('row', { name: /C-0003/ })
+    await userEvent.click(within(row).getByRole('link'))
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/cari/${PARTY_3}`))
+    await act(async () => {
+      await router.navigate(-1)
+    })
+    await screen.findByRole('searchbox', undefined, { timeout: 5000 })
+
+    // A search means the user is no longer asking for the list they left, so the
+    // walk is abandoned and its notice is dropped rather than describing a list that
+    // no longer exists.
+    await userEvent.type(screen.getByRole('searchbox'), 'zzz')
+    await waitFor(() =>
+      expect((document.querySelector('[role="status"]') as HTMLElement).textContent).toBe(''),
+    )
+  })
+})
+
+describe('C-01 client contract on the wire (PR #230 080e7a1)', () => {
+
+  function problem(code: string) {
+    return new Response(
+      JSON.stringify({
+        type: 'https://www.rfc-editor.org/rfc/rfc9110#section-15.5.10',
+        title: 'Uyumlu istemci gerekli.',
+        status: 409,
+        code,
+      }),
+      { status: 409, headers: { 'Content-Type': 'application/json' } },
+    )
+  }
+
+  it('declares the contract exactly once on every counterparty read', async () => {
+    const { calls } = installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    const reads = calls.filter((c) => c.url.includes('/counterparties'))
+    expect(reads.length).toBeGreaterThan(0)
+    // One value, never combined: the server refuses an empty, duplicated or combined
+    // declaration with `client_contract_unsupported`.
+    expect(reads.every((c) => c.contract === 'optional-trade-roles-v1')).toBe(true)
+  })
+
+  it('a contract refusal is NOT shown as a record conflict', async () => {
+    // 409 maps to "Kayıt başka bir işlemle değişti; farkı gözden geçirin." — false
+    // here: nothing changed and there is no difference to review. The user would go
+    // looking for an edit that never happened.
+    installFetch({ counterparties: () => problem('client_contract_required') })
+    renderAt('/cari')
+
+    const block = await waitFor(() => {
+      const node = document.querySelector<HTMLElement>('[data-state="client-contract"]')
+      if (node === null) throw new Error('contract block not rendered')
+      return node
+    })
+    expect(block.textContent).toContain('Uyumlu istemci gerekli')
+    expect(block.textContent).not.toContain('farkı gözden geçirin')
+    expect(queryStateBlock('conflict')).toBeNull()
+  })
+
+  it('treats an unsupported declaration the same way, by code not by text', async () => {
+    installFetch({ counterparties: () => problem('client_contract_unsupported') })
+    renderAt('/cari')
+
+    const block = await waitFor(() => {
+      const node = document.querySelector<HTMLElement>('[data-state="client-contract"]')
+      if (node === null) throw new Error('contract block not rendered')
+      return node
+    })
+    expect(block.getAttribute('role')).toBe('alert')
+    expect(queryStateBlock('conflict')).toBeNull()
+  })
+
+  it('a real 409 that is NOT a contract refusal still reads as a conflict', async () => {
+    // The branch is on the stable code, so an ordinary conflict keeps its own meaning.
+    installFetch({
+      counterparties: () =>
+        new Response(JSON.stringify({ status: 409, code: 'version_conflict' }), {
+          status: 409,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    })
+    renderAt('/cari')
+
+    expect(await findStateBlock('conflict')).toBeTruthy()
+    expect(document.querySelector('[data-state="client-contract"]')).toBeNull()
+  })
+
 })

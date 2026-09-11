@@ -1,0 +1,13 @@
+.back {
+  align-self: flex-start;
+  color: #1f5fd0;
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+.back:hover {
+  text-decoration: underline;
+}
+.back:focus-visible {
+  outline: 2px solid #1f5fd0;
+  outline-offset: 2px;
+}

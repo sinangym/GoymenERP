@@ -24,19 +24,39 @@ import {
   type SortField,
 } from './api'
 import {
+  COUNT_SCOPE_FILTERED_AUTHORIZED,
   PARTY_KIND,
   PROBLEM_CODE,
   problemCodeOf,
-  rolesFromFlags,
   type CounterpartyListItem,
   type CounterpartyPage,
 } from './contract'
+import {
+  LEGACY_ROLE_FILTER_HEADING,
+  LEGACY_ROLE_HEADING,
+  NO_COMMERCIAL_ROLE_LIST,
+  ROLE_LABEL,
+  rolesText,
+} from './roleText'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
 import { contextKeyString, contextKey, hasCapability } from '../shell/shellState'
 import { CAPABILITY } from '../shell/capabilities'
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
+import { allowed, isRendered, notEntitled, type ActionGate } from './actionGating'
+import { API_BASE, type ContractContext } from './clientContract'
+import {
+  clearedFilters,
+  DEFAULT_CARI_LIST_VIEW,
+  isFiltered,
+  PAGE_SIZE_OPTIONS,
+  readCariListView,
+  rememberOpenedRecord,
+  takeOpenedRecord,
+  writeCariListView,
+  type CariListView,
+} from './listViewState'
 import styles from './CariListPage.module.css'
 
 const KIND_LABEL: Record<number, string> = {
@@ -44,25 +64,113 @@ const KIND_LABEL: Record<number, string> = {
   [PARTY_KIND.NaturalPerson]: 'Gerçek kişi',
 }
 
-const ROLE_LABEL: Record<string, string> = {
-  Customer: 'Müşteri',
-  Supplier: 'Tedarikçi',
-  Tolling: 'Fason',
-  Service: 'Hizmet',
-}
-
 const ROLE_OPTIONS: readonly RoleFilter[] = ['Customer', 'Supplier', 'Tolling', 'Service']
 
+const PARTY_STATE_LABEL: Record<PartyStateFilter, string> = {
+  active: 'Aktif',
+  inactive: 'Pasif',
+  all: 'Hepsi',
+}
+const ACCOUNT_STATE_LABEL: Record<AccountStateFilter, string> = {
+  all: 'Hepsi',
+  active: 'Aktif',
+  inactive: 'Pasif',
+}
+
 /**
- * NEEDS-SINAN (via ChatGPT C-01 spec): the default party-state filter. `active` is used
- * here because DEC-CAR-003 keeps used records visible but inactive, and an operator
- * listing counterparties normally works with active ones. Passives remain reachable via
- * the filter (AT-013).
+ * The client-contract refusals (PR #230 `080e7a1`), which must NOT be shown as a
+ * generic conflict.
+ *
+ * Both arrive as `409`, and the shell maps any 409 to "Kayıt başka bir işlemle
+ * değişti; farkı gözden geçirin." That sentence is false here — nothing changed and
+ * there is no difference to review — and it sends the user hunting for an edit that
+ * never happened. Branch on the stable CODE, exactly as the invalid-cursor recovery
+ * does, never on the localized text.
+ *
+ * The wording follows the server's own resource so the two surfaces cannot drift into
+ * telling the user different things about the same refusal.
  */
-const DEFAULT_PARTY_STATE: PartyStateFilter = 'active'
-/** Contract default. The company-account state is filtered independently of the Party. */
-const DEFAULT_ACCOUNT_STATE: AccountStateFilter = 'all'
-const DEFAULT_PAGE_SIZE = 50
+const CONTRACT_PROBLEM_CODES = new Set<string>([
+  PROBLEM_CODE.clientContractRequired,
+  PROBLEM_CODE.clientContractUnsupported,
+])
+
+const CONTRACT_REFUSAL_TITLE = 'Uyumlu istemci gerekli'
+const CONTRACT_REFUSAL_DETAIL =
+  'Bu cari işlemi desteklenen istemci sözleşmesi ile yeniden açılmalıdır. ' +
+  'Sayfayı yenileyin; bekleyen bir işlemi otomatik tekrarlamayın.'
+
+/**
+ * How many EXTRA pages a return may read forward before giving up.
+ *
+ * A budget rather than "until found": the remembered record may have left the result
+ * set, and an unbounded walk would page through the whole company to prove a negative
+ * — on a screen the user is waiting to look at. Four extra pages covers the realistic
+ * case (a record opened a page or two down) at a bounded number of reads.
+ */
+const RETURN_PAGE_WALK_LIMIT = 4
+
+/**
+ * What the number in the caption counts (UX review §8.7/65: "toplam kapsamı").
+ *
+ * ASSUMPTION-CARI-001. `filtered-authorized-visible-parties` is the ONLY scope the
+ * C-01 slice accepts, and it is a machine token — printing it tells an operator
+ * nothing, which is why the count was previously not requested at all. This is the
+ * Turkish reading of the token's three parts, chosen rather than asked: the count
+ * covers the records the current FILTERS match, that this user is AUTHORIZED for,
+ * and that are VISIBLE in the active company.
+ *
+ * It matters because the alternative reading — "the company has 128 counterparties"
+ * — is a claim about data the caller may not be entitled to see. Reversible text
+ * decision; the token it labels is contract-fixed and is asserted against the
+ * decoder's constant, so a new scope cannot silently inherit this sentence.
+ */
+const COUNT_SCOPE_LABEL: Record<string, string> = {
+  [COUNT_SCOPE_FILTERED_AUTHORIZED]: 'Filtrelenmiş, yetkili ve görünür cariler',
+}
+
+/**
+ * What the user has narrowed the list by, in their own words.
+ *
+ * A filter the user cannot see is a filter they cannot undo: the UX walkthrough hit
+ * an "empty" list whose cause — a party-state left on Pasif two records ago — was
+ * three controls away and looked exactly like having no counterparties at all.
+ * Naming each active filter makes the cause of an empty result readable without
+ * inspecting every control.
+ *
+ * Defaults are deliberately absent from this list. Announcing "Taraf durumu: Aktif"
+ * on a screen nobody has touched would make the normal state look like something the
+ * user did.
+ */
+function activeFilterLabels(view: CariListView): readonly string[] {
+  const labels: string[] = []
+  if (view.q.trim().length > 0) labels.push(`Arama: “${view.q.trim()}”`)
+  if (view.kind !== '') labels.push(`Tür: ${KIND_LABEL[PARTY_KIND[view.kind]]}`)
+  if (view.roles.length > 0) {
+    const names = view.roles.map((role) => ROLE_LABEL[role]).join(', ')
+    /**
+     * "Geçmiş rol", not "Rol". The chip is often the ONLY place an applied role
+     * filter is visible — the control itself lives in a block that can be folded
+     * away — so it is the place that has to say what the filter actually selects:
+     * a classification recorded earlier, not today's commercial direction
+     * (ILK_DILIM §4.1).
+     *
+     * The match mode only changes the query with 2+ roles, so it is only named there.
+     */
+    labels.push(
+      view.roles.length > 1 && view.roleMatch === 'all'
+        ? `Geçmiş rol (hepsi birden): ${names}`
+        : `Geçmiş rol: ${names}`,
+    )
+  }
+  if (view.partyState !== DEFAULT_CARI_LIST_VIEW.partyState) {
+    labels.push(`Taraf durumu: ${PARTY_STATE_LABEL[view.partyState]}`)
+  }
+  if (view.accountState !== DEFAULT_CARI_LIST_VIEW.accountState) {
+    labels.push(`Şirket hesabı durumu: ${ACCOUNT_STATE_LABEL[view.accountState]}`)
+  }
+  return labels
+}
 
 /**
  * The ONLY failures a continuation may survive: the request did not get through, or
@@ -97,16 +205,41 @@ export function CariListPage() {
 
 function CariList({ namespace }: { readonly namespace: string | null }) {
   const shell = useShellState()
-  const [q, setQ] = useState('')
-  const [kind, setKind] = useState<KindFilter | ''>('')
-  const [roles, setRoles] = useState<readonly RoleFilter[]>([])
-  const [roleMatch, setRoleMatch] = useState<RoleMatch>('any')
-  const [partyState, setPartyState] = useState<PartyStateFilter>(DEFAULT_PARTY_STATE)
-  const [accountState, setAccountState] = useState<AccountStateFilter>(DEFAULT_ACCOUNT_STATE)
-  const [sort, setSort] = useState<SortField>('code')
-  const [direction, setDirection] = useState<SortDirection>('asc')
+  /**
+   * Read ONCE, at mount. This component is remounted whenever the namespace changes
+   * (see the `key` above), so "once per mount" is exactly "once per context" — and a
+   * view saved under another actor or company is unreachable rather than merely
+   * unused.
+   */
+  const [restored] = useState<CariListView>(() => readCariListView(namespace))
+  const [q, setQ] = useState(restored.q)
+  const [kind, setKind] = useState<KindFilter | ''>(restored.kind)
+  const [roles, setRoles] = useState<readonly RoleFilter[]>(restored.roles)
+  const [roleMatch, setRoleMatch] = useState<RoleMatch>(restored.roleMatch)
+  const [partyState, setPartyState] = useState<PartyStateFilter>(restored.partyState)
+  const [accountState, setAccountState] = useState<AccountStateFilter>(restored.accountState)
+  const [sort, setSort] = useState<SortField>(restored.sort)
+  const [direction, setDirection] = useState<SortDirection>(restored.direction)
+  const [pageSize, setPageSize] = useState<number>(restored.pageSize)
+  /**
+   * Whether the legacy-classification block is open.
+   *
+   * Seeded from the RESTORED view, not from a constant: coming back to a list that
+   * still carries a role filter must not present a folded block over a silently
+   * narrowed list. A filter the user cannot see is the §4.1 failure whether it was
+   * just applied or restored from two screens ago.
+   */
+  const [legacyOpen, setLegacyOpen] = useState(restored.roles.length > 0)
   const [cursor, setCursor] = useState<string | undefined>(undefined)
   const [loaded, setLoaded] = useState<readonly CounterpartyListItem[]>([])
+  const searchRef = useRef<HTMLInputElement>(null)
+  /**
+   * The row to return to, read ONCE at mount for the same reason the view is: this
+   * component is remounted per context, so "once per mount" is "once per return".
+   */
+  const [returnToId] = useState<string | null>(() => takeOpenedRecord(namespace))
+  const returnHandled = useRef(false)
+  const returnPagesWalked = useRef(0)
 
   const activeCompanyId = shell.activeContext?.companyId ?? null
   const scopeMode = shell.activeContext?.scopeMode ?? 'single'
@@ -124,20 +257,47 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
    */
   // The central security boundary for every authenticated read on this screen.
   const boundary = useAuthBoundary()
-  // The detail is a SEPARATE grant (#182); holding the list does not imply it.
-  const canOpenDetail = hasCapability(shell, CAPABILITY.cariPartiesDetail)
+  /**
+   * Opening a record is a SEPARATE grant (#182); holding the list does not imply it.
+   *
+   * Stated as a gate rather than a boolean so the reason it is hidden — rather than
+   * disabled with an explanation — is carried by the value itself. See
+   * actionGating.ts: this is the `not-entitled` half of the rule, and the type has
+   * nowhere to put a message precisely so that no one can add one here later.
+   */
+  const detailGate: ActionGate = hasCapability(shell, CAPABILITY.cariPartiesDetail)
+    ? allowed
+    : notEntitled
   // See CapabilityRoute: the entry generation makes a revisit addressable, so it
   // cannot be served from the previous entry's cache (#146).
   const entryGeneration = shell.routeEntryGeneration
 
   const singleCompanyContext = scopeMode === 'single' && activeCompanyId !== null
 
-  const filterActive =
-    q.trim().length > 0 ||
-    kind !== '' ||
-    roles.length > 0 ||
-    partyState !== DEFAULT_PARTY_STATE ||
-    accountState !== DEFAULT_ACCOUNT_STATE
+  /**
+   * Origin + namespace: the API we are talking to, plus actor, scope mode, company,
+   * capability generation and committed revision. Exactly what the contract binds
+   * readiness to.
+   */
+  const contractContext: ContractContext | null = useMemo(
+    () => (namespace === null ? null : { origin: API_BASE, namespace }),
+    [namespace],
+  )
+
+  const view: CariListView = useMemo(
+    () => ({ q, kind, roles, roleMatch, partyState, accountState, sort, direction, pageSize }),
+    [q, kind, roles, roleMatch, partyState, accountState, sort, direction, pageSize],
+  )
+  const filterActive = isFiltered(view)
+  const filterLabels = useMemo(() => activeFilterLabels(view), [view])
+
+  /**
+   * Remember the query the user chose, so leaving for a record and coming back does
+   * not silently drop their search. The DATA is not remembered — see listViewState.ts.
+   */
+  useEffect(() => {
+    writeCariListView(namespace, view)
+  }, [namespace, view])
 
   const query = useQuery({
     // INV-NS: the company context owns the cache namespace, so a company switch can
@@ -150,7 +310,7 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
       // normally, because the generation only moves when the route is entered.
       entryGeneration,
       'counterparties',
-      { q, kind, roles, roleMatch, partyState, accountState, sort, direction, cursor },
+      { q, kind, roles, roleMatch, partyState, accountState, sort, direction, pageSize, cursor },
     ],
     enabled: namespace !== null && singleCompanyContext,
     /**
@@ -175,10 +335,24 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
           accountState,
           sort,
           direction,
-          pageSize: DEFAULT_PAGE_SIZE,
+          pageSize,
+          /**
+           * ASK for the count (§8.7/65). The decoder binds the response to this
+           * flag in both directions — a count that arrives unrequested is still
+           * malformed — so the number on screen is always one we asked for and
+           * can label.
+           */
+          includeCount: true,
           cursor,
         },
         signal,
+        /**
+         * Bind what this read establishes to the context that issued it. A successful,
+         * validated, acknowledged read here is what later permits commands in THIS
+         * context — and only here; a company switch, a re-login or a new capability
+         * generation produces a different namespace and therefore a different binding.
+         */
+        contractContext,
       )
       // SAB-006: first page, continuation and refetch all report here. There is
       // no weaker per-path variant — this IS the path.
@@ -239,11 +413,17 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
     !crossPageDuplicate &&
     CONTINUATION_SURVIVABLE.has(state.kind)
 
-
-
   function resetPaging() {
     setCursor(undefined)
     setLoaded([])
+    /**
+     * The user changed what they are looking at, so the record they left is no longer
+     * what they are asking for. Abandon the return walk rather than fighting them for
+     * the cursor, and drop the notice, which would now describe a list that no longer
+     * exists.
+     */
+    returnHandled.current = true
+    setReturnNotice(null)
   }
 
   function toggleRole(role: RoleFilter) {
@@ -251,6 +431,30 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
       current.includes(role) ? current.filter((r) => r !== role) : [...current, role],
     )
     resetPaging()
+  }
+
+  function clearFilters() {
+    const cleared = clearedFilters(view)
+    setQ(cleared.q)
+    setKind(cleared.kind)
+    setRoles(cleared.roles)
+    setRoleMatch(cleared.roleMatch)
+    setPartyState(cleared.partyState)
+    setAccountState(cleared.accountState)
+    // Page size is not a filter and survives, like the sort.
+    // Nothing legacy is applied any more, so the block goes back to being a place
+    // you open on purpose rather than a control standing open over an empty state.
+    setLegacyOpen(false)
+    // Sort is not a filter and is deliberately left alone (see listViewState.ts).
+    resetPaging()
+    /**
+     * The button that was just activated is the LAST filter, so it unmounts with the
+     * summary and focus would fall to <body> — a keyboard user would be returned to
+     * the top of the document with no idea where they are. Hand focus to the search
+     * box: it is the control this row is about, and it is where a re-narrowed search
+     * starts.
+     */
+    searchRef.current?.focus()
   }
 
   function toggleSort(field: SortField) {
@@ -268,6 +472,16 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
     setCursor(page.nextCursor)
   }
 
+  /**
+   * A contract refusal is about THIS CLIENT, not about the record, so it gets its own
+   * block instead of the conflict text. It is also the one read failure a reload can
+   * actually fix, which is why the message says so.
+   */
+  const contractRefusal =
+    outcome?.type === 'http' &&
+    outcome.status === 409 &&
+    CONTRACT_PROBLEM_CODES.has(problemCodeOf(outcome.body) ?? '')
+
   // An expired or otherwise invalid cursor must not strand the user on a broken page:
   // fall back to the first page. Branches on the STABLE code, never the localized text.
   const isInvalidCursor =
@@ -281,6 +495,8 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
   // The ref makes recovery happen at most once per rejected cursor.
   const recoveredCursor = useRef<string | null>(null)
   const [cursorRecovered, setCursorRecovered] = useState(false)
+  /** How a return ended. See the effect below. */
+  const [returnNotice, setReturnNotice] = useState<'restored' | 'not-found' | null>(null)
   // oxlint-disable-next-line react/set-state-in-effect -- see the note above
   useEffect(() => {
     if (isInvalidCursor && cursor !== undefined && recoveredCursor.current !== cursor) {
@@ -292,6 +508,103 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
       setCursorRecovered(true)
     }
   }, [isInvalidCursor, cursor])
+
+  /**
+   * Put the keyboard back where it was.
+   *
+   * Runs after the rows exist, which is why it is an effect and not a render-time
+   * decision: on return the list re-reads, so at first paint there is no row to
+   * focus. The ref makes it happen at most once — a focus move the user cannot
+   * account for is worse than none — and a marker whose row is no longer in the
+   * page (filtered out, or on a page that was not re-accumulated) simply finds
+   * nothing and leaves focus alone.
+   */
+  useEffect(() => {
+    if (returnToId === null || returnHandled.current) return
+    // Nothing has been read back yet; there is no page to look in.
+    if (state.kind !== 'ready') return
+    /**
+     * Decide nothing while data is moving.
+     *
+     * `keepPreviousData` means an in-flight walk shows the page we already had, so
+     * "the row is not here" is not yet an answer — it is the question still being
+     * asked. Without this the first walk step declared its own fetch a failure and
+     * announced "not found" over a record that arrived a moment later.
+     */
+    if (query.isFetching) return
+
+    // Matched by reading the attribute rather than by interpolating the id into a
+    // selector: an id in a selector needs escaping, and `CSS.escape` is not
+    // guaranteed to exist in every environment this renders in.
+    const link = [...document.querySelectorAll<HTMLAnchorElement>('[data-row-link]')].find(
+      (candidate) => candidate.dataset.rowLink === returnToId,
+    )
+    if (link !== undefined) {
+      returnHandled.current = true
+      link.focus()
+      /**
+       * Announced ONLY when the row was not already on the first page. Landing back on
+       * page one is what the user expects and needs no narration; arriving three pages
+       * deep without being told is the case that reads as the screen acting on its own.
+       */
+      if (returnPagesWalked.current > 0) {
+        // oxlint-disable-next-line react/set-state-in-effect -- see the note below
+        setReturnNotice('restored')
+      }
+      return
+    }
+
+    /**
+     * The record is not in what has been read back so far — the ordinary case for a
+     * record opened from a continuation page, because coming back re-reads the FIRST
+     * page only.
+     *
+     * WALK FORWARD, WITH FRESH READS. What is never replayed is the REMEMBERED cursor
+     * chain: those tokens were minted under the previous route entry's authorization,
+     * and rebuilding a view out of them is the exact frame `CapabilityRoute` bumps the
+     * entry generation to close (#146/#148). The cursor used below is a different
+     * thing — it comes out of the response just received, under the CURRENT entry
+     * generation, and every page it fetches is authorized again on arrival. The
+     * position is restored by reading forward, not by trusting anything old.
+     *
+     * BOUNDED, because "walk until found" is a promise this screen cannot keep: the
+     * record may have left the result set entirely, and an unbounded walk would then
+     * page through the whole company to prove a negative while the user waits.
+     */
+    if (
+      page !== null &&
+      page.hasMore &&
+      page.nextCursor !== null &&
+      returnPagesWalked.current < RETURN_PAGE_WALK_LIMIT
+    ) {
+      returnPagesWalked.current += 1
+      setLoaded(items)
+      setCursor(page.nextCursor)
+      return
+    }
+
+    /**
+     * Out of pages, or out of budget. Say where the user IS — not what happened to the
+     * record, because we cannot tell "further down than we looked" from "passivated
+     * while you were away".
+     *
+     * Not derivable during render: the trigger is whether the freshly-read pages
+     * CONTAIN the row, which is the same question this effect already had to ask the
+     * DOM in order to move focus. Deriving it during render would answer it twice,
+     * from two different sources.
+     */
+    returnHandled.current = true
+    // oxlint-disable-next-line react/set-state-in-effect -- see the note above
+    setReturnNotice('not-found')
+    /**
+     * The triggers are the count of rows on screen, the page we just received and
+     * whether a read is in flight. `items` itself is deliberately NOT a trigger: it is
+     * rebuilt on every render, so listing it would re-run this on every render — and
+     * it is only READ here, for accumulation, where the closure already holds the
+     * current value.
+     */
+    // oxlint-disable-next-line exhaustive-deps -- see the note above
+  }, [returnToId, items.length, state.kind, page, query.isFetching])
 
   const ariaSort = (field: SortField): 'ascending' | 'descending' | 'none' =>
     sort !== field ? 'none' : direction === 'asc' ? 'ascending' : 'descending'
@@ -315,13 +628,20 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
       <h1 id="cari-list-heading">Cari Kartlar</h1>
 
       <div role="status" aria-live="polite" className={styles.announce}>
-        {cursorRecovered ? 'Liste güncellendi; ilk sayfaya dönüldü.' : ''}
+        {cursorRecovered
+          ? 'Liste güncellendi; ilk sayfaya dönüldü.'
+          : returnNotice === 'restored'
+            ? 'Ayrıldığınız kayda dönüldü; sonraki sayfalar yeniden okundu.'
+            : returnNotice === 'not-found'
+              ? 'Ayrıldığınız kayıt okunan sayfalarda bulunamadı; liste ilk sayfadan yeniden okundu.'
+              : ''}
       </div>
 
       <div className={styles.filters} role="search">
         <label className={styles.field}>
           <span>Ara</span>
           <input
+            ref={searchRef}
             type="search"
             value={q}
             placeholder="Kod, unvan veya ticari unvan"
@@ -346,38 +666,6 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
             <option value="NaturalPerson">Gerçek kişi</option>
           </select>
         </label>
-
-        <fieldset className={styles.roles}>
-          <legend>Rol</legend>
-          {ROLE_OPTIONS.map((role) => (
-            <label key={role}>
-              <input
-                type="checkbox"
-                checked={roles.includes(role)}
-                onChange={() => toggleRole(role)}
-              />
-              {ROLE_LABEL[role]}
-            </label>
-          ))}
-        </fieldset>
-
-        {/* Only meaningful with 2+ roles — with one role `any` and `all` are the same
-            query, so offering the choice would imply a distinction that does not exist. */}
-        {roles.length > 1 ? (
-          <label className={styles.field}>
-            <span>Rol eşleşmesi</span>
-            <select
-              value={roleMatch}
-              onChange={(event) => {
-                setRoleMatch(event.target.value as RoleMatch)
-                resetPaging()
-              }}
-            >
-              <option value="any">Herhangi biri</option>
-              <option value="all">Hepsi birden</option>
-            </select>
-          </label>
-        ) : null}
 
         {/* Two INDEPENDENT facts, two filters. A Party can be globally active while its
             account in the selected company is passive, and the reverse never happens —
@@ -411,9 +699,113 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
             <option value="inactive">Pasif</option>
           </select>
         </label>
+
+        {/* Changing the size restarts paging: the cursor already handed out was
+            issued for the OLD size, and continuing it would silently mix two page
+            lengths into one accumulated list. */}
+        <label className={styles.field}>
+          <span>Sayfa boyutu</span>
+          <select
+            value={String(pageSize)}
+            onChange={(event) => {
+              setPageSize(Number(event.target.value))
+              resetPaging()
+            }}
+          >
+            {PAGE_SIZE_OPTIONS.map((size) => (
+              <option key={size} value={String(size)}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
-      {(state.kind !== 'ready' && !continuationFailed) || crossPageDuplicate ? (
+      {/*
+        The legacy commercial classification (ILK_DILIM §4.1, §7).
+
+        DEMOTED, not removed. The 10 September decision removes the mandatory
+        commercial role, so a role filter presented as a peer of the search box
+        would keep teaching the operator that classification is how you find a
+        counterparty. The recorded 1..15 markers still exist and still deserve a
+        way to be queried, so the surface stays — one fold away, and labelled as
+        history.
+
+        A native <details> rather than a bespoke toggle: the open/closed state, the
+        keyboard behaviour and the screen-reader announcement all come from the
+        element, and there is no way for our own aria-expanded to disagree with what
+        is actually rendered.
+      */}
+      <details
+        className={styles.legacy}
+        open={legacyOpen}
+        onToggle={(event) => setLegacyOpen(event.currentTarget.open)}
+      >
+        <summary className={styles.legacySummary}>{LEGACY_ROLE_FILTER_HEADING}</summary>
+        <p className={styles.legacyNote}>
+          Bu işaretler eski kayıtlardan gelir; ticari rol seçmek zorunlu değildir. Bir
+          işaret seçtiğinizde, ticari rolü olmayan cariler listeden düşer.
+        </p>
+        <div className={styles.legacyControls}>
+          <fieldset className={styles.roles}>
+            <legend>Kayıtlı işaret</legend>
+            {ROLE_OPTIONS.map((role) => (
+              <label key={role}>
+                <input
+                  type="checkbox"
+                  checked={roles.includes(role)}
+                  onChange={() => toggleRole(role)}
+                />
+                {ROLE_LABEL[role]}
+              </label>
+            ))}
+          </fieldset>
+
+          {/* Only meaningful with 2+ roles — with one role `any` and `all` are the same
+              query, so offering the choice would imply a distinction that does not exist. */}
+          {roles.length > 1 ? (
+            <label className={styles.field}>
+              <span>İşaret eşleşmesi</span>
+              <select
+                value={roleMatch}
+                onChange={(event) => {
+                  setRoleMatch(event.target.value as RoleMatch)
+                  resetPaging()
+                }}
+              >
+                <option value="any">Herhangi biri</option>
+                <option value="all">Hepsi birden</option>
+              </select>
+            </label>
+          ) : null}
+        </div>
+      </details>
+
+      {/* The way OUT of a narrowed list, and the way to see what narrowed it. Rendered
+          only when something is actually applied, so an untouched screen carries no
+          control that would do nothing. */}
+      {filterActive ? (
+        <div className={styles.activeFilters}>
+          <span className={styles.activeFiltersLabel}>Etkin filtreler:</span>
+          <ul className={styles.chips}>
+            {filterLabels.map((label) => (
+              <li key={label} className={styles.chip}>
+                {label}
+              </li>
+            ))}
+          </ul>
+          <button type="button" className={styles.clear} onClick={clearFilters}>
+            Filtreleri temizle
+          </button>
+        </div>
+      ) : null}
+
+      {contractRefusal ? (
+        <div className={styles.contractRefusal} role="alert" data-state="client-contract">
+          <p className={styles.contractRefusalTitle}>{CONTRACT_REFUSAL_TITLE}</p>
+          <p>{CONTRACT_REFUSAL_DETAIL}</p>
+        </div>
+      ) : (state.kind !== 'ready' && !continuationFailed) || crossPageDuplicate ? (
         <StateBlock
           state={crossPageDuplicate ? { kind: 'malformed-response' } : state}
           subject="cari listesi"
@@ -423,10 +815,22 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
           }}
         />
       ) : items.length === 0 ? (
-        <StateBlock
-          state={{ kind: filterActive ? 'empty-filtered' : 'empty-no-data' }}
-          subject="cari"
-        />
+        /**
+         * `keepPreviousData` hands back the PREVIOUS page while the new query is in
+         * flight, so an empty result that is still being replaced is not evidence
+         * about the filters now on screen. Labelling it anyway produced a real wrong
+         * message: clearing the last filter showed "Kayıt yok — bu görünümde henüz
+         * kayıt yok" over a company that has counterparties, for as long as the
+         * refetch took. Say what is true instead: this is still loading.
+         */
+        query.isPlaceholderData ? (
+          <StateBlock state={{ kind: 'initial-loading' }} subject="cari listesi" />
+        ) : (
+          <StateBlock
+            state={{ kind: filterActive ? 'empty-filtered' : 'empty-no-data' }}
+            subject="cari"
+          />
+        )
       ) : (
         <>
           {/* The rows below are the last VALIDATED set. While a refetch is in flight
@@ -444,11 +848,30 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
           >
           <table className={styles.table} aria-busy={query.isFetching}>
             <caption className={styles.caption}>
-              {/* The scope is VALIDATED, not displayed: `filtered-authorized-visible-parties`
-                  is a machine token, and printing it tells the user nothing. */}
-              {page?.totalCount != null
-                ? `${page.totalCount} kayıt`
-                : `${items.length} kayıt yüklendi`}
+              {/*
+                The total and WHAT IT COVERS, together (§8.7/65).
+
+                A bare "128 kayıt" over a filtered, authorization-scoped read invites
+                the one reading we are not entitled to offer — "this company has 128
+                counterparties". The scope sentence is not decoration; it is the
+                difference between a number and a claim.
+
+                `totalCount` is carried as a STRING all the way here: it is an int64
+                that can exceed the JS safe range, and it is displayed, never math'd.
+                That is also why "loaded" is stated separately instead of being
+                subtracted from it.
+              */}
+              <span className={styles.countValue}>
+                {page?.totalCount != null
+                  ? `${page.totalCount} kayıt`
+                  : `${items.length} kayıt yüklendi`}
+              </span>
+              {page?.totalCount != null && items.length > 0 ? (
+                <span className={styles.countLoaded}>{` · ${items.length} tanesi yüklendi`}</span>
+              ) : null}
+              {page?.countScope != null && COUNT_SCOPE_LABEL[page.countScope] !== undefined ? (
+                <span className={styles.countScope}>{COUNT_SCOPE_LABEL[page.countScope]}</span>
+              ) : null}
             </caption>
             <thead>
               <tr>
@@ -463,7 +886,10 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
                   </button>
                 </th>
                 <th scope="col">Tür</th>
-                <th scope="col">Bu şirketteki roller</th>
+                {/* Named as history, for the same reason the filter is: a column
+                    called "Bu şirketteki roller" states the classification as the
+                    counterparty's current commercial direction (ILK_DILIM §7). */}
+                <th scope="col">{LEGACY_ROLE_HEADING}</th>
                 <th scope="col">Taraf durumu</th>
                 <th scope="col">Şirket hesabı durumu</th>
               </tr>
@@ -484,19 +910,23 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
                           phone. The accessible name includes the legal name so a
                           screen-reader user hearing the link out of context knows
                           which counterparty it opens. */}
-                      {canOpenDetail ? (
+                      {isRendered(detailGate) ? (
                         <Link
                           className={styles.rowLink}
                           to={`/cari/${item.id}`}
+                          data-row-link={item.id}
                           aria-label={`${item.code} — ${item.legalName}`}
+                          onClick={() => rememberOpenedRecord(namespace, item.id)}
                         >
                           {item.code}
                         </Link>
                       ) : (
-                        // No detail grant: the code is still shown, but as text.
-                        // Rendering a link the route would refuse anyway offers an
-                        // action the caller is not entitled to and tells them the
-                        // screen exists. Codex caught this on #172 (P1-1).
+                        // No detail grant: the code is still shown, but as text —
+                        // no link, no disabled link, no explanation. Rendering a
+                        // link the route would refuse anyway offers an action the
+                        // caller is not entitled to and tells them the screen
+                        // exists. Codex caught this on #172 (P1-1); actionGating.ts
+                        // now states it as the general rule.
                         item.code
                       )}
                     </td>
@@ -507,10 +937,12 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
                       ) : null}
                     </td>
                     <td>{KIND_LABEL[item.kind]}</td>
-                    <td>
-                      {rolesFromFlags(account.roles)
-                        .map((role) => ROLE_LABEL[role])
-                        .join(', ')}
+                    {/* An empty cell here would read exactly like the "unknown" the
+                        two state columns below were written to avoid. A counterparty
+                        with no commercial classification is an ordinary record as of
+                        the 10 September decision, and the cell says so. */}
+                    <td data-roles={account.roles === 0 ? 'none' : 'legacy'}>
+                      {rolesText(account.roles, NO_COMMERCIAL_ROLE_LIST)}
                     </td>
                     {/* AT-013 + DEC-CAR-002: two separate facts, both stated explicitly.
                         Showing only the passive one would leave "active" as an absence,

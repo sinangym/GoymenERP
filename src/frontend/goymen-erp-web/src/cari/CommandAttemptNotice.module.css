@@ -1,0 +1,60 @@
+.unknown,
+.failed {
+  padding: 12px 14px;
+  border-radius: 4px;
+  font-size: 0.92rem;
+  max-width: 40rem;
+}
+.unknown {
+  border: 1px solid #d9a441;
+  border-left: 4px solid #a3592f;
+  background: #fdf7ec;
+  color: #6b4415;
+}
+.failed {
+  border: 1px solid #e0b4b4;
+  border-left: 4px solid #b3261e;
+  background: #fdf3f3;
+  color: #6b1f1f;
+}
+.title {
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+.detail {
+  margin: 0 0 10px;
+  line-height: 1.4;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.primary,
+.secondary {
+  padding: 6px 14px;
+  border-radius: 4px;
+  font: inherit;
+  cursor: pointer;
+}
+.primary {
+  border: 1px solid #1f5fd0;
+  background: #1f5fd0;
+  color: #fff;
+}
+.secondary {
+  border: 1px solid #1f5fd0;
+  background: #fff;
+  color: #1f5fd0;
+}
+.primary:focus-visible,
+.secondary:focus-visible {
+  outline: 2px solid #0f1f3d;
+  outline-offset: 2px;
+}
+/* The abandoned-attempt box receives focus after a refused submit; the focus
+   must be visible (UX-AC-001), not colour-only. */
+.unknown:focus-visible {
+  outline: 2px solid #0f1f3d;
+  outline-offset: 2px;
+}

@@ -191,8 +191,38 @@ describe('decodeCounterpartyPage — fails closed', () => {
     expect(decodeCounterpartyPage(page({ items: [item({ kind: 0 })] }), SINGLE_A)).toBeNull()
   })
 
-  it('rejects PartyRole flags outside 1..15 or with unknown bits', () => {
-    for (const roles of [0, 16, 32, -1, 1.5]) {
+  it('resolves roles=0 — "no commercial classification" is an ordinary account', () => {
+    // Not a relaxation of the range check: it is the range the 10 September decision
+    // defines. Rejecting 0 made one role-less counterparty reject the WHOLE page.
+    const decoded = decodeCounterpartyPage(
+      page({ items: [item({ companyAccounts: [account({ roles: 0 })] })] }),
+      SINGLE_A,
+    )
+    expect(decoded).not.toBeNull()
+    expect(decoded!.items[0].companyAccounts[0].roles).toBe(0)
+    expect(rolesFromFlags(decoded!.items[0].companyAccounts[0].roles)).toEqual([])
+  })
+
+  it('resolves roles=15 — the whole legacy range is valid, both bounds included', () => {
+    // 0 and 15 are the two ends of the accepted range, and only one of them was
+    // pinned. 15 is every declared bit set at once, which is also the value nearest
+    // the first REJECTED one (16), so it is the end where an off-by-one hides.
+    const decoded = decodeCounterpartyPage(
+      page({ items: [item({ companyAccounts: [account({ roles: 15 })] })] }),
+      SINGLE_A,
+    )
+    expect(decoded).not.toBeNull()
+    expect(decoded!.items[0].companyAccounts[0].roles).toBe(15)
+    expect(rolesFromFlags(decoded!.items[0].companyAccounts[0].roles)).toEqual([
+      'Customer',
+      'Supplier',
+      'Tolling',
+      'Service',
+    ])
+  })
+
+  it('still rejects unknown bits, negatives and non-integers', () => {
+    for (const roles of [16, 32, -1, 1.5]) {
       expect(
         decodeCounterpartyPage(
           page({ items: [item({ companyAccounts: [account({ roles })] })] }),
@@ -200,6 +230,28 @@ describe('decodeCounterpartyPage — fails closed', () => {
         ),
       ).toBeNull()
     }
+  })
+
+  it('rejects a NULL or absent roles — the response contract requires the number', () => {
+    // PR #230 settled this: `roles` is optional in the REQUEST and stays REQUIRED in
+    // every account view, as `PartyRole` = integer 0..15. So "no commercial
+    // classification" travels back as the number 0 and never as null or an absent
+    // property. Accepting either would mean guessing which of the two a server meant,
+    // and a guessed 0 is a claim about the record we are not entitled to make.
+    expect(
+      decodeCounterpartyPage(
+        page({ items: [item({ companyAccounts: [account({ roles: null })] })] }),
+        SINGLE_A,
+      ),
+    ).toBeNull()
+
+    const { roles: _dropped, ...withoutRoles } = account()
+    expect(
+      decodeCounterpartyPage(
+        page({ items: [item({ companyAccounts: [withoutRoles] })] }),
+        SINGLE_A,
+      ),
+    ).toBeNull()
   })
 
   it('rejects a nil or malformed UUID', () => {

@@ -159,12 +159,53 @@ describe('decodeCounterpartyDetail — fails closed', () => {
     expect(decodeCounterpartyDetail(detail({ kind: 3 }), COMPANY_A)).toBeNull()
   })
 
-  it('rejects role flags outside 1..15 or with unknown bits', () => {
-    for (const roles of [0, 16, 32, -1, 1.5]) {
+  it('resolves roles=0 — a role-less counterparty has a readable record', () => {
+    const decoded = decodeCounterpartyDetail(
+      detail({ companyAccounts: [account({ roles: 0 })] }),
+      COMPANY_A,
+    )
+    expect(decoded).not.toBeNull()
+    expect(decoded!.account.roles).toBe(0)
+    expect(rolesFromFlags(decoded!.account.roles)).toEqual([])
+  })
+
+  it('resolves roles=15 — the whole legacy range is valid, both bounds included', () => {
+    // Same reasoning as the list decoder: 15 is the valid value adjacent to the first
+    // rejected one, so it is the bound worth stating.
+    const decoded = decodeCounterpartyDetail(
+      detail({ companyAccounts: [account({ roles: 15 })] }),
+      COMPANY_A,
+    )
+    expect(decoded).not.toBeNull()
+    expect(decoded!.account.roles).toBe(15)
+    expect(rolesFromFlags(decoded!.account.roles)).toEqual([
+      'Customer',
+      'Supplier',
+      'Tolling',
+      'Service',
+    ])
+  })
+
+  it('still rejects unknown bits, negatives and non-integers', () => {
+    for (const roles of [16, 32, -1, 1.5]) {
       expect(
         decodeCounterpartyDetail(detail({ companyAccounts: [account({ roles })] }), COMPANY_A),
       ).toBeNull()
     }
+  })
+
+  it('rejects a NULL or absent roles — the response contract requires the number', () => {
+    // Same rule as the list decoder: PR #230 keeps `roles` required in every account
+    // view as integer 0..15. Zero is the wire form of "no commercial classification";
+    // null and a missing property are neither, and are not normalised into one.
+    expect(
+      decodeCounterpartyDetail(detail({ companyAccounts: [account({ roles: null })] }), COMPANY_A),
+    ).toBeNull()
+
+    const { roles: _dropped, ...withoutRoles } = account()
+    expect(
+      decodeCounterpartyDetail(detail({ companyAccounts: [withoutRoles] }), COMPANY_A),
+    ).toBeNull()
   })
 
   it('rejects nil or malformed UUIDs', () => {

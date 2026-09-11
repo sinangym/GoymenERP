@@ -11,8 +11,10 @@ import { createBrowserRouter, type RouteObject } from 'react-router'
 import { AppShell } from './AppShell'
 import { ShellHome } from './ShellHome'
 import { CapabilityRoute } from './CapabilityRoute'
-import { CAPABILITY, CAPABILITY_ROUTE, RESERVED_CARI_PATHS } from './capabilities'
+import { CAPABILITY, CAPABILITY_ROUTE } from './capabilities'
 import { CariListPage } from '../cari/CariListPage'
+import { CariCreatePage } from '../cari/CariCreatePage'
+import { CariLinkWorkspacePage } from '../cari/CariLinkWorkspacePage'
 import { CariDetailPage } from '../cari/CariDetailPage'
 import { StateBlock } from './StateBlock'
 
@@ -30,19 +32,30 @@ export const shellRoutes: RouteObject[] = [
           </CapabilityRoute>
         ),
       },
-      ...RESERVED_CARI_PATHS.map((path) => ({
+      {
         /**
-         * Declared by the server, not implemented here — and matched BEFORE the
-         * param route so `/cari/:partyId` cannot swallow them.
-         *
-         * Without this, `/cari/yeni` is read as a party id: the detail screen
-         * mounts and issues a read for a record that cannot exist. Codex caught it
-         * on #172 (P1-2). The neutral block is the same one any unknown path gets,
-         * so a reserved-but-unbuilt path discloses nothing about what exists.
+         * STATIC paths are matched BEFORE the `/cari/:partyId` param route, so
+         * `yeni` and `sirkete-bagla` can never be read as a party id — the
+         * detail screen would otherwise mount and issue a read for a record that
+         * cannot exist (Codex #172 P1-2). Each is gated on its OWN capability:
+         * an ungranted create or link route closes onto the same neutral
+         * not-found block any unknown path gets, and calls nothing.
          */
-        path,
-        element: <StateBlock state={{ kind: 'not-found' }} subject="sayfa" />,
-      })),
+        path: CAPABILITY_ROUTE[CAPABILITY.cariPartiesCreate].slice(1),
+        element: (
+          <CapabilityRoute capability={CAPABILITY.cariPartiesCreate}>
+            <CariCreatePage />
+          </CapabilityRoute>
+        ),
+      },
+      {
+        path: CAPABILITY_ROUTE[CAPABILITY.cariAccountsLink].slice(1),
+        element: (
+          <CapabilityRoute capability={CAPABILITY.cariAccountsLink}>
+            <CariLinkWorkspacePage />
+          </CapabilityRoute>
+        ),
+      },
       {
         /**
          * C-03 detail, gated on its OWN capability.

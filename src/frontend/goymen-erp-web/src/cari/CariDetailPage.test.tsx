@@ -146,7 +146,7 @@ describe('C-03 core summary (spec §5.1)', () => {
     expect(factValue('Hukuki unvan')).toBe('Örnek Metal Sanayi ve Ticaret A.Ş.')
     expect(factValue('Ticari unvan')).toBe('Örnek Metal')
     expect(factValue('Tür')).toBe('Tüzel kişi')
-    expect(factValue('Bu şirketteki roller')).toBe('Müşteri, Tedarikçi')
+    expect(factValue('Geçmiş ticari sınıflandırma')).toBe('Müşteri, Tedarikçi')
 
     // The company is named from the shell DIRECTORY, not from the record — the
     // response carries only an id. That is a second query, so it can resolve after
@@ -359,5 +359,63 @@ describe('C-03 capability matrix — the detail is a SEPARATE grant (#182)', () 
         `${path} was read as a party id`,
       ).toBe(false)
     }
+  })
+})
+
+describe('C-03 a counterparty with no commercial role (ILK_DILIM §7)', () => {
+  it('renders the record and states that the field is not required', async () => {
+    installFetch({
+      detail: () =>
+        json(
+          detail({
+            companyAccounts: [
+              { id: ACC, companyId: A_ID, roles: 0, isActive: true, version: '2' },
+            ],
+          }),
+        ),
+    })
+    renderAt(`/cari/${PARTY}`)
+
+    // The heading proves the whole record resolved: before the decoder accepted 0,
+    // a role-less counterparty was `malformed` and this screen showed an error.
+    await screen.findByRole('heading', { name: /Örnek Metal Sanayi/ })
+    expect(factValue('Geçmiş ticari sınıflandırma')).toBe('Ticari rol yok — bu alan zorunlu değil')
+  })
+
+  it('does not present the absence as a gap in the record', async () => {
+    installFetch({
+      detail: () =>
+        json(
+          detail({
+            companyAccounts: [
+              { id: ACC, companyId: A_ID, roles: 0, isActive: true, version: '2' },
+            ],
+          }),
+        ),
+    })
+    renderAt(`/cari/${PARTY}`)
+    await screen.findByRole('heading', { name: /Örnek Metal Sanayi/ })
+
+    const facts = document.querySelector('dl')?.textContent ?? ''
+    expect(facts).not.toMatch(/eksik|belirtilmemiş|sınıflandırılmamış|yetkisiz/i)
+    // The two state facts are unchanged by it — no role is not passive.
+    expect(factValue('Taraf durumu')).toBe('Aktif')
+    expect(factValue('Şirket hesabı durumu')).toBe('Aktif')
+  })
+
+  it('still fails closed on an unknown role bit', async () => {
+    installFetch({
+      detail: () =>
+        json(
+          detail({
+            companyAccounts: [
+              { id: ACC, companyId: A_ID, roles: 16, isActive: true, version: '2' },
+            ],
+          }),
+        ),
+    })
+    renderAt(`/cari/${PARTY}`)
+
+    expect(await findStateBlock('malformed-response')).toBeTruthy()
   })
 })

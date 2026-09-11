@@ -1,0 +1,77 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(15, 31, 61, 0.45);
+  z-index: 20;
+}
+
+.dialog {
+  background: #fff;
+  border: 1px solid #d5dbe6;
+  border-radius: 8px;
+  padding: 20px;
+  width: min(100%, 32rem);
+  box-shadow: 0 12px 32px rgba(15, 31, 61, 0.25);
+}
+
+.title {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+}
+
+.detail {
+  margin: 0 0 16px;
+  color: #35405c;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  justify-content: flex-end;
+}
+
+.primary,
+.secondary {
+  padding: 8px 16px;
+  border-radius: 4px;
+  font: inherit;
+  cursor: pointer;
+}
+.primary {
+  border: 1px solid #1f5fd0;
+  background: #1f5fd0;
+  color: #fff;
+}
+.secondary {
+  border: 1px solid #a3592f;
+  background: #fff;
+  color: #6b4415;
+}
+.primary:focus-visible,
+.secondary:focus-visible {
+  outline: 2px solid #0f1f3d;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .dialog {
+    animation: appear 120ms ease-out;
+  }
+  @keyframes appear {
+    from {
+      transform: translateY(4px);
+      opacity: 0.6;
+    }
+    to {
+      transform: none;
+      opacity: 1;
+    }
+  }
+}

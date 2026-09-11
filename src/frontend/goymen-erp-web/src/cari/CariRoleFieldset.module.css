@@ -1,0 +1,35 @@
+.roles {
+  border: 1px solid #d5dbe6;
+  border-radius: 4px;
+  padding: 6px 10px 8px;
+  margin: 0;
+  min-width: 0;
+}
+.roles[data-invalid='true'] {
+  border-color: #b3261e;
+}
+.roles legend {
+  font-size: 0.85rem;
+  color: #55607a;
+  padding: 0 4px;
+}
+.options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.92rem;
+}
+.option input:focus-visible {
+  outline: 2px solid #1f5fd0;
+  outline-offset: 2px;
+}
+.error {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+  color: #b3261e;
+}

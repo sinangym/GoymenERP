@@ -6,9 +6,16 @@
  */
 
 import { decodeCounterpartyPage, type CounterpartyPage } from './contract'
+import {
+  API_BASE,
+  contractAckOf,
+  contractRequestHeader,
+  beginContractRead,
+  recordContractRead,
+  recordContractReadFailure,
+  type ContractContext,
+} from './clientContract'
 import type { ViewOutcome } from '../shell/uiState'
-
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
 const DEV_IDENTITY_ENABLED =
   import.meta.env.DEV || import.meta.env.VITE_BOOTSTRAP_IDENTITY_ENABLED === 'true'
@@ -70,14 +77,27 @@ export async function fetchCounterparties(
   scope: CounterpartyScope,
   query: CounterpartyQuery,
   signal?: AbortSignal,
+  /**
+   * The context this read is issued in. Passing it lets the read establish — or
+   * revoke — command readiness for exactly that context; omitting it reads normally
+   * and grants nothing.
+   */
+  contractContext?: ContractContext | null,
 ): Promise<ViewOutcome<CounterpartyPage>> {
   const headers: Record<string, string> = DEV_IDENTITY_ENABLED
-    ? { 'X-Development-User': DEV_USER }
-    : {}
+    ? { 'X-Development-User': DEV_USER, ...contractRequestHeader() }
+    : { ...contractRequestHeader() }
   if (scope.mode === 'single') {
     if (scope.companyId === null) return { type: 'malformed' }
     headers['X-Company-Id'] = scope.companyId
   }
+
+  /**
+   * Mark this context current BEFORE the request goes out, so a response that lands
+   * after the client has moved on can be recognised as late — including a successful
+   * one.
+   */
+  beginContractRead(contractContext ?? null)
 
   let response: Response
   try {
@@ -86,7 +106,14 @@ export async function fetchCounterparties(
       signal,
     })
   } catch {
-    if (signal?.aborted) return { type: 'fence-stale' }
+    // An abort is OUR cancellation and says nothing about the server; anything else
+    // is a server we can no longer reach, and readiness earned over a connection that
+    // is gone must not stand.
+    if (signal?.aborted) {
+      recordContractReadFailure(contractContext ?? null, 'aborted')
+      return { type: 'fence-stale' }
+    }
+    recordContractReadFailure(contractContext ?? null, 'unreachable')
     if (!navigator.onLine) return { type: 'offline' }
     // Online, but nothing came back — a different fact from a bad response body.
     return { type: 'network-error' }
@@ -96,11 +123,35 @@ export async function fetchCounterparties(
   try {
     body = await response.json()
   } catch {
+    /**
+     * The headers arrived, so the transport-level abort branch above never ran — but
+     * the body can still be cut off mid-stream when the shell cancels this read.
+     *
+     * That is our own cancellation, exactly like an abort before the response. Letting
+     * it fall through as "unreadable body" revoked a grant the server never withdrew.
+     * A body that genuinely will not parse still does, which is the difference this
+     * branch draws.
+     */
+    if (signal?.aborted) {
+      recordContractReadFailure(contractContext ?? null, 'aborted')
+      return { type: 'fence-stale' }
+    }
     body = null
   }
 
+  const ack = contractAckOf(response)
+
   // Exact 200 only — the whole 2xx range is not success (same rule as the shell client).
-  if (response.status !== 200) return { type: 'http', status: response.status, body }
+  if (response.status !== 200) {
+    // A failed read never grants readiness, and it REVOKES any earlier grant for this
+    // context: a server that has started refusing us is not one we may write to.
+    recordContractRead(contractContext ?? null, {
+      status: response.status,
+      bodyValidated: false,
+      ack,
+    })
+    return { type: 'http', status: response.status, body }
+  }
 
   // The decoder binds the page to the caller's company context: in single mode a
   // foreign or missing account rejects the whole page (JIT spec §3.5). It is also
@@ -113,6 +164,17 @@ export async function fetchCounterparties(
       : { mode: 'group' },
     query.includeCount === true,
   )
+  /**
+   * Readiness is recorded from the DECODER's verdict, not the status code. A 200 whose
+   * body we could not validate is a server we could not read; treating that as licence
+   * to start writing to it would be exactly backwards.
+   */
+  recordContractRead(contractContext ?? null, {
+    status: response.status,
+    bodyValidated: page !== null,
+    ack,
+  })
+
   if (page === null) return { type: 'malformed' }
   return { type: 'ok-single', data: page }
 }
