@@ -27,11 +27,11 @@ public static class SourceBinding
     public const string ClientContractHeader = "X-ERP-Counterparty-Contract";
     public const string ClientContractVersion = "optional-trade-roles-v1";
 
-    private static readonly string[] OwnedSources =
+    private static readonly string[] BackendBuildInputs =
     [
-        "tools/GoymenERP.CariAcceptance006", "tools/cari-acceptance-006",
-        "tests/GoymenERP.CariAcceptance006.Tests", "tools/ci/cari-c02-link.ps1",
-        ".github/workflows/cari-c02-link-acceptance.yml",
+        "src/backend", "tools/GoymenERP.CariAcceptance006", "tests/GoymenERP.CariAcceptance006.Tests",
+        ":(top,glob)*.props", ":(top,glob)*.targets", ":(top,glob)*.rsp", "global.json", "NuGet.Config",
+        ":(exclude,glob)**/bin/**", ":(exclude,glob)**/obj/**",
     ];
 
     public static string Hash(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
@@ -63,6 +63,14 @@ public static class SourceBinding
     private static string GitText(string root, params string[] arguments) =>
         Encoding.UTF8.GetString(Git(root, arguments)).TrimEnd('\r', '\n');
 
+    public static bool IsBackendSourceClean(string root) =>
+        Git(root, "diff", "--name-only", "HEAD", "--").Length == 0
+        // Ownership is not a build boundary: also reject untracked inputs outside this lane.
+        && Git(root, "ls-files", "--others", "--exclude-standard", "--").Length == 0
+        // Git-ignore does not exclude SDK compile/import inputs. Only standard build outputs
+        // are omitted from this second observation of the C006 backend build roots.
+        && Git(root, ["ls-files", "--others", "--", .. BackendBuildInputs]).Length == 0;
+
     public static SourceSnapshot Capture(RunSettings identity)
     {
         identity.Validate("Testing");
@@ -85,8 +93,7 @@ public static class SourceBinding
             "tools/GoymenERP.CariAcceptance006/AcceptanceProfile.cs",
             "tools/cari-acceptance-006/run.json",
         }.Select(path => path + "=" + Hash(File.ReadAllBytes(Path.Combine(RunSettings.ApprovedRoot, path))))) + "\n";
-        var clean = Git(RunSettings.ApprovedRoot, "diff", "--name-only", "HEAD", "--").Length == 0
-            && Git(RunSettings.ApprovedRoot, ["ls-files", "--others", "--exclude-standard", "--", .. OwnedSources]).Length == 0
+        var clean = IsBackendSourceClean(RunSettings.ApprovedRoot)
             && Git(FrontendRoot, "diff", "--name-only", "HEAD", "--", "src/frontend/goymen-erp-web", "tests/e2e").Length == 0
             && Git(FrontendRoot, "ls-files", "--others", "--exclude-standard", "--", "src/frontend/goymen-erp-web", "tests/e2e").Length == 0;
         var artifacts = new SortedDictionary<string, string>(StringComparer.Ordinal);

@@ -1,9 +1,57 @@
+using System.Diagnostics;
 using GoymenERP.CariAcceptance006;
 
 namespace GoymenERP.CariAcceptance006.Tests;
 
 public sealed class SourceBindingTests
 {
+    [Theory]
+    [InlineData("src/backend/GoymenERP.Api/Injected.cs")]
+    [InlineData("src/backend/GoymenERP.Api/Injected.local.cs")]
+    [InlineData("tools/GoymenERP.CariAcceptance006/Injected.cs")]
+    [InlineData("tests/GoymenERP.CariAcceptance006.Tests/Injected.cs")]
+    [InlineData("Directory.Build.props")]
+    [InlineData("Directory.Build.targets")]
+    [InlineData("Directory.Build.local.props")]
+    [InlineData("build/Injected.targets")]
+    public void UntrackedBuildInputs_AreRejectedEvenOutsideOwnedPathsOrWhenIgnored(string path)
+    {
+        using var checkout = new SourceCheckout();
+        Assert.True(SourceBinding.IsBackendSourceClean(checkout.Root));
+        checkout.Write(path, "untracked build input");
+        Assert.False(SourceBinding.IsBackendSourceClean(checkout.Root));
+    }
+
+    [Fact]
+    public void TrackedAndStagedSourceChanges_AreRejected()
+    {
+        using var checkout = new SourceCheckout();
+        checkout.Write("src/backend/Tracked.cs", "changed tracked input");
+        Assert.False(SourceBinding.IsBackendSourceClean(checkout.Root));
+        checkout.Git("add", "--", "src/backend/Tracked.cs");
+        Assert.False(SourceBinding.IsBackendSourceClean(checkout.Root));
+    }
+
+    [Fact]
+    public void IgnoredBuildOutputsAndExternalEvidence_DoNotDirtySourceInputs()
+    {
+        using var checkout = new SourceCheckout();
+        foreach (var path in new[]
+        {
+            "src/backend/GoymenERP.Api/bin/generated.cs", "src/backend/GoymenERP.Api/obj/generated.cs",
+            "tools/GoymenERP.CariAcceptance006/bin/generated.cs",
+            "tests/GoymenERP.CariAcceptance006.Tests/obj/generated.cs", "artifacts/probe.json",
+        }) checkout.Write(path, "generated output");
+        Assert.True(SourceBinding.IsBackendSourceClean(checkout.Root));
+    }
+
+    [Fact]
+    public void GitObservationFailure_IsNotAcceptedAsClean()
+    {
+        using var checkout = new SourceCheckout(empty: true);
+        Assert.Throws<InvalidOperationException>(() => SourceBinding.IsBackendSourceClean(checkout.Root));
+    }
+
     private static SourceSnapshot Valid()
     {
         var run = new RunSettings();
@@ -86,5 +134,61 @@ public sealed class SourceBindingTests
             after with { Rows = [rows[0], rows[1] with { Roles = 2 }] }, 1));
         Assert.Throws<InvalidOperationException>(() => DatabaseEvidence.VerifyBrowserJourney(identity, before,
             after with { Rows = [rows[0], rows[1] with { CompanyId = rows[0].CompanyId }] }, 1));
+    }
+
+    private sealed class SourceCheckout : IDisposable
+    {
+        public string Root { get; } = Path.Combine(Path.GetTempPath(), "goymen-c006-source-" + Guid.NewGuid().ToString("N"));
+
+        public SourceCheckout(bool empty = false)
+        {
+            Directory.CreateDirectory(Root);
+            Git("init", "--quiet");
+            if (empty) return;
+            Write(".gitignore", "**/bin/\n**/obj/\nartifacts/\n*.local.cs\n*.local.props\n");
+            Write("src/backend/Tracked.cs", "// tracked fixture\n");
+            Git("add", "--", ".gitignore", "src/backend/Tracked.cs");
+            Git("-c", "user.name=C006 test", "-c", "user.email=c006@example.invalid",
+                "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "C006 source fixture");
+        }
+
+        public void Write(string path, string contents)
+        {
+            var fullPath = Path.Combine(Root, path);
+            Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+            File.WriteAllText(fullPath, contents);
+        }
+
+        public void Git(params string[] arguments)
+        {
+            var start = new ProcessStartInfo("git")
+            {
+                WorkingDirectory = Root, UseShellExecute = false, CreateNoWindow = true,
+                RedirectStandardOutput = true, RedirectStandardError = true,
+            };
+            foreach (var argument in arguments) start.ArgumentList.Add(argument);
+            using var process = Process.Start(start) ?? throw new InvalidOperationException("Fixture Git did not start.");
+            var output = process.StandardOutput.ReadToEndAsync();
+            var error = process.StandardError.ReadToEndAsync();
+            if (!process.WaitForExit(30_000))
+            {
+                process.Kill(entireProcessTree: true);
+                process.WaitForExit();
+                throw new InvalidOperationException("Fixture Git timed out.");
+            }
+            Task.WhenAll(output, error).GetAwaiter().GetResult();
+            Assert.True(process.ExitCode == 0, "Fixture Git failed: " + error.Result);
+        }
+
+        public void Dispose()
+        {
+            var root = Path.GetFullPath(Root);
+            var ownedPrefix = Path.Combine(Path.GetFullPath(Path.GetTempPath()), "goymen-c006-source-");
+            if (!root.StartsWith(ownedPrefix, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Refusing cleanup outside this test's temporary checkout.");
+            foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+                File.SetAttributes(file, FileAttributes.Normal);
+            Directory.Delete(root, recursive: true);
+        }
     }
 }

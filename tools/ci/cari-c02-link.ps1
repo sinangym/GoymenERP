@@ -68,6 +68,20 @@ function Assert-CompleteTrx([xml]$Trx, [string[]]$DiscoveryEntries) {
     }
     return $total
 }
+function Assert-NoUntrackedSources([string]$Phase) {
+    Invoke-Step "source-untracked-$Phase" 'git' @('ls-files', '--others', '--exclude-standard', '--')
+    if (-not [string]::IsNullOrWhiteSpace((Get-Content (Join-Path $logs.FullName "source-untracked-$Phase.log") -Raw))) {
+        throw 'C006 verification refuses untracked source files.'
+    }
+    # Match SourceBinding: ignored source files still enter SDK builds; bin/obj do not.
+    Invoke-Step "source-build-inputs-$Phase" 'git' @('ls-files', '--others', '--',
+        'src/backend', 'tools/GoymenERP.CariAcceptance006', 'tests/GoymenERP.CariAcceptance006.Tests',
+        ':(top,glob)*.props', ':(top,glob)*.targets', ':(top,glob)*.rsp', 'global.json', 'NuGet.Config',
+        ':(exclude,glob)**/bin/**', ':(exclude,glob)**/obj/**')
+    if (-not [string]::IsNullOrWhiteSpace((Get-Content (Join-Path $logs.FullName "source-build-inputs-$Phase.log") -Raw))) {
+        throw 'C006 verification refuses untracked backend build inputs, including ignored sources.'
+    }
+}
 $project = 'tests/GoymenERP.CariAcceptance006.Tests/GoymenERP.CariAcceptance006.Tests.csproj'
 $frontend = 'src/frontend/goymen-erp-web'
 $playwright = 'tests/e2e/node_modules/@playwright/test/cli.js'
@@ -86,6 +100,7 @@ try {
         Invoke-Step 'source-before' 'git' @('rev-parse', 'HEAD')
         $head = (Get-Content (Join-Path $logs.FullName 'source-before.log') -Raw).Trim()
         Invoke-Step 'source-diff-before' 'git' @('diff', '--exit-code', '--name-only', 'HEAD', '--')
+        Assert-NoUntrackedSources 'before'
         $summary.source_before = @{ head = $head }
         $summary.chromium_status = 'NOT_RUN'
         $summary.helpers_status = 'NOT_RUN'
@@ -111,6 +126,7 @@ try {
         }
         Invoke-Step 'source-after' 'git' @('rev-parse', 'HEAD')
         Invoke-Step 'source-diff-after' 'git' @('diff', '--exit-code', '--name-only', 'HEAD', '--')
+        Assert-NoUntrackedSources 'after'
         $after = (Get-Content (Join-Path $logs.FullName 'source-after.log') -Raw).Trim()
         if ($head -ne $after) { throw 'Source HEAD changed during C006 verification.' }
         $summary.source_after = @{ head = $after }
