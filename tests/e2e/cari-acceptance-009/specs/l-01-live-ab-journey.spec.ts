@@ -90,23 +90,28 @@ async function switchCompany(page: Page, net: LiveRecorder, companyId: string): 
   if (await dialog.count()) await dialog.getByRole('button', { name: 'Değişiklikleri bırak' }).click()
   await expect(picker).toHaveValue(companyId, { timeout: 30_000 })
   /**
-   * Positive evidence, both halves.
+   * Positive evidence that the new company's page read actually ANSWERED.
    *
-   * The picker holding its new value does not mean the shell's capability chain has
-   * issued the new company's scoped read yet — at that instant nothing is pending because
-   * nothing has started, and an empty outstanding set would wave the wait straight
-   * through into the very `goto` collision it exists to prevent. So this states what it
-   * expects to see begin: a counterparties read bound to the company just switched to.
-   * Then, and only then, does an empty pending set mean that read also finished.
+   * Two weaker conditions were tried and both let the collision back in. "Nothing is
+   * pending" is the state at the first instant after the click, before anything has been
+   * issued. "A matching read started" is satisfied by the copy StrictMode cancels — it is
+   * terminal, so it settles, and it carries the right company and path — while the real
+   * read has still not gone out. This journey already knows about that duplicate: the
+   * candidate-read helper below filters on `status === 200` for the same reason.
+   *
+   * So what is required is the completed page read itself: transfer finished, body
+   * captured, 200, acknowledged, usable page. A cancelled copy, a header-only read whose
+   * body never landed, and a response that is not this page all fail it.
    */
   const settled = await net.settleSince(beforeAction, {
     timeoutMs: 15_000,
-    expectStarted: (r) => r.companyId === companyId && r.path.startsWith('/api/v1/counterparties'),
-    minimumStarted: 1,
+    expectCompleted: (r) => r.companyId === companyId && r.path.startsWith('/api/v1/counterparties'),
+    minimumCompleted: 1,
+    contractVersion: CONTRACT,
   })
   expect(
-    settled.startedExpected,
-    `the switch to ${companyId} must actually issue its scoped counterparties read before the journey navigates: ${JSON.stringify(settled.matched)}`,
+    settled.completedExpected,
+    `the switch to ${companyId} must land a COMPLETED scoped counterparties read before the journey navigates — a cancelled or half-read copy is not that read. completed=${JSON.stringify(settled.matched)} incomplete=${JSON.stringify(settled.matchedIncomplete)}`,
   ).toBe(true)
   expect(
     settled.outstanding,

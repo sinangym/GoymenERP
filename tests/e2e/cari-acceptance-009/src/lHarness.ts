@@ -494,41 +494,64 @@ export class LiveRecorder {
    * `sinceTick` must be taken BEFORE the user action that triggers the reads. Taking it
    * afterwards would leave the action's own requests outside the interval.
    *
-   * AN EMPTY PENDING SET IS NOT AN ANSWER. The previous shape returned immediately when
-   * nothing was pending, which is exactly the state at the first instant after a click:
-   * the picker already holds its new value while the shell's capability chain has not yet
-   * issued the scoped read, so "nothing pending" meant "nothing has started yet" and the
-   * collision it was meant to prevent stayed wide open. `expectStarted` + `minimumStarted`
-   * demand POSITIVE evidence that the read this wait exists for actually began; only then
-   * does an empty pending set mean it also finished.
+   * AN EMPTY PENDING SET IS NOT AN ANSWER, AND NEITHER IS "IT STARTED".
+   *
+   * Returning as soon as nothing was pending was wrong: that is the state at the first
+   * instant after a click, when the picker already holds its new value and the shell's
+   * capability chain has not yet issued the scoped read.
+   *
+   * Requiring only that a matching read STARTED was also wrong, for a sharper reason.
+   * StrictMode issues two copies of a mount's first read and cancels one. The cancelled
+   * copy is terminal, so it settles; it carries the new company and the right path, so it
+   * matches. A wait that counted it would again find an empty pending set at the exact
+   * moment the real read had not yet been issued, and let the navigation through — the
+   * original collision, reached by a different route.
+   *
+   * So the condition is COMPLETION: the read this wait exists for must have finished its
+   * transfer, had its body captured, answered 200, been acknowledged, and carried a usable
+   * page. Only then does an empty pending set mean the work is actually done.
    */
   async settleSince(
     sinceTick: number,
     {
       timeoutMs = 15_000,
-      expectStarted,
-      minimumStarted = 0,
-    }: { timeoutMs?: number; expectStarted?: (record: LiveRecord) => boolean; minimumStarted?: number } = {},
+      expectCompleted,
+      minimumCompleted = 0,
+      contractVersion = CLIENT_CONTRACT_VERSION,
+    }: {
+      timeoutMs?: number
+      expectCompleted?: (record: LiveRecord) => boolean
+      minimumCompleted?: number
+      contractVersion?: string
+    } = {},
   ): Promise<SettleSinceResult> {
     const started = Date.now()
+    const brief = (r: LiveRecord) => ({ seq: r.seq, method: r.method, path: r.path, companyId: r.companyId, status: r.status })
+    const near = (r: LiveRecord) => ({
+      seq: r.seq, path: r.path, companyId: r.companyId, status: r.status,
+      transferOutcome: r.transferOutcome, bodyState: r.bodyState, failure: r.failure,
+    })
     for (;;) {
       const since = this.records.filter((r) => r.requestTick > sinceTick)
-      const matched = expectStarted === undefined ? [] : since.filter(expectStarted)
+      const identified = expectCompleted === undefined ? [] : since.filter(expectCompleted)
+      /**
+       * COMPLETED, by the same definition the write gate uses: the transfer finished, the
+       * body was captured, the status was 200, it was acknowledged, and the payload is a
+       * usable page. A cancelled copy, a header-only read whose body never landed, and a
+       * response that is not the page this wait is about all fail it.
+       */
+      const completed = identified.filter((r) => isCompletedPageRead(r, contractVersion))
       const pending = since.filter((r) => r.settledTick === null)
-      const enoughStarted = matched.length >= minimumStarted
-      if (enoughStarted && pending.length === 0) {
-        return {
-          settled: true,
-          startedExpected: enoughStarted,
-          matched: matched.map((r) => ({ seq: r.seq, method: r.method, path: r.path, companyId: r.companyId, status: r.status })),
-          outstanding: [],
-        }
+      const enough = completed.length >= minimumCompleted
+      if (enough && pending.length === 0) {
+        return { settled: true, completedExpected: enough, matched: completed.map(brief), matchedIncomplete: [], outstanding: [] }
       }
       if (Date.now() - started > timeoutMs) {
         return {
           settled: false,
-          startedExpected: enoughStarted,
-          matched: matched.map((r) => ({ seq: r.seq, method: r.method, path: r.path, companyId: r.companyId, status: r.status })),
+          completedExpected: enough,
+          matched: completed.map(brief),
+          matchedIncomplete: identified.filter((r) => !isCompletedPageRead(r, contractVersion)).map(near),
           outstanding: pending.map((r) => this.describe(r)),
         }
       }
@@ -986,9 +1009,19 @@ export function evidenceErrorText(evidenceError: unknown): string {
 export interface SettleSinceResult {
   /** Everything issued in the interval reached a terminal transfer AND a settled capture. */
   readonly settled: boolean
-  /** The read this wait exists for was actually observed to start. */
-  readonly startedExpected: boolean
+  /**
+   * The read this wait exists for was observed to COMPLETE — not merely to start.
+   *
+   * "Started" was not enough. Under the dev server StrictMode issues two copies of a
+   * mount's first read and cancels one; the cancelled copy is terminal, so it settles,
+   * and it matches the company and the path just as well as the real one. A wait that
+   * accepted it would find an empty pending set at the very moment the real read had not
+   * been issued yet, and wave the navigation straight through.
+   */
+  readonly completedExpected: boolean
   readonly matched: { seq: number; method: string; path: string; companyId: string | null; status: number | null }[]
+  /** Matching reads that did NOT complete — kept so the near miss is visible. */
+  readonly matchedIncomplete: { seq: number; path: string; companyId: string | null; status: number | null; transferOutcome: string; bodyState: string; failure: string | null }[]
   readonly outstanding: OutstandingRecord[]
 }
 
