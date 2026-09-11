@@ -18,6 +18,7 @@ Stack: ADR-013 (`react-router` + `@tanstack/react-query` + CSS Modules + reducer
 | `ShellHome.tsx` | Index route — active company + honest "no module yet". |
 | `StateBlock.tsx` / `.module.css` | Renders a `RemoteViewState` with distinct text per §12 state. |
 | `router.tsx` | `shellRoutes` (config, for tests) + `shellRouter` (browser). |
+| `SwitchConfirmDialog.tsx` / `.module.css` | Dirty-scope confirmation (`confirming-switch`): Kal / Değişiklikleri bırak, focus return. The bound context stays mounted underneath. |
 
 ## Bootstrap / switch flow
 
@@ -34,6 +35,6 @@ company select → REQUEST_SWITCH → phase 'switching' (fence++, activeContext 
 
 ## Not here yet
 
-Route guards / capability-gated business routes / deep-link non-disclosure (with the
-first feature route); dirty-form confirm UI (`DIRTY_SET`/`CONFIRM_*` exist in the
-reducer, no form yet); generated client; browser E2E; responsive `1600px` drawer.
+Generated client; browser E2E for the C-02/CARI-LINK write paths; responsive `1600px`
+drawer. (Route guards, deep-link non-disclosure and the dirty-form confirm UI landed
+with C-01/C-03 and C-02/CARI-LINK respectively.)

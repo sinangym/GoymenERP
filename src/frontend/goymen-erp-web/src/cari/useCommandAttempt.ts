@@ -1,0 +1,181 @@
+/**
+ * React binding for one logical command attempt (see ./commandAttempt.ts for the
+ * rules). Owns the in-memory key, the in-flight guard, the abort on unmount and
+ * the two fences a write needs beyond what a read needs:
+ *
+ *  1. the central 401/403 boundary — reported with the snapshot captured BEFORE
+ *     the request started, exactly like the read paths (SAB-001/006);
+ *  2. a context binding — the outcome is applied only if the actor, company,
+ *     committed revision and session epoch are still the ones the attempt was
+ *     made under. A late response from a company the user has discarded writes
+ *     nothing: no state, no navigation, no announcement (spec §4.3, §7.1).
+ *
+ * The owning screen is already remounted on a context change (same `key`
+ * pattern as C-01/C-03), so the binding check is defence in depth for the frame
+ * between the switch and the unmount, and for a response that outlives it.
+ */
+
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useShellState } from '../shell/shellContext'
+import { useAuthBoundary } from '../shell/useAuthBoundary'
+import type { ShellState } from '../shell/shellState'
+import type { CommandOutcome } from './commandApi'
+import {
+  abandonAttempt,
+  beginAttempt,
+  canBeginAttempt,
+  generateAttemptKey,
+  repeatsUnresolvedAttempt,
+  retryAttempt,
+  settleAttempt,
+  type AttemptSnapshot,
+  type AttemptState,
+} from './commandAttempt'
+
+/** Sends the frozen snapshot under the given key. Called once per submit/retry. */
+export type CommandSender<R> = (idempotencyKey: string, signal: AbortSignal) => Promise<CommandOutcome<R>>
+
+/**
+ * What `submit` did. `blocked`: a request is in flight, the attempt is frozen,
+ * failed-but-unacknowledged or completed, or there is no committed context to
+ * bind to. `unchanged`: the payload repeats an ABANDONED attempt whose outcome is
+ * still unknown — nothing is sent and no key is minted; the owner offers the
+ * same-key retry of that attempt instead (§4.3, C-004-P1-001).
+ */
+export type SubmitResult = 'started' | 'blocked' | 'unchanged'
+
+/**
+ * The authority an attempt is bound to. Null when there is no committed
+ * single-company context — a write cannot be started then.
+ */
+export function attemptBinding(state: ShellState): string | null {
+  const context = state.activeContext
+  if (context === null || context.companyId === null) return null
+  return JSON.stringify([
+    context.userId,
+    context.companyId,
+    context.capabilityGeneration,
+    state.committedContextRevision,
+    state.sessionEpoch,
+  ])
+}
+
+export interface CommandAttemptController<P, R> {
+  readonly state: AttemptState<P, R>
+  /**
+   * Begin a NEW logical attempt. Sends nothing and returns `blocked` while one is
+   * in flight, frozen, failed-but-unacknowledged, completed, or when there is no
+   * committed context to bind to; returns `unchanged` (still sending nothing)
+   * when the payload repeats an abandoned attempt that is still unresolved.
+   */
+  readonly submit: (operation: string, payload: P, send: CommandSender<R>) => SubmitResult
+  /** Resend the kept snapshot with the SAME key. Only from `unknown` or `abandoned`. */
+  readonly retry: () => void
+  /**
+   * Explicitly leave the current attempt. A definite failure or a completion is
+   * closed (`idle`); an UNKNOWN outcome becomes `abandoned` — unfrozen, but its
+   * identity is kept so the unchanged payload is never re-sent under a new key.
+   */
+  readonly abandon: () => void
+}
+
+export function useCommandAttempt<P, R>(): CommandAttemptController<P, R> {
+  const shell = useShellState()
+  const boundary = useAuthBoundary()
+  const [state, setState] = useState<AttemptState<P, R>>({ phase: 'idle' })
+
+  // Mirrors for the async continuation. Written in an effect, never during
+  // render (oxlint/react purity — the same lesson as CapabilityRoute).
+  const shellRef = useRef(shell)
+  const boundaryRef = useRef(boundary)
+  const stateRef = useRef(state)
+  useEffect(() => {
+    shellRef.current = shell
+    boundaryRef.current = boundary
+    stateRef.current = state
+  })
+
+  const senderRef = useRef<CommandSender<R> | null>(null)
+  const controllerRef = useRef<AbortController | null>(null)
+  const inFlightRef = useRef(false)
+  const disposedRef = useRef(false)
+
+  useEffect(() => {
+    // Re-armed on every mount: StrictMode runs the cleanup once before the real
+    // mount, and a ref left `true` there would discard every outcome in dev.
+    disposedRef.current = false
+    return () => {
+      disposedRef.current = true
+      controllerRef.current?.abort()
+    }
+  }, [])
+
+  const dispatchSend = useCallback((snapshot: AttemptSnapshot<P>, send: CommandSender<R>) => {
+    inFlightRef.current = true
+    const controller = new AbortController()
+    controllerRef.current = controller
+    // SAB-001: security bindings captured BEFORE the request starts.
+    const security = boundaryRef.current.capture()
+
+    void send(snapshot.key, controller.signal).then((outcome) => {
+      inFlightRef.current = false
+      // The reducer judges currentness and applies the effect exactly once, so a
+      // 401/403 is reported whether or not this screen is still mounted.
+      if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) {
+        boundaryRef.current.report(outcome.status, security)
+      }
+      if (disposedRef.current) return
+      // A departed context: the outcome belongs to an attempt that no longer has a
+      // screen. Nothing is written, nothing is announced.
+      if (attemptBinding(shellRef.current) !== snapshot.binding) return
+      setState((current) =>
+        current.phase === 'submitting' && current.snapshot.key === snapshot.key
+          ? settleAttempt(current, outcome)
+          : current,
+      )
+    })
+  }, [])
+
+  const submit = useCallback(
+    (operation: string, payload: P, send: CommandSender<R>): SubmitResult => {
+      if (inFlightRef.current) return 'blocked'
+      const current = stateRef.current
+      if (!canBeginAttempt(current)) return 'blocked'
+      const binding = attemptBinding(shell)
+      if (binding === null) return 'blocked'
+      // An abandoned attempt is still unresolved: the same operation with the
+      // same payload IS that attempt. It is retried under its own key or not at
+      // all — a new key here could duplicate a record the server already wrote.
+      if (repeatsUnresolvedAttempt(current, operation, payload)) return 'unchanged'
+      // The key is minted HERE, for this snapshot, and nowhere else.
+      const snapshot: AttemptSnapshot<P> = { key: generateAttemptKey(), operation, binding, payload }
+      senderRef.current = send
+      stateRef.current = beginAttempt(snapshot)
+      setState(stateRef.current)
+      dispatchSend(snapshot, send)
+      return 'started'
+    },
+    [dispatchSend, shell],
+  )
+
+  const retry = useCallback(() => {
+    const current = stateRef.current
+    if (current.phase !== 'unknown' && current.phase !== 'abandoned') return
+    if (inFlightRef.current || senderRef.current === null) return
+    stateRef.current = retryAttempt(current)
+    setState(stateRef.current)
+    dispatchSend(current.snapshot, senderRef.current)
+  }, [dispatchSend])
+
+  const abandon = useCallback(() => {
+    if (inFlightRef.current) return
+    const next = abandonAttempt(stateRef.current)
+    // The sender outlives the attempt only while its snapshot may still be
+    // retried under its own key (unresolved); a closed attempt drops it.
+    if (next.phase !== 'abandoned') senderRef.current = null
+    stateRef.current = next
+    setState(next)
+  }, [])
+
+  return { state, submit, retry, abandon }
+}

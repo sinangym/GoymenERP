@@ -297,6 +297,13 @@ export const PROBLEM_CODE = {
   companyContextInvalid: 'company_context_invalid',
   serviceUnavailable: 'service_unavailable',
   internalError: 'internal_error',
+  // Command (write) codes — C-02 create and CARI-LINK (spec §5, §8; OpenAPI
+  // `x-erp-problem-codes`). Same rule: the UI branches on the code, never on text.
+  // Transferred verbatim with the d46 sources; only the surrounding file is merged.
+  commandMetadataInvalid: 'command_metadata_invalid',
+  correlationMetadataInvalid: 'correlation_metadata_invalid',
+  idempotencyConflict: 'idempotency_conflict',
+  alreadyLinked: 'already_linked',
 } as const
 
 export type ProblemCode = (typeof PROBLEM_CODE)[keyof typeof PROBLEM_CODE]

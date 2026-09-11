@@ -1,0 +1,29 @@
+{
+  "extends": "../cari-acceptance-009/tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "paths": {
+      "react": [
+        "../../../src/frontend/goymen-erp-web/node_modules/@types/react"
+      ],
+      "react/*": [
+        "../../../src/frontend/goymen-erp-web/node_modules/@types/react/*"
+      ],
+      "react-dom/*": [
+        "../../../src/frontend/goymen-erp-web/node_modules/@types/react-dom/*"
+      ],
+      "@tanstack/react-query": [
+        "../../../src/frontend/goymen-erp-web/node_modules/@tanstack/react-query"
+      ],
+      "react-router": [
+        "../../../src/frontend/goymen-erp-web/node_modules/react-router/dist/production/index.d.ts"
+      ]
+    }
+  },
+  "include": [
+    "*.ts",
+    "*.tsx",
+    "src/**/*.ts",
+    "specs/**/*.ts"
+  ]
+}

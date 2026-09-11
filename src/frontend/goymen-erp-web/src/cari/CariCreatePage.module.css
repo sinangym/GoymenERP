@@ -1,0 +1,211 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.page h1 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 40rem;
+  min-width: 0;
+}
+
+.readonly {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  background: #f7f9fc;
+  border: 1px solid #d5dbe6;
+  border-radius: 6px;
+}
+.readonlyLabel {
+  font-size: 0.8rem;
+  color: #55607a;
+}
+.readonlyValue {
+  font-size: 0.95rem;
+  color: #1a2233;
+  overflow-wrap: anywhere;
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid #d5dbe6;
+  border-radius: 6px;
+  background: #fff;
+  min-width: 0;
+}
+.fields:disabled {
+  opacity: 0.7;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.field label {
+  font-size: 0.85rem;
+  color: #55607a;
+}
+.field input,
+.field select {
+  padding: 8px 10px;
+  border: 1px solid #d5dbe6;
+  border-radius: 4px;
+  font: inherit;
+  color: #1a2233;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+.field input[aria-invalid='true'],
+.field select[aria-invalid='true'] {
+  border-color: #b3261e;
+}
+.field input:focus-visible,
+.field select:focus-visible {
+  outline: 2px solid #1f5fd0;
+  outline-offset: 2px;
+}
+.hint {
+  font-size: 0.78rem;
+  color: #7b8499;
+}
+.optional {
+  color: #7b8499;
+  font-weight: 400;
+}
+.error {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #b3261e;
+}
+
+.summary {
+  padding: 10px 14px;
+  border: 1px solid #e0b4b4;
+  border-left: 4px solid #b3261e;
+  border-radius: 4px;
+  background: #fdf3f3;
+  color: #6b1f1f;
+  font-size: 0.9rem;
+}
+.summary p {
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+.summary ul {
+  margin: 0;
+  padding-left: 18px;
+}
+/* The summary takes focus on an invalid submit (UX-AC-001); visible focus. */
+.summary:focus-visible {
+  outline: 2px solid #0f1f3d;
+  outline-offset: 2px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.primary,
+.secondary {
+  padding: 8px 18px;
+  border-radius: 4px;
+  font: inherit;
+  cursor: pointer;
+}
+.primary {
+  border: 1px solid #1f5fd0;
+  background: #1f5fd0;
+  color: #fff;
+}
+.primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.secondary {
+  border: 1px solid #1f5fd0;
+  background: #fff;
+  color: #1f5fd0;
+}
+.primary:focus-visible,
+.secondary:focus-visible {
+  outline: 2px solid #0f1f3d;
+  outline-offset: 2px;
+}
+
+.success {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 40rem;
+  padding: 14px;
+  border: 1px solid #b7d7b0;
+  border-left: 4px solid #2e7d32;
+  border-radius: 6px;
+  background: #f3faf3;
+}
+.successTitle {
+  margin: 0;
+  font-size: 1.05rem;
+}
+.successNote {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #35405c;
+}
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 1px;
+  margin: 0;
+  background: #d5dbe6;
+  border: 1px solid #d5dbe6;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.fact {
+  background: #fff;
+  padding: 10px 12px;
+  min-width: 0;
+}
+.fact dt {
+  font-size: 0.78rem;
+  color: #55607a;
+  margin-bottom: 4px;
+}
+.fact dd {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #1a2233;
+  overflow-wrap: anywhere;
+}
+
+/* Announcement region: read by assistive tech, not a visual banner. */
+.announce,
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

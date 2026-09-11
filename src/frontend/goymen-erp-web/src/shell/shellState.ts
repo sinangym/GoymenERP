@@ -707,9 +707,24 @@ export type ContextKey = readonly [
   committedContextRevision: string,
 ]
 
+/**
+ * Phases in which `activeContext` is the server-verified, still-bound context.
+ *
+ * `confirming-switch` is included deliberately. REQUEST_SWITCH under a dirty
+ * scope only ASKS: it does not advance the fence, does not clear or snapshot the
+ * context and starts no reauthorization (see the reducer and the "dirty gate"
+ * tests). Treating it as neutral unmounted every gated route the moment the
+ * user touched the company picker — which destroyed the dirty form that the
+ * confirmation exists to protect (ERP-000K §13.1–13.2). Nothing is committed
+ * until the user answers; `switching` stays neutral exactly as before.
+ */
+function contextIsBound(state: ShellState): boolean {
+  return state.phase === 'idle' || state.phase === 'confirming-switch'
+}
+
 export function contextKey(state: ShellState): ContextKey | null {
   const ctx = state.activeContext
-  if (ctx === null || state.phase !== 'idle') return null
+  if (ctx === null || !contextIsBound(state)) return null
   return [
     ctx.userId,
     ctx.scopeMode,
@@ -747,7 +762,7 @@ export function contextActorMismatch(
 
 /** True when capability-gated feature mounts must be closed (fail-closed). */
 export function capabilityFailClosed(state: ShellState): boolean {
-  return state.phase !== 'idle' || state.activeContext?.capabilityGeneration == null
+  return !contextIsBound(state) || state.activeContext?.capabilityGeneration == null
 }
 
 /**

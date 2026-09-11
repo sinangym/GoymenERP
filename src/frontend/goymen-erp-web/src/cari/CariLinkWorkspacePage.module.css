@@ -1,0 +1,355 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.page h1 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+.intro {
+  margin: 0;
+  max-width: 48rem;
+  color: #35405c;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.readonly {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  background: #f7f9fc;
+  border: 1px solid #d5dbe6;
+  border-radius: 6px;
+  max-width: 40rem;
+}
+.readonlyLabel {
+  font-size: 0.8rem;
+  color: #55607a;
+}
+.readonlyValue {
+  font-size: 0.95rem;
+  color: #1a2233;
+  overflow-wrap: anywhere;
+}
+
+.search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  align-items: flex-end;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid #d5dbe6;
+  border-radius: 6px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: #55607a;
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+.field input {
+  padding: 8px 10px;
+  border: 1px solid #d5dbe6;
+  border-radius: 4px;
+  font: inherit;
+  color: #1a2233;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+.field input:focus-visible {
+  outline: 2px solid #1f5fd0;
+  outline-offset: 2px;
+}
+
+/* The TABLE may scroll sideways; the PAGE must not (WCAG 1.4.10). The scroll region
+   is keyboard-reachable so off-screen columns are not mouse-only. */
+.tableScroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.tableScroll:focus-visible {
+  outline: 2px solid #1f5fd0;
+  outline-offset: 2px;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border: 1px solid #d5dbe6;
+  border-radius: 6px;
+  overflow: hidden;
+  min-width: 40rem;
+}
+.caption {
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  color: #55607a;
+}
+.table th,
+.table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-top: 1px solid #eef1f6;
+  font-size: 0.9rem;
+  vertical-align: top;
+}
+.table th {
+  background: #f7f9fc;
+  font-weight: 600;
+  color: #35405c;
+}
+.table tr[data-selected='true'] td {
+  background: #eef4ff;
+}
+.table input[type='radio']:focus-visible {
+  outline: 2px solid #1f5fd0;
+  outline-offset: 2px;
+}
+.code {
+  white-space: nowrap;
+}
+.legalName {
+  display: block;
+}
+.tradeName {
+  display: block;
+  font-size: 0.82rem;
+  color: #7b8499;
+}
+.sources {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sources li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.sourceCompany {
+  font-weight: 600;
+}
+/* A passive SOURCE account carries a visible cue beyond colour (ERP-000K §15). */
+.sources li[data-account-state='inactive'] .sourceState {
+  color: #a3592f;
+  font-weight: 600;
+}
+
+.more {
+  align-self: flex-start;
+  padding: 8px 16px;
+  border: 1px solid #1f5fd0;
+  border-radius: 4px;
+  background: #fff;
+  color: #1f5fd0;
+  font: inherit;
+  cursor: pointer;
+}
+.more:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.continuationError {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 14px;
+  border: 1px solid #d9a441;
+  border-left: 4px solid #a3592f;
+  border-radius: 4px;
+  background: #fdf7ec;
+  color: #6b4415;
+  font-size: 0.9rem;
+}
+.continuationError button {
+  padding: 6px 14px;
+  border: 1px solid #1f5fd0;
+  border-radius: 4px;
+  background: #fff;
+  color: #1f5fd0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 40rem;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #d5dbe6;
+  border-radius: 6px;
+  background: #fff;
+}
+.formHeading {
+  margin: 0;
+  font-size: 1.05rem;
+}
+.selection {
+  margin: 0;
+  font-size: 0.92rem;
+  overflow-wrap: anywhere;
+}
+.selection[data-selection='none'] {
+  color: #55607a;
+}
+.fields {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.fields:disabled {
+  opacity: 0.7;
+}
+.error {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #b3261e;
+}
+.summary {
+  padding: 10px 14px;
+  border: 1px solid #e0b4b4;
+  border-left: 4px solid #b3261e;
+  border-radius: 4px;
+  background: #fdf3f3;
+  color: #6b1f1f;
+  font-size: 0.9rem;
+}
+.summary p {
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+.summary ul {
+  margin: 0;
+  padding-left: 18px;
+}
+/* The summary takes focus on an invalid submit (UX-AC-001); visible focus. */
+.summary:focus-visible {
+  outline: 2px solid #0f1f3d;
+  outline-offset: 2px;
+}
+.verify {
+  margin: 0 0 10px;
+}
+.verify a {
+  color: #1f5fd0;
+  text-decoration: underline;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.primary,
+.secondary {
+  padding: 8px 18px;
+  border-radius: 4px;
+  font: inherit;
+  cursor: pointer;
+}
+.primary {
+  border: 1px solid #1f5fd0;
+  background: #1f5fd0;
+  color: #fff;
+}
+.primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.secondary {
+  border: 1px solid #1f5fd0;
+  background: #fff;
+  color: #1f5fd0;
+}
+.secondary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.primary:focus-visible,
+.secondary:focus-visible {
+  outline: 2px solid #0f1f3d;
+  outline-offset: 2px;
+}
+
+.success {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 40rem;
+  padding: 14px;
+  border: 1px solid #b7d7b0;
+  border-left: 4px solid #2e7d32;
+  border-radius: 6px;
+  background: #f3faf3;
+}
+.successTitle {
+  margin: 0;
+  font-size: 1.05rem;
+}
+.successNote {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #35405c;
+}
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 1px;
+  margin: 0;
+  background: #d5dbe6;
+  border: 1px solid #d5dbe6;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.fact {
+  background: #fff;
+  padding: 10px 12px;
+  min-width: 0;
+}
+.fact dt {
+  font-size: 0.78rem;
+  color: #55607a;
+  margin-bottom: 4px;
+}
+.fact dd {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #1a2233;
+  overflow-wrap: anywhere;
+}
+
+.announce {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 767px) {
+  .search {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
