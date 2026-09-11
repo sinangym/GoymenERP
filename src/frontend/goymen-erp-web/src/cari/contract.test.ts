@@ -203,6 +203,24 @@ describe('decodeCounterpartyPage — fails closed', () => {
     expect(rolesFromFlags(decoded!.items[0].companyAccounts[0].roles)).toEqual([])
   })
 
+  it('resolves roles=15 — the whole legacy range is valid, both bounds included', () => {
+    // 0 and 15 are the two ends of the accepted range, and only one of them was
+    // pinned. 15 is every declared bit set at once, which is also the value nearest
+    // the first REJECTED one (16), so it is the end where an off-by-one hides.
+    const decoded = decodeCounterpartyPage(
+      page({ items: [item({ companyAccounts: [account({ roles: 15 })] })] }),
+      SINGLE_A,
+    )
+    expect(decoded).not.toBeNull()
+    expect(decoded!.items[0].companyAccounts[0].roles).toBe(15)
+    expect(rolesFromFlags(decoded!.items[0].companyAccounts[0].roles)).toEqual([
+      'Customer',
+      'Supplier',
+      'Tolling',
+      'Service',
+    ])
+  })
+
   it('still rejects unknown bits, negatives and non-integers', () => {
     for (const roles of [16, 32, -1, 1.5]) {
       expect(

@@ -169,6 +169,23 @@ describe('decodeCounterpartyDetail — fails closed', () => {
     expect(rolesFromFlags(decoded!.account.roles)).toEqual([])
   })
 
+  it('resolves roles=15 — the whole legacy range is valid, both bounds included', () => {
+    // Same reasoning as the list decoder: 15 is the valid value adjacent to the first
+    // rejected one, so it is the bound worth stating.
+    const decoded = decodeCounterpartyDetail(
+      detail({ companyAccounts: [account({ roles: 15 })] }),
+      COMPANY_A,
+    )
+    expect(decoded).not.toBeNull()
+    expect(decoded!.account.roles).toBe(15)
+    expect(rolesFromFlags(decoded!.account.roles)).toEqual([
+      'Customer',
+      'Supplier',
+      'Tolling',
+      'Service',
+    ])
+  })
+
   it('still rejects unknown bits, negatives and non-integers', () => {
     for (const roles of [16, 32, -1, 1.5]) {
       expect(
