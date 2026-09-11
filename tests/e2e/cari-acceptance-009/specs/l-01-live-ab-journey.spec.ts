@@ -114,13 +114,29 @@ function backToList(page: Page) {
  * click is what caused it. How many qualified is recorded rather than reduced to a flag.
  */
 function revalidatingRead(reads: LiveRecord[], afterTick: number, post: LiveRecord): LiveRecord[] {
-  return reads.filter(
-    (r) =>
-      isCompletedPageRead(r, CONTRACT) &&
-      r.requestTick > afterTick &&
-      r.transferTick !== null &&
-      r.transferTick < post.requestTick,
-  )
+  return reads.filter((r) => inTransferWindow(r, afterTick, post) && isCompletedPageRead(r, CONTRACT))
+}
+
+/**
+ * The FIXED window: issued after the retry was asked for, and its TRANSFER ended before
+ * the POST went out. Nothing about this moves while waiting — a read whose transfer
+ * ended after the POST is outside it and can never become the pre-check.
+ */
+function inTransferWindow(record: LiveRecord, afterTick: number, post: LiveRecord): boolean {
+  return record.requestTick > afterTick && record.transferTick !== null && record.transferTick < post.requestTick
+}
+
+/**
+ * Reads already inside that window whose RECORDER COPY has not settled yet.
+ *
+ * This is the only thing worth waiting for. The honest sequence — transfer ends, the app
+ * validates, the POST goes out, and the recorder's copy of that body resolves a moment
+ * later — would otherwise be read once, while the copy was still in flight, and reported
+ * as "no pre-check answered". The window stays exactly where it was; only the copy is
+ * waited on, and a copy that comes back unreadable still fails the completeness check.
+ */
+function awaitingCapture(reads: LiveRecord[], afterTick: number, post: LiveRecord): LiveRecord[] {
+  return reads.filter((r) => inTransferWindow(r, afterTick, post) && r.captureTick === null)
 }
 
 test('L-01 A create → list → detail; B invisible + detail 404 before link; fresh candidate → link → list → detail; both commands survive a real lost reply and a real same-key retry; A account preserved', async ({ page, request }, testInfo) => {
@@ -283,7 +299,11 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; f
    * be wrong; what makes this the accepted path is a fresh read that had already come
    * back 200 AND acknowledged when the second POST went out.
    */
-  const createRechecks = revalidatingRead(net.listReads().filter((r) => r.companyId === A), tickAtCreateRetry, retriedCreate)
+  const aListReads = () => net.listReads().filter((r) => r.companyId === A)
+  // Bounded wait for the recorder's own copies to settle — not for anything the
+  // application does, and not for the window, which is already fixed.
+  await expect.poll(() => awaitingCapture(aListReads(), tickAtCreateRetry, retriedCreate).length, { timeout: 30_000 }).toBe(0)
+  const createRechecks = revalidatingRead(aListReads(), tickAtCreateRetry, retriedCreate)
   expect(createRechecks.length, 'a fresh acknowledged read must answer before the create is re-sent').toBeGreaterThanOrEqual(1)
   const createRecheck = createRechecks.at(-1)!
 
@@ -440,7 +460,9 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; f
   expect(linked.companyAccounts[0].roles).toBe(0)
   expect(linked.companyAccounts[0].id).toBe(upstreamLink.accounts.find((a) => a.companyId === B)!.id)
 
-  const linkRechecks = revalidatingRead(net.candidateReads().filter((r) => r.companyId === B), tickAtLinkRetry, retriedLink)
+  const bCandidateReads = () => net.candidateReads().filter((r) => r.companyId === B)
+  await expect.poll(() => awaitingCapture(bCandidateReads(), tickAtLinkRetry, retriedLink).length, { timeout: 30_000 }).toBe(0)
+  const linkRechecks = revalidatingRead(bCandidateReads(), tickAtLinkRetry, retriedLink)
   expect(linkRechecks.length, 'a fresh acknowledged candidate read must answer before the link is re-sent').toBeGreaterThanOrEqual(1)
   const linkRecheck = linkRechecks.at(-1)!
   /**
