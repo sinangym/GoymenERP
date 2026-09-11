@@ -77,7 +77,12 @@ async function selectionState(page: Page): Promise<string | null> {
 }
 
 /** Evidence survives failure here too; a diagnostic that cannot be written stays silent. */
-test.afterEach(async (_fixtures, testInfo) => {
+// Playwright requires this first argument to BE an object destructuring pattern and
+// rejects the file at load time otherwise — which is exactly what happened: renaming it
+// to `_fixtures` to silence the linter made both L specs unloadable, and neither tsc nor
+// oxlint can see it because it is a runtime contract of the test loader.
+// oxlint-disable-next-line no-empty-pattern -- required by the Playwright hook signature
+test.afterEach(async ({}, testInfo) => {
   if (testInfo.status === 'passed') return
   const recorder = activeRecorder
   if (recorder === null) return
