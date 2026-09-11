@@ -15,7 +15,7 @@ import { LiveRecorder, lShot, readManifest, writeLJson } from '../src/lHarness.j
 const manifest = readManifest()
 const A = manifest.companyAId
 const B = manifest.companyBId
-const PREFIX = manifest.browserDataPrefix
+const PREFIX = manifest.browserPrefix
 // One journey = one Party; the token keeps a re-run distinguishable in the database.
 const RUN_TOKEN = new Date().toISOString().replace(/\D/g, '').slice(8, 14)
 const LEGAL_NAME = `${PREFIX} Kabul Metal Sanayi ${RUN_TOKEN} A.Ş.`
@@ -52,8 +52,14 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; B
   await page.getByLabel('Taraf türü').selectOption('1')
   await page.getByLabel('Hukuki ad').fill(LEGAL_NAME)
   await page.getByLabel(/^Ticari ad/).fill(TRADE_NAME)
-  await page.getByRole('checkbox', { name: 'Müşteri' }).check()
-  await page.getByRole('checkbox', { name: 'Tedarikçi' }).check()
+  /**
+   * No classification is chosen, and that is the point of this journey now: the
+   * 10 September decision removed the mandatory commercial role, so a Cari is created
+   * without one. The picker is left untouched rather than cleared, because "untouched"
+   * is what an operator who has no classification to give actually does.
+   */
+  await expect(page.getByRole('checkbox', { name: 'Müşteri' })).not.toBeChecked()
+  await expect(page.getByRole('checkbox', { name: 'Tedarikçi' })).not.toBeChecked()
   await lShot(page, slug, '01-A-create-filled')
   await page.getByRole('button', { name: 'Cari oluştur' }).click()
 
@@ -65,7 +71,13 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; B
   expect(create.status).toBe(201)
   expect(create.companyId).toBe(A)
   expect(create.idempotencyKey).toMatch(/^[0-9a-f]{32}$/)
-  expect(create.requestBody).toEqual({ kind: 1, legalName: LEGAL_NAME, tradeName: TRADE_NAME, roles: 3 })
+  // `roles` is OMITTED, not sent as 0: absent and 0 are the same normalized payload
+  // (spec §3.1), and absence is what "the user chose none" looks like on the wire.
+  expect(create.requestBody).toEqual({ kind: 1, legalName: LEGAL_NAME, tradeName: TRADE_NAME })
+  // The declaration goes out on the command, and the server acknowledges it. Without
+  // the acknowledgment this 201 would be an unknown outcome, not a creation.
+  expect(create.contractDeclaration).toBe(manifest.clientContractVersion)
+  expect(create.contractAck).toBe(manifest.clientContractVersion)
   const created = create.responseBody as {
     id: string
     code: string
@@ -119,19 +131,27 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; B
   expect(candidateReadsBeforeLink.length).toBeGreaterThanOrEqual(1)
   expect(net.candidateReads().every((r) => r.queryKeys.every((k) => ['q', 'pageSize', 'cursor'].includes(k)))).toBe(true)
   await candidateRow.getByRole('radio').check()
-  await page.getByRole('checkbox', { name: 'Tedarikçi' }).check()
+  // A fresh selection and no classification is a complete link.
+  await expect(page.getByRole('checkbox', { name: 'Tedarikçi' })).not.toBeChecked()
   await expect.poll(() => page.locator('[data-selection]').getAttribute('data-selection')).toBe('fresh')
   await lShot(page, slug, '06-B-candidate-selected')
   await page.getByRole('button', { name: 'Şirkete bağla' }).click()
   await expect(page).toHaveURL(new RegExp(`/cari/${partyId}$`, 'i'), { timeout: 30_000 })
   await expect(page.getByRole('heading', { level: 1, name: LEGAL_NAME })).toBeVisible({ timeout: 30_000 })
-  await expect(factValue(page, 'Bu şirketteki roller')).toHaveText('Tedarikçi')
+  // Stated, not blank: a counterparty with no commercial classification is an
+  // ordinary record, and an empty field would read as "unknown" (ILK_DILIM §7).
+  await expect(factValue(page, 'Geçmiş ticari sınıflandırma')).toHaveText(
+    'Ticari rol yok — bu alan zorunlu değil',
+  )
   await expect.poll(() => net.links().length).toBe(1)
   const link = net.links()[0]
   expect(link.status).toBe(201)
   expect(link.companyId).toBe(B)
   expect(link.path).toBe(`/api/v1/counterparties/${partyId}/company-account`)
-  expect(link.requestBody).toEqual({ roles: 2 })
+  // `{}` is the roleless link request the contract names — not an absent body.
+  expect(link.requestBody).toEqual({})
+  expect(link.contractDeclaration).toBe(manifest.clientContractVersion)
+  expect(link.contractAck).toBe(manifest.clientContractVersion)
   expect(link.idempotencyKey).toMatch(/^[0-9a-f]{32}$/)
   expect(link.idempotencyKey).not.toBe(create.idempotencyKey)
   const linked = link.responseBody as { id: string; code: string; version: string; companyAccounts: { companyId: string; roles: number; version: string }[] }
@@ -139,7 +159,7 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; B
   expect(linked.code).toBe(code)
   expect(linked.companyAccounts).toHaveLength(1)
   expect(linked.companyAccounts[0].companyId).toBe(B)
-  expect(linked.companyAccounts[0].roles).toBe(2)
+  expect(linked.companyAccounts[0].roles).toBe(0)
   await lShot(page, slug, '07-B-detail-after-link')
 
   // ---- B: list shows it; it is no longer a candidate -------------------------------------
@@ -170,17 +190,39 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; B
   // Every request carried exactly one company header and the bootstrap identity; no other company appeared.
   const apiRecords = net.records.filter((r) => r.path.startsWith('/api/v1/counterparties') || r.path.startsWith('/api/v1/shell/'))
   expect(apiRecords.every((r) => r.companyId === A || r.companyId === B)).toBe(true)
-  expect(net.records.every((r) => r.devIdentityHeader === manifest.syntheticActorIds.browser)).toBe(true)
+  expect(net.records.every((r) => r.devIdentityHeader === manifest.actor)).toBe(true)
+
+  /**
+   * The handshake held for the WHOLE journey, not just the two commands: every Cari
+   * exchange declared the contract exactly once, and every successful one came back
+   * acknowledged. A single unacknowledged success anywhere in here would mean the
+   * write gate had been open on evidence the server never gave.
+   */
+  const cariRecords = net.records.filter((r) => r.path.startsWith('/api/v1/counterparties'))
+  expect(cariRecords.length).toBeGreaterThan(0)
+  expect(cariRecords.every((r) => r.contractDeclaration === manifest.clientContractVersion)).toBe(true)
+  expect(
+    cariRecords.filter((r) => r.status === 200 || r.status === 201).every(
+      (r) => r.contractAck === manifest.clientContractVersion,
+    ),
+  ).toBe(true)
 
   writeLJson('measurements', `${slug}.json`, {
     runId: manifest.runId,
+    instanceId: manifest.instanceId,
     apiBaseUrl: manifest.apiBaseUrl,
-    backendHead: manifest.backendHead,
+    fixtureHash: manifest.fixtureHash,
     party: { id: partyId, code, legalName: LEGAL_NAME, version: created.version },
     create: { status: create.status, companyId: create.companyId, idempotencyKey: create.idempotencyKey, body: create.requestBody, replayed: create.responseHeaders['idempotency-replayed'] ?? null },
     link: { status: link.status, companyId: link.companyId, idempotencyKey: link.idempotencyKey, body: link.requestBody, replayed: link.responseHeaders['idempotency-replayed'] ?? null },
     accountA: { before: created.companyAccounts[0], after: aDetailAfter.companyAccounts[0] },
     accountB: linked.companyAccounts[0],
+    contract: {
+      header: manifest.clientContractHeader,
+      version: manifest.clientContractVersion,
+      declaredOnEveryCariExchange: true,
+      acknowledgedOnEverySuccess: true,
+    },
     bDetailBeforeLink: 404,
     bListBeforeLinkContainedParty: false,
     bCandidateOfferedParty: true,

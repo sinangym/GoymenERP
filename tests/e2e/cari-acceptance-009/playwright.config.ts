@@ -12,6 +12,7 @@
  * has not shown the behaviour it claims. Traces and screenshots are kept as
  * evidence; the data is synthetic and no secret is involved.
  */
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, devices } from '@playwright/test'
@@ -71,11 +72,40 @@ export default defineConfig({
 })
 
 function webServerEnv(): Record<string, string> {
+  /**
+   * In the L lane the API target and the bootstrap actor come from the C-DESKTOP-006
+   * environment manifest, not from ambient variables.
+   *
+   * The values used to be whatever the caller happened to export, with
+   * `http://127.0.0.1:9` as the fallback — a port nothing listens on, chosen so a
+   * misconfigured run fails instead of silently reaching some other API. That
+   * fallback stays for the T lane, which has no live API at all. What changes is
+   * that the L lane no longer ACCEPTS an ambient value: a run that proxies somewhere
+   * other than the owned environment is not evidence about it, and reading the
+   * manifest is the only way to know which one this is.
+   */
   const env: Record<string, string> = {
     CARI009_UI_PORT: String(uiPort),
     CARI009_API_TARGET: process.env.CARI009_API_TARGET ?? 'http://127.0.0.1:9',
   }
-  // The synthetic bootstrap actor name (published in the environment manifest), L lane only.
+  if (lane === 'L') {
+    const manifestFile = process.env.CARI009_ENVIRONMENT_MANIFEST
+    if (!manifestFile) {
+      throw new Error('CARI009_ENVIRONMENT_MANIFEST is not set; the L lane needs the C-DESKTOP-006 environment.json')
+    }
+    const manifest = JSON.parse(readFileSync(manifestFile, 'utf8')) as {
+      readyForBrowser?: boolean
+      apiBaseUrl?: string
+      actor?: string
+    }
+    if (manifest.readyForBrowser !== true) throw new Error('environment manifest is not readyForBrowser')
+    if (!manifest.apiBaseUrl) throw new Error('environment manifest is missing apiBaseUrl')
+    if (!manifest.actor) throw new Error('environment manifest is missing actor')
+    env.CARI009_API_TARGET = manifest.apiBaseUrl
+    env.VITE_DEV_USER = manifest.actor
+    return env
+  }
+  // T lane: no live API, and no manifest to read one from.
   if (process.env.VITE_DEV_USER) env.VITE_DEV_USER = process.env.VITE_DEV_USER
   return env
 }

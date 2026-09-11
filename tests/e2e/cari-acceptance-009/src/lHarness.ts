@@ -22,6 +22,15 @@ export interface LiveRecord {
   companyId: string | null
   idempotencyKey: string | null
   devIdentityHeader: string | null
+  /**
+   * The client-contract handshake, both directions (PR #230 `080e7a1`).
+   *
+   * Recorded because the acceptance turns on it: a write may only follow a fresh
+   * successful GET that came back acknowledged, and "no acknowledgment" is the whole
+   * evidence that a node is old. Neither half can be read back from a body.
+   */
+  contractDeclaration: string | null
+  contractAck: string | null
   requestBody: unknown
   status: number | null
   responseHeaders: Record<string, string>
@@ -29,36 +38,99 @@ export interface LiveRecord {
   failure: string | null
 }
 
+/**
+ * The C-DESKTOP-006 `environment.json`, as its publisher actually writes it.
+ *
+ * MIRRORS, never invents: `tools/cari-acceptance-006/publish.py`. The earlier shape
+ * here was a flat manifest of our own naming — `syntheticActorIds.browser`,
+ * `browserDataPrefix`, `credentialFreeVerifyCommand`, a `safeBootstrapMethodNoSecrets`
+ * block — and none of those keys exist in what C006 publishes. Reading them would
+ * have produced `undefined` at every use, which is the quiet kind of wrong: the lane
+ * would have run against defaults instead of against the owned environment.
+ *
+ * Only the fields this lane consumes are declared. The envelope carries more
+ * (`backendTests`, `frontendReviewReceipt`, `sources`, `resources`, `host`); they are
+ * the publisher's evidence, not ours to re-interpret.
+ */
 export interface EnvironmentManifest {
   readonly contractId: string
   readonly taskId: string
   readonly readyForBrowser: boolean
   readonly preparedAtUtc: string
   readonly runId: string
+  readonly instanceId: string
   readonly apiBaseUrl: string
   readonly databaseName: string
-  readonly databaseEndpointLoopback: string
-  readonly backendHead: string
-  readonly backendDiffSha256: string
-  readonly frontendDiffSha256: string
   readonly fixtureHash: string
+  readonly baselineSha256: string
+  readonly smokeSha256: string
   readonly companyAId: string
   readonly companyBId: string
-  readonly syntheticActorIds: { readonly browser: string }
-  readonly safeBootstrapMethodNoSecrets: { readonly headers: Record<string, string> }
-  readonly browserDataPrefix: string
-  readonly allowedUiOrigins: readonly string[]
-  readonly credentialFreeVerifyCommand: string
-  readonly credentialFreeSnapshotCommand: string
+  /** One synthetic actor for the whole lane; sent as `X-Development-User`. */
+  readonly actor: string
+  /** Every record this lane creates is named with it, so a stray row is attributable. */
+  readonly browserPrefix: string
+  readonly clientContractHeader: string
+  readonly clientContractVersion: string
+  /**
+   * What the publisher itself observed before handing the environment over: a fresh
+   * acknowledged GET per company. The lane asserts these rather than assuming them.
+   */
+  readonly freshGetObservations: readonly {
+    readonly companyId: string
+    readonly status: number
+    readonly ack: string
+    readonly observedAtUtc: string
+  }[]
+  /** Lifecycle entry points. Owned by the publisher; this lane only reports them. */
+  readonly commands: {
+    readonly control: string
+    readonly start: string
+    readonly verify: string
+    readonly stop: string
+    readonly releaseCheck: string
+    readonly teardown: string
+  }
+  readonly browserAcceptance: string
+  readonly erpAccepted: boolean
+  readonly productionActivated: boolean
+  readonly topology: string
 }
 
-const CAPTURED_RESPONSE_HEADERS = ['idempotency-replayed', 'idempotency-original-correlation-id', 'location', 'content-type', 'x-correlation-id', 'traceparent']
+const CAPTURED_RESPONSE_HEADERS = ['idempotency-replayed', 'idempotency-original-correlation-id', 'location', 'content-type', 'x-correlation-id', 'traceparent', 'x-erp-counterparty-contract']
 
 export function readManifest(): EnvironmentManifest {
   const file = process.env.CARI009_ENVIRONMENT_MANIFEST
   if (!file) throw new Error('CARI009_ENVIRONMENT_MANIFEST is not set; the L lane needs the C-DESKTOP-006 environment.json')
   const manifest = JSON.parse(readFileSync(file, 'utf8')) as EnvironmentManifest
   if (manifest.readyForBrowser !== true) throw new Error('environment manifest is not readyForBrowser')
+
+  /**
+   * Fail loudly on a manifest this lane cannot honestly run against.
+   *
+   * Every one of these is a value the lane would otherwise silently substitute a
+   * default for — and a run against a default is a run against something other than
+   * the owned environment, which is exactly what must not be reported as acceptance.
+   */
+  for (const field of [
+    'apiBaseUrl',
+    'actor',
+    'browserPrefix',
+    'companyAId',
+    'companyBId',
+    'clientContractHeader',
+    'clientContractVersion',
+    'runId',
+    'instanceId',
+  ] as const) {
+    const value = manifest[field]
+    if (typeof value !== 'string' || value.length === 0) {
+      throw new Error(`environment manifest is missing ${field}; the L lane will not substitute a default`)
+    }
+  }
+  if (manifest.erpAccepted !== false || manifest.productionActivated !== false) {
+    throw new Error('environment manifest claims ERP/production acceptance; the L lane refuses to run against it')
+  }
   return manifest
 }
 
@@ -93,6 +165,10 @@ export class LiveRecorder {
         companyId: headers['x-company-id'] ?? null,
         idempotencyKey: headers['idempotency-key'] ?? null,
         devIdentityHeader: headers['x-development-user'] ?? null,
+        // Named headers only, exactly like the rest of this recorder: `authorization`
+        // and `cookie` are never copied, here or anywhere.
+        contractDeclaration: headers['x-erp-counterparty-contract'] ?? null,
+        contractAck: null,
         requestBody: body,
         status: null,
         responseHeaders: {},
@@ -108,6 +184,7 @@ export class LiveRecorder {
       if (!record) return
       record.status = response.status()
       const headers = response.headers()
+      record.contractAck = headers['x-erp-counterparty-contract'] ?? null
       for (const name of CAPTURED_RESPONSE_HEADERS) {
         if (headers[name] !== undefined) record.responseHeaders[name] = headers[name]
       }

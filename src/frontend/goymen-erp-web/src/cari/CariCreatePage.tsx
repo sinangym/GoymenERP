@@ -33,7 +33,12 @@ import { useCommandAttempt } from './useCommandAttempt'
 import { CariRoleFieldset } from './CariRoleFieldset'
 import { CommandAttemptNotice } from './CommandAttemptNotice'
 import { CariBackLink } from './CariBackLink'
-import { CARI_CREATE_TEXT as TEXT, CARI_KIND_LABEL, CARI_ROLE_LABEL } from './cariCommandText'
+import {
+  CARI_COMMAND_TEXT as COMMAND_TEXT,
+  CARI_CREATE_TEXT as TEXT,
+  CARI_KIND_LABEL,
+  CARI_ROLE_LABEL,
+} from './cariCommandText'
 import { useShellDispatch, useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import {
@@ -207,6 +212,18 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
   const repeatsUnresolved =
     validation.ok && repeatsUnresolvedAttempt(attempt.state, CREATE_OPERATION, validation.payload)
 
+  /**
+   * Whether a retry control is actually RENDERED right now.
+   *
+   * `CommandAttemptNotice` draws nothing for an abandoned attempt whose payload no
+   * longer repeats it, so "unresolved" alone does not mean "there is a button". Any
+   * warning that names one has to ask this, not the phase.
+   */
+  const retryOffered =
+    attempt.state.phase === 'unknown' || (attempt.state.phase === 'abandoned' && repeatsUnresolved)
+  const retryLabel =
+    attempt.state.phase === 'abandoned' ? COMMAND_TEXT.abandoned.retry : COMMAND_TEXT.unknown.retry
+
   // Dirty scope (§4.2): from the first user change until success or an explicit
   // reset. A frozen attempt is dirty even if the fields were somehow pristine —
   // the pending write is the thing a silent switch must not carry.
@@ -375,16 +392,32 @@ function CariCreateForm({ namespace }: { readonly namespace: string | null }) {
             screen's memory, so a reload drops them and the next submit could mint a
             new key for a command the server may already hold.
           */}
-          {unresolvedAttempt ? (
-            <p>
-              Daha önce gönderilen işlemin sonucu belirsiz kaldı ve bu ekranda korunuyor.
-              Sayfayı yenilemeyin; aşağıdaki “Aynı işlemi yeniden dene” düğmesini kullanın —
-              aynı işlem anahtarı korunur.
-            </p>
-          ) : (
+          {/*
+            THREE situations, and a sentence that fits two of them is still wrong for
+            the third.
+
+            An abandoned attempt whose box is not on screen — because the payload has
+            since been edited — is the case that caught this out: the warning pointed
+            at a retry button that was not offered. What a warning names has to be
+            something the user can actually do here.
+          */}
+          {!unresolvedAttempt ? (
             <p>
               Bu cari işlemi desteklenen istemci sözleşmesi ile yeniden açılmalıdır. Sayfayı
               yenileyin; form kapalıdır ve hiçbir istek gönderilmedi.
+            </p>
+          ) : retryOffered ? (
+            <p>
+              Daha önce gönderilen işlemin sonucu belirsiz kaldı ve bu ekranda korunuyor.
+              Sayfayı yenilemeyin; aşağıdaki “{retryLabel}” düğmesini kullanın — aynı işlem
+              anahtarı korunur.
+            </p>
+          ) : (
+            <p>
+              Daha önce gönderilen işlemin sonucu belirsiz kaldı ve bu ekranda korunuyor;
+              bilgileri değiştirdiğiniz için o işlemin yeniden deneme seçeneği şu an
+              gösterilmiyor. Sayfayı yenilemeyin — yenilerseniz o işlem ve anahtarı kaybolur.
+              Önceki işlemi yeniden denemek için alanları eski değerlerine geri getirin.
             </p>
           )}
         </div>

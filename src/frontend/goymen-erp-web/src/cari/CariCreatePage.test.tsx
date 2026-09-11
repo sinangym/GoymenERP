@@ -919,3 +919,58 @@ describe('C-02 a pending retry check loses to the user (spec §4.5)', () => {
     expect(screen.getByRole('button', { name: 'Aynı işlemi yeniden dene' })).toBeTruthy()
   })
 })
+
+describe('C-02 the compatibility warning names only what is on screen (ca19 P2)', () => {
+  async function unresolvedThenSilent(user: ReturnType<typeof userEvent.setup>) {
+    let probeCalls = 0
+    installFetch({
+      create: () => jsonWithoutAck(mutationView(), 201),
+      counterparties: () => {
+        probeCalls += 1
+        return probeCalls === 1
+          ? json({ items: [], nextCursor: null, hasMore: false, totalCount: null, countScope: null })
+          : jsonWithoutAck({ items: [], nextCursor: null, hasMore: false, totalCount: null, countScope: null })
+      },
+    })
+    renderAt('/cari/yeni')
+    await screen.findByLabelText('Taraf türü')
+    await fillValid(user)
+    await user.click(submitButton())
+    await screen.findByText(/Sunucu bu işlemi onaylamadı/)
+    // The re-check finds a silent server: the compatibility warning appears and the
+    // attempt is still unresolved.
+    await user.click(screen.getByRole('button', { name: 'Aynı işlemi yeniden dene' }))
+    await waitFor(() => query('[data-state="client-contract"]'))
+  }
+
+  it('points at the retry button while that button is actually offered', async () => {
+    const user = userEvent.setup()
+    await unresolvedThenSilent(user)
+
+    const warning = query('[data-state="client-contract"]')
+    expect(warning.textContent).toContain('Aynı işlemi yeniden dene')
+    expect(screen.getByRole('button', { name: 'Aynı işlemi yeniden dene' })).toBeTruthy()
+  })
+
+  it('stops naming it once the edited payload withdraws that offer', async () => {
+    const user = userEvent.setup()
+    await unresolvedThenSilent(user)
+
+    // Leave the attempt, then edit the legal name. The abandoned box only shows for a
+    // payload that REPEATS the attempt, so the retry control disappears — and a
+    // warning that still names it sends the user looking for a button that is gone.
+    await user.click(screen.getByRole('button', { name: 'İşlemi bırak' }))
+    await user.type(legalNameInput(), ' A.Ş.')
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /yeniden dene/i })).toBeNull(),
+    )
+    const warning = query('[data-state="client-contract"]')
+    expect(warning.textContent).not.toMatch(/yeniden dene[”"]? düğmesini/i)
+    // What it says instead is true and actionable: the attempt and its key are still
+    // held here, a reload would lose them, and the way back to the retry is to
+    // restore the values.
+    expect(warning.textContent).toContain('Sayfayı yenilemeyin')
+    expect(warning.textContent).toContain('eski değerlerine geri getirin')
+  })
+})
