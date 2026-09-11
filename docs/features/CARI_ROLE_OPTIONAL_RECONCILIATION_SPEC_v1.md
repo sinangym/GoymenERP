@@ -4,405 +4,372 @@
 - Şerit: `CHATGPT-BUSINESS`
 - Durum: **REVIEW EDİLEBİLİR İŞ ŞARTNAMESİ / ERP KABULÜ DEĞİL**
 - Dosya: `docs/features/CARI_ROLE_OPTIONAL_RECONCILIATION_SPEC_v1.md`
+- Mevcut PR: **#232**; yeni belge veya paralel şartname değildir.
 - Hazırlık tabanı: `main@060da63f2644cb271d78d9eab8b7a6985d544ad1`
-- İlgili kaynaklar: PR #227, #228, #229, #230, #231, #232, #233 ve Issue #66 koordinasyon kayıtları.
-- Öncelikli transport kaynağı: PR #233 comment `5626451657` (`#230@080e7a1` exact-source handoff).
+- Önceki belge revizyonları: `1299a6ee9f817c552ee08bbe385d4cb12c11bb8e` → `4e063e26f2c5848f7330891016d99a82088efa7b`. Bu güncelleme mevcut 4e063e2 içeriğinin devamıdır.
+- Öncelikli transport kaynağı: [#233 / 5626451657](https://github.com/sinangym/GoymenERP/pull/233#issuecomment-5626451657), backend `080e7a1d24f74975b45546c5277f0529c13f06d1`.
+- Koşullu hata başlığı düzeltmesi: [#230 / 5630622096](https://github.com/sinangym/GoymenERP/pull/230#issuecomment-5630622096), backend `880cae838e5d2f01a988f1e4a89afbe67858f48c`.
 
-Bu belge uygulama kodu yazmaz, kanonik karar/task durumunu değiştirmez, `docs/planning/2026-09-10/**` veya paylaşılan ilerleme belgelerinin tek-yazar sahipliğini devralmaz. PR #229 içindeki tarihli karar paketi insan review kapısında kalır; burada kullanılması onun merge edildiği veya insan tarafından kabul edildiği anlamına gelmez. Otomatik şirket ilişkisi için aşağıdaki `B` seçeneği yalnız CHATGPT-BUSINESS önerisidir; kullanıcı kararı değildir.
+Bu belge uygulama kodu yazmaz, kanonik karar/task durumunu değiştirmez, `docs/planning/2026-09-10/**` veya paylaşılan ilerleme belgelerinin tek-yazar sahipliğini devralmaz. PR #229 karar paketi ile #232'nin uygulanabilir insan inceleme/kabul kapıları korunur. Kaynak göstermek, bu kapıları geçmek veya production yetkisi vermek değildir. Otomatik şirket ilişkisi için `B` yalnız öneridir; kullanıcı kararı değildir.
 
 ## 1. Kaynak önceliği ve güncel depo gerçeği
 
-Kaynak önceliği `AGENTS.md` ile aynıdır: en son tarihli kullanıcı kararı → `KARAR_SICILI` → Master Rapor → ilgili feature/ADR → eski referanslar. Açık yetki, güvenlik, migration veya production politikası tahminle kapatılmaz.
+Öncelik: `AGENTS.md` ve uygulanabilir governance altında en yeni açık kullanıcı kararı → tarihli kullanıcı kararları → `KARAR_SICILI` → Master Rapor → ilgili feature/ADR → eski referanslar. Açık yetki, güvenlik, migration veya production politikası tahminle kapatılmaz.
 
-11 Eylül 2026 doğrulamasında:
+11 Eylül 2026 kaynak kesiti:
 
-- PR #227 merge edilmiştir; `main=060da63f2644cb271d78d9eab8b7a6985d544ad1`. #227 mevcut create/list/detail/company-link API akışının gerçek-SQL baseline kabul yolculuğudur; roleless frontend, mixed-version veya production kabulü değildir.
-- PR #228 açıktır ve draft'tır; `head=d46f7f819456fc578a25cdcabf5c98ad6f634456`. C-02 create/link/router/attempt ve kontrollü Chromium donor kaynağı burada zaten vardır. Aynı implementation paralel yeniden yazılmaz.
-- #228 recipient makbuzu `5626181170` **HANDOFF-ACCEPTED (recipient)** olarak yayımlanmıştır; gerçek donor `HANDOFF-RELEASED` hâlâ gereklidir. Recipient makbuzu donor release yerine geçmez.
-- PR #229 açıktır ve draft'tır; `head=e1fd69da69df36a72e559ea07163fb3f359b3c61`. İnsan karar incelemesi gereken planlama paketidir.
-- PR #230 açıktır ve draft'tır. `080e7a1d24f74975b45546c5277f0529c13f06d1` main `060da63` ile uzlaştırılmış transport-gate adayının exact kanıt başıdır: 7/7 CI, gerçek SQL `75/75`, exact RCSI `10/10`, skip=0. Ampere bu SHA için P0=0/P1=0/P2=0; James aynı SHA için error-ack dokümantasyonunda P2=1 bildirmiştir.
-- #230 güncel head `880cae838e5d2f01a988f1e4a89afbe67858f48c`, James P2'sini `docs(openapi): clarify conditional counterparty error acknowledgment` ile düzeltmeyi hedefler. Bu yeni SHA'nın CI'si doğrulama anında çalışmaktadır; `080e7a1` başarısı `880cae8` için otomatik PASS sayılmaz.
-- PR #233 açıktır ve draft'tır; `head=424a586fc07efa291db4b37866ba5cce54fb7443`, base `main@060da63`. Temiz main tabanlı 15 frontend yoludur; Node24 component suite `267/267 PASS`, C-01 gerçek browser `10/10 PASS`. Bu head yeni `X-ERP-Counterparty-Contract` protokolünü henüz uygulamamıştır.
-- PR #231 `173b003` tarihsel kaynak olarak korunur; aktif temiz frontend adayı #233'tür.
+- #227 merge edilmiştir; main `060da63f2644cb271d78d9eab8b7a6985d544ad1`. Mevcut create/list/detail/company-link API yolculuğunun gerçek-SQL baseline'ıdır; yeni roleless frontend/transport veya production kabulü değildir.
+- #228 `d46f7f819456fc578a25cdcabf5c98ad6f634456`, açık/draft donor kaynağıdır. Create/link/router/attempt ve kontrollü Chromium emeği yeniden yazılmaz. Recipient `5626181170` makbuzu mevcuttur; gerçek donor `HANDOFF-RELEASED` yerine geçmez.
+- #229 `e1fd69da69df36a72e559ea07163fb3f359b3c61`, insan incelemesi gereken açık/draft karar paketidir.
+- #230 `080e7a1d24f74975b45546c5277f0529c13f06d1`, main uzlaştırması ve yeni transport gate'in önceki kanıt başıdır: 7 kontrol, SQL75/RCSI10, sıfır skip. James'in bu SHA'daki conditional error-header P2'si tarihsel olarak koşulludur; geriye dönük koşulsuz onaya çevrilmez.
+- #230 güncel `880cae838e5d2f01a988f1e4a89afbe67858f48c`, **beş dosyalık OpenAPI/handoff/test düzeltmesidir**; yeni protokol sürümü veya runtime filter değişikliği değildir. James ve Ampere bu exact SHA'nın dar farkında P0/P1/P2=0 bildirmiştir. Bu tur yeni CI ve gerçek SQL günlüğü ayrıca okunmuştur: SQL75/RCSI10, sıfır skip. Kanıt eski SHA'dan kopyalanmamıştır; ayrıntı §9.1.
+- Aktif frontend #233 `424a586fc07efa291db4b37866ba5cce54fb7443`, main tabanlı 15 frontend yoludur. Node24 component suite267/267 ve C-01 browser10/10 kendi kapsamlarında raporludur. **Bu head yeni transport/readiness protokolünü veya donor create/link birleşimini henüz uygulamaz.**
+- #231 `173b003` tarihsel kaynaktır. Yeni frontend görevleri #233'te sürer; ikinci create/link veya ikinci şartname açılmaz.
 
-## 2. Kilitli kullanıcı sonucu
+## 2. Kilitli kullanıcı sonucu, kapsam ve değişmezler
 
-Aynı hukuki karşı taraf tek `Party` kimliğidir. Cari oluştururken veya mevcut Party'yi yetkili olunan bir Göymen şirketiyle ilişkilendirirken önceden sabit `Müşteri / Tedarikçi / Fason / Hizmet` ticari sınıflandırması seçmek zorunlu değildir.
+Aynı hukuki karşı taraf tek `Party` kimliğidir. Cari oluştururken veya mevcut Party'yi yetkili olunan şirkete bağlarken önceden sabit Müşteri/Tedarikçi/Fason/Hizmet sınıflandırması seçmek zorunlu değildir.
 
-Ticari yön ilgili gerçek iş işleminden gelir. Cari üzerindeki legacy ticari sınıflandırma:
+Ticari yön gerçek iş işleminden gelir. Legacy ticari sınıflandırma kullanıcı yetkisi, şirket erişimi, alış/satış ön şartı veya aktiflik durumu değildir; ayrı Party üretmez. `Party.Kind`, değişmez Cari kodu, `CompanyPartyAccount`, şirket izolasyonu, Identity permission/rolleri, aktif/pasiflik, audit, idempotency ve concurrency korunur. Rol yokluğu mal sahibini değiştirmez.
 
-- kullanıcı yetkisi değildir,
-- şirket erişimi değildir,
-- alış/satış yapabilme kapısı değildir,
-- hesabın aktif/pasif durumunu belirlemez,
-- ikinci bir Party/Cari kimliği oluşturma nedeni değildir.
+Mevcut dilim: roleless create/link, dört okuyucu, istemci-sunucu uyumluluğu, güvenli retry ve bunların kabulü. Sipariş implementasyonu, VKN/TCKN mükerrer motoru, otomatik şirket ilişkisi implementasyonu, yeni permission, toplu legacy veri silme, saklama politikası veya production aktivasyonu kapsam dışıdır. Para/miktar/formül/yuvarlama politikası bu dilimde yoktur.
 
-Korunanlar: `Party.Kind`, değişmez Cari kodu, `CompanyPartyAccount`, `CompanyId` izolasyonu, Identity permission/rol sistemi, aktif/pasif yaşam döngüsü, audit, idempotency ve concurrency.
+İş anlamı: `Party` ortak hukuki kimlik; `CompanyPartyAccount` tek şirketin bu tarafla ilişkisi; `Roles` opsiyonel eski ticari işaretler; `IsActive` ayrı yaşam döngüsü; `Version/RowVersion` ayrı eşzamanlılık kontrolüdür. Fiziksel şema/API sahibi Codex, ekran sahibi Claude'dur.
 
 ## 3. Payload wire sözleşmesi
 
 ### 3.1 İstek
 
-`POST /api/v1/counterparties` için `kind` ve `legalName` zorunludur. `tradeName` ve `roles` opsiyoneldir.
+`POST /api/v1/counterparties`: `kind` ve `legalName` zorunlu; `tradeName` ve `roles` opsiyoneldir. Mevcut Firma/Kişi, trim ve alan uzunluğu kuralları korunur.
 
-`POST /api/v1/counterparties/{partyId}/company-account` için rol seçimi zorunlu değildir; geçerli JSON object `{}` rol-yok ilişki isteğidir.
+`POST /api/v1/counterparties/{partyId}/company-account`: geçerli JSON object `{}` roleless link isteğidir. HTTP body'nin tamamen yokluğu `{}` değildir.
 
-`roles` command anlamları:
-
-- alan eksik → `PartyRole.None`;
-- sayısal tamsayı `0` → `PartyRole.None`;
-- sayısal tamsayı `1..15` → mevcut legacy flag birleşimleri.
-
-Geçersiz command değerleri: `null`, string, kesirli sayı, negatif değer, `16` veya tanımsız bitler ve malformed JSON. Link route'unda HTTP body'nin tamamen yokluğu `{}` ile aynı sayılmaz; mevcut body/mediatype doğrulaması korunur.
+- Eksik `roles` veya sayısal tamsayı `0` → aynı `PartyRole.None` ve aynı normalize logical payload.
+- Sayısal tamsayı `1..15` → mevcut legacy flag birleşimleri; **15 geçerlidir**.
+- `null`, string, kesirli/uygunsuz sayısal temsil, negatif, `16` gibi tanımsız bit ve malformed JSON geçersizdir. Client veya server geçersizi otomatik sıfıra çeviremez.
 
 ### 3.2 Yanıt
 
-Account projection'larındaki `roles` alanı **zorunlu sayısal tamsayıdır ve 0..15 aralığındadır**.
+List, detail, mutation ve link-candidate account projection'larında `roles` **zorunlu sayısal tamsayı 0..15**'tir. Request opsiyonelliği response'a taşınmaz.
 
-- `0` geçerlidir: belirtilmiş legacy ticari sınıflandırma yoktur.
-- `1..15` geçerlidir.
-- **15 geçerlidir.**
-- `16`, negatif, kesirli, `null` veya eksik response alanı malformed contract'tır.
+Geçerli: `0`, `1..15` ve özellikle `15`. Geçersiz: eksik alan, `null`, string, kesirli, negatif, `16` veya tanımsız bit. Null/missing response'u `0` kabul eden fallback yoktur. Şirket, kimlik ve version kontrolleri gevşetilmez.
 
-Bu ayrım list, detail, mutation ve link-candidate dört account reader yüzeyinde aynıdır.
+Liste version'ı mevcut numeric int64; detail/mutation/candidate account version'ı mevcut pozitif decimal string olarak kalır. Create/link için yeni `expectedVersion` üretilmez; active-state command'inin mevcut expectedVersion, gerekçe ve yetki sınırı korunur. Liste sayısından güvenilmez write version'ı türetilmez.
 
 ### 3.3 GET değişmezi
 
-Liste, detay, link-candidate araması, filtre, count ve pagination:
+Liste/detail/candidate/filter/count/pagination Party veya account oluşturmaz, aktifleştirmez, business audit veya durable command etkisi üretmez. Filtresiz sorgu `role` ve gereksiz `roleMatch` göndermez. HTTP `role=0`, rol-yok kayıt seçme sözleşmesi değildir; mevcut named legacy filtreler görünür ve temizlenebilir kalır.
 
-- Party oluşturmaz,
-- `CompanyPartyAccount` oluşturmaz,
-- hesabı aktifleştirmez,
-- business audit/idempotency etkisi üretmez.
+## 4. İstemci-sunucu uyumluluk sözleşmesi
 
-Filtresiz okuma `role` göndermez; gereksiz `roleMatch` göndermez. `role=0` yeni bir “rolsüzleri filtrele” contract'ı değildir.
+**Yalnız `roles=0` okuyabilmek yeterli değildir.** Payload doğruluğu, uyumlu sunucuyla konuşulduğunu veya bir komutun gerçekten işlendiğini kanıtlamaz.
 
-## 4. Client-server compatibility transport sözleşmesi
+### 4.1 Declaration ve sunucu cevabı
 
-`roles=0` okuyabilmek **tek başına yeterli değildir**. Yeni frontend ile yeni backend'in birbirini exact protokol düzeyinde tanıması ve command öncesinde mevcut server/context uyumluluğunu taze olarak kanıtlaması gerekir.
-
-### 4.1 Contract declaration
-
-Desteklenen her Cari exchange'de istemci tam olarak bir kez şunu gönderir:
+Yeni uyumlu istemci her desteklenen Cari exchange'de, GET dahil, tam bir adet şu başlığı gönderir:
 
 ```text
 X-ERP-Counterparty-Contract: optional-trade-roles-v1
 ```
 
-Command'lerde bu declaration zorunludur. Missing command header → `409 client_contract_required`. Empty/duplicate/combined/unsupported declaration → `409 client_contract_unsupported`.
+Sunucu teyidi de aynı başlık/değerdir; API'nin ürettiği değerdir, keyfi istemci değerinin yansıması değildir.
 
-Bu pre-handler contract reddi:
+Tüm Cari commands, active-state ve durable replay dahil, desteklenen declaration gerektirir:
 
-- business handler çalıştırmaz,
-- Party/account yazmaz,
-- business audit yazmaz,
-- durable idempotency result üretmez.
+| Command isteği | Beklenen sonuç | Oluşmaması gereken etki |
+|---|---|---|
+| Başlık yok | 409 `client_contract_required` | Handler çalışması, business/audit/idempotency kaydı, attempt key tüketimi |
+| Boş, duplicate, virgülle birleşmiş veya unsupported declaration | 409 `client_contract_unsupported` | Aynı sıfır etki |
+| Tek doğru declaration | Mevcut authorization/validation/command akışı devam eder | Otomatik permission, şirket erişimi, capability veya transaction başarısı |
 
-Header authentication, permission, capability veya feature flag değildir.
+Bu başlık authentication, entitlement veya feature flag değildir. Private/no-store response ve mevcut CORS origin allowlist korunur. Başlığı okumak için allowlist genişletilmez.
 
-### 4.2 Command readiness yalnız taze başarılı GET ile oluşur
+### 4.2 Yazma öncesi taze başarılı GET
 
-Form/yazma aksiyonu ancak aynı güncel bağlamda yapılan **taze, başarılı ve gövdesi başarıyla doğrulanmış bir GET** sonrasında açılabilir.
-
-Hazırlık kanıtı birlikte şunları gerektirir:
+Herhangi bir Cari yazması açılmadan önce istemci aynı güncel bağlamda yeni, başarılı bir Cari GET alışverişiyle uyumu doğrular. Hazırlık koşulları birlikte sağlanır:
 
 ```text
-HTTP success
-+ response DTO validation success
-+ exact X-ERP-Counterparty-Contract: optional-trade-roles-v1 acknowledgment
+başarılı HTTP GET
++ tam ve decoder-valid response body
++ exact X-ERP-Counterparty-Contract: optional-trade-roles-v1 teyidi
 + aynı API origin
-+ aynı actor/session
-+ aynı selected CompanyId
-+ aynı client generation
++ aynı kullanıcı/oturum
++ aynı seçili CompanyId
++ aynı generation/fence
 ```
 
-Readiness global bir boolean değildir. Logout, session değişimi, company değişimi, API origin değişimi veya generation/fence değişimi readiness'i geçersiz kılar. Geç kalan response eski context için readiness kuramaz.
+Eski cache verisi, önceki oturumdan boolean, yalnız `roles=0` görülmesi, hata cevabı veya command cevabı bu hazırlığın yerine geçmez. Sayısal freshness TTL'si burada seçilmez. Gerekli bağlam yenilendiğinde taze GET yeniden yapılır.
 
-Eski server request header'ı yok sayıp `200` dönebilir fakat acknowledgment vermeyebilir. Bu durumda yeni client formu kapalı tutar ve **POST sayısı 0** olmalıdır. Uyumluluğu aşmak için `Customer=1` veya `15` uydurulmaz.
+Eski server declaration'ı yok sayıp 200 ve geçerli gövde dönebilir, fakat teyit vermeyebilir. **Form/yazma kapalı, POST/PUT sayısı 0** kalmalıdır. Uyumu denemek için POST yapılmaz; `Customer=1` veya `15` uydurularak dolaşılmaz.
 
-### 4.3 GET compatibility davranışı
+Taze GET doğru teyit taşısa bile hata veya geçersiz/yanlış şirkete ait gövdeyse hazır oluş kurulmaz. Başarılı GET'te eksik/uyumsuz/çelişkili teyit de uyumun kanıtlanamadığı anlamına gelir; yalnız başlığa bakarak sunucu sürümü teşhisi yapılmaz.
 
-Legacy/headerless GET, görünür projection yalnız `roles=1..15` içeriyorsa mevcut authorized legacy başarıyı döndürebilir. Görünür authorized projection içinde `roles=0` varsa incompatible success body yerine compatibility `409` verilir.
+Company/session/actor/API origin/generation değişikliği, logout ve mevcut fence olayları hazırlığı iptal eder. Eski response yeni bağlamı hazır yapamaz. A şirketindeki teyit B'ye link yazmasını açmaz; B bağlamında yetkili başarılı GET gerekir. B hesabı henüz yoksa buna uygun mevcut list/candidate okuması kullanılabilir; GET yine hesap açmaz.
 
-Unsupported GET declaration mevcut authorization/validation/not-found/availability davranışını maskelenmemelidir. Örneğin unauthorized list `403` kalır; acknowledgment veya account kimliği sızdırmaz. Foreign-company zero row görünür hale gelmez.
+### 4.3 Legacy GET farklıdır
 
-### 4.4 Error response acknowledgment semantiği
+Yeni istemcinin her GET'te declaration göndermesi, backend'in tüm headerless GET'leri koşulsuz reddettiği anlamına gelmez:
 
-**Hata response'undaki acknowledgment readiness değildir ve command success değildir.**
+- Declaration'sız legacy GET yalnız yetkili projection'da roller1..15 ise mevcut başarıyı döndürebilir.
+- Aynı yetkili projection'da herhangi bir görünür account `roles=0` içeriyorsa incompatible success body yerine 409 `client_contract_required` döner.
+- Unsupported GET declaration yalnız başarılı yetkili projection'ı 409 `client_contract_unsupported` yapar; mevcut authorization/validation/not-found/availability hatasını maskelemez.
+- Örneğin unsupported declaration'lı yetkisiz liste 403 olarak kalır; teyit ve account kimliği sızmaz. Başka şirketin gizli zero hesabı görünürlüğe veya compatibility kararına katılmaz.
 
-`080e7a1` runtime'da exact declaration client-contract filtresinden geçtikten sonra handler tarafından üretilen bazı error response'lar acknowledgment taşıyabilir. Buna karşılık authentication, company resolution veya body binding gibi filtre öncesi hatalar acknowledgment içermeyebilir.
+### 4.4 P2: hata başlığı koşulludur
 
-Bu nedenle:
+`880cae8` OpenAPI'de bu başlığı **opsiyonel response metadata** olarak belgelemiştir. Her hata/başarı cevabında varlığı garanti edilmez. Buna rağmen yeni istemcinin command hazırlığı için §4.2'deki başarılı GET + teyit birlikte zorunludur; bunlar çelişmez.
 
-- error + matching ack → readiness kurulmaz;
-- error + matching ack → business success değildir;
-- error + ack yok → tek başına “eski server” kanıtı değildir;
-- mevcut HTTP/problem-code/unknown-outcome davranışı korunur.
+Mevcut filter doğru declaration'ı kabul ettikten sonra, handler'dan önce API-owned teyidi kurar. Bazı handler hataları bu başlığı taşır. Authentication, company resolution, body binding ve diğer filter öncesi hatalar taşımayabilir. Unsupported declaration'a compatibility reddi teyit vermez.
 
-James P2, OpenAPI'nin error response'lardaki bu koşullu header gerçeğini eksik belgelemesiydi. `880cae8` bu açıklamayı generated OpenAPI'ye taşımayı hedefleyen P2 düzeltmesidir. `880cae8` final CI/review tamamlanmadan P2 “final PASS” olarak bu belgeye yazılmaz.
+Aşağıdaki gerçek HTTP contract örnekleri P2 tesliminde aynı doğru request declaration ile ayrılmıştır:
 
-### 4.5 Command acknowledgment ve unknown outcome
+| Yol | HTTP | Teyit | İstemci hükmü |
+|---|---|---|---|
+| Yetkili GET, geçersiz `role=0` query | 400 handler validation | Var | Hata; hazır oluş ve business başarı yok |
+| Cari read permission'ı olmayan company viewer, handler/read-service reddi | 403 | Var | Yetki hatası; hazır oluş yok |
+| Kimlik doğrulanmamış GET | 401 filter öncesi | Yok | Oturum/auth hatası; başlık yokluğu eski server kanıtı değil |
+| Yetkili POST, malformed JSON | 400 body binding | Yok | Mevcut hata/attempt kuralları korunur; eski server teşhisi yapılmaz |
 
-Command exchange declaration gönderir ve response acknowledgment doğrular.
+**Hata + doğru teyit ne transaction makbuzu ne command başarısı ne readiness'tir. Hata + teyit yokluğu tek başına eski server kanıtı değildir. Başarısız GET ve command cevapları readiness kurmaz.**
 
-Başarılı command response için matching acknowledgment beklenir. Command response'ta acknowledgment eksik/uyumsuzsa istemci sonucu güvenli biçimde **unknown outcome** olarak ele alır; “başarısız oldu, yeni key ile yeniden dene” sonucuna atlamaz.
+P2 yeni protokol sürümü değildir. Beş dosya: `ErpOpenApiContract.cs`, canonical OpenAPI, backend handoff, `OpenApiContractGenerationTests.cs`, `CounterpartyClientContractTests.cs`. Runtime filter/CORS/permission/SQL/retry/version davranışı değiştirilmemiştir. Final SHA'nın yeni kanıtı §9.1'de ayrı tutulur.
 
-Unknown outcome sırasında aşağıdakiler korunur:
+### 4.5 Belirsiz command sonucu
 
-- aynı command attempt,
-- aynı actor/session ve CompanyContext,
-- aynı normalized payload,
-- aynı Party/resource binding,
-- **aynı Idempotency-Key**.
+Command response'unda eksik/uyumsuz acknowledgment, malformed başarı gövdesi veya ağ/timeout gibi belirsizlik başarıya çevrilmez. Mevcut unknown-outcome davranışı korunur; körce yeni logical attempt açılmaz.
 
-Daha sonra gelen compatibility `409` bu attempt'i silmez. İstemci otomatik yeni key üretmez ve otomatik blind retry yapmaz. Güncel context tekrar doğrulandıktan ve taze başarılı GET + exact acknowledgment yeniden alındıktan sonra yalnız kullanıcının/akışın açık same-attempt retry'ı aynı key ile yapılabilir.
+Korunan işlem: command/path, actor, CompanyContext, API hedefi, Party/resource bağı, normalize payload, **aynı Idempotency-Key** ve mevcut correlation/attempt izi. Aynı key'le başka şirket/Party/payload'a taşınmaz.
 
-Create ve link birbirinden ayrı logical attempt'tir; birbirlerinin key'ini paylaşmaz.
+Daha sonra compatibility409 alınması daha önce belirsiz kalan girişimin hiç işlenmediğini kanıtlamaz. Önceki attempt silinmez; otomatik yeni key veya otomatik blind retry yoktur. Yeni işlem olduğu kesin olan ilk compatibility reddinin sıfır etkisiyle, daha eski belirsiz bir girişimin sonucu karıştırılmaz.
+
+Güncel yetki/bağlam tekrar doğrulandıktan ve o bağlamda taze başarılı GET + exact teyit alındıktan sonra, yalnız açık same-attempt retry aynı key ve normalize payload ile yapılabilir. Kullanıcı/oturum/şirket değişimi otomatik recovery veya otomatik retry değildir; önceki girişim yeni bağlama taşınmaz. Eski yanıt yeni ekrana success/navigation yaptıramaz.
+
+Create ile link ayrı logical attempts'tir; farklı key kullanır. Aynı command/context/key içinde missing roles ile numeric0 eşdeğerdir. HTTP hata statüleri korunur; başlık bir iş işleminin commit olup olmadığının tek başına makbuzu sayılamaz.
 
 ### 4.6 Mixed-node sınırı
 
-Bu protokol eski backend node'larını retrofit etmez. Aynı deployment'ta yeni/eski node karışımı varsa coordinator düzeyinde affinity/drain/routing checkpoint gerekir. Bir istekte acknowledgment alınmış olması sonraki request'in aynı uyumlu node'a gideceğini kendiliğinden kanıtlamaz.
+Protokol eski backend binary'sini sonradan uyumlu hale getirmez. Teyit veren node'a GET yapılması, sonraki yazmanın aynı uyumlu node'a gideceğini kendiliğinden kanıtlamaz. Karma node ortamı için koordinatörün somut routing/affinity/drain checkpoint'i gerekir; var olan bir mekanizma varsayılmaz.
 
-Mixed-node routing/drain production politikası bu spec tarafından seçilmez ve production aktivasyonu vermez.
+Sonraki command teyitsiz kalırsa §4.5 uygulanır. Routing/production politikası bu şartnameyle seçilmez. Normal capability kapısı ve production aktivasyonu ayrı kalır.
 
-## 5. SQL, migration, retry ve rollback sınırı
+## 5. SQL, işlem durumları ve geri alma sınırı
 
-PR #230 `CompanyPartyAccount.Roles` alanını NOT NULL integer olarak bırakır ve check constraint'i `1..15` → `0..15` genişletir. Eski migration dosyaları veya legacy `1..15` verileri rewrite/backfill edilmez.
+`CompanyPartyAccount.Roles` NOT NULL integer kalır; constraint1..15 →0..15 genişler. Uygulanmış eski migration veya legacy kimlik/rol/audit/durable response/fingerprint rewrite edilmez.
 
-Aynı normalized command + aynı actor + aynı company + aynı idempotency key tekrarında ikinci business etki oluşmaz. Actor/company/payload değişirse mevcut conflict sınırı korunur. Farklı key'lerle aynı `(CompanyId, PartyId)` link yarışında tek account kalmalıdır.
+İzinli: aktif veya mevcut pasif hesabın roles0 taşıması; farklı şirket hesaplarında farklı legacy işaretler. Yasak: rol yok diye reaktivasyon, grant, sahiplik devri veya ikinci Party oluşturulması. Pasif hesabı aktifleştirme ayrı mevcut yetkili/version'lı command'dir.
 
-Audit veya durable idempotency persistence başarısızsa business write atomik rollback olmalıdır.
+Create atomik başarıda bir Party, bir seçili şirket hesabı, bir ilgili created audit ve bir durable result üretir. Link aynı Party için bir target account, bir ilgili created audit ve kendi durable result'unu üretir; kaynak hesap değişmez. Bu normal başarı örnekleri sistem genelindeki tüm audit/log kayıt sayısı iddiası değildir.
 
-Downgrade veri-bağımlıdır:
+Same-key replay ikinci business effect üretmez. Farklı key'li aynı `(CompanyId, PartyId)` link yarışında tek account ve tek başarılı created audit kalır. Kaybeden command'in durable conflict sonucu saklanabilir; iki ayrı attempt olduğu için toplam CommandExecution sayısını körce1 şart koşmayın.
 
-- henüz `roles=0` satırı yoksa eski constraint'e dönüş mümkün olabilir;
-- `roles=0` satırı varsa Down DDL öncesi fail-closed reddetmelidir (`SQL 51000`);
-- rollback için hesabı silmek, `Customer=1` veya `15` uydurmak yasaktır;
-- expanded schema + compatible reader korunur, yeni write durdurulur ve forward-fix uygulanır.
+Audit veya idempotency persistence hatası business transaction'ı geri alır; yarım Party/account kalmaz. SQL sequence boşluğu business kaydı sayılmaz; kesintisiz kod sırası garantisi üretilmez. Formdan Vazgeç, sunucunun işlemiş olabileceği command'in rollback'i değildir.
 
-## 6. Çok şirketli Cari görünümü — iş kuralı
+Zero account yokken eski constraint'e güvenli Down yolu testlidir. Zero account varsa Down DDL öncesi SQL51000 ile reddeder. Hesap silme veya sahte Customer/15 atama yoktur; expanded schema ve uyumlu reader korunur, yeni yazma durdurulur, forward-fix yolu izlenir. Bu dilimde finansal iade/ters stok hareketi veya genel silme komutu yoktur.
 
-Bu konu tek-şirket Cari akışının blokajı değildir.
+## 6. Çok şirketli Cari görünümü
 
-Değişmez iş modeli:
+Hukuki Party tek; şirket ilişkileri ayrı `CompanyPartyAccount`'lardır. Grup görünümünde tek hukuki başlık altında şirket hesapları açıkça ayrılır. Her account'un CompanyId'si, aktifliği ve legacy sınıflandırması kendi hesabına aittir. Ortak Party görünürlüğü yetkisiz şirket bilgilerini açmaz.
 
-1. Hukuki cari/Party **tek kalır**.
-2. Her Göymen şirketi ilişkisi ayrı `CompanyPartyAccount` olarak kalır.
-3. Grup görünümünde aynı Party tek hukuki kimlik olarak gruplanabilir; altındaki şirket hesapları açıkça ayrılmalıdır.
-4. Her şirket hesabının `CompanyId`, aktif/pasif durumu ve legacy sınıflandırması başka şirket hesabıyla sessiz birleştirilemez.
-5. Gelecekte bakiye/risk/limit/tutar gösterildiğinde şirket ve para birimi boyutu korunur. Farklı şirket/döviz tutarları tek hesap değeri gibi mahsuplaştırılamaz/birleştirilemez.
-6. Şirket başına alt satır, açılır account alanı veya rozetli görünüm gibi sunum tercihi geri alınabilir UX kararıdır; iş kuralı yukarıdaki ayrımı korur.
+Gelecekte mali tutarlar yalnız yetkili gerçek kaynakla ve şirket + para birimi boyutunda gösterilir; ayrı şirket/döviz bakiyeleri sessizce toplanmaz veya mahsuplaştırılmaz. Bugün olmayan bakiye servisi için sıfır/sahte metrik üretilmez.
 
-Grup görünümünün nihai piksel düzeni C-01/C-02/C-03/link tek-şirket düzeltmelerini bekletmez.
+Alt satır, açılır account bölümü veya şirket rozeti gibi sunum tercihi geri alınabilir UX kararıdır. Hiçbiri hesap ayrımını kaldıramaz. Bu tercih tüm tek-şirket C-01/C-02/C-03/link akışına veya protocol düzeltmesine blokaj yapılmaz. Her yazma yine tek açık CompanyContext'tedir; grup okuması tek başına write readiness değildir.
 
 ## 7. Kabul kimliği uzlaştırması
 
-PR #229 `ILK_DILIM_CARI_ROL_UZLASTIRMA.md` içindeki CR kimlikleri değiştirilmez ve yeniden anlamlandırılmaz.
+Paket kaynağı: [#229 exact ilk dilim](https://github.com/sinangym/GoymenERP/blob/e1fd69da69df36a72e559ea07163fb3f359b3c61/docs/planning/2026-09-10/ILK_DILIM_CARI_ROL_UZLASTIRMA.md). CR kimlikleri değiştirilmez; bu belgedeki CRO kimlikleri kanonik AT/DEC kaydı değildir.
 
-| Paket-local kimlik | Bu belgedeki kimlik | Anlam |
+| Paket-local | Bu belge | Değişmeyen anlam |
 |---|---|---|
 | CR-01 | CRO-AC-001 | Roleless create |
-| CR-02 | CRO-AC-002 | Migration, legacy koruma, invalid SQL/wire sınırı |
+| CR-02 | CRO-AC-002 | Migration/legacy koruma |
 | CR-03 | CRO-AC-003 | Roleless company link |
 | CR-04 | CRO-AC-004 | Şirket/yetki/non-disclosure |
-| CR-05 | CRO-AC-005 | Same-key retry ve conflict |
-| CR-06 | CRO-AC-006 | Different-key race ve transactional rollback |
+| CR-05 | CRO-AC-005 | Same-key retry/conflict |
+| CR-06 | CRO-AC-006 | Different-key race/rollback |
 | CR-07 | CRO-AC-007 | Durable legacy/roleless replay |
-| CR-08 | CRO-AC-008 | Roleless read/filter/candidate ve GET saflığı |
-| CR-09 | CRO-AC-009 | Passive/version/permission ayrımı |
-| CR-10 | CRO-AC-010 | Mixed old/new client ve rollout |
-| — | CRO-AC-011 | Wire invalid-response/request matrisi |
-| — | CRO-AC-012 | Başarı sonrası detail/list dönüşü ve state/focus |
+| CR-08 | CRO-AC-008 | Read/filter/candidate ve GET saflığı |
+| CR-09 | CRO-AC-009 | Passive/version/permission |
+| CR-10 | CRO-AC-010 | Mixed client/rollout |
+| — | CRO-AC-011 | Geçersiz wire/transport |
+| — | CRO-AC-012 | Başarı/detail/list dönüşü |
 
-Yeni transport senaryoları ayrı bir kimlik ailesi oluşturmaz; CRO-AC-001/003/005/008/010/011/012 içine aşağıda bağlanır.
+İlk sohbet taslağının CR'leri paket CR'leri değildir: sohbet01→CRO001; sohbet02/06/09→CRO008; sohbet03→CRO002 kısmi; sohbet04→CRO003; sohbet05→CRO004 kısmi; sohbet07→CRO006 kısmi; sohbet08→CRO005. Paket CR07/09/10'un tamamı bu eski sohbet karşılıklarıyla kanıtlanmış sayılmaz.
 
-Gelecekte aynı roleless Carinin gerçek alış ve satış siparişlerinde kullanılmasını kanıtlayacak senaryo bu Cari diliminde çalışmış test değildir. Yerel referans: `FUT-CARI-ORDER-001`; durum `FUTURE / NOT_IMPLEMENTED / NOT_RUN`.
+Sohbet CR10'daki gelecekte alış+satış siparişinde aynı Cari kullanımı `FUT-CARI-ORDER-001 / FUTURE / NOT_IMPLEMENTED / NOT_RUN` olarak ayrıdır. Yeni transport alt senaryoları aşağıdaki aynı CRO maddelerine bağlanır; yeni kimlik sistemi/görev sistemi açılmaz.
 
 ## 8. Kanıt sınıfları
 
-Kanıtlar birbirinin yerine kullanılmaz:
+- **REAL_SQL:** gerçek SQL Server + backend/HTTP persistence kabulü. JS readiness veya gerçek tarayıcı değildir.
+- **HTTP_CONTRACT / OPENAPI:** HTTP hata/header yolları ve şema/drift; SQL olarak sayılmaz.
+- **COMPONENT:** React/Vitest decoder/form/context davranışı; browser veya gerçek API değildir.
+- **CONTROLLED_BROWSER:** kontrollü/stub/seam Chromium; gerçek durable server replay değildir.
+- **ISOLATED_C01_BROWSER:** gerçek API+frontend, yalnız etkin C-01 kapsamı; create/link kabulü değildir.
+- **INTEGRATED_ROLELESS_BROWSER:** pinlenmiş güncel frontend/backend/schema/fixture üzerinde roleless create/list/detail/link, context/protocol ve gerçek persistence birlikte.
 
-- **REAL_SQL**: gerçek SQL Server üzerinde backend/HTTP persistence ve transport kabulü.
-- **COMPONENT**: React/Vitest decoder/form/context/readiness davranışı; gerçek tarayıcı veya gerçek server değildir.
-- **CONTROLLED_BROWSER**: kontrollü/stub/seam tabanlı Chromium; gerçek backend/persistence değildir.
-- **ISOLATED_C01_BROWSER**: izole compose yığınında gerçek API + frontend; yalnız aktive edilen capability ve exact test kapsamını kanıtlar.
-- **INTEGRATED_ROLELESS_BROWSER**: güncel backend transport/schema + güncel frontend protocol/forms + roleless create/list/detail/link + SQL persistence birleşik kanıtı.
-
-Exact-head kanıtı yalnız kendi SHA'sına aittir. `080e7a1` başarıları `880cae8` veya sonraki SHA'ya otomatik taşınmaz.
+Test tasarımı PASS değildir. Her sonuç exact source, gerçek checkout, run/job ve kapsama bağlıdır. 080e7a1 sonuçları 880cae8'e veya sonraki SHA'ya otomatik taşınmaz. Kaynak incelemesi, başkasının koşum raporu, doğrudan CI günlüğü okuması ve yeni test çalıştırma ayrı tutulur. CHATGPT-BUSINESS bu teslimde ürün testlerini yeniden koşturmadı; aşağıdaki belirtilen günlükleri okudu.
 
 ## 9. Kanıta bağlı kabul matrisi
 
-| Kabul | REAL_SQL / backend | COMPONENT | CONTROLLED / C-01 browser | INTEGRATED_ROLELESS_BROWSER | Güncel hüküm |
-|---|---|---|---|---|---|
-| CRO-AC-001 roleless create | **PASS @080e7a1**: main reconcile + optional-role SQL/protocol inventory korunmuş; broad `75/75`, RCSI `10/10`, skip0. Command header gate eksik/unsupported write'ı handler öncesi durdurur. | #228 donor formunda role zorunluluğu tarihsel olarak hâlâ var; #233 transport/form birleşimi henüz yok. | #228 eski roleful controlled create kanıtı; #233 C-01 ilgisiz. | **NOT_RUN** | Backend exact 080 PASS; kullanıcı create + fresh-GET readiness + new-client/old-server POST0 browser açık. |
-| CRO-AC-002 migration/legacy | **PASS @080e7a1**: migration/Down/legacy replay korunumu, #227 inventory ile main uzlaşması tamamlanmış. | N/A | N/A | N/A | 080 exact-head kanıtlı; 880 P2 docs SHA'sına CI otomatik taşınmaz. |
-| CRO-AC-003 roleless link | **PASS @080e7a1**: missing/0 link, race, transaction ve protocol gate. Target company için taze readiness ayrıca frontend sorumluluğu. | #228 link form donor kaynağı; donor release bekleniyor. | Eski roleful controlled link tarihsel kanıt. | **NOT_RUN** | Target-company fresh GET + ack → same Party/roles0 B link integrated browser açık. |
-| CRO-AC-004 company/yetki | **PASS @080e7a1**: authorization/company isolation korunur; unsupported GET declaration handler 403/404 gibi error'ları maskelenmez; zero detection authorized projection sınırındadır. | #233 mevcut company/generation reader guard'ları kendi kapsamlarında testli. | #233 C-01 authorized list regresyonu. | **NOT_RUN roleless** | Header permission değildir; birleşik negatif browser açık. |
-| CRO-AC-005 same-key retry | **PASS @080e7a1**: durable same-key replay/protocol facts. Command compatibility rejection handler/idempotency etkisi üretmez. | Donor `commandAttempt/useCommandAttempt` same-attempt semantics korunacak; yeni protocol unknown-outcome testleri henüz yok. | #228 controlled unknown-outcome `persistentServerReplayClaimed=false`; gerçek durable browser replay değildir. | **NOT_RUN** | Missing/mismatched command ack → unknown; same key/context/payload korunmalı; auto new-key yasak. |
-| CRO-AC-006 race/rollback | **PASS @080e7a1**: prior race/rollback + reconciled mandatory inventory. | N/A | N/A | N/A | Backend exact-head PASS. |
-| CRO-AC-007 durable replay | **PASS @080e7a1**: legacy/roleless replay ve command transport declaration davranışı backend scope'ta korunur. | N/A | Controlled replay durable server kanıtı değildir. | **NOT_RUN mixed-version** | Backend PASS; client/mixed-node kanıtı ayrı. |
-| CRO-AC-008 roleless read/GET saflığı | **PASS @080e7a1**: roleless list/detail/candidate GET no-write + compatibility 409/non-disclosure protocol facts. | **PASS kısmi @#233/424a586**: list/detail roles `0..15`, null/missing/fraction/negative/16 reject; Node24 `267/267 PASS`. Mutation/candidate donor tarafı henüz alınmadı. | #233 gerçek C-01 `10/10 PASS`; yalnız list/regression, yeni transport header/readiness uygulanmış değil. | **NOT_RUN** | Dört reader + transport readiness tamamlanmadan genel PASS yok. |
-| CRO-AC-009 passive/version/permission | 080 backend kapsamı active-state command'i de contract header'a bağlar; önceki lifecycle/version kuralları korunur. Exact yeni integrated browser yok. | N/A | N/A | **NOT_RUN** | Backend contract mevcut; end-to-end active-state optional-role kanıtı genel Cari kapanışı değildir. |
-| CRO-AC-010 mixed client/rollout | **PASS backend protocol scope @080e7a1**, fakat mixed-node/browser değildir. Eski client headerless GET zero projection görürse incompatible success withheld/409; command header gate vardır. | #233 `424a586` yeni transport protokolünü henüz uygulamıyor. | #233 C-01 yeni frontend + eski backend yalnız payload/list regresyonudur; new protocol readiness değildir. | **NOT_RUN**: old-client/new-server, new-client/old-server, mixed-node affinity/drain, pending/company/logout/unknown | **PARTIAL / CR-10 NOT_RUN**. |
-| CRO-AC-011 invalid wire/transport | **PASS @080e7a1**: invalid roles + missing/unsupported/duplicate contract declaration protocol facts. James P2 yalnız error-header dokümantasyon tamamlığıydı. | #233 list/detail payload guard PASS; transport error-ack semantics henüz component'e alınmadı. | Mevcut C-01 header protokolünü test etmiyor. | **NOT_RUN** | 880cae8 error-header docs düzeltmesi mevcut fakat final CI/review sonucu bekleniyor. |
-| CRO-AC-012 başarı/detail/list dönüşü | #227 baseline create→list→detail→link roleful gerçek SQL; 080 transport backend scope ekler, frontend journey değildir. | **PASS kısmi @424a586**: sonraki sayfa dönüşü artık taze cursor ile en çok 4 sayfa ileri walk; remembered cursor replay edilmez. | #233 C-01 list browser PASS; detail capability/return walk browserda çalıştırılmış değildir. | **NOT_RUN** | Component dönüş düzeltmesi tam roleless create/detail/link/browser kabulü değildir. |
+Her satırda başlangıç/eylem, beklenen kayıt ve yasak etki belirtilmiştir. Backend için yeni kanıt kesiti §9.1'deki 880cae8/969a4a8 koşumudur; eski080 sonucu değildir. Entegre protokol browser'ı bütün ilgili satırlarda henüz NOT_RUN'dır.
 
-### 9.1 `080e7a1` kanıt sınırı
+| Kabul | Başlangıç, eylem ve beklenen/yasak etki | Backend kanıtı | Component / controlled / C-01 | Bütünleşik kabul ve kalan |
+|---|---|---|---|---|
+| CRO-AC-001 | Yetkili A kullanıcısı; taze valid GET+teyit, sonra roles eksik/0 create. Bir Party+A account, roles0, ilgili audit/durable result. Eski server200/no-ack varyantında POST0, kayıt0. | OptionalRoles SQL missing/zero create ve command-gate senaryoları; yeni broad75 PASS. SQL, frontend'in önce GET yaptığını kanıtlamaz. | #228 roleful create donor; #233 list/detail dışında form/protocol birleşimi yok. C-01 bu senaryonun kanıtı değil. | NOT_RUN: gerçek form→GET/ack→POST201→doğru detail; no-ack sunucuda hiç POST olmaması. |
+| CRO-AC-002 | Eski1/3/15 kayıtlarıyla upgrade; kimlik/rol/audit/replay değişmez. Zero sonrası Down reddi; DDL/veri kaybı yok. | OptionalRoles migration/legacy/Down senaryoları yeni broad75 içinde PASS. | UI uygulanmaz. | Backend scope kanıtlı; production migration yapılmış değildir. |
+| CRO-AC-003 | Party A'da görünür, B account yok. B bağlamında taze valid GET+ack; `{}` veya roles0 link. Aynı Party, tek B account, A değişmez. A teyidiyle B yazması yasak. | OptionalRoles create/link ve target isolation SQL; yeni broad75 PASS. | Donor link ve candidate/mutation uyarlaması bekler. Controlled roleful link, roleless kanıt değildir. | NOT_RUN: B-readiness, same Party, yeni B hesabı ve no-ack B'de POST0. |
+| CRO-AC-004 | Yetkisiz/foreign Party ve şirket varyantları. Doğru başlık grant vermez; mevcut403/404, kimlik sızıntısı ve business etki0. | OptionalRoles authorization/isolation + transport HTTP/SQL senaryoları; §4.4 error yolları ayrıca HTTP contract. | #233 company/generation okuyucu kontrolleri kendi kapsamlarında; C-01 yetki listesi sınırlı. | NOT_RUN: context reset, yanlış şirket cevabından readiness kurulmaması, yetkisiz yazma0. |
+| CRO-AC-005 | Gönderilmiş command'in yanıtı timeout/malformed/ack eksik. Aynı attempt/key/company/Party/payload korunur; sonra409 ve tazeGET+ack sonrası açık same-key retry. İkinci business etki ve auto-new-key yok. | Durable replay/rollback ve protocol key-consumption SQL; yeni broad75 PASS. | #228 controlled unknown-outcome yalnız controlledResponsesOnly/persistentServerReplayClaimed=false. Yeni transport component zinciri henüz yok. | NOT_RUN: gerçek browser+server aynı key/path/payload ve tek kalıcı business etki. |
+| CRO-AC-006 | İki farklı key aynı Party/B link yarışı; ayrıca audit/idempotency hata enjeksiyonu. Tek target account/başarılı created audit; yarım write yok. | OptionalRoles different-key race + audit/idempotency rollback; yeni broad75 PASS. | UI bu SQL kanıtının yerine geçmez. | Backend scope kanıtlı. Kaybedenin durable conflict'i ikinci hesap değildir. |
+| CRO-AC-007 | Eski1..15 ve yeni0 durable sonuçlar; uyumlu declaration ile replay. Eski hash/snapshot korunur, yeni business etki yok. Headerless replay command'i reddedilir. | OptionalRoles legacy replay + transport command/retry SQL, yeni broad75 PASS. | Controlled replay gerçek durable replay değildir. | Client/mixed-node birleşimi NOT_RUN; eski hash yeniden yazılmaz. |
+| CRO-AC-008 | Liste/detail/candidate roles0; named filtre ve count; GET'ler DB değiştirmez. Legacy authorized projection1..15 başarı olabilir, visible0 ise409; gizli foreign0 sızmaz. | OptionalRoles read/no-write + iki protocol SQL fact'in read kapsamı; yeni broad75 PASS. | #233 list/detail roles0..15 component kanıtlı; mutation/candidate donor uyarlaması açık. C-01 yalnız list/regression. | NOT_RUN: dört reader+header/ack+valid GET. 200 fakat malformed body readiness kurmamalı. |
+| CRO-AC-009 | Roles0 pasif account, current/stale active-state sürümleri. Contract header zorunlu; gerekçe/yetki/version atlanmaz; pasiflik otomatik aşılmaz. | Mevcut active-state/version kuralları ve header gate kapsamı korunur. Toplam75 sonucundan özel roleless stale-version alt varyantına koşulsuz PASS çıkarılmaz; exact test bağı sahibi tarafından teyit edilecek. | Yeni active-state/protocol browser kanıtı yok. | PARTIAL; özellikle stale/no-op kayıt/version/audit sonucu ayrıca pinlenmeli. |
+| CRO-AC-010 | Eski/yeni client-server dört birleşim; mixed nodes; bekleyen response sırasında logout/company/session/API değişimi. Yalnız current valid GET+ack readiness; old server200/no-ack write0; error asla readiness değil. | Backend legacy GET/zero withholding ve command header reddi SQL PASS; client readiness/mixed-node kanıtı değildir. | #233 C-01 yeni payload reader+eski backend kanıtı; yeni transport handshake değil. | CR-10 NOT_RUN: hata başlığı var/yok, geç response, yeni node teyidinden sonra eski node yazma/unknown, somut affinity/drain. |
+| CRO-AC-011 | Request roles/null/string/fraction/negative/16; header missing/empty/duplicate/combined/unsupported. Response0/15 geçerli, null/missing/16 geçersiz. Error400/403 ack var;401/binding400 ack yok. | Invalid-role/protocol SQL + §4.4 dört HTTP test/OpenAPI P2 senaryoları. 880 yeni drift CI başarılı; yerel11 ayrı rapor. | #233 list/detail decoder testleri var; error-ack/readiness ve dört consumer birleşimi henüz yok. | NOT_RUN: hiçbir hata success veya readiness olmaz; error no-ack yalnızca eski server diye etiketlenmez. |
+| CRO-AC-012 | Başarılı roleless create/link ancak valid mutation+ack ile tek success/detail. Listeye dönüş güncel yetkiyle; eski cursor/generation geri yüklenmez. Belirsiz command'te success toast/navigation yok. | #227 roleful SQL journey korunur; backend transaction kanıtı ekran dönüşü kanıtı değildir. | #233424a586 sınırlı taze cursor walk component'i; detail/return browser NOT_RUN. C-01 liste PASS, form/link/detail yerine geçmez. | NOT_RUN: gerçek roleless akış+odak/konum. Bütçede bulunamadı uyarısı o kayda dönüş PASS'i değildir. |
 
-`080e7a1` için doğrulanmış: main `060da63` uzlaşması, 7/7 final-head CI, SQL `75/75`, RCSI `10/10`, skip0. Ampere exact SHA için P0/P1/P2=0 raporlamıştır. James aynı exact SHA'da yalnız conditional error-response acknowledgment dokümantasyonunda P2=1 bulmuştur. Bu P2 runtime authorization açığı değil contract completeness açığıdır.
+### 9.1 Backend exact-source kanıt kaydı
 
-`880cae8` P2 düzeltme commit'idir. Şu an `080e7a1` test başarısı `880cae8` için PASS olarak kopyalanmaz; `880cae8` kendi final CI/review evidence'ını tamamlamalıdır.
+**Tarihsel080e7a1:** [CI34538870747](https://github.com/sinangym/GoymenERP/actions/runs/34538870747), SQL75/RCSI10, skip0; C-01 ve UI golden önceki exact-source kanıtıdır. James'in o SHA'daki P2'li incelemesi tarihsel koşullu kayıttır.
 
-### 9.2 #233 kanıt sınırı
+**Yeni880cae8:** [CI34571306671](https://github.com/sinangym/GoymenERP/actions/runs/34571306671), [UI golden34571306701](https://github.com/sinangym/GoymenERP/actions/runs/34571306701), [C-01 browser34571306722](https://github.com/sinangym/GoymenERP/actions/runs/34571306722) tamamlanmış success. CI'nın backend/frontend/OpenAPI/SQL/container işleri ile iki ayrı workflow toplam yedi kontrolü oluşturur. Backend dalındaki frontend işi #233'ün yeni protocol implementasyonu değildir.
 
-#233 `424a586`, main tabanlı temiz 15 frontend yoldur. Node24 suite `267/267 PASS`, exact-head C-01 `10/10 PASS`. Sonraki sayfa dönüşü component düzeyinde taze cursor walk ile geliştirilmiştir.
+Bu tur doğrudan okunan [SQL job103173794207](https://github.com/sinangym/GoymenERP/actions/runs/34571306671/job/103173794207):
 
-Bu head yeni `X-ERP-Counterparty-Contract` declaration/ack/readiness protokolünü henüz uygulamaz. C-01 yalnız listeyi kanıtlar; create/detail/link, CR-10 veya new protocol integrated acceptance değildir.
+- CI'nin ilişkilendirildiği PR head: `880cae838e5d2f01a988f1e4a89afbe67858f48c`.
+- Günlükte gerçek checkout: `969a4a864b800e7e96fc0158aecbe60d7bf22866`, GitHub test-merge (`880cae8` into `060da63`). Test checkout'u PR head gibi yeniden adlandırılmaz.
+- 11 Eylül06:50:34 UTC: **SQLSERVER_RELATIONAL_ACCEPTANCE PASS total75/passed75/failed0/skipped0**.
+- 11 Eylül06:52:09 UTC: **RCSI_RELATIONAL_ACCEPTANCE PASS total10/passed10/failed0/skipped0**.
+- Bunlar gerçek .NET SQL koşum sonuçlarıdır, verifier MOCK veya self-test satırları değildir. Envanter kaynak handoff'unda68 discovery/75 execution olarak tanımlıdır.
 
-### 9.3 #228 donor/recipient sınırı
+İlgili kaynak/test yüzeyleri:
 
-Recipient `HANDOFF-ACCEPTED` `5626181170` ile mevcuttur. Donor `HANDOFF-RELEASED` henüz eksiktir. Donor release olmadan #228 shared/create/link yüzeyleri #233 owner tarafından devralınmış sayılmaz. Bu spec donor gibi makbuz vermez.
+- [CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests.cs @880](https://github.com/sinangym/GoymenERP/blob/880cae838e5d2f01a988f1e4a89afbe67858f48c/tests/GoymenERP.Api.IntegrationTests/CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests.cs): missing/zero create-link, legacy migration/replay, Down, authorization/read-only, race, audit/idempotency failure ve protocol alt senaryoları.
+- [CounterpartyClientContractTests.cs @880](https://github.com/sinangym/GoymenERP/blob/880cae838e5d2f01a988f1e4a89afbe67858f48c/tests/GoymenERP.Api.IntegrationTests/CounterpartyClientContractTests.cs): HTTP transport ve koşullu hata başlığı; SQL/browser diye sayılmaz.
+- [OpenApiContractGenerationTests.cs @880](https://github.com/sinangym/GoymenERP/blob/880cae838e5d2f01a988f1e4a89afbe67858f48c/tests/GoymenERP.Api.IntegrationTests/OpenApiContractGenerationTests.cs) ve canonical OpenAPI: request/response/header metadata.
+- #227'nin `CounterpartyJourneySqlServerRelationalAcceptanceTests.cs` mevcut baseline yolculuğu yeni mandatory envanterden çıkarılmaz.
+
+P2 tesliminin yerel raporu: dört yeni HTTP case + yedi OpenAPI/contract testi =11 PASS; schema SHA256 `062c06175916295bc97a438adea6fd01cdb608413c58501aa62208f87038a829`. Bu yerel sayı bu asistan tarafından tekrar koşturulmuş sayılmaz.
+
+[James880 delta incelemesi](https://github.com/sinangym/GoymenERP/pull/230#issuecomment-5630628142) ve [Ampere880 delta incelemesi](https://github.com/sinangym/GoymenERP/pull/230#issuecomment-5630627940) P0/P1/P2=0, önceki P2'nin yeni SHA'da kapandığını bildirir. Bağımsız AI incelemesi olarak aktarılmışlardır; insan/production onayı değildir. Böylece 880'e ait P2 kaynak ve yeni CI kanıtı mevcutken, 080'in koşullu incelemesi geriye dönük değiştirilmemiş olur.
+
+### 9.2 Frontend ve browser kanıt sınırı
+
+#233 `424a586fc07efa291db4b37866ba5cce54fb7443`: Node24 suite267/267 ve exact-source C-01 list10/10 raporu, 15 frontend yoluna aittir. [PR kaynak raporu](https://github.com/sinangym/GoymenERP/pull/233) ile [devir dosyası](https://github.com/sinangym/GoymenERP/blob/424a586fc07efa291db4b37866ba5cce54fb7443/src/frontend/goymen-erp-web/CARI_FRONTEND_DEVIR_2026-09-10.md) esas alınır.
+
+Liste dönüşü artık yalnız uyarı değildir: ilk sayfa taze okunur, gerekirse en çok dört ek sayfaya güncel cevap cursor'ıyla yürünür; eski cursor replay edilmez. Bu sınır mevcut implementation parametresidir, yeni genel işletme politikası değildir. Kayıt bulunursa odak döner; bütçede bulunamaması gerçek dönüş başarısı değildir. Detail capability kapalı C-01 yığını bu walk'ı veya create/link/detail zincirini tarayıcıda kanıtlamaz.
+
+#233'ün bu head'i yeni declaration/ack/readiness'i henüz uygulamaz. Eski C-01 veya component yeşili yeni protokolün PASS'i değildir. Ayrı tek seferlik16/16 liste davranışı raporu ve eski #231266/266 kaydı tarihsel/kapsamlı kalır. Node26'daki iki yerel hata yeni mandatory CI arızası diye tekrar açılmaz.
+
+### 9.3 Donor ve kontrollü browser sınırı
+
+#228 recipient `HANDOFF-ACCEPTED`5626181170 vardır; tekrar istenmez. Donor release ayrıca gereklidir; bu şartname donor gibi makbuz vermez veya onun unpublished successor dosyalarını sahiplenmez.
+
+[Koordinatörün controlled evidence kaydı](https://github.com/sinangym/GoymenERP/pull/228#issuecomment-5624268419): run34103473977 artifact10011561394; SDK80/80, helper54/54, controlled Chromium17/17; test-merge checkout2ebcbc7 ile d46 kaynak ağacının eşliği ayrı doğrulanmıştı. `persistentServerReplayClaimed=false`, `erp_accepted=false`; bu sayılar gerçek roleless server/browser birleşimi veya yeni protocol kabulü değildir. CSS/DPR eşdeğerleri gerçek browser zoom/screen-reader konuşması sayılmaz.
 
 ## 10. Frontend implementation sözleşmesi
 
-Tek frontend writer mevcut #233 sahibidir; #228 donor release sonrasında mevcut create/link/router kaynaklarını devralır. Yeni paralel implementation açılmaz.
-
 ### 10.1 Dört reader
 
-List/detail/mutation/link-candidate response için:
+Mevcut #233 sahibi list/detail'i, donor release sonrasında mevcut mutation/candidate'i aynı required integer0..15 contract'a uzlaştırır. 15 kabul,16 ret; response null/missing→zero yok. Identifier, şirket, PartyKind, aktiflik ve version korumaları değişmez. Yeni decoder ailesi veya paralel create/link uygulaması açılmaz.
 
-```text
-roles required
-integer
-0 <= roles <= 15
-known mask only
-```
+### 10.2 Form, düğme ve hata
 
-Geçerli: `0..15` — **15 dahil**. Geçersiz: missing/null/string/fraction/negative/16+ unknown bit.
+Mevcut create/link formlarındaki mandatory-role validation ve metin kaldırılır; başka zorunlu sınıfa dönüştürülmez. Firma/Kişi, hukuki ad, opsiyonel ticari ad ve salt okunur seçili şirket korunur. Kaynak roller hedefe kopyalanmaz.
 
-#233 list/detail uyumludur. Mutation/candidate donor code'daki `>=1` guard donor release sonrası aynı contract'a çekilir.
+Permission kaynaklı aksi mevcut non-disclosing kuralıyla sunulmaz; yetkili kullanıcı için uyumluluk doğrulanamaması işlevin çalışıyormuş gibi gösterilmesine izin vermez. Güvenli Türkçe açıklama ve mevcut error/dirty/pending/focus davranışı korunur. Teknik başlık kullanıcıdan elle istenmez.
 
-### 10.2 Formlar
+Yükleniyor/GET hatası/uyum doğrulanamadı durumunda write kapalıdır. Yalnız valid GET+ack açabilir. Command başarısı ancak kendi tam response ve teyidiyle gösterilir; belirsizlikte başarı bildirimi, formu temizleme veya detail navigation yapılmaz. Hata sınıfı başlık yokluğundan uydurulmaz.
 
-Create/link mandatory role validation/text kaldırılır. Request roles omitted veya `0` olabilir. Source account rolü target account'a kör kopyalanmaz. Dirty/pending, idempotency attempt, Party/company binding, action gating ve a11y korunur.
+### 10.3 Bağlama bağlı hazırlık
 
-### 10.3 Transport readiness
+`(apiOrigin, actor/session, selectedCompanyId, generation)` değişirse readiness düşer. Taze GET cevabı aynı tuple'a ait olmalıdır. Gerçek sunucu teyidi, response decoder ve mevcut authorization ayrı zorunluluklardır. Transport header eski source-account görünürlüğünü target link yetkisine çeviremez.
 
-Frontend her desteklenen exchange'de exact declaration gönderir. Command UI readiness yalnız taze başarılı validated GET + matching response acknowledgment ile kurulur ve şu tuple'a bağlıdır:
+### 10.4 Belirsiz girişim
 
-```text
-(apiOrigin, actor/session, selectedCompanyId, generation)
-```
+§4.5 tek attempt/key/payload/context kaynağıdır. Mevcut commandAttempt/useCommandAttempt, dirty/pending/company/logout fence ve accessible retry kaydı korunur. Daha sonra gelen409 önceki belirsiz girişimi yok saydıramaz. Fresh valid GET+ack sonrasında yalnız explicit same-key retry; otomatik yeni key yoktur.
 
-Tuple değişiminde readiness düşer. Old server 200 + ack yok → form blocked, POST0. Error response readiness kurmaz. Pre-filter error'da ack yokluğu old-server teşhisi değildir.
+## 11. Kalan görevler — mevcut sahiplik ve görevlerin devamı
 
-### 10.4 Unknown outcome
+Aşağıdaki CB/CF/CO/GB etiketleri mevcut #232 görev satırlarıdır; yeni issue, bağımsız görev sistemi veya paralel writer atanması değildir.
 
-Command response acknowledgment eksik/uyumsuzsa unknown outcome. Same attempt/key/context/payload korunur. Otomatik yeni key yok; otomatik blind retry yok. Fresh successful ack + current context sonrasında yalnız same-key explicit retry.
+### CODEX-BACKEND — #230 mevcut sahibi
 
-## 11. Kalan görevler — mevcut sahipleri koruyarak
+**CB-1 — P2 kanıtı güncellendi.** Kaynak: §4.4 ve §9.1. 880'de beş dosyalık düzeltme, James/Ampere delta kapanışı ve yeni CI/SQL kanıtı mevcuttur. Aynı P2 veya eski main conflict'leri yeniden açılmaz. Daha yeni backend commit gelirse yalnız ona ait fresh CI/review/SQL kanıtı istenir; 880 sonucu taşınmaz.
 
-### CODEX-BACKEND — PR #230 mevcut sahibi
+**CB-2 — bütünleşik protocol sözleşmesini koru.** Kaynak:5626451657 ve5630622096. Headerless/unsupported commands sıfır etkiyle ayrılan409; legacy authorized GET, koşullu error-ack, CORS allowlist, GET no-write, durable same-key, migration ve #227 mandatory journey korunmalı. Ölçülebilir bitiş: seçilen integrated backend/schema SHA'sında mevcut inventory/negative tests ve uygun fresh kapılar; CRO009 roleless stale-version alt testinin exact bağı veya dürüst açık kaydı.
 
-**CB-1 — P2 finalizasyonu.** `880cae8` conditional error-response acknowledgment açıklamasını OpenAPI/handoff/test contract'ında tamamlar. Bitiş: bu SHA veya daha yeni exact head için fresh required CI ve P2 closure review; `080e7a1` sonuçları otomatik taşınmaz.
+**CB-3 — mevcut izole kabul altyapısını değerlendir/devret.** Kaynak: koordinatörün mevcut altyapı sırası. P2 sonrası yayımlanmış donor lifecycle/fixture kullanılmalı; ikinci altyapı veya paylaşılan servis restart'ı açılmaz. Bitiş: tek kullanımlık, owner/run/commit/company/permission-bound ortamda gereken create/detail/link capability'leri ve teardown kanıtı; normal/production provider aktivasyonu değildir.
 
-**CB-2 — protocol invariants koruma.** Missing/unsupported command declaration handler öncesi 409; authorized read compatibility behavior; error header koşullu semantiği; CORS allowlist; GET no-write; same-key durable retry; SQL75/RCSI envanteri sonraki head'de korunur.
+### CLAUDE-FRONTEND — #233 mevcut sahibi
 
-**CB-3 — izole integrated acceptance altyapı devri.** Koordinatör sırasına göre mevcut backend/test altyapı sahibi create/detail/link capability desteğini run/commit/company/permission-bound biçimde tamamlar. Bu yeni backend implementation görevi değildir; mevcut test altyapısının integrated roleless browser için açılmasıdır.
+**CF-1 — yeni transport receipt ve uygulama.** Kaynak:080 handoff +880 conditional error clarification. Mevcut #233'te exact declaration, iki stable compatibility code, valid GET+ack readiness uygulanmalı. Payload-only veya ownership receipt yeni protocol receipt değildir. Bitiş: exact frontend commit, kullandığı backend/schema pinleri ve yeni contract testleri.
 
-### CLAUDE-FRONTEND — PR #233 mevcut sahibi
+**CF-2 — donor release sonrası dört reader/form.** Kaynak: mevcut #228 donor/recipient devri. Recipient makbuzu tekrar istenmez; donor release olmadan shared yüzey yazılmaz. Release sonrası mevcut create/link/router/attempt kodu alınır; mutation/candidate>=1 ve mandatory role kaldırılır, tüm eski ProblemCode'lar iki yeni code ile birlikte korunur. Bitiş: dört decoder için0/15 pozitif, null/missing/16 ve şirket/version negatifleri; roles eksik/0 form submit sözleşmesi.
 
-**CF-1 — yeni protocol exact-source receipt.** `080e7a1`/sonraki kabul edilen backend protocolünü exact source olarak al; declaration + stable error code + readiness contract'ı #233'e uygula. Eski payload-only handoff yeterli değildir.
+**CF-3 — readiness component varyantları.** Kaynak:CRO001/003/004/008/010/011. Taze valid GET+ack; old server200/no-ack→POST0; error400/403+ack→hazır değil;401/binding400-no-ack→eski server iddiası yok; actor/session/company/API/generation ve late response. Bitiş: her varyantta gönderilen command sayısı ve readiness durumu assert edilen gerçek component koşumu; önceki267 bunun yerine kullanılmaz.
 
-**CF-2 — donor release sonrası dört reader/form entegrasyonu.** Recipient receipt zaten `5626181170`; donor HANDOFF-RELEASED gelmeden shared #228 yüzeylerine yazma. Release sonrası mutation/candidate roles0 guard, create/link mandatory-role kaldırma ve mevcut command ProblemCode'ları + yeni `client_contract_required/unsupported` kodları birlikte korunur.
+**CF-4 — belirsiz attempt.** Kaynak:CRO005/007/012. Timeout/malformed/ack eksik→unknown; later409'da aynı attempt; fresh GET+ack sonrası açık same-key retry. Bitiş: command key/path/payload/company eşliği, yeni otomatik key/request olmadığı ve stale success/navigation olmadığı testli.
 
-**CF-3 — context-bound readiness component testleri.** Fresh GET+ack; old server 200/no-ack → POST0; error ack readiness kurmaz; pre-filter error no-ack old-server demek değildir; origin/actor/session/company/generation fence; pending/late response; logout/company change.
-
-**CF-4 — unknown attempt.** Missing/mismatched command ack → unknown; exact attempt/payload/context/key tutulur; later 409 attempt'i silmez; auto new key/retry yok; fresh ack sonrası same-key explicit retry.
-
-**CF-5 — integrated browser.** Koordinatörün pinned backend/frontend/schema/fixture head'lerinde roleless create→list→detail→B link; authorization/company negatives; old-client/new-server; new-client/old-server; company/logout/pending/unknown/same-key. C-01 `10/10` bunun yerine kullanılamaz. Mixed-node routing/drain coordinator koşuludur.
+**CF-5 — gerçek bütünleşik browser.** Kaynak: aynı CRO seti, yeni kimlik yok. Pinli backend/frontend/schema/fixture ile roleless create→list→detail→B link; wrong-company/permission; old-client/new-server ve new-client/old-server; pending/logout/unknown/retry. Bitiş: gerçekten çalışmış browser+API+SQL kayıt sayıları, skip ayrımı ve teardown. C-01 list10/10 veya controlled17/17 bunun yerine geçmez. Dönüş walk/gerçek zoom/screen-reader ayrı ölçülür; çalışmayan PASS değildir.
 
 ### CODEX-ORCHESTRATOR
 
-**CO-1.** Yeni paralel spec/create-link/backend writer açma; mevcut #230/#233 ve donor ownership sırasını koru.
+**CO-1.** Mevcut #230/#233/#228 sahiplik sırasını koru; yeni parallel spec/backend/create-link writer açma.
 
-**CO-2.** #228 recipient receipt'i tekrar isteme; yalnız gerçek donor release'i takip et. Bu business spec donor makbuzu vermez.
+**CO-2.** Var olan recipient receipt'i tekrar isteme; yalnız gerçek donor release'i ve yeni transport acceptance receipt'ini kendi anlamlarında takip et.
 
-**CO-3.** Backend exact SHA evidence'ını taşıma: `080e7a1` PASS ≠ `880cae8` PASS. Her yeni head için fresh CI/review sonucu ayrıca kaydedilir.
+**CO-3.** 080 ve880 kaynak/test/incelemelerini ayrı tut. 880 yeni CI/SQL/P2 kanıtı §9.1'de vardır; sonraki SHA için taşıma yapılmaz. Belge değişikliği ürün kabulü değildir.
 
-**CO-4.** Integrated browser için capability fixture/test altyapısını mevcut sahibine tamamlat; “yalnız liste açık” durumunu kalıcı ürün engeli diye yorumlama.
+**CO-4.** P2 sonrası mevcut altyapı sahibinin integrated fixture hazırlığı → Claude protocol/consumer/form kabulü → pinli gerçek integrated browser sırasını koru. Mixed nodes için somut affinity/drain checkpoint'ini kayıtla; var sayma veya production ayarını bu belgeyle seçme.
 
-**CO-5.** Final K3 kapısında exact backend/frontend/schema/fixture pinleri, fresh CI, gerçek SQL, integrated browser ve iki bağımsız exact-head review doğrula. Production activation ayrı Sinan kapısıdır.
+**CO-5.** Final K3 exact backend/frontend/schema/fixture, fresh CI/SQL/browser ve iki bağımsız exact-head review kapılarını doğrula. Lane self-merge yok. #229/#232 insan incelemesi ve production Sinan kapısı ayrıdır.
 
 ### CHATGPT-BUSINESS
 
-**GB-1.** Yalnız bu #232 dosyasını değişen exact-head evidence ile truth-sync tut; yeni paralel spec oluşturma.
+**GB-1.** Yalnız mevcut #232 dosyası ve kendi PR açıklaması exact-source kanıtla güncellenir; kanonik/shared ilerleme kaydına paralel yazılmaz.
 
-**GB-2.** CRO-AC kimlikleri ve CR eşlemesi sabit tutulur; transport acceptance yeni ID ailesine bölünmez.
+**GB-2.** CRO001…012 ve eski CR eşlemesi korunur; protokol varyantları bunlara bağlanır.
 
-**GB-3.** Sonraki yalnız bir dilim otomatik şirket ilişkisi pre-spec'idir; coordinator sırası roleless/mixed-version Cari kapanışından sonra implementation'a geçer.
+**GB-3.** Hemen sonraki hazır iş mevcut bütünleşik Cari kabulüdür. Aşağıdaki otomatik şirket ilişkisi yalnız önceden hazırlanmış bir sonraki pre-spec olarak korunur; implementation sırası/permission kararı onaylanmış sayılmaz. Bunun ötesinde sipariş veya genel ERP analizi açılmaz.
 
 ## 12. Sonraki tek dilim — otomatik şirket ilişkisi pre-spec
 
-Yerel çalışma adı: `CARI_AUTO_ACCOUNT_ON_FIRST_AUTHORIZED_BUSINESS_COMMAND_JIT_v1`.
+Yerel çalışma adı: `CARI_AUTO_ACCOUNT_ON_FIRST_AUTHORIZED_BUSINESS_COMMAND_JIT_v1`. Ayrı dosya açılmaz. Durum: **PRE-SPEC / IMPLEMENTATION-READY DEĞİL / NOT_RUN**.
 
-Durum: **PRE-SPEC / IMPLEMENTATION-READY DEĞİL / NOT_RUN**.
+Mevcut Cari roleless/protocol/entegrasyon işlerini bloke etmez. Otomatik ilişki implementation'ı ancak koordinatör sırası doğrulandığında ve ilgili açık yetki politikası karara bağlandığında açılır; bu belge next-step dispatch değildir.
 
-Bu dilim mevcut opsiyonel-rol düzeltmelerini bloke etmez. Mevcut roleless/mixed-version entegrasyon kapısı kapanmadan implementation başlamaz.
+### 12.1 Tetikleyici ve bağlam
 
-### 12.1 Tetikleyici
+GET/list/detail/search/candidate tetikleyici değildir. Yalnız gerçekten var olan authenticated ve yetkili business write command ihtiyaç duyduğunda account ensure değerlendirilebilir. Henüz olmayan sipariş endpoint'i uydurulmaz.
 
-GET/list/detail/search/candidate tetikleyici değildir.
-
-Yalnız gerçekten var olan, authenticated ve yetkilendirilmiş bir **business write command** şirket hesabına ihtiyaç duyduğu anda account ensure değerlendirebilir. Henüz uygulanmamış satış/satın alma endpoint'i sırf bu kabul için uydurulmaz.
-
-Tetikleyici bağlamı en az:
-
-- authenticated actor,
-- resolved tek `CompanyContext`,
-- `PartyId`,
-- ilgili business command'in kendi permission'ı,
-- Party görünürlük/uygunluk kontrolü,
-- command'in kendi validation'ı,
-- idempotency/correlation bilgisi.
-
-Hedef `CompanyId` request body'den serbestçe seçilmez; doğrulanmış CompanyContext'ten gelir.
+En az actor, tek resolved CompanyContext, PartyId, business permission, Party görünürlük/uygunluk, command validation, idempotency/correlation gerekir. CompanyId body'den serbestçe seçilmez. Mevcut transport/readiness de business authority yerine geçmez.
 
 ### 12.2 Account davranışı
 
-- Hedef şirkette uygun aktif `CompanyPartyAccount` varsa tekrar oluşturulmaz.
-- Hesap yoksa, yalnız izin politikası sağlanıyorsa `roles=0` account ensure edilebilir.
-- Başka şirketin role/aktiflik/bakiye bilgisinden hedef hesaba kör kopyalama yapılmaz.
-- Mevcut hesap pasifse sessiz reaktivasyon yapılmaz; active-state/version/permission sözleşmesi ayrı kalır.
+Uygun aktif hedef hesap varsa aynısı kullanılır. Hesap yoksa yalnız onaylanacak yetki politikası sağlanırsa roles0 ensure değerlendirilebilir. Yeni Party veya kaynak şirketten rol/aktiflik/bakiye kopyası üretilmez. Mevcut pasif hesap sessizce aktifleştirilmez; ayrı active-state/version/permission sözleşmesi korunur.
 
 ### 12.3 Atomiklik ve rollback
 
-Account ensure ile onu gerektiren business write aynı logical başarı zincirine bağlıdır. Business persistence/audit/idempotency başarısızsa yeni account kalmamalıdır. Modül sınırı korunur; bir business modülü Counterparty tablosuna doğrudan yazmaz.
+Yeni account ile onu gerektiren business write aynı logical başarıya bağlıdır. Business validation/persistence/audit/idempotency başarısızsa yeni hesap kalmaz. Bir business modülü Counterparty tablosuna doğrudan yazmaz; teknik transaction/orchestration Codex'in sahipliğindedir. Kısmi işlemin kapsamı gelecekte tetikleyen gerçek command sözleşmesine bağlanır; burada miktar/formül politikası seçilmez.
 
-### 12.4 Idempotency ve race
+### 12.4 Retry ve yarış
 
-Aynı business command replay'i ikinci account yaratmaz. İki eşzamanlı command aynı `(CompanyId, PartyId)` account'a ihtiyaç duyarsa account cardinality `1` kalır; her business command kendi authorization/idempotency sonucuna göre tamamlanır.
+Same business-command replay ikinci account/iş etkisi yaratmaz. İki ayrı command aynı `(CompanyId, PartyId)` hesabına ihtiyaç duyarsa tek account kalır; her business command kendi yetki ve idempotency sonucuna göre tamamlanır. Account ensure kendi başına GET yan etkisine çevrilmez.
 
-### 12.5 Açık yetki politikası
+### 12.5 Açık permission politikası
 
-Aşağıdaki seçim **henüz kullanıcı tarafından onaylanmış değildir**:
+- **A:** business command permission + mevcut `counterparty.accounts.create` gerekir. Yetki değişimi azdır; günlük admin link ihtiyacı sürebilir.
+- **B — öneri:** business command permission'ı yalnız kendi transaction'ındaki implicit account etkisini kapsar; standalone link yetkisi vermez. Günlük ayrı bağlama yükünü azaltır, command kapsamının açık audit/yetki sözleşmesini gerektirir.
+- **C:** ayrı `counterparty.accounts.ensure` permission. Daha ince yönetim sağlar; yeni permission matrisi/yönetim yükü getirir.
 
-- **A:** business command permission + mevcut `counterparty.accounts.create` birlikte gerekir.
-- **B — CHATGPT-BUSINESS önerisi:** ilgili business command permission'ı yalnız kendi transaction'ı içinde eksik account ensure etkisini yetkilendirir; kullanıcıya standalone link yetkisi vermez.
-- **C:** ayrı `counterparty.accounts.ensure` permission tanımlanır.
+B yalnız CHATGPT-BUSINESS önerisidir; kullanıcı onayı olmadan KILITLI/ACCEPTED/DONE veya production kuralı yapılamaz. Hiçbir A/B/C seçimi bu tur uygulanmamıştır.
 
-`B` yalnız öneridir. Kullanıcı onayı gelmeden `KILITLI`, `ACCEPTED`, `DONE` veya production politikası olarak kaydedilemez.
+## 13. Gerçek kullanıcı kararı ve devir sınırı
 
-## 13. Gerçek kullanıcı kararı gereken maddeler
+Mevcut roleless/transport Cari düzeltmesi için yeni işletme kararı gerekmiyor. `roles=0/null` tercihi tekrar sorulmaz; request/response §3'te sabittir. P2 teknik düzeltmesi kaynakta tamamlanmıştır; yeni kullanıcı politikası değildir.
 
-Mevcut role-optional/transport Cari düzeltmesi için yeni kullanıcı iş kararı gerekmemektedir. Backend P2, contract dokümantasyon/test düzeltmesi olarak mevcut teknik yetki kapsamında kapatılır.
+`NEEDS-SINAN-CARI-AUTO-001`: yalnız gelecekte implicit account permission kaynağı A/B/C kararı gerekir. ÖneriB, **onay değil**; mevcut Cari düzeltmelerinin ön şartı değildir. Çok şirketli piksel düzeni tüm akışı bekleten bir kullanıcı kararı yapılmaz.
 
-### NEEDS-SINAN-CARI-AUTO-001 — otomatik account ensure permission kaynağı
+Kaynak olarak [tarihli kullanıcı kararları](https://github.com/sinangym/GoymenERP/blob/e1fd69da69df36a72e559ea07163fb3f359b3c61/docs/decisions/SINAN_KARARLARI_2026-09-10.md), `docs/decisions/KARAR_SICILI.md`, `docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md`, mevcut Cari JIT/yetki sözleşmeleri ve öncelikli iki protocol handoff birlikte okunur. Eski #227 headerless örnekleri yeni contract'a aynen çalıştırılmaz; tarihsel kanıt olarak korunur.
 
-Karar gelecekte implementation başlamadan önce: **A / B / C**.
-
-Öneri: **B**, çünkü günlük zorunlu ayrı link adımını standalone Cari-link yetkisi dağıtmadan karşılar. Ancak bu öneri mevcut role-optional Cari düzeltmesinin şartı değildir ve henüz onaylanmış sayılmaz.
-
-Çok şirketli Cari görünümünün tam görsel kompozisyonu bu aşamada kullanıcı karar kapısı değildir; veri ayrımı iş şartıdır, sunum geri alınabilir UX kararı olarak ilerleyebilir.
-
-PR #229 ve bu PR #232 insan review/acceptance kapıları ayrıca korunur; bu belge bu review'ları kendiliğinden tamamlamaz.
+#229 ve #232 insan review/acceptance kapıları açık kalır. Bu dosyanın güncellenmesi diğer ajana uygulama gönderildiği, onların çalıştırdığı, merge edildiği, runtime açıldığı veya ERP'nin kabul edildiği anlamına gelmez.
