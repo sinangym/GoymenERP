@@ -343,3 +343,22 @@ td[data-account-state='inactive'] {
   font-size: 0.78rem;
   color: #55607a;
 }
+
+/* The client-contract refusal. Deliberately not styled like the generic error block:
+   it is about this browser session being out of step with the server, and the action
+   it asks for (reload) is different from "retry". */
+.contractRefusal {
+  border: 1px solid #d9a441;
+  background: #fdf7ec;
+  border-radius: 6px;
+  padding: 12px 14px;
+  color: #4a3a1a;
+  max-width: 70ch;
+}
+.contractRefusalTitle {
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+.contractRefusal p {
+  margin: 0;
+}

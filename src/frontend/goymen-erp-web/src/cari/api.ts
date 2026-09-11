@@ -6,9 +6,14 @@
  */
 
 import { decodeCounterpartyPage, type CounterpartyPage } from './contract'
+import {
+  API_BASE,
+  contractAckOf,
+  contractRequestHeader,
+  recordContractRead,
+  type ContractContext,
+} from './clientContract'
 import type { ViewOutcome } from '../shell/uiState'
-
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
 const DEV_IDENTITY_ENABLED =
   import.meta.env.DEV || import.meta.env.VITE_BOOTSTRAP_IDENTITY_ENABLED === 'true'
@@ -70,10 +75,16 @@ export async function fetchCounterparties(
   scope: CounterpartyScope,
   query: CounterpartyQuery,
   signal?: AbortSignal,
+  /**
+   * The context this read is issued in. Passing it lets the read establish — or
+   * revoke — command readiness for exactly that context; omitting it reads normally
+   * and grants nothing.
+   */
+  contractContext?: ContractContext | null,
 ): Promise<ViewOutcome<CounterpartyPage>> {
   const headers: Record<string, string> = DEV_IDENTITY_ENABLED
-    ? { 'X-Development-User': DEV_USER }
-    : {}
+    ? { 'X-Development-User': DEV_USER, ...contractRequestHeader() }
+    : { ...contractRequestHeader() }
   if (scope.mode === 'single') {
     if (scope.companyId === null) return { type: 'malformed' }
     headers['X-Company-Id'] = scope.companyId
@@ -99,8 +110,19 @@ export async function fetchCounterparties(
     body = null
   }
 
+  const ack = contractAckOf(response)
+
   // Exact 200 only — the whole 2xx range is not success (same rule as the shell client).
-  if (response.status !== 200) return { type: 'http', status: response.status, body }
+  if (response.status !== 200) {
+    // A failed read never grants readiness, and it REVOKES any earlier grant for this
+    // context: a server that has started refusing us is not one we may write to.
+    recordContractRead(contractContext ?? null, {
+      status: response.status,
+      bodyValidated: false,
+      ack,
+    })
+    return { type: 'http', status: response.status, body }
+  }
 
   // The decoder binds the page to the caller's company context: in single mode a
   // foreign or missing account rejects the whole page (JIT spec §3.5). It is also
@@ -113,6 +135,17 @@ export async function fetchCounterparties(
       : { mode: 'group' },
     query.includeCount === true,
   )
+  /**
+   * Readiness is recorded from the DECODER's verdict, not the status code. A 200 whose
+   * body we could not validate is a server we could not read; treating that as licence
+   * to start writing to it would be exactly backwards.
+   */
+  recordContractRead(contractContext ?? null, {
+    status: response.status,
+    bodyValidated: page !== null,
+    ack,
+  })
+
   if (page === null) return { type: 'malformed' }
   return { type: 'ok-single', data: page }
 }

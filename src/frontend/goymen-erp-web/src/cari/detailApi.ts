@@ -7,9 +7,14 @@
  */
 
 import { decodeCounterpartyDetail, type CounterpartyDetail } from './detailContract'
+import {
+  API_BASE,
+  contractAckOf,
+  contractRequestHeader,
+  recordContractRead,
+  type ContractContext,
+} from './clientContract'
 import type { ViewOutcome } from '../shell/uiState'
-
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
 const DEV_IDENTITY_ENABLED =
   import.meta.env.DEV || import.meta.env.VITE_BOOTSTRAP_IDENTITY_ENABLED === 'true'
@@ -27,10 +32,11 @@ export async function fetchCounterpartyDetail(
   partyId: string,
   activeCompanyId: string,
   signal?: AbortSignal,
+  contractContext?: ContractContext | null,
 ): Promise<ViewOutcome<CounterpartyDetail>> {
   const headers: Record<string, string> = DEV_IDENTITY_ENABLED
-    ? { 'X-Development-User': DEV_USER }
-    : {}
+    ? { 'X-Development-User': DEV_USER, ...contractRequestHeader() }
+    : { ...contractRequestHeader() }
   headers['X-Company-Id'] = activeCompanyId
 
   let response: Response
@@ -55,10 +61,24 @@ export async function fetchCounterpartyDetail(
     body = null
   }
 
+  const ack = contractAckOf(response)
+
   // Exact 200 only. The whole 2xx range is not success.
-  if (response.status !== 200) return { type: 'http', status: response.status, body }
+  if (response.status !== 200) {
+    recordContractRead(contractContext ?? null, {
+      status: response.status,
+      bodyValidated: false,
+      ack,
+    })
+    return { type: 'http', status: response.status, body }
+  }
 
   const detail = decodeCounterpartyDetail(body, activeCompanyId)
+  recordContractRead(contractContext ?? null, {
+    status: response.status,
+    bodyValidated: detail !== null,
+    ack,
+  })
   if (detail === null) return { type: 'malformed' }
   return { type: 'ok-single', data: detail }
 }

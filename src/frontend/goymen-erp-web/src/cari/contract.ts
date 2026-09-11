@@ -279,6 +279,17 @@ export function decodeCounterpartyPage(
  */
 export const PROBLEM_CODE = {
   invalidCursor: 'invalid_cursor',
+  /**
+   * The client-contract gate (PR #230 `080e7a1`). `required` means this exchange
+   * needed the `X-ERP-Counterparty-Contract` declaration and did not carry one;
+   * `unsupported` means the declaration was empty, duplicated, combined or unknown.
+   *
+   * Both arrive as `409`, which is why they must be branched on by CODE: the generic
+   * conflict message — "the record changed, review the difference" — is false for
+   * them and would send the user looking for an edit that never happened.
+   */
+  clientContractRequired: 'client_contract_required',
+  clientContractUnsupported: 'client_contract_unsupported',
   validationFailed: 'validation_failed',
   forbidden: 'forbidden',
   notFound: 'not_found',

@@ -70,12 +70,12 @@ interface Config {
 }
 
 function installFetch(config: Config = {}) {
-  const calls: { url: string; companyId: string | null }[] = []
+  const calls: { url: string; companyId: string | null; contract: string | null }[] = []
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString()
-    const companyId =
-      (init?.headers as Record<string, string> | undefined)?.['X-Company-Id'] ?? null
-    calls.push({ url, companyId })
+    const sent = init?.headers as Record<string, string> | undefined
+    const companyId = sent?.['X-Company-Id'] ?? null
+    calls.push({ url, companyId, contract: sent?.['X-ERP-Counterparty-Contract'] ?? null })
     if (url.includes('/identity/me')) return json(IDENTITY)
     if (url.includes('/organization/companies')) return json(DIRECTORY)
     if (url.includes('/shell/capabilities')) {
@@ -1907,4 +1907,77 @@ describe('C-01 returning to a record that was on a later page', () => {
       expect((document.querySelector('[role="status"]') as HTMLElement).textContent).toBe(''),
     )
   })
+})
+
+describe('C-01 client contract on the wire (PR #230 080e7a1)', () => {
+
+  function problem(code: string) {
+    return new Response(
+      JSON.stringify({
+        type: 'https://www.rfc-editor.org/rfc/rfc9110#section-15.5.10',
+        title: 'Uyumlu istemci gerekli.',
+        status: 409,
+        code,
+      }),
+      { status: 409, headers: { 'Content-Type': 'application/json' } },
+    )
+  }
+
+  it('declares the contract exactly once on every counterparty read', async () => {
+    const { calls } = installFetch()
+    renderAt('/cari')
+    await screen.findByRole('row', { name: /C-0001/ })
+
+    const reads = calls.filter((c) => c.url.includes('/counterparties'))
+    expect(reads.length).toBeGreaterThan(0)
+    // One value, never combined: the server refuses an empty, duplicated or combined
+    // declaration with `client_contract_unsupported`.
+    expect(reads.every((c) => c.contract === 'optional-trade-roles-v1')).toBe(true)
+  })
+
+  it('a contract refusal is NOT shown as a record conflict', async () => {
+    // 409 maps to "Kayıt başka bir işlemle değişti; farkı gözden geçirin." — false
+    // here: nothing changed and there is no difference to review. The user would go
+    // looking for an edit that never happened.
+    installFetch({ counterparties: () => problem('client_contract_required') })
+    renderAt('/cari')
+
+    const block = await waitFor(() => {
+      const node = document.querySelector<HTMLElement>('[data-state="client-contract"]')
+      if (node === null) throw new Error('contract block not rendered')
+      return node
+    })
+    expect(block.textContent).toContain('Uyumlu istemci gerekli')
+    expect(block.textContent).not.toContain('farkı gözden geçirin')
+    expect(queryStateBlock('conflict')).toBeNull()
+  })
+
+  it('treats an unsupported declaration the same way, by code not by text', async () => {
+    installFetch({ counterparties: () => problem('client_contract_unsupported') })
+    renderAt('/cari')
+
+    const block = await waitFor(() => {
+      const node = document.querySelector<HTMLElement>('[data-state="client-contract"]')
+      if (node === null) throw new Error('contract block not rendered')
+      return node
+    })
+    expect(block.getAttribute('role')).toBe('alert')
+    expect(queryStateBlock('conflict')).toBeNull()
+  })
+
+  it('a real 409 that is NOT a contract refusal still reads as a conflict', async () => {
+    // The branch is on the stable code, so an ordinary conflict keeps its own meaning.
+    installFetch({
+      counterparties: () =>
+        new Response(JSON.stringify({ status: 409, code: 'version_conflict' }), {
+          status: 409,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    })
+    renderAt('/cari')
+
+    expect(await findStateBlock('conflict')).toBeTruthy()
+    expect(document.querySelector('[data-state="client-contract"]')).toBeNull()
+  })
+
 })

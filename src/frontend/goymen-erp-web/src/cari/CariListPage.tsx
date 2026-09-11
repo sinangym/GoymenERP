@@ -45,6 +45,7 @@ import { CAPABILITY } from '../shell/capabilities'
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { allowed, isRendered, notEntitled, type ActionGate } from './actionGating'
+import { API_BASE, type ContractContext } from './clientContract'
 import {
   clearedFilters,
   DEFAULT_CARI_LIST_VIEW,
@@ -75,6 +76,29 @@ const ACCOUNT_STATE_LABEL: Record<AccountStateFilter, string> = {
   active: 'Aktif',
   inactive: 'Pasif',
 }
+
+/**
+ * The client-contract refusals (PR #230 `080e7a1`), which must NOT be shown as a
+ * generic conflict.
+ *
+ * Both arrive as `409`, and the shell maps any 409 to "Kayıt başka bir işlemle
+ * değişti; farkı gözden geçirin." That sentence is false here — nothing changed and
+ * there is no difference to review — and it sends the user hunting for an edit that
+ * never happened. Branch on the stable CODE, exactly as the invalid-cursor recovery
+ * does, never on the localized text.
+ *
+ * The wording follows the server's own resource so the two surfaces cannot drift into
+ * telling the user different things about the same refusal.
+ */
+const CONTRACT_PROBLEM_CODES = new Set<string>([
+  PROBLEM_CODE.clientContractRequired,
+  PROBLEM_CODE.clientContractUnsupported,
+])
+
+const CONTRACT_REFUSAL_TITLE = 'Uyumlu istemci gerekli'
+const CONTRACT_REFUSAL_DETAIL =
+  'Bu cari işlemi desteklenen istemci sözleşmesi ile yeniden açılmalıdır. ' +
+  'Sayfayı yenileyin; bekleyen bir işlemi otomatik tekrarlamayın.'
 
 /**
  * How many EXTRA pages a return may read forward before giving up.
@@ -250,6 +274,16 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
 
   const singleCompanyContext = scopeMode === 'single' && activeCompanyId !== null
 
+  /**
+   * Origin + namespace: the API we are talking to, plus actor, scope mode, company,
+   * capability generation and committed revision. Exactly what the contract binds
+   * readiness to.
+   */
+  const contractContext: ContractContext | null = useMemo(
+    () => (namespace === null ? null : { origin: API_BASE, namespace }),
+    [namespace],
+  )
+
   const view: CariListView = useMemo(
     () => ({ q, kind, roles, roleMatch, partyState, accountState, sort, direction, pageSize }),
     [q, kind, roles, roleMatch, partyState, accountState, sort, direction, pageSize],
@@ -312,6 +346,13 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
           cursor,
         },
         signal,
+        /**
+         * Bind what this read establishes to the context that issued it. A successful,
+         * validated, acknowledged read here is what later permits commands in THIS
+         * context — and only here; a company switch, a re-login or a new capability
+         * generation produces a different namespace and therefore a different binding.
+         */
+        contractContext,
       )
       // SAB-006: first page, continuation and refetch all report here. There is
       // no weaker per-path variant — this IS the path.
@@ -430,6 +471,16 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
     setLoaded(items)
     setCursor(page.nextCursor)
   }
+
+  /**
+   * A contract refusal is about THIS CLIENT, not about the record, so it gets its own
+   * block instead of the conflict text. It is also the one read failure a reload can
+   * actually fix, which is why the message says so.
+   */
+  const contractRefusal =
+    outcome?.type === 'http' &&
+    outcome.status === 409 &&
+    CONTRACT_PROBLEM_CODES.has(problemCodeOf(outcome.body) ?? '')
 
   // An expired or otherwise invalid cursor must not strand the user on a broken page:
   // fall back to the first page. Branches on the STABLE code, never the localized text.
@@ -749,7 +800,12 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
         </div>
       ) : null}
 
-      {(state.kind !== 'ready' && !continuationFailed) || crossPageDuplicate ? (
+      {contractRefusal ? (
+        <div className={styles.contractRefusal} role="alert" data-state="client-contract">
+          <p className={styles.contractRefusalTitle}>{CONTRACT_REFUSAL_TITLE}</p>
+          <p>{CONTRACT_REFUSAL_DETAIL}</p>
+        </div>
+      ) : (state.kind !== 'ready' && !continuationFailed) || crossPageDuplicate ? (
         <StateBlock
           state={crossPageDuplicate ? { kind: 'malformed-response' } : state}
           subject="cari listesi"

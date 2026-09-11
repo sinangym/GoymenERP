@@ -15,7 +15,8 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
 import { fetchCounterpartyDetail } from './detailApi'
-import { PARTY_KIND } from './contract'
+import { PARTY_KIND, PROBLEM_CODE, problemCodeOf } from './contract'
+import { API_BASE } from './clientContract'
 import { LEGACY_ROLE_HEADING, NO_COMMERCIAL_ROLE_DETAIL, rolesText } from './roleText'
 import type { CounterpartyDetail } from './detailContract'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
@@ -25,6 +26,17 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { useCompanyDirectory } from '../shell/useShellOrchestrator'
 import { StateBlock } from '../shell/StateBlock'
 import styles from './CariDetailPage.module.css'
+
+/** See CariListPage: a contract refusal is about this client, never about the record. */
+const CONTRACT_PROBLEM_CODES = new Set<string>([
+  PROBLEM_CODE.clientContractRequired,
+  PROBLEM_CODE.clientContractUnsupported,
+])
+
+const CONTRACT_REFUSAL_TITLE = 'Uyumlu istemci gerekli'
+const CONTRACT_REFUSAL_DETAIL =
+  'Bu cari işlemi desteklenen istemci sözleşmesi ile yeniden açılmalıdır. ' +
+  'Sayfayı yenileyin; bekleyen bir işlemi otomatik tekrarlamayın.'
 
 const KIND_LABEL: Record<number, string> = {
   [PARTY_KIND.LegalEntity]: 'Tüzel kişi',
@@ -74,7 +86,12 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
     enabled: namespace !== null && singleCompanyContext && (partyId ?? '').length > 0,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
-      const outcome = await fetchCounterpartyDetail(partyId ?? '', activeCompanyId ?? '', signal)
+      const outcome = await fetchCounterpartyDetail(
+        partyId ?? '',
+        activeCompanyId ?? '',
+        signal,
+        namespace === null ? null : { origin: API_BASE, namespace },
+      )
       if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) {
         boundary.report(outcome.status, snapshot)
       }
@@ -99,6 +116,26 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
           state={{ kind: 'no-authorized-company' }}
           subject="Cari 360 için tek şirket bağlamı"
         />
+      </section>
+    )
+  }
+
+  const contractRefusal =
+    query.data?.type === 'http' &&
+    query.data.status === 409 &&
+    CONTRACT_PROBLEM_CODES.has(problemCodeOf(query.data.body) ?? '')
+
+  if (contractRefusal) {
+    return (
+      <section aria-labelledby="cari-detail-heading" className={styles.page}>
+        <h1 id="cari-detail-heading">Cari 360</h1>
+        <BackToList />
+        <div role="alert" data-state="client-contract">
+          <p>
+            <strong>{CONTRACT_REFUSAL_TITLE}</strong>
+          </p>
+          <p>{CONTRACT_REFUSAL_DETAIL}</p>
+        </div>
       </section>
     )
   }
