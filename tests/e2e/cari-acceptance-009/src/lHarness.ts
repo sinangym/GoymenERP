@@ -194,14 +194,48 @@ export function isCompletedRead(record: LiveRecord, contractVersion = CLIENT_CON
   )
 }
 
-/** A page payload the reader could actually use — not merely 200 with something in it. */
-export function isCandidatePagePayload(body: unknown): body is { items: { id?: string; code?: string }[] } {
-  return typeof body === 'object' && body !== null && Array.isArray((body as { items?: unknown }).items)
+/**
+ * The page ENVELOPE the real readers require — and deliberately nothing past it.
+ *
+ * `Array.isArray(items)` alone was not a usable page: `{"items":[null]}` passed it, and so
+ * did `{"items":[],"hasMore":"invalid","nextCursor":null}`. Either could satisfy a
+ * completion condition and release a navigation barrier on a response the application
+ * itself would have refused to render.
+ *
+ * This mirrors the envelope rules both product decoders apply before they look at a
+ * single row — `decodeCounterpartyPage` (contract.ts) and `decodeLinkCandidatePage`
+ * (candidateContract.ts):
+ *
+ *   - an object, and `items` an array of actual rows (a `null` element is not a row);
+ *   - `hasMore` a boolean;
+ *   - `nextCursor` null or a non-empty string of at most 4096 characters;
+ *   - `hasMore` and `nextCursor` agreeing, or the page cannot be walked safely;
+ *   - the count pair present on the list endpoint and absent on the candidate endpoint,
+ *     which is where the two envelopes genuinely differ.
+ *
+ * It stops there ON PURPOSE. Whether a row's roles, version or company binding are valid
+ * is the product decoder's business, and pulling that in here would put this harness in
+ * the position of re-deciding it. What a barrier needs to know is narrower: did a page
+ * this reader could have used actually come back?
+ */
+export function isUsablePagePayload(body: unknown, path: string): boolean {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) return false
+  const page = body as Record<string, unknown>
+  if (!Array.isArray(page.items)) return false
+  if (!page.items.every((item) => typeof item === 'object' && item !== null && !Array.isArray(item))) return false
+  if (typeof page.hasMore !== 'boolean') return false
+  const cursor = page.nextCursor
+  if (cursor !== null && !(typeof cursor === 'string' && cursor.length > 0 && cursor.length <= 4096)) return false
+  if (page.hasMore !== (cursor !== null)) return false
+  const countFields = [Object.hasOwn(page, 'totalCount'), Object.hasOwn(page, 'countScope')]
+  return path.endsWith('/company-account-link-candidates')
+    ? countFields.every((present) => !present)
+    : countFields.every((present) => present)
 }
 
 /** A completed read whose body is a usable page. This is what a pre-check must be. */
 export function isCompletedPageRead(record: LiveRecord, contractVersion = CLIENT_CONTRACT_VERSION): boolean {
-  return isCompletedRead(record, contractVersion) && isCandidatePagePayload(record.responseBody)
+  return isCompletedRead(record, contractVersion) && isUsablePagePayload(record.responseBody, record.path)
 }
 
 export class LiveRecorder {
