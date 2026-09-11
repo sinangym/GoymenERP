@@ -6,16 +6,16 @@ param(
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 if ($root -ne 'C:\src\GoymenERP-cari-acceptance-envelope-20260911') { throw 'C006 wrong worktree.' }
-$evidence='C:\src\GoymenERP-cari-acceptance-envelope-20260911\artifacts\cari-acceptance-006\c006-ac5fc7069528'
+$evidence='C:\src\GoymenERP-cari-acceptance-envelope-20260911\artifacts\cari-acceptance-006\c006-fc721a1b9752'
 $run=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'run.json') -Raw | ConvertFrom-Json
 $resources=Get-Content -LiteralPath (Join-Path $evidence 'resources.json') -Raw | ConvertFrom-Json
 if ($ResumeC012) {
     if ($Action -notin @('start','snapshot','verify','stop')) { throw 'C006 resume supports only start, snapshot, verify and stop; teardown and the original empty-DB smoke stay with the C006 owner.' }
-    $evidence='C:\src\GoymenERP-cari-acceptance-envelope-20260911\artifacts\cari-acceptance-006\c006-ac5fc7069528\resume'
+    $evidence='C:\src\GoymenERP-cari-acceptance-envelope-20260911\artifacts\cari-acceptance-006\c006-fc721a1b9752\resume'
     $execution=Get-Content -LiteralPath (Join-Path $evidence 'started.json') -Raw | ConvertFrom-Json
     if ($execution.task_id -ne 'C-DESKTOP-012' -or $execution.resourceRunId -ne $run.RunId -or $execution.instanceId -ne $run.InstanceId -or $execution.status -ne 'in_progress' -or $execution.executionRunId -cnotmatch '\Ac012-[0-9a-f]{12}\z') { throw 'C006 resume record identity mismatch.' }
 }
-if ($run.RunId -ne 'c006-ac5fc7069528' -or $run.InstanceId -ne '292e8f25-7e06-4d8a-a96c-06586a316cb1' -or $resources.instanceId -ne $run.InstanceId) { throw 'C006 identity mismatch.' }
+if ($run.RunId -ne 'c006-fc721a1b9752' -or $run.InstanceId -ne '7ec92416-5a5d-42ad-9823-3574f27592a8' -or $resources.instanceId -ne $run.InstanceId) { throw 'C006 identity mismatch.' }
 $container=& docker inspect --format '{"id":{{json .Id}},"labels":{{json .Config.Labels}}}' $run.ContainerName | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or $container.id -ne $resources.container.id -or $container.labels.'com.goymen.acceptance.instance' -ne $run.InstanceId) { throw 'C006 container ownership mismatch.' }
 $dll=Join-Path $root 'tools/GoymenERP.CariAcceptance006/bin/Release/net10.0-windows/GoymenERP.CariAcceptance006.dll'

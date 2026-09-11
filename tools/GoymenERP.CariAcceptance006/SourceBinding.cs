@@ -18,9 +18,9 @@ public sealed record SourceSnapshot(
 public static class SourceBinding
 {
     public const string FrontendRoot = @"C:\src\GoymenERP-claude";
-    public const string FrontendHead = "a5851a148b55f66ca6555cdcc810107f949fb6a4";
+    public const string FrontendHead = "c3cb45e1f85a7079c742bc0abbe62ca3aa805dfe";
     public const string FrontendBase = "060da63f2644cb271d78d9eab8b7a6985d544ad1";
-    public const string FrontendDiff = "6af32c6103aff854feffcd4c451ad9fd42b3d6608c6aa68825aceac96a18f743";
+    public const string FrontendDiff = "a184b46b34b2208dde74c366abe105b54c9d01515aa1930f0a597cb597fd6e53";
     public const string BackendTree = "4e0b1a5d6a1116ee2ba76df132aeec6e8b9c99d5";
     public const string OpenApiHash = "062c06175916295bc97a438adea6fd01cdb608413c58501aa62208f87038a829";
     public const string MigrationHash = "1ec8222d998cb59891f437fc1ce4f62f954203508f3b2cffd4a00d97b1933e44";

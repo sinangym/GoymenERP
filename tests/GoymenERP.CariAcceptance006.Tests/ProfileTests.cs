@@ -73,10 +73,10 @@ public sealed class ProfileTests
     {
         var identity = new RunSettings();
         identity.Validate("Testing");
-        Assert.Equal("c006-ac5fc7069528", identity.RunId);
-        Assert.Equal("292e8f25-7e06-4d8a-a96c-06586a316cb1", identity.InstanceId);
-        Assert.Equal("a5851a148b55f66ca6555cdcc810107f949fb6a4", SourceBinding.FrontendHead);
-        Assert.Equal("6af32c6103aff854feffcd4c451ad9fd42b3d6608c6aa68825aceac96a18f743", identity.FrontendDiffSha256);
+        Assert.Equal("c006-fc721a1b9752", identity.RunId);
+        Assert.Equal("7ec92416-5a5d-42ad-9823-3574f27592a8", identity.InstanceId);
+        Assert.Equal("c3cb45e1f85a7079c742bc0abbe62ca3aa805dfe", SourceBinding.FrontendHead);
+        Assert.Equal("a184b46b34b2208dde74c366abe105b54c9d01515aa1930f0a597cb597fd6e53", identity.FrontendDiffSha256);
         Assert.Equal(SourceBinding.FrontendDiff, identity.FrontendDiffSha256);
         Assert.Equal("880cae838e5d2f01a988f1e4a89afbe67858f48c", identity.BackendHead);
         var services = Canonical();
@@ -96,6 +96,15 @@ public sealed class ProfileTests
         new RunSettings { SmokePrefix = "C006-SMOKE-303760997c6f" },
         new RunSettings { BrowserPrefix = "CARI-JOURNEY-303760997c6f" },
         new RunSettings { FrontendDiffSha256 = "b9e9354e971da26bbd5a0743dcefc78c2f3b4a7e4cbb6d59d74793c7c3b25c11" },
+        new RunSettings { RunId = "c006-ac5fc7069528" },
+        new RunSettings { InstanceId = "292e8f25-7e06-4d8a-a96c-06586a316cb1" },
+        new RunSettings { DatabaseName = "GoymenCariC006_ac5fc7069528" },
+        new RunSettings { ComposeProject = "goymen-cari-c006-ac5fc7069528" },
+        new RunSettings { ContainerName = "goymen-cari-c006-ac5fc7069528-sql" },
+        new RunSettings { VolumeName = "goymen-cari-c006-ac5fc7069528-data" },
+        new RunSettings { SmokePrefix = "C006-SMOKE-ac5fc7069528" },
+        new RunSettings { BrowserPrefix = "CARI-JOURNEY-ac5fc7069528" },
+        new RunSettings { FrontendDiffSha256 = "6af32c6103aff854feffcd4c451ad9fd42b3d6608c6aa68825aceac96a18f743" },
     };
 
     [Theory]

@@ -9,17 +9,17 @@ a normal-provider change, production activation, or completed Cari acceptance.
 - published-source-manifest.json records ORIGINAL raw blobs and original working copies,
   not the subsequently adapted sources. Old WIP, DPAPI and evidence are not transferred.
 - Backend dependency: 880cae838e5d2f01a988f1e4a89afbe67858f48c. Closed P2 is unchanged.
-- Approved frontend source: a5851a148b55f66ca6555cdcc810107f949fb6a4, owned by Claude/#233.
+- Approved frontend source: c3cb45e1f85a7079c742bc0abbe62ca3aa805dfe, owned by Claude/#233.
   Coordinator accepted its seven CI checks and independent exact-head source reviews:
-  https://github.com/sinangym/GoymenERP/pull/233#issuecomment-5640985562
-  https://github.com/sinangym/GoymenERP/pull/233#issuecomment-5640985718
+  https://github.com/sinangym/GoymenERP/pull/233#issuecomment-5641353556
+  https://github.com/sinangym/GoymenERP/pull/233#issuecomment-5641378360
   Source acceptance is not live browser/ERP acceptance. The publisher's explicit refusal
   of obsolete frontend 8f8e241db68b8f071e52d37a33c2176980eed1e8 remains unchanged.
 - OpenAPI SHA256: 062c06175916295bc97a438adea6fd01cdb608413c58501aa62208f87038a829.
 - Migration source-manifest SHA256: 1ec8222d998cb59891f437fc1ce4f62f954203508f3b2cffd4a00d97b1933e44.
-- Frontend diff SHA256: 6af32c6103aff854feffcd4c451ad9fd42b3d6608c6aa68825aceac96a18f743 (1076300 raw bytes).
+- Frontend diff SHA256: a184b46b34b2208dde74c366abe105b54c9d01515aa1930f0a597cb597fd6e53 (1077156 raw bytes).
   Method: git diff --binary --full-index --no-color --no-ext-diff --no-textconv
-  060da63f2644cb271d78d9eab8b7a6985d544ad1 a5851a148b55f66ca6555cdcc810107f949fb6a4
+  060da63f2644cb271d78d9eab8b7a6985d544ad1 c3cb45e1f85a7079c742bc0abbe62ca3aa805dfe
   -- src/frontend/goymen-erp-web tests/e2e.
 - Runtime source-binding.json binds the clean acceptance commit, compile-time SourceRevisionId,
   output DLL disk hashes, fixture source hash and exact run/resource identities.
@@ -29,14 +29,14 @@ a normal-provider change, production activation, or completed Cari acceptance.
 
 Worktree: C:\src\GoymenERP-cari-acceptance-envelope-20260911
 Frontend worktree (read only): C:\src\GoymenERP-claude
-Run: c006-ac5fc7069528
-Instance: 292e8f25-7e06-4d8a-a96c-06586a316cb1
-Database: GoymenCariC006_ac5fc7069528
+Run: c006-fc721a1b9752
+Instance: 7ec92416-5a5d-42ad-9823-3574f27592a8
+Database: GoymenCariC006_fc721a1b9752
 SQL: 127.0.0.1,25433
 API: http://127.0.0.1:25080
 Test-only browser origins: http://127.0.0.1:25173 and http://localhost:25173
-Evidence: artifacts/cari-acceptance-006/c006-ac5fc7069528
-Browser synthetic name prefix: CARI-JOURNEY-ac5fc7069528
+Evidence: artifacts/cari-acceptance-006/c006-fc721a1b9752
+Browser synthetic name prefix: CARI-JOURNEY-fc721a1b9752
 
 Exactly list/detail/create/link open in Testing; existing permissions and CompanyId remain.
 company-a-viewer has no Cari write permission; its existing Cari read denial is not bypassed.
@@ -111,7 +111,7 @@ The frontend diff base remains 060da63f2644cb271d78d9eab8b7a6985d544ad1, using t
 committed frontend+harness diff recipe above, independently of the PR main base.
 
 CODEX-BACKEND is the single writer of the external contract, at:
-C:\src\GoymenERP-cari-acceptance-envelope-20260911\artifacts\cari-acceptance-006\inputs-c006-ac5fc7069528\contract.json
+C:\src\GoymenERP-cari-acceptance-envelope-20260911\artifacts\cari-acceptance-006\inputs-c006-fc721a1b9752\contract.json
 Only real accepted sources and matching local-build evidence can populate it.
 
 Previous run c006-303760997c6f is consumed and torn down. Its ENV_READY, inputs,
@@ -121,3 +121,10 @@ into acceptance. New scoped L02 is required because the shared barrier changed:
 existing fixture/smoke -> typed L02-before -> Claude L02 -> typed after/zero -> one L01
 -> strict ExpectedNewParties=1 -> owned cleanup. No extra seed, API probe, intermediate
 SQL hook or parallel lifecycle is introduced; selection coverage remains separately scoped.
+
+The subsequent c006-ac5fc7069528 / backend6543792 / frontenda585 run is also consumed.
+Its L02 test body did not load; separate browser warm-up is not test-body acceptance
+or a measured API request count. The full attempted interval's typed SQL projection
+was unchanged, and owned cleanup was verified. Its artifacts remain historical.
+This next run binds the separately reviewed c3cb45e loader correction; neither old
+ENV_READY is rebound, and no new lifecycle or intermediate SQL hook is introduced.
