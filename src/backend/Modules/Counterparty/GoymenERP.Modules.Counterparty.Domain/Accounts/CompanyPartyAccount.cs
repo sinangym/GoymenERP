@@ -114,7 +114,7 @@ public sealed class CompanyPartyAccount
 
     private static PartyRole RequireRoles(PartyRole roles)
     {
-        if (roles == PartyRole.None || (roles & ~KnownRoles) != 0)
+        if ((roles & ~KnownRoles) != 0)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(roles),

@@ -85,6 +85,9 @@ public sealed class CounterpartyPersistenceModelTests
         Assert.Contains(
             "20260828123500_InitialCounterparty",
             dbContext.Database.GetMigrations());
+        Assert.Contains(
+            "20260910120000_AllowCounterpartyAccountNoRole",
+            dbContext.Database.GetMigrations());
         Assert.False(dbContext.Database.HasPendingModelChanges());
     }
 

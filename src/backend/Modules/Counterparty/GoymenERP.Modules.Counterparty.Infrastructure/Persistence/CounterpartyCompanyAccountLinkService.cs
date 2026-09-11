@@ -362,12 +362,12 @@ internal sealed class CounterpartyCompanyAccountLinkService(
     {
         const PartyRole knownRoles =
             PartyRole.Customer | PartyRole.Supplier | PartyRole.Tolling | PartyRole.Service;
-        if (roles == PartyRole.None || (roles & ~knownRoles) != 0)
+        if ((roles & ~knownRoles) != 0)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(roles),
                 roles,
-                "Cari şirket hesabı en az bir bilinen ticari rol taşımalıdır.");
+                "Cari şirket hesabı geçersiz ticari rol bilgisi taşıyor.");
         }
 
         return roles;

@@ -36,19 +36,47 @@ public sealed class CompanyPartyAccountTests
     }
 
     [Fact]
-    public void Account_requires_at_least_one_known_role()
+    public void Account_without_trade_classification_is_active_but_has_no_legacy_flags()
+    {
+        var noneAccount = new CompanyPartyAccount(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            PartyRole.None);
+        Assert.Equal(PartyRole.None, noneAccount.Roles);
+        Assert.True(noneAccount.IsActive);
+        Assert.Equal(1L, noneAccount.Version);
+        Assert.False(noneAccount.HasRole(PartyRole.Customer));
+        Assert.False(noneAccount.HasRole(PartyRole.Supplier));
+        Assert.False(noneAccount.HasRole(PartyRole.None));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(16)]
+    [InlineData(17)]
+    public void Account_rejects_unknown_trade_classification_bits(int value)
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new CompanyPartyAccount(
             Guid.NewGuid(),
             Guid.NewGuid(),
             Guid.NewGuid(),
-            PartyRole.None));
+            (PartyRole)value));
+    }
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => new CompanyPartyAccount(
-            Guid.NewGuid(),
-            Guid.NewGuid(),
-            Guid.NewGuid(),
-            (PartyRole)16));
+    [Fact]
+    public void Clearing_trade_classification_preserves_inactive_state_and_advances_version()
+    {
+        var account = new CompanyPartyAccount(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), PartyRole.Supplier);
+        account.Deactivate();
+        var previousVersion = account.Version;
+
+        account.SetRoles(PartyRole.None);
+
+        Assert.Equal(PartyRole.None, account.Roles);
+        Assert.False(account.IsActive);
+        Assert.Equal(previousVersion + 1, account.Version);
     }
 
     [Fact]

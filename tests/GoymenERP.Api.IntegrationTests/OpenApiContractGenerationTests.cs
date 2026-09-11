@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using GoymenERP.Api.OpenApi;
+using GoymenERP.Api.Contracts;
 using GoymenERP.BuildingBlocks.OpenApi;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
@@ -62,6 +63,7 @@ public sealed class OpenApiContractGenerationTests
             AuthenticatedResponses(
                 "200:application/json",
                 "400:application/problem+json",
+                "409:application/problem+json",
                 "503:application/problem+json"),
             ParameterValues:
             [
@@ -82,6 +84,7 @@ public sealed class OpenApiContractGenerationTests
             AuthenticatedResponses(
                 "200:application/json",
                 "400:application/problem+json",
+                "409:application/problem+json",
                 "503:application/problem+json"),
             ParameterValues:
             [
@@ -93,7 +96,7 @@ public sealed class OpenApiContractGenerationTests
             AuthenticatedResponses("201:application/json", "400:application/problem+json", "409:application/problem+json", "415:"),
             "#/components/schemas/CreateCounterparty"),
         new("get", "/api/v1/counterparties/{partyId}", "GetCounterpartyV1",
-            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json"),
             ParameterValues:
             [
                 "path:partyId:true:type:string;format:uuid",
@@ -218,22 +221,27 @@ public sealed class OpenApiContractGenerationTests
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
             ["GetCounterpartiesV1:400"] = ["invalid_cursor", "validation_failed"],
+            ["GetCounterpartiesV1:409"] = ["client_contract_required", "client_contract_unsupported"],
+            ["GetCounterpartyV1:409"] = ["client_contract_required", "client_contract_unsupported"],
+            ["GetCounterpartyCompanyAccountLinkCandidatesV1:409"] =
+                ["client_contract_required", "client_contract_unsupported"],
             ["GetCounterpartyCompanyAccountLinkCandidatesV1:400"] =
                 ["invalid_cursor", "validation_failed"],
             ["GetCounterpartyV1:400"] = ["validation_failed"],
             ["GetCounterpartyV1:404"] = ["not_found"],
             ["CreateCounterpartyV1:400"] = ["command_metadata_invalid", "validation_failed"],
-            ["CreateCounterpartyV1:409"] = ["idempotency_conflict"],
+            ["CreateCounterpartyV1:409"] =
+                ["client_contract_required", "client_contract_unsupported", "idempotency_conflict"],
             ["CreateCounterpartyCompanyAccountV1:400"] =
                 ["command_metadata_invalid", "validation_failed"],
             ["CreateCounterpartyCompanyAccountV1:404"] = ["not_found"],
             ["CreateCounterpartyCompanyAccountV1:409"] =
-                ["already_linked", "idempotency_conflict"],
+                ["already_linked", "client_contract_required", "client_contract_unsupported", "idempotency_conflict"],
             ["SetCounterpartyCompanyAccountActiveStateV1:400"] =
                 ["command_metadata_invalid", "validation_failed"],
             ["SetCounterpartyCompanyAccountActiveStateV1:404"] = ["not_found"],
             ["SetCounterpartyCompanyAccountActiveStateV1:409"] =
-                ["idempotency_conflict", "version_conflict"],
+                ["client_contract_required", "client_contract_unsupported", "idempotency_conflict", "version_conflict"],
             ["GetShellCapabilitiesV1:400"] = ["company_context_invalid"],
         };
 
@@ -421,13 +429,13 @@ public sealed class OpenApiContractGenerationTests
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
                 ["CreateCounterparty"] = ObjectSchema(
-                    ["kind", "legalName", "roles"],
+                    ["kind", "legalName"],
                     ("kind", "ref:PartyKind"),
                     ("legalName", "type:string"),
                     ("tradeName", "type:null|string"),
                     ("roles", "ref:PartyRole")),
                 ["CreateCompanyPartyAccount"] = ObjectSchema(
-                    ["roles"],
+                    [],
                     ("roles", "ref:PartyRole")),
                 ["SetCompanyPartyAccountActiveState"] = ObjectSchema(
                     ["isActive", "expectedVersion", "reason"],
@@ -1088,6 +1096,14 @@ public sealed class OpenApiContractGenerationTests
                 "X-Correlation-Id",
                 "X-Causation-Id",
             };
+            var isCounterparty = operation.Path.StartsWith("/api/v1/counterparties", StringComparison.Ordinal);
+            if (isCounterparty)
+            {
+                expectedHeaderNames.Add(CounterpartyClientContract.HeaderName);
+                AssertHeaderSchema(parameters, CounterpartyClientContract.HeaderName,
+                    required: operation.Method != "get", type: "string",
+                    pattern: CounterpartyClientContract.VersionPattern);
+            }
             if (RequiredCompanyOperations.Contains(operation.OperationId)
                 || OptionalCompanyOperations.Contains(operation.OperationId))
             {
@@ -1187,6 +1203,26 @@ public sealed class OpenApiContractGenerationTests
                 var numericStatusCode = int.Parse(
                     response.Name,
                     CultureInfo.InvariantCulture);
+                var acknowledgmentExpected = isCounterparty;
+                Assert.Equal(acknowledgmentExpected, responseHeaders.TryGetProperty(
+                    CounterpartyClientContract.HeaderName, out _));
+                if (acknowledgmentExpected)
+                {
+                    AssertResponseHeaderSchema(responseHeaders,
+                        CounterpartyClientContract.HeaderName, "string",
+                        pattern: CounterpartyClientContract.VersionPattern);
+                    var acknowledgment = responseHeaders.GetProperty(CounterpartyClientContract.HeaderName);
+                    Assert.False(acknowledgment.TryGetProperty("required", out var required)
+                        && required.GetBoolean());
+                    var description = acknowledgment.GetProperty("description").GetString();
+                    Assert.Contains("handler-generated errors", description, StringComparison.Ordinal);
+                    Assert.Contains("errors before the filter", description, StringComparison.Ordinal);
+                    Assert.Contains("may omit it", description, StringComparison.Ordinal);
+                    Assert.Contains("not command success or client readiness", description, StringComparison.Ordinal);
+                    Assert.Contains("fresh, successful, validated GET", description, StringComparison.Ordinal);
+                    Assert.Contains("Absence on an error is not proof of an old server", description,
+                        StringComparison.Ordinal);
+                }
                 var replayHeadersExpected = ReplayableResponseStatuses
                     .GetValueOrDefault(operation.OperationId, [])
                     .Contains(numericStatusCode);
@@ -1669,12 +1705,12 @@ public sealed class OpenApiContractGenerationTests
 
         AssertRequestSchema(
             schemas.GetProperty("CreateCounterparty"),
-            ["kind", "legalName", "roles"],
+            ["kind", "legalName"],
             ["tradeName"],
             ["kind", "legalName", "tradeName", "roles"]);
         AssertRequestSchema(
             schemas.GetProperty("CreateCompanyPartyAccount"),
-            ["roles"],
+            [],
             [],
             ["roles"]);
         AssertRequestSchema(
@@ -1697,7 +1733,7 @@ public sealed class OpenApiContractGenerationTests
                 .EnumerateArray()
                 .Select(value => value.GetInt32()));
         var partyRole = schemas.GetProperty("PartyRole");
-        Assert.Equal(1, partyRole.GetProperty("minimum").GetInt32());
+        Assert.Equal(0, partyRole.GetProperty("minimum").GetInt32());
         Assert.Equal(15, partyRole.GetProperty("maximum").GetInt32());
         Assert.Equal(
             [1, 2, 4, 8],
@@ -1796,12 +1832,12 @@ public sealed class OpenApiContractGenerationTests
         IReadOnlyList<string> nullableProperties,
         IReadOnlyList<string> expectedProperties)
     {
+        var actualRequiredProperties = schema.TryGetProperty("required", out var required)
+            ? required.EnumerateArray().Select(item => item.GetString()!).ToArray()
+            : [];
         Assert.Equal(
             requiredProperties.Order(StringComparer.Ordinal),
-            schema.GetProperty("required")
-                .EnumerateArray()
-                .Select(item => item.GetString())
-                .Order(StringComparer.Ordinal));
+            actualRequiredProperties.Order(StringComparer.Ordinal));
         var properties = schema.GetProperty("properties");
         Assert.Equal(
             expectedProperties.Order(StringComparer.Ordinal),

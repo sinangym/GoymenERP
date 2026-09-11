@@ -184,6 +184,63 @@ public sealed class CounterpartyCompanyLinkSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task ExistingParty_CanBeLinkedWithNoRole()
+    {
+        var baseConnectionString = Environment.GetEnvironmentVariable(
+            SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
+        var factory = new SqlServerRelationalApiFactory(baseConnectionString);
+
+        try
+        {
+            using var healthClient = factory.CreateClient();
+            using var healthResponse = await healthClient.GetAsync("/health/live");
+            Assert.Equal(HttpStatusCode.OK, healthResponse.StatusCode);
+
+            await using var connection = new SqlConnection(factory.DatabaseConnectionString);
+            await connection.OpenAsync();
+
+            var created = await CreatePartyAsync(factory, "SQL Rol Olmadan Cari A.Ş.");
+            var linkKey = $"cari-link-none-{Guid.NewGuid():N}";
+            var correlation = $"cari-link-none-first-{Guid.NewGuid():N}";
+            using var targetClient = factory.CreateClientFor(
+                TestUsers.GroupAdmin,
+                TestCompanyIds.CompanyB);
+            SetRequestIdentity(targetClient, linkKey, correlation);
+            using var response = await targetClient.PostAsJsonAsync(
+                $"/api/v1/counterparties/{created.PartyId}/company-account",
+                new CreateCompanyPartyAccount(PartyRole.None));
+
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.DoesNotContain("externalIntegrationCode", body, StringComparison.Ordinal);
+            using var document = JsonDocument.Parse(body);
+            var account = Assert.Single(
+                document.RootElement.GetProperty("companyAccounts").EnumerateArray());
+            Assert.Equal(0, account.GetProperty("roles").GetInt32());
+
+            Assert.Equal(
+                1,
+                await ScalarAsync<int>(
+                    connection,
+                    "SELECT COUNT(*) FROM [counterparty].[CompanyPartyAccounts] WHERE [CompanyId] = @CompanyB AND [PartyId] = @PartyId AND [Roles] = 0;",
+                    new SqlParameter("@CompanyB", TestCompanyIds.CompanyB),
+                    new SqlParameter("@PartyId", created.PartyId)));
+            Assert.Equal(
+                1,
+                await ScalarAsync<int>(
+                    connection,
+                    "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [CompanyId] = @CompanyB AND [CorrelationId] = @CorrelationId AND [EventType] = N'counterparty.company-account.created.v1';",
+                    new SqlParameter("@CompanyB", TestCompanyIds.CompanyB),
+                    new SqlParameter("@CorrelationId", correlation)));
+        }
+        finally
+        {
+            await factory.DisposeAsync();
+            await DropDatabaseAsync(baseConnectionString, factory.DatabaseName);
+        }
+    }
+
+    [SqlServerFact]
     public async Task DurableCreatedReplay_FailsClosedForUnknownSchemaOrForeignAccountRelationship()
     {
         var baseConnectionString = Environment.GetEnvironmentVariable(

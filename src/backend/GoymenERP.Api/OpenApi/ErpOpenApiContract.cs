@@ -65,7 +65,8 @@ public static class ErpOpenApiContract
         "^(authentication_required|company_context_invalid|correlation_metadata_invalid|"
         + "forbidden|internal_error|service_unavailable|validation_failed|"
         + "command_metadata_invalid|invalid_cursor|not_found|already_linked|"
-        + "version_conflict|idempotency_conflict)$";
+        + "version_conflict|idempotency_conflict|client_contract_required|"
+        + "client_contract_unsupported)$";
 
     public static IServiceCollection AddErpOpenApi(this IServiceCollection services)
     {
@@ -95,6 +96,7 @@ public static class ErpOpenApiContract
                 if (context.JsonTypeInfo.Type == typeof(CreateCounterparty))
                 {
                     schema.Required?.Remove("tradeName");
+                    schema.Required?.Remove("roles");
                     AddCanonicalLengthContract(
                         schema,
                         "legalName",
@@ -105,6 +107,11 @@ public static class ErpOpenApiContract
                         "tradeName",
                         minimumLength: null,
                         maximumLength: 200);
+                }
+
+                if (context.JsonTypeInfo.Type == typeof(CreateCompanyPartyAccount))
+                {
+                    schema.Required?.Remove("roles");
                 }
 
                 if (context.JsonTypeInfo.Type == typeof(SetCompanyPartyAccountActiveState))
@@ -142,7 +149,10 @@ public static class ErpOpenApiContract
 
                 if (context.JsonTypeInfo.Type == typeof(PartyRole))
                 {
-                    schema.Minimum = "1";
+                    schema.Description = "Optional legacy trade classification. Zero means no specified "
+                        + "classification; values 1 through 15 retain their stored flags. "
+                        + "This value does not grant user permissions or restrict buying and selling.";
+                    schema.Minimum = "0";
                     schema.Maximum = "15";
                     var allowedFlags = new JsonArray(
                         (int)PartyRole.Customer,
@@ -418,6 +428,8 @@ public static class ErpOpenApiContract
     {
         cancellationToken.ThrowIfCancellationRequested();
         var endpointMetadata = context.Description.ActionDescriptor.EndpointMetadata;
+        var hasCounterpartyClientContract = endpointMetadata
+            .OfType<CounterpartyClientContractMetadata>().Any();
         var problemCodesByStatus = endpointMetadata
             .OfType<ErpProblemCodeMetadata>()
             .GroupBy(metadata => metadata.StatusCode)
@@ -490,6 +502,19 @@ public static class ErpOpenApiContract
             .OfType<IdempotentCommandMetadata>()
             .SingleOrDefault();
         var isIdempotentCommand = idempotentCommand is not null;
+        if (hasCounterpartyClientContract)
+        {
+            AddHeaderParameter(
+                operation,
+                CounterpartyClientContract.HeaderName,
+                required: !HttpMethods.IsGet(context.Description.HttpMethod ?? string.Empty),
+                "Exact client compatibility declaration. Required for every command and "
+                    + "for reads containing zero-role accounts. Before enabling commands, "
+                    + "require the matching server acknowledgment on a fresh, successful, "
+                    + "validated GET bound to the current API origin, actor/session, "
+                    + "selected company and generation. An error response never establishes readiness.",
+                pattern: CounterpartyClientContract.VersionPattern);
+        }
         if (isIdempotentCommand)
         {
             AddHeaderParameter(
@@ -597,6 +622,27 @@ public static class ErpOpenApiContract
                 out var numericStatusCode);
             concreteResponse.Headers ??=
                 new Dictionary<string, IOpenApiHeader>(StringComparer.Ordinal);
+            if (hasCounterpartyClientContract)
+            {
+                concreteResponse.Headers[CounterpartyClientContract.HeaderName] =
+                    new OpenApiHeader
+                    {
+                        Required = false,
+                        Description = "Optional server acknowledgment, present only after the "
+                            + "client-contract filter accepts the exact request declaration. "
+                            + "It can accompany handler-generated errors; errors before the filter "
+                            + "(including authentication, company resolution and body binding) may omit it. "
+                            + "Its presence on an error is not command success or client readiness. "
+                            + "Readiness requires a fresh, successful, validated GET with the matching "
+                            + "acknowledgment bound to the current API origin, actor/session, selected "
+                            + "company and generation. Absence on an error is not proof of an old server.",
+                        Schema = new OpenApiSchema
+                        {
+                            Type = JsonSchemaType.String,
+                            Pattern = CounterpartyClientContract.VersionPattern,
+                        },
+                    };
+            }
             concreteResponse.Headers[CorrelationHeaderName] = CorrelationHeader(
                 "Server-resolved correlation identifier.");
             if (hasNumericStatusCode

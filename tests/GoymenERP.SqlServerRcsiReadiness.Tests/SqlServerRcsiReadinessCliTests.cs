@@ -91,7 +91,7 @@ public sealed class SqlServerRcsiReadinessCliTests : IDisposable
     public async Task ConcurrentFreshInvocations_ToSamePathHaveOneWinnerAndNoResidue()
     {
         var directory = CreateTemporaryDirectory();
-        var outputPath = Path.Combine(directory, "winner.json");
+        var outputPath = Path.Combine(directory, "winner-\u0131\u015f.json");
         var entered = 0;
         var bothEntered = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);

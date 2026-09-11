@@ -481,12 +481,12 @@ internal sealed class CounterpartyCommandService(
     {
         const PartyRole knownRoles =
             PartyRole.Customer | PartyRole.Supplier | PartyRole.Tolling | PartyRole.Service;
-        if (roles == PartyRole.None || (roles & ~knownRoles) != 0)
+        if ((roles & ~knownRoles) != 0)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(roles),
                 roles,
-                "Cari en az bir bilinen ticari rol taşımalıdır.");
+                "Cari geçersiz ticari rol bilgisi taşıyor.");
         }
 
         return roles;

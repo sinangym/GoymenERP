@@ -12,6 +12,72 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed class CounterpartyWriteSqlServerRelationalAcceptanceTests
 {
     [SqlServerFact]
+    public async Task CanCreateCounterpartyWithoutRole()
+    {
+        var baseConnectionString = Environment.GetEnvironmentVariable(
+            SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
+        var factory = new SqlServerRelationalApiFactory(baseConnectionString);
+
+        try
+        {
+            using var healthClient = factory.CreateClient();
+            using var healthResponse = await healthClient.GetAsync("/health/live");
+            Assert.Equal(HttpStatusCode.OK, healthResponse.StatusCode);
+
+            await using var connection = new SqlConnection(factory.DatabaseConnectionString);
+            await connection.OpenAsync();
+
+            var createKey = $"cari-create-none-{Guid.NewGuid():N}";
+            var createCorrelation = $"cari-create-none-corr-{Guid.NewGuid():N}";
+            using var createClient = factory.CreateClientFor(
+                TestUsers.GroupAdmin,
+                TestCompanyIds.CompanyA);
+            SetRequestIdentity(createClient, createKey, createCorrelation);
+            var createCommand = new CreateCounterparty(
+                PartyKind.LegalEntity,
+                "SQL Rol Olmadan Cari A.Ş.",
+                "SQL Rol Olmadan",
+                PartyRole.None);
+
+            using var create = await createClient.PostAsJsonAsync(
+                "/api/v1/counterparties",
+                createCommand);
+            Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+            var body = await create.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(body);
+            var account = Assert.Single(document.RootElement.GetProperty("companyAccounts").EnumerateArray());
+            Assert.Equal(0, account.GetProperty("roles").GetInt32());
+            var partyId = document.RootElement.GetProperty("id").GetGuid();
+            Assert.Equal(
+                1,
+                await ScalarAsync<int>(
+                    connection,
+                    "SELECT COUNT(*) FROM [counterparty].[CompanyPartyAccounts] WHERE [CompanyId] = @CompanyId AND [PartyId] = @PartyId;",
+                    new SqlParameter("@CompanyId", TestCompanyIds.CompanyA),
+                    new SqlParameter("@PartyId", partyId)));
+            Assert.Equal(
+                1,
+                await ScalarAsync<int>(
+                    connection,
+                    "SELECT COUNT(*) FROM [counterparty].[CompanyPartyAccounts] WHERE [CompanyId] = @CompanyId AND [PartyId] = @PartyId AND [Roles] = 0;",
+                    new SqlParameter("@CompanyId", TestCompanyIds.CompanyA),
+                    new SqlParameter("@PartyId", partyId)));
+            Assert.Equal(
+                1,
+                await ScalarAsync<int>(
+                    connection,
+                    "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [CompanyId] = @CompanyId AND [CorrelationId] = @CorrelationId AND [EventType] = N'counterparty.party.created.v1';",
+                    new SqlParameter("@CompanyId", TestCompanyIds.CompanyA),
+                    new SqlParameter("@CorrelationId", createCorrelation)));
+        }
+        finally
+        {
+            await factory.DisposeAsync();
+            await DropDatabaseAsync(baseConnectionString, factory.DatabaseName);
+        }
+    }
+
+    [SqlServerFact]
     public async Task WriteIdempotencyAndTerminalReplay_AreDurable()
     {
         var baseConnectionString = Environment.GetEnvironmentVariable(
