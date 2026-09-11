@@ -208,7 +208,8 @@ export function isCompletedRead(record: LiveRecord, contractVersion = CLIENT_CON
  *
  *   - an object, and `items` an array of actual rows (a `null` element is not a row);
  *   - `hasMore` a boolean;
- *   - `nextCursor` null or a non-empty string of at most 4096 characters;
+ *   - `nextCursor` null or a non-empty string of at most 4096 characters, by the
+ *     product's own `isNonEmptyString` rule (whitespace-only is not non-empty);
  *   - `hasMore` and `nextCursor` agreeing, or the page cannot be walked safely;
  *   - the count pair present on the list endpoint and absent on the candidate endpoint,
  *     which is where the two envelopes genuinely differ.
@@ -225,7 +226,12 @@ export function isUsablePagePayload(body: unknown, path: string): boolean {
   if (!page.items.every((item) => typeof item === 'object' && item !== null && !Array.isArray(item))) return false
   if (typeof page.hasMore !== 'boolean') return false
   const cursor = page.nextCursor
-  if (cursor !== null && !(typeof cursor === 'string' && cursor.length > 0 && cursor.length <= 4096)) return false
+  // Matched to the product guard, not approximated: `isNonEmptyString` (wireGuards.ts:24,
+  // and the identical local copy in contract.ts:91) rejects a whitespace-only string via
+  // `trim().length > 0` while bounding the UNTRIMMED length. A `" "` cursor passed here
+  // and was refused by the decoder, so a finished 200+ACK page the reader could not have
+  // used was counted as completion.
+  if (cursor !== null && !(typeof cursor === 'string' && cursor.trim().length > 0 && cursor.length <= 4096)) return false
   if (page.hasMore !== (cursor !== null)) return false
   const countFields = [Object.hasOwn(page, 'totalCount'), Object.hasOwn(page, 'countScope')]
   return path.endsWith('/company-account-link-candidates')
