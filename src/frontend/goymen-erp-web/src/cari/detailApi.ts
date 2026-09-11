@@ -12,6 +12,7 @@ import {
   contractAckOf,
   contractRequestHeader,
   recordContractRead,
+  recordContractReadFailure,
   type ContractContext,
 } from './clientContract'
 import type { ViewOutcome } from '../shell/uiState'
@@ -46,7 +47,12 @@ export async function fetchCounterpartyDetail(
       signal,
     })
   } catch (error) {
-    if (signal?.aborted) return { type: 'fence-stale' }
+    // See api.ts: an abort is our own cancellation, everything else is unreachable.
+    if (signal?.aborted) {
+      recordContractReadFailure(contractContext ?? null, 'aborted')
+      return { type: 'fence-stale' }
+    }
+    recordContractReadFailure(contractContext ?? null, 'unreachable')
     if (!navigator.onLine) return { type: 'offline' }
     // A request that never produced a response is a transport failure, not a
     // malformed body — the shell distinguishes these (PR #155).

@@ -130,9 +130,45 @@ export function recordContractRead(
   observation: ReadObservation,
 ): void {
   if (context === null) return
+  const key = contractContextKey(context)
   const ready =
     observation.status === 200 && observation.bodyValidated && observation.ack !== null
-  grant = { key: contractContextKey(context), ready }
+
+  if (ready) {
+    grant = { key, ready: true }
+    return
+  }
+
+  /**
+   * A REVOKE only touches its own context.
+   *
+   * With one slot, writing `{key, ready:false}` unconditionally let a failure that
+   * belonged to the context the user just LEFT overwrite the grant they are working
+   * under now. A late 403 or a dropped connection from the previous company would
+   * shut the gate on the current one — and, worse, the reverse shape would have let a
+   * stale success reopen it. An observation may only speak about the context it was
+   * issued in.
+   */
+  if (grant !== null && grant.key === key) {
+    grant = { key, ready: false }
+  }
+}
+
+/**
+ * A read that never produced a usable response.
+ *
+ * `aborted` is OUR cancellation — the shell drops in-flight reads when the context
+ * moves — so it is evidence about us, not about the server, and it must not be read as
+ * a failure. Everything else (offline, a connection that dropped, a request that never
+ * completed) is a server we can no longer reach, and readiness earned over a
+ * connection that is gone cannot stand.
+ */
+export function recordContractReadFailure(
+  context: ContractContext | null,
+  reason: 'aborted' | 'unreachable',
+): void {
+  if (reason === 'aborted') return
+  recordContractRead(context, { status: 0, bodyValidated: false, ack: null })
 }
 
 /**
@@ -177,15 +213,103 @@ export function commandAckOutcome(response: Pick<Response, 'headers'>): CommandA
 }
 
 /**
- * Whether a later response may CLOSE an attempt already recorded as an unknown outcome.
+ * The identity of one command attempt.
  *
- * Only an acknowledged response, in a context that is itself currently ready. Anything
- * else leaves the unknown outcome standing — which is the safe state, because it is the
- * one that keeps the same key and forbids an automatic re-send.
+ * All three parts, because all three are what make a re-send the SAME send: the
+ * context it was authorized in, the idempotency key the server deduplicates on, and a
+ * fingerprint of the normalized payload. A form edited while an attempt was pending is
+ * a different command, and must not be smuggled out under the old key.
+ */
+export interface CommandAttempt {
+  readonly context: ContractContext
+  readonly idempotencyKey: string
+  /** Stable digest of the NORMALIZED payload — absent roles and 0 are one payload. */
+  readonly payloadFingerprint: string
+}
+
+export function sameCommandAttempt(a: CommandAttempt, b: CommandAttempt): boolean {
+  return (
+    contractContextKey(a.context) === contractContextKey(b.context) &&
+    a.idempotencyKey === b.idempotencyKey &&
+    a.payloadFingerprint === b.payloadFingerprint
+  )
+}
+
+/**
+ * What came back, as far as the caller could actually read it.
+ *
+ * `validated` means the body decoded as this command's own result — the created or
+ * linked record, or the stored result replayed for the same key. `undecodable` means
+ * a response arrived that we could not read as that. `no-response` covers a timeout,
+ * an abort and any transport failure.
+ */
+export type CommandResult =
+  | { readonly kind: 'validated'; readonly status: number }
+  | { readonly kind: 'undecodable'; readonly status: number }
+  | { readonly kind: 'no-response' }
+
+/** One attempt reporting back. */
+export interface CommandSettlement {
+  /** Whose response this is. */
+  readonly attempt: CommandAttempt
+  /** The context the client is in right now. */
+  readonly context: ContractContext | null
+  readonly response: Pick<Response, 'headers'> | null
+  readonly result: CommandResult
+}
+
+/**
+ * Whether an attempt already recorded as an unknown outcome may be CLOSED.
+ *
+ * The protocol acknowledgment is not a result. It proves the server understood the
+ * declaration and nothing more — it is written before the handler runs, so it rides on
+ * a 500 raised after the write just as readily as on one raised before it. Closing an
+ * unknown outcome on the strength of the header alone would mark a command resolved
+ * while its effect was still unknown, which is exactly the state the unknown outcome
+ * exists to preserve.
+ *
+ * So closure requires a DEFINITIVE result, and every clause below is load-bearing:
+ *
+ *  - the same attempt: same context, same key, same normalized payload;
+ *  - reported from that attempt's own context, which must be ready NOW — a grant from
+ *    another company or a previous session cannot certify this one;
+ *  - an acknowledged response, so we know which contract the answer is in;
+ *  - a `validated` 2xx: the command's own result read back, or its replay.
+ *
+ * Everything else leaves the unknown outcome standing: a timeout, a 500, an
+ * undecodable body, any 4xx, and a later compatibility 409 — which on a re-issue is
+ * consistent both with "the first attempt landed" and with "it never did". Standing is
+ * the safe state: it keeps the same key and forbids an automatic re-send.
  */
 export function settlesUnknownOutcome(
-  context: ContractContext | null,
-  response: Pick<Response, 'headers'>,
+  recorded: CommandAttempt,
+  settlement: CommandSettlement,
 ): boolean {
-  return isCommandContractReady(context) && commandAckOutcome(response) === 'acknowledged'
+  if (!sameCommandAttempt(recorded, settlement.attempt)) return false
+  if (settlement.context === null) return false
+  if (contractContextKey(settlement.context) !== contractContextKey(recorded.context)) return false
+  if (!isCommandContractReady(settlement.context)) return false
+  if (settlement.response === null) return false
+  if (commandAckOutcome(settlement.response) !== 'acknowledged') return false
+  if (settlement.result.kind !== 'validated') return false
+  return settlement.result.status >= 200 && settlement.result.status < 300
+}
+
+/**
+ * Whether the SAME attempt may be explicitly re-sent.
+ *
+ * Same context, and that context ready again. There is deliberately no function here
+ * that mints a key: an unknown outcome is re-sent under the key it already has, or not
+ * at all. A new key would turn one uncertain command into two.
+ *
+ * This never fires by itself — it answers a question for a caller acting on the user's
+ * explicit retry, not a timer.
+ */
+export function mayRetrySameKey(
+  attempt: CommandAttempt,
+  current: ContractContext | null,
+): boolean {
+  if (current === null) return false
+  if (contractContextKey(current) !== contractContextKey(attempt.context)) return false
+  return isCommandContractReady(current)
 }

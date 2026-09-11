@@ -17,6 +17,8 @@ import {
   isCommandContractReady,
   recordContractRead,
   resetContractReadiness,
+  mayRetrySameKey,
+  sameCommandAttempt,
   settlesUnknownOutcome,
   type ContractContext,
 } from './clientContract'
@@ -184,6 +186,25 @@ describe('what the gate is bound to', () => {
 })
 
 describe('what a command response means', () => {
+  const ATTEMPT = {
+    context: CTX,
+    idempotencyKey: 'attempt-key-1',
+    payloadFingerprint: 'kind=1|legalName=Alfa|roles=absent',
+  }
+  const VALIDATED_201 = { kind: 'validated', status: 201 } as const
+
+  const ready = () =>
+    recordContractRead(CTX, { status: 200, bodyValidated: true, ack: COUNTERPARTY_CONTRACT_VERSION })
+
+  /** The same attempt reporting back, varying only what is under test. */
+  const settlement = (over = {}) => ({
+    attempt: ATTEMPT,
+    context: CTX,
+    response: res(ACK),
+    result: VALIDATED_201,
+    ...over,
+  })
+
   it('is acknowledged only with the exact header', () => {
     expect(commandAckOutcome(res(ACK))).toBe('acknowledged')
     expect(commandAckOutcome(res({}))).toBe('unknown-outcome')
@@ -199,18 +220,136 @@ describe('what a command response means', () => {
     expect(commandAckOutcome(res({}))).toBe('unknown-outcome')
   })
 
-  it('an unknown outcome is not settled by a later response in an unready context', () => {
-    // Including a compatibility 409: on a re-issue that is consistent both with "the
-    // first attempt landed" and with "it never did".
-    expect(settlesUnknownOutcome(CTX, res(ACK))).toBe(false)
+  it('settles on a validated 2xx result for the same attempt in a ready context', () => {
+    ready()
+    expect(settlesUnknownOutcome(ATTEMPT, settlement())).toBe(true)
+    expect(
+      settlesUnknownOutcome(ATTEMPT, settlement({ result: { kind: 'validated', status: 200 } })),
+    ).toBe(true)
   })
 
-  it('is settled only by an acknowledged response in a context that is itself ready', () => {
+  it('does NOT settle on a 500, acknowledgment or not', () => {
+    // The declaration header proves the server understood the DECLARATION. It says
+    // nothing about whether the command was applied: a 500 can be raised after the
+    // write as easily as before it.
+    ready()
+    expect(
+      settlesUnknownOutcome(ATTEMPT, settlement({ result: { kind: 'validated', status: 500 } })),
+    ).toBe(false)
+    expect(
+      settlesUnknownOutcome(ATTEMPT, settlement({ result: { kind: 'undecodable', status: 500 } })),
+    ).toBe(false)
+  })
+
+  it('does NOT settle when no usable response arrived — timeout, abort, transport', () => {
+    ready()
+    expect(
+      settlesUnknownOutcome(ATTEMPT, settlement({ response: null, result: { kind: 'no-response' } })),
+    ).toBe(false)
+    // Even if a response object exists, "no usable result" is not an answer.
+    expect(settlesUnknownOutcome(ATTEMPT, settlement({ result: { kind: 'no-response' } }))).toBe(
+      false,
+    )
+  })
+
+  it('does NOT settle on a 2xx whose body could not be decoded as the result', () => {
+    // "It answered 201" is not the same as "we read back the record it created".
+    ready()
+    expect(
+      settlesUnknownOutcome(ATTEMPT, settlement({ result: { kind: 'undecodable', status: 201 } })),
+    ).toBe(false)
+  })
+
+  it('does NOT settle on a later compatibility 409', () => {
+    // A 409 on a re-issue is consistent both with "the first attempt landed" and with
+    // "it never did", so it is not an answer either way.
+    ready()
+    expect(
+      settlesUnknownOutcome(ATTEMPT, settlement({ result: { kind: 'validated', status: 409 } })),
+    ).toBe(false)
+  })
+
+  it('does NOT settle on any 4xx, however well formed', () => {
+    ready()
+    for (const status of [400, 401, 403, 404, 415, 422]) {
+      expect(
+        settlesUnknownOutcome(ATTEMPT, settlement({ result: { kind: 'validated', status } })),
+      ).toBe(false)
+    }
+  })
+
+  it('does NOT settle without the acknowledgment, even on a validated 201', () => {
+    ready()
+    expect(settlesUnknownOutcome(ATTEMPT, settlement({ response: res({}) }))).toBe(false)
+  })
+
+  it('does NOT settle in a context that is not itself ready', () => {
+    // No `ready()`: the gate is shut, so nothing observed through it counts.
+    expect(settlesUnknownOutcome(ATTEMPT, settlement())).toBe(false)
+  })
+
+  it('does NOT settle from a context other than the one the attempt was made in', () => {
+    recordContractRead(OTHER_COMPANY, {
+      status: 200,
+      bodyValidated: true,
+      ack: COUNTERPARTY_CONTRACT_VERSION,
+    })
+    // Ready — but for a different company than the attempt belongs to.
+    expect(settlesUnknownOutcome(ATTEMPT, settlement({ context: OTHER_COMPANY }))).toBe(false)
+  })
+
+  it('does NOT settle from a DIFFERENT attempt: another key or an edited payload', () => {
+    ready()
+    expect(
+      settlesUnknownOutcome(
+        ATTEMPT,
+        settlement({ attempt: { ...ATTEMPT, idempotencyKey: 'another-key' } }),
+      ),
+    ).toBe(false)
+    expect(
+      settlesUnknownOutcome(
+        ATTEMPT,
+        settlement({ attempt: { ...ATTEMPT, payloadFingerprint: 'edited-while-pending' } }),
+      ),
+    ).toBe(false)
+    expect(
+      settlesUnknownOutcome(
+        ATTEMPT,
+        settlement({ attempt: { ...ATTEMPT, context: OTHER_COMPANY } }),
+      ),
+    ).toBe(false)
+  })
+
+  it('compares attempts by context, key and payload together', () => {
+    expect(sameCommandAttempt(ATTEMPT, { ...ATTEMPT })).toBe(true)
+    expect(sameCommandAttempt(ATTEMPT, { ...ATTEMPT, idempotencyKey: 'x' })).toBe(false)
+    expect(sameCommandAttempt(ATTEMPT, { ...ATTEMPT, payloadFingerprint: 'x' })).toBe(false)
+    expect(sameCommandAttempt(ATTEMPT, { ...ATTEMPT, context: OTHER_COMPANY })).toBe(false)
+  })
+})
+
+describe('retrying an unknown outcome', () => {
+  const ATTEMPT = {
+    context: CTX,
+    idempotencyKey: 'attempt-key-1',
+    payloadFingerprint: 'kind=1|legalName=Alfa|roles=absent',
+  }
+
+  it('is refused until readiness is re-established in the attempt own context', () => {
+    expect(mayRetrySameKey(ATTEMPT, CTX)).toBe(false)
+
     recordContractRead(CTX, { status: 200, bodyValidated: true, ack: COUNTERPARTY_CONTRACT_VERSION })
-    expect(settlesUnknownOutcome(CTX, res(ACK))).toBe(true)
-    // Ready context, but this response did not acknowledge: still unknown.
-    expect(settlesUnknownOutcome(CTX, res({}))).toBe(false)
-    // Acknowledged response, but readiness belongs to another context: still unknown.
-    expect(settlesUnknownOutcome(OTHER_COMPANY, res(ACK))).toBe(false)
+    expect(mayRetrySameKey(ATTEMPT, CTX)).toBe(true)
+  })
+
+  it('is refused in any other context, however ready that context is', () => {
+    recordContractRead(OTHER_COMPANY, {
+      status: 200,
+      bodyValidated: true,
+      ack: COUNTERPARTY_CONTRACT_VERSION,
+    })
+    // The attempt belongs to company A. Being ready in company B does not license
+    // re-sending it there — and never under a freshly minted key.
+    expect(mayRetrySameKey(ATTEMPT, OTHER_COMPANY)).toBe(false)
   })
 })

@@ -11,6 +11,7 @@ import {
   contractAckOf,
   contractRequestHeader,
   recordContractRead,
+  recordContractReadFailure,
   type ContractContext,
 } from './clientContract'
 import type { ViewOutcome } from '../shell/uiState'
@@ -97,7 +98,14 @@ export async function fetchCounterparties(
       signal,
     })
   } catch {
-    if (signal?.aborted) return { type: 'fence-stale' }
+    // An abort is OUR cancellation and says nothing about the server; anything else
+    // is a server we can no longer reach, and readiness earned over a connection that
+    // is gone must not stand.
+    if (signal?.aborted) {
+      recordContractReadFailure(contractContext ?? null, 'aborted')
+      return { type: 'fence-stale' }
+    }
+    recordContractReadFailure(contractContext ?? null, 'unreachable')
     if (!navigator.onLine) return { type: 'offline' }
     // Online, but nothing came back — a different fact from a bad response body.
     return { type: 'network-error' }

@@ -201,3 +201,114 @@ describe('the detail read', () => {
     expect(isCommandContractReady(CTX)).toBe(false)
   })
 })
+
+describe('a transport failure must not leave the gate open', () => {
+  /** Throwing from fetch is how a real network failure reaches the client. */
+  function installFailingFetch(error: unknown) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw error
+      }),
+    )
+  }
+
+  async function grant() {
+    installFetch(() => respond(listBody()))
+    await fetchCounterparties({ mode: 'single', companyId: COMPANY }, {}, undefined, CTX)
+    expect(isCommandContractReady(CTX)).toBe(true)
+  }
+
+  it('REVOKES readiness when the next read in the same context fails on the network', async () => {
+    // Before this, the early transport return skipped the recording entirely, so a
+    // grant earned seconds ago outlived the connection it was earned on — and the
+    // command gate stayed open against a server we could no longer reach.
+    await grant()
+
+    installFailingFetch(new TypeError('Failed to fetch'))
+    const outcome = await fetchCounterparties(
+      { mode: 'single', companyId: COMPANY },
+      {},
+      undefined,
+      CTX,
+    )
+
+    expect(outcome.type).toBe('network-error')
+    expect(isCommandContractReady(CTX)).toBe(false)
+  })
+
+  it('REVOKES readiness when the next read in the same context finds us offline', async () => {
+    await grant()
+
+    vi.stubGlobal('navigator', { onLine: false })
+    installFailingFetch(new TypeError('Failed to fetch'))
+    const outcome = await fetchCounterparties(
+      { mode: 'single', companyId: COMPANY },
+      {},
+      undefined,
+      CTX,
+    )
+
+    expect(outcome.type).toBe('offline')
+    expect(isCommandContractReady(CTX)).toBe(false)
+  })
+
+  it('does the same on the detail read', async () => {
+    installFetch(() => respond(detailBody()))
+    await fetchCounterpartyDetail(PARTY, COMPANY, undefined, CTX)
+    expect(isCommandContractReady(CTX)).toBe(true)
+
+    installFailingFetch(new TypeError('Failed to fetch'))
+    await fetchCounterpartyDetail(PARTY, COMPANY, undefined, CTX)
+    expect(isCommandContractReady(CTX)).toBe(false)
+  })
+
+  it('an ABORTED read changes nothing — it is our own cancellation, not the server', async () => {
+    // The shell cancels in-flight reads when the context moves. That cancellation is
+    // evidence about us, not about the server, and it must not be read as a failure.
+    await grant()
+
+    const controller = new AbortController()
+    controller.abort()
+    installFailingFetch(new DOMException('Aborted', 'AbortError'))
+    const outcome = await fetchCounterparties(
+      { mode: 'single', companyId: COMPANY },
+      {},
+      controller.signal,
+      CTX,
+    )
+
+    expect(outcome.type).toBe('fence-stale')
+    expect(isCommandContractReady(CTX)).toBe(true)
+  })
+
+  it('a failed read from an OLD context must not revoke the NEW context', async () => {
+    // The single slot is the hazard: a late failure carrying the previous namespace
+    // would otherwise overwrite the grant the user is actually working under.
+    const OLD: ContractContext = { origin: API_BASE, namespace: 'actor-a single company-a gen-1' }
+    const NEW: ContractContext = { origin: API_BASE, namespace: 'actor-a single company-b gen-2' }
+
+    installFetch(() => respond(listBody()))
+    await fetchCounterparties({ mode: 'single', companyId: COMPANY }, {}, undefined, NEW)
+    expect(isCommandContractReady(NEW)).toBe(true)
+
+    installFailingFetch(new TypeError('Failed to fetch'))
+    await fetchCounterparties({ mode: 'single', companyId: COMPANY }, {}, undefined, OLD)
+
+    expect(isCommandContractReady(NEW)).toBe(true)
+    expect(isCommandContractReady(OLD)).toBe(false)
+  })
+
+  it('a late HTTP failure from an OLD context must not revoke the NEW context either', async () => {
+    const OLD: ContractContext = { origin: API_BASE, namespace: 'actor-a single company-a gen-1' }
+    const NEW: ContractContext = { origin: API_BASE, namespace: 'actor-a single company-b gen-2' }
+
+    installFetch(() => respond(listBody()))
+    await fetchCounterparties({ mode: 'single', companyId: COMPANY }, {}, undefined, NEW)
+
+    installFetch(() => respond({ code: 'forbidden' }, { status: 403, acknowledged: false }))
+    await fetchCounterparties({ mode: 'single', companyId: COMPANY }, {}, undefined, OLD)
+
+    expect(isCommandContractReady(NEW)).toBe(true)
+  })
+})
