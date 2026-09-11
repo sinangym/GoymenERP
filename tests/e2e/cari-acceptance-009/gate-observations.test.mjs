@@ -14,8 +14,11 @@ import {
   GitObservationError,
   compareBytes,
   extractDllPath,
+  gitCommittedDiffSha256,
   gitDiffSha256,
   gitHead,
+  gitMigrationSourcesSha256,
+  gitTreeOid,
   isoDiffSeconds,
   observeListener,
   observeProcess,
@@ -369,4 +372,105 @@ test('C008-P2-001 (controlled doubles): failures of rev-parse, the tracked diff 
   assert.equal(errorDetails.name, 'GitObservationError')
   assert.equal(errorDetails.status, 128)
   assert.deepEqual(errorDetails.args.slice(0, 5), ['-c', 'core.safecrlf=false', '-C', repo, 'diff'])
+})
+
+// ---- C006 source-schema recipes (e35ad38) -------------------------------------------------
+// Three observations the old gate had no equivalent of: a COMMITTED range diff, a tree
+// OID, and the committed migration inventory. Each is measured against a real throw-away
+// repository, because each recipe's value depends on details (flag order, pathspecs,
+// line terminators) that a hand-written expectation would not catch.
+
+test('gitCommittedDiffSha256 hashes the committed range over the given pathspecs, harness included', () => {
+  const { repo, git } = makeRepo()
+  mkdirSync(path.join(repo, 'src/frontend/goymen-erp-web'), { recursive: true })
+  mkdirSync(path.join(repo, 'tests/e2e'), { recursive: true })
+  mkdirSync(path.join(repo, 'src/backend'), { recursive: true })
+  writeFileSync(path.join(repo, 'src/frontend/goymen-erp-web/app.ts'), 'export const a = 1\n')
+  writeFileSync(path.join(repo, 'tests/e2e/harness.ts'), 'export const h = 1\n')
+  writeFileSync(path.join(repo, 'src/backend/Api.cs'), 'class Api {}\n')
+  git('add', '-A')
+  git('commit', '-q', '-m', 'base')
+  const base = gitHead(repo)
+  writeFileSync(path.join(repo, 'src/frontend/goymen-erp-web/app.ts'), 'export const a = 2\n')
+  writeFileSync(path.join(repo, 'tests/e2e/harness.ts'), 'export const h = 2\n')
+  writeFileSync(path.join(repo, 'src/backend/Api.cs'), 'class Api { int x; }\n')
+  git('add', '-A')
+  git('commit', '-q', '-m', 'head')
+  const head = gitHead(repo)
+
+  const paths = ['src/frontend/goymen-erp-web', 'tests/e2e']
+  const result = gitCommittedDiffSha256(repo, { base, head, paths })
+  const expected = strictGit(repo, ['diff', '--binary', '--full-index', '--no-color', '--no-ext-diff', '--no-textconv', base, head, '--', ...paths])
+  assert.equal(result.sha256, sha256Hex(expected))
+  assert.equal(result.bytes, expected.length)
+
+  // The harness is INSIDE this range: dropping tests/e2e changes the hash, so the old
+  // harness-excluded worktree diff can never stand in for it.
+  assert.notEqual(gitCommittedDiffSha256(repo, { base, head, paths: ['src/frontend/goymen-erp-web'] }).sha256, result.sha256)
+  // The backend change is outside it: the pathspecs are part of the recipe.
+  assert.equal(String(expected).includes('src/backend/Api.cs'), false)
+  // A dirty worktree does not move a committed range.
+  writeFileSync(path.join(repo, 'src/frontend/goymen-erp-web/app.ts'), 'export const a = 99\n')
+  assert.equal(gitCommittedDiffSha256(repo, { base, head, paths }).sha256, result.sha256)
+})
+
+test('gitCommittedDiffSha256 refuses an incomplete recipe instead of hashing something else', () => {
+  const { repo } = makeRepo()
+  const head = gitHead(repo)
+  assert.throws(() => gitCommittedDiffSha256(repo, { base: 'HEAD~1', head, paths: ['src'] }), gitError(/base is not a full 40-hex commit id/))
+  assert.throws(() => gitCommittedDiffSha256(repo, { base: head, head: 'main', paths: ['src'] }), gitError(/head is not a full 40-hex commit id/))
+  // An unrestricted diff is a different hash, so an empty pathspec list is an error, not
+  // a convenience.
+  assert.throws(() => gitCommittedDiffSha256(repo, { base: head, head, paths: [] }), gitError(/at least one pathspec/))
+  assert.throws(() => gitCommittedDiffSha256(repo, { base: head, head, paths: ['src'], spawn: fakeSpawn('diff', { status: 128, stderr: Buffer.from('fatal: bad object') }) }), gitError(/exited 128/))
+})
+
+test('gitTreeOid returns the tree object id of a path, which is not a content hash', () => {
+  const { repo, git } = makeRepo()
+  mkdirSync(path.join(repo, 'src/backend'), { recursive: true })
+  writeFileSync(path.join(repo, 'src/backend/Api.cs'), 'class Api {}\n')
+  git('add', '-A')
+  git('commit', '-q', '-m', 'backend')
+  const oid = gitTreeOid(repo, 'HEAD:src/backend')
+  assert.match(oid, /^[0-9a-f]{40}$/)
+  assert.equal(oid, String(strictGit(repo, ['rev-parse', 'HEAD:src/backend'])).trim())
+  // A change under the path moves the tree; a change outside it does not.
+  writeFileSync(path.join(repo, 'src/backend/Api.cs'), 'class Api { int x; }\n')
+  git('add', '-A')
+  git('commit', '-q', '-m', 'changed')
+  assert.notEqual(gitTreeOid(repo, 'HEAD:src/backend'), oid)
+  assert.throws(() => gitTreeOid(repo, 'HEAD:does/not/exist'), gitError(/exited 128/))
+})
+
+test('gitMigrationSourcesSha256 hashes the committed migration inventory, in Git order, LF-terminated', () => {
+  const { repo, git } = makeRepo()
+  mkdirSync(path.join(repo, 'src/backend/Data/Migrations'), { recursive: true })
+  mkdirSync(path.join(repo, 'src/backend/Api'), { recursive: true })
+  writeFileSync(path.join(repo, 'src/backend/Data/Migrations/0001_Init.cs'), 'init\n')
+  writeFileSync(path.join(repo, 'src/backend/Data/Migrations/0002_Party.cs'), 'party\n')
+  writeFileSync(path.join(repo, 'src/backend/Api/Controller.cs'), 'controller\n')
+  git('add', '-A')
+  git('commit', '-q', '-m', 'migrations')
+
+  const listing = String(strictGit(repo, ['ls-tree', '-r', 'HEAD', '--', 'src/backend']))
+  const migrationLines = listing.split('\n').filter((line) => line.includes('/Migrations/'))
+  const expected = sha256Hex(Buffer.from(migrationLines.map((line) => `${line}\n`).join(''), 'utf8'))
+  const result = gitMigrationSourcesSha256(repo, {})
+  assert.equal(result.sha256, expected)
+  assert.equal(result.lines, 2)
+  // It is a SOURCE inventory: the non-migration file is excluded, and editing it changes
+  // nothing here. No database is read and none could be.
+  writeFileSync(path.join(repo, 'src/backend/Api/Controller.cs'), 'controller v2\n')
+  git('add', '-A')
+  git('commit', '-q', '-m', 'api only')
+  assert.equal(gitMigrationSourcesSha256(repo, {}).sha256, expected)
+  // A new migration does change it.
+  writeFileSync(path.join(repo, 'src/backend/Data/Migrations/0003_Roles.cs'), 'roles\n')
+  git('add', '-A')
+  git('commit', '-q', '-m', 'third migration')
+  const grown = gitMigrationSourcesSha256(repo, {})
+  assert.equal(grown.lines, 3)
+  assert.notEqual(grown.sha256, expected)
+  assert.throws(() => gitMigrationSourcesSha256(repo, { spawn: fakeSpawn('ls-tree', { status: 0, stdout: Buffer.from('100644 blob abc\tsrc/backend/Data/Migrations/x.cs') }) }), gitError(/truncated/))
+  assert.throws(() => gitMigrationSourcesSha256(repo, { pathspec: 'does/not/exist' }), gitError(/listed nothing/))
 })

@@ -21,6 +21,8 @@ import base from '../../../src/frontend/goymen-erp-web/vite.config.ts'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const frontendRoot = path.resolve(here, '../../../src/frontend/goymen-erp-web')
+// The runner passes the lane's port; the L lane pins 25173, the only loopback UI origin
+// the C006 Testing host's CORS policy permits.
 const port = Number(process.env.CARI009_UI_PORT ?? '15173')
 const apiTarget = process.env.CARI009_API_TARGET ?? 'http://127.0.0.1:9'
 

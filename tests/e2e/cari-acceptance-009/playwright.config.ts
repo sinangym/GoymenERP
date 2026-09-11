@@ -21,7 +21,31 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(here, '../../..')
 const frontendDir = path.join(repoRoot, 'src', 'frontend', 'goymen-erp-web')
 const lane = (process.env.CARI009_LANE ?? 'T').toUpperCase()
-const uiPort = Number(process.env.CARI009_UI_PORT ?? '15173')
+/**
+ * The UI port is a SOURCE-profile condition, not a preference.
+ *
+ * C006's isolated Testing host pins its CORS policy to exactly
+ * `http://127.0.0.1:25173` and `http://localhost:25173` (AcceptanceFactory.cs), and the
+ * environment envelope carries no UI field at all — there is nothing to read it from.
+ * So the L lane binds 25173 and refuses an ambient override that disagrees: a UI served
+ * anywhere else is refused by the API, and quietly moving to another port would turn
+ * that into a confusing CORS failure instead of a clear one here. `--strictPort` below
+ * covers the other half, occupation.
+ */
+const PINNED_UI_PORT = 25173
+const uiPort = resolveUiPort()
+
+function resolveUiPort(): number {
+  const requested = process.env.CARI009_UI_PORT
+  // The T lane answers every request in the browser and never reaches an API, so it keeps
+  // its own port: serving controlled responses on the one origin the live API trusts is
+  // an avoidable way to confuse two runs.
+  if (lane !== 'L') return Number(requested ?? 15173)
+  if (requested !== undefined && Number(requested) !== PINNED_UI_PORT) {
+    throw new Error(`the L lane is pinned to UI port ${PINNED_UI_PORT} by the C006 source profile; CARI009_UI_PORT=${requested} would be refused by the API`)
+  }
+  return PINNED_UI_PORT
+}
 const evidenceDir = process.env.CARI009_EVIDENCE_DIR ?? path.join(here, 'artifacts')
 const laneDir = path.join(evidenceDir, lane)
 const viteBin = path.join(frontendDir, 'node_modules', 'vite', 'bin', 'vite.js')

@@ -265,3 +265,51 @@ export function isoDiffSeconds(a, b) {
 export function resolveUnder(base, relative) {
   return path.isAbsolute(relative) ? relative : path.join(base, relative)
 }
+
+/**
+ * The exact-byte diff between two COMMITS, restricted to pathspecs.
+ *
+ * This is not `gitDiffSha256`: that one hashes a dirty worktree against its own HEAD
+ * and can exclude the harness. The C006 source binding's `FrontendDiffSha256` is a
+ * committed range — base..head over `src/frontend/goymen-erp-web` and `tests/e2e`,
+ * harness INCLUDED — so the two hashes answer different questions and neither may
+ * stand in for the other. Worktree cleanliness stays a separate observation.
+ *
+ * The flag order is the publisher's, because the flags change the bytes.
+ */
+const COMMITTED_DIFF_FLAGS = ['diff', '--binary', '--full-index', '--no-color', '--no-ext-diff', '--no-textconv']
+
+export function gitCommittedDiffSha256(dir, { base, head, paths = [], spawn } = {}) {
+  for (const [label, value] of [['base', base], ['head', head]]) {
+    if (typeof value !== 'string' || !/^[0-9a-f]{40}$/.test(value)) {
+      throw new GitObservationError(`committed diff ${label} is not a full 40-hex commit id: ${JSON.stringify(String(value ?? '').slice(0, 60))}`)
+    }
+  }
+  if (paths.length === 0) throw new GitObservationError('committed diff needs at least one pathspec; an unrestricted diff is a different hash')
+  const { stdout } = runGit(dir, [...COMMITTED_DIFF_FLAGS, base, head, '--', ...paths], { spawn })
+  return { sha256: sha256Hex(stdout), bytes: stdout.length }
+}
+
+/** A tree OID (`HEAD:src/backend`) — a Git object id, never a SHA-256 of anything. */
+export function gitTreeOid(dir, spec, { spawn } = {}) {
+  const oid = runGit(dir, ['rev-parse', spec], { spawn }).stdout.toString('utf8').replace(/\r?\n$/, '')
+  if (!/^[0-9a-f]{40}$/.test(oid)) throw new GitObservationError(`git rev-parse ${spec} returned an unexpected value: ${JSON.stringify(oid.slice(0, 60))}`)
+  return oid
+}
+
+/**
+ * The committed migration INVENTORY hash: `git ls-tree -r HEAD -- <pathspec>`, keeping
+ * only the lines whose path contains `/Migrations/`, in Git's own order and with their
+ * complete mode/type/OID/path text, joined by LF with one final LF.
+ *
+ * This is a source inventory, not a live database schema hash, and must never be
+ * described as one — no DDL is read and no server is contacted.
+ */
+export function gitMigrationSourcesSha256(dir, { pathspec = 'src/backend', spawn } = {}) {
+  const stdout = runGit(dir, ['ls-tree', '-r', 'HEAD', '--', pathspec], { spawn }).stdout.toString('utf8')
+  if (stdout.length === 0) throw new GitObservationError(`git ls-tree listed nothing under ${pathspec}`)
+  const lines = stdout.split('\n')
+  if (lines.pop() !== '') throw new GitObservationError('git ls-tree output is truncated: the last record has no line terminator')
+  const migrations = lines.filter((line) => line.includes('/Migrations/'))
+  return { sha256: sha256Hex(Buffer.from(migrations.map((line) => `${line}\n`).join(''), 'utf8')), lines: migrations.length }
+}

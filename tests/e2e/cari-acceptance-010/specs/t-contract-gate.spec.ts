@@ -13,9 +13,11 @@
  * in each of these ways.
  */
 import { expect, test } from '../src/test'
-import { B_ID, candidate, candidatePage, linkedView } from '../../cari-acceptance-009/src/fixtures'
-import { CONTRACT_VERSION, Lane, json, problem, refetch } from '../src/harness'
+import { B_ID, IDENTITY, PARTY_2, candidate, candidatePage, linkedView } from '../../cari-acceptance-009/src/fixtures'
+import { CONTRACT_HEADER, CONTRACT_VERSION, Lane, NO_ACK, held, insensitiveTransport, json, problem, refetch, shell } from '../src/harness'
 import { openLink, choose, submit, noSuccess } from '../src/ui'
+
+const p2 = candidate({ id: PARTY_2, code: 'CAR-000002' })
 
 test('CG-001 old server: valid rows, no acknowledgment — the form is closed and nothing is POSTed', async ({ page }, info) => {
   // A node that predates the contract answers 200 with a perfectly good body and
@@ -194,4 +196,97 @@ test('CG-006 unknown → explicit retry after a fresh acknowledged read → one 
     sameKey: keys[0] === keys[1],
     note: 'Controlled 201. Not a durable server commit or replay claim.',
   })
+})
+
+test('CG-007 a context change does not inherit the previous context readiness', async ({ page }, info) => {
+  /**
+   * Readiness belongs to one origin, actor session, company and generation. When the
+   * actor changes, the grant the previous one earned is gone, and the new context has to
+   * earn its own: here the server stops acknowledging at the moment of the switch, so
+   * the rows render but the gate stays shut.
+   *
+   * Without this the sequence "sign in as A, read, switch to B, write" would carry A's
+   * grant into B's session — a write to a node whose answer to B was never validated.
+   */
+  const actor2 = '88888888-8888-8888-8888-888888888888'
+  let actor = IDENTITY.userId
+  const lane = await Lane.install(page, {
+    slug: 'contract-context-change', company: B_ID,
+    identity: () => ({ ...IDENTITY, userId: actor, displayName: actor === actor2 ? 'Kullanıcı B' : 'Kullanıcı A' }),
+    // Acknowledged for the first actor; silent for the second. `NO_ACK` is explicit:
+    // a lane never loses its acknowledgment by accident.
+    candidates: () => (actor === actor2
+      ? json(candidatePage([p2]), 200, { [CONTRACT_HEADER]: NO_ACK })
+      : json(candidatePage([candidate()]))),
+  })
+  await openLink(page)
+  await choose(page)
+  await expect(submit(page)).toBeEnabled()
+  const before = await shell(page)
+
+  actor = actor2
+  await refetch(page, 'identity')
+  await expect.poll(async () => (await shell(page)).actor).toBe(actor2)
+  await expect(page.getByRole('radio', { name: /CAR-000002/ })).toBeVisible()
+  const after = await shell(page)
+  expect(after.epoch).toBeGreaterThan(before.epoch)
+
+  // The new context can read; it may not write.
+  await page.getByRole('radio', { name: /CAR-000002/ }).check()
+  await expect(submit(page)).toBeDisabled()
+  await submit(page).click({ force: true })
+  await page.waitForTimeout(400)
+  expect(lane.of('link')).toHaveLength(0)
+  await noSuccess(page)
+  const unacknowledged = lane.of('candidates').filter((r) => r.contractAck === null)
+  expect(unacknowledged.length).toBeGreaterThan(0)
+  await lane.finish(info, { before, after, newContextUnacknowledged: true, links: lane.of('link').length })
+})
+
+test('CG-008 a LATE acknowledged read from the previous context cannot open the gate for the new one', async ({ page }, info) => {
+  /**
+   * The same read, arriving late. The request was issued by the old actor and comes back
+   * — 200, acknowledged, perfectly valid — after the context has already changed. It
+   * describes a context that no longer exists, so it may not speak for the current one,
+   * and the button must not blink open when it lands.
+   */
+  const late = held()
+  const actor2 = '88888888-8888-8888-8888-888888888888'
+  let actor = IDENTITY.userId
+  await insensitiveTransport(page, { method: 'GET', fragment: 'cursor=old-actor' })
+  const lane = await Lane.install(page, {
+    slug: 'contract-late-old-context-ack', company: B_ID,
+    identity: () => ({ ...IDENTITY, userId: actor, displayName: actor === actor2 ? 'Kullanıcı B' : 'Kullanıcı A' }),
+    candidates: async ({ url }) => {
+      // The old actor's paged read: held open, then answered 200 WITH the acknowledgment.
+      if (url.searchParams.get('cursor') === 'old-actor') { await late.promise; return json(candidatePage([candidate()])) }
+      return actor === actor2
+        ? json(candidatePage([p2]), 200, { [CONTRACT_HEADER]: NO_ACK })
+        : json(candidatePage([candidate()], { hasMore: true, nextCursor: 'old-actor' }))
+    },
+  })
+  try {
+    await openLink(page)
+    await choose(page)
+    await page.getByRole('button', { name: 'Daha fazla aday yükle' }).click()
+    await expect.poll(() => lane.of('candidates').filter((r) => r.cursor === 'old-actor').length).toBe(1)
+
+    actor = actor2
+    await refetch(page, 'identity')
+    await expect.poll(async () => (await shell(page)).actor).toBe(actor2)
+    await page.getByRole('radio', { name: /CAR-000002/ }).check()
+    await expect(submit(page)).toBeDisabled()
+
+    // Now let the old context's acknowledged response arrive.
+    late.release()
+    await expect.poll(() => lane.of('candidates').filter((r) => r.cursor === 'old-actor' && r.contractAck === CONTRACT_VERSION).length).toBe(1)
+    await page.waitForTimeout(600)
+
+    await expect(submit(page)).toBeDisabled()
+    await submit(page).click({ force: true })
+    await page.waitForTimeout(300)
+    expect(lane.of('link')).toHaveLength(0)
+    await noSuccess(page)
+    await lane.finish(info, { lateAckDelivered: true, stillClosed: true, links: lane.of('link').length })
+  } finally { late.release() }
 })
