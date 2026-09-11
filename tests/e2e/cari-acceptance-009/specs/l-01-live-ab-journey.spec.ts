@@ -1,26 +1,65 @@
 /**
  * L-01 — the LIVE A→B journey: real browser, real API (C-DESKTOP-006 loopback
- * environment), real SQL Server behind it. No route.fulfill, no mock.
+ * environment), real SQL Server behind it.
  *
- * G-SUPPORT-004 row 1 (+3 for the terminal pre-checks on B) and G-002 checks 1, 2,
- * 3, 5, 10: A create → A list → A detail; under B the new Party is invisible in the
- * list and its detail closes 404 before the link; a FRESH authorized candidate read
- * offers it; link with roles only → B list/detail; the A account, its roles and its
+ * G-SUPPORT-004 row 1 (+3 for the terminal pre-checks on B) and G-002 checks 1, 2, 3,
+ * 5, 10: A create → A list → A detail; under B the new Party is invisible in the list
+ * and its detail closes 404 before the link; a FRESH authorized candidate read offers
+ * it; link with no classification → B list/detail; the A account, its roles and its
  * version are unchanged. The database deltas are measured OUTSIDE the browser by the
- * environment's read-only snapshot/verify tooling (evidence/L/db-*.json).
+ * environment's read-only snapshot/verify tooling.
+ *
+ * BOTH commands go through a real lost reply and a real same-key retry. The first
+ * create POST and the first link POST are re-issued to the real API by the test with
+ * `route.fetch` — same method, path, company, key and body — and only once the real
+ * 201, the real acknowledgment and the real Party/account identity have been SEEN is
+ * the browser's delivery of that reply aborted. The server has committed; the browser
+ * has an unknown outcome. The user then rechecks, gets a fresh acknowledged GET in the
+ * same context, and retries the SAME key, which travels as an ordinary browser request
+ * and comes back as a real replay of the same record.
+ *
+ * NOTHING here is mocked. There is no `route.fulfill`, no synthesised 201, no invented
+ * replay header and no fabricated body anywhere in this lane. The withheld reply is
+ * recorded as `upstream_success_then_delivery_abort`: the browser did not see a 201 and
+ * no natural network fault occurred — the test withheld a reply the server had already
+ * committed, which is what a lost reply is.
+ *
+ * Immutable effect, unchanged by any of the above: +1 Party, +2 company accounts (both
+ * roles=0), +1 create audit, +1 link audit, +1 create execution, +1 link execution.
+ * The final `control.ps1 -Action verify -ExpectedNewParties 1` stands as it is.
  */
 import { expect, test, type Page } from '@playwright/test'
-import { LiveRecorder, lShot, readManifest, writeLJson } from '../src/lHarness.js'
+import {
+  ActorProbe,
+  DeliveryWithholder,
+  LiveRecorder,
+  lShot,
+  readManifest,
+  writeLJson,
+  type LiveRecord,
+} from '../src/lHarness.js'
 
 const manifest = readManifest()
 const A = manifest.companyAId
 const B = manifest.companyBId
 const PREFIX = manifest.browserPrefix
+const CONTRACT = manifest.clientContractVersion
 // One journey = one Party; the token keeps a re-run distinguishable in the database.
 const RUN_TOKEN = new Date().toISOString().replace(/\D/g, '').slice(8, 14)
 const LEGAL_NAME = `${PREFIX} Kabul Metal Sanayi ${RUN_TOKEN} A.Ş.`
 const TRADE_NAME = `${PREFIX} Kabul ${RUN_TOKEN}`
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
+/** The classification fact as the detail screen states it for an account with no role. */
+const NO_ROLE_DETAIL = 'Ticari rol yok — bu alan zorunlu değil'
+const LEGACY_ROLE_LABEL = 'Geçmiş ticari sınıflandırma'
+/**
+ * A fresh idempotency key per run for the refused writes. A constant would mean a later
+ * run re-sending the key of an earlier one, and a replay is not a refusal — the negative
+ * would then be passing on the previous run's answer.
+ */
+const negativeKey = (tag: string): string => `${tag}${RUN_TOKEN}`.padEnd(32, 'a').slice(0, 32)
+const UNKNOWN_NOTICE = '[data-attempt="unknown"]'
+const RETRY_BUTTON = 'Aynı işlemi yeniden dene'
 
 async function switchCompany(page: Page, companyId: string): Promise<void> {
   const picker = page.getByRole('combobox', { name: 'Şirket', exact: true })
@@ -34,18 +73,58 @@ function factValue(page: Page, label: string) {
   return page.locator('dt', { hasText: label }).locator('xpath=following-sibling::dd[1]')
 }
 
-test('L-01 A create → list → detail; B invisible + detail 404 before link; B fresh candidate → link → list → detail; A account preserved', async ({ page }, testInfo) => {
-  test.setTimeout(240_000)
+/** The in-app return to the list. A distinct name from the nav item, on purpose. */
+function backToList(page: Page) {
+  return page.getByRole('link', { name: /Cari Kartlar listesine dön/ })
+}
+
+/**
+ * The fresh, successful, ACKNOWLEDGED reads that were BOTH issued after `afterTick` and
+ * had already answered before `post` went out — the recheck the retry stands on.
+ *
+ * Both halves matter: a read that started earlier but answered later proves nothing,
+ * which is why the recorder stamps a tick on the response as well as on the request.
+ * `afterTick` is taken at the retry click, so a read that was already in flight before
+ * the user asked for the recheck cannot stand in for it. What this establishes is
+ * ordering, not causality: it says a qualifying read had answered first, not that the
+ * click is what caused it. How many qualified is recorded rather than reduced to a flag.
+ */
+function revalidatingRead(reads: LiveRecord[], afterTick: number, post: LiveRecord): LiveRecord[] {
+  return reads.filter(
+    (r) =>
+      r.status === 200 &&
+      r.contractAck === CONTRACT &&
+      r.requestTick > afterTick &&
+      r.responseTick !== null &&
+      r.responseTick < post.requestTick,
+  )
+}
+
+test('L-01 A create → list → detail; B invisible + detail 404 before link; fresh candidate → link → list → detail; both commands survive a real lost reply and a real same-key retry; A account preserved', async ({ page, request }, testInfo) => {
+  test.setTimeout(360_000)
   const slug = 'l01-live-ab-journey'
-  // Seed the preference ONCE. The script runs on every navigation, and the shell
-  // itself rewrites the preference on a committed switch — overwriting it on each
-  // reload would drag the browser back to A after the switch to B.
+  // An acceptance case that passes on a second attempt has not shown the behaviour it
+  // claims — and a command journey that re-ran would write a second Party.
+  expect(testInfo.retry).toBe(0)
+
+  // Seed the preference ONCE. The script runs on every navigation, and the shell itself
+  // rewrites the preference on a committed switch — overwriting it on each reload would
+  // drag the browser back to A after the switch to B.
   await page.addInitScript((id: string) => {
     if (window.localStorage.getItem('goymen-company-id') === null) window.localStorage.setItem('goymen-company-id', id)
   }, A)
   const net = LiveRecorder.attach(page)
+  /**
+   * Exactly two deliveries are withheld in the whole journey: the first create POST
+   * under A and the first link POST under B. Every other request — the retries
+   * included — is passed straight through.
+   */
+  const withholder = await DeliveryWithholder.install(page, [
+    { label: 'create', method: 'POST', companyId: A, match: (p) => p === '/api/v1/counterparties' },
+    { label: 'link', method: 'POST', companyId: B, match: (p) => /^\/api\/v1\/counterparties\/[^/]+\/company-account$/.test(p) },
+  ])
 
-  // ---- A: create --------------------------------------------------------------
+  // ---- A: create, with a real lost reply ------------------------------------------
   await page.goto('/cari/yeni')
   await expect(page.getByRole('heading', { level: 1, name: 'Yeni Cari' })).toBeVisible({ timeout: 60_000 })
   await expect(page.getByRole('combobox', { name: 'Şirket', exact: true })).toHaveValue(A)
@@ -63,63 +142,158 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; B
   await lShot(page, slug, '01-A-create-filled')
   await page.getByRole('button', { name: 'Cari oluştur' }).click()
 
-  // The verified id opens Cari 360 under A.
-  await expect(page).toHaveURL(new RegExp(`/cari/${UUID_RE.source}$`, 'i'), { timeout: 30_000 })
-  await expect(page.getByRole('heading', { level: 1, name: LEGAL_NAME })).toBeVisible({ timeout: 30_000 })
-  await expect.poll(() => net.creates().length).toBe(1)
-  const create = net.creates()[0]
-  expect(create.status).toBe(201)
-  expect(create.companyId).toBe(A)
-  expect(create.idempotencyKey).toMatch(/^[0-9a-f]{32}$/)
+  // The reply is gone. The record is not: the server committed before the test cut the
+  // delivery, and the screen says the outcome is unknown rather than guessing either way.
+  const unknownAfterCreate = page.locator(UNKNOWN_NOTICE)
+  await expect(unknownAfterCreate).toBeVisible({ timeout: 60_000 })
+  await expect(unknownAfterCreate.getByRole('button', { name: RETRY_BUTTON })).toBeVisible()
+  /**
+   * What an unknown outcome must NOT do, measured rather than assumed: no success block,
+   * no navigation, and no clearing of the attempt. A screen that quietly moved on would
+   * be claiming a result the browser never received.
+   */
+  const createUnknownUrl = page.url()
+  expect(createUnknownUrl).toMatch(/\/cari\/yeni$/)
+  await expect(page.locator('[data-outcome]')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Anladım' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Cari oluştur' })).toBeDisabled()
+  await page.waitForTimeout(500)
+  await expect(page.locator(UNKNOWN_NOTICE)).toBeVisible()
+  await expect(page.locator('[data-outcome]')).toHaveCount(0)
+  expect(page.url()).toBe(createUnknownUrl)
+  // Counted, not asserted-then-declared: the numbers written to the evidence are the
+  // ones the page actually reported at this moment.
+  const duringCreateUnknown = {
+    url: createUnknownUrl,
+    urlUnchanged: page.url() === createUnknownUrl,
+    successDomCount: await page.locator('[data-outcome]').count(),
+    acknowledgeButtonCount: await page.getByRole('button', { name: 'Anladım' }).count(),
+    unknownNoticeCount: await page.locator(UNKNOWN_NOTICE).count(),
+    submitDisabled: await page.getByRole('button', { name: 'Cari oluştur' }).isDisabled(),
+  }
+  await lShot(page, slug, '02-A-create-unknown-outcome')
+
+  const createUpstream = withholder.of('create')
+  expect(createUpstream).toHaveLength(1)
+  const upstreamCreate = createUpstream[0]
+  // The real upstream result, seen by the test before the delivery was cut.
+  expect(upstreamCreate.marker).toBe('upstream_success_then_delivery_abort')
+  expect(upstreamCreate.upstreamError).toBeNull()
+  expect(upstreamCreate.upstreamStatus).toBe(201)
+  expect(upstreamCreate.contractAck).toBe(CONTRACT)
+  expect(upstreamCreate.contractDeclaration).toBe(CONTRACT)
+  expect(upstreamCreate.companyId).toBe(A)
+  expect(upstreamCreate.partyId).toMatch(UUID_RE)
+  expect(upstreamCreate.partyCode).toMatch(/^CAR-\d{6}$/)
+  expect(upstreamCreate.accounts).toHaveLength(1)
+  expect(upstreamCreate.accounts[0].companyId).toBe(A)
+  expect(upstreamCreate.accounts[0].roles).toBe(0)
+  expect(upstreamCreate.deliveredToBrowser).toBe(false)
+  const partyId = upstreamCreate.partyId!
+  const code = upstreamCreate.partyCode!
+  const aAccountVersion = upstreamCreate.accounts[0].version
+
+  // The browser's own view of the same exchange: a request that failed, with no status.
+  expect(net.creates()).toHaveLength(1)
+  const firstCreate = net.creates()[0]
+  expect(firstCreate.status).toBeNull()
+  expect(firstCreate.failure).not.toBeNull()
+  expect(firstCreate.companyId).toBe(A)
+  expect(firstCreate.idempotencyKey).toMatch(/^[0-9a-f]{32}$/)
   // `roles` is OMITTED, not sent as 0: absent and 0 are the same normalized payload
   // (spec §3.1), and absence is what "the user chose none" looks like on the wire.
-  expect(create.requestBody).toEqual({ kind: 1, legalName: LEGAL_NAME, tradeName: TRADE_NAME })
-  // The declaration goes out on the command, and the server acknowledges it. Without
-  // the acknowledgment this 201 would be an unknown outcome, not a creation.
-  expect(create.contractDeclaration).toBe(manifest.clientContractVersion)
-  expect(create.contractAck).toBe(manifest.clientContractVersion)
-  const created = create.responseBody as {
+  expect(firstCreate.requestBody).toEqual({ kind: 1, legalName: LEGAL_NAME, tradeName: TRADE_NAME })
+  expect(firstCreate.contractDeclaration).toBe(CONTRACT)
+  /**
+   * The chain is joined by the ATTEMPT KEY, not only by Party identity: the upstream that
+   * committed is the very request the browser lost. And it was the ORIGINAL commit — had
+   * the first upstream exchange itself been a replay of a key surviving from an earlier
+   * run, this journey would read identically while "+1 Party" was false.
+   */
+  expect(upstreamCreate.idempotencyKey).toBe(firstCreate.idempotencyKey)
+  expect(String(upstreamCreate.replayed ?? '')).not.toMatch(/^true$/i)
+
+  // ---- A: explicit recheck, then the SAME key again --------------------------------
+  const tickAtCreateRetry = net.currentTick()
+  await unknownAfterCreate.getByRole('button', { name: RETRY_BUTTON }).click()
+  /**
+   * The command first, the success afterwards — in that order, deliberately.
+   *
+   * Asserting the navigation first would also pass for a screen that read the record
+   * with a GET, concluded it existed and moved on without ever re-sending. Waiting for
+   * the second POST and its 201 before looking at the URL excludes that: there is no
+   * silent success here that a GET could have produced.
+   */
+  await expect.poll(() => net.creates().length, { timeout: 60_000 }).toBe(2)
+  await expect.poll(() => net.creates()[1].status, { timeout: 60_000 }).toBe(201)
+  await expect(page).toHaveURL(new RegExp(`/cari/${partyId}$`, 'i'), { timeout: 60_000 })
+  await expect(page.getByRole('heading', { level: 1, name: LEGAL_NAME })).toBeVisible({ timeout: 30_000 })
+
+  const retriedCreate = net.creates()[1]
+  // The same attempt, not a new one: same key, same body, same path.
+  expect(retriedCreate.idempotencyKey).toBe(firstCreate.idempotencyKey)
+  expect(retriedCreate.requestBody).toEqual(firstCreate.requestBody)
+  expect(retriedCreate.companyId).toBe(A)
+  expect(retriedCreate.contractDeclaration).toBe(CONTRACT)
+  expect(retriedCreate.status).toBe(201)
+  expect(retriedCreate.contractAck).toBe(CONTRACT)
+  // A REAL replay of the record the server already holds — not a second creation.
+  expect(String(retriedCreate.responseHeaders['idempotency-replayed'] ?? '')).toMatch(/^true$/i)
+  const created = retriedCreate.responseBody as {
     id: string
     code: string
     version: string
     legalName: string
     companyAccounts: { id: string; companyId: string; roles: number; version: string }[]
   }
+  expect(created.id).toBe(partyId)
+  expect(created.code).toBe(code)
   expect(created.legalName).toBe(LEGAL_NAME)
-  expect(created.code).toMatch(/^CAR-\d{6}$/)
-  expect(typeof created.version).toBe('string')
   expect(created.companyAccounts).toHaveLength(1)
-  expect(created.companyAccounts[0].companyId).toBe(A)
-  expect(created.companyAccounts[0].roles).toBe(3)
-  const partyId = created.id
-  const code = created.code
+  expect(created.companyAccounts[0].id).toBe(upstreamCreate.accounts[0].id)
+  expect(created.companyAccounts[0].roles).toBe(0)
+  expect(created.companyAccounts[0].version).toBe(aAccountVersion)
+
+  /**
+   * The recheck happened, and it happened BEFORE the resend. A retry that re-sent on the
+   * grant the first attempt had earned would satisfy "two POSTs with one key" and still
+   * be wrong; what makes this the accepted path is a fresh read that had already come
+   * back 200 AND acknowledged when the second POST went out.
+   */
+  const createRechecks = revalidatingRead(net.listReads().filter((r) => r.companyId === A), tickAtCreateRetry, retriedCreate)
+  expect(createRechecks.length, 'a fresh acknowledged read must answer before the create is re-sent').toBeGreaterThanOrEqual(1)
+  const createRecheck = createRechecks.at(-1)!
+
   await expect(factValue(page, 'Cari kodu')).toHaveText(code)
-  await expect(factValue(page, 'Bu şirketteki roller')).toHaveText('Müşteri, Tedarikçi')
+  await expect(factValue(page, LEGACY_ROLE_LABEL)).toHaveText(NO_ROLE_DETAIL)
+  await expect(page.locator('dd[data-roles]')).toHaveAttribute('data-roles', 'none')
   await expect.poll(() => net.detailReads(partyId).length).toBeGreaterThanOrEqual(1)
   expect(net.detailReads(partyId)[0].companyId).toBe(A)
-  await lShot(page, slug, '02-A-detail-after-create')
+  await lShot(page, slug, '03-A-detail-after-retry')
 
-  // ---- A: list --------------------------------------------------------------------
-  await page.goto('/cari')
+  // ---- A: list, reached the way a user reaches it ----------------------------------
+  await backToList(page).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Cari Kartlar' })).toBeVisible({ timeout: 60_000 })
   await expect(page.getByRole('row', { name: new RegExp(code) })).toBeVisible({ timeout: 30_000 })
-  await lShot(page, slug, '03-A-list-shows-new-party')
+  await lShot(page, slug, '04-A-list-shows-new-party')
 
   // ---- B: invisible before the link; detail closes 404 ------------------------------
   await switchCompany(page, B)
   await page.goto('/cari')
   await expect(page.getByRole('heading', { level: 1, name: 'Cari Kartlar' })).toBeVisible({ timeout: 60_000 })
   await expect(page.getByRole('combobox', { name: 'Şirket', exact: true })).toHaveValue(B)
-  await expect.poll(() => net.listReads().filter((r) => r.companyId === B && r.status !== null).length).toBeGreaterThanOrEqual(1)
+  // A SUCCESSFUL read: a 403 or 500 also renders no row, and "the screen did not list it"
+  // would then be recorded from a screen that never listed anything.
+  await expect.poll(() => net.listReads().filter((r) => r.companyId === B && r.status === 200).length).toBeGreaterThanOrEqual(1)
   await expect(page.getByRole('row', { name: new RegExp(code) })).toHaveCount(0)
-  await lShot(page, slug, '04-B-list-before-link')
+  await lShot(page, slug, '05-B-list-before-link')
   await page.goto(`/cari/${partyId}`)
   await expect(page.locator('[data-state="not-found"]')).toBeVisible({ timeout: 30_000 })
   await expect.poll(() => net.detailReads(partyId).filter((r) => r.companyId === B).map((r) => r.status)).toContain(404)
   expect(await page.locator('body').innerText()).not.toContain(LEGAL_NAME)
-  await lShot(page, slug, '05-B-detail-404-before-link')
+  await lShot(page, slug, '06-B-detail-404-before-link')
 
-  // ---- B: fresh authorized candidate → link (roles only) -------------------------------
+  // ---- B: fresh authorized candidate → link, with a real lost reply -----------------
   await page.goto('/cari/sirkete-bagla')
   await expect(page.getByRole('heading', { level: 1, name: 'Cariyi Şirkete Bağla' })).toBeVisible({ timeout: 60_000 })
   const candidateRow = page.getByRole('row', { name: new RegExp(code) })
@@ -134,60 +308,213 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; B
   // A fresh selection and no classification is a complete link.
   await expect(page.getByRole('checkbox', { name: 'Tedarikçi' })).not.toBeChecked()
   await expect.poll(() => page.locator('[data-selection]').getAttribute('data-selection')).toBe('fresh')
-  await lShot(page, slug, '06-B-candidate-selected')
+  await lShot(page, slug, '07-B-candidate-selected')
   await page.getByRole('button', { name: 'Şirkete bağla' }).click()
-  await expect(page).toHaveURL(new RegExp(`/cari/${partyId}$`, 'i'), { timeout: 30_000 })
-  await expect(page.getByRole('heading', { level: 1, name: LEGAL_NAME })).toBeVisible({ timeout: 30_000 })
-  // Stated, not blank: a counterparty with no commercial classification is an
-  // ordinary record, and an empty field would read as "unknown" (ILK_DILIM §7).
-  await expect(factValue(page, 'Geçmiş ticari sınıflandırma')).toHaveText(
-    'Ticari rol yok — bu alan zorunlu değil',
-  )
-  await expect.poll(() => net.links().length).toBe(1)
-  const link = net.links()[0]
-  expect(link.status).toBe(201)
-  expect(link.companyId).toBe(B)
-  expect(link.path).toBe(`/api/v1/counterparties/${partyId}/company-account`)
+
+  const unknownAfterLink = page.locator(UNKNOWN_NOTICE)
+  await expect(unknownAfterLink).toBeVisible({ timeout: 60_000 })
+  const linkUnknownUrl = page.url()
+  expect(linkUnknownUrl).toMatch(/\/cari\/sirkete-bagla$/)
+  await expect(page.locator('[data-outcome]')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Anladım' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Şirkete bağla' })).toBeDisabled()
+  await page.waitForTimeout(500)
+  await expect(page.locator(UNKNOWN_NOTICE)).toBeVisible()
+  await expect(page.locator('[data-outcome]')).toHaveCount(0)
+  expect(page.url()).toBe(linkUnknownUrl)
+  // Counted, not asserted-then-declared: the numbers written to the evidence are the
+  // ones the page actually reported at this moment.
+  const duringLinkUnknown = {
+    url: linkUnknownUrl,
+    urlUnchanged: page.url() === linkUnknownUrl,
+    successDomCount: await page.locator('[data-outcome]').count(),
+    acknowledgeButtonCount: await page.getByRole('button', { name: 'Anladım' }).count(),
+    unknownNoticeCount: await page.locator(UNKNOWN_NOTICE).count(),
+    submitDisabled: await page.getByRole('button', { name: 'Şirkete bağla' }).isDisabled(),
+  }
+  await lShot(page, slug, '08-B-link-unknown-outcome')
+
+  const linkUpstream = withholder.of('link')
+  expect(linkUpstream).toHaveLength(1)
+  const upstreamLink = linkUpstream[0]
+  expect(upstreamLink.marker).toBe('upstream_success_then_delivery_abort')
+  expect(upstreamLink.upstreamError).toBeNull()
+  expect(upstreamLink.upstreamStatus).toBe(201)
+  expect(upstreamLink.contractAck).toBe(CONTRACT)
+  expect(upstreamLink.companyId).toBe(B)
+  expect(upstreamLink.path).toBe(`/api/v1/counterparties/${partyId}/company-account`)
+  expect(upstreamLink.partyId).toBe(partyId)
+  expect(upstreamLink.accounts.some((a) => a.companyId === B && a.roles === 0)).toBe(true)
+  expect(upstreamLink.deliveredToBrowser).toBe(false)
+
+  expect(net.links()).toHaveLength(1)
+  const firstLink = net.links()[0]
+  expect(firstLink.status).toBeNull()
+  expect(firstLink.failure).not.toBeNull()
+  expect(firstLink.companyId).toBe(B)
   // `{}` is the roleless link request the contract names — not an absent body.
-  expect(link.requestBody).toEqual({})
-  expect(link.contractDeclaration).toBe(manifest.clientContractVersion)
-  expect(link.contractAck).toBe(manifest.clientContractVersion)
-  expect(link.idempotencyKey).toMatch(/^[0-9a-f]{32}$/)
-  expect(link.idempotencyKey).not.toBe(create.idempotencyKey)
-  const linked = link.responseBody as { id: string; code: string; version: string; companyAccounts: { companyId: string; roles: number; version: string }[] }
+  expect(firstLink.requestBody).toEqual({})
+  expect(firstLink.idempotencyKey).toMatch(/^[0-9a-f]{32}$/)
+  expect(firstLink.idempotencyKey).not.toBe(firstCreate.idempotencyKey)
+  expect(upstreamLink.idempotencyKey).toBe(firstLink.idempotencyKey)
+  expect(String(upstreamLink.replayed ?? '')).not.toMatch(/^true$/i)
+
+  /**
+   * The hard part. The link is already committed upstream, so the recheck the retry
+   * performs may come back with the Party no longer among the candidates. The attempt
+   * must survive that: it belongs to the key and the Party it was made for, not to a row
+   * that happens to still be on screen. If the retry control were gone, or if the screen
+   * treated a successful GET as a successful link, this test fails — and the fixture and
+   * the expected counts stay exactly as they are either way.
+   */
+  await expect(unknownAfterLink.getByRole('button', { name: RETRY_BUTTON })).toBeVisible()
+  const tickAtLinkRetry = net.currentTick()
+  await unknownAfterLink.getByRole('button', { name: RETRY_BUTTON }).click()
+  // Again the command before the success: a screen that saw the Party missing from the
+  // fresh candidate read, concluded "already linked" and navigated would pass a
+  // URL-first assertion and never re-send. It cannot pass this one.
+  await expect.poll(() => net.links().length, { timeout: 60_000 }).toBe(2)
+  await expect.poll(() => net.links()[1].status, { timeout: 60_000 }).toBe(201)
+  await expect(page).toHaveURL(new RegExp(`/cari/${partyId}$`, 'i'), { timeout: 60_000 })
+  await expect(page.getByRole('heading', { level: 1, name: LEGAL_NAME })).toBeVisible({ timeout: 30_000 })
+
+  const retriedLink = net.links()[1]
+  expect(retriedLink.idempotencyKey).toBe(firstLink.idempotencyKey)
+  expect(retriedLink.requestBody).toEqual({})
+  expect(retriedLink.path).toBe(firstLink.path)
+  expect(retriedLink.companyId).toBe(B)
+  expect(retriedLink.status).toBe(201)
+  expect(retriedLink.contractAck).toBe(CONTRACT)
+  expect(String(retriedLink.responseHeaders['idempotency-replayed'] ?? '')).toMatch(/^true$/i)
+  const linked = retriedLink.responseBody as {
+    id: string
+    code: string
+    version: string
+    companyAccounts: { id: string; companyId: string; roles: number; version: string }[]
+  }
   expect(linked.id).toBe(partyId)
   expect(linked.code).toBe(code)
   expect(linked.companyAccounts).toHaveLength(1)
   expect(linked.companyAccounts[0].companyId).toBe(B)
   expect(linked.companyAccounts[0].roles).toBe(0)
-  await lShot(page, slug, '07-B-detail-after-link')
+  expect(linked.companyAccounts[0].id).toBe(upstreamLink.accounts.find((a) => a.companyId === B)!.id)
 
-  // ---- B: list shows it; it is no longer a candidate -------------------------------------
-  await page.goto('/cari')
-  await expect(page.getByRole('row', { name: new RegExp(code) })).toBeVisible({ timeout: 30_000 })
-  await lShot(page, slug, '08-B-list-after-link')
+  const linkRechecks = revalidatingRead(net.candidateReads().filter((r) => r.companyId === B), tickAtLinkRetry, retriedLink)
+  expect(linkRechecks.length, 'a fresh acknowledged candidate read must answer before the link is re-sent').toBeGreaterThanOrEqual(1)
+  const linkRecheck = linkRechecks.at(-1)!
+  /**
+   * Whether the committed Party was still listed by that recheck is the environment's
+   * business, not this test's — but which of the two happened is recorded, because the
+   * interesting case is the one where it had already gone and the attempt held anyway.
+   */
+  const recheckItems = (linkRecheck.responseBody as { items?: { id?: string }[] } | null)?.items ?? []
+  const candidateStillListedAfterCommit = recheckItems.some((item) => item?.id === partyId)
+
+  // Stated, not blank: a counterparty with no commercial classification is an ordinary
+  // record, and an empty field would read as "unknown" (ILK_DILIM §7).
+  await expect(factValue(page, LEGACY_ROLE_LABEL)).toHaveText(NO_ROLE_DETAIL)
+  await lShot(page, slug, '09-B-detail-after-retry')
+
+  // ---- B: the real return — navigation the user performs, and the focus they get ----
+  /**
+   * `page.goto` proves the route renders; it does not prove a user can get back to the
+   * record they were looking at. The return position is only armed by opening the record
+   * FROM the list, so the round trip is walked in full: back to the list, into the
+   * record by its row, back again — and the row the user left must be what holds focus.
+   */
+  await backToList(page).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Cari Kartlar' })).toBeVisible({ timeout: 60_000 })
+  const bRow = page.getByRole('link', { name: `${code} — ${LEGAL_NAME}` })
+  await expect(bRow).toBeVisible({ timeout: 30_000 })
+  await lShot(page, slug, '10-B-list-after-link')
+  await bRow.click()
+  await expect(page).toHaveURL(new RegExp(`/cari/${partyId}$`, 'i'), { timeout: 30_000 })
+  await expect(page.getByRole('heading', { level: 1, name: LEGAL_NAME })).toBeVisible({ timeout: 30_000 })
+  await backToList(page).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Cari Kartlar' })).toBeVisible({ timeout: 60_000 })
+  await expect
+    .poll(() => page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.rowLink ?? null), { timeout: 30_000 })
+    .toBe(partyId)
+  await lShot(page, slug, '11-B-return-focus-on-record')
+
+  // It is no longer a candidate.
   await page.goto('/cari/sirkete-bagla')
   await expect(page.getByRole('heading', { level: 1, name: 'Cariyi Şirkete Bağla' })).toBeVisible({ timeout: 60_000 })
   await expect.poll(() => okCandidateReads().length).toBeGreaterThan(candidateReadsBeforeLink.length)
   await expect(page.getByRole('row', { name: new RegExp(code) })).toHaveCount(0)
-  await lShot(page, slug, '09-B-candidates-after-link')
+  await lShot(page, slug, '12-B-candidates-after-link')
 
-  // ---- A: the account, its roles and its version are unchanged ------------------------------
+  // ---- A: the account, its roles and its version are unchanged ---------------------
   await switchCompany(page, A)
   await page.goto(`/cari/${partyId}`)
   await expect(page.getByRole('heading', { level: 1, name: LEGAL_NAME })).toBeVisible({ timeout: 30_000 })
-  await expect(factValue(page, 'Bu şirketteki roller')).toHaveText('Müşteri, Tedarikçi')
+  await expect(factValue(page, LEGACY_ROLE_LABEL)).toHaveText(NO_ROLE_DETAIL)
   await expect.poll(() => net.detailReads(partyId).filter((r) => r.companyId === A && r.status === 200).length).toBeGreaterThanOrEqual(2)
   const aDetailAfter = net.detailReads(partyId).filter((r) => r.companyId === A && r.status === 200).at(-1)!.responseBody as {
     companyAccounts: { companyId: string; roles: number; version: string; isActive: boolean }[]
   }
   expect(aDetailAfter.companyAccounts).toHaveLength(1)
   expect(aDetailAfter.companyAccounts[0].companyId).toBe(A)
-  expect(aDetailAfter.companyAccounts[0].roles).toBe(3)
-  expect(aDetailAfter.companyAccounts[0].version).toBe(created.companyAccounts[0].version)
-  await lShot(page, slug, '10-A-detail-after-link-unchanged')
+  expect(aDetailAfter.companyAccounts[0].roles).toBe(0)
+  expect(aDetailAfter.companyAccounts[0].version).toBe(aAccountVersion)
+  await lShot(page, slug, '13-A-detail-after-link-unchanged')
 
-  // Every request carried exactly one company header and the bootstrap identity; no other company appeared.
+  /**
+   * ---- the other actors, in their own request context ----------------------------
+   *
+   * The journey actor is never changed. `VITE_DEV_USER` is baked into the served bundle
+   * at dev-server start, so no browser context can speak as somebody else — and swapping
+   * it would mean re-running the whole journey as a different user. These probes travel
+   * on their own APIRequestContext instead, through the same proxy origin, and the
+   * recorder never sees them (it listens to page events only), so every assertion about
+   * the journey's identity stays true and stays about the journey.
+   *
+   * None of them may write: a refused write that still created a Party would break
+   * ExpectedNewParties 1, and a refusal that names the record it is hiding would leak it.
+   */
+  const probe = new ActorProbe(request, CONTRACT)
+  const viewerList = await probe.send({
+    label: 'company-a-viewer reads the A list',
+    actor: 'company-a-viewer', method: 'GET', path: '/api/v1/counterparties?pageSize=1', companyId: A,
+    mustNotDisclose: [LEGAL_NAME, code, partyId],
+  })
+  expect(viewerList.status).toBe(403)
+  expect(viewerList.disclosedForbiddenText).toBe(false)
+
+  const crossCompanyRead = await probe.send({
+    label: 'company-a-user reaches into B',
+    actor: 'company-a-user', method: 'GET', path: '/api/v1/counterparties?pageSize=1', companyId: B,
+    mustNotDisclose: [LEGAL_NAME, code, partyId],
+  })
+  expect(crossCompanyRead.status).toBeGreaterThanOrEqual(400)
+  expect(crossCompanyRead.status).toBeLessThan(500)
+  expect(crossCompanyRead.disclosedForbiddenText).toBe(false)
+
+  const crossCompanyWrite = await probe.send({
+    label: 'company-a-user writes into B',
+    actor: 'company-a-user', method: 'POST', path: `/api/v1/counterparties/${partyId}/company-account`, companyId: B,
+    data: {}, idempotencyKey: negativeKey('ff'),
+    mustNotDisclose: [LEGAL_NAME, code],
+  })
+  expect(crossCompanyWrite.status).toBeGreaterThanOrEqual(400)
+  expect(crossCompanyWrite.status).toBeLessThan(500)
+  expect(crossCompanyWrite.disclosedForbiddenText).toBe(false)
+  expect(crossCompanyWrite.createdPartyId).toBeNull()
+
+  const viewerWrite = await probe.send({
+    label: 'company-a-viewer creates under A',
+    actor: 'company-a-viewer', method: 'POST', path: '/api/v1/counterparties', companyId: A,
+    data: { kind: 1, legalName: `${PREFIX} REDDEDILMELI ${RUN_TOKEN}`, tradeName: `${PREFIX} RED ${RUN_TOKEN}` },
+    idempotencyKey: negativeKey('ee'),
+    mustNotDisclose: [LEGAL_NAME],
+  })
+  expect(viewerWrite.status).toBeGreaterThanOrEqual(400)
+  expect(viewerWrite.status).toBeLessThan(500)
+  expect(viewerWrite.disclosedForbiddenText).toBe(false)
+  expect(viewerWrite.createdPartyId).toBeNull()
+
+  // Every browser request carried exactly one company header and the journey identity;
+  // no other company and no other actor appeared in the journey itself.
   const apiRecords = net.records.filter((r) => r.path.startsWith('/api/v1/counterparties') || r.path.startsWith('/api/v1/shell/'))
   expect(apiRecords.every((r) => r.companyId === A || r.companyId === B)).toBe(true)
   expect(net.records.every((r) => r.devIdentityHeader === manifest.actor)).toBe(true)
@@ -195,17 +522,20 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; B
   /**
    * The handshake held for the WHOLE journey, not just the two commands: every Cari
    * exchange declared the contract exactly once, and every successful one came back
-   * acknowledged. A single unacknowledged success anywhere in here would mean the
-   * write gate had been open on evidence the server never gave.
+   * acknowledged. A single unacknowledged success anywhere in here would mean the write
+   * gate had been open on evidence the server never gave.
    */
   const cariRecords = net.records.filter((r) => r.path.startsWith('/api/v1/counterparties'))
   expect(cariRecords.length).toBeGreaterThan(0)
-  expect(cariRecords.every((r) => r.contractDeclaration === manifest.clientContractVersion)).toBe(true)
-  expect(
-    cariRecords.filter((r) => r.status === 200 || r.status === 201).every(
-      (r) => r.contractAck === manifest.clientContractVersion,
-    ),
-  ).toBe(true)
+  expect(cariRecords.every((r) => r.contractDeclaration === CONTRACT)).toBe(true)
+  expect(cariRecords.filter((r) => r.status === 200 || r.status === 201).every((r) => r.contractAck === CONTRACT)).toBe(true)
+
+  /**
+   * The browser half of the snapshot barrier. The environment's post-run snapshot is a
+   * multi-query reader, so it only means something once mutations have stopped and
+   * nothing is still outstanding here.
+   */
+  const barrier = await net.quiesce()
 
   writeLJson('measurements', `${slug}.json`, {
     runId: manifest.runId,
@@ -213,13 +543,63 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; B
     apiBaseUrl: manifest.apiBaseUrl,
     fixtureHash: manifest.fixtureHash,
     party: { id: partyId, code, legalName: LEGAL_NAME, version: created.version },
-    create: { status: create.status, companyId: create.companyId, idempotencyKey: create.idempotencyKey, body: create.requestBody, replayed: create.responseHeaders['idempotency-replayed'] ?? null },
-    link: { status: link.status, companyId: link.companyId, idempotencyKey: link.idempotencyKey, body: link.requestBody, replayed: link.responseHeaders['idempotency-replayed'] ?? null },
-    accountA: { before: created.companyAccounts[0], after: aDetailAfter.companyAccounts[0] },
+    /**
+     * The three states a request in this journey could be in, kept apart on purpose:
+     * a reply the server produced and the browser never received; the browser's own
+     * failed request; and the ordinary retry that went through untouched.
+     */
+    upstreamWithheld: withholder.withheld,
+    browserAborted: [firstCreate, firstLink].map((r) => ({
+      path: r.path, companyId: r.companyId, idempotencyKey: r.idempotencyKey, status: r.status, failure: r.failure,
+    })),
+    normalRetries: [retriedCreate, retriedLink].map((r) => ({
+      path: r.path, companyId: r.companyId, idempotencyKey: r.idempotencyKey, status: r.status,
+      replayed: r.responseHeaders['idempotency-replayed'] ?? null,
+      // Derived: the withholder logs each command it let through untouched.
+      passedThrough: withholder.passedThrough.some((p) => p.idempotencyKey === r.idempotencyKey),
+    })),
+    passedThroughCommands: withholder.passedThrough,
+    recheckBeforeResend: {
+      create: { path: createRecheck.path, status: createRecheck.status, ack: createRecheck.contractAck, qualifyingReads: createRechecks.length, answeredBeforeResend: createRecheck.responseTick !== null && createRecheck.responseTick < retriedCreate.requestTick },
+      link: { path: linkRecheck.path, status: linkRecheck.status, ack: linkRecheck.contractAck, qualifyingReads: linkRechecks.length, answeredBeforeResend: linkRecheck.responseTick !== null && linkRecheck.responseTick < retriedLink.requestTick },
+      note: 'Ordering, not causality: a qualifying read answered after the retry click and before the resend. It is not asserted that the click is what produced it.',
+    },
+    candidateStillListedAfterCommit,
+    /**
+     * While each outcome was unknown: no success DOM, no navigation, no clearing of the
+     * attempt. Recorded as measured zeros, not as an absence nobody looked for.
+     */
+    duringUnknown: { create: duringCreateUnknown, link: duringLinkUnknown },
+    /** Real application navigation and the focus it restores — no `page.goto` stands in. */
+    navigationAndFocus: {
+      listReachedBy: 'in-app link "Cari Kartlar listesine dön"',
+      recordOpenedBy: 'the list row link',
+      returnFocusRowLink: partyId,
+      returnFocusMeasured: true,
+    },
+    cursorAndGeneration: {
+      candidateQueryKeys: [...new Set(net.candidateReads().flatMap((r) => r.queryKeys))],
+      listQueryKeys: [...new Set(net.listReads().flatMap((r) => r.queryKeys))],
+      note: 'Query VALUES are never recorded (keys only). Route-generation is an internal counter; what is recorded here is the observable behaviour it produces.',
+    },
+    /**
+     * What this journey does NOT measure, so nothing downstream reads it as covered:
+     * a context change (company switch or session exit) while a real command is already
+     * in flight. The existing controlled unknown-state/same-key protections cover that
+     * shape and are closed scope; the live sub-type is prepared separately as a
+     * read-only source step (l-02) and, for a real session exit, not measured at all.
+     */
+    notMeasuredHere: [
+      'context change while a real command POST is in flight (covered controlled; live sub-type not run here)',
+      'real session exit / logout (no sign-out affordance exists with header-based development identity)',
+      'an old server binary refusing the contract (controlled no-ack evidence is NOT an old-binary acceptance)',
+    ],
+    accountA: { roles: aDetailAfter.companyAccounts[0].roles, version: aDetailAfter.companyAccounts[0].version, versionPreserved: true },
     accountB: linked.companyAccounts[0],
+    negativeActors: probe.records,
     contract: {
       header: manifest.clientContractHeader,
-      version: manifest.clientContractVersion,
+      version: CONTRACT,
       declaredOnEveryCariExchange: true,
       acknowledgedOnEverySuccess: true,
     },
@@ -227,7 +607,59 @@ test('L-01 A create → list → detail; B invisible + detail 404 before link; B
     bListBeforeLinkContainedParty: false,
     bCandidateOfferedParty: true,
     bCandidateAfterLinkContainedParty: false,
-    requestCounts: { creates: net.creates().length, links: net.links().length, candidateReads: net.candidateReads().length, detailReads: net.detailReads().length, listReads: net.listReads().length },
+    returnedToRecordByAppNavigation: true,
+    expectedImmutableEffect: '+1 Party / +2 company accounts (roles=0) / +1 create audit / +1 link audit / +1 create execution / +1 link execution',
+    browserBarrier: barrier,
+    /**
+     * How a snapshot must be read against this journey.
+     *
+     * Both withheld replies came AFTER a real upstream 201, so the reference point for
+     * anything that follows them — the lost delivery, the recheck, the same-key replay —
+     * is POSTCOMMIT. What those can show is that they added NO FURTHER effect. None of
+     * them may be read as the earlier commit having been rolled back, and the whole
+     * journey stays inside the single ExpectedNewParties 1 total.
+     *
+     * The browser cannot make the effect claim at all: an aborted delivery, a navigation
+     * or a context change is not by itself evidence of server effect 0. That is the
+     * environment snapshot's measurement, not this recorder's.
+     */
+    snapshotBoundary: {
+      // Derived from what the upstream actually returned, so this cannot say POSTCOMMIT
+      // about a journey whose commits were never observed.
+      reference:
+        withholder.withheld.length === 2 && withholder.withheld.every((w) => w.marker === 'upstream_success_then_delivery_abort')
+          ? 'POSTCOMMIT'
+          : 'INDETERMINATE',
+      withheldMarkers: withholder.withheld.map((w) => ({ label: w.label, marker: w.marker, upstreamStatus: w.upstreamStatus })),
+      /** An EXPECTATION for the snapshot to test — not a result this browser measured. */
+      expectedAdditionalEffectForSnapshot: 0,
+      measuredBy: 'control.ps1 -Action snapshot (before/after, by the environment owner)',
+      rollbackClaimed: false,
+      totalExpectedNewParties: 1,
+      browserCanProveServerEffect: false,
+    },
+    evidenceMeaning:
+      'A withheld delivery is a reply the real server committed and the test did not let the browser receive. The browser never saw a 201 for it, and no natural network fault occurred. Nothing in this lane is mocked.',
+    requestCounts: {
+      creates: net.creates().length, links: net.links().length, candidateReads: net.candidateReads().length,
+      detailReads: net.detailReads().length, listReads: net.listReads().length,
+      upstreamWithheld: withholder.withheld.length,
+      /**
+       * Derived, because a literal preserves nothing. `browserRequestsFailed` is every
+       * failed request the page made — which legitimately includes the StrictMode
+       * duplicate reads this lane cancels — while the command-level number is the two
+       * deliveries this test withheld on purpose.
+       */
+      browserRequestsFailed: net.records.filter((r) => r.failure !== null).length,
+      commandDeliveriesAborted: [firstCreate, firstLink].filter((r) => r.failure !== null).length,
+      normalRetries: [retriedCreate, retriedLink].filter((r) => r.status === 201).length,
+      pageWritesIssued: net.records.filter((r) => r.method === 'POST').length,
+      negativeActorRequests: probe.records.length,
+    },
   })
-  await net.finish(testInfo, slug, { party: { id: partyId, code } })
+  await net.finish(testInfo, slug, {
+    party: { id: partyId, code },
+    upstreamWithheld: withholder.withheld,
+    negativeActors: probe.records,
+  })
 })
