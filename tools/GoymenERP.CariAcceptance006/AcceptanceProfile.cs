@@ -14,18 +14,18 @@ namespace GoymenERP.CariAcceptance006;
 public sealed record RunSettings
 {
     public const string ApprovedRoot = @"C:\src\GoymenERP-cari-acceptance-envelope-20260911";
-    public const string ApprovedEvidence = @"C:\src\GoymenERP-cari-acceptance-envelope-20260911\artifacts\cari-acceptance-006\c006-303760997c6f";
-    public const string ExpectedRun = "c006-303760997c6f";
-    public const string ExpectedInstance = "3a6f9f42-2d52-4874-95d0-7cff415aaf15";
+    public const string ApprovedEvidence = @"C:\src\GoymenERP-cari-acceptance-envelope-20260911\artifacts\cari-acceptance-006\c006-ac5fc7069528";
+    public const string ExpectedRun = "c006-ac5fc7069528";
+    public const string ExpectedInstance = "292e8f25-7e06-4d8a-a96c-06586a316cb1";
     public const string ExpectedHead = "880cae838e5d2f01a988f1e4a89afbe67858f48c";
-    public const string ExpectedDatabase = "GoymenCariC006_303760997c6f";
-    public const string ExpectedProject = "goymen-cari-c006-303760997c6f";
+    public const string ExpectedDatabase = "GoymenCariC006_ac5fc7069528";
+    public const string ExpectedProject = "goymen-cari-c006-ac5fc7069528";
     public string ContractId { get; init; } = "CARI-AB-20260905-006-009";
     public string TaskId { get; init; } = "C-DESKTOP-006";
     public string RunId { get; init; } = ExpectedRun;
     public string InstanceId { get; init; } = ExpectedInstance;
     public string BackendHead { get; init; } = ExpectedHead;
-    public string FrontendDiffSha256 { get; init; } = "b9e9354e971da26bbd5a0743dcefc78c2f3b4a7e4cbb6d59d74793c7c3b25c11";
+    public string FrontendDiffSha256 { get; init; } = "6af32c6103aff854feffcd4c451ad9fd42b3d6608c6aa68825aceac96a18f743";
     public string ComposeProject { get; init; } = ExpectedProject;
     public string DatabaseName { get; init; } = ExpectedDatabase;
     public string EnvironmentName { get; init; } = "Testing";
@@ -40,8 +40,8 @@ public sealed record RunSettings
     public string CompanyAId { get; init; } = "10000000-0000-0000-0000-000000000001";
     public string CompanyBId { get; init; } = "10000000-0000-0000-0000-000000000002";
     public string Actor { get; init; } = "group-bootstrap-admin";
-    public string SmokePrefix { get; init; } = "C006-SMOKE-303760997c6f";
-    public string BrowserPrefix { get; init; } = "CARI-JOURNEY-303760997c6f";
+    public string SmokePrefix { get; init; } = "C006-SMOKE-ac5fc7069528";
+    public string BrowserPrefix { get; init; } = "CARI-JOURNEY-ac5fc7069528";
 
     public static RunSettings Load()
     {
@@ -65,8 +65,8 @@ public sealed record RunSettings
             || CompanyAId != "10000000-0000-0000-0000-000000000001"
             || CompanyBId != "10000000-0000-0000-0000-000000000002"
             || Actor != "group-bootstrap-admin"
-            || SmokePrefix != "C006-SMOKE-303760997c6f" || BrowserPrefix != "CARI-JOURNEY-303760997c6f"
-            || FrontendDiffSha256 != "b9e9354e971da26bbd5a0743dcefc78c2f3b4a7e4cbb6d59d74793c7c3b25c11")
+            || SmokePrefix != "C006-SMOKE-ac5fc7069528" || BrowserPrefix != "CARI-JOURNEY-ac5fc7069528"
+            || FrontendDiffSha256 != "6af32c6103aff854feffcd4c451ad9fd42b3d6608c6aa68825aceac96a18f743")
         {
             throw new InvalidOperationException("C006 requires the exact approved Testing/run/instance/SHA/loopback/database identity.");
         }

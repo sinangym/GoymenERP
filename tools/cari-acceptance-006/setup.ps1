@@ -3,8 +3,8 @@ $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $expectedRoot = 'C:\src\GoymenERP-cari-acceptance-envelope-20260911'
 if ($root -ne $expectedRoot) { throw 'C006 unexpected worktree.' }
 $run = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'run.json') -Raw | ConvertFrom-Json
-if ($run.RunId -ne 'c006-303760997c6f' -or $run.InstanceId -ne '3a6f9f42-2d52-4874-95d0-7cff415aaf15') { throw 'C006 unexpected run.' }
-$evidence = 'C:\src\GoymenERP-cari-acceptance-envelope-20260911\artifacts\cari-acceptance-006\c006-303760997c6f'
+if ($run.RunId -ne 'c006-ac5fc7069528' -or $run.InstanceId -ne '292e8f25-7e06-4d8a-a96c-06586a316cb1') { throw 'C006 unexpected run.' }
+$evidence = 'C:\src\GoymenERP-cari-acceptance-envelope-20260911\artifacts\cari-acceptance-006\c006-ac5fc7069528'
 if (Test-Path -LiteralPath (Join-Path $evidence 'resources.json')) { throw 'C006 resources already recorded; no duplicate setup.' }
 $dll=Join-Path $root 'tools/GoymenERP.CariAcceptance006/bin/Release/net10.0-windows/GoymenERP.CariAcceptance006.dll'
 & dotnet $dll source-check
