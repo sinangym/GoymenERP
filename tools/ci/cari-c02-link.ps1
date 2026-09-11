@@ -82,6 +82,15 @@ function Assert-NoUntrackedSources([string]$Phase) {
         throw 'C006 verification refuses untracked backend build inputs, including ignored sources.'
     }
 }
+function Get-C006TestBuildArtifacts {
+    $directory = 'tests/GoymenERP.CariAcceptance006.Tests/bin/Release/net10.0-windows'
+    $files = @(Get-ChildItem -LiteralPath $directory -Filter 'GoymenERP*.dll' -File | Sort-Object Name)
+    if ($files.Count -eq 0) { throw 'The executed test output has no ERP assemblies.' }
+    foreach ($file in $files) {
+        [ordered]@{ path = "$directory/$($file.Name)"; bytes = $file.Length;
+            sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+    }
+}
 $project = 'tests/GoymenERP.CariAcceptance006.Tests/GoymenERP.CariAcceptance006.Tests.csproj'
 $frontend = 'src/frontend/goymen-erp-web'
 $playwright = 'tests/e2e/node_modules/@playwright/test/cli.js'
@@ -107,6 +116,7 @@ try {
         Invoke-Step 'backend-restore' 'dotnet' @('restore', $project, '-noAutoResponse', '--configfile', 'NuGet.Config', '--disable-parallel')
         Invoke-Step 'backend-build' 'dotnet' @('build', $project, '-noAutoResponse', '--configuration', 'Release',
             '--no-restore', '--disable-build-servers', "-p:SourceRevisionId=$head")
+        $testedBuild = @(Get-C006TestBuildArtifacts)
         Invoke-Step 'backend-discovery' 'dotnet' @('test', $project, '-noAutoResponse', '--configuration', 'Release',
             '--no-build', '--no-restore', '--list-tests')
         $discovered = @(Get-Content (Join-Path $logs.FullName 'backend-discovery.log') | Where-Object {
@@ -119,11 +129,21 @@ try {
             '--no-build', '--no-restore', '--logger', 'trx;LogFileName=cari-c02-link.trx', '--results-directory', $trxDir)
         [xml]$trx = Get-Content (Join-Path $trxDir 'cari-c02-link.trx') -Raw
         $summary.backend_executed = Assert-CompleteTrx $trx $discovered
-        foreach ($artifact in @('tests/GoymenERP.CariAcceptance006.Tests/bin/Release/net10.0-windows/GoymenERP.CariAcceptance006.Tests.dll',
-            'tools/GoymenERP.CariAcceptance006/bin/Release/net10.0-windows/GoymenERP.CariAcceptance006.dll')) {
-            $summary.build_artifacts += @{ path = $artifact; bytes = (Get-Item $artifact).Length;
-                sha256 = (Get-FileHash $artifact -Algorithm SHA256).Hash.ToLowerInvariant() }
+        Invoke-Step 'python-version' 'python' @('--version')
+        Invoke-Step 'publisher-tests' 'python' @('-I', '-S', '-B', '-m', 'unittest', 'discover',
+            '-s', 'tests/GoymenERP.CariAcceptance006.Tests', '-p', 'test_publisher.py', '-v')
+        $publisherLog = Get-Content (Join-Path $logs.FullName 'publisher-tests.log') -Raw
+        if ($publisherLog -notmatch '(?m)^Ran (\d+) tests? in ' -or [int]$Matches[1] -le 0) {
+            throw 'No publisher contract tests executed.'
         }
+        $summary.publisher_executed = [int]$Matches[1]
+        if ($publisherLog -notmatch '(?m)^OK\r?$') { throw 'Publisher tests must pass without skips.' }
+        $summary.publisher_status = 'passed'
+        $observedBuild = @(Get-C006TestBuildArtifacts)
+        if (($testedBuild | ConvertTo-Json -Depth 5 -Compress) -cne ($observedBuild | ConvertTo-Json -Depth 5 -Compress)) {
+            throw 'Executed ERP build artifacts changed during verification.'
+        }
+        $summary.build_artifacts = $testedBuild
         Invoke-Step 'source-after' 'git' @('rev-parse', 'HEAD')
         Invoke-Step 'source-diff-after' 'git' @('diff', '--exit-code', '--name-only', 'HEAD', '--')
         Assert-NoUntrackedSources 'after'
