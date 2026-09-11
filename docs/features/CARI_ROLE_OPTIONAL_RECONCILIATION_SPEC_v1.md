@@ -326,7 +326,7 @@ Aşağıdaki CB/CF/CO/GB etiketleri mevcut #232 görev satırlarıdır; yeni iss
 
 ### CHATGPT-BUSINESS
 
-**GB-1.** Yalnız mevcut #232 dosyası ve kendi PR açıklaması exact-source kanıtla güncellenir; kanonik/shared ilerleme kaydına paralel yazılmaz.
+**GB-1.** Yalnız mevcut #232 dosyası exact-source kanıtla güncellenir; kanonik/shared ilerleme kaydına paralel yazılmaz.
 
 **GB-2.** CRO-AC-001…012 ve eski CR eşlemesi korunur; protokol varyantları bunlara bağlanır.
 
