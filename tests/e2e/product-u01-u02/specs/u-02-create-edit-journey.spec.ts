@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { Lane, json } from '../src/harness'
-import { PRODUCT_1, mutation, productCard, productCore } from '../src/fixtures'
+import { A_ID, PRODUCT_1, mutation, productCard, productCore } from '../src/fixtures'
 import { KEY_ALPHABET, changeNameAndReason, fillMinimum, openList, saveDraft, saveEdit } from '../src/ui'
 
 test('U-02 journey: list → new → Draft (server code) → card → basic edit with reason → fresh version → back to card', async ({ page }, info) => {
@@ -28,7 +28,8 @@ test('U-02 journey: list → new → Draft (server code) → card → basic edit
 
     const post = lane.of('create')
     expect(post).toHaveLength(1)
-    expect(post[0].company).toBeNull()
+    expect(post[0].company).toBe(A_ID)
+    expect(post[0].payloadKeys).not.toContain('companyId')
     expect(post[0].key).toMatch(KEY_ALPHABET)
     // The create minimum and nothing server-owned; unanswered roles are omitted, not sent as false.
     expect(post[0].payloadKeys).toEqual(['groupId', 'name'])
@@ -47,7 +48,7 @@ test('U-02 journey: list → new → Draft (server code) → card → basic edit
     const patch = lane.of('edit')
     expect(patch).toHaveLength(1)
     expect(patch[0].path).toBe(`/api/v1/products/${PRODUCT_1}/draft`)
-    expect(patch[0].company).toBeNull()
+    expect(patch[0].company).toBe(A_ID)
     expect(patch[0].key).toMatch(KEY_ALPHABET)
     expect(patch[0].key).not.toBe(post[0].key)
     expect(patch[0].payloadKeys).toEqual(['changes', 'expectedVersion', 'reason'])
@@ -55,7 +56,7 @@ test('U-02 journey: list → new → Draft (server code) → card → basic edit
     await page.getByRole('link', { name: 'Ürün kartına dön' }).click()
     await expect(page.getByRole('heading', { level: 1, name: 'Galvaniz sac' })).toBeVisible()
 
-    for (const r of lane.product()) expect(r.company, r.kind + ' carried a company header').toBeNull()
+    for (const r of lane.product()) expect(r.company, r.kind + ' origin header').toBe(A_ID)
     expect(lane.externalBlocked).toBe(0)
     expect(lane.of('unexpected')).toHaveLength(0)
     await lane.finish(info, { scope: 'U-01+U-02', oneCreate: true, oneEdit: true, distinctKeys: true })

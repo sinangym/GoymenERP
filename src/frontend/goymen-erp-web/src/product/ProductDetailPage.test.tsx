@@ -3,6 +3,7 @@ import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import { PRODUCT_CAPABILITY } from './capabilities'
 import { resetPendingAttempts } from './pendingAttempt'
 import {
+  COMPANY_A,
   CLASS_FLAT,
   FAMILY_FLAT,
   PRODUCT_1,
@@ -37,7 +38,9 @@ describe('mounting', () => {
     expect(calls.some((call) => call.url.includes('/products/'))).toBe(false)
   })
 
-  it('reads the card with the detail capability, and sends no company header', async () => {
+  it('reads the card with the detail capability, under the committed company as the validated origin', async () => {
+    // §15: the origin header is the server-validated source of the read — not the
+    // Product's owner. It is sent on the card read exactly as on the list read.
     const { calls } = installFetch({ capabilities: DETAIL_ONLY })
     renderProductApp(PATH)
 
@@ -45,7 +48,7 @@ describe('mounting', () => {
     expect(screen.getByText('SAC-42')).toBeTruthy()
     const cardCalls = calls.filter((call) => call.url.includes('/products/'))
     expect(cardCalls.length).toBeGreaterThan(0)
-    expect(cardCalls.every((call) => call.companyId === null)).toBe(true)
+    expect(cardCalls.every((call) => call.companyId === COMPANY_A)).toBe(true)
   })
 })
 

@@ -133,6 +133,13 @@ export function ProductListPage() {
 
 function ProductList({ namespace }: { readonly namespace: string | null }) {
   const shell = useShellState()
+  /**
+   * The operation's origin: the committed company, sent as `X-Company-Id` and
+   * validated by the server (§15). Not the Product's owner and not a grant — the
+   * actual endpoints require it (`RequireCompanyContext`), so without one the
+   * read is not made.
+   */
+  const origin = shell.activeContext?.companyId ?? null
   const [restored] = useState<ProductListView>(() => readProductListView(namespace))
   const [q, setQ] = useState(restored.q)
   const [lifecycle, setLifecycle] = useState<LifecycleFilter>(restored.lifecycle)
@@ -195,12 +202,13 @@ function ProductList({ namespace }: { readonly namespace: string | null }) {
   const query = useQuery({
     queryKey: [namespace ?? 'no-context', entryGeneration, 'products', queryShape, cursor ?? ''],
     /**
-     * Bound to a resolved shell context, NOT to a single company. The Product master
-     * is global (`PRD-SCOPE-001=A`), and `IProductService` requires server-resolved
-     * global authorization — "No company-scoped grant satisfies this contract". The
-     * context is still required: capabilities resolve per context.
+     * Bound to a resolved shell context WITH a committed company. The Product master
+     * is global (`PRD-SCOPE-001=A`) and `IProductService` requires server-resolved
+     * global authorization — the company is not a grant. It is the ORIGIN the actual
+     * endpoints require (`RequireCompanyContext`) and validate, so without one there
+     * is no request to make.
      */
-    enabled: namespace !== null,
+    enabled: namespace !== null && origin !== null,
     placeholderData: keepPreviousData,
     queryFn: async ({ signal }) => {
       // SAB-001: security bindings captured BEFORE the request starts.
@@ -217,6 +225,7 @@ function ProductList({ namespace }: { readonly namespace: string | null }) {
           pageSize,
           cursor,
         },
+        { companyId: origin as string },
         signal,
       )
       if (outcome.type === 'http') boundary.report(outcome.status, snapshot)

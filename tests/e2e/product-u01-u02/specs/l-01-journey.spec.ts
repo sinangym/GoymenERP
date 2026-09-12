@@ -50,7 +50,8 @@ test('L-01 live journey: create (lost reply → same-key replay) → list → ca
   expect(withholder.withheld.filter((w) => w.label === 'create')).toHaveLength(1)
   const createWithheld = withholder.withheld[0]
   expect(createWithheld.marker, createWithheld.upstreamError ?? '').toBe('upstream_success_then_delivery_abort')
-  expect(createWithheld.companyId).toBeNull()
+  // The validated origin (§15): the committed company, sent — not the Product's owner.
+  expect(createWithheld.companyId).toBe(env.companyId)
   expect(createWithheld.identity.lifecycle).toBe('Draft')
   const productId = createWithheld.identity.id as string
   const createdCode = createWithheld.identity.code as string
@@ -65,6 +66,8 @@ test('L-01 live journey: create (lost reply → same-key replay) → list → ca
   expect(createPosts).toHaveLength(2)
   expect(createPosts[0].idempotencyKey).toBe(createWithheld.idempotencyKey)
   expect(createPosts[1].idempotencyKey).toBe(createWithheld.idempotencyKey)
+  // Frozen origin: the retry went out under the same company as the withheld send.
+  expect(createPosts[1].companyId).toBe(createPosts[0].companyId)
   expect(createPosts[1].status).toBe(201)
   await lShot(page, 'l01', '03-create-replayed')
 
@@ -91,7 +94,7 @@ test('L-01 live journey: create (lost reply → same-key replay) → list → ca
   await lShot(page, 'l01', '06-edit-unknown')
   const editWithheld = withholder.withheld.find((w) => w.label === 'edit')
   expect(editWithheld?.marker, editWithheld?.upstreamError ?? '').toBe('upstream_success_then_delivery_abort')
-  expect(editWithheld?.companyId).toBeNull()
+  expect(editWithheld?.companyId).toBe(env.companyId)
   expect(editWithheld?.identity.id).toBe(productId)
   expect(editWithheld?.identity.version).not.toBe(versionBefore)
 
@@ -101,6 +104,7 @@ test('L-01 live journey: create (lost reply → same-key replay) → list → ca
   const patches = recorder.records.filter((r) => r.method === 'PATCH' && r.path === `/api/v1/products/${productId}/draft`)
   expect(patches).toHaveLength(2)
   expect(patches[0].idempotencyKey).toBe(patches[1].idempotencyKey)
+  expect(patches[1].companyId).toBe(patches[0].companyId)
   expect(patches[1].status).toBe(200)
   const sentBody = patches[0].requestBody as { expectedVersion?: unknown; changes?: Record<string, unknown>; reason?: unknown }
   expect(sentBody.expectedVersion).toBe(versionBefore)
@@ -118,10 +122,12 @@ test('L-01 live journey: create (lost reply → same-key replay) → list → ca
   await expect(page.getByRole('heading', { level: 1, name: EDITED_NAME })).toBeVisible()
   await lShot(page, 'l01', '08-reopened')
 
-  // Global master: no Product request carried a company header; every request went as the bound actor.
+  // Global master with a validated origin: every Product request went as the bound
+  // actor under the bound company, and no payload carried a companyId.
   for (const r of recorder.records.filter((x) => x.path.startsWith('/api/v1/products'))) {
-    expect(r.companyId, `${r.method} ${r.path}`).toBeNull()
+    expect(r.companyId, `${r.method} ${r.path}`).toBe(env.companyId)
     expect(r.devIdentityHeader, `${r.method} ${r.path}`).toBe(env.actor)
+    if (r.requestBody !== null && typeof r.requestBody === 'object') expect(r.requestBody).not.toHaveProperty('companyId')
   }
 
   writeLJson('withheld', 'l01-withheld.json', { ...evidenceIdentity(env), withheld: withholder.withheld, passedThrough: withholder.passedThrough })

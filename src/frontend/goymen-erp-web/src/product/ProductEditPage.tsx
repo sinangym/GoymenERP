@@ -106,6 +106,8 @@ export function ProductEditPage() {
   const namespace = key === null ? null : contextKeyString(key)
   const boundary = useAuthBoundary()
   const entryGeneration = shell.routeEntryGeneration
+  // The validated origin header (§15) — see the create page.
+  const origin = shell.activeContext?.companyId ?? null
   // The attempt's durable identity, scoped to THIS record — see the create page.
   const binding = useMemo(
     () => attemptBindingFor(shell, editScope(productId ?? '')),
@@ -114,10 +116,10 @@ export function ProductEditPage() {
 
   const cardQuery = useQuery({
     queryKey: [namespace ?? 'no-context', entryGeneration, 'product-edit-card', productId ?? ''],
-    enabled: namespace !== null && productId !== undefined && productId.length > 0,
+    enabled: namespace !== null && origin !== null && productId !== undefined && productId.length > 0,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
-      const outcome = await fetchProductCard(productId as string, signal)
+      const outcome = await fetchProductCard(productId as string, { companyId: origin as string }, signal)
       if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
       return outcome
     },
@@ -144,6 +146,7 @@ export function ProductEditPage() {
       key={`${binding?.key ?? 'no-context'}:${outcome.data.product.id}:${outcome.data.product.version}`}
       card={outcome.data}
       namespace={namespace}
+      origin={origin as string}
       binding={binding}
       entryGeneration={entryGeneration}
       onReload={() => void cardQuery.refetch()}
@@ -154,12 +157,15 @@ export function ProductEditPage() {
 function ProductEditForm({
   card,
   namespace,
+  origin,
   binding,
   entryGeneration,
   onReload,
 }: {
   readonly card: ProductCard
   readonly namespace: string | null
+  /** The committed company — the validated origin header. The card was read under it. */
+  readonly origin: string
   readonly binding: AttemptBinding | null
   readonly entryGeneration: number
   readonly onReload: () => void
@@ -226,6 +232,7 @@ function ProductEditForm({
       const outcome = await fetchReferenceOptions(
         card.product.groupId,
         values.classId === '' ? null : values.classId,
+        { companyId: origin },
         signal,
       )
       if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
@@ -268,8 +275,10 @@ function ProductEditForm({
       rememberAttempt(binding, inFlight)
       setAttempt(inFlight)
       const securitySnapshot = boundary.capture()
+      // Origin from the SNAPSHOT: the retry is the same attempt under the same origin.
       const result = await editProductDraft(productId, snapshot.payload, {
         idempotencyKey: snapshot.key,
+        origin: { companyId: snapshot.origin },
       })
       // `previous` is passed so a refusal that only answered a RETRY cannot be read
       // as proof that the earlier send did not apply.
@@ -327,6 +336,7 @@ function ProductEditForm({
     void send({
       key: generateAttemptKey(),
       payload: validation.payload,
+      origin,
       namespace: binding?.key ?? '',
     })
   }

@@ -106,6 +106,12 @@ export function ProductCreatePage() {
   const namespace = key === null ? null : contextKeyString(key)
   const entryGeneration = shell.routeEntryGeneration
   /**
+   * The operation's origin: the committed company, sent as `X-Company-Id` and
+   * validated by the server (§15). Not an owner, not a grant — and frozen into every
+   * attempt so a retry goes out under the origin of the first send.
+   */
+  const origin = shell.activeContext?.companyId ?? null
+  /**
    * The attempt's DURABLE identity — actor, real session epoch, origin, committed
    * context, screen. Deliberately not the cache namespace: that carries the
    * capability generation and the committed revision, both of which a re-fence and
@@ -124,10 +130,10 @@ export function ProductCreatePage() {
   const boundary = useAuthBoundary()
   const groupQuery = useQuery({
     queryKey: [namespace ?? 'no-context', entryGeneration, 'product-code-groups'],
-    enabled: namespace !== null,
+    enabled: namespace !== null && origin !== null,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
-      const outcome = await fetchCodeGroups(signal)
+      const outcome = await fetchCodeGroups({ companyId: origin as string }, signal)
       if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
       return outcome
     },
@@ -142,6 +148,7 @@ export function ProductCreatePage() {
       // context is a new form. A capability re-verification is NOT.
       key={binding?.key ?? 'no-context'}
       namespace={namespace}
+      origin={origin}
       binding={binding}
       groups={groups}
       groupsLoading={groupQuery.isPending}
@@ -153,6 +160,7 @@ export function ProductCreatePage() {
 
 function ProductCreateForm({
   namespace,
+  origin,
   binding,
   groups,
   groupsLoading,
@@ -160,6 +168,8 @@ function ProductCreateForm({
   onRetryGroups,
 }: {
   readonly namespace: string | null
+  /** The committed company — the validated origin header; null while no company is committed. */
+  readonly origin: string | null
   readonly binding: AttemptBinding | null
   /** `null` means the code-group read has not produced a usable list. */
   readonly groups: readonly ProductCodeGroup[] | null
@@ -238,7 +248,7 @@ function ProductCreateForm({
       values.groupId,
       values.classId,
     ],
-    enabled: namespace !== null && values.groupId !== '',
+    enabled: namespace !== null && origin !== null && values.groupId !== '',
     queryFn: async ({ signal }) => {
       // Same authority as every other read on this screen — a refusal here is the
       // same fact and must reach the same boundary. This one was missed when the
@@ -247,6 +257,7 @@ function ProductCreateForm({
       const outcome = await fetchReferenceOptions(
         values.groupId,
         values.classId === '' ? null : values.classId,
+        { companyId: origin as string },
         signal,
       )
       if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
@@ -323,8 +334,11 @@ function ProductCreateForm({
     // The write is an authenticated call under the same authority as the reads, so
     // a 401/403 answering it reaches the same boundary rather than staying local.
     const securitySnapshot = boundary.capture()
+    // The origin travels FROM THE SNAPSHOT, never from the shell's current state: a
+    // retry is the same attempt under the same origin, key and payload.
     const outcome = await createProductDraft(snapshot.payload, {
       idempotencyKey: snapshot.key,
+      origin: { companyId: snapshot.origin },
     })
     // `previous` is passed so a refusal that only answered a RETRY cannot be read
     // as proof that the earlier send did not apply.
@@ -354,7 +368,7 @@ function ProductCreateForm({
 
   function onSubmit(event: React.FormEvent) {
     event.preventDefault()
-    if (frozen || !canCreate) return
+    if (frozen || !canCreate || origin === null) return
     setSubmitted(true)
 
     const validation = validateCreateForm(values, groupIds, classIds, familyIds)
@@ -388,6 +402,7 @@ function ProductCreateForm({
     void send({
       key: generateAttemptKey(),
       payload: validation.payload,
+      origin,
       namespace: binding?.key ?? '',
     })
   }

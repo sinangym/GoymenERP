@@ -11,10 +11,17 @@
  *   PATCH /api/v1/products/{id}/draft   → 200 ProductMutationResponse
  *
  * The transport carries no business logic and invents no field:
- *  - NO `X-Company-Id` on any Product request. `PRD-SCOPE-001=A` makes the master
- *    global and §15 is explicit: "Frontend Product'a CompanyId eklemez". The
- *    contract agrees — `IProductService` requires "server-resolved global
- *    authorization… No company-scoped grant satisfies this contract";
+ *  - `X-Company-Id` on EVERY Product request, from the shell's committed context.
+ *    The actual endpoints (`ProductEndpoints.RequireCompanyContext()`, #251
+ *    `643a6e1`) require it and the server validates it as the ORIGIN of the
+ *    operation — §15 (`6a649ef`): it "carries the server-validated source of the
+ *    operation; it creates neither Product ownership nor global authority". The
+ *    master stays global (`PRD-SCOPE-001=A`): no `companyId` is ever put into a
+ *    Product identity or ownership PAYLOAD, and the header grants nothing —
+ *    `IProductService` still requires server-resolved global authorization;
+ *  - the origin is FROZEN with the attempt: a retry of an unresolved command sends
+ *    the same origin, key and payload (§19.4/§19.6), and an attempt never follows a
+ *    company or session change into a new context;
  *  - ONE `Idempotency-Key` per logical attempt, supplied by the caller, meeting the
  *    source rule (1..128 printable ASCII, no whitespace or comma);
  *  - success is EXACTLY 201 for create and EXACTLY 200 for edit. Any other status
@@ -51,6 +58,19 @@ const DEV_IDENTITY_ENABLED =
 
 function devHeaders(): Record<string, string> {
   return DEV_IDENTITY_ENABLED ? { 'X-Development-User': DEV_USER } : {}
+}
+
+/**
+ * The operation's origin: the company the shell has COMMITTED for this actor. Sent
+ * as `X-Company-Id`, validated by the server, and nothing more — it is not the
+ * Product's owner and it is not a grant.
+ */
+export interface ProductOrigin {
+  readonly companyId: string
+}
+
+function originHeaders(origin: ProductOrigin): Record<string, string> {
+  return { ...devHeaders(), 'X-Company-Id': origin.companyId }
 }
 
 /* ── List query (ProductListQuery) ────────────────────────────────────────── */
@@ -138,11 +158,12 @@ interface RawResult {
 
 async function rawRead(
   path: string,
+  origin: ProductOrigin,
   signal: AbortSignal | undefined,
 ): Promise<RawResult | { readonly failure: 'aborted' | 'offline' | 'unreachable' }> {
   let response: Response
   try {
-    response = await fetch(`${API_BASE}${path}`, { headers: devHeaders(), signal })
+    response = await fetch(`${API_BASE}${path}`, { headers: originHeaders(origin), signal })
   } catch {
     if (signal?.aborted) return { failure: 'aborted' }
     if (!navigator.onLine) return { failure: 'offline' }
@@ -167,12 +188,13 @@ function failureOutcome<T>(failure: 'aborted' | 'offline' | 'unreachable'): View
   return { type: 'network-error' }
 }
 
-/** U-01 list. Global scope by design — no company header. */
+/** U-01 list. Global master; the committed company travels only as the validated origin header. */
 export async function fetchProducts(
   query: ProductQuery,
+  origin: ProductOrigin,
   signal?: AbortSignal,
 ): Promise<ViewOutcome<ProductPage>> {
-  const result = await rawRead(`/products${buildProductQuery(query)}`, signal)
+  const result = await rawRead(`/products${buildProductQuery(query)}`, origin, signal)
   if ('failure' in result) return failureOutcome(result.failure)
   if (result.status !== 200) return { type: 'http', status: result.status, body: result.body }
   const page = decodeProductPage(result.body)
@@ -183,9 +205,10 @@ export async function fetchProducts(
 /** U-01 Product 360. The decoder binds the card to `productId`. */
 export async function fetchProductCard(
   productId: string,
+  origin: ProductOrigin,
   signal?: AbortSignal,
 ): Promise<ViewOutcome<ProductCard>> {
-  const result = await rawRead(`/products/${encodeURIComponent(productId)}`, signal)
+  const result = await rawRead(`/products/${encodeURIComponent(productId)}`, origin, signal)
   if ('failure' in result) return failureOutcome(result.failure)
   if (result.status !== 200) return { type: 'http', status: result.status, body: result.body }
   const card = decodeProductCard(result.body, productId)
@@ -201,9 +224,10 @@ export async function fetchProductCard(
  * nothing else; when it fails or returns nothing, creation waits.
  */
 export async function fetchCodeGroups(
+  origin: ProductOrigin,
   signal?: AbortSignal,
 ): Promise<ViewOutcome<ProductCodeGroup>> {
-  const result = await rawRead('/products/code-groups', signal)
+  const result = await rawRead('/products/code-groups', origin, signal)
   if ('failure' in result) return failureOutcome(result.failure)
   if (result.status !== 200) return { type: 'http', status: result.status, body: result.body }
   const groups = decodeCodeGroupList(result.body)
@@ -226,11 +250,12 @@ export async function fetchCodeGroups(
 export async function fetchReferenceOptions(
   groupId: string,
   classId: string | null,
+  origin: ProductOrigin,
   signal?: AbortSignal,
 ): Promise<ViewOutcome<ProductReferenceOptions>> {
   const params = new URLSearchParams({ groupId })
   if (classId !== null) params.set('classId', classId)
-  const result = await rawRead(`/products/reference-options?${params.toString()}`, signal)
+  const result = await rawRead(`/products/reference-options?${params.toString()}`, origin, signal)
   if ('failure' in result) return failureOutcome(result.failure)
   if (result.status !== 200) return { type: 'http', status: result.status, body: result.body }
   const options = decodeReferenceOptions(result.body, groupId)
@@ -333,6 +358,12 @@ export interface CommandContext {
    * click. Source rule: 1..128 printable ASCII, no whitespace, no comma.
    */
   readonly idempotencyKey: string
+  /**
+   * The attempt's FROZEN origin — the company committed when the snapshot was
+   * taken, not whatever the shell holds at retry time. A retry of an unresolved
+   * command must reach the server under the same origin as the first send.
+   */
+  readonly origin: ProductOrigin
 }
 
 async function sendCommand(
@@ -347,7 +378,7 @@ async function sendCommand(
     response = await fetch(`${API_BASE}${path}`, {
       method,
       headers: {
-        ...devHeaders(),
+        ...originHeaders(context.origin),
         'Content-Type': 'application/json',
         'Idempotency-Key': context.idempotencyKey,
       },

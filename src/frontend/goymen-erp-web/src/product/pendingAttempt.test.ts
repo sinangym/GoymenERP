@@ -43,7 +43,7 @@ const A = attemptBindingFor(shellWith({}), createScope()) as AttemptBinding
 type S = AttemptState<{ name: string }, unknown>
 
 function snapshotOf(key: string): AttemptSnapshot<{ name: string }> {
-  return { key, payload: { name: 'x' }, namespace: A.key }
+  return { key, payload: { name: 'x' }, origin: 'company-a', namespace: A.key }
 }
 const snapshot = snapshotOf('k1')
 

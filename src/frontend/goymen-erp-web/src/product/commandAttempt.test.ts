@@ -28,6 +28,7 @@ function payload(over: Partial<CreateProductDraftPayload> = {}): CreateProductDr
 const snapshot: AttemptSnapshot<CreateProductDraftPayload> = {
   key: 'k1',
   payload: payload(),
+  origin: 'aaaaaaaa-0000-0000-0000-000000000001',
   namespace: 'ns-a',
 }
 

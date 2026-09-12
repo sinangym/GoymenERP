@@ -33,10 +33,10 @@ test('L-02 an actor without global Product authority is refused on read and writ
     data: { name: FORBIDDEN_NAME, groupId: NOWHERE },
     mustNotDisclose: [FORBIDDEN_NAME],
   })
-  for (const r of [list, card, create]) {
-    expect(r.status, r.label).toBe(403)
-    expect(r.problemCode, r.label).toBe('forbidden')
-  }
+  // A real 403 is the refusal; the actual endpoint answers `Results.Problem(403)`
+  // and the contract promises no `code` for it, so none is required — and none is
+  // added anywhere on the way. The code is recorded as observed.
+  for (const r of [list, card, create]) expect(r.status, r.label).toBe(403)
   expect(create.disclosedForbiddenText).toBe(false)
 
   // The authorized actor's list does not contain the refused name: nothing was created.

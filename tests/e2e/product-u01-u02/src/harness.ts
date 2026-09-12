@@ -40,7 +40,7 @@ export interface RequestU { url: URL; company: string | null; nth: number; key: 
 
 export interface LaneOptions {
   slug: string
-  /** The committed company the shell boots into; Product is global, so it must never reach a Product request. */
+  /** The committed company the shell boots into; it reaches every Product request as the validated origin header, never a payload. */
   company?: string
   /** What the server publishes; default is all four Product ids. */
   capabilities?: () => readonly string[]

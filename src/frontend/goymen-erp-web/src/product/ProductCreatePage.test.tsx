@@ -368,7 +368,10 @@ describe('the request itself', () => {
     await waitFor(() => expect(calls.some((call) => call.method === 'POST')).toBe(true))
     const post = calls.find((call) => call.method === 'POST')
     expect(post?.url).toContain('/products')
-    expect(post?.companyId).toBeNull()
+    // The committed company travels as the validated ORIGIN header (§15) — and
+    // only there: it is not in the payload, and it is not the Product's owner.
+    expect(post?.companyId).toBe(COMPANY_A)
+    expect(JSON.parse(post?.body ?? '{}')).not.toHaveProperty('companyId')
     const body = JSON.parse(post?.body ?? '{}')
     expect(body.name).toBe('Siyah sac')
     expect(body.groupId).toBe(GROUP_SAC)
@@ -459,6 +462,52 @@ describe('success', () => {
 
     await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
     expect(screen.queryByText('Taslak kaydedildi')).toBeNull()
+  })
+})
+
+describe('the validated origin (X-Company-Id)', () => {
+  it('goes out on every Product read and write as the committed company, and never in a payload', async () => {
+    /**
+     * §15 (6a649ef): the header "carries the server-validated source of the
+     * operation; it creates neither Product ownership nor global authority". The
+     * actual endpoints require it (`RequireCompanyContext`), so it is on every
+     * request — reference reads included — while the payload stays free of it.
+     */
+    const { calls } = installFetch({ capabilities: CREATE_ONLY })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await fillMinimum()
+    await userEvent.click(saveButton())
+    await waitFor(() => expect(calls.some((call) => call.method === 'POST')).toBe(true))
+
+    const product = calls.filter((call) => call.url.includes('/products'))
+    expect(product.length).toBeGreaterThanOrEqual(3) // code-groups, reference-options, POST
+    for (const call of product) expect(call.companyId, `${call.method} ${call.url}`).toBe(COMPANY_A)
+    for (const call of product.filter((c) => c.body !== null)) {
+      expect(JSON.parse(call.body as string)).not.toHaveProperty('companyId')
+    }
+  })
+
+  it('is FROZEN with the attempt: the same-key retry carries the origin of the first send', async () => {
+    const { calls } = installFetch({
+      capabilities: CREATE_ONLY,
+      onCreate: (attempt) => (attempt === 1 ? json({}, 503) : json(mutation(), 201)),
+    })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await fillMinimum()
+    await userEvent.click(saveButton())
+    await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: 'Aynı işlemi tekrar dene' }))
+    await waitFor(() => expect(calls.filter((call) => call.method === 'POST')).toHaveLength(2))
+
+    const posts = calls.filter((call) => call.method === 'POST')
+    expect(posts[0].companyId).toBe(COMPANY_A)
+    expect(posts[1].companyId).toBe(posts[0].companyId)
+    expect(posts[1].idempotencyKey).toBe(posts[0].idempotencyKey)
+    expect(posts[1].body).toBe(posts[0].body)
   })
 })
 

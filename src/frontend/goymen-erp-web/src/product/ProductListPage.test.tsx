@@ -5,6 +5,7 @@ import { PRODUCT_CAPABILITY } from './capabilities'
 import { resetPendingAttempts } from './pendingAttempt'
 import { resetProductListView } from './listViewState'
 import {
+  COMPANY_A,
   PRODUCT_1,
   PRODUCT_2,
   installFetch,
@@ -55,12 +56,14 @@ describe('mounting', () => {
 })
 
 describe('global master scope', () => {
-  it('never attaches a company header to a Product read', async () => {
+  it('sends the committed company as the validated ORIGIN header on every Product read', async () => {
     /**
-     * `PRD-SCOPE-001=A` + §15, and the contract agrees: `IProductService` requires
-     * server-resolved global authorization and "No company-scoped grant satisfies
-     * this contract". A company header would be the client asserting a scope
-     * neither side uses.
+     * `PRD-SCOPE-001=A` keeps the master global and `IProductService` still requires
+     * server-resolved global authorization — but the actual endpoints
+     * (`RequireCompanyContext`, #251) require `X-Company-Id` and validate it as the
+     * source of the operation. §15 (6a649ef): it "creates neither Product ownership
+     * nor global authority". So it is sent, from the committed context, and never
+     * enters a payload or a query.
      */
     const { calls } = installFetch({ capabilities: LIST_ONLY })
     renderProductApp('/urun')
@@ -68,12 +71,8 @@ describe('global master scope', () => {
     await rowsVisible()
     const productCalls = calls.filter((call) => call.url.includes('/products'))
     expect(productCalls.length).toBeGreaterThan(0)
-    expect(productCalls.every((call) => call.companyId === null)).toBe(true)
-    // The shell's own calls still carry it — this is a Product-request rule, not a
-    // claim that the shell stopped scoping anything.
-    expect(
-      calls.some((call) => call.url.includes('/shell/capabilities') && call.companyId !== null),
-    ).toBe(true)
+    expect(productCalls.every((call) => call.companyId === COMPANY_A)).toBe(true)
+    expect(productCalls.every((call) => !call.url.includes('companyId'))).toBe(true)
   })
 
   it('says on screen that the card is shared by both companies', async () => {

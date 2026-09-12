@@ -13,9 +13,9 @@ Her ikisi de mevcut Cari desenlerini **tüketir**: C010 koşum sahipliği modül
 
 | Spec | Ölçülen |
 | --- | --- |
-| `u-01-list-card` | liste → satır → kart; hiçbir Product isteğinde `X-Company-Id` yok; etiket/eksiklik karttan; "okunamadı" ≠ "atanmadı" |
+| `u-01-list-card` | liste → satır → kart; her Product isteğinde committed şirket doğrulanmış origin başlığı (`X-Company-Id`) olarak, payload'da asla; etiket/eksiklik karttan; "okunamadı" ≠ "atanmadı" |
 | `u-01-authority` | capability yoksa nötr blok + sıfır Product okuması; liste/kart 403 → route kapanır, kayıt açığa çıkmaz; liste grant'i kart açmaz |
-| `u-02-create-edit-journey` | liste → yeni → Draft (sunucu kodu) → kart → düzenle + gerekçe → taze sürüm → karta dön; tek POST/tek PATCH, farklı key'ler, key alfabesi; DIFF + `expectedVersion` okunan karttan |
+| `u-02-create-edit-journey` | liste → yeni → Draft (sunucu kodu) → kart → düzenle + gerekçe → taze sürüm → karta dön; tek POST/tek PATCH, farklı key'ler, key alfabesi, origin başlığı var payload'da companyId yok; DIFF + `expectedVersion` okunan karttan |
 | `u-02-unknown-same-key` | 503 → aynı key/aynı gövde ile resubmit ve retry → `isReplay` kabul; unknown → retry 403 → route kapanır → **gen-2** ile taze giriş girişimi bulur, otomatik POST yok, insan retry'ı ilk key |
 | `u-02-context-change` | dirty create + şirket değişimi: Kal tutar; onaylı bırak düşürür, diğer şirket boş, geri dönüşte gelmez, resend yok |
 | `u-02-edit-conflicts` | `version_conflict`: iki sürüm, girdi korunur, yalnız "Güncel hâli yükle"; `lifecycle_conflict` adıyla |
@@ -52,8 +52,8 @@ Hedef negatifler (ortam gerektirmez, sentetik dosyalar geçici dizinde): `node -
 
 | Spec | Ölçülen |
 | --- | --- |
-| `l-01-journey` | create → liste (aramayla bulunur) → kart → düzenle + gerekçe → taze sürüm → karta dön → listeden yeniden aç. Kod grubu **sözleşmenin `codeGroupId`'si**, yalnız canlı yetkili katalog sunuyorsa (adım 4). **İki komut da gerçek kayıp yanıt + gerçek aynı-key replay'den geçer:** ilk POST ve ilk PATCH `route.fetch` ile gerçek API'ye iletilir; gerçek 201/200 ve gerçek ürün kimliği (`lifecycle: Draft`) **görüldükten sonra** tarayıcıya teslimi kesilir (`upstream_success_then_delivery_abort`). Aynı key ile retry sıradan tarayıcı isteğidir ve gerçek `isReplay: true` döner. Kod/id/sürüm yalnız gerçek yanıttan; PATCH `expectedVersion` karttan okunan sürüm; her Product isteği bağlı actor ile ve şirket başlığı olmadan (shell şirketi Ürün sahibi değildir). |
-| `l-02-authority` | `unauthorizedActor` doğrudan probe ile liste/kart/create → gerçek 403 + `forbidden`, reddedilen ad açığa çıkmaz; yetkili actor'ün aramasında o ad yok; var olmayan id → nötr blok, id doğrulanmaz. |
+| `l-01-journey` | create → liste (aramayla bulunur) → kart → düzenle + gerekçe → taze sürüm → karta dön → listeden yeniden aç. Kod grubu **sözleşmenin `codeGroupId`'si**, yalnız canlı yetkili katalog sunuyorsa (adım 4). **İki komut da gerçek kayıp yanıt + gerçek aynı-key replay'den geçer:** ilk POST ve ilk PATCH `route.fetch` ile gerçek API'ye iletilir; gerçek 201/200 ve gerçek ürün kimliği (`lifecycle: Draft`) **görüldükten sonra** tarayıcıya teslimi kesilir (`upstream_success_then_delivery_abort`). Aynı key ile retry sıradan tarayıcı isteğidir ve gerçek `isReplay: true` döner. Kod/id/sürüm yalnız gerçek yanıttan; PATCH `expectedVersion` karttan okunan sürüm; her Product isteği bağlı actor ve bağlı şirket (doğrulanmış origin başlığı) ile, payload'da companyId yok; retry aynı origin/key/payload (shell şirketi Ürün sahibi değildir). |
+| `l-02-authority` | `unauthorizedActor` doğrudan probe ile liste/kart/create → gerçek 403 (sözleşme `code` vaat etmez; gözlenen kaydedilir, zorunlu değil), reddedilen ad açığa çıkmaz; yetkili actor'ün aramasında o ad yok; var olmayan id → nötr blok, id doğrulanmaz. |
 
 Her L kanıt kaydı: C010 **tarayıcı** `runId` + ortam `resourceRunId/resourceInstanceId` + üç dosya hash'i + `frontendHead` + yayımcı `verifiedAtUtc` (adım 3).
 

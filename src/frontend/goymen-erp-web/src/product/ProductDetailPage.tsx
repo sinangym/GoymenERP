@@ -55,16 +55,17 @@ export function ProductDetailPage() {
   const { productId } = useParams()
   const key = contextKey(shell)
   const namespace = key === null ? null : contextKeyString(key)
+  const origin = shell.activeContext?.companyId ?? null
   const boundary = useAuthBoundary()
   const entryGeneration = shell.routeEntryGeneration
   const canReturnToList = hasCapability(shell, PRODUCT_CAPABILITY.productsList)
 
   const query = useQuery({
     queryKey: [namespace ?? 'no-context', entryGeneration, 'product-card', productId ?? ''],
-    enabled: namespace !== null && productId !== undefined && productId.length > 0,
+    enabled: namespace !== null && origin !== null && productId !== undefined && productId.length > 0,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
-      const outcome = await fetchProductCard(productId as string, signal)
+      const outcome = await fetchProductCard(productId as string, { companyId: origin as string }, signal)
       if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
       return outcome
     },

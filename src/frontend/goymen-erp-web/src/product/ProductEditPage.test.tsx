@@ -6,6 +6,7 @@ import { resetPendingAttempts } from './pendingAttempt'
 import { PRODUCT_EDIT_TEXT } from './productText'
 import {
   CLASS_FLAT,
+  COMPANY_A,
   COMPANY_B,
   GROUP_SAC,
   PRODUCT_1,
@@ -77,7 +78,9 @@ describe('the diff, not the form', () => {
     const patch = calls.find((call) => call.method === 'PATCH')
     // The contract's route: PATCH /api/v1/products/{id}/draft.
     expect(patch?.url).toContain(`/products/${PRODUCT_1}/draft`)
-    expect(patch?.companyId).toBeNull()
+    // The validated origin header, and nothing of it in the payload (§15).
+    expect(patch?.companyId).toBe(COMPANY_A)
+    expect(JSON.parse(patch?.body ?? '{}')).not.toHaveProperty('companyId')
     const body = JSON.parse(patch?.body ?? '{}')
     /**
      * An omitted member is `Optional` with no value, which the server reads as

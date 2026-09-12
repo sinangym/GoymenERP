@@ -67,6 +67,12 @@ export interface AttemptSnapshot<P> {
   /** The normalized payload exactly as sent. */
   readonly payload: P
   /**
+   * The operation's origin exactly as sent: the company id that went out as
+   * `X-Company-Id` on the first send, and goes out unchanged on every retry.
+   * §15/§19.4: "aynı girişim, origin, key ve payload korunur".
+   */
+  readonly origin: string
+  /**
    * The shell context the attempt was authorized under.
    *
    * §19.4: "Origin değişirse eski girişim otomatik taşınmaz." An attempt belongs to

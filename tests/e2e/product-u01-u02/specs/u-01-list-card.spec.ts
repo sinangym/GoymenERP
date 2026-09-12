@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test'
 import { Lane, json } from '../src/harness'
-import { PRODUCT_1, productCore, productPage } from '../src/fixtures'
+import { A_ID, PRODUCT_1, productCore, productPage } from '../src/fixtures'
 import { openList } from '../src/ui'
 
-test('U-01 list → card: rows from the server, no company header on any Product request, labels and completeness from the card', async ({ page }, info) => {
+test('U-01 list → card: rows from the server, the committed company as the validated origin header on every Product request, labels and completeness from the card', async ({ page }, info) => {
   const lane = await Lane.install(page, { slug: 'u01-list-card' })
   try {
     await openList(page)
@@ -21,16 +21,16 @@ test('U-01 list → card: rows from the server, no company header on any Product
     await expect(page.getByTestId('product-missing-fields')).toContainText('references.units.stock')
     await expect(page.getByRole('link', { name: 'Düzenle' })).toBeVisible()
 
-    // Global master: nothing Product-shaped carried X-Company-Id; the shell's own calls did.
+    // Global master, validated origin: every Product request carried the committed
+    // company as X-Company-Id (§15) — the source of the operation, not its owner.
     expect(lane.of('list').length).toBeGreaterThanOrEqual(1)
     expect(lane.of('card').length).toBeGreaterThanOrEqual(1)
-    for (const r of lane.product()) expect(r.company, r.kind + ' carried a company header').toBeNull()
-    expect(lane.of('capabilities').some((r) => r.company !== null)).toBe(true)
+    for (const r of lane.product()) expect(r.company, r.kind + ' origin header').toBe(A_ID)
     // The card read is the exact route of the contract, for the exact id.
     expect(lane.of('card')[0].path).toBe(`/api/v1/products/${PRODUCT_1}`)
     expect(lane.externalBlocked).toBe(0)
     expect(lane.of('unexpected')).toHaveLength(0)
-    await lane.finish(info, { scope: 'U-01', productRequestsWithoutCompany: lane.product().length })
+    await lane.finish(info, { scope: 'U-01', productRequestsWithOrigin: lane.product().length })
   } finally { lane.dispose() }
 })
 

@@ -168,7 +168,8 @@ export interface HarnessConfig {
 /**
  * Installs a fetch mock covering the shell bootstrap plus the Product endpoints.
  * Returns the recorded calls so a test can assert what actually left the client —
- * notably that no `X-Company-Id` is ever attached to a Product request.
+ * notably that every Product request carries the committed company as its
+ * validated origin (`X-Company-Id`) and that no `companyId` ever enters a payload.
  */
 export function installFetch(config: HarnessConfig = {}) {
   const calls: RecordedCall[] = []
