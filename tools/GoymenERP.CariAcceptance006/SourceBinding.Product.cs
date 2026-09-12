@@ -9,7 +9,7 @@ public static partial class SourceBinding
 {
     public const string ProductWorktree = @"C:\src\GoymenERP-product-owner-boundary-20260912";
     public const string ProductFrontendWorktree = @"C:\src\GoymenERP\.claude\worktrees\urun-frontend-02";
-    public const string ProductFrontendHead = "1c48f609b83caa1118b0b274261678b6857088fa";
+    public const string ProductFrontendHead = "da7ad01eba7046aadb4f107b90b66f3410b2fe15";
     public const string ProductDependency = "c765e629c669698d41e6b32ac760c08dbf9caf45";
 
     // The source object of the EXISTING PRODUCT-U0102-L-v1 three-file contract.
