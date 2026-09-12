@@ -81,8 +81,6 @@ export type CommandFailure =
   | { readonly kind: 'idempotency-conflict' }
   /** 415 — media type. A client bug, not a user-recoverable state. */
   | { readonly kind: 'unsupported-media' }
-  /** Any other definite non-2xx the contract does not describe. Fails closed. */
-  | { readonly kind: 'unexpected'; readonly status: number }
 
 /** The outcome is UNKNOWN: the command may or may not have been applied. */
 export type CommandUnknown =
@@ -91,6 +89,21 @@ export type CommandUnknown =
   | { readonly kind: 'network-error' }
   /** 5xx — the server answered, but not about our command's result. */
   | { readonly kind: 'service-unavailable'; readonly status: number }
+  /**
+   * A 2xx that is NOT 204. The contract defines exactly one success code, so a 200 or
+   * 202 tells us the request was handled by something whose answer we cannot read.
+   * Reading it as success would assert an effect; reading it as refusal would assert
+   * the opposite. Both are claims we are not entitled to make.
+   */
+  | { readonly kind: 'unexpected-success'; readonly status: number }
+  /**
+   * A response we cannot classify at all: a status the contract does not describe, or
+   * a 409 whose body is missing/unparseable so the version-vs-idempotency
+   * discriminator is unavailable. A response off the contract is NOT evidence that
+   * the command did not apply, so it fails closed into UNKNOWN rather than into a
+   * refusal that would tell the user "uygulanmadı".
+   */
+  | { readonly kind: 'undecodable'; readonly status: number }
   /** Cancelled by us (unmount / context change). Nothing is known either. */
   | { readonly kind: 'aborted' }
 
@@ -101,7 +114,14 @@ export type CommandOutcome =
       readonly replayed: boolean
       readonly originalCorrelationId: string | null
     }
-  | { readonly type: 'failed'; readonly failure: CommandFailure }
+  /**
+   * A definite refusal. `replayed` is load-bearing: the server replays a stored
+   * terminal answer for a repeated key, so a REPLAYED 404/409 is the original
+   * command's own outcome and therefore resolves it. A non-replayed refusal on a
+   * retry (a 403 at the auth gate, say) is about THAT request and says nothing about
+   * whether the first one was recorded.
+   */
+  | { readonly type: 'failed'; readonly failure: CommandFailure; readonly replayed: boolean }
   | { readonly type: 'unknown'; readonly unknown: CommandUnknown }
 
 function readReplayed(headers: Headers): boolean {
@@ -113,7 +133,30 @@ function readOriginalCorrelationId(headers: Headers): string | null {
   return value !== null && value.trim().length > 0 ? value.trim() : null
 }
 
-function classifyFailure(status: number, body: unknown, replayed: boolean): CommandFailure {
+function isObjectBody(body: unknown): boolean {
+  return typeof body === 'object' && body !== null && !Array.isArray(body)
+}
+
+/**
+ * Turns a non-2xx, non-5xx response into either a DEFINITE refusal or an explicitly
+ * indeterminate one.
+ *
+ * The line is drawn at "does the contract describe this answer?". 400/401/403/404/415
+ * are described and their status alone is the whole meaning. A 409 is described but is
+ * TWO answers, told apart by the presence of the conflict object — so a 409 whose body
+ * never arrived or would not parse leaves the discriminator unavailable, and guessing
+ * "idempotency conflict" there would tell the user a specific thing we do not know.
+ * Anything else is off-contract entirely.
+ *
+ * Both of those indeterminate cases return null and become UNKNOWN, because an answer
+ * we cannot read is not evidence that the command did not apply.
+ */
+function classifyFailure(
+  status: number,
+  body: unknown,
+  bodyParsed: boolean,
+  replayed: boolean,
+): CommandFailure | null {
   if (status === 400) return { kind: 'validation' }
   if (status === 401) return { kind: 'unauthenticated' }
   if (status === 403) return { kind: 'forbidden' }
@@ -123,11 +166,14 @@ function classifyFailure(status: number, body: unknown, replayed: boolean): Comm
     const conflict = decodeVersionConflict(body)
     // The PRESENCE of the conflict object is the discriminator the backend named —
     // not the title text, which is localized and must never be parsed.
-    return conflict === null
-      ? { kind: 'idempotency-conflict' }
-      : { kind: 'version-conflict', conflict, conflictIsCurrent: !replayed }
+    if (conflict !== null) {
+      return { kind: 'version-conflict', conflict, conflictIsCurrent: !replayed }
+    }
+    // A well-formed problem body with no conflict IS the idempotency answer. A body
+    // that never parsed is not — it is a 409 we could not read.
+    return bodyParsed && isObjectBody(body) ? { kind: 'idempotency-conflict' } : null
   }
-  return { kind: 'unexpected', status }
+  return null
 }
 
 /**
@@ -171,13 +217,23 @@ export async function setLocationActiveState(
     return { type: 'unknown', unknown: { kind: 'network-error' } }
   }
 
+  const replayed = readReplayed(response.headers)
+
   // Exact 204. A 200/202 for this command is not in the contract; treating one as
-  // success would be asserting an effect the server never confirmed.
+  // success would be asserting an effect the server never confirmed — and treating it
+  // as a refusal would assert the opposite. It is UNKNOWN (see CommandUnknown).
   if (response.status === 204) {
     return {
       type: 'applied',
-      replayed: readReplayed(response.headers),
+      replayed,
       originalCorrelationId: readOriginalCorrelationId(response.headers),
+    }
+  }
+
+  if (response.status >= 200 && response.status < 300) {
+    return {
+      type: 'unknown',
+      unknown: { kind: 'unexpected-success', status: response.status },
     }
   }
 
@@ -189,20 +245,25 @@ export async function setLocationActiveState(
   }
 
   let parsed: unknown = null
+  let bodyParsed = false
   try {
     parsed = await response.json()
+    bodyParsed = true
   } catch {
-    // A code-less or entirely empty problem body is expected here; the status still
-    // classifies the answer.
+    // A code-less or entirely empty problem body is expected on 400; for a 409 it
+    // costs us the discriminator, which `classifyFailure` accounts for.
     parsed = null
+  }
+
+  const failure = classifyFailure(response.status, parsed, bodyParsed, replayed)
+  if (failure === null) {
+    return { type: 'unknown', unknown: { kind: 'undecodable', status: response.status } }
   }
 
   /**
    * Replay headers are read on FAILURES too, not only on 204. A replayed terminal
-   * answer is still a replay, and for a 409 that changes what its numbers mean.
+   * answer is the ORIGINAL command's own outcome, which is what lets the caller tell
+   * "my command ended this way" from "this particular retry was turned away".
    */
-  return {
-    type: 'failed',
-    failure: classifyFailure(response.status, parsed, readReplayed(response.headers)),
-  }
+  return { type: 'failed', failure, replayed }
 }

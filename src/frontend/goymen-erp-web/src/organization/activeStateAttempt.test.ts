@@ -4,6 +4,7 @@ import {
   attemptReducer,
   initialAttemptState,
   isBusy,
+  isUnresolved,
   unresolvedSnapshot,
   type AttemptSnapshot,
   type AttemptState,
@@ -58,7 +59,7 @@ describe('settling', () => {
     const state = attemptReducer(submitting(), {
       type: 'SETTLE',
       key: 'key-1',
-      outcome: { type: 'failed', failure: { kind: 'forbidden' } },
+      outcome: { type: 'failed', failure: { kind: 'forbidden' }, replayed: false },
     })
     expect(state).toMatchObject({ phase: 'failed', failure: { kind: 'forbidden' } })
     // A closed attempt holds no unresolved key.
@@ -134,11 +135,69 @@ describe('resend', () => {
     expect(settled).toMatchObject({ phase: 'applied', replayed: true })
   })
 
+  it('KEEPS the unresolved history when a retry is refused by the gate', () => {
+    /**
+     * The first PUT may already be recorded. A 403 on the retry is the auth gate
+     * turning THAT request away before it ran — no evidence at all about the first
+     * one. Closing the attempt here would both tell the user "uygulanmadı" (which we
+     * do not know) and free the form to mint a second key.
+     */
+    const resent = attemptReducer(unknown(), { type: 'RESEND' })
+    const settled = attemptReducer(resent, {
+      type: 'SETTLE',
+      key: 'key-1',
+      outcome: { type: 'failed', failure: { kind: 'forbidden' }, replayed: false },
+    })
+    expect(settled).toMatchObject({
+      phase: 'unknown',
+      reason: { kind: 'service-unavailable', status: 503 },
+      lastRefusal: { kind: 'forbidden' },
+    })
+    // The key survives, so the same attempt can still be resolved.
+    expect(unresolvedSnapshot(settled)?.key).toBe('key-1')
+  })
+
+  it.each([
+    ['validation', { kind: 'validation' } as const],
+    ['unauthenticated', { kind: 'unauthenticated' } as const],
+    ['unsupported-media', { kind: 'unsupported-media' } as const],
+  ])('keeps the history for a refused retry: %s', (_label, failure) => {
+    const resent = attemptReducer(unknown(), { type: 'RESEND' })
+    const settled = attemptReducer(resent, {
+      type: 'SETTLE',
+      key: 'key-1',
+      outcome: { type: 'failed', failure, replayed: false },
+    })
+    expect(settled.phase).toBe('unknown')
+  })
+
+  it('CLOSES the attempt when the refusal is a REPLAY of the original', () => {
+    // A replayed terminal answer is the original command's own outcome, so it does
+    // resolve the uncertainty — that is exactly what the replay contract is for.
+    const resent = attemptReducer(unknown(), { type: 'RESEND' })
+    const settled = attemptReducer(resent, {
+      type: 'SETTLE',
+      key: 'key-1',
+      outcome: { type: 'failed', failure: { kind: 'not-found' }, replayed: true },
+    })
+    expect(settled).toMatchObject({ phase: 'failed', failure: { kind: 'not-found' } })
+    expect(unresolvedSnapshot(settled)).toBeNull()
+  })
+
+  it('still closes a FIRST attempt on a plain refusal — nothing was unresolved yet', () => {
+    const settled = attemptReducer(submitting(), {
+      type: 'SETTLE',
+      key: 'key-1',
+      outcome: { type: 'failed', failure: { kind: 'forbidden' }, replayed: false },
+    })
+    expect(settled).toMatchObject({ phase: 'failed' })
+  })
+
   it('refuses to re-send anything that is not unresolved', () => {
     const failed = attemptReducer(submitting(), {
       type: 'SETTLE',
       key: 'key-1',
-      outcome: { type: 'failed', failure: { kind: 'not-found' } },
+      outcome: { type: 'failed', failure: { kind: 'not-found' }, replayed: false },
     })
     expect(attemptReducer(failed, { type: 'RESEND' })).toBe(failed)
     expect(attemptReducer(initialAttemptState, { type: 'RESEND' })).toBe(initialAttemptState)
@@ -173,6 +232,28 @@ describe('fingerprint', () => {
     expect(attemptFingerprint('ctx-b', snapshot().payload)).not.toBe(
       attemptFingerprint(BINDING, snapshot().payload),
     )
+  })
+})
+
+describe('the freeze', () => {
+  it('reports an in-flight or unknown attempt as unresolved', () => {
+    expect(isUnresolved(submitting())).toBe(true)
+    const unknownState = attemptReducer(submitting(), {
+      type: 'SETTLE',
+      key: 'key-1',
+      outcome: { type: 'unknown', unknown: { kind: 'network-error' } },
+    })
+    expect(isUnresolved(unknownState)).toBe(true)
+  })
+
+  it('reports a settled attempt as resolved', () => {
+    expect(isUnresolved(initialAttemptState)).toBe(false)
+    const applied = attemptReducer(submitting(), {
+      type: 'SETTLE',
+      key: 'key-1',
+      outcome: { type: 'applied', replayed: false, originalCorrelationId: null },
+    })
+    expect(isUnresolved(applied)).toBe(false)
   })
 })
 

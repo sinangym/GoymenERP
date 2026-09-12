@@ -331,20 +331,191 @@ describe('an unknown outcome', () => {
 })
 
 describe('definite refusals', () => {
-  it('reports a 403 without claiming the change happened', async () => {
-    stub({ command: [() => problem(403)] })
-    renderAt(PATH)
-    await fillAndSubmit()
-
-    expect(await screen.findByText('Yetkiniz yok')).toBeTruthy()
-    expect(screen.getByText(/Değişiklik uygulanmadı/)).toBeTruthy()
-  })
-
   it('reports a validation refusal with an empty body', async () => {
     stub({ command: [() => new Response(null, { status: 400 })] })
     renderAt(PATH)
     await fillAndSubmit()
     expect(await screen.findByText('İşlem kabul edilmedi')).toBeTruthy()
+  })
+
+  it('reports a 404 without claiming anything about other records', async () => {
+    stub({ command: [() => problem(404)] })
+    renderAt(PATH)
+    await fillAndSubmit()
+    expect(await screen.findByText('Bulunamadı')).toBeTruthy()
+  })
+})
+
+describe('a command refused by authorization reaches the SHARED boundary', () => {
+  it.each([
+    [401, 'Oturum sonlandı — oturum'],
+    [403, 'Bulunamadı — sayfa'],
+  ])('routes a command %i through the central boundary, not just the modal', async (status, text) => {
+    /**
+     * A command rejected by authorization is the same security fact as a rejected read.
+     * Before this, a PUT 401 printed "Oturum sonlandı" inside the modal while the dead
+     * session kept its company card, capabilities and submit surface on screen behind
+     * it. Now it is reported to the shell boundary, which ends the session (401) or
+     * drops the capability generation and fails every gated mount closed (403).
+     */
+    stub({ command: [() => problem(status)] })
+    renderAt(PATH)
+    await fillAndSubmit()
+
+    expect(await screen.findByText(text)).toBeTruthy()
+    // The write surface must not survive behind the boundary's verdict.
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+})
+
+describe('an unresolved attempt cannot become a second command', () => {
+  async function reachUnknown() {
+    const scenario = stub({ command: [() => problem(503), () => noContent()] })
+    renderAt(PATH)
+    await fillAndSubmit()
+    expect(await screen.findByText(/sonuç bilinmiyor/)).toBeTruthy()
+    return scenario
+  }
+
+  it('freezes the justification while the outcome is unknown', async () => {
+    // Editing it would change the payload fingerprint, and a changed fingerprint is
+    // what mints a new key for a command that may already be recorded.
+    const { recorded } = await reachUnknown()
+    const field = screen.getByLabelText('Gerekçe') as HTMLTextAreaElement
+    expect(field.readOnly).toBe(true)
+
+    await userEvent.type(field, ' ek metin')
+    expect(field.value).toBe(REASON)
+    expect(commandCalls(recorded)).toHaveLength(1)
+  })
+
+  it('offers no ordinary submit while unresolved — only the same-key resend', async () => {
+    await reachUnknown()
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).queryByRole('button', { name: ACTION })).toBeNull()
+    expect(
+      within(dialog).getByRole('button', { name: /Aynı işlem anahtarıyla tekrar gönder/ }),
+    ).toBeTruthy()
+  })
+
+  it('refreshing the record does NOT discard the unresolved attempt', async () => {
+    /**
+     * Seeing the target state in a GET is not a receipt for the command — the record
+     * could have reached it another way. Dropping the key here would abandon an
+     * unresolved command while telling the user nothing about what became of it.
+     */
+    const { recorded } = await reachUnknown()
+    const before = detailReads(recorded).length
+
+    await userEvent.click(screen.getByRole('button', { name: 'Güncel kaydı yükle' }))
+
+    await waitFor(() => expect(detailReads(recorded).length).toBeGreaterThan(before))
+    // Still unresolved, still no second command.
+    expect(await screen.findByText(/sonuç bilinmiyor/)).toBeTruthy()
+    expect(commandCalls(recorded)).toHaveLength(1)
+
+    // And the ONE way forward still uses the original key.
+    await userEvent.click(
+      screen.getByRole('button', { name: /Aynı işlem anahtarıyla tekrar gönder/ }),
+    )
+    await waitFor(() => expect(commandCalls(recorded)).toHaveLength(2))
+    const [first, second] = commandCalls(recorded)
+    expect(second.headers['Idempotency-Key']).toBe(first.headers['Idempotency-Key'])
+    expect(second.body).toEqual(first.body)
+  })
+
+  it('keeps the uncertainty when a retry is refused, and never says it was not applied', async () => {
+    const { recorded } = stub({ command: [() => problem(503), () => problem(400)] })
+    renderAt(PATH)
+    await fillAndSubmit()
+    expect(await screen.findByText(/sonuç bilinmiyor/)).toBeTruthy()
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /Aynı işlem anahtarıyla tekrar gönder/ }),
+    )
+
+    // The refusal is shown...
+    expect(await screen.findByText(/Son deneme sunucu tarafından reddedildi/)).toBeTruthy()
+    // ...but the first request's uncertainty still owns the verdict.
+    expect(screen.getByText(/sonuç bilinmiyor/)).toBeTruthy()
+    expect(screen.queryByText(/Değişiklik uygulanmadı/)).toBeNull()
+    // And the key is still the same one, so a further resend is still a replay.
+    expect(commandCalls(recorded)[1].headers['Idempotency-Key']).toBe(
+      commandCalls(recorded)[0].headers['Idempotency-Key'],
+    )
+  })
+
+  it('resolves the attempt when the retry REPLAYS the original terminal answer', async () => {
+    const { recorded } = stub({
+      command: [
+        () => problem(503),
+        () => problem(404, {}, { 'Idempotency-Replayed': 'true' }),
+      ],
+    })
+    renderAt(PATH)
+    await fillAndSubmit()
+    await userEvent.click(
+      await screen.findByRole('button', { name: /Aynı işlem anahtarıyla tekrar gönder/ }),
+    )
+
+    expect(await screen.findByText('Bulunamadı')).toBeTruthy()
+    expect(screen.queryByText(/sonuç bilinmiyor/)).toBeNull()
+    expect(commandCalls(recorded)).toHaveLength(2)
+  })
+})
+
+describe('the justification survives the recommended recovery', () => {
+  it('keeps the typed reason after a version conflict reload', async () => {
+    /**
+     * The recommended next step after a 409 is "look at the fresh record and decide
+     * again". Wiping the draft as a side effect of taking that step is the opposite of
+     * helping (AT-006 / Business).
+     */
+    stub({
+      command: [() => json({ conflict: { expectedVersion: 3, currentVersion: 5 } }, 409)],
+      detail: [
+        () => json(location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0', { version: 3 })),
+        () => json(location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0', { version: 5 })),
+      ],
+    })
+    renderAt(PATH)
+    await fillAndSubmit()
+    expect(await screen.findByText('Kayıt bu sırada değişti')).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Güncel kaydı yükle' }))
+
+    const field = (await screen.findByLabelText('Gerekçe')) as HTMLTextAreaElement
+    expect(field.value).toBe(REASON)
+    // The attempt is closed, so a fresh submit is available again.
+    expect(field.readOnly).toBe(false)
+    expect(within(screen.getByRole('dialog')).getByRole('button', { name: ACTION })).toBeTruthy()
+  })
+})
+
+describe('focus stays inside the modal', () => {
+  it('cycles Tab and Shift+Tab within the dialog', async () => {
+    /**
+     * `aria-modal` is a promise to assistive technology, not something the browser
+     * implements for a plain div. Without containment Tab reaches the trigger, the
+     * breadcrumb and the company picker underneath — which is also a keyboard route to
+     * acting on the page behind an unresolved attempt.
+     */
+    stub()
+    renderAt(PATH)
+    const dialog = await openDialog()
+
+    const focusable = [...dialog.querySelectorAll<HTMLElement>('button, textarea, a[href]')]
+    expect(focusable.length).toBeGreaterThan(1)
+    const last = focusable[focusable.length - 1]
+
+    for (let i = 0; i < focusable.length + 2; i += 1) {
+      await userEvent.tab()
+      expect(dialog.contains(document.activeElement)).toBe(true)
+    }
+
+    last.focus()
+    await userEvent.tab({ shift: true })
+    expect(dialog.contains(document.activeElement)).toBe(true)
   })
 })
 
@@ -409,6 +580,19 @@ describe('unsent draft during a company switch', () => {
 
     // The shared dirty-scope gate, not a local flag: nothing is switched until the
     // user answers, so the draft survives "Kal".
+    expect(await screen.findByText('Kaydedilmemiş değişiklikler var')).toBeTruthy()
+  })
+
+  it('warns for an UNRESOLVED attempt even with no text typed', async () => {
+    // An unresolved key is dirty work of its own: leaving the context would strand a
+    // command whose outcome nobody has established.
+    stub({ command: [() => problem(503)] })
+    renderAt(PATH)
+    await fillAndSubmit()
+    expect(await screen.findByText(/sonuç bilinmiyor/)).toBeTruthy()
+
+    await userEvent.selectOptions(screen.getByRole('combobox'), COMPANY_B)
+
     expect(await screen.findByText('Kaydedilmemiş değişiklikler var')).toBeTruthy()
   })
 

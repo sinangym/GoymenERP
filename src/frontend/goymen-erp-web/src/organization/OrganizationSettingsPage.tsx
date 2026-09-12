@@ -19,7 +19,7 @@
 
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router'
+import { Link, useLocation } from 'react-router'
 import { fetchLocationPage, fetchSites, DEFAULT_PAGE_SIZE } from './api'
 import { pageCount, type LocationPage, type SiteSummary } from './contract'
 import { locationDetailPath } from './capabilities'
@@ -41,6 +41,30 @@ import styles from './OrganizationSettingsPage.module.css'
  * what guarantees the page number resets too — a page 3 that existed in company A is
  * meaningless in company B.
  */
+/**
+ * What a return from the location card carries back, so the user lands on the page
+ * they left rather than on page 1.
+ *
+ * It travels in the ROUTER's location state rather than the URL, and it carries the
+ * context namespace with it. That namespace is the whole point: a company switch keeps
+ * the same history entry, so a bare page number would restore company A's page 3 in
+ * company B. Checking it makes "same context returns to its page" and "a switch resets
+ * to page 1" the same rule rather than two competing ones.
+ */
+export interface OrganizationListReturn {
+  readonly page: number
+  readonly ns: string
+}
+
+function returnedPage(state: unknown, namespace: string | null): number {
+  if (typeof state !== 'object' || state === null || namespace === null) return 1
+  const candidate = state as Partial<OrganizationListReturn>
+  if (candidate.ns !== namespace) return 1
+  return typeof candidate.page === 'number' && Number.isSafeInteger(candidate.page) && candidate.page >= 1
+    ? candidate.page
+    : 1
+}
+
 export function OrganizationSettingsPage() {
   const shell = useShellState()
   const key = contextKey(shell)
@@ -57,7 +81,10 @@ function OrganizationSettings({ namespace }: { readonly namespace: string | null
   const singleCompanyContext = scopeMode === 'single' && activeCompanyId !== null
   const enabled = namespace !== null && singleCompanyContext
 
-  const [page, setPage] = useState(1)
+  // Seeded from the return state for THIS context; 1 for a fresh entry or after a
+  // company switch (the namespace in the state will not match).
+  const routerLocation = useLocation()
+  const [page, setPage] = useState(() => returnedPage(routerLocation.state, namespace))
 
   const sitesQuery = useQuery({
     queryKey: [namespace ?? 'no-context', entryGeneration, 'organization-sites'],
@@ -132,6 +159,7 @@ function OrganizationSettings({ namespace }: { readonly namespace: string | null
         state={locationsState}
         sites={sites}
         page={page}
+        namespace={namespace}
         onPage={setPage}
         onRetry={() => void locationsQuery.refetch()}
       />
@@ -192,12 +220,14 @@ function LocationsSection({
   state,
   sites,
   page,
+  namespace,
   onPage,
   onRetry,
 }: {
   readonly state: RemoteViewState<LocationPage>
   readonly sites: readonly SiteSummary[]
   readonly page: number
+  readonly namespace: string | null
   readonly onPage: (page: number) => void
   readonly onRetry: () => void
 }) {
@@ -260,7 +290,16 @@ function LocationsSection({
                 {group.rows.map((location) => (
                   <tr key={location.id}>
                     <th scope="row" className={styles.codeCell}>
-                      <Link className={styles.rowLink} to={locationDetailPath(location.id)}>
+                      <Link
+                        className={styles.rowLink}
+                        to={locationDetailPath(location.id)}
+                        // The page to come back to, bound to this context.
+                        state={
+                          namespace === null
+                            ? undefined
+                            : ({ page, ns: namespace } satisfies OrganizationListReturn)
+                        }
+                      >
                         {location.code}
                       </Link>
                     </th>

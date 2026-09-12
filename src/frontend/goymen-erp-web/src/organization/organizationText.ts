@@ -121,12 +121,21 @@ export function failureText(failure: CommandFailure): { title: string; detail: s
       }
     default:
       return {
-        title: 'Beklenmeyen yanıt',
-        detail:
-          `Sunucu beklenmeyen bir durum kodu döndürdü (${failure.status}). ` +
-          'İşlem güvenli biçimde durduruldu.',
+        title: 'İstek biçimi desteklenmiyor',
+        detail: 'İstek sunucunun beklediği biçimde değil. Değişiklik uygulanmadı.',
       }
   }
+}
+
+/**
+ * Shown when a LATER request was turned away while an EARLIER one is still unresolved.
+ *
+ * The refusal is real and worth showing, but it is about that retry — not about the
+ * first command, which may already be recorded. So this text deliberately never says
+ * "uygulanmadı"; the surrounding unknown notice keeps owning that uncertainty.
+ */
+export function retryRefusedText(failure: CommandFailure): string {
+  return `Son deneme sunucu tarafından reddedildi (${failureText(failure).title}). Bu, ilk isteğin uygulanmadığı anlamına gelmez; yukarıdaki belirsizlik sürüyor.`
 }
 
 /**
@@ -168,6 +177,20 @@ export function unknownText(reason: CommandUnknown): { title: string; detail: st
       return {
         title: `Servis yanıt veremedi (${reason.status}) — sonuç bilinmiyor`,
         detail: shared,
+      }
+    case 'unexpected-success':
+      return {
+        title: `Sözleşme dışı yanıt (${reason.status}) — sonuç bilinmiyor`,
+        detail:
+          `Sunucu bu işlem için tanımlı olmayan bir başarı kodu döndürdü (${reason.status}); ` +
+          'yalnız 204 kabul edilir. ' +
+          shared,
+      }
+    case 'undecodable':
+      return {
+        title: `Yanıt çözümlenemedi (${reason.status}) — sonuç bilinmiyor`,
+        detail:
+          'Sunucu yanıtı bu işlemin sözleşmesinde tanımlı değil veya okunamadı. ' + shared,
       }
     default:
       return { title: 'İşlem yarıda kesildi — sonuç bilinmiyor', detail: shared }

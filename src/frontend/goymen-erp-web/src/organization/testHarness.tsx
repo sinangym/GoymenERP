@@ -111,12 +111,15 @@ export function noContent(headers: Record<string, string> = {}): Response {
 }
 
 /** A code-less problem body, the shape 404/409 actually use on this surface. */
-export function problem(status: number, extra: Record<string, unknown> = {}): Response {
-  return json(
-    { type: 'about:blank', title: 'Hata', status, detail: 'Ayrıntı', ...extra },
-    status,
-    { 'Content-Type': 'application/problem+json' },
-  )
+export function problem(
+  status: number,
+  extra: Record<string, unknown> = {},
+  headers: Record<string, string> = {},
+): Response {
+  return json({ type: 'about:blank', title: 'Hata', status, detail: 'Ayrıntı', ...extra }, status, {
+    'Content-Type': 'application/problem+json',
+    ...headers,
+  })
 }
 
 export interface RecordedRequest {

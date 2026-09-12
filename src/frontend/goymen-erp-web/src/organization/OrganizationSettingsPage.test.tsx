@@ -352,3 +352,68 @@ describe('capability gating', () => {
     expect(await screen.findByRole('table', { name: /SITE-OSM/ })).toBeTruthy()
   })
 })
+
+describe('returning from a location card', () => {
+  /** Page 1 and page 2 hold different rows, so "which page am I on" is observable. */
+  function pagedStub() {
+    return stub({
+      locations: (url) =>
+        url.includes('page=2')
+          ? json(page([location(LOC_GAZ, SITE_GAZ, 'GAZ-DEP', 'Gaziantep')], { page: 2, pageSize: 3, totalCount: 6 }))
+          : json(page(ROWS, { page: 1, pageSize: 3, totalCount: 6 })),
+    })
+  }
+
+  it('comes back to the page the card was opened from, not page 1', async () => {
+    /**
+     * The real round-trip, not a cache flag: page 2 → card → back. Losing the page here
+     * is the difference between "I changed one of 200 locations" and "I have to find my
+     * place again after every single change".
+     */
+    pagedStub()
+    renderAt(PATH)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Sonraki' }))
+    expect(await screen.findByText('Sayfa 2 / 2')).toBeTruthy()
+
+    await userEvent.click(await screen.findByRole('link', { name: 'GAZ-DEP' }))
+    expect(await screen.findByRole('heading', { name: 'Lokasyon' })).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('link', { name: /Organizasyon/ }))
+
+    expect(await screen.findByText('Sayfa 2 / 2')).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'GAZ-DEP' })).toBeTruthy()
+  })
+
+  it('still starts on page 1 for a fresh entry', async () => {
+    pagedStub()
+    renderAt(PATH)
+    expect(await screen.findByText('Sayfa 1 / 2')).toBeTruthy()
+  })
+
+  it('resets to page 1 when the company changes, even carrying a return page', async () => {
+    /**
+     * The return state is bound to the context namespace, so a switch cannot restore
+     * company A's page 3 in company B. That makes "same context returns to its page"
+     * and "a switch resets to page 1" one rule rather than two competing ones.
+     */
+    const recorded = pagedStub()
+    renderAt(PATH)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Sonraki' }))
+    await userEvent.click(await screen.findByRole('link', { name: 'GAZ-DEP' }))
+    await screen.findByRole('heading', { name: 'Lokasyon' })
+    await userEvent.click(screen.getByRole('link', { name: /Organizasyon/ }))
+    expect(await screen.findByText('Sayfa 2 / 2')).toBeTruthy()
+
+    await userEvent.selectOptions(screen.getByRole('combobox'), COMPANY_B)
+
+    await waitFor(() => {
+      const forB = requestsFor(recorded, '/organization/locations').filter(
+        (request) => request.headers['X-Company-Id'] === COMPANY_B,
+      )
+      expect(forB.length).toBeGreaterThan(0)
+      expect(forB.every((request) => request.url.includes('page=1'))).toBe(true)
+    })
+  })
+})

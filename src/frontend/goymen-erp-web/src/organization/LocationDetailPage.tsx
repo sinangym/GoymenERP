@@ -24,14 +24,14 @@
 
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useParams } from 'react-router'
+import { Link, useLocation, useParams } from 'react-router'
 import { fetchLocation } from './api'
 import { setLocationActiveState, type CommandContext } from './commandApi'
 import type { LocationSummary } from './contract'
 import {
-  attemptFingerprint,
   attemptReducer,
   initialAttemptState,
+  isUnresolved,
   type AttemptSnapshot,
   type AttemptState,
 } from './activeStateAttempt'
@@ -52,6 +52,7 @@ import {
   conflictVersionsText,
   externalLabel,
   failureText,
+  retryRefusedText,
   targetStateSummary,
   unknownText,
 } from './organizationText'
@@ -183,11 +184,22 @@ function LocationDetail({ namespace }: { readonly namespace: string | null }) {
   )
 }
 
+/**
+ * The back link carries the list's return state straight through.
+ *
+ * The row that opened this card recorded which page it was on, bound to the context
+ * namespace. Passing it back unchanged is what makes "page 2 → card → change → back"
+ * land on page 2; the list re-checks the namespace, so the same state after a company
+ * switch is ignored and resets to page 1. Neither screen has to know the other's rule.
+ */
 function Frame({ children }: { readonly children: React.ReactNode }) {
+  const routerLocation = useLocation()
   return (
     <section aria-labelledby="org-location-heading" className={styles.page}>
       <nav aria-label="Geri" className={styles.breadcrumb}>
-        <Link to="/ayarlar/organizasyon">← Organizasyon</Link>
+        <Link to="/ayarlar/organizasyon" state={routerLocation.state}>
+          ← Organizasyon
+        </Link>
       </nav>
       <h1 id="org-location-heading">Lokasyon</h1>
       {children}
@@ -295,8 +307,11 @@ function ActiveStateSection({
         ref={triggerRef}
         type="button"
         className={styles.primary}
+        disabled={isUnresolved(attempt)}
         onClick={() => {
-          dispatch({ type: 'RESET' })
+          // Never RESET over an unresolved attempt: that would drop the key whose
+          // command may already be recorded (P1-1).
+          if (!isUnresolved(attempt)) dispatch({ type: 'RESET' })
           setOpen(true)
         }}
       >
@@ -348,6 +363,9 @@ function AppliedNotice({
   )
 }
 
+/** Tabbable controls this dialog can contain. */
+const FOCUSABLE = 'a[href], button, textarea, input, select, [tabindex]:not([tabindex="-1"])'
+
 function ActiveStateDialog({
   location,
   companyId,
@@ -368,6 +386,7 @@ function ActiveStateDialog({
   readonly onRefresh: () => Promise<void>
 }) {
   const shellDispatch = useShellDispatch()
+  const boundary = useAuthBoundary()
   const [reason, setReason] = useState('')
   const [reasonError, setReasonError] = useState<string | null>(null)
   const reasonRef = useRef<HTMLTextAreaElement>(null)
@@ -375,11 +394,21 @@ function ActiveStateDialog({
   const noticeRef = useRef<HTMLDivElement>(null)
 
   const busy = attempt.phase === 'submitting'
-  const unresolved = attempt.phase === 'unknown'
+  /**
+   * THE FREEZE. While a key is unresolved the justification cannot be edited and the
+   * ordinary submit is gone.
+   *
+   * Editing the reason changes the payload fingerprint, and a changed fingerprint is
+   * precisely what mints a NEW key — which would turn a committed-but-unacknowledged
+   * command into a SECOND command, and against a freshly-read state possibly into the
+   * opposite activation. The only ways forward are the same-key resend and refreshing
+   * the read.
+   */
+  const unresolved = isUnresolved(attempt)
 
   // The draft is dirty work: a company switch must warn before discarding it
   // (ERP-000K §13.1). Registered with the SHARED scope mechanism, not a local flag.
-  const dirty = reason.trim().length > 0 || busy || unresolved
+  const dirty = reason.trim().length > 0 || unresolved
   useEffect(() => {
     shellDispatch({ type: dirty ? 'DIRTY_SET' : 'DIRTY_CLEAR', scope: DIRTY_SCOPE })
   }, [dirty, shellDispatch])
@@ -401,18 +430,41 @@ function ActiveStateDialog({
         locationId: location.id,
         idempotencyKey: snapshot.key,
       }
+      /**
+       * Captured BEFORE the request, so the shared boundary judges the answer against
+       * the context the command was actually authorized under. A late 401/403 from a
+       * context we have since left is then recognised as stale and closes nothing
+       * (SAB-008/009) — the reducer owns that decision, not this component.
+       */
+      const security = boundary.capture()
       const outcome = await setLocationActiveState(context, snapshot.payload)
+
+      /**
+       * A command rejected by authorization is the same security fact as a rejected
+       * read, and it goes to the SAME central boundary. Reporting it only inside this
+       * modal left a dead session sitting behind a company card and a submit surface
+       * that still looked usable.
+       *
+       * This does NOT resolve the attempt — see the reducer: a 401/403 on a retry says
+       * nothing about an earlier request that may already be recorded.
+       */
+      if (outcome.type === 'failed') {
+        if (outcome.failure.kind === 'unauthenticated') boundary.report(401, security)
+        if (outcome.failure.kind === 'forbidden') boundary.report(403, security)
+      }
+
       dispatch({ type: 'SETTLE', outcome, key: snapshot.key })
       // A 204 says the command was accepted, never what the record now is.
       if (outcome.type === 'applied') await onRefresh()
     },
-    [companyId, dispatch, location.id, onRefresh],
+    [boundary, companyId, dispatch, location.id, onRefresh],
   )
 
   const submit = useCallback(
     (event: React.FormEvent) => {
       event.preventDefault()
-      if (busy) return
+      // Frozen: an unresolved attempt is advanced only by the explicit same-key resend.
+      if (busy || unresolved) return
 
       const trimmed = reason.trim()
       // Mirrors the server's 1..1000-after-trim rule. A submit that fails here mints
@@ -429,48 +481,83 @@ function ActiveStateDialog({
       }
       setReasonError(null)
 
-      const payload = {
-        isActive: targetActive,
-        expectedVersion: location.version,
-        reason: trimmed,
+      const snapshot: AttemptSnapshot = {
+        key: newIdempotencyKey(),
+        binding,
+        payload: { isActive: targetActive, expectedVersion: location.version, reason: trimmed },
       }
-      const fingerprint = attemptFingerprint(binding, payload)
-      const existing =
-        attempt.phase === 'unknown' &&
-        attemptFingerprint(attempt.snapshot.binding, attempt.snapshot.payload) === fingerprint
-          ? attempt.snapshot
-          : null
-
-      // An unresolved attempt with the SAME content is re-sent under its OWN key, so
-      // the server replays instead of writing twice.
-      if (existing !== null) {
-        dispatch({ type: 'RESEND' })
-        void send(existing)
-        return
-      }
-
-      const snapshot: AttemptSnapshot = { key: newIdempotencyKey(), binding, payload }
       dispatch({ type: 'SUBMIT', snapshot })
       void send(snapshot)
     },
-    [attempt, binding, busy, dispatch, location.version, reason, send, targetActive],
+    [binding, busy, dispatch, location.version, reason, send, targetActive, unresolved],
   )
 
-  const reload = useCallback(async () => {
+  const resend = useCallback(() => {
+    if (attempt.phase !== 'unknown') return
+    const snapshot = attempt.snapshot
+    dispatch({ type: 'RESEND' })
+    void send(snapshot)
+  }, [attempt, dispatch, send])
+
+  /**
+   * UNKNOWN recovery: refresh the READ only.
+   *
+   * It must not touch the attempt. Seeing the target state in a GET is not a receipt
+   * for the command — the record could have reached that state another way — so
+   * dropping the key here would abandon an unresolved command while telling the user
+   * nothing about what became of it.
+   */
+  const refreshOnly = useCallback(async () => {
+    await onRefresh()
+  }, [onRefresh])
+
+  /**
+   * REFUSED recovery: the attempt is closed, so a new one may be started — and the
+   * justification the user wrote is KEPT.
+   *
+   * After a version conflict the recommended next step is exactly "look at the fresh
+   * record and decide again"; wiping the draft as a side effect of taking that step is
+   * the opposite of helping.
+   */
+  const reloadForNewAttempt = useCallback(async () => {
     dispatch({ type: 'RESET' })
-    setReason('')
     setReasonError(null)
     await onRefresh()
-    onClose()
-  }, [dispatch, onClose, onRefresh])
+  }, [dispatch, onRefresh])
 
+  /**
+   * Focus containment. `aria-modal` is a promise to assistive technology, not a
+   * behaviour the browser implements for a plain div — without this, Tab walks out to
+   * the trigger, the breadcrumb and the company picker underneath. That is both a
+   * broken modal and, because those controls act on the page behind, a keyboard route
+   * to losing an unresolved attempt.
+   */
   function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
-    if (event.key !== 'Escape') return
-    event.preventDefault()
-    // Escape never abandons an in-flight or unresolved command silently — that would
-    // hide an outcome the user needs to see.
-    if (busy || unresolved) return
-    onClose()
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      // Escape never abandons an in-flight or unresolved command silently — that would
+      // hide an outcome the user needs to see.
+      if (busy || unresolved) return
+      onClose()
+      return
+    }
+    if (event.key !== 'Tab') return
+    const root = dialogRef.current
+    if (root === null) return
+    const focusable = [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+      (element) => !element.hasAttribute('disabled') && element.tabIndex !== -1,
+    )
+    if (focusable.length === 0) return
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    const active = document.activeElement
+    if (event.shiftKey && (active === first || !root.contains(active))) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && (active === last || !root.contains(active))) {
+      event.preventDefault()
+      first.focus()
+    }
   }
 
   return (
@@ -494,13 +581,9 @@ function ActiveStateDialog({
         <Outcome
           attempt={attempt}
           noticeRef={noticeRef}
-          onReload={reload}
-          onResend={() => {
-            if (attempt.phase !== 'unknown') return
-            const snapshot = attempt.snapshot
-            dispatch({ type: 'RESEND' })
-            void send(snapshot)
-          }}
+          onRefreshOnly={refreshOnly}
+          onReloadForNewAttempt={reloadForNewAttempt}
+          onResend={resend}
         />
 
         <form className={styles.form} onSubmit={submit} noValidate>
@@ -508,8 +591,9 @@ function ActiveStateDialog({
             {REASON_LABEL}
           </label>
           <p id="org-reason-help" className={styles.help}>
-            Bu değişiklik gerekçesiyle birlikte audit kaydına yazılır. En fazla{' '}
-            {REASON_MAX_LENGTH} karakter.
+            {unresolved
+              ? 'Sonucu bilinmeyen bir işlem sürüyor. Çözülene kadar gerekçe değiştirilemez ve yeni işlem başlatılamaz.'
+              : `Bu değişiklik gerekçesiyle birlikte audit kaydına yazılır. En fazla ${REASON_MAX_LENGTH} karakter.`}
           </p>
           <textarea
             id="org-reason"
@@ -518,6 +602,9 @@ function ActiveStateDialog({
             value={reason}
             rows={3}
             maxLength={REASON_MAX_LENGTH}
+            /* Frozen while unresolved — see `unresolved` above. Read-only rather than
+               disabled so the text the user wrote stays readable and selectable. */
+            readOnly={unresolved}
             disabled={busy}
             aria-describedby={
               reasonError === null ? 'org-reason-help' : 'org-reason-help org-reason-error'
@@ -531,9 +618,11 @@ function ActiveStateDialog({
             </p>
           )}
           <div className={styles.actions}>
-            <button type="submit" className={styles.primary} disabled={busy}>
-              {busy ? 'Gönderiliyor…' : confirmActionLabel(location.isActive)}
-            </button>
+            {unresolved ? null : (
+              <button type="submit" className={styles.primary} disabled={busy}>
+                {confirmActionLabel(location.isActive)}
+              </button>
+            )}
             <button
               type="button"
               className={styles.secondary}
@@ -552,12 +641,14 @@ function ActiveStateDialog({
 function Outcome({
   attempt,
   noticeRef,
-  onReload,
+  onRefreshOnly,
+  onReloadForNewAttempt,
   onResend,
 }: {
   readonly attempt: AttemptState
   readonly noticeRef: React.RefObject<HTMLDivElement | null>
-  readonly onReload: () => void
+  readonly onRefreshOnly: () => void
+  readonly onReloadForNewAttempt: () => void
   readonly onResend: () => void
 }) {
   if (attempt.phase === 'failed') {
@@ -581,7 +672,8 @@ function Outcome({
             )}
           </p>
         ) : null}
-        <button type="button" className={styles.secondary} onClick={onReload}>
+        {/* Closes the attempt and refreshes the record, KEEPING the justification. */}
+        <button type="button" className={styles.secondary} onClick={onReloadForNewAttempt}>
           Güncel kaydı yükle
         </button>
       </div>
@@ -601,12 +693,20 @@ function Outcome({
     >
       <p className={styles.noticeTitle}>{title}</p>
       <p>{detail}</p>
+      {attempt.lastRefusal === undefined ? null : (
+        /* A later request was turned away. Shown, but it never claims the first one
+           did not apply — the uncertainty above still owns that. */
+        <p className={styles.retryRefused} data-refusal={attempt.lastRefusal.kind}>
+          {retryRefusedText(attempt.lastRefusal)}
+        </p>
+      )}
       <div className={styles.actions}>
         {/* Same snapshot, same key — the server replays rather than writing twice. */}
         <button type="button" className={styles.primary} onClick={onResend}>
           Aynı işlem anahtarıyla tekrar gönder
         </button>
-        <button type="button" className={styles.secondary} onClick={onReload}>
+        {/* Refreshes the READ ONLY. The unresolved key and snapshot are kept. */}
+        <button type="button" className={styles.secondary} onClick={onRefreshOnly}>
           Güncel kaydı yükle
         </button>
       </div>

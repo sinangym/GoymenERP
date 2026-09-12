@@ -58,6 +58,13 @@ export type AttemptState =
       readonly snapshot: AttemptSnapshot
       readonly reason: CommandUnknown
       readonly resends: number
+      /**
+       * A later request was refused while THIS attempt is still unresolved. Shown, but
+       * it does not close the attempt: a retry turned away at the auth or validation
+       * gate never ran the command, so it is no evidence about the first request that
+       * did. The key and snapshot stay.
+       */
+      readonly lastRefusal?: CommandFailure
     }
   | {
       readonly phase: 'failed'
@@ -106,9 +113,22 @@ export function unresolvedSnapshot(state: AttemptState): AttemptSnapshot | null 
   return state.phase === 'submitting' || state.phase === 'unknown' ? state.snapshot : null
 }
 
-/** True while the form must stay frozen (a key is in flight or unresolved). */
+/** True while a request is in flight. */
 export function isBusy(state: AttemptState): boolean {
   return state.phase === 'submitting'
+}
+
+/**
+ * True while an attempt holds a key whose outcome is not settled.
+ *
+ * The form MUST stay frozen in this state. Editing the justification would change the
+ * payload fingerprint, and a fingerprint change is what mints a new key — which is
+ * exactly how a committed-but-unacknowledged command becomes a SECOND command (and,
+ * against a freshly-read state, possibly the opposite activation). The only ways out
+ * are the same-key resend or an explicit abandon.
+ */
+export function isUnresolved(state: AttemptState): boolean {
+  return state.phase === 'submitting' || state.phase === 'unknown'
 }
 
 export function attemptReducer(state: AttemptState, event: AttemptEvent): AttemptState {
@@ -150,7 +170,31 @@ export function attemptReducer(state: AttemptState, event: AttemptEvent): Attemp
       }
 
       if (event.outcome.type === 'failed') {
-        return { phase: 'failed', snapshot: state.snapshot, failure: event.outcome.failure }
+        /**
+         * A refusal only CLOSES this attempt when it is the attempt's own outcome.
+         *
+         * If nothing was unresolved yet, this response is the answer to the only
+         * request we made — definite. But once an earlier send has gone unresolved, the
+         * first PUT may already be recorded, and a later 401/403/400/415 is the auth or
+         * validation gate turning away THAT request before it ran. It proves nothing
+         * about the first one, so treating it as "uygulanmadı" would be a false
+         * reassurance AND would free the form to mint a second key.
+         *
+         * The exception is a REPLAY: the server replays a stored terminal answer for a
+         * repeated key, so a replayed 404/409 IS the original command's own outcome and
+         * does resolve it.
+         */
+        const unresolvedSince = state.unresolvedSince
+        if (unresolvedSince === undefined || event.outcome.replayed) {
+          return { phase: 'failed', snapshot: state.snapshot, failure: event.outcome.failure }
+        }
+        return {
+          phase: 'unknown',
+          snapshot: state.snapshot,
+          reason: unresolvedSince,
+          resends: state.resends,
+          lastRefusal: event.outcome.failure,
+        }
       }
 
       /**

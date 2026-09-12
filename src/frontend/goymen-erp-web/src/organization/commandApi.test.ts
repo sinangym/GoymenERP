@@ -107,12 +107,19 @@ describe('success', () => {
     })
   })
 
-  it('does NOT treat a 200 as success', async () => {
-    // 200 is not in the contract for this command. Reading it as applied would be
-    // asserting an effect the server never confirmed.
-    stub(() => new Response(JSON.stringify({}), { status: 200 }))
+  it.each([200, 202])('treats a %i as UNKNOWN — not success, and not a refusal', async (status) => {
+    /**
+     * 204 is the only success this contract defines. Reading a 200/202 as applied
+     * would assert an effect the server never confirmed; reading it as a refusal would
+     * assert the opposite. Neither is ours to claim, so it stays unknown and the key
+     * is kept.
+     */
+    stub(() => new Response(JSON.stringify({}), { status }))
     const outcome = await setLocationActiveState(CONTEXT, PAYLOAD)
-    expect(outcome.type).toBe('failed')
+    expect(outcome).toMatchObject({
+      type: 'unknown',
+      unknown: { kind: 'unexpected-success', status },
+    })
   })
 })
 
@@ -127,6 +134,7 @@ describe('the two different 409s', () => {
     const outcome = await setLocationActiveState(CONTEXT, PAYLOAD)
     expect(outcome).toEqual({
       type: 'failed',
+      replayed: false,
       failure: {
         kind: 'version-conflict',
         conflict: { expectedVersion: 3, currentVersion: 5 },
@@ -145,7 +153,39 @@ describe('the two different 409s', () => {
       }),
     )
     const outcome = await setLocationActiveState(CONTEXT, PAYLOAD)
-    expect(outcome).toEqual({ type: 'failed', failure: { kind: 'idempotency-conflict' } })
+    expect(outcome).toEqual({
+      type: 'failed',
+      replayed: false,
+      failure: { kind: 'idempotency-conflict' },
+    })
+  })
+
+  it('does NOT call a 409 an idempotency conflict when its body never parsed', async () => {
+    /**
+     * The presence/absence of the conflict object is the ONLY discriminator on this
+     * code-less surface. If the body did not arrive, that discriminator is unavailable
+     * — and "no conflict object" would then be a fact about our parser, not about the
+     * server. Naming it an idempotency conflict would tell the user something specific
+     * we do not know, so it fails closed into unknown.
+     */
+    stub(() => new Response('<<not json>>', { status: 409 }))
+    const outcome = await setLocationActiveState(CONTEXT, PAYLOAD)
+    expect(outcome).toMatchObject({
+      type: 'unknown',
+      unknown: { kind: 'undecodable', status: 409 },
+    })
+  })
+
+  it('marks a replayed refusal as the ORIGINAL command’s own outcome', async () => {
+    // A replayed terminal answer resolves the attempt; a fresh one on a retry does not.
+    stub(() =>
+      new Response(JSON.stringify({ title: 'Kayıt bulunamadı.' }), {
+        status: 404,
+        headers: { 'Idempotency-Replayed': 'true' },
+      }),
+    )
+    const outcome = await setLocationActiveState(CONTEXT, PAYLOAD)
+    expect(outcome).toMatchObject({ type: 'failed', replayed: true, failure: { kind: 'not-found' } })
   })
 
   it('marks a REPLAYED version conflict as not carrying a current version', async () => {
@@ -184,7 +224,7 @@ describe('other definite refusals', () => {
   ])('classifies %i by status alone', async (status, kind) => {
     stub(() => new Response(JSON.stringify({ title: 'x', status }), { status }))
     const outcome = await setLocationActiveState(CONTEXT, PAYLOAD)
-    expect(outcome).toMatchObject({ type: 'failed', failure: { kind } })
+    expect(outcome).toMatchObject({ type: 'failed', replayed: false, failure: { kind } })
   })
 
   it('classifies a 400 with an entirely EMPTY body', async () => {
@@ -206,10 +246,15 @@ describe('other definite refusals', () => {
     expect(outcome).toMatchObject({ type: 'failed', failure: { kind: 'validation' } })
   })
 
-  it('fails closed on an undocumented status', async () => {
+  it('treats an off-contract status as UNKNOWN, not as a refusal', async () => {
+    // A response the contract does not describe is not evidence that the command did
+    // not apply, so it must not produce a "Değişiklik uygulanmadı" message.
     stub(() => new Response(JSON.stringify({}), { status: 418 }))
     const outcome = await setLocationActiveState(CONTEXT, PAYLOAD)
-    expect(outcome).toMatchObject({ type: 'failed', failure: { kind: 'unexpected', status: 418 } })
+    expect(outcome).toMatchObject({
+      type: 'unknown',
+      unknown: { kind: 'undecodable', status: 418 },
+    })
   })
 })
 
