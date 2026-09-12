@@ -15,5 +15,6 @@
     <ProjectReference Include="../../src/backend/GoymenERP.Api/GoymenERP.Api.csproj" />
     <ProjectReference Include="../../src/backend/Modules/Product/GoymenERP.Modules.Product.Application/GoymenERP.Modules.Product.Application.csproj" />
     <ProjectReference Include="../../src/backend/Modules/Product/GoymenERP.Modules.Product.Domain/GoymenERP.Modules.Product.Domain.csproj" />
+    <ProjectReference Include="../../src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/GoymenERP.Modules.Product.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

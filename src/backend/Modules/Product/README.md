@@ -153,3 +153,22 @@ invalid_reason, invalid_version, derived_role_readonly, template_required. Front
 maps these to Turkish resource strings and keeps a generic unknown-code fallback while
 preserving the field binding. isReplay remains in the response body; no replay header
 is advertised. Lifecycle conflict and reason max1000 remain unchanged.
+
+## Product persistence preparation after #237
+
+`Product.Infrastructure/Persistence/ProductCommandIntent` freezes the submitted
+request, binds edit target/version/reason, preserves omitted/null and array order,
+and sorts JSON object properties before SHA-256 hashing. Numeric lexemes are retained
+without floating-point conversion; a differently written numeric value may conflict
+rather than being silently treated as equivalent. Duplicate nested attribute members
+are rejected. Raw idempotency keys are not retained. Input snapshots are sensitive and
+must not be logged or used as an authority decision.
+
+`ProductStoredRecord` captures/restores Product identity, lifecycle/version, tagged
+roles and an independent reference JSON snapshot. Unknown/corrupt stored role pairs
+and missing reference payloads fail rather than being shown as false/empty.
+These are tested storage/command boundaries, not a DbContext, SQL schema, migration,
+unique constraint, resolver registration or transaction. The accepted owner replay
+resolver and atomic writer must still reauthorize and commit Product + audit + terminal
+together. `AuthorizedMissing` is never a reservation. No global eligibility or
+production grant is inferred from this code.
