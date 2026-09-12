@@ -107,6 +107,7 @@ public static class ProductEndpoints
             });
         }
         catch (ProductOperationException exception) { return Problem(exception.Code, exception.StatusCode); }
+        catch (UnauthorizedAccessException) { return Results.Problem(statusCode: StatusCodes.Status403Forbidden); }
         // Unexpected storage/projection faults go to the host's canonical exception
         // handler before IResult is executed. No partial Product body has been sent.
     }

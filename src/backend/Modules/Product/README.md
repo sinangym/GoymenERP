@@ -172,3 +172,18 @@ unique constraint, resolver registration or transaction. The accepted owner repl
 resolver and atomic writer must still reauthorize and commit Product + audit + terminal
 together. `AuthorizedMissing` is never a reservation. No global eligibility or
 production grant is inferred from this code.
+
+The same continuation now contains `ProductDbContext` / `ProductRow` with SQL Server
+mapping for Products and one CodeRegistrations namespace, a version concurrency token,
+role-pair/lifecycle/identity/JSON checks, and stable-order indexes. No migration or DDL
+has run. SaveChanges fails explicitly until the shared atomic writer enrollment exists;
+an arbitrary SQL transaction alone must not enable a partial Product-only commit.
+
+`ProductCommandGateway` consumes the merged #243 resolver (no privileged reader access),
+maps conflict without old data, and validates replay schema, operation status, required
+body members and Product identity/lifecycle/version. Read authority uses the strict
+shared read context. OriginalCorrelationId is retained internally for the owner's host
+metadata mapping; no new header or response field is invented. SQL provider/model and
+controlled resolver tests are not real SQL/bootstrap acceptance. The central owner must
+admit the exact DbContext and Idempotency.Domain edge described by ADR-PRD-001 before
+the architecture gate can pass. Global grants and production activation remain closed.

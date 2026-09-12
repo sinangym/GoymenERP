@@ -5,6 +5,11 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.8" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../BuildingBlocks/GoymenERP.BuildingBlocks/GoymenERP.BuildingBlocks.csproj" />
+    <ProjectReference Include="../../Idempotency/GoymenERP.Modules.Idempotency.Domain/GoymenERP.Modules.Idempotency.Domain.csproj" />
     <ProjectReference Include="../GoymenERP.Modules.Product.Application/GoymenERP.Modules.Product.Application.csproj" />
     <ProjectReference Include="../GoymenERP.Modules.Product.Domain/GoymenERP.Modules.Product.Domain.csproj" />
   </ItemGroup>
