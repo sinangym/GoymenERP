@@ -291,20 +291,17 @@ function ProductCreateForm({
   }, [attempt])
 
   /**
-   * Whether a screen is still here to show an answer. A send can outlive its
-   * component — a reference read answered 403 while the POST was in flight — and a
-   * canonical result that lands then must be KEPT for the next screen, not settled
-   * by a continuation nobody can see.
+   * THE acknowledgement that a success was shown — and the only one.
+   *
+   * A send can outlive its screen: a reference read answered 403 while the POST
+   * was in flight closes the route, and the canonical 201 then lands in a
+   * continuation nobody can see. "Still mounted" at that moment proves nothing
+   * either: when the refusal and the success resolve in the same React batch, the
+   * component is mounted while the continuation runs and gone by the commit, and
+   * the success screen never exists. So the continuation never settles a success;
+   * this effect does, after a completed screen has actually rendered under this
+   * binding and key. Until then the store keeps it for the next screen.
    */
-  const mounted = useRef(true)
-  useEffect(() => {
-    mounted.current = true
-    return () => {
-      mounted.current = false
-    }
-  }, [])
-
-  // A success recalled from the store is settled once THIS screen has rendered it.
   useEffect(() => {
     if (attempt.phase === 'completed') rememberAttempt(binding, attempt)
   }, [attempt, binding])
@@ -334,8 +331,9 @@ function ProductCreateForm({
     const next = nextState(snapshot, outcome, previous)
     // Written BEFORE the boundary hears about a refusal: the report is what
     // unmounts this screen, and the outcome must already be safe when it does.
-    // `seen` says whether a screen can still show it; an unseen success is kept.
-    rememberAttempt(binding, next, mounted.current)
+    // A success is written UNSEEN here, always: whether a screen will render it
+    // is not known in this continuation. The post-render effect above is the ack.
+    rememberAttempt(binding, next, false)
     if (outcome.type === 'http') boundary.report(outcome.status, securitySnapshot)
     if (next.phase === 'failed' && next.failure === 'validation') {
       /**

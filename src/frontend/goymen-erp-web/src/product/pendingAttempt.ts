@@ -50,12 +50,15 @@
  *
  * A RESULT NOBODY SAW IS NOT RESOLVED. A send can outlive its screen — a reference
  * read answered 403 while the POST was in flight — and its canonical answer then
- * lands in the continuation of a component that no longer exists. Settling it
- * there would delete the only record that the write succeeded; the fresh return
- * would show an empty form and invite a second key for a product that exists. So a
- * terminal SUCCESS that arrives unseen is kept, and is settled only once a screen
- * under the same binding has rendered it. A definite refusal arriving unseen is
- * settled: nothing was created, and a fresh form with a fresh key is the truth.
+ * lands in a continuation with no screen to show it; and "still mounted" in that
+ * continuation proves nothing, because the refusal and the success can resolve in
+ * the same React batch, whose commit closes the gate before any success screen
+ * exists. Settling there would delete the only record that the write succeeded;
+ * the fresh return would show an empty form and invite a second key for a product
+ * that exists. So a terminal SUCCESS is ALWAYS written unseen by the send, and is
+ * settled only by the post-render effect of a completed screen under the same
+ * binding and key — or by an explicit discard. A definite refusal is settled at
+ * once: nothing was created, and a fresh form with a fresh key is the truth.
  *
  * Memory only. A pending write is not written to storage, a URL or a log: it
  * carries a payload that can name a real product, and a page reload is a

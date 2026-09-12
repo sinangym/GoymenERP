@@ -387,6 +387,9 @@ describe('an unknown edit across a REAL capability re-fence', () => {
     const { calls } = installFetch({
       capabilities: EDIT_ONLY,
       capabilityGeneration: 'gen-2',
+      // The re-read card is NEWER than the one the person edited. The recalled
+      // attempt is still theirs: it is neither rebased onto '9' nor re-keyed.
+      onCard: () => json(productCard({ product: productCore({ version: '9' }) })),
       onEdit: () =>
         json(
           mutation({
@@ -412,8 +415,10 @@ describe('an unknown edit across a REAL capability re-fence', () => {
     const patches = calls.filter((call) => call.method === 'PATCH')
     expect(patches).toHaveLength(1)
     expect(patches[0].idempotencyKey).toBe(firstKey)
-    // The snapshot's expectedVersion is still the one the person saw: '7'.
+    // The snapshot's expectedVersion is still the one the person saw: '7' — not
+    // the '9' the fresh card now carries.
     expect(JSON.parse(patches[0].body ?? '{}').expectedVersion).toBe('7')
+    expect(calls.some((call) => call.method === 'GET' && call.url.includes(`/products/${PRODUCT_1}`))).toBe(true)
   })
 })
 
@@ -449,6 +454,59 @@ describe('a canonical answer that lands after the screen is gone', () => {
         json(mutation({ card: productCard({ product: productCore({ name: 'Galvaniz sac', version: '8' }) }) })),
       )
     })
+
+    const { calls } = installFetch({ capabilities: EDIT_ONLY, capabilityGeneration: 'gen-2' })
+    await act(async () => {
+      await router.navigate(`/urun/${PRODUCT_1}`)
+    })
+    await act(async () => {
+      await router.navigate(PATH)
+    })
+    await waitFor(() => expect(screen.getByText('Değişiklikler kaydedildi')).toBeTruthy())
+    expect(calls.filter((call) => call.method === 'PATCH')).toHaveLength(0)
+  })
+})
+
+describe('a 200 that resolves in the SAME batch as the refusal that closes the screen', () => {
+  it('is kept and shown on the fresh return', async () => {
+    // The edit twin of the create case: mounted is not an acknowledgement.
+    let answerEdit: ((response: Response) => void) | null = null
+    let answerOptions: ((response: Response) => void) | null = null
+    installFetch({
+      capabilities: EDIT_ONLY,
+      onEdit: () =>
+        new Promise<Response>((resolve) => {
+          answerEdit = resolve
+        }),
+    })
+    const { router } = renderProductApp(PATH)
+
+    await formVisible()
+    await changeNameAndReason()
+    await userEvent.click(saveButton())
+    await waitFor(() => expect(answerEdit).not.toBeNull())
+
+    installFetch({
+      capabilities: EDIT_ONLY,
+      onOptions: () =>
+        new Promise<Response>((resolve) => {
+          answerOptions = resolve
+        }),
+    })
+    act(() => {
+      window.dispatchEvent(new Event('offline'))
+      window.dispatchEvent(new Event('online'))
+    })
+    await waitFor(() => expect(answerOptions).not.toBeNull())
+
+    await act(async () => {
+      ;(answerOptions as unknown as (response: Response) => void)(json({ code: 'forbidden' }, 403))
+      ;(answerEdit as unknown as (response: Response) => void)(
+        json(mutation({ card: productCard({ product: productCore({ name: 'Galvaniz sac', version: '8' }) }) })),
+      )
+    })
+    await waitFor(() => expect(document.querySelector('[data-state]')).not.toBeNull())
+    expect(screen.queryByText('Değişiklikler kaydedildi')).toBeNull()
 
     const { calls } = installFetch({ capabilities: EDIT_ONLY, capabilityGeneration: 'gen-2' })
     await act(async () => {

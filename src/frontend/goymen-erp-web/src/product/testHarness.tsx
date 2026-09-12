@@ -156,10 +156,11 @@ export interface HarnessConfig {
   readonly capabilityGeneration?: string
   /** The shell's company-directory read; failing it removes the whole outlet. */
   readonly onDirectory?: () => Response
-  readonly onList?: (url: string) => Response
-  readonly onCard?: (url: string) => Response
-  readonly onGroups?: () => Response
-  readonly onOptions?: (url: string) => Response
+  readonly onList?: (url: string) => Response | Promise<Response>
+  readonly onCard?: (url: string) => Response | Promise<Response>
+  readonly onGroups?: () => Response | Promise<Response>
+  /** May be deferred, so a test can resolve it in the same batch as a command's answer. */
+  readonly onOptions?: (url: string) => Response | Promise<Response>
   readonly onCreate?: (attempt: number, body: string | null) => Response | Promise<Response>
   readonly onEdit?: (attempt: number, body: string | null) => Response | Promise<Response>
 }
@@ -201,10 +202,10 @@ export function installFetch(config: HarnessConfig = {}) {
       })
     }
     if (url.includes('/products/code-groups')) {
-      return config.onGroups?.() ?? json(codeGroups())
+      return (await config.onGroups?.()) ?? json(codeGroups())
     }
     if (url.includes('/products/reference-options')) {
-      return config.onOptions?.(url) ?? json(referenceOptions())
+      return (await config.onOptions?.(url)) ?? json(referenceOptions())
     }
     if (url.includes('/products')) {
       if (method === 'PATCH') {
@@ -220,8 +221,8 @@ export function installFetch(config: HarnessConfig = {}) {
       }
       // `/products/{id}` (and `/products/{id}/draft`) have a segment after
       // `products`; `/products?x` does not.
-      if (/\/products\/[^?]+/.test(url)) return config.onCard?.(url) ?? json(productCard())
-      return config.onList?.(url) ?? json(productPage())
+      if (/\/products\/[^?]+/.test(url)) return (await config.onCard?.(url)) ?? json(productCard())
+      return (await config.onList?.(url)) ?? json(productPage())
     }
     throw new Error(`unexpected fetch: ${url}`)
   })

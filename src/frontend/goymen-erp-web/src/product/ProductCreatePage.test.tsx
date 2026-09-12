@@ -1015,6 +1015,60 @@ describe('an unknown attempt across a REAL capability re-fence', () => {
     expect(calls.find((call) => call.method === 'POST')?.idempotencyKey).toBe(firstKey)
   })
 
+  it('keeps a 201 that resolves in the SAME batch as the refusal that closes the screen', async () => {
+    /**
+     * The remaining interval of the unseen-success gap: the boundary's 403 and the
+     * canonical 201 land in one React batch. The form is still mounted when the
+     * send continuation runs — so "mounted" was never an acknowledgement — and the
+     * commit of that batch closes the gate before any success screen exists. The
+     * only acknowledgement is a completed screen's post-render effect.
+     */
+    let answerCreate: ((response: Response) => void) | null = null
+    let answerOptions: ((response: Response) => void) | null = null
+    installFetch({
+      capabilities: CREATE_ONLY,
+      onCreate: () =>
+        new Promise<Response>((resolve) => {
+          answerCreate = resolve
+        }),
+    })
+    const { router } = renderProductApp(PATH)
+
+    await formVisible()
+    await fillMinimum()
+    await userEvent.click(saveButton())
+    await waitFor(() => expect(answerCreate).not.toBeNull())
+
+    installFetch({
+      capabilities: CREATE_ONLY,
+      onOptions: () =>
+        new Promise<Response>((resolve) => {
+          answerOptions = resolve
+        }),
+    })
+    reconnect()
+    await waitFor(() => expect(answerOptions).not.toBeNull())
+
+    // Both answers inside ONE act: one batch, one commit, and that commit closes the route.
+    await act(async () => {
+      ;(answerOptions as unknown as (response: Response) => void)(json({ code: 'forbidden' }, 403))
+      ;(answerCreate as unknown as (response: Response) => void)(json(mutation(), 201))
+    })
+    await waitFor(() => expect(document.querySelector('[data-state]')).not.toBeNull())
+    expect(screen.queryByRole('heading', { name: 'Taslak kaydedildi' })).toBeNull()
+
+    const { calls } = installFetch({ capabilities: CREATE_ONLY, capabilityGeneration: 'gen-2' })
+    await act(async () => {
+      await router.navigate('/urun')
+    })
+    await act(async () => {
+      await router.navigate(PATH)
+    })
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Taslak kaydedildi' })).toBeTruthy())
+    expect(screen.getByText(/SAC-42/)).toBeTruthy()
+    expect(calls.filter((call) => call.method === 'POST')).toHaveLength(0)
+  })
+
   it('is dropped when the user chooses to leave', async () => {
     installFetch({
       capabilities: [...CREATE_ONLY, PRODUCT_CAPABILITY.productsList],

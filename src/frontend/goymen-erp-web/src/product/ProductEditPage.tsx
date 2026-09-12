@@ -251,14 +251,7 @@ function ProductEditForm({
     attemptRef.current = attempt
   }, [attempt])
 
-  // See the create page: a result that lands after this screen is gone is kept.
-  const mounted = useRef(true)
-  useEffect(() => {
-    mounted.current = true
-    return () => {
-      mounted.current = false
-    }
-  }, [])
+  // The only acknowledgement that a success was shown — see the create page.
   useEffect(() => {
     if (attempt.phase === 'completed') rememberAttempt(binding, attempt)
   }, [attempt, binding])
@@ -281,8 +274,9 @@ function ProductEditForm({
       // `previous` is passed so a refusal that only answered a RETRY cannot be read
       // as proof that the earlier send did not apply.
       const next = nextState(snapshot, result, previous)
-      // Written BEFORE the boundary can unmount this screen; an unseen success is kept.
-      rememberAttempt(binding, next, mounted.current)
+      // Written BEFORE the boundary can unmount this screen; a success is written
+      // UNSEEN, always — the post-render effect is the acknowledgement.
+      rememberAttempt(binding, next, false)
       if (result.type === 'http') boundary.report(result.status, securitySnapshot)
 
       if (next.phase === 'failed' && next.failure === 'stale-version') {
