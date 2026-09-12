@@ -83,10 +83,33 @@ export type ProductLifecycleValue =
   | { readonly known: true; readonly value: ProductLifecycle }
   | { readonly known: false; readonly raw: string }
 
+/**
+ * Characters a status token cannot legitimately contain: C0/C1 controls, and the
+ * bidi overrides and invisible formatting marks in U+200B..U+200F / U+202A..U+202E /
+ * U+2066..U+2069.
+ *
+ * The bidi ones are the reason this exists. A right-to-left override inside a token
+ * that is printed verbatim can make `Inactive` RENDER as something else entirely —
+ * the displayed order stops matching the stored value, and the operator reads a
+ * status the server never sent. Length is already bounded (64) by the guard below,
+ * so this closes what a bound cannot.
+ */
+// eslint-disable-next-line no-control-regex -- matching control characters is the point
+const UNPRINTABLE_RE = /[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2066-\u2069]/
+
 function decodeLifecycle(value: unknown): ProductLifecycleValue | null {
   // Absent, blank or non-string is still fatal: that is a missing field, not an
   // unfamiliar one, and there is nothing to carry.
   if (!isNonEmptyString(value, 64)) return null
+  /**
+   * So is an unprintable one — and that is NOT a step back from carrying unknown
+   * values. UNFAMILIAR and MALFORMED are different: a status token in any sane
+   * vocabulary is printable text, so a control or bidi character means the field is
+   * broken, not that it names a state this build has not learned yet. Broken fields
+   * have always been fatal here; keeping that line where it is costs nothing,
+   * because no real vocabulary lands on this side of it.
+   */
+  if (UNPRINTABLE_RE.test(value)) return null
   return (PRODUCT_LIFECYCLE as readonly string[]).includes(value)
     ? { known: true, value: value as ProductLifecycle }
     : { known: false, raw: value }

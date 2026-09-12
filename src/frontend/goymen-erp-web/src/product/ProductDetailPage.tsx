@@ -117,6 +117,22 @@ function ProductDetailView({
             {detail.name}
           </h1>
         </div>
+        {/*
+          WHERE AN ACTIVATE / DEACTIVATE CONTROL WOULD GO, and the rule it must
+          follow when it does.
+
+          There is none today: §6.6 keeps those commands fail-closed until
+          `G-PRD-PLATFORM-01`, `G-PRD-PERM-01` and `G-PRD-PERSIST-01` pass, so this
+          slice offers no state-dependent action anywhere — not here and not on a
+          list row.
+
+          When one is added it must be CLOSED for a lifecycle this build could not
+          read, with the reason said out loud ("bu kaydın durumu okunamadı"), not
+          left enabled. An action whose meaning depends on the current state cannot
+          be offered against a state we declined to interpret: the user would be
+          asked to approve a transition neither side can name. Same reasoning as the
+          banner below — do not make a second claim about something unknown.
+        */}
         <div className={styles.lifecycle}>
           <span
             className={styles.badge}

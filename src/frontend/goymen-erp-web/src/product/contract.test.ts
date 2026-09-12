@@ -140,6 +140,30 @@ describe('decodeProductPage', () => {
     expect(knownLifecycle(decoded!.items[1].lifecycle)).toBeNull()
   })
 
+  it('rejects an unprintable lifecycle token — malformed is not merely unfamiliar', () => {
+    /**
+     * A bidi override inside a token printed verbatim can make it RENDER as a
+     * different word than the one stored, so the operator reads a status the server
+     * never sent. Length is already bounded at 64 by the guard; this closes what a
+     * bound cannot. Any sane vocabulary is printable, so nothing real lands here.
+     */
+    const bidi = 'Inac' + String.fromCharCode(0x202e) + 'tive'
+    expect(decodeProductPage(page({ items: [item({ lifecycle: bidi })] }))).toBeNull()
+    expect(
+      decodeProductPage(page({ items: [item({ lifecycle: 'dr' + String.fromCharCode(0) + 'aft' })] })),
+    ).toBeNull()
+    expect(
+      decodeProductPage(page({ items: [item({ lifecycle: 'dra' + String.fromCharCode(0x200b) + 'ft' })] })),
+    ).toBeNull()
+    // ...and an ordinary unfamiliar token is still carried, not rejected.
+    expect(decodeProductPage(page({ items: [item({ lifecycle: 'archived' })] }))).not.toBeNull()
+  })
+
+  it('rejects a lifecycle token longer than the bound', () => {
+    expect(decodeProductPage(page({ items: [item({ lifecycle: 'x'.repeat(65) })] }))).toBeNull()
+    expect(decodeProductPage(page({ items: [item({ lifecycle: 'x'.repeat(64) })] }))).not.toBeNull()
+  })
+
   it('still rejects a missing or blank lifecycle', () => {
     // An absent field is a different fact from an unfamiliar one: there is nothing
     // to carry and nothing to show.
