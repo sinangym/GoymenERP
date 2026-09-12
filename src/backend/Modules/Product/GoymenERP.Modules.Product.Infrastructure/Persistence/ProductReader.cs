@@ -23,7 +23,7 @@ public sealed class ProductReader(ProductReadStore store, ProductCursorCodec cur
     public Task<ProductCardView?> GetAsync(Guid id, CancellationToken cancellationToken) =>
         ReadAsync<ProductCardView?>(async context =>
         {
-            var row = await store.FindAsync(context, id, cancellationToken);
+            var row = await store.ReadByIdAsync(context, id, cancellationToken);
             if (row is null) return null;
             var groups = await store.ReadCodeGroupsAsync(context, cancellationToken);
             var label = groups.SingleOrDefault(group => group.Id == row.GroupId)?.Name;

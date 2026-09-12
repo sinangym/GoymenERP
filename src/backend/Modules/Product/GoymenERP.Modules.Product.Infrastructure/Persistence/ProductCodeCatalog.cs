@@ -53,27 +53,39 @@ public sealed class ProductCodeCounter
 /// </summary>
 public sealed class ProductCodeAllocator(ProductDbContext context)
 {
+    private int started;
+
     public async Task<ProductCode> StageNextAsync(GroupSharedMasterCommandContext authority, Guid groupId,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(authority);
         if (authority.Operation != GroupSharedMasterOperation.DraftCreate)
             throw new UnauthorizedAccessException("Code allocation requires Product create authority.");
+        // A command/retry owns a fresh context and allocator. Never resume a prior
+        // tracked allocation after cancellation or failure; retry the whole unit.
+        if (Interlocked.Exchange(ref started, 1) != 0)
+            throw new InvalidOperationException("A Product code allocation attempt cannot be reused.");
         var group = await context.CodeGroups.AsNoTracking().SingleOrDefaultAsync(row => row.Id == groupId, cancellationToken)
             ?? throw new ProductValidationException([new("groupId", "invalid_reference")]);
-        var counter = context.CodeCounters.Local.SingleOrDefault(row => row.Prefix == group.Prefix)
-            ?? await context.CodeCounters.SingleOrDefaultAsync(row => row.Prefix == group.Prefix, cancellationToken);
+        var counter = await context.CodeCounters.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.Prefix == group.Prefix, cancellationToken);
         if (counter is null)
         {
             counter = ProductCodeCounter.ForGroup(group);
             context.CodeCounters.Add(counter);
+        }
+        else
+        {
+            // Attach the database snapshot before advancing so the original
+            // sequence remains the optimistic concurrency predicate. An existing
+            // tracked instance conflicts rather than supplying cached authority.
+            context.CodeCounters.Attach(counter);
         }
 
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var candidate = counter.Advance();
-            if (context.CodeRegistrations.Local.Any(row => row.Code == candidate.Value)) continue;
             // Retired aliases reserve a code just as a current code does.
             if (!await context.CodeRegistrations.AnyAsync(row => row.Code == candidate.Value, cancellationToken))
                 return candidate;
