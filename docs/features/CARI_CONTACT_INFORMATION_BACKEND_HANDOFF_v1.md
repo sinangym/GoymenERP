@@ -384,8 +384,8 @@ is checked as present but is not confused with immutable business response data.
 ### Prepared existing C006 command path (not ENV_READY)
 
 Worktree: `C:\src\GoymenERP-cari-party-card-backend-20260912`.
-New unused run `c006-406abcfedbec`, instance `16a207bd-f437-4960-a151-1f5c1137b180`,
-database `GoymenCariC006_406abcfedbec`; API/SQL/UI ports 25080/25433/25173.
+New unused run `c006-db61f4b0aac9`, instance `10db1804-6167-4b6a-b49b-d86bdd3cdd57`,
+database `GoymenCariC006_db61f4b0aac9`; API/SQL/UI ports 25080/25433/25173.
 API dependency is `9df7f40e3aefc5b02ef42a378c0d1aa800a2fe29`, backend subtree
 `d11840bd6c6f18c4b2e282419daa9e75e54a8c1b`. Runtime AcceptanceHead and CompiledHead
 are the final harness commit, observed/built locally, never hard-coded to this file's
@@ -457,3 +457,16 @@ The corrected source accepts SQL DBNull only with an independently counted zero 
 using the canonical empty JSON array fingerprint. Other scalar/type/count mismatches fail closed;
 nonempty JSON fingerprint bytes are unchanged. A fresh run/instance/database above is required.
 API dependency 9df7f40e3aefc5b02ef42a378c0d1aa800a2fe29 and frontend 44ae49cd6c54984fb7a52c9c6e4ee5fd67284d6e remain separate from the corrected harness HEAD.
+
+## Review evidence projection for browser preflight
+
+The c177 / c006-406abcfedbec environment passed live smoke, but browser preflight
+rejected raw GitHub PR prose containing a credential-like marker. L03 did not run;
+the typed SQL snapshot remained identical to the baseline and owned cleanup passed.
+That environment/report is preserved. The fresh run above must bind the corrected HEAD.
+
+The browser envelope carries only validated PR/head/comment IDs, reviewer attribution,
+body/response hashes and the eight actual successful checks. Exact decoded gh api output
+texts are retained in immutable frontend-review-source.json outside the envelope, bound
+by path/byte count/SHA-256. The original credential marker gate is not relaxed; the
+publisher applies the same gate before writing any new browser envelope.

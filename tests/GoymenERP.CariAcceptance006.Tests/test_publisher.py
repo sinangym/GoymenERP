@@ -2,6 +2,7 @@
 import copy
 import importlib.util
 import json
+import tempfile
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -172,7 +173,7 @@ class PublisherBuildEvidenceTests(unittest.TestCase):
 
 class PublisherFrontendReviewTests(unittest.TestCase):
     def setUp(self):
-        self.source = {'FrontendHead': 'a' * 40}
+        self.source = {'FrontendHead': 'a' * 40, 'RunId': 'controlled-run', 'InstanceId': 'controlled-instance'}
         self.review = {
             'head': 'a' * 40, 'status': 'approved', 'pullRequest': 235, 'riskClass': 'K2',
             'requiredIndependentReviews': 1, 'reviewerId': '/root/frontend_final_review_one',
@@ -182,18 +183,88 @@ class PublisherFrontendReviewTests(unittest.TestCase):
         }
         payload = {key: value for key, value in self.review.items() if key != 'reviewUrls'}
         self.evidence = {
-            'comment': {'html_url': self.review['reviewUrls'][0],
+            'comment': {'id': 123, 'user': {'id': 456}, 'html_url': self.review['reviewUrls'][0],
                         'issue_url': 'https://api.github.com/repos/sinangym/GoymenERP/issues/235',
                         'author_association': 'OWNER', 'body': '```json\n' + json.dumps(payload) + '\n```'},
-            'pullRequest': {'number': 235, 'head': {'sha': 'a' * 40}},
+            'pullRequest': {'id': 789, 'number': 235, 'head': {'sha': 'a' * 40},
+                            'html_url': 'https://github.com/sinangym/GoymenERP/pull/235', 'body': 'Controlled PR prose'},
             'checkRuns': {'check_runs': [
                 {'id': index, 'head_sha': 'a' * 40, 'name': name, 'status': 'completed', 'conclusion': 'success'}
-                for index, name in enumerate(PUBLISHER.REQUIRED_FRONTEND_CHECKS)
+                for index, name in enumerate(PUBLISHER.REQUIRED_FRONTEND_CHECKS, start=1)
             ]},
         }
 
     def validate(self):
         PUBLISHER.validate_frontend_review(self.source, self.review, self.evidence)
+
+    def projection(self):
+        responses = {name: json.dumps(value, ensure_ascii=False) for name, value in self.evidence.items()}
+        return PUBLISHER.prepare_frontend_review_evidence(self.source, self.review, self.source, responses)
+
+    def test_pr_token_prose_is_preserved_outside_the_unchanged_browser_marker_gate(self):
+        self.evidence['pullRequest']['body'] = 'token yine ayr\u0131\u015ft\u0131r\u0131lm\u0131yor'
+        before = copy.deepcopy(self.evidence)
+        projection, raw_bytes = self.projection()
+        PUBLISHER.require_credential_free_envelope({'frontendReviewEvidence': projection})
+        self.assertNotIn('body', projection['pullRequest'])
+        self.assertNotIn('body', projection['comment'])
+        self.assertEqual(before, self.evidence)
+        raw = json.loads(raw_bytes)
+        self.assertEqual(json.loads(raw['responses']['pullRequest'])['body'], self.evidence['pullRequest']['body'])
+        self.assertEqual(projection['sourceArtifact']['sha256'], PUBLISHER.hashlib.sha256(raw_bytes).hexdigest())
+        self.assertEqual(projection['sourceArtifact']['bytes'], len(raw_bytes))
+        self.assertEqual(projection['pullRequest']['head']['sha'], self.source['FrontendHead'])
+        self.assertEqual(projection['comment']['id'], 123)
+        self.assertEqual(projection['comment']['authorId'], 456)
+        self.assertEqual(projection['reviewerId'], self.review['reviewerId'])
+        self.assertEqual(len(projection['checkRuns']['check_runs']), len(PUBLISHER.REQUIRED_FRONTEND_CHECKS))
+        for name, value in raw['responses'].items():
+            self.assertEqual(projection['sourceResponseSha256'][name], PUBLISHER.hashlib.sha256(value.encode()).hexdigest())
+
+    def test_actual_credential_shaped_envelope_values_are_still_rejected(self):
+        for value in [{'password': 'synthetic-only'}, {'accessToken': 'synthetic-only'},
+                      {'connection': 'Server=test;Pwd=synthetic-only'}, {'secret': 'synthetic-only'}]:
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(RuntimeError, 'credential-like material'):
+                    PUBLISHER.require_credential_free_envelope(value)
+
+    def test_projection_cannot_hide_substituted_source_identity_or_a_failed_check(self):
+        original = copy.deepcopy(self.evidence)
+        for mutation in ['comment-id', 'author-id', 'pr-id', 'pr-url', 'check-id', 'check-failed']:
+            with self.subTest(mutation=mutation):
+                self.evidence = copy.deepcopy(original)
+                if mutation == 'comment-id': self.evidence['comment']['id'] = 999
+                elif mutation == 'author-id': self.evidence['comment']['user']['id'] = True
+                elif mutation == 'pr-id': self.evidence['pullRequest']['id'] = 0
+                elif mutation == 'pr-url': self.evidence['pullRequest']['html_url'] += '?access_token=synthetic-only'
+                elif mutation == 'check-id': self.evidence['checkRuns']['check_runs'][0]['id'] = True
+                else: self.evidence['checkRuns']['check_runs'][0]['conclusion'] = 'failure'
+                with self.assertRaises(RuntimeError):
+                    self.projection()
+
+    def test_raw_source_is_immutable_and_retains_the_bytes_bound_by_projection(self):
+        projection, raw_bytes = self.projection()
+        with tempfile.TemporaryDirectory() as directory, patch.object(PUBLISHER, 'EVIDENCE', Path(directory)):
+            PUBLISHER.atomic_bytes('frontend-review-source.json', raw_bytes)
+            path = Path(directory) / 'frontend-review-source.json'
+            self.assertEqual(path.read_bytes(), raw_bytes)
+            self.assertEqual(PUBLISHER.digest(path), projection['sourceArtifact']['sha256'])
+            with self.assertRaisesRegex(RuntimeError, 'existing evidence is preserved'):
+                PUBLISHER.atomic_bytes('frontend-review-source.json', b'different')
+            self.assertEqual(path.read_bytes(), raw_bytes)
+
+    def test_projection_requires_the_complete_strict_json_sources_and_same_run(self):
+        responses = {name: json.dumps(value) for name, value in self.evidence.items()}
+        with self.assertRaises(RuntimeError):
+            PUBLISHER.prepare_frontend_review_evidence(self.source, self.review,
+                {**self.source, 'RunId': 'different'}, responses)
+        incomplete = dict(responses)
+        incomplete.pop('pullRequest')
+        with self.assertRaises(RuntimeError):
+            PUBLISHER.prepare_frontend_review_evidence(self.source, self.review, self.source, incomplete)
+        responses['pullRequest'] = '{"number":235,"number":233}'
+        with self.assertRaises(RuntimeError):
+            PUBLISHER.prepare_frontend_review_evidence(self.source, self.review, self.source, responses)
 
     def test_exact_non_author_ai_result_and_fresh_checks_accept_only_the_scoped_profile(self):
         self.validate()

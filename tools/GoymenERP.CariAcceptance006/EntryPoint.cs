@@ -8,7 +8,7 @@ namespace GoymenERP.CariAcceptance006;
 public static class Evidence
 {
     public static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
-    public const string ResumeEvidence = @"C:\src\GoymenERP-cari-party-card-backend-20260912\artifacts\cari-acceptance-006\contact-edit-20260912\c006-406abcfedbec\resume";
+    public const string ResumeEvidence = @"C:\src\GoymenERP-cari-party-card-backend-20260912\artifacts\cari-acceptance-006\contact-edit-20260912\c006-db61f4b0aac9\resume";
 
     public static string ValidateResumeRecord(string json)
     {

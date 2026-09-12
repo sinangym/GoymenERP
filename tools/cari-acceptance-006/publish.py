@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 import urllib.request
 
 ROOT = Path(r'C:\src\GoymenERP-cari-party-card-backend-20260912')
-EVIDENCE = ROOT / 'artifacts/cari-acceptance-006/contact-edit-20260912/c006-406abcfedbec'
+EVIDENCE = ROOT / 'artifacts/cari-acceptance-006/contact-edit-20260912/c006-db61f4b0aac9'
 DLL = ROOT / 'tools/GoymenERP.CariAcceptance006/bin/Release/net10.0-windows/GoymenERP.CariAcceptance006.dll'
 CONTRACT_HEADER = 'X-ERP-Counterparty-Contract'
 CONTRACT_VERSION = 'optional-trade-roles-v1'
@@ -51,11 +51,14 @@ def encode(value):
     return (json.dumps(value, ensure_ascii=False, indent=2) + '\n').encode('utf-8')
 
 def atomic(name, value):
+    atomic_bytes(name, encode(value))
+
+def atomic_bytes(name, value):
     destination = EVIDENCE / name
     require(not destination.exists(), 'existing evidence is preserved: ' + name)
     temporary = destination.with_name(destination.name + '.tmp')
     with temporary.open('xb') as stream:
-        stream.write(encode(value))
+        stream.write(value)
         stream.flush()
         os.fsync(stream.fileno())
     temporary.rename(destination)
@@ -154,6 +157,65 @@ def validate_frontend_review(source, review, evidence=None, pull_request=235):
             and all(check.get('status') == 'completed' and check.get('conclusion') == 'success' for check in latest.values()),
             'fresh required frontend checks have not all passed')
 
+def require_credential_free_envelope(value):
+    # Keep the existing frontend marker gate, without exceptions for review prose.
+    require(not re.search(r'password|secret|token|pwd',
+                          json.dumps(value, ensure_ascii=False, allow_nan=False), re.IGNORECASE),
+            'browser envelope contains credential-like material')
+
+def prepare_frontend_review_evidence(source, review, run, responses):
+    require(set(responses) == {'comment', 'pullRequest', 'checkRuns'}
+            and all(isinstance(value, str) for value in responses.values()),
+            'complete GitHub response texts are required')
+    evidence = {name: strict_json(value) for name, value in responses.items()}
+    validate_frontend_review(source, review, evidence)
+    require(source.get('RunId') == run.get('RunId')
+            and source.get('InstanceId') == run.get('InstanceId')
+            and isinstance(run.get('RunId'), str) and isinstance(run.get('InstanceId'), str),
+            'GitHub evidence run binding differs')
+    comment, pr = evidence['comment'], evidence['pullRequest']
+    comment_id = review['reviewUrls'][0].rsplit('-', 1)[1]
+    require(type(comment.get('id')) is int and comment['id'] > 0
+            and str(comment['id']) == comment_id
+            and type(pr.get('id')) is int and pr['id'] > 0
+            and pr.get('html_url') == 'https://github.com/sinangym/GoymenERP/pull/235'
+            and isinstance(comment.get('user'), dict)
+            and type(comment['user'].get('id')) is int and comment['user']['id'] > 0,
+            'GitHub projected identities are malformed')
+    require(pr.get('body') is None or isinstance(pr.get('body'), str), 'GitHub PR body is malformed')
+    latest = {}
+    for check in evidence['checkRuns']['check_runs']:
+        if check.get('head_sha') == source['FrontendHead'] and check.get('name') in REQUIRED_FRONTEND_CHECKS:
+            require(type(check.get('id')) is int and check['id'] > 0, 'GitHub check identity is malformed')
+            if check['name'] not in latest or check['id'] > latest[check['name']]['id']:
+                latest[check['name']] = check
+    raw_record = {
+        'runId': run['RunId'], 'instanceId': run['InstanceId'], 'frontendHead': source['FrontendHead'],
+        'retrievedAtUtc': datetime.now(timezone.utc).isoformat(),
+        'meaning': 'Exact decoded gh api stdout texts used by validation; not an HTTP wire capture.',
+        'responses': dict(responses),
+    }
+    raw_bytes = encode(raw_record)
+    body_hash = lambda value: hashlib.sha256(value.encode('utf-8')).hexdigest()
+    projection = {
+        'pullRequest': {'id': pr['id'], 'number': 235, 'html_url': pr['html_url'],
+                        'head': {'sha': source['FrontendHead']}, 'bodySha256': body_hash(pr.get('body') or '')},
+        'comment': {'id': comment['id'], 'html_url': comment['html_url'], 'issue_url': comment['issue_url'],
+                    'author_association': comment['author_association'], 'authorId': comment['user']['id'],
+                    'bodySha256': body_hash(comment['body'])},
+        'reviewerId': review['reviewerId'], 'reviewerKind': review['reviewerKind'],
+        'authorAgent': review['authorAgent'],
+        'checkRuns': {'check_runs': [
+            {key: check[key] for key in ['id', 'head_sha', 'name', 'status', 'conclusion']}
+            for _, check in sorted(latest.items())
+        ]},
+        'sourceResponseSha256': {name: body_hash(value) for name, value in responses.items()},
+        'sourceArtifact': {'path': str(EVIDENCE / 'frontend-review-source.json'),
+                           'sha256': hashlib.sha256(raw_bytes).hexdigest(), 'bytes': len(raw_bytes)},
+    }
+    require_credential_free_envelope(projection)
+    return projection, raw_bytes
+
 def bind_validated_contract(validated, observed_bytes):
     value = validated.get('contractSha256') if isinstance(validated, dict) else None
     require(isinstance(value, str) and re.fullmatch(r'[0-9a-f]{64}', value)
@@ -188,12 +250,12 @@ def main():
             and re.fullmatch(r'https://github\.com/sinangym/GoymenERP/pull/235#issuecomment-[0-9]+', urls[0]),
             'exact #235 review comment URL is required')
     comment_id = urls[0].rsplit('-', 1)[1]
-    github_evidence = {
-        'comment': json.loads(command(args.github_cli, 'api', 'repos/sinangym/GoymenERP/issues/comments/' + comment_id)),
-        'pullRequest': json.loads(command(args.github_cli, 'api', 'repos/sinangym/GoymenERP/pulls/235')),
-        'checkRuns': json.loads(command(args.github_cli, 'api', 'repos/sinangym/GoymenERP/commits/' + source['FrontendHead'] + '/check-runs?per_page=100')),
+    github_responses = {
+        'comment': command(args.github_cli, 'api', 'repos/sinangym/GoymenERP/issues/comments/' + comment_id),
+        'pullRequest': command(args.github_cli, 'api', 'repos/sinangym/GoymenERP/pulls/235'),
+        'checkRuns': command(args.github_cli, 'api', 'repos/sinangym/GoymenERP/commits/' + source['FrontendHead'] + '/check-runs?per_page=100'),
     }
-    validate_frontend_review(source, review, github_evidence)
+    github_projection, github_raw_bytes = prepare_frontend_review_evidence(source, review, run, github_responses)
     require(smoke['passed'] and smoke['RunId'] == run['RunId'] and smoke['InstanceId'] == run['InstanceId'],
             'smoke belongs to another run')
     require(host['RunId'] == run['RunId'] and host['InstanceId'] == run['InstanceId']
@@ -251,7 +313,7 @@ def main():
                          'executed': tests['backend_executed'], 'testedArtifacts': tested_artifacts,
                          'publisherExecuted': tests['publisher_executed']},
         'frontendReviewReceipt': review, 'reviewReceiptMeaning': 'Coordinator-supplied receipt; not a new independent review.',
-        'frontendReviewEvidence': github_evidence,
+        'frontendReviewEvidence': github_projection,
         'contactEdit': {'logicalUpdates': 6, 'expectedNewParties': 0, 'expectedDurableResults': 7,
                         'readOnlyActor': 'company-a-user', 'browserVerdict': 'NOT_RUN'},
         'freshGetObservations': observations, 'companyAId': run['CompanyAId'], 'companyBId': run['CompanyBId'],
@@ -264,6 +326,9 @@ def main():
         'browserAcceptance': 'NOT_RUN', 'erpAccepted': False, 'productionActivated': False,
         'topology': 'One loopback API process and one newly owned disposable SQL container. No mixed-node claim.',
     }
+    require_credential_free_envelope(manifest)
+    # Preserve validated source texts separately; bind the exact written bytes, not a later reread.
+    atomic_bytes('frontend-review-source.json', github_raw_bytes)
     atomic('environment.json', manifest)
     atomic('ENV_READY.json', {'runId': run['RunId'], 'instanceId': run['InstanceId'],
         'environmentSha256': digest(EVIDENCE / 'environment.json'), 'readyForBrowser': True, 'erpAccepted': False})

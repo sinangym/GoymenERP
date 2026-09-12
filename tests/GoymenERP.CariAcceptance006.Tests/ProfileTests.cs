@@ -114,8 +114,8 @@ public sealed class ProfileTests
     {
         var identity = new RunSettings();
         identity.Validate("Testing");
-        Assert.Equal("c006-406abcfedbec", identity.RunId);
-        Assert.Equal("16a207bd-f437-4960-a151-1f5c1137b180", identity.InstanceId);
+        Assert.Equal("c006-db61f4b0aac9", identity.RunId);
+        Assert.Equal("10db1804-6167-4b6a-b49b-d86bdd3cdd57", identity.InstanceId);
         Assert.Equal("44ae49cd6c54984fb7a52c9c6e4ee5fd67284d6e", SourceBinding.FrontendHead);
         Assert.Equal("40e5e738367fd983a42b9dcd9eb705f8ccdf87897d494058d907f7c204ffd8d1", identity.FrontendDiffSha256);
         Assert.Equal(SourceBinding.FrontendDiff, identity.FrontendDiffSha256);
