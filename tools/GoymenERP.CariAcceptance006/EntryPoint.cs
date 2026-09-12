@@ -64,6 +64,7 @@ public static class EntryPoint
                 return 0; // Source inputs only: no resource, grant, host or readiness publication.
             }
             if (args.Length == 0) throw new InvalidOperationException("Use serve | start-check <launched-pid> | smoke | snapshot | verify [expected-new-parties] | stop | release-check.");
+            if (args[0] == "product-env") return await ProductEnvironment.RunAsync(args[1..]);
             var identity = RunSettings.Load();
             var exitCode = 0;
             switch (args[0])

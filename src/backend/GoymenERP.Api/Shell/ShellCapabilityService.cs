@@ -6,14 +6,15 @@ using GoymenERP.Modules.Organization.Application.Contracts;
 
 namespace GoymenERP.Api.Shell;
 
-public sealed class ShellCapabilityService(
+public sealed partial class ShellCapabilityService(
     ShellCapabilityRegistry registry,
     IActorSessionBindingResolver sessionBindingResolver,
     ShellCapabilityGenerationProtector protector,
     ICurrentUser currentUser,
     ICompanyContext companyContext,
     IErpAuthorizationService authorizationService,
-    IOrganizationService organizationService)
+    IOrganizationService organizationService,
+    IGroupSharedMasterAuthorizationService? productAuthorizationService = null)
 {
     public async Task<ShellCapabilitySnapshot> GetSnapshotAsync(
         CancellationToken cancellationToken = default)
@@ -70,12 +71,15 @@ public sealed class ShellCapabilityService(
             throw new ShellCapabilityUnavailableException();
         }
 
+        var productAuthorities = await ReadProductAuthoritiesAsync(userId, selectedCompanyId, cancellationToken);
         var capabilities = registry.Registrations
             .Where(registration => registration.Declaration.ImplementationAvailable)
             .Where(registration => IsContextCompatible(
                 registration.Declaration,
                 isSingleCompany))
-            .Where(registration => authorizations.Any(authorization =>
+            .Where(registration => registration.Declaration.GlobalProductOperation is { } operation
+                ? productAuthorities.TryGetValue(operation, out var decision) && decision.IsGranted
+                : authorizations.Any(authorization =>
                 IsAllowed(
                     registration.Declaration,
                     authorization.Snapshot.PermissionScopes)))
@@ -120,6 +124,12 @@ public sealed class ShellCapabilityService(
             }
         }
 
+        foreach (var (operation, decision) in productAuthorities.OrderBy(item => item.Key))
+        {
+            generationComponents.Add($"global-product-operation:{operation}");
+            generationComponents.Add(decision.IsGranted ? "global-granted:1" : "global-granted:0");
+            generationComponents.Add($"global-revision:{decision.AuthorityRevision}");
+        }
         generationComponents.AddRange(capabilities.Select(x => $"capability:{x}"));
         var generation = protector.Protect(generationComponents);
         var readonlyCapabilities = Array.AsReadOnly(capabilities);
@@ -130,6 +140,10 @@ public sealed class ShellCapabilityService(
         {
             throw new ShellCapabilityUnavailableException();
         }
+        var revalidatedProduct = await ReadProductAuthoritiesAsync(userId, selectedCompanyId, cancellationToken);
+        if (productAuthorities.Count != revalidatedProduct.Count
+            || productAuthorities.Any(item => !revalidatedProduct.TryGetValue(item.Key, out var value) || item.Value != value))
+            throw new ShellCapabilityUnavailableException();
 
         return new ShellCapabilitySnapshot(
             ShellCapabilityRegistry.ContractVersion,

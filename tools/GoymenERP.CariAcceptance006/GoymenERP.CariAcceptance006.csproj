@@ -12,6 +12,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/backend/GoymenERP.Api/GoymenERP.Api.csproj" />
+    <Compile Include="../../tests/GoymenERP.Product.UnitTests/SqlAcceptance/ProductSqlFixture.cs" Link="ProductOwner/ProductSqlFixture.cs" />
+    <Compile Include="../../tests/GoymenERP.Product.UnitTests/SqlAcceptance/ProductSqlSnapshot.cs" Link="ProductOwner/ProductSqlSnapshot.cs" />
   </ItemGroup>
   <ItemGroup>
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">

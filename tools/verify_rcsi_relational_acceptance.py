@@ -40,6 +40,7 @@ EXPECTED_TESTS = tuple(
     )
 )
 BROAD_EXPECTED_TESTS = (
+    "GoymenERP.Api.IntegrationTests.ProductGlobalRuntimeSqlServerRelationalAcceptanceTests.ProductGlobalRuntime_ShellCapabilitiesFollowExplicitGlobalAssignments",
     "GoymenERP.Api.IntegrationTests.ProductGlobalRuntimeSqlServerRelationalAcceptanceTests.ProductGlobalRuntime_ReadCreateEditReplayAndCompanyIsolation_AreDurable",
     "GoymenERP.Api.IntegrationTests.ProductGlobalRuntimeSqlServerRelationalAcceptanceTests.ProductGlobalRuntime_EachFlushFailureAndLateRevocation_RollBackAllOwners",
     "GoymenERP.Api.IntegrationTests.ProductGlobalRuntimeSqlServerRelationalAcceptanceTests.ProductGlobalRuntime_ConcurrentDuplicateAndSharedPrefixCommands_HaveSingleEffects",
@@ -123,8 +124,8 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.UnapprovedLogicalEndpoint_IsRejectedWithoutChangingDatabase",
     "GoymenERP.Api.IntegrationTests.SqlServerRelationalAcceptanceTests.MigrationSeedWriteGuardCompositeForeignKeyAndHttpIsolation_AreEnforced",
 )
-BROAD_DISCOVERY_COUNT = 82
-BROAD_EXECUTION_COUNT = 89
+BROAD_DISCOVERY_COUNT = 83
+BROAD_EXECUTION_COUNT = 90
 
 
 def verify_discovery(standard_output: str) -> None:

@@ -1,3 +1,5 @@
+using GoymenERP.BuildingBlocks.Security;
+
 namespace GoymenERP.BuildingBlocks.Shell;
 
 public sealed record ShellCapabilityDeclaration(
@@ -9,4 +11,5 @@ public sealed record ShellCapabilityDeclaration(
     ShellCapabilityContextRequirement ContextRequirement,
     ShellCapabilityScopeRequirement ScopeRequirement,
     IReadOnlyCollection<string> RequiredPermissions,
-    bool ImplementationAvailable);
+    bool ImplementationAvailable,
+    GroupSharedMasterOperation? GlobalProductOperation = null);

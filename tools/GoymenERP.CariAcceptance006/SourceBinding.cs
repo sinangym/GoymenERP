@@ -31,6 +31,7 @@ public static partial class SourceBinding
     private static readonly string[] BackendBuildInputs =
     [
         "src/backend", "tools/GoymenERP.CariAcceptance006", "tests/GoymenERP.CariAcceptance006.Tests",
+        "tests/GoymenERP.Product.UnitTests/SqlAcceptance",
         ":(top,glob)*.props", ":(top,glob)*.targets", ":(top,glob)*.rsp", "global.json", "NuGet.Config",
         ":(exclude,glob)**/bin/**", ":(exclude,glob)**/obj/**",
     ];

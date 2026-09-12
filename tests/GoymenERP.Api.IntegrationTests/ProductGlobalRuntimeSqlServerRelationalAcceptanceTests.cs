@@ -5,6 +5,8 @@ using System.Text.RegularExpressions;
 using System.Security.Claims;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Api.ProductRuntime;
+using GoymenERP.Api.Shell;
+using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
@@ -400,7 +402,71 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
         Assert.Equal(applied, await database.Database.GetAppliedMigrationsAsync());
     }
 
-    private static async Task WithDatabaseAsync(Func<SqlServerRelationalApiFactory, TestObserver, Task> test)
+    [SqlServerFact]
+    public Task ProductGlobalRuntime_ShellCapabilitiesFollowExplicitGlobalAssignments() =>
+        WithDatabaseAsync(async (factory, _) =>
+        {
+            using var administrator = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
+            using var companyOnly = factory.CreateClientFor("company-a-user", CompanyA);
+            var before = await SnapshotAsync(factory.DatabaseConnectionString);
+            var first = (await administrator.GetFromJsonAsync<ShellCapabilitySnapshot>("/api/v1/shell/capabilities"))!;
+            Assert.Equal(new[] { "product.items.create", "product.items.detail", "product.items.edit", "product.items.list" }, first.Capabilities);
+            var denied = (await companyOnly.GetFromJsonAsync<ShellCapabilitySnapshot>("/api/v1/shell/capabilities"))!;
+            Assert.Empty(denied.Capabilities);
+            Assert.Equal(before, await SnapshotAsync(factory.DatabaseConnectionString));
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+                var grant = await identity.Set<ProductMasterAssignment>().SingleAsync(row => row.UserId == ActorId && row.Operation == ProductMasterOperation.Read);
+                grant.Revoke(Guid.NewGuid(), "Isolated Product Shell read revocation", DateTimeOffset.UtcNow);
+                await identity.SaveChangesAsync();
+            }
+            var withoutRead = (await administrator.GetFromJsonAsync<ShellCapabilitySnapshot>("/api/v1/shell/capabilities"))!;
+            Assert.Equal(new[] { "product.items.create", "product.items.edit" }, withoutRead.Capabilities);
+            Assert.NotEqual(first.Generation, withoutRead.Generation);
+            using var rejectedRead = await administrator.GetAsync("/api/v1/products");
+            Assert.Equal(HttpStatusCode.Forbidden, rejectedRead.StatusCode);
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+                foreach (var grant in await identity.Set<ProductMasterAssignment>().Where(row => row.UserId == ActorId && row.IsActive).ToArrayAsync())
+                    grant.Revoke(Guid.NewGuid(), "Isolated Product Shell command revocation", DateTimeOffset.UtcNow);
+                await identity.SaveChangesAsync();
+            }
+            var withoutGlobal = (await administrator.GetFromJsonAsync<ShellCapabilitySnapshot>("/api/v1/shell/capabilities"))!;
+            Assert.Empty(withoutGlobal.Capabilities); // The existing company administrator role remains assigned.
+            Assert.NotEqual(withoutRead.Generation, withoutGlobal.Generation);
+            Assert.Equal(before, await SnapshotAsync(factory.DatabaseConnectionString));
+        }, services =>
+        {
+            var provider = new ProductShellFixtureProvider();
+            var revision = ShellCapabilityRegistry.ComputeCandidateRevision([provider]);
+            Assert.Equal("sha256:h3eow9s5L3gYs0heRdgllKTw5iTNcXXLokOTL9QCVMY", revision);
+            services.RemoveAll<IShellCapabilityProvider>();
+            services.AddSingleton<IShellCapabilityProvider>(provider);
+            services.RemoveAll<ShellCapabilityAuthorityCatalog>();
+            services.AddSingleton(new ShellCapabilityAuthorityCatalog([revision]));
+        });
+
+    private sealed class ProductShellFixtureProvider : IShellCapabilityProvider
+    {
+        public string Owner => "PRODUCT";
+        public string ContractVersion => "PRODUCT-TEST-CAPABILITY-V1";
+        public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
+        [
+            Declaration("create", "/urun/yeni", GroupSharedMasterOperation.DraftCreate, false),
+            Declaration("detail", "/urun/:productId", GroupSharedMasterOperation.Read, true),
+            Declaration("edit", "/urun/:productId/duzenle", GroupSharedMasterOperation.DraftBasicEdit, true),
+            Declaration("list", "/urun", GroupSharedMasterOperation.Read, false),
+        ];
+        private static ShellCapabilityDeclaration Declaration(string action, string path, GroupSharedMasterOperation operation, bool parameterized) =>
+            new("product.items." + action, "product.items." + action, path, "PRODUCT-TEST-" + action.ToUpperInvariant(),
+                parameterized ? ShellCapabilityRoutePrecedence.ParameterizedAfterStatic : ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.AnyGrantedScope, [], true, operation);
+    }
+
+    private static async Task WithDatabaseAsync(Func<SqlServerRelationalApiFactory, TestObserver, Task> test,
+        Action<IServiceCollection>? configureServices = null)
     {
         var baseConnection = Environment.GetEnvironmentVariable(SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
         var databaseName = "goymen_erp_ci_" + Guid.NewGuid().ToString("N");
@@ -413,6 +479,7 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                 new ProductPilotIssuerBinding(ActorId, ActorExternalId), Enumerable.Range(1, 32).Select(value => (byte)value).ToArray()));
             services.RemoveAll<IProductCommandAttemptObserver>();
             services.AddSingleton<IProductCommandAttemptObserver>(observer);
+            configureServices?.Invoke(services);
         }, databaseName: databaseName);
         try
         {

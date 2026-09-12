@@ -76,6 +76,7 @@ function Assert-NoUntrackedSources([string]$Phase) {
     # Match SourceBinding: ignored source files still enter SDK builds; bin/obj do not.
     Invoke-Step "source-build-inputs-$Phase" 'git' @('ls-files', '--others', '--',
         'src/backend', 'tools/GoymenERP.CariAcceptance006', 'tests/GoymenERP.CariAcceptance006.Tests',
+        'tests/GoymenERP.Product.UnitTests/SqlAcceptance',
         ':(top,glob)*.props', ':(top,glob)*.targets', ':(top,glob)*.rsp', 'global.json', 'NuGet.Config',
         ':(exclude,glob)**/bin/**', ':(exclude,glob)**/obj/**')
     if (-not [string]::IsNullOrWhiteSpace((Get-Content (Join-Path $logs.FullName "source-build-inputs-$Phase.log") -Raw))) {
@@ -120,7 +121,7 @@ try {
         Invoke-Step 'backend-discovery' 'dotnet' @('test', $project, '-noAutoResponse', '--configuration', 'Release',
             '--no-build', '--no-restore', '--list-tests')
         $discovered = @(Get-Content (Join-Path $logs.FullName 'backend-discovery.log') | Where-Object {
-            $_ -match '^\s+(?:GoymenERP\.CariAcceptance006\.Tests\.(?:ProfileTests|LifecycleTests|SourceBindingTests)|ResumeRecordTests)\.'
+            $_ -match '^\s+(?:GoymenERP\.CariAcceptance006\.Tests\.[A-Za-z0-9_]+|ResumeRecordTests)\.'
         })
         if ($discovered.Count -eq 0) { throw 'No C006 SDK tests discovered.' }
         $summary.backend_discovery_entries = $discovered.Count
@@ -166,7 +167,7 @@ try {
     }
     Invoke-Step 'backend-discovery' 'dotnet' @('test', $project, '-noAutoResponse', '--configuration', 'Release', '--no-build', '--no-restore', '--list-tests')
     $discovered = @(Get-Content (Join-Path $logs.FullName 'backend-discovery.log') | Where-Object {
-        $_ -match '^\s+(?:GoymenERP\.CariAcceptance006\.Tests\.(?:ProfileTests|LifecycleTests|SourceBindingTests)|ResumeRecordTests)\.'
+        $_ -match '^\s+(?:GoymenERP\.CariAcceptance006\.Tests\.[A-Za-z0-9_]+|ResumeRecordTests)\.'
     })
     $summary.backend_discovery_entries = $discovered.Count
     if ($discovered.Count -eq 0) { throw 'No SDK tests discovered.' }

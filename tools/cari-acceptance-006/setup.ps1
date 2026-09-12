@@ -1,21 +1,34 @@
+param([switch]$Product)
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+$toolPrefix=@()
+$stateRoot=$PSScriptRoot
+if ($Product) {
+    if ($root -ne 'C:\src\GoymenERP-product-owner-boundary-20260912') { throw 'Product unexpected worktree.' }
+    $dll=Join-Path $root 'tools/GoymenERP.CariAcceptance006/bin/Release/net10.0-windows/GoymenERP.CariAcceptance006.dll'
+    $run=(& dotnet $dll product-env profile) | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) { throw 'Product accepted profile validation failed.' }
+    $toolPrefix=@('product-env')
+    $evidence=$run.EvidenceRoot
+    $stateRoot=$evidence
+} else {
 $expectedRoot = 'C:\src\GoymenERP-cari-party-card-backend-20260912'
 if ($root -ne $expectedRoot) { throw 'C006 unexpected worktree.' }
 $run = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'run.json') -Raw | ConvertFrom-Json
 if ($run.RunId -ne 'c006-db61f4b0aac9' -or $run.InstanceId -ne '10db1804-6167-4b6a-b49b-d86bdd3cdd57') { throw 'C006 unexpected run.' }
 $evidence = 'C:\src\GoymenERP-cari-party-card-backend-20260912\artifacts\cari-acceptance-006\contact-edit-20260912\c006-db61f4b0aac9'
+}
 if (Test-Path -LiteralPath (Join-Path $evidence 'resources.json')) { throw 'C006 resources already recorded; no duplicate setup.' }
 $dll=Join-Path $root 'tools/GoymenERP.CariAcceptance006/bin/Release/net10.0-windows/GoymenERP.CariAcceptance006.dll'
-& dotnet $dll source-check
+& dotnet $dll @toolPrefix source-check
 if ($LASTEXITCODE -ne 0) { throw 'C006 source binding failed before resource creation.' }
-if (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'compose.json')) { throw 'C006 previous compose attempt is preserved.' }
+if (Test-Path -LiteralPath (Join-Path $stateRoot 'compose.json')) { throw 'C006 previous compose attempt is preserved.' }
 if (@(Get-NetTCPConnection -State Listen | Where-Object { $_.LocalPort -in @($run.SqlPort,$run.ApiPort) }).Count) { throw 'C006 port occupied; preserve listener and allocate another port explicitly.' }
 $prior = & docker ps -a --filter ('name=^/' + $run.ContainerName + '$') --format '{{.ID}}'
 if ($LASTEXITCODE -ne 0 -or $prior) { throw 'C006 container is not new.' }
 $priorVolume = & docker volume ls --filter ('name=^' + $run.VolumeName + '$') --format '{{.Name}}'
 if ($LASTEXITCODE -ne 0 -or $priorVolume) { throw 'C006 volume is not new.' }
-$labels = [ordered]@{'com.goymen.acceptance.task'='C-DESKTOP-006';'com.goymen.acceptance.run'=$run.RunId;'com.goymen.acceptance.instance'=$run.InstanceId;'com.goymen.acceptance.contract'=$run.ContractId}
+$labels = [ordered]@{'com.goymen.acceptance.task'=$run.TaskId;'com.goymen.acceptance.run'=$run.RunId;'com.goymen.acceptance.instance'=$run.InstanceId;'com.goymen.acceptance.contract'=$run.ContractId}
 $compose = [ordered]@{
     name=$run.ComposeProject
     services=@{sql=@{
@@ -28,11 +41,12 @@ $compose = [ordered]@{
     networks=@{default=@{name=($run.ComposeProject+'-network');labels=$labels}}
 }
 $encoding = [Text.UTF8Encoding]::new($false)
-$composePath = Join-Path $PSScriptRoot 'compose.json'
+if ($Product) { New-Item -ItemType Directory -Path $evidence -Force | Out-Null }
+$composePath = Join-Path $stateRoot 'compose.json'
 [IO.File]::WriteAllText($composePath,($compose|ConvertTo-Json -Depth 8),$encoding)
-$private = Join-Path $root 'secrets/cari-acceptance-006'
+$private = if ($Product) { $run.PrivateRoot } else { Join-Path $root 'secrets/cari-acceptance-006' }
 if (Test-Path -LiteralPath $private) { throw 'C006 private state already exists; no overwrite.' }
-New-Item -ItemType Directory -Path $private | Out-Null
+New-Item -ItemType Directory -Path $private -Force | Out-Null
 $password = 'Aa!' + [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 $plain = [Text.Encoding]::UTF8.GetBytes($password)
 try {
@@ -61,5 +75,5 @@ $resources=[ordered]@{recordedAtUtc=[DateTime]::UtcNow.ToString('o');runId=$run.
 [IO.File]::WriteAllText((Join-Path $evidence 'resources.json'),($resources|ConvertTo-Json -Depth 8),$encoding)
 Write-Output 'C006 isolated SQL container created; no existing database or volume reused.'
 
-& dotnet $dll wait-sql
+& dotnet $dll @toolPrefix wait-sql
 if ($LASTEXITCODE -ne 0) { throw 'C006 SQL readiness failed; preserve the recorded resources for owned cleanup.' }
