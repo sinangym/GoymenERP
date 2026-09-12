@@ -33,6 +33,20 @@ public sealed class ProductReader(ProductReadStore store, ProductCursorCodec cur
     public Task<IReadOnlyList<ProductCodeGroup>> GetCodeGroupsAsync(CancellationToken cancellationToken) =>
         ReadAsync(context => store.ReadCodeGroupsAsync(context, cancellationToken), cancellationToken);
 
+    public Task<ProductReferenceOptions> GetReferenceOptionsAsync(ProductReferenceQuery query, CancellationToken cancellationToken) =>
+        ReadAsync(async context =>
+        {
+            if (query.GroupId == Guid.Empty || query.ClassId == Guid.Empty)
+                throw new ProductValidationException([new("query", "invalid_metadata")]);
+            var groups = await store.ReadCodeGroupsAsync(context, cancellationToken);
+            if (!groups.Any(group => group.Id == query.GroupId))
+                throw new ProductValidationException([new("groupId", "invalid_reference")]);
+            // ClassId is echoed only as the requested filter, never as a verified
+            // catalogue entry. All five unavailable sources remain explicit.
+            return new ProductReferenceOptions(query.GroupId, query.ClassId, [], [], [], [], [],
+                ["classes", "families", "units", "trackingPolicies", "templates"]);
+        }, cancellationToken);
+
     private async Task<T> ReadAsync<T>(Func<GroupSharedMasterReadContext, Task<T>> read, CancellationToken cancellationToken)
     {
         var initial = await AuthorizeAsync(cancellationToken);

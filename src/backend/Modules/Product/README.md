@@ -1,9 +1,12 @@
 # U-01 / U-02 backend contract v1
 
-Source: Business #181 `3dfe58e745f064a49d52b118361c757a0882807d`,
+Source: Business #181 `3f5deca6f1c338d44a4e9b52787c27dbab85846e`,
 `PRODUCT_U01_U02_IDENTITY_LIFECYCLE_JIT_SPEC_v1.md` §19 and
 [minimum-field arbitration](https://github.com/sinangym/GoymenERP/issues/100#issuecomment-5646263306).
 DEC-PRD-003/004/010, Master §7.4 and locked #98/#99 remain binding.
+The September 12 pilot grant/revocation decision is Sinan's alone; company admin
+membership never grants global Product authority. This is not a named user grant,
+Identity ID mapping, schema/runtime acceptance or production authorization.
 
 ## Exact module HTTP contract
 
@@ -23,9 +26,9 @@ is claimed. These routes are pinned for frontend integration, not live URLs.
 
 List parameters: q (trimmed, max 200, no controls), lifecycle (exact Draft, Active,
 Inactive), optional groupId/classId/familyId, roles (comma-separated distinct purchasable/sellable/productionInput/productionOutput), roleMatch (any/all; default any), sort (code/name/updatedAtUtc; default code), direction (asc/desc; default asc), completeness (NotEvaluated/Incomplete/Complete), pageSize (1..100, default 50), opaque cursor.
-A role filter matches known true values only; any/all applies to the submitted distinct roles. Unknown is not false. nextCursor=null means the final page; a non-null cursor is the only continuation signal. No total count is advertised. Server ordering uses the selected key and immutable UUID tie-breaker in the selected direction. The future persistence
-reader must apply the same authorized scope and all filters on every page. Cursor
-binding/codec remains an explicit persistence dependency, not a client-created offset.
+A role filter matches known true values only; any/all applies to the submitted distinct roles. Unknown is not false. nextCursor=null means the final page; a non-null cursor is the only continuation signal. No total count is advertised. Server ordering uses the selected key and immutable UUID tie-breaker in the selected direction. The persistence
+reader applies the same authorized scope and all filters on every page. Cursor
+binding/codec is implemented below; host registration and real SQL acceptance remain open.
 
 Create minimum: name (trimmed Unicode, 1..250, no controls) and non-nil groupId.
 The group must resolve to a real authorized code group with a valid prefix.
@@ -167,8 +170,8 @@ must not be logged or used as an authority decision.
 `ProductStoredRecord` captures/restores Product identity, lifecycle/version, tagged
 roles and an independent reference JSON snapshot. Unknown/corrupt stored role pairs
 and missing reference payloads fail rather than being shown as false/empty.
-These are tested storage/command boundaries, not a DbContext, SQL schema, migration,
-unique constraint, resolver registration or transaction. The accepted owner replay
+The snapshot/fingerprint tests themselves do not prove SQL schema, migration,
+unique constraints, resolver registration or a transaction. The accepted owner replay
 resolver and atomic writer must still reauthorize and commit Product + audit + terminal
 together. `AuthorizedMissing` is never a reservation. No global eligibility or
 production grant is inferred from this code.
@@ -203,3 +206,10 @@ Server provider translation, which is not real SQL execution evidence.
 actor, origin and authority revision. The host must supply signing material and a
 technical lifetime. No key is committed, generated as a production default or registered
 in the host. Reference labels outside the available code-group catalogue remain null.
+
+`ProductCodeOnlyReferenceCatalog` validates the actual SQL code group for the minimum
+Draft. Missing optional class/family/unit/template/tracking values remain permitted;
+supplied references without an accepted catalogue adapter fail validation. The read
+options endpoint explicitly lists all five catalogues as unavailable, rather than
+claiming that they are valid empty catalogues. This does not complete the separate
+selected-family/unit/template sub-slice. No default group or fake reference is seeded.

@@ -11,6 +11,7 @@ public sealed class ProductReaderTests
     [InlineData("page")]
     [InlineData("card")]
     [InlineData("groups")]
+    [InlineData("references")]
     public async Task Missing_global_authority_denies_before_cursor_parsing_or_any_database_connection(string operation)
     {
         await using var context = new ProductDbContext(new DbContextOptionsBuilder<ProductDbContext>()
@@ -21,6 +22,7 @@ public sealed class ProductReaderTests
         {
             "page" => reader.GetPageAsync(new(Cursor: "invalid"), default),
             "card" => reader.GetAsync(Guid.NewGuid(), default),
+            "references" => reader.GetReferenceOptionsAsync(new(Guid.NewGuid()), default),
             _ => (Task)reader.GetCodeGroupsAsync(default),
         });
     }
