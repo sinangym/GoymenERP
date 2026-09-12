@@ -1,0 +1,465 @@
+/**
+ * ORG-02 component/DOM tests — the reasoned state change and the fresh read.
+ *
+ * Fixtures through the real shell, gate and fence. NOT real-API, real-SQL or browser
+ * acceptance, and never reported as such.
+ */
+
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import {
+  COMPANY_A,
+  COMPANY_B,
+  LOC_H0,
+  READ_CAPABILITIES,
+  SITE_OSM,
+  installFetch,
+  json,
+  location,
+  noContent,
+  problem,
+  renderAt,
+  requestsFor,
+  type RecordedRequest,
+} from './testHarness'
+
+const PATH = `/ayarlar/organizasyon/lokasyon/${LOC_H0}`
+const REASON = 'Bakım için pasife alma'
+
+interface Scenario {
+  readonly recorded: RecordedRequest[]
+  /** Detail payloads served in order; the last one repeats. */
+  readonly detail: Array<() => Response>
+  readonly command: Array<() => Response>
+}
+
+function stub(
+  options: {
+    detail?: Array<() => Response>
+    command?: Array<() => Response>
+    capabilities?: readonly string[]
+  } = {},
+): Scenario {
+  const detail = options.detail ?? [() => json(location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0'))]
+  const command = options.command ?? [() => noContent()]
+  let detailIndex = 0
+  let commandIndex = 0
+
+  const recorded = installFetch({
+    capabilities: options.capabilities,
+    respond: (url) => {
+      if (url.includes('/active-state')) {
+        const respond = command[Math.min(commandIndex, command.length - 1)]
+        commandIndex += 1
+        return respond()
+      }
+      if (url.includes('/organization/locations/')) {
+        const respond = detail[Math.min(detailIndex, detail.length - 1)]
+        detailIndex += 1
+        return respond()
+      }
+      return undefined
+    },
+  })
+  return { recorded, detail, command }
+}
+
+function commandCalls(recorded: readonly RecordedRequest[]) {
+  return requestsFor(recorded, '/active-state')
+}
+
+function detailReads(recorded: readonly RecordedRequest[]) {
+  return requestsFor(recorded, '/organization/locations/').filter(
+    (request) => !request.url.includes('/active-state'),
+  )
+}
+
+const ACTION = /Pasife al|Aktifleştir/
+
+/** Opens the confirmation modal from the card. */
+async function openDialog() {
+  await userEvent.click(await screen.findByRole('button', { name: ACTION }))
+  return screen.getByRole('dialog')
+}
+
+async function fillAndSubmit(reason = REASON) {
+  const dialog = await openDialog()
+  const field = within(dialog).getByLabelText('Gerekçe')
+  await userEvent.clear(field)
+  if (reason.length > 0) await userEvent.type(field, reason)
+  // The submit lives INSIDE the dialog; the card's trigger shares its label.
+  await userEvent.click(within(dialog).getByRole('button', { name: ACTION }))
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+describe('the card', () => {
+  it('shows the location read from the server', async () => {
+    stub()
+    renderAt(PATH)
+
+    expect(await screen.findByRole('heading', { name: 'Lokasyon' })).toBeTruthy()
+    expect(await screen.findByText('OSM-H0')).toBeTruthy()
+    expect(screen.getByText('Hol-0')).toBeTruthy()
+    expect(screen.getByText('Aktif')).toBeTruthy()
+  })
+
+  it('scopes the read to the committed company', async () => {
+    const { recorded } = stub()
+    renderAt(PATH)
+    await screen.findByText('OSM-H0')
+    expect(detailReads(recorded)[0].headers['X-Company-Id']).toBe(COMPANY_A)
+  })
+
+  it('shows the neutral not-found block for a 404', async () => {
+    stub({ detail: [() => problem(404)] })
+    renderAt(PATH)
+    expect(await screen.findByText('Bulunamadı — lokasyon')).toBeTruthy()
+  })
+
+  it('fails closed on a version it cannot vouch for', async () => {
+    stub({
+      detail: [
+        () => json({ ...location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0'), version: 9007199254740994 }),
+      ],
+    })
+    renderAt(PATH)
+    expect(await screen.findByText('Beklenmeyen yanıt — lokasyon')).toBeTruthy()
+  })
+})
+
+describe('who may change the state', () => {
+  it('hides the write surface from a read-only holder', async () => {
+    // The server would refuse anyway; offering a form that can only fail is not a
+    // capability the frontend gets to imply.
+    stub({ capabilities: READ_CAPABILITIES })
+    renderAt(PATH)
+
+    await screen.findByText('OSM-H0')
+    expect(screen.queryByRole('button', { name: ACTION })).toBeNull()
+    expect(screen.queryByLabelText('Gerekçe')).toBeNull()
+  })
+
+  it('offers it to a holder of the status capability', async () => {
+    stub()
+    renderAt(PATH)
+    expect(await screen.findByRole('button', { name: 'Pasife al' })).toBeTruthy()
+    const dialog = await openDialog()
+    expect(within(dialog).getByLabelText('Gerekçe')).toBeTruthy()
+  })
+})
+
+describe('the justification is mandatory', () => {
+  it('refuses an empty reason and mints NO key', async () => {
+    const { recorded } = stub()
+    renderAt(PATH)
+    await fillAndSubmit('')
+
+    expect(await screen.findByText(/Gerekçe zorunludur/)).toBeTruthy()
+    // Nothing was attempted, so there is nothing to be uncertain about.
+    expect(commandCalls(recorded)).toHaveLength(0)
+  })
+
+  it('refuses a whitespace-only reason, matching the server’s trim rule', async () => {
+    const { recorded } = stub()
+    renderAt(PATH)
+    await fillAndSubmit('    ')
+
+    expect(await screen.findByText(/Gerekçe zorunludur/)).toBeTruthy()
+    expect(commandCalls(recorded)).toHaveLength(0)
+  })
+})
+
+describe('a successful change', () => {
+  it('sends the contract body and then RE-READS the record', async () => {
+    const { recorded } = stub({
+      detail: [
+        () => json(location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0', { version: 3 })),
+        () => json(location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0', { isActive: false, version: 4 })),
+      ],
+    })
+    renderAt(PATH)
+    await fillAndSubmit()
+
+    await waitFor(() => expect(commandCalls(recorded)).toHaveLength(1))
+    const command = commandCalls(recorded)[0]
+    expect(command.method).toBe('PUT')
+    expect(command.body).toEqual({
+      isActive: false,
+      expectedVersion: '3',
+      reason: REASON,
+    })
+    expect(command.headers['Idempotency-Key']).toBeTruthy()
+    expect(command.headers['X-Company-Id']).toBe(COMPANY_A)
+
+    // A 204 carries no state. The card must come from a fresh GET.
+    await waitFor(() => expect(detailReads(recorded).length).toBeGreaterThan(1))
+    expect(await screen.findByText('Değişiklik kaydedildi')).toBeTruthy()
+    expect(await screen.findByText('Pasif')).toBeTruthy()
+  })
+
+  it('never predicts the next version — the card follows the server', async () => {
+    // A same-state command records a NoChange audit and leaves the version alone,
+    // so version+1 is not something a client may assume.
+    const { recorded } = stub({
+      detail: [
+        () => json(location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0', { version: 7 })),
+        () => json(location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0', { version: 7 })),
+      ],
+    })
+    renderAt(PATH)
+    await fillAndSubmit()
+
+    await waitFor(() => expect(detailReads(recorded).length).toBeGreaterThan(1))
+    // Still active, still version 7 — and the screen says so rather than claiming
+    // the change it asked for.
+    expect(await screen.findByText('Aktif')).toBeTruthy()
+  })
+
+  it('reports a REPLAY without claiming a resulting state', async () => {
+    /**
+     * A replayed 204 is the server repeating an earlier command's terminal answer,
+     * not a statement about the record now. The notice says so and points at the
+     * fresh view.
+     */
+    const { recorded } = stub({
+      command: [() => noContent({ 'Idempotency-Replayed': 'true' })],
+      detail: [
+        () => json(location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0', { version: 3 })),
+        () => json(location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0', { version: 3 })),
+      ],
+    })
+    renderAt(PATH)
+    await fillAndSubmit()
+
+    expect(await screen.findByText('Aynı işlem zaten kaydedilmişti')).toBeTruthy()
+    await waitFor(() => expect(detailReads(recorded).length).toBeGreaterThan(1))
+  })
+})
+
+describe('the two different 409s get different recoveries', () => {
+  it('shows a version conflict with both numbers', async () => {
+    stub({
+      command: [
+        () => json({ conflict: { expectedVersion: 3, currentVersion: 5 } }, 409),
+      ],
+      detail: [() => json(location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0', { version: 3 }))],
+    })
+    renderAt(PATH)
+    await fillAndSubmit()
+
+    expect(await screen.findByText('Kayıt bu sırada değişti')).toBeTruthy()
+    expect(screen.getByText(/Beklediğiniz sürüm 3, kaydın güncel sürümü 5\./)).toBeTruthy()
+  })
+
+  it('does NOT call a replayed conflict’s number current', async () => {
+    /**
+     * Verified against PR #241: the server replays a stored 409 verbatim, so its
+     * `currentVersion` can be several versions stale. Calling it "güncel" would put a
+     * wrong number in front of the user.
+     */
+    stub({
+      command: [
+        () =>
+          json({ conflict: { expectedVersion: 3, currentVersion: 4 } }, 409, {
+            'Idempotency-Replayed': 'true',
+          }),
+      ],
+      detail: [() => json(location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0', { version: 3 }))],
+    })
+    renderAt(PATH)
+    await fillAndSubmit()
+
+    expect(await screen.findByText('Kayıt bu sırada değişti')).toBeTruthy()
+    expect(screen.getByText(/daha önceki aynı işlemin tekrarı/)).toBeTruthy()
+    expect(screen.queryByText(/kaydın güncel sürümü/)).toBeNull()
+  })
+
+  it('distinguishes an idempotency conflict, which no re-send can fix', async () => {
+    stub({
+      command: [() => json({ title: 'Idempotency-Key çakışması.', status: 409 }, 409)],
+    })
+    renderAt(PATH)
+    await fillAndSubmit()
+
+    expect(
+      await screen.findByText('Bu işlem anahtarı farklı bir istekle kullanılmış'),
+    ).toBeTruthy()
+    // No same-key retry is offered for this one: it cannot succeed.
+    expect(screen.queryByRole('button', { name: /Aynı işlem anahtarıyla/ })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Güncel kaydı yükle' })).toBeTruthy()
+  })
+})
+
+describe('an unknown outcome', () => {
+  it('says the change MAY have been applied, and never that it was not', async () => {
+    stub({ command: [() => problem(503)] })
+    renderAt(PATH)
+    await fillAndSubmit()
+
+    expect(await screen.findByText(/sonuç bilinmiyor/)).toBeTruthy()
+    expect(screen.getByText(/uygulanmış olabilir/)).toBeTruthy()
+  })
+
+  it('re-sends under the SAME key so the server replays instead of writing twice', async () => {
+    const { recorded } = stub({ command: [() => problem(503), () => noContent()] })
+    renderAt(PATH)
+    await fillAndSubmit()
+
+    expect(await screen.findByText(/sonuç bilinmiyor/)).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: /Aynı işlem anahtarıyla tekrar gönder/ }))
+
+    await waitFor(() => expect(commandCalls(recorded)).toHaveLength(2))
+    const [first, second] = commandCalls(recorded)
+    expect(second.headers['Idempotency-Key']).toBe(first.headers['Idempotency-Key'])
+    expect(second.body).toEqual(first.body)
+  })
+
+  it('does not re-send on its own', async () => {
+    const { recorded } = stub({ command: [() => problem(503)] })
+    renderAt(PATH)
+    await fillAndSubmit()
+
+    expect(await screen.findByText(/sonuç bilinmiyor/)).toBeTruthy()
+    // Give any stray retry a chance to appear.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(commandCalls(recorded)).toHaveLength(1)
+  })
+})
+
+describe('definite refusals', () => {
+  it('reports a 403 without claiming the change happened', async () => {
+    stub({ command: [() => problem(403)] })
+    renderAt(PATH)
+    await fillAndSubmit()
+
+    expect(await screen.findByText('Yetkiniz yok')).toBeTruthy()
+    expect(screen.getByText(/Değişiklik uygulanmadı/)).toBeTruthy()
+  })
+
+  it('reports a validation refusal with an empty body', async () => {
+    stub({ command: [() => new Response(null, { status: 400 })] })
+    renderAt(PATH)
+    await fillAndSubmit()
+    expect(await screen.findByText('İşlem kabul edilmedi')).toBeTruthy()
+  })
+})
+
+describe('modal semantics', () => {
+  it('puts focus in the justification field when the dialog opens', async () => {
+    stub()
+    renderAt(PATH)
+    const dialog = await openDialog()
+    expect(document.activeElement).toBe(within(dialog).getByLabelText('Gerekçe'))
+  })
+
+  it('states the target as a fact before it is committed', async () => {
+    stub()
+    renderAt(PATH)
+    const dialog = await openDialog()
+    expect(
+      within(dialog).getByText(/OSM-H0 lokasyonu AKTİF durumdan PASİF duruma alınacak\./),
+    ).toBeTruthy()
+  })
+
+  it('closes on Escape and returns focus to the trigger', async () => {
+    stub()
+    renderAt(PATH)
+    const trigger = await screen.findByRole('button', { name: ACTION })
+    await openDialog()
+
+    await userEvent.keyboard('{Escape}')
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('keeps the dialog open on Escape while an outcome is UNRESOLVED', async () => {
+    // Dismissing here would hide the fact that the write may have landed.
+    stub({ command: [() => problem(503)] })
+    renderAt(PATH)
+    await fillAndSubmit()
+
+    expect(await screen.findByText(/sonuç bilinmiyor/)).toBeTruthy()
+    await userEvent.keyboard('{Escape}')
+    expect(screen.getByRole('dialog')).toBeTruthy()
+  })
+
+  it('closes the dialog once the command is accepted', async () => {
+    stub()
+    renderAt(PATH)
+    await fillAndSubmit()
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(await screen.findByText('Değişiklik kaydedildi')).toBeTruthy()
+  })
+})
+
+describe('unsent draft during a company switch', () => {
+  it('warns before discarding a typed justification', async () => {
+    stub()
+    renderAt(PATH)
+    const dialog = await openDialog()
+    await userEvent.type(within(dialog).getByLabelText('Gerekçe'), 'Yarım kalmış gerekçe')
+
+    await userEvent.selectOptions(screen.getByRole('combobox'), COMPANY_B)
+
+    // The shared dirty-scope gate, not a local flag: nothing is switched until the
+    // user answers, so the draft survives "Kal".
+    expect(await screen.findByText('Kaydedilmemiş değişiklikler var')).toBeTruthy()
+  })
+
+  it('does not warn when nothing has been typed', async () => {
+    stub()
+    renderAt(PATH)
+    await openDialog()
+
+    await userEvent.selectOptions(screen.getByRole('combobox'), COMPANY_B)
+
+    await waitFor(() => expect(screen.queryByText('Kaydedilmemiş değişiklikler var')).toBeNull())
+  })
+})
+
+describe('the list behind the card', () => {
+  it('drops the cached list page so the change is visible there too', async () => {
+    /**
+     * Business requires the new state to be visible "on the same list page". Under the
+     * production 30 s staleTime a revisit would otherwise paint the pre-change rows
+     * from cache, so the accepted command invalidates them.
+     */
+    const { recorded } = stub({
+      detail: [
+        () => json(location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0', { version: 3 })),
+        () => json(location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0', { isActive: false, version: 4 })),
+      ],
+    })
+    const { queryClient } = renderAt(PATH, { retainCache: true })
+
+    // Seed a list page into the cache the way a visit to ORG-01 would.
+    await screen.findByText('OSM-H0')
+    const namespace = queryClient
+      .getQueryCache()
+      .getAll()
+      .map((entry) => entry.queryKey)
+      .find((key) => key[2] === 'organization-location')?.[0]
+    expect(namespace).toBeTruthy()
+    queryClient.setQueryData([namespace, 1, 'organization-locations', 1], {
+      type: 'ok-single',
+      data: { items: [], page: 1, pageSize: 25, totalCount: 0 },
+    })
+
+    await fillAndSubmit()
+    await waitFor(() => expect(commandCalls(recorded)).toHaveLength(1))
+
+    await waitFor(() => {
+      const listQuery = queryClient
+        .getQueryCache()
+        .getAll()
+        .find((entry) => entry.queryKey[2] === 'organization-locations')
+      expect(listQuery?.state.isInvalidated).toBe(true)
+    })
+  })
+})
