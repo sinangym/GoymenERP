@@ -23,12 +23,14 @@
  */
 import { expect, test } from '@playwright/test'
 import { LiveRecorder, ProductDeliveryWithholder, evidenceIdentity, lShot, liveEnvironment, writeLJson } from '../src/live'
-import { CHECKPOINT_STAGES, DEFAULT_ACK_TIMEOUT_MS, awaitCheckpointAck, writeCheckpointRequest, type CheckpointReceipt, type CheckpointStage } from '../src/checkpoint'
+import { CHECKPOINT_STAGES, DEFAULT_ACK_TIMEOUT_MS, awaitCheckpointAck, boundedMs, writeCheckpointRequest, type CheckpointReceipt, type CheckpointStage } from '../src/checkpoint'
 import { runDir, runId as browserRunId } from '../paths'
 import { retrySame, saveDraft, saveEdit } from '../src/ui'
 
 const env = liveEnvironment()
-const ACK_TIMEOUT_MS = Number(process.env.URUN_CHECKPOINT_TIMEOUT_MS ?? DEFAULT_ACK_TIMEOUT_MS)
+// Validated once here, before any budget is derived from it: an unbounded or absurd
+// ceiling would otherwise turn a bounded wait into an open one.
+const ACK_TIMEOUT_MS = boundedMs(process.env.URUN_CHECKPOINT_TIMEOUT_MS ?? DEFAULT_ACK_TIMEOUT_MS, 'URUN_CHECKPOINT_TIMEOUT_MS')
 // The journey holds three quiet stages for the Backend; its own budget must cover them.
 test.setTimeout(CHECKPOINT_STAGES.length * ACK_TIMEOUT_MS + 5 * 60_000)
 

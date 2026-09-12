@@ -129,34 +129,49 @@ export function validateCheckpointAck(
   return { ack: a as unknown as CheckpointAck, snapshotBytes }
 }
 
+/** A wait ceiling or a poll interval must be a finite, positive number of milliseconds — anything else is not a bound. */
+export function boundedMs(value: unknown, name: string): number {
+  const ms = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(ms) || ms <= 0) refuse('CONFIG', name + ' must be a finite positive number of milliseconds; got ' + JSON.stringify(value))
+  return ms
+}
+
 /**
  * Waits for the ack of a stage — for the ARTIFACT, polled at a fixed short interval,
- * bounded by a run-configurable ceiling. A missing ack at the ceiling fails the stage
- * (`TIMEOUT`); a wrong ack fails it immediately.
+ * bounded by a run-configurable ceiling that is checked on EVERY turn of the loop,
+ * whatever branch the turn took (absent file, unreadable file, transient read error).
+ * A missing or unreadable ack at the ceiling fails the stage (`TIMEOUT`); a wrong ack
+ * fails it immediately; a ceiling or interval that is not a finite positive number is
+ * refused before the first wait.
  */
 export async function awaitCheckpointAck(
   runDir: string,
   expected: { stage: CheckpointStage; resourceRunId: string; requestSha256: string; requestPath: string },
   options: { timeoutMs?: number; pollMs?: number; now?: () => number; sleep?: (ms: number) => Promise<void>; readFile?: (file: string) => Buffer; exists?: (file: string) => boolean } = {},
 ): Promise<CheckpointReceipt> {
-  const timeoutMs = options.timeoutMs ?? Number(process.env.URUN_CHECKPOINT_TIMEOUT_MS ?? DEFAULT_ACK_TIMEOUT_MS)
-  const pollMs = options.pollMs ?? 1000
+  const timeoutMs = boundedMs(options.timeoutMs ?? process.env.URUN_CHECKPOINT_TIMEOUT_MS ?? DEFAULT_ACK_TIMEOUT_MS, 'checkpoint ack timeout')
+  const pollMs = boundedMs(options.pollMs ?? 1000, 'checkpoint poll interval')
   const now = options.now ?? (() => Date.now())
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
   const readFile = options.readFile ?? ((file: string) => readFileSync(file))
   const exists = options.exists ?? ((file: string) => existsSync(file))
   const ackPath = path.join(checkpointDir(runDir), expected.stage + '.ack.json')
   const started = now()
+  const deadline = started + timeoutMs
+  let lastProblem = 'no ack file'
   for (;;) {
     if (exists(ackPath)) {
-      let bytes: Buffer
-      try { bytes = readFile(ackPath) } catch { await sleep(pollMs); continue }
-      let raw: unknown
-      try { raw = JSON.parse(bytes.toString('utf8')) } catch { return refuse('SHAPE', 'ack is not JSON: ' + ackPath) }
-      const { ack, snapshotBytes } = validateCheckpointAck(raw, expected, readFile)
-      return { stage: expected.stage, requestPath: expected.requestPath, requestSha256: expected.requestSha256, ackPath, ackSha256: sha256(bytes), ack, snapshotBytes, waitedMs: now() - started }
-    }
-    if (now() - started >= timeoutMs) refuse('TIMEOUT', 'no ' + expected.stage + ' ack appeared at ' + ackPath + ' within ' + timeoutMs + ' ms; the stage was NOT continued')
+      let bytes: Buffer | null = null
+      try { bytes = readFile(ackPath) } catch (error) { lastProblem = 'ack not readable: ' + String((error as Error)?.message ?? error).slice(0, 80) }
+      if (bytes !== null) {
+        let raw: unknown
+        try { raw = JSON.parse(bytes.toString('utf8')) } catch { return refuse('SHAPE', 'ack is not JSON: ' + ackPath) }
+        const { ack, snapshotBytes } = validateCheckpointAck(raw, expected, readFile)
+        return { stage: expected.stage, requestPath: expected.requestPath, requestSha256: expected.requestSha256, ackPath, ackSha256: sha256(bytes), ack, snapshotBytes, waitedMs: now() - started }
+      }
+    } else lastProblem = 'no ack file'
+    // The one deadline check, reached from every branch that did not return.
+    if (now() >= deadline) refuse('TIMEOUT', 'no usable ' + expected.stage + ' ack at ' + ackPath + ' within ' + timeoutMs + ' ms (' + lastProblem + '); the stage was NOT continued')
     await sleep(pollMs)
   }
 }

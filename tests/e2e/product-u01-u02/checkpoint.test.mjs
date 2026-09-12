@@ -13,7 +13,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { after, test } from 'node:test'
-import { CheckpointError, awaitCheckpointAck, checkpointDir, validateCheckpointAck, writeCheckpointRequest } from './src/checkpoint.ts'
+import { CheckpointError, awaitCheckpointAck, boundedMs, checkpointDir, validateCheckpointAck, writeCheckpointRequest } from './src/checkpoint.ts'
 
 const tmp = mkdtempSync(path.join(tmpdir(), 'urun-checkpoint-'))
 after(() => rmSync(tmp, { recursive: true, force: true }))
@@ -62,6 +62,51 @@ test('no ack at the ceiling refuses the stage — the journey does not continue 
   const req = request(dir)
   let t = 0
   await refused(() => awaitCheckpointAck(dir, { stage: 'after-create', resourceRunId: RUN, requestSha256: req.sha256, requestPath: req.path }, { timeoutMs: 100, pollMs: 1, now: () => (t += 50), sleep: async () => {} }), 'TIMEOUT')
+})
+
+test('an ack file that stays UNREADABLE is not a continuation: the deadline holds on that branch too (TIMEOUT)', async () => {
+  const dir = runDir()
+  const req = request(dir)
+  writeFileSync(path.join(checkpointDir(dir), 'after-create.ack.json'), '{}')
+  let t = 0
+  let reads = 0
+  await refused(() => awaitCheckpointAck(dir, { stage: 'after-create', resourceRunId: RUN, requestSha256: req.sha256, requestPath: req.path }, {
+    timeoutMs: 100, pollMs: 1, now: () => (t += 30), sleep: async () => {},
+    readFile: () => { reads += 1; throw new Error('EBUSY: locked by the writer') },
+  }), 'TIMEOUT')
+  assert.ok(reads >= 2 && reads <= 5, `bounded number of read attempts, got ${reads}`)
+})
+
+test('a TRANSIENT read error is retried and the valid ack that follows continues the stage', async () => {
+  const dir = runDir()
+  const req = request(dir)
+  writeFileSync(path.join(checkpointDir(dir), 'after-create.ack.json'), JSON.stringify(ack({ requestSha256: req.sha256 })))
+  let attempts = 0
+  const { readFileSync } = await import('node:fs')
+  const receipt = await awaitCheckpointAck(dir, { stage: 'after-create', resourceRunId: RUN, requestSha256: req.sha256, requestPath: req.path }, {
+    timeoutMs: 10_000, pollMs: 1,
+    readFile: (file) => { attempts += 1; if (attempts <= 2) throw new Error('EBUSY'); return readFileSync(file) },
+  })
+  assert.equal(attempts, 3)
+  assert.equal(receipt.ack.requestSha256, req.sha256)
+})
+
+for (const [label, value] of [['NaN', Number.NaN], ['Infinity', Number.POSITIVE_INFINITY], ['zero', 0], ['negative', -5], ['a word', 'soon'], ['undefined env value coerced', 'undefined']]) {
+  test(`a ceiling of ${label} is refused before any wait (CONFIG) — an unbounded wait is not a bounded one`, async () => {
+    const dir = runDir()
+    const req = request(dir)
+    let slept = 0
+    await refused(() => awaitCheckpointAck(dir, { stage: 'after-create', resourceRunId: RUN, requestSha256: req.sha256, requestPath: req.path }, { timeoutMs: value, pollMs: 1, sleep: async () => { slept += 1 } }), 'CONFIG')
+    assert.equal(slept, 0)
+    assert.throws(() => boundedMs(value, 'x'), (e) => e instanceof CheckpointError && e.code === 'CONFIG')
+  })
+}
+
+test('a poll interval that is not finite and positive is refused the same way', async () => {
+  const dir = runDir()
+  const req = request(dir)
+  await refused(() => awaitCheckpointAck(dir, { stage: 'after-create', resourceRunId: RUN, requestSha256: req.sha256, requestPath: req.path }, { timeoutMs: 1_000, pollMs: 0 }), 'CONFIG')
+  assert.equal(boundedMs('1500', 'x'), 1500)
 })
 
 for (const [label, over, code] of [
