@@ -18,6 +18,7 @@ import { fetchCounterpartyDetail } from './detailApi'
 import { PARTY_KIND, PROBLEM_CODE, problemCodeOf } from './contract'
 import { API_BASE } from './clientContract'
 import { LEGACY_ROLE_HEADING, NO_COMMERCIAL_ROLE_DETAIL, rolesText } from './roleText'
+import { CARI_CARD_TEXT as CARD } from './cariCommandText'
 import type { CounterpartyDetail } from './detailContract'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
@@ -162,43 +163,67 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
       <h1 id="cari-detail-heading">{detail.legalName}</h1>
       <BackToList />
 
-      <dl className={styles.facts}>
-        <Fact label="Cari kodu" value={detail.code} />
-        <Fact label="Hukuki unvan" value={detail.legalName} />
-        {detail.tradeName !== null && detail.tradeName !== detail.legalName ? (
-          <Fact label="Ticari unvan" value={detail.tradeName} />
-        ) : null}
-        <Fact label="Tür" value={KIND_LABEL[detail.kind]} />
+      {/**
+        * TWO SECTIONS, and the split is not cosmetic.
+        *
+        * One Party is shared by every company the user is authorized in; the account
+        * under it belongs to ONE of them. Presented as a single flat list, "Pasif"
+        * read as a fact about the counterparty when it was a fact about this
+        * company's relationship with it — and once fields here become editable, the
+        * same flat list would leave the user unsure whether they are about to change
+        * what every other company sees. So each fact now sits under the thing it is
+        * actually about, and each section says whose data it is.
+        */}
+      <section aria-labelledby="cari-identity-heading" className={styles.block} data-section="identity">
+        <h2 id="cari-identity-heading" className={styles.blockTitle}>
+          {CARD.identityHeading}
+        </h2>
+        <p className={styles.blockNote}>{CARD.identityNote}</p>
+        <dl className={styles.facts}>
+          <Fact label="Cari kodu" value={detail.code} />
+          <Fact label="Hukuki unvan" value={detail.legalName} />
+          {detail.tradeName !== null && detail.tradeName !== detail.legalName ? (
+            <Fact label="Ticari unvan" value={detail.tradeName} />
+          ) : null}
+          <Fact label="Tür" value={KIND_LABEL[detail.kind]} />
+          {/* The GLOBAL party state. Its counterpart lives in the other section, and
+              the two are never collapsed into one "Durum". */}
+          <Fact
+            label="Taraf durumu"
+            value={detail.isActive ? 'Aktif' : 'Pasif'}
+            data-party-state={detail.isActive ? 'active' : 'inactive'}
+          />
+        </dl>
+      </section>
 
-        {/* Two independent facts, never collapsed into one "Durum". A Party can be
-            globally active while its account in this company is passive. */}
-        <Fact
-          label="Taraf durumu"
-          value={detail.isActive ? 'Aktif' : 'Pasif'}
-          data-party-state={detail.isActive ? 'active' : 'inactive'}
-        />
-
-        {/* The company is named from the shell directory, not from the record —
-            the response carries an id, and inventing a name from it would be a
-            guess. */}
-        <Fact
-          label="Aktif şirket"
-          value={activeCompany === null ? '—' : `${activeCompany.legalName} (${activeCompany.code})`}
-        />
-        <Fact
-          label="Şirket hesabı durumu"
-          value={account.isActive ? 'Aktif' : 'Pasif'}
-          data-account-state={account.isActive ? 'active' : 'inactive'}
-        />
-        {/* Named as history and STATED when absent (ILK_DILIM §7). The record's own
-            screen has room to say the second half out loud: a counterparty with no
-            commercial classification is not a record someone forgot to finish. */}
-        <Fact
-          label={LEGACY_ROLE_HEADING}
-          value={rolesText(account.roles, NO_COMMERCIAL_ROLE_DETAIL)}
-          data-roles={account.roles === 0 ? 'none' : 'legacy'}
-        />
-      </dl>
+      <section aria-labelledby="cari-account-heading" className={styles.block} data-section="account">
+        <h2 id="cari-account-heading" className={styles.blockTitle}>
+          {CARD.accountHeading}
+        </h2>
+        <p className={styles.blockNote}>{CARD.accountNote}</p>
+        <dl className={styles.facts}>
+          {/* The company is named from the shell directory, not from the record —
+              the response carries an id, and inventing a name from it would be a
+              guess. It heads this section because every fact below is scoped to it. */}
+          <Fact
+            label="Aktif şirket"
+            value={activeCompany === null ? '—' : `${activeCompany.legalName} (${activeCompany.code})`}
+          />
+          <Fact
+            label="Şirket hesabı durumu"
+            value={account.isActive ? 'Aktif' : 'Pasif'}
+            data-account-state={account.isActive ? 'active' : 'inactive'}
+          />
+          {/* Named as history and STATED when absent (ILK_DILIM §7). The record's own
+              screen has room to say the second half out loud: a counterparty with no
+              commercial classification is not a record someone forgot to finish. */}
+          <Fact
+            label={LEGACY_ROLE_HEADING}
+            value={rolesText(account.roles, NO_COMMERCIAL_ROLE_DETAIL)}
+            data-roles={account.roles === 0 ? 'none' : 'legacy'}
+          />
+        </dl>
+      </section>
     </section>
   )
 }

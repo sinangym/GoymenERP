@@ -23,6 +23,26 @@
   outline-offset: 2px;
 }
 
+/* A section is a group, not a box with a border for its own sake: the heading and
+   the note are what tell the user whose data the facts below belong to. */
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.blockTitle {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1a2233;
+  margin: 0;
+}
+.blockNote {
+  font-size: 0.8rem;
+  color: #55607a;
+  margin: 0 0 2px;
+}
+
 .facts {
   display: grid;
   /* Wraps instead of forcing a page-level horizontal scroll (WCAG 1.4.10). */

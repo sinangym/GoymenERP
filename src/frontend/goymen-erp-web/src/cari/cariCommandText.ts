@@ -106,6 +106,19 @@ export const CARI_LINK_TEXT = {
   candidateLabel: (code: string, legalName: string) => `${code} — ${legalName}`,
 } as const
 
+/**
+ * The Cari card (C-03). The two section notes are the load-bearing text here: the
+ * handoff requires the user to be able to tell SHARED party identity from what
+ * belongs only to the selected company's account, because that distinction decides
+ * which of the two is about to be changed and who else sees it.
+ */
+export const CARI_CARD_TEXT = {
+  identityHeading: 'Kimlik',
+  identityNote: 'Bütün yetkili şirketlerde aynı olan ortak taraf kimliği.',
+  accountHeading: 'Bu şirketteki hesap',
+  accountNote: 'Yalnız seçili şirketin hesabına ait bilgiler.',
+} as const
+
 export const CARI_COMMAND_TEXT = {
   unknown: {
     title: 'İşlem sonucu belirsiz',
