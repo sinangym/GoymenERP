@@ -5,29 +5,40 @@
  * is preference. It belongs to another lane with a single writer, and it encodes the
  * Counterparty client-contract handshake — the `X-ERP-Counterparty-Contract`
  * acknowledgment, cursor paging and the contract-version gate — none of which exist on
- * the Organization surface. Importing it would drag exactly the protocol this module
- * has been told repeatedly not to carry over. So this is the same PATTERN, written
- * small for this surface, not a second framework.
+ * the Organization surface. Importing it would drag in exactly the protocol this module
+ * has been told not to carry over. So this is the same PATTERN, written small for this
+ * surface, not a second framework.
+ *
+ * CORRELATION IS BY REQUEST IDENTITY, NOT BY PATH. Playwright hands the same `Request`
+ * object to the `request`, `response` and `requestfailed` events, so each record is
+ * keyed by it. Matching "the most recent unfinished record with this pathname" looked
+ * equivalent and is not: two reads of the same location that finish out of order would
+ * swap their statuses, bodies and sequence numbers — and those are precisely the values
+ * used to prove a fresh read happened AFTER a command.
+ *
+ * A RECORD IS ONLY EVIDENCE ONCE IT IS COMPLETE. `status` arrives with the response
+ * HEADERS; the JSON body arrives later. A read whose headers said 200 while its body was
+ * still in flight is not a completed read, so `completed()` requires both and the specs
+ * poll on that rather than on a rendered heading.
  *
  * NOTHING IS MOCKED. There is no `route.fulfill` in this file. The only interception is
  * `DeliveryWithholder`, which re-issues one REAL request with `route.fetch`, reads the
- * server's REAL answer, and then aborts the BROWSER's delivery of it. That models a
- * lost reply — the only way to reach a genuinely unknown outcome on demand — and it is
+ * server's REAL answer, and then aborts the BROWSER's delivery of it. That models a lost
+ * reply — the only way to reach a genuinely unknown outcome on demand — and it is
  * recorded as a withheld delivery, never as a network fault.
  *
  * REDACTION IS STRUCTURAL. Only a URL's pathname and its query KEYS are ever copied, so
- * no value can reach the evidence through this path; `authorization` and `cookie`
+ * no query value can reach the evidence through this path; `authorization` and `cookie`
  * headers are never read at all.
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { Page, Route, TestInfo } from '@playwright/test'
+import { expect, type Page, type Request, type Route, type TestInfo } from '@playwright/test'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 export const EVIDENCE_ROOT = process.env.ORG_EVIDENCE_DIR ?? path.join(here, '..', 'artifacts')
 
-/** Request/response headers this suite is allowed to record. */
 const RECORDED_REQUEST_HEADERS = [
   'x-company-id',
   'idempotency-key',
@@ -48,14 +59,15 @@ export interface LiveRecord {
   /** Query KEYS only, never values. */
   queryKeys: string[]
   requestHeaders: Record<string, string>
-  /** The PUT body. Organization command bodies carry no personal data. */
   requestBody?: unknown
   status?: number
   responseHeaders?: Record<string, string>
-  /** Present only for JSON reads; the Organization DTOs are structural, not personal. */
   responseBody?: unknown
-  /** Set when the browser's delivery of a real answer was deliberately withheld. */
-  withheld?: 'delivery-withheld'
+  /** The request produced no response at all (including a withheld delivery). */
+  failed?: string
+  /** True once the exchange is finished: a status plus its body, or a failure. */
+  complete: boolean
+  /** Monotonic ticks, so "this GET finished before that PUT was issued" is a comparison. */
   issuedAt: number
   settledAt?: number
 }
@@ -71,83 +83,184 @@ function pick(headers: Record<string, string>, allowed: readonly string[]): Reco
 
 export class LiveRecorder {
   readonly records: LiveRecord[] = []
-  private seq = 0
+  private readonly byRequest = new Map<Request, LiveRecord>()
+  private readonly bodies: Array<Promise<unknown>> = []
+  private tick = 0
 
-  private constructor(private readonly page: Page) {}
+  private constructor() {}
 
-  static async attach(page: Page): Promise<LiveRecorder> {
-    const recorder = new LiveRecorder(page)
+  static attach(page: Page): LiveRecorder {
+    const recorder = new LiveRecorder()
+
     page.on('request', (request) => {
-      if (!request.url().includes('/api/v1/')) return
       const url = new URL(request.url())
+      if (!url.pathname.startsWith('/api/v1/')) return
       let body: unknown
-      if (request.method() === 'PUT') {
+      if (request.method() !== 'GET') {
         try {
           body = JSON.parse(request.postData() ?? 'null')
         } catch {
           body = undefined
         }
       }
-      recorder.records.push({
-        seq: (recorder.seq += 1),
+      const record: LiveRecord = {
+        seq: recorder.records.length + 1,
         method: request.method(),
         path: url.pathname,
         queryKeys: [...url.searchParams.keys()],
         requestHeaders: pick(request.headers(), RECORDED_REQUEST_HEADERS),
         requestBody: body,
-        issuedAt: (recorder.seq += 1),
-      })
+        complete: false,
+        issuedAt: (recorder.tick += 1),
+      }
+      recorder.records.push(record)
+      recorder.byRequest.set(request, record)
     })
+
     page.on('response', (response) => {
-      const url = new URL(response.url())
-      if (!url.pathname.includes('/api/v1/')) return
-      const record = [...recorder.records]
-        .reverse()
-        .find((r) => r.path === url.pathname && r.status === undefined)
+      // Resolved through the REQUEST OBJECT, so overlapping same-path reads cannot swap.
+      const record = recorder.byRequest.get(response.request())
       if (record === undefined) return
       record.status = response.status()
       record.responseHeaders = pick(response.headers(), RECORDED_RESPONSE_HEADERS)
-      record.settledAt = (recorder.seq += 1)
-      void response
+      const body = response
         .json()
         .then((value: unknown) => {
           record.responseBody = value
         })
         .catch(() => {
-          /* 204 and problem bodies that do not parse are simply absent. */
+          /* 204 and unparseable problem bodies are legitimately absent. */
         })
+        .finally(() => {
+          // Complete only once the BODY is in: headers alone are not a completed read.
+          record.settledAt = (recorder.tick += 1)
+          record.complete = true
+        })
+      recorder.bodies.push(body)
     })
+
+    page.on('requestfailed', (request) => {
+      const record = recorder.byRequest.get(request)
+      if (record === undefined) return
+      // A withheld delivery lands here. It is an outcome, not a hang — mark it complete
+      // so `drain()` cannot wait forever on an answer that will never be delivered.
+      record.failed = request.failure()?.errorText ?? 'failed'
+      record.settledAt = (recorder.tick += 1)
+      record.complete = true
+    })
+
     return recorder
   }
 
-  /** Every request to a path, in issue order. */
-  forPath(pattern: RegExp, method?: string): LiveRecord[] {
+  /** Awaits every body this recorder has started reading. */
+  async drain(): Promise<void> {
+    await Promise.allSettled(this.bodies)
+  }
+
+  /** Completed exchanges only — the ones that may be used as evidence. */
+  completed(pattern: RegExp, method?: string): LiveRecord[] {
+    return this.records.filter(
+      (r) => r.complete && pattern.test(r.path) && (method === undefined || r.method === method),
+    )
+  }
+
+  /** Every request, complete or not. Use for "was this ever issued?" assertions. */
+  issued(pattern: RegExp, method?: string): LiveRecord[] {
     return this.records.filter(
       (r) => pattern.test(r.path) && (method === undefined || r.method === method),
     )
   }
 
-  /** The command requests this journey issued. */
   activeStatePuts(): LiveRecord[] {
-    return this.forPath(/\/api\/v1\/organization\/locations\/[^/]+\/active-state$/, 'PUT')
+    return this.completed(ACTIVE_STATE_RE, 'PUT')
   }
 
   siteReads(): LiveRecord[] {
-    return this.forPath(/\/api\/v1\/organization\/sites$/, 'GET')
+    return this.completed(SITES_RE, 'GET')
+  }
+
+  issuedSiteReads(): LiveRecord[] {
+    return this.issued(SITES_RE, 'GET')
   }
 
   locationPageReads(): LiveRecord[] {
-    return this.forPath(/\/api\/v1\/organization\/locations$/, 'GET')
+    return this.completed(LOCATIONS_RE, 'GET')
   }
 
   locationDetailReads(): LiveRecord[] {
-    return this.forPath(/\/api\/v1\/organization\/locations\/[0-9a-fA-F-]+$/, 'GET')
+    return this.completed(DETAIL_RE, 'GET')
   }
 
-  write(group: string, file: string): string {
+  /**
+   * Waits for a COMPLETED record matching `pick`, and returns it.
+   *
+   * This is the bounded await the acceptance cases use instead of trusting a rendered
+   * heading or a receipt notice. Those render on their own schedule: the list heading
+   * appears before the data lands, and the success notice appears before the fresh read
+   * that follows a 204 has finished. Polling the traffic itself is what makes the
+   * assertion about the exchange rather than about paint timing — and it is what stops
+   * ordinary real-API latency from failing the suite.
+   */
+  async waitFor(
+    description: string,
+    select: (records: readonly LiveRecord[]) => LiveRecord | undefined,
+    timeout = 20_000,
+  ): Promise<LiveRecord> {
+    await expect
+      .poll(() => (select(this.records) === undefined ? 0 : 1), {
+        timeout,
+        message: `timed out waiting for ${description}`,
+      })
+      .toBe(1)
+    return select(this.records)!
+  }
+
+  /** The nth completed request of a kind, waited for. */
+  waitForNth(
+    description: string,
+    pattern: RegExp,
+    method: string,
+    index: number,
+    timeout?: number,
+  ): Promise<LiveRecord> {
+    return this.waitFor(
+      description,
+      (records) =>
+        records.filter(
+          (r) => r.complete && r.method === method && pattern.test(r.path),
+        )[index],
+      timeout,
+    )
+  }
+
+  /** A completed read of `pattern` that was ISSUED after `tick`. */
+  waitForAfter(
+    description: string,
+    pattern: RegExp,
+    method: string,
+    tick: number,
+    timeout?: number,
+  ): Promise<LiveRecord> {
+    return this.waitFor(
+      description,
+      (records) =>
+        records.find(
+          (r) => r.complete && r.method === method && pattern.test(r.path) && r.issuedAt > tick,
+        ),
+      timeout,
+    )
+  }
+
+  async write(group: string, file: string): Promise<string> {
+    await this.drain()
     return writeEvidence(group, file, { records: this.records })
   }
 }
+
+export const ACTIVE_STATE_RE = /^\/api\/v1\/organization\/locations\/[^/]+\/active-state$/
+export const SITES_RE = /^\/api\/v1\/organization\/sites$/
+export const LOCATIONS_RE = /^\/api\/v1\/organization\/locations$/
+export const DETAIL_RE = /^\/api\/v1\/organization\/locations\/[0-9a-fA-F-]+$/
 
 /**
  * Sends ONE real command, reads the server's real answer, then withholds the browser's
@@ -155,7 +268,7 @@ export class LiveRecorder {
  *
  * This is how a genuine unknown outcome is produced without lying about anything: the
  * command really is committed server-side, and the client really does not learn the
- * result. A synthesised 503 would test our error branch; this tests the actual
+ * result. A synthesised 503 would exercise our error branch; this reproduces the actual
  * situation the idempotency key exists for.
  */
 export class DeliveryWithholder {
@@ -186,6 +299,13 @@ export class DeliveryWithholder {
       },
     )
   }
+
+  /** Bounded wait for the withheld exchange to have happened. */
+  async waitForWithheld(timeout = 20_000): Promise<void> {
+    await expect
+      .poll(() => this.withheldStatus, { timeout, message: 'timed out waiting for the withheld command' })
+      .not.toBeNull()
+  }
 }
 
 export function writeEvidence(group: string, file: string, value: unknown): string {
@@ -204,12 +324,19 @@ export async function shot(page: Page, group: string, label: string): Promise<st
   return target
 }
 
-/** Attaches the recorded traffic to the Playwright report of a failing case. */
+/**
+ * Attaches the traffic of the case that just ran.
+ *
+ * The recorder MUST be the one started at the beginning of that case. An earlier version
+ * attached a freshly created recorder, which by construction had observed nothing — so
+ * the promised diagnostic was an empty file exactly when it was needed.
+ */
 export async function attachEvidence(
   testInfo: TestInfo,
   recorder: LiveRecorder,
   group: string,
 ): Promise<void> {
-  const file = recorder.write(group, `${testInfo.title.replace(/[^a-z0-9]+/gi, '-')}.json`)
+  const slug = testInfo.title.replace(/[^a-z0-9]+/gi, '-').slice(0, 80)
+  const file = await recorder.write(group, `${slug}.json`)
   await testInfo.attach('organization-network', { path: file, contentType: 'application/json' })
 }

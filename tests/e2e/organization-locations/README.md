@@ -47,21 +47,37 @@ Ports are pinned: **27173 UI · 27080 API · 27433 SQL**. Cari (25xxx) and Ürü
 belong to other owners and are never touched. `strictPort` covers occupation; an
 `ORG_UI_PORT` that disagrees is refused here rather than becoming a confusing failure.
 
-## Prerequisites that do not exist yet
+## Prerequisites
 
-This package cannot run today, and says so rather than degrading:
+State as of this commit, verified against `main` rather than asserted:
 
-1. the server must publish the `organization.*` capabilities (#246 provider);
-2. the shell must mount the routes — `shell/capabilities.ts` declares the two ids
-   (#247), which is the frontend saying it has an implementation; the router/nav layer
-   is the shared owner's follow-up;
-3. the Organization environment must be stood up and declared ENV_READY with the tuple
-   above, per `tests/e2e-fixtures/organization-locations/README.md`;
-4. the `o-02` no-sites case additionally needs a **locations-only actor**, which the
-   fixture package marks `NOT_PREPARED` (PR #244 `a2a3cfc8`). Until one is bound, that
-   case **skips** and `artifacts/o-02-scope-and-permissions/coverage.json` records that it
-   was not measured. It is never reported as covered by this seed or by the SQL test's
-   permission reduction.
+1. **Done.** The shell mounts the routes and the nav entry (#248, `fc14554`), and
+   `shell/capabilities.ts` declares the two route ids (#247).
+2. **Outstanding.** The server must publish the `organization.*` capabilities. At
+   `main@fc14554` the only `IShellCapabilityProvider` implementation is still
+   `CounterpartyShellCapabilityProvider`, so until the #246 provider merges these routes
+   mount nothing — `CapabilityRoute` closes them onto the neutral not-found block, by
+   design. Every case here would fail at the first list read, correctly.
+3. **Outstanding.** The Organization environment must be stood up and declared ENV_READY
+   with the tuple above, per `tests/e2e-fixtures/organization-locations/README.md`;
+4. the `o-02` no-sites case additionally needs a **locations-only actor bound in the
+   manifest**. The environment owner has now PREPARED that payload, but it is not loaded
+   (`runtimeLoaded=false`) and it runs against its own reduced-permission seed in a fresh
+   owned database — the normal viewer/site assertions belong to the normal seed run.
+   Prepared input is not an observation: until a manifest binds the actor, that case
+   **skips** and `artifacts/o-02-scope-and-permissions/coverage.json` records that it was
+   not measured. It is never marked observed from a source hash, and never reported as
+   covered by the normal seed or by the SQL test's permission reduction.
+
+## Who owns port 27173 during a run
+
+This suite starts Vite itself through Playwright's `webServer` with
+`reuseExistingServer: false`, so it must be the only thing on 27173 when it starts. If
+the environment owner has a temporary Vite smoke process on that port, it has to be
+released first — otherwise `strictPort` refuses and the run stops before any case.
+
+That order is deliberate: the suite serving its own bound frontend is what makes the
+evidence say which frontend commit was measured.
 
 ## Running it, once the environment exists
 

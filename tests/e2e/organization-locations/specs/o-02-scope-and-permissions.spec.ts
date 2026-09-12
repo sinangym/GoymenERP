@@ -5,15 +5,18 @@
  * roles in `identity-seed.json` (`ORGANIZATION_READER` / `ORGANIZATION_OPERATOR`), the
  * #246 capability mapping and the fixture manifest's actor table.
  *
- * WHY THE BROWSER ADDS SOMETHING HERE. The component tests can prove the screen does
- * not RENDER a write surface. They cannot prove the server refuses one, nor that the
- * shell's capability snapshot and the server's permissions agree. Both of those are
- * measured here — and the distinction matters, because "did not display it" and "cannot
- * do it" are different guarantees and only the second is authorization.
+ * WHY THE BROWSER ADDS SOMETHING HERE. The component tests can prove the screen does not
+ * RENDER a write surface. They cannot prove the server refuses one, nor that the shell's
+ * capability snapshot and the server's permissions agree. Both are measured here — and
+ * the distinction matters, because "did not display it" and "cannot do it" are different
+ * guarantees and only the second is authorization.
  *
- * NOTHING IS MOCKED. The only interception rewrites ONE request header — the
- * development identity — to run the same real application as another real seeded actor.
- * Every status and body is the server's own; there is no `route.fulfill` here.
+ * EVERY ASSERTION WAITS FOR THE EXCHANGE. A heading renders before its data arrives, so
+ * each case polls for the COMPLETED record it is about.
+ *
+ * NOTHING IS MOCKED. The only interception rewrites ONE request header — the development
+ * identity — to run the same real application as another real seeded actor. Every status
+ * and body is the server's own; there is no `route.fulfill` here.
  *
  * NOT MEASURED: identity-provider revocation (the Development bootstrap host
  * authenticates by header, so a real revocation cannot be produced), and database rows.
@@ -28,11 +31,21 @@ import {
   locationLink,
   pageItems,
 } from '../src/journey.js'
-import { LiveRecorder, shot, writeEvidence } from '../src/recorder.js'
-import { readOrganizationManifest } from '../src/manifest.js'
+import {
+  DETAIL_RE,
+  LOCATIONS_RE,
+  LiveRecorder,
+  SITES_RE,
+  attachEvidence,
+  shot,
+  writeEvidence,
+} from '../src/recorder.js'
+import { ORG_UI_PORT, readOrganizationManifest } from '../src/manifest.js'
 
 const manifest = readOrganizationManifest()
 const GROUP = 'o-02-scope-and-permissions'
+/** The one verified origin this lane serves. Contexts created by hand need it explicitly. */
+const BASE_URL = `http://127.0.0.1:${ORG_UI_PORT}`
 /** Fixture expectations: the viewer is scoped to SITE-OSM, which holds these eight. */
 const VIEWER_SITE_CODE = 'SITE-OSM'
 const VIEWER_LOCATION_COUNT = 8
@@ -48,88 +61,106 @@ async function asActor(context: BrowserContext, actor: string): Promise<void> {
   })
 }
 
+let active: LiveRecorder | null = null
+
 test.describe('O-02 scope and permissions', () => {
   test('the site-scoped viewer sees only its own facility and is offered no write surface', async ({
     page,
     context,
   }) => {
     await asActor(context, manifest.viewerActor)
-    const net = await LiveRecorder.attach(page)
+    const net = LiveRecorder.attach(page)
+    active = net
 
     await page.goto(ORG_LIST_PATH)
-    await expect(listHeading(page)).toBeVisible()
 
-    const sites = net.siteReads()
-    expect(sites.length).toBeGreaterThan(0)
-    expect(sites[0].status).toBe(200)
-    const siteBodies = sites.at(-1)!.responseBody as Array<{ code: string }>
-    expect(siteBodies.map((s) => s.code)).toEqual([VIEWER_SITE_CODE])
+    const sites = await net.waitForNth('the viewer facility read', SITES_RE, 'GET', 0)
+    expect(sites.status).toBe(200)
+    expect((sites.responseBody as Array<{ code: string }>).map((s) => s.code)).toEqual([
+      VIEWER_SITE_CODE,
+    ])
 
-    const locations = pageItems(net.locationPageReads().at(-1)!.responseBody)
+    const page1 = await net.waitForNth('the viewer location page read', LOCATIONS_RE, 'GET', 0)
+    expect(page1.status).toBe(200)
+    const locations = pageItems(page1.responseBody)
     expect(locations).toHaveLength(VIEWER_LOCATION_COUNT)
     expect(locations.some((l) => l.code === HIDDEN_CODE)).toBe(false)
 
+    await expect(listHeading(page)).toBeVisible()
+
     // The card opens; the reasoned-change control does not exist for a reader.
     await locationLink(page, locations[0].code).click()
+    const detail = await net.waitForNth('the viewer card detail read', DETAIL_RE, 'GET', 0)
+    expect(detail.status).toBe(200)
     await expect(cardHeading(page)).toBeVisible()
     await expect(actionTrigger(page)).toHaveCount(0)
     await expect(page.getByLabel('Gerekçe')).toHaveCount(0)
     // Not showing it is not the guarantee; not sending it is.
-    expect(net.activeStatePuts()).toHaveLength(0)
+    expect(net.issued(/active-state$/, 'PUT')).toHaveLength(0)
 
     await shot(page, GROUP, '01-viewer-card')
-    net.write(GROUP, 'viewer.json')
+    await net.write(GROUP, 'viewer.json')
   })
 
   test('a location outside the viewer scope is non-disclosing on a direct link', async ({
     page,
     context,
+    browser,
   }) => {
     /**
-     * The deep link is the interesting case: the row was never rendered, so only a
-     * direct navigation can reach it. A 404 that leaks the id would tell the viewer the
-     * record exists — which is the disclosure the non-disclosure rule forbids.
+     * The deep link is the interesting case: the row was never rendered for the viewer,
+     * so only a direct navigation can reach it. A 404 that leaked the id would tell the
+     * viewer the record exists — the disclosure the non-disclosure rule forbids.
+     *
+     * The id is looked up in a SEPARATE operator context so the viewer interception
+     * cannot touch it. That context is created by hand and therefore does NOT inherit
+     * the suite's `use.baseURL`; it is given the verified origin explicitly, because a
+     * relative navigation there would otherwise have nothing to resolve against.
      */
-    const operator = await context.browser()!.newContext()
-    const lookup = await operator.newPage()
-    const lookupNet = await LiveRecorder.attach(lookup)
+    const operatorContext = await browser.newContext({ baseURL: BASE_URL })
+    const lookup = await operatorContext.newPage()
+    const lookupNet = LiveRecorder.attach(lookup)
     await lookup.goto(ORG_LIST_PATH)
-    await expect(listHeading(lookup)).toBeVisible()
-    const hidden = pageItems(lookupNet.locationPageReads().at(-1)!.responseBody).find(
-      (row) => row.code === HIDDEN_CODE,
+    const operatorPage = await lookupNet.waitForNth(
+      'the operator location page read',
+      LOCATIONS_RE,
+      'GET',
+      0,
     )
-    expect(hidden, `${HIDDEN_CODE} must exist for the operator`).toBeTruthy()
-    await operator.close()
+    expect(operatorPage.status).toBe(200)
+    const hidden = pageItems(operatorPage.responseBody).find((row) => row.code === HIDDEN_CODE)
+    expect(hidden, `${HIDDEN_CODE} must be visible to the operator`).toBeTruthy()
+    await operatorContext.close()
 
     await asActor(context, manifest.viewerActor)
-    const net = await LiveRecorder.attach(page)
+    const net = LiveRecorder.attach(page)
+    active = net
     await page.goto(locationCardPath(hidden!.id))
 
-    const detail = net.locationDetailReads()
-    expect(detail.length).toBeGreaterThan(0)
-    expect(detail.at(-1)!.status).toBe(404)
-    const body = JSON.stringify(detail.at(-1)!.responseBody ?? {})
-    expect(body).not.toContain(hidden!.id)
-    expect(net.activeStatePuts()).toHaveLength(0)
+    const detail = await net.waitForNth('the viewer deep-link detail read', DETAIL_RE, 'GET', 0)
+    expect(detail.status).toBe(404)
+    expect(JSON.stringify(detail.responseBody ?? {})).not.toContain(hidden!.id)
+    expect(net.issued(/active-state$/, 'PUT')).toHaveLength(0)
 
     await shot(page, GROUP, '02-hidden-deep-link')
-    net.write(GROUP, 'hidden-deep-link.json')
+    await net.write(GROUP, 'hidden-deep-link.json')
   })
 
   test('an actor in the other company reads nothing of company A', async ({ page, context }) => {
     await asActor(context, manifest.foreignActor)
-    const net = await LiveRecorder.attach(page)
+    const net = LiveRecorder.attach(page)
+    active = net
 
     await page.goto(ORG_LIST_PATH)
-    await expect(listHeading(page)).toBeVisible()
-
-    const locations = pageItems(net.locationPageReads().at(-1)!.responseBody)
+    const read = await net.waitForNth('the foreign location page read', LOCATIONS_RE, 'GET', 0)
+    expect(read.status).toBe(200)
     // The fixture seeds no topology for the second company.
-    expect(locations).toHaveLength(0)
-    expect(net.activeStatePuts()).toHaveLength(0)
+    expect(pageItems(read.responseBody)).toHaveLength(0)
+    await expect(listHeading(page)).toBeVisible()
+    expect(net.issued(/active-state$/, 'PUT')).toHaveLength(0)
 
     await shot(page, GROUP, '03-foreign-company')
-    net.write(GROUP, 'foreign.json')
+    await net.write(GROUP, 'foreign.json')
   })
 
   test('without the optional sites capability the screen issues ZERO /sites requests', async ({
@@ -141,38 +172,47 @@ test.describe('O-02 scope and permissions', () => {
      * the ORG-01 route stands on `organization.locations.read` alone, and when the sites
      * capability is absent the request is not issued at all.
      *
-     * The fixture package marks this actor variant NOT_PREPARED (PR #244 `a2a3cfc8`), and
-     * all three prepared actors hold the sites permission — so this case SKIPS rather
-     * than pretending. It is recorded as not-measured; it is never reported as covered
-     * by this seed, nor by the SQL test's permission reduction.
+     * The environment owner has PREPARED a locations-only payload, but it is not loaded
+     * (`runtimeLoaded=false`) and this case runs against its own reduced-permission seed
+     * in a fresh owned database. Prepared input is not an observation: until a manifest
+     * binds that actor, this case SKIPS and records that it was not measured. It is never
+     * marked observed from a source hash.
      */
     test.skip(
       manifest.locationsOnlyActor === undefined,
-      'locations-only actor variant is NOT_PREPARED in the fixture package; this case is not measured',
+      'no locations-only actor is bound in this manifest; the payload may be prepared but this run did not load it',
     )
     await asActor(context, manifest.locationsOnlyActor!)
-    const net = await LiveRecorder.attach(page)
+    const net = LiveRecorder.attach(page)
+    active = net
 
     await page.goto(ORG_LIST_PATH)
-    await expect(listHeading(page)).toBeVisible()
-
+    const read = await net.waitForNth('the locations-only page read', LOCATIONS_RE, 'GET', 0)
+    expect(read.status).toBe(200)
     // The entitled half of the screen works...
-    const locations = pageItems(net.locationPageReads().at(-1)!.responseBody)
-    expect(locations.length).toBeGreaterThan(0)
-    // ...and the facility read was never attempted.
-    expect(net.siteReads()).toHaveLength(0)
+    expect(pageItems(read.responseBody).length).toBeGreaterThan(0)
+    await expect(listHeading(page)).toBeVisible()
+    // ...and the facility read was never attempted, not merely discarded.
+    expect(net.issuedSiteReads()).toHaveLength(0)
 
     await shot(page, GROUP, '04-locations-only')
-    net.write(GROUP, 'locations-only.json')
+    await net.write(GROUP, 'locations-only.json')
+  })
+
+  test.afterEach(async ({}, testInfo) => {
+    if (active !== null && testInfo.status !== testInfo.expectedStatus) {
+      await attachEvidence(testInfo, active, GROUP)
+    }
+    active = null
   })
 
   test.afterAll(async () => {
     writeEvidence(GROUP, 'coverage.json', {
-      locationsOnlyActorPrepared: manifest.locationsOnlyActor !== undefined,
+      locationsOnlyActorBound: manifest.locationsOnlyActor !== undefined,
       note:
         manifest.locationsOnlyActor === undefined
-          ? 'The sites-capability-absent case was SKIPPED: the fixture package marks that actor variant NOT_PREPARED. It is not covered by this run.'
-          : 'The sites-capability-absent case ran against a prepared locations-only actor.',
+          ? 'The sites-capability-absent case was SKIPPED: no locations-only actor is bound in this manifest. A prepared payload that was never loaded is not an observation, and this run does not cover that case.'
+          : 'The sites-capability-absent case ran against a bound locations-only actor in its own reduced-permission seed.',
     })
   })
 })
