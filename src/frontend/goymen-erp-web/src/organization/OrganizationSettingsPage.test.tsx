@@ -285,6 +285,12 @@ describe('company switch', () => {
     const { router } = renderAt(PATH)
     await screen.findByRole('table', { name: /SITE-OSM/ })
     const before = requestsFor(recorded, '/organization/locations').length
+    // The switch only means something if we STARTED somewhere else. Asserted rather
+    // than assumed: the shell bootstraps from a stored company preference, so a leak
+    // from a previous case would otherwise turn this into a no-op that still passes.
+    expect(requestsFor(recorded, '/organization/locations')[0].headers['X-Company-Id']).toBe(
+      COMPANY_A,
+    )
 
     await userEvent.selectOptions(screen.getByRole('combobox'), COMPANY_B)
 
@@ -308,6 +314,14 @@ describe('company switch', () => {
     await waitFor(() =>
       expect(requestsFor(recorded, '/organization/locations').some((r) => r.url.includes('page=2'))).toBe(true),
     )
+    // Same guard as above, and this is the case that actually caught the leak on CI:
+    // with a stale preference the run started in B, so the page=2 read WAS a B read
+    // and "never the previous company's page" failed for the right reason.
+    expect(
+      requestsFor(recorded, '/organization/locations').every(
+        (r) => r.headers['X-Company-Id'] === COMPANY_A,
+      ),
+    ).toBe(true)
 
     await userEvent.selectOptions(screen.getByRole('combobox'), COMPANY_B)
 

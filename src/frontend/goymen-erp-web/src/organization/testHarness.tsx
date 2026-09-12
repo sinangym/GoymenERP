@@ -126,6 +126,43 @@ export interface RecordedRequest {
   readonly body: unknown
 }
 
+/**
+ * The shell remembers the last chosen company in `localStorage`
+ * (`useShellOrchestrator`, key `goymen-company-id`) and bootstraps into it. That is
+ * SHARED state between tests in one file, so without a reset the company a previous
+ * case switched to becomes the company the next case starts in — and a test that means
+ * "switch from A to B" silently becomes "already in B, no switch at all".
+ *
+ * This is exactly what failed on CI while passing locally: this Node build has no
+ * `window.localStorage`, so the preference was never stored here and every case
+ * bootstrapped into the first authorized company. CI has real web storage, so the leak
+ * was real there and only there.
+ *
+ * Rather than call `window.localStorage.clear()` — which throws in this environment and
+ * is why several shell test files fail locally — the harness installs a small in-memory
+ * store and clears it per test. Both environments then behave the SAME way, and the way
+ * they behave is the one production has.
+ */
+function resetCompanyPreference(): void {
+  const store = new Map<string, string>()
+  const stub: Storage = {
+    get length() {
+      return store.size
+    },
+    clear: () => store.clear(),
+    getItem: (key: string) => store.get(key) ?? null,
+    key: (index: number) => [...store.keys()][index] ?? null,
+    removeItem: (key: string) => void store.delete(key),
+    setItem: (key: string, value: string) => void store.set(key, String(value)),
+  }
+  // Defined on the window the shell actually reads (`window.localStorage`), per test.
+  Object.defineProperty(window, 'localStorage', {
+    value: stub,
+    configurable: true,
+    writable: true,
+  })
+}
+
 export interface HarnessOptions {
   /** Capability ids the SERVER grants. Defaults to read + status. */
   readonly capabilities?: readonly string[]
@@ -138,6 +175,9 @@ export interface HarnessOptions {
  * bootstrap; everything else is delegated to `respond`.
  */
 export function installFetch(options: HarnessOptions = {}): RecordedRequest[] {
+  // Per test, before anything mounts: the company the shell bootstraps into must be
+  // decided by this case alone, never inherited from the previous one.
+  resetCompanyPreference()
   const capabilities = options.capabilities ?? OPERATOR_CAPABILITIES
   const recorded: RecordedRequest[] = []
 
