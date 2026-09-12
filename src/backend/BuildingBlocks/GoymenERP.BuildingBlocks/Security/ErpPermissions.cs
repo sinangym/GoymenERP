@@ -11,6 +11,7 @@ public static class ErpPermissions
 
     public const string CounterpartyPartiesRead = "counterparty.parties.read";
     public const string CounterpartyPartiesCreate = "counterparty.parties.create";
+    public const string CounterpartyPartiesUpdateBasic = "counterparty.parties.update.basic";
     public const string CounterpartyAccountsCreate = "counterparty.accounts.create";
     public const string CounterpartyAccountsStatusUpdate =
         "counterparty.accounts.status.update";
@@ -30,6 +31,7 @@ public static class ErpPermissions
             OrganizationLocationsStatusUpdate,
             CounterpartyPartiesRead,
             CounterpartyPartiesCreate,
+            CounterpartyPartiesUpdateBasic,
             CounterpartyAccountsCreate,
             CounterpartyAccountsStatusUpdate,
             IdentityProfileRead,
@@ -52,6 +54,7 @@ public static class ErpPermissions
         [
             CounterpartyPartiesRead,
             CounterpartyPartiesCreate,
+            CounterpartyPartiesUpdateBasic,
             CounterpartyAccountsCreate,
             CounterpartyAccountsStatusUpdate,
             IdentityAuditRead,
