@@ -92,8 +92,6 @@ fail-closed.
 
 ## 5. Önerilen drift testi (shell sahibi veya ben — kararı sahibin)
 
-Cari ids'in backend provider sabitlerine karşı doğrulandığı yerde, aynı biçimde:
-
 ```ts
 it('the shell mounts exactly the ids the Product lane declares', () => {
   expect(CAPABILITY.productItemsList).toBe(PRODUCT_CAPABILITY.productsList)
@@ -103,7 +101,18 @@ it('the shell mounts exactly the ids the Product lane declares', () => {
 ```
 
 Bir id sessizce ayrışırsa shell, grant verilmiş bir özelliği mount etmeyi bırakır — sessiz ve
-teşhisi zor bir kayıp. Cari tarafı bu testi tam bu nedenle taşıyor.
+teşhisi zor bir kayıp. Bu testin kapattığı şey budur.
+
+**Bu test backend parity kanıtı DEĞİLDİR.** Cari ids'i backend provider sabitlerine karşı
+doğrulayan test farklı bir şeyi kanıtlıyor: shell'in mount ettiği id'lerin sunucunun gerçekten
+yayımladığı id'ler olduğunu. Yukarıdaki test yalnız shell ↔ Ürün şeridi sabitlerini
+karşılaştırıyor, çünkü `product.*` henüz hiçbir backend provider'da yayımlanmadı — kıyaslanacak
+bir registry sabiti yok.
+
+`capabilities.ts`'in kendi doktrini bu sırayı zaten açıkça izin veriyor: listelemek hiçbir şey
+vermez, sunucu grant etmeden route nötr not-found basar. Gerçek parity testi, Backend Product
+registry'sini yayımladığında ve o sahip tarafından yazılacaktır; bu ara testin onun yerine
+sayılmaması gerekir.
 
 ---
 
