@@ -266,14 +266,14 @@ Bu tablo mevcut W1-CARI kapsamını owner bağımlılıklarıyla eşler; ikinci 
 | Kullanıcının işlemi ve sonucu | Alanlar/kurallar; verinin sahibi | Mevcut iş/kabul | Gerçek durum / en küçük bağımlılık |
 |---|---|---|---|
 | Firma/kişi kartı oluştur/aç | Counterparty: UUID, değişmez kod, hukuki tür/ad, ticari ad; ülke ve türü açık resmi kimlikler. Zorunlu ticari rol yok. | W1-CARI; C-02/03/07; CARI-AC-005/007/008/012/015/026; AT-009/010/014 | Ad/tür/kod/create-read çekirdeği mevcut ve fc kapsamı doğrulanmış. Vergi/ülke/sicil ve kritik değişiklik/onay §14.6'da TASARLANDI; global yetki kapısı açık, yeni kabul NOT_RUN. |
-| İletişim/adres/muhatap düzenle, yeniden aç ve geçmişini gör | Counterparty: açık Party/account kapsamı, telefon/e-posta, amaçlı çoklu adres, kişiler; update+audit, kritik alan ayrı. | W1-CARI; C-06; CARI-AC-009/010/011/020/021/022/030/031; AT-003/005/006/008 | **İlk alt uygulamada; gerçek kabul NOT_RUN.** #235 ara tüketici ve Backend DTO WIP'i §14.6'da ayrılmıştır; Finance/dış entegrasyon bağımlılığı yok. |
+| İletişim/adres/muhatap düzenle, yeniden aç ve geçmişini gör | Counterparty: açık Party/account kapsamı, telefon/e-posta, amaçlı çoklu adres, kişiler; update+audit, kritik alan ayrı. | W1-CARI; C-06; CARI-AC-009/010/011/020/021/022/030/031; AT-003/005/006/008 | **İlk alt uygulamada; gerçek kabul NOT_RUN.** #235 ara tüketici ve #236/a6efdc0 yayımlanmış Backend sözleşmesi §14.3–14.4'te ayrılmıştır; Finance/dış entegrasyon bağımlılığı yok. |
 | Aktif/pasif yap; mükerreri ve değişiklik geçmişini incele | Global Party ve hesap aktifliği ayrı. Fiziksel silme/otomatik merge yok. Kimlik eşleşmesi yalnız yetkili kapsamda adaydır. | W1-CARI; C-11; CARI-AC-008/014…025; AT-009/012/013 | Hesap lifecycle/özel SQL kanıtı korunur. Global master lifecycle, kapsamlı history ve mükerrer yönetimi açık; gerçek cross-module merge, ERP-000F ve referans sahiplerinin sözleşmesini bekler. |
 | Aynı Party'nin şirket ilişkilerini gör | Party tek; CompanyPartyAccount durumları ayrı. Her yazma açık tek şirkette. Tutarlar şirket+döviz bazında; izinli açık read toplamı hukuki mahsup değildir. | W1-CARI; CARI-AC-001…004/027; AT-001/008/010/011 | Çekirdek ilişki mevcut; tam grup görünümü ayrıca kanıtlanacak. Piksel düzeni tek-şirket akışını durdurmaz. |
 | Alış/satış/hizmet talep ve siparişleri, açık/kapalı ve kalanlar | Sales/Purchasing: PartyId/CompanyId, yön, mal-hizmet, Talep/Sipariş, satır, termin, miktar/birim, teslim/kapatılan/kalan ve kaynak linki. Talep stok bloke etmez. | W2-SATIS/W2-SATINALMA; CARI-AC-026/028; AT-024/025/026 | **Bağımlılık bekliyor:** gerçek owner kayıtları + yetkili sayfalı read/drill-down. Cari ikinci sipariş veya kalan hesap motoru üretmez. |
 | İrsaliye/fatura/dekont/ekstre/açık kalemi aç | Sales/Purchasing/Lojistik belge/teslimi; Finance/Accounting fatura/açık kalemi; Finance para/dekont/dağıtımı sahiplenir. Belge no/tarih/durum/yön/şirket/döviz/tutar/kaynak bağı ayrı. | W2-IRSALIYE/W2-ACIKKALEM/W4-FINANS/W4-MUHASEBE; CARI-AC-026…028; AT-025/055/058/065 | **Bağımlılık bekliyor.** Gerçek owner read sözleşmesi olmadan yer tutucu bitmiş değildir. Sipariş/irsaliye ledger, dekont dağıtımı ikinci para hareketi değildir. |
 | Onaylı risk/limit/vade ve stok/tahsis/fason giriş-çıkışı gör | Risk/Finance onaylı sürümlü hesap; Stock/Allocation/Lojistik mal sahibi, şirket, depo, etiket/lot, miktar/birim ve hareket bağları. Müşteri malı şirket malına dönüşmez. | W4-RISK/W1-SETTINGS/W3-STOK/W3-TAHSIS/W3-LOJISTIK; CARI-AC-026/027; AT-022/029…032/040 | **Bağımlılık bekliyor.** Eşik/kur/formül uydurulmaz. Sahip modül sonucu yokken sıfır risk/bakiye/stok gösterilmez. |
 | Belge/sürüm/sicil arşivine ve AI taslağına ulaş | Documents dosya/version/hash/link sahibi; Counterparty onaylı masterı tutar. AI yalnız yetkili kaynakla taslak/fark; kendisi onay/yazma yetkisi kazanmaz. | W0-DOCVAULT/W2-BELGE/ERP-000J; C-10; CARI-AC-014/015/032…034; AT-014/056/057/059/060/065 | **Bağımlılık bekliyor.** Manuel kart AI/dış sicil olmadan çalışır; eski belge güncel kartla yeniden yazılmaz. |
-| Sayfa/işlem/şirket/fiyat-tutar/onay yetkileri | Identity/Organization kapsamı üretir; her modül API'de uygular. Çıktı/arama/AI de alan yetkisine tabidir. | W1-YETKI; CARI-AC-001/004/013/015/033; AT-001/004/008/060/068 | Temel isolation mevcut; yeni edit/approval izinleri ayrıca pinlenecek. Read, create veya status izni kendiliğinden contact-edit/global-master/onay izni vermez. |
+| Sayfa/işlem/şirket/fiyat-tutar/onay yetkileri | Identity/Organization kapsamı üretir; her modül API'de uygular. Çıktı/arama/AI de alan yetkisine tabidir. | W1-YETKI; CARI-AC-001/004/013/015/033; AT-001/004/008/060/068 | Temel isolation mevcut; basic edit izin pini §14.4'te, ortak-master approval kapsamı §14.6'da ayrı ve açıktır. Read, create veya status izni kendiliğinden contact-edit/global-master/onay izni vermez. |
 
 Gerçek boş sonuç, yetkisizlik, yükleme ve bağımlı servisin yokluğu/hatası farklı gösterilir. Kısmi miktar, iade, kapanış ve risk formülleri sahibi modülden gelir. Ertelenmiş maliyet ve dış entegrasyonlar bu kartın başlangıç engeli değildir; ertelenmiş durumları korunur.
 
@@ -281,74 +281,87 @@ Gerçek boş sonuç, yetkisizlik, yükleme ve bağımlı servisin yokluğu/hatas
 
 **Yol:** C-01 → mevcut Party C-03 → Cari Bilgileri/C-06 → açık seçili şirket iletişimini Düzenle → Kaydet → kartta yeni değer → listeye dön ve yeniden aç.
 
+**Teknik kaynak pini:** Backend sahibi #236, `a6efdc0c9e22dc4531f87bd192def2bb44b46c2c`; [tam contact-information handoff][card-contact-be] ve aynı commit'in [OpenAPI'si][card-contact-openapi]. Handoff blob'u `0282fb2c652a97d8e0f687e359d567960ed60b05`; okunan sonraki #236/`1a330b4f86a0d5a2d504224f62fee7439dfdf0bc` başında bu dosya değişmemiştir. Aşağıdaki değerler önceki BUSINESS teknik önerilerinin yerini alan yayımlanmış kaynak sözleşmesidir; yeni işletme politikası, rol/grant, final review veya kabul PASS'i değildir. İlk edit browser kabulü NOT_RUN; test katmanları ve exact-head kanıtı ayrı tutulur.
+
 **İlk yazma kapsamı seçili CompanyPartyAccount'ın operasyon iletişimidir.** Ortak Party hukuki kimliği salt okunur. Ortak resmi merkez adresi/global master iletişimi burada şirket-yerel alana dönüştürülmez veya bu yetkiyle güncellenmez; tam teslimde ayrı kalır (§14.6). Hesap yoksa GET/Kaydet hesap oluşturmaz; mevcut yetkili link ayrıdır. Onaysız otomatik-account B seçilmez.
 
-Read açık `partyId/code/kind/legalName/tradeName/partyVersion/partyIsActive` ile `accountId/companyId/accountVersion/accountIsActive/roles` ayrımını taşır. İsimler DTO önerisidir; mevcut alan yeniden adlandırılmaz. Response roles zorunlu integer0..15; 15 geçerli,16 geçersiz. Şirket adı gerçek Organization kaynağından gelir. Mevcut [Party.cs][card-party] sınırları hukuki ad trim sonrası1..250, ticari ad nullable/ençok200'dür; bu alanlar bu editte yazılmaz.
+Contact GET yanıtı `partyId`, `accountId`, `companyId`, `version`, `isActive`, `information` taşır. `version` hesabın mantıksal sürümüdür; `isActive` hesap durumudur. `information` içinde `phone`, `phoneExtension`, `email`, `website`, `addresses[]`, `contacts[]` ve her muhatabın `channels[]` alanları vardır; opsiyonel metinler null, boş koleksiyonlar [] olarak döner; pasif child kayıtları korunur. Party kod/tür/ad/global durum ve `roles` mevcut detail kaynağından okunur, profil cevabında uydurulmaz. Mevcut account response'larında roles zorunlu integer0..15; 15 geçerli,16 geçersiz. Şirket adı gerçek Organization kaynağından gelir. [Party.cs][card-party] hukuki ad1..250/ticari ad nullable ençok200 sınırları korunur; bu edit bunları yazmaz.
 
-Yeni alanların aşağıdaki boyları **teknik contract önerisidir**, onaylı işletme/saklama politikası değildir. Backend ortak validator ile kesin boy/formatı OpenAPI ve Claude'a aynı devirde pinler; sessiz kırpma yok, rutin boy seçimi Sinan sorusu değildir.
+Bütün metinlerde trim; kontrol karakteri, sessiz kırpma veya aksan katlama yoktur. Aşağıdaki kesin teknik sınırları Backend validator/OpenAPI sahiplenir; Claude aynı kaynağı tüketir.
 
 | Alan | Zorunluluk/boş/format | Kapsam ve yasak etki |
 |---|---|---|
-| Telefon, cep, fax | Opsiyonel/null; trim, ençok64. `+`, baştaki0, ayraç/dahili kayıpsız; sayıya veya tahmini ülke koduna dönüştürülmez. | Ulaşılabilirlik/operatör teyidi değil. |
-| E-posta | Opsiyonel/null; trim, ençok254; tek adresin biçimi, liste ayıracıyla çok adres yığılmaz. | İletişim izni veya adres sahipliği teyidi değil. |
-| Web adresi | Opsiyonel/null; ençok2048; yalnız http/https. | Otomatik tarama/fetch yok. |
-| Adres kimliği/amaç/satır | Mevcut satırda bağlı UUID; yeni kimliği server üretir. Yeni adresin amacı ve satır1'i gerekli,1..500; satır2 nullable/ençok500. | Amaç genel iletişim/teslimat/faturalama; resmi adres teyidi değildir. Satır bu account'a ait olmalı. |
-| Adres ülkesi | Yeni adresde gerekli; referans ülke kodu2 büyük harf. TR varsayılmaz. | Adres ülkesi hukuki kimlik ülkesi değildir; bilinmeyen ülke yalnız o adres kaydını bekletir. |
-| İl/bölge, ilçe/yerleşim, posta kodu | Opsiyonel/null; ilk ikisi ençok100, posta kodu32; metin ve baştaki0 korunur. | Yabancı adreste TR il/ilçe zorunlu değil; resmi posta doğruluğu iddia edilmez. |
-| Muhatap adı/görevi | Yeni muhatapta ad1..200 gerekli; görev nullable/ençok100. Telefon/e-posta yukarıdaki gibi opsiyonel. | Muhatap yeni NaturalPerson Party değildir; enazbir kanal zorunluluğu üretilmez. |
-| Adres/muhatap aktifliği | Açık boolean, satır bazlı işlem. | Pasife alma geçmişi silmez ve Party/account aktifliğini değiştirmez. |
+| `phone` / phone kanalının `value` değeri | Profilde opsiyonel/null; yeni phone kanalında gerekli; ençok32. `+`, baştaki0 ve noktalama korunur. | Sayıya/tahmini ülke koduna dönüşüm ve ulaşılabilirlik teyidi yok. |
+| `phoneExtension` / phone kanalında `extension` | Opsiyonel/null, ençok10; bağlı phone gerekir; email kanalında kullanılamaz. | Dahili varken telefonu temizlemek için dahili de açıkça null gönderilir; phone değişimi saklanan dahiliyi sessiz silmez. |
+| `email` / email kanalının `value` değeri | Profilde opsiyonel/null; yeni email kanalında gerekli; ençok254; tek biçimsel mailbox, display-name/liste değil. | Teslimat veya adres sahipliği teyidi değil. |
+| `website` | Opsiyonel/null; ençok2048; absolute HTTP/HTTPS, host gerekli, gömülü kullanıcı/parola yok. | Otomatik fetch/tarama yok. |
+| Adres `purpose`, `line1`, `line2` | Yeni adreste purpose ve line1 gerekli; purpose yalnız `billing`, `delivery`, `operational`; line1 1..250, line2 nullable/ençok250. | Operasyonel kullanım; resmi merkez adresi veya resmi adres teyidi değildir. |
+| Adres `countryCode` | Yeni adreste gerekli; yalnız iki ASCII harf, uppercase saklama. | ISO registry/referans servis teyidi YOK; TR varsayımı ve hukuki kimlik ülkesi çıkarımı yok. |
+| Adres `city`, `district`, `postalCode` | Opsiyonel/null; ençok100/100/20; baştaki0 korunur. | TR dahil zorunlu il/ilçe politikası üretilmez; yabancı adres Türkçe hiyerarşiye zorlanmaz. |
+| Muhatap `displayName`, `jobTitle`, `purpose` | Yeni muhatapta displayName 1..200 ve purpose açık metin1..120 gerekli; jobTitle nullable/ençok120. | Purpose enum değildir. Muhatap ikinci NaturalPerson Party değildir; enazbir kanal zorunluluğu yok. |
+| Kanal `kind`, `value`, `extension` | Yeni kanalda kind yalnız `phone` veya `email`; value ilgili32/254 sınırında gerekli. Mevcut aynı UUID'de kind değişmez. | Çoklu phone kanalı desteklenir. Ayrı mobile/fax scalar veya sınıflandırması bu kaynakta yok; tam teslim listesinde sonraki açık iş olarak korunur, tamamlandı/kapsam dışı sayılmaz. |
+| Adres/muhatap/kanal `id`, `operation` | Boş olmayan UUID'yi yeni child için CLIENT üretir; aynı upsert/girişim/retry aynı id'yi korur. Operation yalnız `upsert`, `deactivate`, `reactivate`. | Kapsam account+collection; channel için ayrıca parent contact. UUID veya fiziksel DB yapısı yetki değildir; başka hesabın satırını adresleyemez. |
 
-**Eksik alan=değiştirme; null=opsiyonel tekil alanı açık temizle; boş/whitespace opsiyonel tekil metin=null.** Koleksiyonun eksikliği silme değildir; görünmeyen satırlar toplu replace ile silinmez. Yeni adres/muhatabın zorunlu alanı null olamaz. Kanal alanlarında kontrol karakteri/satır kırılması reddedilir; normal metnin aksanı/ad biçimi değiştirilmez. İlgisiz adres taslağının eksikliği telefon/e-posta update'ini bloke etmez.
+**İşlem listesi ve yaşam döngüsü:** Arrays tam değiştirme değil açık operasyon listeleridir. Gönderilmeyen array/child mevcut satırı korur. Null array/eleman, boş UUID ve aynı koleksiyonda yinelenen UUID operasyonu reddedilir. Her collection/request için ençok100 operasyon, kalıcı kart satır sayısı limiti değildir. Yeni UUID upsert yalnız seçili hesap/koleksiyonda child oluşturur. `deactivate/reactivate` mevcut child ister; yalnız id+operation taşır, value alanları veya nested değişiklik taşımaz. Pasif child'a upsert içerik düzeltmesi olabilir ama reactivation değildir; ayrı açık reactivate gerekir. Delete yok; Party/account aktifliği değişmez.
+
+**Eksik alan=değiştirme; null=opsiyonel tekil alanı açık temizle; boş/whitespace opsiyonel tekil metin=null.** Oluşturmada zorunlu alan, gönderildiğinde null/boş olamaz. `phone` ve varsa `phoneExtension` birlikte açık temizlenir; email kanalına extension eklenmez. Bağımsız telefon/e-posta kaydı için eksik adres taslağı gönderilmez; sunucuya gönderilen geçersiz karma işlem ise kısmi uygulanmaz. Görülmeyen child satırları toplu replace ile silinmez.
 
 ### 14.4 Sözleşme, ekran ve hata davranışı
 
-Mantıksal niyet: `UpdateCompanyPartyContactDetails`; var olan endpoint iddiası değildir. Read+write mevcut Counterparty route/transport standardını kullanır; fiziksel şema/route/DTO Backend'indir. `CompanyId` server-resolved context, Party/account bağı server'da doğrulanır. Read izni yanında açık temel iletişim update izni/capability gerekir; mevcut izin adları veya varsayılan grant'ler BUSINESS tarafından genişletilmez. Backend kesin izin eşlemesini Claude'a verir; yalnız create/status izninden yazma türetilmez. Migration/permission etkisi uygulanabilir K3 kapısındadır.
+Yayımlanmış kaynakta `GET/PUT /api/v1/counterparties/{partyId}/contact-information` kullanılır. Her ikisi server-resolved `X-Company-Id` ister; query parametreleri reddedilir. GET company-wide `counterparty.parties.read`; PUT bununla BİRLİKTE dedicated company-wide `counterparty.parties.update.basic` ister. Hiçbir normal rol/seed bu yeni izni otomatik almaz; read/create/status veya fiziksel kayıt varlığı edit yetkisi değildir. API grant normal staged UI provider'ını açmaz. Fiziksel şema/DTO/OpenAPI aynı Backend'indir; capability/UI tüketimi aynı Claude'dadır, uygulanabilir K3 kapıları korunur.
 
-Örnek niyet (wire'ı Backend pinler):
+PUT örneği (seçili hesaptan taze okunan version="7"; varsa telefon dahili bilgisi de temizlenir):
 
 ```json
 {
-  "expectedVersion": 7,
-  "changes": { "phone": null, "email": "operasyon@example.test" }
+  "expectedVersion": "7",
+  "changes": {
+    "phone": null,
+    "phoneExtension": null,
+    "email": "operasyon@example.test"
+  }
 }
 ```
 
-UUID/kod/Kind/legalName/officialIdentifier/IBAN/globalStatus gibi alan basic payload'a eklenirse tüm command reddedilir; kritik alanı ignore edip basic kısmı kısmen yazma yok. `expectedVersion` düzenlenen hesap/iletişim kaydının read sürümüdür, global PartyVersion değildir; kesin version temsili mevcut int64/string güvenli sözleşmeyle pinlenir.
+`version/expectedVersion` kanonik pozitif decimal STRING,1..9223372036854775807'dir; JSON number, baştaki0, işaret, kesir, exponent veya whitespace ret. Client Number dönüşümü yapmaz. Bu token SQL rowversion byte'ları veya global Party sürümü değil, tüm contact grafiğini koruyan account mantıksal Version'dır. Child read version'ları string'dir; ayrı expectedVersion girişi değildir. Root UUID/kod/Kind/legalName/officialIdentifier/IBAN/globalStatus veya başka bilinmeyen JSON alanı eklenirse tüm command reddedilir; açık child `id` bundan farklıdır. Yetkili şirkette ilişki yoksa güvenli404, yetkisiz şirket/dar scope için403; GET/PUT hesap yaratmaz.
 
-Kaydet yalnız kendi güncel API/actor/session/company/generation bağında taze başarılı decoder-valid GET+exact contract ACK ile açılır. Yetki ayrıca her command'de yeniden kontrol edilir. Gerçek değişiklikte iletişim sürümü ilerler; canonical değerler geri döner. Update+ilgili audit+durable sonuç atomiktir. Aynı-key replay ikinci business/audit etkisi üretmez. Değişiklik yoksa Kaydet kapalı; server no-op'un iş sürümü/audit'i artmaz, durable no-op sonucu ayrı değerlendirilir. Yeni Party/account, B iletişimi, resmi kimlik, finans/stok/sipariş veya eski belge değişmez.
+Kaydet yalnız kendi güncel API/actor/session/company/generation bağında taze başarılı decoder-valid GET+exact `X-ERP-Counterparty-Contract: optional-trade-roles-v1` ACK ile açılır; command aynı declaration'ı taşır. Hata ACK'i başarı/hazırlık değildir; hatada ACK yokluğu tek başına eski server kanıtı değildir. Yetki replay'den önce de yeniden kontrol edilir. Başarı **204+ACK, boş gövde**; canonical değer/sürüm taze GET'ten alınır, gönderilen taslak yeni gerçek diye boyanmaz. Update+ilgili audit+durable sonuç atomiktir; replay ikinci business/audit etkisi üretmez. Yeni Party/account, B iletişimi, resmi kimlik, finans/stok/sipariş veya eski belge değişmez.
+
+**No-op:** Canonical değişiklik yoksa child/account mantıksal sürümleri ve business audit artmaz; durable no-op sonucu kaydedilir. Version+SQL rowversion koşullu update concurrency kontrolünü korur; yalnız iç SQL rowversion ilerleyebilir. UI değişiklik yokken Kaydet'i kapatır; sunucudaki no-op kontrolü atlanmaz.
 
 | Durum | Beklenen kullanıcı sonucu |
 |---|---|
 | Read pending/error/ACK yok veya capability bilinmiyor | Yazma kapalı ve nedeni görünür; POST/PUT/PATCH0. Hata, gerçek boş iletişim değildir. |
-|400 validation_failed | Alan hatası+odaklı özet, taslak korunur; kısmi kayıt yok. |
+|400 validation_failed | Mevcut ProblemDetails code/title/detail; yapılandırılmış field/index/UUID errors map YOK. Localized detail parse edilmez, sunucu field pointer'ı uydurulmaz. Odaklı hata özeti ve taslak korunumu; kısmi kayıt yok. Yerel input doğrulaması ayrı olabilir. |
+|400 command_metadata_invalid; binding400 veya415 | Metadata kodu mevcut contract'tan gelir; binding400/unsupported-media415 gövdesiz olabilir, zorunlu ProblemDetails varsayılmaz. Güvenli hata özeti/taslak korunur. |
 |401/403/404 | Mevcut auth boundary/non-disclosure; yabancı hesap/sürüm/alan/history sızmaz. |
-|409 version_conflict | Taslak korunur; yetkili son kayıtla fark gösterilir. Kullanıcı incelemeden yeni version ile otomatik overwrite yok. |
+|409 version_conflict | Taslak korunur; yanıt numeric conflict nesnesi taşımaz, exact güncel string sürüm taze GET'ten alınır. İncelemesiz overwrite yok; sonraki retry409 önceki unknown girişimi kapatmaz. |
 |409 idempotency_conflict | Key farklı niyet için kullanılamaz; eski unknown silinmez. |
-| Timeout/teyitsiz veya bozuk sonuç/500 | Unknown; aynı girişim/key/path/body/account/company korunur. Otomatik retry/new-key yok; kendi taze valid GET+ACK sonrası açık same-key retry. Sonraki compatibility409 eski unknown'ı kapatmaz. |
-| Başarı | Yalnız doğrulanmış canonical response; tek başarı bildirimi, dirty kapanır; detay/liste dönüşünde kalıcı yeni değer. |
+| Timeout/teyitsiz veya sözleşme dışı sonuç/500/503 | Unknown; aynı girişim/key/path/body/account/company ve child UUID'leri korunur. Otomatik retry/new-key yok; kendi taze valid GET+ACK sonrası açık same-key retry. Sonraki compatibility409 eski unknown'ı kapatmaz. |
+| Başarı | Doğrulanmış204+ACK ve boş gövde; tek başarı bildirimi. Canonical görünüm taze GET'ten gelir. Sonraki GET hatası kaydı geri almaz; gönderilen taslak boyanmaz, yalnız okumayı yenile, kör PUT yok. |
 | Şirket/oturum/API değişimi, geç yanıt | Taslak/girişim başka bağlama kaydedilmez; eski response yeni ekranı/success'i değiştiremez. |
 | Vazgeç/geri | Mevcut dirty-form uyarısı ve güvenli iç return route; gönderilmiş unknown için rollback iddiası yok. |
 
-History aynı şirket/alan yetkisinde kim/zaman/alan-farkı/sürüm gösterir. Kişisel veriler ham telemetry/metric label'ına yazılmaz. Genel saklama/imha politikası seçilmez. İletişim edit adayı #235 yayımlanmıştır; ara tüketici/DTO WIP'i final API veya gerçek edit kabulü değildir. Mevcut C006 sonucu bunun yerine geçmez.
+History kaynağı mevcut korumalı audit read API'sidir; kendi `identity.audit.read` yetkisini ister, basic edit bu erişimi vermez. Before/after ve sürümler korumalı audit verisidir; kişisel veri ham telemetry/metric label'ına yazılmaz. Genel saklama/imha politikası seçilmez. #236 kaynak/DTO/OpenAPI yayımlıdır; hedef test/derleme, gerçek SQL ve browser kanıtı birbirinin yerine geçmez. Bu hizalama yeni kabul sonucu kaydetmez; temel edit browser NOT_RUN, C006 bu editin kanıtı değildir.
 
 ### 14.5 İlk editin kabul adımları — mevcut kimlikler
 
-Hepsi yeni edit için **tasarım / NOT_RUN**. Backend source+checkout+HTTP/REAL_SQL, Claude component+gerçek browser sonuçlarını ayrı pinler; test sayısı başarı ölçüsü değildir.
+Aşağıdaki kullanıcı kabul adımları kaynak sözleşmesine uyarlanmıştır; bu belge hizalaması yeni PASS kaydetmez. **Temel edit browser kabulü NOT_RUN.** Backend source+checkout+HTTP/REAL_SQL, Claude unit/helper/component+gerçek browser sonuçlarını ayrı pinler; hedef test/derleme tam edit kabulü değildir.
 
 | Mevcut kabul bağı | Başlangıç ve gerçek kullanıcı adımı | Beklenen kayıt/ekran ve yasak etki |
 |---|---|---|
-| CARI-AC-011/026/030; AT-003 | P'nin A/B hesabı var. A e-postasını değiştir, telefonu temizle; kaydet, listeye dön ve tekrar aç. | A yeni değer/null telefon, yeni sürüm+audit; B/global kimlik ve Party/account sayısı aynı. Approval/finans/stok kaydı yok. |
-| CARI-AC-009/010/011 | TR ve yabancı iki operasyon adresi/iki muhatap ekle; birini pasife al. | Amaç/ülke/kapsam ayrı; yabancıya TR ilçe zorunlu değil; eski satır/history korunur. |
-| CARI-AC-011/030; AT-006 | Geçersiz e-posta, aşırı uzun değer veya eksik zorunlu adres alanıyla kaydet, düzelt. |400+taslak korunumu; business/audit0. Eksik/değeri-null/boş ayrımı ve koleksiyon korunumu doğrulanır. |
-| CARI-AC-004/015; AT-001/008 | A kullanıcısı B account/contact ID'sini dener; read-only kullanıcı save dener. | Server403/güvenli404, write0; yabancı kimlik/sürüm/history sızıntısı yok. |
+| CARI-AC-011/026/030; AT-003 | P'nin A/B hesabı var. A e-postasını değiştir, telefonu ve varsa phoneExtension'ı açık null yap; kaydet, taze GET, listeye dön ve tekrar aç. |204+ACK ardından A yeni değer/null telefon-dahili, exact string sürüm+audit; B/global kimlik ve Party/account sayısı aynı. Approval/finans/stok kaydı yok. |
+| CARI-AC-009/010/011 | Client UUID'lerle iki adres/muhatap/kanal ekle; birini pasife al, sonra upsert ve ayrı reactivate dene. | Aynı girişim/retry UUID'leri sabit; status operasyonu value/nested değişiklik taşımaz, inactive upsert reactivation olmaz. Purpose/ülke sınırları §14.3; eski satır/history korunur. |
+| CARI-AC-011/030; AT-006 | Geçersiz e-posta, aşırı uzun değer veya eksik zorunlu adres alanıyla kaydet, düzelt. |400 hata özeti+taslak; server field-map veya detail parse yok, business/audit0. Dahili-phone, immutable kanal kind, null/duplicate operasyon ve100 işlem/request sınırı da aynı doğrulama varyantlarıdır; kalıcı satır limiti değildir. |
+| CARI-AC-004/015; AT-001/008 | A kullanıcısı B hesap bağlamını dener; read-only kullanıcı save dener. A'da upsert id'si B child UUID'siyle aynı olsa da kapsamı ayrıca doğrula. | Yetkisiz hedef403/güvenli404, write0. Child UUID global otorite değil: yetkili A'da yalnız A+collection(+parentcontact) adreslenir/oluşur; B verisi okunmaz/değişmez. |
 | CARI-AC-012/013/022 | Basic update'e legalName/VKN/IBAN ekle. | Tüm command reddedilir; kritik veya basic kısmi etki/onay bypass yok. |
-| CARI-AC-020/021/022; AT-005 | İki kullanıcı aynı sürümü açar; biri kaydeder. İkinci stale, same-key replay ve different-payload retry dener. | Stale409 overwrite yapmaz; replay tek etki; farklı payload409; audit/durable hata enjeksiyonunda atomik rollback. |
+| CARI-AC-020/021/022; AT-005 | İki kullanıcı aynı sürümü açar; biri kaydeder. İkinci stale, same-key replay ve different-payload retry dener. | Stale409 overwrite yapmaz; sürüm fresh GET string'inden, replay tek etki ve aynı UUID; farklı payload409; audit/durable hata enjeksiyonunda atomik rollback. Canonical no-op sürüm/audit0, durable sonuç var ve concurrency guard etkin. |
 | CARI-AC-030/031; AT-006/008 | Valid GET sonrası offline; gerçek save cevabını kontrollü kaybettir; şirket/oturum değiştir, uygun bağlamda explicit retry yap. | Hazırlık yokken write0; unknown key korunur; geç yanıt başka şirkete yazmaz; same-key tek kalıcı etki. Helper testi form/browser yerine sayılmaz. |
-| CARI-AC-029/031 | Klavyeyle düzenle; success/error focus, geri ve yeniden açmayı yap. | Kalıcı doğru kayıt, label/aria/odak ve güvenli liste dönüşü; yalnız ekran açılması PASS değil. |
+| CARI-AC-029/031 | Klavyeyle düzenle; success/error focus, geri ve yeniden açmayı yap. |204 sonrası fresh GET ile kalıcı doğru kayıt, label/aria/odak ve liste dönüşü; okumada hata olursa sent-payload canonical sayılmaz. History ayrı audit izniyle; yalnız ekran açılması PASS değil. |
 
 ### 14.6 Bir sonraki tek alt: resmi kimlik/banka ve kritik değişiklik
 
-**12 Eylül 2026 — iş akışı TASARLANDI, kritik master uygulaması/HTTP/REAL_SQL/browser NOT_RUN; yetki kapsamı aşağıdaki tek soruya bağlı.** Bu bölüm mevcut W1-CARI teslim listesinin firma kimliği, history ve onay satırlarını ayrıntılandırır; yeni kabul numarası veya generic approval projesi açmaz. İlk iletişim işi sürer: [#235/eab785f][card-contact-fe] ara tüketicidir; Backend contact-information alan/nullable/operasyon ve decimal-string account version devri koordinatörce WIP olarak bildirilmiştir. Derlenmiş pin/OpenAPI veya gerçek edit kabulü yerine sayılmaz. İlk iş bu bölümü, canlı ENV'yi veya global onay kararını beklemez.
+**12 Eylül 2026 — iş akışı TASARLANDI, kritik master uygulaması/HTTP/REAL_SQL/browser NOT_RUN; yetki kapsamı aşağıdaki tek soruya bağlı.** Bu bölüm mevcut W1-CARI teslim listesinin firma kimliği, history ve onay satırlarını ayrıntılandırır; yeni kabul numarası veya generic approval projesi açmaz. İlk iletişim işi sürer: [#235/eab785f][card-contact-fe] ara tüketicidir; Backend contact-information kaynak/DTO/OpenAPI devri artık [#236/a6efdc0][card-contact-be] ile yayımlıdır (§14.3–14.4); kaynak/derleme/ara test gerçek edit veya kritik master kabulü değildir. İlk iş bu bölümü, canlı ENV'yi veya global onay kararını beklemez.
 
 #### 14.6.1 Yetki kaynakları: kilitli kural ile eksik kapsam
 
@@ -444,7 +457,7 @@ Karar yalnız global izin/persist/approve/apply bağını etkiler. Mevcut yetkil
 
 ### 14.7 Mevcut sahipler için devir/bitiş
 
-**Backend:** mevcut contact-information alan/null/operasyon/decimal-string account version ve OpenAPI devrini aynı ilk işte tamamlar. Sonraki §14.6 için saf öneri/diff/hash/sürüm ve atomiklik modelini, default-deny yetki adaptasyon noktasıyla hazırlar; açık policy yerine grant seçmez. Tek contract'ta action/target/scope/required-nullable/version/ProblemCode ve başarı-replay örneklerini Claude'a verir; frontend uygulamasını bekleyerek contract'ı tutmaz. HTTP/REAL_SQL kabulü ayrı, fiziksel şema kendisinde; global mastera şirket izniyle geçiş yok.
+**Backend:** contact-information alan/null/operasyon/decimal-string account version ve OpenAPI kaynak pinini [#236/a6efdc0][card-contact-be] ile yayımladı; aynı ilk işin final contract/CI/SQL devri ve Claude entegrasyonu kendi exact kaynaklarıyla ilerler. Sonraki §14.6 için saf öneri/diff/hash/sürüm ve atomiklik modelini, default-deny yetki adaptasyon noktasıyla hazırlar; açık policy yerine grant seçmez. Tek contract'ta action/target/scope/required-nullable/version/ProblemCode ve başarı-replay örneklerini Claude'a verir; frontend uygulamasını bekleyerek contract'ı tutmaz. HTTP/REAL_SQL kabulü ayrı, fiziksel şema kendisinde; global mastera şirket izniyle geçiş yok.
 
 **Claude:** aynı #235 ilk C-03/C-06 iletişim editini sürdürür. Bir sonraki alt için §14.6 geçerli/önerilen değer, gerekçe, pending/rejected/stale ve farklı onaycı davranışını Backend'in tek DTO taslağıyla hazırlar; fixture'ı gerçek kayıt saymaz. Final API/permission olmadan submit/approve açmaz. Gerçek kaydet/öneri/karar/retry/dönüş ve erişilebilirlik kabulünü ayrı verir; endpoint/grant veya ikinci create/link uygulaması üretmez.
 
@@ -466,3 +479,6 @@ Kapsam küçültülmedi: kritik/global master ve diğer Cari işleri aynı liste
 [card-auth-service]: https://github.com/sinangym/GoymenERP/blob/3e7dd98a5f8b7cb9e6850e05148eb4e7b26f3e3f/src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/ErpAuthorizationService.cs
 [card-group-draft]: https://github.com/sinangym/GoymenERP/blob/3e7dd98a5f8b7cb9e6850e05148eb4e7b26f3e3f/docs/features/PLATFORM_GROUP_SHARED_MASTER_CONTRACT_DRAFT_v1.md
 [card-contact-fe]: https://github.com/sinangym/GoymenERP/commit/eab785fdce391f5dcaa792146ed747f59a07c07f
+
+[card-contact-be]: https://github.com/sinangym/GoymenERP/blob/a6efdc0c9e22dc4531f87bd192def2bb44b46c2c/docs/features/CARI_CONTACT_INFORMATION_BACKEND_HANDOFF_v1.md
+[card-contact-openapi]: https://github.com/sinangym/GoymenERP/blob/a6efdc0c9e22dc4531f87bd192def2bb44b46c2c/contracts/openapi/goymen-erp-v1.json
