@@ -11,14 +11,16 @@
  * a claim, and we are not entitled to make it.
  */
 
-import { useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
 import { fetchCounterpartyDetail } from './detailApi'
 import { PARTY_KIND, PROBLEM_CODE, problemCodeOf } from './contract'
 import { API_BASE } from './clientContract'
 import { LEGACY_ROLE_HEADING, NO_COMMERCIAL_ROLE_DETAIL, rolesText } from './roleText'
-import { CARI_CARD_TEXT as CARD } from './cariCommandText'
+import { CARI_ACCOUNT_STATUS_TEXT as STATUS, CARI_CARD_TEXT as CARD } from './cariCommandText'
+import { CARI_CONTROL_CAPABILITY } from './accountStatusContract'
+import { AccountStatusControl, type AccountStatusApplied } from './AccountStatusControl'
 import type { CounterpartyDetail } from './detailContract'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
@@ -75,6 +77,25 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
     [directory, activeCompanyId],
   )
   const canEditContact = hasCapability(shell, CAPABILITY.cariAccountsContactUpdate)
+  /**
+   * The status action's own control capability — read straight from the server snapshot,
+   * exactly like the route capabilities, and never derived from the detail grant: reading
+   * a record and changing its company account's state are different authorities. The
+   * server publishes no such id today, so this is false and the action is absent.
+   */
+  const canChangeStatus = hasCapability(shell, CARI_CONTROL_CAPABILITY.accountStatusUpdate)
+  const queryClient = useQueryClient()
+
+  /**
+   * A status change the server APPLIED (204), waiting for the fresh read it owes.
+   *
+   * The 204 has no body, so nothing about the record's new state is known until that
+   * read lands; while it is pending the action is closed, and if the read FAILS the
+   * screen says "saved, view not refreshed" and offers the read again — never the write.
+   */
+  const [pendingAdopt, setPendingAdopt] = useState<AccountStatusApplied | null>(null)
+  /** The last adopted result, shown until the next window opens. */
+  const [saved, setSaved] = useState<AccountStatusApplied | null>(null)
 
   const query = useQuery({
     queryKey: [
@@ -107,6 +128,31 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
       ? { kind: 'initial-loading' }
       : classifyOutcome(query.data ?? { type: 'malformed' })
   ) as RemoteViewState<CounterpartyDetail>
+
+  /**
+   * Adopting the fresh read a 204 owes. The cached reads in this context — the detail
+   * AND the list, which shows the account's state in its rows — are dropped when the
+   * control reports the success; this effect closes the pending state once the detail
+   * read has actually landed, and leaves it open (read recovery) while it has not.
+   */
+  const onApplied = useCallback(
+    (applied: AccountStatusApplied) => {
+      setSaved(null)
+      setPendingAdopt(applied)
+      if (namespace !== null) {
+        void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === namespace })
+      }
+    },
+    [namespace, queryClient],
+  )
+  const onBeginNewAttempt = useCallback(() => setSaved(null), [])
+  const readOutcomeType = query.data?.type ?? null
+  useEffect(() => {
+    if (pendingAdopt === null || query.isFetching || readOutcomeType !== 'ok-single') return
+    // oxlint-disable-next-line react/set-state-in-effect -- adopts the fresh read a definite 204 owes, once
+    setSaved(pendingAdopt)
+    setPendingAdopt(null)
+  }, [pendingAdopt, query.isFetching, readOutcomeType])
 
   // C-03A is single-company, like C-01A. Group scope has no accepted per-company
   // representation, and a detail screen cannot honestly show "the" account when
@@ -152,6 +198,13 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
             404 block itself (§6). */}
         <h1 id="cari-detail-heading">Cari 360</h1>
         <BackToList />
+        {pendingAdopt !== null ? (
+          // A READ recovery: the change was applied, the read after it was not. The retry
+          // below is the read's own; no second PUT exists on this path.
+          <p className={styles.recovery} role="status" data-state="read-recovery">
+            {STATUS.readRecovery}
+          </p>
+        ) : null}
         <StateBlock state={state} subject="cari" onRetry={() => void query.refetch()} />
       </section>
     )
@@ -237,6 +290,39 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
           <Link className={styles.action} to={`/cari/${encodeURIComponent(detail.id)}/bilgiler`}>
             {CARD.editContact}
           </Link>
+        ) : null}
+
+        <div aria-live="polite" className={styles.srOnly} data-testid="cari-account-status-announcement">
+          {saved !== null ? STATUS.announceSaved[saved.intent] : ''}
+        </div>
+
+        {saved !== null ? (
+          <div role="status" className={styles.saved} data-state="account-status-saved" data-intent={saved.intent}>
+            <p className={styles.savedTitle}>{STATUS.savedTitle[saved.intent]}</p>
+            <p>{STATUS.savedDetail}</p>
+            {saved.replayed ? <p data-state="replayed">{STATUS.savedReplayed}</p> : null}
+            {saved.intent === 'deactivate' ? <p>{STATUS.savedListNote}</p> : null}
+          </div>
+        ) : null}
+
+        {/**
+          * The status action, offered only under its OWN control capability. Not the
+          * detail grant and not the contact editor's: the API re-authorizes
+          * `counterparty.accounts.status.update` on every request, and a button that
+          * exists in order to be refused is worse than no button.
+          */}
+        {canChangeStatus && activeCompanyId !== null && namespace !== null ? (
+          <AccountStatusControl
+            partyId={detail.id}
+            detail={detail}
+            companyLabel={activeCompany === null ? '—' : `${activeCompany.legalName} (${activeCompany.code})`}
+            companyId={activeCompanyId}
+            namespace={namespace}
+            refetch={query.refetch}
+            onApplied={onApplied}
+            onBeginNewAttempt={onBeginNewAttempt}
+            disabled={pendingAdopt !== null}
+          />
         ) : null}
       </section>
     </section>

@@ -14,6 +14,7 @@ import { waitFor } from '@testing-library/react'
 import { SHELL_CAPABILITY_CONTRACT_VERSION } from '../shell/api'
 import { CAPABILITY } from '../shell/capabilities'
 import { PARTY_ROLE_FLAG } from './contract'
+import { CARI_CONTROL_CAPABILITY } from './accountStatusContract'
 
 export const A_ID = 'aaaaaaaa-0000-0000-0000-000000000001'
 export const B_ID = 'bbbbbbbb-0000-0000-0000-000000000002'
@@ -237,6 +238,8 @@ export interface HarnessConfig {
   detail?: Responder
   /** The account-scoped operational contact block: `GET`/`PUT` the C-06 editor uses. */
   contact?: Responder
+  /** The selected account's reasoned active-state `PUT` the C-03 status action uses. */
+  activeState?: Responder
 }
 
 export const ALL_CARI_CAPABILITIES: readonly string[] = [
@@ -245,7 +248,18 @@ export const ALL_CARI_CAPABILITIES: readonly string[] = [
   CAPABILITY.cariAccountsLink,
   CAPABILITY.cariPartiesDetail,
   CAPABILITY.cariAccountsContactUpdate,
+  // The status CONTROL — proposed, never published by the server today. Granted here by
+  // default so the action's behaviour can be tested; the "not granted" cases say so.
+  CARI_CONTROL_CAPABILITY.accountStatusUpdate,
 ]
+
+/** A compatible server's 204: no body, the acknowledgment, optionally a replay marker. */
+export function noContent(headers: Record<string, string> = {}): Response {
+  return new Response(null, {
+    status: 204,
+    headers: { 'X-ERP-Counterparty-Contract': 'optional-trade-roles-v1', ...headers },
+  })
+}
 
 export const CREATE_RE = /\/counterparties$/
 export const LINK_RE = /\/counterparties\/[^/?]+\/company-account$/
@@ -253,6 +267,7 @@ export const CANDIDATES_RE = /\/counterparties\/company-account-link-candidates(
 /** A single Party read; the candidates collection path is excluded explicitly. */
 export const DETAIL_RE = /\/counterparties\/(?!company-account-link-candidates)[^/?]+$/
 export const CONTACT_RE = /\/counterparties\/[^/?]+\/contact-information$/
+export const ACTIVE_STATE_RE = /\/counterparties\/[^/?]+\/company-account\/active-state$/
 
 export function installFetch(config: HarnessConfig = {}) {
   const calls: RecordedCall[] = []
@@ -305,6 +320,11 @@ export function installFetch(config: HarnessConfig = {}) {
       if (method === 'POST' && CREATE_RE.test(url)) {
         return (config.create ?? (() => json(mutationView(), 201)))(call)
       }
+      // Deeper than the link path, so it is matched first; a 204 by default, because
+      // that is what a compatible server answers an applied status change with.
+      if (method === 'PUT' && ACTIVE_STATE_RE.test(url)) {
+        return (config.activeState ?? (() => noContent()))(call)
+      }
       // Before the detail pattern for the same reason the candidates path is: a deeper
       // segment must not be read as a party id.
       if (CONTACT_RE.test(url)) {
@@ -331,6 +351,7 @@ export function installFetch(config: HarnessConfig = {}) {
     detailReads: () => calls.filter((c) => c.method === 'GET' && DETAIL_RE.test(c.url)),
     contactReads: () => calls.filter((c) => c.method === 'GET' && CONTACT_RE.test(c.url)),
     contactUpdates: () => calls.filter((c) => c.method === 'PUT' && CONTACT_RE.test(c.url)),
+    activeStateUpdates: () => calls.filter((c) => c.method === 'PUT' && ACTIVE_STATE_RE.test(c.url)),
     capabilityReads: () => calls.filter((c) => c.url.includes('/shell/capabilities')),
   }
 }

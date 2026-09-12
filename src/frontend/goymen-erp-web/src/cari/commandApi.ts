@@ -20,6 +20,7 @@
 
 import { decodeCounterpartyMutation, type CounterpartyMutationResult } from './mutationContract'
 import { decodeLinkCandidatePage, type LinkCandidatePage } from './candidateContract'
+import { accountStatusPath, type AccountStatusPayload } from './accountStatusContract'
 import { problemCodeOf, type PartyKind, type ProblemCode } from './contract'
 import { isLosslessVersion } from './wireGuards'
 import {
@@ -99,7 +100,18 @@ export type CommandOutcome<T> =
    * request existed and no key was spent.
    */
   | { readonly type: 'unfenced' }
-  | { readonly type: 'http'; readonly status: number; readonly code: ProblemCode | null; readonly body: unknown }
+  | {
+      readonly type: 'http'
+      readonly status: number
+      readonly code: ProblemCode | null
+      readonly body: unknown
+      /**
+       * `Idempotency-Replayed` on a DEFINITE non-success answer. A replayed 409 is the
+       * stored terminal answer sent again verbatim, so any version it names is the one
+       * from the FIRST run — a screen must not present it as the record's current state.
+       */
+      readonly replayed?: boolean
+    }
   /** A 201 arrived and its body did not match the contract. The record may exist. */
   | { readonly type: 'malformed' }
   | { readonly type: 'offline' }
@@ -186,7 +198,13 @@ async function postCommand<T>(
   // Exact 201 only. Everything else is reported with its stable code (or null when
   // the body carried none — `x-erp-empty-body-possible` on 400).
   if (response.status !== 201) {
-    return { type: 'http', status: response.status, code: problemCodeOf(parsed), body: parsed }
+    return {
+      type: 'http',
+      status: response.status,
+      code: problemCodeOf(parsed),
+      body: parsed,
+      replayed: readReplayed(response.headers),
+    }
   }
 
   /**
@@ -289,7 +307,13 @@ export async function putVersionedCommand(
     } catch {
       parsed = null
     }
-    return { type: 'http', status: response.status, code: problemCodeOf(parsed), body: parsed }
+    return {
+      type: 'http',
+      status: response.status,
+      code: problemCodeOf(parsed),
+      body: parsed,
+      replayed: readReplayed(response.headers),
+    }
   }
 
   /**
@@ -308,6 +332,34 @@ export async function putVersionedCommand(
     replayed: readReplayed(response.headers),
     originalCorrelationId: readOriginalCorrelationId(response.headers),
   }
+}
+
+/**
+ * `PUT /api/v1/counterparties/{partyId}/company-account/active-state` — the SELECTED
+ * company account's reasoned deactivate / reactivate (`SetCounterpartyCompanyAccountActiveStateV1`).
+ *
+ * The body is exactly the contract's three properties: `isActive` (an explicit boolean —
+ * `false` deactivates, `true` activates, never a string and never omitted), `reason`
+ * (already canonical, see `buildAccountStatusPayload`) and the `expectedVersion` fence
+ * `putVersionedCommand` owns — the ACCOUNT's version, carried as the decimal string the
+ * schema's `[integer, string]` declaration accepts, the same way the contact-information
+ * fence reaches the wire. No company in the body: `X-Company-Id` names the target
+ * account, and a missing account is the server's 404, never a create.
+ */
+export function setCompanyAccountActiveState(
+  context: CommandContext,
+  partyId: string,
+  expectedVersion: string,
+  payload: AccountStatusPayload,
+  signal?: AbortSignal,
+): Promise<CommandOutcome<null>> {
+  return putVersionedCommand(
+    accountStatusPath(partyId),
+    context,
+    expectedVersion,
+    { isActive: payload.isActive, reason: payload.reason },
+    signal,
+  )
 }
 
 /** `POST /api/v1/counterparties` — one Party + one account in the active company. */

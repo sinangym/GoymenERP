@@ -95,3 +95,42 @@
   color: #a3592f;
   font-weight: 600;
 }
+
+/* The account status action's result. Named as what it is — a fresh read's answer —
+   and never a cue by colour alone (ERP-000K §15). */
+.saved {
+  border: 1px solid #1f7a4d;
+  border-left-width: 4px;
+  border-radius: 4px;
+  padding: 10px 12px;
+  color: #145c39;
+}
+.savedTitle {
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+.saved p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+/* "Kaydedildi, görünüm yenilenemedi": a READ recovery, sitting above the read's own
+   state block so the retry it offers is visibly the read's, not the write's. */
+.recovery {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #55607a;
+  font-weight: 600;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
