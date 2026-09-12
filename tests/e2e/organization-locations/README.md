@@ -1,7 +1,16 @@
 # Organization location real-browser journeys (ORG-01 / ORG-02)
 
-Status: **SOURCE_PREPARED — never executed.** No environment has been started, no browser
-has run, and no count in this package has been observed. Preparing source is not a PASS.
+Status: **MEASURED (normal profile) — run `20260912o39r2`, 7 passed / 1 skipped.**
+A real Chromium ran the seven authorized cases against the real API on `127.0.0.1:27080`
+and its own SQL database, twice consecutively green on the committed tree.
+
+The eighth case — "without the optional sites capability the screen issues ZERO /sites
+requests" — is **SKIPPED and therefore NOT MEASURED**: this manifest binds no
+`locationsOnlyActor`. That slice is not covered by this run and must not be counted as
+accepted. `o-02-scope-and-permissions/coverage.json` records that in the evidence itself.
+
+Database rows, audit contents and cleanup are the environment owner's observation, not
+this package's.
 
 Owner: `CLAUDE-FRONTEND-ORGANIZASYON`, sole writer of `tests/e2e/organization-locations/**`.
 The environment, the SQL side and cleanup belong to the Organization backend owner.
