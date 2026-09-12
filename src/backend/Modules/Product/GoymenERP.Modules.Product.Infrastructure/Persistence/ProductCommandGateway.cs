@@ -43,6 +43,35 @@ public sealed class ProductCommandGateway(
         CancellationToken cancellationToken) => ResolveAsync(GroupSharedMasterOperation.DraftBasicEdit,
             ProductCommandIntent.EditDraft(key, productId, request), productId, cancellationToken);
 
+    // The owner uses this after a whole-attempt rollback/unique race and before
+    // relying on any prepared replay. It reuses the canonical response validator
+    // and never reconstructs an intent from mutable HTTP inputs or a raw key.
+    public async Task<ProductPreparedCommand> RefreshAsync(ProductPreparedCommand prepared,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(prepared);
+        ArgumentNullException.ThrowIfNull(prepared.Context);
+        ArgumentNullException.ThrowIfNull(prepared.Intent);
+        cancellationToken.ThrowIfCancellationRequested();
+        var envelope = JsonSerializer.Deserialize<FrozenCommandEnvelope>(prepared.Intent.CanonicalRequestJson, Json)
+            ?? throw new InvalidOperationException("The frozen Product envelope is missing.");
+        var operation = envelope.Operation switch
+        {
+            "product.draft.create.v1" when envelope.ProductId is null => GroupSharedMasterOperation.DraftCreate,
+            "product.draft.basic-edit.v1" when envelope.ProductId is { } id && id != Guid.Empty => GroupSharedMasterOperation.DraftBasicEdit,
+            _ => throw new InvalidOperationException("The frozen Product operation or target is invalid."),
+        };
+        if (prepared.Context.Operation != operation || envelope.Request.ValueKind != JsonValueKind.Object)
+            throw new InvalidOperationException("The prepared authority differs from its frozen Product operation.");
+        var refreshed = await ResolveAsync(operation, prepared.Intent, envelope.ProductId, cancellationToken);
+        if (refreshed.Context.LocalActorId != prepared.Context.LocalActorId
+            || refreshed.Context.OriginCompanyId != prepared.Context.OriginCompanyId)
+            throw new UnauthorizedAccessException("A Product attempt cannot move to another actor or origin.");
+        return refreshed;
+    }
+
+    private sealed record FrozenCommandEnvelope(string Operation, JsonElement Request, Guid? ProductId = null);
+
     private async Task<ProductPreparedCommand> ResolveAsync(GroupSharedMasterOperation operation,
         ProductCommandIntent intent, Guid? expectedProductId, CancellationToken cancellationToken)
     {

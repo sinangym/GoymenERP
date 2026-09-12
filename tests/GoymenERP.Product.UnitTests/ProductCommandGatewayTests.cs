@@ -95,6 +95,106 @@ public sealed class ProductCommandGatewayTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => Gateway(terminal).PrepareEditAsync(Key, target, edit, default));
     }
 
+    [Fact]
+    public async Task Refresh_observes_committed_winner_without_rebuilding_the_frozen_intent()
+    {
+        var reader = new Reader(null);
+        var authority = new Authority();
+        var gateway = new ProductCommandGateway(authority, new GroupSharedCommandReplayResolver(authority, reader));
+        var prepared = await gateway.PrepareCreateAsync(Key, Request, default);
+        reader.Terminal = Terminal(Response());
+        authority.Observe = operation => Authority.Snapshot(operation) with { AuthorityRevision = "fixture-authority-2" };
+        var refreshed = await gateway.RefreshAsync(prepared, default);
+        Assert.Same(prepared.Intent, refreshed.Intent);
+        Assert.Equal(prepared.Intent.KeyHash, refreshed.Intent.KeyHash);
+        Assert.Equal(prepared.Intent.RequestHash, refreshed.Intent.RequestHash);
+        Assert.True(refreshed.Replay!.IsReplay);
+        Assert.Equal("original-correlation", refreshed.OriginalCorrelationId);
+        Assert.Equal("fixture-authority-2", refreshed.Context.AuthorityRevision);
+        Assert.Equal(2, reader.Calls);
+    }
+
+    [Fact]
+    public async Task Refresh_cannot_reuse_a_previously_prepared_replay_or_correlation()
+    {
+        var reader = new Reader(Terminal(Response()));
+        var authority = new Authority();
+        var gateway = new ProductCommandGateway(authority, new GroupSharedCommandReplayResolver(authority, reader));
+        var prepared = await gateway.PrepareCreateAsync(Key, Request, default);
+        reader.Terminal = null;
+        var refreshed = await gateway.RefreshAsync(prepared, default);
+        Assert.Null(refreshed.Replay);
+        Assert.Null(refreshed.OriginalCorrelationId);
+        Assert.Same(prepared.Intent, refreshed.Intent);
+        Assert.Equal(2, reader.Calls);
+    }
+
+    [Fact]
+    public async Task Revocation_on_refresh_denies_before_reopening_the_terminal()
+    {
+        var reader = new Reader(Terminal(Response()));
+        var authority = new Authority();
+        var gateway = new ProductCommandGateway(authority, new GroupSharedCommandReplayResolver(authority, reader));
+        var prepared = await gateway.PrepareCreateAsync(Key, Request, default);
+        authority.Observe = operation => GroupSharedMasterAuthorizationSnapshot.Denied(GroupSharedMasterKind.Product, operation);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => gateway.RefreshAsync(prepared, default));
+        Assert.Equal(1, reader.Calls);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Refresh_cannot_move_a_missing_attempt_to_a_different_actor_or_origin(bool changeActor)
+    {
+        var authority = new Authority();
+        var gateway = new ProductCommandGateway(authority, new GroupSharedCommandReplayResolver(authority, new Reader(null)));
+        var prepared = await gateway.PrepareCreateAsync(Key, Request, default);
+        authority.Observe = operation => changeActor
+            ? Authority.Snapshot(operation) with { LocalActorId = Guid.NewGuid() }
+            : Authority.Snapshot(operation) with { OriginCompanyId = Guid.NewGuid() };
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => gateway.RefreshAsync(prepared, default));
+    }
+
+    [Fact]
+    public async Task Refresh_rejects_a_context_for_another_frozen_operation_before_terminal_access()
+    {
+        var reader = new Reader(null);
+        var authority = new Authority();
+        var gateway = new ProductCommandGateway(authority, new GroupSharedCommandReplayResolver(authority, reader));
+        var prepared = await gateway.PrepareCreateAsync(Key, Request, default);
+        prepared = prepared with { Context = GroupSharedMasterCommandContext.FromServerDecision(
+            Authority.Snapshot(GroupSharedMasterOperation.DraftBasicEdit), GroupSharedMasterOperation.DraftBasicEdit) };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => gateway.RefreshAsync(prepared, default));
+        Assert.Equal(1, reader.Calls);
+    }
+
+    [Fact]
+    public async Task Refresh_validates_the_edit_winner_against_the_original_frozen_target()
+    {
+        var reader = new Reader(null);
+        var authority = new Authority();
+        var gateway = new ProductCommandGateway(authority, new GroupSharedCommandReplayResolver(authority, reader));
+        var target = Guid.NewGuid();
+        var request = new EditProductDraftRequest("1", new() { Name = new("Düzeltilen") }, "Düzeltme");
+        var prepared = await gateway.PrepareEditAsync(Key, target, request, default);
+        var binding = GroupSharedCommandBinding.Create(prepared.Context, prepared.Intent.KeyHash, prepared.Intent.RequestHash);
+        reader.Terminal = GroupSharedCommandTerminal.Create(binding, 200,
+            JsonSerializer.Serialize(Response(), new JsonSerializerOptions(JsonSerializerDefaults.Web)), "other-card", 1);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => gateway.RefreshAsync(prepared, default));
+        Assert.Equal(2, reader.Calls);
+    }
+
+    [Fact]
+    public async Task Canceled_refresh_never_opens_the_terminal_again()
+    {
+        var reader = new Reader(null);
+        var authority = new Authority();
+        var gateway = new ProductCommandGateway(authority, new GroupSharedCommandReplayResolver(authority, reader));
+        var prepared = await gateway.PrepareCreateAsync(Key, Request, default);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => gateway.RefreshAsync(prepared, new CancellationToken(true)));
+        Assert.Equal(1, reader.Calls);
+    }
+
     private static ProductCommandGateway Gateway(GroupSharedCommandTerminal? terminal)
     {
         var authority = new Authority();
@@ -120,19 +220,21 @@ public sealed class ProductCommandGatewayTests
     private sealed class Reader(GroupSharedCommandTerminal? terminal) : IGroupSharedCommandTerminalReader
     {
         public int Calls { get; private set; }
+        public GroupSharedCommandTerminal? Terminal { get; set; } = terminal;
         public Task<GroupSharedCommandTerminal?> ReadAsync(GroupSharedCommandKey key, CancellationToken cancellationToken)
         {
             Calls++;
-            return Task.FromResult(terminal);
+            return Task.FromResult(Terminal);
         }
     }
 
     private sealed class Authority : IGroupSharedMasterAuthorizationService
     {
+        public Func<GroupSharedMasterOperation, GroupSharedMasterAuthorizationSnapshot> Observe { get; set; } = Snapshot;
         public static GroupSharedMasterAuthorizationSnapshot Snapshot(GroupSharedMasterOperation operation) => new(true,
             GroupSharedMasterKind.Product, operation, Guid.Parse("4e3c1a8b-0b58-441c-a2cc-a5768d0dfef0"),
             Guid.Parse("50e650f1-5546-438c-8d6c-3a867faf16f6"), "fixture-authority-1");
         public Task<GroupSharedMasterAuthorizationSnapshot> GetSnapshotAsync(GroupSharedMasterKind subject,
-            GroupSharedMasterOperation operation, CancellationToken cancellationToken) => Task.FromResult(Snapshot(operation));
+            GroupSharedMasterOperation operation, CancellationToken cancellationToken) => Task.FromResult(Observe(operation));
     }
 }
