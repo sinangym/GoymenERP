@@ -1,0 +1,281 @@
+/* U-02 Draft create. Guided-form page type (design system §4). */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 780px;
+}
+
+.title {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+.note {
+  margin: 0;
+  max-width: 72ch;
+  font-size: 0.85rem;
+  color: #55607a;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid #d5dbe6;
+  border-radius: 6px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: #55607a;
+}
+
+.field input {
+  padding: 7px 10px;
+  border: 1px solid #d5dbe6;
+  border-radius: 4px;
+  font: inherit;
+  color: #1a2233;
+}
+
+/* An invalid field is marked by aria-invalid AND by a visible border change —
+   colour alone carries no meaning (design system §2, §9). */
+.field input[aria-invalid='true'] {
+  border-color: #dc2626;
+  border-width: 2px;
+}
+
+.field input:disabled {
+  background: #f4f6fa;
+  color: #6b7688;
+}
+
+.required {
+  color: #dc2626;
+}
+
+.optional {
+  font-weight: 400;
+  color: #6b7688;
+}
+
+.hint {
+  margin: 0;
+  max-width: 64ch;
+  font-size: 0.78rem;
+  color: #6b7688;
+}
+
+.fieldError {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #b91c1c;
+}
+
+.roles {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid #d5dbe6;
+  border-radius: 4px;
+  padding: 10px 12px 12px;
+}
+
+.roles > legend {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1a2233;
+  padding: 0 4px;
+}
+
+.roleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  border: 0;
+  border-top: 1px solid #eef1f6;
+  margin: 0;
+  padding: 8px 0 0;
+}
+
+.roleRow > legend {
+  font-size: 0.85rem;
+  color: #1a2233;
+  padding: 0;
+}
+
+.radio {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.88rem;
+  color: #1a2233;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.primaryAction {
+  display: inline-block;
+  padding: 8px 16px;
+  border: 1px solid #0b6fe8;
+  border-radius: 4px;
+  background: #0b6fe8;
+  color: #fff;
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.primaryAction:hover {
+  background: #075bc4;
+  border-color: #075bc4;
+}
+
+.primaryAction:disabled {
+  background: #9dbdea;
+  border-color: #9dbdea;
+  cursor: default;
+}
+
+.secondaryAction {
+  display: inline-block;
+  padding: 8px 14px;
+  border: 1px solid #d5dbe6;
+  border-radius: 4px;
+  background: #fff;
+  color: #1a2233;
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.secondaryAction:disabled {
+  color: #97a0b2;
+  cursor: default;
+}
+
+.errorSummary {
+  padding: 12px 14px;
+  border: 1px solid #f0b4b4;
+  border-left-width: 4px;
+  border-radius: 6px;
+  background: #fdf3f3;
+  color: #7f1d1d;
+  font-size: 0.88rem;
+}
+
+.errorSummary p {
+  margin: 0 0 6px;
+}
+
+.errorSummary ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.errorSummaryTitle {
+  font-weight: 600;
+}
+
+/* Moves focus inside the page; styled as a link but is a button, because it does
+   not navigate. */
+.errorLink {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: #b91c1c;
+  text-decoration: underline;
+  cursor: pointer;
+  text-align: left;
+}
+
+/* The unknown outcome is NOT an error box. The write may have succeeded, and the
+   colour says "attention", not "failed". */
+.unknownBlock {
+  padding: 12px 14px;
+  border: 1px solid #e2d2ae;
+  border-left-width: 4px;
+  border-radius: 6px;
+  background: #fdf8ee;
+  color: #6b4c07;
+  font-size: 0.88rem;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.unknownBlock p {
+  margin: 0;
+}
+
+.successBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid #9dd3b0;
+  border-left-width: 4px;
+  border-radius: 6px;
+  background: #f3faf5;
+}
+
+.createdCode {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #14532d;
+}
+
+.dialogBackdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgb(7 31 61 / 45%);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(440px, 100%);
+  padding: 18px 20px;
+  background: #fff;
+  border-radius: 10px;
+  color: #1a2233;
+  font-size: 0.92rem;
+}
+
+.dialog p {
+  margin: 0;
+}
+
+.page :focus-visible,
+.dialog :focus-visible {
+  outline: 2px solid #0b6fe8;
+  outline-offset: 2px;
+}
+
+@media (max-width: 767px) {
+  .roleRow {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+}

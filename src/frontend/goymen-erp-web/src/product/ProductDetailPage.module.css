@@ -1,0 +1,212 @@
+/* U-01 Product 360. Same tokens as the list, so the two read as one application. */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.backLink {
+  align-self: flex-start;
+  font-size: 0.88rem;
+  color: #0b6fe8;
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid #d5dbe6;
+  border-radius: 6px;
+}
+
+.code {
+  margin: 0;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  color: #55607a;
+}
+
+.title {
+  margin: 2px 0 0;
+  font-size: 1.25rem;
+}
+
+.lifecycle {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+}
+
+.lifecycleMeaning {
+  font-size: 0.8rem;
+  color: #55607a;
+  text-align: right;
+}
+
+.badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  border: 1px solid #d5dbe6;
+  background: #f1f4f9;
+  color: #1a2233;
+}
+
+.badge[data-lifecycle='Active'] {
+  border-color: #9dd3b0;
+  background: #eaf7ef;
+  color: #15803d;
+}
+
+.badge[data-lifecycle='Inactive'] {
+  border-color: #d9dee8;
+  background: #f1f4f9;
+  color: #55607a;
+}
+
+.badge[data-lifecycle='Draft'] {
+  border-color: #f0cf9a;
+  background: #fdf5e7;
+  color: #9a5b06;
+}
+
+.inactiveBanner {
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid #e2d2ae;
+  border-left-width: 4px;
+  border-radius: 6px;
+  background: #fdf8ee;
+  color: #6b4c07;
+  font-size: 0.88rem;
+}
+
+.section {
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid #d5dbe6;
+  border-radius: 6px;
+}
+
+.section h2 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+}
+
+.definitionList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px 20px;
+  margin: 0;
+}
+
+.definitionList dt {
+  font-size: 0.8rem;
+  color: #55607a;
+}
+
+.definitionList dd {
+  margin: 2px 0 0;
+  font-size: 0.92rem;
+  color: #1a2233;
+}
+
+.roleTable,
+.aliasTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 0.9rem;
+}
+
+.roleTable caption,
+.aliasTable caption {
+  caption-side: top;
+  text-align: left;
+  padding-bottom: 6px;
+  font-size: 0.8rem;
+  color: #55607a;
+}
+
+.roleTable th,
+.roleTable td,
+.aliasTable th,
+.aliasTable td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid #eef1f6;
+}
+
+.roleTable thead th,
+.aliasTable thead th {
+  color: #55607a;
+  font-weight: 600;
+  background: #f7f9fc;
+}
+
+.value {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #1a2233;
+}
+
+.note {
+  margin: 6px 0 0;
+  max-width: 72ch;
+  font-size: 0.82rem;
+  color: #6b7688;
+}
+
+.empty {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #55607a;
+}
+
+/* A section whose module is not mounted. Deliberately looks different from an empty
+   one: "unavailable" and "none" are different facts (§9, shell contract §12). */
+.unavailable {
+  padding: 10px 12px;
+  border: 1px dashed #cfd6e2;
+  border-radius: 6px;
+  background: #f7f9fc;
+}
+
+.unavailableTitle {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #55607a;
+}
+
+.page :focus-visible {
+  outline: 2px solid #0b6fe8;
+  outline-offset: 2px;
+}
+
+@media (max-width: 767px) {
+  .header {
+    flex-direction: column;
+  }
+
+  .lifecycle {
+    align-items: flex-start;
+  }
+
+  .lifecycleMeaning {
+    text-align: left;
+  }
+
+  .roleTable,
+  .aliasTable {
+    display: block;
+    overflow-x: auto;
+  }
+}
