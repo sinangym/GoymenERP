@@ -198,15 +198,21 @@ async function addressIndexFor(page: Page, line1: string): Promise<number> {
 }
 
 /**
- * What the CURRENT company's editor actually resolved to, waited for properly.
+ * What the CURRENT company's editor actually resolved to — a real ANSWER, not merely the
+ * absence of traffic, and observed before anything is allowed to navigate away from it.
  *
- * "No request is outstanding" is not that on its own: between the capability exchange
- * finishing and the editor's own read starting there is a gap in which nothing is in
- * flight, and a navigation released in that gap abandons the read it was supposed to be
- * waiting for. So this waits for a TERMINAL answer about this company — the editor's read
- * reaching a terminal transfer, or the route closing on a capability the server did not
- * grant — AND for everything to have drained. The old condition (a completed list page)
- * is not restored: the editor's read is a single record and can never satisfy it.
+ * Two ways this was wrong, and they compound. "Nothing is outstanding" is true in the gap
+ * between the capability exchange finishing and the editor's own read starting, so a
+ * navigation released there abandoned the very read it was waiting for. And a request that
+ * had merely stopped being pending counted as terminal — which includes the first mount's
+ * copy being ABORTED, exactly what a switch-then-navigate produces. So the run could be
+ * satisfied by the cancellation of the read whose answer it needed.
+ *
+ * What is required now is a FINISHED transfer with a status, together with the screen that
+ * status implies: a 200 with the editor actually rendered, a non-200 with the matching
+ * state block, or — where the server granted no capability — the neutral block and no
+ * contact read at all. The old list-envelope condition is NOT restored: the editor's read
+ * is a single record and could never satisfy it.
  */
 async function awaitCompanyTerminal(
   page: Page,
@@ -214,20 +220,40 @@ async function awaitCompanyTerminal(
   companyId: string,
   sinceTick: number,
   label: string,
-): Promise<{ readonly status: number | null; readonly closedByCapability: boolean }> {
+): Promise<{
+  readonly status: number | null
+  readonly closedByCapability: boolean
+  readonly editorRendered: boolean
+}> {
   const deadline = Date.now() + 45_000
   for (;;) {
-    const answered = contactGets(net).find(
-      (r) => r.requestTick > sinceTick && r.companyId === companyId && r.transferOutcome !== 'pending',
-    )
-    const closed = (await page.locator('[data-state="not-found"]').count()) > 0
-    const outstanding = net.outstanding()
-    if (outstanding.length === 0 && (answered !== undefined || closed)) {
-      return { status: answered?.status ?? null, closedByCapability: answered === undefined && closed }
+    // A cancelled copy is not an answer. `finished` with a status is.
+    const answered = contactGets(net)
+      .filter(
+        (r) =>
+          r.requestTick > sinceTick &&
+          r.companyId === companyId &&
+          r.transferOutcome === 'finished' &&
+          r.status !== null,
+      )
+      .at(-1)
+    const editorRendered = (await field(page, 'cari-contact-phone').count()) > 0
+    const stateBlock = (await page.locator('[data-state]').count()) > 0
+    const neutralBlock = (await page.locator('[data-state="not-found"]').count()) > 0
+    if (net.outstanding().length === 0) {
+      if (answered !== undefined && answered.status === 200 && editorRendered) {
+        return { status: 200, closedByCapability: false, editorRendered: true }
+      }
+      if (answered !== undefined && answered.status !== 200 && stateBlock) {
+        return { status: answered.status, closedByCapability: false, editorRendered: false }
+      }
+      if (answered === undefined && neutralBlock) {
+        return { status: null, closedByCapability: true, editorRendered: false }
+      }
     }
     if (Date.now() > deadline) {
       throw new Error(
-        `${label}: no terminal outcome for company ${companyId}: outstanding=${JSON.stringify(outstanding)} contactReads=${JSON.stringify(
+        `${label}: no terminal outcome for company ${companyId}: outstanding=${JSON.stringify(net.outstanding())} editorRendered=${editorRendered} stateBlock=${stateBlock} contactReads=${JSON.stringify(
           contactGets(net)
             .filter((r) => r.requestTick > sinceTick)
             .map((r) => ({ seq: r.seq, companyId: r.companyId, status: r.status, transferOutcome: r.transferOutcome })),
@@ -625,11 +651,18 @@ test('L-03 C-06: six real updates v1→v7 across two tabs — withheld reply and
   // ---- 9. an unsaved draft is defended when the company changes --------------------
   await field(page, 'cari-contact-website').fill('https://example.test/terk-edilecek')
   const putsBeforeB = contactPuts(net).length
-  await switchCompany(page, net, B, true)
+  /**
+   * The interval opens BEFORE the switch, and there is NO navigation afterwards.
+   *
+   * The route does not change when the company does — the shell remounts the editor for the
+   * new context on the same URL — so the `page.goto` that used to follow was not needed and
+   * was the thing aborting company B's first read. The wait now sits between the switch and
+   * every assertion about B, which is the boundary it belongs on.
+   */
   const beforeB = net.currentTick()
-  await page.goto(`/cari/${partyId}/bilgiler`)
+  await switchCompany(page, net, B, true)
   const bTerminal = await awaitCompanyTerminal(page, net, B, beforeB, 'company B editor')
-  const bEditorOpen = (await field(page, 'cari-contact-website').count()) > 0
+  const bEditorOpen = bTerminal.editorRendered
   const bWebsite = bEditorOpen ? await field(page, 'cari-contact-website').inputValue() : null
   expect(bWebsite, "the draft prepared in company A must not appear in company B").not.toBe(
     'https://example.test/terk-edilecek',

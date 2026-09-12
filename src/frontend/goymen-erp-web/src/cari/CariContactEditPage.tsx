@@ -238,6 +238,15 @@ function originalFromView(view: ContactInformationView) {
  * the user never touched. A concurrent editor's corrected phone number was overwritten by
  * the stale value this form happened to be holding, on a save the user believed was about
  * their e-mail.
+ *
+ * "CHANGED" MEANS WHAT THE PATCH MEANS BY IT, which is why the comparison is canonical
+ * and not raw. The patch builder compares trimmed values, so typing ` 111 ` over `111`
+ * sends nothing — but a raw comparison here read that as intent, kept the stale `111`,
+ * and the next save then overwrote the concurrent `222` with it. The mirror case is
+ * worse: whitespace typed into an empty field is no change at all, yet raw it looked like
+ * one, and the save would have sent `null` and CLEARED whatever value had arrived in the
+ * meantime. Both are the same mistake — two different ideas of "the user changed this" —
+ * and the fix is to have only one.
  */
 function mergeValues(
   base: Readonly<Record<string, string>>,
@@ -246,7 +255,7 @@ function mergeValues(
 ): Record<string, string> {
   const merged: Record<string, string> = { ...theirs }
   for (const key of Object.keys(mine)) {
-    if (mine[key] !== (base[key] ?? '')) merged[key] = mine[key]
+    if (trimToNull(mine[key] ?? '') !== trimToNull(base[key] ?? '')) merged[key] = mine[key]
   }
   return merged
 }

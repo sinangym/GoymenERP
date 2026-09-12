@@ -960,3 +960,72 @@ describe('C-06 concurrency — a refresh must not re-assert what the user never 
     })
   })
 })
+
+describe('C-06 the rebase and the patch must mean the same thing by "changed"', () => {
+  it('treats a whitespace-only edit as no change, so it cannot overwrite a concurrent value', async () => {
+    /**
+     * The patch builder compares TRIMMED values, so retyping ` 111 ` over `111` sends
+     * nothing. The rebase compared raw strings, read that as intent, kept the stale `111`
+     * — and the next save then overwrote the concurrent `222` with it. The mirror case is
+     * worse: whitespace typed into an empty field is no change at all, yet raw it looked
+     * like one, and the save would have sent `null` and CLEARED the value that had arrived
+     * in the meantime.
+     */
+    const RIVAL_SITE = 'https://rakip.example.test/'
+    let version = 1
+    const fetchLog = installFetch({
+      contact: (call) => {
+        if (call.method === 'PUT') {
+          const expected = (call.body as { expectedVersion?: string } | null)?.expectedVersion
+          if (expected !== String(version)) return problem(409, PROBLEM_CODE.versionConflict)
+          version += 1
+          return ack204()
+        }
+        return version === 1
+          ? json(contactView({ phone: '111', website: null, email: null }, { version: '1' }))
+          : json(contactView({ phone: '222', website: RIVAL_SITE, email: null }, { version: '2' }))
+      },
+    })
+    const user = userEvent.setup()
+    await openEditor()
+
+    // Two canonical no-ops — the same value with different whitespace, and whitespace in an
+    // empty field — plus one real change.
+    await user.clear(control('cari-contact-phone'))
+    await user.type(control('cari-contact-phone'), ' 111 ')
+    await user.type(control('cari-contact-website'), '   ')
+    await user.type(control('cari-contact-email'), 'operasyon@example.test')
+
+    // Meanwhile the other editor really did change both of those fields.
+    version = 2
+    await user.click(saveButton())
+    await waitFor(() => {
+      expect(fetchLog.contactUpdates()).toHaveLength(1)
+    }, CHAIN)
+    // The refused save already proves the two edits are no-ops on the wire.
+    expect(fetchLog.contactUpdates()[0].body).toEqual({
+      expectedVersion: '1',
+      changes: { email: 'operasyon@example.test' },
+    })
+    await findByFailure('version-conflict')
+    await user.click(screen.getByRole('button', { name: 'Kaydı yenile' }))
+    await findByState('refreshed')
+
+    // The rebase agrees with the patch: neither no-op was intent, so both fields show what
+    // the record now holds.
+    expect((control('cari-contact-phone') as HTMLInputElement).value).toBe('222')
+    expect((control('cari-contact-website') as HTMLInputElement).value).toBe(RIVAL_SITE)
+    expect((control('cari-contact-email') as HTMLInputElement).value).toBe('operasyon@example.test')
+
+    await user.click(saveButton())
+    await waitFor(() => {
+      expect(fetchLog.contactUpdates()).toHaveLength(2)
+    }, CHAIN)
+    // The decisive assertion: only the real intent travels. No phone, and above all no
+    // `website: null` that would have erased the value this user never touched.
+    expect(fetchLog.contactUpdates()[1].body).toEqual({
+      expectedVersion: '2',
+      changes: { email: 'operasyon@example.test' },
+    })
+  })
+})
