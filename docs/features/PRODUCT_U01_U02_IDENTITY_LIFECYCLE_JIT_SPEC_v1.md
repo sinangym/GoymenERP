@@ -237,7 +237,7 @@ Exact route adları kilitlenmeden aşağıdaki capability'ler gerekir:
 - duplicate candidate read-only preview;
 - template, unit ve package summary navigation contract'ları.
 
-Her response source scope, revision ve capability/permission sonucu açısından server authoritative'dir. Frontend Product'a CompanyId eklemez.
+Her response source scope, revision ve capability/permission sonucu açısından server authoritative'dir. Frontend Product kimliğine veya sahiplik payload’ına CompanyId eklemez. Yayımlanmış API’nin gerektirdiği X-Company-Id, sunucunun doğruladığı işlem kaynağını taşır; Product sahipliği veya global yetki oluşturmaz. Belirsiz komutun tekrarında aynı girişim, origin, key ve payload korunur; şirket/oturum değişiminde eski girişim yeni bağlama otomatik taşınmaz. Kaynak: §19.4/§19.6 ve Backend #251 `643a6e1fa00fcc31921fb24c3dfdfe89ef6ca773` — [ProductEndpoints](https://github.com/sinangym/GoymenERP/blob/643a6e1fa00fcc31921fb24c3dfdfe89ef6ca773/src/backend/GoymenERP.Api/Endpoints/ProductEndpoints.cs), [OpenAPI origin sözleşmesi](https://github.com/sinangym/GoymenERP/blob/643a6e1fa00fcc31921fb24c3dfdfe89ef6ca773/src/backend/GoymenERP.Api/OpenApi/ErpOpenApiContract.Product.cs).
 
 ## 16. Kabul bağı
 
