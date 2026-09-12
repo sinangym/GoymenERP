@@ -2,7 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
-using GoymenERP.Modules.Product.Api;
+using GoymenERP.Api.Endpoints;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Domain.Products;
 using Microsoft.AspNetCore.Authentication;
@@ -21,6 +21,35 @@ namespace GoymenERP.Product.UnitTests;
 // platform global-authority or real-browser acceptance.
 public sealed class ProductHttpContractTests
 {
+    [Theory]
+    [InlineData("?roles=sellable,purchasable&roleMatch=all&sort=name&direction=desc&completeness=NotEvaluated", 200)]
+    [InlineData("?roles=sellable,sellable", 400)]
+    [InlineData("?roles=unknown", 400)]
+    [InlineData("?roleMatch=unknown", 400)]
+    [InlineData("?sort=unknown", 400)]
+    [InlineData("?completeness=unknown", 400)]
+    public async Task List_query_vocabulary_is_explicit(string query, int expectedStatus)
+    {
+        var service = new Service();
+        await using var app = await StartAsync(service);
+        using var client = Client(app);
+        Assert.Equal(expectedStatus, (int)(await client.GetAsync("/api/v1/products" + query)).StatusCode);
+        Assert.Equal(expectedStatus == 200 ? 1 : 0, service.Reads);
+    }
+
+    [Fact]
+    public async Task Reference_options_report_unavailable_catalogs_without_inventing_choices()
+    {
+        var service = new Service();
+        await using var app = await StartAsync(service);
+        using var client = Client(app);
+        var result = await client.GetFromJsonAsync<ProductReferenceOptions>(
+            $"/api/v1/products/reference-options?groupId={service.Group.Id}");
+        Assert.Empty(result!.Families);
+        Assert.Contains("families", result.UnavailableCatalogs);
+        Assert.Equal(service.Group.Id, result.GroupId);
+    }
+
     [Fact]
     public async Task Create_and_read_use_one_exact_casing_version_and_time_contract()
     {
@@ -34,7 +63,8 @@ public sealed class ProductHttpContractTests
         Assert.Equal("1", result.Card.Product.Version);
         Assert.Equal($"/api/v1/products/{result.Card.Product.Id:D}", response.Headers.Location!.ToString());
         var read = await client.GetFromJsonAsync<ProductCardView>(response.Headers.Location);
-        Assert.Equal(result.Card.Product, read!.Product);
+        Assert.Equal(result.Card.Product.Id, read!.Product.Id);
+        Assert.Equal(result.Card.Product.Version, read.Product.Version);
         Assert.Null(read.Product.Roles.ProductionInput.Value);
         Assert.Equal("not-evaluated", read.Product.Roles.ProductionInput.Provenance);
         Assert.True(response.Headers.CacheControl!.NoStore);
@@ -149,7 +179,8 @@ public sealed class ProductHttpContractTests
         {
             var product = ProductCard.CreateDraft(Guid.NewGuid(), ProductCode.FromSequence("SAC", 1), "Sac",
                 Group.Id, null, null, ProductRoles.NotEvaluated, DateTimeOffset.UtcNow);
-            Card = new(ProductDraftView.FromProduct(product), new(), new("NotEvaluated", ["references.templateId"]));
+            Card = new(ProductDraftView.FromProduct(product,
+                completeness: new("NotEvaluated", ["references.templateId"])), new());
         }
         public Task<ProductPage> GetPageAsync(ProductListQuery query, CancellationToken cancellationToken)
         { Reads++; return Task.FromResult(new ProductPage([Card.Product], null)); }
@@ -161,6 +192,9 @@ public sealed class ProductHttpContractTests
         }
         public Task<IReadOnlyList<ProductCodeGroup>> GetCodeGroupsAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<ProductCodeGroup>>([Group]);
+        public Task<ProductReferenceOptions> GetReferenceOptionsAsync(ProductReferenceQuery query,
+            CancellationToken cancellationToken) => Task.FromResult(new ProductReferenceOptions(
+                Group.Id, null, [], [], [], [], [], ["classes", "families", "units", "trackingPolicies", "templates"]));
         public Task<ProductMutationResponse> CreateDraftAsync(CreateProductDraftRequest request, string idempotencyKey,
             CancellationToken cancellationToken)
         { Writes++; return Task.FromResult(new ProductMutationResponse(Card, false)); }

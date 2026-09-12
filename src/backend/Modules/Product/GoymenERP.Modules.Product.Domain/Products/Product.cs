@@ -115,7 +115,7 @@ public sealed class Product
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(value);
         var normalized = value.Trim();
-        if (normalized.Length > MaximumNameLength || normalized.Any(char.IsControl))
+        if (normalized.Length > MaximumNameLength || value.Any(char.IsControl))
         {
             throw new ArgumentException("Ürün adı uzunluğu veya karakterleri geçersiz.", nameof(value));
         }

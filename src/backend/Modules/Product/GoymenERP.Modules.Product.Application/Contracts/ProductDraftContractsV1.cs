@@ -159,9 +159,11 @@ public sealed record ProductRolesView(ProductRoleView Purchasable, ProductRoleVi
 public sealed record ProductDraftView(
     Guid Id, string Code, string Name, Guid GroupId, Guid? ClassId, Guid? FamilyId,
     ProductRolesView Roles, string Lifecycle, string Version,
-    DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc)
+    DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc,
+    ProductReferenceLabels Labels, ProductCompletenessView Completeness)
 {
-    public static ProductDraftView FromProduct(Domain.Products.Product product)
+    public static ProductDraftView FromProduct(Domain.Products.Product product,
+        ProductReferenceLabels? labels = null, ProductCompletenessView? completeness = null)
     {
         ArgumentNullException.ThrowIfNull(product);
         var code = ProductCode.Parse(product.Code.Value);
@@ -179,14 +181,18 @@ public sealed record ProductDraftView(
                 ProductRoleView.FromState(product.Roles.ProductionInput),
                 ProductRoleView.FromState(product.Roles.ProductionOutput)),
             lifecycle, product.Version.ToString(CultureInfo.InvariantCulture),
-            product.CreatedAtUtc, product.UpdatedAtUtc);
+            product.CreatedAtUtc, product.UpdatedAtUtc,
+            labels ?? new(null, null, null, null), completeness ?? new("NotEvaluated", []));
     }
 }
 
-public sealed record ProductCardView(ProductDraftView Product, ProductReferences References,
-    ProductCompletenessView Completeness);
+public sealed record ProductCardView(ProductDraftView Product, ProductReferences References)
+{
+    public ProductCompletenessView Completeness => Product.Completeness;
+}
 
 public sealed record ProductCompletenessView(string Evaluation, IReadOnlyList<string> MissingFields);
+public sealed record ProductReferenceLabels(string? Group, string? Class, string? Family, string? PrimaryStockUnit);
 
 public static class ProductVersion
 {

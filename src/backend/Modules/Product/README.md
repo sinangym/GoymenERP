@@ -12,6 +12,7 @@ DEC-PRD-003/004/010, Master §7.4 and locked #98/#99 remain binding.
 | List/search | GET /api/v1/products | ProductPage: items + nullable nextCursor |
 | Card | GET /api/v1/products/{id} | ProductCardView; 404 not_found |
 | Code groups | GET /api/v1/products/code-groups | ProductCodeGroup[] from authorized real catalogue |
+| Reference choices | GET /api/v1/products/reference-options?groupId=...&classId=... | ProductReferenceOptions from authorized catalogues |
 | Draft create | POST /api/v1/products | 201 ProductMutationResponse + Location |
 | Basic Draft edit | PATCH /api/v1/products/{id}/draft | 200 ProductMutationResponse |
 
@@ -21,9 +22,8 @@ No production Product service, global grant, DbContext, migration, or SQL accept
 is claimed. These routes are pinned for frontend integration, not live URLs.
 
 List parameters: q (trimmed, max 200, no controls), lifecycle (exact Draft, Active,
-Inactive), optional groupId/classId/familyId, role (purchasable, sellable,
-productionInput, productionOutput), pageSize (1..100, default 50), opaque cursor.
-Role filter means a known true value; unknown is not false. The future persistence
+Inactive), optional groupId/classId/familyId, roles (comma-separated distinct purchasable/sellable/productionInput/productionOutput), roleMatch (any/all; default any), sort (code/name/updatedAtUtc; default code), direction (asc/desc; default asc), completeness (NotEvaluated/Incomplete/Complete), pageSize (1..100, default 50), opaque cursor.
+A role filter matches known true values only; any/all applies to the submitted distinct roles. Unknown is not false. nextCursor=null means the final page; a non-null cursor is the only continuation signal. No total count is advertised. Server ordering uses the selected key and immutable UUID tie-breaker in the selected direction. The future persistence
 reader must apply the same authorized scope and all filters on every page. Cursor
 binding/codec remains an explicit persistence dependency, not a client-created offset.
 
@@ -108,9 +108,7 @@ ProductCode.Parse so malformed code cannot leave a successful response. Internal
   IProductService is a narrow Product-owned port, with no runtime implementation yet.
   IProductReferenceCatalog is a reference-validation port, not a seeded catalogue.
 - Existing platform Backend: authored solution delta fd20534894a6a4e64b9a2804a1430e766273f252
-  registers the existing Domain/Application/test projects. The Product.Api project is
-  compiled transitively by its test reference; direct solution/host registration remains
-  the same single writer's integration task.
+  registers the existing Domain/Application/test projects. ProductEndpoints.cs now belongs to the existing GoymenERP.Api/Endpoints surface; a separate Product.Api assembly was removed after the architecture guard rejected its extra FrameworkReference. The central Application project reference remains a Backend-authored delta.
 - Platform #103/#104: current global authorization subject/scope, separate subject/origin
   canonical audit, durable global command identity and replay binding must be pinned.
   Product-specific candidate permissions are product.master.read, product.draft.create,
@@ -124,11 +122,34 @@ ProductCode.Parse so malformed code cannot leave a successful response. Internal
 
 ## Verification scope
 
-61 tests currently pass: domain/serialization/validation plus seven controlled HTTP
-contract cases. No SQL, real global-authority, browser or activation acceptance is
+The prior 07a0401 source ran 61 Product tests in CI; the current reference/list-query delta adds seven controlled HTTP cases. Updated final-head results are recorded in the PR. No SQL, real global-authority, browser or activation acceptance is
 included. TestServer fixtures are explicit test doubles. The actual final CI must run
 the registered Product test project; earlier green CI on e4fdf9 did not run it.
 
 ```powershell
 dotnet test tests/GoymenERP.Product.UnitTests/GoymenERP.Product.UnitTests.csproj
 ```
+## Frontend consumption completion
+
+Reference options are a single authorized, group/class-filtered response containing
+classes/families (id,displayName), units (id,displayName,symbol,isKilogram), trackingPolicies
+(id,displayName), templates (id,version,displayName), and unavailableCatalogs. The latter
+uses classes/families/units/trackingPolicies/templates keys. An unavailable catalogue
+is different from a valid empty catalogue and must not produce made-up choices. Actual
+catalogue providers remain an implementation dependency; no synthetic production seed.
+
+Every list/card product projection now carries labels {group,class,family,primaryStockUnit}
+and completeness {evaluation,missingFields}. Labels are server-resolved and nullable
+when no value or unavailable source exists. The frontend does not fan out UUIDs into
+other module reads. Card.completeness is a compatibility projection of product.completeness,
+not an independently calculated status. NotEvaluated is not complete; a Complete reference
+check still does not advertise an activation capability. Formula/package completeness
+that has not been evaluated is not fabricated.
+
+The exact v1 field-error set is ProductFieldCodesV1.All: invalid_name,
+invalid_role_provenance, invalid_reference, invalid_code_prefix, template_pair_required,
+explicit_attribute_change_required, null_not_allowed, required, invalid_metadata,
+invalid_reason, invalid_version, derived_role_readonly, template_required. Frontend
+maps these to Turkish resource strings and keeps a generic unknown-code fallback while
+preserving the field binding. isReplay remains in the response body; no replay header
+is advertised. Lifecycle conflict and reason max1000 remain unchanged.

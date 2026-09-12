@@ -12,7 +12,7 @@
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
     <Using Include="Xunit" />
-    <ProjectReference Include="../../src/backend/Modules/Product/GoymenERP.Modules.Product.Api/GoymenERP.Modules.Product.Api.csproj" />
+    <ProjectReference Include="../../src/backend/GoymenERP.Api/GoymenERP.Api.csproj" />
     <ProjectReference Include="../../src/backend/Modules/Product/GoymenERP.Modules.Product.Application/GoymenERP.Modules.Product.Application.csproj" />
     <ProjectReference Include="../../src/backend/Modules/Product/GoymenERP.Modules.Product.Domain/GoymenERP.Modules.Product.Domain.csproj" />
   </ItemGroup>

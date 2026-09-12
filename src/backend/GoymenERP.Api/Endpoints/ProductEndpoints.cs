@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 
-namespace GoymenERP.Modules.Product.Api;
+namespace GoymenERP.Api.Endpoints;
 
 public static class ProductEndpoints
 {
@@ -17,10 +17,16 @@ public static class ProductEndpoints
         group.MapGet("/", async ([AsParameters] ProductListQuery query, IProductService service,
             HttpContext context, CancellationToken cancellationToken) => await ExecuteAsync(context, async () =>
             {
+                var requestedRoles = query.Roles?.Split(',') ?? [];
                 if (query.PageSize is < 1 or > 100 || query.Q?.Length > 200
                     || query.Q?.Any(char.IsControl) == true
                     || (query.Lifecycle is not null && query.Lifecycle is not ("Draft" or "Active" or "Inactive"))
-                    || (query.Role is not null && query.Role is not ("purchasable" or "sellable" or "productionInput" or "productionOutput"))
+                    || requestedRoles.Length > 4
+                    || requestedRoles.Any(role => role is not ("purchasable" or "sellable" or "productionInput" or "productionOutput"))
+                    || requestedRoles.Distinct(StringComparer.Ordinal).Count() != requestedRoles.Length
+                    || query.RoleMatch is not ("any" or "all")
+                    || query.Sort is not ("code" or "name" or "updatedAtUtc") || query.Direction is not ("asc" or "desc")
+                    || (query.Completeness is not null && query.Completeness is not ("NotEvaluated" or "Incomplete" or "Complete"))
                     || query.GroupId == Guid.Empty || query.ClassId == Guid.Empty || query.FamilyId == Guid.Empty)
                 {
                     return Problem(ProductApiV1.ValidationFailed, 400);
@@ -33,6 +39,17 @@ public static class ProductEndpoints
             CancellationToken cancellationToken) => await ExecuteAsync(context, async () =>
                 Results.Ok(await service.GetCodeGroupsAsync(cancellationToken))))
             .WithName("GetProductCodeGroupsV1").Produces<IReadOnlyList<ProductCodeGroup>>();
+
+        group.MapGet("/reference-options", async ([AsParameters] ProductReferenceQuery query,
+            IProductService service, HttpContext context, CancellationToken cancellationToken) =>
+            await ExecuteAsync(context, async () =>
+            {
+                if (query.GroupId == Guid.Empty || query.ClassId == Guid.Empty)
+                {
+                    return Problem(ProductApiV1.ValidationFailed, 400);
+                }
+                return Results.Ok(await service.GetReferenceOptionsAsync(query, cancellationToken));
+            })).WithName("GetProductReferenceOptionsV1").Produces<ProductReferenceOptions>();
 
         group.MapGet("/{id:guid}", async (Guid id, IProductService service, HttpContext context,
             CancellationToken cancellationToken) => await ExecuteAsync(context, async () =>

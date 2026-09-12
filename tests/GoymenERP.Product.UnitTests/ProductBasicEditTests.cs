@@ -123,6 +123,8 @@ public sealed class ProductBasicEditTests
         Assert.Equal("Çelik sac", ProductCard.NormalizeName(" Çelik sac "));
         Assert.Throws<ArgumentException>(() => ProductCard.NormalizeName(new string('a', 251)));
         Assert.Throws<ArgumentException>(() => ProductCard.NormalizeName("Sac\nçelik"));
+        Assert.Throws<ArgumentException>(() => ProductCard.NormalizeName("\nSac"));
+        Assert.Throws<ArgumentException>(() => ProductCard.NormalizeName("Sac\t"));
     }
 
     [Fact]
