@@ -57,6 +57,22 @@ export const CAPABILITY = {
   productItemsDetail: 'product.items.detail',
   /** U-02 Yeni Ürün — Draft creation only. Route `/urun/yeni`. */
   productItemsCreate: 'product.items.create',
+  /**
+   * U-02 basic edit of a created Draft. Route `/urun/:productId/duzenle`.
+   *
+   * A SEPARATE grant from the detail for the reason the Product lane gives and the Cari
+   * ids already follow: reading a card and rewriting it are different authorities.
+   * `PRD-PERM-001=A` happens to give both to `SYSTEM_ADMINISTRATOR` alone today, but that
+   * is a fact about who holds them, not an argument for one id — the day read widens past
+   * admin, a fused id would hand out the write with it.
+   *
+   * Pinned by its owner (Business §19.2 via #181 `3dfe58e`, relayed by the Product lane)
+   * BEFORE its own symbol exists: at #238 head `8689232` that lane declares three ids, not
+   * four. The value and the route below are the parts this file needs and they are fixed;
+   * the counterpart property name is read from `src/product/capabilities.ts` when the
+   * drift test lands with the follow-up commit, never assumed.
+   */
+  productItemsEdit: 'product.items.edit',
 } as const
 
 export type CapabilityId = (typeof CAPABILITY)[keyof typeof CAPABILITY]
@@ -71,6 +87,9 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   // Static before the parameter route, the same rule /cari/yeni follows: a deeper
   // static segment must never be readable as a record id.
   [CAPABILITY.productItemsCreate]: '/urun/yeni',
+  // Longer and static-tailed first: 'duzenle' must never be read as a product id, the
+  // same ordering the Cari routes follow.
+  [CAPABILITY.productItemsEdit]: '/urun/:productId/duzenle',
   [CAPABILITY.productItemsDetail]: '/urun/:productId',
 }
 
@@ -83,6 +102,9 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   [CAPABILITY.cariPartiesDetail]: '',
   [CAPABILITY.productItemsList]: 'Ürünler',
   [CAPABILITY.productItemsCreate]: 'Yeni Ürün',
-  // Nor this one, for the same reason as the Cari detail.
+  // Nor these two, for the same reason as the Cari detail: the 360 is reached from a row
+  // and the editor from the card it edits, never from the sidebar. So `NAV_CAPABILITIES`
+  // gains two entries when the routes are mounted, not four.
   [CAPABILITY.productItemsDetail]: '',
+  [CAPABILITY.productItemsEdit]: '',
 }
