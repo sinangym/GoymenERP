@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PRODUCT_CAPABILITY } from './capabilities'
+import { resetPendingAttempts } from './pendingAttempt'
 import {
   CLASS_FLAT,
   COMPANY_B,
@@ -21,6 +22,9 @@ const PATH = `/urun/${PRODUCT_1}/duzenle`
 
 afterEach(() => {
   cleanup()
+  // The pending-attempt store outlives a component by design, so a case that ends
+  // with an unresolved write would otherwise seed the next one.
+  resetPendingAttempts()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
@@ -436,6 +440,24 @@ describe('success', () => {
 })
 
 describe('unsaved guard', () => {
+  it('leaves on the FIRST "leave" — Cancel is not asked twice', async () => {
+    // Cancel and the blocker used to guard the same exit, so the user answered the
+    // same question twice.
+    installFetch({ capabilities: [...EDIT_ONLY, PRODUCT_CAPABILITY.productsDetail] })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await changeNameAndReason()
+    await userEvent.click(screen.getByRole('button', { name: 'Vazgeç' }))
+
+    const first = await waitFor(() => screen.getByRole('alertdialog'))
+    expect(screen.getAllByRole('alertdialog')).toHaveLength(1)
+    await userEvent.click(within(first).getByRole('button', { name: 'Değişiklikleri bırak' }))
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Siyah sac' })).toBeTruthy())
+  })
+
   it('asks before leaving with a real change, and Escape means stay', async () => {
     installFetch({ capabilities: [...EDIT_ONLY, PRODUCT_CAPABILITY.productsDetail] })
     renderProductApp(PATH)

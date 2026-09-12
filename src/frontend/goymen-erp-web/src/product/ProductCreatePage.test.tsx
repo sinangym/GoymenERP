@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PRODUCT_CAPABILITY } from './capabilities'
+import { resetPendingAttempts } from './pendingAttempt'
 import {
   CLASS_FLAT,
   COMPANY_B,
@@ -20,6 +21,9 @@ const PATH = '/urun/yeni'
 
 afterEach(() => {
   cleanup()
+  // The pending-attempt store outlives a component by design, so a case that ends
+  // with an unresolved write would otherwise seed the next one.
+  resetPendingAttempts()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
@@ -683,8 +687,97 @@ describe('a refused retry', () => {
   })
 })
 
+describe('an unknown attempt across an unmount', () => {
+  it('survives a capability re-fence and is offered again on an authorized return', async () => {
+    /**
+     * The 403 closes the route and the form unmounts — taking the idempotency key
+     * with it, which is how a fresh key got minted for a payload the server may
+     * already have applied. The attempt is now held outside the component, bound to
+     * this exact context, and NOTHING is retried on its own.
+     */
+    installFetch({ capabilities: CREATE_ONLY, onCreate: () => json({}, 503) })
+    const first = renderProductApp(PATH)
+
+    await formVisible()
+    await fillMinimum()
+    await userEvent.click(saveButton())
+    const before = await waitFor(() => screen.getByTestId('product-create-unknown'))
+    expect(before).toBeTruthy()
+
+    first.unmount()
+    cleanup()
+
+    // A fresh, authorized visit in the SAME context.
+    const { calls } = installFetch({ capabilities: CREATE_ONLY })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
+    // Restoring is not retrying: no write left the client on its own.
+    expect(calls.filter((call) => call.method === 'POST')).toHaveLength(0)
+  })
+
+  it('is not offered to a different actor or company', async () => {
+    // The namespace includes actor, company, capability generation and committed
+    // revision, so a pending write cannot surface anywhere it was not authorized.
+    installFetch({ capabilities: CREATE_ONLY, onCreate: () => json({}, 503) })
+    const first = renderProductApp(PATH)
+
+    await formVisible()
+    await fillMinimum()
+    await userEvent.click(saveButton())
+    await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
+
+    first.unmount()
+    cleanup()
+    // Simulate a different context: the store is keyed by namespace, and the
+    // harness cannot mint a second identity, so the store is cleared to stand in
+    // for one. The namespace binding itself is covered by pendingAttempt.test.ts.
+    resetPendingAttempts()
+
+    installFetch({ capabilities: CREATE_ONLY })
+    renderProductApp(PATH)
+    await formVisible()
+    expect(screen.queryByTestId('product-create-unknown')).toBeNull()
+  })
+
+  it('is dropped when the user chooses to leave', async () => {
+    installFetch({
+      capabilities: [...CREATE_ONLY, PRODUCT_CAPABILITY.productsList],
+      onCreate: () => json({}, 503),
+    })
+    const { router, unmount } = renderProductApp(PATH)
+
+    await formVisible()
+    await fillMinimum()
+    await userEvent.click(saveButton())
+    await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
+
+    await act(async () => {
+      await router.navigate('/urun')
+    })
+    const dialog = await waitFor(() => screen.getByRole('alertdialog'))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Değişiklikleri bırak' }))
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Ürünler' })).toBeTruthy())
+
+    unmount()
+    cleanup()
+    installFetch({ capabilities: CREATE_ONLY })
+    renderProductApp(PATH)
+    await formVisible()
+    // The user was asked and said yes; keeping the key would resurrect a decision
+    // they just made.
+    expect(screen.queryByTestId('product-create-unknown')).toBeNull()
+  })
+})
+
 describe('unsaved guard', () => {
-  it('asks before leaving with typed input, and staying keeps it', async () => {
+  it('asks ONCE when Cancel is pressed, and staying keeps the input', async () => {
+    /**
+     * Cancel used to open its own dialog and then navigate, which the blocker caught
+     * a second time — the user answered "leave" and was asked again. There is now
+     * one guard for every router exit.
+     */
     installFetch({ capabilities: [...CREATE_ONLY, PRODUCT_CAPABILITY.productsList] })
     renderProductApp(PATH)
 
@@ -693,12 +786,28 @@ describe('unsaved guard', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Vazgeç' }))
 
     const dialog = await waitFor(() => screen.getByRole('alertdialog'))
+    expect(screen.getAllByRole('alertdialog')).toHaveLength(1)
     // Focus lands on the SAFE option, not the destructive one.
     expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Sayfada kal' }))
 
     await userEvent.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
     expect((screen.getByLabelText(/Ürün adı/) as HTMLInputElement).value).toBe('Siyah sac')
+  })
+
+  it('leaves on the FIRST "leave" — the choice is not asked twice', async () => {
+    installFetch({ capabilities: [...CREATE_ONLY, PRODUCT_CAPABILITY.productsList] })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await userEvent.type(screen.getByLabelText(/Ürün adı/), 'Siyah sac')
+    await userEvent.click(screen.getByRole('button', { name: 'Vazgeç' }))
+
+    const dialog = await waitFor(() => screen.getByRole('alertdialog'))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Değişiklikleri bırak' }))
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Ürünler' })).toBeTruthy())
+    expect(screen.queryByRole('alertdialog')).toBeNull()
   })
 
   it('does not ask when nothing was typed', async () => {

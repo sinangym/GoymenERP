@@ -74,7 +74,7 @@ import { contextKey, contextKeyString, hasCapability } from '../shell/shellState
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { UnresolvedExitGuard } from './UnresolvedExitGuard'
-import { UnsavedDialog } from './UnsavedDialog'
+import { editScope, forgetAttempt, recallAttempt, rememberAttempt } from './pendingAttempt'
 import styles from './ProductCreatePage.module.css'
 
 type EditAttempt = AttemptState<EditProductDraftPayload, ProductMutationResult>
@@ -157,9 +157,17 @@ function ProductEditForm({
   const [values, setValues] = useState<EditFormValues>(() => editFormFrom(card))
   const [errors, setErrors] = useState<EditFormErrors>({})
   const [submitted, setSubmitted] = useState(false)
-  const [attempt, setAttempt] = useState<EditAttempt>({ phase: 'idle' })
+  /**
+   * Seeded from the pending store — see the create page. Scoped to THIS product, so
+   * an unresolved edit of one record cannot surface on another.
+   */
+  const [attempt, setAttempt] = useState<EditAttempt>(
+    () => recallAttempt<EditProductDraftPayload, ProductMutationResult>(
+      namespace,
+      editScope(card.product.id),
+    ) ?? { phase: 'idle' },
+  )
   const [staleCurrentVersion, setStaleCurrentVersion] = useState<string | null>(null)
-  const [leaveIntent, setLeaveIntent] = useState<string | null>(null)
 
   const summaryRef = useRef<HTMLDivElement>(null)
   const fieldRefs = useRef<Partial<Record<EditFieldId, HTMLElement | null>>>({})
@@ -176,6 +184,10 @@ function ProductEditForm({
   useEffect(() => {
     dispatch({ type: unresolved ? 'DIRTY_SET' : 'DIRTY_CLEAR', scope: PRODUCT_EDIT_DIRTY_SCOPE })
   }, [unresolved, dispatch])
+
+  useEffect(() => {
+    rememberAttempt(namespace, editScope(card.product.id), attempt)
+  }, [namespace, card.product.id, attempt])
   useEffect(
     () => () => dispatch({ type: 'DIRTY_CLEAR', scope: PRODUCT_EDIT_DIRTY_SCOPE }),
     [dispatch],
@@ -313,16 +325,14 @@ function ProductEditForm({
     if (submitted && errorList.length > 0) summaryRef.current?.focus()
   }, [submitted, errorList.length])
 
-  function guardedNavigate(to: string) {
-    if (unresolved) {
-      setLeaveIntent(to)
-      return
-    }
+  /** Cancel navigates plainly; the blocker owns the question. See the create page. */
+  function leave(to: string) {
     void navigate(to)
   }
 
   if (attempt.phase === 'completed') {
     const saved = attempt.result.card.product
+    forgetAttempt(editScope(card.product.id))
     return (
       <section className={styles.page} aria-labelledby="product-edited-heading">
         <div className={styles.successBlock} role="status">
@@ -682,36 +692,22 @@ function ProductEditForm({
             type="button"
             className={styles.secondaryAction}
             disabled={attempt.phase === 'submitting'}
-            onClick={() => guardedNavigate(productDetailPath(card.product.id))}
+            onClick={() => leave(productDetailPath(card.product.id))}
           >
             {PRODUCT_EDIT_TEXT.cancel}
           </button>
         </div>
       </form>
 
-      {/* SPA exits — Back, a sidebar link — go through the same guard. */}
+      {/* Every router exit goes through this one guard. */}
       <UnresolvedExitGuard
         active={unresolved}
         title={PRODUCT_EDIT_TEXT.unsavedTitle}
         detail={PRODUCT_EDIT_TEXT.unsavedDetail}
         stayLabel={PRODUCT_EDIT_TEXT.unsavedStay}
         leaveLabel={PRODUCT_EDIT_TEXT.unsavedLeave}
+        onLeave={() => forgetAttempt(editScope(card.product.id))}
       />
-
-      {leaveIntent !== null ? (
-        <UnsavedDialog
-          title={PRODUCT_EDIT_TEXT.unsavedTitle}
-          detail={PRODUCT_EDIT_TEXT.unsavedDetail}
-          stayLabel={PRODUCT_EDIT_TEXT.unsavedStay}
-          leaveLabel={PRODUCT_EDIT_TEXT.unsavedLeave}
-          onStay={() => setLeaveIntent(null)}
-          onLeave={() => {
-            const to = leaveIntent
-            setLeaveIntent(null)
-            void navigate(to)
-          }}
-        />
-      ) : null}
     </section>
   )
 }

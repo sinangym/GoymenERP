@@ -31,12 +31,15 @@ export function UnresolvedExitGuard({
   detail,
   stayLabel,
   leaveLabel,
+  onLeave,
 }: {
   readonly active: boolean
   readonly title: string
   readonly detail: string
   readonly stayLabel: string
   readonly leaveLabel: string
+  /** Called when the user chooses to leave, before the navigation proceeds. */
+  readonly onLeave?: () => void
 }) {
   /**
    * Blocks only a real location change. A re-render, a search-param tweak or a
@@ -78,7 +81,10 @@ export function UnresolvedExitGuard({
       stayLabel={stayLabel}
       leaveLabel={leaveLabel}
       onStay={() => blocker.reset()}
-      onLeave={() => blocker.proceed()}
+      onLeave={() => {
+        onLeave?.()
+        blocker.proceed()
+      }}
     />
   )
 }

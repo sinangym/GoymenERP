@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import { PRODUCT_CAPABILITY } from './capabilities'
+import { resetPendingAttempts } from './pendingAttempt'
 import {
   CLASS_FLAT,
   FAMILY_FLAT,
@@ -18,6 +19,9 @@ const PATH = `/urun/${PRODUCT_1}`
 
 afterEach(() => {
   cleanup()
+  // The pending-attempt store outlives a component by design, so a case that ends
+  // with an unresolved write would otherwise seed the next one.
+  resetPendingAttempts()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })

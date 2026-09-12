@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PRODUCT_CAPABILITY } from './capabilities'
+import { resetPendingAttempts } from './pendingAttempt'
 import { resetProductListView } from './listViewState'
 import {
   PRODUCT_1,
@@ -23,6 +24,9 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  // The pending-attempt store outlives a component by design, so a case that ends
+  // with an unresolved write would otherwise seed the next one.
+  resetPendingAttempts()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })

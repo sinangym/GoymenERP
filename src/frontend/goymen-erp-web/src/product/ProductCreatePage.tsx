@@ -70,7 +70,7 @@ import { useShellDispatch, useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { UnresolvedExitGuard } from './UnresolvedExitGuard'
-import { UnsavedDialog } from './UnsavedDialog'
+import { createScope, forgetAttempt, recallAttempt, rememberAttempt } from './pendingAttempt'
 import styles from './ProductCreatePage.module.css'
 
 type CreateAttempt = AttemptState<CreateProductDraftPayload, ProductMutationResult>
@@ -158,8 +158,17 @@ function ProductCreateForm({
   const [values, setValues] = useState<CreateFormValues>(EMPTY_CREATE_FORM)
   const [errors, setErrors] = useState<CreateFormErrors>({})
   const [submitted, setSubmitted] = useState(false)
-  const [attempt, setAttempt] = useState<CreateAttempt>({ phase: 'idle' })
-  const [leaveIntent, setLeaveIntent] = useState<string | null>(null)
+  /**
+   * Seeded from the pending store, so an attempt whose outcome is unknown survives
+   * the unmount a capability re-fence causes. Only this exact namespace can see it;
+   * nothing is retried on its own.
+   */
+  const [attempt, setAttempt] = useState<CreateAttempt>(
+    () => recallAttempt<CreateProductDraftPayload, ProductMutationResult>(
+      namespace,
+      createScope(),
+    ) ?? { phase: 'idle' },
+  )
 
   const summaryRef = useRef<HTMLDivElement>(null)
   const fieldRefs = useRef<Partial<Record<CreateFieldId, HTMLElement | null>>>({})
@@ -184,6 +193,15 @@ function ProductCreateForm({
   useEffect(() => {
     dispatch({ type: unresolved ? 'DIRTY_SET' : 'DIRTY_CLEAR', scope: PRODUCT_CREATE_DIRTY_SCOPE })
   }, [unresolved, dispatch])
+
+  /**
+   * Persist on every change, not on unmount: a route closed underneath the screen
+   * does not reliably run a cleanup we control, and a key saved only on the way out
+   * is lost exactly when it matters.
+   */
+  useEffect(() => {
+    rememberAttempt(namespace, createScope(), attempt)
+  }, [namespace, attempt])
   useEffect(
     () => () => dispatch({ type: 'DIRTY_CLEAR', scope: PRODUCT_CREATE_DIRTY_SCOPE }),
     [dispatch],
@@ -210,8 +228,19 @@ function ProductCreateForm({
       values.classId,
     ],
     enabled: namespace !== null && values.groupId !== '',
-    queryFn: async ({ signal }) =>
-      fetchReferenceOptions(values.groupId, values.classId === '' ? null : values.classId, signal),
+    queryFn: async ({ signal }) => {
+      // Same authority as every other read on this screen — a refusal here is the
+      // same fact and must reach the same boundary. This one was missed when the
+      // code-group read was wired up, which is exactly how a gap survives a fix.
+      const snapshot = boundary.capture()
+      const outcome = await fetchReferenceOptions(
+        values.groupId,
+        values.classId === '' ? null : values.classId,
+        signal,
+      )
+      if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
+      return outcome
+    },
   })
 
   const options: ProductReferenceOptions | null =
@@ -342,16 +371,21 @@ function ProductCreateForm({
     if (submitted && errorList.length > 0) summaryRef.current?.focus()
   }, [submitted, errorList.length])
 
-  function guardedNavigate(to: string) {
-    if (unresolved) {
-      setLeaveIntent(to)
-      return
-    }
+  /**
+   * Cancel navigates plainly and lets the BLOCKER decide.
+   *
+   * It used to open its own dialog and then call `navigate`, which the blocker
+   * caught a second time — the user answered "leave" and was asked again. One exit,
+   * one guard, one question.
+   */
+  function leave(to: string) {
     void navigate(to)
   }
 
   if (attempt.phase === 'completed') {
     const created = attempt.result.card.product
+    // Resolved: there is no longer a key to protect.
+    forgetAttempt(createScope())
     return (
       <section className={styles.page} aria-labelledby="product-created-heading">
         <div className={styles.successBlock} role="status">
@@ -712,7 +746,7 @@ function ProductCreateForm({
             className={styles.secondaryAction}
             disabled={attempt.phase === 'submitting'}
             onClick={() =>
-              guardedNavigate(PRODUCT_CAPABILITY_ROUTE[PRODUCT_CAPABILITY.productsList])
+              leave(PRODUCT_CAPABILITY_ROUTE[PRODUCT_CAPABILITY.productsList])
             }
           >
             {PRODUCT_CREATE_TEXT.cancel}
@@ -720,29 +754,19 @@ function ProductCreateForm({
         </div>
       </form>
 
-      {/* SPA exits — Back, a sidebar link, a row link — go through the same guard. */}
+      {/*
+        EVERY router exit — Cancel, Back, a sidebar link — goes through this one
+        guard. Leaving deliberately drops the pending key: the user was asked and
+        said yes, so keeping it would resurrect a decision they just made.
+      */}
       <UnresolvedExitGuard
         active={unresolved}
         title={PRODUCT_CREATE_TEXT.unsavedTitle}
         detail={PRODUCT_CREATE_TEXT.unsavedDetail}
         stayLabel={PRODUCT_CREATE_TEXT.unsavedStay}
         leaveLabel={PRODUCT_CREATE_TEXT.unsavedLeave}
+        onLeave={() => forgetAttempt(createScope())}
       />
-
-      {leaveIntent !== null ? (
-        <UnsavedDialog
-          title={PRODUCT_CREATE_TEXT.unsavedTitle}
-          detail={PRODUCT_CREATE_TEXT.unsavedDetail}
-          stayLabel={PRODUCT_CREATE_TEXT.unsavedStay}
-          leaveLabel={PRODUCT_CREATE_TEXT.unsavedLeave}
-          onStay={() => setLeaveIntent(null)}
-          onLeave={() => {
-            const to = leaveIntent
-            setLeaveIntent(null)
-            void navigate(to)
-          }}
-        />
-      ) : null}
     </section>
   )
 }
