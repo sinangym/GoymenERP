@@ -145,35 +145,60 @@ function readReplayed(headers: Headers): boolean {
 }
 
 /**
- * The definite answers a server can STORE for a key and hand back verbatim — the
- * idempotency contract's own terminal statuses, by stable code. A compatibility
- * refusal (`client_contract_*`) is produced by the gate BEFORE any handler runs and is
- * never stored; an `idempotency_conflict` is a verdict about a DIFFERENT payload under
- * the same key, not this attempt's result. Neither can be a genuine replay of the
- * first send, whatever header a response carries.
+ * The NON-SUCCESS answers ONE endpoint can STORE for a key and hand back verbatim —
+ * that endpoint's own `WithIdempotencyContract(...)` statuses, by stable code. Each
+ * caller passes its own table, because the tables differ and a union of them would let
+ * one endpoint's stored verdict be believed on another's wire (Dirac #250 round 3):
+ *
+ *  - `CreateCounterpartyV1` stores ONLY its 201. No non-success answer of a create is
+ *    ever a replay, whatever it carries.
+ *  - `CreateCounterpartyCompanyAccountV1` (link) stores 404 `not_found` and
+ *    409 `already_linked`.
+ *  - `SetCounterpartyCompanyAccountActiveStateV1` and the contact-information update
+ *    store 404 `not_found` and 409 `version_conflict`.
+ *
+ * Never in any table: a compatibility refusal (`client_contract_*`), produced by the
+ * gate BEFORE a handler runs and never stored; `idempotency_conflict`, a verdict about
+ * a DIFFERENT payload under the same key; and every 5xx.
+ *
+ * Source of the tables: `CounterpartyEndpoints.cs` and
+ * `CounterpartyEndpoints.ContactInformation.cs` at `main@fc14554d`.
  */
-const REPLAYABLE_TERMINAL: ReadonlyMap<number, ReadonlySet<string>> = new Map([
+export type ReplayableFailures = ReadonlyMap<number, ReadonlySet<string>>
+
+/** Create: only the 201 is stored; no failure is ever a replay. */
+export const NO_REPLAYABLE_FAILURE: ReplayableFailures = new Map()
+
+/** Link (`POST .../company-account`): 404 not_found, 409 already_linked. */
+export const LINK_REPLAYABLE_FAILURES: ReplayableFailures = new Map([
   [404, new Set<string>([PROBLEM_CODE.notFound])],
-  [409, new Set<string>([PROBLEM_CODE.versionConflict, PROBLEM_CODE.alreadyLinked])],
+  [409, new Set<string>([PROBLEM_CODE.alreadyLinked])],
+])
+
+/** The two versioned updates (active-state, contact-information): 404 not_found, 409 version_conflict. */
+export const VERSIONED_UPDATE_REPLAYABLE_FAILURES: ReplayableFailures = new Map([
+  [404, new Set<string>([PROBLEM_CODE.notFound])],
+  [409, new Set<string>([PROBLEM_CODE.versionConflict])],
 ])
 
 /**
- * Whether a NON-SUCCESS answer is a VERIFIED replay of this attempt's stored result.
+ * Whether a NON-SUCCESS answer is a VERIFIED replay of THIS endpoint's stored result
+ * for this attempt.
  *
  * The header alone proves nothing: the non-success paths below return before the
  * acknowledgment is checked and carry a body that may have failed to parse. A replay
  * is believed only when the answer is acknowledged by the compatibility filter (so we
  * know which node and contract answered), its body decoded to a stable code, and that
- * status/code pair is one the endpoint can actually store as terminal. Anything else
- * says nothing about the first send and must leave an unresolved attempt unresolved
- * (Dirac #250 second round, finding 1).
+ * status/code pair is one THE SELECTED ENDPOINT can actually store as terminal.
+ * Anything else says nothing about the first send and must leave an unresolved
+ * attempt unresolved (Dirac #250 rounds 2 and 3).
  */
-function verifiedReplay(response: Response, parsed: unknown): boolean {
+function verifiedReplay(response: Response, parsed: unknown, replayable: ReplayableFailures): boolean {
   if (!readReplayed(response.headers)) return false
   if (commandAckOutcome(response) !== 'acknowledged') return false
   const code = problemCodeOf(parsed)
   if (code === null) return false
-  return REPLAYABLE_TERMINAL.get(response.status)?.has(code) ?? false
+  return replayable.get(response.status)?.has(code) ?? false
 }
 
 function readOriginalCorrelationId(headers: Headers): string | null {
@@ -186,6 +211,8 @@ async function postCommand<T>(
   context: CommandContext,
   body: unknown,
   decode: (raw: unknown) => T | null,
+  /** The endpoint's own stored-failure table; see `ReplayableFailures`. */
+  replayable: ReplayableFailures,
   signal?: AbortSignal,
 ): Promise<CommandOutcome<T>> {
   /**
@@ -239,7 +266,7 @@ async function postCommand<T>(
       status: response.status,
       code: problemCodeOf(parsed),
       body: parsed,
-      replayed: verifiedReplay(response, parsed),
+      replayed: verifiedReplay(response, parsed, replayable),
     }
   }
 
@@ -308,6 +335,12 @@ export async function putVersionedCommand(
   expectedVersion: string,
   fields: Readonly<Record<string, unknown>>,
   signal?: AbortSignal,
+  /**
+   * The endpoint's own stored-failure table. Both versioned updates at `fc14554d`
+   * store the same pair, which is what the default names; a caller whose endpoint
+   * stores something else passes its own table rather than inheriting this one.
+   */
+  replayable: ReplayableFailures = VERSIONED_UPDATE_REPLAYABLE_FAILURES,
 ): Promise<CommandOutcome<null>> {
   // Same write gate as every command: proven compatibility in THIS context first.
   if (!isCommandContractReady(context.contract)) return { type: 'contract-not-ready' }
@@ -348,7 +381,7 @@ export async function putVersionedCommand(
       status: response.status,
       code: problemCodeOf(parsed),
       body: parsed,
-      replayed: verifiedReplay(response, parsed),
+      replayed: verifiedReplay(response, parsed, replayable),
     }
   }
 
@@ -395,6 +428,8 @@ export function setCompanyAccountActiveState(
     expectedVersion,
     { isActive: payload.isActive, reason: payload.reason },
     signal,
+    // `SetCounterpartyCompanyAccountActiveStateV1` stores 204 / 404 / 409 (version_conflict).
+    VERSIONED_UPDATE_REPLAYABLE_FAILURES,
   )
 }
 
@@ -425,6 +460,8 @@ export function createCounterparty(
     context,
     body,
     (raw) => decodeCounterpartyMutation(raw, { activeCompanyId: context.companyId }),
+    // `CreateCounterpartyV1` stores only its 201: no failure of a create is a replay.
+    NO_REPLAYABLE_FAILURE,
     signal,
   )
 }
@@ -449,6 +486,8 @@ export function linkCompanyAccount(
     body,
     (raw) =>
       decodeCounterpartyMutation(raw, { activeCompanyId: context.companyId, expectedPartyId: partyId }),
+    // `CreateCounterpartyCompanyAccountV1` stores 201 / 404 / 409 (already_linked).
+    LINK_REPLAYABLE_FAILURES,
     signal,
   )
 }
