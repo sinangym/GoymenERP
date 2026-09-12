@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   buildLinkCandidateQuery,
   createCounterparty,
+  putVersionedCommand,
   fetchLinkCandidates,
   linkCompanyAccount,
   type CreateCounterpartyPayload,
@@ -364,5 +365,141 @@ describe('the write gate (spec §4.2)', () => {
     await linkCompanyAccount(TARGET_FOR_GATE, PARTY, { roles: 0 })
 
     expect(calls[0].init?.body).toBe('{}')
+  })
+})
+
+/**
+ * The versioned update — `PUT`, exact-204 success, and a row-version fence.
+ *
+ * WHAT THE FENCE IS. For a company-scoped Cari change it is the
+ * `CompanyPartyAccount` rowversion (Backend, 12 September): the Party's own
+ * identity/version is a different row, and another company's account is a third.
+ *
+ * The path below is a placeholder on purpose. This is a transport case about method,
+ * headers, fence and status classes; naming a real endpoint here would imply the
+ * server serves one. The transport names no business field either — the caller
+ * passes the accepted DTO's fields, and Backend owns that DTO.
+ */
+describe('putVersionedCommand — PUT, exact 204, fenced on the row version it read', () => {
+  const PATH = `/counterparties/${PARTY}/versioned-example`
+  const FIELDS = { someAcceptedField: 'değer' }
+  /** Int64.MaxValue: 19 digits, far past 2^53. */
+  const HUGE_VERSION = '9223372036854775807'
+  const noContent = (headers: Record<string, string> = {}) => new Response(null, { status: 204, headers })
+
+  it('sends PUT with one X-Company-Id, the caller key, and the fence the transport owns', async () => {
+    const calls = stubFetch(() => noContent())
+    // A caller-supplied `expectedVersion` must not win: the fence belongs to the
+    // transport, exactly as `Idempotency-Key` and `X-Company-Id` do.
+    const outcome = await putVersionedCommand(PATH, CONTEXT, '7', { ...FIELDS, expectedVersion: '999' })
+
+    expect(outcome).toMatchObject({ type: 'applied', data: null, replayed: false })
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe(`/api/v1${PATH}`)
+    expect(calls[0].init?.method).toBe('PUT')
+    const headers = headersOf(calls[0])
+    expect(headers['X-Company-Id']).toBe(A_ID)
+    expect(Object.keys(headers).filter((h) => h.toLowerCase() === 'x-company-id')).toHaveLength(1)
+    expect(headers['Idempotency-Key']).toBe(KEY)
+    expect(headers['Content-Type']).toBe('application/json')
+    expect(headers[COUNTERPARTY_CONTRACT_HEADER]).toBe(COUNTERPARTY_CONTRACT_VERSION)
+    expect(bodyOf(calls[0])).toEqual({ someAcceptedField: 'değer', expectedVersion: '7' })
+  })
+
+  it('carries an int64 fence verbatim as a string — parsing it would round the token', async () => {
+    const calls = stubFetch(() => noContent())
+    await putVersionedCommand(PATH, CONTEXT, HUGE_VERSION, FIELDS)
+
+    // The whole point of the decimal string: `9223372036854775807` becomes
+    // `9223372036854775808` the moment it passes through an IEEE-754 double, and a
+    // rounded fence can pass a concurrency check it should have failed.
+    expect((bodyOf(calls[0]) as { expectedVersion: unknown }).expectedVersion).toBe(HUGE_VERSION)
+    expect(calls[0].init?.body).toContain(`"expectedVersion":"${HUGE_VERSION}"`)
+  })
+
+  it('204 is applied; replay headers are surfaced so a second toast is avoidable', async () => {
+    stubFetch(() =>
+      noContent({ 'Idempotency-Replayed': 'TRUE', 'Idempotency-Original-Correlation-Id': ' corr-0007 ' }),
+    )
+    expect(await putVersionedCommand(PATH, CONTEXT, '7', FIELDS)).toEqual({
+      type: 'applied',
+      data: null,
+      replayed: true,
+      originalCorrelationId: 'corr-0007',
+    })
+  })
+
+  it('exactly 204 is success: a 200 or 202 is an HTTP outcome, never applied', async () => {
+    stubFetch(() => json({ ok: true }, 200))
+    expect(await putVersionedCommand(PATH, CONTEXT, '7', FIELDS)).toMatchObject({ type: 'http', status: 200 })
+    stubFetch(() => json({ ok: true }, 202))
+    expect(await putVersionedCommand(PATH, CONTEXT, '7', FIELDS)).toMatchObject({ type: 'http', status: 202 })
+  })
+
+  it('a 204 the server did not acknowledge is unknown, not applied', async () => {
+    stubFetch(() => noContent({ [NO_ACK_MARKER]: 'true' }))
+    expect(await putVersionedCommand(PATH, CONTEXT, '7', FIELDS)).toEqual({ type: 'unacknowledged', status: 204 })
+  })
+
+  it('reports the versioned 409 by its stable code', async () => {
+    stubFetch(() => problem(409, PROBLEM_CODE.versionConflict))
+    expect(await putVersionedCommand(PATH, CONTEXT, '7', FIELDS)).toMatchObject({
+      type: 'http',
+      status: 409,
+      code: PROBLEM_CODE.versionConflict,
+    })
+    stubFetch(() => problem(404, PROBLEM_CODE.notFound))
+    expect(await putVersionedCommand(PATH, CONTEXT, '7', FIELDS)).toMatchObject({ status: 404, code: 'not_found' })
+  })
+
+  it('refuses to send an update that cannot be fenced — nothing reaches the wire', async () => {
+    // Everything the contract's `^[1-9][0-9]*$` / maxLength 19 excludes. An unfenced
+    // versioned write would overwrite whatever the record has become since it was read,
+    // so the refusal happens before a request exists: no key is spent, nothing is
+    // uncertain afterwards.
+    for (const bad of ['', ' ', '0', '01', '-1', '1.0', '1e3', '12 ', 'abc', '9'.repeat(20)]) {
+      const calls = stubFetch(() => noContent())
+      expect(await putVersionedCommand(PATH, CONTEXT, bad, FIELDS)).toEqual({ type: 'unfenced' })
+      expect(calls).toHaveLength(0)
+    }
+    // A JSON number is refused too, whatever its value.
+    const calls = stubFetch(() => noContent())
+    expect(await putVersionedCommand(PATH, CONTEXT, 7 as unknown as string, FIELDS)).toEqual({ type: 'unfenced' })
+    expect(calls).toHaveLength(0)
+  })
+
+  it('obeys the same write gate as every other command, and the gate is checked first', async () => {
+    resetContractReadiness()
+    const calls = stubFetch(() => noContent())
+    // Not "unfenced": the gate refusal comes first, because without proven
+    // compatibility this client must not speak to that node at all.
+    expect(await putVersionedCommand(PATH, CONTEXT, 'not-a-version', FIELDS)).toEqual({ type: 'contract-not-ready' })
+    expect(calls).toHaveLength(0)
+
+    // Readiness earned in company B does not open a write in company A.
+    openWriteGate(CONTRACT_B_GATE)
+    expect(await putVersionedCommand(PATH, CONTEXT, '7', FIELDS)).toEqual({ type: 'contract-not-ready' })
+    expect(calls).toHaveLength(0)
+  })
+
+  it('no response at all leaves the outcome unknown — the update may have been applied', async () => {
+    stubFetch(() => {
+      throw new TypeError('Failed to fetch')
+    })
+    expect(await putVersionedCommand(PATH, CONTEXT, '7', FIELDS)).toEqual({ type: 'network-error' })
+
+    vi.stubGlobal('navigator', { onLine: false })
+    stubFetch(() => {
+      throw new TypeError('Failed to fetch')
+    })
+    expect(await putVersionedCommand(PATH, CONTEXT, '7', FIELDS)).toEqual({ type: 'offline' })
+    vi.stubGlobal('navigator', { onLine: true })
+
+    const controller = new AbortController()
+    stubFetch(() => {
+      controller.abort()
+      throw new DOMException('Aborted', 'AbortError')
+    })
+    expect(await putVersionedCommand(PATH, CONTEXT, '7', FIELDS, controller.signal)).toEqual({ type: 'aborted' })
   })
 })

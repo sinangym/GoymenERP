@@ -21,6 +21,7 @@
 import { decodeCounterpartyMutation, type CounterpartyMutationResult } from './mutationContract'
 import { decodeLinkCandidatePage, type LinkCandidatePage } from './candidateContract'
 import { problemCodeOf, type PartyKind, type ProblemCode } from './contract'
+import { isLosslessVersion } from './wireGuards'
 import {
   beginContractRead,
   commandAckOutcome,
@@ -81,6 +82,23 @@ export type CommandOutcome<T> =
       readonly replayed: boolean
       readonly originalCorrelationId: string | null
     }
+  /**
+   * A versioned update the server APPLIED (204), possibly as a replay. `data` is
+   * `null` for every one of these: a 204 carries no body, so there is nothing the
+   * server has told us about the record's new state. See `putVersionedCommand`.
+   */
+  | {
+      readonly type: 'applied'
+      readonly data: T
+      readonly replayed: boolean
+      readonly originalCorrelationId: string | null
+    }
+  /**
+   * A versioned update whose row-version fence was not a usable concurrency token,
+   * so the client refused to send it. Definite, like `contract-not-ready`: no
+   * request existed and no key was spent.
+   */
+  | { readonly type: 'unfenced' }
   | { readonly type: 'http'; readonly status: number; readonly code: ProblemCode | null; readonly body: unknown }
   /** A 201 arrived and its body did not match the contract. The record may exist. */
   | { readonly type: 'malformed' }
@@ -189,6 +207,99 @@ async function postCommand<T>(
   return {
     type: 'created',
     data,
+    replayed: readReplayed(response.headers),
+    originalCorrelationId: readOriginalCorrelationId(response.headers),
+  }
+}
+
+/**
+ * A versioned update: `PUT`, success is EXACTLY 204, and the change is fenced on
+ * the row version it was read at.
+ *
+ * WHICH VERSION. For a company-scoped Cari update it is the
+ * `CompanyPartyAccount` rowversion — `CounterpartyDetail.account.version`, not
+ * `CounterpartyDetail.version`. The Party's own identity and version are a
+ * different row and a different authorization story, and another company's account
+ * is a third; fencing a company-scoped change on the Party version would make two
+ * companies' editors collide over a row neither of them touched.
+ *
+ * Three differences from `postCommand`, all load-bearing:
+ *
+ *  1. THE FENCE is carried verbatim as the decimal string the accepted contract
+ *     takes (`SetCompanyPartyAccountActiveState.expectedVersion`:
+ *     `type: [integer, string]`, `pattern ^[1-9][0-9]*$`). Never parsed into a
+ *     number — an int64 past 2^53 rounds, and a rounded token can pass a
+ *     concurrency check it should have failed. A value that is not a lossless
+ *     version is REFUSED here, before a request exists, because an unfenced
+ *     versioned write would overwrite whatever the record has become since.
+ *  2. SUCCESS HAS NO BODY. 204 means applied and nothing else, so the outcome
+ *     carries `data: null` and no screen can paint the patch it sent as the
+ *     record's new truth. The caller owes a fresh authorized read afterwards.
+ *  3. A 2xx THAT IS NOT 204 is outside the contract and is reported as UNKNOWN —
+ *     the update may have been applied — exactly as a non-201 2xx is for a create.
+ *
+ * The transport names no business field. `fields` is passed through as the caller
+ * built it, so the accepted DTO is the form's responsibility and never guessed
+ * here; only `expectedVersion` is owned by this function, and it overrides any
+ * same-named key a caller might carry.
+ */
+export async function putVersionedCommand(
+  path: string,
+  context: CommandContext,
+  expectedVersion: string,
+  fields: Readonly<Record<string, unknown>>,
+  signal?: AbortSignal,
+): Promise<CommandOutcome<null>> {
+  // Same write gate as every command: proven compatibility in THIS context first.
+  if (!isCommandContractReady(context.contract)) return { type: 'contract-not-ready' }
+  if (!isLosslessVersion(expectedVersion)) return { type: 'unfenced' }
+
+  const headers: Record<string, string> = {
+    ...devHeaders(),
+    ...contractRequestHeader(),
+    'Content-Type': 'application/json',
+    'X-Company-Id': context.companyId,
+    'Idempotency-Key': context.idempotencyKey,
+  }
+
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ ...fields, expectedVersion }),
+      signal,
+    })
+  } catch {
+    if (signal?.aborted) return { type: 'aborted' }
+    if (!navigator.onLine) return { type: 'offline' }
+    // No response for a WRITE is not "it did not happen". Same key on retry.
+    return { type: 'network-error' }
+  }
+
+  if (response.status !== 204) {
+    let parsed: unknown = null
+    try {
+      parsed = await response.json()
+    } catch {
+      parsed = null
+    }
+    return { type: 'http', status: response.status, code: problemCodeOf(parsed), body: parsed }
+  }
+
+  /**
+   * A 204 the server did not acknowledge is NOT success, for the same reason a
+   * 201 is not: without the acknowledgment we cannot tell which node answered
+   * under which contract, and "applied" is the one reading that must not be
+   * guessed. Unknown keeps the same key and forbids an automatic re-send.
+   */
+  if (commandAckOutcome(response) === 'unknown-outcome') {
+    return { type: 'unacknowledged', status: response.status }
+  }
+
+  return {
+    type: 'applied',
+    data: null,
     replayed: readReplayed(response.headers),
     originalCorrelationId: readOriginalCorrelationId(response.headers),
   }

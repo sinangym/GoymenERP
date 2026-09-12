@@ -161,6 +161,19 @@ export const CARI_COMMAND_TEXT = {
       title: 'İşlem çakışması',
       detail: 'Aynı işlem anahtarı farklı bir istekle kullanılmış; işlem otomatik yinelenmedi.',
     },
+    'version-conflict': {
+      title: 'Kayıt siz düzenlerken değişti',
+      detail:
+        'Değişikliğiniz uygulanmadı; kayıt açtığınız sürümden sonra güncellenmiş. ' +
+        'Aynı işlem yeniden denenmez: kaydı yenileyip güncel değerleri görün ve ' +
+        'değişikliğinizi yeniden girin.',
+    },
+    unfenced: {
+      title: 'Kaydın sürümü doğrulanamadı',
+      detail:
+        'Bu güncelleme kaydın okunduğu sürüme bağlanamadığı için gönderilmedi. ' +
+        'Kaydı yenileyip düzenlemeyi tekrar açın.',
+    },
     unexpected: {
       title: 'İşlem tamamlanamadı',
       detail: 'Sunucu isteği reddetti; iş etkisi oluşmadı.',
