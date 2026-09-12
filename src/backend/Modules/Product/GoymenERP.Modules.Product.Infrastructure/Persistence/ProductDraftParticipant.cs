@@ -2,6 +2,7 @@ using System.Data;
 using System.Data.Common;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Product.Domain.Products;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -82,9 +83,20 @@ public sealed class ProductDraftParticipant : IAsyncDisposable
         }
         catch (DbUpdateConcurrencyException exception) when (exception.Entries.Any(entry => entry.Entity is ProductRow))
         {
-            // A row changed after its version was read. Never silently reload and
-            // overwrite. Counter concurrency remains an owner whole-attempt retry.
-            throw new ProductOperationException(ProductApiV1.VersionConflict, 409);
+            // Read only the database version, never reload/apply the losing edit.
+            // The tracked row already contains the attempted v+1, which is NOT
+            // evidence of the winner's current version (it may have advanced again).
+            var expected = staged.VersionBefore
+                ?? throw new InvalidOperationException("A Product edit conflict has no original version.");
+            var current = await context.Products.AsNoTracking()
+                .Where(row => row.Id == staged.ProductId).Select(row => (long?)row.Version)
+                .SingleOrDefaultAsync(cancellationToken);
+            if (current is null) throw new ProductOperationException(ProductApiV1.NotFound, 404);
+            if (current < 1) throw new InvalidOperationException("The stored Product version is invalid.");
+            // The owner still rolls back/disposes and rechecks current authority
+            // before releasing error metadata. Counter concurrency remains an
+            // owner whole-attempt retry rather than a Product version conflict.
+            throw new ProductVersionConflictException(expected, current.Value);
         }
         return staged;
     }

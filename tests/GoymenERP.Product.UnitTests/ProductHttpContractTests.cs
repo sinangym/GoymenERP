@@ -118,6 +118,7 @@ public sealed class ProductHttpContractTests
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
         Assert.Equal("version_conflict", body.GetProperty("code").GetString());
+        Assert.Equal("1", body.GetProperty("expectedVersion").GetString());
         Assert.Equal("9007199254740993", body.GetProperty("currentVersion").GetString());
     }
 
