@@ -340,6 +340,14 @@ export const PRODUCT_CREATE_TEXT = {
   unknownOutcomeDetail:
     'Sunucudan doğrulanabilir bir yanıt alınamadı. Aynı işlem tekrar denendiğinde yeni bir kayıt oluşmaz.',
   retrySameAttempt: 'Aynı işlemi tekrar dene',
+  /**
+   * Shown when a retry was refused but the FIRST send is still unaccounted for.
+   * Saying "not created" there would be a claim the refusal does not support: the
+   * server must re-authorize before it can read a stored result, so a 403 answering
+   * the retry is a denial of replay access, not evidence of a rollback.
+   */
+  retryRefusedStillUnknown:
+    'Tekrar denemesi reddedildi. Bu, ilk denemenin uygulanmadığı anlamına gelmez; sonucu hâlâ bilinmiyor. Yetkiniz geri verildiğinde aynı işlemle tekrar deneyin.',
   saveFailedRetained: 'Girdiğiniz bilgiler korundu; düzeltip tekrar kaydedebilirsiniz.',
   unsavedTitle: 'Kaydedilmemiş değişiklikler var',
   unsavedDetail: 'Sayfadan ayrılırsanız girdiğiniz bilgiler kaybolur.',
@@ -401,6 +409,14 @@ export const PRODUCT_EDIT_TEXT = {
   unknownOutcomeDetail:
     'Sunucudan doğrulanabilir bir yanıt alınamadı. Aynı işlem tekrar denendiğinde ikinci bir değişiklik uygulanmaz.',
   retrySameAttempt: 'Aynı işlemi tekrar dene',
+  /**
+   * Shown when a retry was refused but the FIRST send is still unaccounted for.
+   * Saying "not created" there would be a claim the refusal does not support: the
+   * server must re-authorize before it can read a stored result, so a 403 answering
+   * the retry is a denial of replay access, not evidence of a rollback.
+   */
+  retryRefusedStillUnknown:
+    'Tekrar denemesi reddedildi. Bu, ilk denemenin uygulanmadığı anlamına gelmez; sonucu hâlâ bilinmiyor. Yetkiniz geri verildiğinde aynı işlemle tekrar deneyin.',
   saveFailedRetained: 'Girdiğiniz bilgiler korundu; düzeltip tekrar kaydedebilirsiniz.',
   unsavedTitle: 'Kaydedilmemiş değişiklikler var',
   unsavedDetail: 'Sayfadan ayrılırsanız yaptığınız değişiklikler kaybolur.',

@@ -51,7 +51,9 @@ import {
   generateAttemptKey,
   hasUnresolvedWork,
   isFormFrozen,
+  isOutcomeStillUnknown,
   isSamePayload,
+  liveSnapshot,
   nextState,
   type AttemptSnapshot,
   type AttemptState,
@@ -67,14 +69,22 @@ import {
 } from './productText'
 import { PRODUCT_CAPABILITY, productDetailPath } from './capabilities'
 import { classifyOutcome } from '../shell/uiState'
-import { useShellState } from '../shell/shellContext'
+import { useShellDispatch, useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
+import { UnresolvedExitGuard } from './UnresolvedExitGuard'
 import { UnsavedDialog } from './UnsavedDialog'
 import styles from './ProductCreatePage.module.css'
 
 type EditAttempt = AttemptState<EditProductDraftPayload, ProductMutationResult>
+
+/**
+ * The shell's dirty scope for this screen — see the create page for why registering
+ * matters: without it the company picker switches straight through and the
+ * namespace remount discards the form and its idempotency key unasked.
+ */
+export const PRODUCT_EDIT_DIRTY_SCOPE = 'product.edit'
 
 const ROLE_CHOICES = [
   { value: 'yes', label: 'Evet' },
@@ -139,6 +149,8 @@ function ProductEditForm({
   readonly onReload: () => void
 }) {
   const shell = useShellState()
+  const dispatch = useShellDispatch()
+  const boundary = useAuthBoundary()
   const navigate = useNavigate()
   const canOpenDetail = hasCapability(shell, PRODUCT_CAPABILITY.productsDetail)
 
@@ -156,20 +168,18 @@ function ProductEditForm({
   const frozen = isFormFrozen(attempt)
   const unresolved = hasUnresolvedWork(attempt, dirty)
 
-  const attemptNamespace =
-    attempt.phase === 'idle' || attempt.phase === 'completed' ? null : attempt.snapshot.namespace
-  const contextChanged =
-    attemptNamespace !== null && namespace !== null && attemptNamespace !== namespace
-
+  /**
+   * The shell's dirty gate. A frozen or unresolved attempt counts as dirty even
+   * when the fields look pristine: the pending write is the thing a silent company
+   * switch must not carry away.
+   */
   useEffect(() => {
-    if (!unresolved) return
-    function onBeforeUnload(event: BeforeUnloadEvent) {
-      event.preventDefault()
-      event.returnValue = ''
-    }
-    window.addEventListener('beforeunload', onBeforeUnload)
-    return () => window.removeEventListener('beforeunload', onBeforeUnload)
-  }, [unresolved])
+    dispatch({ type: unresolved ? 'DIRTY_SET' : 'DIRTY_CLEAR', scope: PRODUCT_EDIT_DIRTY_SCOPE })
+  }, [unresolved, dispatch])
+  useEffect(
+    () => () => dispatch({ type: 'DIRTY_CLEAR', scope: PRODUCT_EDIT_DIRTY_SCOPE }),
+    [dispatch],
+  )
 
   /**
    * Class and family choices, scoped to the record own group — which basic edit
@@ -184,12 +194,18 @@ function ProductEditForm({
       values.classId,
     ],
     enabled: namespace !== null,
-    queryFn: async ({ signal }) =>
-      fetchReferenceOptions(
+    queryFn: async ({ signal }) => {
+      // Same authority as the card read, so a refusal reaches the same boundary
+      // instead of leaving the open card looking valid under revoked authority.
+      const snapshot = boundary.capture()
+      const outcome = await fetchReferenceOptions(
         card.product.groupId,
         values.classId === '' ? null : values.classId,
         signal,
-      ),
+      )
+      if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
+      return outcome
+    },
   })
   const options: ProductReferenceOptions | null =
     optionsQuery.data?.type === 'ok-single' ? optionsQuery.data.data : null
@@ -204,13 +220,27 @@ function ProductEditForm({
   const familiesUnavailable = options?.unavailableCatalogs.includes('families') ?? false
 
   const productId = card.product.id
+  /** The attempt as it stood when the send began — see the create page. */
+  const attemptRef = useRef<EditAttempt>(attempt)
+  useEffect(() => {
+    attemptRef.current = attempt
+  }, [attempt])
+
   const send = useCallback(
     async (snapshot: AttemptSnapshot<EditProductDraftPayload>) => {
+      // Read BEFORE the submitting transition: the ref follows the rendered state,
+      // so reading it after would see `submitting` and lose the very history this
+      // exists to carry.
+      const previous = attemptRef.current
       setAttempt({ phase: 'submitting', snapshot })
+      const securitySnapshot = boundary.capture()
       const result = await editProductDraft(productId, snapshot.payload, {
         idempotencyKey: snapshot.key,
       })
-      const next = nextState(snapshot, result)
+      if (result.type === 'http') boundary.report(result.status, securitySnapshot)
+      // `previous` is passed so a refusal that only answered a RETRY cannot be read
+      // as proof that the earlier send did not apply.
+      const next = nextState(snapshot, result, previous)
 
       if (next.phase === 'failed' && next.failure === 'stale-version') {
         /**
@@ -234,12 +264,12 @@ function ProductEditForm({
       }
       setAttempt(next)
     },
-    [productId],
+    [productId, boundary],
   )
 
   function onSubmit(event: React.FormEvent) {
     event.preventDefault()
-    if (frozen || contextChanged) return
+    if (frozen) return
     setSubmitted(true)
 
     const validation = validateEditForm(card, values, classIds, familyIds)
@@ -250,8 +280,11 @@ function ProductEditForm({
     setErrors({})
     setStaleCurrentVersion(null)
 
-    if (attempt.phase === 'unknown' && isSamePayload(attempt.snapshot.payload, validation.payload)) {
-      void send(attempt.snapshot)
+    // The live snapshot now includes a refusal that left an earlier send
+    // unresolved: resubmitting the same payload must reuse that key.
+    const live = liveSnapshot(attempt)
+    if (live !== null && isSamePayload(live.payload, validation.payload)) {
+      void send(live)
       return
     }
     void send({
@@ -262,8 +295,9 @@ function ProductEditForm({
   }
 
   function retrySameAttempt() {
-    if (attempt.phase !== 'unknown' || contextChanged) return
-    void send(attempt.snapshot)
+    const live = liveSnapshot(attempt)
+    if (live === null) return
+    void send(live)
   }
 
   const errorList = useMemo(
@@ -330,13 +364,6 @@ function ProductEditForm({
       <p className={styles.note}>{PRODUCT_EDIT_TEXT.scopeNote}</p>
       <p className={styles.note}>{PENDING_REFERENCE_NOTE}</p>
 
-      {contextChanged ? (
-        <div className={styles.errorSummary} role="alert" data-testid="product-edit-context-changed">
-          <p className={styles.errorSummaryTitle}>{PRODUCT_EDIT_TEXT.contextChangedTitle}</p>
-          <p>{PRODUCT_EDIT_TEXT.contextChangedDetail}</p>
-        </div>
-      ) : null}
-
       {submitted && errorList.length > 0 ? (
         <div
           className={styles.errorSummary}
@@ -363,7 +390,9 @@ function ProductEditForm({
         </div>
       ) : null}
 
-      {attempt.phase === 'failed' && attempt.failure === 'stale-version' ? (
+      {attempt.phase === 'failed' &&
+      !isOutcomeStillUnknown(attempt) &&
+      attempt.failure === 'stale-version' ? (
         <div className={styles.errorSummary} role="alert" data-testid="product-edit-stale">
           <p className={styles.errorSummaryTitle}>{PRODUCT_EDIT_TEXT.staleTitle}</p>
           <p>{PRODUCT_EDIT_TEXT.staleDetail}</p>
@@ -384,14 +413,18 @@ function ProductEditForm({
         </div>
       ) : null}
 
-      {attempt.phase === 'failed' && attempt.failure === 'lifecycle-conflict' ? (
+      {attempt.phase === 'failed' &&
+      !isOutcomeStillUnknown(attempt) &&
+      attempt.failure === 'lifecycle-conflict' ? (
         <div className={styles.errorSummary} role="alert" data-testid="product-edit-lifecycle">
           <p className={styles.errorSummaryTitle}>{PRODUCT_EDIT_TEXT.lifecycleConflictTitle}</p>
           <p>{PRODUCT_EDIT_TEXT.lifecycleConflictDetail}</p>
         </div>
       ) : null}
 
-      {attempt.phase === 'failed' && attempt.failure === 'not-found' ? (
+      {attempt.phase === 'failed' &&
+      !isOutcomeStillUnknown(attempt) &&
+      attempt.failure === 'not-found' ? (
         <div className={styles.errorSummary} role="alert">
           <p className={styles.errorSummaryTitle}>{PRODUCT_EDIT_TEXT.notFoundTitle}</p>
           <p>{PRODUCT_EDIT_TEXT.notFoundDetail}</p>
@@ -399,6 +432,7 @@ function ProductEditForm({
       ) : null}
 
       {attempt.phase === 'failed' &&
+      !isOutcomeStillUnknown(attempt) &&
       (attempt.failure === 'unauthenticated' || attempt.failure === 'forbidden') ? (
         <div className={styles.errorSummary} role="alert">
           <p className={styles.errorSummaryTitle}>
@@ -409,6 +443,7 @@ function ProductEditForm({
       ) : null}
 
       {attempt.phase === 'failed' &&
+      !isOutcomeStillUnknown(attempt) &&
       (attempt.failure === 'unexpected' ||
         attempt.failure === 'metadata' ||
         attempt.failure === 'idempotency-conflict') ? (
@@ -418,15 +453,23 @@ function ProductEditForm({
         </div>
       ) : null}
 
-      {attempt.phase === 'unknown' ? (
+      {isOutcomeStillUnknown(attempt) && attempt.phase !== 'submitting' ? (
         <div className={styles.unknownBlock} role="alert" data-testid="product-edit-unknown">
           <p className={styles.errorSummaryTitle}>{PRODUCT_EDIT_TEXT.unknownOutcomeTitle}</p>
           {/* No rollback is claimed: the change may have applied. */}
           <p>{PRODUCT_EDIT_TEXT.unknownOutcomeDetail}</p>
+          {/*
+            A refusal that only answered the RETRY settles nothing about the first
+            send. Saying "uygulanmadı" there would be a claim the refusal cannot
+            support — the server re-authorizes before it can even read a stored
+            result, so a 403 is a denial of replay access, not a rollback.
+          */}
+          {attempt.phase === 'failed' ? (
+            <p>{PRODUCT_EDIT_TEXT.retryRefusedStillUnknown}</p>
+          ) : null}
           <button
             type="button"
             className={styles.primaryAction}
-            disabled={contextChanged}
             onClick={retrySameAttempt}
           >
             {PRODUCT_EDIT_TEXT.retrySameAttempt}
@@ -442,7 +485,7 @@ function ProductEditForm({
             type="text"
             value={values.name}
             maxLength={250}
-            disabled={frozen || contextChanged}
+            disabled={frozen}
             aria-invalid={errors.name !== undefined || undefined}
             aria-describedby={errors.name !== undefined ? `${EDIT_FIELD.name}-error` : undefined}
             ref={(el) => {
@@ -467,7 +510,7 @@ function ProductEditForm({
           <select
             id={EDIT_FIELD.classId}
             value={values.classId}
-            disabled={frozen || contextChanged || classesUnavailable}
+            disabled={frozen || classesUnavailable}
             aria-invalid={errors.classId !== undefined || undefined}
             aria-describedby={`${EDIT_FIELD.classId}-hint`}
             ref={(el) => {
@@ -511,7 +554,7 @@ function ProductEditForm({
           <select
             id={EDIT_FIELD.familyId}
             value={values.familyId}
-            disabled={frozen || contextChanged || familiesUnavailable}
+            disabled={frozen || familiesUnavailable}
             aria-invalid={errors.familyId !== undefined || undefined}
             aria-describedby={`${EDIT_FIELD.familyId}-hint`}
             ref={(el) => {
@@ -568,7 +611,7 @@ function ProductEditForm({
                         name={`edit-role-${role}`}
                         value={choice.value}
                         checked={values.roles[role] === choice.value}
-                        disabled={frozen || contextChanged}
+                        disabled={frozen}
                         onChange={() =>
                           setValues((v) => ({
                             ...v,
@@ -604,7 +647,7 @@ function ProductEditForm({
             type="text"
             value={values.reason}
             maxLength={1000}
-            disabled={frozen || contextChanged}
+            disabled={frozen}
             aria-required="true"
             aria-invalid={errors.reason !== undefined || undefined}
             aria-describedby={`${EDIT_FIELD.reason}-hint${
@@ -629,7 +672,7 @@ function ProductEditForm({
           <button
             type="submit"
             className={styles.primaryAction}
-            disabled={frozen || contextChanged}
+            disabled={frozen}
           >
             {attempt.phase === 'submitting'
               ? PRODUCT_EDIT_TEXT.submitting
@@ -645,6 +688,15 @@ function ProductEditForm({
           </button>
         </div>
       </form>
+
+      {/* SPA exits — Back, a sidebar link — go through the same guard. */}
+      <UnresolvedExitGuard
+        active={unresolved}
+        title={PRODUCT_EDIT_TEXT.unsavedTitle}
+        detail={PRODUCT_EDIT_TEXT.unsavedDetail}
+        stayLabel={PRODUCT_EDIT_TEXT.unsavedStay}
+        leaveLabel={PRODUCT_EDIT_TEXT.unsavedLeave}
+      />
 
       {leaveIntent !== null ? (
         <UnsavedDialog

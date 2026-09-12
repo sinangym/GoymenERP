@@ -4,7 +4,9 @@ import {
   generateAttemptKey,
   hasUnresolvedWork,
   isFormFrozen,
+  isOutcomeStillUnknown,
   isSamePayload,
+  liveSnapshot,
   nextState,
   type AttemptSnapshot,
 } from './commandAttempt'
@@ -162,6 +164,68 @@ describe('nextState', () => {
     expect(state.phase).toBe('failed')
     if (state.phase !== 'failed') return
     expect(state.failure).toBe(failure)
+  })
+})
+
+describe('a refusal that only answers a RETRY', () => {
+  const unknown = nextState(snapshot, { type: 'network-error' } as never)
+
+  it('does not settle the earlier send', () => {
+    /**
+     * The scenario this exists for: the first write COMMITS, its response is lost,
+     * the caller's authority is then revoked, and the same-key retry gets 403. The
+     * backend must re-authorize before it can read a stored result, so that 403 is a
+     * denial of REPLAY ACCESS — never evidence the first write rolled back.
+     */
+    const refused = nextState(
+      snapshot,
+      { type: 'http', status: 403, code: 'forbidden', body: null },
+      unknown,
+    )
+    expect(refused.phase).toBe('failed')
+    if (refused.phase !== 'failed') return
+    expect(refused.failure).toBe('forbidden')
+    // ...and the earlier outcome is still open.
+    expect(refused.unresolvedSince).toBe('network-error')
+    expect(isOutcomeStillUnknown(refused)).toBe(true)
+  })
+
+  it('keeps the snapshot alive so the same payload reuses the key', () => {
+    // Minting a second key here is how one committed record becomes two.
+    const refused = nextState(
+      snapshot,
+      { type: 'http', status: 403, code: 'forbidden', body: null },
+      unknown,
+    )
+    expect(liveSnapshot(refused)?.key).toBe('k1')
+  })
+
+  it('keeps the ORIGINAL unknown reason across a further transport failure', () => {
+    const again = nextState(snapshot, { type: 'offline' }, unknown)
+    expect(again.phase).toBe('unknown')
+    if (again.phase !== 'unknown') return
+    expect(again.reason).toBe('network-error')
+  })
+
+  it('leaves a FIRST-send refusal definite, with nothing carried', () => {
+    // No prior unknown: this really is "it did not happen", and the screen may
+    // say so.
+    const first = nextState(snapshot, { type: 'http', status: 403, code: 'forbidden', body: null })
+    expect(first.phase).toBe('failed')
+    if (first.phase !== 'failed') return
+    expect(first.unresolvedSince).toBeUndefined()
+    expect(isOutcomeStillUnknown(first)).toBe(false)
+    // A closed attempt is not resubmitted under its old key.
+    expect(liveSnapshot(first)).toBeNull()
+  })
+
+  it('counts as unsaved work even with an untouched form', () => {
+    const refused = nextState(
+      snapshot,
+      { type: 'http', status: 403, code: 'forbidden', body: null },
+      unknown,
+    )
+    expect(hasUnresolvedWork(refused, false)).toBe(true)
   })
 })
 

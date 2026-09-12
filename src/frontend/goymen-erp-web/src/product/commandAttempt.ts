@@ -84,6 +84,22 @@ export type AttemptState<P, R> =
       readonly failure: AttemptFailure
       /** The server's field errors, when it sent any. */
       readonly fieldErrors: Readonly<Record<string, string>>
+      /**
+       * Set when this refusal answered a RETRY of an attempt whose outcome was
+       * already unknown.
+       *
+       * It is the difference between "your change was not applied" and "we still do
+       * not know whether your change was applied, and this retry was refused". The
+       * second is the truth when a write committed, its response was lost, and the
+       * caller's authority was then revoked: the backend must re-authorize before it
+       * can read a stored result, so the refusal is a denial of REPLAY ACCESS, never
+       * evidence that the first write rolled back.
+       *
+       * Carrying it also keeps the snapshot alive, so resubmitting the SAME payload
+       * reuses the key instead of minting a second one against a record that may
+       * already exist.
+       */
+      readonly unresolvedSince?: AttemptUnknownReason
     }
   | {
       readonly phase: 'completed'
@@ -151,26 +167,38 @@ function stableStringify(value: unknown): string {
 export function nextState<P, R>(
   snapshot: AttemptSnapshot<P>,
   outcome: CommandOutcome<R>,
+  /**
+   * What was known BEFORE this send. Passing it is what lets a refusal of a retry
+   * stop short of claiming the earlier write did not happen.
+   */
+  previous?: AttemptState<P, R>,
 ): AttemptState<P, R> {
+  const unresolvedSince =
+    previous !== undefined && previous.phase === 'unknown'
+      ? previous.reason
+      : previous !== undefined && previous.phase === 'failed'
+        ? previous.unresolvedSince
+        : undefined
+
   switch (outcome.type) {
     case 'succeeded':
       // `isReplay` lives INSIDE the result in this contract, not beside it, so the
       // attempt state does not carry a second copy that could disagree with it.
       return { phase: 'completed', snapshot, result: outcome.data }
     case 'offline':
-      return { phase: 'unknown', snapshot, reason: 'offline' }
+      return { phase: 'unknown', snapshot, reason: unresolvedSince ?? 'offline' }
     case 'network-error':
-      return { phase: 'unknown', snapshot, reason: 'network-error' }
+      return { phase: 'unknown', snapshot, reason: unresolvedSince ?? 'network-error' }
     case 'malformed':
-      return { phase: 'unknown', snapshot, reason: 'malformed-response' }
+      return { phase: 'unknown', snapshot, reason: unresolvedSince ?? 'malformed-response' }
     case 'aborted':
       // Our own cancellation. The request may still have been processed, so the
       // attempt stays unresolved rather than silently disappearing.
-      return { phase: 'unknown', snapshot, reason: 'network-error' }
+      return { phase: 'unknown', snapshot, reason: unresolvedSince ?? 'network-error' }
     case 'http': {
       // A 5xx is the server failing to answer, not an answer. The key is kept.
       if (outcome.status >= 500) {
-        return { phase: 'unknown', snapshot, reason: 'service-unavailable' }
+        return { phase: 'unknown', snapshot, reason: unresolvedSince ?? 'service-unavailable' }
       }
       /**
        * A 2xx that is NOT the expected success status is uncertainty, not refusal.
@@ -183,13 +211,16 @@ export function nextState<P, R>(
        * rather than writing twice.
        */
       if (outcome.status >= 200 && outcome.status < 300) {
-        return { phase: 'unknown', snapshot, reason: 'malformed-response' }
+        return { phase: 'unknown', snapshot, reason: unresolvedSince ?? 'malformed-response' }
       }
       return {
         phase: 'failed',
         snapshot,
         failure: classifyFailure(outcome.status, outcome.code),
         fieldErrors: {},
+        // A definite answer to THIS request. Whether it also settles the previous
+        // one is a different question, and the answer is no.
+        ...(unresolvedSince !== undefined ? { unresolvedSince } : {}),
       }
     }
     default:
@@ -223,6 +254,31 @@ function classifyFailure(status: number, code: string | null): AttemptFailure {
   return 'unexpected'
 }
 
+/**
+ * Whether the outcome of an earlier send is STILL unknown.
+ *
+ * True while the attempt is unknown, and true after a refusal that only answered a
+ * retry. A screen must not say "not applied" while this holds.
+ */
+export function isOutcomeStillUnknown<P, R>(state: AttemptState<P, R>): boolean {
+  if (state.phase === 'unknown' || state.phase === 'submitting') return true
+  return state.phase === 'failed' && state.unresolvedSince !== undefined
+}
+
+/**
+ * The snapshot a resubmission of the same payload must reuse.
+ *
+ * A plain failure closes its attempt — editing and resubmitting is a NEW business
+ * attempt with a new key. But a failure that left an earlier write unresolved keeps
+ * its snapshot: minting a second key there is exactly how one committed write
+ * becomes two.
+ */
+export function liveSnapshot<P, R>(state: AttemptState<P, R>): AttemptSnapshot<P> | null {
+  if (state.phase === 'unknown') return state.snapshot
+  if (state.phase === 'failed' && state.unresolvedSince !== undefined) return state.snapshot
+  return null
+}
+
 /** Whether a state leaves the form frozen. */
 export function isFormFrozen<P, R>(state: AttemptState<P, R>): boolean {
   return state.phase === 'submitting' || state.phase === 'completed'
@@ -240,6 +296,8 @@ export function hasUnresolvedWork<P, R>(
   formDirty: boolean,
 ): boolean {
   if (state.phase === 'completed') return false
-  if (state.phase === 'unknown' || state.phase === 'submitting') return true
+  // A refused retry still leaves the first write unaccounted for, so leaving the
+  // screen silently would forget it just as surely as leaving during the unknown.
+  if (isOutcomeStillUnknown(state)) return true
   return formDirty
 }

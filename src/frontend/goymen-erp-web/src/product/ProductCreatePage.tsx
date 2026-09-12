@@ -46,7 +46,9 @@ import {
   generateAttemptKey,
   hasUnresolvedWork,
   isFormFrozen,
+  isOutcomeStillUnknown,
   isSamePayload,
+  liveSnapshot,
   nextState,
   type AttemptSnapshot,
   type AttemptState,
@@ -64,12 +66,25 @@ import {
   PRODUCT_CAPABILITY_ROUTE,
   productDetailPath,
 } from './capabilities'
-import { useShellState } from '../shell/shellContext'
+import { useShellDispatch, useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
+import { useAuthBoundary } from '../shell/useAuthBoundary'
+import { UnresolvedExitGuard } from './UnresolvedExitGuard'
 import { UnsavedDialog } from './UnsavedDialog'
 import styles from './ProductCreatePage.module.css'
 
 type CreateAttempt = AttemptState<CreateProductDraftPayload, ProductMutationResult>
+
+/**
+ * The shell's dirty scope for this screen.
+ *
+ * Registering here is what makes a company switch ASK instead of proceeding: the
+ * reducer turns `REQUEST_SWITCH` into `confirming-switch` while any scope is dirty.
+ * Without it the picker switched straight through, and the remount below then wiped
+ * the form and its idempotency key with no one being asked — which is precisely the
+ * silent abandonment §19.5 forbids.
+ */
+export const PRODUCT_CREATE_DIRTY_SCOPE = 'product.create'
 
 const ROLE_CHOICES: readonly { readonly value: RoleChoice; readonly label: string }[] = [
   { value: 'yes', label: PRODUCT_CREATE_TEXT.roleYes },
@@ -84,10 +99,24 @@ export function ProductCreatePage() {
   const namespace = key === null ? null : contextKeyString(key)
   const entryGeneration = shell.routeEntryGeneration
 
+  /**
+   * Reference reads go through the SAME security boundary as the business reads.
+   *
+   * They are authenticated reads against the same global authority, so a 401/403
+   * here is the same fact as a 401/403 on the list — and letting it pass unreported
+   * left the capability snapshot and the card cache looking valid under authority
+   * the server had just refused.
+   */
+  const boundary = useAuthBoundary()
   const groupQuery = useQuery({
     queryKey: [namespace ?? 'no-context', entryGeneration, 'product-code-groups'],
     enabled: namespace !== null,
-    queryFn: async ({ signal }) => fetchCodeGroups(signal),
+    queryFn: async ({ signal }) => {
+      const snapshot = boundary.capture()
+      const outcome = await fetchCodeGroups(signal)
+      if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
+      return outcome
+    },
   })
 
   const groups =
@@ -120,6 +149,8 @@ function ProductCreateForm({
   readonly onRetryGroups: () => void
 }) {
   const shell = useShellState()
+  const dispatch = useShellDispatch()
+  const boundary = useAuthBoundary()
   const navigate = useNavigate()
   const canOpenDetail = hasCapability(shell, PRODUCT_CAPABILITY.productsDetail)
   const canReturnToList = hasCapability(shell, PRODUCT_CAPABILITY.productsList)
@@ -138,24 +169,25 @@ function ProductCreateForm({
   const unresolved = hasUnresolvedWork(attempt, dirty)
 
   /**
-   * §19.4: "Origin değişirse eski girişim otomatik taşınmaz." An attempt belongs to
-   * the context it started in; when the shell commits a different one it is
-   * abandoned visibly rather than silently re-aimed at authority it never had.
+   * Register with the SHELL's dirty gate, not just with `beforeunload`.
+   *
+   * §19.4 says an attempt must not be carried into a new context — and this screen
+   * enforces that by remounting on the namespace key. But a remount is destruction,
+   * not protection: on its own it threw away a dirty form and an unresolved
+   * idempotency key without anyone being asked. The dirty scope is what turns the
+   * company switch into `confirming-switch` first, so the discard becomes the
+   * user's explicit choice and the remount only ever happens after it.
+   *
+   * A frozen or unresolved attempt counts as dirty even when the fields look
+   * pristine: the pending write is the thing a silent switch must not carry.
    */
-  const attemptNamespace =
-    attempt.phase === 'idle' || attempt.phase === 'completed' ? null : attempt.snapshot.namespace
-  const contextChanged =
-    attemptNamespace !== null && namespace !== null && attemptNamespace !== namespace
-
   useEffect(() => {
-    if (!unresolved) return
-    function onBeforeUnload(event: BeforeUnloadEvent) {
-      event.preventDefault()
-      event.returnValue = ''
-    }
-    window.addEventListener('beforeunload', onBeforeUnload)
-    return () => window.removeEventListener('beforeunload', onBeforeUnload)
-  }, [unresolved])
+    dispatch({ type: unresolved ? 'DIRTY_SET' : 'DIRTY_CLEAR', scope: PRODUCT_CREATE_DIRTY_SCOPE })
+  }, [unresolved, dispatch])
+  useEffect(
+    () => () => dispatch({ type: 'DIRTY_CLEAR', scope: PRODUCT_CREATE_DIRTY_SCOPE }),
+    [dispatch],
+  )
 
   const groupIds = useMemo(() => (groups ?? []).map((group) => group.id), [groups])
   /** Creation is impossible without a real code group (§19.3). */
@@ -208,12 +240,32 @@ function ProductCreateForm({
     setValues((current) => ({ ...current, classId, familyId: '' }))
   }
 
+  /**
+   * The attempt as it stood when the send began. A ref rather than a closure
+   * capture: `send` is memoised, and reading stale state here would lose exactly
+   * the history this fix exists to preserve.
+   */
+  const attemptRef = useRef<CreateAttempt>(attempt)
+  useEffect(() => {
+    attemptRef.current = attempt
+  }, [attempt])
+
   const send = useCallback(async (snapshot: AttemptSnapshot<CreateProductDraftPayload>) => {
+    // Read BEFORE the submitting transition: the ref follows the rendered state, so
+    // reading it after would see `submitting` and lose the very history this exists
+    // to carry.
+    const previous = attemptRef.current
     setAttempt({ phase: 'submitting', snapshot })
+    // The write is an authenticated call under the same authority as the reads, so
+    // a 401/403 answering it reaches the same boundary rather than staying local.
+    const securitySnapshot = boundary.capture()
     const outcome = await createProductDraft(snapshot.payload, {
       idempotencyKey: snapshot.key,
     })
-    const next = nextState(snapshot, outcome)
+    if (outcome.type === 'http') boundary.report(outcome.status, securitySnapshot)
+    // `previous` is passed so a refusal that only answered a RETRY cannot be read
+    // as proof that the earlier send did not apply.
+    const next = nextState(snapshot, outcome, previous)
     if (next.phase === 'failed' && next.failure === 'validation') {
       /**
        * The server sends machine codes, so the text is produced here. A code this
@@ -229,11 +281,11 @@ function ProductCreateForm({
       return
     }
     setAttempt(next)
-  }, [])
+  }, [boundary])
 
   function onSubmit(event: React.FormEvent) {
     event.preventDefault()
-    if (frozen || contextChanged || !canCreate) return
+    if (frozen || !canCreate) return
     setSubmitted(true)
 
     const validation = validateCreateForm(values, groupIds, classIds, familyIds)
@@ -253,8 +305,14 @@ function ProductCreateForm({
      * under a new key is how one click becomes two products — and the contract says
      * so too: "An unknown outcome must not be retried with a new key."
      */
-    if (attempt.phase === 'unknown' && isSamePayload(attempt.snapshot.payload, validation.payload)) {
-      void send(attempt.snapshot)
+    /**
+     * Resubmitting the SAME payload reuses the live snapshot — which now includes a
+     * refusal that left an earlier send unresolved. Minting a fresh key there is how
+     * one committed record becomes two.
+     */
+    const live = liveSnapshot(attempt)
+    if (live !== null && isSamePayload(live.payload, validation.payload)) {
+      void send(live)
       return
     }
 
@@ -266,8 +324,9 @@ function ProductCreateForm({
   }
 
   function retrySameAttempt() {
-    if (attempt.phase !== 'unknown' || contextChanged) return
-    void send(attempt.snapshot)
+    const live = liveSnapshot(attempt)
+    if (live === null) return
+    void send(live)
   }
 
   const errorList = useMemo(
@@ -328,8 +387,14 @@ function ProductCreateForm({
     )
   }
 
+  /**
+   * A refusal is only a DEFINITE failure when nothing is left unresolved behind it.
+   * Otherwise the screen would tell the user their record was not created while an
+   * earlier send may well have created it.
+   */
   const definiteFailure =
     attempt.phase === 'failed' &&
+    !isOutcomeStillUnknown(attempt) &&
     attempt.failure !== 'validation' &&
     attempt.failure !== 'unauthenticated' &&
     attempt.failure !== 'forbidden'
@@ -364,17 +429,6 @@ function ProductCreateForm({
         </div>
       ) : null}
 
-      {contextChanged ? (
-        <div
-          className={styles.errorSummary}
-          role="alert"
-          data-testid="product-create-context-changed"
-        >
-          <p className={styles.errorSummaryTitle}>{PRODUCT_CREATE_TEXT.contextChangedTitle}</p>
-          <p>{PRODUCT_CREATE_TEXT.contextChangedDetail}</p>
-        </div>
-      ) : null}
-
       {submitted && errorList.length > 0 ? (
         <div
           className={styles.errorSummary}
@@ -402,6 +456,7 @@ function ProductCreateForm({
       ) : null}
 
       {attempt.phase === 'failed' &&
+      !isOutcomeStillUnknown(attempt) &&
       (attempt.failure === 'unauthenticated' || attempt.failure === 'forbidden') ? (
         <div className={styles.errorSummary} role="alert">
           <p className={styles.errorSummaryTitle}>
@@ -426,14 +481,21 @@ function ProductCreateForm({
         The unknown outcome. Distinct from a failure on purpose: the Draft MAY exist,
         so the copy must not invite a fresh save, and the retry re-sends the same key.
       */}
-      {attempt.phase === 'unknown' ? (
+      {isOutcomeStillUnknown(attempt) && attempt.phase !== 'submitting' ? (
         <div className={styles.unknownBlock} role="alert" data-testid="product-create-unknown">
           <p className={styles.errorSummaryTitle}>{PRODUCT_CREATE_TEXT.unknownOutcomeTitle}</p>
           <p>{PRODUCT_CREATE_TEXT.unknownOutcomeDetail}</p>
+          {/*
+            A refusal that only answered the RETRY settles nothing about the first
+            send, so the screen keeps saying the outcome is unknown instead of
+            reporting the record as not created.
+          */}
+          {attempt.phase === 'failed' ? (
+            <p>{PRODUCT_CREATE_TEXT.retryRefusedStillUnknown}</p>
+          ) : null}
           <button
             type="button"
             className={styles.primaryAction}
-            disabled={contextChanged}
             onClick={retrySameAttempt}
           >
             {PRODUCT_CREATE_TEXT.retrySameAttempt}
@@ -457,7 +519,7 @@ function ProductCreateForm({
             required
             aria-required="true"
             maxLength={250}
-            disabled={frozen || contextChanged}
+            disabled={frozen}
             aria-invalid={errors.name !== undefined || undefined}
             aria-describedby={`${CREATE_FIELD.name}-hint${
               errors.name !== undefined ? ` ${CREATE_FIELD.name}-error` : ''
@@ -490,7 +552,7 @@ function ProductCreateForm({
             value={values.groupId}
             required
             aria-required="true"
-            disabled={frozen || contextChanged || !canCreate}
+            disabled={frozen || !canCreate}
             aria-invalid={errors.groupId !== undefined || undefined}
             aria-describedby={`${CREATE_FIELD.groupId}-hint${
               errors.groupId !== undefined ? ` ${CREATE_FIELD.groupId}-error` : ''
@@ -530,7 +592,7 @@ function ProductCreateForm({
           <select
             id={CREATE_FIELD.classId}
             value={values.classId}
-            disabled={frozen || contextChanged || values.groupId === '' || classesUnavailable}
+            disabled={frozen || values.groupId === '' || classesUnavailable}
             aria-invalid={errors.classId !== undefined || undefined}
             aria-describedby={`${CREATE_FIELD.classId}-hint`}
             ref={(el) => {
@@ -567,7 +629,7 @@ function ProductCreateForm({
           <select
             id={CREATE_FIELD.familyId}
             value={values.familyId}
-            disabled={frozen || contextChanged || values.groupId === '' || familiesUnavailable}
+            disabled={frozen || values.groupId === '' || familiesUnavailable}
             aria-invalid={errors.familyId !== undefined || undefined}
             aria-describedby={`${CREATE_FIELD.familyId}-hint`}
             ref={(el) => {
@@ -625,7 +687,7 @@ function ProductCreateForm({
                     name={`role-${role}`}
                     value={choice.value}
                     checked={values.roles[role] === choice.value}
-                    disabled={frozen || contextChanged}
+                    disabled={frozen}
                     onChange={() => setRole(setValues, role, choice.value)}
                   />
                   {choice.label}
@@ -639,7 +701,7 @@ function ProductCreateForm({
           <button
             type="submit"
             className={styles.primaryAction}
-            disabled={frozen || contextChanged || !canCreate}
+            disabled={frozen || !canCreate}
           >
             {attempt.phase === 'submitting'
               ? PRODUCT_CREATE_TEXT.submitting
@@ -657,6 +719,15 @@ function ProductCreateForm({
           </button>
         </div>
       </form>
+
+      {/* SPA exits — Back, a sidebar link, a row link — go through the same guard. */}
+      <UnresolvedExitGuard
+        active={unresolved}
+        title={PRODUCT_CREATE_TEXT.unsavedTitle}
+        detail={PRODUCT_CREATE_TEXT.unsavedDetail}
+        stayLabel={PRODUCT_CREATE_TEXT.unsavedStay}
+        leaveLabel={PRODUCT_CREATE_TEXT.unsavedLeave}
+      />
 
       {leaveIntent !== null ? (
         <UnsavedDialog

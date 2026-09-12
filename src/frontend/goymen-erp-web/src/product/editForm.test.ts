@@ -125,14 +125,36 @@ describe('changesFrom', () => {
     expect(Object.hasOwn(changesFrom(base, values), 'roles')).toBe(false)
   })
 
-  it('does not express a return to "unanswered"', () => {
+  it('sends a return to "unanswered" as the contract’s tagged not-evaluated value', () => {
     /**
-     * "I no longer know" is not a state a user can assert: `not-evaluated` is the
-     * server's statement that it has not determined the role. Omitting leaves the
-     * stored value alone rather than inventing a clear-to-unevaluated operation.
+     * `ProductRoleInput.ToManualState` accepts `{value: null, provenance:
+     * 'not-evaluated'}` as a write, so this is a state the user CAN assert. Dropping
+     * it was a rule this form invented — and a costly one: alone it reported
+     * "nothing changed", and alongside another edit it reported success while the
+     * old role quietly stayed.
      */
     const base = card()
     const values = form(base, { roles: { ...editFormFrom(base).roles, purchasable: 'unset' } })
+    expect(changesFrom(base, values).roles).toEqual({
+      purchasable: { value: null, provenance: 'not-evaluated' },
+    })
+  })
+
+  it('counts a return to "unanswered" as a real change on its own', () => {
+    // Otherwise the save is refused as "nothing changed" while the user is looking
+    // at a field they just cleared.
+    const base = card()
+    const values = form(base, { roles: { ...editFormFrom(base).roles, sellable: 'unset' } })
+    expect(hasChanges(base, values)).toBe(true)
+    const result = validateEditForm(base, values)
+    expect(result.ok).toBe(true)
+  })
+
+  it('still never writes a derived role, even to unset it', () => {
+    const base = card()
+    const values = form(base, {
+      roles: { ...editFormFrom(base).roles, productionOutput: 'unset' },
+    })
     expect(Object.hasOwn(changesFrom(base, values), 'roles')).toBe(false)
   })
 })

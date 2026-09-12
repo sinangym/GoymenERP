@@ -222,8 +222,17 @@ export function installFetch(config: HarnessConfig = {}) {
   return { calls }
 }
 
-/** Renders the shell with the Product routes mounted, at `initialPath`. */
-export function renderProductApp(initialPath: string): RenderResult {
+/**
+ * Renders the shell with the Product routes mounted, at `initialPath`.
+ *
+ * The router is returned so a test can drive a navigation the SCREEN did not
+ * initiate — browser Back, a sidebar link — which is the class of exit the local
+ * Cancel handler never saw. The shell's own nav has no Product entry here because
+ * mounting it is the shell owner's delta, so the router is the honest stand-in.
+ */
+export function renderProductApp(
+  initialPath: string,
+): RenderResult & { readonly router: ReturnType<typeof createMemoryRouter> } {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: 0, refetchOnWindowFocus: false } },
   })
@@ -231,9 +240,12 @@ export function renderProductApp(initialPath: string): RenderResult {
     [{ path: '/', element: <AppShell />, children: productRoutes }],
     { initialEntries: [initialPath] },
   )
-  return render(
-    <ShellProvider queryClient={queryClient}>
-      <RouterProvider router={router} />
-    </ShellProvider>,
-  )
+  return {
+    ...render(
+      <ShellProvider queryClient={queryClient}>
+        <RouterProvider router={router} />
+      </ShellProvider>,
+    ),
+    router,
+  }
 }

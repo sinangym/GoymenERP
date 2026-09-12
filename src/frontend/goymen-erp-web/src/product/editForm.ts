@@ -113,11 +113,8 @@ export function editFormFrom(card: ProductCard): EditFormValues {
 /**
  * The members that actually differ from the card as read.
  *
- * Derived roles are never included. A role returning to `unset` is not expressible
- * and is therefore not sent: `not-evaluated` is the server's statement that it has
- * not determined the role, and a person cannot un-determine something they decided.
- * Omitting leaves the stored value alone, which is honest; the alternative would be
- * inventing a clear-to-unevaluated operation the contract does not define.
+ * Derived roles are never included; every other changed role is, including one the
+ * user moved back to "unanswered" — see the comment on the role loop.
  */
 export function changesFrom(card: ProductCard, values: EditFormValues): ProductDraftChanges {
   const changes: {
@@ -140,13 +137,28 @@ export function changesFrom(card: ProductCard, values: EditFormValues): ProductD
   const familyId = values.familyId === '' ? null : values.familyId
   if (familyId !== card.product.familyId) changes.familyId = familyId
 
-  const roles: Record<string, { value: boolean; provenance: 'manual' }> = {}
+  /**
+   * Every EDITABLE role the user changed, including a change back to "unanswered".
+   *
+   * An earlier version dropped `unset` on the theory that a person cannot
+   * un-determine something they decided. That was a rule this form invented: the
+   * contract's own `ProductRoleInput.ToManualState` accepts
+   * `{value: null, provenance: 'not-evaluated'}` as a write, and README lists it
+   * beside `manual`+boolean. Silently discarding it was worse than merely wrong —
+   * on its own it made the save report "nothing changed", and alongside another
+   * edit it reported success while the old role quietly stayed.
+   *
+   * `derived` stays untouched: it is server-only, and `PreserveDerived` rejects an
+   * attempt to overwrite one.
+   */
+  const roles: Record<string, ProductRoleWrites[ProductRoleName]> = {}
   for (const role of PRODUCT_ROLE) {
     if (!isRoleEditable(card, role)) continue
     const choice = values.roles[role]
     if (choice === roleChoiceOf(card, role)) continue
     if (choice === 'yes') roles[role] = { value: true, provenance: 'manual' }
     else if (choice === 'no') roles[role] = { value: false, provenance: 'manual' }
+    else roles[role] = { value: null, provenance: 'not-evaluated' }
   }
   if (Object.keys(roles).length > 0) changes.roles = roles as ProductRoleWrites
 

@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PRODUCT_CAPABILITY } from './capabilities'
 import {
   CLASS_FLAT,
+  COMPANY_B,
   GROUP_SAC,
   installFetch,
   json,
@@ -493,7 +494,13 @@ describe('unknown outcome', () => {
 })
 
 describe('definite refusals', () => {
-  it('reports a 403 as unauthorized rather than as an unknown outcome', async () => {
+  it('reports a command 403 to the shared boundary, which closes the capability', async () => {
+    /**
+     * A refusal of an authenticated write is the same fact as a refusal of a read:
+     * the central boundary re-fences the capability so a route return cannot mount
+     * the feature again on authority the server just rejected. Handling it only
+     * locally left the capability snapshot looking valid.
+     */
     installFetch({ capabilities: CREATE_ONLY, onCreate: () => json({ code: 'forbidden' }, 403) })
     renderProductApp(PATH)
 
@@ -501,8 +508,16 @@ describe('definite refusals', () => {
     await fillMinimum()
     await userEvent.click(saveButton())
 
-    await waitFor(() => expect(screen.getByText('Yetkiniz yok')).toBeTruthy())
-    expect(screen.queryByTestId('product-create-unknown')).toBeNull()
+    await waitFor(() => expect(document.querySelector('[data-state]')).not.toBeNull())
+    expect(screen.queryByRole('button', { name: 'Taslak olarak kaydet' })).toBeNull()
+  })
+
+  it('reports a reference-read 403 to the boundary too', async () => {
+    // `code-groups` is an authenticated read under the same global authority.
+    installFetch({ capabilities: CREATE_ONLY, onGroups: () => json({ code: 'forbidden' }, 403) })
+    renderProductApp(PATH)
+
+    await waitFor(() => expect(document.querySelector('[data-state]')).not.toBeNull())
   })
 
   it('reports an idempotency conflict as a definite refusal', async () => {
@@ -518,6 +533,153 @@ describe('definite refusals', () => {
 
     await waitFor(() => expect(screen.getByTestId('product-create-failed')).toBeTruthy())
     expect(screen.queryByTestId('product-create-unknown')).toBeNull()
+  })
+})
+
+describe('the shell dirty gate', () => {
+  it('makes a company switch ASK while the form is dirty, and keeps the form', async () => {
+    /**
+     * The screen remounts on a namespace change, which is how an attempt is kept
+     * from crossing contexts. But a remount is destruction, not protection: without
+     * the shell's dirty scope the picker switched straight through and the form and
+     * its idempotency key went with it, unasked.
+     */
+    installFetch({ capabilities: CREATE_ONLY })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await userEvent.type(screen.getByLabelText(/Ürün adı/), 'Siyah sac')
+    await userEvent.selectOptions(screen.getByLabelText('Şirket'), COMPANY_B)
+
+    const dialog = await waitFor(() => screen.getByRole('dialog'))
+    expect(within(dialog).getByRole('button', { name: 'Kal' })).toBeTruthy()
+    // The form is still there behind the dialog — "Kal" has something to keep.
+    expect((screen.getByLabelText(/Ürün adı/) as HTMLInputElement).value).toBe('Siyah sac')
+  })
+
+  it('asks on a company switch while an outcome is UNRESOLVED, form untouched', async () => {
+    // The pending write is the thing a silent switch must not carry, even when the
+    // fields look pristine.
+    installFetch({ capabilities: CREATE_ONLY, onCreate: () => json({}, 503) })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await fillMinimum()
+    await userEvent.click(saveButton())
+    await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
+
+    await userEvent.selectOptions(screen.getByLabelText('Şirket'), COMPANY_B)
+    expect(await waitFor(() => screen.getByRole('dialog'))).toBeTruthy()
+  })
+
+  it('lets a switch through once the form is clean again', async () => {
+    // The gate must not become a trap: an empty form is not unsaved work.
+    installFetch({ capabilities: CREATE_ONLY })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await userEvent.selectOptions(screen.getByLabelText('Şirket'), COMPANY_B)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+})
+
+describe('SPA exit guard', () => {
+  it('blocks a navigation the screen did not initiate', async () => {
+    /**
+     * Back, a sidebar link and a row link never went through the local Cancel
+     * handler, so an unresolved write could leave with a single click. The blocker
+     * covers the router-driven exits; the shell's dirty gate covers the company
+     * switch, which is not a navigation.
+     */
+    installFetch({
+      capabilities: [...CREATE_ONLY, PRODUCT_CAPABILITY.productsList],
+      onCreate: () => json({}, 503),
+    })
+    const { router } = renderProductApp(PATH)
+
+    await formVisible()
+    await fillMinimum()
+    await userEvent.click(saveButton())
+    await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
+
+    // A router-driven departure: the screen's own Cancel handler is not involved.
+    await act(async () => {
+      await router.navigate('/urun')
+    })
+
+    const dialog = await waitFor(() => screen.getByRole('alertdialog'))
+    expect(within(dialog).getByRole('button', { name: 'Sayfada kal' })).toBeTruthy()
+    // Staying keeps the unresolved attempt visible rather than losing it.
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Sayfada kal' }))
+    await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
+  })
+
+  it('lets the navigation through when nothing is unresolved', async () => {
+    // The guard must not become a trap: an untouched form is not unsaved work.
+    installFetch({ capabilities: [...CREATE_ONLY, PRODUCT_CAPABILITY.productsList] })
+    const { router } = renderProductApp(PATH)
+
+    await formVisible()
+    await act(async () => {
+      await router.navigate('/urun')
+    })
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Ürünler' })).toBeTruthy())
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+  })
+
+  it('proceeds when the user chooses to leave', async () => {
+    installFetch({
+      capabilities: [...CREATE_ONLY, PRODUCT_CAPABILITY.productsList],
+      onCreate: () => json({}, 503),
+    })
+    const { router } = renderProductApp(PATH)
+
+    await formVisible()
+    await fillMinimum()
+    await userEvent.click(saveButton())
+    await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
+
+    await act(async () => {
+      await router.navigate('/urun')
+    })
+    const dialog = await waitFor(() => screen.getByRole('alertdialog'))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Değişiklikleri bırak' }))
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Ürünler' })).toBeTruthy())
+  })
+})
+
+describe('a refused retry', () => {
+  it('does not report the record as not created', async () => {
+    /**
+     * First send commits, its response is lost, and the same-key retry is refused.
+     * The refusal answers the RETRY only — saying "Kayıt oluşturulmadı" would be a
+     * claim it cannot support.
+     *
+     * An `idempotency_conflict` is used rather than a 403 because an AUTH refusal
+     * re-fences the capability and closes the route; both behaviours are correct,
+     * and only one can be observed at a time.
+     */
+    installFetch({
+      capabilities: CREATE_ONLY,
+      onCreate: (attempt) =>
+        attempt === 1 ? json({}, 503) : json({ code: 'idempotency_conflict' }, 409),
+    })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await fillMinimum()
+    await userEvent.click(saveButton())
+    await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
+
+    await userEvent.click(screen.getByRole('button', { name: 'Aynı işlemi tekrar dene' }))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('product-create-unknown').textContent).toContain(
+        'ilk denemenin uygulanmadığı anlamına gelmez',
+      ),
+    )
+    expect(screen.queryByText('Kayıt oluşturulmadı.')).toBeNull()
   })
 })
 

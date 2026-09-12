@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { PRODUCT_CAPABILITY } from './capabilities'
 import {
   CLASS_FLAT,
+  COMPANY_B,
   GROUP_SAC,
   PRODUCT_1,
   installFetch,
@@ -253,6 +254,137 @@ describe('unknown outcome', () => {
 
     await waitFor(() => expect(screen.getByTestId('product-edit-unknown')).toBeTruthy())
     expect(screen.queryByText('Değişiklikler kaydedildi')).toBeNull()
+  })
+})
+
+describe('a refused retry', () => {
+  it('does not turn into "değişiklik uygulanmadı"', async () => {
+    /**
+     * The first PATCH commits, its response is lost, and the same-key retry is
+     * refused. The refusal answers the RETRY — it is not evidence that the first
+     * write rolled back, so the screen keeps saying the outcome is unknown.
+     *
+     * An `idempotency_conflict` is used rather than a 403 because an AUTH refusal
+     * closes the capability (see the next test) and the screen stops rendering
+     * altogether. Both behaviours are correct; only one of them can be observed at
+     * a time.
+     */
+    installFetch({
+      capabilities: EDIT_ONLY,
+      onEdit: (attempt) =>
+        attempt === 1 ? json({}, 503) : json({ code: 'idempotency_conflict' }, 409),
+    })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await changeNameAndReason()
+    await userEvent.click(saveButton())
+    await waitFor(() => expect(screen.getByTestId('product-edit-unknown')).toBeTruthy())
+
+    await userEvent.click(screen.getByRole('button', { name: 'Aynı işlemi tekrar dene' }))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('product-edit-unknown').textContent).toContain(
+        'ilk denemenin uygulanmadığı anlamına gelmez',
+      ),
+    )
+    expect(screen.queryByText('Değişiklik uygulanmadı.')).toBeNull()
+  })
+
+  it('reports an auth refusal of the retry to the boundary, and still claims no rollback', async () => {
+    /**
+     * Security wins the render: a 401/403 re-fences the capability and the gated
+     * route closes, exactly as it does for a read. What must NOT happen — and does
+     * not — is the screen announcing that the earlier change was not applied on the
+     * way out. Saying nothing is honest here; saying "uygulanmadı" would not be.
+     *
+     * KNOWN LIMIT, recorded rather than hidden: once the route closes, the pending
+     * attempt is no longer visible to the user. Carrying an unresolved write across
+     * a capability revocation would need somewhere durable to keep it, which is a
+     * separate decision with its own failure modes.
+     */
+    installFetch({
+      capabilities: EDIT_ONLY,
+      onEdit: (attempt) => (attempt === 1 ? json({}, 503) : json({ code: 'forbidden' }, 403)),
+    })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await changeNameAndReason()
+    await userEvent.click(saveButton())
+    await waitFor(() => expect(screen.getByTestId('product-edit-unknown')).toBeTruthy())
+
+    await userEvent.click(screen.getByRole('button', { name: 'Aynı işlemi tekrar dene' }))
+
+    await waitFor(() => expect(document.querySelector('[data-state]')).not.toBeNull())
+    expect(screen.queryByText('Değişiklik uygulanmadı.')).toBeNull()
+  })
+
+  it('reuses the SAME key when the unchanged payload is submitted again', async () => {
+    // The attempt is still live after the refusal; a fresh key would risk a second
+    // write against a record the first send may already have changed.
+    const { calls } = installFetch({
+      capabilities: EDIT_ONLY,
+      onEdit: (attempt) =>
+        attempt === 1
+          ? json({}, 503)
+          : attempt === 2
+            ? json({ code: 'idempotency_conflict' }, 409)
+            : json(mutation({ card: productCard({ product: productCore({ version: '8' }) }) })),
+    })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await changeNameAndReason()
+    await userEvent.click(saveButton())
+    await waitFor(() => screen.getByTestId('product-edit-unknown'))
+    await userEvent.click(screen.getByRole('button', { name: 'Aynı işlemi tekrar dene' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('product-edit-unknown').textContent).toContain(
+        'ilk denemenin uygulanmadığı',
+      ),
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Aynı işlemi tekrar dene' }))
+    await waitFor(() => expect(screen.getByText('Değişiklikler kaydedildi')).toBeTruthy())
+
+    const keys = calls.filter((call) => call.method === 'PATCH').map((call) => call.idempotencyKey)
+    expect(keys).toHaveLength(3)
+    expect(new Set(keys).size).toBe(1)
+  })
+})
+
+describe('roles', () => {
+  it('sends a cleared role as the contract’s tagged not-evaluated value', async () => {
+    // `ToManualState` accepts it, so "Belirtilmedi" is a state the user can assert.
+    const { calls } = installFetch({ capabilities: EDIT_ONLY })
+    renderProductApp(PATH)
+
+    await formVisible()
+    // `purchasable` is a manual true; move it back to unanswered.
+    await userEvent.click(screen.getAllByRole('radio', { name: 'Belirtilmedi' })[0])
+    await userEvent.type(screen.getByLabelText(/Değişiklik gerekçesi/), 'Rol geri alındı')
+    await userEvent.click(saveButton())
+
+    await waitFor(() => expect(calls.some((call) => call.method === 'PATCH')).toBe(true))
+    const body = JSON.parse(calls.find((call) => call.method === 'PATCH')?.body ?? '{}')
+    expect(body.changes.roles).toEqual({
+      purchasable: { value: null, provenance: 'not-evaluated' },
+    })
+  })
+})
+
+describe('the shell dirty gate', () => {
+  it('makes a company switch ASK while a change is pending', async () => {
+    installFetch({ capabilities: EDIT_ONLY })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await changeNameAndReason()
+    await userEvent.selectOptions(screen.getByLabelText('Şirket'), COMPANY_B)
+
+    const dialog = await waitFor(() => screen.getByRole('dialog'))
+    expect(within(dialog).getByRole('button', { name: 'Kal' })).toBeTruthy()
+    expect((screen.getByLabelText(/Ürün adı/) as HTMLInputElement).value).toBe('Galvaniz sac')
   })
 })
 
