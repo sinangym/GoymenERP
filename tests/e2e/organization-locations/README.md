@@ -5,9 +5,12 @@ A real Chromium ran the seven authorized cases against the real API on `127.0.0.
 and its own SQL database, twice consecutively green on the committed tree.
 
 The eighth case — "without the optional sites capability the screen issues ZERO /sites
-requests" — is **SKIPPED and therefore NOT MEASURED**: this manifest binds no
-`locationsOnlyActor`. That slice is not covered by this run and must not be counted as
-accepted. `o-02-scope-and-permissions/coverage.json` records that in the evidence itself.
+requests" — is **MEASURED SEPARATELY**, in run `20260912o39lo1` on its own reduced-
+permission seed and database, with a bound `locationsOnlyActor` (Node v24.21.0). It
+passed: the entitled list rendered, the entitled card opened with no reasoned-change
+control and zero commands sent, and `/api/v1/organization/sites` was never requested at
+all — not issued and discarded. `o-02-scope-and-permissions/coverage.json` records which
+of the two situations produced the evidence, so a skipped run can never read as a pass.
 
 Database rows, audit contents and cleanup are the environment owner's observation, not
 this package's.
