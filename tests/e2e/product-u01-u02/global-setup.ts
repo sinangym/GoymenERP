@@ -29,6 +29,19 @@ export default async function globalSetup(_config: FullConfig): Promise<void> {
   })
   page.on('pageerror', (error) => push('pageerror', String(error.message).slice(0, 300)))
   page.on('requestfailed', (request) => push('requestfailed', request.method() + ' ' + new URL(request.url()).pathname + ' ' + (request.failure()?.errorText ?? '')))
+  // Which development user and company the bundle actually sent, and what came back:
+  // the first live warm-up failed silently on exactly this, and the record of it was
+  // missing. Named headers only; never a cookie, never a body.
+  page.on('request', (request) => {
+    const url = new URL(request.url())
+    if (!url.pathname.startsWith('/api/v1/')) return
+    const headers = request.headers()
+    push('api-request', `${request.method()} ${url.pathname} devUser=${headers['x-development-user'] ?? '-'} company=${headers['x-company-id'] ?? '-'}`)
+  })
+  page.on('response', (response) => {
+    const url = new URL(response.url())
+    if (url.pathname.startsWith('/api/v1/')) push('api-response', `${response.request().method()} ${url.pathname} ${response.status()}`)
+  })
   let outcome = 'ok'
   let headingMs: number | null = null
   let optimizerWaitMs: number | null = null

@@ -28,12 +28,27 @@ const ownership: Plugin = {
     })
   },
 }
+/**
+ * The bundle's development user, in the L lane ONLY, and from the joined binding only.
+ *
+ * `envPrefix` below deliberately blocks every ambient `VITE_*` variable from reaching
+ * `import.meta.env` — which is right for the T lane and was WRONG for the L lane's
+ * actor: the first live run (`urun-l-da7ad01-01`) served a bundle whose
+ * `import.meta.env.VITE_DEV_USER` was undefined, so the app fell back to its default
+ * development user, the server published no Product capability for it and the list
+ * route rendered the neutral block. The actor is therefore compiled in with `define`
+ * from the hash-checked snapshot, not read from the environment — an ambient
+ * `VITE_DEV_USER` still cannot redirect it.
+ */
+const compiledDevUser = liveBinding === null ? {} : { 'import.meta.env.VITE_DEV_USER': JSON.stringify(liveBinding.actor) }
+
 /** The production Vite config with a test-only root, entry and cache; no production module is transformed. */
 export default {
   ...base,
   root: here,
   envDir: false,
   envPrefix: 'URUN_NO_PUBLIC_ENV_',
+  define: { ...((base as { define?: Record<string, unknown> }).define ?? {}), ...compiledDevUser },
   cacheDir: viteCacheDir,
   plugins: [...(base.plugins ?? []), ownership],
   resolve: {
