@@ -201,16 +201,42 @@ describe('§13 states', () => {
   })
 
   it('fails closed on a malformed page instead of rendering a partial list', async () => {
-    // One bad row rejects the whole page: a filtered view would silently hide that
-    // something arrived that we could not validate.
+    // One STRUCTURALLY bad row rejects the whole page: a filtered view would
+    // silently hide that something arrived we could not validate.
     installFetch({
       capabilities: LIST_ONLY,
-      onList: () => json(productPage({ items: [productItem({ lifecycle: 'draft' })] })),
+      onList: () => json(productPage({ items: [productItem({ version: 7 })] })),
     })
     renderProductApp('/urun')
 
     await waitFor(() => expect(screen.getByText('Beklenmeyen yanıt — ürün')).toBeTruthy())
     expect(screen.queryByRole('table')).toBeNull()
+  })
+
+  it('shows an unrecognised status as unknown, naming it, without losing the list', async () => {
+    /**
+     * The contract-drift case, and it is live: #237 emits `"draft"` where this reads
+     * `Draft`. The row stays, its status says it is not understood, and the raw
+     * token is printed so the report that reaches the schema owner is actionable.
+     * Rejecting the page would show an empty list and explain nothing.
+     */
+    installFetch({
+      capabilities: LIST_ONLY,
+      onList: () =>
+        json(
+          productPage({
+            items: [productItem(), productItem({ id: PRODUCT_2, code: 'BORU-7', lifecycle: 'draft' })],
+          }),
+        ),
+    })
+    renderProductApp('/urun')
+
+    await rowsVisible()
+    expect(screen.getByText('SAC-42')).toBeTruthy()
+    const odd = screen.getByRole('row', { name: /BORU-7/ })
+    expect(within(odd).getByText('Bilinmeyen durum: draft')).toBeTruthy()
+    // It is NOT quietly read as the state it resembles.
+    expect(within(odd).queryByText('Taslak')).toBeNull()
   })
 
   it('offers a restart, not a generic conflict, on an invalid cursor', async () => {

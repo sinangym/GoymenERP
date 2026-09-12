@@ -26,8 +26,8 @@ import {
   COMPLETENESS_AREA_LABEL,
   COMPLETENESS_LABEL,
   DETAIL_SECTION_LABEL,
-  LIFECYCLE_LABEL,
-  LIFECYCLE_MEANING,
+  lifecycleLabel,
+  lifecycleMeaning,
   PRODUCT_DETAIL_TEXT,
   ROLE_LABEL,
   ROLE_PROVENANCE_LABEL,
@@ -118,15 +118,18 @@ function ProductDetailView({
           </h1>
         </div>
         <div className={styles.lifecycle}>
-          <span className={styles.badge} data-lifecycle={detail.lifecycle}>
-            {LIFECYCLE_LABEL[detail.lifecycle]}
+          <span
+            className={styles.badge}
+            data-lifecycle={detail.lifecycle.known ? detail.lifecycle.value : 'unknown'}
+          >
+            {lifecycleLabel(detail.lifecycle)}
           </span>
           {/*
             The state NAME alone does not tell an operator that a Draft cannot be
             picked in an order line — which is the whole point of the state
             (§6.1, DEC-PRD-010). The consequence is printed with it.
           */}
-          <span className={styles.lifecycleMeaning}>{LIFECYCLE_MEANING[detail.lifecycle]}</span>
+          <span className={styles.lifecycleMeaning}>{lifecycleMeaning(detail.lifecycle)}</span>
         </div>
       </header>
 
@@ -135,7 +138,12 @@ function ProductDetailView({
         history stays readable. Said as a banner because the rest of the card looks
         exactly like an active one.
       */}
-      {detail.lifecycle === 'Inactive' ? (
+      {/*
+        Only for a KNOWN Inactive. An unrecognised status must not inherit this
+        banner's claim — "closed in both companies" is a statement about a state we
+        would not understand.
+      */}
+      {detail.lifecycle.known && detail.lifecycle.value === 'Inactive' ? (
         <p className={styles.inactiveBanner} role="status">
           Bu ürün her iki şirkette de yeni kullanıma kapalıdır. Geçmiş kayıtlar görünür kalır.
           {detail.deactivationReason !== null

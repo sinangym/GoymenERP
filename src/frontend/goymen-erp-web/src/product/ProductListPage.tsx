@@ -36,6 +36,7 @@ import {
   COMPLETENESS_AREA_LABEL,
   LIFECYCLE_LABEL,
   MATCH_REASON_LABEL,
+  lifecycleLabel,
   PRODUCT_LIST_TEXT,
   ROLE_LABEL,
   UNASSIGNED,
@@ -577,8 +578,11 @@ function ProductList({ namespace }: { readonly namespace: string | null }) {
                     <td>{rolesText(item.roles)}</td>
                     <td>{item.primaryStockUnit ?? UNASSIGNED}</td>
                     <td>
-                      <span className={styles.badge} data-lifecycle={item.lifecycle}>
-                        {LIFECYCLE_LABEL[item.lifecycle]}
+                      <span
+                        className={styles.badge}
+                        data-lifecycle={item.lifecycle.known ? item.lifecycle.value : 'unknown'}
+                      >
+                        {lifecycleLabel(item.lifecycle)}
                       </span>
                     </td>
                     <td>

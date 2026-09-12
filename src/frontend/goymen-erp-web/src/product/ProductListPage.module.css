@@ -163,6 +163,14 @@
   color: #9a5b06;
 }
 
+/* A status this build does not recognise. Deliberately the most conspicuous badge:
+   it is a signal to whoever can reconcile the contract, not a neutral state. */
+.badge[data-lifecycle='unknown'] {
+  border-color: #e4a9a9;
+  background: #fdf3f3;
+  color: #b91c1c;
+}
+
 /* Names the retired code that matched, so "eski kod" cannot be read as a label on
    the current one. */
 .aliasBadge {

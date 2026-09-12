@@ -58,8 +58,43 @@ export const PRODUCT_CONTRACT_SOURCE =
 export const PRODUCT_LIFECYCLE = ['Draft', 'Active', 'Inactive'] as const
 export type ProductLifecycle = (typeof PRODUCT_LIFECYCLE)[number]
 
-function isLifecycle(value: unknown): value is ProductLifecycle {
-  return typeof value === 'string' && (PRODUCT_LIFECYCLE as readonly string[]).includes(value)
+/**
+ * A lifecycle as READ. Either one of the three states this build understands, or a
+ * value it does not — carried verbatim, never guessed at.
+ *
+ * WHY THIS IS NOT JUST `ProductLifecycle`. The vocabulary stays exactly these three
+ * strings, in exactly this casing: §6 names them, and accepting a second spelling
+ * would hide a real contract drift and quietly establish a second schema truth. That
+ * is a question for the schema owner, not for a decoder.
+ *
+ * What changes is what an out-of-vocabulary value COSTS. Rejecting the whole page
+ * for one unrecognised token means a single odd row hides every valid one behind
+ * "Beklenmeyen yanıt", which tells the operator nothing about what is wrong — and
+ * that is not hypothetical: the Product backend candidate (#237) currently emits
+ * `"draft"` where this reads `Draft` (review finding P1-1), so the first time the
+ * two lanes connect, every list would be empty. A row that says its status is
+ * unknown is both safer and a far louder signal to the person who can fix it.
+ *
+ * Strictness belongs on the WRITE side and stays there: `decodeProductDraftCreated`
+ * still rejects any 201 that is not exactly `Draft`, because that one is a safety
+ * check about an activation nobody asked for, not a display concern.
+ */
+export type ProductLifecycleValue =
+  | { readonly known: true; readonly value: ProductLifecycle }
+  | { readonly known: false; readonly raw: string }
+
+function decodeLifecycle(value: unknown): ProductLifecycleValue | null {
+  // Absent, blank or non-string is still fatal: that is a missing field, not an
+  // unfamiliar one, and there is nothing to carry.
+  if (!isNonEmptyString(value, 64)) return null
+  return (PRODUCT_LIFECYCLE as readonly string[]).includes(value)
+    ? { known: true, value: value as ProductLifecycle }
+    : { known: false, raw: value }
+}
+
+/** The state when it is one this build understands, else null. */
+export function knownLifecycle(lifecycle: ProductLifecycleValue): ProductLifecycle | null {
+  return lifecycle.known ? lifecycle.value : null
 }
 
 /* ── Roles and provenance (spec §5.2, DEC-PRD-001) ────────────────────────── */
@@ -247,7 +282,7 @@ export interface ProductListItem {
   readonly name: string
   readonly classification: ProductClassification
   readonly roles: ProductRoles
-  readonly lifecycle: ProductLifecycle
+  readonly lifecycle: ProductLifecycleValue
   /**
    * Main stock unit code (DEC-PRD-007: kg for every product). `null` while a Draft
    * has not been given one — rendered as "atanmadı", never as an empty unit.
@@ -294,7 +329,8 @@ function decodeListItem(raw: unknown): ProductListItem | null {
   if (!isBoundUuid(i.id)) return null
   if (!isNonEmptyString(i.code, 64)) return null
   if (!isNonEmptyString(i.name, 250)) return null
-  if (!isLifecycle(i.lifecycle)) return null
+  const lifecycle = decodeLifecycle(i.lifecycle)
+  if (lifecycle === null) return null
   if (!isNullableText(i.primaryStockUnit, 32)) return null
   if (!isInstant(i.lastChangedAt)) return null
   if (!isLosslessVersion(i.version)) return null
@@ -314,7 +350,7 @@ function decodeListItem(raw: unknown): ProductListItem | null {
     name: i.name,
     classification,
     roles,
-    lifecycle: i.lifecycle,
+    lifecycle,
     primaryStockUnit: (i.primaryStockUnit as string | null) ?? null,
     completeness,
     match,
@@ -435,7 +471,7 @@ export interface ProductDetail {
   readonly name: string
   readonly classification: ProductClassification
   readonly roles: ProductRoles
-  readonly lifecycle: ProductLifecycle
+  readonly lifecycle: ProductLifecycleValue
   readonly completeness: ProductCompleteness
   readonly version: string
   readonly aliases: readonly ProductAlias[]
@@ -520,7 +556,8 @@ export function decodeProductDetail(raw: unknown, expectedId: string): ProductDe
   if (d.id !== expectedId) return null
   if (!isNonEmptyString(d.code, 64)) return null
   if (!isNonEmptyString(d.name, 250)) return null
-  if (!isLifecycle(d.lifecycle)) return null
+  const lifecycle = decodeLifecycle(d.lifecycle)
+  if (lifecycle === null) return null
   if (!isLosslessVersion(d.version)) return null
   if (!isNullableText(d.trackingPolicy, 120)) return null
   if (!isInstant(d.createdAt) || !isInstant(d.updatedAt)) return null
@@ -562,8 +599,16 @@ export function decodeProductDetail(raw: unknown, expectedId: string): ProductDe
    * deactivation reason. Both pairings are things the server states twice; when the
    * two statements disagree we cannot tell which one is true.
    */
-  if (d.lifecycle === 'Draft' && d.lastActivatedAt !== null) return null
-  if (d.lifecycle !== 'Inactive' && d.deactivationReason !== null) return null
+  if (lifecycle.known) {
+    if (lifecycle.value === 'Draft' && d.lastActivatedAt !== null) return null
+    if (lifecycle.value !== 'Inactive' && d.deactivationReason !== null) return null
+  }
+  /**
+   * Both checks are skipped for an unrecognised state, and that is the point: they
+   * ask whether two statements about a KNOWN state agree. We cannot judge whether a
+   * deactivation reason belongs to a status we do not understand, and inventing a
+   * verdict either way would be worse than carrying the pair as the server sent it.
+   */
 
   return {
     id: d.id,
@@ -571,7 +616,7 @@ export function decodeProductDetail(raw: unknown, expectedId: string): ProductDe
     name: d.name,
     classification,
     roles,
-    lifecycle: d.lifecycle,
+    lifecycle,
     completeness,
     version: d.version,
     aliases,

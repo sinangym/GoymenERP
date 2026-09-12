@@ -14,6 +14,7 @@ import {
   type DetailSection,
   type MatchReason,
   type ProductLifecycle,
+  type ProductLifecycleValue,
   type ProductRoleName,
   type ProductRoles,
   type RoleProvenance,
@@ -36,6 +37,27 @@ export const LIFECYCLE_MEANING: Record<ProductLifecycle, string> = {
   Draft: 'Kesin işlemlerde seçilemez.',
   Active: 'Yeni işlemlerde seçilebilir.',
   Inactive: 'Yeni kullanıma kapalı; geçmiş kayıtlarda görünür.',
+}
+
+/**
+ * A status this build does not recognise (see `ProductLifecycleValue`).
+ *
+ * The raw token is printed beside it rather than hidden. An operator who can see
+ * `bilinmeyen durum: draft` can report something actionable; "bilinmeyen durum"
+ * alone tells whoever receives the complaint nothing at all.
+ */
+export const LIFECYCLE_UNKNOWN_LABEL = 'Bilinmeyen durum'
+export const LIFECYCLE_UNKNOWN_MEANING =
+  'Bu durumu bu sürüm tanımıyor. Ürünün kullanılabilirliği hakkında bir sonuç çıkarmayın.'
+
+export function lifecycleLabel(lifecycle: ProductLifecycleValue): string {
+  return lifecycle.known
+    ? LIFECYCLE_LABEL[lifecycle.value]
+    : `${LIFECYCLE_UNKNOWN_LABEL}: ${lifecycle.raw}`
+}
+
+export function lifecycleMeaning(lifecycle: ProductLifecycleValue): string {
+  return lifecycle.known ? LIFECYCLE_MEANING[lifecycle.value] : LIFECYCLE_UNKNOWN_MEANING
 }
 
 export const ROLE_LABEL: Record<ProductRoleName, string> = {

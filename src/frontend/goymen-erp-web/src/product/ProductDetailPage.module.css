@@ -77,6 +77,13 @@
   color: #9a5b06;
 }
 
+/* See the list stylesheet: an unrecognised status is a contract signal, not a state. */
+.badge[data-lifecycle='unknown'] {
+  border-color: #e4a9a9;
+  background: #fdf3f3;
+  color: #b91c1c;
+}
+
 .inactiveBanner {
   margin: 0;
   padding: 10px 14px;

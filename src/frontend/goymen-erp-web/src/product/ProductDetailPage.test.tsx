@@ -59,6 +59,20 @@ describe('lifecycle', () => {
     expect(screen.getByText('Kesin işlemlerde seçilemez.')).toBeTruthy()
   })
 
+  it('does not claim anything about a status it does not understand', async () => {
+    installFetch({
+      capabilities: DETAIL_ONLY,
+      onDetail: () => json(productDetail({ lifecycle: 'archived', lastActivatedAt: null })),
+    })
+    renderProductApp(PATH)
+
+    await detailVisible()
+    expect(screen.getByText('Bilinmeyen durum: archived')).toBeTruthy()
+    expect(screen.getByText(/Ürünün kullanılabilirliği hakkında bir sonuç çıkarmayın/)).toBeTruthy()
+    // The inactive banner is a claim about a KNOWN state and must not be inherited.
+    expect(screen.queryByText(/her iki şirkette de yeni kullanıma kapalıdır/)).toBeNull()
+  })
+
   it('banners an inactive product as closed in BOTH companies, with its reason', async () => {
     installFetch({
       capabilities: DETAIL_ONLY,

@@ -6,6 +6,7 @@ import {
   decodeProductDetail,
   decodeProductDraftCreated,
   decodeProductPage,
+  knownLifecycle,
   productFieldErrorsOf,
   productProblemCodeOf,
   unevaluatedRoles,
@@ -13,6 +14,7 @@ import {
 
 const PRODUCT_ID = '11111111-1111-1111-1111-111111111111'
 const TEMPLATE_ID = '22222222-2222-2222-2222-222222222222'
+const OTHER_ID = '44444444-4444-4444-4444-444444444444'
 const NIL = '00000000-0000-0000-0000-000000000000'
 
 function roles(over: Record<string, unknown> = {}) {
@@ -121,9 +123,29 @@ describe('decodeProductPage', () => {
     expect(decodeProductPage(page({ items: [item({ version: '07' })] }))).toBeNull()
   })
 
-  it('rejects an unknown lifecycle', () => {
-    expect(decodeProductPage(page({ items: [item({ lifecycle: 'Archived' })] }))).toBeNull()
-    expect(decodeProductPage(page({ items: [item({ lifecycle: 'draft' })] }))).toBeNull()
+  it('carries an unrecognised lifecycle instead of rejecting the whole page', () => {
+    /**
+     * The vocabulary is unchanged — `Archived` and `draft` are both still NOT one of
+     * the three states. What changed is the cost: one odd row used to hide every
+     * valid row behind "Beklenmeyen yanıt". #237 currently emits `"draft"`, so this
+     * is the difference between an empty list and a list that names the problem.
+     */
+    const decoded = decodeProductPage(
+      page({ items: [item(), item({ id: OTHER_ID, code: 'BORU-7', lifecycle: 'draft' })] }),
+    )
+    expect(decoded?.items).toHaveLength(2)
+    expect(decoded?.items[0].lifecycle).toEqual({ known: true, value: 'Active' })
+    // Carried verbatim, never coerced into `Draft`.
+    expect(decoded?.items[1].lifecycle).toEqual({ known: false, raw: 'draft' })
+    expect(knownLifecycle(decoded!.items[1].lifecycle)).toBeNull()
+  })
+
+  it('still rejects a missing or blank lifecycle', () => {
+    // An absent field is a different fact from an unfamiliar one: there is nothing
+    // to carry and nothing to show.
+    expect(decodeProductPage(page({ items: [item({ lifecycle: '  ' })] }))).toBeNull()
+    expect(decodeProductPage(page({ items: [item({ lifecycle: null })] }))).toBeNull()
+    expect(decodeProductPage(page({ items: [item({ lifecycle: 3 })] }))).toBeNull()
   })
 
   it('rejects a role whose value contradicts its provenance', () => {
@@ -230,6 +252,20 @@ describe('decodeProductDetail', () => {
     expect(
       decodeProductDetail(detail({ lifecycle: 'Draft', lastActivatedAt: '2026-02-01T00:00:00Z' }), PRODUCT_ID),
     ).toBeNull()
+  })
+
+  it('skips the consistency checks for a status it does not understand', () => {
+    /**
+     * Both checks ask whether two statements about a KNOWN state agree. We cannot
+     * judge whether a deactivation reason belongs to a status we do not understand,
+     * so the pair is carried as sent rather than given an invented verdict.
+     */
+    const decoded = decodeProductDetail(
+      detail({ lifecycle: 'archived', deactivationReason: 'arşivlendi' }),
+      PRODUCT_ID,
+    )
+    expect(decoded?.lifecycle).toEqual({ known: false, raw: 'archived' })
+    expect(decoded?.deactivationReason).toBe('arşivlendi')
   })
 
   it('rejects a non-Inactive product carrying a deactivation reason', () => {
