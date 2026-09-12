@@ -55,7 +55,11 @@ public static class CounterpartyModuleExtensions
             allowEphemeralCursorKey,
             configuration["Counterparty:CursorSigningKey"]));
         services.AddSingleton<ICounterpartyCursorCodec, CounterpartyCursorCodec>();
-        services.AddScoped<ICounterpartyCommandService, CounterpartyCommandService>();
+        services.AddScoped<CounterpartyCommandService>();
+        services.AddScoped<ICounterpartyCommandService>(provider =>
+            provider.GetRequiredService<CounterpartyCommandService>());
+        services.AddScoped<ICounterpartyContactInformationService>(provider =>
+            provider.GetRequiredService<CounterpartyCommandService>());
         services.AddScoped<ICounterpartyCompanyAccountLinkService, CounterpartyCompanyAccountLinkService>();
         services.AddScoped<
             ICounterpartyMutationRelationshipVerifier,

@@ -14,6 +14,17 @@ export const NIL_UUID = '00000000-0000-0000-0000-000000000000'
 /** Int64.MaxValue is 19 digits; the contract pins `maxLength: 19`. */
 export const MAX_VERSION_DIGITS = 19
 
+/**
+ * Int64.MaxValue itself, as the decimal string the contract pins
+ * (`1..9223372036854775807`).
+ *
+ * The digit count alone is not the bound: `9223372036854775808` is also 19 digits and
+ * is one past the largest value an Int64 can hold, so a length-only guard accepted a
+ * token the server can never have issued — as a decoded version, as a child version,
+ * and as the fence on a write.
+ */
+const INT64_MAX_DECIMAL = '9223372036854775807'
+
 /** Customer | Supplier | Tolling | Service. */
 export const ALL_ROLE_FLAGS = 1 | 2 | 4 | 8
 
@@ -37,11 +48,16 @@ export function isSafeIntish(value: unknown): value is number {
  * rejected response. The token is carried verbatim and never parsed.
  */
 export function isLosslessVersion(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    value.length <= MAX_VERSION_DIGITS &&
-    /^[1-9][0-9]*$/.test(value)
-  )
+  if (typeof value !== 'string') return false
+  if (!/^[1-9][0-9]*$/.test(value)) return false
+  if (value.length > MAX_VERSION_DIGITS) return false
+  /**
+   * At the full width the value has to be compared, not just counted. Both operands are
+   * the same length and hold only digits, so a lexicographic comparison IS the numeric
+   * one — and doing it this way keeps the token unparsed, which is the whole point of
+   * carrying it as a string.
+   */
+  return value.length < MAX_VERSION_DIGITS || value <= INT64_MAX_DECIMAL
 }
 
 /**

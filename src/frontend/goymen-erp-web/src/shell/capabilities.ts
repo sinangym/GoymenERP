@@ -35,18 +35,36 @@ export const CAPABILITY = {
    */
   cariPartiesDetail: 'cari.parties.detail',
   /**
+   * C-06 — the selected company's operational contact and address editor. Route
+   * `/cari/:partyId/bilgiler`, route id `cari.contact-edit`.
+   *
+   * A SEPARATE grant from the detail, for the reason #182 made the detail separate
+   * from the list: holding the read must not imply holding the write. Gating the
+   * editor's route on it is also the only way the user is spared an editor whose Save
+   * they are not permitted to use — a capability is UI visibility, and the API
+   * re-authorizes `counterparty.parties.read` + `counterparty.parties.update.basic`
+   * on every request regardless.
+   *
+   * Listing it here grants nothing; until the server publishes it the route mounts the
+   * same neutral not-found block any unknown path gets, and calls nothing.
+   */
+  cariAccountsContactUpdate: 'cari.accounts.contact.update',
+  /**
    * U-01 Ürünler listesi. Route `/urun`, owner CLAUDE-FRONTEND-URUN.
    *
    * Declared here by the shared-integration owner from that lane's handover
-   * (`src/product/SHARED_MOUNT_HANDOFF.md`, PR #238 head `8689232`); the values are the
-   * ones `src/product/capabilities.ts` declares, and a drift test pins the two together
-   * once the Product source is in the same tree.
+   * (`src/product/SHARED_MOUNT_HANDOFF.md`); the values, routes and labels are the ones
+   * `src/product/capabilities.ts` declares at pin `8558ce5`, read from that source rather
+   * than assumed, and a drift test pins the two together once the Product source is in
+   * the same tree.
    *
    * WHAT LISTING IT DOES NOT DO, and it matters more here than for the Cari ids: the
-   * server publishes no `product.*` capability at all yet. So these three grant nothing,
-   * mount nothing and render no nav entry — `CapabilityRoute` closes an ungranted route
-   * onto the same neutral not-found block any unknown path gets. That is the intended
-   * state until Backend publishes the Product registry, not a gap.
+   * server publishes no `product.*` capability at all yet. `ProductPermissionManifestV1`
+   * publishes permission NAMES, which is not a capability registry — `IShellCapabilityProvider`
+   * is still implemented only for Counterparty. So these four grant nothing, mount nothing
+   * and render no nav entry; `CapabilityRoute` closes an ungranted route onto the same
+   * neutral not-found block any unknown path gets. That is the intended state until
+   * Backend publishes the Product registry, not a gap.
    */
   productItemsList: 'product.items.list',
   /**
@@ -66,11 +84,8 @@ export const CAPABILITY = {
    * is a fact about who holds them, not an argument for one id — the day read widens past
    * admin, a fused id would hand out the write with it.
    *
-   * Pinned by its owner (Business §19.2 via #181 `3dfe58e`, relayed by the Product lane)
-   * BEFORE its own symbol exists: at #238 head `8689232` that lane declares three ids, not
-   * four. The value and the route below are the parts this file needs and they are fixed;
-   * the counterpart property name is read from `src/product/capabilities.ts` when the
-   * drift test lands with the follow-up commit, never assumed.
+   * Its counterpart now EXISTS and was read from source: `PRODUCT_CAPABILITY.productsEdit`
+   * at #238 pin `8558ce5`, with the same value, the same route and an empty nav label.
    */
   productItemsEdit: 'product.items.edit',
 } as const
@@ -83,12 +98,14 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.cariPartiesCreate]: '/cari/yeni',
   [CAPABILITY.cariAccountsLink]: '/cari/sirkete-bagla',
   [CAPABILITY.cariPartiesDetail]: '/cari/:partyId',
+  [CAPABILITY.cariAccountsContactUpdate]: '/cari/:partyId/bilgiler',
   [CAPABILITY.productItemsList]: '/urun',
   // Static before the parameter route, the same rule /cari/yeni follows: a deeper
   // static segment must never be readable as a record id.
   [CAPABILITY.productItemsCreate]: '/urun/yeni',
   // Longer and static-tailed first: 'duzenle' must never be read as a product id, the
-  // same ordering the Cari routes follow.
+  // same ordering the Cari routes follow. The Product lane declares them in this order
+  // too (list, create, edit, detail).
   [CAPABILITY.productItemsEdit]: '/urun/:productId/duzenle',
   [CAPABILITY.productItemsDetail]: '/urun/:productId',
 }
@@ -100,11 +117,13 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   [CAPABILITY.cariAccountsLink]: 'Cariyi Şirkete Bağla',
   // No nav entry: the detail is reached from a row, never from the sidebar.
   [CAPABILITY.cariPartiesDetail]: '',
+  // Nor this one: it is reached from the card of the record it edits.
+  [CAPABILITY.cariAccountsContactUpdate]: '',
   [CAPABILITY.productItemsList]: 'Ürünler',
   [CAPABILITY.productItemsCreate]: 'Yeni Ürün',
   // Nor these two, for the same reason as the Cari detail: the 360 is reached from a row
   // and the editor from the card it edits, never from the sidebar. So `NAV_CAPABILITIES`
-  // gains two entries when the routes are mounted, not four.
+  // gains two Product entries when the routes are mounted, not four.
   [CAPABILITY.productItemsDetail]: '',
   [CAPABILITY.productItemsEdit]: '',
 }

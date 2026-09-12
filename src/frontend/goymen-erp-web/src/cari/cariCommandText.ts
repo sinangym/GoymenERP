@@ -106,6 +106,123 @@ export const CARI_LINK_TEXT = {
   candidateLabel: (code: string, legalName: string) => `${code} — ${legalName}`,
 } as const
 
+/**
+ * The Cari card (C-03). The two section notes are the load-bearing text here: the
+ * handoff requires the user to be able to tell SHARED party identity from what
+ * belongs only to the selected company's account, because that distinction decides
+ * which of the two is about to be changed and who else sees it.
+ */
+export const CARI_CARD_TEXT = {
+  identityHeading: 'Kimlik',
+  identityNote: 'Bütün yetkili şirketlerde aynı olan ortak taraf kimliği.',
+  accountHeading: 'Bu şirketteki hesap',
+  accountNote: 'Yalnız seçili şirketin hesabına ait bilgiler.',
+  editContact: 'İletişim ve adres bilgilerini düzenle',
+} as const
+
+/**
+ * C-06 — the selected company's operational contact and address editor.
+ *
+ * Every problem message says what the client actually knows. The e-mail and country
+ * lines are deliberate about their own limits: a format check is not a claim that the
+ * address receives mail or that the country exists in any registry.
+ */
+export const CARI_CONTACT_TEXT = {
+  title: 'Cari Bilgileri — İletişim ve Adres',
+  backToCard: '← Cari karta dön',
+  backToList: '← Cari Kartlar listesine dön',
+  scopeNote:
+    'Bu bölüm yalnız seçili şirketin hesabına aittir. Ortak taraf kimliği (unvan, resmi kimlik, sicil) burada değişmez.',
+  activeCompany: 'İşlem şirketi',
+  subject: 'iletişim ve adres bilgileri',
+  noSingleCompany: 'iletişim düzenlemesi için tek şirket bağlamı',
+  contactHeading: 'Operasyonel iletişim',
+  addressHeading: 'Adresler',
+  contactsHeading: 'İrtibat kişileri',
+  channelsHeading: 'İletişim kanalları',
+  addAddress: 'Adres ekle',
+  addContact: 'İrtibat kişisi ekle',
+  addChannel: 'Kanal ekle',
+  deactivate: 'Pasife al',
+  reactivate: 'Yeniden etkinleştir',
+  undoState: 'Durum değişikliğini geri al',
+  passive: 'Pasif',
+  markedDeactivate: 'Kaydedildiğinde pasife alınacak.',
+  markedReactivate: 'Kaydedildiğinde yeniden etkinleştirilecek.',
+  newRow: 'Yeni satır',
+  /** Only ever offered for a row the user just added; an existing row is deactivated. */
+  removeRow: 'Satırı kaldır',
+  statusBlockedByEdits:
+    'Bu satırda kaydedilmemiş alan değişikliği var; durum işlemi ayrı bir kayıttır. Önce alanları kaydedin ya da değişikliği geri alın.',
+  fieldsFrozenByStatus:
+    'Durum işlemi yalnız satırın durumunu değiştirir; bu kayıtta alanlar gönderilmez.',
+  noAddresses: 'Bu şirket hesabında kayıtlı adres yok.',
+  noContacts: 'Bu şirket hesabında kayıtlı irtibat kişisi yok.',
+  save: 'Bilgileri kaydet',
+  saving: 'Gönderiliyor…',
+  nothingToSave: 'Kaydedilecek değişiklik yok.',
+  errorSummary: 'Bilgiler kaydedilemedi; işaretli alanları düzeltin.',
+  savedTitle: 'Bilgiler kaydedildi',
+  savedDetail: 'Kayıt sunucudan yeniden okundu; aşağıdaki değerler güncel hâlidir.',
+  refreshRecord: 'Kaydı yenile',
+  refreshedTitle: 'Kayıt yenilendi',
+  refreshedDetail:
+    'Sunucudaki güncel sürüm alındı. Yalnız sizin değiştirdiğiniz alanlar korundu; dokunmadığınız alanlar sunucudaki güncel hâliyle güncellendi. Değişikliklerinizi gözden geçirip yeniden kaydedin.',
+  revalidating: 'Önceki işlem yeniden denenmeden önce kayıt yeniden okunuyor…',
+  readRecovery:
+    'İşlem sunucuya iletildi, ancak kaydın güncel hâli okunamadı. Aşağıdan yeniden okuyun; okuma başarılı olana kadar yeni kayıt gönderilmez.',
+  announceSaved: 'İletişim ve adres bilgileri kaydedildi.',
+  retainedNote: (count: number) =>
+    `Bu ekranda görünmeyen ${count} kayıt korunuyor; gönderilmeyen satır silinmez.`,
+  optional: 'isteğe bağlı',
+  selectPlaceholder: 'Seçin',
+  /** A value the server holds that is not in the published set. Kept, never rewritten. */
+  keepCurrent: (value: string) => `${value} (mevcut değer)`,
+  field: {
+    phone: 'Telefon',
+    phoneExtension: 'Dahili',
+    email: 'E-posta',
+    website: 'Web adresi',
+    purpose: 'Kullanım amacı',
+    countryCode: 'Ülke kodu',
+    line1: 'Adres satırı 1',
+    line2: 'Adres satırı 2',
+    city: 'İl',
+    district: 'İlçe',
+    postalCode: 'Posta kodu',
+    displayName: 'Ad soyad',
+    jobTitle: 'Görev',
+    contactPurpose: 'Amaç',
+    kind: 'Kanal türü',
+    value: 'Değer',
+    extension: 'Dahili',
+  },
+  problem: {
+    required: 'Bu alan zorunludur.',
+    tooLong: (max: number) => `Boşluklar kırpıldıktan sonra en çok ${max} karakter olabilir.`,
+    tooLongUnknown: 'Değer sunucunun kabul ettiği uzunluğu aşıyor.',
+    emailFormat: 'E-posta biçimi geçersiz. Biçim kontrolü adresin ulaşılabilirliğini doğrulamaz.',
+    urlUnsupported: 'Yalnız http veya https ile başlayan tam adres kabul edilir.',
+    notAllowed: 'Listedeki değerlerden birini seçin.',
+    countryFormat: 'İki büyük harf kullanın (örnek: TR). Ülke kaydı doğrulanmaz.',
+    notClearable: 'Bu alan boş bırakılamaz.',
+    criticalScope: 'Bu alan buradan kaydedilmez; ayrı onay akışı gerektirir.',
+    unknownField: 'Bu alan sunucu sözleşmesinde yok.',
+    rowIdentity: 'Satır kimliği eksik; satırı kaldırıp yeniden ekleyin.',
+    rowEmpty: 'Eklenen satırı doldurun ya da kaldırın.',
+    immutable: 'Bu alan kayıtlı satırda değiştirilemez; bunun yerine yeni bir satır ekleyin.',
+    controlCharacters:
+      'Değerin içinde satır sonu veya görünmeyen denetim karakteri var; bunları kaldırın.',
+    notApplicable:
+      'Dahili numara yalnız bir telefonla birlikte kaydedilir. Telefonu doldurun ya da dahiliyi temizleyin.',
+    rowDuplicate: 'Aynı kayıt için ikinci bir işlem var; satırlardan birini kaldırın.',
+    statusNeedsExisting: 'Durum değişikliği yalnız kayıtlı satırlar için yapılabilir.',
+    tooManyOperations:
+      'Tek kaydetmede bu bölüm için en çok 100 satır işlemi gönderilebilir; değişikliği bölün. ' +
+      'Bu sınır kayıttaki satır sayısını sınırlamaz.',
+  },
+} as const
+
 export const CARI_COMMAND_TEXT = {
   unknown: {
     title: 'İşlem sonucu belirsiz',
@@ -160,6 +277,19 @@ export const CARI_COMMAND_TEXT = {
     'idempotency-conflict': {
       title: 'İşlem çakışması',
       detail: 'Aynı işlem anahtarı farklı bir istekle kullanılmış; işlem otomatik yinelenmedi.',
+    },
+    'version-conflict': {
+      title: 'Kayıt siz düzenlerken değişti',
+      detail:
+        'Değişikliğiniz uygulanmadı; kayıt açtığınız sürümden sonra güncellenmiş. ' +
+        'Aynı işlem yeniden denenmez: kaydı yenileyip güncel değerleri görün ve ' +
+        'değişikliğinizi yeniden girin.',
+    },
+    unfenced: {
+      title: 'Kaydın sürümü doğrulanamadı',
+      detail:
+        'Bu güncelleme kaydın okunduğu sürüme bağlanamadığı için gönderilmedi. ' +
+        'Kaydı yenileyip düzenlemeyi tekrar açın.',
     },
     unexpected: {
       title: 'İşlem tamamlanamadı',
