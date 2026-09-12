@@ -56,6 +56,16 @@ public sealed class ProductSqlCommandRunner(ProductRuntimeOptions options, IServ
                 // Both early and late SQL conflicts leave the attempt before their
                 // version metadata is disclosed. A changed/revoked grant masks it.
                 _ = await ReauthorizeAsync(current.Context, cancellationToken);
+                // A concurrent identical edit may already have committed this
+                // logical command. Resolve its terminal after rollback/disposal;
+                // do not turn the successful same-key command into a stale edit.
+                var winner = await gateway.RefreshAsync(current, cancellationToken);
+                if (winner.Replay is not null)
+                {
+                    request.Response.Headers["Idempotency-Replayed"] = "true";
+                    request.Response.Headers["Idempotency-Original-Correlation-Id"] = winner.OriginalCorrelationId;
+                    return winner.Replay;
+                }
                 throw;
             }
             catch (ProductOperationException exception) when (exception.StatusCode is 404 or 409)

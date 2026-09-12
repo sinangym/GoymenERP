@@ -319,3 +319,43 @@ another CI build as local runtime BackendVerify. The existing three-file contrac
 in `tools/product-u01-u02/ENVIRONMENT_CONTRACT.md` retains API26080/SQL26433/UI26173,
 source/instance/resource ownership and owner-only writes. No new gateway, lifecycle,
 manifest family, production action or lane self-merge is authorized by this handoff.
+
+### Independent-review and CI corrections - 2026-09-12, 22:41 +03:00
+
+Ampere and James reviewed runtime head8192d5026eb7dd1a8f9da66fd14d2068af35b16c;
+0 P0 / 0 P1 each, three distinct P2 findings combined. Neither was an unconditional
+approval. The follow-up corrects same-key staged edit recovery through the fresh
+terminal resolver, full multi-fragment SQL JSON snapshots, and reference-query
+error-path final authority. The latter consumes Product owner commit
+`c765e629c669698d41e6b32ac760c08dbf9caf45` (supersedes the a7 Product dependency for
+this follow-up); the owner reports ProductReaderTests15/15 controlled PASS, not SQL.
+
+The first final-head CI found three unit failures and two SQL failures: sidecar
+nullable-Guid expression assertions, the Organization null-company V1 error order,
+and the two new Identity/Audit migration inventory rows. Exact ownership of both
+Organization Audit guard files was confirmed by Third/root before the narrow fix.
+Company filter equality/receiver/type checks remain exact; null and Guid.Empty
+both retain the original rejection. Migration assertions now check the exact new
+IDs and zero implicit Product assignments, not a lower-bound count.
+
+Local follow-up evidence (artifacts/product-owner-boundary):
+- product-runtime-p2-race-snapshot.trx: real SQL4/4 PASS, zero skips; includes same-key
+  edit both200/one replay/one durable effect, distinct-key409, revoked403 and a
+  tail-only difference beyond the first JSON fragment. This rerun was needed
+  because the snapshot reader itself changed the validity of all four SQL proofs.
+- product-shared-audit-migration-sql-fix.trx: the two affected real SQL cases2/2 PASS.
+- product-sidecar-counterparty-filter.trx:1/1 PASS; product-sidecar-organization-v1.trx:7/7 PASS.
+- product-p2-runtime-inventory-guard.trx:263/263 PASS; exact runtime fingerprint updated.
+  An earlier overly narrow filter selected no tests and is NOT_RUN, not a pass.
+- product-source-capture-preparation.trx:15/15 controlled PASS for the read-only
+  `product-source` entry in the existing C006 executable. It reuses source capture
+  and hash algorithms and outputs only the existing Product contract's source
+  object. It does not create a new lifecycle, resources, assignments or ENV_READY.
+
+The Product frontend source was independently observed by root at
+`C:\src\GoymenERP\.claude\worktrees\urun-frontend-02`, head1c48f609b83caa1118b0b274261678b6857088fa,
+with clean status and candidate diff base3e7dd98a5f8b7cb9e6850e05148eb4e7b26f3e3f.
+That is not a fresh Claude handoff or a browser run. Actual Product setup/host,
+accepted-contract approval, source/ownership verification, publication, L and cleanup
+remain NOT_RUN. The read-only capture is preparatory, not the missing live publisher.
+Fresh follow-up CI and the same reviewers' exact-head closure are still required.

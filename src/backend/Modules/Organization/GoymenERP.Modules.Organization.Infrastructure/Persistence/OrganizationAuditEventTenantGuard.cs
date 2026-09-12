@@ -31,7 +31,7 @@ internal static class OrganizationAuditEventTenantGuard
                 continue;
             }
 
-            if (entry.Entity.CompanyId == Guid.Empty)
+            if (!entry.Entity.CompanyId.HasValue || entry.Entity.CompanyId == Guid.Empty)
             {
                 throw new InvalidOperationException(
                     "Audit kaydı CompanyId olmadan yazılamaz.");

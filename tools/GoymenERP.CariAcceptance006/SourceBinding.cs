@@ -15,7 +15,7 @@ public sealed record SourceSnapshot(
     string ApiBaseUrl, string SqlEndpoint, bool SourcesClean,
     SortedDictionary<string, string> DiskArtifacts);
 
-public static class SourceBinding
+public static partial class SourceBinding
 {
     public const string ContractPath = RunSettings.ApprovedRoot + @"\artifacts\cari-acceptance-006\contact-edit-20260912\contract.json";
     public const string FrontendRoot = @"C:\src\GoymenERP-claude";

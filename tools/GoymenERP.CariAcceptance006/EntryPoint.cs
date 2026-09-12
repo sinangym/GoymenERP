@@ -56,6 +56,13 @@ public static class EntryPoint
     {
         try
         {
+            if (args.Length > 0 && args[0] == "product-source")
+            {
+                if (args.Length < 5)
+                    throw new InvalidOperationException("Use product-source <backend-dependency> <frontend-worktree> <frontend-diff-base> <fixture-path> [...].");
+                Console.WriteLine(SourceBinding.CaptureProductSource(args[1], args[2], args[3], args[4..]).GetRawText());
+                return 0; // Source inputs only: no resource, grant, host or readiness publication.
+            }
             if (args.Length == 0) throw new InvalidOperationException("Use serve | start-check <launched-pid> | smoke | snapshot | verify [expected-new-parties] | stop | release-check.");
             var identity = RunSettings.Load();
             var exitCode = 0;

@@ -195,6 +195,62 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             Assert.True(await reader.ReadAsync());
             for (var index = 0; index < 4; index++) Assert.Equal(3, reader.GetInt32(index));
             Assert.Equal(3, reader.GetInt64(4));
+            await reader.DisposeAsync();
+
+            // Both identical edits load v1 before either writes. The late loser
+            // must recover the winner's terminal, not manufacture a 409.
+            staged = new TwoAttemptStageBarrier();
+            observer.Callback = staged.ObserveAsync;
+            var edits = await Task.WhenAll(
+                EditAsync(firstClient, first.Card.Product.Id, "product-same-edit-key", "1", "Same logical edit"),
+                EditAsync(secondClient, first.Card.Product.Id, "product-same-edit-key", "1", "Same logical edit"));
+            Assert.Equal(2, staged.ArrivalCount);
+            foreach (var response in edits) Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var editResults = await Task.WhenAll(edits.Select(response => response.Content.ReadFromJsonAsync<ProductMutationResponse>()));
+            Assert.NotEqual(editResults[0]!.IsReplay, editResults[1]!.IsReplay);
+            Assert.All(editResults, result => Assert.Equal("2", result!.Card.Product.Version));
+            Assert.Equal(JsonSerializer.Serialize(editResults[0]!.Card), JsonSerializer.Serialize(editResults[1]!.Card));
+            var replayIndex = editResults[0]!.IsReplay ? 0 : 1;
+            Assert.Equal("true", Assert.Single(edits[replayIndex].Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal(Assert.Single(edits[1 - replayIndex].Headers.GetValues("X-Correlation-Id")),
+                Assert.Single(edits[replayIndex].Headers.GetValues("Idempotency-Original-Correlation-Id")));
+            foreach (var response in edits) response.Dispose();
+            counts.CommandText = """
+                SELECT (SELECT COUNT(*) FROM [product].[Products]),
+                    (SELECT COUNT(*) FROM [product].[CodeRegistrations]),
+                    (SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [SubjectKind] = N'GroupSharedProduct'),
+                    (SELECT COUNT(*) FROM [idempotency].[GroupSharedCommandTerminals]);
+                """;
+            await using (var effects = await counts.ExecuteReaderAsync())
+            {
+                Assert.True(await effects.ReadAsync());
+                Assert.Equal(3, effects.GetInt32(0));
+                Assert.Equal(3, effects.GetInt32(1));
+                Assert.Equal(4, effects.GetInt32(2));
+                Assert.Equal(4, effects.GetInt32(3));
+            }
+            var afterConcurrentEdit = await SnapshotAsync(factory.DatabaseConnectionString);
+            using var completeSnapshot = JsonDocument.Parse(afterConcurrentEdit);
+            Assert.True(afterConcurrentEdit.Length > 8192);
+            using var retryEdit = await EditAsync(firstClient, first.Card.Product.Id, "product-same-edit-key", "1", "Same logical edit");
+            Assert.Equal(HttpStatusCode.OK, retryEdit.StatusCode);
+            Assert.True((await retryEdit.Content.ReadFromJsonAsync<ProductMutationResponse>())!.IsReplay);
+            Assert.Equal(afterConcurrentEdit, await SnapshotAsync(factory.DatabaseConnectionString));
+
+            // Exercise the SAME reader with a tail-only difference in a real SQL
+            // JSON result longer than a transport fragment. Scalar-prefix reads
+            // would either fail JSON parsing or incorrectly compare equal.
+            counts.CommandText = "SELECT REPLICATE(CAST(N'x' AS nvarchar(max)), 8192) AS padding, @tail AS tail FOR JSON PATH, WITHOUT_ARRAY_WRAPPER;";
+            counts.Parameters.AddWithValue("@tail", "before");
+            var beforeTail = await ReadJsonFragmentsAsync(counts);
+            counts.Parameters["@tail"].Value = "after";
+            var afterTail = await ReadJsonFragmentsAsync(counts);
+            Assert.Equal(beforeTail[..4096], afterTail[..4096]);
+            Assert.NotEqual(beforeTail, afterTail);
+            using var beforeDocument = JsonDocument.Parse(beforeTail);
+            using var afterDocument = JsonDocument.Parse(afterTail);
+            Assert.Equal("before", beforeDocument.RootElement.GetProperty("tail").GetString());
+            Assert.Equal("after", afterDocument.RootElement.GetProperty("tail").GetString());
         });
 
     [SqlServerFact]
@@ -425,7 +481,16 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                 (SELECT * FROM [idempotency].[GroupSharedCommandTerminals] ORDER BY [Subject], [CommandName], [IdempotencyKeyHash] FOR JSON PATH) AS terminals
             FOR JSON PATH, WITHOUT_ARRAY_WRAPPER;
             """;
-        return (string)(await command.ExecuteScalarAsync())!;
+        return await ReadJsonFragmentsAsync(command);
+    }
+
+    private static async Task<string> ReadJsonFragmentsAsync(SqlCommand command)
+    {
+        await using var fragments = await command.ExecuteReaderAsync();
+        Assert.Equal(1, fragments.FieldCount);
+        var json = new System.Text.StringBuilder();
+        while (await fragments.ReadAsync()) json.Append(fragments.GetString(0));
+        return json.ToString();
     }
 
     private sealed class TestObserver : IProductCommandAttemptObserver
