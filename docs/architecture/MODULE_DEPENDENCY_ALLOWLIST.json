@@ -2,6 +2,12 @@
   "schema_version": 1,
   "edges": [
     {
+      "source": "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/GoymenERP.Modules.Product.Infrastructure.csproj",
+      "target": "src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Domain/GoymenERP.Modules.Idempotency.Domain.csproj",
+      "adr": "docs/adr/ADR-PRD-001-product-replay-consumer.md",
+      "reason": "Product consumes the reviewed global replay resolver contract; it does not access the owner terminal reader or map/write Idempotency tables. Atomic writer enrollment remains closed."
+    },
+    {
       "source": "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/GoymenERP.Modules.Organization.Infrastructure.csproj",
       "target": "src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj",
       "adr": "docs/adr/ADR-009-audit-and-correlation.md",

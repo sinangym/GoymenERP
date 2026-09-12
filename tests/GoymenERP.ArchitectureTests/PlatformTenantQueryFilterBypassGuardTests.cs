@@ -113,7 +113,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["src/backend/Modules/Organization/"
              + "GoymenERP.Modules.Organization.Infrastructure/Persistence/"
              + "OrganizationDbContext.cs"] =
-                "198fddce9a2fd4552850c2d1545b96b0030411d5d256a70ee932cf5173be2ff2"
+                "198fddce9a2fd4552850c2d1545b96b0030411d5d256a70ee932cf5173be2ff2",
+            ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
+             + "Persistence/ProductDbContext.cs"] =
+                "2126c32b6508491721942f254f2895d8caf7b101f09ede0215a276706a9cfa81"
         };
 
     // Accepted module initializers own one exact Migrate/EnsureCreated provider branch each.
