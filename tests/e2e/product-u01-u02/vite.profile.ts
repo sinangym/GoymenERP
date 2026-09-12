@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import type { Plugin } from '../../../src/frontend/goymen-erp-web/node_modules/vite/dist/node/index'
 import base from '../../../src/frontend/goymen-erp-web/vite.config'
 import { here, repo, frontend, runDir, runId, viteCacheDir, coldStart, role, origin, uiPort, lane, liveBinding } from './paths'
+import { devUserDefine } from './src/devUser'
 
 const configLoadedAtUtc = new Date().toISOString()
 /**
@@ -40,7 +41,7 @@ const ownership: Plugin = {
  * from the hash-checked snapshot, not read from the environment — an ambient
  * `VITE_DEV_USER` still cannot redirect it.
  */
-const compiledDevUser = liveBinding === null ? {} : { 'import.meta.env.VITE_DEV_USER': JSON.stringify(liveBinding.actor) }
+const compiledDevUser = devUserDefine(liveBinding)
 
 /** The production Vite config with a test-only root, entry and cache; no production module is transformed. */
 export default {
