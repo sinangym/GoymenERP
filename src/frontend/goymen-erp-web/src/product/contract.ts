@@ -31,8 +31,10 @@ import {
   isBoundUuid,
   isInstant,
   isLosslessVersion,
+  isMachineToken,
   isNonEmptyString,
   isNullableInstant,
+  isNullableMachineToken,
   isNullableText,
 } from './wireGuards'
 
@@ -83,33 +85,15 @@ export type ProductLifecycleValue =
   | { readonly known: true; readonly value: ProductLifecycle }
   | { readonly known: false; readonly raw: string }
 
-/**
- * Characters a status token cannot legitimately contain: C0/C1 controls, and the
- * bidi overrides and invisible formatting marks in U+200B..U+200F / U+202A..U+202E /
- * U+2066..U+2069.
- *
- * The bidi ones are the reason this exists. A right-to-left override inside a token
- * that is printed verbatim can make `Inactive` RENDER as something else entirely —
- * the displayed order stops matching the stored value, and the operator reads a
- * status the server never sent. Length is already bounded (64) by the guard below,
- * so this closes what a bound cannot.
- */
-// eslint-disable-next-line no-control-regex -- matching control characters is the point
-const UNPRINTABLE_RE = /[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2066-\u2069]/
-
 function decodeLifecycle(value: unknown): ProductLifecycleValue | null {
   // Absent, blank or non-string is still fatal: that is a missing field, not an
   // unfamiliar one, and there is nothing to carry.
-  if (!isNonEmptyString(value, 64)) return null
-  /**
-   * So is an unprintable one — and that is NOT a step back from carrying unknown
-   * values. UNFAMILIAR and MALFORMED are different: a status token in any sane
-   * vocabulary is printable text, so a control or bidi character means the field is
-   * broken, not that it names a state this build has not learned yet. Broken fields
-   * have always been fatal here; keeping that line where it is costs nothing,
-   * because no real vocabulary lands on this side of it.
-   */
-  if (UNPRINTABLE_RE.test(value)) return null
+  //
+  // So is an unprintable one, and that is NOT a step back from carrying unknown
+  // values. UNFAMILIAR and MALFORMED are different: a status token in any sane
+  // vocabulary is printable text, so a control or bidi character means the field is
+  // broken, not that it names a state this build has not learned yet.
+  if (!isMachineToken(value, 64)) return null
   return (PRODUCT_LIFECYCLE as readonly string[]).includes(value)
     ? { known: true, value: value as ProductLifecycle }
     : { known: false, raw: value }
@@ -287,7 +271,7 @@ function decodeMatch(raw: unknown): ProductMatch | null {
   const reason = m.reason
   if (reason !== null && typeof reason !== 'string') return null
   if (reason !== null && !(MATCH_REASON as readonly string[]).includes(reason)) return null
-  if (!isNullableText(m.matchedAlias, 64)) return null
+  if (!isNullableMachineToken(m.matchedAlias, 64)) return null
   const matchedAlias = (m.matchedAlias as string | null) ?? null
   if (reason === 'alias' && matchedAlias === null) return null
   if (reason !== 'alias' && matchedAlias !== null) return null
@@ -350,11 +334,11 @@ function decodeListItem(raw: unknown): ProductListItem | null {
   if (typeof raw !== 'object' || raw === null) return null
   const i = raw as Record<string, unknown>
   if (!isBoundUuid(i.id)) return null
-  if (!isNonEmptyString(i.code, 64)) return null
+  if (!isMachineToken(i.code, 64)) return null
   if (!isNonEmptyString(i.name, 250)) return null
   const lifecycle = decodeLifecycle(i.lifecycle)
   if (lifecycle === null) return null
-  if (!isNullableText(i.primaryStockUnit, 32)) return null
+  if (!isNullableMachineToken(i.primaryStockUnit, 32)) return null
   if (!isInstant(i.lastChangedAt)) return null
   if (!isLosslessVersion(i.version)) return null
 
@@ -520,7 +504,7 @@ export interface ProductDetail {
 function decodeAlias(raw: unknown): ProductAlias | null {
   if (typeof raw !== 'object' || raw === null) return null
   const a = raw as Record<string, unknown>
-  if (!isNonEmptyString(a.code, 64)) return null
+  if (!isMachineToken(a.code, 64)) return null
   if (!isInstant(a.retiredAt)) return null
   return { code: a.code, retiredAt: a.retiredAt }
 }
@@ -534,7 +518,7 @@ function decodeTemplate(raw: unknown): ProductTemplateRef | null | 'invalid' {
   // The pinned version is carried verbatim: §5.3 requires the VERSION that was
   // pinned, and re-deriving or defaulting it would let a master change rewrite what
   // a historical record meant (DEC-PRDCT-008).
-  if (!isNonEmptyString(t.version, 64)) return 'invalid'
+  if (!isMachineToken(t.version, 64)) return 'invalid'
   return { id: t.id, name: t.name, version: t.version }
 }
 
@@ -544,7 +528,7 @@ function decodeUnitRoles(raw: unknown): ProductUnitRoles | null {
   const out: Partial<Record<UnitRoleName, string | null>> = {}
   for (const role of UNIT_ROLE) {
     if (!Object.hasOwn(source, role)) return null
-    if (!isNullableText(source[role], 32)) return null
+    if (!isNullableMachineToken(source[role], 32)) return null
     out[role] = (source[role] as string | null) ?? null
   }
   return out as ProductUnitRoles
@@ -577,7 +561,7 @@ export function decodeProductDetail(raw: unknown, expectedId: string): ProductDe
    * at the wrong revision.
    */
   if (d.id !== expectedId) return null
-  if (!isNonEmptyString(d.code, 64)) return null
+  if (!isMachineToken(d.code, 64)) return null
   if (!isNonEmptyString(d.name, 250)) return null
   const lifecycle = decodeLifecycle(d.lifecycle)
   if (lifecycle === null) return null
@@ -682,7 +666,7 @@ export function decodeProductDraftCreated(raw: unknown): ProductDraftCreated | n
   if (typeof raw !== 'object' || raw === null) return null
   const c = raw as Record<string, unknown>
   if (!isBoundUuid(c.id)) return null
-  if (!isNonEmptyString(c.code, 64)) return null
+  if (!isMachineToken(c.code, 64)) return null
   if (!isNonEmptyString(c.name, 250)) return null
   if (c.lifecycle !== 'Draft') return null
   if (!isLosslessVersion(c.version)) return null

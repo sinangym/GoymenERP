@@ -159,6 +159,31 @@ describe('decodeProductPage', () => {
     expect(decodeProductPage(page({ items: [item({ lifecycle: 'archived' })] }))).not.toBeNull()
   })
 
+  it('rejects a spoofable code, alias or unit but NOT a human-written name', () => {
+    /**
+     * Where the line falls. A bidi override inside a value printed verbatim makes
+     * the RENDERED text differ from the STORED one, so `SAC-42` can be read as
+     * `SAC-24` — a record-identity confusion, worse than a status one.
+     *
+     * It applies to tokens the SERVER mints (code, alias, unit, pinned version) and
+     * NOT to text a PERSON wrote. Guarding a product name would make this client
+     * stricter than the server's own validator: a name the server accepted would
+     * become a record this screen refuses to show, which is the worse failure.
+     */
+    const rlo = String.fromCharCode(0x202e)
+    expect(decodeProductPage(page({ items: [item({ code: 'SAC' + rlo + '-42' })] }))).toBeNull()
+    expect(decodeProductPage(page({ items: [item({ primaryStockUnit: 'k' + rlo + 'g' })] }))).toBeNull()
+    expect(
+      decodeProductPage(
+        page({ items: [item({ match: { reason: 'alias', matchedAlias: 'ESK' + rlo + 'I-1' } })] }),
+      ),
+    ).toBeNull()
+
+    // ...and the human-written fields are left alone.
+    const decoded = decodeProductPage(page({ items: [item({ name: 'Siyah' + rlo + ' sac' })] }))
+    expect(decoded?.items).toHaveLength(1)
+  })
+
   it('rejects a lifecycle token longer than the bound', () => {
     expect(decodeProductPage(page({ items: [item({ lifecycle: 'x'.repeat(65) })] }))).toBeNull()
     expect(decodeProductPage(page({ items: [item({ lifecycle: 'x'.repeat(64) })] }))).not.toBeNull()
@@ -276,6 +301,29 @@ describe('decodeProductDetail', () => {
     expect(
       decodeProductDetail(detail({ lifecycle: 'Draft', lastActivatedAt: '2026-02-01T00:00:00Z' }), PRODUCT_ID),
     ).toBeNull()
+  })
+
+  it('rejects a spoofable alias code or pinned template version on the detail', () => {
+    const rlo = String.fromCharCode(0x202e)
+    expect(
+      decodeProductDetail(
+        detail({ aliases: [{ code: 'ESK' + rlo + 'I-1', retiredAt: '2026-01-02T00:00:00Z' }] }),
+        PRODUCT_ID,
+      ),
+    ).toBeNull()
+    expect(
+      decodeProductDetail(
+        detail({ template: { id: TEMPLATE_ID, name: 'Şablon', version: 'v' + rlo + '3' } }),
+        PRODUCT_ID,
+      ),
+    ).toBeNull()
+    // A template NAME is human text and is not guarded.
+    expect(
+      decodeProductDetail(
+        detail({ template: { id: TEMPLATE_ID, name: 'Şab' + rlo + 'lon', version: 'v3' } }),
+        PRODUCT_ID,
+      ),
+    ).not.toBeNull()
   })
 
   it('skips the consistency checks for a status it does not understand', () => {
