@@ -110,7 +110,14 @@ describe('value checks — the client never improves on what the user typed', ()
   it('checks the SHAPE of an e-mail and claims nothing more', () => {
     expect(isEmailShaped('operasyon@example.test')).toBe(true)
     expect(isEmailShaped('a.b-c+d@alt.example.test')).toBe(true)
-    expect(isEmailShaped('operasyon@example')).toBe(false)
+    /**
+     * A DOTTED DOMAIN IS NOT REQUIRED. The pinned contract validates one syntactically
+     * valid mailbox and its validator accepts this, so refusing it here was the client
+     * inventing a second business rule — and the cost was real: a counterparty whose
+     * stored e-mail looks like this could not have their PHONE corrected, because the
+     * section refused to save over a field the user never touched.
+     */
+    expect(isEmailShaped('kisi@example')).toBe(true)
     expect(isEmailShaped('ope rasyon@example.test')).toBe(false)
     expect(isEmailShaped('@example.test')).toBe(false)
     expect(isEmailShaped('a@@example.test')).toBe(false)
@@ -127,6 +134,45 @@ describe('value checks — the client never improves on what the user typed', ()
     expect(isSupportedWebUrl('javascript:alert(1)')).toBe(false)
     expect(isSupportedWebUrl('data:text/html,x')).toBe(false)
     expect(isSupportedWebUrl('www.example.test')).toBe(false)
+  })
+
+  it('separates unsaved work from sendable work: an invalid-only edit is still dirty', () => {
+    /**
+     * These answer different questions, and conflating them lost the user's typing: an
+     * edit whose only change is invalid produces an EMPTY patch, so a screen deriving
+     * "is there unsaved work" from the patch called itself clean — no field error, a
+     * closed Save, and no warning on leaving or switching company.
+     */
+    const original = { scalars: { phone: '0212 555 00 00', phoneExtension: null, email: null, website: null }, collections: {} }
+    const invalidOnly = buildChanges(SPEC, original, {
+      scalars: { phone: '0212 555 00 00', email: 'operasyon@' },
+      collections: {},
+    })
+    expect(invalidOnly.problems).toEqual({ email: 'email-format' })
+    expect(invalidOnly.dirty).toBe(true)
+    expect(invalidOnly.hasChanges).toBe(false)
+    expect(canSubmitChanges(invalidOnly)).toBe(false)
+
+    // And a value typed then reverted is neither dirty nor sendable.
+    const reverted = buildChanges(SPEC, original, {
+      scalars: { phone: ' 0212 555 00 00 ', email: '' },
+      collections: {},
+    })
+    expect(reverted.dirty).toBe(false)
+    expect(reverted.hasChanges).toBe(false)
+  })
+
+  it('counts an added-but-blank row and a status request as unsaved work', () => {
+    const blankRow = buildChanges(
+      SPEC,
+      { scalars: {}, collections: {} },
+      { scalars: {}, collections: { addresses: [{ id: generateRowId(), intent: 'upsert', values: blank(ADDRESS_RULES) }] } },
+    )
+    // The row is on screen and it blocks the save, so the screen must be able to say so
+    // and offer to drop it — which it cannot do if the form is reported clean.
+    expect(blankRow.problems).toEqual({ 'addresses.0': 'row-empty' })
+    expect(blankRow.dirty).toBe(true)
+    expect(blankRow.hasChanges).toBe(false)
   })
 
   it('refuses an over-long value when a limit is published, and checks nothing when it is not', () => {

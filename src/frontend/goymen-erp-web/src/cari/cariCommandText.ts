@@ -150,6 +150,12 @@ export const CARI_CONTACT_TEXT = {
   markedDeactivate: 'Kaydedildiğinde pasife alınacak.',
   markedReactivate: 'Kaydedildiğinde yeniden etkinleştirilecek.',
   newRow: 'Yeni satır',
+  /** Only ever offered for a row the user just added; an existing row is deactivated. */
+  removeRow: 'Satırı kaldır',
+  statusBlockedByEdits:
+    'Bu satırda kaydedilmemiş alan değişikliği var; durum işlemi ayrı bir kayıttır. Önce alanları kaydedin ya da değişikliği geri alın.',
+  fieldsFrozenByStatus:
+    'Durum işlemi yalnız satırın durumunu değiştirir; bu kayıtta alanlar gönderilmez.',
   noAddresses: 'Bu şirket hesabında kayıtlı adres yok.',
   noContacts: 'Bu şirket hesabında kayıtlı irtibat kişisi yok.',
   save: 'Bilgileri kaydet',
@@ -158,6 +164,12 @@ export const CARI_CONTACT_TEXT = {
   errorSummary: 'Bilgiler kaydedilemedi; işaretli alanları düzeltin.',
   savedTitle: 'Bilgiler kaydedildi',
   savedDetail: 'Kayıt sunucudan yeniden okundu; aşağıdaki değerler güncel hâlidir.',
+  refreshRecord: 'Kaydı yenile',
+  refreshedTitle: 'Kayıt yenilendi',
+  refreshedDetail:
+    'Sunucudaki güncel sürüm alındı ve yazdıklarınız korundu. Değişikliklerinizi gözden geçirip yeniden kaydedin; dokunmadığınız alanlar sunucudaki hâliyle kalır.',
+  readRecovery:
+    'İşlem sunucuya iletildi, ancak kaydın güncel hâli okunamadı. Aşağıdan yeniden okuyun; okuma başarılı olana kadar yeni kayıt gönderilmez.',
   announceSaved: 'İletişim ve adres bilgileri kaydedildi.',
   retainedNote: (count: number) =>
     `Bu ekranda görünmeyen ${count} kayıt korunuyor; gönderilmeyen satır silinmez.`,
@@ -198,6 +210,8 @@ export const CARI_CONTACT_TEXT = {
     rowIdentity: 'Satır kimliği eksik; satırı kaldırıp yeniden ekleyin.',
     rowEmpty: 'Eklenen satırı doldurun ya da kaldırın.',
     immutable: 'Bu alan kayıtlı satırda değiştirilemez; bunun yerine yeni bir satır ekleyin.',
+    controlCharacters:
+      'Değerin içinde satır sonu veya görünmeyen denetim karakteri var; bunları kaldırın.',
     notApplicable:
       'Dahili numara yalnız bir telefonla birlikte kaydedilir. Telefonu doldurun ya da dahiliyi temizleyin.',
     rowDuplicate: 'Aynı kayıt için ikinci bir işlem var; satırlardan birini kaldırın.',

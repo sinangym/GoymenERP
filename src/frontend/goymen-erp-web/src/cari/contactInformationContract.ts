@@ -2,11 +2,21 @@
  * The account-scoped operational contact/address contract — the ONE place in this
  * client that names a property of it.
  *
- * SOURCE, pinned: Backend #236 at `a6efdc0c9e22dc4531f87bd192def2bb44b46c2c` —
+ * SOURCE, pinned: Backend #236 at `9df7f40e3aefc5b02ef42a378c0d1aa800a2fe29` —
  * `docs/features/CARI_CONTACT_INFORMATION_BACKEND_HANDOFF_v1.md` with the DTO
- * (`Contracts/CounterpartyContactInformation.cs`) and the checked-in OpenAPI in the
- * SAME commit. Backend is the single schema owner; this file consumes that and asserts
- * nothing of its own.
+ * (`Contracts/CounterpartyContactInformation.cs`) and the checked-in OpenAPI. Backend is
+ * the single schema owner; this file consumes that and asserts nothing of its own.
+ *
+ * That commit is also the dependency a real acceptance binds to. The DTO and OpenAPI
+ * SHAPE is unchanged from the earlier `a6efdc0`, which is why nothing structural here
+ * moved with the pin; what changed upstream is that raw control characters are now
+ * refused BEFORE the trim, because a CR or LF that vanished in a trim was slipping past
+ * validation entirely. `checkField` refuses an interior control character for the same
+ * reason — see `hasControlCharacters`.
+ *
+ * STILL NOT RUNTIME EVIDENCE. That source is ready; its final CI, its two independent
+ * reviews and a real environment are not. Nothing here is evidence that the endpoint has
+ * been accepted — no live journey has run against it.
  *
  * The limits below are that handoff's exact field matrix, which explicitly REPLACES
  * the earlier Business draft's suggestions — so a superseded number must not survive
@@ -14,10 +24,6 @@
  * optional because a field the API owner has not published a maximum for gets no
  * client-side length check at all: the server's own validation decides, and nothing is
  * shortened to fit a number we guessed.
- *
- * UPSTREAM IS STILL EARLY. That commit is a pinned implementation contract, not a
- * backend-ready declaration: its own CI and reviews are in flight. Nothing here is
- * evidence that the endpoint has been accepted — no live journey has run against it.
  *
  * READ IS PERMISSIVE ABOUT VALUES, STRICT ABOUT STRUCTURE. `purpose` and `kind` are
  * closed sets for a WRITE, and the decoder still accepts any non-empty string for

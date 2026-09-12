@@ -133,6 +133,8 @@ export type FieldProblem =
   | 'immutable'
   /** Has no meaning in this row as it stands — an extension with no phone to extend. */
   | 'not-applicable'
+  /** Carries a control character the contract rejects. */
+  | 'control-characters'
 
 export type RowProblem =
   /** A row with no id. Every child change carries one, new rows included. */
@@ -179,10 +181,17 @@ export function normalizePhone(raw: string): FieldValue {
 }
 
 /**
- * A SHAPE check, deliberately narrow: one `@`, something before it, and a dotted
- * domain with no whitespace. It is not a deliverability test, not a DNS lookup and
- * not a commercial verification — a value that passes must never be presented as a
- * verified address.
+ * A SHAPE check, deliberately narrow: no whitespace, exactly one `@` with something on
+ * each side, and no dangling or doubled dot in the domain. It is not a deliverability
+ * test, not a DNS lookup and not a commercial verification — a value that passes must
+ * never be presented as a verified address.
+ *
+ * A DOTTED DOMAIN IS NOT REQUIRED, and requiring one was a second business rule this
+ * client invented. The pinned contract validates "one syntactically valid mailbox", and
+ * the server's own validator accepts `kisi@example` — so a counterparty whose stored
+ * e-mail has no dotted domain could not have their PHONE corrected, because the section
+ * refused to save on a field the user never touched and the server was content with.
+ * Nothing here may be stricter than the contract it consumes.
  */
 export function isEmailShaped(value: string): boolean {
   if (/\s/.test(value)) return false
@@ -190,8 +199,7 @@ export function isEmailShaped(value: string): boolean {
   if (at <= 0 || at !== value.lastIndexOf('@')) return false
   const domain = value.slice(at + 1)
   if (domain.length === 0 || domain.startsWith('.') || domain.endsWith('.')) return false
-  if (domain.includes('..')) return false
-  return domain.includes('.')
+  return !domain.includes('..')
 }
 
 /** `http`/`https` only, and it must parse as an absolute URL. */
@@ -231,6 +239,7 @@ export function checkField(rule: FieldRule, raw: string): FieldCheck {
     if (rule.required) return { ok: false, problem: 'required' }
     return { ok: true, value: null }
   }
+  if (hasControlCharacters(value)) return { ok: false, problem: 'control-characters' }
   // A closed set is checked before anything else: for those fields nothing but
   // membership is meaningful, and a length rule would be beside the point.
   if (rule.options !== undefined && !rule.options.includes(value)) {
@@ -245,6 +254,24 @@ export function checkField(rule: FieldRule, raw: string): FieldCheck {
   if (rule.kind === 'url' && !isSupportedWebUrl(value)) return { ok: false, problem: 'url-unsupported' }
   if (rule.kind === 'country' && !isCountryCodeShaped(value)) return { ok: false, problem: 'country-format' }
   return { ok: true, value }
+}
+
+/**
+ * A control character INSIDE the value, after the surrounding whitespace is gone.
+ *
+ * The contract rejects control characters, and its own validator does so BEFORE trimming
+ * — a CR or LF that vanished in a trim was a real validation hole upstream. The surrounding
+ * whitespace is not the interesting case here, because the contract trims it too and this
+ * client sends the trimmed value; what would otherwise reach the server untouched is a
+ * control character in the MIDDLE of an address line or a name, and that comes back as a
+ * 400 with no field map to place it on. So it is caught here, next to the field.
+ */
+export function hasControlCharacters(value: string): boolean {
+  for (const char of value) {
+    const code = char.codePointAt(0) ?? 0
+    if (code <= 0x1f || code === 0x7f) return true
+  }
+  return false
 }
 
 /** True when every value in the row is empty — an untouched row, not an invalid one. */
@@ -278,7 +305,19 @@ export interface FieldPatch {
   readonly patch: Readonly<Record<string, FieldValue>>
   /** Per-field, so the screen can put each message beside its own input. */
   readonly problems: Readonly<Record<string, FieldProblem>>
+  /** The fields that are IN the patch — valid, and different from the read. */
   readonly changed: readonly string[]
+  /**
+   * The fields the user actually altered, valid or not.
+   *
+   * Separate from `changed` because they answer different questions, and conflating them
+   * lost work: an edit whose ONLY change is invalid produces an empty patch, and a screen
+   * that derived "is there unsaved work" from the patch then reported the form clean —
+   * no field error, a closed Save, and no warning when the user navigated away or
+   * switched company. Whether something may be SENT and whether something would be LOST
+   * are not the same fact.
+   */
+  readonly touched: readonly string[]
 }
 
 /**
@@ -298,8 +337,16 @@ export function buildFieldPatch(
   const patch: Record<string, FieldValue> = {}
   const problems: Record<string, FieldProblem> = {}
   const changed: string[] = []
+  const touched: string[] = []
 
   for (const [key, raw] of Object.entries(edited)) {
+    /**
+     * Recorded FIRST, before any rule can reject the value: an alteration the contract
+     * refuses is still an alteration, and the screen has to know it is there.
+     */
+    const previous = Object.hasOwn(original, key) ? original[key] : null
+    if (trimToNull(raw) !== previous) touched.push(key)
+
     const rule = rules[key]
     if (rule === undefined) {
       // The server rejects an unknown property outright, so sending one would fail
@@ -324,7 +371,7 @@ export function buildFieldPatch(
       problems[key] = checked.problem
       continue
     }
-    const before = Object.hasOwn(original, key) ? original[key] : null
+    const before = previous
     if (checked.value === before) continue
     /**
      * Clearing is allowed only where the contract says a client may clear (rule 2).
@@ -339,7 +386,7 @@ export function buildFieldPatch(
     changed.push(key)
   }
 
-  return { patch, problems, changed }
+  return { patch, problems, changed, touched }
 }
 
 export interface EditedRow {
@@ -385,6 +432,8 @@ export const MAX_OPERATIONS_PER_COLLECTION = 100
 export interface CollectionPatch {
   /** Wire-ready elements: `{ id, operation, ...changed fields, [nested]: [...] }`. */
   readonly elements: readonly Readonly<Record<string, unknown>>[]
+  /** Any row was altered — including a row whose alteration is currently invalid. */
+  readonly touched: boolean
   /** Keyed `<index>` for a row problem, `<index>.<field>`, `<index>.<n>.<field>`. */
   readonly problems: Readonly<Record<string, FieldProblem | RowProblem>>
   /**
@@ -413,16 +462,19 @@ export function buildCollectionPatch(
   const elements: Readonly<Record<string, unknown>>[] = []
   const problems: Record<string, FieldProblem | RowProblem> = {}
   const mentioned = new Set<string>()
+  let touched = false
 
   rows.forEach((row, index) => {
     if (row.id.length === 0) {
       problems[`${index}`] = 'row-identity'
+      touched = true
       return
     }
     // Two operations for one id are rejected by the server for the WHOLE command, so
     // the second one is refused here where it can be pointed at.
     if (mentioned.has(row.id)) {
       problems[`${index}`] = 'row-duplicate'
+      touched = true
       return
     }
     mentioned.add(row.id)
@@ -434,6 +486,9 @@ export function buildCollectionPatch(
     // the identity and the operation and nothing else — no value fields and no nested
     // updates. A status change also needs a row the server already holds.
     if (row.intent === 'deactivate' || row.intent === 'reactivate') {
+      // An explicitly requested status change is unsaved work whether or not it can be
+      // sent, so it counts as touched before the identity check can reject it.
+      touched = true
       if (isNew) {
         problems[`${index}`] = 'status-needs-existing'
         return
@@ -443,12 +498,16 @@ export function buildCollectionPatch(
     }
     if (row.intent === 'upsert' && isNew && isRowEmpty(row.values)) {
       problems[`${index}`] = 'row-empty'
+      // A row the user added and left blank IS unsaved work: it is on screen, it blocks
+      // the save, and the screen must be able to say so and offer to drop it.
+      touched = true
       return
     }
 
     let rowFailed = false
     const rowRules = refine === undefined ? rules : refine(row.values, rules)
     const built = buildFieldPatch(rowRules, before?.values ?? {}, row.values)
+    if (built.touched.length > 0) touched = true
     for (const [key, problem] of Object.entries(built.problems)) {
       problems[`${index}.${key}`] = problem
       rowFailed = true
@@ -473,6 +532,7 @@ export function buildCollectionPatch(
         undefined,
         nested.refine,
       )
+      if (child.touched) touched = true
       for (const [key, problem] of Object.entries(child.problems)) {
         problems[`${index}.${nested.property}.${key}`] = problem
         rowFailed = true
@@ -499,7 +559,7 @@ export function buildCollectionPatch(
   })
 
   const retainedIds = Object.keys(originals).filter((id) => !mentioned.has(id))
-  return { elements, problems, retainedIds }
+  return { elements, touched, problems, retainedIds }
 }
 
 /** One collection as it appears in the `changes` object. */
@@ -539,8 +599,16 @@ export interface ChangesBody {
   readonly problems: Readonly<Record<string, FieldProblem | RowProblem>>
   /** Per collection property: the ids this editor did not speak about. */
   readonly retained: Readonly<Record<string, readonly string[]>>
-  /** Something is actually being asked for. `Save` stays closed while this is false. */
+  /**
+   * The user has unsaved work — valid or not.
+   *
+   * This is what the dirty scope, the leave/switch warning and the enabled Save are
+   * derived from. It is deliberately NOT `hasChanges`: an edit that is currently invalid
+   * must still be defended, or the screen silently discards it.
+   */
   readonly dirty: boolean
+  /** There is something the contract would accept sending. */
+  readonly hasChanges: boolean
 }
 
 /**
@@ -562,6 +630,7 @@ export function buildChanges(
   const problems: Record<string, FieldProblem | RowProblem> = { ...scalars.problems }
   const retained: Record<string, readonly string[]> = {}
   let collectionElements = 0
+  let touched = scalars.touched.length > 0
 
   for (const collection of spec.collections) {
     const rows = edited.collections[collection.property] ?? []
@@ -577,6 +646,7 @@ export function buildChanges(
       problems[`${collection.property}.${key}`] = problem
     }
     retained[collection.property] = built.retainedIds
+    if (built.touched) touched = true
     /**
      * One request carries at most 100 operations per collection. Over that the server
      * rejects the whole command, so the refusal belongs here where it can name which
@@ -600,7 +670,8 @@ export function buildChanges(
     changes,
     problems,
     retained,
-    dirty: scalars.changed.length > 0 || collectionElements > 0,
+    dirty: touched,
+    hasChanges: scalars.changed.length > 0 || collectionElements > 0,
   }
 }
 
@@ -611,5 +682,5 @@ export function buildChanges(
  * say nothing.
  */
 export function canSubmitChanges(body: ChangesBody): boolean {
-  return body.dirty && Object.keys(body.problems).length === 0
+  return body.hasChanges && Object.keys(body.problems).length === 0
 }

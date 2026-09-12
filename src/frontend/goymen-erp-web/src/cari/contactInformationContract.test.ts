@@ -111,6 +111,26 @@ describe('decodeContactInformation', () => {
     expect(decodeContactInformation(view({ version: '' }), EXPECTED)).toBeNull()
   })
 
+  it('refuses a version one past Int64.MaxValue, at every level', () => {
+    /**
+     * 19 digits is not the bound. `9223372036854775808` is also 19 digits and is one past
+     * the largest value an Int64 can hold, so a length-only guard accepted a token the
+     * server can never have issued — as the account version, as a child version, and as
+     * the fence a write is sent on.
+     */
+    const max = '9223372036854775807'
+    const past = '9223372036854775808'
+    expect(decodeContactInformation(view({ version: max }), EXPECTED)?.version).toBe(max)
+    expect(decodeContactInformation(view({ version: past }), EXPECTED)).toBeNull()
+    expect(decodeContactInformation(view({}, { addresses: [address({ version: past })] }), EXPECTED)).toBeNull()
+    expect(decodeContactInformation(view({}, { contacts: [contact({ version: past })] }), EXPECTED)).toBeNull()
+    expect(
+      decodeContactInformation(view({}, { contacts: [contact({ channels: [channel({ version: past })] })] }), EXPECTED),
+    ).toBeNull()
+    // The boundary value itself stays valid everywhere.
+    expect(decodeContactInformation(view({}, { addresses: [address({ version: max })] }), EXPECTED)).not.toBeNull()
+  })
+
   it('refuses a body about another company or another Party', () => {
     // Not filtered — refused. A response about someone else is not something to render
     // a part of, and quietly dropping the foreign half would hide the leak.
@@ -214,7 +234,10 @@ describe('the rules the editor consumes are the API owner published ones', () =>
       ok: true,
       value: 'kisi@example.test',
     })
-    expect(checkField(channelValueRule('email'), 'kisi@example')).toEqual({ ok: false, problem: 'email-format' })
+    // An undotted domain is accepted: the pinned contract's own validator takes it, and
+    // the client must not be stricter than the contract it consumes.
+    expect(checkField(channelValueRule('email'), 'kisi@example')).toEqual({ ok: true, value: 'kisi@example' })
+    expect(checkField(channelValueRule('email'), 'kisi@')).toEqual({ ok: false, problem: 'email-format' })
     expect(checkField(channelValueRule('email'), `${'a'.repeat(250)}@ex.test`)).toEqual({
       ok: false,
       problem: 'too-long',

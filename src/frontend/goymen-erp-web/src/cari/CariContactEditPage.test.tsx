@@ -8,25 +8,29 @@
  * screen may claim to be the record's new state until a fresh read says so.
  *
  * Fixture shape and example values come from the pinned Backend handoff
- * (`CARI_CONTACT_INFORMATION_BACKEND_HANDOFF_v1.md` at `a6efdc0`). This is a component
+ * (`CARI_CONTACT_INFORMATION_BACKEND_HANDOFF_v1.md` at `9df7f40`). This is a component
  * test against a stubbed transport: it is NOT an API acceptance, and no live
  * environment is involved.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, screen, waitFor } from '@testing-library/react'
+import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
   A_ID,
+  B_ID,
   CHAIN,
   PARTY,
   contactAddress,
   contactPerson,
   contactView,
+  held,
   installFetch,
   json,
+  jsonWithoutAck,
   problem,
   renderAt,
+  settle,
 } from './commandPageHarness'
 import { resetContractReadiness } from './clientContract'
 import { PROBLEM_CODE } from './contract'
@@ -405,5 +409,396 @@ describe('C-06 gating', () => {
     }, CHAIN)
     expect(fetchLog.contactReads()).toHaveLength(0)
     expect(fetchLog.contactUpdates()).toHaveLength(0)
+  })
+})
+
+/**
+ * The behaviours the first non-author review found missing, each with its own case, plus
+ * the narrow controlled additions Business asked for in the same batch.
+ *
+ * CONTROLLED, and labelled as such: the transport is stubbed. None of these is an API
+ * acceptance, and the session cases are a context change in this client — no
+ * identity-provider session was revoked anywhere.
+ */
+
+/** A real-shaped 204: no body, and the acknowledgment a compatible node sends. */
+function ack204(headers: Record<string, string> = {}): Response {
+  return new Response(null, {
+    status: 204,
+    headers: { 'X-ERP-Counterparty-Contract': 'optional-trade-roles-v1', ...headers },
+  })
+}
+
+async function findByState(state: string): Promise<HTMLElement> {
+  return await waitFor(() => {
+    const node = document.querySelector<HTMLElement>(`[data-state="${state}"]`)
+    if (node === null) throw new Error(`no [data-state="${state}"]`)
+    return node
+  }, CHAIN)
+}
+
+async function findByFailure(failure: string): Promise<HTMLElement> {
+  return await waitFor(() => {
+    const node = document.querySelector<HTMLElement>(`[data-failure="${failure}"]`)
+    if (node === null) throw new Error(`no [data-failure="${failure}"]`)
+    return node
+  }, CHAIN)
+}
+
+describe('C-06 after a save — the editor stays usable', () => {
+  it('lets the user save AGAIN once the first save has been confirmed', async () => {
+    /**
+     * A completed attempt can begin no new one, so with the attempt left completed the
+     * screen re-seeded, called itself clean, and then refused every further edit: Save
+     * enabled, submit silently blocked, nothing said. The attempt is released once the
+     * fresh read it depends on has landed.
+     */
+    let version = 1
+    const fetchLog = installFetch({
+      contact: (call) => {
+        if (call.method === 'PUT') {
+          version += 1
+          return ack204()
+        }
+        return json(
+          contactView({ phone: version > 1 ? '+90 212 555 00 01' : null }, { version: String(version) }),
+        )
+      },
+    })
+    const user = userEvent.setup()
+    await openEditor()
+
+    await user.type(control('cari-contact-phone'), '+90 212 555 00 01')
+    await user.click(saveButton())
+    await waitFor(() => {
+      expect(screen.getByText('Bilgiler kaydedildi')).toBeTruthy()
+    }, CHAIN)
+    expect(saveButton().disabled).toBe(true)
+
+    // A second, independent edit on the SAME screen.
+    await user.type(control('cari-contact-email'), 'operasyon@example.test')
+    expect(saveButton().disabled).toBe(false)
+    await user.click(saveButton())
+    await waitFor(() => {
+      expect(fetchLog.contactUpdates()).toHaveLength(2)
+    }, CHAIN)
+
+    const second = fetchLog.contactUpdates()[1]
+    // Fenced on what the record became, under a key of its own.
+    expect(second.body).toEqual({ expectedVersion: '2', changes: { email: 'operasyon@example.test' } })
+    expect(second.idempotencyKey).not.toBe(fetchLog.contactUpdates()[0].idempotencyKey)
+  })
+
+  it('offers a read-only recovery when the read after a save fails, and sends no second write', async () => {
+    let puts = 0
+    let gets = 0
+    const fetchLog = installFetch({
+      contact: (call) => {
+        if (call.method === 'PUT') {
+          puts += 1
+          return ack204()
+        }
+        gets += 1
+        // The read the screen needs in order to say anything at all.
+        if (gets === 2) throw new TypeError('Failed to fetch')
+        return json(contactView({ phone: puts > 0 ? '+90 212 555 00 01' : null }, { version: puts > 0 ? '2' : '1' }))
+      },
+    })
+    const user = userEvent.setup()
+    await openEditor()
+
+    await user.type(control('cari-contact-phone'), '+90 212 555 00 01')
+    await user.click(saveButton())
+
+    const recovery = await findByState('read-recovery')
+    expect(recovery.textContent).toContain('kaydın güncel hâli okunamadı')
+    // Nothing is claimed about the record, and no second write may go out on top of a
+    // state nobody has confirmed.
+    expect(screen.queryByText('Bilgiler kaydedildi')).toBeNull()
+    expect(saveButton().disabled).toBe(true)
+    expect(puts).toBe(1)
+
+    await user.click(screen.getByRole('button', { name: 'Tekrar dene' }))
+    await waitFor(() => {
+      expect(screen.getByText('Bilgiler kaydedildi')).toBeTruthy()
+    }, CHAIN)
+    // The recovery cost no extra write.
+    expect(puts).toBe(1)
+    expect(fetchLog.contactUpdates()).toHaveLength(1)
+  })
+})
+
+describe('C-06 conflict recovery — the fence moves, the draft does not', () => {
+  it('adopts the new version on refresh, keeps the draft, and saves on the new fence', async () => {
+    let version = 1
+    let gets = 0
+    const fetchLog = installFetch({
+      contact: (call) => {
+        if (call.method === 'PUT') {
+          const expected = (call.body as { expectedVersion?: string } | null)?.expectedVersion
+          if (expected !== String(version)) return problem(409, PROBLEM_CODE.versionConflict)
+          version += 1
+          return ack204()
+        }
+        gets += 1
+        const body = json(contactView({}, { version: String(version) }))
+        // Somebody else commits between the editor's seed and its save.
+        if (gets === 1) version = 2
+        return body
+      },
+    })
+    const user = userEvent.setup()
+    await openEditor()
+
+    await user.type(control('cari-contact-email'), 'operasyon@example.test')
+    await user.click(saveButton())
+    const conflict = await findByFailure('version-conflict')
+    expect(conflict.textContent).toContain('Kayıt siz düzenlerken değişti')
+    expect(fetchLog.contactUpdates()[0].body).toMatchObject({ expectedVersion: '1' })
+
+    await user.click(screen.getByRole('button', { name: 'Kaydı yenile' }))
+    await findByState('refreshed')
+    // The draft is NOT overwritten: the user's own words survive for them to review.
+    expect((control('cari-contact-email') as HTMLInputElement).value).toBe('operasyon@example.test')
+
+    await user.click(saveButton())
+    await waitFor(() => {
+      expect(fetchLog.contactUpdates()).toHaveLength(2)
+    }, CHAIN)
+    // The second attempt is fenced on what the refresh actually read, not on the version
+    // the conflict was about — and it carries its own key.
+    expect(fetchLog.contactUpdates()[1].body).toEqual({
+      expectedVersion: '2',
+      changes: { email: 'operasyon@example.test' },
+    })
+    expect(fetchLog.contactUpdates()[1].idempotencyKey).not.toBe(fetchLog.contactUpdates()[0].idempotencyKey)
+    await waitFor(() => {
+      expect(screen.getByText('Bilgiler kaydedildi')).toBeTruthy()
+    }, CHAIN)
+  })
+
+  it('keeps the same-key recovery reachable after an unknown outcome is abandoned', async () => {
+    let puts = 0
+    const fetchLog = installFetch({
+      contact: (call) => {
+        if (call.method !== 'PUT') return json(contactView())
+        puts += 1
+        throw new TypeError('Failed to fetch')
+      },
+    })
+    const user = userEvent.setup()
+    await openEditor()
+
+    await user.type(control('cari-contact-phone'), '0212 555 00 00')
+    await user.click(saveButton())
+    await waitFor(() => {
+      expect(document.querySelector('[data-attempt="unknown"]')).toBeTruthy()
+    }, CHAIN)
+    await user.click(screen.getByRole('button', { name: 'İşlemi bırak' }))
+
+    /**
+     * Abandoned is still UNRESOLVED: the write may have landed. The box has to stay on
+     * screen, because without it the unchanged payload was refused silently and the
+     * same-key retry — the only way to resolve it — was unreachable.
+     */
+    const abandoned = await waitFor(() => {
+      const node = document.querySelector<HTMLElement>('[data-attempt="abandoned"]')
+      if (node === null) throw new Error('no abandoned notice')
+      return node
+    }, CHAIN)
+    expect(abandoned.textContent).toContain('Bırakılan işlemin sonucu belirsiz')
+    // The unchanged payload mints no new key.
+    await user.click(saveButton())
+    expect(puts).toBe(1)
+
+    await user.click(screen.getByRole('button', { name: 'Önceki işlemi yeniden dene' }))
+    await waitFor(() => {
+      expect(puts).toBe(2)
+    }, CHAIN)
+    expect(fetchLog.contactUpdates()[1].idempotencyKey).toBe(fetchLog.contactUpdates()[0].idempotencyKey)
+    expect(fetchLog.contactUpdates()[1].body).toEqual(fetchLog.contactUpdates()[0].body)
+  })
+})
+
+describe('C-06 refusals that must not cost the user their work', () => {
+  it('treats an invalid-only edit as unsaved work, not as a clean form', async () => {
+    const fetchLog = installFetch({ contact: () => json(contactView()) })
+    const user = userEvent.setup()
+    await openEditor()
+
+    await user.type(control('cari-contact-email'), 'operasyon@')
+    // Dirty: Save is offered and the "nothing to save" hint is gone, so the user can find
+    // out what is wrong instead of facing a grey button with no explanation.
+    expect(saveButton().disabled).toBe(false)
+    expect(screen.queryByText('Kaydedilecek değişiklik yok.')).toBeNull()
+
+    await user.click(saveButton())
+    expect(await screen.findByText(/E-posta biçimi geçersiz/, {}, CHAIN)).toBeTruthy()
+    expect(fetchLog.contactUpdates()).toHaveLength(0)
+    expect((control('cari-contact-email') as HTMLInputElement).value).toBe('operasyon@')
+  })
+
+  it('moves focus to the error summary on the first refused submit', async () => {
+    installFetch({ contact: () => json(contactView()) })
+    const user = userEvent.setup()
+    await openEditor()
+
+    await user.type(control('cari-contact-email'), 'operasyon@')
+    await user.click(saveButton())
+    const summary = await findByState('form-invalid')
+    // The summary is created by the render this click caused, so focusing it from the
+    // handler moved nothing: the focus stayed on the Save button.
+    await waitFor(() => {
+      expect(document.activeElement).toBe(summary)
+    }, CHAIN)
+  })
+
+  it('lets the user drop a row they added instead of being held hostage by it', async () => {
+    const fetchLog = installFetch({ contact: (call) => (call.method === 'PUT' ? ack204() : json(contactView())) })
+    const user = userEvent.setup()
+    await openEditor()
+
+    await user.type(control('cari-contact-phone'), '0212 555 00 00')
+    await user.click(screen.getByRole('button', { name: 'Adres ekle' }))
+    await user.click(saveButton())
+    // The blank row blocks the whole section — which is correct — so there has to be a
+    // way out of it that is not "abandon the edit you actually came to make".
+    expect(await screen.findByText(/Eklenen satırı doldurun/, {}, CHAIN)).toBeTruthy()
+    expect(fetchLog.contactUpdates()).toHaveLength(0)
+
+    await user.click(screen.getByRole('button', { name: 'Satırı kaldır' }))
+    await user.click(saveButton())
+    await waitFor(() => {
+      expect(fetchLog.contactUpdates()).toHaveLength(1)
+    }, CHAIN)
+    expect(fetchLog.contactUpdates()[0].body).toEqual({
+      expectedVersion: '1',
+      changes: { phone: '0212 555 00 00' },
+    })
+  })
+
+  it('never lets a status operation swallow a field edit', async () => {
+    const fetchLog = installFetch({
+      contact: (call) =>
+        call.method === 'PUT'
+          ? ack204()
+          : json(contactView({ addresses: [contactAddress({ city: null, district: null })] })),
+    })
+    const user = userEvent.setup()
+    await openEditor()
+
+    // A status operation carries the identity and NOTHING else, so an edited row that is
+    // also marked passive would have had its edit dropped in silence. The screen closes
+    // whichever the user did not start, and says why.
+    await user.type(control('cari-address-0-city'), 'Kocaeli')
+    expect((screen.getByRole('button', { name: 'Pasife al' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByText(/durum işlemi ayrı bir kayıttır/)).toBeTruthy()
+
+    await user.clear(control('cari-address-0-city'))
+    expect((screen.getByRole('button', { name: 'Pasife al' }) as HTMLButtonElement).disabled).toBe(false)
+
+    await user.click(screen.getByRole('button', { name: 'Pasife al' }))
+    expect(control('cari-address-0-line1').disabled).toBe(true)
+    expect(screen.getByText(/alanlar gönderilmez/)).toBeTruthy()
+
+    await user.click(saveButton())
+    await waitFor(() => {
+      expect(fetchLog.contactUpdates()).toHaveLength(1)
+    }, CHAIN)
+    expect(fetchLog.contactUpdates()[0].body).toEqual({
+      expectedVersion: '1',
+      changes: { addresses: [{ id: 'a1111111-1111-4111-8111-111111111111', operation: 'deactivate' }] },
+    })
+  })
+})
+
+describe('C-06 controlled boundaries — stubbed transport, never an API acceptance', () => {
+  it('sends no write when the read that would open the gate was not acknowledged', async () => {
+    /**
+     * A 200 with a perfectly valid body from a node that never acknowledges is exactly how
+     * an old server looks. The editor still renders — the body IS valid — but the write
+     * gate never opened, so the refusal happens before a request exists.
+     */
+    const fetchLog = installFetch({
+      contact: (call) => (call.method === 'PUT' ? ack204() : jsonWithoutAck(contactView())),
+    })
+    const user = userEvent.setup()
+    await openEditor()
+
+    await user.type(control('cari-contact-phone'), '0212 555 00 00')
+    await user.click(saveButton())
+    const refusal = await findByFailure('contract-not-ready')
+    expect(refusal.textContent).toContain('Uyumlu istemci gerekli')
+    expect(fetchLog.contactUpdates()).toHaveLength(0)
+  })
+
+  it('keeps the draft after a server 400 and lets the user correct it under a new key', async () => {
+    let puts = 0
+    const fetchLog = installFetch({
+      contact: (call) => {
+        if (call.method !== 'PUT') return json(contactView())
+        puts += 1
+        return puts === 1 ? problem(400, PROBLEM_CODE.validationFailed) : ack204()
+      },
+    })
+    const user = userEvent.setup()
+    await openEditor()
+
+    await user.type(control('cari-contact-phone'), '0212 555 00 00')
+    await user.click(saveButton())
+    const failed = await findByFailure('validation')
+    expect(failed.textContent).toContain('Sunucu doğrulaması başarısız')
+    /**
+     * The rejection is shown as a summary and NOT parsed into field messages: this 400
+     * carries a localized `detail` and no field map, so placing it on an input would be
+     * the client inventing a pointer the server never sent.
+     */
+    expect(document.querySelector('[aria-invalid="true"]')).toBeNull()
+    expect((control('cari-contact-phone') as HTMLInputElement).value).toBe('0212 555 00 00')
+
+    await user.click(screen.getByRole('button', { name: 'Anladım' }))
+    await user.type(control('cari-contact-email'), 'operasyon@example.test')
+    await user.click(saveButton())
+    await waitFor(() => {
+      expect(puts).toBe(2)
+    }, CHAIN)
+    // A definite rejection closed the first attempt, so the corrected submit is a NEW
+    // business attempt with a key of its own.
+    expect(fetchLog.contactUpdates()[1].idempotencyKey).not.toBe(fetchLog.contactUpdates()[0].idempotencyKey)
+  })
+
+  it('applies nothing to the screen when the reply lands after the company changed', async () => {
+    /**
+     * A CONTEXT change in this client, and nothing more: no identity-provider session was
+     * revoked and none can be from here. What is measured is that an outcome bound to the
+     * company the attempt was made under does not paint a screen that has moved on.
+     */
+    const gate = held()
+    const fetchLog = installFetch({
+      contact: (call) => (call.method === 'PUT' ? gate.promise : json(contactView())),
+    })
+    const user = userEvent.setup()
+    await openEditor()
+
+    await user.type(control('cari-contact-phone'), '0212 555 00 00')
+    await user.click(saveButton())
+    await waitFor(() => {
+      expect(fetchLog.contactUpdates()).toHaveLength(1)
+    }, CHAIN)
+
+    // The draft is defended on the way out: a frozen attempt is unsaved work too.
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Şirket' }), B_ID)
+    const dialog = await waitFor(() => {
+      const node = document.querySelector<HTMLElement>('[role="dialog"]')
+      if (node === null) throw new Error('no switch dialog')
+      return node
+    }, CHAIN)
+    await user.click(within(dialog).getByRole('button', { name: 'Değişiklikleri bırak' }))
+
+    gate.release(ack204())
+    await settle(150)
+    // The late success belongs to an attempt whose screen is gone.
+    expect(screen.queryByText('Bilgiler kaydedildi')).toBeNull()
+    expect(fetchLog.contactUpdates().filter((c) => c.companyId === B_ID)).toHaveLength(0)
   })
 })

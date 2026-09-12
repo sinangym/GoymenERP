@@ -117,7 +117,7 @@ export function linkedView(roles: number = PARTY_ROLE_FLAG.Supplier, over: Recor
 /**
  * `CounterpartyContactInformationView` — the account-scoped operational block.
  * Shape and example values from the pinned Backend handoff
- * (`CARI_CONTACT_INFORMATION_BACKEND_HANDOFF_v1.md` at `a6efdc0`).
+ * (`CARI_CONTACT_INFORMATION_BACKEND_HANDOFF_v1.md` at `9df7f40`).
  */
 export function contactView(
   information: Record<string, unknown> = {},

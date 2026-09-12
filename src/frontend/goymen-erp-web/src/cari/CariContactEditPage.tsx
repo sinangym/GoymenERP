@@ -15,20 +15,28 @@
  * passivity is the explicit `deactivate` operation on the row the user chose.
  *
  * VERSIONS. One fence for the whole graph: the ACCOUNT version from the read this
- * form was seeded on. There is no per-child expected version, and the token is a
- * canonical Int64 decimal string that is never parsed. A 409 `version_conflict` is
- * definite and is NOT retried under the same key — the kept snapshot carries the
- * fence that is already stale — so the recovery is a fresh read.
+ * form is seeded on, a canonical Int64 decimal string that is never parsed. There is
+ * no per-child expected version. Every terminal outcome ADOPTS a fresh read before
+ * the next write can go out — a success re-seeds the whole draft, a conflict adopts
+ * the new version while KEEPING the draft for review — so the fence can never be one
+ * the server has already moved past.
  *
  * AFTER A 204 the response carries no body, so nothing on screen comes from the
- * request: the form is re-seeded from a fresh authorized GET, and only then does the
- * screen say the values it shows are what the record holds.
+ * request: the draft is re-seeded from a fresh authorized GET, and only then does the
+ * screen say the values it shows are what the record holds. If that read fails, the
+ * screen says so and offers a READ retry — it never lets a second write go out on top
+ * of a state nobody has confirmed.
  *
  * THE 400 HAS NO FIELD MAP. `validation_failed` arrives as ProblemDetails with a
  * localized `detail` and no structured field/index errors, so this screen never parses
  * it into field messages: the server's rejection is shown as a summary and the draft
  * is kept intact. The per-field messages below are the client's OWN checks, and they
  * are labelled as such.
+ *
+ * UNSAVED WORK IS DEFENDED WHETHER OR NOT IT IS VALID. The dirty scope, the enabled
+ * Save and the switch warning follow `dirty` (the user altered something), never
+ * `hasChanges` (something is sendable). An edit that is currently invalid is still
+ * work that would be lost.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -56,9 +64,11 @@ import {
   type OperationalAddress,
   type OperationalContact,
 } from './contactInformationContract'
+import { repeatsUnresolvedAttempt } from './commandAttempt'
 import {
   buildChanges,
   generateRowId,
+  trimToNull,
   type EditedRow,
   type FieldProblem,
   type FieldRule,
@@ -90,6 +100,18 @@ const CONTRACT_PROBLEM_CODES = new Set<string>([
   PROBLEM_CODE.clientContractRequired,
   PROBLEM_CODE.clientContractUnsupported,
 ])
+
+/**
+ * What a settled attempt owes the screen before another write may go out.
+ *
+ * `full` — a success: the record is whatever the server now says, so the draft is
+ * rebuilt from the fresh read.
+ * `fence` — a refusal that moved the record (a version conflict): the new version is
+ * adopted so the next attempt is fenced on it, and the DRAFT IS KEPT so the user can
+ * review their own edits against what the record has become. Overwriting their work
+ * unreviewed would be the other half of the same bug.
+ */
+type PendingAdopt = 'full' | 'fence' | null
 
 interface RowState {
   readonly id: string
@@ -216,6 +238,34 @@ function toEditedRow(row: RowState): EditedRow {
 }
 
 /**
+ * Does this row carry field work the server has not seen?
+ *
+ * Used to keep a status operation and a field edit from colliding. A status operation
+ * carries the identity and nothing else — the contract says so — so a row that is both
+ * edited and marked passive would have had its edit silently dropped on save. Rather
+ * than choosing for the user, the screen closes one of the two while the other stands.
+ */
+function rowHasFieldWork(
+  originals: Readonly<Record<string, OriginalRow>>,
+  row: RowState,
+  fields: readonly string[],
+): boolean {
+  const before = originals[row.id]
+  if (before === undefined) return Object.values(row.values).some((raw) => trimToNull(raw) !== null)
+  for (const key of fields) {
+    if (trimToNull(row.values[key] ?? '') !== (before.values[key] ?? null)) return true
+  }
+  for (const channel of row.channels ?? []) {
+    const beforeChannel = before.children?.[channel.id]
+    if (beforeChannel === undefined) return true
+    for (const key of CHANNEL_FIELDS) {
+      if (trimToNull(channel.values[key] ?? '') !== (beforeChannel.values[key] ?? null)) return true
+    }
+  }
+  return false
+}
+
+/**
  * The client's OWN message for a problem it detected itself. None of these comes from
  * the server, and the two are never mixed: a server rejection is shown as its own
  * summary, because `validation_failed` carries no field map to place.
@@ -249,6 +299,8 @@ function problemText(problem: FieldProblem | RowProblem, rule?: FieldRule): stri
       return p.immutable
     case 'not-applicable':
       return p.notApplicable
+    case 'control-characters':
+      return p.controlCharacters
     case 'row-duplicate':
       return p.rowDuplicate
     case 'status-needs-existing':
@@ -337,9 +389,21 @@ function ContactEditor({ namespace }: { readonly namespace: string | null }) {
   const [seeded, setSeeded] = useState<ContactInformationView | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [showErrors, setShowErrors] = useState(false)
-  const [reseedPending, setReseedPending] = useState(false)
+  const [summaryFocusRequest, setSummaryFocusRequest] = useState(0)
+  const [pendingAdopt, setPendingAdopt] = useState<PendingAdopt>(null)
+  /** The version a save was confirmed at, so the notice outlives the attempt reset. */
+  const [savedVersion, setSavedVersion] = useState<string | null>(null)
+  /** Set when a conflict refresh adopted a new version and kept the draft. */
+  const [refreshedVersion, setRefreshedVersion] = useState<string | null>(null)
+
+  const summaryRef = useRef<HTMLDivElement | null>(null)
+  const unresolvedRef = useRef<HTMLDivElement | null>(null)
 
   const view = state.kind === 'ready' ? state.data : null
+
+  const attempt = useCommandAttempt<Record<string, unknown>, null>()
+  const completed = attempt.state.phase === 'completed' ? attempt.state : null
+  const frozen = attempt.state.phase === 'submitting' || attempt.state.phase === 'unknown'
 
   /**
    * Seeding the draft from the server's answer, once.
@@ -356,12 +420,11 @@ function ContactEditor({ namespace }: { readonly namespace: string | null }) {
     setForm(formFromView(view))
   }, [view, seeded])
 
-  const attempt = useCommandAttempt<Record<string, unknown>, null>()
-  const completed = attempt.state.phase === 'completed' ? attempt.state : null
-  const frozen = attempt.state.phase === 'submitting' || attempt.state.phase === 'unknown'
-
   const original = useMemo(
-    () => (seeded === null ? { scalars: {}, collections: {} } : originalFromView(seeded)),
+    () =>
+      seeded === null
+        ? { scalars: {}, collections: { addresses: {}, contacts: {} } }
+        : originalFromView(seeded),
     [seeded],
   )
   const edited = useMemo(
@@ -374,14 +437,28 @@ function ContactEditor({ namespace }: { readonly namespace: string | null }) {
     }),
     [form],
   )
-  const body = useMemo(
-    () => buildChanges(CONTACT_CHANGES_SPEC, original, edited),
-    [original, edited],
-  )
+  const body = useMemo(() => buildChanges(CONTACT_CHANGES_SPEC, original, edited), [original, edited])
 
-  // Dirty from the first real change until a success or an explicit reset. A frozen
-  // attempt is dirty whatever the fields say: a write may be in flight.
-  const dirty = frozen || (completed === null && body.dirty)
+  const operation = `counterparty.contact-update:${partyId ?? ''}`
+  const payload = useMemo(
+    () => ({ expectedVersion: seeded?.version ?? '', changes: body.changes }),
+    [seeded, body.changes],
+  )
+  /**
+   * The abandoned-but-unresolved attempt whose payload the form still holds.
+   *
+   * Without this the recovery disappeared: after an unknown outcome was abandoned, the
+   * notice unmounted, the unchanged payload was refused as `unchanged` with nothing on
+   * screen to explain it, and the same-key retry — the only way to resolve a write that
+   * may already have landed — was unreachable.
+   */
+  const repeatsUnresolved = repeatsUnresolvedAttempt(attempt.state, operation, payload)
+
+  /**
+   * Unsaved work is unsaved work, valid or not: `dirty`, never `hasChanges`. A frozen
+   * attempt counts too, because a write may be in flight.
+   */
+  const dirty = frozen || body.dirty
   useEffect(() => {
     dispatch({ type: dirty ? 'DIRTY_SET' : 'DIRTY_CLEAR', scope: CARI_CONTACT_DIRTY_SCOPE })
   }, [dirty, dispatch])
@@ -395,58 +472,86 @@ function ContactEditor({ namespace }: { readonly namespace: string | null }) {
   useEffect(() => {
     if (completed === null || completedKeyRef.current === completed.snapshot.key) return
     completedKeyRef.current = completed.snapshot.key
-    setReseedPending(true)
+    // oxlint-disable-next-line react/set-state-in-effect -- reconciles a definite server outcome, once per snapshot
+    setPendingAdopt('full')
+    setRefreshedVersion(null)
     if (namespace !== null) {
       void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === namespace })
     }
   }, [completed, namespace, queryClient])
 
   /**
-   * And re-seeding after a successful save, from the FRESH read rather than from the
-   * request. Waits for the refetch to settle: re-seeding while it is still in flight
-   * would rebuild the form from the pre-save body and show the user their change
-   * apparently undone.
+   * Adopting the fresh read, and RELEASING the attempt.
+   *
+   * Releasing is the part that was missing: a completed attempt can begin no new one, so
+   * after the first successful save the form re-seeded, went quiet, and then refused
+   * every further edit — Save enabled, submit silently blocked, and the screen calling
+   * itself clean. The attempt is closed here, once the fresh read it depends on has
+   * actually landed.
    */
   useEffect(() => {
-    if (!reseedPending || query.isFetching || view === null) return
-    // oxlint-disable-next-line react/set-state-in-effect -- completes the server-triggered reseed above
-    setSeeded(view)
-    setForm(formFromView(view))
-    setShowErrors(false)
-    setReseedPending(false)
-  }, [reseedPending, query.isFetching, view])
+    if (pendingAdopt === null || query.isFetching || view === null) return
+    if (pendingAdopt === 'full') {
+      // oxlint-disable-next-line react/set-state-in-effect -- completes the server-triggered reseed above
+      setSeeded(view)
+      setForm(formFromView(view))
+      setShowErrors(false)
+      setSavedVersion(view.version)
+    } else {
+      // The fence moves to what the record now is; the draft stays for the user to review.
+      // oxlint-disable-next-line react/set-state-in-effect -- completes the server-triggered refence above
+      setSeeded(view)
+      setRefreshedVersion(view.version)
+      setSavedVersion(null)
+    }
+    setPendingAdopt(null)
+    attempt.abandon()
+  }, [pendingAdopt, query.isFetching, view, attempt])
 
-  const setScalar = useCallback((field: string, value: string) => {
-    setForm((current) => ({ ...current, scalars: { ...current.scalars, [field]: value } }))
+  useEffect(() => {
+    if (summaryFocusRequest === 0) return
+    // The summary exists only after the render this request caused, which is why the
+    // focus cannot be moved from the submit handler: it ran before the box was mounted
+    // and the focus stayed on the Save button.
+    summaryRef.current?.focus()
+  }, [summaryFocusRequest])
+
+  const setScalar = useCallback((fieldName: string, value: string) => {
+    setForm((current) => ({ ...current, scalars: { ...current.scalars, [fieldName]: value } }))
   }, [])
 
   const setRowValue = useCallback(
-    (collection: 'addresses' | 'contacts', index: number, field: string, value: string) => {
+    (collection: 'addresses' | 'contacts', index: number, fieldName: string, value: string) => {
       setForm((current) => ({
         ...current,
         [collection]: current[collection].map((row, i) =>
-          i === index ? { ...row, values: { ...row.values, [field]: value } } : row,
+          i === index ? { ...row, values: { ...row.values, [fieldName]: value } } : row,
         ),
       }))
     },
     [],
   )
 
-  const setChannelValue = useCallback((contactIndex: number, channelIndex: number, field: string, value: string) => {
-    setForm((current) => ({
-      ...current,
-      contacts: current.contacts.map((row, i) =>
-        i !== contactIndex
-          ? row
-          : {
-              ...row,
-              channels: (row.channels ?? []).map((channel, j) =>
-                j === channelIndex ? { ...channel, values: { ...channel.values, [field]: value } } : channel,
-              ),
-            },
-      ),
-    }))
-  }, [])
+  const setChannelValue = useCallback(
+    (contactIndex: number, channelIndex: number, fieldName: string, value: string) => {
+      setForm((current) => ({
+        ...current,
+        contacts: current.contacts.map((row, i) =>
+          i !== contactIndex
+            ? row
+            : {
+                ...row,
+                channels: (row.channels ?? []).map((channel, j) =>
+                  j === channelIndex
+                    ? { ...channel, values: { ...channel.values, [fieldName]: value } }
+                    : channel,
+                ),
+              },
+        ),
+      }))
+    },
+    [],
+  )
 
   const toggleRowState = useCallback((collection: 'addresses' | 'contacts', index: number) => {
     setForm((current) => ({
@@ -460,6 +565,32 @@ function ContactEditor({ namespace }: { readonly namespace: string | null }) {
         }
         return { ...row, intent: (row.isActive ? 'deactivate' : 'reactivate') as RowIntent }
       }),
+    }))
+  }, [])
+
+  /**
+   * Dropping a row the user just added.
+   *
+   * Only ever a NEW row. An existing row leaving the editor is not an instruction — the
+   * contract has no delete and omission retains — so for those the offer is
+   * deactivate/reactivate. Without this, an added-and-abandoned empty row could not be
+   * removed at all and its `row-empty` refusal held the whole section hostage.
+   */
+  const removeRow = useCallback((collection: 'addresses' | 'contacts', index: number) => {
+    setForm((current) => ({
+      ...current,
+      [collection]: current[collection].filter((row, i) => !(i === index && row.isNew)),
+    }))
+  }, [])
+
+  const removeChannel = useCallback((contactIndex: number, channelIndex: number) => {
+    setForm((current) => ({
+      ...current,
+      contacts: current.contacts.map((row, i) =>
+        i !== contactIndex
+          ? row
+          : { ...row, channels: (row.channels ?? []).filter((c, j) => !(j === channelIndex && c.isNew)) },
+      ),
     }))
   }, [])
 
@@ -524,37 +655,38 @@ function ContactEditor({ namespace }: { readonly namespace: string | null }) {
     }))
   }, [])
 
-  const summaryRef = useRef<HTMLDivElement | null>(null)
-  const unresolvedRef = useRef<HTMLDivElement | null>(null)
-
   const submit = () => {
-    if (frozen || seeded === null || activeCompanyId === null || namespace === null) return
+    if (frozen || pendingAdopt !== null || seeded === null) return
+    if (activeCompanyId === null || namespace === null) return
     if (!body.dirty) return
     if (Object.keys(body.problems).length > 0) {
-      // Client-invalid: nothing is sent and NO key is minted. The summary takes focus so
-      // the refusal is perceivable without sight.
+      // Client-invalid: nothing is sent and NO key is minted. The summary takes focus via
+      // the effect above, so the refusal is perceivable without sight.
       setShowErrors(true)
-      summaryRef.current?.focus()
+      setSummaryFocusRequest((count) => count + 1)
       return
     }
+    if (!body.hasChanges) return
     setShowErrors(false)
     const changes = body.changes
     const companyId = activeCompanyId
     const expectedVersion = seeded.version
     const target = partyId ?? ''
-    const outcome = attempt.submit(
-      `counterparty.contact-update:${target}`,
-      { expectedVersion, changes },
-      (idempotencyKey, signal) =>
-        updateContactInformation(
-          { companyId, idempotencyKey, contract: { origin: API_BASE, namespace } },
-          target,
-          expectedVersion,
-          changes,
-          signal,
-        ),
+    const outcome = attempt.submit(operation, { expectedVersion, changes }, (idempotencyKey, signal) =>
+      updateContactInformation(
+        { companyId, idempotencyKey, contract: { origin: API_BASE, namespace } },
+        target,
+        expectedVersion,
+        changes,
+        signal,
+      ),
     )
     if (outcome === 'unchanged') unresolvedRef.current?.focus()
+  }
+
+  const refreshRecord = () => {
+    setPendingAdopt('fence')
+    void query.refetch()
   }
 
   if (!singleCompanyContext) {
@@ -600,6 +732,16 @@ function ContactEditor({ namespace }: { readonly namespace: string | null }) {
 
   const retainedCount = Object.values(body.retained).reduce((total, ids) => total + ids.length, 0)
   const problemCount = Object.keys(body.problems).length
+  /**
+   * The read the screen is waiting on did not arrive.
+   *
+   * This is a READ recovery and nothing else: the draft is kept, the form is closed, and
+   * no second write may go out on top of a state nobody has confirmed. Before this, a
+   * failed post-save read left the old draft on screen with no feedback at all.
+   */
+  const adoptReadFailed = pendingAdopt !== null && !query.isFetching && state.kind !== 'ready'
+  const formDisabled = frozen || pendingAdopt !== null
+  const savedNotice = savedVersion !== null && !body.dirty && pendingAdopt === null
 
   return (
     <section aria-labelledby="cari-contact-heading" className={styles.page}>
@@ -613,13 +755,27 @@ function ContactEditor({ namespace }: { readonly namespace: string | null }) {
       </p>
 
       <div aria-live="polite" className={styles.srOnly} data-testid="cari-contact-announcement">
-        {completed !== null && !reseedPending ? TEXT.announceSaved : ''}
+        {savedNotice ? TEXT.announceSaved : ''}
       </div>
 
-      {completed !== null && !reseedPending ? (
+      {adoptReadFailed ? (
+        <div data-state="read-recovery">
+          <p className={styles.retained}>{TEXT.readRecovery}</p>
+          <StateBlock state={state} subject={TEXT.subject} onRetry={() => void query.refetch()} />
+        </div>
+      ) : null}
+
+      {savedNotice ? (
         <div role="status" className={styles.saved} data-state="saved">
           <p className={styles.savedTitle}>{TEXT.savedTitle}</p>
           <p>{TEXT.savedDetail}</p>
+        </div>
+      ) : null}
+
+      {refreshedVersion !== null ? (
+        <div role="status" className={styles.saved} data-state="refreshed">
+          <p className={styles.savedTitle}>{TEXT.refreshedTitle}</p>
+          <p>{TEXT.refreshedDetail}</p>
         </div>
       ) : null}
 
@@ -636,24 +792,24 @@ function ContactEditor({ namespace }: { readonly namespace: string | null }) {
           submit()
         }}
       >
-        <fieldset className={styles.group} disabled={frozen}>
+        <fieldset className={styles.group} disabled={formDisabled}>
           <legend className={styles.legend}>{TEXT.contactHeading}</legend>
           <div className={styles.grid}>
-            {SCALAR_FIELDS.map((field) => (
+            {SCALAR_FIELDS.map((fieldName) => (
               <Field
-                key={field}
-                id={`cari-contact-${field}`}
-                label={labelFor(field, 'scalar')}
-                rule={refineScalarRules(form.scalars, CONTACT_SCALAR_RULES)[field]}
-                value={form.scalars[field] ?? ''}
-                problem={showErrors ? body.problems[field] : undefined}
-                onChange={(value) => setScalar(field, value)}
+                key={fieldName}
+                id={`cari-contact-${fieldName}`}
+                label={labelFor(fieldName, 'scalar')}
+                rule={refineScalarRules(form.scalars, CONTACT_SCALAR_RULES)[fieldName]}
+                value={form.scalars[fieldName] ?? ''}
+                problem={showErrors ? body.problems[fieldName] : undefined}
+                onChange={(value) => setScalar(fieldName, value)}
               />
             ))}
           </div>
         </fieldset>
 
-        <fieldset className={styles.group} disabled={frozen}>
+        <fieldset className={styles.group} disabled={formDisabled}>
           <legend className={styles.legend}>{TEXT.addressHeading}</legend>
           {form.addresses.length === 0 ? <p className={styles.empty}>{TEXT.noAddresses}</p> : null}
           <CollectionProblem problem={body.problems.addresses} />
@@ -669,8 +825,10 @@ function ContactEditor({ namespace }: { readonly namespace: string | null }) {
               optionLabels={{ purpose: ADDRESS_PURPOSE_LABEL }}
               problems={showErrors ? body.problems : {}}
               problemPrefix={`addresses.${index}`}
-              onChange={(field, value) => setRowValue('addresses', index, field, value)}
+              hasFieldWork={rowHasFieldWork(original.collections.addresses, row, ADDRESS_FIELDS)}
+              onChange={(fieldName, value) => setRowValue('addresses', index, fieldName, value)}
               onToggleState={() => toggleRowState('addresses', index)}
+              onRemove={() => removeRow('addresses', index)}
             />
           ))}
           <button type="button" className={styles.secondary} onClick={addAddress}>
@@ -678,57 +836,79 @@ function ContactEditor({ namespace }: { readonly namespace: string | null }) {
           </button>
         </fieldset>
 
-        <fieldset className={styles.group} disabled={frozen}>
+        <fieldset className={styles.group} disabled={formDisabled}>
           <legend className={styles.legend}>{TEXT.contactsHeading}</legend>
           {form.contacts.length === 0 ? <p className={styles.empty}>{TEXT.noContacts}</p> : null}
           <CollectionProblem problem={body.problems.contacts} />
-          {form.contacts.map((row, index) => (
-            <div key={row.id} className={styles.nest}>
-              <RowBlock
-                row={row}
-                index={index}
-                idPrefix={`cari-contact-row-${index}`}
-                fields={CONTACT_FIELDS}
-                rules={CONTACT_FIELD_RULES}
-                collection="contact"
-                optionLabels={{}}
-                problems={showErrors ? body.problems : {}}
-                problemPrefix={`contacts.${index}`}
-                onChange={(field, value) => setRowValue('contacts', index, field, value)}
-                onToggleState={() => toggleRowState('contacts', index)}
-              />
-              <div className={styles.channels}>
-                <p className={styles.channelsTitle}>{TEXT.channelsHeading}</p>
-                {(row.channels ?? []).map((channel, channelIndex) => (
-                  <div key={channel.id} className={styles.grid} data-channel={channel.id}>
-                    {CHANNEL_FIELDS.map((field) => (
-                      <Field
-                        key={field}
-                        id={`cari-contact-row-${index}-channel-${channelIndex}-${field}`}
-                        label={labelFor(field, 'channel')}
-                        rule={refineChannelRules(channel.values, CHANNEL_FIELD_RULES)[field]}
-                        value={channel.values[field] ?? ''}
-                        optionLabel={field === 'kind' ? CHANNEL_KIND_LABEL : undefined}
-                        /* The kind of a channel the server already holds is fixed by the
-                           contract, so the control is closed rather than offering an edit
-                           that would be refused. */
-                        disabled={field === 'kind' && !channel.isNew}
-                        problem={
-                          showErrors
-                            ? body.problems[`contacts.${index}.channels.${channelIndex}.${field}`]
-                            : undefined
-                        }
-                        onChange={(value) => setChannelValue(index, channelIndex, field, value)}
-                      />
-                    ))}
-                  </div>
-                ))}
-                <button type="button" className={styles.secondary} onClick={() => addChannel(index)}>
-                  {TEXT.addChannel}
-                </button>
+          {form.contacts.map((row, index) => {
+            const statusMarked = row.intent === 'deactivate' || row.intent === 'reactivate'
+            return (
+              <div key={row.id} className={styles.nest}>
+                <RowBlock
+                  row={row}
+                  index={index}
+                  idPrefix={`cari-contact-row-${index}`}
+                  fields={CONTACT_FIELDS}
+                  rules={CONTACT_FIELD_RULES}
+                  collection="contact"
+                  optionLabels={{}}
+                  problems={showErrors ? body.problems : {}}
+                  problemPrefix={`contacts.${index}`}
+                  hasFieldWork={rowHasFieldWork(original.collections.contacts, row, CONTACT_FIELDS)}
+                  onChange={(fieldName, value) => setRowValue('contacts', index, fieldName, value)}
+                  onToggleState={() => toggleRowState('contacts', index)}
+                  onRemove={() => removeRow('contacts', index)}
+                />
+                <div className={styles.channels}>
+                  <p className={styles.channelsTitle}>{TEXT.channelsHeading}</p>
+                  {(row.channels ?? []).map((channel, channelIndex) => (
+                    <div key={channel.id} className={styles.channelRow} data-channel={channel.id}>
+                      <div className={styles.grid}>
+                        {CHANNEL_FIELDS.map((fieldName) => (
+                          <Field
+                            key={fieldName}
+                            id={`cari-contact-row-${index}-channel-${channelIndex}-${fieldName}`}
+                            label={labelFor(fieldName, 'channel')}
+                            rule={refineChannelRules(channel.values, CHANNEL_FIELD_RULES)[fieldName]}
+                            value={channel.values[fieldName] ?? ''}
+                            optionLabel={fieldName === 'kind' ? CHANNEL_KIND_LABEL : undefined}
+                            problem={
+                              showErrors
+                                ? body.problems[`contacts.${index}.channels.${channelIndex}.${fieldName}`]
+                                : undefined
+                            }
+                            /* The kind of a channel the server already holds is fixed by the
+                               contract, so the control is closed rather than offering an edit
+                               that would be refused. A status operation sends no fields, so
+                               while one is marked the channels are closed too. */
+                            disabled={statusMarked || (fieldName === 'kind' && !channel.isNew)}
+                            onChange={(value) => setChannelValue(index, channelIndex, fieldName, value)}
+                          />
+                        ))}
+                      </div>
+                      {channel.isNew ? (
+                        <button
+                          type="button"
+                          className={styles.secondary}
+                          onClick={() => removeChannel(index, channelIndex)}
+                        >
+                          {TEXT.removeRow}
+                        </button>
+                      ) : null}
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className={styles.secondary}
+                    disabled={statusMarked}
+                    onClick={() => addChannel(index)}
+                  >
+                    {TEXT.addChannel}
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
           <button type="button" className={styles.secondary} onClick={addContact}>
             {TEXT.addContact}
           </button>
@@ -738,6 +918,7 @@ function ContactEditor({ namespace }: { readonly namespace: string | null }) {
 
         <CommandAttemptNotice
           state={attempt.state}
+          repeatsUnresolved={repeatsUnresolved}
           onRetry={() =>
             attempt.retry(async () => {
               /**
@@ -757,8 +938,8 @@ function ContactEditor({ namespace }: { readonly namespace: string | null }) {
           extra={
             attempt.state.phase === 'failed' && attempt.state.failure === 'version-conflict' ? (
               <p>
-                <button type="button" className={styles.secondary} onClick={() => void query.refetch()}>
-                  Kaydı yenile
+                <button type="button" className={styles.secondary} onClick={refreshRecord}>
+                  {TEXT.refreshRecord}
                 </button>
               </p>
             ) : undefined
@@ -767,15 +948,15 @@ function ContactEditor({ namespace }: { readonly namespace: string | null }) {
 
         <div className={styles.actions}>
           {/**
-            * Enabled whenever something changed, even while a field is wrong.
+            * Enabled whenever the user has unsaved work, valid or not.
             *
-            * A Save that goes grey with no explanation is a worse failure than a
-            * refused click: the user cannot tell whether the screen is broken, whether
-            * they are unauthorized, or which field is at fault. Clicking shows the
-            * summary, moves focus to it and marks every offending field — and still
-            * sends nothing and mints no key.
+            * A Save that goes grey with no explanation is a worse failure than a refused
+            * click: the user cannot tell whether the screen is broken, whether they are
+            * unauthorized, or which field is at fault. Clicking shows the summary, moves
+            * focus to it and marks every offending field — and still sends nothing and
+            * mints no key.
             */}
-          <button type="submit" className={styles.primary} disabled={frozen || !body.dirty}>
+          <button type="submit" className={styles.primary} disabled={formDisabled || !body.dirty}>
             {frozen ? TEXT.saving : TEXT.save}
           </button>
           {!body.dirty ? <span className={styles.hint}>{TEXT.nothingToSave}</span> : null}
@@ -815,8 +996,10 @@ function RowBlock({
   optionLabels,
   problems,
   problemPrefix,
+  hasFieldWork,
   onChange,
   onToggleState,
+  onRemove,
 }: {
   readonly row: RowState
   readonly index: number
@@ -827,21 +1010,39 @@ function RowBlock({
   readonly optionLabels: Readonly<Record<string, Record<string, string>>>
   readonly problems: Readonly<Record<string, FieldProblem | RowProblem>>
   readonly problemPrefix: string
+  readonly hasFieldWork: boolean
   readonly onChange: (field: string, value: string) => void
   readonly onToggleState: () => void
+  readonly onRemove: () => void
 }) {
   const rowProblem = problems[problemPrefix]
-  const marked = row.intent === 'deactivate' || row.intent === 'reactivate'
+  const statusMarked = row.intent === 'deactivate' || row.intent === 'reactivate'
+  /**
+   * The two cannot both be pending on one row.
+   *
+   * A status operation carries the identity and nothing else, so a row that is edited AND
+   * marked passive would have had its edit dropped on save without a word. Rather than
+   * choosing for the user, whichever they started closes the other — and says why.
+   */
+  const statusBlocked = hasFieldWork && !statusMarked
   return (
     <div className={styles.row} data-row={row.id} data-row-index={index} data-intent={row.intent}>
       <div className={styles.rowHead}>
         {row.isNew ? <span className={styles.badge}>{TEXT.newRow}</span> : null}
         {!row.isNew && !row.isActive ? <span className={styles.badge}>{TEXT.passive}</span> : null}
-        <button type="button" className={styles.secondary} onClick={onToggleState}>
-          {marked ? TEXT.undoState : row.isActive ? TEXT.deactivate : TEXT.reactivate}
-        </button>
+        {row.isNew ? (
+          <button type="button" className={styles.secondary} onClick={onRemove}>
+            {TEXT.removeRow}
+          </button>
+        ) : (
+          <button type="button" className={styles.secondary} disabled={statusBlocked} onClick={onToggleState}>
+            {statusMarked ? TEXT.undoState : row.isActive ? TEXT.deactivate : TEXT.reactivate}
+          </button>
+        )}
         {row.intent === 'deactivate' ? <span className={styles.mark}>{TEXT.markedDeactivate}</span> : null}
         {row.intent === 'reactivate' ? <span className={styles.mark}>{TEXT.markedReactivate}</span> : null}
+        {statusBlocked ? <span className={styles.mark}>{TEXT.statusBlockedByEdits}</span> : null}
+        {statusMarked ? <span className={styles.mark}>{TEXT.fieldsFrozenByStatus}</span> : null}
       </div>
       {rowProblem !== undefined ? (
         <p role="alert" className={styles.error}>
@@ -849,16 +1050,17 @@ function RowBlock({
         </p>
       ) : null}
       <div className={styles.grid}>
-        {fields.map((field) => (
+        {fields.map((fieldName) => (
           <Field
-            key={field}
-            id={`${idPrefix}-${field}`}
-            label={labelFor(field, collection)}
-            rule={rules[field]}
-            value={row.values[field] ?? ''}
-            optionLabel={optionLabels[field]}
-            problem={problems[`${problemPrefix}.${field}`]}
-            onChange={(value) => onChange(field, value)}
+            key={fieldName}
+            id={`${idPrefix}-${fieldName}`}
+            label={labelFor(fieldName, collection)}
+            rule={rules[fieldName]}
+            value={row.values[fieldName] ?? ''}
+            optionLabel={optionLabels[fieldName]}
+            problem={problems[`${problemPrefix}.${fieldName}`]}
+            disabled={statusMarked}
+            onChange={(value) => onChange(fieldName, value)}
           />
         ))}
       </div>

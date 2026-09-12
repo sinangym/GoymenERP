@@ -415,6 +415,8 @@ describe('putVersionedCommand — PUT, exact 204, fenced on the row version it r
     // `9223372036854775808` the moment it passes through an IEEE-754 double, and a
     // rounded fence can pass a concurrency check it should have failed.
     expect((bodyOf(calls[0]) as { expectedVersion: unknown }).expectedVersion).toBe(HUGE_VERSION)
+    // And the boundary itself is accepted, so the fix narrowed to exactly one value.
+    expect(HUGE_VERSION).toBe('9223372036854775807')
     expect(calls[0].init?.body).toContain(`"expectedVersion":"${HUGE_VERSION}"`)
   })
 
@@ -458,7 +460,9 @@ describe('putVersionedCommand — PUT, exact 204, fenced on the row version it r
     // versioned write would overwrite whatever the record has become since it was read,
     // so the refusal happens before a request exists: no key is spent, nothing is
     // uncertain afterwards.
-    for (const bad of ['', ' ', '0', '01', '-1', '1.0', '1e3', '12 ', 'abc', '9'.repeat(20)]) {
+    // `9223372036854775808` is one past Int64.MaxValue: 19 digits, and still not a
+    // version any server could have issued.
+    for (const bad of ['', ' ', '0', '01', '-1', '1.0', '1e3', '12 ', 'abc', '9'.repeat(20), '9223372036854775808']) {
       const calls = stubFetch(() => noContent())
       expect(await putVersionedCommand(PATH, CONTEXT, bad, FIELDS)).toEqual({ type: 'unfenced' })
       expect(calls).toHaveLength(0)
