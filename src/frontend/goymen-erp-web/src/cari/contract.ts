@@ -304,6 +304,18 @@ export const PROBLEM_CODE = {
   correlationMetadataInvalid: 'correlation_metadata_invalid',
   idempotencyConflict: 'idempotency_conflict',
   alreadyLinked: 'already_linked',
+  /**
+   * The versioned-update fence. Already in the accepted contract on
+   * `SetCounterpartyCompanyAccountActiveStateV1` (409 `x-erp-problem-codes`), and
+   * on the card's contact-information update while that is still a Backend draft.
+   *
+   * Branched on by CODE for the same reason the two client-contract refusals are:
+   * three different things arrive as 409 and the recovery is different for each. An
+   * `idempotency_conflict` says this key was already spent on a different request; a
+   * `version_conflict` says the record moved under the editor. Only the second one
+   * is fixed by reading again, and neither is fixed by resending.
+   */
+  versionConflict: 'version_conflict',
 } as const
 
 export type ProblemCode = (typeof PROBLEM_CODE)[keyof typeof PROBLEM_CODE]

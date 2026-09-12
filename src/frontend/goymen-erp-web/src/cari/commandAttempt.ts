@@ -46,6 +46,23 @@ export type AttemptFailure =
   | 'not-found'
   | 'already-linked'
   | 'idempotency-conflict'
+  /**
+   * The record moved between the read the editor was opened on and the update, so
+   * the server applied nothing. Definite — and NOT retryable under the same key
+   * either: the kept snapshot carries the `expectedVersion` that is now stale, so a
+   * resend would be refused for exactly the same reason. The way forward is a fresh
+   * read, then the edit re-entered against what the record actually says now.
+   */
+  | 'version-conflict'
+  /**
+   * The update could not be fenced on a valid row version, so the client refused to
+   * send it. No request existed, no key was spent, nothing is uncertain.
+   *
+   * This is a definite failure rather than a swallowed guard because the alternative
+   * is worse than a refusal: an unfenced versioned write overwrites whatever the
+   * record has become since it was read, silently and with the user's authority.
+   */
+  | 'unfenced'
   | 'unexpected'
 
 /** Why an outcome is unknown. Every one of these is retryable with the SAME key. */
@@ -149,6 +166,17 @@ export function classifyCommandOutcome<R>(outcome: CommandOutcome<R>): CommandRe
       return { kind: 'unknown', reason: 'unacknowledged' }
     case 'created':
       return { kind: 'completed', result: outcome.data, replayed: outcome.replayed }
+    case 'applied':
+      /**
+       * 204: applied, and nothing more. `data` is `null` because the response carried
+       * no body, so no screen can paint the patch it sent as the record's new truth.
+       * What the record now says comes from the fresh authorized read the caller owes
+       * after a success — never from the request.
+       */
+      return { kind: 'completed', result: outcome.data, replayed: outcome.replayed }
+    case 'unfenced':
+      // Refused before the request existed, exactly like `contract-not-ready`.
+      return { kind: 'failed', failure: 'unfenced' }
     case 'offline':
       return { kind: 'unknown', reason: 'offline' }
     case 'network-error':
@@ -189,7 +217,14 @@ function classifyHttp<R>(status: number, code: string | null): CommandResolution
     case 409:
       if (code === PROBLEM_CODE.alreadyLinked) return { kind: 'failed', failure: 'already-linked' }
       if (code === PROBLEM_CODE.idempotencyConflict) return { kind: 'failed', failure: 'idempotency-conflict' }
-      // `version_conflict` belongs to the versioned update flow, not to create/link.
+      /**
+       * The versioned update flow's own 409. Create and link cannot produce it — they
+       * carry no `expectedVersion` — so before this branch existed it fell through to
+       * `unexpected` ("the server rejected the request; no business effect"), which is
+       * true but useless: it sends the user looking for a malformed request instead of
+       * telling them someone else changed the record while they were editing it.
+       */
+      if (code === PROBLEM_CODE.versionConflict) return { kind: 'failed', failure: 'version-conflict' }
       return { kind: 'failed', failure: 'unexpected' }
     default:
       // 415 and any other definite rejection: safe technical error, no business effect.
