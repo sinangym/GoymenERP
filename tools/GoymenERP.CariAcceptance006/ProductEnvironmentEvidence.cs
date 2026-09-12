@@ -28,20 +28,8 @@ internal static class ProductEnvironmentEvidence
             || !metadataReader.GetBoolean(1)) throw new InvalidOperationException("Product isolated database/RCSI identity is not ready.");
         await metadataReader.DisposeAsync();
         var product = await ProductSqlSnapshot.ReadAsync(Fixture(settings), sql, null, cancellationToken);
-        // Shared owner observes its own two durable surfaces. SQL JSON can arrive
-        // in multiple rows; never truncate this receipt with ExecuteScalar.
-        await using var command = sql.CreateCommand();
-        command.CommandText = """
-            SELECT (SELECT * FROM [audit].[AuditEvents] WHERE [SubjectKind]=N'GroupSharedProduct' ORDER BY [Id] FOR JSON PATH, INCLUDE_NULL_VALUES) AS audit,
-                (SELECT * FROM [idempotency].[GroupSharedCommandTerminals] ORDER BY [Subject], [CommandName], [IdempotencyKeyHash] FOR JSON PATH, INCLUDE_NULL_VALUES) AS terminals
-            FOR JSON PATH, WITHOUT_ARRAY_WRAPPER;
-            """;
-        var json = new StringBuilder();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken)) json.Append(reader.GetString(0));
-        using var document = JsonDocument.Parse(json.ToString());
-        return new(settings.DatabaseName, true, product, document.RootElement.GetProperty("audit").Clone(),
-            document.RootElement.GetProperty("terminals").Clone());
+        var shared = await ProductSharedStateSnapshot.ReadAsync(sql, cancellationToken);
+        return new(settings.DatabaseName, true, product, shared.Audit, shared.Terminals);
     }
 
     internal static HttpClient Client(string actor)

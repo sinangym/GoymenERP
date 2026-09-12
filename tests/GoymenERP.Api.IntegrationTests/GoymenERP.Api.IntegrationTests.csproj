@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Compile Include="../../tools/GoymenERP.CariAcceptance006/ProductSharedStateSnapshot.cs" Link="ProductAcceptance/ProductSharedStateSnapshot.cs" />
   </ItemGroup>
 
   <ItemGroup>

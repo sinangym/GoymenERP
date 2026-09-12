@@ -79,9 +79,9 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             "RolelessAuditAndIdempotencyFailures_RollBackAndPermitSameKeyRetry",
         ))
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
-        self.assertEqual(83, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(83, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(90, VERIFIER.BROAD_EXECUTION_COUNT)
+        self.assertEqual(84, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(84, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(91, VERIFIER.BROAD_EXECUTION_COUNT)
         for omitted in required:
             with self.subTest(omitted=omitted):
                 discovery = "\n".join(
@@ -97,9 +97,9 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             "CreateFindDetailAndLinkSecondCompany_PreserveIdentityVisibilityAndExactlyOnceEffects"
         )
         self.assertIn(journey, VERIFIER.BROAD_EXPECTED_TESTS)
-        self.assertEqual(83, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(83, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(90, VERIFIER.BROAD_EXECUTION_COUNT)
+        self.assertEqual(84, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(84, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(91, VERIFIER.BROAD_EXECUTION_COUNT)
         without_journey = [name for name in VERIFIER.BROAD_EXPECTED_TESTS if name != journey]
         with self.assertRaisesRegex(RuntimeError, "exact"):
             VERIFIER.verify_broad_discovery("\n".join(without_journey))
@@ -114,9 +114,9 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             prefix + "ScopedPagingAndRejectedCommands_PreserveLocationAndExposeNoForeignState",
         }
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
-        self.assertEqual(83, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(83, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(90, VERIFIER.BROAD_EXECUTION_COUNT)
+        self.assertEqual(84, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(84, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(91, VERIFIER.BROAD_EXECUTION_COUNT)
         for omitted in required:
             with self.subTest(omitted=omitted):
                 discovery = "\n".join(
@@ -136,9 +136,9 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             )
         }
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
-        self.assertEqual(83, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(83, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(90, VERIFIER.BROAD_EXECUTION_COUNT)
+        self.assertEqual(84, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(84, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(91, VERIFIER.BROAD_EXECUTION_COUNT)
         for omitted in required:
             with self.subTest(omitted=omitted):
                 with self.assertRaises(RuntimeError):
@@ -156,6 +156,17 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
         without_shell = [item for item in VERIFIER.BROAD_EXPECTED_TESTS if item != name]
         with self.assertRaisesRegex(RuntimeError, "exact"):
             VERIFIER.verify_broad_discovery("\n".join(without_shell))
+
+    def test_actual_product_shared_snapshot_is_mandatory(self) -> None:
+        name = (
+            "GoymenERP.Api.IntegrationTests."
+            "ProductGlobalRuntimeSqlServerRelationalAcceptanceTests."
+            "ProductGlobalRuntime_SharedSnapshotEmitsEmptyAndPopulatedJsonArrays"
+        )
+        self.assertIn(name, VERIFIER.BROAD_EXPECTED_TESTS)
+        without_snapshot = [item for item in VERIFIER.BROAD_EXPECTED_TESTS if item != name]
+        with self.assertRaisesRegex(RuntimeError, "exact"):
+            VERIFIER.verify_broad_discovery("\n".join(without_snapshot))
 
     def test_main_repeats_bootstrap_preflight_before_each_dotnet_boundary(self) -> None:
         calls: list[tuple[str, ...]] = []

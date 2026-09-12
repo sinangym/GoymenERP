@@ -1,4 +1,5 @@
 using System.Net;
+using GoymenERP.CariAcceptance006;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -36,6 +37,34 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
     private static readonly Guid CompanyA = Guid.Parse("10000000-0000-0000-0000-000000000001");
     private static readonly Guid CompanyB = Guid.Parse("10000000-0000-0000-0000-000000000002");
     private static readonly Guid GroupId = Guid.Parse("82000000-0000-0000-0000-000000000001");
+
+    [SqlServerFact]
+    public Task ProductGlobalRuntime_SharedSnapshotEmitsEmptyAndPopulatedJsonArrays() =>
+        WithDatabaseAsync(async (factory, _) =>
+        {
+            await using var sql = new SqlConnection(factory.DatabaseConnectionString);
+            await sql.OpenAsync();
+            var empty = await ProductSharedStateSnapshot.ReadAsync(sql, CancellationToken.None);
+            Assert.Equal(JsonValueKind.Array, empty.Audit.ValueKind);
+            Assert.Equal(JsonValueKind.Array, empty.Terminals.ValueKind);
+            Assert.Equal(0, empty.Audit.GetArrayLength());
+            Assert.Equal(0, empty.Terminals.GetArrayLength());
+            using var client = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
+            using var create = await CreateAsync(client, "product-shared-snapshot-create", "Actual empty-to-created shared snapshot");
+            Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+            var product = (await create.Content.ReadFromJsonAsync<ProductMutationResponse>())!.Card.Product;
+            var created = await ProductSharedStateSnapshot.ReadAsync(sql, CancellationToken.None);
+            Assert.Equal(1, created.Audit.GetArrayLength());
+            Assert.Equal(1, created.Terminals.GetArrayLength());
+            using var edit = await EditAsync(client, product.Id, "product-shared-snapshot-edit", "1", "Actual edited shared snapshot");
+            Assert.Equal(HttpStatusCode.OK, edit.StatusCode);
+            var edited = await ProductSharedStateSnapshot.ReadAsync(sql, CancellationToken.None);
+            Assert.Equal(2, edited.Audit.GetArrayLength());
+            Assert.Equal(2, edited.Terminals.GetArrayLength());
+            var unchanged = await ProductSharedStateSnapshot.ReadAsync(sql, CancellationToken.None);
+            Assert.True(JsonElement.DeepEquals(edited.Audit, unchanged.Audit));
+            Assert.True(JsonElement.DeepEquals(edited.Terminals, unchanged.Terminals));
+        });
 
     [SqlServerFact]
     public Task ProductGlobalRuntime_ReadCreateEditReplayAndCompanyIsolation_AreDurable() =>

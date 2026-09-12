@@ -31,6 +31,7 @@ public sealed class ProductEnvironmentSettings
         "tools/GoymenERP.CariAcceptance006/ProductEnvironment.cs",
         "tools/GoymenERP.CariAcceptance006/ProductEnvironmentEvidence.cs",
         "tools/GoymenERP.CariAcceptance006/ProductEnvironmentSettings.cs",
+        "tools/GoymenERP.CariAcceptance006/ProductSharedStateSnapshot.cs",
     ];
 
     private ProductEnvironmentSettings(byte[] bytes, string hash, JsonElement contract)
