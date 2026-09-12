@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "status": "SOURCE_PREPARED",
+  "sourceBaselineCommit": "3122b6910aea6d0030c5dd67595896839e2eb0cb",
+  "sourceGitBlobs": {
+    "src/backend/GoymenERP.Api/Seed/organization-seed.json": "3a9b7bc9b03eeecf8ec9c2d0bb5dc5bb649d36cf",
+    "src/backend/GoymenERP.Api/Seed/identity-seed.json": "06fec1e3d010c327e8fcfb49904cd7ea9e959b3a",
+    "src/backend/GoymenERP.Api/appsettings.Development.json": "09f059b4f3673425db189d2e5d56562d154c3fe4",
+    "src/backend/GoymenERP.Api/Program.cs": "cd3f2e1378e710a58a5c9acb2848131715b1b2d2",
+    "src/backend/GoymenERP.Api/Endpoints/OrganizationEndpoints.cs": "3e30f5ecdf4a0e58a542949adf61b6008a377253",
+    "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Seeding/OrganizationDataSeeder.cs": "53255286dc24eaed7afbf0c6d16715e050fa3994",
+    "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/IdentityModuleExtensions.cs": "d073768ebd6dd1b9b9ee9ccc331c9daee20f4190",
+    "src/frontend/goymen-erp-web/vite.config.ts": "6ab5d5359d59305c3b516781c69641e3e1c4845d",
+    "tests/GoymenERP.Api.IntegrationTests/OrganizationLocationLifecycleSqlServerRelationalAcceptanceTests.cs": "7455cb42e6fba210f7f056dd533d6f05ed53fedc"
+  },
+  "runtimeBinding": {
+    "status": "NOT_STARTED",
+    "requiredBeforeStart": [
+      "backendCommit", "frontendCommit", "capabilityProviderCommit", "shellMountCommit",
+      "fixtureCommit", "browserJourneyCommit", "runId", "apiWorktree", "frontendWorktree",
+      "containerNameAndOwnerLabel", "databaseName", "portOwnership"
+    ]
+  },
+  "environment": {
+    "host": "127.0.0.1",
+    "apiPort": 27080,
+    "sqlPort": 27433,
+    "frontendPort": 27173,
+    "frontendApiBase": "/api/v1",
+    "aspnetcoreEnvironment": "Development",
+    "databaseProvider": "SqlServer",
+    "databaseNamePrefix": "GoymenERP_Organization_Browser_",
+    "containerNamePrefix": "goymen-org-browser-",
+    "ownerLabelKey": "com.goymen.owner",
+    "ownerLabelValue": "organization-backend-f800",
+    "sqlImage": "mcr.microsoft.com/mssql/server@sha256:ba4c8329f48fb8f02e1416be6a930ebfd71268caee78aa985f3af4315e457c89"
+  },
+  "headers": {
+    "actor": "X-Development-User",
+    "company": "X-Company-Id",
+    "idempotency": "Idempotency-Key"
+  },
+  "actors": [
+    { "subject": "company-a-user", "companyCode": "GDC", "scope": "Company", "canChangeLocationState": true },
+    { "subject": "company-a-viewer", "companyCode": "GDC", "scope": "SITE-OSM", "canChangeLocationState": false },
+    { "subject": "company-b-user", "companyCode": "GSP", "scope": "Company", "canChangeLocationState": true }
+  ],
+  "expectedSeedTopology": {
+    "basis": "Source expectations for a fresh isolated database, not observed runtime counts",
+    "companies": [
+      { "code": "GDC", "id": "10000000-0000-0000-0000-000000000001", "siteCount": 3, "locationCount": 15 },
+      { "code": "GSP", "id": "10000000-0000-0000-0000-000000000002", "siteCount": 0, "locationCount": 0 },
+      { "code": "GIN", "id": "10000000-0000-0000-0000-000000000003", "siteCount": 0, "locationCount": 0 }
+    ],
+    "gdcSites": [
+      { "code": "SITE-OSM", "locationCodes": ["OSM-H0", "OSM-H1", "OSM-H2", "OSM-H3", "OSM-H4", "OSM-H5", "OSM-H6", "OSM-H7"] },
+      { "code": "SITE-GAZ", "locationCodes": ["GAZ-DEP"] },
+      { "code": "SITE-EXT", "locationCodes": ["EXT-BASTUG", "EXT-SELIMOGLU", "EXT-ALYA", "EXT-SADILER", "EXT-TOSCELIK", "EXT-DOGRULUK"] }
+    ],
+    "mutationSelector": { "companyCode": "GDC", "siteCode": "SITE-OSM", "locationCode": "OSM-H0" },
+    "hiddenFromViewerSelector": { "companyCode": "GDC", "locationCode": "GAZ-DEP" },
+    "viewerExpectedSiteCount": 1,
+    "viewerExpectedLocationCount": 8,
+    "locationIdAndVersionSource": "Fresh authenticated list and detail; never manufacture IDs or predict versions"
+  },
+  "apiContract": {
+    "sites": "GET /api/v1/organization/sites",
+    "locations": "GET /api/v1/organization/locations?page=1&pageSize=25",
+    "locationDetail": "GET /api/v1/organization/locations/{id}",
+    "activeState": "PUT /api/v1/organization/locations/{id}/active-state",
+    "siteFields": ["id", "code", "name", "type", "isActive"],
+    "locationFields": ["id", "siteId", "code", "name", "isExternal", "isActive", "version"],
+    "pageFields": ["items", "page", "pageSize", "totalCount"],
+    "commandFields": ["isActive", "expectedVersion", "reason"],
+    "successStatus": 204,
+    "successBody": "empty",
+    "replayHeaders": ["Idempotency-Replayed", "Idempotency-Original-Correlation-Id"]
+  },
+  "acceptanceScenarios": [
+    "List sites and offset-paged locations; enter detail and preserve the originating page on return",
+    "GDC operator: reasoned deactivate, empty 204, fresh detail and list, then reasoned reactivate with freshly read version",
+    "GDC viewer: only SITE-OSM and eight locations; no mutation control; direct write forbidden; hidden location detail not found",
+    "GSP operator: empty sites and locations; GDC location detail not found; wrong company context forbidden",
+    "Stale version: 409, keep reason draft, read fresh state before offering a new command",
+    "Uncertain response: preserve original payload and key, retry exactly; a fresh GET or retry authorization failure is not a command receipt",
+    "Delayed replay after a later successful command: historical receipt does not replace fresh location state",
+    "Sites read failure, loading, empty, network error and keyboard focus states use existing shell boundaries"
+  ],
+  "evidenceBoundary": "SQL lifecycle evidence is already in PR #241. This manifest adds no browser PASS, provider grant or runtime observation."
+}
