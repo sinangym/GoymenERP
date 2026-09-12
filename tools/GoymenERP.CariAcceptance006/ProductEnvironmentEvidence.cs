@@ -186,7 +186,7 @@ internal static class ProductEnvironmentEvidence
         const string script = "import importlib.util,sys; s=importlib.util.spec_from_file_location('publisher',sys.argv[1]); "
             + "m=importlib.util.module_from_spec(s); s.loader.exec_module(m); p=m.strict_json(sys.stdin.read()); "
             + "m.validate_tested_build(p['source'],p['host'],p['tests']); print('Product local tested runtime binding PASS')";
-        _ = RunWithInput(payload, "python", "-I", "-S", "-B", "-c", script,
+        _ = RunWithInput(payload, "python", "-I", "-S", "-B", "-X", "utf8", "-c", script,
             Path.Combine(SourceBinding.ProductWorktree, "tools/cari-acceptance-006/publish.py"));
         return SourceBinding.Hash(summaryBytes);
     }

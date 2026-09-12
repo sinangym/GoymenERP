@@ -17,7 +17,7 @@ public sealed class ProductEnvironmentProfileTests
         var evidence = typeof(ProductEnvironment).Assembly.GetType("GoymenERP.CariAcceptance006.ProductEnvironmentEvidence")!;
         var run = evidence.GetMethod("RunWithInput", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
         var output = (string)run.Invoke(null, ["{\"value\":\"\u0131\"}", "python", new[]
-        { "-I", "-S", "-B", "-c", "import sys,json; assert json.load(sys.stdin)['value'] == chr(305); print('passed')" }])!;
+        { "-I", "-S", "-B", "-X", "utf8", "-c", "import sys,json; assert json.load(sys.stdin)['value'] == chr(305); print('passed')" }])!;
         Assert.Equal("passed", output.Trim());
     }
 
