@@ -170,5 +170,99 @@ class PublisherBuildEvidenceTests(unittest.TestCase):
             http.assert_not_called()
 
 
+class PublisherFrontendReviewTests(unittest.TestCase):
+    def setUp(self):
+        self.source = {'FrontendHead': 'a' * 40}
+        self.review = {
+            'head': 'a' * 40, 'status': 'approved', 'pullRequest': 235, 'riskClass': 'K2',
+            'requiredIndependentReviews': 1, 'reviewerId': '/root/frontend_final_review_one',
+            'reviewerKind': 'ai-non-author', 'authorAgent': 'CLAUDE-FRONTEND',
+            'authorIsReviewer': False, 'humanApproval': False, 'openP0': 0, 'openP1': 0, 'openP2': 0,
+            'reviewUrls': ['https://github.com/sinangym/GoymenERP/pull/235#issuecomment-123'],
+        }
+        payload = {key: value for key, value in self.review.items() if key != 'reviewUrls'}
+        self.evidence = {
+            'comment': {'html_url': self.review['reviewUrls'][0],
+                        'issue_url': 'https://api.github.com/repos/sinangym/GoymenERP/issues/235',
+                        'author_association': 'OWNER', 'body': '```json\n' + json.dumps(payload) + '\n```'},
+            'pullRequest': {'number': 235, 'head': {'sha': 'a' * 40}},
+            'checkRuns': {'check_runs': [
+                {'id': index, 'head_sha': 'a' * 40, 'name': name, 'status': 'completed', 'conclusion': 'success'}
+                for index, name in enumerate(PUBLISHER.REQUIRED_FRONTEND_CHECKS)
+            ]},
+        }
+
+    def validate(self):
+        PUBLISHER.validate_frontend_review(self.source, self.review, self.evidence)
+
+    def test_exact_non_author_ai_result_and_fresh_checks_accept_only_the_scoped_profile(self):
+        self.validate()
+        self.assertFalse(self.review['humanApproval'])
+
+    def test_self_human_or_wrong_reviewer_claim_is_rejected(self):
+        original = copy.deepcopy(self.review)
+        for field, value in [('authorIsReviewer', True), ('humanApproval', True), ('reviewerId', 'CLAUDE-FRONTEND'),
+                             ('reviewerKind', 'human'), ('authorAgent', 'someone-else'), ('requiredIndependentReviews', True)]:
+            with self.subTest(field=field):
+                self.review = {**original, field: value}
+                with self.assertRaises(RuntimeError):
+                    self.validate()
+
+    def test_wrong_pr_head_risk_or_open_findings_are_rejected(self):
+        original = copy.deepcopy(self.review)
+        for field, value in [('pullRequest', 233), ('head', 'b' * 40), ('riskClass', 'K3'),
+                             ('status', 'changes_required'), ('openP0', 1), ('openP1', 1), ('openP2', 1)]:
+            with self.subTest(field=field):
+                self.review = {**original, field: value}
+                with self.assertRaises(RuntimeError):
+                    self.validate()
+
+    def test_comment_url_alone_or_unrelated_source_cannot_approve(self):
+        original = copy.deepcopy(self.evidence)
+        for field, value in [('body', 'approved'), ('html_url', 'https://example.test/'),
+                             ('issue_url', 'https://api.github.com/repos/sinangym/GoymenERP/issues/233'),
+                             ('author_association', 'NONE')]:
+            with self.subTest(field=field):
+                self.evidence = copy.deepcopy(original)
+                self.evidence['comment'][field] = value
+                with self.assertRaises(RuntimeError):
+                    self.validate()
+
+    def test_actual_comment_result_must_match_the_receipt(self):
+        self.evidence['comment']['body'] = self.evidence['comment']['body'].replace('"openP2": 0', '"openP2": 12')
+        with self.assertRaises(RuntimeError):
+            self.validate()
+
+    def test_pr_advanced_after_review_is_rejected(self):
+        self.evidence['pullRequest']['head']['sha'] = 'b' * 40
+        with self.assertRaises(RuntimeError):
+            self.validate()
+
+    def test_missing_failed_skipped_stale_or_later_failing_checks_reject(self):
+        original = copy.deepcopy(self.evidence['checkRuns']['check_runs'])
+        for mutation in ['missing', 'failure', 'skipped', 'pending', 'stale', 'later_failure']:
+            with self.subTest(mutation=mutation):
+                checks = copy.deepcopy(original)
+                if mutation == 'missing': checks.pop()
+                elif mutation == 'failure': checks[0]['conclusion'] = 'failure'
+                elif mutation == 'skipped': checks[0]['conclusion'] = 'skipped'
+                elif mutation == 'pending': checks[0]['status'] = 'in_progress'
+                elif mutation == 'stale': checks[0]['head_sha'] = 'b' * 40
+                else: checks.append({**checks[0], 'id': 999, 'conclusion': 'failure'})
+                self.evidence['checkRuns']['check_runs'] = checks
+                with self.assertRaises(RuntimeError):
+                    self.validate()
+
+    def test_legacy_233_still_requires_two_urls_and_cannot_be_relabelled_as_235(self):
+        review = {'head': 'a' * 40, 'status': 'approved',
+                  'reviewUrls': ['https://github.com/sinangym/GoymenERP/pull/233#issuecomment-1']}
+        with self.assertRaises(RuntimeError):
+            PUBLISHER.validate_frontend_review(self.source, review, pull_request=233)
+        review['reviewUrls'].append('https://github.com/sinangym/GoymenERP/pull/233#issuecomment-2')
+        PUBLISHER.validate_frontend_review(self.source, review, pull_request=233)
+        with self.assertRaises(RuntimeError):
+            PUBLISHER.validate_frontend_review(self.source, review, self.evidence)
+
+
 if __name__ == '__main__':
     unittest.main()

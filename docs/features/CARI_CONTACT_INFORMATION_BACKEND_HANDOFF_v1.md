@@ -380,3 +380,63 @@ The existing no-op SQL fact deterministically inserts a competing real HTTP comm
 between the no-op read and guarded save, requires 409 and same-key durable replay,
 one winner audit and unchanged persisted conflict receipt. Per-request traceId
 is checked as present but is not confused with immutable business response data.
+
+### Prepared existing C006 command path (not ENV_READY)
+
+Worktree: `C:\src\GoymenERP-cari-party-card-backend-20260912`.
+New unused run `c006-5398ba40f4ea`, instance `49e1a8d6-62b5-4197-9e19-7810f75d7c67`,
+database `GoymenCariC006_5398ba40f4ea`; API/SQL/UI ports 25080/25433/25173.
+API dependency is `9df7f40e3aefc5b02ef42a378c0d1aa800a2fe29`, backend subtree
+`d11840bd6c6f18c4b2e282419daa9e75e54a8c1b`. Runtime AcceptanceHead and CompiledHead
+are the final harness commit, observed/built locally, never hard-coded to this file's
+own containing SHA. The OpenAPI/migration pins are measured from that API source.
+
+Current FE827 pins are measured PREPARATION ONLY and explicitly blocked by the
+publisher due to its open findings. The corrected final FE head and committed
+frontend+harness diff hash must replace those pins before publication. No approved
+review, running instance or final frontend hash is invented in this preparation.
+
+The single external `contract.json` at the coordinator-assigned path must carry
+`codex.baseHead` = API dependency, `codex.acceptanceHead` = `codex.compiledHead` =
+the actual final harness HEAD, and the exact `claude.baseHead`, `frontendDiffBase`,
+`frontendDiffSha256` plus the unchanged ports. Binding validates these against live
+Git, the assembly revision and source pins. Missing/stale contract fails closed.
+The existing three-file fixture hash recipe is preserved; external contract bytes
+are separately bound by `environment.contractSha256` and the SQL verification CLI.
+
+Run ONLY after final FE source/review/CI and backend source gates, from this worktree:
+
+```powershell
+./tools/ci/cari-c02-link.ps1 -Mode BackendVerify -OutputParent C:\src\GoymenERP-c006-evidence
+dotnet ./tools/GoymenERP.CariAcceptance006/bin/Release/net10.0-windows/GoymenERP.CariAcceptance006.dll bind
+./tools/cari-acceptance-006/setup.ps1
+./tools/cari-acceptance-006/control.ps1 -Action start
+./tools/cari-acceptance-006/control.ps1 -Action smoke
+python ./tools/cari-acceptance-006/publish.py --tests-summary <same-local-build-summary.json> --frontend-review <coordinator-receipt.json> --github-cli <installed-gh.exe>
+./tools/cari-acceptance-006/control.ps1 -Action verify-contact-edit -BrowserMeasurement <actual-l03-measurement.json>
+./tools/cari-acceptance-006/control.ps1 -Action stop
+./tools/cari-acceptance-006/control.ps1 -Action release-check
+./tools/cari-acceptance-006/control.ps1 -Action teardown
+```
+
+Angle-bracket arguments above refer to actual run outputs supplied in the final
+handoff, not fabricated files. BackendVerify must be the same local DLL build that
+serves the run, never a substituted CI build. Final-head source changes require
+fresh exact build evidence; unchanged successful targets are not re-run manually.
+
+The publisher's #235-only K2 gate checks a coordinator-attributed non-author Dirac
+receipt against the actual GitHub comment body/URL/PR head and the latest successful
+eight required checks. The one JSON block includes head/status/pullRequest/riskClass,
+requiredIndependentReviews, reviewerId `/root/frontend_final_review_one`,
+reviewerKind `ai-non-author`, authorAgent `CLAUDE-FRONTEND`, authorIsReviewer=false,
+humanApproval=false and the true open P0/P1/P2 counts (zero for this fixed candidate).
+This is not a universal zero-P2 policy or human approval. Historical #233 retains
+its two-review rule; backend K3 still requires its own two exact-head reviews.
+
+The contact CLI checks ENV_READY/environment/source/baseline/contract byte binding,
+then reads `contactPuts` and `staleContactPuts` separately from the existing browser
+measurement and compares all seven durable SQL results. It writes immutable
+`contact-verification.json`; its SQL result does not declare browser or ERP acceptance.
+The old create/link `-Action verify -ExpectedNewParties 1` remains unchanged and must
+not be used for this zero-new-Party contact journey. Extra retry runs need their own
+explicit expectation and evidence; they cannot be silently added to this fixed run.

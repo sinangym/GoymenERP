@@ -8,7 +8,7 @@ namespace GoymenERP.CariAcceptance006;
 public static class Evidence
 {
     public static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
-    public const string ResumeEvidence = @"C:\src\GoymenERP-cari-acceptance-envelope-20260911\artifacts\cari-acceptance-006\c006-fc721a1b9752\resume";
+    public const string ResumeEvidence = @"C:\src\GoymenERP-cari-party-card-backend-20260912\artifacts\cari-acceptance-006\contact-edit-20260912\c006-5398ba40f4ea\resume";
 
     public static string ValidateResumeRecord(string json)
     {
@@ -159,6 +159,34 @@ public static class EntryPoint
                     var current = await DatabaseEvidence.ReadAsync(identity);
                     DatabaseEvidence.VerifyBrowserJourney(identity, baseline, current, count);
                     Console.WriteLine(JsonSerializer.Serialize(new { passed = true, expectedNewParties = count, baseline, current }, Evidence.Json));
+                    break;
+                case "verify-contact-edit":
+                    if (args.Length != 2) throw new InvalidOperationException("C006 contact verification needs its actual browser measurement path.");
+                    var contactSource = SourceBinding.Verify(identity);
+                    var environmentBytes = File.ReadAllBytes(Path.Combine(RunSettings.ApprovedEvidence, "environment.json"));
+                    using (var environment = JsonDocument.Parse(environmentBytes))
+                    using (var ready = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(RunSettings.ApprovedEvidence, "ENV_READY.json"))))
+                    {
+                        var baselineBytes = File.ReadAllBytes(Path.Combine(RunSettings.ApprovedEvidence, "baseline.json"));
+                        ContactJourneyMeasurement.ValidatePublication(identity, contactSource,
+                            environment.RootElement, ready.RootElement, SourceBinding.Hash(environmentBytes), SourceBinding.Hash(baselineBytes),
+                            SourceBinding.Hash(File.ReadAllBytes(SourceBinding.ContractPath)));
+                        var contactBaseline = JsonSerializer.Deserialize<DatabaseSnapshot>(baselineBytes)!;
+                        var measurementBytes = File.ReadAllBytes(Path.GetFullPath(args[1]));
+                        var contactCurrent = await DatabaseEvidence.ReadAsync(identity);
+                        using var measurement = JsonDocument.Parse(measurementBytes);
+                        ContactJourneyMeasurement.Verify(identity, contactBaseline, contactCurrent, measurement.RootElement);
+                        Evidence.Write("contact-verification.json", new
+                        {
+                            identity.RunId, identity.InstanceId, observedAtUtc = DateTimeOffset.UtcNow,
+                            source = contactSource, sqlEffectsVerified = true, expectedNewParties = 0,
+                            expectedLogicalUpdates = 6, expectedDurableResults = 7,
+                            measurementPath = Path.GetFullPath(args[1]), measurementSha256 = SourceBinding.Hash(measurementBytes),
+                            baselineSha256 = SourceBinding.Hash(baselineBytes), current = contactCurrent,
+                            browserAcceptance = "NOT_ASSESSED_BY_SQL_VERIFIER", erpAccepted = false,
+                        });
+                        Console.WriteLine("C006 L-03 exact SQL effects verified; browser verdict remains a separate gate.");
+                    }
                     break;
                 default: throw new InvalidOperationException("Unknown C006 operation.");
             }

@@ -9,13 +9,19 @@ import subprocess
 from datetime import datetime, timezone
 import urllib.request
 
-ROOT = Path(r'C:\src\GoymenERP-cari-acceptance-envelope-20260911')
-EVIDENCE = ROOT / 'artifacts/cari-acceptance-006/c006-fc721a1b9752'
+ROOT = Path(r'C:\src\GoymenERP-cari-party-card-backend-20260912')
+EVIDENCE = ROOT / 'artifacts/cari-acceptance-006/contact-edit-20260912/c006-5398ba40f4ea'
 DLL = ROOT / 'tools/GoymenERP.CariAcceptance006/bin/Release/net10.0-windows/GoymenERP.CariAcceptance006.dll'
 CONTRACT_HEADER = 'X-ERP-Counterparty-Contract'
 CONTRACT_VERSION = 'optional-trade-roles-v1'
 TEST_OUTPUT = 'tests/GoymenERP.CariAcceptance006.Tests/bin/Release/net10.0-windows/'
 TEST_ASSEMBLY = 'GoymenERP.CariAcceptance006.Tests.dll'
+REQUIRED_FRONTEND_CHECKS = {
+    'Backend build, test and migration', 'Frontend lint, test and build',
+    'SQL Server relational acceptance', 'Container build',
+    'UI catalog structure, references and hashes', 'OpenAPI contract drift',
+    'Cari C006 backend envelope', 'C-01 real-browser E2E',
+}
 
 def require(condition, message):
     if not condition:
@@ -86,18 +92,69 @@ def validate_tested_build(source, host, tests):
         require(tested[name] == value, 'tested runtime artifact hash differs: ' + name)
     return tested
 
+def validate_frontend_review(source, review, evidence=None, pull_request=235):
+    require(isinstance(review, dict) and review.get('head') == source.get('FrontendHead')
+            and review.get('status') == 'approved', 'exact-head frontend review receipt is missing')
+    urls = review.get('reviewUrls')
+    require(isinstance(urls, list) and all(isinstance(url, str) for url in urls), 'review URLs are missing')
+    # Historical #233 required two independent reviews. The new K2 rule is scoped
+    # to #235 only, never a generic reduction of the old K3 gate.
+    if pull_request == 233:
+        require(len(set(urls)) >= 2 and all(url.startswith('https://github.com/sinangym/GoymenERP/pull/233#') for url in urls),
+                'historical #233 two-review gate is missing')
+        return
+    require(pull_request == 235 and review.get('pullRequest') == 235
+            and review.get('riskClass') == 'K2' and type(review.get('requiredIndependentReviews')) is int
+            and review['requiredIndependentReviews'] == 1 and len(urls) == 1
+            and re.fullmatch(r'https://github\.com/sinangym/GoymenERP/pull/235#issuecomment-[0-9]+', urls[0]),
+            'unexpected #235 review profile or source')
+    require(review.get('reviewerId') == '/root/frontend_final_review_one'
+            and review.get('reviewerKind') == 'ai-non-author' and review.get('authorAgent') == 'CLAUDE-FRONTEND'
+            and review.get('authorIsReviewer') is False and review.get('humanApproval') is False
+            and all(type(review.get(name)) is int and review[name] == 0 for name in ['openP0', 'openP1', 'openP2']),
+            'independent AI attribution or clean review result is missing')
+    require(isinstance(evidence, dict), 'live GitHub review evidence is missing')
+    comment, pr = evidence.get('comment', {}), evidence.get('pullRequest', {})
+    require(comment.get('html_url') == urls[0]
+            and comment.get('issue_url') == 'https://api.github.com/repos/sinangym/GoymenERP/issues/235'
+            and comment.get('author_association') in ['OWNER', 'MEMBER', 'COLLABORATOR']
+            and isinstance(comment.get('body'), str) and pr.get('number') == 235
+            and pr.get('head', {}).get('sha') == source['FrontendHead'],
+            'GitHub comment or current PR source differs from the receipt')
+    expected = {key: value for key, value in review.items() if key != 'reviewUrls'}
+    payloads = []
+    for block in re.findall(r'```json\s*\n(.*?)\n```', comment['body'], re.DOTALL):
+        try:
+            payloads.append(json.loads(block))
+        except json.JSONDecodeError:
+            continue
+    require(payloads.count(expected) == 1, 'GitHub source does not attest this exact review result')
+    checks = evidence.get('checkRuns', {}).get('check_runs', [])
+    require(isinstance(checks, list), 'live frontend check evidence is missing')
+    latest = {}
+    for check in checks:
+        if check.get('head_sha') == source['FrontendHead'] and check.get('name') in REQUIRED_FRONTEND_CHECKS:
+            name = check['name']
+            if name not in latest or check['id'] > latest[name]['id']:
+                latest[name] = check
+    require(set(latest) == REQUIRED_FRONTEND_CHECKS
+            and all(check.get('status') == 'completed' and check.get('conclusion') == 'success' for check in latest.values()),
+            'fresh required frontend checks have not all passed')
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--tests-summary', type=Path, required=True)
     parser.add_argument('--frontend-review', type=Path, required=True)
+    parser.add_argument('--github-cli', default='gh')
     args = parser.parse_args()
     require(Path(__file__).resolve().parent.parent.parent == ROOT, 'wrong publisher worktree')
     require(not (EVIDENCE / 'environment.json').exists() and not (EVIDENCE / 'ENV_READY.json').exists(),
             'this run was already published')
     command('dotnet', str(DLL), 'source-check')
     source = read(EVIDENCE / 'source-binding.json')
-    require(source['FrontendHead'] != '8f8e241db68b8f071e52d37a33c2176980eed1e8',
-            'frontend candidate has open P1 findings; final corrected source and review are required')
+    require(source['FrontendHead'] not in ['8f8e241db68b8f071e52d37a33c2176980eed1e8',
+                                         '8273530417964ce8a85873f5b95df091535878bb'],
+            'frontend candidate has open findings; final corrected source and review are required')
     run = read(ROOT / 'tools/cari-acceptance-006/run.json')
     smoke = read(EVIDENCE / 'smoke.json')
     host = read(EVIDENCE / 'host-started.json')
@@ -106,10 +163,17 @@ def main():
     tests = json.loads(tests_bytes.decode('utf-8-sig'))
     review = read(args.frontend_review)
     tested_artifacts = validate_tested_build(source, host, tests)
-    require(review['head'] == source['FrontendHead'] and review['status'] == 'approved'
-            and len(set(review['reviewUrls'])) >= 2, 'exact-head frontend review receipt is missing')
-    for url in review['reviewUrls']:
-        require(url.startswith('https://github.com/sinangym/GoymenERP/pull/233#'), 'unexpected review source')
+    urls = review.get('reviewUrls', [])
+    require(isinstance(urls, list) and len(urls) == 1 and isinstance(urls[0], str)
+            and re.fullmatch(r'https://github\.com/sinangym/GoymenERP/pull/235#issuecomment-[0-9]+', urls[0]),
+            'exact #235 review comment URL is required')
+    comment_id = urls[0].rsplit('-', 1)[1]
+    github_evidence = {
+        'comment': json.loads(command(args.github_cli, 'api', 'repos/sinangym/GoymenERP/issues/comments/' + comment_id)),
+        'pullRequest': json.loads(command(args.github_cli, 'api', 'repos/sinangym/GoymenERP/pulls/235')),
+        'checkRuns': json.loads(command(args.github_cli, 'api', 'repos/sinangym/GoymenERP/commits/' + source['FrontendHead'] + '/check-runs?per_page=100')),
+    }
+    validate_frontend_review(source, review, github_evidence)
     require(smoke['passed'] and smoke['RunId'] == run['RunId'] and smoke['InstanceId'] == run['InstanceId'],
             'smoke belongs to another run')
     require(host['RunId'] == run['RunId'] and host['InstanceId'] == run['InstanceId']
@@ -158,16 +222,21 @@ def main():
         'instanceId': run['InstanceId'], 'apiBaseUrl': run['ApiBaseUrl'], 'databaseName': run['DatabaseName'],
         'worktree': str(ROOT), 'sources': source, 'resources': resources, 'host': host,
         'fixtureHash': source['FixtureSha256'], 'baselineSha256': digest(EVIDENCE / 'baseline.json'),
+        'contractSha256': digest(ROOT / 'artifacts/cari-acceptance-006/contact-edit-20260912/contract.json'),
         'smokeSha256': digest(EVIDENCE / 'smoke.json'),
         'backendTests': {'path': str(args.tests_summary.resolve()), 'sha256': hashlib.sha256(tests_bytes).hexdigest(),
                          'executed': tests['backend_executed'], 'testedArtifacts': tested_artifacts,
                          'publisherExecuted': tests['publisher_executed']},
         'frontendReviewReceipt': review, 'reviewReceiptMeaning': 'Coordinator-supplied receipt; not a new independent review.',
+        'frontendReviewEvidence': github_evidence,
+        'contactEdit': {'logicalUpdates': 6, 'expectedNewParties': 0, 'expectedDurableResults': 7,
+                        'readOnlyActor': 'company-a-user', 'browserVerdict': 'NOT_RUN'},
         'freshGetObservations': observations, 'companyAId': run['CompanyAId'], 'companyBId': run['CompanyBId'],
         'actor': run['Actor'], 'browserPrefix': run['BrowserPrefix'],
         'clientContractHeader': CONTRACT_HEADER, 'clientContractVersion': CONTRACT_VERSION,
         'commands': {'control': str(ROOT / 'tools/cari-acceptance-006/control.ps1'),
                      'start': '-Action start', 'verify': '-Action verify -ExpectedNewParties 1',
+                     'verifyContactEdit': '-Action verify-contact-edit -BrowserMeasurement <actual-l03-measurement.json>',
                      'stop': '-Action stop', 'releaseCheck': '-Action release-check', 'teardown': '-Action teardown'},
         'browserAcceptance': 'NOT_RUN', 'erpAccepted': False, 'productionActivated': False,
         'topology': 'One loopback API process and one newly owned disposable SQL container. No mixed-node claim.',

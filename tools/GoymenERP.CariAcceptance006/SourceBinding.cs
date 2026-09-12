@@ -17,13 +17,14 @@ public sealed record SourceSnapshot(
 
 public static class SourceBinding
 {
+    public const string ContractPath = RunSettings.ApprovedRoot + @"\artifacts\cari-acceptance-006\contact-edit-20260912\contract.json";
     public const string FrontendRoot = @"C:\src\GoymenERP-claude";
-    public const string FrontendHead = "c3cb45e1f85a7079c742bc0abbe62ca3aa805dfe";
-    public const string FrontendBase = "060da63f2644cb271d78d9eab8b7a6985d544ad1";
-    public const string FrontendDiff = "a184b46b34b2208dde74c366abe105b54c9d01515aa1930f0a597cb597fd6e53";
-    public const string BackendTree = "4e0b1a5d6a1116ee2ba76df132aeec6e8b9c99d5";
-    public const string OpenApiHash = "062c06175916295bc97a438adea6fd01cdb608413c58501aa62208f87038a829";
-    public const string MigrationHash = "1ec8222d998cb59891f437fc1ce4f62f954203508f3b2cffd4a00d97b1933e44";
+    public const string FrontendHead = "8273530417964ce8a85873f5b95df091535878bb";
+    public const string FrontendBase = "3e7dd98a5f8b7cb9e6850e05148eb4e7b26f3e3f";
+    public const string FrontendDiff = "fe63eb9b50d4f90c5e2c934b7b5200199f5202b4a91a7c64a25ff96989d8cf73";
+    public const string BackendTree = "d11840bd6c6f18c4b2e282419daa9e75e54a8c1b";
+    public const string OpenApiHash = "6caaeed76f63c49efa63be04b66a043fa843932c1b7a792b80e07f776c81a3d6";
+    public const string MigrationHash = "8ddf6db888521e0b6d253b5e1cc0de04a73ba23f0b2a012801ff108b165bb291";
     public const string ClientContractHeader = "X-ERP-Counterparty-Contract";
     public const string ClientContractVersion = "optional-trade-roles-v1";
 
@@ -82,6 +83,11 @@ public static class SourceBinding
             .SingleOrDefault(attribute => attribute.Key == "C006SourceHead")?.Value ?? "";
         var backendTree = GitText(RunSettings.ApprovedRoot, "rev-parse", "HEAD:src/backend");
         var frontendHead = GitText(FrontendRoot, "rev-parse", "HEAD");
+        var contractBytes = File.ReadAllBytes(ContractPath);
+        using (var contract = JsonDocument.Parse(contractBytes))
+        {
+            ValidateExternalContract(contract.RootElement, head, compiledHead);
+        }
         var frontendDiff = Hash(Git(FrontendRoot, "diff", "--binary", "--full-index", "--no-color",
             "--no-ext-diff", "--no-textconv", FrontendBase, frontendHead, "--",
             "src/frontend/goymen-erp-web", "tests/e2e"));
@@ -143,6 +149,26 @@ public static class SourceBinding
         };
         if (JsonSerializer.Serialize(recordedCanonical, Evidence.Json) != JsonSerializer.Serialize(currentCanonical, Evidence.Json))
             throw new InvalidOperationException("C006 source or build changed since binding; preserve the previous run.");
+    }
+
+    public static void ValidateExternalContract(JsonElement contract, string head, string compiledHead)
+    {
+        var codex = contract.GetProperty("codex");
+        var claude = contract.GetProperty("claude");
+        var ports = contract.GetProperty("suggestedPorts");
+        if (contract.GetProperty("id").GetString() != "CARI-AB-20260905-006-009"
+            || codex.GetProperty("taskId").GetString() != "C-DESKTOP-006"
+            || codex.GetProperty("cwd").GetString() != RunSettings.ApprovedRoot
+            || codex.GetProperty("baseHead").GetString() != RunSettings.ExpectedHead
+            || !Regex.IsMatch(head, "\\A[0-9a-f]{40}\\z", RegexOptions.CultureInvariant)
+            || codex.GetProperty("acceptanceHead").GetString() != head
+            || codex.GetProperty("compiledHead").GetString() != compiledHead || compiledHead != head
+            || claude.GetProperty("baseHead").GetString() != FrontendHead
+            || claude.GetProperty("frontendDiffBase").GetString() != FrontendBase
+            || claude.GetProperty("frontendDiffSha256").GetString() != FrontendDiff
+            || ports.GetProperty("api").GetInt32() != 25080 || ports.GetProperty("sql").GetInt32() != 25433
+            || ports.GetProperty("ui").GetInt32() != 25173)
+            throw new InvalidOperationException("C006 external contract differs from actual source/build pins.");
     }
 
     public static SourceSnapshot Verify(RunSettings identity)

@@ -114,12 +114,12 @@ public sealed class ProfileTests
     {
         var identity = new RunSettings();
         identity.Validate("Testing");
-        Assert.Equal("c006-fc721a1b9752", identity.RunId);
-        Assert.Equal("7ec92416-5a5d-42ad-9823-3574f27592a8", identity.InstanceId);
-        Assert.Equal("c3cb45e1f85a7079c742bc0abbe62ca3aa805dfe", SourceBinding.FrontendHead);
-        Assert.Equal("a184b46b34b2208dde74c366abe105b54c9d01515aa1930f0a597cb597fd6e53", identity.FrontendDiffSha256);
+        Assert.Equal("c006-5398ba40f4ea", identity.RunId);
+        Assert.Equal("49e1a8d6-62b5-4197-9e19-7810f75d7c67", identity.InstanceId);
+        Assert.Equal("8273530417964ce8a85873f5b95df091535878bb", SourceBinding.FrontendHead);
+        Assert.Equal("fe63eb9b50d4f90c5e2c934b7b5200199f5202b4a91a7c64a25ff96989d8cf73", identity.FrontendDiffSha256);
         Assert.Equal(SourceBinding.FrontendDiff, identity.FrontendDiffSha256);
-        Assert.Equal("880cae838e5d2f01a988f1e4a89afbe67858f48c", identity.BackendHead);
+        Assert.Equal("9df7f40e3aefc5b02ef42a378c0d1aa800a2fe29", identity.BackendHead);
         var services = Canonical();
         Assert.Throws<InvalidOperationException>(() => AcceptanceProfile.Configure(services, "Testing",
             identity with { BackendHead = "78494ed9bc60692fac6c186aa52b0049bbf4c306" }));
@@ -128,6 +128,10 @@ public sealed class ProfileTests
 
     public static TheoryData<RunSettings> ConsumedRunIdentities => new()
     {
+        new RunSettings { RunId = "c006-fc721a1b9752" },
+        new RunSettings { InstanceId = "7ec92416-5a5d-42ad-9823-3574f27592a8" },
+        new RunSettings { DatabaseName = "GoymenCariC006_fc721a1b9752" },
+        new RunSettings { ComposeProject = "goymen-cari-c006-fc721a1b9752" },
         new RunSettings { RunId = "c006-303760997c6f" },
         new RunSettings { InstanceId = "3a6f9f42-2d52-4874-95d0-7cff415aaf15" },
         new RunSettings { DatabaseName = "GoymenCariC006_303760997c6f" },
