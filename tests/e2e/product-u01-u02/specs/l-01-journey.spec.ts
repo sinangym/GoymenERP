@@ -1,5 +1,6 @@
 /**
- * L-01 — the LIVE U-01/U-02 journey: real browser, real Product API, real store behind it.
+ * L-01 — the LIVE U-01/U-02 journey: real browser, real Product API, real store behind it,
+ * against the ONE environment snapshot the gate verified and the run is bound to.
  *
  * create → list (found by search) → card → basic edit with a reason → fresh version →
  * back to the card → reopen from the list. BOTH commands go through a real lost reply
@@ -11,17 +12,16 @@
  *
  * NOTHING here is mocked: no `route.fulfill`, no synthesised body, no invented code or
  * version. Every code, id and version asserted below was read from a real response.
- * The withheld replies are recorded as `upstream_success_then_delivery_abort`.
  */
 import { expect, test } from '@playwright/test'
-import { LiveRecorder, ProductDeliveryWithholder, lShot, readProductManifest, writeLJson } from '../src/live'
+import { LiveRecorder, ProductDeliveryWithholder, evidenceIdentity, lShot, liveEnvironment, writeLJson } from '../src/live'
 import { retrySame, saveDraft, saveEdit } from '../src/ui'
 
-const manifest = readProductManifest()
+const env = liveEnvironment()
 const RUN_TOKEN = new Date().toISOString().replace(/\D/g, '').slice(8, 14)
-const NAME = `${manifest.browserPrefix} Kabul sac ${RUN_TOKEN}`
+const NAME = `${env.browserPrefix} Kabul sac ${RUN_TOKEN}`
 const EDITED_NAME = `${NAME} galvaniz`
-const REASON = `${manifest.browserPrefix} kabul koşumu ${RUN_TOKEN}: ad düzeltildi`
+const REASON = `${env.browserPrefix} kabul koşumu ${RUN_TOKEN}: ad düzeltildi`
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 test('L-01 live journey: create (lost reply → same-key replay) → list → card → edit (lost reply → same-key replay) → card → reopen', async ({ page }, info) => {
@@ -30,18 +30,17 @@ test('L-01 live journey: create (lost reply → same-key replay) → list → ca
     { label: 'create', method: 'POST', expectedStatus: 201, match: (p) => p === '/api/v1/products' },
     { label: 'edit', method: 'PATCH', expectedStatus: 200, match: (p) => /^\/api\/v1\/products\/[^/]+\/draft$/.test(p) },
   ])
-  await page.addInitScript((company) => localStorage.setItem('goymen-company-id', company), manifest.companyId)
+  await page.addInitScript((company) => localStorage.setItem('goymen-company-id', company), env.companyId)
 
   // ── create ────────────────────────────────────────────────────────────────
   await page.goto('/urun/yeni')
   await expect(page.getByRole('heading', { level: 1, name: 'Yeni ürün' })).toBeVisible()
   await page.getByLabel(/Ürün adı/).fill(NAME)
-  // A REAL code group from the live catalogue — the first one the server offered.
+  // The contract's exact `codeGroupId`, and only if the LIVE authorized catalogue offers
+  // it (contract step 4) — never an arbitrary first group.
   const group = page.getByLabel(/Kod grubu/)
-  await expect.poll(async () => (await group.locator('option').count()) > 1).toBe(true)
-  const groupValue = await group.locator('option').nth(1).getAttribute('value')
-  expect(groupValue).toMatch(UUID_RE)
-  await group.selectOption(groupValue as string)
+  await expect(group.locator(`option[value="${env.codeGroupId}"]`)).toBeAttached()
+  await group.selectOption(env.codeGroupId)
   await lShot(page, 'l01', '01-create-filled')
 
   await saveDraft(page).click()
@@ -119,13 +118,12 @@ test('L-01 live journey: create (lost reply → same-key replay) → list → ca
   await expect(page.getByRole('heading', { level: 1, name: EDITED_NAME })).toBeVisible()
   await lShot(page, 'l01', '08-reopened')
 
-  // Global master: no Product request carried a company header.
-  for (const r of recorder.records.filter((x) => x.path.startsWith('/api/v1/products'))) expect(r.companyId, `${r.method} ${r.path}`).toBeNull()
+  // Global master: no Product request carried a company header; every request went as the bound actor.
+  for (const r of recorder.records.filter((x) => x.path.startsWith('/api/v1/products'))) {
+    expect(r.companyId, `${r.method} ${r.path}`).toBeNull()
+    expect(r.devIdentityHeader, `${r.method} ${r.path}`).toBe(env.actor)
+  }
 
-  writeLJson('withheld', 'l01-withheld.json', { runId: manifest.runId, instanceId: manifest.instanceId, withheld: withholder.withheld, passedThrough: withholder.passedThrough })
-  await recorder.finish(info, 'l01-journey', {
-    runId: manifest.runId, instanceId: manifest.instanceId, productId, createdCode, versionBefore, versionAfter,
-    note: 'Live Product API through the Vite proxy; two withheld deliveries, two same-key replays. Not ERP acceptance by itself: erpAccepted is the environment publisher’s field.',
-    erpAccepted: manifest.erpAccepted,
-  })
+  writeLJson('withheld', 'l01-withheld.json', { ...evidenceIdentity(env), withheld: withholder.withheld, passedThrough: withholder.passedThrough })
+  await recorder.finish(info, 'l01-journey', { ...evidenceIdentity(env), productId, createdCode, versionBefore, versionAfter })
 })

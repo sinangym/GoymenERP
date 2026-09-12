@@ -13,8 +13,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import path from 'node:path'
 import { chromium, type FullConfig } from '@playwright/test'
 import { Lane } from './src/harness'
-import { readProductManifest } from './src/live'
-import { origin, runDir, runId, viteCacheDir, coldStart, role, claimedAtUtc, lane } from './paths'
+import { origin, runDir, runId, viteCacheDir, coldStart, role, claimedAtUtc, lane, liveBinding } from './paths'
 
 export default async function globalSetup(_config: FullConfig): Promise<void> {
   mkdirSync(path.join(runDir, 'diagnostics'), { recursive: true })
@@ -36,10 +35,9 @@ export default async function globalSetup(_config: FullConfig): Promise<void> {
   let secondPassHeadingMs: number | null = null
   const metadata = path.join(viteCacheDir, 'deps', '_metadata.json')
   const controlled = lane === 'T' ? await Lane.install(page, { slug: 'warm-up' }) : null
-  if (lane === 'L') {
-    const manifest = readProductManifest()
-    await page.addInitScript((company) => localStorage.setItem('goymen-company-id', company), manifest.companyId)
-    push('live-manifest', `runId=${manifest.runId} instanceId=${manifest.instanceId}`)
+  if (lane === 'L' && liveBinding !== null) {
+    await page.addInitScript((company) => localStorage.setItem('goymen-company-id', company), liveBinding.companyId)
+    push('live-binding', `contract=${liveBinding.contractId} resourceRun=${liveBinding.resourceRunId} instance=${liveBinding.resourceInstanceId} manifestSha256=${liveBinding.manifestSha256}`)
   }
   try {
     await page.goto(origin + '/urun', { waitUntil: 'domcontentloaded', timeout: 180_000 })
@@ -74,6 +72,7 @@ export default async function globalSetup(_config: FullConfig): Promise<void> {
     : []
   writeFileSync(path.join(runDir, 'diagnostics', 'warm-up.json'), JSON.stringify({
     task_id: 'U-01-U-02', lane, runId, role, coldStart, claimedAtUtc, viteCacheDir, startedAtUtc, finishedAtUtc: new Date().toISOString(), browserVersion,
+    liveBinding: liveBinding === null ? null : { contractId: liveBinding.contractId, resourceRunId: liveBinding.resourceRunId, resourceInstanceId: liveBinding.resourceInstanceId, manifestSha256: liveBinding.manifestSha256, acceptedContractSha256: liveBinding.acceptedContractSha256, sourceBindingSha256: liveBinding.sourceBindingSha256 },
     outcome, warmUpMs: Date.now() - t0, headingVisibleMs: headingMs, optimizerWaitMs, secondPassHeadingMs,
     cacheMetadataPresentAfterWarmUp: existsSync(metadata),
     controlledRequests: controlled?.records.map((r) => ({ kind: r.kind, status: r.status, transport: r.transport, browserFinished: r.browserFinished, browserCancelled: r.browserCancelled })) ?? null,

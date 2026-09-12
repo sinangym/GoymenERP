@@ -2,16 +2,16 @@ import path from 'node:path'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import type { Plugin } from '../../../src/frontend/goymen-erp-web/node_modules/vite/dist/node/index'
 import base from '../../../src/frontend/goymen-erp-web/vite.config'
-import { here, repo, frontend, runDir, runId, viteCacheDir, coldStart, role, origin, uiPort, lane } from './paths'
+import { here, repo, frontend, runDir, runId, viteCacheDir, coldStart, role, origin, uiPort, lane, liveBinding } from './paths'
 
 const configLoadedAtUtc = new Date().toISOString()
 /**
  * Where `/api` goes. T lane: a closed loopback port, so a request that escaped the
- * browser-side interception fails visibly instead of reaching anything. L lane: the
- * live API base of the ENV_READY tuple, handed over by the runner.
+ * browser-side interception fails visibly instead of reaching anything. L lane: the API
+ * origin of the gate-verified binding this web server JOINED (`./paths` re-hashed the
+ * manifest) — never an ambient variable.
  */
-const apiTarget = lane === 'L' ? (process.env.URUN_API_TARGET ?? '') : 'http://127.0.0.1:9'
-if (lane === 'L' && apiTarget === '') throw new Error('URUN_API_TARGET is required in the L lane (the runner passes it from the environment manifest)')
+const apiTarget = lane === 'L' ? (liveBinding as NonNullable<typeof liveBinding>).apiBaseUrl : 'http://127.0.0.1:9'
 
 const ownership: Plugin = {
   name: 'urun-owned-loopback-service',
@@ -22,6 +22,8 @@ const ownership: Plugin = {
         task_id: 'U-01-U-02', lane, runId, role, pid: process.pid, configLoadedAtUtc, listeningAtUtc: new Date().toISOString(),
         startupMs: Date.now() - Date.parse(configLoadedAtUtc), origin, sourceRoot: here,
         cacheDir: viteCacheDir, coldStart, controlledTOnly: lane === 'T', apiProxyTarget: lane === 'L' ? apiTarget : null,
+        // The snapshot this server serves against — the same hashes every evidence record carries.
+        liveBinding: liveBinding === null ? null : { manifestSha256: liveBinding.manifestSha256, acceptedContractSha256: liveBinding.acceptedContractSha256, sourceBindingSha256: liveBinding.sourceBindingSha256, contractId: liveBinding.contractId, resourceRunId: liveBinding.resourceRunId, resourceInstanceId: liveBinding.resourceInstanceId },
       }, null, 2) + '\n')
     })
   },
@@ -42,6 +44,8 @@ export default {
   },
   server: {
     host: '127.0.0.1', port: uiPort, strictPort: true, fs: { allow: [repo] },
+    // Same-origin: the browser only ever talks to this loopback origin; `/api` is
+    // forwarded server-side, so no cross-origin request — and no CORS policy — is involved.
     proxy: { '/api': { target: apiTarget, changeOrigin: true } },
   },
 }

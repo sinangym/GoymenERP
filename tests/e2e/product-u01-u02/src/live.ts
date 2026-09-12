@@ -1,60 +1,49 @@
 /**
- * The L lane for the Product screens: the LIVE API of the Backend's ENV_READY tuple,
- * through the Vite proxy, exactly as a user's browser would reach it.
+ * The L lane for the Product screens: the LIVE API of a gate-verified environment,
+ * through the same-origin Vite proxy, exactly as a user's browser would reach it.
  *
  * Nothing here fulfils a response. The 009 live tooling is REUSED where it is not
  * Cari-specific — `LiveRecorder` (records every `/api/v1/**` exchange with structural
- * redaction), `ActorProbe` (one direct request as a named actor), the evidence
- * writers and the withheld-delivery vocabulary. The one Cari-bound piece, the
- * delivery withholder, is bound to `/api/v1/counterparties` and to the Party
- * identity; the Product one below is the same mechanism narrowed to
- * `/api/v1/products` and the product identity (`card.product.id/code/version`,
- * `isReplay`). If the 009 owner ever parameterises the prefix, this class collapses to
- * an import; until then it is the smallest thing that is not a mock.
+ * redaction), `ActorProbe` (one direct request as a named actor), the evidence writers
+ * and the withheld-delivery vocabulary. The one Cari-bound piece, the delivery
+ * withholder, is bound to `/api/v1/counterparties` and to the Party identity; the
+ * Product one below is the same mechanism narrowed to `/api/v1/products` and the
+ * product identity (`card.product.id/code/version`, `isReplay`). If the 009 owner ever
+ * parameterises the prefix, this class collapses to an import.
+ *
+ * Which environment: the one `manifest-validator.ts` bound the run to. A spec never
+ * reads the manifest for itself; it takes the binding the runner established
+ * (`liveEnvironment`) and writes its hashes into every evidence record.
  */
-import { readFileSync } from 'node:fs'
 import type { APIResponse, Page } from '@playwright/test'
 import type { WithheldMarker } from '../../cari-acceptance-009/src/lHarness'
+import { joinLiveBinding, type LiveBinding } from '../manifest-validator'
+import { runId as browserRunId } from '../paths'
 
 export { ActorProbe, LiveRecorder, lShot, writeLJson, failurePriority, evidenceErrorText } from '../../cari-acceptance-009/src/lHarness'
 export type { LiveRecord, ActorProbeRecord } from '../../cari-acceptance-009/src/lHarness'
+export type { LiveBinding } from '../manifest-validator'
 
-/**
- * What the Backend's ENV_READY tuple must carry for this lane to run honestly. Every
- * field is a value the lane would otherwise silently default — and a run against a
- * default is a run against something other than the owned environment. The shape is
- * the narrow input this lane asks of the environment publisher (see README).
- */
-export interface ProductEnvironmentManifest {
-  readonly readyForBrowser: boolean
-  readonly runId: string
-  readonly instanceId: string
-  /** The live Product API base, e.g. `http://127.0.0.1:26080`; the Vite proxy targets it. */
-  readonly apiBaseUrl: string
-  /** The actor with current GLOBAL Product authority; sent by the bundle as `X-Development-User`. */
-  readonly actor: string
-  /** An actor WITHOUT Product authority (company membership alone); used only by the direct probe. */
-  readonly unauthorizedActor: string
-  /** The company the shell boots into. Product is global; the id never reaches a Product request. */
-  readonly companyId: string
-  /** Every record this lane creates is named with it, so a stray row is attributable. */
-  readonly browserPrefix: string
-  readonly erpAccepted: boolean
-  readonly productionActivated: boolean
+/** The validated binding this worker joined. Refuses if any of the three files moved since. */
+export function liveEnvironment(): LiveBinding {
+  return joinLiveBinding(process.env)
 }
 
-export function readProductManifest(): ProductEnvironmentManifest {
-  const file = process.env.URUN_ENVIRONMENT_MANIFEST
-  if (!file) throw new Error('URUN_ENVIRONMENT_MANIFEST is not set; the L lane needs the Backend ENV_READY manifest')
-  const manifest = JSON.parse(readFileSync(file, 'utf8')) as ProductEnvironmentManifest
-  if (manifest.readyForBrowser !== true) throw new Error('environment manifest is not readyForBrowser')
-  for (const field of ['apiBaseUrl', 'actor', 'unauthorizedActor', 'companyId', 'browserPrefix', 'runId', 'instanceId'] as const) {
-    const value = manifest[field]
-    if (typeof value !== 'string' || value.length === 0) throw new Error(`environment manifest field "${field}" is missing or empty`)
+/**
+ * The identity every L evidence record carries (contract step 3): the C010 BROWSER run
+ * id and the environment's RESOURCE run/instance, distinct and explicitly linked, plus
+ * all three file hashes — so a reader can tie each record to the exact snapshot.
+ */
+export function evidenceIdentity(binding: LiveBinding) {
+  return {
+    browserRunId,
+    resourceRunId: binding.resourceRunId, resourceInstanceId: binding.resourceInstanceId,
+    contractId: binding.contractId, taskId: binding.taskId, environmentName: binding.environmentName,
+    manifestSha256: binding.manifestSha256, acceptedContractSha256: binding.acceptedContractSha256, sourceBindingSha256: binding.sourceBindingSha256,
+    publisherVerifiedAtUtc: binding.verifiedAtUtc, frontendHead: binding.frontendHead,
+    apiBaseUrl: binding.apiBaseUrl, uiOrigin: binding.uiOrigin,
+    note: 'Live Product API through the same-origin Vite proxy of a publisher-verified, consumer-validated environment; not ERP acceptance by itself.',
   }
-  if (manifest.actor === manifest.unauthorizedActor) throw new Error('environment manifest: actor and unauthorizedActor must differ')
-  if (manifest.productionActivated === true) throw new Error('environment manifest says productionActivated; this lane never runs against production')
-  return manifest
 }
 
 /** Identity read from a REAL mutation response — never the whole body. */

@@ -1,24 +1,21 @@
 import path from 'node:path'
 import { defineConfig } from '@playwright/test'
-// Importing ./paths establishes (runner) or verifies (workers) the run identity before
-// anything else here is evaluated; a refused run throws before the web server or browser.
-import { here, frontend, origin, runDir, runId, viteCacheDir, evidenceRoot, coldStart, claimId, lane, liveManifest } from './paths'
-
-/**
- * The L lane's inputs come from the Backend's ENV_READY manifest and nowhere else: the
- * API base for the proxy and the actor the bundle sends as `X-Development-User`. Both
- * are handed to the web server explicitly; `./paths` already refused a missing or
- * not-ready manifest before claiming a run.
- */
-const live = liveManifest
+// Importing ./paths binds the L lane to a gate-verified snapshot and establishes
+// (runner) or verifies (workers) the run identity before anything else here is
+// evaluated; a refused tuple or run throws before the web server or browser exists.
+import { here, frontend, origin, runDir, runId, viteCacheDir, evidenceRoot, coldStart, claimId, lane, liveBinding } from './paths'
+import { BINDING_ENV, bindingEnvValue } from './manifest-validator'
 
 const webServerEnv: Record<string, string> = {
   CARI010_EVIDENCE_DIR: evidenceRoot, CARI010_RUN_ID: runId, CARI010_VITE_CACHE_DIR: viteCacheDir,
   CARI010_COLD_START: coldStart ? '1' : '0', CARI010_RUN_CLAIM: claimId, URUN_LANE: lane,
 }
-if (live !== null) {
-  webServerEnv.URUN_API_TARGET = live.apiBaseUrl
-  webServerEnv.VITE_DEV_USER = live.actor
+if (liveBinding !== null) {
+  // The web server and every worker JOIN this exact binding: the API target and the
+  // bundle's `X-Development-User` come from the validated snapshot and nowhere else.
+  webServerEnv[BINDING_ENV] = bindingEnvValue(liveBinding)
+  webServerEnv.VITE_DEV_USER = liveBinding.actor
+  process.env[BINDING_ENV] = webServerEnv[BINDING_ENV]
 }
 
 export default defineConfig({

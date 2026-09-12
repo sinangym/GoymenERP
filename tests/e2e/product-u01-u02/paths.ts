@@ -2,7 +2,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { establishRunIdentity } from '../cari-acceptance-010/run-ownership'
 import type { RunIdentity } from '../cari-acceptance-010/run-ownership'
-import { readProductManifest, type ProductEnvironmentManifest } from './src/live'
+import { BINDING_ENV, establishLiveBinding, joinLiveBinding, type LiveBinding } from './manifest-validator'
 
 export const here = path.dirname(fileURLToPath(import.meta.url))
 export const repo = path.resolve(here, '../../..')
@@ -11,17 +11,16 @@ export const frontend = path.join(repo, 'src/frontend/goymen-erp-web')
 /**
  * Two lanes, selected by `URUN_LANE`:
  *  - `T` (default): controlled responses answered in the browser; no API is reached.
- *  - `L`: the live Product API of the Backend's ENV_READY tuple through the Vite proxy;
- *    nothing is fulfilled by the test.
+ *  - `L`: the live Product API of a GATE-VERIFIED environment through the same-origin
+ *    Vite proxy; nothing is fulfilled by the test.
  */
 export const lane: 'T' | 'L' = (process.env.URUN_LANE ?? 'T').toUpperCase() === 'L' ? 'L' : 'T'
 
 /**
  * UI ports. The T lane serves controlled responses on a loopback port of its own,
- * 15175, so it can run beside a real environment without touching it. The L lane
- * binds the RESERVED Ürün UI port 26173 — the only origin the isolated Product host is
- * expected to allow — and refuses an ambient override that disagrees rather than
- * turning it into a confusing CORS failure later.
+ * 15175, so it can run beside a real environment without touching it. The L lane binds
+ * the RESERVED Ürün UI port 26173 — the origin the gate verified — and refuses an
+ * ambient override that disagrees.
  */
 export const RESERVED_UI_PORT = 26173
 export const uiPort = resolveUiPort()
@@ -36,11 +35,15 @@ function resolveUiPort(): number {
 export const origin = `http://127.0.0.1:${uiPort}`
 
 /**
- * The L lane's inputs come from the Backend's ENV_READY manifest and nowhere else. It is
- * read BEFORE the run identity is claimed, so a missing or not-ready manifest refuses
- * the run without consuming a run id, a directory or a cache location.
+ * The L lane's binding to ONE validated environment snapshot — see
+ * `manifest-validator.ts` (the consumer side of `tools/product-u01-u02/ENVIRONMENT_CONTRACT.md`).
+ * Established by the runner from `environment-ready.json`, its two fixed siblings and the
+ * Orchestrator-recorded accepted-contract hash, BEFORE the C010 run identity is claimed,
+ * so a wrong, stale, edited or missing tuple consumes no run id, directory, cache, web
+ * server or browser. Members (the Vite web server, workers) only join and re-hash.
  */
-export const liveManifest: ProductEnvironmentManifest | null = lane === 'L' ? readProductManifest() : null
+export const liveBinding: LiveBinding | null =
+  lane === 'L' ? (process.env[BINDING_ENV] ? joinLiveBinding(process.env) : establishLiveBinding(process.env, repo, origin)) : null
 
 /**
  * Run identity — the C010 ownership module, REUSED rather than re-written: one
