@@ -1,23 +1,32 @@
 /**
  * U-01 Ürünler — list, pinned to `GET /api/v1/products` (`ProductPage`).
  *
- * COLUMN SET. Narrower than §8.2 asks for, and deliberately so: the published
- * `ProductDraftView` carries `groupId/classId/familyId` as IDS, and carries no
- * primary stock unit, no per-area completeness and no alias/match information.
- * Resolving ids to labels in the browser would be the client fan-out §19.5 forbids,
- * and inventing the rest is the fabricated summary §9 forbids. So the screen shows
- * what the contract gives, SAYS that it is narrower, and the gap stays open with
- * the contract owner rather than being papered over.
+ * The projection now carries server-resolved `labels` {group, class, family,
+ * primaryStockUnit} and `completeness` on every row, so the columns §8.2 asks for
+ * are real rather than derived: the client never resolves a UUID itself, which is
+ * the fan-out §19.5 forbids.
  *
- * Forbidden here and absent: stock quantity, price, package instances, lot/label
- * values, supplier part codes, recipes, AI.
+ * Filters and ordering are the contract's own vocabulary — distinct roles combined
+ * by `roleMatch`, `sort` over code/name/updatedAtUtc with a direction, and a
+ * completeness filter. Nothing here invents a semantics the server does not define.
+ *
+ * Forbidden and absent, per §3/§9: stock quantity, price, package instances,
+ * lot/label values, supplier part codes, recipes, AI.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'
-import { fetchProducts, type LifecycleFilter } from './api'
 import {
+  fetchProducts,
+  type CompletenessFilter,
+  type LifecycleFilter,
+  type ProductSort,
+  type RoleMatch,
+  type SortDirection,
+} from './api'
+import {
+  COMPLETENESS_EVALUATION,
   PRODUCT_LIFECYCLE,
   PRODUCT_PROBLEM_CODE,
   PRODUCT_ROLE,
@@ -27,9 +36,13 @@ import {
   type ProductRoleName,
 } from './contract'
 import {
+  COMPLETENESS_LABEL,
+  COMPLETENESS_UNKNOWN_LABEL,
   LIFECYCLE_LABEL,
   PRODUCT_LIST_TEXT,
   ROLE_LABEL,
+  UNASSIGNED,
+  labelOrUnavailable,
   lifecycleLabel,
   rolesText,
 } from './productText'
@@ -64,18 +77,43 @@ const LIFECYCLE_FILTER_LABEL: Record<LifecycleFilter, string> = {
   Inactive: LIFECYCLE_LABEL.Inactive,
 }
 
+const COMPLETENESS_FILTER_OPTIONS: readonly CompletenessFilter[] = [
+  'all',
+  ...COMPLETENESS_EVALUATION,
+]
+
+const COMPLETENESS_FILTER_LABEL: Record<CompletenessFilter, string> = {
+  all: 'Hepsi',
+  Complete: COMPLETENESS_LABEL.Complete,
+  Incomplete: COMPLETENESS_LABEL.Incomplete,
+  NotEvaluated: COMPLETENESS_LABEL.NotEvaluated,
+}
+
+const SORT_LABEL: Record<ProductSort, string> = {
+  code: 'Kod',
+  name: 'Ad',
+  updatedAtUtc: 'Son değişiklik',
+}
+
 /**
  * The filters the user has applied, in their own words.
  *
  * A filter the user cannot see is a filter they cannot undo — and the most likely
  * cause of an unexpectedly empty list is a lifecycle or role filter set two screens
- * ago.
+ * ago. Sort is not listed: it is not a filter.
  */
 function activeFilterLabels(view: ProductListView): string[] {
   const labels: string[] = []
   if (view.q.trim().length > 0) labels.push(`Arama: “${view.q.trim()}”`)
   if (view.lifecycle !== 'all') labels.push(`Durum: ${LIFECYCLE_FILTER_LABEL[view.lifecycle]}`)
-  if (view.role !== '') labels.push(`Rol: ${ROLE_LABEL[view.role]}`)
+  if (view.roles.length > 0) {
+    const names = view.roles.map((role) => ROLE_LABEL[role]).join(', ')
+    const match = view.roleMatch === 'all' ? PRODUCT_LIST_TEXT.roleAll : PRODUCT_LIST_TEXT.roleAny
+    labels.push(`Rol (${match.toLocaleLowerCase('tr')}): ${names}`)
+  }
+  if (view.completeness !== 'all') {
+    labels.push(`Tamlık: ${COMPLETENESS_FILTER_LABEL[view.completeness]}`)
+  }
   return labels
 }
 
@@ -98,7 +136,11 @@ function ProductList({ namespace }: { readonly namespace: string | null }) {
   const [restored] = useState<ProductListView>(() => readProductListView(namespace))
   const [q, setQ] = useState(restored.q)
   const [lifecycle, setLifecycle] = useState<LifecycleFilter>(restored.lifecycle)
-  const [role, setRole] = useState<ProductRoleName | ''>(restored.role)
+  const [roles, setRoles] = useState<readonly ProductRoleName[]>(restored.roles)
+  const [roleMatch, setRoleMatch] = useState<RoleMatch>(restored.roleMatch)
+  const [completeness, setCompleteness] = useState<CompletenessFilter>(restored.completeness)
+  const [sort, setSort] = useState<ProductSort>(restored.sort)
+  const [direction, setDirection] = useState<SortDirection>(restored.direction)
   const [pageSize, setPageSize] = useState<number>(restored.pageSize)
   const [cursor, setCursor] = useState<string | undefined>(undefined)
   const [loaded, setLoaded] = useState<readonly ProductCore[]>([])
@@ -117,8 +159,8 @@ function ProductList({ namespace }: { readonly namespace: string | null }) {
   const entryGeneration = shell.routeEntryGeneration
 
   const view: ProductListView = useMemo(
-    () => ({ q, lifecycle, role, pageSize }),
-    [q, lifecycle, role, pageSize],
+    () => ({ q, lifecycle, roles, roleMatch, completeness, sort, direction, pageSize }),
+    [q, lifecycle, roles, roleMatch, completeness, sort, direction, pageSize],
   )
   const filterActive = isFiltered(view)
   const filterLabels = useMemo(() => activeFilterLabels(view), [view])
@@ -128,11 +170,21 @@ function ProductList({ namespace }: { readonly namespace: string | null }) {
   }, [namespace, view])
 
   /**
-   * §8.1: a cursor is bound to the query that produced it, so a filter change drops
-   * it — and the accumulated rows with it, since they were read under the previous
-   * query. Held in STATE, not a ref: a ref read during render breaks render purity.
+   * A cursor is bound to the query that produced it, so ANY query change — filter
+   * or ordering — drops it, and the accumulated rows with it: they were read under
+   * the previous query and the server's ordering key may have changed underneath
+   * them. Held in STATE, not a ref: a ref read during render breaks render purity.
    */
-  const queryShape = JSON.stringify([q, lifecycle, role, pageSize])
+  const queryShape = JSON.stringify([
+    q,
+    lifecycle,
+    roles,
+    roleMatch,
+    completeness,
+    sort,
+    direction,
+    pageSize,
+  ])
   const [previousShape, setPreviousShape] = useState(queryShape)
   if (previousShape !== queryShape) {
     setPreviousShape(queryShape)
@@ -154,7 +206,17 @@ function ProductList({ namespace }: { readonly namespace: string | null }) {
       // SAB-001: security bindings captured BEFORE the request starts.
       const snapshot = boundary.capture()
       const outcome = await fetchProducts(
-        { q, lifecycle, role: role === '' ? undefined : role, pageSize, cursor },
+        {
+          q,
+          lifecycle,
+          roles: roles.length > 0 ? roles : undefined,
+          roleMatch: roles.length > 0 ? roleMatch : undefined,
+          completeness,
+          sort,
+          direction,
+          pageSize,
+          cursor,
+        },
         signal,
       )
       if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
@@ -197,8 +259,8 @@ function ProductList({ namespace }: { readonly namespace: string | null }) {
   const problemCode =
     outcome !== undefined && outcome.type === 'http' ? productProblemCodeOf(outcome.body) : null
 
-  // §8.3: a FIRST-page failure is a full error state; a NEXT-page failure keeps the
-  // rows already on screen.
+  // A FIRST-page failure is a full error state; a NEXT-page failure keeps the rows
+  // already on screen.
   const nextPageFailed =
     cursor !== undefined && outcome !== undefined && outcome.type !== 'ok-single'
 
@@ -221,11 +283,19 @@ function ProductList({ namespace }: { readonly namespace: string | null }) {
     void query.refetch()
   }
 
+  function toggleRole(role: ProductRoleName) {
+    setRoles((current) =>
+      current.includes(role) ? current.filter((name) => name !== role) : [...current, role],
+    )
+  }
+
   function clearAll() {
     const next = clearedFilters(view)
     setQ(next.q)
     setLifecycle(next.lifecycle)
-    setRole(next.role)
+    setRoles(next.roles)
+    setRoleMatch(next.roleMatch)
+    setCompleteness(next.completeness)
     searchRef.current?.focus()
   }
 
@@ -251,8 +321,6 @@ function ProductList({ namespace }: { readonly namespace: string | null }) {
     )
   }
 
-  const showRows = rows.length > 0
-
   return (
     <section className={styles.page} aria-labelledby="product-list-heading">
       <header className={styles.header}>
@@ -261,7 +329,6 @@ function ProductList({ namespace }: { readonly namespace: string | null }) {
             {PRODUCT_LIST_TEXT.title}
           </h1>
           <p className={styles.scopeNote}>{PRODUCT_LIST_TEXT.scopeNote}</p>
-          <p className={styles.scopeNote}>{PRODUCT_LIST_TEXT.projectionNote}</p>
         </div>
         {canCreate ? (
           <Link
@@ -305,29 +372,80 @@ function ProductList({ namespace }: { readonly namespace: string | null }) {
           </select>
         </div>
 
-        {/*
-          ONE role. `ProductListQuery.Role` is a single value and there is no
-          `roleMatch`, so a multi-select with any/all semantics would be a meaning
-          this screen invented. The hint says what the filter actually does.
-        */}
-        <div className={styles.field}>
-          <label htmlFor="product-role">{PRODUCT_LIST_TEXT.roleLabel}</label>
-          <select
-            id="product-role"
-            value={role}
-            aria-describedby="product-role-hint"
-            onChange={(event) => setRole(event.target.value as ProductRoleName | '')}
-          >
-            <option value="">{PRODUCT_LIST_TEXT.roleAll}</option>
-            {PRODUCT_ROLE.map((name) => (
-              <option key={name} value={name}>
-                {ROLE_LABEL[name]}
-              </option>
-            ))}
-          </select>
+        <fieldset className={styles.roleFilter}>
+          <legend>{PRODUCT_LIST_TEXT.rolesLabel}</legend>
+          {PRODUCT_ROLE.map((role) => (
+            <label key={role} className={styles.checkbox}>
+              <input
+                type="checkbox"
+                checked={roles.includes(role)}
+                onChange={() => toggleRole(role)}
+              />
+              {ROLE_LABEL[role]}
+            </label>
+          ))}
+          {/*
+            any/all is EXPLICIT, because the two readings return different products
+            the moment a second role is ticked — and because the contract defines
+            both, the screen is not inventing the choice.
+          */}
+          <div className={styles.field}>
+            <label htmlFor="product-role-match">{PRODUCT_LIST_TEXT.roleMatchLabel}</label>
+            <select
+              id="product-role-match"
+              value={roleMatch}
+              aria-describedby="product-role-hint"
+              onChange={(event) => setRoleMatch(event.target.value as RoleMatch)}
+            >
+              <option value="any">{PRODUCT_LIST_TEXT.roleAny}</option>
+              <option value="all">{PRODUCT_LIST_TEXT.roleAll}</option>
+            </select>
+          </div>
           <p id="product-role-hint" className={styles.hint}>
             {PRODUCT_LIST_TEXT.roleHint}
           </p>
+        </fieldset>
+
+        <div className={styles.field}>
+          <label htmlFor="product-completeness">{PRODUCT_LIST_TEXT.completenessLabel}</label>
+          <select
+            id="product-completeness"
+            value={completeness}
+            onChange={(event) => setCompleteness(event.target.value as CompletenessFilter)}
+          >
+            {COMPLETENESS_FILTER_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {COMPLETENESS_FILTER_LABEL[option]}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className={styles.field}>
+          <label htmlFor="product-sort">{PRODUCT_LIST_TEXT.sortLabel}</label>
+          <select
+            id="product-sort"
+            value={sort}
+            onChange={(event) => setSort(event.target.value as ProductSort)}
+          >
+            {(Object.keys(SORT_LABEL) as ProductSort[]).map((option) => (
+              <option key={option} value={option}>
+                {SORT_LABEL[option]}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className={styles.field}>
+          <label htmlFor="product-direction">{PRODUCT_LIST_TEXT.directionLabel}</label>
+          <select
+            id="product-direction"
+            value={direction}
+            onChange={(event) => setDirection(event.target.value as SortDirection)}
+          >
+            <option value="asc">{PRODUCT_LIST_TEXT.directionAsc}</option>
+            <option value="desc">{PRODUCT_LIST_TEXT.directionDesc}</option>
+          </select>
         </div>
 
         <div className={styles.field}>
@@ -359,19 +477,22 @@ function ProductList({ namespace }: { readonly namespace: string | null }) {
         </p>
       ) : null}
 
-      {!showRows ? (
+      {rows.length === 0 ? (
         <StateBlock state={state} subject="ürün" onRetry={() => void query.refetch()} />
       ) : (
         <>
           <table className={styles.table}>
-            {/* No total: `ProductPage` publishes none, so the caption says what is shown. */}
+            {/* No total: `ProductPage` advertises none, so the caption says what is shown. */}
             <caption className={styles.caption}>{PRODUCT_LIST_TEXT.shown(rows.length)}</caption>
             <thead>
               <tr>
                 <th scope="col">{PRODUCT_LIST_TEXT.columns.code}</th>
                 <th scope="col">{PRODUCT_LIST_TEXT.columns.name}</th>
+                <th scope="col">{PRODUCT_LIST_TEXT.columns.classification}</th>
                 <th scope="col">{PRODUCT_LIST_TEXT.columns.roles}</th>
+                <th scope="col">{PRODUCT_LIST_TEXT.columns.stockUnit}</th>
                 <th scope="col">{PRODUCT_LIST_TEXT.columns.lifecycle}</th>
+                <th scope="col">{PRODUCT_LIST_TEXT.columns.completeness}</th>
                 <th scope="col">{PRODUCT_LIST_TEXT.columns.updatedAt}</th>
               </tr>
             </thead>
@@ -392,7 +513,19 @@ function ProductList({ namespace }: { readonly namespace: string | null }) {
                     )}
                   </td>
                   <td>{item.name}</td>
+                  {/*
+                    Server-resolved labels. A null label on a product that HAS the id
+                    means the catalogue could not be read — a different fact from
+                    "nothing assigned", and said differently.
+                  */}
+                  <td data-testid={`product-class-${item.id}`}>
+                    {labelOrUnavailable(item.labels.class, item.classId)}
+                    {item.familyId !== null || item.labels.family !== null
+                      ? ` / ${labelOrUnavailable(item.labels.family, item.familyId)}`
+                      : ''}
+                  </td>
                   <td>{rolesText(item.roles)}</td>
+                  <td>{item.labels.primaryStockUnit ?? UNASSIGNED}</td>
                   <td>
                     <span
                       className={styles.badge}
@@ -400,6 +533,11 @@ function ProductList({ namespace }: { readonly namespace: string | null }) {
                     >
                       {lifecycleLabel(item.lifecycle)}
                     </span>
+                  </td>
+                  <td data-testid={`product-completeness-${item.id}`}>
+                    {item.completeness.evaluation === null
+                      ? `${COMPLETENESS_UNKNOWN_LABEL}: ${item.completeness.rawEvaluation}`
+                      : COMPLETENESS_LABEL[item.completeness.evaluation]}
                   </td>
                   <td>{formatInstant(item.updatedAtUtc)}</td>
                 </tr>
@@ -420,7 +558,7 @@ function ProductList({ namespace }: { readonly namespace: string | null }) {
             </div>
           ) : null}
 
-          {/* `nextCursor !== null` is the only "there is more" signal the page has. */}
+          {/* `nextCursor !== null` is the only continuation signal the page has. */}
           {page?.nextCursor !== null && page?.nextCursor !== undefined && !nextPageFailed ? (
             <button
               type="button"

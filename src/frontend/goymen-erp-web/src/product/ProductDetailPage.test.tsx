@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import { PRODUCT_CAPABILITY } from './capabilities'
 import {
+  CLASS_FLAT,
   FAMILY_FLAT,
   PRODUCT_1,
   installFetch,
@@ -122,7 +123,13 @@ describe('completeness', () => {
     installFetch({
       capabilities: DETAIL_ONLY,
       onCard: () =>
-        json(productCard({ completeness: { evaluation: 'NotEvaluated', missingFields: [] } })),
+        json(
+          productCard({
+            product: productCore({
+              completeness: { evaluation: 'NotEvaluated', missingFields: [] },
+            }),
+          }),
+        ),
     })
     renderProductApp(PATH)
 
@@ -134,7 +141,12 @@ describe('completeness', () => {
   it('names an unknown evaluation token instead of coercing it', async () => {
     installFetch({
       capabilities: DETAIL_ONLY,
-      onCard: () => json(productCard({ completeness: { evaluation: 'Partial', missingFields: [] } })),
+      onCard: () =>
+        json(
+          productCard({
+            product: productCore({ completeness: { evaluation: 'Partial', missingFields: [] } }),
+          }),
+        ),
     })
     renderProductApp(PATH)
 
@@ -172,14 +184,48 @@ describe('references', () => {
     expect(screen.getByTestId('product-unit-production').textContent).toBe('atanmadı')
   })
 
-  it('says why reference ids are shown as ids', async () => {
-    // No catalogue read is published, and guessing a label would be client fan-out.
+  it('shows the SERVER-resolved labels, never a client lookup', async () => {
     installFetch({ capabilities: DETAIL_ONLY })
     renderProductApp(PATH)
 
     await cardVisible()
-    expect(screen.getByText(/görünen adları için henüz bir katalog okuması yayımlanmadı/)).toBeTruthy()
-    expect(screen.getByText(/bu sürümde sunulmuyor/)).toBeTruthy()
+    expect(screen.getByTestId('product-group').textContent).toBe('Sac')
+    expect(screen.getByTestId('product-primary-stock-unit').textContent).toBe('kg')
+    // Nothing assigned reads as "atanmadı".
+    expect(screen.getByTestId('product-class').textContent).toBe('atanmadı')
+  })
+
+  it('separates "nothing assigned" from "label could not be read"', async () => {
+    /**
+     * README makes a null label with a present id a DIFFERENT fact from a null id:
+     * one says nobody chose, the other says the catalogue could not be resolved.
+     * Printing one dash for both would hide a broken catalogue behind an empty field.
+     */
+    installFetch({
+      capabilities: DETAIL_ONLY,
+      onCard: () =>
+        json(
+          productCard({
+            product: productCore({
+              classId: CLASS_FLAT,
+              labels: { group: 'Sac', class: null, family: null, primaryStockUnit: 'kg' },
+            }),
+          }),
+        ),
+    })
+    renderProductApp(PATH)
+
+    await cardVisible()
+    expect(screen.getByTestId('product-class').textContent).toBe('ad okunamadı')
+    expect(screen.getByTestId('product-family').textContent).toBe('atanmadı')
+  })
+
+  it('says which editors are still out of scope', async () => {
+    installFetch({ capabilities: DETAIL_ONLY })
+    renderProductApp(PATH)
+
+    await cardVisible()
+    expect(screen.getByText(/sonraki dilimde aile bazlı tamlık/)).toBeTruthy()
   })
 })
 

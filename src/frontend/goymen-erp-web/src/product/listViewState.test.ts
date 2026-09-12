@@ -34,7 +34,7 @@ describe('isFiltered', () => {
     expect(isFiltered({ ...DEFAULT_PRODUCT_LIST_VIEW, q: '  ' })).toBe(false)
     expect(isFiltered({ ...DEFAULT_PRODUCT_LIST_VIEW, q: 'sac' })).toBe(true)
     expect(isFiltered({ ...DEFAULT_PRODUCT_LIST_VIEW, lifecycle: 'Draft' })).toBe(true)
-    expect(isFiltered({ ...DEFAULT_PRODUCT_LIST_VIEW, role: 'sellable' })).toBe(true)
+    expect(isFiltered({ ...DEFAULT_PRODUCT_LIST_VIEW, roles: ['sellable'] })).toBe(true)
   })
 
   it('does not count page size — it changes how many, never which', () => {
@@ -48,12 +48,12 @@ describe('clearedFilters', () => {
       ...DEFAULT_PRODUCT_LIST_VIEW,
       q: 'sac',
       lifecycle: 'Inactive',
-      role: 'purchasable',
+      roles: ['purchasable'],
       pageSize: 100,
     })
     expect(cleared.q).toBe('')
     expect(cleared.lifecycle).toBe('all')
-    expect(cleared.role).toBe('')
+    expect(cleared.roles).toEqual([])
     // Page size is not a filter; resetting it would undo a choice the user did not
     // ask to undo.
     expect(cleared.pageSize).toBe(100)

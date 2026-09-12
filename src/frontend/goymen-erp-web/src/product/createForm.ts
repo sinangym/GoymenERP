@@ -7,14 +7,12 @@
  * WHAT THE FORM OFFERS, and what it deliberately does not:
  *  - `name` and `groupId` are the create minimum the contract states, and the group
  *    comes from `GET /products/code-groups` — never typed;
- *  - `classId` / `familyId` are accepted by the request and validated against
- *    `IProductReferenceCatalog`, but the contract publishes NO read that would let
- *    this screen offer a valid one. §19.3 forbids the client producing a reference,
- *    so the fields are absent rather than free text. Reported as gap 1 of the
- *    contract review; they return when a class/family read exists;
- *  - `references` (template, attributes, units, trackingPolicyId) are all UUIDs
- *    into catalogues with no read either, and the source rejects supplied
- *    references when the catalogue cannot resolve them. The first slice sends none;
+ *  - `classId` / `familyId` come from `GET /products/reference-options`, scoped to
+ *    the chosen group. They are CHOSEN, never typed: §19.3 forbids the client
+ *    producing a reference;
+ *  - `references` (template, attributes, units, trackingPolicyId) are NOT offered.
+ *    §19.6 and the coordinator keep attribute/unit completeness in the next slice,
+ *    so opening them here would pull an unfinished decision forward;
  *  - roles ARE offered, because their vocabulary is fully defined by the contract.
  */
 
@@ -45,6 +43,10 @@ export interface CreateFormValues {
   readonly name: string
   /** A code-group id from `GET /products/code-groups`. `''` means nothing chosen. */
   readonly groupId: string
+  /** A class id from `reference-options`. `''` means none — a valid Draft state. */
+  readonly classId: string
+  /** A family id from `reference-options`. `''` means none. */
+  readonly familyId: string
   readonly roles: CreateFormRoles
 }
 
@@ -58,6 +60,8 @@ export interface CreateFormValues {
 export const CREATE_FIELD = {
   name: 'name',
   groupId: 'groupId',
+  classId: 'classId',
+  familyId: 'familyId',
   roles: 'roles',
 } as const
 
@@ -67,12 +71,16 @@ export type CreateFieldId = (typeof CREATE_FIELD)[keyof typeof CREATE_FIELD]
 export const CREATE_FIELD_ORDER: readonly CreateFieldId[] = [
   CREATE_FIELD.name,
   CREATE_FIELD.groupId,
+  CREATE_FIELD.classId,
+  CREATE_FIELD.familyId,
   CREATE_FIELD.roles,
 ]
 
 export const CREATE_FIELD_LABEL: Record<CreateFieldId, string> = {
   [CREATE_FIELD.name]: PRODUCT_CREATE_TEXT.nameLabel,
   [CREATE_FIELD.groupId]: PRODUCT_CREATE_TEXT.groupLabel,
+  [CREATE_FIELD.classId]: PRODUCT_CREATE_TEXT.classLabel,
+  [CREATE_FIELD.familyId]: PRODUCT_CREATE_TEXT.familyLabel,
   [CREATE_FIELD.roles]: PRODUCT_CREATE_TEXT.rolesLabel,
 }
 
@@ -92,6 +100,8 @@ const EMPTY_ROLES: CreateFormRoles = {
 export const EMPTY_CREATE_FORM: CreateFormValues = {
   name: '',
   groupId: '',
+  classId: '',
+  familyId: '',
   roles: EMPTY_ROLES,
 }
 
@@ -100,6 +110,8 @@ export function isCreateFormPristine(values: CreateFormValues): boolean {
   return (
     values.name === '' &&
     values.groupId === '' &&
+    values.classId === '' &&
+    values.familyId === '' &&
     PRODUCT_ROLE.every((role) => values.roles[role] === 'unset')
   )
 }
@@ -115,6 +127,8 @@ export function isCreateFormPristine(values: CreateFormValues): boolean {
 export function validateCreateForm(
   values: CreateFormValues,
   availableGroupIds: readonly string[],
+  availableClassIds: readonly string[] = [],
+  availableFamilyIds: readonly string[] = [],
 ): CreateFormValidation {
   const errors: CreateFormErrors = {}
 
@@ -134,6 +148,20 @@ export function validateCreateForm(
   }
 
   /**
+   * MISSING is fine; INVALID is not. §19.3 draws exactly this line: "Draft'ta
+   * tamamlanmamış referans boş kalabilir; gönderilmiş bilinmeyen/uyumsuz referans
+   * reddedilir." An unchosen class is an incomplete Draft, which is allowed; a class
+   * that is not on the server's list is a reference this client must not send —
+   * including one remembered after the options changed under it.
+   */
+  if (values.classId !== '' && !availableClassIds.includes(values.classId)) {
+    errors.classId = PRODUCT_CREATE_TEXT.validation.classUnknown
+  }
+  if (values.familyId !== '' && !availableFamilyIds.includes(values.familyId)) {
+    errors.familyId = PRODUCT_CREATE_TEXT.validation.familyUnknown
+  }
+
+  /**
    * NO role is required. DEC-PRD-001 makes roles independent of the group, and a
    * Draft may be saved incomplete — requiring one would move an activation-time
    * check onto the save, which §6.2 keeps separate.
@@ -147,6 +175,10 @@ export function validateCreateForm(
     payload: {
       name,
       groupId: values.groupId,
+      // ABSENT rather than null when nothing was chosen: both are optional in the
+      // request, and omitting claims less than sending an explicit null.
+      ...(values.classId !== '' ? { classId: values.classId } : {}),
+      ...(values.familyId !== '' ? { familyId: values.familyId } : {}),
       // Omitted entirely when nothing was answered: the source treats an absent
       // `Roles` and an all-not-evaluated one identically, and absent claims less.
       ...(Object.keys(roles).length > 0 ? { roles } : {}),

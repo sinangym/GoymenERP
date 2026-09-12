@@ -3,11 +3,12 @@
  *
  * ┌─ CONTRACT STATUS ──────────────────────────────────────────────────────────┐
  * │ PINNED. Aligned to the published Product backend contract at               │
- * │ `codex/urun-u01-u02-backend-20260912` @ `3a7f2f8`:                          │
+ * │ `codex/urun-u01-u02-backend-20260912` @ `cb75e2f`:                          │
  * │   src/backend/Modules/Product/README.md                                    │
  * │   …/Application/Contracts/ProductDraftContractsV1.cs                       │
  * │   …/Application/Contracts/IProductService.cs                               │
- * │   …/Api/ProductEndpoints.cs                                                │
+ * │   …/Application/Contracts/ProductFieldCodesV1.cs                           │
+ * │   src/backend/GoymenERP.Api/Endpoints/ProductEndpoints.cs                  │
  * │                                                                            │
  * │ Every name below now comes from that source, not from the business spec.   │
  * │ Where the two differ the SOURCE wins and the difference is noted; where     │
@@ -40,7 +41,7 @@ import {
  */
 export const PRODUCT_CONTRACT_STATUS = 'PINNED' as const
 export const PRODUCT_CONTRACT_SOURCE =
-  'Product backend contract v1 (PR #237, 3a7f2f8): README.md + ProductDraftContractsV1.cs + IProductService.cs + ProductEndpoints.cs'
+  'Product backend contract v1 (PR #237, cb75e2f): README.md + ProductDraftContractsV1.cs + IProductService.cs + ProductFieldCodesV1.cs + Endpoints/ProductEndpoints.cs'
 
 /* ── Lifecycle ────────────────────────────────────────────────────────────── */
 
@@ -205,17 +206,167 @@ export function decodeCodeGroupList(raw: unknown): readonly ProductCodeGroup[] |
   return out
 }
 
+/* ── Reference options (GET /products/reference-options) ──────────────────── */
+
+/** `ProductReferenceOption(Guid Id, string DisplayName)`. */
+export interface ProductReferenceOption {
+  readonly id: string
+  readonly displayName: string
+}
+
+/**
+ * The catalogues `ProductReferenceOptions` can report as unavailable.
+ *
+ * README draws the line this list exists for: "An unavailable catalogue is
+ * different from a valid empty catalogue and must not produce made-up choices." So
+ * the screen treats them as two separate states — an unavailable catalogue hides
+ * its field and says why, an empty one shows the field and says it is empty.
+ * Rendering both the same way would present "nothing defined yet" for something we
+ * simply could not read.
+ */
+export const REFERENCE_CATALOG = [
+  'classes',
+  'families',
+  'units',
+  'trackingPolicies',
+  'templates',
+] as const
+export type ReferenceCatalog = (typeof REFERENCE_CATALOG)[number]
+
+export interface ProductReferenceOptions {
+  readonly groupId: string
+  readonly classId: string | null
+  readonly classes: readonly ProductReferenceOption[]
+  readonly families: readonly ProductReferenceOption[]
+  readonly unavailableCatalogs: readonly ReferenceCatalog[]
+}
+
+function decodeOption(raw: unknown): ProductReferenceOption | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const o = raw as Record<string, unknown>
+  if (!isBoundUuid(o.id)) return null
+  // A catalogue display name is human text and stays Unicode.
+  if (!isNonEmptyString(o.displayName, 200)) return null
+  return { id: o.id, displayName: o.displayName }
+}
+
+function decodeOptionList(raw: unknown): readonly ProductReferenceOption[] | null {
+  if (!Array.isArray(raw)) return null
+  const out: ProductReferenceOption[] = []
+  const seen = new Set<string>()
+  for (const entry of raw) {
+    const option = decodeOption(entry)
+    if (option === null) return null
+    // A duplicate id would render twice and make the selection ambiguous.
+    if (seen.has(option.id)) return null
+    seen.add(option.id)
+    out.push(option)
+  }
+  return out
+}
+
+/**
+ * Decode the reference options, bound to the group they were requested for.
+ *
+ * Only `classes` and `families` are modelled: this slice offers class and family,
+ * which are first-class members of `CreateProductDraftRequest`. Units, templates
+ * and tracking policies belong to the `references` block, which §19.6 and the
+ * coordinator keep in the NEXT slice — decoding options this screen cannot use
+ * would be carrying weight for a feature that is not here.
+ */
+export function decodeReferenceOptions(
+  raw: unknown,
+  expectedGroupId: string,
+): ProductReferenceOptions | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const o = raw as Record<string, unknown>
+  if (!isBoundUuid(o.groupId)) return null
+  // Options for another group would offer choices the create would then reject.
+  if (o.groupId !== expectedGroupId) return null
+  if (o.classId !== null && o.classId !== undefined && !isBoundUuid(o.classId)) return null
+
+  const classes = decodeOptionList(o.classes)
+  if (classes === null) return null
+  const families = decodeOptionList(o.families)
+  if (families === null) return null
+
+  if (!Array.isArray(o.unavailableCatalogs)) return null
+  const unavailable: ReferenceCatalog[] = []
+  for (const entry of o.unavailableCatalogs) {
+    if (typeof entry !== 'string') return null
+    // An unknown catalogue name is drift: we would not know which field to close.
+    if (!(REFERENCE_CATALOG as readonly string[]).includes(entry)) return null
+    const catalog = entry as ReferenceCatalog
+    if (!unavailable.includes(catalog)) unavailable.push(catalog)
+  }
+
+  return {
+    groupId: o.groupId,
+    classId: (o.classId as string | null) ?? null,
+    classes,
+    families,
+    unavailableCatalogs: unavailable,
+  }
+}
+
+/** Whether a catalogue could not be read — distinct from it being empty. */
+export function isCatalogUnavailable(
+  options: ProductReferenceOptions | null,
+  catalog: ReferenceCatalog,
+): boolean {
+  return options !== null && options.unavailableCatalogs.includes(catalog)
+}
+
+/* ── Reference labels (ProductReferenceLabels) ────────────────────────────── */
+
+/**
+ * Server-resolved display names for the ids a product carries.
+ *
+ * README: nullable "when no value or unavailable source exists" — and those are NOT
+ * the same fact. A null label on a product that HAS the id means the catalogue
+ * could not be read; a null id means nothing is assigned. The screen keeps them
+ * apart rather than printing one dash for both.
+ *
+ * These exist so the client never fans a UUID out into another module's read.
+ */
+export interface ProductReferenceLabels {
+  readonly group: string | null
+  readonly class: string | null
+  readonly family: string | null
+  readonly primaryStockUnit: string | null
+}
+
+const LABEL_KEYS = ['group', 'class', 'family', 'primaryStockUnit'] as const
+
+function decodeLabels(raw: unknown): ProductReferenceLabels | null {
+  if (raw === null || raw === undefined) {
+    return { group: null, class: null, family: null, primaryStockUnit: null }
+  }
+  if (typeof raw !== 'object') return null
+  const source = raw as Record<string, unknown>
+  const out: Partial<Record<(typeof LABEL_KEYS)[number], string | null>> = {}
+  for (const key of LABEL_KEYS) {
+    const value = source[key]
+    if (value === undefined || value === null) out[key] = null
+    // Human text a catalogue owner maintains: bounded, but not held to the
+    // machine-token alphabet — that would make this client stricter than the source.
+    else if (isNonEmptyString(value, 200)) out[key] = value
+    else return null
+  }
+  return out as ProductReferenceLabels
+}
+
 /* ── Product core (ProductDraftView) ──────────────────────────────────────── */
 
 /**
  * The product core, shared by list items and the card (README: "list items use the
  * same product core").
  *
- * DELIBERATELY ABSENT, because the source does not carry them: display names for
- * group/class/family, a primary stock unit, per-area completeness, alias/match
- * information. Resolving ids to labels in the browser would be the client fan-out
- * §19.5 forbids, and inventing the rest would be the fabricated summary §9 forbids.
- * The gap is reported to the contract owner, not filled here.
+ * `labels` and `completeness` travel with EVERY projection (list rows included), so
+ * the client never resolves an id itself — which is the fan-out §19.5 forbids.
+ *
+ * Still absent because the source carries none: alias/match information. Not
+ * invented here.
  */
 export interface ProductCore {
   readonly id: string
@@ -230,6 +381,13 @@ export interface ProductCore {
   readonly version: string
   readonly createdAtUtc: string
   readonly updatedAtUtc: string
+  readonly labels: ProductReferenceLabels
+  /**
+   * The server's own verdict. `ProductCardView.Completeness` is a compatibility
+   * projection OF THIS value, not a second calculation, so this is the one the
+   * screen reads — if the two ever disagree, the product's is the truth.
+   */
+  readonly completeness: ProductCompleteness
 }
 
 function decodeCore(raw: unknown): ProductCore | null {
@@ -250,6 +408,10 @@ function decodeCore(raw: unknown): ProductCore | null {
   if (roles === null) return null
   const lifecycle = decodeLifecycle(p.lifecycle)
   if (lifecycle === null) return null
+  const labels = decodeLabels(p.labels)
+  if (labels === null) return null
+  const completeness = decodeCompleteness(p.completeness)
+  if (completeness === null) return null
 
   return {
     id: p.id,
@@ -263,6 +425,8 @@ function decodeCore(raw: unknown): ProductCore | null {
     version: p.version,
     createdAtUtc: p.createdAtUtc,
     updatedAtUtc: p.updatedAtUtc,
+    labels,
+    completeness,
   }
 }
 
@@ -411,7 +575,6 @@ export function isComplete(completeness: ProductCompleteness): boolean {
 export interface ProductCard {
   readonly product: ProductCore
   readonly references: ProductReferences
-  readonly completeness: ProductCompleteness
 }
 
 /** Decode a card, bound to the id that was requested. */
@@ -428,9 +591,13 @@ export function decodeProductCard(raw: unknown, expectedId: string): ProductCard
   if (product.id !== expectedId) return null
   const references = decodeReferences(c.references)
   if (references === null) return null
-  const completeness = decodeCompleteness(c.completeness)
-  if (completeness === null) return null
-  return { product, references, completeness }
+  /**
+   * `card.completeness` is deliberately NOT read. The source makes it a computed
+   * projection of `product.completeness`, so requiring it would let a serializer
+   * detail become a decode failure — and reading it would give two places for the
+   * same fact to disagree.
+   */
+  return { product, references }
 }
 
 /* ── Page (ProductPage) ───────────────────────────────────────────────────── */
@@ -585,6 +752,30 @@ export interface ProductFieldError {
   readonly field: string
   readonly code: string
 }
+
+/**
+ * `ProductFieldCodesV1.All` — the closed v1 set, verbatim.
+ *
+ * Listed so the Turkish mapping can be asserted complete in a test: a code the
+ * server can send but this build has no sentence for would silently fall back to
+ * the generic one, which is exactly the drift the list makes visible.
+ */
+export const PRODUCT_FIELD_CODE = [
+  'invalid_name',
+  'invalid_role_provenance',
+  'invalid_reference',
+  'invalid_code_prefix',
+  'template_pair_required',
+  'explicit_attribute_change_required',
+  'null_not_allowed',
+  'required',
+  'invalid_metadata',
+  'invalid_reason',
+  'invalid_version',
+  'derived_role_readonly',
+  'template_required',
+] as const
+export type ProductFieldCode = (typeof PRODUCT_FIELD_CODE)[number]
 
 export function productFieldErrorsOf(raw: unknown): readonly ProductFieldError[] {
   if (typeof raw !== 'object' || raw === null) return []

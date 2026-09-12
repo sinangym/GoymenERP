@@ -19,13 +19,23 @@
  */
 
 import type { ProductRoleName } from './contract'
-import type { LifecycleFilter } from './api'
+import type {
+  CompletenessFilter,
+  LifecycleFilter,
+  ProductSort,
+  RoleMatch,
+  SortDirection,
+} from './api'
 
 export interface ProductListView {
   readonly q: string
   readonly lifecycle: LifecycleFilter
-  /** ONE role, or `''` for no role filter — the query takes a single value. */
-  readonly role: ProductRoleName | ''
+  /** Distinct role names; the contract combines them by `roleMatch`. */
+  readonly roles: readonly ProductRoleName[]
+  readonly roleMatch: RoleMatch
+  readonly completeness: CompletenessFilter
+  readonly sort: ProductSort
+  readonly direction: SortDirection
   readonly pageSize: number
 }
 
@@ -38,12 +48,18 @@ export interface ProductListView {
  * who just created one arrives on this list to find it. An `Active` default would
  * hide their own new record behind a filter they did not set.
  *
- * `pageSize` 50 is the contract's own default (`ProductListQuery.PageSize = 50`).
+ * Every other default is the contract's own (`ProductListQuery`): `roleMatch` any,
+ * `sort` code, `direction` asc, `pageSize` 50. Matching them means an untouched
+ * screen asks for exactly what the server would have assumed.
  */
 export const DEFAULT_PRODUCT_LIST_VIEW: ProductListView = {
   q: '',
   lifecycle: 'all',
-  role: '',
+  roles: [],
+  roleMatch: 'any',
+  completeness: 'all',
+  sort: 'code',
+  direction: 'asc',
   pageSize: 50,
 }
 
@@ -53,21 +69,33 @@ export const PAGE_SIZE_OPTIONS: readonly number[] = [10, 25, 50, 100]
 /**
  * Whether the view narrows the list.
  *
- * `pageSize` is not a filter: it changes how many of the same matching records are
- * shown, never which match. That is why a page-size change leaves an empty result
- * reading "no records" rather than "nothing matched".
+ * Neither SORT nor PAGE SIZE is a filter: both change how the same matching records
+ * are presented, never which match. That is why a sorted-but-unfiltered empty list
+ * still reads "no records" rather than "nothing matched" — two §13 states with two
+ * different things for the user to do.
  */
 export function isFiltered(view: ProductListView): boolean {
   return (
     view.q.trim().length > 0 ||
     view.lifecycle !== DEFAULT_PRODUCT_LIST_VIEW.lifecycle ||
-    view.role !== DEFAULT_PRODUCT_LIST_VIEW.role
+    view.roles.length > 0 ||
+    view.completeness !== DEFAULT_PRODUCT_LIST_VIEW.completeness
   )
 }
 
-/** Clears every filter and keeps the page size the user chose. */
+/**
+ * Clears every filter and keeps the sort, direction and page size the user chose.
+ *
+ * None of the three is a filter, so resetting them would undo a choice the user did
+ * not ask to undo.
+ */
 export function clearedFilters(view: ProductListView): ProductListView {
-  return { ...DEFAULT_PRODUCT_LIST_VIEW, pageSize: view.pageSize }
+  return {
+    ...DEFAULT_PRODUCT_LIST_VIEW,
+    sort: view.sort,
+    direction: view.direction,
+    pageSize: view.pageSize,
+  }
 }
 
 let slot: { readonly namespace: string; readonly view: ProductListView } | null = null

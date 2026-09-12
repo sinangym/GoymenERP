@@ -13,11 +13,11 @@
  *
  * WHAT IS EDITABLE HERE, and what is not:
  *  - `name` and the manual roles. Their vocabularies are fully defined;
- *  - `classId` / `familyId` are in `ProductDraftChanges`, but no read exists that
- *    would let this screen offer a valid value (contract review gap 1). Offering
- *    only "clear" would be a destructive half-control, so neither is offered;
- *  - `references` for the same reason — every member is a UUID into a catalogue
- *    with no read;
+ *  - `classId` / `familyId`, chosen from `reference-options` scoped to the record's
+ *    group. Clearing them is legitimate — the contract lets an explicit null clear a
+ *    nullable scalar reference;
+ *  - `references` are NOT offered: §19.6 and the coordinator keep attribute/unit
+ *    completeness in the next slice;
  *  - group and code are immutable in basic edit by the contract's own statement.
  */
 
@@ -31,6 +31,9 @@ export const NAME_MAX = 250
 
 export interface EditFormValues {
   readonly name: string
+  /** `''` means no class — a real, clearable state. */
+  readonly classId: string
+  readonly familyId: string
   readonly roles: CreateFormRoles
   /** Required for a real change: one edit is visible in both Göymen companies. */
   readonly reason: string
@@ -38,6 +41,8 @@ export interface EditFormValues {
 
 export const EDIT_FIELD = {
   name: 'name',
+  classId: 'classId',
+  familyId: 'familyId',
   roles: 'roles',
   reason: 'reason',
 } as const
@@ -46,12 +51,16 @@ export type EditFieldId = (typeof EDIT_FIELD)[keyof typeof EDIT_FIELD]
 
 export const EDIT_FIELD_ORDER: readonly EditFieldId[] = [
   EDIT_FIELD.name,
+  EDIT_FIELD.classId,
+  EDIT_FIELD.familyId,
   EDIT_FIELD.roles,
   EDIT_FIELD.reason,
 ]
 
 export const EDIT_FIELD_LABEL: Record<EditFieldId, string> = {
   [EDIT_FIELD.name]: PRODUCT_EDIT_TEXT.nameLabel,
+  [EDIT_FIELD.classId]: PRODUCT_EDIT_TEXT.classLabel,
+  [EDIT_FIELD.familyId]: PRODUCT_EDIT_TEXT.familyLabel,
   [EDIT_FIELD.roles]: PRODUCT_EDIT_TEXT.rolesLabel,
   [EDIT_FIELD.reason]: PRODUCT_EDIT_TEXT.reasonLabel,
 }
@@ -92,6 +101,8 @@ export function editFormFrom(card: ProductCard): EditFormValues {
   for (const role of PRODUCT_ROLE) roles[role] = roleChoiceOf(card, role)
   return {
     name: card.product.name,
+    classId: card.product.classId ?? '',
+    familyId: card.product.familyId ?? '',
     roles,
     // Never seeded: a reason belongs to THIS change, and a carried-over one would
     // attach last week's justification to today's edit.
@@ -109,10 +120,25 @@ export function editFormFrom(card: ProductCard): EditFormValues {
  * inventing a clear-to-unevaluated operation the contract does not define.
  */
 export function changesFrom(card: ProductCard, values: EditFormValues): ProductDraftChanges {
-  const changes: { name?: string; roles?: ProductRoleWrites } = {}
+  const changes: {
+    name?: string
+    classId?: string | null
+    familyId?: string | null
+    roles?: ProductRoleWrites
+  } = {}
 
   const name = values.name.trim()
   if (name !== card.product.name) changes.name = name
+
+  /**
+   * An explicit `null` CLEARS a nullable scalar reference — that is the contract's
+   * own distinction from omitting the member, and it is why the diff sends `null`
+   * rather than simply leaving the key out when the user emptied the field.
+   */
+  const classId = values.classId === '' ? null : values.classId
+  if (classId !== card.product.classId) changes.classId = classId
+  const familyId = values.familyId === '' ? null : values.familyId
+  if (familyId !== card.product.familyId) changes.familyId = familyId
 
   const roles: Record<string, { value: boolean; provenance: 'manual' }> = {}
   for (const role of PRODUCT_ROLE) {
@@ -144,12 +170,31 @@ export function isEditDirty(card: ProductCard, values: EditFormValues): boolean 
 export function validateEditForm(
   card: ProductCard,
   values: EditFormValues,
+  availableClassIds: readonly string[] = [],
+  availableFamilyIds: readonly string[] = [],
 ): EditFormValidation {
   const errors: EditFormErrors = {}
 
   const name = values.name.trim()
   if (name.length === 0) errors.name = PRODUCT_EDIT_TEXT.validation.nameRequired
   else if (name.length > NAME_MAX) errors.name = PRODUCT_EDIT_TEXT.validation.nameTooLong
+
+  /**
+   * A reference is checked only when the user CHANGED it. The record's existing
+   * value may legitimately be absent from today's options — the catalogue can move
+   * — and refusing to save an unrelated name change because of that would punish
+   * the user for someone else's edit.
+   */
+  if (values.classId !== '' && values.classId !== (card.product.classId ?? '')) {
+    if (!availableClassIds.includes(values.classId)) {
+      errors.classId = PRODUCT_EDIT_TEXT.validation.classUnknown
+    }
+  }
+  if (values.familyId !== '' && values.familyId !== (card.product.familyId ?? '')) {
+    if (!availableFamilyIds.includes(values.familyId)) {
+      errors.familyId = PRODUCT_EDIT_TEXT.validation.familyUnknown
+    }
+  }
 
   const changes = changesFrom(card, values)
   const nothingToSave = Object.keys(changes).length === 0

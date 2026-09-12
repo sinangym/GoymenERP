@@ -31,6 +31,21 @@ export const GROUP_SAC = 'aaaaaaa1-0000-0000-0000-000000000001'
 export const CLASS_FLAT = 'cccccccc-0000-0000-0000-000000000001'
 export const FAMILY_FLAT = 'bbbbbbb1-0000-0000-0000-000000000001'
 
+/** `ProductReferenceOptions` — classes/families plus the unavailable-catalogue list. */
+export function referenceOptions(over: Record<string, unknown> = {}) {
+  return {
+    groupId: GROUP_SAC,
+    classId: null,
+    classes: [{ id: CLASS_FLAT, displayName: 'Yassı ürün' }],
+    families: [{ id: FAMILY_FLAT, displayName: 'Soğuk hadde' }],
+    units: [],
+    trackingPolicies: [],
+    templates: [],
+    unavailableCatalogs: [],
+    ...over,
+  }
+}
+
 const IDENTITY = {
   userId: '99999999-9999-9999-9999-999999999999',
   displayName: 'Kullanıcı A',
@@ -80,6 +95,8 @@ export function productCore(over: Record<string, unknown> = {}) {
     version: '7',
     createdAtUtc: '2026-01-01T00:00:00+00:00',
     updatedAtUtc: '2026-09-12T07:00:00+00:00',
+    labels: { group: 'Sac', class: null, family: null, primaryStockUnit: 'kg' },
+    completeness: { evaluation: 'Incomplete', missingFields: ['references.units.stock'] },
     ...over,
   }
 }
@@ -101,12 +118,17 @@ export function references(over: Record<string, unknown> = {}) {
   }
 }
 
-/** `ProductCardView`. */
+/**
+ * `ProductCardView`. The card-level `completeness` is a compatibility projection of
+ * `product.completeness` in the source, so the fixture emits it too — and the
+ * decoder deliberately reads only the product one.
+ */
 export function productCard(over: Record<string, unknown> = {}) {
+  const product = (over.product ?? productCore()) as Record<string, unknown>
   return {
-    product: productCore(),
+    product,
     references: references(),
-    completeness: { evaluation: 'Incomplete', missingFields: ['references.units.stock'] },
+    completeness: product.completeness,
     ...over,
   }
 }
@@ -129,6 +151,7 @@ export interface HarnessConfig {
   readonly onList?: (url: string) => Response
   readonly onCard?: (url: string) => Response
   readonly onGroups?: () => Response
+  readonly onOptions?: (url: string) => Response
   readonly onCreate?: (attempt: number, body: string | null) => Response | Promise<Response>
   readonly onEdit?: (attempt: number, body: string | null) => Response | Promise<Response>
 }
@@ -171,6 +194,9 @@ export function installFetch(config: HarnessConfig = {}) {
     }
     if (url.includes('/products/code-groups')) {
       return config.onGroups?.() ?? json(codeGroups())
+    }
+    if (url.includes('/products/reference-options')) {
+      return config.onOptions?.(url) ?? json(referenceOptions())
     }
     if (url.includes('/products')) {
       if (method === 'PATCH') {

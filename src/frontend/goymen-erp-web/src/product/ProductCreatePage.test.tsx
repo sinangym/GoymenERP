@@ -2,7 +2,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PRODUCT_CAPABILITY } from './capabilities'
-import { GROUP_SAC, installFetch, json, mutation, productCard, productCore, renderProductApp } from './testHarness'
+import {
+  CLASS_FLAT,
+  GROUP_SAC,
+  installFetch,
+  json,
+  mutation,
+  productCard,
+  productCore,
+  referenceOptions,
+  renderProductApp,
+} from './testHarness'
 
 const CREATE_ONLY = [PRODUCT_CAPABILITY.productsCreate]
 const PATH = '/urun/yeni'
@@ -97,20 +107,74 @@ describe('what the screen deliberately does not offer', () => {
     expect(screen.getByText(/Ürün kodunu sunucu/)).toBeTruthy()
   })
 
-  it('offers no class, family or reference field, and says why', async () => {
+  it('offers class and family as REFERENCES scoped to the chosen group', async () => {
+    const { calls } = installFetch({ capabilities: CREATE_ONLY })
+    renderProductApp(PATH)
+
+    await formVisible()
+    // Nothing is asked for until a group is chosen: there would be nothing to
+    // scope by, and the answer could not be trusted.
+    expect(calls.some((call) => call.url.includes('reference-options'))).toBe(false)
+
+    await fillMinimum()
+    await waitFor(() =>
+      expect(calls.some((call) => call.url.includes(`reference-options?groupId=${GROUP_SAC}`))).toBe(
+        true,
+      ),
+    )
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Yassı ürün' })).toBeTruthy())
+  })
+
+  it('sends a chosen class and family as ids, and omits them when unchosen', async () => {
+    const { calls } = installFetch({ capabilities: CREATE_ONLY })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await fillMinimum()
+    await waitFor(() => screen.getByRole('option', { name: 'Yassı ürün' }))
+    await userEvent.selectOptions(screen.getByLabelText(/Ürün sınıfı/), CLASS_FLAT)
+    await userEvent.click(saveButton())
+
+    await waitFor(() => expect(calls.some((call) => call.method === 'POST')).toBe(true))
+    const body = JSON.parse(calls.find((call) => call.method === 'POST')?.body ?? '{}')
+    expect(body.classId).toBe(CLASS_FLAT)
+    // ABSENT rather than null: both are optional, and omitting claims less.
+    expect(Object.hasOwn(body, 'familyId')).toBe(false)
+  })
+
+  it('closes a catalogue the server could not read, and says which', async () => {
     /**
-     * The request accepts them, but no catalogue read is published — so the client
-     * could only invent a reference, which §19.3 forbids. Saying so is what makes
-     * this a known gap rather than a screen that looks finished.
+     * README: "An unavailable catalogue is different from a valid empty catalogue
+     * and must not produce made-up choices." An empty one stays open and says it is
+     * empty; an unavailable one is closed and says it could not be read.
      */
+    installFetch({
+      capabilities: CREATE_ONLY,
+      onOptions: () =>
+        json(referenceOptions({ classes: [], unavailableCatalogs: ['classes'] })),
+    })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await fillMinimum()
+
+    await waitFor(() =>
+      expect((screen.getByLabelText(/Ürün sınıfı/) as HTMLSelectElement).disabled).toBe(true),
+    )
+    expect(screen.getByText(/Bu katalog şu anda okunamıyor/)).toBeTruthy()
+    // The families catalogue was fine, so its field stays open.
+    expect((screen.getByLabelText(/Ürün ailesi/) as HTMLSelectElement).disabled).toBe(false)
+  })
+
+  it('offers no template, unit or tracking-policy editor, and says why', async () => {
+    // The coordinator keeps attribute/unit completeness in the NEXT slice.
     installFetch({ capabilities: CREATE_ONLY })
     renderProductApp(PATH)
 
     await formVisible()
-    expect(screen.queryByLabelText(/Ürün ailesi/)).toBeNull()
-    expect(screen.queryByLabelText(/Ürün sınıfı/)).toBeNull()
     expect(screen.queryByLabelText(/Takip politikası/)).toBeNull()
-    expect(screen.getByText(/bu sürümde sunulmuyor/)).toBeTruthy()
+    expect(screen.queryByLabelText(/Şablon/)).toBeNull()
+    expect(screen.getByText(/sonraki dilimde aile bazlı tamlık/)).toBeTruthy()
   })
 
   it('has no activate action — the contract includes no activation command', async () => {

@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { PRODUCT_CAPABILITY } from './capabilities'
 import { resetProductListView } from './listViewState'
 import {
+  PRODUCT_1,
   PRODUCT_2,
   installFetch,
   json,
@@ -81,18 +82,19 @@ describe('global master scope', () => {
 })
 
 describe('honesty about the narrow projection', () => {
-  it('says which columns the server does not yet provide', async () => {
+  it('renders the SERVER-resolved labels and completeness on every row', async () => {
     /**
-     * `ProductDraftView` carries reference IDS and no labels, no stock unit and no
-     * per-area completeness. Resolving ids in the browser would be client fan-out;
-     * inventing the rest would be a fabricated summary. Saying so is the difference
-     * between a known gap and a screen that looks finished.
+     * The projection carries `labels` and `completeness`, so the columns are real
+     * rather than derived — the client never resolves a UUID itself, which is the
+     * fan-out §19.5 forbids.
      */
     installFetch({ capabilities: LIST_ONLY })
     renderProductApp('/urun')
 
     await rowsVisible()
-    expect(screen.getByText(/sunucu projeksiyonunda henüz yok/)).toBeTruthy()
+    const row = screen.getByRole('row', { name: /SAC-42/ })
+    expect(within(row).getByText('kg')).toBeTruthy()
+    expect(screen.getByTestId(`product-completeness-${PRODUCT_1}`).textContent).toBe('Eksik')
   })
 
   it('shows no count, because the page publishes none', async () => {
@@ -157,18 +159,55 @@ describe('detail entitlement', () => {
 })
 
 describe('query', () => {
-  it('sends one role and no roleMatch — the contract takes a single value', async () => {
+  it('sends distinct comma-separated roles with an explicit roleMatch', async () => {
+    /**
+     * Both the list and the any/all semantics are the contract's, so the screen can
+     * offer the choice without inventing a meaning — and the two readings return
+     * different products the moment a second role is ticked.
+     */
     const { calls } = installFetch({ capabilities: LIST_ONLY })
     renderProductApp('/urun')
 
     await rowsVisible()
-    await userEvent.selectOptions(screen.getByLabelText('Rol'), 'sellable')
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Alınabilir' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Satılabilir' }))
+    await userEvent.selectOptions(screen.getByLabelText('Rol eşleşmesi'), 'all')
 
     await waitFor(() => {
-      const withRole = calls.filter((call) => call.url.includes('role=sellable'))
-      expect(withRole.length).toBeGreaterThan(0)
-      expect(withRole.every((call) => !call.url.includes('roleMatch'))).toBe(true)
+      const sent = calls.filter((call) => call.url.includes('roleMatch=all'))
+      expect(sent.length).toBeGreaterThan(0)
+      expect(sent.some((call) => call.url.includes('roles=purchasable%2Csellable'))).toBe(true)
     })
+  })
+
+  it('says that an unevaluated role never satisfies a role filter', async () => {
+    // README: "A role filter matches known true values only… Unknown is not false."
+    installFetch({ capabilities: LIST_ONLY })
+    renderProductApp('/urun')
+
+    await rowsVisible()
+    expect(screen.getByText(/değerlendirilmemiş rol eşleşme saymaz/)).toBeTruthy()
+  })
+
+  it('sends the sort key, direction and completeness filter', async () => {
+    const { calls } = installFetch({ capabilities: LIST_ONLY })
+    renderProductApp('/urun')
+
+    await rowsVisible()
+    await userEvent.selectOptions(screen.getByLabelText('Sıralama'), 'updatedAtUtc')
+    await userEvent.selectOptions(screen.getByLabelText('Yön'), 'desc')
+    await userEvent.selectOptions(screen.getByLabelText('Tamlık'), 'Incomplete')
+
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (call) =>
+            call.url.includes('sort=updatedAtUtc') &&
+            call.url.includes('direction=desc') &&
+            call.url.includes('completeness=Incomplete'),
+        ),
+      ).toBe(true),
+    )
   })
 
   it('strips control characters from the search term', async () => {

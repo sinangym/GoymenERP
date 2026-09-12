@@ -42,6 +42,8 @@ function core(over: Record<string, unknown> = {}) {
     version: '7',
     createdAtUtc: '2026-01-01T00:00:00+00:00',
     updatedAtUtc: '2026-09-12T07:00:00+00:00',
+    labels: { group: 'Sac', class: null, family: null, primaryStockUnit: 'kg' },
+    completeness: { evaluation: 'Incomplete', missingFields: ['references.units.stock'] },
     ...over,
   }
 }
@@ -58,12 +60,7 @@ function references(over: Record<string, unknown> = {}) {
 }
 
 function card(over: Record<string, unknown> = {}) {
-  return {
-    product: core(),
-    references: references(),
-    completeness: { evaluation: 'Incomplete', missingFields: ['references.units.stock'] },
-    ...over,
-  }
+  return { product: core(), references: references(), ...over }
 }
 
 describe('contract provenance', () => {
@@ -165,7 +162,7 @@ describe('decodeProductCard', () => {
     const decoded = decodeProductCard(card(), PRODUCT_ID)
     expect(decoded?.product.code).toBe('SAC-42')
     expect(decoded?.references.units.stock).toBeNull()
-    expect(decoded?.completeness.evaluation).toBe('Incomplete')
+    expect(decoded?.product.completeness.evaluation).toBe('Incomplete')
   })
 
   it('rejects a card about a different product', () => {
@@ -213,20 +210,20 @@ describe('decodeProductCard', () => {
     // README: "NotEvaluated must not be rendered as complete or activatable." The
     // same restraint applies to a token this build does not know.
     const decoded = decodeProductCard(
-      card({ completeness: { evaluation: 'Partial', missingFields: [] } }),
+      card({ product: core({ completeness: { evaluation: 'Partial', missingFields: [] } }) }),
       PRODUCT_ID,
     )
-    expect(decoded?.completeness.evaluation).toBeNull()
-    expect(decoded?.completeness.rawEvaluation).toBe('Partial')
-    expect(isComplete(decoded!.completeness)).toBe(false)
+    expect(decoded?.product.completeness.evaluation).toBeNull()
+    expect(decoded?.product.completeness.rawEvaluation).toBe('Partial')
+    expect(isComplete(decoded!.product.completeness)).toBe(false)
   })
 
   it('does not treat NotEvaluated as complete', () => {
     const decoded = decodeProductCard(
-      card({ completeness: { evaluation: 'NotEvaluated', missingFields: [] } }),
+      card({ product: core({ completeness: { evaluation: 'NotEvaluated', missingFields: [] } }) }),
       PRODUCT_ID,
     )
-    expect(isComplete(decoded!.completeness)).toBe(false)
+    expect(isComplete(decoded!.product.completeness)).toBe(false)
   })
 })
 

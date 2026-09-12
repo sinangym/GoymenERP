@@ -1,10 +1,11 @@
 /**
  * Product (Ürün) transport, pinned to the published backend contract
- * (PR #237 @ `3a7f2f8`; see ./contract.ts for the exact sources).
+ * (PR #237 @ `cb75e2f`; see ./contract.ts for the exact sources).
  *
  * Routes, verbatim from `ProductApiV1` / `ProductEndpoints`:
  *   GET   /api/v1/products              → ProductPage
  *   GET   /api/v1/products/code-groups  → ProductCodeGroup[]
+ *   GET   /api/v1/products/reference-options?groupId&classId → ProductReferenceOptions
  *   GET   /api/v1/products/{id}         → ProductCardView (404 not_found)
  *   POST  /api/v1/products              → 201 ProductMutationResponse
  *   PATCH /api/v1/products/{id}/draft   → 200 ProductMutationResponse
@@ -28,13 +29,16 @@ import {
   decodeProductCard,
   decodeProductMutation,
   decodeProductPage,
+  decodeReferenceOptions,
   productProblemCodeOf,
+  type CompletenessEvaluation,
   type ProductCard,
   type ProductCodeGroup,
   type ProductLifecycle,
   type ProductMutationResult,
   type ProductPage,
   type ProductProblemCode,
+  type ProductReferenceOptions,
   type ProductRoleName,
 } from './contract'
 import type { ViewOutcome } from '../shell/uiState'
@@ -54,6 +58,12 @@ function devHeaders(): Record<string, string> {
 export const SEARCH_MAX = 200
 
 export type LifecycleFilter = ProductLifecycle | 'all'
+/** `RoleMatch` — any/all over the submitted distinct roles. Source default: `any`. */
+export type RoleMatch = 'any' | 'all'
+export type ProductSort = 'code' | 'name' | 'updatedAtUtc'
+export type SortDirection = 'asc' | 'desc'
+/** `Completeness` filter, matching `ProductCompletenessView.Evaluation`. */
+export type CompletenessFilter = CompletenessEvaluation | 'all'
 
 export interface ProductQuery {
   readonly q?: string
@@ -62,13 +72,18 @@ export interface ProductQuery {
   readonly classId?: string
   readonly familyId?: string
   /**
-   * ONE role. `ProductListQuery.Role` is a single nullable string and the endpoint
-   * rejects anything outside the four names — there is no `roleMatch` and no
-   * repeated `role`. The any/all semantics §8.1 asks for are not in this contract,
-   * so the screen offers one role rather than a picker whose meaning it would have
-   * to invent.
+   * Distinct role names, sent comma-separated, combined by `roleMatch`.
+   *
+   * Both the list and the semantics are the contract's, so the screen can offer
+   * any/all without inventing a meaning. README: "A role filter matches known true
+   * values only… Unknown is not false" — which is why an unevaluated role never
+   * satisfies a filter.
    */
-  readonly role?: ProductRoleName
+  readonly roles?: readonly ProductRoleName[]
+  readonly roleMatch?: RoleMatch
+  readonly sort?: ProductSort
+  readonly direction?: SortDirection
+  readonly completeness?: CompletenessFilter
   /** 1..100, default 50. */
   readonly pageSize?: number
   /** Opaque server token, echoed verbatim. The client never builds one. */
@@ -96,7 +111,17 @@ export function buildProductQuery(query: ProductQuery): string {
   if (query.groupId !== undefined) params.set('groupId', query.groupId)
   if (query.classId !== undefined) params.set('classId', query.classId)
   if (query.familyId !== undefined) params.set('familyId', query.familyId)
-  if (query.role !== undefined) params.set('role', query.role)
+  if (query.roles !== undefined && query.roles.length > 0) {
+    // Comma-separated and DISTINCT, as the source requires: a repeated name is
+    // rejected rather than merely redundant.
+    params.set('roles', [...new Set(query.roles)].join(','))
+    if (query.roleMatch !== undefined) params.set('roleMatch', query.roleMatch)
+  }
+  if (query.sort !== undefined) params.set('sort', query.sort)
+  if (query.direction !== undefined) params.set('direction', query.direction)
+  if (query.completeness !== undefined && query.completeness !== 'all') {
+    params.set('completeness', query.completeness)
+  }
   if (query.pageSize !== undefined) params.set('pageSize', String(query.pageSize))
   if (query.cursor !== undefined) params.set('cursor', query.cursor)
   const serialized = params.toString()
@@ -183,6 +208,33 @@ export async function fetchCodeGroups(
   const groups = decodeCodeGroupList(result.body)
   if (groups === null) return { type: 'malformed' }
   return { type: 'ok', data: groups, filterActive: false }
+}
+
+/**
+ * The class/family choices available under a code group.
+ *
+ * Scoped to the group (and optionally the class) the user actually picked, because
+ * the server filters them that way — offering a family from another group would be
+ * offering a choice the create then rejects.
+ *
+ * `unavailableCatalogs` is carried through rather than flattened into "empty": the
+ * README makes an unavailable catalogue a DIFFERENT fact from a valid empty one,
+ * and showing both as "nothing defined yet" would invent an answer for something we
+ * could not read.
+ */
+export async function fetchReferenceOptions(
+  groupId: string,
+  classId: string | null,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<ProductReferenceOptions>> {
+  const params = new URLSearchParams({ groupId })
+  if (classId !== null) params.set('classId', classId)
+  const result = await rawRead(`/products/reference-options?${params.toString()}`, signal)
+  if ('failure' in result) return failureOutcome(result.failure)
+  if (result.status !== 200) return { type: 'http', status: result.status, body: result.body }
+  const options = decodeReferenceOptions(result.body, groupId)
+  if (options === null) return { type: 'malformed' }
+  return { type: 'ok-single', data: options }
 }
 
 /* ── Writes ───────────────────────────────────────────────────────────────── */

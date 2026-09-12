@@ -29,6 +29,12 @@ function card(over: Partial<ProductCard['product']> = {}): ProductCard {
       version: '7',
       createdAtUtc: '2026-01-01T00:00:00+00:00',
       updatedAtUtc: '2026-09-12T07:00:00+00:00',
+      labels: { group: 'Sac', class: null, family: null, primaryStockUnit: 'kg' },
+      completeness: {
+        evaluation: 'Incomplete' as const,
+        rawEvaluation: 'Incomplete',
+        missingFields: [],
+      },
       ...over,
     },
     references: {
@@ -45,7 +51,6 @@ function card(over: Partial<ProductCard['product']> = {}): ProductCard {
       },
       trackingPolicyId: null,
     },
-    completeness: { evaluation: 'Incomplete', rawEvaluation: 'Incomplete', missingFields: [] },
   }
 }
 

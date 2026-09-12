@@ -3,12 +3,15 @@ import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PRODUCT_CAPABILITY } from './capabilities'
 import {
+  CLASS_FLAT,
+  GROUP_SAC,
   PRODUCT_1,
   installFetch,
   json,
   mutation,
   productCard,
   productCore,
+  referenceOptions,
   renderProductApp,
 } from './testHarness'
 
@@ -331,19 +334,75 @@ describe('unsaved guard', () => {
 })
 
 describe('scope', () => {
-  it('offers no group, code, class, family or reference control', async () => {
-    /**
-     * The contract freezes group and code in basic edit, and publishes no catalogue
-     * read for the rest — offering only "clear" would be a destructive half-control.
-     */
+  it('offers no group or code control — the contract freezes both', async () => {
     installFetch({ capabilities: EDIT_ONLY })
     renderProductApp(PATH)
 
     await formVisible()
     expect(screen.queryByLabelText(/Kod grubu/)).toBeNull()
-    expect(screen.queryByLabelText(/Ürün ailesi/)).toBeNull()
     expect(screen.queryByLabelText(/Ürün kodu/)).toBeNull()
     expect(screen.getByText(/kod grubu ve ürün kodu değişmez/)).toBeTruthy()
+  })
+
+  it('offers class and family, scoped to the record’s own group', async () => {
+    const { calls } = installFetch({ capabilities: EDIT_ONLY })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await waitFor(() =>
+      expect(calls.some((call) => call.url.includes(`reference-options?groupId=${GROUP_SAC}`))).toBe(
+        true,
+      ),
+    )
+    expect(screen.getByLabelText(/Ürün sınıfı/)).toBeTruthy()
+  })
+
+  it('sends an explicit null to CLEAR a reference', async () => {
+    /**
+     * An explicit `null` clears a nullable scalar reference — a distinct operation
+     * from leaving the member out, which means "unchanged".
+     */
+    const { calls } = installFetch({
+      capabilities: EDIT_ONLY,
+      onCard: () => json(productCard({ product: productCore({ classId: CLASS_FLAT }) })),
+    })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await waitFor(() => screen.getByRole('option', { name: 'Yassı ürün' }))
+    await userEvent.selectOptions(screen.getByLabelText(/Ürün sınıfı/), '')
+    await userEvent.type(screen.getByLabelText(/Değişiklik gerekçesi/), 'Sınıf bağı kaldırıldı')
+    await userEvent.click(saveButton())
+
+    await waitFor(() => expect(calls.some((call) => call.method === 'PATCH')).toBe(true))
+    const body = JSON.parse(calls.find((call) => call.method === 'PATCH')?.body ?? '{}')
+    expect(body.changes.classId).toBeNull()
+    expect(Object.hasOwn(body.changes, 'name')).toBe(false)
+  })
+
+  it('keeps the record’s own class selectable when the catalogue no longer offers it', async () => {
+    // Otherwise merely opening the form would silently drop a reference the user
+    // never touched.
+    installFetch({
+      capabilities: EDIT_ONLY,
+      onCard: () =>
+        json(
+          productCard({
+            product: productCore({
+              classId: CLASS_FLAT,
+              labels: { group: 'Sac', class: 'Eski sınıf', family: null, primaryStockUnit: 'kg' },
+            }),
+          }),
+        ),
+      onOptions: () => json(referenceOptions({ classes: [] })),
+    })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await waitFor(() =>
+      expect((screen.getByLabelText(/Ürün sınıfı/) as HTMLSelectElement).value).toBe(CLASS_FLAT),
+    )
+    expect(screen.getByRole('option', { name: 'Eski sınıf' })).toBeTruthy()
   })
 
   it('states the global impact before the fields', async () => {

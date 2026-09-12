@@ -15,6 +15,11 @@ eksiklik değil, mevcut doğru durum: sunucu `product.*` capability'sini yayıml
 `CapabilityRoute` yayımlanmamış bir capability'yi fail-closed kapatıyor. Delta uygulansa bile
 sunucu grant vermeden ekranlar açılmaz.
 
+Not: Backend `ProductPermissionManifestV1` ile `product.master.read` / `product.draft.create` /
+`product.draft.edit` **adlarını** yayımladı, ama dosyanın kendi yorumu bunun hiçbir permission,
+rol, assignment veya scope kaydetmediğini yazıyor. Capability registry hâlâ yayımlanmadı; bu
+delta hâlâ tek başına hiçbir şey açmıyor.
+
 ---
 
 ## 1. `src/shell/capabilities.ts`

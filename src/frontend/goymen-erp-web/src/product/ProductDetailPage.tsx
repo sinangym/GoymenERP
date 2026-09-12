@@ -4,10 +4,11 @@
  * Shows exactly what the card carries: the product core, the reference block and
  * the server's completeness verdict.
  *
- * TWO THINGS IT REFUSES TO DO:
- *  - resolve a reference id to a display name. No catalogue read is published, and
- *    guessing a label would be the client fan-out §19.5 forbids. Ids are shown as
- *    ids, with one sentence saying why;
+ * WHAT IT REFUSES TO DO:
+ *  - resolve a reference id itself. The labels come from the SERVER, on the
+ *    projection; a client-side lookup would be the fan-out §19.5 forbids. When a
+ *    label is null while the id is present, that says the catalogue could not be
+ *    read — a different fact from "nothing assigned", and shown differently;
  *  - present `NotEvaluated` completeness as complete or activatable. README states
  *    that rule explicitly, and an unknown evaluation token is not coerced either.
  *
@@ -27,6 +28,7 @@ import {
   ROLE_PROVENANCE_LABEL,
   UNASSIGNED,
   UNIT_ROLE_LABEL,
+  labelOrUnavailable,
   lifecycleLabel,
   lifecycleMeaning,
 } from './productText'
@@ -126,7 +128,10 @@ function ProductCardView({
   readonly backLink: React.ReactNode
   readonly editLink: React.ReactNode
 }) {
-  const { product, references, completeness } = card
+  const { product, references } = card
+  // Single source: the card's own `completeness` is a compatibility projection of
+  // this one, so reading the product's removes any chance of the two disagreeing.
+  const completeness = product.completeness
 
   return (
     <article className={styles.page} aria-labelledby="product-detail-heading">
@@ -232,19 +237,35 @@ function ProductCardView({
 
       <section className={styles.section} aria-labelledby="product-references-heading">
         <h2 id="product-references-heading">{PRODUCT_DETAIL_TEXT.referencesHeading}</h2>
-        <p className={styles.note}>{PRODUCT_DETAIL_TEXT.referenceIdNote}</p>
+        {/*
+          Server-resolved labels, never a client lookup. A null label beside a
+          present id means the catalogue could not be read; a null id means nothing
+          is assigned — and the two read differently on purpose.
+        */}
         <dl className={styles.definitionList}>
           <div>
             <dt>{PRODUCT_DETAIL_TEXT.groupId}</dt>
-            <dd className={styles.identifier}>{product.groupId}</dd>
+            <dd data-testid="product-group">
+              {labelOrUnavailable(product.labels.group, product.groupId)}
+            </dd>
           </div>
           <div>
             <dt>{PRODUCT_DETAIL_TEXT.classId}</dt>
-            <dd className={styles.identifier}>{product.classId ?? UNASSIGNED}</dd>
+            <dd data-testid="product-class">
+              {labelOrUnavailable(product.labels.class, product.classId)}
+            </dd>
           </div>
           <div>
             <dt>{PRODUCT_DETAIL_TEXT.familyId}</dt>
-            <dd className={styles.identifier}>{product.familyId ?? UNASSIGNED}</dd>
+            <dd data-testid="product-family">
+              {labelOrUnavailable(product.labels.family, product.familyId)}
+            </dd>
+          </div>
+          <div>
+            <dt>{PRODUCT_DETAIL_TEXT.primaryStockUnit}</dt>
+            <dd data-testid="product-primary-stock-unit">
+              {product.labels.primaryStockUnit ?? UNASSIGNED}
+            </dd>
           </div>
           <div>
             <dt>{PRODUCT_DETAIL_TEXT.templateVersion}</dt>

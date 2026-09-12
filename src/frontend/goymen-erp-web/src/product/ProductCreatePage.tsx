@@ -8,8 +8,8 @@
  * Deliberately absent, each for a stated reason:
  *  - a product CODE field: the server mints it from the group's prefix, and the
  *    admin manual-code exception is a later explicit command;
- *  - `classId`, `familyId`, `references`: accepted by the request, but no catalogue
- *    read is published, and §19.3 forbids the client producing a reference;
+ *  - `references` (template + version, attributes, the six units, tracking policy):
+ *    §19.6 and the coordinator keep attribute/unit completeness in the NEXT slice;
  *  - activation: the contract includes no activation command;
  *  - AI drafting and duplicate-similarity warnings: both need a server surface that
  *    does not exist. Exact collisions are still handled — from the server's answer.
@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
-import { createProductDraft, fetchCodeGroups } from './api'
+import { createProductDraft, fetchCodeGroups, fetchReferenceOptions } from './api'
 import type { CreateProductDraftPayload } from './api'
 import {
   PRODUCT_PROBLEM_CODE,
@@ -26,6 +26,7 @@ import {
   productFieldErrorsOf,
   type ProductCodeGroup,
   type ProductMutationResult,
+  type ProductReferenceOptions,
   type ProductRoleName,
 } from './contract'
 import {
@@ -51,6 +52,8 @@ import {
   type AttemptState,
 } from './commandAttempt'
 import {
+  CATALOG_EMPTY,
+  CATALOG_UNAVAILABLE,
   PENDING_REFERENCE_NOTE,
   PRODUCT_CREATE_TEXT,
   ROLE_LABEL,
@@ -96,6 +99,7 @@ export function ProductCreatePage() {
       namespace={namespace}
       groups={groups}
       groupsLoading={groupQuery.isPending}
+      entryGeneration={entryGeneration}
       onRetryGroups={() => void groupQuery.refetch()}
     />
   )
@@ -105,12 +109,14 @@ function ProductCreateForm({
   namespace,
   groups,
   groupsLoading,
+  entryGeneration,
   onRetryGroups,
 }: {
   readonly namespace: string | null
   /** `null` means the code-group read has not produced a usable list. */
   readonly groups: readonly ProductCodeGroup[] | null
   readonly groupsLoading: boolean
+  readonly entryGeneration: number
   readonly onRetryGroups: () => void
 }) {
   const shell = useShellState()
@@ -155,6 +161,53 @@ function ProductCreateForm({
   /** Creation is impossible without a real code group (§19.3). */
   const canCreate = groups !== null && groups.length > 0
 
+  /**
+   * Class and family choices, scoped to the chosen group (and then the chosen
+   * class), because that is how the server filters them — offering a family from
+   * another group would be offering a choice the create then rejects.
+   *
+   * Not fetched until a group is picked: there is nothing to scope by, and asking
+   * without one would be a read whose answer could not be trusted.
+   */
+  const optionsQuery = useQuery({
+    queryKey: [
+      namespace ?? 'no-context',
+      entryGeneration,
+      'product-reference-options',
+      values.groupId,
+      values.classId,
+    ],
+    enabled: namespace !== null && values.groupId !== '',
+    queryFn: async ({ signal }) =>
+      fetchReferenceOptions(values.groupId, values.classId === '' ? null : values.classId, signal),
+  })
+
+  const options: ProductReferenceOptions | null =
+    optionsQuery.data?.type === 'ok-single' ? optionsQuery.data.data : null
+  const classIds = useMemo(() => (options?.classes ?? []).map((entry) => entry.id), [options])
+  const familyIds = useMemo(() => (options?.families ?? []).map((entry) => entry.id), [options])
+  /**
+   * An UNAVAILABLE catalogue is not an empty one. README: it "must not produce
+   * made-up choices", so the field is closed and says it could not be read — while
+   * a genuinely empty catalogue stays open and says it is empty. Showing both the
+   * same way would answer "nothing is defined yet" for something we never saw.
+   */
+  const classesUnavailable = options?.unavailableCatalogs.includes('classes') ?? false
+  const familiesUnavailable = options?.unavailableCatalogs.includes('families') ?? false
+
+  /**
+   * A class chosen under one group is meaningless under another, and the family
+   * list is scoped by class. Clearing on change prevents submitting a reference the
+   * current options never offered — which the validator would reject anyway, but as
+   * a confusing error rather than as a field that simply reset.
+   */
+  function chooseGroup(groupId: string) {
+    setValues((current) => ({ ...current, groupId, classId: '', familyId: '' }))
+  }
+  function chooseClass(classId: string) {
+    setValues((current) => ({ ...current, classId, familyId: '' }))
+  }
+
   const send = useCallback(async (snapshot: AttemptSnapshot<CreateProductDraftPayload>) => {
     setAttempt({ phase: 'submitting', snapshot })
     const outcome = await createProductDraft(snapshot.payload, {
@@ -183,7 +236,7 @@ function ProductCreateForm({
     if (frozen || contextChanged || !canCreate) return
     setSubmitted(true)
 
-    const validation = validateCreateForm(values, groupIds)
+    const validation = validateCreateForm(values, groupIds, classIds, familyIds)
     if (!validation.ok) {
       /**
        * A client-side rejection mints NO key: nothing was sent, so there is nothing
@@ -445,7 +498,7 @@ function ProductCreateForm({
             ref={(el) => {
               fieldRefs.current[CREATE_FIELD.groupId] = el
             }}
-            onChange={(event) => setValues((v) => ({ ...v, groupId: event.target.value }))}
+            onChange={(event) => chooseGroup(event.target.value)}
           >
             <option value="">{PRODUCT_CREATE_TEXT.chooseNone}</option>
             {(groups ?? []).map((group) => (
@@ -461,6 +514,85 @@ function ProductCreateForm({
             <p id={`${CREATE_FIELD.groupId}-error`} className={styles.fieldError}>
               {errors.groupId}
             </p>
+          ) : null}
+        </div>
+
+        {/*
+          Class and family are REFERENCES from `reference-options`, scoped to the
+          chosen group. Both may stay empty on a Draft (§19.3), so neither is
+          required — but a value that is sent must be one the server offered.
+        */}
+        <div className={styles.field}>
+          <label htmlFor={CREATE_FIELD.classId}>
+            {PRODUCT_CREATE_TEXT.classLabel}
+            <span className={styles.optional}> ({PRODUCT_CREATE_TEXT.optional})</span>
+          </label>
+          <select
+            id={CREATE_FIELD.classId}
+            value={values.classId}
+            disabled={frozen || contextChanged || values.groupId === '' || classesUnavailable}
+            aria-invalid={errors.classId !== undefined || undefined}
+            aria-describedby={`${CREATE_FIELD.classId}-hint`}
+            ref={(el) => {
+              fieldRefs.current[CREATE_FIELD.classId] = el
+            }}
+            onChange={(event) => chooseClass(event.target.value)}
+          >
+            <option value="">{PRODUCT_CREATE_TEXT.chooseNone}</option>
+            {(options?.classes ?? []).map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.displayName}
+              </option>
+            ))}
+          </select>
+          <p id={`${CREATE_FIELD.classId}-hint`} className={styles.hint}>
+            {values.groupId === ''
+              ? PRODUCT_CREATE_TEXT.chooseGroupFirst
+              : classesUnavailable
+                ? CATALOG_UNAVAILABLE
+                : (options?.classes.length ?? 0) === 0
+                  ? CATALOG_EMPTY
+                  : PRODUCT_CREATE_TEXT.referenceHint}
+          </p>
+          {errors.classId !== undefined ? (
+            <p className={styles.fieldError}>{errors.classId}</p>
+          ) : null}
+        </div>
+
+        <div className={styles.field}>
+          <label htmlFor={CREATE_FIELD.familyId}>
+            {PRODUCT_CREATE_TEXT.familyLabel}
+            <span className={styles.optional}> ({PRODUCT_CREATE_TEXT.optional})</span>
+          </label>
+          <select
+            id={CREATE_FIELD.familyId}
+            value={values.familyId}
+            disabled={frozen || contextChanged || values.groupId === '' || familiesUnavailable}
+            aria-invalid={errors.familyId !== undefined || undefined}
+            aria-describedby={`${CREATE_FIELD.familyId}-hint`}
+            ref={(el) => {
+              fieldRefs.current[CREATE_FIELD.familyId] = el
+            }}
+            onChange={(event) => setValues((v) => ({ ...v, familyId: event.target.value }))}
+          >
+            <option value="">{PRODUCT_CREATE_TEXT.chooseNone}</option>
+            {(options?.families ?? []).map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.displayName}
+              </option>
+            ))}
+          </select>
+          <p id={`${CREATE_FIELD.familyId}-hint`} className={styles.hint}>
+            {values.groupId === ''
+              ? PRODUCT_CREATE_TEXT.chooseGroupFirst
+              : familiesUnavailable
+                ? CATALOG_UNAVAILABLE
+                : (options?.families.length ?? 0) === 0
+                  ? CATALOG_EMPTY
+                  : PRODUCT_CREATE_TEXT.referenceHint}
+          </p>
+          {errors.familyId !== undefined ? (
+            <p className={styles.fieldError}>{errors.familyId}</p>
           ) : null}
         </div>
 

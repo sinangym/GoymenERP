@@ -10,6 +10,7 @@
 import {
   PRODUCT_ROLE,
   type CompletenessEvaluation,
+  type ProductFieldCode,
   type ProductLifecycle,
   type ProductLifecycleValue,
   type ProductRoleName,
@@ -118,18 +119,32 @@ export const UNIT_ROLE_LABEL: Record<UnitRoleName, string> = {
 
 /** Value shown where the server has no value. Never an empty cell. */
 export const UNASSIGNED = 'atanmadı'
+/**
+ * Shown where the product HAS a reference but the server could not resolve its
+ * label. README makes this a different fact from "nothing assigned", so it reads
+ * differently: one says nobody chose, the other says we could not look it up.
+ */
+export const LABEL_UNAVAILABLE = 'ad okunamadı'
+
+export function labelOrUnavailable(label: string | null, id: string | null): string {
+  if (label !== null) return label
+  return id === null ? UNASSIGNED : LABEL_UNAVAILABLE
+}
 
 /**
- * Field-error codes → Turkish.
+ * `ProductFieldCodesV1.All` → Turkish, all thirteen.
  *
- * The server sends `errors: [{field, code}]` — machine codes, not messages. These
- * are the codes visible in the published validator source. An UNKNOWN code must
- * still reach its input: `fieldErrorText` falls back to a general localized
- * sentence rather than dropping the error, because losing the field binding is
- * worse than losing message precision. The closed code set is an open request to
- * the contract owner.
+ * The server sends `errors: [{field, code}]` — machine codes, not messages — so the
+ * sentence is produced here. The set is closed and published, and a test asserts
+ * this map covers every member: a code the server can send but this build has no
+ * sentence for would quietly fall back to the generic one, and the assertion is
+ * what makes that drift visible instead of invisible.
+ *
+ * The fallback still exists and still matters: README asks for it explicitly, and a
+ * v2 code arriving early must reach its input rather than be dropped. Losing the
+ * FIELD binding is worse than losing message precision.
  */
-export const FIELD_ERROR_TEXT: Record<string, string> = {
+export const FIELD_ERROR_TEXT: Record<ProductFieldCode, string> = {
   invalid_name: 'Ürün adı geçersiz.',
   invalid_role_provenance: 'Rol değeri veya kaynağı geçersiz.',
   invalid_reference: 'Seçilen referans geçersiz veya artık mevcut değil.',
@@ -139,25 +154,37 @@ export const FIELD_ERROR_TEXT: Record<string, string> = {
   null_not_allowed: 'Bu alan boş bırakılamaz.',
   required: 'Bu alan zorunludur.',
   invalid_metadata: 'İstek başlığı geçersiz.',
+  invalid_reason: 'Değişiklik gerekçesi geçersiz.',
+  invalid_version: 'Sürüm bilgisi geçersiz.',
+  derived_role_readonly: 'İlişkiden türetilen rol elle değiştirilemez.',
+  template_required: 'Bu işlem için şablon seçimi gereklidir.',
 }
 
 export const FIELD_ERROR_FALLBACK = 'Sunucu bu alanı reddetti.'
 
 export function fieldErrorText(code: string): string {
-  return FIELD_ERROR_TEXT[code] ?? FIELD_ERROR_FALLBACK
+  return FIELD_ERROR_TEXT[code as ProductFieldCode] ?? FIELD_ERROR_FALLBACK
 }
 
 /**
- * What this slice cannot offer yet, and why — shown on screen rather than left as
- * a silent absence.
+ * What this slice still does not offer, and why.
  *
- * The published contract accepts `classId`, `familyId` and the `references` block,
- * but publishes no read that would let the screen offer a valid value for any of
- * them. §19.3 forbids the client producing a reference, so the fields are absent.
- * Saying so is the difference between a known gap and a screen that looks finished.
+ * Class and family ARE offered now — `reference-options` publishes them and they are
+ * first-class members of the create request. The `references` block (template +
+ * version, attributes, the six units, tracking policy) stays closed: §19.6 and the
+ * coordinator keep attribute/unit completeness in the NEXT slice, so opening it here
+ * would pull an unfinished decision forward rather than complete this one.
  */
 export const PENDING_REFERENCE_NOTE =
-  'Sınıf, aile, şablon, birim ve takip politikası alanları bu sürümde sunulmuyor: sunucu bu referanslar için henüz bir okuma yayımlamadı ve istemci referans üretemez.'
+  'Şablon, nitelikler, birim rolleri ve takip politikası bu dilimde düzenlenmiyor; sonraki dilimde aile bazlı tamlık çalışmasıyla birlikte gelecek.'
+
+/**
+ * A catalogue the server could not read. Distinct from an empty one: README —
+ * "An unavailable catalogue is different from a valid empty catalogue and must not
+ * produce made-up choices."
+ */
+export const CATALOG_UNAVAILABLE = 'Bu katalog şu anda okunamıyor; seçim sunulmuyor.'
+export const CATALOG_EMPTY = 'Bu katalogda tanımlı seçenek yok.'
 
 export const PRODUCT_LIST_TEXT = {
   title: 'Ürünler',
@@ -168,18 +195,24 @@ export const PRODUCT_LIST_TEXT = {
    */
   scopeNote:
     'Ürün kartı iki Göymen şirketi için ortaktır. Şirkete özel fiyat, paket, stok ve etiket kayıtları bu listede yer almaz.',
-  /**
-   * The list projection carries ids, not labels. Saying so keeps the narrow column
-   * set from reading as "this product has no family".
-   */
-  projectionNote:
-    'Liste bu sürümde kod, ad, roller, durum ve son değişikliği gösterir. Grup, sınıf ve aile adları ile birim/tamlık özeti sunucu projeksiyonunda henüz yok.',
   searchLabel: 'Kod, eski kod veya ad ara',
   lifecycleLabel: 'Yaşam döngüsü',
-  roleLabel: 'Rol',
-  /** One role, because the contract's query takes one. */
-  roleHint: 'Tek rol seçilebilir; seçilen rolü taşıdığı bilinen ürünler listelenir.',
+  rolesLabel: 'Roller',
+  roleMatchLabel: 'Rol eşleşmesi',
+  roleAny: 'Herhangi biri',
   roleAll: 'Hepsi',
+  /**
+   * README: "A role filter matches known true values only… Unknown is not false."
+   * Said on screen, because an operator filtering by "alınabilir" would otherwise
+   * expect undetermined products to appear as not-matching rather than as absent.
+   */
+  roleHint:
+    'Rol filtresi yalnız bilinen "evet" değerlerini eşler; değerlendirilmemiş rol eşleşme saymaz.',
+  completenessLabel: 'Tamlık',
+  sortLabel: 'Sıralama',
+  directionLabel: 'Yön',
+  directionAsc: 'Artan',
+  directionDesc: 'Azalan',
   clearFilters: 'Filtreleri temizle',
   pageSizeLabel: 'Sayfa boyutu',
   loadMore: 'Sonraki sayfa',
@@ -188,8 +221,11 @@ export const PRODUCT_LIST_TEXT = {
   columns: {
     code: 'Kod',
     name: 'Ad',
+    classification: 'Sınıf / aile',
     roles: 'Roller',
+    stockUnit: 'Ana stok birimi',
     lifecycle: 'Durum',
+    completeness: 'Tamlık',
     updatedAt: 'Son değişiklik',
   },
   /**
@@ -217,6 +253,7 @@ export const PRODUCT_DETAIL_TEXT = {
   groupId: 'Kod grubu',
   classId: 'Sınıf',
   familyId: 'Aile',
+  primaryStockUnit: 'Ana stok birimi',
   templateVersion: 'Şablon sürümü',
   trackingPolicy: 'Takip politikası',
   missingFields: 'Eksik alanlar',
@@ -227,9 +264,13 @@ export const PRODUCT_DETAIL_TEXT = {
    */
   trackingPolicyNote:
     'Ürün kartında yalnız takip politikası referansı bulunur. Parti, menşe ve kalite/kusur durumu fiziksel etiket kaydında tutulur.',
-  /** Ids without labels: said once rather than rendered as a bare UUID with no explanation. */
-  referenceIdNote:
-    'Aşağıdaki referanslar sunucudan kimlik olarak gelir; görünen adları için henüz bir katalog okuması yayımlanmadı.',
+  /**
+   * Unit references are still raw ids: `reference-options` publishes unit options,
+   * but the unit EDITOR belongs to the next slice, so the card shows what the
+   * `references` block carries rather than resolving names it was not given.
+   */
+  unitIdNote:
+    'Birim referansları sunucudan kimlik olarak gelir; birim düzenleme sonraki dilimdedir.',
 } as const
 
 export const PRODUCT_CREATE_TEXT = {
@@ -247,7 +288,13 @@ export const PRODUCT_CREATE_TEXT = {
   nameHint: 'Ad her iki Göymen şirketinde ortaktır.',
   groupLabel: 'Kod grubu',
   groupHint: 'Ürün kodu bu grubun ön ekinden üretilir ve sonradan değişmez.',
+  classLabel: 'Ürün sınıfı',
+  familyLabel: 'Ürün ailesi',
+  /** §19.3: an unresolved reference may stay empty on a Draft. */
+  referenceHint: 'Taslakta boş bırakılabilir; sonradan tamamlanabilir.',
   chooseNone: '— seçilmedi —',
+  chooseGroupFirst: 'Önce kod grubu seçin.',
+  optional: 'isteğe bağlı',
   rolesLabel: 'Ticari ve operasyonel roller',
   rolesHint:
     'Rol gruptan bağımsızdır; birden fazla rol seçilebilir. Belirtilmeyen rol "değerlendirilmedi" olarak kalır, hayır olarak kaydedilmez.',
@@ -268,6 +315,8 @@ export const PRODUCT_CREATE_TEXT = {
     nameTooLong: 'Ürün adı en fazla 250 karakter olabilir.',
     groupRequired: 'Kod grubu seçilmelidir; ürün kodu bu gruptan üretilir.',
     groupUnknown: 'Seçilen kod grubu artık listede yok. Listeyi yenileyip tekrar seçin.',
+    classUnknown: 'Seçilen ürün sınıfı artık listede yok. Listeyi yenileyip tekrar seçin.',
+    familyUnknown: 'Seçilen ürün ailesi artık listede yok. Listeyi yenileyip tekrar seçin.',
   },
   /**
    * §19.3/§19.6: creation needs a real code group with a known prefix rule, and
@@ -314,6 +363,11 @@ export const PRODUCT_EDIT_TEXT = {
   /** Basic edit is Draft-only and does not move the group or the code. */
   scopeNote: 'Temel düzenleme yalnız taslak kayıtta yapılır; kod grubu ve ürün kodu değişmez.',
   nameLabel: 'Ürün adı',
+  classLabel: 'Ürün sınıfı',
+  familyLabel: 'Ürün ailesi',
+  chooseNone: '— yok —',
+  /** An explicit null clears a nullable reference; the copy says so plainly. */
+  clearableHint: 'Boş bırakmak bağı kaldırır.',
   rolesLabel: 'Ticari ve operasyonel roller',
   reasonLabel: 'Değişiklik gerekçesi',
   reasonHint: 'Gerekçe denetim kaydına yazılır.',
@@ -358,6 +412,8 @@ export const PRODUCT_EDIT_TEXT = {
   validation: {
     nameRequired: 'Ürün adı zorunludur.',
     nameTooLong: 'Ürün adı en fazla 250 karakter olabilir.',
+    classUnknown: 'Seçilen ürün sınıfı artık listede yok. Listeyi yenileyip tekrar seçin.',
+    familyUnknown: 'Seçilen ürün ailesi artık listede yok. Listeyi yenileyip tekrar seçin.',
     reasonRequired: 'Değişiklik gerekçesi zorunludur.',
     reasonTooLong: 'Gerekçe en fazla 1000 karakter olabilir.',
     nothingChanged: 'Değişen bir alan yok.',

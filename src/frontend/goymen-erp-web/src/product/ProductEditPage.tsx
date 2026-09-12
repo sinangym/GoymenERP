@@ -15,16 +15,15 @@
  *  - an unknown outcome retries the SAME key and never claims a rollback;
  *  - a committed context change abandons the attempt visibly.
  *
- * Editable here: `name` and the MANUAL roles. Not editable: group and code (the
- * contract freezes both in basic edit), and `classId`/`familyId`/`references` —
- * accepted by the request, but no catalogue read is published, so offering only
- * "clear" would be a destructive half-control.
+ * Editable here: `name`, `classId`, `familyId` and the MANUAL roles. Not editable:
+ * group and code (the contract freezes both in basic edit), and the `references`
+ * block — the coordinator keeps attribute/unit completeness in the next slice.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
-import { editProductDraft, fetchProductCard } from './api'
+import { editProductDraft, fetchProductCard, fetchReferenceOptions } from './api'
 import type { EditProductDraftPayload } from './api'
 import {
   PRODUCT_ROLE,
@@ -32,6 +31,7 @@ import {
   productFieldErrorsOf,
   type ProductCard,
   type ProductMutationResult,
+  type ProductReferenceOptions,
 } from './contract'
 import {
   EDIT_FIELD,
@@ -57,6 +57,9 @@ import {
   type AttemptState,
 } from './commandAttempt'
 import {
+  CATALOG_EMPTY,
+  CATALOG_UNAVAILABLE,
+  PENDING_REFERENCE_NOTE,
   PRODUCT_EDIT_TEXT,
   ROLE_LABEL,
   ROLE_PROVENANCE_LABEL,
@@ -118,6 +121,7 @@ export function ProductEditPage() {
       key={`${namespace ?? 'no-context'}:${outcome.data.product.id}:${outcome.data.product.version}`}
       card={outcome.data}
       namespace={namespace}
+      entryGeneration={entryGeneration}
       onReload={() => void cardQuery.refetch()}
     />
   )
@@ -126,10 +130,12 @@ export function ProductEditPage() {
 function ProductEditForm({
   card,
   namespace,
+  entryGeneration,
   onReload,
 }: {
   readonly card: ProductCard
   readonly namespace: string | null
+  readonly entryGeneration: number
   readonly onReload: () => void
 }) {
   const shell = useShellState()
@@ -164,6 +170,38 @@ function ProductEditForm({
     window.addEventListener('beforeunload', onBeforeUnload)
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
   }, [unresolved])
+
+  /**
+   * Class and family choices, scoped to the record own group — which basic edit
+   * cannot change, so the scope is fixed for the life of this form.
+   */
+  const optionsQuery = useQuery({
+    queryKey: [
+      namespace ?? 'no-context',
+      entryGeneration,
+      'product-reference-options',
+      card.product.groupId,
+      values.classId,
+    ],
+    enabled: namespace !== null,
+    queryFn: async ({ signal }) =>
+      fetchReferenceOptions(
+        card.product.groupId,
+        values.classId === '' ? null : values.classId,
+        signal,
+      ),
+  })
+  const options: ProductReferenceOptions | null =
+    optionsQuery.data?.type === 'ok-single' ? optionsQuery.data.data : null
+  const classIds = useMemo(() => (options?.classes ?? []).map((entry) => entry.id), [options])
+  const familyIds = useMemo(() => (options?.families ?? []).map((entry) => entry.id), [options])
+  /**
+   * An UNAVAILABLE catalogue is not an empty one, so the field is closed and says it
+   * could not be read rather than offering "nothing defined yet" for something we
+   * never saw.
+   */
+  const classesUnavailable = options?.unavailableCatalogs.includes('classes') ?? false
+  const familiesUnavailable = options?.unavailableCatalogs.includes('families') ?? false
 
   const productId = card.product.id
   const send = useCallback(
@@ -204,7 +242,7 @@ function ProductEditForm({
     if (frozen || contextChanged) return
     setSubmitted(true)
 
-    const validation = validateEditForm(card, values)
+    const validation = validateEditForm(card, values, classIds, familyIds)
     if (!validation.ok) {
       setErrors(validation.errors)
       return
@@ -290,6 +328,7 @@ function ProductEditForm({
       <p className={styles.note}>{PRODUCT_EDIT_TEXT.globalImpactNote}</p>
       <p className={styles.note}>{PRODUCT_EDIT_TEXT.diffNote}</p>
       <p className={styles.note}>{PRODUCT_EDIT_TEXT.scopeNote}</p>
+      <p className={styles.note}>{PENDING_REFERENCE_NOTE}</p>
 
       {contextChanged ? (
         <div className={styles.errorSummary} role="alert" data-testid="product-edit-context-changed">
@@ -415,6 +454,92 @@ function ProductEditForm({
             <p id={`${EDIT_FIELD.name}-error`} className={styles.fieldError}>
               {errors.name}
             </p>
+          ) : null}
+        </div>
+
+        {/*
+          References basic edit may change. Emptying one sends an explicit `null`,
+          which CLEARS it — a distinct operation from leaving the member out, and the
+          hint says so rather than leaving the user to guess.
+        */}
+        <div className={styles.field}>
+          <label htmlFor={EDIT_FIELD.classId}>{PRODUCT_EDIT_TEXT.classLabel}</label>
+          <select
+            id={EDIT_FIELD.classId}
+            value={values.classId}
+            disabled={frozen || contextChanged || classesUnavailable}
+            aria-invalid={errors.classId !== undefined || undefined}
+            aria-describedby={`${EDIT_FIELD.classId}-hint`}
+            ref={(el) => {
+              fieldRefs.current[EDIT_FIELD.classId] = el
+            }}
+            onChange={(event) =>
+              setValues((v) => ({ ...v, classId: event.target.value, familyId: '' }))
+            }
+          >
+            <option value="">{PRODUCT_EDIT_TEXT.chooseNone}</option>
+            {/*
+              The record OWN value stays selectable even when the catalogue no longer
+              offers it: otherwise merely opening the form would silently drop a
+              reference the user never touched.
+            */}
+            {card.product.classId !== null && !classIds.includes(card.product.classId) ? (
+              <option value={card.product.classId}>
+                {card.product.labels.class ?? card.product.classId}
+              </option>
+            ) : null}
+            {(options?.classes ?? []).map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.displayName}
+              </option>
+            ))}
+          </select>
+          <p id={`${EDIT_FIELD.classId}-hint`} className={styles.hint}>
+            {classesUnavailable
+              ? CATALOG_UNAVAILABLE
+              : (options?.classes.length ?? 0) === 0
+                ? CATALOG_EMPTY
+                : PRODUCT_EDIT_TEXT.clearableHint}
+          </p>
+          {errors.classId !== undefined ? (
+            <p className={styles.fieldError}>{errors.classId}</p>
+          ) : null}
+        </div>
+
+        <div className={styles.field}>
+          <label htmlFor={EDIT_FIELD.familyId}>{PRODUCT_EDIT_TEXT.familyLabel}</label>
+          <select
+            id={EDIT_FIELD.familyId}
+            value={values.familyId}
+            disabled={frozen || contextChanged || familiesUnavailable}
+            aria-invalid={errors.familyId !== undefined || undefined}
+            aria-describedby={`${EDIT_FIELD.familyId}-hint`}
+            ref={(el) => {
+              fieldRefs.current[EDIT_FIELD.familyId] = el
+            }}
+            onChange={(event) => setValues((v) => ({ ...v, familyId: event.target.value }))}
+          >
+            <option value="">{PRODUCT_EDIT_TEXT.chooseNone}</option>
+            {card.product.familyId !== null && !familyIds.includes(card.product.familyId) ? (
+              <option value={card.product.familyId}>
+                {card.product.labels.family ?? card.product.familyId}
+              </option>
+            ) : null}
+            {(options?.families ?? []).map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.displayName}
+              </option>
+            ))}
+          </select>
+          <p id={`${EDIT_FIELD.familyId}-hint`} className={styles.hint}>
+            {familiesUnavailable
+              ? CATALOG_UNAVAILABLE
+              : (options?.families.length ?? 0) === 0
+                ? CATALOG_EMPTY
+                : PRODUCT_EDIT_TEXT.clearableHint}
+          </p>
+          {errors.familyId !== undefined ? (
+            <p className={styles.fieldError}>{errors.familyId}</p>
           ) : null}
         </div>
 
