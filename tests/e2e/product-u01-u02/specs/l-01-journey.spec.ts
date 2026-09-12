@@ -12,12 +12,51 @@
  *
  * NOTHING here is mocked: no `route.fulfill`, no synthesised body, no invented code or
  * version. Every code, id and version asserted below was read from a real response.
+ *
+ * THREE STAGE HANDOFFS to the Backend's real snapshot (`src/checkpoint.ts`): `baseline`
+ * before the first mutation, `after-create` once the create is complete and before the
+ * edit begins (the Product owner's Created assertion needs the real v1, which the final
+ * v2 cannot yield), and `final` after the edit and the reopen. At each, the browser
+ * quiesces (C009 barrier), writes a request naming the real record identity and the real
+ * exchanges so far, and continues ONLY on the Backend's acknowledgement of those exact
+ * bytes. No sleep stands in for the snapshot; the browser opens no SQL.
  */
 import { expect, test } from '@playwright/test'
 import { LiveRecorder, ProductDeliveryWithholder, evidenceIdentity, lShot, liveEnvironment, writeLJson } from '../src/live'
+import { CHECKPOINT_STAGES, DEFAULT_ACK_TIMEOUT_MS, awaitCheckpointAck, writeCheckpointRequest, type CheckpointReceipt, type CheckpointStage } from '../src/checkpoint'
+import { runDir, runId as browserRunId } from '../paths'
 import { retrySame, saveDraft, saveEdit } from '../src/ui'
 
 const env = liveEnvironment()
+const ACK_TIMEOUT_MS = Number(process.env.URUN_CHECKPOINT_TIMEOUT_MS ?? DEFAULT_ACK_TIMEOUT_MS)
+// The journey holds three quiet stages for the Backend; its own budget must cover them.
+test.setTimeout(CHECKPOINT_STAGES.length * ACK_TIMEOUT_MS + 5 * 60_000)
+
+/** Real HTTP exchange metadata — method, path, status, key, origin header; never a body. */
+function exchangesOf(recorder: LiveRecorder) {
+  return recorder.records
+    .filter((r) => r.path.startsWith('/api/v1/products'))
+    .map((r) => ({ seq: r.seq, method: r.method, path: r.path, status: r.status, idempotencyKey: r.idempotencyKey, companyId: r.companyId, transferOutcome: r.transferOutcome, at: r.at }))
+}
+
+/**
+ * One stage: quiesce, write the request, wait for the Backend's ack of those exact bytes.
+ * Returns the receipt; a missing or wrong ack fails the journey at THIS stage.
+ */
+async function handOff(stage: CheckpointStage, recorder: LiveRecorder, subject: { productId: string | null; code: string | null; version: string | null }): Promise<CheckpointReceipt> {
+  const quiescence = await recorder.quiesce()
+  expect(quiescence.accepted, `browser quiescent before ${stage}: ${JSON.stringify(quiescence.outstanding)}`).toBe(true)
+  const request = writeCheckpointRequest(runDir, {
+    stage, requestedAtUtc: new Date().toISOString(), browserRunId,
+    resourceRunId: env.resourceRunId, resourceInstanceId: env.resourceInstanceId, manifestSha256: env.manifestSha256,
+    subject, quiescence, exchanges: exchangesOf(recorder),
+    note: `Stage ${stage}: the browser is quiet and holds; the Backend takes its real quiescent snapshot (control.ps1 -Product -Action snapshot) and acknowledges these request bytes at <stage>.ack.json.`,
+  })
+  console.log(`[checkpoint] ${stage} requested: ${request.path} (sha256 ${request.sha256}); waiting up to ${ACK_TIMEOUT_MS} ms for ${stage}.ack.json`)
+  const receipt = await awaitCheckpointAck(runDir, { stage, resourceRunId: env.resourceRunId, requestSha256: request.sha256, requestPath: request.path }, { timeoutMs: ACK_TIMEOUT_MS })
+  console.log(`[checkpoint] ${stage} acknowledged after ${receipt.waitedMs} ms: snapshot ${receipt.ack.snapshotSha256} (${receipt.snapshotBytes})`)
+  return receipt
+}
 const RUN_TOKEN = new Date().toISOString().replace(/\D/g, '').slice(8, 14)
 const NAME = `${env.browserPrefix} Kabul sac ${RUN_TOKEN}`
 const EDITED_NAME = `${NAME} galvaniz`
@@ -42,6 +81,9 @@ test('L-01 live journey: create (lost reply → same-key replay) → list → ca
   await expect(group.locator(`option[value="${env.codeGroupId}"]`)).toBeAttached()
   await group.selectOption(env.codeGroupId)
   await lShot(page, 'l01', '01-create-filled')
+
+  // ── stage 1: baseline, before the first mutation leaves the browser ─────────
+  const baseline = await handOff('baseline', recorder, { productId: null, code: null, version: null })
 
   await saveDraft(page).click()
   // The browser never received the 201: the outcome is unknown, the key is held.
@@ -70,6 +112,10 @@ test('L-01 live journey: create (lost reply → same-key replay) → list → ca
   expect(createPosts[1].companyId).toBe(createPosts[0].companyId)
   expect(createPosts[1].status).toBe(201)
   await lShot(page, 'l01', '03-create-replayed')
+
+  // ── stage 2: after-create — the create is complete, the edit has not begun ───
+  // The Created assertion wants the REAL v1; it cannot be derived from the final v2.
+  const afterCreate = await handOff('after-create', recorder, { productId, code: createdCode, version: createWithheld.identity.version })
 
   // ── list → card ───────────────────────────────────────────────────────────
   await page.getByRole('link', { name: 'Listeye dön' }).click()
@@ -122,6 +168,9 @@ test('L-01 live journey: create (lost reply → same-key replay) → list → ca
   await expect(page.getByRole('heading', { level: 1, name: EDITED_NAME })).toBeVisible()
   await lShot(page, 'l01', '08-reopened')
 
+  // ── stage 3: final — the edit is complete and the card was reopened ─────────
+  const final = await handOff('final', recorder, { productId, code: createdCode, version: versionAfter })
+
   // Global master with a validated origin: every Product request went as the bound
   // actor under the bound company, and no payload carried a companyId.
   for (const r of recorder.records.filter((x) => x.path.startsWith('/api/v1/products'))) {
@@ -131,5 +180,15 @@ test('L-01 live journey: create (lost reply → same-key replay) → list → ca
   }
 
   writeLJson('withheld', 'l01-withheld.json', { ...evidenceIdentity(env), withheld: withholder.withheld, passedThrough: withholder.passedThrough })
-  await recorder.finish(info, 'l01-journey', { ...evidenceIdentity(env), productId, createdCode, versionBefore, versionAfter })
+  // ONE handover for the Product owner: the three stage receipts (request/ack paths and
+  // hashes, snapshot hashes), the real create/edit/replay exchanges and the withheld
+  // deliveries — all from this one bound run. A snapshot hash here is the Backend's
+  // artifact, acknowledged against these request bytes; nothing is derived from JSON.
+  writeLJson('checkpoints', 'l01-handover.json', {
+    ...evidenceIdentity(env), productId, createdCode, versionBefore, versionAfter,
+    stages: { baseline, afterCreate, final },
+    exchanges: exchangesOf(recorder), withheld: withholder.withheld,
+    note: 'Baseline, after-create and final are the Backend’s real quiescent snapshots, each acknowledged against the exact request bytes the browser wrote at that quiet stage. The browser ran no SQL and derived no state from responses.',
+  })
+  await recorder.finish(info, 'l01-journey', { ...evidenceIdentity(env), productId, createdCode, versionBefore, versionAfter, checkpoints: { baseline: baseline.ack.snapshotSha256, afterCreate: afterCreate.ack.snapshotSha256, final: final.ack.snapshotSha256 } })
 })
