@@ -62,8 +62,8 @@ public sealed class ProfileTests
             Permissions = [ErpPermissions.CounterpartyPartiesRead],
         });
         var configure = Assert.Single(container.GetServices<IPostConfigureOptions<IdentitySeedOptions>>());
-        configure.PostConfigure(null, options);
-        configure.PostConfigure(null, options);
+        configure.PostConfigure(Options.DefaultName, options);
+        configure.PostConfigure(Options.DefaultName, options);
         Assert.Single(options.Roles[0].Permissions, permission => permission == ErpPermissions.CounterpartyPartiesUpdateBasic);
         Assert.DoesNotContain(ErpPermissions.CounterpartyPartiesUpdateBasic,
             new IdentityRoleSeed().Permissions);
