@@ -172,11 +172,13 @@ test.describe('O-02 scope and permissions', () => {
      * the ORG-01 route stands on `organization.locations.read` alone, and when the sites
      * capability is absent the request is not issued at all.
      *
-     * The environment owner has PREPARED a locations-only payload, but it is not loaded
-     * (`runtimeLoaded=false`) and this case runs against its own reduced-permission seed
-     * in a fresh owned database. Prepared input is not an observation: until a manifest
-     * binds that actor, this case SKIPS and records that it was not measured. It is never
-     * marked observed from a source hash.
+     * This actor also lacks `organization.locations.status`, so the same run proves the
+     * other half of the mapping: the card it IS entitled to opens, and carries no write
+     * surface at all.
+     *
+     * Prepared input is not an observation. Until a manifest binds a locations-only
+     * actor this case SKIPS and records that it was not measured; it is never marked
+     * observed from a source hash.
      */
     test.skip(
       manifest.locationsOnlyActor === undefined,
@@ -194,8 +196,26 @@ test.describe('O-02 scope and permissions', () => {
     await expect(listHeading(page)).toBeVisible()
     // ...and the facility read was never attempted, not merely discarded.
     expect(net.issuedSiteReads()).toHaveLength(0)
-
     await shot(page, GROUP, '04-locations-only')
+
+    /**
+     * The entitled card, with NO write surface. `organization.locations.detail` is
+     * granted and `organization.locations.status` is not, so the reasoned-change control
+     * must not exist — and, the part that actually matters, no command may be sent.
+     */
+    const rows = pageItems(read.responseBody)
+    await locationLink(page, rows[0].code).click()
+    const detail = await net.waitForNth('the locations-only card detail read', DETAIL_RE, 'GET', 0)
+    expect(detail.status).toBe(200)
+    await expect(cardHeading(page)).toBeVisible()
+    await expect(actionTrigger(page)).toHaveCount(0)
+    await expect(page.getByLabel('Gerekçe')).toHaveCount(0)
+    // Not showing the control is not the guarantee; not sending the command is.
+    expect(net.issued(/active-state$/, 'PUT')).toHaveLength(0)
+    // Opening the card must not have tempted the screen into the facility read either.
+    expect(net.issuedSiteReads()).toHaveLength(0)
+
+    await shot(page, GROUP, '05-locations-only-readonly-card')
     await net.write(GROUP, 'locations-only.json')
   })
 
