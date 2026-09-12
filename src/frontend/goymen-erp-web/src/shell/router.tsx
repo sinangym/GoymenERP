@@ -17,6 +17,7 @@ import { CariCreatePage } from '../cari/CariCreatePage'
 import { CariLinkWorkspacePage } from '../cari/CariLinkWorkspacePage'
 import { CariDetailPage } from '../cari/CariDetailPage'
 import { CariContactEditPage } from '../cari/CariContactEditPage'
+import { organizationRoutes } from '../organization/organizationRoutes'
 import { StateBlock } from './StateBlock'
 
 export const shellRoutes: RouteObject[] = [
@@ -98,6 +99,18 @@ export const shellRoutes: RouteObject[] = [
           </CapabilityRoute>
         ),
       },
+      /**
+       * The Organization lane's own routes, declared in
+       * `src/organization/organizationRoutes.tsx` and mounted here by the
+       * shared-integration owner.
+       *
+       * BEFORE the catch-all, and that is not a style preference: `path: '*'` matches
+       * everything, so a route registered after it can never be reached. Each entry is
+       * gated on its own capability exactly like the Cari ones, and that file fixes the
+       * segment order itself — the card's static `lokasyon` segment sits ahead of
+       * `:locationId`, so no static segment is read as a record id.
+       */
+      ...organizationRoutes,
       {
         /**
          * Catch-all. Without it react-router renders its own error boundary —
