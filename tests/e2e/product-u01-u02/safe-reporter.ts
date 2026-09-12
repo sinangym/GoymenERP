@@ -26,7 +26,7 @@ export default class SafeReporter implements Reporter {
       passed: this.tests.filter((t) => t.status === 'passed').length,
       failed: this.tests.filter((t) => t.status !== 'passed').length, globalErrors: this.globalErrors, tests: this.tests,
       note: lane === 'L'
-        ? 'Live Product API through the same-origin Vite proxy of a publisher-verified, consumer-validated environment; real records were written. The runner status is the test result; Product SQL assertions and snapshot ownership are the Backend/Product owner’s. Not ERP acceptance by itself.'
+        ? 'Live lane: the browser reached the real Product API through the same-origin Vite proxy of a publisher-verified, consumer-validated environment. What was written, if anything, is stated only by the real evidence — the network/withheld/checkpoint records and the Backend’s snapshots and Product SQL assertions — never by this note. The runner status is the test result. Not ERP acceptance by itself.'
         : 'Controlled T responses in a real Chromium against the unchanged frontend; no live API, SQL, login or capability publication. Not ERP acceptance.',
     }, null, 2) + '\n')
   }
