@@ -1,5 +1,8 @@
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Identity.Infrastructure.Seeding;
+using Microsoft.Extensions.Options;
 using GoymenERP.CariAcceptance006;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,7 +19,7 @@ public sealed class ProfileTests
     }
 
     [Fact]
-    public void ExactRun_OpensExactlyFourCapabilities_PreservesPermissionsAndNormalProvider()
+    public void ExactRun_OpensFourReadsAndContactEdit_PreservesPermissionsAndNormalProvider()
     {
         var services = Canonical();
         AcceptanceProfile.Configure(services, "Testing", new RunSettings());
@@ -26,8 +29,16 @@ public sealed class ProfileTests
         var registry = new ShellCapabilityRegistry([provider], catalog);
         Assert.Equal(AcceptanceProfile.Revision, registry.Revision);
         var original = new CounterpartyShellCapabilityProvider().GetDeclarations();
-        Assert.Equal(4, provider.GetDeclarations().Count);
-        foreach (var declaration in provider.GetDeclarations())
+        Assert.Equal(5, provider.GetDeclarations().Count);
+        var edit = Assert.Single(provider.GetDeclarations(), x => x.CapabilityId == "cari.accounts.contact.update");
+        Assert.Equal("cari.contact-edit", edit.RouteId);
+        Assert.Equal("/cari/:partyId/bilgiler", edit.RoutePath);
+        Assert.Equal("C-06", edit.ScreenId);
+        Assert.True(edit.ImplementationAvailable);
+        Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, edit.ContextRequirement);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, edit.ScopeRequirement);
+        Assert.Equal(new[] { ErpPermissions.CounterpartyPartiesRead, ErpPermissions.CounterpartyPartiesUpdateBasic }, edit.RequiredPermissions);
+        foreach (var declaration in provider.GetDeclarations().Where(x => x.CapabilityId != edit.CapabilityId))
         {
             var source = Assert.Single(original, x => x.CapabilityId == declaration.CapabilityId);
             Assert.True(declaration.ImplementationAvailable);
@@ -36,6 +47,26 @@ public sealed class ProfileTests
             Assert.Equal(source.ScopeRequirement, declaration.ScopeRequirement);
         }
         Assert.All(original, x => Assert.False(x.ImplementationAvailable));
+    }
+
+    [Fact]
+    public void BasicPermissionGrant_IsTestOnlyExplicitAndIdempotent()
+    {
+        var services = Canonical();
+        AcceptanceProfile.Configure(services, "Testing", new RunSettings());
+        using var container = services.BuildServiceProvider();
+        var options = new IdentitySeedOptions();
+        options.Roles.Add(new IdentityRoleSeed
+        {
+            Id = Guid.NewGuid(), Code = "SYSTEM_ADMINISTRATOR", Name = "Test only",
+            Permissions = [ErpPermissions.CounterpartyPartiesRead],
+        });
+        var configure = Assert.Single(container.GetServices<IPostConfigureOptions<IdentitySeedOptions>>());
+        configure.PostConfigure(null, options);
+        configure.PostConfigure(null, options);
+        Assert.Single(options.Roles[0].Permissions, permission => permission == ErpPermissions.CounterpartyPartiesUpdateBasic);
+        Assert.DoesNotContain(ErpPermissions.CounterpartyPartiesUpdateBasic,
+            new IdentityRoleSeed().Permissions);
     }
 
     [Theory]

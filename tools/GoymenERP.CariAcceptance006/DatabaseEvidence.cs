@@ -1,14 +1,21 @@
 using Microsoft.Data.SqlClient;
+using GoymenERP.Modules.Counterparty.Application.Contracts;
+using System.Globalization;
+using System.Text;
 
 namespace GoymenERP.CariAcceptance006;
 
-public sealed record Effects(int Parties, int Accounts, int CreateAudits, int LinkAudits, int CreateExecutions, int LinkExecutions)
+public sealed record Effects(int Parties, int Accounts, int CreateAudits, int LinkAudits, int CreateExecutions, int LinkExecutions,
+    int ContactAudits = 0, int ContactExecutions = 0)
 {
     public Effects AddJourney(int count) => new(Parties + count, Accounts + count * 2,
-        CreateAudits + count, LinkAudits + count, CreateExecutions + count, LinkExecutions + count);
+        CreateAudits + count, LinkAudits + count, CreateExecutions + count, LinkExecutions + count,
+        ContactAudits, ContactExecutions);
 }
-public sealed record AccountRow(Guid PartyId, string Code, string LegalName, Guid CompanyId, int Roles, string Version);
-public sealed record DatabaseSnapshot(string DatabaseName, bool Rcsi, Effects Effects, IReadOnlyList<AccountRow> Rows);
+public sealed record AccountRow(Guid PartyId, string Code, string LegalName, Guid CompanyId, int Roles, string Version,
+    string? ContactInformationJson = null, bool IsActive = true);
+public sealed record DatabaseSnapshot(string DatabaseName, bool Rcsi, Effects Effects, IReadOnlyList<AccountRow> Rows,
+    string PartyStateSha256 = "");
 
 // Fixed read-only queries from the pinned real-SQL test contract, not a SQL console.
 // The connection can only be constructed for this new, exact C006 database.
@@ -55,16 +62,18 @@ public static class DatabaseEvidence
               (SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType]=N'counterparty.party.created.v1'),
               (SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType]=N'counterparty.company-account.created.v1'),
               (SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [CommandName]=N'counterparty.party.create.v1'),
-              (SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [CommandName]=N'counterparty.company-account.create.v1');
+              (SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [CommandName]=N'counterparty.company-account.create.v1'),
+              (SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType]=N'counterparty.company-account.contact-information.changed.v1'),
+              (SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [CommandName]=N'counterparty.company-account.contact-information.update.v1');
             """;
         await using var reader = await counts.ExecuteReaderAsync();
         if (!await reader.ReadAsync()) throw new InvalidOperationException("C006 count snapshot missing.");
         var effects = new Effects(reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2),
-            reader.GetInt32(3), reader.GetInt32(4), reader.GetInt32(5));
+            reader.GetInt32(3), reader.GetInt32(4), reader.GetInt32(5), reader.GetInt32(6), reader.GetInt32(7));
         await reader.DisposeAsync();
         await using var rows = connection.CreateCommand();
         rows.CommandText = """
-            SELECT p.Id, p.Code, p.LegalName, a.CompanyId, a.Roles, a.Version
+            SELECT p.Id, p.Code, p.LegalName, a.CompanyId, a.Roles, a.Version, a.ContactInformationJson, a.IsActive
             FROM counterparty.Parties AS p
             JOIN counterparty.CompanyPartyAccounts AS a ON a.PartyId=p.Id
             ORDER BY p.Id,a.CompanyId;
@@ -73,8 +82,39 @@ public static class DatabaseEvidence
         var values = new List<AccountRow>();
         while (await rowReader.ReadAsync())
             values.Add(new(rowReader.GetGuid(0), rowReader.GetString(1), rowReader.GetString(2),
-                rowReader.GetGuid(3), rowReader.GetInt32(4), rowReader.GetInt64(5).ToString(System.Globalization.CultureInfo.InvariantCulture)));
-        return new(identity.DatabaseName, rcsi, effects, values);
+                rowReader.GetGuid(3), rowReader.GetInt32(4), rowReader.GetInt64(5).ToString(CultureInfo.InvariantCulture),
+                rowReader.IsDBNull(6) ? null : rowReader.GetString(6), rowReader.GetBoolean(7)));
+        await rowReader.DisposeAsync();
+        await using var partyState = connection.CreateCommand();
+        partyState.CommandText = "SELECT (SELECT * FROM [counterparty].[Parties] ORDER BY [Id] FOR JSON PATH, INCLUDE_NULL_VALUES);";
+        var partyJson = (string)(await partyState.ExecuteScalarAsync())!;
+        var partyHash = SourceBinding.Hash(Encoding.UTF8.GetBytes(partyJson));
+        return new(identity.DatabaseName, rcsi, effects, values, partyHash);
+    }
+
+    public static void VerifyContactEdit(
+        RunSettings identity, DatabaseSnapshot baseline, DatabaseSnapshot current,
+        Guid partyId, Guid companyId, CounterpartyContactInformation expectedInformation)
+    {
+        identity.Validate("Testing");
+        var expectedJson = CounterpartyContactInformationEditor.Serialize(expectedInformation);
+        var before = baseline.Rows.SingleOrDefault(row => row.PartyId == partyId && row.CompanyId == companyId);
+        var after = current.Rows.SingleOrDefault(row => row.PartyId == partyId && row.CompanyId == companyId);
+        if (before is null || after is null || baseline.DatabaseName != identity.DatabaseName
+            || current.DatabaseName != identity.DatabaseName || !baseline.Rcsi || !current.Rcsi
+            || baseline.PartyStateSha256.Length != 64 || baseline.PartyStateSha256 != current.PartyStateSha256
+            || baseline.Rows.Count != current.Rows.Count || before.ContactInformationJson == expectedJson
+            || current.Effects != baseline.Effects with
+            {
+                ContactAudits = baseline.Effects.ContactAudits + 1,
+                ContactExecutions = baseline.Effects.ContactExecutions + 1,
+            })
+            throw new InvalidOperationException("C006 contact edit must change one existing account, with no new Party/account or unrelated effect.");
+        var nextVersion = checked(CounterpartyContactInformationEditor.ParseVersion(before.Version) + 1)
+            .ToString(CultureInfo.InvariantCulture);
+        if (after != before with { Version = nextVersion, ContactInformationJson = expectedJson }
+            || baseline.Rows.Where(row => row != before).Any(row => !current.Rows.Contains(row)))
+            throw new InvalidOperationException("C006 contact edit canonical value, version or company isolation mismatch.");
     }
 
     public static void VerifyBrowserJourney(RunSettings identity, DatabaseSnapshot baseline, DatabaseSnapshot current, int count)

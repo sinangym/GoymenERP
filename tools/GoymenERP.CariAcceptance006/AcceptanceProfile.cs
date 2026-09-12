@@ -3,6 +3,8 @@ using System.Text;
 using System.Text.Json;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Identity.Infrastructure.Seeding;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -93,9 +95,9 @@ public sealed record RunSettings
 
 public static class AcceptanceProfile
 {
-    // Offline canonical fingerprint for these four exact, single-company declarations.
+    // Offline canonical fingerprint for these five exact, single-company declarations.
     // The real registry checks it. It is NOT derived from arbitrary providers at runtime.
-    public const string Revision = "sha256:lEpHK3qtyce7t9M_I5RebxCJKlLL052fsdrzKzsLrLE";
+    public const string Revision = "sha256:VgK2rm5DemWYcc50HvrUcElPoDcymsCMdawVI137j4A";
     public static void Configure(IServiceCollection services, string environment, RunSettings identity)
     {
         identity.Validate(environment);
@@ -103,6 +105,12 @@ public static class AcceptanceProfile
         if (providers.Length != 1 || providers[0].ImplementationType != typeof(CounterpartyShellCapabilityProvider)
             || providers[0].Lifetime != ServiceLifetime.Singleton)
             throw new InvalidOperationException("C006 cannot replace an unexpected or C01 provider.");
+        services.PostConfigure<IdentitySeedOptions>(options =>
+        {
+            var administrator = options.Roles.Single(role => role.Code == "SYSTEM_ADMINISTRATOR");
+            if (!administrator.Permissions.Contains(ErpPermissions.CounterpartyPartiesUpdateBasic))
+                administrator.Permissions.Add(ErpPermissions.CounterpartyPartiesUpdateBasic);
+        });
         services.Remove(providers[0]);
         services.AddSingleton<IShellCapabilityProvider, CariAcceptanceProvider>();
         services.RemoveAll<ShellCapabilityAuthorityCatalog>();
@@ -120,5 +128,11 @@ public sealed class CariAcceptanceProvider : IShellCapabilityProvider
         {
             ContextRequirement = ShellCapabilityContextRequirement.SingleCompany,
             ImplementationAvailable = true,
-        }).ToArray());
+        }).Append(new ShellCapabilityDeclaration(
+            "cari.accounts.contact.update", "cari.contact-edit", "/cari/:partyId/bilgiler", "C-06",
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [ErpPermissions.CounterpartyPartiesRead, ErpPermissions.CounterpartyPartiesUpdateBasic],
+            ImplementationAvailable: true)).ToArray());
 }

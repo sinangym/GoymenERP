@@ -251,3 +251,39 @@ the existing isolated acceptance harness for a real edit/reopen/list flow. Final
 K3 merge requires fresh CI and two independent exact-head reviews via coordinator.
 Global legal/tax/bank approval and the remaining owner-module views remain on the
 same Business delivery list, not silently removed from the full user goal.
+
+## Contact-edit composition preparation
+
+The existing Testing-only provider now additionally declares:
+`cari.accounts.contact.update` / `cari.contact-edit` /
+`/cari/:partyId/bilgiler` / `C-06`, requiring read + basic company-wide.
+Its offline registry revision is
+`sha256:VgK2rm5DemWYcc50HvrUcElPoDcymsCMdawVI137j4A`.
+The test profile explicitly grants basic edit only to its synthetic administrator.
+Normal provider and normal roles remain unchanged.
+
+The existing DatabaseEvidence snapshot adds contact audit/execution counters,
+account contact JSON/active state and a hash of complete Party rows.
+VerifyContactEdit compares one exact expected canonical profile and one logical
+version increment, one audit/command, all other account rows and global Party hash.
+It requires zero new Party/account. It is distinct from the unchanged strict
+create/link journey ExpectedNewParties=1; helper tests are not browser acceptance.
+
+Coordinator assigned the single external input writer to CODEX-BACKEND at:
+`C:\src\GoymenERP-cari-party-card-backend-20260912\artifacts\cari-acceptance-006\contact-edit-20260912\contract.json`.
+Do not start the old consumed fc resource identity. New run/resource/source pins
+and command wiring must be finalized against the published frontend form candidate
+before bind/setup/start/publish. This preparation does not emit ENV_READY.
+The historical source-provenance manifest is not rewritten to describe adapted files.
+
+CI at 1a330b4: backend/build/migration, OpenAPI, frontend, C006-envelope, C01-browser
+and catalog passed; SQL83 had 79PASS/4FAIL/0skip; dependent Container build skipped.
+The four failures were historical migration fixture/model mismatches:
+two exact migration totals now require4; roles-only downgrade assertions must begin
+at the roles migration boundary; current EF runtime cannot operate on a schema
+without its new column. Fixed fixtures retain historical raw row/rowversion,
+constraint, migration journal and durable-byte assertions; HTTP replays run only
+after restoring the current schema. The four focused real-SQL reruns passed.
+This is NOT a claim that the new binary supports an unmigrated old schema:
+deploy the additive migration before the new binary; never roll the schema back
+while that binary serves requests.
