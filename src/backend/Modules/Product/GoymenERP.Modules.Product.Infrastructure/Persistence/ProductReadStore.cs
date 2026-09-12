@@ -13,7 +13,7 @@ public sealed record ProductStoredPage(IReadOnlyList<ProductStoredRecord> Items,
 /// <summary>Product-only relational reads; the application caller rechecks current authority before releasing results.</summary>
 public sealed class ProductReadStore(ProductDbContext context)
 {
-    public async Task<ProductStoredRecord?> FindAsync(GroupSharedMasterReadContext authority, Guid id,
+    public async Task<ProductStoredRecord?> ReadByIdAsync(GroupSharedMasterReadContext authority, Guid id,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(authority);
