@@ -308,3 +308,18 @@ The single-edit helper and strict create/link `ExpectedNewParties=1` remain sepa
 The L-03 helper's controlled tests are NOT live SQL or browser acceptance. Source
 pins, measurement CLI wiring, frontend final review, exact local BackendVerify and
 fresh runtime publication remain separate gates. No new ENV_READY is asserted.
+
+This two-edit profile describes frontend candidate #235/8273530 only. Business's
+expanded final acceptance journey is not silently assigned the same counters.
+Its actual ordered attempts and values must be supplied by Claude, then the same
+typed helper and source pins adapted before any fresh environment is published.
+
+The existing round-trip SQL fact now additionally proves inactive-address upsert
+preserves inactivity, followed by explicit reactivation of the same UUID, retained
+contact data, four audit entries and unchanged B/global Party data. The existing
+authorization/isolation fact additionally proves an A address UUID cannot resolve
+a B child through partial upsert/deactivate; complete B upsert with the same UUID
+creates only B's own child. A channel cannot be addressed through another contact.
+Both updated facts passed against real local SQL Server on 2026-09-12, zero skips;
+TRX: `artifacts/party-card-tests/party-card-contact-child-boundaries.trx`.
+No new test inventory, permission grant, runtime API behavior or migration was added.

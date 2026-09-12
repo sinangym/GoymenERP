@@ -94,6 +94,48 @@ public sealed class CounterpartyContactInformationSqlServerRelationalAcceptanceT
             $"/api/v1/audit/events?entityType=Counterparty.CompanyPartyAccount&entityId={after.GetProperty("accountId").GetGuid():D}");
         Assert.Equal(2, history.GetProperty("items").EnumerateArray()
             .Count(item => item.GetProperty("eventType").GetString() == EventName));
+
+        // Editing an inactive child must not silently reactivate it. The same UUID
+        // survives an explicit reactivation, with one history event per real change.
+        NewKey(a);
+        using var inactiveEdit = await PutAsync(a, path, $$$"""
+            {"expectedVersion":"3","changes":{"addresses":[
+              {"id":"{{{firstAddress}}}","operation":"upsert","line1":"Edited while inactive"}]}}
+            """);
+        Assert.Equal(HttpStatusCode.NoContent, inactiveEdit.StatusCode);
+        var inactive = await ReadAsync(a, path);
+        Assert.Equal("4", inactive.GetProperty("version").GetString());
+        var inactiveAddress = inactive.GetProperty("information").GetProperty("addresses").EnumerateArray()
+            .Single(address => address.GetProperty("id").GetGuid() == firstAddress);
+        Assert.False(inactiveAddress.GetProperty("isActive").GetBoolean());
+        Assert.Equal("3", inactiveAddress.GetProperty("version").GetString());
+        Assert.Equal("Edited while inactive", inactiveAddress.GetProperty("line1").GetString());
+        NewKey(a);
+        using var reactivate = await PutAsync(a, path, $$$"""
+            {"expectedVersion":"4","changes":{"addresses":[
+              {"id":"{{{firstAddress}}}","operation":"reactivate"}]}}
+            """);
+        Assert.Equal(HttpStatusCode.NoContent, reactivate.StatusCode);
+        var reactivated = await ReadAsync(a, path);
+        Assert.Equal("5", reactivated.GetProperty("version").GetString());
+        var reactivatedAddresses = reactivated.GetProperty("information").GetProperty("addresses");
+        Assert.Equal(2, reactivatedAddresses.GetArrayLength());
+        var sameAddress = reactivatedAddresses.EnumerateArray()
+            .Single(address => address.GetProperty("id").GetGuid() == firstAddress);
+        Assert.True(sameAddress.GetProperty("isActive").GetBoolean());
+        Assert.Equal("4", sameAddress.GetProperty("version").GetString());
+        Assert.Equal("Edited while inactive", sameAddress.GetProperty("line1").GetString());
+        Assert.Equal(after.GetProperty("information").GetProperty("contacts").GetRawText(),
+            reactivated.GetProperty("information").GetProperty("contacts").GetRawText());
+        Assert.Equal(beforeB.GetRawText(), (await ReadAsync(b, path)).GetRawText());
+        Assert.Equal(beforeParty, await test.ScalarAsync<string>(
+            "SELECT (SELECT * FROM [counterparty].[Parties] WHERE [Id]=@Party FOR JSON PATH);", party));
+        var extendedHistory = await ReadAsync(a,
+            $"/api/v1/audit/events?entityType=Counterparty.CompanyPartyAccount&entityId={after.GetProperty("accountId").GetGuid():D}");
+        Assert.Equal(4, extendedHistory.GetProperty("items").EnumerateArray()
+            .Count(item => item.GetProperty("eventType").GetString() == EventName));
+        Assert.Equal(4, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [CommandName]=@Command;", party));
     }
 
     [SqlServerFact]
@@ -132,6 +174,63 @@ public sealed class CounterpartyContactInformationSqlServerRelationalAcceptanceT
         Assert.Equal(1, await test.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [counterparty].[CompanyPartyAccounts] WHERE [PartyId]=@Party;", party));
         Assert.Equal(0, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType]=@Event;", party));
+
+        a.DefaultRequestHeaders.Add("X-ERP-Counterparty-Contract", "optional-trade-roles-v1");
+        var addressId = Guid.NewGuid();
+        var firstContact = Guid.NewGuid();
+        var secondContact = Guid.NewGuid();
+        var channelId = Guid.NewGuid();
+        NewKey(a);
+        using var initializeA = await PutAsync(a, path, $$$"""
+            {"expectedVersion":"1","changes":{
+             "addresses":[{"id":"{{{addressId}}}","operation":"upsert","purpose":"delivery","countryCode":"TR","line1":"Company A only"}],
+             "contacts":[
+              {"id":"{{{firstContact}}}","operation":"upsert","displayName":"First","purpose":"Operations",
+               "channels":[{"id":"{{{channelId}}}","operation":"upsert","kind":"phone","value":"00123"}]},
+              {"id":"{{{secondContact}}}","operation":"upsert","displayName":"Second","purpose":"Operations"}]}}
+            """);
+        Assert.Equal(HttpStatusCode.NoContent, initializeA.StatusCode);
+        var preservedA = (await ReadAsync(a, path)).GetRawText();
+        NewKey(b);
+        using var linkB = await b.PostAsJsonAsync($"/api/v1/counterparties/{party}/company-account", new { roles = 0 });
+        Assert.Equal(HttpStatusCode.Created, linkB.StatusCode);
+        var untouchedB = (await ReadAsync(b, path)).GetRawText();
+        foreach (var foreignChild in new[]
+        {
+            $$$"""{"expectedVersion":"1","changes":{"addresses":[{"id":"{{{addressId}}}","operation":"deactivate"}]}}""",
+            $$$"""{"expectedVersion":"1","changes":{"addresses":[{"id":"{{{addressId}}}","operation":"upsert","line1":"Cannot resolve A"}]}}""",
+        })
+        {
+            NewKey(b);
+            using var foreignChildResponse = await PutAsync(b, path, foreignChild);
+            Assert.Equal(HttpStatusCode.BadRequest, foreignChildResponse.StatusCode);
+            Assert.Equal(untouchedB, (await ReadAsync(b, path)).GetRawText());
+            Assert.Equal(preservedA, (await ReadAsync(a, path)).GetRawText());
+        }
+        // A UUID is scoped to its owning account, not a global address lookup.
+        NewKey(b);
+        using var ownAddressB = await PutAsync(b, path, $$$"""
+            {"expectedVersion":"1","changes":{"addresses":[
+             {"id":"{{{addressId}}}","operation":"upsert","purpose":"operational","countryCode":"DE","line1":"Company B only"}]}}
+            """);
+        Assert.Equal(HttpStatusCode.NoContent, ownAddressB.StatusCode);
+        Assert.Equal(preservedA, (await ReadAsync(a, path)).GetRawText());
+        var ownB = await ReadAsync(b, path);
+        Assert.Equal("2", ownB.GetProperty("version").GetString());
+        var ownBAddress = Assert.Single(ownB.GetProperty("information").GetProperty("addresses").EnumerateArray());
+        Assert.Equal(addressId, ownBAddress.GetProperty("id").GetGuid());
+        Assert.Equal("Company B only", ownBAddress.GetProperty("line1").GetString());
+        // A channel under the first contact cannot be addressed through the second.
+        NewKey(a);
+        using var foreignParent = await PutAsync(a, path, $$$"""
+            {"expectedVersion":"2","changes":{"contacts":[
+             {"id":"{{{secondContact}}}","operation":"upsert","channels":[{"id":"{{{channelId}}}","operation":"deactivate"}]}]}}
+            """);
+        Assert.Equal(HttpStatusCode.BadRequest, foreignParent.StatusCode);
+        Assert.Equal(preservedA, (await ReadAsync(a, path)).GetRawText());
+        Assert.Equal(ownB.GetRawText(), (await ReadAsync(b, path)).GetRawText());
+        Assert.Equal(2, await test.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType]=@Event;", party));
     }
 
