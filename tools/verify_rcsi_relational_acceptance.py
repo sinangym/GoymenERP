@@ -40,6 +40,8 @@ EXPECTED_TESTS = tuple(
     )
 )
 BROAD_EXPECTED_TESTS = (
+    "GoymenERP.Api.IntegrationTests.OrganizationLocationLifecycleSqlServerRelationalAcceptanceTests.ListDetailDeactivateReactivateAndDelayedReplay_ReturnFreshStateAndSingleAuditPerCommand",
+    "GoymenERP.Api.IntegrationTests.OrganizationLocationLifecycleSqlServerRelationalAcceptanceTests.ScopedPagingAndRejectedCommands_PreserveLocationAndExposeNoForeignState",
     "GoymenERP.Api.IntegrationTests.CounterpartyContactInformationSqlServerRelationalAcceptanceTests.ContactCard_NoOpKeepsLogicalVersionAndAuditWhilePersistingOneReplayResult",
     "GoymenERP.Api.IntegrationTests.CounterpartyContactInformationSqlServerRelationalAcceptanceTests.AccountContactCard_RoundTripsExplicitChildrenWithoutChangingPartyOrOtherCompany",
     "GoymenERP.Api.IntegrationTests.CounterpartyContactInformationSqlServerRelationalAcceptanceTests.ContactCard_AuthorizationNoDefaultGrantAndMissingRelationAreNonDisclosing",
@@ -117,8 +119,8 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.UnapprovedLogicalEndpoint_IsRejectedWithoutChangingDatabase",
     "GoymenERP.Api.IntegrationTests.SqlServerRelationalAcceptanceTests.MigrationSeedWriteGuardCompositeForeignKeyAndHttpIsolation_AreEnforced",
 )
-BROAD_DISCOVERY_COUNT = 76
-BROAD_EXECUTION_COUNT = 83
+BROAD_DISCOVERY_COUNT = 78
+BROAD_EXECUTION_COUNT = 85
 
 
 def verify_discovery(standard_output: str) -> None:
