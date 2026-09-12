@@ -1,0 +1,293 @@
+/*
+ * ORG-02 styling. Same token set and the same rules as ORG-01: colour is never the
+ * only carrier of status, focus is always visible, and nothing forces the page body
+ * to scroll sideways at 400px.
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.page h1 {
+  font-size: 1.25rem;
+  margin: 0;
+  color: #0f172a;
+  overflow-wrap: anywhere;
+}
+
+.breadcrumb a {
+  color: #0b6fe8;
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+.breadcrumb a:hover {
+  text-decoration: underline;
+}
+.breadcrumb a:focus-visible {
+  outline: 2px solid #0b6fe8;
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.card {
+  display: grid;
+  /* Reflows to one column instead of forcing a horizontal scroll (WCAG 1.4.10). */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 1px;
+  margin: 0;
+  background: #e2e8f0;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.field {
+  background: #ffffff;
+  padding: 12px 14px;
+  min-width: 0;
+}
+.field dt {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+.field dd {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #0f172a;
+  overflow-wrap: anywhere;
+}
+
+.badgeActive,
+.badgePassive {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.badgeActive {
+  background: #e8f5ec;
+  color: #15803d;
+  border: 1px solid #bfe3cb;
+}
+.badgePassive {
+  background: #fdf3e7;
+  color: #a3592f;
+  border: 1px solid #f0d3ae;
+  font-weight: 600;
+}
+
+.actionSection {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sectionHeading {
+  font-size: 1rem;
+  margin: 0;
+  color: #0f172a;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.help {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #64748b;
+  max-width: 60ch;
+}
+
+.textarea {
+  font: inherit;
+  font-size: 0.95rem;
+  color: #0f172a;
+  padding: 9px 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  resize: vertical;
+  width: 100%;
+  box-sizing: border-box;
+}
+.textarea:focus-visible {
+  outline: 2px solid #0b6fe8;
+  outline-offset: 1px;
+  border-color: #0b6fe8;
+}
+.textarea[aria-invalid='true'] {
+  border-color: #dc2626;
+}
+.textarea:disabled {
+  background: #f5f7fa;
+  color: #64748b;
+}
+
+.fieldError {
+  margin: 0;
+  color: #dc2626;
+  font-size: 0.85rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.primary,
+.secondary {
+  font: inherit;
+  font-size: 0.9rem;
+  border-radius: 8px;
+  padding: 9px 16px;
+  cursor: pointer;
+  min-height: 40px;
+}
+
+.primary {
+  background: #0b6fe8;
+  border: 1px solid #0b6fe8;
+  color: #ffffff;
+}
+.primary:hover:not(:disabled) {
+  background: #075bc4;
+  border-color: #075bc4;
+}
+.primary:disabled {
+  background: #9dbdea;
+  border-color: #9dbdea;
+  cursor: not-allowed;
+}
+
+.secondary {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
+}
+.secondary:hover {
+  background: #f5f7fa;
+}
+
+.primary:focus-visible,
+.secondary:focus-visible {
+  outline: 2px solid #0b6fe8;
+  outline-offset: 2px;
+}
+
+/*
+ * Outcome notices. Each state gets its own colour AND its own heading text, so the
+ * three are never distinguishable by colour alone. They are focus targets, so they
+ * carry a visible focus ring too.
+ */
+.noticeOk,
+.noticeWarn,
+.noticeError {
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 0.9rem;
+}
+.noticeOk p,
+.noticeWarn p,
+.noticeError p {
+  margin: 0;
+  max-width: 70ch;
+}
+
+.noticeOk {
+  background: #e8f5ec;
+  border: 1px solid #bfe3cb;
+  color: #14532d;
+}
+.noticeWarn {
+  background: #fdf3e7;
+  border: 1px solid #f0d3ae;
+  color: #7c3f12;
+}
+.noticeError {
+  background: #fdecec;
+  border: 1px solid #f2c2c2;
+  color: #991b1b;
+}
+
+.noticeOk:focus-visible,
+.noticeWarn:focus-visible,
+.noticeError:focus-visible {
+  outline: 2px solid #0b6fe8;
+  outline-offset: 2px;
+}
+
+.noticeTitle {
+  font-weight: 600;
+}
+
+.conflict {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Modal, matching the shell's SwitchConfirmDialog conventions. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 50;
+}
+
+.dialog {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 20px;
+  width: min(100%, 34rem);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-sizing: border-box;
+}
+
+.dialogTitle {
+  margin: 0;
+  font-size: 1.05rem;
+  color: #0f172a;
+}
+
+.dialogTarget {
+  margin: 0;
+  color: #0f172a;
+  font-size: 0.95rem;
+  background: #f5f7fa;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.retryRefused {
+  margin: 0;
+  font-size: 0.85rem;
+  font-style: italic;
+}
