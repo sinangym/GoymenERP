@@ -5,12 +5,15 @@ namespace GoymenERP.Product.UnitTests;
 
 public sealed class ProductDraftTests
 {
+    private static ProductCard Create(Guid id, ProductCode code, string name, DateTimeOffset now) =>
+        ProductCard.CreateDraft(id, code, name, Guid.NewGuid(), null, null, ProductRoles.NotEvaluated, now);
+
     [Fact]
     public void Basic_create_is_draft_even_without_activation_completeness()
     {
         var id = Guid.NewGuid();
         var clock = new DateTimeOffset(2026, 9, 12, 10, 0, 0, TimeSpan.FromHours(3));
-        var product = new ProductCard(id, ProductCode.FromSequence("SAC", 42), "  Siyah sac  ", clock);
+        var product = Create(id, ProductCode.FromSequence("SAC", 42), "  Siyah sac  ", clock);
 
         Assert.Equal(id, product.Id);
         Assert.Equal("Siyah sac", product.Name);
@@ -23,14 +26,14 @@ public sealed class ProductDraftTests
     [Fact]
     public void Default_code_cannot_create_an_unidentified_card()
     {
-        Assert.Throws<ArgumentNullException>(() => new ProductCard(
+        Assert.Throws<ArgumentNullException>(() => Create(
             Guid.NewGuid(), default, "Sac", DateTimeOffset.UtcNow));
     }
 
     [Fact]
     public void Missing_identity_is_rejected()
     {
-        Assert.Throws<ArgumentException>(() => new ProductCard(
+        Assert.Throws<ArgumentException>(() => Create(
             Guid.Empty, ProductCode.FromSequence("SAC", 1), "Sac", DateTimeOffset.UtcNow));
     }
 
@@ -39,7 +42,7 @@ public sealed class ProductDraftTests
     [InlineData(" ")]
     public void Blank_name_cannot_create_a_card(string name)
     {
-        Assert.Throws<ArgumentException>(() => new ProductCard(
+        Assert.Throws<ArgumentException>(() => Create(
             Guid.NewGuid(), ProductCode.FromSequence("SAC", 1), name, DateTimeOffset.UtcNow));
     }
 

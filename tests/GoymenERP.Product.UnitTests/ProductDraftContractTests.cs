@@ -7,6 +7,9 @@ namespace GoymenERP.Product.UnitTests;
 
 public sealed class ProductDraftContractTests
 {
+    private static ProductCard Create(Guid id, ProductCode code, string name, DateTimeOffset now) =>
+        ProductCard.CreateDraft(id, code, name, Guid.NewGuid(), null, null, ProductRoles.NotEvaluated, now);
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     [Theory]
@@ -35,13 +38,13 @@ public sealed class ProductDraftContractTests
     [Fact]
     public void Response_uses_string_version_and_explicit_draft_status()
     {
-        var product = new ProductCard(Guid.NewGuid(), ProductCode.FromSequence("SAC", 42),
+        var product = Create(Guid.NewGuid(), ProductCode.FromSequence("SAC", 42),
             "Sac", DateTimeOffset.UtcNow);
         using var json = JsonDocument.Parse(JsonSerializer.Serialize(ProductDraftView.FromProduct(product), JsonOptions));
 
         Assert.Equal(JsonValueKind.String, json.RootElement.GetProperty("version").ValueKind);
         Assert.Equal("1", json.RootElement.GetProperty("version").GetString());
-        Assert.Equal("draft", json.RootElement.GetProperty("lifecycle").GetString());
+        Assert.Equal("Draft", json.RootElement.GetProperty("lifecycle").GetString());
         Assert.False(json.RootElement.TryGetProperty("companyId", out _));
         Assert.False(json.RootElement.TryGetProperty("stockQuantity", out _));
     }
