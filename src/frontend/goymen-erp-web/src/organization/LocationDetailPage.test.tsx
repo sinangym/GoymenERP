@@ -8,9 +8,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { attemptStoreKey, recallAttempt } from './unresolvedAttemptStore'
 import {
   COMPANY_A,
   COMPANY_B,
+  IDENTITY,
   LOC_H0,
   READ_CAPABILITIES,
   SITE_OSM,
@@ -645,5 +647,143 @@ describe('the list behind the card', () => {
         .find((entry) => entry.queryKey[2] === 'organization-locations')
       expect(listQuery?.state.isInvalidated).toBe(true)
     })
+  })
+})
+
+describe('the unresolved attempt survives the component lifecycle', () => {
+  const STORE_KEY = attemptStoreKey(IDENTITY.userId, COMPANY_A, LOC_H0)
+
+  it('survives a FAILED re-read that unmounts the card, and comes back on recovery', async () => {
+    /**
+     * The gap this closes: "Güncel kaydı yükle" on an unknown outcome refreshes the
+     * record; if that GET fails, the card renders a state block instead of the action
+     * section, the section unmounts, and its `useReducer` — the only copy of the
+     * Idempotency-Key — went with it. A later successful read then mounted a fresh
+     * `idle` section, so a command that MAY ALREADY BE RECORDED had silently lost its
+     * key, and the next submit would mint a second one.
+     */
+    const { recorded } = stub({
+      command: [() => problem(503), () => noContent()],
+      detail: [
+        () => json(location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0', { version: 3 })),
+        () => problem(503), // the refresh fails
+        () => json(location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0', { version: 3 })),
+      ],
+    })
+    renderAt(PATH)
+    await fillAndSubmit()
+    expect(await screen.findByText(/sonuç bilinmiyor/)).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Güncel kaydı yükle' }))
+
+    // The card is gone, but the outstanding command is NOT silent.
+    expect(await screen.findByText('Sonucu bilinmeyen bir işleminiz var')).toBeTruthy()
+    expect(recallAttempt(STORE_KEY)?.snapshot.key).toBeTruthy()
+
+    // Recover the read; the attempt must come back, not restart idle.
+    await userEvent.click(screen.getByRole('button', { name: 'Tekrar dene' }))
+
+    expect(await screen.findByText(/sonuç bilinmiyor/)).toBeTruthy()
+    const resend = await screen.findByRole('button', {
+      name: /Aynı işlem anahtarıyla tekrar gönder/,
+    })
+    await userEvent.click(resend)
+
+    await waitFor(() => expect(commandCalls(recorded)).toHaveLength(2))
+    const [first, second] = commandCalls(recorded)
+    // The ORIGINAL key, not a new one.
+    expect(second.headers['Idempotency-Key']).toBe(first.headers['Idempotency-Key'])
+    expect(second.body).toEqual(first.body)
+  })
+
+  it('restores the justification it was sent with, not an empty box', async () => {
+    stub({
+      command: [() => problem(503)],
+      detail: [
+        () => json(location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0', { version: 3 })),
+        () => problem(503),
+        () => json(location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0', { version: 3 })),
+      ],
+    })
+    renderAt(PATH)
+    await fillAndSubmit()
+    await userEvent.click(await screen.findByRole('button', { name: 'Güncel kaydı yükle' }))
+    await screen.findByText('Sonucu bilinmeyen bir işleminiz var')
+    await userEvent.click(screen.getByRole('button', { name: 'Tekrar dene' }))
+
+    const field = (await screen.findByLabelText('Gerekçe')) as HTMLTextAreaElement
+    expect(field.value).toBe(REASON)
+    // Still frozen: the attempt is still unresolved.
+    expect(field.readOnly).toBe(true)
+  })
+
+  it('survives the auth boundary closing the mount on a retry 403', async () => {
+    /**
+     * Same loss, arriving the other way: the same-key retry is refused 403, which is
+     * reported to the shared boundary, which drops the capability and unmounts every
+     * gated screen. The safe close is correct and stays — what must not happen is the
+     * outstanding key disappearing with it.
+     */
+    const { recorded } = stub({ command: [() => problem(503), () => problem(403)] })
+    renderAt(PATH)
+    await fillAndSubmit()
+    expect(await screen.findByText(/sonuç bilinmiyor/)).toBeTruthy()
+    const originalKey = commandCalls(recorded)[0].headers['Idempotency-Key']
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /Aynı işlem anahtarıyla tekrar gönder/ }),
+    )
+
+    // The shell closed the feature — that part is the boundary doing its job.
+    expect(await screen.findByText('Bulunamadı — sayfa')).toBeTruthy()
+    // ...and the outstanding command is still on record for this exact identity.
+    const stored = recallAttempt(STORE_KEY)
+    expect(stored?.snapshot.key).toBe(originalKey)
+    expect(stored?.snapshot.payload.reason).toBe(REASON)
+  })
+
+  it('does not offer a surviving attempt to a different company', async () => {
+    // The store key is actor + company + location, so a switch cannot surface it.
+    stub({ command: [() => problem(503)] })
+    renderAt(PATH)
+    await fillAndSubmit()
+    expect(await screen.findByText(/sonuç bilinmiyor/)).toBeTruthy()
+
+    expect(recallAttempt(STORE_KEY)).not.toBeNull()
+    expect(recallAttempt(attemptStoreKey(IDENTITY.userId, COMPANY_B, LOC_H0))).toBeNull()
+  })
+
+  it('forgets the attempt once it is resolved', async () => {
+    stub({ command: [() => noContent()] })
+    renderAt(PATH)
+    await fillAndSubmit()
+
+    expect(await screen.findByText('Değişiklik kaydedildi')).toBeTruthy()
+    expect(recallAttempt(STORE_KEY)).toBeNull()
+  })
+})
+
+describe('focus cannot escape backwards from a notice', () => {
+  it('keeps Shift+Tab inside the dialog when focus sits on the outcome notice', async () => {
+    /**
+     * The outcome notices are `tabIndex={-1}` so an arriving answer can be focused
+     * programmatically. From there the trap's first/last tests did not match and the
+     * element was inside the root, so the guard fell through and Shift+Tab walked out
+     * to the breadcrumb behind the modal.
+     */
+    stub({ command: [() => problem(503)] })
+    renderAt(PATH)
+    await fillAndSubmit()
+
+    const notice = await screen.findByRole('alert')
+    await waitFor(() => expect(document.activeElement).toBe(notice))
+    const dialog = screen.getByRole('dialog')
+
+    await userEvent.tab({ shift: true })
+    expect(dialog.contains(document.activeElement)).toBe(true)
+
+    notice.focus()
+    await userEvent.tab()
+    expect(dialog.contains(document.activeElement)).toBe(true)
   })
 })

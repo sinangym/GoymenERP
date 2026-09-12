@@ -21,6 +21,12 @@ export interface LocationGroup {
   readonly rows: readonly LocationSummary[]
 }
 
+/**
+ * Group key for every row whose facility this caller may not read. Site ids are
+ * UUIDs, so this plain token cannot collide with a real one.
+ */
+export const UNKNOWN_SITE_GROUP = 'unknown-site'
+
 export function groupLocations(
   locations: readonly LocationSummary[],
   sites: readonly SiteSummary[],
@@ -28,8 +34,18 @@ export function groupLocations(
   const byId = new Map(sites.map((site) => [site.id, site]))
   const groups = new Map<string, LocationSummary[]>()
   for (const location of locations) {
-    const bucket = groups.get(location.siteId)
-    if (bucket === undefined) groups.set(location.siteId, [location])
+    /**
+     * Every unreadable facility shares ONE group.
+     *
+     * Keying them by `siteId` produced several tables with the identical
+     * "facility not visible" caption — a distinction the user can see but cannot act
+     * on or even name, which reads as a rendering fault rather than as information.
+     * The fact we can honestly state is "these rows belong to facilities outside your
+     * scope", and that is one statement.
+     */
+    const key = byId.has(location.siteId) ? location.siteId : UNKNOWN_SITE_GROUP
+    const bucket = groups.get(key)
+    if (bucket === undefined) groups.set(key, [location])
     else bucket.push(location)
   }
   /**

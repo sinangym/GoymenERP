@@ -27,8 +27,10 @@ Sadece **iki** id shell'e giriyor (gerekçe §3'te):
   /**
    * ORG-01 Ayarlar > Organizasyon — tesis + sayfalı lokasyon listesi.
    * Route `/ayarlar/organizasyon`, owner CLAUDE-FRONTEND-ORGANIZASYON.
-   * İzinler: organization.sites.read + organization.locations.read (ikisi de
-   * `ErpPermissions`'ta merged ve enforced).
+   *
+   * Taşıyıcı izin: YALNIZ `organization.locations.read` (#246 exact mapping).
+   * `organization.sites.read` bu route'un şartı DEĞİLDİR — ayrı bir opsiyonel
+   * control capability'sidir (§3).
    */
   organizationSettingsList: 'organization.sites.list',
   /**
@@ -56,17 +58,22 @@ Sadece **iki** id shell'e giriyor (gerekçe §3'te):
 
 **Route sırası:** `organizationRoutes` içinde zaten doğru sırada duruyor ve iki yol da kendi statik önekini taşıdığı için birbirine göre sıra hassas değil; Cari/Ürün yollarıyla da kesişmiyor (`/ayarlar/...` ayrı bir ön ek). Yine de dizi sırasını olduğu gibi spread edin.
 
-## 3. Neden üçüncü id shell'e girmiyor
+## 3. Shell'e girmeyen İKİ control id
 
-Sunucunun yayımlaması gereken **üçüncü** bir capability var:
+`#246`'nın exact mapping'i dört capability tanımlıyor; **ikisi route, ikisi control**. Route olanlar §2'de; control olanlar `CapabilityId` union'ına, `CAPABILITY_ROUTE`'a veya `CAPABILITY_NAV_LABEL`'a **girmiyor**, çünkü mount edilecek bir yolları yok ve `hasCapability(state, id)` imzası `string` alıyor — ekranım bunları doğrudan sunucu snapshot'ına karşı okuyor. Böylece `Record<CapabilityId,string>` yüzünden boş route/label girdisi uydurmak zorunda kalmıyorsunuz.
 
-```
-organization.locations.status   <- izin: organization.locations.status.update
-```
+| Capability | Tür | İzinler |
+|---|---|---|
+| `organization.sites.list` | **route** `/ayarlar/organizasyon` | `locations.read` |
+| `organization.locations.detail` | **route** `/ayarlar/organizasyon/lokasyon/:locationId` | `locations.read` |
+| `organization.locations.status` | control (ORG-02 aktif/pasif) | `locations.read` + `locations.status.update` |
+| `organization.sites.read` | control (ORG-01 opsiyonel tesis etiketi) | `locations.read` + `sites.read` |
 
-Bu bir **route değil, kontrol**: ORG-02 içindeki gerekçeli aktif/pasif işlemini açar. `hasCapability(state, id)` imzası `string` aldığı için ekranım bunu doğrudan sunucu snapshot'ına karşı okuyor — `CapabilityId` union'ına, `CAPABILITY_ROUTE`'a veya `CAPABILITY_NAV_LABEL`'a girmesine gerek yok, ve `Record<CapabilityId,string>` zorunluluğu yüzünden boş route/label girdisi uydurmak zorunda kalmıyorsunuz.
+Snapshot tarafında hepsi aynı `string[]`; bu tablo yalnız hangisinin route hangisinin control olduğunu söylüyor.
 
-Read ile write'ı ayrı tutmamın sebebi mevcut seed'de zaten var: `identity-seed.json` iki rol tanımlıyor — `ORGANIZATION_READER` (sites.read + locations.read) ve `ORGANIZATION_OPERATOR` (+ locations.status.update). Yani bu ayrım benim icadım değil, var olan rol sınırı.
+Read/write ayrımı benim icadım değil, mevcut `identity-seed.json` zaten `ORGANIZATION_READER` ile `ORGANIZATION_OPERATOR` rollerini ayırıyor.
+
+**Katalog notu:** ORG-01 ve ORG-02 kanonik **AV-01**'in teknik alt görünümleridir; yeni katalog kaydı veya yeni izin talep etmiyorum.
 
 ## 4. "Verdiğin id'ler her şey mi?" — evet, bu dilim için
 
@@ -94,19 +101,24 @@ Shell'den **tükettiklerim** (hepsi mevcut public yüzey, değişiklik istemiyor
 
 Buna bir de benim #241 review'umdan çıkan ve **her istemciyi ilgilendiren** olgu ekleniyor: **replay edilen 409'un `currentVersion` değeri bayattır.** Sunucu terminal cevabı aynen replay ettiği için, kayıt ilerlemişken tekrar edilen bir 409 ilk koşudaki sayıyı taşır. Ayırt edici sinyal `Idempotency-Replayed`. Ekranım bu durumda sayıyı "güncel" diye sunmuyor. Cari'de benzer bir replay+conflict yüzeyi varsa aynı kural oraya da geçerli olabilir — bilgi olarak bırakıyorum, iş istemiyorum.
 
-## 7. Bir açık soru — sizin ve Backend'in alanı, benim değil
+## 7. 403 davranışı — KESİN HÜKÜM, iki önerim de kabul edilmedi
 
-**403 tek bir okuma için geldiğinde bütün gated ekranlar kapanıyor.**
+Bu bölüm sırayla "açık soru" ve sonra "ara çözüm" idi. **Kesin sözleşme geldi; ikisi de geçersiz.** Kayıt için bırakıyorum, çünkü yanlış öneri de devrin parçası.
 
-`BUSINESS_AUTH_OUTCOME` (Issue #165) bir business read 403 dönünce capability generation'ı düşürüyor ve taze snapshot gelene kadar her gated mount fail-closed kapanıyor. Güvenlik yönü doğru ve **bilerek dokunmadım**.
+**Sorun:** `BUSINESS_AUTH_OUTCOME` bir business read 403 dönünce capability generation'ı düşürüp taze snapshot gelene kadar her gated mount'u kapatıyor; guard **capability-kör**. ORG-01 iki AYRI izinli iki okuma yaptığı için, yalnız `locations.read` tutan geçerli bir kullanıcı hak ettiği listeyi de kaybediyordu.
 
-Ama ORG-01 iki AYRI izinli iki okuma yapıyor (`organization.sites.read` ve `organization.locations.read`). Yalnız `locations.read` tutan geçerli bir kullanıcı, `/sites` 403'ü yüzünden hak ettiği lokasyon listesini de kaybediyor. Bunu `OrganizationSettingsPage.test.tsx` içinde **gerçek davranış olarak** test ettim (gizlemedim).
+**Reddedilen öneri 1:** `organization.sites.list`'i iki izni birlikte tutana yayımlamak. Business kuralı bunun tersi; ayrıca sites capability'sini ilgisiz bir izne bağlayıp yalnız sites tutan kullanıcıdan tesis listesini gizlerdi.
 
-Seçenekler sizde ve Backend'de:
-1. Sunucu `organization.sites.list` capability'sini yalnız iki izni birlikte tutana yayımlar → 403 pratikte oluşmaz, bugünkü davranış zaten doğru olur. **Bunu öneriyorum**; en az hareketli çözüm.
-2. Ekran ikincil okumanın 403'ünü boundary'ye bildirmez, bölümü "yetkiniz yok" olarak gösterir. Bu ortak güvenlik mekanizmasının semantiğini değiştirmek demek — **sizin kararınız**, benim tek taraflı yapacağım şey değil.
+**Reddedilen ara çözüm 2 (bende kısa süre koddaydı):** `/sites` isteğini yine at, 403'ünü boundary'ye bildirme. Bu da hükme uygun değil — istemciyi "hangi ret sayılır" hakemi yapıyor, ve *"yalnız reducer dosyasına dokunmamak yeterli sayılmaz"*.
 
-Karar 1 ise benden kod değişikliği gerekmiyor. Karar 2 ise kendi şeridimde uygularım, söylemeniz yeterli.
+**Uygulanan kesin kural (#246):** `organization.sites.read` **opsiyonel control capability**'dir.
+
+- Capability **yoksa** `/sites` isteği **hiç başlatılmaz**; tesisler bölümü kapsam dışı olduğunu söyler, lokasyon listesi/kartı çalışır, satırlar kendi başlığı altında gruplanır.
+- Capability **varsa** hiçbir şey özel-durum değildir: gerçek bir `/sites` 403'ü olağan `capture`/`report` yolundan geçer ve genel guard aynen çalışır.
+
+Ortak guard'a dokunulmadı, `src/shell/**` içinde tek satır değişmedi ve 403 hiçbir yerde susturulmuyor.
+
+**Senden bir şey istemiyorum;** ortak shell paketini Cari/shared Claude üstlendi.
 
 ## 8. Delta uygulanmadan durum
 

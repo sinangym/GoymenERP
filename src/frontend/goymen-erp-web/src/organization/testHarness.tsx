@@ -31,6 +31,7 @@ import { StateBlock } from '../shell/StateBlock'
 import { SHELL_CAPABILITY_CONTRACT_VERSION } from '../shell/api'
 import { ORGANIZATION_CAPABILITY } from './capabilities'
 import { organizationRoutes } from './organizationRoutes'
+import { clearAttemptStore } from './unresolvedAttemptStore'
 
 export const COMPANY_A = 'aaaaaaaa-0000-0000-0000-000000000001'
 export const COMPANY_B = 'bbbbbbbb-0000-0000-0000-000000000002'
@@ -55,14 +56,28 @@ export const DIRECTORY = [
   { id: COMPANY_B, code: 'GSP', legalName: 'Göymen Sac Profil', isPlaceholder: false },
 ]
 
-/** Read-only capability set: the card renders, the write surface does not. */
+/**
+ * Read-only: both routes plus the optional facility-label control, no write surface.
+ * Mirrors the seeded ORGANIZATION_READER role.
+ */
 export const READ_CAPABILITIES = [
   ORGANIZATION_CAPABILITY.settingsList,
   ORGANIZATION_CAPABILITY.locationDetail,
+  ORGANIZATION_CAPABILITY.sitesRead,
 ]
 
 /** Read + the status control. Mirrors the seeded ORGANIZATION_OPERATOR role. */
 export const OPERATOR_CAPABILITIES = [...READ_CAPABILITIES, ORGANIZATION_CAPABILITY.locationStatus]
+
+/**
+ * Entitled to locations but NOT to facility labels — the configuration the final
+ * mapping exists to support. The routes still mount; `/sites` is never requested.
+ */
+export const LOCATIONS_ONLY_CAPABILITIES = [
+  ORGANIZATION_CAPABILITY.settingsList,
+  ORGANIZATION_CAPABILITY.locationDetail,
+  ORGANIZATION_CAPABILITY.locationStatus,
+]
 
 export function site(id: string, code: string, name: string, type = 'Factory', isActive = true) {
   return { id, code, name, type, isActive }
@@ -181,6 +196,10 @@ export function installFetch(options: HarnessOptions = {}): RecordedRequest[] {
   // Per test, before anything mounts: the company the shell bootstraps into must be
   // decided by this case alone, never inherited from the previous one.
   resetCompanyPreference()
+  // Same rule for the unresolved-attempt store. It is module state that deliberately
+  // OUTLIVES unmounts, so without this a case would inherit the previous case's
+  // outstanding command and open restored into its dialog.
+  clearAttemptStore()
   const capabilities = options.capabilities ?? OPERATOR_CAPABILITIES
   const recorded: RecordedRequest[] = []
 

@@ -15,6 +15,7 @@ import {
   LOC_H0,
   LOC_H1,
   LOC_ORPHAN,
+  LOCATIONS_ONLY_CAPABILITIES,
   READ_CAPABILITIES,
   SITE_GAZ,
   SITE_OSM,
@@ -161,26 +162,37 @@ describe('scope differences between the two reads', () => {
     expect(screen.getByRole('table', { name: /SITE-GAZ/ })).toBeTruthy()
   })
 
-  it('closes the whole gated screen when a read comes back 403', async () => {
+  it('never requests /sites without the optional capability, and still lists locations', async () => {
     /**
-     * DESIGNED, and not this page's decision. A 403 on a business read is reported to
-     * the shared auth boundary, which drops the capability generation and fails every
-     * gated mount closed until a FRESH capability snapshot arrives (shell reducer
-     * `BUSINESS_AUTH_OUTCOME`, Issue #165). So the user gets the same neutral block an
-     * unknown path gets — non-disclosure — rather than this page's own forbidden box.
-     *
-     * Recorded here because it has a real cost: `/sites` and `/locations` carry
-     * DIFFERENT permissions, so a user holding only `organization.locations.read`
-     * loses the screen instead of seeing the part they are entitled to. The fix is a
-     * capability/permission mapping decision that belongs to the shell + backend
-     * owners, not a weakening of the boundary from inside this lane. It is written up
-     * in SHARED_MOUNT_HANDOFF.md as an open question.
+     * The final mapping: the ORG-01 route stands on `organization.locations.read`
+     * alone; facility labels sit behind their own `organization.sites.read` control.
+     * Without it the request is NOT ISSUED — the capability is the server's own
+     * statement that this read is unavailable here, so there is nothing to ask, and
+     * asking-then-discarding-the-403 would make the client the judge of which refusals
+     * count.
+     */
+    const recorded = stub({ capabilities: LOCATIONS_ONLY_CAPABILITIES })
+    renderAt(PATH)
+
+    const unknown = await screen.findByRole('table', { name: new RegExp(UNKNOWN_SITE_HEADING) })
+    expect(within(unknown).getByRole('link', { name: 'OSM-H0' })).toBeTruthy()
+    expect(screen.getByText('Yetkiniz yok — tesis listesi')).toBeTruthy()
+    // The entitled half of the screen is intact...
+    expect(screen.queryByText('Bulunamadı — sayfa')).toBeNull()
+    // ...and no facilities request was ever made.
+    expect(requestsFor(recorded, '/organization/sites')).toHaveLength(0)
+  })
+
+  it('still fails closed when a GRANTED /sites read is refused 403', async () => {
+    /**
+     * Nothing is special-cased once the capability is held: a 403 on a read we were
+     * told we could make is a genuine refusal and goes through the ordinary
+     * capture/report path into the shared guard, exactly like the locations read.
      */
     stub({ sites: () => problem(403) })
     renderAt(PATH)
 
     expect(await screen.findByText('Bulunamadı — sayfa')).toBeTruthy()
-    // Half-rendering would be the disclosure the boundary exists to prevent.
     expect(screen.queryByRole('table', { name: /SITE-OSM/ })).toBeNull()
   })
 })

@@ -32,10 +32,17 @@ import {
   attemptReducer,
   initialAttemptState,
   isUnresolved,
+  unresolvedSnapshot,
   type AttemptSnapshot,
   type AttemptState,
 } from './activeStateAttempt'
 import { ORGANIZATION_CAPABILITY } from './capabilities'
+import {
+  attemptStoreKey,
+  forgetAttempt,
+  recallAttempt,
+  rememberAttempt,
+} from './unresolvedAttemptStore'
 import {
   APPLIED_DETAIL,
   APPLIED_TITLE,
@@ -106,6 +113,16 @@ function LocationDetail({ namespace }: { readonly namespace: string | null }) {
   const scopeMode = shell.activeContext?.scopeMode ?? 'single'
   const singleCompanyContext = scopeMode === 'single' && activeCompanyId !== null
   const canChangeStatus = hasCapability(shell, ORGANIZATION_CAPABILITY.locationStatus)
+  /**
+   * Identity of an outstanding command for THIS actor, company and location. Not the
+   * shell namespace: that carries the capability generation, which a 403 refence
+   * changes — and surviving a refence is half the point. See unresolvedAttemptStore.
+   */
+  const storeKey = attemptStoreKey(
+    shell.activeContext?.userId ?? null,
+    activeCompanyId,
+    locationId ?? '',
+  )
 
   const query = useQuery({
     queryKey: [
@@ -161,9 +178,15 @@ function LocationDetail({ namespace }: { readonly namespace: string | null }) {
   }
 
   if (state.kind !== 'ready') {
+    /**
+     * The card cannot render, but an outstanding command must not go quiet just
+     * because the READ failed. Saying nothing here is how the user concludes the
+     * change never happened.
+     */
     return (
       <Frame>
         <StateBlock state={state} subject="lokasyon" onRetry={() => void query.refetch()} />
+        <OutstandingCommandBanner storeKey={storeKey} />
       </Frame>
     )
   }
@@ -176,6 +199,7 @@ function LocationDetail({ namespace }: { readonly namespace: string | null }) {
           location={state.data}
           companyId={activeCompanyId ?? ''}
           binding={namespace ?? 'no-context'}
+          storeKey={storeKey}
           refreshing={query.isFetching}
           onRefresh={refresh}
         />
@@ -237,21 +261,90 @@ function LocationCard({ location }: { readonly location: LocationSummary }) {
   )
 }
 
+/**
+ * Tells the user a command of theirs is still outstanding even though the card could
+ * not be read. Deliberately offers no action: the only honest next steps need the
+ * record, and the state block above already owns retrying that.
+ */
+function OutstandingCommandBanner({ storeKey }: { readonly storeKey: string | null }) {
+  const pending = recallAttempt(storeKey)
+  if (pending === null) return null
+  return (
+    <div className={styles.noticeWarn} role="alert" data-outcome="outstanding">
+      <p className={styles.noticeTitle}>Sonucu bilinmeyen bir işleminiz var</p>
+      <p>
+        Daha önce gönderdiğiniz durum değişikliğinin sonucu hâlâ belirsiz ve kayıt şu an
+        okunamıyor. İşlem kendiliğinden tekrarlanmadı ve iptal edilmedi. Kayıt yeniden
+        okunduğunda aynı işlem anahtarıyla devam edebilirsiniz.
+      </p>
+    </div>
+  )
+}
+
+/** Rebuilds the reducer state from a surviving unresolved attempt, if there is one. */
+function restoredAttempt(storeKey: string | null): AttemptState {
+  const stored = recallAttempt(storeKey)
+  if (stored === null) return initialAttemptState
+  return {
+    phase: 'unknown',
+    snapshot: stored.snapshot,
+    reason: stored.reason,
+    resends: stored.resends,
+    lastRefusal: stored.lastRefusal,
+  }
+}
+
 function ActiveStateSection({
   location,
   companyId,
   binding,
+  storeKey,
   refreshing,
   onRefresh,
 }: {
   readonly location: LocationSummary
   readonly companyId: string
   readonly binding: string
+  readonly storeKey: string | null
   readonly refreshing: boolean
   readonly onRefresh: () => Promise<void>
 }) {
-  const [attempt, dispatch] = useReducer(attemptReducer, initialAttemptState)
-  const [open, setOpen] = useState(false)
+  /**
+   * Seeded from the store, so an attempt that outlived this component's unmount comes
+   * back instead of starting `idle` with its key silently gone.
+   */
+  const [attempt, dispatch] = useReducer(attemptReducer, storeKey, restoredAttempt)
+  // A restored attempt opens its dialog: the user has an outstanding command and needs
+  // the controls that resolve it, not a closed modal hiding them.
+  const [open, setOpen] = useState(() => recallAttempt(storeKey) !== null)
+
+  /**
+   * The store mirrors the reducer for exactly the unresolved phases.
+   *
+   * `submitting` counts: if this unmounts mid-flight the settle is dropped, so the
+   * outcome is genuinely unknown and the key must survive.
+   */
+  useEffect(() => {
+    if (attempt.phase === 'unknown') {
+      rememberAttempt(storeKey, {
+        snapshot: attempt.snapshot,
+        reason: attempt.reason,
+        resends: attempt.resends,
+        lastRefusal: attempt.lastRefusal,
+      })
+      return
+    }
+    if (attempt.phase === 'submitting') {
+      rememberAttempt(storeKey, {
+        snapshot: attempt.snapshot,
+        reason: attempt.unresolvedSince ?? { kind: 'aborted' },
+        resends: attempt.resends,
+      })
+      return
+    }
+    // idle / applied / failed are all resolved — nothing outstanding to remember.
+    forgetAttempt(storeKey)
+  }, [attempt, storeKey])
   const triggerRef = useRef<HTMLButtonElement>(null)
   const successRef = useRef<HTMLDivElement>(null)
 
@@ -387,7 +480,12 @@ function ActiveStateDialog({
 }) {
   const shellDispatch = useShellDispatch()
   const boundary = useAuthBoundary()
-  const [reason, setReason] = useState('')
+  /**
+   * Seeded from the attempt when one is already unresolved at mount — a restored
+   * attempt must show the justification it was sent with, not an empty box the user
+   * would read as "my text was lost".
+   */
+  const [reason, setReason] = useState(() => unresolvedSnapshot(attempt)?.payload.reason ?? '')
   const [reasonError, setReasonError] = useState<string | null>(null)
   const reasonRef = useRef<HTMLTextAreaElement>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -551,10 +649,28 @@ function ActiveStateDialog({
     const first = focusable[0]
     const last = focusable[focusable.length - 1]
     const active = document.activeElement
-    if (event.shiftKey && (active === first || !root.contains(active))) {
+    /**
+     * Focus may sit on an element that is NOT tabbable: the outcome notices are
+     * `tabIndex={-1}` so they can be focused programmatically when an answer arrives.
+     * From there neither the "first" nor the "last" test matched and neither did
+     * "outside the root", so the guard fell through and Shift+Tab walked out to the
+     * breadcrumb behind the modal. Anything inside the dialog but off the tab ring is
+     * therefore steered explicitly.
+     */
+    if (!root.contains(active)) {
+      event.preventDefault()
+      ;(event.shiftKey ? last : first).focus()
+      return
+    }
+    if (!focusable.includes(active as HTMLElement)) {
+      event.preventDefault()
+      ;(event.shiftKey ? last : first).focus()
+      return
+    }
+    if (event.shiftKey && active === first) {
       event.preventDefault()
       last.focus()
-    } else if (!event.shiftKey && (active === last || !root.contains(active))) {
+    } else if (!event.shiftKey && active === last) {
       event.preventDefault()
       first.focus()
     }

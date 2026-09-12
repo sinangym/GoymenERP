@@ -22,12 +22,12 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation } from 'react-router'
 import { fetchLocationPage, fetchSites, DEFAULT_PAGE_SIZE } from './api'
 import { pageCount, type LocationPage, type SiteSummary } from './contract'
-import { locationDetailPath } from './capabilities'
+import { ORGANIZATION_CAPABILITY, locationDetailPath } from './capabilities'
 import { groupLocations } from './locationGrouping'
 import { activeStateLabel, externalLabel, siteTypeLabel } from './organizationText'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
-import { contextKey, contextKeyString } from '../shell/shellState'
+import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { StateBlock } from '../shell/StateBlock'
 import styles from './OrganizationSettingsPage.module.css'
@@ -86,9 +86,31 @@ function OrganizationSettings({ namespace }: { readonly namespace: string | null
   const routerLocation = useLocation()
   const [page, setPage] = useState(() => returnedPage(routerLocation.state, namespace))
 
+  /**
+   * FACILITIES ARE AN OPTIONAL, CAPABILITY-GATED ENRICHMENT.
+   *
+   * Final mapping (Business, via the coordinator): the ORG-01 ROUTE stands on
+   * `organization.locations.read` alone. The facility labels sit behind their own
+   * control capability, `organization.sites.read`, which additionally needs the sites
+   * permission. So a user entitled to locations but not to facilities keeps the list
+   * and the card — the entitled half of the screen no longer dies with the unentitled
+   * half.
+   *
+   * WHEN THE CAPABILITY IS ABSENT THE REQUEST IS NOT ISSUED AT ALL. An earlier version
+   * of mine fired it anyway and declined to report the resulting 403 to the shared
+   * boundary. That was the wrong shape: it made the client the judge of which refusals
+   * count. The capability is the server's own statement that this read is unavailable
+   * here, so the honest response is not to ask.
+   *
+   * WHEN IT IS PRESENT, NOTHING IS SPECIAL-CASED. A real 403 is then a genuine refusal
+   * of a read we were told we could make, and it goes through the ordinary
+   * capture/report path into the shared guard, exactly like the locations read below.
+   */
+  const canReadSites = hasCapability(shell, ORGANIZATION_CAPABILITY.sitesRead)
+
   const sitesQuery = useQuery({
     queryKey: [namespace ?? 'no-context', entryGeneration, 'organization-sites'],
-    enabled,
+    enabled: enabled && canReadSites,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
       const outcome = await fetchSites(activeCompanyId ?? '', signal)
@@ -153,7 +175,11 @@ function OrganizationSettings({ namespace }: { readonly namespace: string | null
         </p>
       </header>
 
-      <SitesSection state={sitesState} onRetry={() => void sitesQuery.refetch()} />
+      <SitesSection
+        available={canReadSites}
+        state={sitesState}
+        onRetry={() => void sitesQuery.refetch()}
+      />
 
       <LocationsSection
         state={locationsState}
@@ -170,9 +196,12 @@ function OrganizationSettings({ namespace }: { readonly namespace: string | null
 }
 
 function SitesSection({
+  available,
   state,
   onRetry,
 }: {
+  /** The server granted the optional facility-label capability. */
+  readonly available: boolean
   readonly state: RemoteViewState<readonly SiteSummary[]>
   readonly onRetry: () => void
 }) {
@@ -181,7 +210,12 @@ function SitesSection({
       <h2 id="org-sites-heading" className={styles.sectionHeading}>
         Tesisler
       </h2>
-      {state.kind !== 'ready' ? (
+      {!available ? (
+        /* No capability, so no request was made. This is a scope statement, not a
+           failed read — and the locations below still render, grouped under their own
+           heading. */
+        <StateBlock state={{ kind: 'forbidden' }} subject="tesis listesi" />
+      ) : state.kind !== 'ready' ? (
         <StateBlock state={state} subject="tesisler" onRetry={onRetry} />
       ) : state.data.length === 0 ? (
         <StateBlock state={{ kind: 'empty-no-data' }} subject="tesisler" />

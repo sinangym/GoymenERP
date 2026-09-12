@@ -54,8 +54,27 @@ export const ORGANIZATION_CAPABILITY = {
    * The reasoned activate/deactivate control INSIDE ORG-02. Not a route — a control.
    * Gated with `hasCapability`, so a read-only holder sees the card without a write
    * surface that would only fail at the server.
+   *
+   * Permissions: `organization.locations.read` + `organization.locations.status.update`.
    */
   locationStatus: 'organization.locations.status',
+  /**
+   * The OPTIONAL facility-label control on ORG-01. Also not a route.
+   *
+   * Permissions: `organization.locations.read` + `organization.sites.read`.
+   *
+   * This is what makes the facility names an optional enrichment rather than a
+   * precondition: the ORG-01 ROUTE stands on `organization.locations.read` alone, so a
+   * user without sites access still gets the list and the card they are entitled to.
+   *
+   * THE RULE THIS ID CARRIES: when it is absent, the `/sites` request is NOT ISSUED AT
+   * ALL. Firing it anyway and then quietly discarding the 403 would be the client
+   * deciding which refusals count — the capability is the server's own statement that
+   * this read is not available here, so there is nothing to ask. When the capability IS
+   * present and a real 403 still comes back, that is a genuine refusal and goes through
+   * the ordinary capture/report path like any other.
+   */
+  sitesRead: 'organization.sites.read',
 } as const
 
 export type OrganizationCapabilityId =
