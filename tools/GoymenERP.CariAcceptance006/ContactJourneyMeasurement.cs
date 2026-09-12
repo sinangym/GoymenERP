@@ -8,17 +8,35 @@ public static class ContactJourneyMeasurement
 {
     public static void Verify(RunSettings identity, DatabaseSnapshot baseline, DatabaseSnapshot current, JsonElement measurement)
     {
+        // Exact #235/44ae49c L-03 measurement shape. These are declarations,
+        // not SQL-derived expectations; the durable join below proves the effects.
+        var expected = measurement.GetProperty("expected");
+        var outcomes = expected.GetProperty("durableOutcomes");
+        var versions = measurement.GetProperty("versions");
         Require(measurement.GetProperty("runId").GetString() == identity.RunId
             && measurement.GetProperty("instanceId").GetString() == identity.InstanceId
             && measurement.GetProperty("slug").GetString() == "l03-contact-edit-journey"
             && measurement.GetProperty("companyA").GetString() == identity.CompanyAId
             && measurement.GetProperty("companyB").GetString() == identity.CompanyBId
-            && measurement.GetProperty("logicalUpdates").GetInt32() == 6
-            && measurement.GetProperty("expectedNewParties").GetInt32() == 0, "measurement identity or declared journey differs");
+            && expected.GetProperty("puts").GetInt32() == 8
+            && expected.GetProperty("successfulLogicalUpdates").GetInt32() == 6
+            && expected.GetProperty("auditEvents").GetInt32() == 6
+            && expected.GetProperty("durableUniqueKeys").GetInt32() == 7
+            && outcomes.GetProperty("succeeded204").GetInt32() == 6
+            && outcomes.GetProperty("versionConflict409").GetInt32() == 1
+            && expected.GetProperty("newParties").GetInt32() == 0
+            && expected.GetProperty("newAccounts").GetInt32() == 0
+            && expected.GetProperty("companyBWrites").GetInt32() == 0, "measurement identity or declared journey differs");
         var partyId = measurement.GetProperty("partyId").GetGuid();
         var companyId = Guid.Parse(identity.CompanyAId);
         var original = baseline.Rows.Single(row => row.PartyId == partyId && row.CompanyId == companyId);
-        Require(measurement.GetProperty("seededVersion").GetString() == original.Version, "measurement did not start from the published account version");
+        Require(original.Version == "1" && versions.GetProperty("start").GetString() == original.Version
+            && versions.GetProperty("afterU1").GetString() == "2"
+            && versions.GetProperty("afterU2").GetString() == "3"
+            && versions.GetProperty("afterU3").GetString() == "4"
+            && versions.GetProperty("afterU4").GetString() == "5"
+            && versions.GetProperty("afterU5").GetString() == "6"
+            && versions.GetProperty("afterU6").GetString() == "7", "measurement version progression differs from the published journey");
         var primary = ReadAttempts(identity, measurement.GetProperty("contactPuts"), primary: true);
         var secondary = ReadAttempts(identity, measurement.GetProperty("staleContactPuts"), primary: false);
         DatabaseEvidence.VerifyContactJourney(identity, baseline, current, partyId, companyId, primary, secondary);

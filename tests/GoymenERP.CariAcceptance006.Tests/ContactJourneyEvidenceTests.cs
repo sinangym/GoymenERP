@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using GoymenERP.CariAcceptance006;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
@@ -7,6 +8,87 @@ namespace GoymenERP.CariAcceptance006.Tests;
 
 public sealed class ContactJourneyEvidenceTests
 {
+    [Theory]
+    [InlineData("valid")]
+    [InlineData("puts")]
+    [InlineData("successfulLogicalUpdates")]
+    [InlineData("auditEvents")]
+    [InlineData("durableUniqueKeys")]
+    [InlineData("newParties")]
+    [InlineData("newAccounts")]
+    [InlineData("companyBWrites")]
+    [InlineData("succeeded204")]
+    [InlineData("versionConflict409")]
+    [InlineData("start")]
+    [InlineData("afterU1")]
+    [InlineData("afterU2")]
+    [InlineData("afterU3")]
+    [InlineData("afterU4")]
+    [InlineData("afterU5")]
+    [InlineData("afterU6")]
+    [InlineData("runId")]
+    [InlineData("instanceId")]
+    [InlineData("companyA")]
+    [InlineData("companyB")]
+    public void ExactFrontendMeasurementShapeJoinsDurableEffectsAndRejectsChangedDeclarations(string mutation)
+    {
+        var value = Fixture();
+        var document = Measurement(value);
+        // Old root aliases must never override the actual nested declarations.
+        document["logicalUpdates"] = 6;
+        document["expectedNewParties"] = 0;
+        document["seededVersion"] = "1";
+        if (mutation is "succeeded204" or "versionConflict409")
+            document["expected"]!["durableOutcomes"]![mutation] = 99;
+        else if (mutation is "start" or "afterU1" or "afterU2" or "afterU3" or "afterU4" or "afterU5" or "afterU6")
+            document["versions"]![mutation] = "99";
+        else if (mutation is "runId" or "instanceId" or "companyA" or "companyB")
+            document[mutation] = "wrong";
+        else if (mutation != "valid")
+            document["expected"]![mutation] = 99;
+        void Check() => ContactJourneyMeasurement.Verify(value.Identity, value.Before, value.After,
+            JsonSerializer.SerializeToElement(document));
+        if (mutation == "valid") Check();
+        else Assert.Throws<InvalidOperationException>(Check);
+    }
+
+    private static JsonObject Measurement(Case value)
+    {
+        JsonArray Attempts(ContactJourneyAttempt[] attempts, bool primary)
+        {
+            var array = new JsonArray();
+            for (var i = 0; i < attempts.Length; i++)
+                array.Add(new JsonObject
+                {
+                    ["seq"] = i, ["companyId"] = value.Identity.CompanyAId,
+                    ["contractDeclaration"] = SourceBinding.ClientContractVersion,
+                    ["idempotencyKey"] = attempts[i].IdempotencyKey,
+                    ["status"] = primary && i == 0 ? null : JsonValue.Create(!primary && i == 0 ? 409 : 204),
+                    ["replayed"] = primary && i == 1 ? "true" : null,
+                    ["contractAck"] = i == 0 ? null : SourceBinding.ClientContractVersion,
+                    ["requestBody"] = JsonSerializer.SerializeToNode(attempts[i].Command,
+                        new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+                });
+            return array;
+        }
+        return new()
+        {
+            ["runId"] = value.Identity.RunId, ["instanceId"] = value.Identity.InstanceId,
+            ["slug"] = "l03-contact-edit-journey", ["partyId"] = value.PartyId,
+            ["companyA"] = value.Identity.CompanyAId, ["companyB"] = value.Identity.CompanyBId,
+            ["versions"] = new JsonObject { ["start"] = "1", ["afterU1"] = "2", ["afterU2"] = "3",
+                ["afterU3"] = "4", ["afterU4"] = "5", ["afterU5"] = "6", ["afterU6"] = "7" },
+            ["expected"] = new JsonObject
+            {
+                ["puts"] = 8, ["successfulLogicalUpdates"] = 6, ["auditEvents"] = 6,
+                ["durableUniqueKeys"] = 7, ["newParties"] = 0, ["newAccounts"] = 0, ["companyBWrites"] = 0,
+                ["durableOutcomes"] = new JsonObject { ["succeeded204"] = 6, ["versionConflict409"] = 1 },
+            },
+            ["contactPuts"] = Attempts([value.First, value.Replay, value.Clear, .. value.Children], true),
+            ["staleContactPuts"] = Attempts([value.Stale, value.Recovered], false),
+        };
+    }
+
     [Fact]
     public void SixUpdatesReplayAndDurableConflictRequireSevenReceiptsAndNoNewParty()
     {
@@ -131,7 +213,7 @@ public sealed class ContactJourneyEvidenceTests
         var first = new ContactJourneyAttempt("first", new("1", new()
         {
             Phone = Text("+90 212 555 00 01"), PhoneExtension = Text("123"),
-            Email = Text(identity.BrowserPrefix.ToLowerInvariant() + "-operations@example.test"),
+            Email = Text(identity.BrowserPrefix.ToLowerInvariant() + "-profil1@example.test"),
             Addresses = [
                 new() { Id = Guid.NewGuid(), Operation = "upsert", Purpose = Text("delivery"), CountryCode = Text("TR"),
                     Line1 = Text(identity.BrowserPrefix + " Teslim Yolu 1"), City = Text("Kocaeli") },
@@ -140,9 +222,9 @@ public sealed class ContactJourneyEvidenceTests
             ],
             Contacts = [new() { Id = Guid.NewGuid(), Operation = "upsert", DisplayName = Text(identity.BrowserPrefix + " Operasyon Muhatab\u0131"),
                 Purpose = Text("Operasyon"), Channels = [new() { Id = Guid.NewGuid(), Operation = "upsert", Kind = Text("phone"), Value = Text("0532 000 00 01") }] },
-                new() { Id = Guid.NewGuid(), Operation = "upsert", DisplayName = Text(identity.BrowserPrefix + " Finans Muhatab\u0131"),
-                Purpose = Text("Finans"), Channels = [new() { Id = Guid.NewGuid(), Operation = "upsert", Kind = Text("email"),
-                    Value = Text(identity.BrowserPrefix.ToLowerInvariant() + "-finance@example.test") }] }],
+                new() { Id = Guid.NewGuid(), Operation = "upsert", DisplayName = Text(identity.BrowserPrefix + " Muhasebe Muhatab\u0131"),
+                Purpose = Text("Muhasebe"), Channels = [new() { Id = Guid.NewGuid(), Operation = "upsert", Kind = Text("email"),
+                    Value = Text(identity.BrowserPrefix.ToLowerInvariant() + "-muhasebe@example.test") }] }],
         }));
         var clear = new ContactJourneyAttempt("clear", new("2", new()
         {
@@ -151,13 +233,13 @@ public sealed class ContactJourneyEvidenceTests
         }));
         var stale = new ContactJourneyAttempt("stale", new("1", new()
         {
-            Email = Text(identity.BrowserPrefix.ToLowerInvariant() + "-stale@example.test"),
+            Email = Text(identity.BrowserPrefix.ToLowerInvariant() + "-profil2@example.test"),
         }));
         var addressId = first.Command.Changes.Addresses[0].Id;
         ContactJourneyAttempt Child(string key, string version, string operation, JsonElement line = default) =>
             new(key, new(version, new() { Addresses = [new() { Id = addressId, Operation = operation, Line1 = line }] }));
         ContactJourneyAttempt[] children = [Child("deactivate", "3", "deactivate"),
-            Child("inactive-edit", "4", "upsert", Text(identity.BrowserPrefix + " Teslim Yolu 1 G\u00fcncel")),
+            Child("inactive-edit", "4", "upsert", Text(identity.BrowserPrefix + " Teslim Yolu 1A")),
             Child("reactivate", "5", "reactivate")];
         var recovered = new ContactJourneyAttempt("recovered", new("6", stale.Command.Changes));
         var final = CounterpartyContactInformationEditor.Apply(

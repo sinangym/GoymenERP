@@ -11,7 +11,8 @@ public static partial class DatabaseEvidence
 {
     // L-03: six edits, one same-key replay and one durable stale-version refusal.
     // Inputs are the browser's actual requests, not values reverse-engineered from SQL.
-    // Client-minted UUIDs vary; every other expected value is fixed by the L-03 source.
+    // Client-minted UUIDs vary; every other expected value is fixed by the L-03
+    // source at frontend #235/44ae49cd6c54984fb7a52c9c6e4ee5fd67284d6e.
     public static void VerifyContactJourney(RunSettings identity, DatabaseSnapshot baseline,
         DatabaseSnapshot current, Guid partyId, Guid companyId,
         IReadOnlyList<ContactJourneyAttempt> primary, IReadOnlyList<ContactJourneyAttempt> secondary)
@@ -62,7 +63,7 @@ public static partial class DatabaseEvidence
             "second edit must only clear phone and extension together");
         var staleChanges = stale.Command.Changes;
         RequireContact(staleChanges.Email.ValueKind == JsonValueKind.String
-            && staleChanges.Email.GetString() == identity.BrowserPrefix.ToLowerInvariant() + "-stale@example.test"
+            && staleChanges.Email.GetString() == identity.BrowserPrefix.ToLowerInvariant() + "-profil2@example.test"
             && staleChanges.Phone.ValueKind == JsonValueKind.Undefined
             && staleChanges.PhoneExtension.ValueKind == JsonValueKind.Undefined
             && staleChanges.Website.ValueKind == JsonValueKind.Undefined
@@ -77,7 +78,7 @@ public static partial class DatabaseEvidence
                 Addresses = [new()
                 {
                     Id = addressId, Operation = index == 3 ? "deactivate" : index == 4 ? "upsert" : "reactivate",
-                    Line1 = index == 4 ? JsonSerializer.SerializeToElement(identity.BrowserPrefix + " Teslim Yolu 1 G\u00fcncel") : default,
+                    Line1 = index == 4 ? JsonSerializer.SerializeToElement(identity.BrowserPrefix + " Teslim Yolu 1A") : default,
                 }],
             };
             RequireContact(JsonSerializer.Serialize(primary[index].Command.Changes) == JsonSerializer.Serialize(expectedChanges),
@@ -124,7 +125,7 @@ public static partial class DatabaseEvidence
         var delivery = information.Addresses.SingleOrDefault(address => address.Purpose == "delivery");
         var operational = information.Addresses.SingleOrDefault(address => address.Purpose == "operational");
         RequireContact(information.Phone == "+90 212 555 00 01" && information.PhoneExtension == "123"
-            && information.Email == identity.BrowserPrefix.ToLowerInvariant() + "-operations@example.test"
+            && information.Email == identity.BrowserPrefix.ToLowerInvariant() + "-profil1@example.test"
             && information.Website is null && information.Addresses.Count == 2
             && delivery is not null && operational is not null
             && delivery.CountryCode == "TR" && delivery.Line1 == identity.BrowserPrefix + " Teslim Yolu 1"
@@ -142,13 +143,13 @@ public static partial class DatabaseEvidence
         RequireContact(channel.Id != Guid.Empty && channel.Version == "1" && channel.IsActive
             && channel.Kind == "phone" && channel.Value == "0532 000 00 01" && channel.Extension is null,
             "channel does not match the pinned L-03 values");
-        var finance = information.Contacts.Single(value => value.Purpose == "Finans");
+        var finance = information.Contacts.Single(value => value.Purpose == "Muhasebe");
         RequireContact(finance.Id != Guid.Empty && finance.Version == "1" && finance.IsActive
-            && finance.DisplayName == identity.BrowserPrefix + " Finans Muhatab\u0131" && finance.JobTitle is null
+            && finance.DisplayName == identity.BrowserPrefix + " Muhasebe Muhatab\u0131" && finance.JobTitle is null
             && finance.Channels.Count == 1, "finance contact does not match the pinned L-03 values");
         var email = finance.Channels[0];
         RequireContact(email.Id != Guid.Empty && email.Version == "1" && email.IsActive && email.Kind == "email"
-            && email.Value == identity.BrowserPrefix.ToLowerInvariant() + "-finance@example.test" && email.Extension is null,
+            && email.Value == identity.BrowserPrefix.ToLowerInvariant() + "-muhasebe@example.test" && email.Extension is null,
             "finance channel does not match the pinned L-03 values");
     }
 
