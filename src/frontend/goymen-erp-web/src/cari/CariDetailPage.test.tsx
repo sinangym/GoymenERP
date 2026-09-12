@@ -205,6 +205,30 @@ describe('C-03 core summary (spec §5.1)', () => {
     expect(factValue('Şirket hesabı durumu')).toBe('Pasif')
   })
 
+  it('offers the contact editor only where the server granted its capability', async () => {
+    /**
+     * A button whose only function is to fail is worse than no button. The API
+     * re-authorizes the basic update on every request regardless — this gate decides
+     * what the card OFFERS, and an ungranted editor is simply not advertised.
+     */
+    installFetch({
+      capabilities: [CAPABILITY.cariPartiesList, CAPABILITY.cariPartiesDetail, 'cari.accounts.contact.update'],
+    })
+    renderAt(`/cari/${PARTY}`)
+    await screen.findByRole('heading', { name: /Örnek Metal/ }, CHAIN)
+    const link = screen.getByRole('link', { name: 'İletişim ve adres bilgilerini düzenle' })
+    expect(link.getAttribute('href')).toBe(`/cari/${PARTY}/bilgiler`)
+    // It lives with the account, not with the shared identity: what it edits belongs to
+    // this company alone.
+    expect(document.querySelector('[data-section="account"]')?.contains(link)).toBe(true)
+
+    cleanup()
+    installFetch({ capabilities: [CAPABILITY.cariPartiesList, CAPABILITY.cariPartiesDetail] })
+    renderAt(`/cari/${PARTY}`)
+    await screen.findByRole('heading', { name: /Örnek Metal/ }, CHAIN)
+    expect(screen.queryByRole('link', { name: 'İletişim ve adres bilgilerini düzenle' })).toBeNull()
+  })
+
   it('shows no balance, risk, limit, stock or order field (mockTruthForbidden)', async () => {
     installFetch()
     renderAt(`/cari/${PARTY}`)

@@ -22,7 +22,8 @@ import { CARI_CARD_TEXT as CARD } from './cariCommandText'
 import type { CounterpartyDetail } from './detailContract'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
-import { contextKey, contextKeyString } from '../shell/shellState'
+import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
+import { CAPABILITY } from '../shell/capabilities'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { useCompanyDirectory } from '../shell/useShellOrchestrator'
 import { StateBlock } from '../shell/StateBlock'
@@ -73,6 +74,7 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
     () => directory.find((c) => c.id === activeCompanyId) ?? null,
     [directory, activeCompanyId],
   )
+  const canEditContact = hasCapability(shell, CAPABILITY.cariAccountsContactUpdate)
 
   const query = useQuery({
     queryKey: [
@@ -223,6 +225,19 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
             data-roles={account.roles === 0 ? 'none' : 'legacy'}
           />
         </dl>
+        {/**
+          * Offered only where the server granted the editor's own capability.
+          *
+          * Not decoration: without the gate the card would advertise an editor whose
+          * Save the user may not be permitted to use, and a button that exists in order
+          * to fail is worse than no button. The API re-authorizes the read and the basic
+          * update on every request regardless — this only decides what is offered.
+          */}
+        {canEditContact ? (
+          <Link className={styles.action} to={`/cari/${encodeURIComponent(detail.id)}/bilgiler`}>
+            {CARD.editContact}
+          </Link>
+        ) : null}
       </section>
     </section>
   )

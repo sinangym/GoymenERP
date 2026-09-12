@@ -10,30 +10,46 @@
  * first write is the SELECTED `CompanyPartyAccount`'s operational contact and
  * address; the shared Party identity is read-only here.
  *
- * WHY THIS FILE HOLDS NO FIELD TABLE. The exact DTO — property names, which
- * properties are nullable, and the one authoritative length for each — belongs to
- * Backend's OpenAPI and to nobody else. A table here would be a second truth that is
- * wrong the moment the real one lands. So the RULES are supplied by the caller and
- * the SEMANTICS live here, which is where the dangerous part is anyway: three of the
- * four rules below are about what the client must NOT say.
+ * WHY THIS FILE HOLDS NO FIELD NAME AND NO LENGTH. The exact DTO — property names,
+ * which properties are nullable, and the one authoritative maximum for each —
+ * belongs to Backend's OpenAPI and to nobody else. This module is the SEMANTICS;
+ * ./contactInformationContract.ts is the single place that names properties, and it
+ * says which source revision it was read from. `FieldRule.maxLength` is optional
+ * for the same reason: until Backend publishes the number, the server's own
+ * validation decides and nothing here invents a limit — or, worse, truncates to one.
  *
- * THE FOUR WIRE RULES, verbatim from the handoff:
+ * THE WIRE RULES, from the handoff and confirmed against Backend's DTO:
  *
- *  1. a field that is not sent does not change;
- *  2. an explicit `null` clears an OPTIONAL single field, and nothing else;
+ *  1. an omitted property is retained — for scalars AND for whole collections;
+ *  2. an explicit `null` clears an OPTIONAL scalar, and nothing else;
  *  3. an empty string becomes `null` after trimming;
- *  4. a collection element that is not sent is NOT a deletion and NOT a
- *     deactivation.
+ *  4. an omitted collection element is NOT a deletion: passivity is an explicit
+ *     `deactivate` operation, and a row that merely left the editor is retained;
+ *  5. a `null` ARRAY is rejected by the server, so an unchanged collection is
+ *     omitted entirely — never sent as `null` and never sent as `[]` to mean
+ *     "empty it";
+ *  6. an unknown property is rejected by the server (`JsonUnmappedMemberHandling
+ *     .Disallow`), so a field with no rule is refused here rather than sent.
  *
  * Rule 4 is the one that silently destroys data if it is got wrong: an editor that
- * PUTs "the rows I still have" deletes every row it never loaded. So a row is only
- * ever added, updated or deactivated by an explicit intent, and a row that has
- * simply left the editor is reported back as retained.
+ * sends "the rows I still have" deletes every row it never loaded.
  *
- * AND NOTHING IS NORMALIZED SILENTLY. A value longer than its limit is a refused
- * save, never a truncation, because a quietly shortened tax office or address line
- * is a wrong record that looks like a saved one.
+ * CHILD IDENTITY. Every child element carries an id, including a brand-new one —
+ * the client mints it. It must be minted when the ROW IS CREATED in the form and
+ * never at submit time: a same-key retry has to carry the identical payload, and a
+ * freshly minted id would turn a retry into a different request, which the server
+ * then refuses as an idempotency conflict.
  */
+
+/**
+ * What the server does with one child element. There is no `delete`: a used address
+ * is deactivated, not removed, and reactivation is its own operation rather than an
+ * update that happens to flip a flag.
+ */
+export type ChildOperation = 'upsert' | 'deactivate' | 'reactivate'
+
+/** What the editor is doing with a row. `unchanged` emits nothing at all. */
+export type RowIntent = 'unchanged' | ChildOperation
 
 /**
  * Which save a field belongs to. `critical` fields (legal name, official
@@ -49,10 +65,32 @@ export type FieldScope = 'basic' | 'critical'
  * e-mail that passes `email` has a plausible SHAPE, and has not been verified,
  * delivered to, or matched against any registry.
  */
-export type ValueKind = 'text' | 'phone' | 'email' | 'url'
+export type ValueKind = 'text' | 'phone' | 'email' | 'url' | 'country'
 
 export interface FieldRule {
   readonly scope: FieldScope
+  /**
+   * A CLOSED set published by the API owner. A value outside it is refused here,
+   * because the server refuses it too and this way the message lands on the field.
+   *
+   * Absent means open text — not "any value is fine", just that the contract does not
+   * restrict it. The difference matters: a closed set may be rendered as a choice, and
+   * an open one must never be, or the user is offered a list nobody promised.
+   */
+  readonly options?: readonly string[]
+  /**
+   * Fixed once the row exists on the server. A channel's `kind` is the published case:
+   * changing it for an existing UUID is refused, so the edit is offered as a new
+   * channel rather than a silent reinterpretation of the old one.
+   */
+  readonly immutableOnExisting?: boolean
+  /**
+   * Not applicable in THIS row's current shape, so any value is refused. An extension
+   * belongs to a phone: without a phone, or on an e-mail channel, it has nothing to
+   * extend. This is how "clearing a phone must clear its extension too" surfaces — as a
+   * visible refusal on the extension, never as a value the client deletes by itself.
+   */
+  readonly forbidden?: boolean
   /**
    * Required ONCE THE ROW IS BEING WRITTEN. An untouched, entirely empty row is not
    * a row with missing fields — see `isRowEmpty` — which is why the handoff says
@@ -60,29 +98,53 @@ export interface FieldRule {
    */
   readonly required: boolean
   /**
-   * The single authoritative maximum, from Backend's OpenAPI. The lengths in the
-   * Business table are a technical proposal; this type exists so there is exactly one
-   * place that has to change when the real contract is published.
+   * The one authoritative maximum, from Backend's OpenAPI. ABSENT means Backend has
+   * not published it yet: no client-side length check runs, the server's 400 decides,
+   * and the value is never shortened to fit a number we guessed.
    */
-  readonly maxLength: number
+  readonly maxLength?: number
   readonly kind: ValueKind
 }
 
 export type FieldProblem =
   /** Empty in a row that is being written. */
   | 'required'
-  /** Over the contract length. The value is NOT truncated. */
+  /** Over the published contract length. The value is NOT truncated. */
   | 'too-long'
   /** Not shaped like an address. Not a claim about reachability either way. */
   | 'email-format'
   /** Only `http` and `https` are supported. */
   | 'url-unsupported'
+  /** Outside the closed set the contract publishes for this field. */
+  | 'not-allowed'
+  /**
+   * Not two uppercase ASCII letters. That is the whole rule the API owner states —
+   * there is no registry check, so a value that passes is well-formed and has NOT
+   * been confirmed to be a country that exists.
+   */
+  | 'country-format'
   /** `null` offered for a field the contract does not let a client clear. */
   | 'not-clearable'
   /** A critical field was offered to the basic save. It has its own command. */
   | 'critical-scope'
-  /** No rule for this key: an unruled field must never reach the wire. */
+  /** No rule for this key. The server rejects unknown properties; so do we. */
   | 'unknown-field'
+  /** Changed on a row the server already holds, where the contract fixes it. */
+  | 'immutable'
+  /** Has no meaning in this row as it stands — an extension with no phone to extend. */
+  | 'not-applicable'
+
+export type RowProblem =
+  /** A row with no id. Every child change carries one, new rows included. */
+  | 'row-identity'
+  /** An upsert with nothing in it. */
+  | 'row-empty'
+  /** Two operations for the same id in one collection. The server rejects the command. */
+  | 'row-duplicate'
+  /** A status change asked for a row the server does not hold yet. */
+  | 'status-needs-existing'
+  /** More operations in one collection than one request may carry. */
+  | 'too-many-operations'
 
 /** A field's value as the contract carries it: a trimmed string, or explicit null. */
 export type FieldValue = string | null
@@ -143,18 +205,45 @@ export function isSupportedWebUrl(value: string): boolean {
   return parsed.protocol === 'http:' || parsed.protocol === 'https:'
 }
 
+/**
+ * Exactly two uppercase ASCII letters — the whole rule the API owner states.
+ *
+ * There is NO registry confirmation behind it, so `XX` passes: the value is
+ * well-formed, and nothing here claims it names a country that exists. And there is
+ * no default: a form that pre-filled `TR` would be inventing the counterparty's
+ * country, which is precisely what a foreign party's card must not do.
+ */
+export function isCountryCodeShaped(value: string): boolean {
+  return /^[A-Z]{2}$/.test(value)
+}
+
 /** One field, from raw input to the value the contract would carry — or a problem. */
 export function checkField(rule: FieldRule, raw: string): FieldCheck {
   const value = rule.kind === 'phone' ? normalizePhone(raw) : trimToNull(raw)
+
+  // Refused before anything else, including `required`: a field that does not apply
+  // cannot be missing.
+  if (rule.forbidden === true) {
+    return value === null ? { ok: true, value: null } : { ok: false, problem: 'not-applicable' }
+  }
 
   if (value === null) {
     if (rule.required) return { ok: false, problem: 'required' }
     return { ok: true, value: null }
   }
-  // Refused, never shortened: a truncated value is a different record.
-  if (value.length > rule.maxLength) return { ok: false, problem: 'too-long' }
+  // A closed set is checked before anything else: for those fields nothing but
+  // membership is meaningful, and a length rule would be beside the point.
+  if (rule.options !== undefined && !rule.options.includes(value)) {
+    return { ok: false, problem: 'not-allowed' }
+  }
+  // Refused, never shortened: a truncated value is a different record. When Backend
+  // has not published a maximum there is simply no check here.
+  if (rule.maxLength !== undefined && value.length > rule.maxLength) {
+    return { ok: false, problem: 'too-long' }
+  }
   if (rule.kind === 'email' && !isEmailShaped(value)) return { ok: false, problem: 'email-format' }
   if (rule.kind === 'url' && !isSupportedWebUrl(value)) return { ok: false, problem: 'url-unsupported' }
+  if (rule.kind === 'country' && !isCountryCodeShaped(value)) return { ok: false, problem: 'country-format' }
   return { ok: true, value }
 }
 
@@ -163,7 +252,28 @@ export function isRowEmpty(values: Readonly<Record<string, string>>): boolean {
   return Object.values(values).every((raw) => trimToNull(raw) === null)
 }
 
-export interface BasicPatch {
+/**
+ * A v4 UUID for a row the user just added, from `getRandomValues`.
+ *
+ * Not `crypto.randomUUID`: that is only defined in a secure context, and a
+ * plain-HTTP intranet host must not silently fall back to something weaker — the
+ * same reason the idempotency key is built this way.
+ *
+ * Call it when the ROW APPEARS, not when the form is submitted. The id is part of
+ * the payload a same-key retry has to reproduce exactly.
+ */
+export function generateRowId(source: Pick<Crypto, 'getRandomValues'> = globalThis.crypto): string {
+  const bytes = new Uint8Array(16)
+  source.getRandomValues(bytes)
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex: string[] = []
+  for (const byte of bytes) hex.push(byte.toString(16).padStart(2, '0'))
+  const s = hex.join('')
+  return `${s.slice(0, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}-${s.slice(16, 20)}-${s.slice(20)}`
+}
+
+export interface FieldPatch {
   /** Exactly the fields that changed. An untouched field is absent (rule 1). */
   readonly patch: Readonly<Record<string, FieldValue>>
   /** Per-field, so the screen can put each message beside its own input. */
@@ -172,7 +282,7 @@ export interface BasicPatch {
 }
 
 /**
- * Build the basic save's payload: only what changed, and only what this save owns.
+ * Diff one flat group of fields: only what changed, and only what this save owns.
  *
  * `original` is the last read's values — the normalized ones, as the contract
  * carries them. `edited` is what is in the inputs now. A field whose normalized
@@ -180,11 +290,11 @@ export interface BasicPatch {
  * untouched field cannot make it look edited, and nothing the user never opened is
  * re-asserted.
  */
-export function buildBasicPatch(
+export function buildFieldPatch(
   rules: Readonly<Record<string, FieldRule>>,
   original: Readonly<Record<string, FieldValue>>,
   edited: Readonly<Record<string, string>>,
-): BasicPatch {
+): FieldPatch {
   const patch: Record<string, FieldValue> = {}
   const problems: Record<string, FieldProblem> = {}
   const changed: string[] = []
@@ -192,6 +302,8 @@ export function buildBasicPatch(
   for (const [key, raw] of Object.entries(edited)) {
     const rule = rules[key]
     if (rule === undefined) {
+      // The server rejects an unknown property outright, so sending one would fail
+      // the whole save. Refusing here keeps the failure next to the field.
       problems[key] = 'unknown-field'
       continue
     }
@@ -230,34 +342,50 @@ export function buildBasicPatch(
   return { patch, problems, changed }
 }
 
-/**
- * What the user did to one collection row. There is no "removed": a row leaving the
- * editor is not an instruction (rule 4). Passivity is chosen, not inferred.
- */
-export type RowIntent = 'unchanged' | 'add' | 'update' | 'deactivate'
-
 export interface EditedRow {
-  /** The server's row identity. `null` only for a row the user just added. */
-  readonly id: string | null
+  /** Always present: the server's id, or the id the FORM minted when it was added. */
+  readonly id: string
   readonly intent: RowIntent
   readonly values: Readonly<Record<string, string>>
+  /** A contact's channels. Rows that own no nested collection leave this out. */
+  readonly children?: readonly EditedRow[]
 }
 
-export type RowElement =
-  | { readonly action: 'add'; readonly fields: Readonly<Record<string, FieldValue>> }
-  | { readonly action: 'update'; readonly id: string; readonly fields: Readonly<Record<string, FieldValue>> }
-  /** Deactivation carries the identity and nothing else: it is not an edit. */
-  | { readonly action: 'deactivate'; readonly id: string }
+/** The last read's rows, keyed by id, with their nested rows alongside. */
+export interface OriginalRow {
+  readonly values: Readonly<Record<string, FieldValue>>
+  readonly children?: Readonly<Record<string, OriginalRow>>
+}
 
-export type RowProblem =
-  /** An add carrying a server id, or an update/deactivate without one. */
-  | 'row-identity'
-  /** An add with nothing in it. */
-  | 'row-empty'
+/**
+ * Refine a row's rules from the row's OWN values.
+ *
+ * Some limits are conditional in the contract: a channel's value is a 32-character
+ * phone or a 254-character mailbox depending on its `kind`, and its extension applies
+ * only to a phone. Resolving that here keeps every check on one path, so a conditional
+ * rule blocks the save exactly like a fixed one instead of being validated twice in two
+ * places that can disagree.
+ */
+export type RuleRefiner = (
+  values: Readonly<Record<string, string>>,
+  base: Readonly<Record<string, FieldRule>>,
+) => Readonly<Record<string, FieldRule>>
+
+/** How a row's nested collection is named and ruled on the wire. */
+export interface NestedSpec {
+  /** The property the nested array sits on, e.g. the channels of a contact. */
+  readonly property: string
+  readonly rules: Readonly<Record<string, FieldRule>>
+  readonly refine?: RuleRefiner
+}
+
+/** One request may carry at most this many operations per collection (pinned contract). */
+export const MAX_OPERATIONS_PER_COLLECTION = 100
 
 export interface CollectionPatch {
-  readonly elements: readonly RowElement[]
-  /** Keyed `<row index>.<field>`, plus `<row index>` for a whole-row problem. */
+  /** Wire-ready elements: `{ id, operation, ...changed fields, [nested]: [...] }`. */
+  readonly elements: readonly Readonly<Record<string, unknown>>[]
+  /** Keyed `<index>` for a row problem, `<index>.<field>`, `<index>.<n>.<field>`. */
   readonly problems: Readonly<Record<string, FieldProblem | RowProblem>>
   /**
    * Rows the server holds that this editor is not speaking about. They are KEPT, and
@@ -268,7 +396,7 @@ export interface CollectionPatch {
 }
 
 /**
- * Build a collection's payload from explicit intents.
+ * Build one collection's elements from explicit intents.
  *
  * `originals` is what the last read returned, keyed by row id. Anything in it that
  * no row mentions is reported as retained and NOTHING is emitted for it — the single
@@ -278,71 +406,210 @@ export interface CollectionPatch {
 export function buildCollectionPatch(
   rules: Readonly<Record<string, FieldRule>>,
   rows: readonly EditedRow[],
-  originals: Readonly<Record<string, Readonly<Record<string, FieldValue>>>>,
+  originals: Readonly<Record<string, OriginalRow>>,
+  nested?: NestedSpec,
+  refine?: RuleRefiner,
 ): CollectionPatch {
-  const elements: RowElement[] = []
+  const elements: Readonly<Record<string, unknown>>[] = []
   const problems: Record<string, FieldProblem | RowProblem> = {}
   const mentioned = new Set<string>()
 
   rows.forEach((row, index) => {
-    if (row.id !== null) mentioned.add(row.id)
-    if (row.intent === 'unchanged') return
-
-    if (row.intent === 'deactivate') {
-      if (row.id === null) {
-        problems[`${index}`] = 'row-identity'
-        return
-      }
-      elements.push({ action: 'deactivate', id: row.id })
-      return
-    }
-
-    if ((row.intent === 'add') !== (row.id === null)) {
-      // An add carrying a server id, or an update without one: neither can be sent.
+    if (row.id.length === 0) {
       problems[`${index}`] = 'row-identity'
       return
     }
-    if (row.intent === 'add' && isRowEmpty(row.values)) {
+    // Two operations for one id are rejected by the server for the WHOLE command, so
+    // the second one is refused here where it can be pointed at.
+    if (mentioned.has(row.id)) {
+      problems[`${index}`] = 'row-duplicate'
+      return
+    }
+    mentioned.add(row.id)
+
+    const before = originals[row.id]
+    const isNew = before === undefined
+
+    // Passivity is chosen, never inferred, and it is not an edit: the element carries
+    // the identity and the operation and nothing else — no value fields and no nested
+    // updates. A status change also needs a row the server already holds.
+    if (row.intent === 'deactivate' || row.intent === 'reactivate') {
+      if (isNew) {
+        problems[`${index}`] = 'status-needs-existing'
+        return
+      }
+      elements.push({ id: row.id, operation: row.intent })
+      return
+    }
+    if (row.intent === 'upsert' && isNew && isRowEmpty(row.values)) {
       problems[`${index}`] = 'row-empty'
       return
     }
 
-    const before = row.id === null ? {} : (originals[row.id] ?? {})
-    const built = buildBasicPatch(rules, before, row.values)
+    let rowFailed = false
+    const rowRules = refine === undefined ? rules : refine(row.values, rules)
+    const built = buildFieldPatch(rowRules, before?.values ?? {}, row.values)
     for (const [key, problem] of Object.entries(built.problems)) {
       problems[`${index}.${key}`] = problem
+      rowFailed = true
     }
-    if (Object.keys(built.problems).length > 0) return
+    // Fixed-for-an-existing-row fields: the change is refused rather than sent, so the
+    // user is offered a new row instead of a rewritten one.
+    if (!isNew) {
+      for (const key of built.changed) {
+        if (rowRules[key]?.immutableOnExisting === true) {
+          problems[`${index}.${key}`] = 'immutable'
+          rowFailed = true
+        }
+      }
+    }
 
-    if (row.intent === 'add') {
-      /**
-       * An add sends the values the row actually has. Against an empty original that is
-       * every non-empty field and nothing else: a new row has no "unchanged" fields, and
-       * an absent field means unset rather than cleared.
-       */
-      elements.push({ action: 'add', fields: built.patch })
-      return
+    let nestedElements: readonly Readonly<Record<string, unknown>>[] = []
+    if (nested !== undefined && row.children !== undefined) {
+      const child = buildCollectionPatch(
+        nested.rules,
+        row.children,
+        before?.children ?? {},
+        undefined,
+        nested.refine,
+      )
+      for (const [key, problem] of Object.entries(child.problems)) {
+        problems[`${index}.${nested.property}.${key}`] = problem
+        rowFailed = true
+      }
+      nestedElements = child.elements
     }
-    // An update with nothing changed says nothing, so it sends nothing.
-    if (built.changed.length === 0) return
-    elements.push({ action: 'update', id: row.id as string, fields: built.patch })
+    if (rowFailed) return
+
+    /**
+     * The operation is derived from what actually changed, not from the form's flag.
+     *
+     * A row whose own fields did not move but whose nested rows did is still sent, as
+     * an `upsert` carrying only the nested array: omission retains the scalars, so it
+     * says "leave my own fields alone, here is what changed underneath" — and without
+     * it a corrected phone channel would have no element to travel in. Conversely a row
+     * the user opened and left as it was sends nothing, whatever its flag says, because
+     * a stale flag must not be able to spend a write.
+     */
+    if (built.changed.length === 0 && nestedElements.length === 0) return
+
+    const element: Record<string, unknown> = { id: row.id, operation: 'upsert', ...built.patch }
+    if (nested !== undefined && nestedElements.length > 0) element[nested.property] = nestedElements
+    elements.push(element)
   })
 
   const retainedIds = Object.keys(originals).filter((id) => !mentioned.has(id))
   return { elements, problems, retainedIds }
 }
 
+/** One collection as it appears in the `changes` object. */
+export interface CollectionSpec {
+  /** The property the array sits on. */
+  readonly property: string
+  readonly rules: Readonly<Record<string, FieldRule>>
+  readonly refine?: RuleRefiner
+  readonly nested?: NestedSpec
+}
+
+export interface ChangesSpec {
+  /** The flat, nullable scalars of the operational contact block. */
+  readonly scalars: Readonly<Record<string, FieldRule>>
+  /** Conditional scalar rules — an extension applies only while there is a phone. */
+  readonly refineScalars?: RuleRefiner
+  readonly collections: readonly CollectionSpec[]
+}
+
+export interface EditedState {
+  readonly scalars: Readonly<Record<string, string>>
+  /** Keyed by the collection's wire property. */
+  readonly collections: Readonly<Record<string, readonly EditedRow[]>>
+}
+
+export interface OriginalState {
+  readonly scalars: Readonly<Record<string, FieldValue>>
+  readonly collections: Readonly<Record<string, Readonly<Record<string, OriginalRow>>>>
+}
+
+export interface ChangesBody {
+  /**
+   * The `changes` object exactly as it goes on the wire. Every absent key is a
+   * deliberate retain, and no key is ever `null` for a collection (rule 5).
+   */
+  readonly changes: Readonly<Record<string, unknown>>
+  readonly problems: Readonly<Record<string, FieldProblem | RowProblem>>
+  /** Per collection property: the ids this editor did not speak about. */
+  readonly retained: Readonly<Record<string, readonly string[]>>
+  /** Something is actually being asked for. `Save` stays closed while this is false. */
+  readonly dirty: boolean
+}
+
 /**
- * Whether the basic save may be offered at all: something changed, and nothing is
- * wrong. "Save" stays disabled while there is no change — the handoff's own rule —
- * because a save that sends an empty patch spends an idempotency key and an audit
- * record to say nothing.
+ * Build the whole `changes` object for the basic save.
+ *
+ * Problems are keyed so a screen can find each message's own input:
+ * `<scalar>`, `<collection>.<index>`, `<collection>.<index>.<field>` and
+ * `<collection>.<index>.<nested>.<index>.<field>`.
  */
-export function canSubmitBasic(
-  patch: BasicPatch,
-  collections: readonly CollectionPatch[] = [],
-): boolean {
-  if (Object.keys(patch.problems).length > 0) return false
-  if (collections.some((c) => Object.keys(c.problems).length > 0)) return false
-  return patch.changed.length > 0 || collections.some((c) => c.elements.length > 0)
+export function buildChanges(
+  spec: ChangesSpec,
+  original: OriginalState,
+  edited: EditedState,
+): ChangesBody {
+  const scalarRules =
+    spec.refineScalars === undefined ? spec.scalars : spec.refineScalars(edited.scalars, spec.scalars)
+  const scalars = buildFieldPatch(scalarRules, original.scalars, edited.scalars)
+  const changes: Record<string, unknown> = { ...scalars.patch }
+  const problems: Record<string, FieldProblem | RowProblem> = { ...scalars.problems }
+  const retained: Record<string, readonly string[]> = {}
+  let collectionElements = 0
+
+  for (const collection of spec.collections) {
+    const rows = edited.collections[collection.property] ?? []
+    const originals = original.collections[collection.property] ?? {}
+    const built = buildCollectionPatch(
+      collection.rules,
+      rows,
+      originals,
+      collection.nested,
+      collection.refine,
+    )
+    for (const [key, problem] of Object.entries(built.problems)) {
+      problems[`${collection.property}.${key}`] = problem
+    }
+    retained[collection.property] = built.retainedIds
+    /**
+     * One request carries at most 100 operations per collection. Over that the server
+     * rejects the whole command, so the refusal belongs here where it can name which
+     * collection — and it is a REQUEST limit, not a cap on how many rows the card may
+     * hold, so the message must not read as "this counterparty has too many addresses".
+     */
+    if (built.elements.length > MAX_OPERATIONS_PER_COLLECTION) {
+      problems[collection.property] = 'too-many-operations'
+    }
+    /**
+     * An unchanged collection is OMITTED. Not `null` — the server rejects that — and
+     * not `[]`, which would read as an instruction even though it carries none.
+     */
+    if (built.elements.length > 0) {
+      changes[collection.property] = built.elements
+      collectionElements += built.elements.length
+    }
+  }
+
+  return {
+    changes,
+    problems,
+    retained,
+    dirty: scalars.changed.length > 0 || collectionElements > 0,
+  }
+}
+
+/**
+ * Whether the save may be offered at all: something changed, and nothing is wrong.
+ * "Save" stays disabled while there is no change — the handoff's own rule — because
+ * a save that sends an empty patch spends an idempotency key and an audit record to
+ * say nothing.
+ */
+export function canSubmitChanges(body: ChangesBody): boolean {
+  return body.dirty && Object.keys(body.problems).length === 0
 }

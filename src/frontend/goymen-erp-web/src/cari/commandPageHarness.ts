@@ -114,6 +114,75 @@ export function linkedView(roles: number = PARTY_ROLE_FLAG.Supplier, over: Recor
   })
 }
 
+/**
+ * `CounterpartyContactInformationView` — the account-scoped operational block.
+ * Shape and example values from the pinned Backend handoff
+ * (`CARI_CONTACT_INFORMATION_BACKEND_HANDOFF_v1.md` at `a6efdc0`).
+ */
+export function contactView(
+  information: Record<string, unknown> = {},
+  over: Record<string, unknown> = {},
+) {
+  return {
+    partyId: PARTY,
+    accountId: ACC_A,
+    companyId: A_ID,
+    version: '1',
+    isActive: true,
+    information: {
+      phone: null,
+      phoneExtension: null,
+      email: null,
+      website: null,
+      addresses: [],
+      contacts: [],
+      ...information,
+    },
+    ...over,
+  }
+}
+
+export function contactAddress(over: Record<string, unknown> = {}) {
+  return {
+    id: 'a1111111-1111-4111-8111-111111111111',
+    version: '1',
+    isActive: true,
+    purpose: 'billing',
+    countryCode: 'TR',
+    line1: 'Merkez Cadde 1',
+    line2: null,
+    city: 'İstanbul',
+    district: 'Şişli',
+    postalCode: null,
+    ...over,
+  }
+}
+
+export function contactChannel(over: Record<string, unknown> = {}) {
+  return {
+    id: 'd1111111-1111-4111-8111-111111111111',
+    version: '1',
+    isActive: true,
+    kind: 'phone',
+    value: '0532 000 00 00',
+    extension: null,
+    ...over,
+  }
+}
+
+export function contactPerson(over: Record<string, unknown> = {}) {
+  return {
+    id: 'c1111111-1111-4111-8111-111111111111',
+    version: '1',
+    isActive: true,
+    displayName: 'Ayşe Yılmaz',
+    jobTitle: null,
+    purpose: 'Operations',
+    channels: [contactChannel()],
+    ...over,
+  }
+}
+
 /** `CounterpartyLinkCandidateItem` shape — visibleSourceAccounts, no Party version. */
 export function candidate(over: Record<string, unknown> = {}) {
   return {
@@ -166,6 +235,8 @@ export interface HarnessConfig {
    */
   counterparties?: Responder
   detail?: Responder
+  /** The account-scoped operational contact block: `GET`/`PUT` the C-06 editor uses. */
+  contact?: Responder
 }
 
 export const ALL_CARI_CAPABILITIES: readonly string[] = [
@@ -173,6 +244,7 @@ export const ALL_CARI_CAPABILITIES: readonly string[] = [
   CAPABILITY.cariPartiesCreate,
   CAPABILITY.cariAccountsLink,
   CAPABILITY.cariPartiesDetail,
+  CAPABILITY.cariAccountsContactUpdate,
 ]
 
 export const CREATE_RE = /\/counterparties$/
@@ -180,6 +252,7 @@ export const LINK_RE = /\/counterparties\/[^/?]+\/company-account$/
 export const CANDIDATES_RE = /\/counterparties\/company-account-link-candidates(\?|$)/
 /** A single Party read; the candidates collection path is excluded explicitly. */
 export const DETAIL_RE = /\/counterparties\/(?!company-account-link-candidates)[^/?]+$/
+export const CONTACT_RE = /\/counterparties\/[^/?]+\/contact-information$/
 
 export function installFetch(config: HarnessConfig = {}) {
   const calls: RecordedCall[] = []
@@ -232,6 +305,11 @@ export function installFetch(config: HarnessConfig = {}) {
       if (method === 'POST' && CREATE_RE.test(url)) {
         return (config.create ?? (() => json(mutationView(), 201)))(call)
       }
+      // Before the detail pattern for the same reason the candidates path is: a deeper
+      // segment must not be read as a party id.
+      if (CONTACT_RE.test(url)) {
+        return (config.contact ?? (() => json(contactView())))(call)
+      }
       if (method === 'GET' && DETAIL_RE.test(url)) {
         return (config.detail ?? (() => json(mutationView())))(call)
       }
@@ -251,6 +329,8 @@ export function installFetch(config: HarnessConfig = {}) {
     links: () => calls.filter((c) => c.method === 'POST' && LINK_RE.test(c.url)),
     candidateReads: () => calls.filter((c) => c.method === 'GET' && CANDIDATES_RE.test(c.url)),
     detailReads: () => calls.filter((c) => c.method === 'GET' && DETAIL_RE.test(c.url)),
+    contactReads: () => calls.filter((c) => c.method === 'GET' && CONTACT_RE.test(c.url)),
+    contactUpdates: () => calls.filter((c) => c.method === 'PUT' && CONTACT_RE.test(c.url)),
     capabilityReads: () => calls.filter((c) => c.url.includes('/shell/capabilities')),
   }
 }
