@@ -165,11 +165,13 @@ test.describe('O-03 conflict, unknown and replay', () => {
     const replay = await net.waitForNth('the same-key resend', ACTIVE_STATE_RE, 'PUT', 0)
 
     /**
-     * The new evidence rule excludes the withheld command from ANSWERED exchanges; it
-     * must not erase it. It stays on the record as an attempt that got no answer, which
-     * is the whole reason the outcome was unknown.
+     * The evidence rule excludes the withheld command from ANSWERED exchanges; it must
+     * not erase it. It stays on the record as an attempt that NEVER RECEIVED A STATUS,
+     * which is the whole reason the outcome was unknown — and is what distinguishes it
+     * from the answered 204 below, which the browser also marks aborted once it tears
+     * down the empty body stream.
      */
-    expect(net.issued(ACTIVE_STATE_RE, 'PUT').some((r) => r.failed !== undefined)).toBe(true)
+    expect(net.issued(ACTIVE_STATE_RE, 'PUT').some((r) => r.status === undefined)).toBe(true)
 
     expect(replay.requestHeaders['idempotency-key']).toBe(originalKey)
     expect(replay.status).toBe(204)

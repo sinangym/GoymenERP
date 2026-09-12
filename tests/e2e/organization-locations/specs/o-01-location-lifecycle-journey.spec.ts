@@ -88,15 +88,44 @@ test.describe('O-01 location lifecycle', () => {
 
     // ---- 2. The card --------------------------------------------------------------
     await locationLink(page, TARGET_CODE).click()
-    const beforeDetail = await net.waitForNth('the card detail read', DETAIL_RE, 'GET', 0)
+    let beforeDetail = await net.waitForNth('the card detail read', DETAIL_RE, 'GET', 0)
     expect(beforeDetail.status).toBe(200)
-    const versionBefore = versionOf(beforeDetail.responseBody)
     await expect(cardHeading(page)).toBeVisible()
+
+    /**
+     * SETUP, NOT A MEASUREMENT.
+     *
+     * This journey deactivates and then reactivates, so it needs the record to START
+     * active — and a real shared database does not reset itself between runs. A run that
+     * fails midway (or an earlier profile) legitimately leaves the record passive, and a
+     * case that can only ever pass once is not an acceptance case.
+     *
+     * So if the record is passive, restore it with a REAL reasoned command first and say
+     * plainly that this is setup. The measured journey begins afterwards, on a freshly
+     * read version. Nothing here is asserted as evidence except that the restore itself
+     * was accepted; the commands that follow are the ones this case is about.
+     */
+    let setupPuts = 0
+    if ((await cardState(page)) === 'passive') {
+      await submitReasonedChange(page, `${manifest.runPrefix} önceki koşumdan kalan durumu geri al`)
+      const restore = await net.waitForNth('the setup restore command', ACTIVE_STATE_RE, 'PUT', 0)
+      expect(restore.status).toBe(204)
+      setupPuts = 1
+      beforeDetail = await net.waitForAfter(
+        'the detail read after the setup restore',
+        DETAIL_RE,
+        'GET',
+        restore.receivedAt!,
+      )
+      await expect.poll(() => cardState(page)).toBe('active')
+    }
+
+    const versionBefore = versionOf(beforeDetail.responseBody)
     expect(await cardState(page)).toBe('active')
 
     // ---- 3. The justified deactivation --------------------------------------------
     await submitReasonedChange(page, DEACTIVATE_REASON)
-    const deactivate = await net.waitForNth('the deactivate command', ACTIVE_STATE_RE, 'PUT', 0)
+    const deactivate = await net.waitForNth('the deactivate command', ACTIVE_STATE_RE, 'PUT', setupPuts)
 
     expect(deactivate.status).toBe(204)
     // The exact three contract fields, the version we READ, and the trimmed reason.
@@ -159,7 +188,7 @@ test.describe('O-01 location lifecycle', () => {
     expect(await cardState(page)).toBe('passive')
 
     await submitReasonedChange(page, REACTIVATE_REASON)
-    const secondPut = await net.waitForNth('the reactivate command', ACTIVE_STATE_RE, 'PUT', 1)
+    const secondPut = await net.waitForNth('the reactivate command', ACTIVE_STATE_RE, 'PUT', setupPuts + 1)
 
     expect(secondPut.status).toBe(204)
     expect(secondPut.requestBody).toEqual({

@@ -102,16 +102,26 @@ function pick(headers: Record<string, string>, allowed: readonly string[]): Reco
  * development double-render issues each query twice and aborts the first, so the very
  * first `/organization/locations` record is a genuine `net::ERR_ABORTED` carrying no
  * status. Indexing over `complete` records therefore made "the first list read" that
- * aborted one, and every assertion against it read `undefined`. A withheld delivery is
- * excluded here for the same reason and by design: it is an outcome the screen must
- * handle, never a read to assert a version or a body against.
+ * aborted one, and every assertion against it read `undefined`.
+ *
+ * THE TEST IS AN ANSWER HAVING ARRIVED — `status` — NOT THE ABSENCE OF `failed`, and
+ * the difference is not academic. A real 204 fires `response` and then, because the
+ * empty body stream is torn down once the client moves on, ALSO fires `requestfailed`
+ * with `net::ERR_ABORTED`. So the successful deactivation carries both a 204 and an
+ * abort on one record. Excluding anything marked `failed` therefore threw away the very
+ * commands this suite exists to measure.
+ *
+ * A withheld delivery is excluded, and cleanly, by the same rule: the browser is never
+ * given a response, so that record has `net::ERR_FAILED` and NO status at all. That is
+ * precisely what makes its outcome unknown, and it is an outcome the screen must
+ * handle — never a read to assert a version or a body against.
  *
  * Counting ATTEMPTS is a different question with its own accessor — `issued` — which
- * deliberately still counts aborted requests, because "was this ever asked for?" is
+ * deliberately still counts unanswered requests, because "was this ever asked for?" is
  * exactly what the no-sites case must answer.
  */
 function isAnswered(record: LiveRecord): boolean {
-  return record.complete && record.failed === undefined && record.status !== undefined
+  return record.complete && record.status !== undefined
 }
 
 export class LiveRecorder {
