@@ -116,8 +116,8 @@ public sealed class ProfileTests
         identity.Validate("Testing");
         Assert.Equal("c006-5398ba40f4ea", identity.RunId);
         Assert.Equal("49e1a8d6-62b5-4197-9e19-7810f75d7c67", identity.InstanceId);
-        Assert.Equal("8273530417964ce8a85873f5b95df091535878bb", SourceBinding.FrontendHead);
-        Assert.Equal("fe63eb9b50d4f90c5e2c934b7b5200199f5202b4a91a7c64a25ff96989d8cf73", identity.FrontendDiffSha256);
+        Assert.Equal("44ae49cd6c54984fb7a52c9c6e4ee5fd67284d6e", SourceBinding.FrontendHead);
+        Assert.Equal("40e5e738367fd983a42b9dcd9eb705f8ccdf87897d494058d907f7c204ffd8d1", identity.FrontendDiffSha256);
         Assert.Equal(SourceBinding.FrontendDiff, identity.FrontendDiffSha256);
         Assert.Equal("9df7f40e3aefc5b02ef42a378c0d1aa800a2fe29", identity.BackendHead);
         var services = Canonical();

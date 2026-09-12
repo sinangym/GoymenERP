@@ -19,9 +19,9 @@ public static class SourceBinding
 {
     public const string ContractPath = RunSettings.ApprovedRoot + @"\artifacts\cari-acceptance-006\contact-edit-20260912\contract.json";
     public const string FrontendRoot = @"C:\src\GoymenERP-claude";
-    public const string FrontendHead = "8273530417964ce8a85873f5b95df091535878bb";
+    public const string FrontendHead = "44ae49cd6c54984fb7a52c9c6e4ee5fd67284d6e";
     public const string FrontendBase = "3e7dd98a5f8b7cb9e6850e05148eb4e7b26f3e3f";
-    public const string FrontendDiff = "fe63eb9b50d4f90c5e2c934b7b5200199f5202b4a91a7c64a25ff96989d8cf73";
+    public const string FrontendDiff = "40e5e738367fd983a42b9dcd9eb705f8ccdf87897d494058d907f7c204ffd8d1";
     public const string BackendTree = "d11840bd6c6f18c4b2e282419daa9e75e54a8c1b";
     public const string OpenApiHash = "6caaeed76f63c49efa63be04b66a043fa843932c1b7a792b80e07f776c81a3d6";
     public const string MigrationHash = "8ddf6db888521e0b6d253b5e1cc0de04a73ba23f0b2a012801ff108b165bb291";
