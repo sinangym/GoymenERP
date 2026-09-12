@@ -70,7 +70,14 @@ import { useShellDispatch, useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { UnresolvedExitGuard } from './UnresolvedExitGuard'
-import { createScope, forgetAttempt, recallAttempt, rememberAttempt } from './pendingAttempt'
+import {
+  attemptBindingFor,
+  createScope,
+  forgetAttempt,
+  recallAttempt,
+  rememberAttempt,
+  type AttemptBinding,
+} from './pendingAttempt'
 import styles from './ProductCreatePage.module.css'
 
 type CreateAttempt = AttemptState<CreateProductDraftPayload, ProductMutationResult>
@@ -98,6 +105,13 @@ export function ProductCreatePage() {
   const key = contextKey(shell)
   const namespace = key === null ? null : contextKeyString(key)
   const entryGeneration = shell.routeEntryGeneration
+  /**
+   * The attempt's DURABLE identity — actor, real session epoch, origin, committed
+   * context, screen. Deliberately not the cache namespace: that carries the
+   * capability generation and the committed revision, both of which a re-fence and
+   * a fresh authorized entry legitimately change. See `pendingAttempt.ts`.
+   */
+  const binding = useMemo(() => attemptBindingFor(shell, createScope()), [shell])
 
   /**
    * Reference reads go through the SAME security boundary as the business reads.
@@ -124,8 +138,11 @@ export function ProductCreatePage() {
 
   return (
     <ProductCreateForm
-      key={namespace ?? 'no-context'}
+      // Remounted per attempt binding: a new actor, session, origin or committed
+      // context is a new form. A capability re-verification is NOT.
+      key={binding?.key ?? 'no-context'}
       namespace={namespace}
+      binding={binding}
       groups={groups}
       groupsLoading={groupQuery.isPending}
       entryGeneration={entryGeneration}
@@ -136,12 +153,14 @@ export function ProductCreatePage() {
 
 function ProductCreateForm({
   namespace,
+  binding,
   groups,
   groupsLoading,
   entryGeneration,
   onRetryGroups,
 }: {
   readonly namespace: string | null
+  readonly binding: AttemptBinding | null
   /** `null` means the code-group read has not produced a usable list. */
   readonly groups: readonly ProductCodeGroup[] | null
   readonly groupsLoading: boolean
@@ -160,14 +179,15 @@ function ProductCreateForm({
   const [submitted, setSubmitted] = useState(false)
   /**
    * Seeded from the pending store, so an attempt whose outcome is unknown survives
-   * the unmount a capability re-fence causes. Only this exact namespace can see it;
-   * nothing is retried on its own.
+   * the unmount a capability re-fence causes. Only this exact binding can see it;
+   * nothing is retried on its own — the person sees the unresolved state and
+   * decides, behind a capability the entry gate has just re-verified.
    */
   const [attempt, setAttempt] = useState<CreateAttempt>(
-    () => recallAttempt<CreateProductDraftPayload, ProductMutationResult>(
-      namespace,
-      createScope(),
-    ) ?? { phase: 'idle' },
+    () =>
+      recallAttempt<CreateProductDraftPayload, ProductMutationResult>(binding) ?? {
+        phase: 'idle',
+      },
   )
 
   const summaryRef = useRef<HTMLDivElement>(null)
@@ -193,15 +213,6 @@ function ProductCreateForm({
   useEffect(() => {
     dispatch({ type: unresolved ? 'DIRTY_SET' : 'DIRTY_CLEAR', scope: PRODUCT_CREATE_DIRTY_SCOPE })
   }, [unresolved, dispatch])
-
-  /**
-   * Persist on every change, not on unmount: a route closed underneath the screen
-   * does not reliably run a cleanup we control, and a key saved only on the way out
-   * is lost exactly when it matters.
-   */
-  useEffect(() => {
-    rememberAttempt(namespace, createScope(), attempt)
-  }, [namespace, attempt])
   useEffect(
     () => () => dispatch({ type: 'DIRTY_CLEAR', scope: PRODUCT_CREATE_DIRTY_SCOPE }),
     [dispatch],
@@ -284,17 +295,28 @@ function ProductCreateForm({
     // reading it after would see `submitting` and lose the very history this exists
     // to carry.
     const previous = attemptRef.current
-    setAttempt({ phase: 'submitting', snapshot })
+    const inFlight: CreateAttempt = { phase: 'submitting', snapshot }
+    /**
+     * The key is protected from HERE — synchronously, before the await, in the
+     * store rather than only in component state. An effect would run after the
+     * commit, and a 403 answering this very send closes the route before that
+     * commit: the state that mattered most was the one never written.
+     */
+    rememberAttempt(binding, inFlight)
+    setAttempt(inFlight)
     // The write is an authenticated call under the same authority as the reads, so
     // a 401/403 answering it reaches the same boundary rather than staying local.
     const securitySnapshot = boundary.capture()
     const outcome = await createProductDraft(snapshot.payload, {
       idempotencyKey: snapshot.key,
     })
-    if (outcome.type === 'http') boundary.report(outcome.status, securitySnapshot)
     // `previous` is passed so a refusal that only answered a RETRY cannot be read
     // as proof that the earlier send did not apply.
     const next = nextState(snapshot, outcome, previous)
+    // Written BEFORE the boundary hears about a refusal: the report is what
+    // unmounts this screen, and the outcome must already be safe when it does.
+    rememberAttempt(binding, next)
+    if (outcome.type === 'http') boundary.report(outcome.status, securitySnapshot)
     if (next.phase === 'failed' && next.failure === 'validation') {
       /**
        * The server sends machine codes, so the text is produced here. A code this
@@ -310,7 +332,7 @@ function ProductCreateForm({
       return
     }
     setAttempt(next)
-  }, [boundary])
+  }, [boundary, binding])
 
   function onSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -348,7 +370,7 @@ function ProductCreateForm({
     void send({
       key: generateAttemptKey(),
       payload: validation.payload,
-      namespace: namespace ?? '',
+      namespace: binding?.key ?? '',
     })
   }
 
@@ -383,9 +405,8 @@ function ProductCreateForm({
   }
 
   if (attempt.phase === 'completed') {
+    // Resolved: `send` already settled the key in the store; nothing left to protect.
     const created = attempt.result.card.product
-    // Resolved: there is no longer a key to protect.
-    forgetAttempt(createScope())
     return (
       <section className={styles.page} aria-labelledby="product-created-heading">
         <div className={styles.successBlock} role="status">
@@ -765,7 +786,7 @@ function ProductCreateForm({
         detail={PRODUCT_CREATE_TEXT.unsavedDetail}
         stayLabel={PRODUCT_CREATE_TEXT.unsavedStay}
         leaveLabel={PRODUCT_CREATE_TEXT.unsavedLeave}
-        onLeave={() => forgetAttempt(createScope())}
+        onLeave={() => forgetAttempt(binding)}
       />
     </section>
   )

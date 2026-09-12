@@ -148,6 +148,12 @@ export interface RecordedCall {
 
 export interface HarnessConfig {
   readonly capabilities?: readonly string[]
+  /**
+   * The capability generation the server answers with. A re-entry after a real
+   * 403 legitimately receives a NEW one; a test that wants to prove recovery
+   * across that change re-installs the mock with a different value mid-test.
+   */
+  readonly capabilityGeneration?: string
   readonly onList?: (url: string) => Response
   readonly onCard?: (url: string) => Response
   readonly onGroups?: () => Response
@@ -184,7 +190,7 @@ export function installFetch(config: HarnessConfig = {}) {
     if (url.includes('/shell/capabilities')) {
       return json({
         contractVersion: SHELL_CAPABILITY_CONTRACT_VERSION,
-        generation: 'gen-1',
+        generation: config.capabilityGeneration ?? 'gen-1',
         capabilities:
           config.capabilities ?? [
             PRODUCT_CAPABILITY.productsList,

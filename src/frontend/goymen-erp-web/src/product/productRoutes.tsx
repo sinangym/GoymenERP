@@ -18,6 +18,11 @@ import type { ReactNode } from 'react'
 import type { RouteObject } from 'react-router'
 import { CapabilityRoute } from '../shell/CapabilityRoute'
 import type { CapabilityId } from '../shell/capabilities'
+import {
+  EditPendingAttemptScope,
+  PendingAttemptDiscardObserver,
+} from './PendingAttemptDiscardObserver'
+import { createScope } from './pendingAttempt'
 import { PRODUCT_CAPABILITY, PRODUCT_CAPABILITY_ROUTE, type ProductCapabilityId } from './capabilities'
 import { ProductListPage } from './ProductListPage'
 import { ProductDetailPage } from './ProductDetailPage'
@@ -57,7 +62,16 @@ export const productRoutes: RouteObject[] = [
   },
   {
     path: PRODUCT_CAPABILITY_ROUTE[PRODUCT_CAPABILITY.productsCreate].slice(1),
-    element: gate(PRODUCT_CAPABILITY.productsCreate, <ProductCreatePage />),
+    /**
+     * The write screens carry a pending-attempt observer OUTSIDE the gate — see
+     * `PendingAttemptDiscardObserver`. It must outlive the form, because the moment
+     * it has to act is the moment the form has already been unmounted.
+     */
+    element: (
+      <PendingAttemptDiscardObserver scope={createScope()}>
+        {gate(PRODUCT_CAPABILITY.productsCreate, <ProductCreatePage />)}
+      </PendingAttemptDiscardObserver>
+    ),
   },
   {
     /**
@@ -67,7 +81,11 @@ export const productRoutes: RouteObject[] = [
      * different authorities.
      */
     path: PRODUCT_CAPABILITY_ROUTE[PRODUCT_CAPABILITY.productsEdit].slice(1),
-    element: gate(PRODUCT_CAPABILITY.productsEdit, <ProductEditPage />),
+    element: (
+      <EditPendingAttemptScope>
+        {gate(PRODUCT_CAPABILITY.productsEdit, <ProductEditPage />)}
+      </EditPendingAttemptScope>
+    ),
   },
   {
     /**

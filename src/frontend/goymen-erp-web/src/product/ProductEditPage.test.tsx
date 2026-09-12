@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PRODUCT_CAPABILITY } from './capabilities'
 import { resetPendingAttempts } from './pendingAttempt'
+import { PRODUCT_EDIT_TEXT } from './productText'
 import {
   CLASS_FLAT,
   COMPANY_B,
@@ -302,10 +303,7 @@ describe('a refused retry', () => {
      * not — is the screen announcing that the earlier change was not applied on the
      * way out. Saying nothing is honest here; saying "uygulanmadı" would not be.
      *
-     * KNOWN LIMIT, recorded rather than hidden: once the route closes, the pending
-     * attempt is no longer visible to the user. Carrying an unresolved write across
-     * a capability revocation would need somewhere durable to keep it, which is a
-     * separate decision with its own failure modes.
+     * What happens to the attempt AFTER the route closes is the next case.
      */
     installFetch({
       capabilities: EDIT_ONLY,
@@ -354,6 +352,62 @@ describe('a refused retry', () => {
     const keys = calls.filter((call) => call.method === 'PATCH').map((call) => call.idempotencyKey)
     expect(keys).toHaveLength(3)
     expect(new Set(keys).size).toBe(1)
+  })
+})
+
+describe('an unknown edit across a REAL capability re-fence', () => {
+  it('is found again under a NEW capability generation, and retries with the same key only when asked', async () => {
+    /**
+     * Same lifecycle as the create screen, in one tree: unknown → same-key retry
+     * refused with 403 → route closed by the boundary → fresh entry answered with
+     * a new generation. The edit is bound to THIS record, and its expectedVersion
+     * is the one the person actually saw — the card is re-read, but the attempt is
+     * never rebased.
+     */
+    const first = installFetch({
+      capabilities: EDIT_ONLY,
+      onEdit: (attempt) => (attempt === 1 ? json({}, 503) : json({ code: 'forbidden' }, 403)),
+    })
+    const { router } = renderProductApp(PATH)
+
+    await formVisible()
+    await changeNameAndReason()
+    await userEvent.click(saveButton())
+    await waitFor(() => expect(screen.getByTestId('product-edit-unknown')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: 'Aynı işlemi tekrar dene' }))
+    await waitFor(() => expect(document.querySelector('[data-state]')).not.toBeNull())
+    const firstKey = first.calls.find((call) => call.method === 'PATCH')?.idempotencyKey
+
+    const { calls } = installFetch({
+      capabilities: EDIT_ONLY,
+      capabilityGeneration: 'gen-2',
+      onEdit: () =>
+        json(
+          mutation({
+            card: productCard({ product: productCore({ name: 'Galvaniz sac', version: '8' }) }),
+            isReplay: true,
+          }),
+        ),
+    })
+    await act(async () => {
+      await router.navigate(`/urun/${PRODUCT_1}`)
+    })
+    await act(async () => {
+      await router.navigate(PATH)
+    })
+    await formVisible()
+
+    await waitFor(() => expect(screen.getByTestId('product-edit-unknown')).toBeTruthy())
+    expect(screen.getByText(PRODUCT_EDIT_TEXT.retryRefusedStillUnknown)).toBeTruthy()
+    expect(calls.filter((call) => call.method === 'PATCH')).toHaveLength(0)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Aynı işlemi tekrar dene' }))
+    await waitFor(() => expect(screen.getByText(PRODUCT_EDIT_TEXT.replayedNote)).toBeTruthy())
+    const patches = calls.filter((call) => call.method === 'PATCH')
+    expect(patches).toHaveLength(1)
+    expect(patches[0].idempotencyKey).toBe(firstKey)
+    // The snapshot's expectedVersion is still the one the person saw: '7'.
+    expect(JSON.parse(patches[0].body ?? '{}').expectedVersion).toBe('7')
   })
 })
 

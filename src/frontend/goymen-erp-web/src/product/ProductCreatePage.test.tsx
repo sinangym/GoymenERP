@@ -3,8 +3,10 @@ import { act, cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PRODUCT_CAPABILITY } from './capabilities'
 import { resetPendingAttempts } from './pendingAttempt'
+import { PRODUCT_CREATE_TEXT } from './productText'
 import {
   CLASS_FLAT,
+  COMPANY_A,
   COMPANY_B,
   GROUP_SAC,
   installFetch,
@@ -14,6 +16,7 @@ import {
   productCore,
   referenceOptions,
   renderProductApp,
+  type HarnessConfig,
 } from './testHarness'
 
 const CREATE_ONLY = [PRODUCT_CAPABILITY.productsCreate]
@@ -687,58 +690,190 @@ describe('a refused retry', () => {
   })
 })
 
-describe('an unknown attempt across an unmount', () => {
-  it('survives a capability re-fence and is offered again on an authorized return', async () => {
-    /**
-     * The 403 closes the route and the form unmounts — taking the idempotency key
-     * with it, which is how a fresh key got minted for a payload the server may
-     * already have applied. The attempt is now held outside the component, bound to
-     * this exact context, and NOTHING is retried on its own.
-     */
-    installFetch({ capabilities: CREATE_ONLY, onCreate: () => json({}, 503) })
-    const first = renderProductApp(PATH)
+describe('an unknown attempt across a REAL capability re-fence', () => {
+  /**
+   * The lifecycle Backend traced on #238, driven through the real shell in ONE
+   * tree — no second render, no reset: an unknown outcome; a same-key retry the
+   * server refuses with 403; the boundary re-fencing the capability and closing
+   * the route underneath the form; and a fresh entry the server answers with a NEW
+   * capability generation. Same actor, same session, same origin, same context —
+   * so the person finds their own attempt, and nothing is retried for them.
+   */
+  async function reachRefusedRetry() {
+    const first = installFetch({
+      capabilities: CREATE_ONLY,
+      onCreate: (attempt) =>
+        attempt === 1 ? json({}, 503) : json({ code: 'forbidden' }, 403),
+    })
+    const { router } = renderProductApp(PATH)
 
     await formVisible()
     await fillMinimum()
     await userEvent.click(saveButton())
-    const before = await waitFor(() => screen.getByTestId('product-create-unknown'))
-    expect(before).toBeTruthy()
-
-    first.unmount()
-    cleanup()
-
-    // A fresh, authorized visit in the SAME context.
-    const { calls } = installFetch({ capabilities: CREATE_ONLY })
-    renderProductApp(PATH)
-
-    await formVisible()
     await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
+
+    await userEvent.click(screen.getByRole('button', { name: 'Aynı işlemi tekrar dene' }))
+    // The 403 re-fences the capability: the route closes onto the neutral block
+    // and the form — and, before this fix, its key — is gone.
+    await waitFor(() => expect(document.querySelector('[data-state]')).not.toBeNull())
+    expect(screen.queryByTestId('product-create-unknown')).toBeNull()
+
+    const firstKey = first.calls.find((call) => call.method === 'POST')?.idempotencyKey ?? null
+    expect(firstKey).not.toBeNull()
+    return { router, firstKey: firstKey as string }
+  }
+
+  /** A fresh entry the server now answers with a DIFFERENT capability generation. */
+  async function reenterAuthorized(
+    router: ReturnType<typeof renderProductApp>['router'],
+    onCreate?: HarnessConfig['onCreate'],
+  ) {
+    const mock = installFetch({
+      capabilities: CREATE_ONLY,
+      capabilityGeneration: 'gen-2',
+      onCreate,
+    })
+    await act(async () => {
+      await router.navigate('/urun')
+    })
+    await act(async () => {
+      await router.navigate(PATH)
+    })
+    await formVisible()
+    return mock
+  }
+
+  it('is found again under a NEW capability generation, and is not retried on its own', async () => {
+    const { router } = await reachRefusedRetry()
+    const { calls } = await reenterAuthorized(router)
+
+    await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
+    // The refusal answered the RETRY; the first send is still unresolved, and the
+    // screen keeps saying so instead of reporting the record as not created.
+    expect(screen.getByText(PRODUCT_CREATE_TEXT.retryRefusedStillUnknown)).toBeTruthy()
+    // Fresh access is a separate fence and was spent: the entry was re-verified
+    // against the server before anything mounted.
+    expect(calls.some((call) => call.url.includes('/shell/capabilities'))).toBe(true)
     // Restoring is not retrying: no write left the client on its own.
     expect(calls.filter((call) => call.method === 'POST')).toHaveLength(0)
   })
 
-  it('is not offered to a different actor or company', async () => {
-    // The namespace includes actor, company, capability generation and committed
-    // revision, so a pending write cannot surface anywhere it was not authorized.
+  it('retries with the SAME key when the person asks, and accepts the server’s replay', async () => {
+    const { router, firstKey } = await reachRefusedRetry()
+    const { calls } = await reenterAuthorized(router, () =>
+      json(mutation({ isReplay: true }), 201),
+    )
+
+    await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: 'Aynı işlemi tekrar dene' }))
+
+    await waitFor(() => expect(screen.getByText(PRODUCT_CREATE_TEXT.replayedNote)).toBeTruthy())
+    const posts = calls.filter((call) => call.method === 'POST')
+    expect(posts).toHaveLength(1)
+    // One click, one product: the key the server already saw.
+    expect(posts[0].idempotencyKey).toBe(firstKey)
+  })
+
+  it('is not shown under another committed context, and is still there on return', async () => {
+    /**
+     * With the form already closed by the 403 nobody is asked about the switch,
+     * so nothing was abandoned: the attempt is simply not THIS context's. It is
+     * neither shown here nor destroyed, and it is waiting where it was started.
+     */
+    const { router } = await reachRefusedRetry()
+    installFetch({ capabilities: CREATE_ONLY, capabilityGeneration: 'gen-2' })
+
+    await userEvent.selectOptions(screen.getByLabelText('Şirket'), COMPANY_B)
+    await waitFor(() =>
+      expect((screen.getByLabelText('Şirket') as HTMLSelectElement).value).toBe(COMPANY_B),
+    )
+    await reenterAuthorized(router)
+    expect(screen.queryByTestId('product-create-unknown')).toBeNull()
+
+    await userEvent.selectOptions(screen.getByLabelText('Şirket'), COMPANY_A)
+    await waitFor(() =>
+      expect((screen.getByLabelText('Şirket') as HTMLSelectElement).value).toBe(COMPANY_A),
+    )
+    await reenterAuthorized(router)
+    await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
+  })
+
+  it('is dropped when the person confirms a company switch — "bekleyen işlem bırakılır"', async () => {
+    /**
+     * The shell's dialog promises exactly that. The form cannot keep the promise —
+     * it is unmounted the instant the switch is confirmed — so the observer outside
+     * the gate does, for the context that was being left.
+     */
     installFetch({ capabilities: CREATE_ONLY, onCreate: () => json({}, 503) })
-    const first = renderProductApp(PATH)
+    const { router } = renderProductApp(PATH)
 
     await formVisible()
     await fillMinimum()
     await userEvent.click(saveButton())
     await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
 
-    first.unmount()
-    cleanup()
-    // Simulate a different context: the store is keyed by namespace, and the
-    // harness cannot mint a second identity, so the store is cleared to stand in
-    // for one. The namespace binding itself is covered by pendingAttempt.test.ts.
-    resetPendingAttempts()
+    await userEvent.selectOptions(screen.getByLabelText('Şirket'), COMPANY_B)
+    const dialog = await waitFor(() => screen.getByRole('dialog'))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Değişiklikleri bırak' }))
+    await waitFor(() =>
+      expect((screen.getByLabelText('Şirket') as HTMLSelectElement).value).toBe(COMPANY_B),
+    )
 
-    installFetch({ capabilities: CREATE_ONLY })
-    renderProductApp(PATH)
+    // Back under the context the attempt was started in: it is gone, because the
+    // person was asked and answered.
+    await userEvent.selectOptions(screen.getByLabelText('Şirket'), COMPANY_A)
+    await waitFor(() =>
+      expect((screen.getByLabelText('Şirket') as HTMLSelectElement).value).toBe(COMPANY_A),
+    )
+    await act(async () => {
+      await router.navigate('/urun')
+    })
+    await act(async () => {
+      await router.navigate(PATH)
+    })
     await formVisible()
     expect(screen.queryByTestId('product-create-unknown')).toBeNull()
+  })
+
+  it('is kept when the screen is torn down while the send is still in flight', async () => {
+    /**
+     * The first send, not only a retry: the key is in the store BEFORE the await,
+     * so a screen that disappears mid-flight leaves it behind. The harness tears
+     * the tree down to stand in for the route closing — the in-tree evidence for a
+     * closure is the gen-2 cases above; this one covers the interval they cannot.
+     */
+    let answer: ((response: Response) => void) | null = null
+    const first = installFetch({
+      capabilities: CREATE_ONLY,
+      onCreate: () =>
+        new Promise<Response>((resolve) => {
+          answer = resolve
+        }),
+    })
+    const { unmount } = renderProductApp(PATH)
+
+    await formVisible()
+    await fillMinimum()
+    await userEvent.click(saveButton())
+    await waitFor(() => expect(answer).not.toBeNull())
+    const firstKey = first.calls.find((call) => call.method === 'POST')?.idempotencyKey
+
+    unmount()
+    cleanup()
+    // The answer arrives after the screen is gone: nobody is there to render it.
+    await act(async () => {
+      ;(answer as unknown as (response: Response) => void)(json({}, 503))
+    })
+
+    const { calls } = installFetch({ capabilities: CREATE_ONLY })
+    renderProductApp(PATH)
+    await formVisible()
+    await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
+    expect(calls.filter((call) => call.method === 'POST')).toHaveLength(0)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Aynı işlemi tekrar dene' }))
+    await waitFor(() => expect(calls.filter((call) => call.method === 'POST')).toHaveLength(1))
+    expect(calls.find((call) => call.method === 'POST')?.idempotencyKey).toBe(firstKey)
   })
 
   it('is dropped when the user chooses to leave', async () => {
@@ -746,7 +881,7 @@ describe('an unknown attempt across an unmount', () => {
       capabilities: [...CREATE_ONLY, PRODUCT_CAPABILITY.productsList],
       onCreate: () => json({}, 503),
     })
-    const { router, unmount } = renderProductApp(PATH)
+    const { router } = renderProductApp(PATH)
 
     await formVisible()
     await fillMinimum()
@@ -760,13 +895,12 @@ describe('an unknown attempt across an unmount', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Değişiklikleri bırak' }))
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Ürünler' })).toBeTruthy())
 
-    unmount()
-    cleanup()
-    installFetch({ capabilities: CREATE_ONLY })
-    renderProductApp(PATH)
+    // Same tree, same context, straight back: the user was asked and said yes;
+    // keeping the key would resurrect a decision they just made.
+    await act(async () => {
+      await router.navigate(PATH)
+    })
     await formVisible()
-    // The user was asked and said yes; keeping the key would resurrect a decision
-    // they just made.
     expect(screen.queryByTestId('product-create-unknown')).toBeNull()
   })
 })

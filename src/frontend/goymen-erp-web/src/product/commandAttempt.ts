@@ -54,6 +54,12 @@ export type AttemptUnknownReason =
   | 'network-error'
   | 'service-unavailable'
   | 'malformed-response'
+  /**
+   * The send was still in flight when its screen was torn down (a capability
+   * re-fence, a route closed underneath it). The screen that comes back has no way
+   * to receive that answer, so to it the outcome is unknown.
+   */
+  | 'interrupted'
 
 export interface AttemptSnapshot<P> {
   /** The single Idempotency-Key for this snapshot. */

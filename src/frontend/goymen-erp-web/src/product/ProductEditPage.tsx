@@ -74,7 +74,14 @@ import { contextKey, contextKeyString, hasCapability } from '../shell/shellState
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { UnresolvedExitGuard } from './UnresolvedExitGuard'
-import { editScope, forgetAttempt, recallAttempt, rememberAttempt } from './pendingAttempt'
+import {
+  attemptBindingFor,
+  editScope,
+  forgetAttempt,
+  recallAttempt,
+  rememberAttempt,
+  type AttemptBinding,
+} from './pendingAttempt'
 import styles from './ProductCreatePage.module.css'
 
 type EditAttempt = AttemptState<EditProductDraftPayload, ProductMutationResult>
@@ -99,6 +106,11 @@ export function ProductEditPage() {
   const namespace = key === null ? null : contextKeyString(key)
   const boundary = useAuthBoundary()
   const entryGeneration = shell.routeEntryGeneration
+  // The attempt's durable identity, scoped to THIS record — see the create page.
+  const binding = useMemo(
+    () => attemptBindingFor(shell, editScope(productId ?? '')),
+    [shell, productId],
+  )
 
   const cardQuery = useQuery({
     queryKey: [namespace ?? 'no-context', entryGeneration, 'product-edit-card', productId ?? ''],
@@ -126,11 +138,13 @@ export function ProductEditPage() {
 
   return (
     <ProductEditForm
-      // Remounted per record AND per version AND per context, so a seeded form can
-      // never carry a previous revision's values or a previous actor's authority.
-      key={`${namespace ?? 'no-context'}:${outcome.data.product.id}:${outcome.data.product.version}`}
+      // Remounted per record AND per version AND per attempt binding, so a seeded
+      // form can never carry a previous revision's values or a previous actor's
+      // authority. A capability re-verification is not a new binding.
+      key={`${binding?.key ?? 'no-context'}:${outcome.data.product.id}:${outcome.data.product.version}`}
       card={outcome.data}
       namespace={namespace}
+      binding={binding}
       entryGeneration={entryGeneration}
       onReload={() => void cardQuery.refetch()}
     />
@@ -140,11 +154,13 @@ export function ProductEditPage() {
 function ProductEditForm({
   card,
   namespace,
+  binding,
   entryGeneration,
   onReload,
 }: {
   readonly card: ProductCard
   readonly namespace: string | null
+  readonly binding: AttemptBinding | null
   readonly entryGeneration: number
   readonly onReload: () => void
 }) {
@@ -162,10 +178,10 @@ function ProductEditForm({
    * an unresolved edit of one record cannot surface on another.
    */
   const [attempt, setAttempt] = useState<EditAttempt>(
-    () => recallAttempt<EditProductDraftPayload, ProductMutationResult>(
-      namespace,
-      editScope(card.product.id),
-    ) ?? { phase: 'idle' },
+    () =>
+      recallAttempt<EditProductDraftPayload, ProductMutationResult>(binding) ?? {
+        phase: 'idle',
+      },
   )
   const [staleCurrentVersion, setStaleCurrentVersion] = useState<string | null>(null)
 
@@ -185,9 +201,6 @@ function ProductEditForm({
     dispatch({ type: unresolved ? 'DIRTY_SET' : 'DIRTY_CLEAR', scope: PRODUCT_EDIT_DIRTY_SCOPE })
   }, [unresolved, dispatch])
 
-  useEffect(() => {
-    rememberAttempt(namespace, editScope(card.product.id), attempt)
-  }, [namespace, card.product.id, attempt])
   useEffect(
     () => () => dispatch({ type: 'DIRTY_CLEAR', scope: PRODUCT_EDIT_DIRTY_SCOPE }),
     [dispatch],
@@ -244,15 +257,21 @@ function ProductEditForm({
       // so reading it after would see `submitting` and lose the very history this
       // exists to carry.
       const previous = attemptRef.current
-      setAttempt({ phase: 'submitting', snapshot })
+      const inFlight: EditAttempt = { phase: 'submitting', snapshot }
+      // Protected from here, before the await — see the create page for why an
+      // effect is too late.
+      rememberAttempt(binding, inFlight)
+      setAttempt(inFlight)
       const securitySnapshot = boundary.capture()
       const result = await editProductDraft(productId, snapshot.payload, {
         idempotencyKey: snapshot.key,
       })
-      if (result.type === 'http') boundary.report(result.status, securitySnapshot)
       // `previous` is passed so a refusal that only answered a RETRY cannot be read
       // as proof that the earlier send did not apply.
       const next = nextState(snapshot, result, previous)
+      // Written BEFORE the boundary can unmount this screen.
+      rememberAttempt(binding, next)
+      if (result.type === 'http') boundary.report(result.status, securitySnapshot)
 
       if (next.phase === 'failed' && next.failure === 'stale-version') {
         /**
@@ -276,7 +295,7 @@ function ProductEditForm({
       }
       setAttempt(next)
     },
-    [productId, boundary],
+    [productId, boundary, binding],
   )
 
   function onSubmit(event: React.FormEvent) {
@@ -302,7 +321,7 @@ function ProductEditForm({
     void send({
       key: generateAttemptKey(),
       payload: validation.payload,
-      namespace: namespace ?? '',
+      namespace: binding?.key ?? '',
     })
   }
 
@@ -332,7 +351,6 @@ function ProductEditForm({
 
   if (attempt.phase === 'completed') {
     const saved = attempt.result.card.product
-    forgetAttempt(editScope(card.product.id))
     return (
       <section className={styles.page} aria-labelledby="product-edited-heading">
         <div className={styles.successBlock} role="status">
@@ -706,7 +724,7 @@ function ProductEditForm({
         detail={PRODUCT_EDIT_TEXT.unsavedDetail}
         stayLabel={PRODUCT_EDIT_TEXT.unsavedStay}
         leaveLabel={PRODUCT_EDIT_TEXT.unsavedLeave}
-        onLeave={() => forgetAttempt(editScope(card.product.id))}
+        onLeave={() => forgetAttempt(binding)}
       />
     </section>
   )
