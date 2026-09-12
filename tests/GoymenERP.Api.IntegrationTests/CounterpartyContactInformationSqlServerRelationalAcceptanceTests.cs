@@ -4,11 +4,13 @@ using System.Text;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
+using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Seeding;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -276,6 +278,22 @@ public sealed class CounterpartyContactInformationSqlServerRelationalAcceptanceT
             """{"expectedVersion":"9007199254740993","changes":{"phone":"001"}}""");
         Assert.Equal(HttpStatusCode.NoContent, exact.StatusCode);
         Assert.Equal("9007199254740994", (await ReadAsync(client, path)).GetProperty("version").GetString());
+        var beforeControl = (await ReadAsync(client, path)).GetRawText();
+        foreach (var raw in new[] { "\r001", "001\n", "\r\n", "\t", " \n " })
+        {
+            NewKey(client);
+            using var control = await PutAsync(client, path, JsonSerializer.Serialize(new
+            {
+                expectedVersion = "9007199254740994", changes = new { phone = raw },
+            }));
+            Assert.Equal(HttpStatusCode.BadRequest, control.StatusCode);
+            Assert.Equal("validation_failed", (await JsonAsync(control)).GetProperty("code").GetString());
+            Assert.Equal(beforeControl, (await ReadAsync(client, path)).GetRawText());
+        }
+        Assert.Equal(1, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType]=@Event;", party));
+        Assert.Equal(1, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [CommandName]=@Command;", party));
         NewKey(client);
         using var stale = await PutAsync(client, path,
             """{"expectedVersion":"9007199254740993","changes":{"phone":"002"}}""");
@@ -380,7 +398,8 @@ public sealed class CounterpartyContactInformationSqlServerRelationalAcceptanceT
     [SqlServerFact]
     public async Task ContactCard_NoOpKeepsLogicalVersionAndAuditWhilePersistingOneReplayResult()
     {
-        await using var test = new ContactTest();
+        var interleave = new NoOpSaveInterleave();
+        await using var test = new ContactTest(beforeSave: interleave);
         using var client = test.Client();
         var party = await CreateAsync(client);
         var path = PathFor(party);
@@ -397,6 +416,43 @@ public sealed class CounterpartyContactInformationSqlServerRelationalAcceptanceT
             "SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [CommandName]=@Command;", party));
         Assert.Equal(0, await test.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [counterparty].[CompanyPartyAccounts] WHERE [PartyId]=@Party AND [ContactInformationJson] IS NOT NULL;", party));
+
+        // The callback runs after the no-op has loaded/version-checked its account,
+        // but before its guarded UPDATE. The winner uses the real HTTP command path.
+        using var winner = test.Client();
+        interleave.BeforeNoOpSave = async () =>
+        {
+            NewKey(winner);
+            using var winningWrite = await PutAsync(winner, path,
+                """{"expectedVersion":"1","changes":{"phone":"winner"}}""");
+            Assert.Equal(HttpStatusCode.NoContent, winningWrite.StatusCode);
+        };
+        NewKey(client);
+        using var raced = await PutAsync(client, path, """{"expectedVersion":"1","changes":{}}""");
+        Assert.True(interleave.Triggered);
+        Assert.Equal(HttpStatusCode.Conflict, raced.StatusCode);
+        Assert.Equal("version_conflict", (await JsonAsync(raced)).GetProperty("code").GetString());
+        const string conflictReceiptSql = "SELECT (SELECT * FROM [idempotency].[CommandExecutions] WHERE [CommandName]=@Command AND [Outcome]=N'VersionConflict' FOR JSON PATH);";
+        var savedConflict = await test.ScalarAsync<string>(conflictReceiptSql, party);
+        using var racedReplay = await PutAsync(client, path, """{"expectedVersion":"1","changes":{}}""");
+        Assert.Equal(HttpStatusCode.Conflict, racedReplay.StatusCode);
+        Assert.True(racedReplay.Headers.Contains("Idempotency-Replayed"));
+        var originalProblem = await JsonAsync(raced);
+        var replayProblem = await JsonAsync(racedReplay);
+        Assert.False(string.IsNullOrWhiteSpace(originalProblem.GetProperty("traceId").GetString()));
+        Assert.False(string.IsNullOrWhiteSpace(replayProblem.GetProperty("traceId").GetString()));
+        Assert.Equal(originalProblem.EnumerateObject().Where(property => property.Name != "traceId")
+                .Select(property => (property.Name, Value: property.Value.GetRawText())),
+            replayProblem.EnumerateObject().Where(property => property.Name != "traceId")
+                .Select(property => (property.Name, Value: property.Value.GetRawText())));
+        Assert.Equal(savedConflict, await test.ScalarAsync<string>(conflictReceiptSql, party));
+        var final = await ReadAsync(client, path);
+        Assert.Equal("2", final.GetProperty("version").GetString());
+        Assert.Equal("winner", final.GetProperty("information").GetProperty("phone").GetString());
+        Assert.Equal(1, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType]=@Event;", party));
+        Assert.Equal(3, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [CommandName]=@Command;", party));
     }
 
     [SqlServerFact]
@@ -468,10 +524,12 @@ public sealed class CounterpartyContactInformationSqlServerRelationalAcceptanceT
         private readonly string _baseConnection = Environment.GetEnvironmentVariable(
             SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
 
-        public ContactTest(bool grantBasic = true)
+        public ContactTest(bool grantBasic = true, SaveChangesInterceptor? beforeSave = null)
         {
             Factory = new SqlServerRelationalApiFactory(_baseConnection, services =>
             {
+                if (beforeSave is not null)
+                    services.AddDbContext<CounterpartyDbContext>((_, options) => options.AddInterceptors(beforeSave));
                 if (grantBasic)
                 {
                     services.PostConfigure<IdentitySeedOptions>(options =>
@@ -528,6 +586,25 @@ public sealed class CounterpartyContactInformationSqlServerRelationalAcceptanceT
                 END;
                 """;
             await command.ExecuteNonQueryAsync();
+        }
+    }
+
+    private sealed class NoOpSaveInterleave : SaveChangesInterceptor
+    {
+        private int _triggered;
+        public Func<Task>? BeforeNoOpSave { get; set; }
+        public bool Triggered => Volatile.Read(ref _triggered) != 0;
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (BeforeNoOpSave is { } callback && eventData.Context is CounterpartyDbContext context
+                && context.ChangeTracker.Entries<CompanyPartyAccount>().Any(entry =>
+                    entry.Property(account => account.ContactInformationJson).IsModified
+                    && entry.Entity.ContactInformationJson is null && entry.Entity.Version == 1)
+                && Interlocked.CompareExchange(ref _triggered, 1, 0) == 0)
+                await callback();
+            return result;
         }
     }
 }

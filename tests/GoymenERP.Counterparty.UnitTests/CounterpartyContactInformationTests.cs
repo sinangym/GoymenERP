@@ -138,4 +138,17 @@ public sealed class CounterpartyContactInformationTests
     private static CounterpartyContactInformation Apply(CounterpartyContactInformation current, string json) =>
         CounterpartyContactInformationEditor.Apply(current,
             JsonSerializer.Deserialize<CounterpartyContactInformationChanges>(json, JsonOptions)!);
+
+    [Theory]
+    [InlineData("\r001")]
+    [InlineData("001\n")]
+    [InlineData("\r\n")]
+    [InlineData("\t")]
+    [InlineData("  \n  ")]
+    public void RawControlCharactersCannotBeTrimmedIntoAValueOrClear(string value)
+    {
+        var current = CounterpartyContactInformationEditor.Empty() with { Phone = "retained" };
+        Assert.Throws<ArgumentException>(() => Apply(current, JsonSerializer.Serialize(new { phone = value })));
+        Assert.Equal("retained", current.Phone);
+    }
 }

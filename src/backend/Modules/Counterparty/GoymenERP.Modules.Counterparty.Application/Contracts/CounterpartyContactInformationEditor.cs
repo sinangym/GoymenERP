@@ -217,15 +217,21 @@ public static class CounterpartyContactInformationEditor
         {
             JsonValueKind.Undefined => previous,
             JsonValueKind.Null => null,
-            JsonValueKind.String => value.GetString()?.Trim(),
+            JsonValueKind.String => value.GetString(),
             _ => throw Invalid(field, "Metin veya null bekleniyor."),
         };
+        if (result is not null && result.Any(char.IsControl))
+        {
+            throw Invalid(field, "Alan kontrol karakteri içermemelidir.");
+        }
+
+        result = result?.Trim();
         if (string.IsNullOrEmpty(result))
         {
             return null;
         }
 
-        if (result.Length > maximum || result.Any(char.IsControl))
+        if (result.Length > maximum)
         {
             throw Invalid(field, $"Alan en fazla {maximum} karakter olmalı ve kontrol karakteri içermemelidir.");
         }

@@ -288,7 +288,7 @@ This is NOT a claim that the new binary supports an unmigrated old schema:
 deploy the additive migration before the new binary; never roll the schema back
 while that binary serves requests.
 
-### L-03 two-edit SQL evidence contract
+### Historical L-03 two-edit SQL evidence contract (superseded below)
 
 The four HTTP PUTs in the contact-edit journey mean two successful logical edits,
 one same-key replay, and one stale-version refusal. The refusal changes no business
@@ -342,3 +342,41 @@ PUTs; it is separate from the smoke's intentional denied API PUT. A fresh browse
 context must use its own real authentication header at the existing transport,
 not mock responses or reuse the admin context's readiness. Do not claim these
 future smoke/browser checks passed merely because the profile unit test passed.
+
+### Expanded L-03 and independent-review correction batch
+
+Coordinator fixed the existing section14.5 acceptance order on 2026-09-12:
+U1 initializes phone/extension, two addresses, operations and finance contacts with
+their phone/email channels and a successful profile email; its real 204 delivery
+is withheld and replayed with the same key. U2 clears phone and extension. U3
+deactivates the delivery address, U4 edits that inactive address, U5 explicitly
+reactivates it. A second editor opened at v1 gets a durable 409 against v6; after
+fresh read/user review U6 saves the requested email with a NEW key and expected v6.
+Final account v7, phone/extension null, updated active delivery address, both
+contacts retained, profile email PREFIX.toLowerCase()+`-stale@example.test`.
+
+Exact delta: 8 PUTs across two pages, 7 unique durable results (6 Succeeded/204,
+1 VersionConflict/409), 6 audits and account version increments, zero new
+Party/accounts and zero B/global changes. `contactPuts` contains six primary-page
+attempts; `staleContactPuts` contains the conflict and reviewed recovery. Sequence
+numbers are page-local and never merged as globally unique identities.
+`VerifyContactJourney` now checks this order, exact values, child transitions,
+key/payload/company/actor/status/schema and the complete typed durable response.
+Malformed/missing/duplicate body fields, metadata/body contradictions and wrong
+conflict versions fail closed. This supersedes the historical827 two-edit profile;
+it is a test intention until final source/runtime/browser gates actually pass.
+
+Reviewer identities: Ampere `01a08c5c-80b3-79d1-82c5-3fb7aa4a70bd` and James
+`01a08d68-5d45-7e60-9e02-760e83301ef5`, exact reviewed source ef430df.
+Unique findings: raw control-character validation after trim, missing deterministic
+no-op race proof, and missing durable ResponseJson verification. These are one
+correction batch, not a new full-scope review. AI/non-author review is not human
+approval, final ERP acceptance or production authorization.
+
+Runtime semantic correction: all control characters are rejected on raw input
+before trimming; CR/LF/tab cannot turn into an accepted value or unintended clear.
+DTO/OpenAPI shape is unchanged; final BackendDependency must include this fix.
+The existing no-op SQL fact deterministically inserts a competing real HTTP commit
+between the no-op read and guarded save, requires 409 and same-key durable replay,
+one winner audit and unchanged persisted conflict receipt. Per-request traceId
+is checked as present but is not confused with immutable business response data.

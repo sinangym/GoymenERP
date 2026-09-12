@@ -8,7 +8,7 @@ namespace GoymenERP.CariAcceptance006.Tests;
 public sealed class ContactJourneyEvidenceTests
 {
     [Fact]
-    public void TwoUpdatesReplayAndDurableConflictRequireThreeReceiptsAndNoNewParty()
+    public void SixUpdatesReplayAndDurableConflictRequireSevenReceiptsAndNoNewParty()
     {
         var value = Fixture();
         Verify(value);
@@ -50,14 +50,14 @@ public sealed class ContactJourneyEvidenceTests
         {
             case "missingConflict": after = after with { ContactExecutionRows = receipts[..2] }; break;
             case "extraReplayReceipt": after = after with { ContactExecutionRows = [.. receipts, receipts[0] with { Id = Guid.NewGuid() }] }; break;
-            case "wrongCompany": receipts[2] = receipts[2] with { CompanyId = Guid.Parse(value.Identity.CompanyBId) }; break;
-            case "wrongActor": receipts[2] = receipts[2] with { ActorId = "another-actor" }; break;
-            case "wrongPayload": receipts[2] = receipts[2] with { RequestHash = new string('A', 64) }; break;
-            case "wrongKey": receipts[2] = receipts[2] with { IdempotencyKeyHash = new string('B', 64) }; break;
-            case "conflictSuccess": receipts[2] = receipts[2] with { Outcome = "Succeeded" }; break;
-            case "conflictStatus": receipts[2] = receipts[2] with { HttpStatusCode = 204 }; break;
-            case "schema": receipts[2] = receipts[2] with { SchemaVersion = 2 }; break;
-            case "duplicateReceipt": receipts[2] = receipts[2] with { Id = receipts[0].Id }; break;
+            case "wrongCompany": receipts[5] = receipts[5] with { CompanyId = Guid.Parse(value.Identity.CompanyBId) }; break;
+            case "wrongActor": receipts[5] = receipts[5] with { ActorId = "another-actor" }; break;
+            case "wrongPayload": receipts[5] = receipts[5] with { RequestHash = new string('A', 64) }; break;
+            case "wrongKey": receipts[5] = receipts[5] with { IdempotencyKeyHash = new string('B', 64) }; break;
+            case "conflictSuccess": receipts[5] = receipts[5] with { Outcome = "Succeeded" }; break;
+            case "conflictStatus": receipts[5] = receipts[5] with { HttpStatusCode = 204 }; break;
+            case "schema": receipts[5] = receipts[5] with { SchemaVersion = 2 }; break;
+            case "duplicateReceipt": receipts[5] = receipts[5] with { Id = receipts[0].Id }; break;
             case "newParty": after = after with { Effects = after.Effects with { Parties = 2 } }; break;
             case "newAccount": after = after with { Effects = after.Effects with { Accounts = 3 } }; break;
             case "extraAudit": after = after with { Effects = after.Effects with { ContactAudits = 3 } }; break;
@@ -116,7 +116,8 @@ public sealed class ContactJourneyEvidenceTests
 
     private static JsonElement Text(string value) => JsonSerializer.SerializeToElement(value);
     private static void Verify(Case value) => DatabaseEvidence.VerifyContactJourney(value.Identity,
-        value.Before, value.After, value.PartyId, value.CompanyId, value.First, value.Replay, value.Clear, value.Stale);
+        value.Before, value.After, value.PartyId, value.CompanyId,
+        [value.First, value.Replay, value.Clear, .. value.Children], [value.Stale, value.Recovered]);
 
     private static Case Fixture()
     {
@@ -130,6 +131,7 @@ public sealed class ContactJourneyEvidenceTests
         var first = new ContactJourneyAttempt("first", new("1", new()
         {
             Phone = Text("+90 212 555 00 01"), PhoneExtension = Text("123"),
+            Email = Text(identity.BrowserPrefix.ToLowerInvariant() + "-operations@example.test"),
             Addresses = [
                 new() { Id = Guid.NewGuid(), Operation = "upsert", Purpose = Text("delivery"), CountryCode = Text("TR"),
                     Line1 = Text(identity.BrowserPrefix + " Teslim Yolu 1"), City = Text("Kocaeli") },
@@ -137,7 +139,10 @@ public sealed class ContactJourneyEvidenceTests
                     Line1 = Text(identity.BrowserPrefix + " Operational 2") },
             ],
             Contacts = [new() { Id = Guid.NewGuid(), Operation = "upsert", DisplayName = Text(identity.BrowserPrefix + " Operasyon Muhatab\u0131"),
-                Purpose = Text("Operasyon"), Channels = [new() { Id = Guid.NewGuid(), Operation = "upsert", Kind = Text("phone"), Value = Text("0532 000 00 01") }] }],
+                Purpose = Text("Operasyon"), Channels = [new() { Id = Guid.NewGuid(), Operation = "upsert", Kind = Text("phone"), Value = Text("0532 000 00 01") }] },
+                new() { Id = Guid.NewGuid(), Operation = "upsert", DisplayName = Text(identity.BrowserPrefix + " Finans Muhatab\u0131"),
+                Purpose = Text("Finans"), Channels = [new() { Id = Guid.NewGuid(), Operation = "upsert", Kind = Text("email"),
+                    Value = Text(identity.BrowserPrefix.ToLowerInvariant() + "-finance@example.test") }] }],
         }));
         var clear = new ContactJourneyAttempt("clear", new("2", new()
         {
@@ -148,23 +153,99 @@ public sealed class ContactJourneyEvidenceTests
         {
             Email = Text(identity.BrowserPrefix.ToLowerInvariant() + "-stale@example.test"),
         }));
+        var addressId = first.Command.Changes.Addresses[0].Id;
+        ContactJourneyAttempt Child(string key, string version, string operation, JsonElement line = default) =>
+            new(key, new(version, new() { Addresses = [new() { Id = addressId, Operation = operation, Line1 = line }] }));
+        ContactJourneyAttempt[] children = [Child("deactivate", "3", "deactivate"),
+            Child("inactive-edit", "4", "upsert", Text(identity.BrowserPrefix + " Teslim Yolu 1 G\u00fcncel")),
+            Child("reactivate", "5", "reactivate")];
+        var recovered = new ContactJourneyAttempt("recovered", new("6", stale.Command.Changes));
         var final = CounterpartyContactInformationEditor.Apply(
             CounterpartyContactInformationEditor.Apply(CounterpartyContactInformationEditor.Empty(), first.Command.Changes),
             clear.Command.Changes);
+        foreach (var child in children)
+            final = CounterpartyContactInformationEditor.Apply(final, child.Command.Changes);
+        final = CounterpartyContactInformationEditor.Apply(final, recovered.Command.Changes);
         ContactExecutionRow Receipt(ContactJourneyAttempt attempt, bool conflict = false) => new(
             Guid.NewGuid(), company, IdempotencyHash.ComputeKey(attempt.IdempotencyKey),
             IdempotencyHash.ComputePayload(new { PartyId = party, Command = attempt.Command }),
-            identity.Actor, conflict ? "VersionConflict" : "Succeeded", conflict ? 409 : 204, "{}", 1);
+            identity.Actor, conflict ? "VersionConflict" : "Succeeded", conflict ? 409 : 204,
+            JsonSerializer.Serialize(new CounterpartyCommandResponse(
+                conflict ? CounterpartyCommandResult.VersionConflict : CounterpartyCommandResult.Succeeded,
+                conflict ? 409 : 204, conflict ? "Version conflict" : null, conflict ? "Read the current version." : null,
+                null, conflict ? new CounterpartyVersionConflict(1, 6) : null)), 1);
         var after = before with
         {
-            Effects = before.Effects with { ContactAudits = 2, ContactExecutions = 3 },
-            Rows = [a with { Version = "3", ContactInformationJson = CounterpartyContactInformationEditor.Serialize(final) }, b],
-            ContactExecutionRows = [Receipt(first), Receipt(clear), Receipt(stale, true)],
+            Effects = before.Effects with { ContactAudits = 6, ContactExecutions = 7 },
+            Rows = [a with { Version = "7", ContactInformationJson = CounterpartyContactInformationEditor.Serialize(final) }, b],
+            ContactExecutionRows = [Receipt(first), Receipt(clear), .. children.Select(child => Receipt(child)), Receipt(stale, true), Receipt(recovered)],
         };
-        return new(identity, before, after, party, company, first, first with { }, clear, stale);
+        return new(identity, before, after, party, company, first, first with { }, clear, stale, children, recovered);
     }
 
     private sealed record Case(RunSettings Identity, DatabaseSnapshot Before, DatabaseSnapshot After,
         Guid PartyId, Guid CompanyId, ContactJourneyAttempt First, ContactJourneyAttempt Replay,
-        ContactJourneyAttempt Clear, ContactJourneyAttempt Stale);
+        ContactJourneyAttempt Clear, ContactJourneyAttempt Stale, IReadOnlyList<ContactJourneyAttempt> Children,
+        ContactJourneyAttempt Recovered);
+
+    [Theory]
+    [InlineData("malformed")]
+    [InlineData("null")]
+    [InlineData("empty")]
+    [InlineData("duplicate")]
+    [InlineData("wrongResult")]
+    [InlineData("wrongStatus")]
+    [InlineData("missingConflict")]
+    [InlineData("wrongExpected")]
+    [InlineData("wrongCurrent")]
+    [InlineData("missingDetail")]
+    [InlineData("successProblem")]
+    public void ReplayBodyMustBeDeserializableAndAgreeWithTheRealTerminalResult(string mutation)
+    {
+        var value = Fixture();
+        var receipts = value.After.ContactExecutionRows!.ToArray();
+        var index = mutation == "successProblem" ? 0 : 5;
+        var response = JsonSerializer.Deserialize<CounterpartyCommandResponse>(receipts[index].ResponseJson)!;
+        var json = mutation switch
+        {
+            "malformed" => "not-json",
+            "null" => "null",
+            "empty" => "{}",
+            "duplicate" => "{\"Result\":4," + receipts[index].ResponseJson[1..],
+            "wrongResult" => JsonSerializer.Serialize(response with { Result = CounterpartyCommandResult.Succeeded }),
+            "wrongStatus" => JsonSerializer.Serialize(response with { StatusCode = 204 }),
+            "missingConflict" => JsonSerializer.Serialize(response with { Conflict = null }),
+            "wrongExpected" => JsonSerializer.Serialize(response with { Conflict = new(2, 6) }),
+            "wrongCurrent" => JsonSerializer.Serialize(response with { Conflict = new(1, 7) }),
+            "missingDetail" => JsonSerializer.Serialize(response with { Detail = null }),
+            "successProblem" => JsonSerializer.Serialize(response with { Title = "not successful" }),
+            _ => throw new ArgumentException(nameof(mutation)),
+        };
+        receipts[index] = receipts[index] with { ResponseJson = json };
+        Assert.Throws<InvalidOperationException>(() => Verify(value with { After = value.After with { ContactExecutionRows = receipts } }));
+    }
+
+    [Theory]
+    [InlineData("skipDeactivate")]
+    [InlineData("wrongAddress")]
+    [InlineData("wrongInactiveValue")]
+    [InlineData("recoveryOldKey")]
+    [InlineData("recoveryOldVersion")]
+    public void ExpandedJourneyRequiresTheExactChildAndReviewedRecoverySteps(string mutation)
+    {
+        var value = Fixture();
+        var children = value.Children.ToArray();
+        value = mutation switch
+        {
+            "skipDeactivate" => value with { Children = children[1..] },
+            "wrongAddress" => value with { Children = [children[0] with { Command = children[0].Command with
+                { Changes = new() { Addresses = [children[0].Command.Changes.Addresses[0] with { Id = Guid.NewGuid() }] } } }, .. children[1..]] },
+            "wrongInactiveValue" => value with { Children = [children[0], children[1] with { Command = children[1].Command with
+                { Changes = new() { Addresses = [children[1].Command.Changes.Addresses[0] with { Line1 = Text("wrong") }] } } }, children[2]] },
+            "recoveryOldKey" => value with { Recovered = value.Recovered with { IdempotencyKey = value.Stale.IdempotencyKey } },
+            "recoveryOldVersion" => value with { Recovered = value.Recovered with { Command = value.Recovered.Command with { ExpectedVersion = "1" } } },
+            _ => throw new ArgumentException(nameof(mutation)),
+        };
+        Assert.Throws<InvalidOperationException>(() => Verify(value));
+    }
 }
