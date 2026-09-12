@@ -95,6 +95,8 @@ public sealed record RunSettings
 
 public static class AcceptanceProfile
 {
+    // Existing company-scoped bootstrap identity; only this isolated profile adds Cari read.
+    public const string ReadOnlyActor = "company-a-user";
     // Offline canonical fingerprint for these five exact, single-company declarations.
     // The real registry checks it. It is NOT derived from arbitrary providers at runtime.
     public const string Revision = "sha256:VgK2rm5DemWYcc50HvrUcElPoDcymsCMdawVI137j4A";
@@ -110,6 +112,9 @@ public static class AcceptanceProfile
             var administrator = options.Roles.Single(role => role.Code == "SYSTEM_ADMINISTRATOR");
             if (!administrator.Permissions.Contains(ErpPermissions.CounterpartyPartiesUpdateBasic))
                 administrator.Permissions.Add(ErpPermissions.CounterpartyPartiesUpdateBasic);
+            var operatorRole = options.Roles.Single(role => role.Code == "ORGANIZATION_OPERATOR");
+            if (!operatorRole.Permissions.Contains(ErpPermissions.CounterpartyPartiesRead))
+                operatorRole.Permissions.Add(ErpPermissions.CounterpartyPartiesRead);
         });
         services.Remove(providers[0]);
         services.AddSingleton<IShellCapabilityProvider, CariAcceptanceProvider>();

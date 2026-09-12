@@ -323,3 +323,22 @@ creates only B's own child. A channel cannot be addressed through another contac
 Both updated facts passed against real local SQL Server on 2026-09-12, zero skips;
 TRX: `artifacts/party-card-tests/party-card-contact-child-boundaries.trx`.
 No new test inventory, permission grant, runtime API behavior or migration was added.
+
+### Read-only browser actor (isolated Testing profile only)
+
+Use a separate browser context whose real API transport sends
+`X-Development-User: company-a-user` and `X-Company-Id: 10000000-0000-0000-0000-000000000001`.
+The existing company-A operator assignment is company-wide. This acceptance profile
+adds only `counterparty.parties.read` to its existing `ORGANIZATION_OPERATOR` test
+role; it does not add basic edit/create/link. The same synthetic role permits the
+existing B operator to read B, without giving the A user access to B.
+Normal seed roles/provider and production are unchanged. `company-a-viewer` is
+site-scoped and cannot read Cari; it is NOT the read-only-card actor.
+
+Expected real API behavior: fresh A contact GET 200 with the contract ACK; contact
+PUT 403 with no business or durable-command effects. The existing smoke now probes
+both and compares full SQL snapshots. Browser deep-link refusal should send zero
+PUTs; it is separate from the smoke's intentional denied API PUT. A fresh browser
+context must use its own real authentication header at the existing transport,
+not mock responses or reuse the admin context's readiness. Do not claim these
+future smoke/browser checks passed merely because the profile unit test passed.

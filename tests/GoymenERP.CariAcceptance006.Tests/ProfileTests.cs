@@ -61,10 +61,20 @@ public sealed class ProfileTests
             Id = Guid.NewGuid(), Code = "SYSTEM_ADMINISTRATOR", Name = "Test only",
             Permissions = [ErpPermissions.CounterpartyPartiesRead],
         });
+        options.Roles.Add(new IdentityRoleSeed
+        {
+            Id = Guid.NewGuid(), Code = "ORGANIZATION_OPERATOR", Name = "Existing test operator",
+            Permissions = [ErpPermissions.IdentityProfileRead],
+        });
         var configure = Assert.Single(container.GetServices<IPostConfigureOptions<IdentitySeedOptions>>());
         configure.PostConfigure(Options.DefaultName, options);
         configure.PostConfigure(Options.DefaultName, options);
         Assert.Single(options.Roles[0].Permissions, permission => permission == ErpPermissions.CounterpartyPartiesUpdateBasic);
+        Assert.Equal("company-a-user", AcceptanceProfile.ReadOnlyActor);
+        Assert.Single(options.Roles[1].Permissions, permission => permission == ErpPermissions.CounterpartyPartiesRead);
+        Assert.DoesNotContain(ErpPermissions.CounterpartyPartiesUpdateBasic, options.Roles[1].Permissions);
+        Assert.DoesNotContain(ErpPermissions.CounterpartyPartiesCreate, options.Roles[1].Permissions);
+        Assert.DoesNotContain(ErpPermissions.CounterpartyAccountsCreate, options.Roles[1].Permissions);
         Assert.DoesNotContain(ErpPermissions.CounterpartyPartiesUpdateBasic,
             new IdentityRoleSeed().Permissions);
     }
