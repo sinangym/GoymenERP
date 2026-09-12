@@ -9,6 +9,20 @@ namespace GoymenERP.Product.UnitTests;
 public sealed class ProductReferenceValidationTests
 {
     [Fact]
+    public void Serializing_partial_edit_does_not_turn_omitted_fields_into_explicit_nulls()
+    {
+        var patch = new ProductDraftChanges
+        {
+            References = new(new ProductReferenceChanges
+            {
+                Units = new(new ProductUnitChanges { Stock = new((Guid?)null) }),
+            }),
+        };
+        var json = JsonSerializer.Serialize(patch, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.Equal("{\"references\":{\"units\":{\"stock\":null}}}", json);
+    }
+
+    [Fact]
     public async Task Draft_with_real_group_may_omit_activation_references()
     {
         var catalog = new Catalog();

@@ -47,6 +47,23 @@ public sealed class Product
         };
     }
 
+    internal static Product Restore(Guid id, string code, string name, Guid groupId,
+        Guid? classId, Guid? familyId, ProductRoles roles, ProductLifecycle lifecycle,
+        long version, DateTimeOffset createdAtUtc, DateTimeOffset updatedAtUtc)
+    {
+        if (!Enum.IsDefined(lifecycle) || version < 1 || updatedAtUtc < createdAtUtc)
+        {
+            throw new InvalidOperationException("Saklanan ürün yaşam döngüsü/sürüm/zaman bilgisi geçersiz.");
+        }
+
+        var product = CreateDraft(id, ProductCode.Parse(code), name, groupId,
+            classId, familyId, roles, createdAtUtc);
+        product.Lifecycle = lifecycle;
+        product.Version = version;
+        product.UpdatedAtUtc = updatedAtUtc.ToUniversalTime();
+        return product;
+    }
+
     public void EditBasic(long expectedVersion, string name, Guid? classId, Guid? familyId,
         ProductRoles roles, string reason, DateTimeOffset now)
     {

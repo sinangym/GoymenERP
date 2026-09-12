@@ -100,8 +100,7 @@ DB uniqueness and allocation are mandatory next persistence work.
 No parameterless Product constructor remains. Construction goes through CreateDraft
 with non-nil group and validated code/name. Reading default(ProductCode).Value yields
 null, not an NRE; the old review's predicted NRE was inaccurate. Projection now calls
-ProductCode.Parse so malformed code cannot leave a successful response. Persistence
-materialization must validate stored identity/lifecycle/version before projection.
+ProductCode.Parse so malformed code cannot leave a successful response. Internal Restore validates stored identity/lifecycle/version before projection; tests cover Active/Inactive history, invalid state and version overflow.
 
 ## Integration and remaining ownership
 
@@ -125,7 +124,7 @@ materialization must validate stored identity/lifecycle/version before projectio
 
 ## Verification scope
 
-54 tests currently pass: domain/serialization/validation plus seven controlled HTTP
+61 tests currently pass: domain/serialization/validation plus seven controlled HTTP
 contract cases. No SQL, real global-authority, browser or activation acceptance is
 included. TestServer fixtures are explicit test doubles. The actual final CI must run
 the registered Product test project; earlier green CI on e4fdf9 did not run it.
