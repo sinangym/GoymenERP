@@ -4,8 +4,8 @@ using GoymenERP.Modules.Product.Domain.Products;
 namespace GoymenERP.Modules.Product.Infrastructure.Persistence;
 
 // Product-owned context. No DI/runtime registration or migration is included.
-// The shared owner must supply the reviewed global authority and the transaction
-// enlisting canonical audit + terminal persistence before this context can write.
+// Public writes remain closed. The narrow participant borrows the shared host's
+// transaction and flushes Product only; audit/terminal and commit stay in the host.
 public sealed class ProductDbContext(DbContextOptions<ProductDbContext> options) : DbContext(options)
 {
     // Canonical prefix + '-' + the longest positive Int64 decimal sequence.
@@ -81,9 +81,18 @@ public sealed class ProductDbContext(DbContextOptions<ProductDbContext> options)
 
     private void GuardWrite()
     {
-        // This is an explicit closed gate until the owner-supported atomic adapter
-        // exists. Merely beginning a SQL transaction cannot manufacture enrollment
-        // of the canonical audit and durable global command result.
-        throw new InvalidOperationException("Product atomic writer enrollment has not been implemented.");
+        // Public writes never enroll a context. Only the narrow participant may
+        // flush; the host separately proves audit/terminal completion at commit.
+        throw new InvalidOperationException("Public Product writes have no atomic writer enrollment.");
+    }
+
+    internal Task<int> FlushEnlistedAsync(ProductDraftParticipant participant, CancellationToken cancellationToken)
+    {
+        // The participant has a private constructor, owns this exact fresh context,
+        // validates its borrowed transaction and the complete Product-only change
+        // set. This path does not enable any public SaveChanges overload.
+        ArgumentNullException.ThrowIfNull(participant);
+        participant.ValidateFlush(this);
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess: true, cancellationToken);
     }
 }
