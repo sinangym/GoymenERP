@@ -202,6 +202,9 @@ export function useAccountStatusFlow({
    */
   useEffect(() => {
     if (refresh === null || detail === null || readStamp <= refresh.baseline) return
+    // A refresh is only ever requested from a definite failure, but the guard is
+    // explicit: a frozen snapshot is never re-seated underneath.
+    if (frozen || attempt.revalidating) return
     // oxlint-disable-next-line react/set-state-in-effect -- adopts the fresh read the user asked for, once
     setDialog((current) =>
       current === null
@@ -214,7 +217,7 @@ export function useAccountStatusFlow({
     )
     setRefreshedNote(true)
     setRefresh(null)
-  }, [refresh, detail, readStamp])
+  }, [refresh, detail, readStamp, frozen, attempt.revalidating])
 
   useEffect(() => {
     if (summaryFocusRequest === 0) return
@@ -353,9 +356,17 @@ export function useAccountStatusFlow({
     void refetch()
   }, [failed, attempt, readStamp, refetch])
 
-  /** A read that landed underneath the open window: move the fence to it, keep the reason. */
+  /**
+   * A read that landed underneath the open window: move the fence to it, keep the reason.
+   *
+   * NEVER while the attempt is frozen or a retry check is pending: the window then shows
+   * the frozen snapshot — the intent, the fence and the state the user was asked about —
+   * and the same-key retry sends exactly that. Re-seating the view during that window
+   * would show one command and send another (Dirac #250 second round, finding 3). A new
+   * intent begins only after a terminal result or an explicit abandon.
+   */
   const adoptFresh = useCallback(() => {
-    if (detail === null) return
+    if (detail === null || frozen || attempt.revalidating) return
     setDialog((current) =>
       current === null
         ? null
@@ -366,7 +377,7 @@ export function useAccountStatusFlow({
           },
     )
     setRefreshedNote(true)
-  }, [detail])
+  }, [detail, frozen, attempt.revalidating])
 
   return {
     attempt,

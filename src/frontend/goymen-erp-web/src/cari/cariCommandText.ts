@@ -302,6 +302,19 @@ export const CARI_ACCOUNT_STATUS_TEXT = {
     'Kayıt güncel sürümle yenilendi; gerekçeniz korundu. Mevcut durumu inceleyip yeniden gönderin — ' +
     'bu yeni bir işlemdir.',
   adoptFresh: 'Güncel sürüme geç',
+  changedWhileFrozen:
+    'Kayıt bu pencere açıldıktan sonra güncellendi. Sonucu belirsiz işlem çözülene kadar burada ' +
+    'gösterilen hedef ve sürüm, gönderilen işleminkiyle aynı kalır; yeni sürüme geçiş ancak kesin ' +
+    'sonuç ya da işlemi bırakma sonrasında yapılır.',
+  readAgainInPlace: 'Kaydı bu ekranda yeniden oku',
+  contractRefusalRecovery:
+    'Bekleyen işlem ve anahtarı bu ekranda korunuyor; sayfayı yenilemek onları kaybettirir. Uyumlu ' +
+    'istemci sözleşmesi yeniden sağlandığında kaydı buradan yeniden okuyun; işlem otomatik tekrarlanmaz.',
+  savedThenChangedTitle: 'İşlem uygulandı; kayıt sonrasında yeniden değişmiş',
+  savedThenChangedDetail:
+    'Sunucu bu işlemi uyguladı, ancak taze okuma hesabı farklı bir durumda gösteriyor — kayıt sizden ' +
+    'sonra yeniden değiştirilmiş olabilir. Ekrandaki durum taze okumanındır; ikinci bir değişiklik ' +
+    'gönderilmedi.',
   savedSupersededTitle: 'Geçmiş işlemin sonucu bildirildi',
   savedSupersededDetail:
     'Sunucu daha önce gönderilen işlemin tekrarını bildirdi; hesap o işlemden sonra yeniden değişmiş. ' +

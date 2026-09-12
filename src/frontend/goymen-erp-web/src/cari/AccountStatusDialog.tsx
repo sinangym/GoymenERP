@@ -228,12 +228,16 @@ export function AccountStatusDialog({
 
         {changedSinceOpen ? (
           <div role="alert" className={styles.blocked} data-state="changed-since-open">
-            <p style={{ margin: 0 }}>{TEXT.changedSinceOpen}</p>
-            <p style={{ margin: '8px 0 0' }}>
-              <button type="button" className={styles.secondary} onClick={onAdoptFresh}>
-                {TEXT.adoptFresh}
-              </button>
-            </p>
+            <p style={{ margin: 0 }}>{busy || locked ? TEXT.changedWhileFrozen : TEXT.changedSinceOpen}</p>
+            {/* Not while the attempt is frozen or a retry check runs: the window shows the
+                frozen snapshot, and the same-key retry sends exactly that. */}
+            {!(busy || locked) ? (
+              <p style={{ margin: '8px 0 0' }}>
+                <button type="button" className={styles.secondary} onClick={onAdoptFresh}>
+                  {TEXT.adoptFresh}
+                </button>
+              </p>
+            ) : null}
           </div>
         ) : null}
 

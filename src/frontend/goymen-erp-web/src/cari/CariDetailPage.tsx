@@ -226,6 +226,28 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
           </p>
           <p>{CONTRACT_REFUSAL_DETAIL}</p>
         </div>
+        {/**
+          * An unresolved status attempt keeps its recovery HERE too. "Sayfayı yenileyin"
+          * above would drop the local key; so the read is offered in place, and the
+          * same-key retry stays reachable once compatibility is back in this context
+          * (Dirac #250 second round, finding 2).
+          */}
+        {canChangeStatus && flow.attempt.state.phase !== 'idle' ? (
+          <div data-state="contract-refusal-recovery">
+            <p className={styles.recovery}>{STATUS.contractRefusalRecovery}</p>
+            <p>
+              <button type="button" className={styles.action} onClick={() => void query.refetch()}>
+                {STATUS.readAgainInPlace}
+              </button>
+            </p>
+            <AccountStatusRecoveryNotice flow={flow} unresolvedRef={statusUnresolvedRef} />
+          </div>
+        ) : null}
+        {pendingAdopt !== null ? (
+          <p className={styles.recovery} role="status" data-state="read-recovery">
+            {STATUS.readRecovery}
+          </p>
+        ) : null}
       </section>
     )
   }
@@ -365,10 +387,19 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
                 <p>{STATUS.savedDetail}</p>
                 {saved.replayed ? <p data-state="replayed">{STATUS.savedReplayed}</p> : null}
               </>
-            ) : (
+            ) : saved.replayed ? (
+              // The server SAID it was a replay: a past command's stored result.
               <>
                 <p className={styles.savedTitle}>{STATUS.savedSupersededTitle}</p>
                 <p>{STATUS.savedSupersededDetail}</p>
+                <p data-state="current-state">{STATUS.currentStateNote(account.isActive)}</p>
+              </>
+            ) : (
+              // A normal, applied 204 whose fresh read already shows a different state:
+              // the record moved after this command. Not a replay, and not called one.
+              <>
+                <p className={styles.savedTitle}>{STATUS.savedThenChangedTitle}</p>
+                <p>{STATUS.savedThenChangedDetail}</p>
                 <p data-state="current-state">{STATUS.currentStateNote(account.isActive)}</p>
               </>
             )}

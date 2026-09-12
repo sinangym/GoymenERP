@@ -21,7 +21,7 @@
 import { decodeCounterpartyMutation, type CounterpartyMutationResult } from './mutationContract'
 import { decodeLinkCandidatePage, type LinkCandidatePage } from './candidateContract'
 import { accountStatusPath, type AccountStatusPayload } from './accountStatusContract'
-import { problemCodeOf, type PartyKind, type ProblemCode } from './contract'
+import { PROBLEM_CODE, problemCodeOf, type PartyKind, type ProblemCode } from './contract'
 import { isLosslessVersion } from './wireGuards'
 import {
   beginContractRead,
@@ -106,9 +106,13 @@ export type CommandOutcome<T> =
       readonly code: ProblemCode | null
       readonly body: unknown
       /**
-       * `Idempotency-Replayed` on a DEFINITE non-success answer. A replayed 409 is the
-       * stored terminal answer sent again verbatim, so any version it names is the one
-       * from the FIRST run — a screen must not present it as the record's current state.
+       * A VERIFIED replay of a DEFINITE non-success answer: `Idempotency-Replayed` on a
+       * response that is acknowledged, whose body decoded to a stable code, and whose
+       * status/code the endpoint can store as terminal (see `verifiedReplay`). A
+       * replayed 409 is the stored terminal answer sent again verbatim, so any version
+       * it names is the one from the FIRST run — a screen must not present it as the
+       * record's current state. A header the transport could not verify is reported
+       * as `false`, never as a guess.
        */
       readonly replayed?: boolean
     }
@@ -138,6 +142,38 @@ export interface CommandContext {
 
 function readReplayed(headers: Headers): boolean {
   return (headers.get('Idempotency-Replayed') ?? '').trim().toLowerCase() === 'true'
+}
+
+/**
+ * The definite answers a server can STORE for a key and hand back verbatim — the
+ * idempotency contract's own terminal statuses, by stable code. A compatibility
+ * refusal (`client_contract_*`) is produced by the gate BEFORE any handler runs and is
+ * never stored; an `idempotency_conflict` is a verdict about a DIFFERENT payload under
+ * the same key, not this attempt's result. Neither can be a genuine replay of the
+ * first send, whatever header a response carries.
+ */
+const REPLAYABLE_TERMINAL: ReadonlyMap<number, ReadonlySet<string>> = new Map([
+  [404, new Set<string>([PROBLEM_CODE.notFound])],
+  [409, new Set<string>([PROBLEM_CODE.versionConflict, PROBLEM_CODE.alreadyLinked])],
+])
+
+/**
+ * Whether a NON-SUCCESS answer is a VERIFIED replay of this attempt's stored result.
+ *
+ * The header alone proves nothing: the non-success paths below return before the
+ * acknowledgment is checked and carry a body that may have failed to parse. A replay
+ * is believed only when the answer is acknowledged by the compatibility filter (so we
+ * know which node and contract answered), its body decoded to a stable code, and that
+ * status/code pair is one the endpoint can actually store as terminal. Anything else
+ * says nothing about the first send and must leave an unresolved attempt unresolved
+ * (Dirac #250 second round, finding 1).
+ */
+function verifiedReplay(response: Response, parsed: unknown): boolean {
+  if (!readReplayed(response.headers)) return false
+  if (commandAckOutcome(response) !== 'acknowledged') return false
+  const code = problemCodeOf(parsed)
+  if (code === null) return false
+  return REPLAYABLE_TERMINAL.get(response.status)?.has(code) ?? false
 }
 
 function readOriginalCorrelationId(headers: Headers): string | null {
@@ -203,7 +239,7 @@ async function postCommand<T>(
       status: response.status,
       code: problemCodeOf(parsed),
       body: parsed,
-      replayed: readReplayed(response.headers),
+      replayed: verifiedReplay(response, parsed),
     }
   }
 
@@ -312,7 +348,7 @@ export async function putVersionedCommand(
       status: response.status,
       code: problemCodeOf(parsed),
       body: parsed,
-      replayed: readReplayed(response.headers),
+      replayed: verifiedReplay(response, parsed),
     }
   }
 
