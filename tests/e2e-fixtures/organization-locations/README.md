@@ -115,8 +115,12 @@ environment, print Docker inspect's `Config.Env`, or save connection strings.
    loopback host, strict port and API proxy. Browser requests stay same-origin,
    preserving replay headers without a shared CORS change. Restart this owned
    Vite process to select another existing fixture actor; do not invent runtime
-   header switches or grants. Clear browser state between actor runs. Anonymous
-   and direct API authorization assertions belong to the existing API boundary.
+   header switches or grants. Clear browser state between actor runs: the shell
+   stores the company preference under `goymen-company-id` in localStorage, which
+   survives a Vite restart and can select the previous actor's company preference
+   when the next actor can access it. Use a fresh isolated browser context for
+   each actor scenario. Anonymous and direct API authorization assertions belong
+   to the existing API boundary.
 
 ## Measure readiness and acceptance
 
@@ -133,6 +137,17 @@ actually renders for the authorized actor. Verify the browser uses the owned
 proxy and real API, not mocks. Only then record ENV_READY, observed counts,
 source bindings and sanitized evidence. Claude owns journey execution and
 loading/error/keyboard assertions; this package does not report their results.
+
+The #246 mapping separates two acceptance cases: without the optional
+`organization.sites.read` capability, the browser issues **zero** `/sites`
+requests while the authorized locations list/detail remain usable; with that
+capability present, an actual `/sites` 403 follows capture/report and closes the
+gated mount. All three actors in this manifest currently have the sites
+permission. The locations-only browser actor variant is **NOT_PREPARED** here;
+its absence case must not be reported as covered by this seed or by the separate
+SQL test's permission reduction. Bind a concrete variant through the existing
+typed fixture and assigned owner before that runtime scenario. This note adds
+no actor, role, permission or runtime override.
 
 Use offset pages (default 25, bounded 1..100), not Cari cursors or contract ACK.
 Use fresh detail versions, trimmed reasons and explicit idempotency keys.

@@ -84,7 +84,9 @@
     "Stale version: 409, keep reason draft, read fresh state before offering a new command",
     "Uncertain response: preserve original payload and key, retry exactly; a fresh GET or retry authorization failure is not a command receipt",
     "Delayed replay after a later successful command: historical receipt does not replace fresh location state",
-    "Sites read failure, loading, empty, network error and keyboard focus states use existing shell boundaries"
+    "Sites capability absent: issue zero /sites requests while authorized locations list and detail remain usable; locations-only runtime actor variant is NOT_PREPARED in this package",
+    "Sites capability present but the actual request returns 403: report through the existing capture/report boundary and close the gated mount",
+    "Loading, empty, network error and keyboard focus states use existing shell boundaries"
   ],
   "evidenceBoundary": "SQL lifecycle evidence is already in PR #241. This manifest adds no browser PASS, provider grant or runtime observation."
 }
