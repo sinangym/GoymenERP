@@ -50,12 +50,28 @@ public sealed class ProductReader(ProductReadStore store, ProductCursorCodec cur
     private async Task<T> ReadAsync<T>(Func<GroupSharedMasterReadContext, Task<T>> read, CancellationToken cancellationToken)
     {
         var initial = await AuthorizeAsync(cancellationToken);
-        var result = await read(initial);
+        T result;
+        try { result = await read(initial); }
+        catch (OperationCanceledException) { throw; }
+        catch
+        {
+            // A missing reference or projection failure can reveal what the query
+            // observed just as a successful result can. Recheck before releasing
+            // either outcome; keep the original error only if authority is stable.
+            await EnsureUnchangedAuthorityAsync(initial, cancellationToken);
+            throw;
+        }
+        await EnsureUnchangedAuthorityAsync(initial, cancellationToken);
+        return result;
+    }
+
+    private async Task EnsureUnchangedAuthorityAsync(GroupSharedMasterReadContext initial, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
         var current = await AuthorizeAsync(cancellationToken);
         if (initial.LocalActorId != current.LocalActorId || initial.OriginCompanyId != current.OriginCompanyId
             || initial.AuthorityRevision != current.AuthorityRevision)
             throw new UnauthorizedAccessException("Product read authority changed during the request.");
-        return result;
     }
 
     private async Task<GroupSharedMasterReadContext> AuthorizeAsync(CancellationToken cancellationToken)
