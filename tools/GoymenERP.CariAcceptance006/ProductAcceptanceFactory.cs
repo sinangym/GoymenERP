@@ -8,6 +8,7 @@ using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Services;
+using GoymenERP.Modules.Organization.Infrastructure.Shell;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
 using GoymenERP.Product.UnitTests.SqlAcceptance;
 using Microsoft.AspNetCore.Hosting;
@@ -74,14 +75,7 @@ public sealed class ProductAcceptanceFactory(ProductEnvironmentSettings settings
         }));
         builder.ConfigureServices(services =>
         {
-            var providers = services.Where(s => s.ServiceType == typeof(IShellCapabilityProvider)).ToArray();
-            if (providers.Length != 1 || providers[0].ImplementationType != typeof(CounterpartyShellCapabilityProvider)
-                || providers[0].Lifetime != ServiceLifetime.Singleton)
-                throw new InvalidOperationException("Product fixture cannot replace an unexpected provider.");
-            services.Remove(providers[0]);
-            services.AddSingleton<IShellCapabilityProvider, ProductAcceptanceProvider>();
-            services.RemoveAll<ShellCapabilityAuthorityCatalog>();
-            services.AddSingleton(new ShellCapabilityAuthorityCatalog([Revision]));
+            ReplaceCanonicalProviders(services);
             services.RemoveAll<ProductRuntimeOptions>();
             services.AddSingleton(new ProductRuntimeOptions(connection,
                 new ProductPilotIssuerBinding(ProductEnvironmentSettings.ActorId, ProductEnvironmentSettings.ActorExternalId),
@@ -89,6 +83,22 @@ public sealed class ProductAcceptanceFactory(ProductEnvironmentSettings settings
         });
         // Same-origin Vite proxy: no added CORS origin or changed normal policy.
         builder.ConfigureLogging(logging => logging.ClearProviders());
+    }
+
+    // Only the isolated factory replaces the exact current normal provider pair.
+    // Validate the entire pair before changing any service registration.
+    public static void ReplaceCanonicalProviders(IServiceCollection services)
+    {
+        var providers = services.Where(s => s.ServiceType == typeof(IShellCapabilityProvider)).ToArray();
+        if (providers.Length != 2
+            || providers.Any(s => s.Lifetime != ServiceLifetime.Singleton)
+            || providers.Count(s => s.ImplementationType == typeof(CounterpartyShellCapabilityProvider)) != 1
+            || providers.Count(s => s.ImplementationType == typeof(OrganizationShellCapabilityProvider)) != 1)
+            throw new InvalidOperationException("Product fixture cannot replace an unexpected provider set.");
+        foreach (var provider in providers) services.Remove(provider);
+        services.AddSingleton<IShellCapabilityProvider, ProductAcceptanceProvider>();
+        services.RemoveAll<ShellCapabilityAuthorityCatalog>();
+        services.AddSingleton(new ShellCapabilityAuthorityCatalog([Revision]));
     }
 }
 

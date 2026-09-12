@@ -40,6 +40,7 @@ public sealed partial class ShellCapabilityRegistryTests
     [InlineData("multi-company")]
     [InlineData("company-scope")]
     [InlineData("wrong-owner")]
+    [InlineData("parent-control")]
     public void GlobalProductRegistry_RejectsAmbiguousOrCompanyDerivedAuthority(string change)
     {
         var declaration = ProductDeclarations()[2];
@@ -53,6 +54,7 @@ public sealed partial class ShellCapabilityRegistryTests
             "wrong-route" => declaration with { RoutePath = "/other" },
             "multi-company" => declaration with { ContextRequirement = ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead },
             "company-scope" => declaration with { ScopeRequirement = ShellCapabilityScopeRequirement.CompanyWide },
+            "parent-control" => declaration with { ParentCapabilityId = "product.items.list" },
             _ => declaration,
         };
         Assert.Throws<InvalidOperationException>(() => ShellCapabilityRegistry.ComputeCandidateRevision(
@@ -75,6 +77,25 @@ public sealed partial class ShellCapabilityRegistryTests
         var snapshot = await ProductService(actor, company, protector, authority, PermissionScope.Denied).GetSnapshotAsync();
         Assert.Equal(expected.Split(','), snapshot.Capabilities);
         Assert.All(authority.Calls.Values, count => Assert.Equal(2, count));
+    }
+
+    [Fact]
+    public void GlobalProductAndOrganizationControls_CoexistWithoutChangingAcceptedNormalAuthority()
+    {
+        IShellCapabilityProvider[] normal =
+        [
+            new GoymenERP.Modules.Counterparty.Infrastructure.Shell.CounterpartyShellCapabilityProvider(),
+            new GoymenERP.Modules.Organization.Infrastructure.Shell.OrganizationShellCapabilityProvider(),
+        ];
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15AndOrganizationV10,
+            ShellCapabilityRegistry.ComputeCandidateRevision(normal));
+        var combined = AuthorizedRegistry([.. normal, Provider("PRODUCT", ProductDeclarations())]);
+        Assert.Equal(12, combined.Registrations.Count);
+        Assert.Equal(4, combined.Registrations.Count(item => item.Declaration.GlobalProductOperation is not null));
+        Assert.Equal(2, combined.Registrations.Count(item => item.Declaration.ParentCapabilityId is not null));
+        Assert.All(combined.Registrations.Where(item => item.Declaration.ParentCapabilityId is not null),
+            item => Assert.Null(item.Declaration.GlobalProductOperation));
+        Assert.NotEqual(ShellCapabilityRegistryAuthorities.CounterpartyV15AndOrganizationV10, combined.Revision);
     }
 
     [Fact]

@@ -67,15 +67,20 @@ public sealed partial class ShellCapabilityRegistry
             registrations,
             registration => registration.Declaration.CapabilityId,
             "capability kimliği");
+        // A control is bound to an existing route, never a second or synthetic route.
+        var routes = registrations
+            .Where(registration => registration.Declaration.ParentCapabilityId is null)
+            .ToArray();
         ValidateUnique(
-            registrations,
+            routes,
             registration => registration.Declaration.RouteId,
             "route kimliği");
-        ValidateRoutePaths(registrations);
+        ValidateRoutePaths(routes);
         ValidateUnique(
-            registrations,
+            routes,
             registration => registration.Declaration.ScreenId,
             "ekran kimliği");
+        ValidateControls(registrations);
         return Array.AsReadOnly(registrations
             .OrderBy(x => x.Declaration.CapabilityId, StringComparer.Ordinal)
             .ToArray());
@@ -192,6 +197,7 @@ public sealed partial class ShellCapabilityRegistry
             };
             if (owner != "PRODUCT" || productOperation != expected.Item1
                 || declaration.RoutePath != expected.Item2 || permissions.Length != 0
+                || declaration.ParentCapabilityId is not null
                 || declaration.ContextRequirement != ShellCapabilityContextRequirement.SingleCompany
                 || declaration.ScopeRequirement != ShellCapabilityScopeRequirement.AnyGrantedScope)
                 throw new InvalidOperationException("Global Product capabilities require their exact operation and explicit origin, not company permissions.");
@@ -239,6 +245,46 @@ public sealed partial class ShellCapabilityRegistry
         }
 
         return normalized;
+    }
+
+    private static void ValidateControls(
+        IReadOnlyCollection<ShellCapabilityRegistration> registrations)
+    {
+        var byId = registrations.ToDictionary(
+            registration => registration.Declaration.CapabilityId,
+            StringComparer.Ordinal);
+        foreach (var registration in registrations)
+        {
+            var control = registration.Declaration;
+            if (control.ParentCapabilityId is null)
+            {
+                continue;
+            }
+
+            _ = RequiredMatch(control.ParentCapabilityId, CapabilityIdPattern(), "Control parent");
+            if (!byId.TryGetValue(control.ParentCapabilityId, out var parentRegistration))
+            {
+                throw new InvalidOperationException("Shell control requires an existing parent route.");
+            }
+
+            var parent = parentRegistration.Declaration;
+            if (parent.ParentCapabilityId is not null
+                || registration.Owner != parentRegistration.Owner
+                || registration.OwnerContractVersion != parentRegistration.OwnerContractVersion
+                || control.RouteId != parent.RouteId
+                || control.RoutePath != parent.RoutePath
+                || control.ScreenId != parent.ScreenId
+                || control.RoutePrecedence != parent.RoutePrecedence
+                || control.ContextRequirement != parent.ContextRequirement
+                || control.ScopeRequirement != parent.ScopeRequirement
+                || !parent.RequiredPermissions.All(permission =>
+                    control.RequiredPermissions.Contains(permission, StringComparer.Ordinal))
+                || control.ImplementationAvailable && !parent.ImplementationAvailable)
+            {
+                throw new InvalidOperationException(
+                    "Shell control must preserve its same-owner parent route and access requirements.");
+            }
+        }
     }
 
     private static void ValidateUnique(
@@ -338,6 +384,13 @@ public sealed partial class ShellCapabilityRegistry
             {
                 Append(canonical, "global-product-operation");
                 Append(canonical, productOperation.ToString());
+            }
+
+            // Keep all previously accepted route-only revision bytes unchanged.
+            if (declaration.ParentCapabilityId is not null)
+            {
+                Append(canonical, "control-parent");
+                Append(canonical, declaration.ParentCapabilityId);
             }
         }
 

@@ -8,6 +8,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 using GoymenERP.Modules.Identity.Infrastructure.Services;
+using GoymenERP.Modules.Organization.Infrastructure.Shell;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
@@ -117,7 +118,7 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
                     "UPDATE [organization].[Companies] SET [IsActive] = 1 WHERE [Id] = @CompanyId;",
                     new SqlParameter("@CompanyId", TestCompanyIds.CompanyA)));
             var recovered = await ReadSnapshotAsync(client);
-            AssertExactEmptySnapshot(recovered);
+            AssertExactOrganizationSnapshot(recovered);
         }
         finally
         {
@@ -164,9 +165,27 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
             var companyABefore = await ReadSnapshotAsync(companyAClient);
             var companyB = await ReadSnapshotAsync(companyBClient);
 
-            AssertExactEmptySnapshot(companyABefore);
-            AssertExactEmptySnapshot(companyB);
+            AssertExactOrganizationSnapshot(companyABefore);
+            AssertExactOrganizationSnapshot(companyB);
             Assert.NotEqual(companyABefore.Generation, companyB.Generation);
+
+            using (var groupClient = factory.CreateClient())
+            {
+                groupClient.DefaultRequestHeaders.Add("X-Development-User", TestUsers.GroupAdmin);
+                AssertExactEmptySnapshot(await ReadSnapshotAsync(groupClient));
+            }
+
+            // The existing SITE-OSM reader is a real persisted narrow grant,
+            // not a CompanyWide-only or controlled authorization substitute.
+            using (var scopedReader = factory.CreateClientFor(TestUsers.CompanyAViewer, TestCompanyIds.CompanyA))
+            {
+                AssertExactOrganizationSnapshot(await ReadSnapshotAsync(scopedReader), includeStatus: false);
+                using var scopedList = await scopedReader.GetAsync("/api/v1/organization/locations?page=1&pageSize=25");
+                Assert.Equal(HttpStatusCode.OK, scopedList.StatusCode);
+                var scopedPage = await scopedList.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.Equal(8, scopedPage.GetProperty("totalCount").GetInt32());
+                Assert.Equal(8, scopedPage.GetProperty("items").GetArrayLength());
+            }
             Assert.DoesNotContain(
                 TestCompanyIds.CompanyB.ToString("D"),
                 companyABefore.RawJson,
@@ -233,8 +252,42 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
 
             var companyAAfter = await ReadSnapshotAsync(companyAClient);
 
-            AssertExactEmptySnapshot(companyAAfter);
+            AssertExactOrganizationSnapshot(companyAAfter, includeStatus: false);
             Assert.NotEqual(companyABefore.Generation, companyAAfter.Generation);
+            Assert.Equal(
+                companyABefore.Capabilities.Where(id => id != OrganizationShellCapabilityProvider.StatusCapabilityId),
+                companyAAfter.Capabilities);
+
+            // Fixture-only permission removal proves the optional sites read does
+            // not suppress an independently authorized locations list/detail.
+            Assert.Equal(1, await ExecuteNonQueryAsync(connection,
+                """
+                DELETE FROM [identity].[RolePermissions]
+                WHERE [RoleId] = @RoleId AND [PermissionCode] = @PermissionCode;
+                """,
+                new SqlParameter("@RoleId", OrganizationOperatorRoleId),
+                new SqlParameter("@PermissionCode", ErpPermissions.OrganizationSitesRead)));
+            var locationsOnly = await ReadSnapshotAsync(companyAClient);
+            AssertExactOrganizationSnapshot(locationsOnly, includeSites: false, includeStatus: false);
+            Assert.NotEqual(companyAAfter.Generation, locationsOnly.Generation);
+            Assert.Equal(
+                companyAAfter.Capabilities.Where(id => id != OrganizationShellCapabilityProvider.SitesReadCapabilityId),
+                locationsOnly.Capabilities);
+            using (var deniedSites = await companyAClient.GetAsync("/api/v1/organization/sites"))
+            {
+                Assert.Equal(HttpStatusCode.Forbidden, deniedSites.StatusCode);
+            }
+            using (var locations = await companyAClient.GetAsync("/api/v1/organization/locations?page=1&pageSize=25"))
+            {
+                Assert.Equal(HttpStatusCode.OK, locations.StatusCode);
+                var page = await locations.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.Equal(15, page.GetProperty("totalCount").GetInt32());
+                var locationId = page.GetProperty("items")[0].GetProperty("id").GetGuid();
+                using var detail = await companyAClient.GetAsync($"/api/v1/organization/locations/{locationId:D}");
+                Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
+                var location = await detail.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.Equal(locationId, location.GetProperty("id").GetGuid());
+            }
             Assert.Equal(
                 auditCountBefore,
                 await ScalarAsync<int>(
@@ -791,9 +844,30 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
 
     private static void AssertExactEmptySnapshot(CapabilitySnapshotProbe snapshot)
     {
+        AssertSnapshotEnvelope(snapshot);
+        Assert.Empty(snapshot.Capabilities);
+    }
+
+    private static void AssertExactOrganizationSnapshot(
+        CapabilitySnapshotProbe snapshot, bool includeSites = true, bool includeStatus = true)
+    {
+        AssertSnapshotEnvelope(snapshot);
+        var expected = new List<string>
+        {
+            OrganizationShellCapabilityProvider.ListCapabilityId,
+            OrganizationShellCapabilityProvider.DetailCapabilityId,
+        };
+        if (includeSites)
+            expected.Add(OrganizationShellCapabilityProvider.SitesReadCapabilityId);
+        if (includeStatus)
+            expected.Add(OrganizationShellCapabilityProvider.StatusCapabilityId);
+        Assert.Equal(expected.Order(StringComparer.Ordinal), snapshot.Capabilities);
+    }
+
+    private static void AssertSnapshotEnvelope(CapabilitySnapshotProbe snapshot)
+    {
         Assert.Equal("SHELL-CAPABILITY-V1", snapshot.ContractVersion);
         Assert.StartsWith("hmac-sha256:", snapshot.Generation, StringComparison.Ordinal);
-        Assert.Empty(snapshot.Capabilities);
         Assert.DoesNotContain("permission", snapshot.RawJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("role", snapshot.RawJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("scope", snapshot.RawJson, StringComparison.OrdinalIgnoreCase);

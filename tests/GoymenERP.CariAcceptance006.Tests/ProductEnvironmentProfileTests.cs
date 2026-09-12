@@ -2,13 +2,73 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.CariAcceptance006;
+using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
+using GoymenERP.Modules.Organization.Infrastructure.Shell;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.CariAcceptance006.Tests;
 
 // Controlled contract tests, not a published run, SQL proof or browser receipt.
 public sealed class ProductEnvironmentProfileTests
 {
+    [Fact]
+    public void IsolatedProviderReplacement_PreservesBothAcceptedRegistryRevisions()
+    {
+        var services = CanonicalProviders();
+        using (var normal = services.BuildServiceProvider())
+        {
+            var registry = new ShellCapabilityRegistry(normal.GetServices<IShellCapabilityProvider>(),
+                new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistryAuthorities.CounterpartyV15AndOrganizationV10]));
+            Assert.Equal(8, registry.Registrations.Count);
+        }
+        ProductAcceptanceFactory.ReplaceCanonicalProviders(services);
+        using var isolated = services.BuildServiceProvider();
+        Assert.IsType<ProductAcceptanceProvider>(Assert.Single(isolated.GetServices<IShellCapabilityProvider>()));
+        var productRegistry = new ShellCapabilityRegistry(isolated.GetServices<IShellCapabilityProvider>(),
+            isolated.GetRequiredService<ShellCapabilityAuthorityCatalog>());
+        Assert.Equal(ProductAcceptanceFactory.Revision, productRegistry.Revision);
+        Assert.Equal(4, productRegistry.Registrations.Count);
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("duplicate")]
+    [InlineData("foreign")]
+    [InlineData("transient")]
+    [InlineData("instance")]
+    [InlineData("factory")]
+    public void UnexpectedProviderSet_IsRejectedBeforeAnyRegistrationChanges(string defect)
+    {
+        var services = CanonicalProviders();
+        if (defect == "duplicate") services.AddSingleton<IShellCapabilityProvider, OrganizationShellCapabilityProvider>();
+        else
+        {
+            services.RemoveAt(1);
+            switch (defect)
+            {
+                case "missing": break;
+                case "foreign": services.AddSingleton<IShellCapabilityProvider, ProductAcceptanceProvider>(); break;
+                case "transient": services.AddTransient<IShellCapabilityProvider, OrganizationShellCapabilityProvider>(); break;
+                case "instance": services.AddSingleton<IShellCapabilityProvider>(new OrganizationShellCapabilityProvider()); break;
+                case "factory": services.AddSingleton<IShellCapabilityProvider>(_ => new OrganizationShellCapabilityProvider()); break;
+                default: throw new ArgumentOutOfRangeException(nameof(defect));
+            }
+        }
+        var before = services.ToArray();
+        Assert.Throws<InvalidOperationException>(() => ProductAcceptanceFactory.ReplaceCanonicalProviders(services));
+        Assert.Equal(before, services.ToArray());
+    }
+
+    private static IServiceCollection CanonicalProviders()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IShellCapabilityProvider, CounterpartyShellCapabilityProvider>();
+        services.AddSingleton<IShellCapabilityProvider, OrganizationShellCapabilityProvider>();
+        return services;
+    }
+
     [Fact]
     public void ExistingPythonValidatorPipe_ReceivesUtf8JsonWithoutABom()
     {

@@ -7,6 +7,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
+using GoymenERP.Modules.Organization.Infrastructure.Shell;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -56,7 +57,9 @@ public sealed class ShellCapabilityAcceptanceTests(
         var groupSnapshot = await groupResponse.Content.ReadFromJsonAsync<JsonElement>();
         var selectedSnapshot = await selectedResponse.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Empty(groupSnapshot.GetProperty("capabilities").EnumerateArray());
-        Assert.Empty(selectedSnapshot.GetProperty("capabilities").EnumerateArray());
+        Assert.Equal(
+            OrganizationCapabilities(),
+            selectedSnapshot.GetProperty("capabilities").EnumerateArray().Select(item => item.GetString()!));
         Assert.NotEqual(
             groupSnapshot.GetProperty("generation").GetString(),
             selectedSnapshot.GetProperty("generation").GetString());
@@ -147,7 +150,9 @@ public sealed class ShellCapabilityAcceptanceTests(
             "hmac-sha256:",
             root.GetProperty("generation").GetString(),
             StringComparison.Ordinal);
-        Assert.Empty(root.GetProperty("capabilities").EnumerateArray());
+        Assert.Equal(
+            OrganizationCapabilities(),
+            root.GetProperty("capabilities").EnumerateArray().Select(item => item.GetString()!));
 
         var payload = root.GetRawText();
         Assert.DoesNotContain("permission", payload, StringComparison.OrdinalIgnoreCase);
@@ -172,7 +177,7 @@ public sealed class ShellCapabilityAcceptanceTests(
             .EnumerateArray()
             .Select(item => item.GetString()!)
             .ToArray();
-        Assert.Empty(capabilities);
+        Assert.Equal(OrganizationCapabilities(), capabilities);
         Assert.DoesNotContain(
             CounterpartyShellCapabilityProvider.ListCapabilityId,
             capabilities);
@@ -361,6 +366,14 @@ public sealed class ShellCapabilityAcceptanceTests(
         Assert.DoesNotContain("vkn", body, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("invoiceCapable", body, StringComparison.OrdinalIgnoreCase);
     }
+
+    private static string[] OrganizationCapabilities() =>
+    [
+        OrganizationShellCapabilityProvider.DetailCapabilityId,
+        OrganizationShellCapabilityProvider.StatusCapabilityId,
+        OrganizationShellCapabilityProvider.ListCapabilityId,
+        OrganizationShellCapabilityProvider.SitesReadCapabilityId,
+    ];
 
     private static async Task<string> ReadGenerationAsync(HttpClient client)
     {
