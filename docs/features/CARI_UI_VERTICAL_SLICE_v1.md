@@ -1,6 +1,6 @@
 # CARI-UI-001 — Cari Kartlar ve Cari 360 İlk Uçtan Uca Dilim
 
-> **Güncel görev notu (12 Eylül 2026):** Aşağıdaki v1.5 metadata ve §1–13 tarihsel çekirdek kesitidir; eski BLOCKED/sahiplik ifadeleri güncel uygulama durumu değildir. Tam Cari kartı ve ilk temel düzenleme altı aynı belgenin §14 bölümündedir; fc kanıtı #232/d03c94b içinde korunur. Yeni edit tasarım aşamasındadır, kabul edilmiş/çalışmış sayılmaz.
+> **Güncel görev notu (12 Eylül 2026):** Aşağıdaki v1.5 metadata ve §1–13 tarihsel çekirdek kesitidir; eski BLOCKED/sahiplik ifadeleri güncel uygulama durumu değildir. Tam Cari kartı ve ilk temel düzenleme altı aynı belgenin §14 bölümündedir; fc kanıtı #232/d03c94b içinde korunur. İletişim edit adayı geliştirilmekte; kritik master altı §14.6'da hazırlanmıştır. Bunlar gerçek edit/onay kabulü sayılmaz.
 
 - Sürüm: `1.5`
 - Tarih: `2026-08-30`
@@ -251,7 +251,7 @@ Bu contract’ın merge edilmesi UI’yı veya production activation’ı açmaz
 
 ## 14. W1-CARI devamı — firma/kişi kartı ve temel iletişim düzenleme
 
-**12 Eylül 2026 / TASARLANDI; yeni edit uygulaması ve kabul testleri NOT_RUN.** Aynı `W1-CARI / CARI-CORE-1` işinin uygulanabilir altıdır; yeni backlog, karar sicili veya kabul numarası oluşturmaz. Backend/API/SQL aynı Codex'in, frontend/browser aynı Claude'un, iş şartnamesi CHATGPT-BUSINESS'in, koordinasyon/merge CODEX-ORCHESTRATOR'ın sorumluluğundadır.
+**12 Eylül 2026 / İletişim edit uygulaması sürüyor; gerçek edit kabulü NOT_RUN. Kritik master öneri/onay altı §14.6'da TASARLANDI, yetki kapsamı kısmen açık.** Aynı `W1-CARI / CARI-CORE-1` işinin uygulanabilir altıdır; yeni backlog, karar sicili veya kabul numarası oluşturmaz. Backend/API/SQL aynı Codex'in, frontend/browser aynı Claude'un, iş şartnamesi CHATGPT-BUSINESS'in, koordinasyon/merge CODEX-ORCHESTRATOR'ın sorumluluğundadır.
 
 ### 14.1 Kaynak ve teslim sınırı
 
@@ -265,8 +265,8 @@ Bu tablo mevcut W1-CARI kapsamını owner bağımlılıklarıyla eşler; ikinci 
 
 | Kullanıcının işlemi ve sonucu | Alanlar/kurallar; verinin sahibi | Mevcut iş/kabul | Gerçek durum / en küçük bağımlılık |
 |---|---|---|---|
-| Firma/kişi kartı oluştur/aç | Counterparty: UUID, değişmez kod, hukuki tür/ad, ticari ad; ülke ve türü açık resmi kimlikler. Zorunlu ticari rol yok. | W1-CARI; C-02/03/07; CARI-AC-005/007/008/012/015/026; AT-009/010/014 | Ad/tür/kod/create-read çekirdeği mevcut ve fc kapsamı doğrulanmış. Vergi/ülke/sicil tam kartı açık; çekirdek başarısından tamamlanmış sayılmaz. |
-| İletişim/adres/muhatap düzenle, yeniden aç ve geçmişini gör | Counterparty: açık Party/account kapsamı, telefon/e-posta, amaçlı çoklu adres, kişiler; update+audit, kritik alan ayrı. | W1-CARI; C-06; CARI-AC-009/010/011/020/021/022/030/031; AT-003/005/006/008 | **İlk hazır alt; TASARLANDI/NOT_RUN.** Finans veya dış entegrasyon bağımlılığı yok. |
+| Firma/kişi kartı oluştur/aç | Counterparty: UUID, değişmez kod, hukuki tür/ad, ticari ad; ülke ve türü açık resmi kimlikler. Zorunlu ticari rol yok. | W1-CARI; C-02/03/07; CARI-AC-005/007/008/012/015/026; AT-009/010/014 | Ad/tür/kod/create-read çekirdeği mevcut ve fc kapsamı doğrulanmış. Vergi/ülke/sicil ve kritik değişiklik/onay §14.6'da TASARLANDI; global yetki kapısı açık, yeni kabul NOT_RUN. |
+| İletişim/adres/muhatap düzenle, yeniden aç ve geçmişini gör | Counterparty: açık Party/account kapsamı, telefon/e-posta, amaçlı çoklu adres, kişiler; update+audit, kritik alan ayrı. | W1-CARI; C-06; CARI-AC-009/010/011/020/021/022/030/031; AT-003/005/006/008 | **İlk alt uygulamada; gerçek kabul NOT_RUN.** #235 ara tüketici ve Backend DTO WIP'i §14.6'da ayrılmıştır; Finance/dış entegrasyon bağımlılığı yok. |
 | Aktif/pasif yap; mükerreri ve değişiklik geçmişini incele | Global Party ve hesap aktifliği ayrı. Fiziksel silme/otomatik merge yok. Kimlik eşleşmesi yalnız yetkili kapsamda adaydır. | W1-CARI; C-11; CARI-AC-008/014…025; AT-009/012/013 | Hesap lifecycle/özel SQL kanıtı korunur. Global master lifecycle, kapsamlı history ve mükerrer yönetimi açık; gerçek cross-module merge, ERP-000F ve referans sahiplerinin sözleşmesini bekler. |
 | Aynı Party'nin şirket ilişkilerini gör | Party tek; CompanyPartyAccount durumları ayrı. Her yazma açık tek şirkette. Tutarlar şirket+döviz bazında; izinli açık read toplamı hukuki mahsup değildir. | W1-CARI; CARI-AC-001…004/027; AT-001/008/010/011 | Çekirdek ilişki mevcut; tam grup görünümü ayrıca kanıtlanacak. Piksel düzeni tek-şirket akışını durdurmaz. |
 | Alış/satış/hizmet talep ve siparişleri, açık/kapalı ve kalanlar | Sales/Purchasing: PartyId/CompanyId, yön, mal-hizmet, Talep/Sipariş, satır, termin, miktar/birim, teslim/kapatılan/kalan ve kaynak linki. Talep stok bloke etmez. | W2-SATIS/W2-SATINALMA; CARI-AC-026/028; AT-024/025/026 | **Bağımlılık bekliyor:** gerçek owner kayıtları + yetkili sayfalı read/drill-down. Cari ikinci sipariş veya kalan hesap motoru üretmez. |
@@ -329,7 +329,7 @@ Kaydet yalnız kendi güncel API/actor/session/company/generation bağında taze
 | Şirket/oturum/API değişimi, geç yanıt | Taslak/girişim başka bağlama kaydedilmez; eski response yeni ekranı/success'i değiştiremez. |
 | Vazgeç/geri | Mevcut dirty-form uyarısı ve güvenli iç return route; gönderilmiş unknown için rollback iddiası yok. |
 
-History aynı şirket/alan yetkisinde kim/zaman/alan-farkı/sürüm gösterir. Kişisel veriler ham telemetry/metric label'ına yazılmaz. Genel saklama/imha politikası seçilmez. Yeni edit source/checkout/CI ve gerçek test henüz yoktur; mevcut C006 sonucu bunun yerine geçmez.
+History aynı şirket/alan yetkisinde kim/zaman/alan-farkı/sürüm gösterir. Kişisel veriler ham telemetry/metric label'ına yazılmaz. Genel saklama/imha politikası seçilmez. İletişim edit adayı #235 yayımlanmıştır; ara tüketici/DTO WIP'i final API veya gerçek edit kabulü değildir. Mevcut C006 sonucu bunun yerine geçmez.
 
 ### 14.5 İlk editin kabul adımları — mevcut kimlikler
 
@@ -348,21 +348,107 @@ Hepsi yeni edit için **tasarım / NOT_RUN**. Backend source+checkout+HTTP/REAL_
 
 ### 14.6 Bir sonraki tek alt: resmi kimlik/banka ve kritik değişiklik
 
-Tam kartın açık kalan alanları: hukuki tür/ad/ticari ad, kimlik ülkesi, VKN/TCKN veya uygun yabancı identifier tür/değeri, vergi dairesi, MERSİS/sicil no ve makamı, resmi merkez adresi; banka/şube/hesap sahibi, IBAN veya ülkeye uygun hesap kimliği, gerektiğinde BIC/SWIFT ve hesap dövizi; kaynak belge/sürüm/history. Bunlar ilk basic payload'ın boş alanları üzerinden açılamaz.
+**12 Eylül 2026 — iş akışı TASARLANDI, kritik master uygulaması/HTTP/REAL_SQL/browser NOT_RUN; yetki kapsamı aşağıdaki tek soruya bağlı.** Bu bölüm mevcut W1-CARI teslim listesinin firma kimliği, history ve onay satırlarını ayrıntılandırır; yeni kabul numarası veya generic approval projesi açmaz. İlk iletişim işi sürer: [#235/eab785f][card-contact-fe] ara tüketicidir; Backend contact-information alan/nullable/operasyon ve decimal-string account version devri koordinatörce WIP olarak bildirilmiştir. Derlenmiş pin/OpenAPI veya gerçek edit kabulü yerine sayılmaz. İlk iş bu bölümü, canlı ENV'yi veya global onay kararını beklemez.
 
-**Tür/ülke:** LegalEntity firma; NaturalPerson kişi/şahıs işletmesi (CARI-DEC-002). Resmi identifier ülke+tür+string değeriyle doğrulanır; baştaki0 korunur. Her Party'de VKN/TCKN/MERSİS zorunlu değildir. TR profili yabancıya uygulanmaz, sahte0 kimlik üretilmez. Ülke/tür profili zorunluluk/uzunluk/checksum/resmi teyit kaynakları Backend contract'ında pinlenmeden kritik yazma açılmaz; ülkesiz eski kartın temel iletişimi bu nedenle bekletilmez. Evrensel yabancı format veya otomatik resmi geçerlilik varsayımı yoktur.
+#### 14.6.1 Yetki kaynakları: kilitli kural ile eksik kapsam
 
-**Kilitli kritik akış (CARI-DEC-004):** eski→önerilen fark/etki→gerekçe→gönder→hazırlayandan farklı TEK yetkili onaycı→kaynak sürümü+proposal hash yeniden kontrol→atomik apply/audit. Banka ekleme/değiştirme/pasife alma da bu akıştadır. Bekleyen/reddedilen/vazgeçilen öneri masterı değiştirmez; stale öneri uygulanmaz; AI onaylayamaz; eski belge byte'ları değişmez. Kabul CARI-AC-012/013/014/015/021/022 ve AT-003/004/014'e bağlanır; yeni numara açılmaz.
+| Doğrulanan kaynak, main3e7dd98 | Ne tanımlar? | Ne vermez? |
+|---|---|---|
+| [CARI-DEC-001/002/004][card-decisions] | Ortak Party, şirketli erişim, Firma/Kişi; kritik değişikliğe hazırlayandan farklı TEK yetkili; ilgili CompanyId/approval kontrolü ve yeniden sürüm/hash doğrulama. | Tek şirket onaycısının ortak Party'nin diğer şirketlerdeki etkisini de yetkilendirdiğini söylemez; exact grant/rol matrisi yoktur. |
+| [CARI_CORE_PERSISTENCE_SECURITY §2/5/8][card-security] | Party erişimi authorized CompanyPartyAccount üzerinden; ilk core write sınırı şirket hesabıdır. Ortak kritik mutation ve hassas alanlar ayrı kontrollü dilim ister. | Read/create/status izninden direct global Party update veya IBAN yazması türetilemez. Eski dar kapsam yasağı hedef özelliğin kalıcı iptali değildir. |
+| [ErpPermissions.cs][card-permissions] | Cari için `counterparty.parties.read`, `.create`, `counterparty.accounts.create`, `.status.update`; hepsi CompanyWideOnly. Identity'nin access/role yönetimi ayrı adlardır. | Ortak Cari kimliği için proposal/approve/apply izni katalogda yoktur. `identity.access.approve` Cari onayı yerine kullanılamaz; SYSTEM_ADMINISTRATOR adı kendiliğinden yeni yetki yaratmaz. |
+| [IErpAuthorizationService][card-auth-interface], [ErpAuthorizationService][card-auth-service] | Permission + somut CompanyId; aktif yerel kullanıcı/rol/atama ve o şirkete ait scope. | IsCompanyWide, grup-geneli demek değildir. A+B read birleşimi global write/approval değildir; body/JWT/header/group görünümü yetki kaynağı olamaz. |
+| [Merged #103 group-shared taslak][card-group-draft] | Product için ayrı server-owned/default-deny group kapsamı, global audit/idempotency gereksinimleri. | DRAFT/implementation-neutral; Product'ın pilot grantee kararı Cari'ye taşınamaz. Belgenin merge'i Cari global izin uygulaması değildir. |
 
-**Gerçek kaynak boşluğu:** DEC-004 ilgili CompanyId/approval permission ve tek onaycıyı kilitler, fakat global Party değişikliğinin bütün şirketlerdeki onay kapsamını ayrıntılandırmaz. Mevcut özel global-master politikası bulunursa Backend onu pinler; yoksa yalnız global apply kapısı bekler, basic edit ve preview ilerler. O kapı için tek soru: **A)** merkezce atanmış ayrı global-master onaycısı (öneri; sade sorumluluk), **B)** etkilenen bütün şirketlerde approval yetkili tek kullanıcı (daha sıkı şirket kapsamı; ortak yetkili yoksa bekler). Bunlar onay/grant değildir; kilitli tek-onaycı kararı yeniden açılmaz. Otomatik şirket hesabı B önerisi bu ayrı soruyla karıştırılmaz.
+**Sonuç:** İncelenen kaynaklarda ortak Party kritik değişikliğinin yetkili kapsamı tamamlanmış değildir. Maker-checker yeniden tartışılmaz. Salt okuma, taslak hazırlama, öneri kaydetme, karar verme ve masterı uygulama ayrı eylemlerdir; her public eylem için Backend'in açık permission/scope eşlemesi gerekir. Yeni kod adı/grant/rol/seed bu belgeyle seçilmez. Politika yokken izin veren fallback yoktur; yetkili mevcut okuma ve yerel/saf preview hazırlığı ilerler, yeni public persist/approve/apply kendi yetki kapısı olmadan açılmaz.
+
+#### 14.6.2 Alanlar, hedef kayıt ve veri sahipliği
+
+**Kullanıcı yolu:** C-03/C-07'de geçerli bilgiyi gör → kritik değişiklik öner → eski/yeni farkı ve etkiyi incele → gerekçeyle gönder → farklı yetkili aynı öneriyi inceleyip onaylasın → güncel kart ve geçmişte uygulanan sonucu gör. Henüz onaylanmamış değer geçerli master gibi gösterilmez.
+
+| Alan / işlem | Zorunluluk, boş ve format sınırı | İş anlamı |
+|---|---|---|
+| Hukuki unvan/ad-soyad değiştirme | Mevcut `legalName` trim sonrası1..250; null/boş ret. Unicode adı keyfî büyük harfe çevirme veya bölme yok. | Tek Party/kod korunur. Kind/UUID/kod değişikliği ve başka hukuki kişiye dönüştürme bu işlem değildir. |
+| VKN/TCKN/yabancı identifier; MERSİS/sicil kimliği | Doldurulan kayıt için açık tür+veren ülke/yargı çevresi+boş olmayan string değer. Ülke/türün kabul edilmiş profili uzunluk/format/checksum'u belirler; baştaki0 korunur. | Her Party'de her numara zorunlu değil; yabancıya TR profili/sahte0 uygulanmaz. Profil yoksa yalnız o kimlik işlemi bekler; biçim kontrolü resmi kurum teyidi değildir. |
+| IBAN/banka hesap kimliği ekle, değiştir, pasife al | Eklemede ülkeye uygun hesap kimliği; mevcut kayıtta bağlı recordId+sürüm. Değiştirmede boş kimlik ret; pasife alma açık eylem, null/silme değil. | CARI-DEC-004 onayı gerekir. Ödeme, banka doğrulaması, hesap yetkisi veya para hareketi üretmez; eski kimlik/history korunur. |
+| Vergi dairesi/sicil makamı; banka/şube/hesap sahibi/döviz; kaynak belge/sürüm | Kimlik değişikliğinin anlamını etkileyen eşlikçi veri preview'da görünür. Optional alan eksik=değişmez; izinli null=temizleme. Kaynak referansı verilirse mevcut ve erişilebilir olmalı. | Bu tablo bütün metadata'yı yeni bir kritik sınıfa dönüştürmez; bağımsız adres/iletişim CARI-DEC-004/6 kapsamında kalır. Zorunlu belge kuralı kaynaksız eklenmez. |
+
+Tam kartın ticari ad, resmi merkez adresi ve şirket-özel kullanım bilgileri §14.2'de kalır; basic payload'ına gizli kritik alan eklenmez. Yeni alanların fiziksel tipi/maxLength ve profil sürümü Backend'in tek OpenAPI/validator kaynağıdır; profil/form fixture aynı sözleşmeyi tüketir. Rutin teknik boy/route seçimi Sinan sorusu değildir.
+
+**Kapsam:** Party hukuki kimliği ortak Counterparty masterıdır. Adres/iletişimin şirket-özel kayıtları ve CompanyPartyAccount'ın durum/operasyon ayarları ayrı kalır. Banka kaydının Party veya CompanyAccount bağı sunucuda kayıt/projection ile açık olmalıdır; bu belge mevcut banka verisini globalleştirmez. Ortak kimliğe yazan öneri global yetki değerlendirmesine, hesap-özel kayıt yalnız kendi şirketine tabidir. Client hedef kapsamı değiştiremez; olmayan hesap GET/öneri/onay ile otomatik oluşturulmaz. Onaysız otomatik şirket hesabı B burada seçilmez.
+
+#### 14.6.3 Uygulanabilir komut sözleşmesi — mantıksal adlar, mevcut API iddiası değil
+
+| İşlem | Girdi ve sunucunun ürettiği bağ | İzinli kayıt etkisi |
+|---|---|---|
+| Geçerli kayıt/öneri oku, farkı önizle | Yetkili Party/child, master sürümü, görünür current/proposed alanları. Sunucu normalizasyon/profil ve farkı hesaplar. | GET/read/preview master, account, approval veya CommandExecution oluşturmaz. Başarılı GET+ACK ayrıca write yetkisi değildir. |
+| Öneriyi gönder | Hedef Party/child, en az bir allowlist değişiklik, kaynak sürümü ve boş olmayan gerekçe. Sunucu proposalId/version, maker, gerçek originatingCompanyId, before snapshot, normalize after, profil sürümü ve proposalHash bağlar. | Bir pending öneri + uygun proposal audit/idempotent sonuç; master/iş hesapları değişmez. Yetki kapısı sağlanmadan public kayıt yok. |
+| Onayla ve uygula | ProposalId + beklenen proposalVersion/hash. Sunucu maker≠checker, mevcut yetki/kapsam, pending durum, stored hedef/before sürümü ve güncel mükerrer uygunluğunu yeniden doğrular. | Onay kararı, canonical değişiklik, history/audit ve durable sonuç tek transaction. Ayrı bir başarılı onay yazıp başarısız apply'ı tamamlanmış gösterme yok. |
+| Reddet / geri çek | Aynı proposal kimliği/sürümü ve ilgili eylem yetkisi; karar aktörü sunucudan. | Yalnız öneri lifecycle/audit sonucu; master değişmez. Uygulanmış kaydı bu eylemlerle geri alma yok. |
+
+Örnek iş niyeti, `/Party=P` ve server-doğrulanmış başlatma şirketi A bağında (wire adları/HTTP başarı biçimi Backend tarafından pinlenir):
+
+```json
+{
+  "expectedPartyVersion": "7",
+  "changes": [{ "field": "legalName", "value": "Örnek Metal Sanayi A.Ş." }],
+  "reason": "Sicil belgesindeki güncel unvanın işlenmesi"
+}
+```
+
+Önizlemede/sunucuda hesaplanan `proposalHash` istemcinin verdiği keyfî before/hash ile onaylanmaz. Hash; hedef/kapsam, kaynak sürümleri, normalize değişiklik ve ilgili gerekçe/profil/kaynak referansını bağlar. Gönderilmiş önerinin içeriği sessizce düzenlenmez; değişen niyet tekrar preview ve yeni öneri sürümü/hash'i ister. Onay komutu öneriyi yeniden yazan payload taşımaz:
+
+```json
+{
+  "expectedProposalVersion": "1",
+  "expectedProposalHash": "<sunucunun-öneriye-bağladığı-hash>"
+}
+```
+
+Master/proposal sürümleri kayıpsız taşınır; örnek decimal-string'dir, client Number dönüşümü yapmaz. `expectedPartyVersion`, temel iletişimdeki `CompanyPartyAccount` sürümü değildir. Banka/identifier alt kaydı varsa onun kaynak sürümü de bağlanır; tam concurrency/DTO tekniği Backend'indir. Şirket-yerel iletişim değişikliğini gerekçesiz global master çatışmasına çevirme yoktur.
+
+**Etki bir kez:** Submit ve approve ayrı logical command/key'dir. Aynı girişimin replay'i yeni öneri veya ikinci master/audit etkisi oluşturmaz. Aynı proposal'a farklı key'lerle eşzamanlı onayda tek apply olabilir; aynı base master sürümüne bağlı rakip önerilerden sonraki stale öneri409 olur. Stored originatingCompanyId, gerçek başlatma bağlamıdır; global masterın keyfî sahibi değildir. Şirket değiştirerek aynı proposal ikinci kez uygulanamaz. Mevcut CompanyId-keyed audit/idempotency'ye sahte şirket/group kimliği konmaz; ortak subject ve yetkili audit okumasının teknik bağını Backend aynı dar contract'ta çözer.
+
+**Atomiklik ve tarihçe:** Audit/durable sonuç/master yazması başarısızsa uygulanmış onay veya yarım yeni kimlik kalmaz. Kimlik numarası başka Party ile çakışırsa mevcut yetkili mükerrer karşılaştırma kuralı uygulanır; otomatik merge, FK taşıma veya gizli Party ifşası yoktur. İşleme ilişkin eski sipariş/fatura/belge snapshot'ları ve dosya byte'ları değişmez; başka modüle doğrudan write, yeni finans/stok olayı veya zorunlu yeni outbox projesi yoktur.
+
+#### 14.6.4 Durumlar, hata ve ekran davranışı
+
+Yerel taslak → önizleme → gönderilmiş/bekliyor → **uygulandı**, reddedildi veya geri çekildi. Son üçü terminaldir. Stale, bekleyen önerinin kaynakla uyuşmadığı açık durum/409 sebebidir; GET ile durum yazılmaz. Otomatik süre aşımı, imha veya keyfî saklama süresi seçilmez. Onaylayıcı değişikliği sessizce düzeltemez; yeni içerik tekrar maker-checker zincirine girer.
+
+Geçerli ve önerilen bilgiler ayrı sütun/kartta; “ortak hukuki bilgi” ile başlatma şirketi açık görünür. Etki açıklaması ortak kimliğin ilişkili hesapların güncel görünümünde değişeceğini belirtir; yetkisiz şirket adı/sayısı, mali toplam veya belge ayrıntısı sızdırmaz. Temel iletişim için **Kaydet**, kritik alan için **Önizle / Onaya gönder**, farklı yetkili için **Onayla ve uygula / Reddet**. Permission yoksa eylem sunulmaz; teknik capability/contract hazır değilse sebep görünür, gönderim0. Form fixture'ı gerçek authority değildir.
+
+400 alan/hata özeti taslağı korur; mevcut401/403/404 sınırı veri/sürüm/history sızdırmaz. Stale master/proposal/hash409: yeni kaynak farkı gösterilir, otomatik rebase/overwrite/onay yoktur. Başarı yalnız doğrulanmış terminal command sonucu ile bildirilir; 204 ise canonical görünüm taze GET'ten alınır, gönderilen taslak master diye boyanmaz. Yetki kapsamı bekliyor mesajı “kritik değişikliğiniz uygulandı” olamaz.
+
+Timeout/teyitsiz201/204, bozuk gövde,500 veya sonraki compatibility409 önceki unknown girişimi kapatmaz. Aynı actor/oturum, kayıt/şirket/API bağlamı, path, key ve payload korunur; otomatik yeni key veya kör retry yoktur. Taze read+ACK+yeniden yetki kontrolü sonrası açık same-key retry; yalnız ekranda aynı değer görünmesi o command'in sonucunu kanıtlamaz. Oturum/şirket değişimi eski taslağı/cevabı yeni bağlama taşımaz; gönderilmiş komut için iptal/rollback iddiası yoktur. Hassas kimlik/IBAN hash dahil telemetry etiketlerine konmaz; maske, alan erişimi, güvenli audit ve saklama mevcut güvenlik sözleşmesiyle uygulanır. AI yalnız izinli taslak/fark hazırlayabilir; maker veya checker yetkisi kazanmaz.
+
+#### 14.6.5 Mevcut kabul kimlikleriyle çalışılacak alt senaryolar
+
+Aşağıdakiler **TASARIM / NOT_RUN**; ilk contact edit, C006, unit/helper veya eski lifecycle SQL sonucu bunları kapatmaz. Yetki fixture'ları test-yerel açık scope girdileridir; üretim rol/grant kararı değildir. Kanıtta backend source+gerçek checkout+HTTP/REAL_SQL ve frontend source+component+browser ayrı kaydedilir.
+
+| Mevcut kabul bağı | Başlangıç ve kullanıcı adımı | Beklenen kayıt etkisi / oluşmaması gereken |
+|---|---|---|
+| CARI-AC-012/013/030; AT-003/004 | A/B'ye bağlı P version7; M yeni unvan önerir, yetkili C≠M onaylar. | Pending'de master eski; apply sonrası aynı P/kod ve yeni unvan/version. Tek terminal onay/master etkisi, öneri/history/audit bağı. Yeni account, işlem veya eski belge değişikliği yok. |
+| CARI-AC-004/013/033; AT-001/004/060 | M kendi önerisini onaylar; yalnız read/create/status veya identity.access.approve sahibi global onay dener; UI/AI yolunu da dene. | Yetki/maker-checker reddi, canonical değişiklik0. Rol adı, başka modül izni veya client capability bu reddi aşmaz. |
+| CARI-AC-012/021; AT-005 | Pending proposal master7'ye bağlı; master8 olur veya öneri hash'i değişir. Eski onayı gönder. |409; stale before/hash uygulanmaz, taslak ve eski öneri korunur. Yetkisiz currentVersion/fark ifşası yok. |
+| CARI-AC-020/021/022; AT-003/005 | Aynı pending öneriye iki checker/different-key yarışı; sonra başarılı girişimin aynı-key replay'i. | Tek apply ve business/audit etkisi; diğer karar terminal çakışma/replay ayrımıyla cevaplanır. Şirket context değişimiyle ikinci apply yok. |
+| CARI-AC-013/014/022 | Pending banka ekleme/değiştirme/pasiflik; ret/geri çek; sonra ayrı geçerli öneriye audit/durable hata enjekte et. | İlkinde yalnız proposal sonucu; hata halinde atomik rollback. Eski banka/history korunur; ödeme veya banka doğrulama kaydı yok. |
+| CARI-AC-008/015/023; AT-009/014 | TR/yabancı uygun profilde kimlik öner, eksik tür/ülke/değer ve yetkili/gizli mükerrer varyantlarını dene. | Destekli deterministic validation; yanlış profil veya gizli taraf sızıntısı yok. Profil/gerçek belge şartı yalnız ilgili yazmayı bekletir; temel iletişim kaydı devam eder. |
+| CARI-AC-013/020/030; AT-006/008 | Submit veya apply başarılı server sonucunun teslimini kontrollü kaybettir; sonraki500/409, taze okuma, explicit aynı-key retry yap. | Unknown girişim korunur; replay tek kalıcı sonuç. Otomatik yeni key, ikinci proposal/apply, yanlış success/navigation yok; doğal ağ olayı diye atfedilmez. |
+| CARI-AC-015/026/030/031; AT-001/006/008/065 | Geçerli/önerilen alanları klavyeyle incele; yetki/şirket/oturum değiştir; history/ilgili eski belgeyi aç. | Geç yanıt yanlış bağlamda görünmez; maskeleme/focus/label korunur. Aynı kaynak belge byte'ları ve şirket/döviz ayrımı değişmez; mali owner verisi uydurulmaz. |
+
+#### 14.6.6 Tek gerçek karar sorusu ve bağımsız devam
+
+Bu, önceki §14.6 kapsam sorusunun kaynakla netleştirilmesidir; yeni karar kimliği değildir: **Ortak Party unvan/vergi/sicil ve ortak banka kimliği değişikliğinde, hazırlayandan farklı tek onaycı (A) merkezce açık ortak-Cari-master yetkisi verilen mevcut kullanıcı mı, yoksa (B) Party'nin güncel bütün ilişkili şirketlerinde ilgili onay yetkisine sahip tek kullanıcı mı olmalı?** Öneri **A**: sorumluluk merkezî ve işlem kısa; ayrı açık kapsam/grant yönetimi gerekir. **B** şirket kapsamını tek kullanıcıda birleştirir; bütün ilişkili şirketlere yetkili kişi yoksa onay bekler. Her iki seçenekte başlatma şirketi ve maker-checker korunur; kendini onaylama veya sınırsız mali veri erişimi yoktur. Hiçbiri bu metinle seçilmemiştir. Bu seçenek B, otomatik şirket hesabı açılmasındaki onaysız B önerisinden ayrı konudur.
+
+Karar yalnız global izin/persist/approve/apply bağını etkiler. Mevcut yetkili okuma, saf alan/profil/diff/hash doğrulaması, yerel preview ve test fixture hazırlığı devam eder; yetkisiz public proposal kaydı bunun içine gizlenmez. İlk account contact-information read/edit/OpenAPI ve Claude formu normal sırasıyla ilerler. Exact permission adları, UI yerleşimi, sürüm taşıma ve veri tablosu tekniği Backend/Claude'un işi; yeni Sinan soruları değildir.
 
 ### 14.7 Mevcut sahipler için devir/bitiş
 
-**Backend:** hesap-kapsamlı read+basic update; kesin alan/null/version/route/permission/capability/OpenAPI devri; şirket/yetki/critical-field injection/stale/replay/atomik hata gerçek HTTP/SQL kanıtı. Fiziksel şema kendisinde; global mastera şirket izniyle geçiş yok.
+**Backend:** mevcut contact-information alan/null/operasyon/decimal-string account version ve OpenAPI devrini aynı ilk işte tamamlar. Sonraki §14.6 için saf öneri/diff/hash/sürüm ve atomiklik modelini, default-deny yetki adaptasyon noktasıyla hazırlar; açık policy yerine grant seçmez. Tek contract'ta action/target/scope/required-nullable/version/ProblemCode ve başarı-replay örneklerini Claude'a verir; frontend uygulamasını bekleyerek contract'ı tutmaz. HTTP/REAL_SQL kabulü ayrı, fiziksel şema kendisinde; global mastera şirket izniyle geçiş yok.
 
-**Claude:** mevcut C-03/C-06 edit, belirgin şirket, kritik alan için ayrı readonly/preview aksiyonu, dirty/error/unknown/409/context fence ve save→yeniden aç→liste dönüşü. Backend contract'ını tüketir; endpoint/grant veya ikinci create/link uygulaması üretmez.
+**Claude:** aynı #235 ilk C-03/C-06 iletişim editini sürdürür. Bir sonraki alt için §14.6 geçerli/önerilen değer, gerekçe, pending/rejected/stale ve farklı onaycı davranışını Backend'in tek DTO taslağıyla hazırlar; fixture'ı gerçek kayıt saymaz. Final API/permission olmadan submit/approve açmaz. Gerçek kaydet/öneri/karar/retry/dönüş ve erişilebilirlik kabulünü ayrı verir; endpoint/grant veya ikinci create/link uygulaması üretmez.
 
-**Orchestrator:** yalnız §14.2'deki küçük owner-module read bağımlılıklarını mevcut işlerine bağlar. Basic edit fc belgesini, Finance'ı, maliyet/dış entegrasyonu veya onaysız otomatik-account B'yi beklemez. Aynı sahipler; yeni lifecycle/gateway yok.
+**Orchestrator:** §14.6.6 tek kapsam sorusunu mevcut karar kanalında takip eder; maker-checker'ı yeniden onaylatmaz. İlk Backend→Claude contract akışı bu hazırlığı/ENV'yi beklemez; yeni bağımlılık döngüsü yoktur. §14.2'deki Sales/Purchasing/Finance/Documents read bağımlılıkları aynı owner işlerinde kalır; yeni gateway/lifecycle/yazar yoktur. #229/#232 insan ve production kapıları ayrıca korunur.
 
 Kapsam küçültülmedi: kritik/global master ve diğer Cari işleri aynı listede açık kalır. Her çalışan altın gerçek kanıtı mevcut kabul satırına eklenir: **tasarlanmış / uygulanmış / doğrulanmış / bağımlılık bekliyor** ayrı. Kanonik backlog/AT durumları, #229/#232 insan kabulü, B ve production yetkisi bu ekle değişmez.
 
@@ -375,3 +461,8 @@ Kapsam küçültülmedi: kritik/global master ve diğer Cari işleri aynı liste
 [card-master]: https://github.com/sinangym/GoymenERP/blob/3e7dd98a5f8b7cb9e6850e05148eb4e7b26f3e3f/docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md
 [card-party]: https://github.com/sinangym/GoymenERP/blob/3e7dd98a5f8b7cb9e6850e05148eb4e7b26f3e3f/src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Domain/Parties/Party.cs
 [card-early]: https://github.com/sinangym/GoymenERP/issues/66#issuecomment-5642102538
+[card-permissions]: https://github.com/sinangym/GoymenERP/blob/3e7dd98a5f8b7cb9e6850e05148eb4e7b26f3e3f/src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Security/ErpPermissions.cs
+[card-auth-interface]: https://github.com/sinangym/GoymenERP/blob/3e7dd98a5f8b7cb9e6850e05148eb4e7b26f3e3f/src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Security/IErpAuthorizationService.cs
+[card-auth-service]: https://github.com/sinangym/GoymenERP/blob/3e7dd98a5f8b7cb9e6850e05148eb4e7b26f3e3f/src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/ErpAuthorizationService.cs
+[card-group-draft]: https://github.com/sinangym/GoymenERP/blob/3e7dd98a5f8b7cb9e6850e05148eb4e7b26f3e3f/docs/features/PLATFORM_GROUP_SHARED_MASTER_CONTRACT_DRAFT_v1.md
+[card-contact-fe]: https://github.com/sinangym/GoymenERP/commit/eab785fdce391f5dcaa792146ed747f59a07c07f
