@@ -42,7 +42,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string OpenApiStartupPath =
         "src/backend/GoymenERP.Api/Program.cs";
     private const string ReviewedOpenApiStartupFingerprint =
-        "54c46ec882dd2930da8994ec6a669be4388524811e294daa1c40d2e5304125eb";
+        "d937f1d3607d6a7e49da592da77dfd91ce655f199fbc88b66e18ab0ed18134fa";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -82,12 +82,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string SqlServerRcsiVerifierPath =
         "tools/verify_rcsi_relational_acceptance.py";
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "b2e60d29c00ee12778fb048d4b21eb4eafa1a87d37b9bfcabf77aa07dec2e795";
+        "d07f62126fa5d0c8f332694dbbd9ff0920cf13eb8d36c206699672a8c38dea74";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "94f7912c1c152e72ed92aac5f1490b6e6a8b71c4a511cee58a189620c53b2b0c";
+        "77e7c210df3effad069181db38b55723b50797f66d8d7aae9c1555eee52d41ed";
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "91a665e6e8982e5a9b66f5d16a14d9fc4d7f98d63775de959a8cc6b2dea2b018";
@@ -102,21 +102,24 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         {
             ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/"
              + "Persistence/AuditDbContext.cs"] =
-                "97ed5c2c671b121708c037e953ae47c662a9d5bd5de8ee58945549631ce8281f",
+                "6339a82c26df4406eded3c5560a346056253b7b58df2c0c69d9614a6eb3e41a1",
             ["src/backend/Modules/Idempotency/"
              + "GoymenERP.Modules.Idempotency.Infrastructure/Persistence/"
              + "CommandExecutionDbContext.cs"] =
                 "3622036369dbfa41ea6f9fb8dbf1c68d63574f36cdb69a53a11e987990220118",
             ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/"
              + "Persistence/IdentityDbContext.cs"] =
-                "9e258b4673942a179c8bf34ee8ba19a76e7b513bd11a46f17eba0ab0e4391b36",
+                "31367b8ff08de6b112ffaf4a5e99c6d4d195fcc7dcde8d73bb4c0d888ede92e4",
             ["src/backend/Modules/Organization/"
              + "GoymenERP.Modules.Organization.Infrastructure/Persistence/"
              + "OrganizationDbContext.cs"] =
                 "198fddce9a2fd4552850c2d1545b96b0030411d5d256a70ee932cf5173be2ff2",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
-                "2126c32b6508491721942f254f2895d8caf7b101f09ede0215a276706a9cfa81"
+                "a25322e5924213ccdf3241e0d1ff4cc15f5d6be168345894eaba3f6b77204812",
+            ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
+             + "Persistence/GroupSharedCommandDbContext.cs"] =
+                "8049fa3a764b3695a477be42aa585c70268601871927429e33674ac860635d08"
         };
 
     // Accepted module initializers own one exact Migrate/EnsureCreated provider branch each.
@@ -127,6 +130,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedRuntimeDatabaseBypassSources =
             new Dictionary<string, ReviewedRuntimeDatabaseBypassSource>(StringComparer.Ordinal)
             {
+                ["src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs"] =
+                    new("e89e8869bed6d7706781ee3c86f09bc59963d0ef26da32c7e06d63449ae8ef27",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["MigrateAsync"] = 2 }),
+                ["src/backend/GoymenERP.Api/ProductRuntime/ProductSqlCommandRunner.cs"] =
+                    new("027a5db0f141d85bd1555c4954cbe05145785987a2bbcff51637688763c62ec4",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Microsoft.Data.SqlClient"] = 1, ["SqlConnection"] = 1 }),
+                ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Services/GroupSharedAuditSession.cs"] =
+                    new("08e6b2c930864ac99b64ad52ad83602b3446e2a86d9d8be4867f2204b3fbf3d0",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["System.Data.Common"] = 1, ["DbConnection"] = 1 }),
                 ["src/backend/Modules/Audit/"
                  + "GoymenERP.Modules.Audit.Infrastructure/AuditModuleExtensions.cs"] =
                     new(
@@ -135,6 +150,25 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["EnsureCreatedAsync"] = 1,
                             ["MigrateAsync"] = 1
+                        }),
+                ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
+                 + "Executions/SqlGroupSharedCommandTerminalStore.cs"] =
+                    new(
+                        "5ecf927a5505ff79b5d2f3d79e436dc674d1b98aa05db28c8ae6e6669ac9b301",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                            ["Microsoft.Data.SqlClient"] = 1,
+                            ["DbConnection"] = 1
+                        }),
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
+                 + "Persistence/ProductDraftParticipant.cs"] =
+                    new(
+                        "9273f2b058ad8f9863504a5f1f5a4c2605431559d0e001c19793135aaf3a238d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["System.Data.Common"] = 1,
+                            ["DbConnection"] = 3
                         }),
                 ["src/backend/Modules/Idempotency/"
                  + "GoymenERP.Modules.Idempotency.Infrastructure/"
@@ -197,6 +231,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedPlatformContextFactories =
             new Dictionary<string, ReviewedContextFactory>(StringComparer.Ordinal)
             {
+                ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Persistence/GroupSharedCommandDesignTimeDbContextFactory.cs"] =
+                    new("GroupSharedCommandDbContext", "cb3032c17681f28ce368afd1b0e13ace3c515a92bf5a23b11f41f8336bb3b37a"),
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/ProductDesignTimeDbContextFactory.cs"] =
+                    new("ProductDbContext", "14980801f97830d0887a538d88a4f9ccb68f9ddfbb696fb9b3c4e2d8d45f7374"),
                 ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/"
                  + "Persistence/AuditDesignTimeDbContextFactory.cs"] =
                     new(
@@ -228,6 +266,22 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedMigrationMutationSources =
             new Dictionary<string, ReviewedMigrationMutationSource>(StringComparer.Ordinal)
             {
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/20260912175128_InitialProductDrafts.cs"] =
+                    new("09b167e9837c486f8487bc8a30518d37a98ee90d6cea5842a40df6fd7c7e00f8",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20260912175120_AddExplicitProductAssignments.cs"] =
+                    new("b366831c39d682f7f1d45664300082806248a8b54910799c83adfcca3f64d14b",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Persistence/Migrations/20260912175124_InitialGroupSharedTerminals.cs"] =
+                    new("ed1ef07eb88ee1ea324479d5ab498d213ecf3cfdba4cf5ab4eae49292c4dc4c7",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Persistence/Migrations/20260912173914_AddGlobalProductAuditSubject.cs"] =
+                    new("e0bc0755399eb10c87793f35c832ce01ea80c4ed7d2c4c02fda465a3feae2df5",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/"
                  + "Persistence/Migrations/20260827160529_InitialAudit.cs"] =
                     new(
@@ -5239,6 +5293,19 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     GetLineNumber(searchableSource, construction.Index)));
             }
 
+            // The existing company-context construction prohibition is unchanged.
+            // Only these exact, fingerprinted global design-time factories gain a
+            // construction counter; this is not a runtime construction exemption.
+            if (ReviewedPlatformContextFactories.TryGetValue(normalizedPath, out var globalFactory)
+                && globalFactory.ContextTypeName is "GroupSharedCommandDbContext" or "ProductDbContext")
+            {
+                foreach (Match construction in Regex.Matches(searchableSource,
+                             @"\bnew\s+" + Regex.Escape(globalFactory.ContextTypeName) + @"\s*\(",
+                             RegexOptions.CultureInvariant))
+                    constructions.Add(new ReviewedContextConstruction(normalizedPath, globalFactory.ContextTypeName,
+                        GetLineNumber(searchableSource, construction.Index)));
+            }
+
             if (!ReviewedPlatformContextFactories.ContainsKey(normalizedPath))
             {
                 var reviewedTypes = ReviewedContextTypeIdentifierRegex()
@@ -5331,6 +5398,24 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         }
 
         return errors;
+    }
+
+    [Theory]
+    [InlineData("src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Persistence/GroupSharedCommandDesignTimeDbContextFactory.cs", "GroupSharedCommandDbContext")]
+    [InlineData("src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/ProductDesignTimeDbContextFactory.cs", "ProductDbContext")]
+    public void Global_design_time_factories_require_exact_constructors_and_do_not_authorize_other_paths(string path, string contextType)
+    {
+        var sources = ReadBackendSources(FindRepositoryRoot());
+        var source = sources[path];
+        var constructor = "new " + contextType + "(";
+        Assert.Equal(1, CountAuditOccurrences(source, constructor));
+        sources[path] = source.Replace(constructor, "new UnapprovedContext(", StringComparison.Ordinal);
+        Assert.Contains(ValidateReviewedPlatformContextConstructions(sources),
+            error => error.Contains("Expected exactly one '" + contextType + "' construction", StringComparison.Ordinal));
+        sources[path] = source;
+        sources["src/backend/GoymenERP.Api/Unapproved" + contextType + "DesignTimeDbContextFactory.cs"] = source;
+        Assert.Contains(ValidateReviewedPlatformContextConstructions(sources),
+            error => error.Contains("Unauthorized design-time DbContext factory reference", StringComparison.Ordinal));
     }
 
     private static string ComputeReviewedSourceFingerprint(string source)

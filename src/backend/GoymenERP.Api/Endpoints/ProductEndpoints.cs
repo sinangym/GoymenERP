@@ -1,3 +1,5 @@
+using GoymenERP.Api.Multitenancy;
+using GoymenERP.Api.OpenApi;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Domain.Products;
 using Microsoft.AspNetCore.Builder;
@@ -12,18 +14,19 @@ public static class ProductEndpoints
     /// <summary>Central host maps this only after the global security/persistence adapter is accepted.</summary>
     public static IEndpointRouteBuilder MapProductEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup(ProductApiV1.BasePath).WithTags("Product").RequireAuthorization();
+        var group = endpoints.MapGroup(ProductApiV1.BasePath).WithTags("Product").RequireAuthorization()
+            .RequireCompanyContext();
 
         group.MapGet("/", async ([AsParameters] ProductListQuery query, IProductService service,
             HttpContext context, CancellationToken cancellationToken) => await ExecuteAsync(context, async () =>
             {
                 return Results.Ok(await service.GetPageAsync(ProductQueryRules.Normalize(query), cancellationToken));
-            })).WithName("GetProductsV1").Produces<ProductPage>();
+            })).WithName("GetProductsV1").Produces<ProductPage>().WithProductRuntimeContract(primitiveBinding: true);
 
         group.MapGet("/code-groups", async (IProductService service, HttpContext context,
             CancellationToken cancellationToken) => await ExecuteAsync(context, async () =>
                 Results.Ok(await service.GetCodeGroupsAsync(cancellationToken))))
-            .WithName("GetProductCodeGroupsV1").Produces<IReadOnlyList<ProductCodeGroup>>();
+            .WithName("GetProductCodeGroupsV1").Produces<IReadOnlyList<ProductCodeGroup>>().WithProductRuntimeContract();
 
         group.MapGet("/reference-options", async ([AsParameters] ProductReferenceQuery query,
             IProductService service, HttpContext context, CancellationToken cancellationToken) =>
@@ -34,27 +37,30 @@ public static class ProductEndpoints
                     return Problem(ProductApiV1.ValidationFailed, 400);
                 }
                 return Results.Ok(await service.GetReferenceOptionsAsync(query, cancellationToken));
-            })).WithName("GetProductReferenceOptionsV1").Produces<ProductReferenceOptions>();
+            })).WithName("GetProductReferenceOptionsV1").Produces<ProductReferenceOptions>()
+            .WithProductRuntimeContract(notFound: true, primitiveBinding: true);
 
         group.MapGet("/{id:guid}", async (Guid id, IProductService service, HttpContext context,
             CancellationToken cancellationToken) => await ExecuteAsync(context, async () =>
             {
                 var card = await service.GetAsync(id, cancellationToken);
                 return card is null ? Problem(ProductApiV1.NotFound, 404) : Results.Ok(card);
-            })).WithName("GetProductV1").Produces<ProductCardView>().ProducesProblem(404);
+            })).WithName("GetProductV1").Produces<ProductCardView>().WithProductRuntimeContract(notFound: true);
 
         group.MapPost("/", async (CreateProductDraftRequest request, IProductService service,
             HttpContext context, CancellationToken cancellationToken) => await ExecuteAsync(context, async () =>
             {
                 var result = await service.CreateDraftAsync(request, ReadIdempotencyKey(context), cancellationToken);
                 return Results.Created($"{ProductApiV1.BasePath}/{result.Card.Product.Id:D}", result);
-            })).WithName("CreateProductDraftV1").Produces<ProductMutationResponse>(201);
+            })).WithName("CreateProductDraftV1").Produces<ProductMutationResponse>(201)
+            .WithProductRuntimeContract(mutation: true, primitiveBinding: true).WithIdempotencyContract(201);
 
         group.MapPatch("/{id:guid}/draft", async (Guid id, EditProductDraftRequest request,
             IProductService service, HttpContext context, CancellationToken cancellationToken) =>
             await ExecuteAsync(context, async () => Results.Ok(await service.EditDraftAsync(id, request,
                 ReadIdempotencyKey(context), cancellationToken))))
-            .WithName("EditProductDraftV1").Produces<ProductMutationResponse>();
+            .WithName("EditProductDraftV1").Produces<ProductMutationResponse>()
+            .WithProductRuntimeContract(mutation: true, notFound: true, primitiveBinding: true).WithIdempotencyContract(200);
         return endpoints;
     }
 

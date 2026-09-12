@@ -198,3 +198,124 @@ SQL26433 / UI26173 and current test lifecycle. No new environment/manifest famil
 Current source evidence: `GroupSharedCommandPersistenceTests` 10 PASS / 0 FAIL / 0 SKIP
 (12 September 2026), model/controlled only. Runtime/SQL/browser and new-head mandatory CI
 remain NOT_RUN until the corresponding source/schema/runtime gates and integration exist.
+
+## Runtime implementation handoff - 2026-09-12
+
+This section supersedes the source-only / NOT_IMPLEMENTED / unregistered runtime
+status in the earlier preparation notes. It does not retroactively turn earlier
+preparation tests into runtime acceptance or reopen the accepted schema decision.
+
+### Authority, source and ownership
+
+- Schema admission: https://github.com/sinangym/GoymenERP/pull/245#issuecomment-5647467887.
+- Business policy: #181 at `3f5deca6f1c338d44a4e9b52787c27dbab85846e`, sections 19.4/19.6.
+  Only Sinan decides initial global Product assignments/revocations. An explicit
+  current per-operation assignment to the existing `SYSTEM_ADMINISTRATOR` is
+  required; company administration alone is not a global Product grant.
+- Consumed Product source: `a7a8857471800525d177f6cffb620023fba4d0d0` (#245),
+  including late SQL conflict observed-version projection and staged race observer.
+- Frontend acceptance candidate supplied by coordinator:
+  `1c48f609b83caa1118b0b274261678b6857088fa` (#238). No frontend file is modified here.
+- The API host registers the real Product service, SQL gateway and reader, Identity
+  authority, canonical Audit V2 writer/reader and global idempotency terminal store.
+  Product, Identity, Audit and Idempotency retain their own tables and persistence.
+- A missing verified issuer binding denies Product operations by default. No actual
+  Sinan identity mapping, normal-user assignment, production activation or normal
+  provider replacement is included. Synthetic isolated SQL fixtures are not grants
+  to a real person. Existing Cari and Organization behavior is not reactivated.
+
+### API and client behavior
+
+The versioned Product routes expose list, detail, code groups, reference options,
+create draft and edit draft. Exact paths, operation IDs, request fields and reachable
+response schemas are in `contracts/openapi/goymen-erp-v1.json`; the generated document
+has the same bytes. GET requests do not create products, assignments or terminals.
+
+An authenticated request carries an explicit authorized origin company through the
+existing company-context header. This is command provenance, not Product ownership.
+Every global operation checks current Identity authority and active Organization
+context server-side. Unrelated company permissions never substitute for the global
+operation assignment. Global audit history is available only through the typed owner
+reader with fresh authority, not through the company audit HTTP collection.
+
+Create returns 201 and edit returns 200 with the Product mutation/card response.
+Versions are lossless positive Int64 strings, not JavaScript numbers. An edit uses
+`expectedVersion` plus `changes`; omission and explicit null are distinct. Example
+edit body: `{"expectedVersion":"1","changes":{"name":"Updated draft"}}`.
+A version conflict returns 409 with root fields such as
+`{"status":409,"code":"version_conflict","expectedVersion":"1","currentVersion":"2"}`.
+The example shows relevant fields, not the complete problem envelope. Late EF
+conflicts use the actual observed stored version, never an inferred increment.
+
+Writes require exactly one original `Idempotency-Key`: 1-128 printable ASCII
+characters excluding comma and whitespace. The raw key is hashed without trimming.
+A valid same-command replay returns the original result/status with
+`Idempotency-Replayed: true` and `Idempotency-Original-Correlation-Id`. Origin,
+actor, operation and payload binding mismatches cannot silently create new effects.
+Fresh authority is required for replay as well as first execution.
+
+Validation is 400; unauthenticated requests are 401; forbidden operations are 403;
+missing authorized targets are 404; domain/version conflicts are 409. Forbidden
+responses need not contain `code`. Module problem responses do not promise all
+company-V1 error fields. After rollback, a fresh authorization check precedes
+404/409 detail disclosure; revoked authority receives 403 without version metadata.
+Unexpected failures use the host error handler; bounded write contention returns
+503 `product_write_contention`. Malformed bodies may fail before the handler.
+
+### Transaction, schema and recovery
+
+Only the host owns connection/transaction begin, commit and rollback. Product data,
+Audit V2 and global terminal are three enlisted owner flushes in one transaction,
+with fresh authorization checkpoints. The staged observer exposes no SQL handles.
+A retry requires confirmed rollback, no commit start and no cancellation; unknown
+rollback/commit outcomes are not automatically retried. The borrowed contexts and
+transaction are disposed before authorized conflict metadata is disclosed.
+
+The canonical Audit table distinguishes company schema-1 events from global Product
+schema-2 events. V1 envelope/hash bytes remain unchanged. V2 has null company owner,
+real origin company and authority revision; no fake owner or second audit ledger is
+introduced. Exact query-filter branch and source/API inventories remain guarded.
+
+Four additive migrations cover Audit subject discrimination, explicit Identity
+assignments, global terminals and Product drafts. Constraints protect valid subject,
+version, role provenance and assignment revocation combinations. Existing append-only
+Audit protection remains active. Down refuses with SQL errors 51041-51044 once the
+respective durable history/data exists. Do not erase history to force rollback;
+retain the data and use a reviewed forward-fix. Draft create/edit has no external
+side effect to dispatch, so this slice adds no alternate outbox/inbox pipeline.
+
+### Local evidence and remaining release gates
+
+These are local WIP results on parent `3173a0b130d5f0526bab4f28c56ac935111353d2`
+with the runtime changes in this delivery. They are not tests of that parent alone,
+not an exact-final-head CI receipt and not local published ENV_READY evidence.
+Artifacts are under `artifacts/product-owner-boundary/`. Times below are 2026-09-12,
+Europe/Istanbul (+03:00); all successful targeted runs listed have zero skipped tests.
+
+| Evidence | Result / finish time |
+| --- | --- |
+| `product-global-runtime-sql-final.trx` | Real SQL 4/4 PASS, 21:47:30; read/create/edit/replay, origin isolation, all flush rollback points, late revocation, staged duplicate/counter/edit races |
+| `product-global-runtime-sql-history-revocation.trx` | 1 PASS / 1 FAIL, 21:56:13; late-conflict revoked-reader masking passed; constraint test encountered the existing append-only trigger rather than CHECK |
+| `product-global-runtime-sql-constraints-final.trx` | Real SQL corrected/extended case 1/1 PASS, 21:59:58; typed history, six CHECK rejections, preserved append-only trigger, four guarded Downs; preceding failure is not counted as pass |
+| `product-global-identity-module.trx` | 25/25 PASS, 21:57:01 |
+| `product-global-architecture-final.trx` then `product-global-architecture-problem-owner.trx` | 276/278, then both corrected exact reference-owner cases 2/2 PASS, 21:56:56; not a claim that the first whole run passed |
+| `product-audit-v1-v2-module.trx` then `product-audit-filter-fixed.trx` | 26/27, then corrected conditional-filter case 1/1 PASS, 21:53:06; V1/V2 regression coverage retained |
+| `product-global-openapi-red.trx` then `product-global-openapi-fixed.trx` | Exact route inventory passed; Development DI failure corrected; deterministic Production/Development/no-network/secret-free case 1/1 PASS, 21:35:33 |
+| SQL verifier unit tests | 10/10 PASS; synthetic verifier output is not a real SQL89 receipt |
+| OpenAPI drift validator | PASS; SHA-256 `baa0fdde0dcffe31b9fdf1e0e3960b2ecaf0f8ad38ae595622497c8796511fa3`, 287303 bytes |
+
+Test entry points used: `dotnet test` on the API integration, Architecture, Audit
+unit and Identity unit projects with Release configuration and the corresponding
+class/method filters; SQL tests use `GOYMEN_ERP_TEST_SQLSERVER_CONNECTION` and the
+existing relational factory's owned disposable database. Verifier command:
+`python -I -S -B -m unittest discover -s tests/rcsi_relational_acceptance_verifier -p "test_*.py" -v`.
+Contract command: `python -I -S -B tools/validate_openapi_contract.py --baseline contracts/openapi/goymen-erp-v1.json --generated artifacts/openapi.json`.
+
+Broad SQL89 and exact RCSI10 on the final runtime are NOT_RUN locally; the mandatory
+CI must run them without skips. Fresh final-head CI, two independent K3 exact-head
+reviews, actual Product ENV publication, Claude's L browser journey, post-browser
+SQL effects and owned cleanup remain pending at this source handoff. Do not reuse
+another CI build as local runtime BackendVerify. The existing three-file contract
+in `tools/product-u01-u02/ENVIRONMENT_CONTRACT.md` retains API26080/SQL26433/UI26173,
+source/instance/resource ownership and owner-only writes. No new gateway, lifecycle,
+manifest family, production action or lane self-merge is authorized by this handoff.

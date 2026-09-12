@@ -29,6 +29,15 @@ public static class AuditEventModelBuilderExtensions
                     table.HasCheckConstraint(
                         "CK_AuditEvents_CompanyId_NotEmpty",
                         "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+                    table.HasCheckConstraint("CK_AuditEvents_Subject",
+                        "([SubjectKind] = N'Company' AND [CompanyId] IS NOT NULL AND [OriginCompanyId] IS NULL "
+                        + "AND [AuthorityRevision] IS NULL AND [SchemaVersion] = 1) OR "
+                        + "([SubjectKind] = N'GroupSharedProduct' AND [CompanyId] IS NULL AND [SchemaVersion] = 2 "
+                        + "AND [OriginCompanyId] IS NOT NULL AND [OriginCompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                        + "AND [AuthorityRevision] IS NOT NULL AND LEN([AuthorityRevision]) > 0 "
+                        + "AND [EntityType] = N'Product.Product' AND LEN([EntityId]) = 36 "
+                        + "AND TRY_CONVERT(uniqueidentifier, [EntityId]) IS NOT NULL "
+                        + "AND TRY_CONVERT(uniqueidentifier, [EntityId]) <> '00000000-0000-0000-0000-000000000000')");
                     table.HasCheckConstraint(
                         "CK_AuditEvents_RoleCodesJson_Valid",
                         "ISJSON([RoleCodesJson]) = 1");
@@ -51,6 +60,10 @@ public static class AuditEventModelBuilderExtensions
         }
 
         entity.HasKey(x => x.Id);
+        entity.Property(x => x.CompanyId).IsRequired(false);
+        entity.Property(x => x.SubjectKind).HasMaxLength(32).UseCollation("Latin1_General_100_BIN2")
+            .HasDefaultValue(AuditEvent.CompanySubject).IsRequired();
+        entity.Property(x => x.AuthorityRevision).HasMaxLength(128).IsUnicode(false).UseCollation("Latin1_General_100_BIN2");
         entity.Property(x => x.EventType).HasMaxLength(160).IsRequired();
         entity.Property(x => x.EntityType).HasMaxLength(160).IsRequired();
         entity.Property(x => x.EntityId).HasMaxLength(128).IsRequired();
@@ -88,5 +101,6 @@ public static class AuditEventModelBuilderExtensions
             .IsDescending(false, true, true);
         entity.HasIndex(x => new { x.CompanyId, x.CorrelationId });
         entity.HasIndex(x => new { x.CompanyId, x.EntityType, x.EntityId, x.OccurredAtUtc });
+        entity.HasIndex(x => new { x.SubjectKind, x.EntityType, x.EntityId, x.OccurredAtUtc, x.Id });
     }
 }

@@ -16,7 +16,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
-public sealed class OpenApiContractGenerationTests
+public sealed partial class OpenApiContractGenerationTests
 {
     private const string DocumentName = "v1";
     private const string CanonicalFileName = "openapi.json";
@@ -121,6 +121,7 @@ public sealed class OpenApiContractGenerationTests
                 "200:application/json",
                 "400:application/problem+json",
                 "503:application/problem+json")),
+        .. ProductOperations,
     ];
 
     private static readonly IReadOnlyDictionary<string, string> ExpectedSuccessSchemas =
@@ -1089,9 +1090,9 @@ public sealed class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(19, operations.Count);
+        Assert.Equal(25, operations.Count);
         Assert.Equal(
-            19,
+            25,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
@@ -1104,6 +1105,11 @@ public sealed class OpenApiContractGenerationTests
         foreach (var expected in ExpectedOperations)
         {
             var actual = operationsById[expected.OperationId];
+            if (IsProductOperation(expected.OperationId))
+            {
+                AssertProductOperation(expected, actual);
+                continue;
+            }
             Assert.Equal(expected.Method, actual.Method);
             Assert.Equal(expected.Path, actual.Path);
             Assert.Equal(
@@ -1193,6 +1199,9 @@ public sealed class OpenApiContractGenerationTests
 
         foreach (var operation in operations)
         {
+            // The Product-specific matrix above checks every request/response/header
+            // using its actual conditional problem shape, not the company V1 shape.
+            if (IsProductOperation(operation.OperationId)) continue;
             var parameters = operation.Value.TryGetProperty("parameters", out var value)
                 ? value.EnumerateArray().ToArray()
                 : [];
@@ -1392,6 +1401,7 @@ public sealed class OpenApiContractGenerationTests
         var schemas = root.GetProperty("components").GetProperty("schemas");
         AssertSchemaSemantics(schemas);
         AssertSuccessComponentSchemas(schemas);
+        AssertProductSchemas(schemas);
         var mutationAccounts = schemas
             .GetProperty("CounterpartyMutationView")
             .GetProperty("properties")

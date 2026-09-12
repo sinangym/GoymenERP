@@ -34,6 +34,7 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
         ConfigureRoleAssignment(modelBuilder);
         ConfigureRoleAssignmentScope(modelBuilder);
         ConfigureAccessGrantRequest(modelBuilder);
+        modelBuilder.ConfigureProductMasterAssignment();
     }
 
     private static void ConfigureUser(ModelBuilder modelBuilder)
