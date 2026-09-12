@@ -94,6 +94,26 @@ function pick(headers: Record<string, string>, allowed: readonly string[]): Reco
   return out
 }
 
+/**
+ * An exchange that may be used as EVIDENCE: the browser is finished with it AND an
+ * answer actually arrived.
+ *
+ * `complete` alone is not enough, and only the real stack showed why. React's
+ * development double-render issues each query twice and aborts the first, so the very
+ * first `/organization/locations` record is a genuine `net::ERR_ABORTED` carrying no
+ * status. Indexing over `complete` records therefore made "the first list read" that
+ * aborted one, and every assertion against it read `undefined`. A withheld delivery is
+ * excluded here for the same reason and by design: it is an outcome the screen must
+ * handle, never a read to assert a version or a body against.
+ *
+ * Counting ATTEMPTS is a different question with its own accessor — `issued` — which
+ * deliberately still counts aborted requests, because "was this ever asked for?" is
+ * exactly what the no-sites case must answer.
+ */
+function isAnswered(record: LiveRecord): boolean {
+  return record.complete && record.failed === undefined && record.status !== undefined
+}
+
 export class LiveRecorder {
   readonly records: LiveRecord[] = []
   private readonly byRequest = new Map<Request, LiveRecord>()
@@ -184,10 +204,10 @@ export class LiveRecorder {
     await Promise.allSettled(this.bodies)
   }
 
-  /** Completed exchanges only — the ones that may be used as evidence. */
+  /** Answered exchanges only — the ones that may be used as evidence. */
   completed(pattern: RegExp, method?: string): LiveRecord[] {
     return this.records.filter(
-      (r) => r.complete && pattern.test(r.path) && (method === undefined || r.method === method),
+      (r) => isAnswered(r) && pattern.test(r.path) && (method === undefined || r.method === method),
     )
   }
 
@@ -254,7 +274,7 @@ export class LiveRecorder {
       description,
       (records) =>
         records.filter(
-          (r) => r.complete && r.method === method && pattern.test(r.path),
+          (r) => isAnswered(r) && r.method === method && pattern.test(r.path),
         )[index],
       timeout,
     )
@@ -279,7 +299,7 @@ export class LiveRecorder {
       description,
       (records) =>
         records.find(
-          (r) => r.complete && r.method === method && pattern.test(r.path) && r.issuedAt > tick,
+          (r) => isAnswered(r) && r.method === method && pattern.test(r.path) && r.issuedAt > tick,
         ),
       timeout,
     )

@@ -157,7 +157,19 @@ test.describe('O-03 conflict, unknown and replay', () => {
 
     // The one way forward: the SAME key, which the server replays.
     await page.getByRole('button', { name: RESEND_BUTTON }).click()
-    const replay = await net.waitForNth('the same-key resend', ACTIVE_STATE_RE, 'PUT', 1)
+    /**
+     * Index 0, not 1: the first command's delivery was WITHHELD, so the browser never
+     * received an answer for it and it is not an answered exchange. It is still on the
+     * record as an attempt — `issued` counts it — but it carries no status to assert.
+     */
+    const replay = await net.waitForNth('the same-key resend', ACTIVE_STATE_RE, 'PUT', 0)
+
+    /**
+     * The new evidence rule excludes the withheld command from ANSWERED exchanges; it
+     * must not erase it. It stays on the record as an attempt that got no answer, which
+     * is the whole reason the outcome was unknown.
+     */
+    expect(net.issued(ACTIVE_STATE_RE, 'PUT').some((r) => r.failed !== undefined)).toBe(true)
 
     expect(replay.requestHeaders['idempotency-key']).toBe(originalKey)
     expect(replay.status).toBe(204)
@@ -221,7 +233,8 @@ test.describe('O-03 conflict, unknown and replay', () => {
 
     // Now command A is retried under its own key: a DELAYED replay.
     await page.getByRole('button', { name: RESEND_BUTTON }).click()
-    const replay = await net.waitForNth('the delayed replay', ACTIVE_STATE_RE, 'PUT', 1)
+    // Index 0 for the same reason: command A's answer was withheld from the browser.
+    const replay = await net.waitForNth('the delayed replay', ACTIVE_STATE_RE, 'PUT', 0)
     expect(replay.status).toBe(204)
     expect(replay.responseHeaders?.['idempotency-replayed']).toBe('true')
 
