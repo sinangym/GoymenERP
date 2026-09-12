@@ -2,18 +2,22 @@
  * The account-scoped operational contact/address contract — the ONE place in this
  * client that names a property of it.
  *
- * SOURCE, pinned: Backend's `CounterpartyContactInformation.cs` in the Counterparty
- * application contracts (worktree `GoymenERP-cari-party-card-backend-20260912`,
- * branch `codex/cari-party-card-backend-20260912`), plus the API owner's technical
- * answers of 12 September for the limits and the closed sets below. Backend is the
- * single schema owner; this file consumes that and asserts nothing of its own.
+ * SOURCE, pinned: Backend #236 at `a6efdc0c9e22dc4531f87bd192def2bb44b46c2c` —
+ * `docs/features/CARI_CONTACT_INFORMATION_BACKEND_HANDOFF_v1.md` with the DTO
+ * (`Contracts/CounterpartyContactInformation.cs`) and the checked-in OpenAPI in the
+ * SAME commit. Backend is the single schema owner; this file consumes that and asserts
+ * nothing of its own.
  *
- * STILL WIP UPSTREAM. The DTO compiles and its author reports the editor green, but
- * the published OpenAPI pin is not out yet and the full maxLength matrix is still
- * arriving. Every limit here is one the API owner stated explicitly; every field it
- * has NOT published a maximum for is left WITHOUT one, so the server's own validation
- * decides rather than a number this client guessed. Nothing here is evidence that the
- * endpoint has been accepted — no live journey has run against it.
+ * The limits below are that handoff's exact field matrix, which explicitly REPLACES
+ * the earlier Business draft's suggestions — so a superseded number must not survive
+ * here, or the client rejects values the contract accepts. `FieldRule.maxLength` stays
+ * optional because a field the API owner has not published a maximum for gets no
+ * client-side length check at all: the server's own validation decides, and nothing is
+ * shortened to fit a number we guessed.
+ *
+ * UPSTREAM IS STILL EARLY. That commit is a pinned implementation contract, not a
+ * backend-ready declaration: its own CI and reviews are in flight. Nothing here is
+ * evidence that the endpoint has been accepted — no live journey has run against it.
  *
  * READ IS PERMISSIVE ABOUT VALUES, STRICT ABOUT STRUCTURE. `purpose` and `kind` are
  * closed sets for a WRITE, and the decoder still accepts any non-empty string for
@@ -80,7 +84,8 @@ export interface ContactInformationView {
   /**
    * The account version. This is the ONE fence for the whole graph — there is no
    * per-child expected version — and it is a canonical Int64 decimal STRING, not a
-   * SQL rowversion byte array. Carried verbatim and never parsed: past 2^53 a JSON
+   * SQL rowversion byte array (1..9223372036854775807, no leading zero, sign,
+   * fraction, exponent or whitespace). Carried verbatim and never parsed: past 2^53 a JSON
    * number rounds, and a rounded concurrency token passes checks it should fail.
    */
   readonly version: string

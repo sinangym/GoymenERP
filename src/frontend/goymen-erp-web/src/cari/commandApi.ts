@@ -216,12 +216,17 @@ async function postCommand<T>(
  * A versioned update: `PUT`, success is EXACTLY 204, and the change is fenced on
  * the row version it was read at.
  *
- * WHICH VERSION. For a company-scoped Cari update it is the
- * `CompanyPartyAccount` rowversion — `CounterpartyDetail.account.version`, not
+ * WHICH VERSION. For a company-scoped Cari update it is the `CompanyPartyAccount`
+ * LOGICAL version — `CounterpartyDetail.account.version`, not
  * `CounterpartyDetail.version`. The Party's own identity and version are a
  * different row and a different authorization story, and another company's account
  * is a third; fencing a company-scoped change on the Party version would make two
  * companies' editors collide over a row neither of them touched.
+ *
+ * It is a canonical positive Int64 DECIMAL STRING (1..9223372036854775807, no
+ * leading zero, sign, fraction, exponent or whitespace) and never a SQL rowversion
+ * byte array — an earlier description of it as a rowversion was wrong about what the
+ * token is, though not about what this code does with it.
  *
  * Three differences from `postCommand`, all load-bearing:
  *

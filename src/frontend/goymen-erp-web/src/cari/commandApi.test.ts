@@ -372,8 +372,9 @@ describe('the write gate (spec §4.2)', () => {
  * The versioned update — `PUT`, exact-204 success, and a row-version fence.
  *
  * WHAT THE FENCE IS. For a company-scoped Cari change it is the
- * `CompanyPartyAccount` rowversion (Backend, 12 September): the Party's own
- * identity/version is a different row, and another company's account is a third.
+ * `CompanyPartyAccount` LOGICAL version — a canonical Int64 decimal string, never a
+ * SQL rowversion byte array. The Party's own identity/version is a different row, and
+ * another company's account is a third.
  *
  * The path below is a placeholder on purpose. This is a transport case about method,
  * headers, fence and status classes; naming a real endpoint here would imply the
