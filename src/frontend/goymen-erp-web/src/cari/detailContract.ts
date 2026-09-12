@@ -50,11 +50,13 @@ function isSafeIntish(value: unknown): value is number {
  * and a silently rounded concurrency token is worse than a rejected response.
  */
 function isLosslessVersion(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    value.length <= MAX_VERSION_DIGITS &&
-    /^[1-9][0-9]*$/.test(value)
-  )
+  if (typeof value !== 'string') return false
+  if (!/^[1-9][0-9]*$/.test(value)) return false
+  if (value.length > MAX_VERSION_DIGITS) return false
+  // 19 digits is not the bound: 9223372036854775808 is 19 digits and one past
+  // Int64.MaxValue. Same length, digits only, so the string comparison is the numeric
+  // one and the token still never gets parsed.
+  return value.length < MAX_VERSION_DIGITS || value <= '9223372036854775807'
 }
 
 /**

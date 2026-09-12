@@ -12,7 +12,7 @@ using Microsoft.Net.Http.Headers;
 
 namespace GoymenERP.Api.Endpoints;
 
-public static class CounterpartyEndpoints
+public static partial class CounterpartyEndpoints
 {
     public static IEndpointRouteBuilder MapCounterpartyEndpoints(
         this IEndpointRouteBuilder endpoints)
@@ -354,6 +354,7 @@ public static class CounterpartyEndpoints
                 CounterpartyClientContract.UnsupportedCode)
             .ProducesErpAuthenticatedProblems();
 
+        MapContactInformationEndpoints(group);
         return endpoints;
     }
 

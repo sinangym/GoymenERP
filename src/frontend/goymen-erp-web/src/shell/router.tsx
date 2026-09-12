@@ -16,6 +16,7 @@ import { CariListPage } from '../cari/CariListPage'
 import { CariCreatePage } from '../cari/CariCreatePage'
 import { CariLinkWorkspacePage } from '../cari/CariLinkWorkspacePage'
 import { CariDetailPage } from '../cari/CariDetailPage'
+import { CariContactEditPage } from '../cari/CariContactEditPage'
 import { StateBlock } from './StateBlock'
 
 export const shellRoutes: RouteObject[] = [
@@ -53,6 +54,25 @@ export const shellRoutes: RouteObject[] = [
         element: (
           <CapabilityRoute capability={CAPABILITY.cariAccountsLink}>
             <CariLinkWorkspacePage />
+          </CapabilityRoute>
+        ),
+      },
+      {
+        /**
+         * C-06 — the operational contact/address editor, on its own capability and
+         * BEFORE the `/cari/:partyId` param route for the same reason `yeni` is: a
+         * deeper static segment must never be read as a party id.
+         *
+         * A separate grant from the detail, like the detail is from the list (#182):
+         * holding the read must not imply holding the write, and gating the route is
+         * what spares the user an editor whose Save they may not use. The API still
+         * re-authorizes `counterparty.parties.read` + `counterparty.parties.update.basic`
+         * on every request — a capability is UI visibility, never authorization.
+         */
+        path: CAPABILITY_ROUTE[CAPABILITY.cariAccountsContactUpdate].slice(1),
+        element: (
+          <CapabilityRoute capability={CAPABILITY.cariAccountsContactUpdate}>
+            <CariContactEditPage />
           </CapabilityRoute>
         ),
       },

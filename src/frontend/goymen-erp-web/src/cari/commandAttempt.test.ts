@@ -103,10 +103,73 @@ describe('classifyCommandOutcome — branches on status + stable code only (§5)
     expect(classifyCommandOutcome(http(404, PROBLEM_CODE.notFound))).toEqual({ kind: 'failed', failure: 'not-found' })
     expect(classifyCommandOutcome(http(409, PROBLEM_CODE.alreadyLinked))).toEqual({ kind: 'failed', failure: 'already-linked' })
     expect(classifyCommandOutcome(http(409, PROBLEM_CODE.idempotencyConflict))).toEqual({ kind: 'failed', failure: 'idempotency-conflict' })
-    // version_conflict is the versioned-update flow's code, not create/link's.
-    expect(classifyCommandOutcome(http(409, 'version_conflict' as unknown as ProblemCode))).toEqual({ kind: 'failed', failure: 'unexpected' })
+    /**
+     * `version_conflict` is the versioned-update flow's code. Create and link cannot
+     * produce it — they carry no fence — but the classifier is shared, so it now says
+     * what the code means instead of falling through to "the server rejected the
+     * request". The two readings are equivalent for create/link and only the second
+     * one is usable for an update.
+     */
+    expect(classifyCommandOutcome(http(409, PROBLEM_CODE.versionConflict))).toEqual({ kind: 'failed', failure: 'version-conflict' })
     expect(classifyCommandOutcome(http(409, null))).toEqual({ kind: 'failed', failure: 'unexpected' })
     expect(classifyCommandOutcome(http(415))).toEqual({ kind: 'failed', failure: 'unexpected' })
+  })
+})
+
+describe('the versioned update — applied, unfenced, and a stale fence on a RE-send', () => {
+  function applied(replayed = false): CommandOutcome<null> {
+    return { type: 'applied', data: null, replayed, originalCorrelationId: replayed ? 'corr-9' : null }
+  }
+
+  it('204 completes the attempt with NOTHING to render: the result is null, replay passes through', () => {
+    // A 204 carries no body, so "completed" cannot smuggle the sent patch back as the
+    // record's new state. The screen has to read again to know what the record says.
+    expect(classifyCommandOutcome(applied())).toEqual({ kind: 'completed', result: null, replayed: false })
+    expect(classifyCommandOutcome(applied(true))).toEqual({ kind: 'completed', result: null, replayed: true })
+
+    const snapshot: AttemptSnapshot<Payload> = { ...SNAPSHOT, operation: 'counterparty.update' }
+    const settled = settleAttempt<Payload, null>(beginAttempt(snapshot), applied(true))
+    expect(settled).toEqual({ phase: 'completed', snapshot, result: null, replayed: true })
+    expect(isAttemptFrozen(settled)).toBe(false)
+  })
+
+  it('a refused fence is a definite non-event, and a version conflict cannot be retried', () => {
+    // Nothing left the client in either case, and neither is retryable: the kept
+    // snapshot carries the fence that was already refused or already stale.
+    expect(classifyCommandOutcome<null>({ type: 'unfenced' })).toEqual({ kind: 'failed', failure: 'unfenced' })
+
+    const conflict = settleAttempt<Payload, null>(
+      beginAttempt(SNAPSHOT),
+      { type: 'http', status: 409, code: PROBLEM_CODE.versionConflict, body: null },
+    )
+    expect(conflict).toEqual({ phase: 'failed', snapshot: SNAPSHOT, failure: 'version-conflict' })
+    expect(retryAttempt(conflict)).toBe(conflict)
+    expect(canBeginAttempt(conflict)).toBe(false)
+    // Acknowledging closes it; the next edit is a new attempt with a new key.
+    expect(abandonAttempt(conflict)).toEqual({ phase: 'idle' })
+  })
+
+  it('a version conflict on the RE-send does not answer the send whose outcome was lost', () => {
+    /**
+     * The sequence that must not be misread: the first PUT is applied, its response is
+     * lost (unknown) → the user retries under the same key → the key record is gone
+     * and the server now sees a stale fence, so the re-send is refused with 409
+     * version_conflict.
+     *
+     * That 409 is about the SECOND request. It suggests the first one landed but does
+     * not prove it — another editor could have moved the row — so the attempt stays
+     * unresolved with its original reason, key and payload. Closing it as a definite
+     * failure here would let the same edit be re-sent later under a NEW key.
+     */
+    let state: AttemptState<Payload, null> = settleAttempt(beginAttempt(SNAPSHOT), { type: 'network-error' })
+    expect(state).toMatchObject({ phase: 'unknown', reason: 'network-error' })
+
+    state = retryAttempt(state)
+    expect(state).toMatchObject({ phase: 'submitting', unresolvedSince: 'network-error', resends: 1 })
+
+    state = settleAttempt(state, { type: 'http', status: 409, code: PROBLEM_CODE.versionConflict, body: null })
+    expect(state).toEqual({ phase: 'unknown', snapshot: SNAPSHOT, reason: 'network-error', resends: 1 })
+    expect(isAttemptFrozen(state)).toBe(true)
   })
 })
 

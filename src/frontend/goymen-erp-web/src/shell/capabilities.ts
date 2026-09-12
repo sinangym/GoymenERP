@@ -34,6 +34,21 @@ export const CAPABILITY = {
    * detail and call its API. Codex caught that on #172.
    */
   cariPartiesDetail: 'cari.parties.detail',
+  /**
+   * C-06 — the selected company's operational contact and address editor. Route
+   * `/cari/:partyId/bilgiler`, route id `cari.contact-edit`.
+   *
+   * A SEPARATE grant from the detail, for the reason #182 made the detail separate
+   * from the list: holding the read must not imply holding the write. Gating the
+   * editor's route on it is also the only way the user is spared an editor whose Save
+   * they are not permitted to use — a capability is UI visibility, and the API
+   * re-authorizes `counterparty.parties.read` + `counterparty.parties.update.basic`
+   * on every request regardless.
+   *
+   * Listing it here grants nothing; until the server publishes it the route mounts the
+   * same neutral not-found block any unknown path gets, and calls nothing.
+   */
+  cariAccountsContactUpdate: 'cari.accounts.contact.update',
 } as const
 
 export type CapabilityId = (typeof CAPABILITY)[keyof typeof CAPABILITY]
@@ -44,6 +59,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.cariPartiesCreate]: '/cari/yeni',
   [CAPABILITY.cariAccountsLink]: '/cari/sirkete-bagla',
   [CAPABILITY.cariPartiesDetail]: '/cari/:partyId',
+  [CAPABILITY.cariAccountsContactUpdate]: '/cari/:partyId/bilgiler',
 }
 
 /** Nav label per capability. Only rendered when the server granted the capability. */
@@ -53,4 +69,6 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   [CAPABILITY.cariAccountsLink]: 'Cariyi Şirkete Bağla',
   // No nav entry: the detail is reached from a row, never from the sidebar.
   [CAPABILITY.cariPartiesDetail]: '',
+  // Nor this one: it is reached from the card of the record it edits.
+  [CAPABILITY.cariAccountsContactUpdate]: '',
 }

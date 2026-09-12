@@ -134,6 +134,22 @@ public static class LiveSmoke
         Require(last.GetProperty("replayed").GetString() == "true" && !string.IsNullOrEmpty(last.GetProperty("originalCorrelation").GetString()), "Replay metadata missing.");
         var final = await DatabaseEvidence.ReadAsync(identity);
         Require(final.Effects == afterLink.Effects, "Replay/reads added effects.");
+        var contactPath = detail + "/contact-information";
+        var readOnlyContact = await Call("GET", contactPath, identity.CompanyAId, null, 200,
+            actor: AcceptanceProfile.ReadOnlyActor);
+        Require(readOnlyContact.GetProperty("partyId").GetString() == id
+            && readOnlyContact.GetProperty("companyId").GetString() == identity.CompanyAId
+            && readOnlyContact.GetProperty("version").GetString() == "1"
+            && readOnlyContact.GetProperty("information").GetProperty("addresses").GetArrayLength() == 0,
+            "Read-only actor must read the actual fresh A contact card.");
+        var deniedContact = await Call("PUT", contactPath, identity.CompanyAId,
+            new { expectedVersion = "1", changes = new { phone = "00123" } }, 403,
+            Guid.NewGuid().ToString("N"), AcceptanceProfile.ReadOnlyActor);
+        Require(deniedContact.GetProperty("code").GetString() == "forbidden",
+            "Read-only contact write must be forbidden by the API, not only the UI.");
+        var afterReadOnly = await DatabaseEvidence.ReadAsync(identity);
+        Require(JsonSerializer.Serialize(afterReadOnly) == JsonSerializer.Serialize(final),
+            "Read-only read/refused PUT produced database effects.");
         Evidence.Write("baseline.json", final);
         var evidence = new { observedAtUtc = DateTimeOffset.UtcNow, identity.RunId, identity.InstanceId,
             transport = "real TCP HttpClient -> loopback Kestrel -> new SQL Server", before, afterCreate, afterLink, final, exchanges, passed = true };

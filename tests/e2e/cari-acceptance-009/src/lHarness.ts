@@ -717,6 +717,18 @@ interface WithholdTarget {
   readonly method: string
   readonly companyId: string
   readonly match: (pathname: string) => boolean
+  /**
+   * The status this command's success IS. Defaults to 201, which is what a create and a
+   * link answer with.
+   *
+   * A versioned update answers 204 with no body, so without this the real success of a
+   * legitimate update was labelled `upstream_unexpected_result` — a measurement that
+   * reads as "the server did not do what was asked" about a server that did exactly
+   * that. The default is unchanged, so the create/link targets behave as before.
+   */
+  readonly expectStatus?: number
+  /** Whether success must also carry a record identity. False for a body-less 204. */
+  readonly requireIdentity?: boolean
   done: boolean
 }
 
@@ -742,7 +754,14 @@ export class DeliveryWithholder {
 
   static async install(
     page: Page,
-    targets: readonly { label: string; method: string; companyId: string; match: (pathname: string) => boolean }[],
+    targets: readonly {
+      label: string
+      method: string
+      companyId: string
+      match: (pathname: string) => boolean
+      expectStatus?: number
+      requireIdentity?: boolean
+    }[],
   ): Promise<DeliveryWithholder> {
     const withholder = new DeliveryWithholder(targets.map((t) => ({ ...t, done: false })))
     await page.route(
@@ -832,8 +851,9 @@ export class DeliveryWithholder {
             }))
           : []
         /**
-         * The loss may only be REPORTED as a withheld success once the real 201, the
-         * acknowledgment and the real identity have been read. The request itself is
+         * The loss may only be REPORTED as a withheld success once the real success
+         * status, the acknowledgment and — where the command has one — the real identity
+         * have been read. The request itself is
          * already consumed by `route.fetch` and cannot be un-sent — and delivering it
          * would mean `route.fulfill`, which this lane does not use — so an unexpected
          * upstream is aborted like any other and labelled for what it was. The spec then
@@ -842,7 +862,12 @@ export class DeliveryWithholder {
         const status = upstream.status()
         const ack = picked['x-erp-counterparty-contract'] ?? null
         const partyId = typeof record?.id === 'string' ? record.id : null
-        const expected = status === 201 && ack === CLIENT_CONTRACT_VERSION && partyId !== null && accounts.length > 0
+        const expectStatus = target.expectStatus ?? 201
+        const requireIdentity = target.requireIdentity ?? true
+        const expected =
+          status === expectStatus &&
+          ack === CLIENT_CONTRACT_VERSION &&
+          (!requireIdentity || (partyId !== null && accounts.length > 0))
         withholder.withheld.push({
           marker: expected ? 'upstream_success_then_delivery_abort' : 'upstream_unexpected_result',
           label: target.label,
@@ -861,7 +886,9 @@ export class DeliveryWithholder {
           accounts,
           deliveredToBrowser: false,
           browserOutcome: 'aborted-by-test',
-          upstreamError: expected ? null : `upstream answered ${status} with ack ${String(ack)}; the expected 201 + acknowledgment + identity was not seen`,
+          upstreamError: expected
+            ? null
+            : `upstream answered ${status} with ack ${String(ack)}; the expected ${expectStatus} + acknowledgment${requireIdentity ? ' + identity' : ''} was not seen`,
         })
         // Only the delivery is cut. The server has already committed.
         await route.abort('failed')
