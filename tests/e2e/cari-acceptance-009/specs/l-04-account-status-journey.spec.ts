@@ -34,14 +34,21 @@
  *       The user closes it (reason discarded on purpose), goes to the LIST — the row
  *       shows the account passive — and reopens the card by KEYBOARD.
  *   K2  SECOND tab: "Bu şirkette aktifleştir" with reason R2 on fence 8. Its 204 is
- *       delivered; the read it owes is WITHHELD (a real 200 whose delivery is cut), so
- *       the card says "saved, current record not yet read" and offers the READ; the
- *       read retry lands v9 ACTIVE and the result is adopted.                → v9
+ *       delivered; the read it owes is WITHHELD (a real, acknowledged 200 whose
+ *       delivery is cut, spec-locally — a GET carries no Idempotency-Key for the
+ *       harness withholder to target), so the card leaves `ready`, says "saved, view
+ *       not refreshed" over the network-error block and offers the READ's own retry;
+ *       that read lands v9 ACTIVE and the result is adopted.                 → v9
  *   K1' MAIN page: the explicit same-key retry of K1 — a fresh read first (v9), then the
  *       SAME key and body. The server hands back the STORED 204 as a replay
- *       (`Idempotency-Replayed: true`); the fresh read still says ACTIVE v9, so the
- *       card reports a PAST command's result and the CURRENT state, and claims no
- *       "left the active list". The old key does NOT re-deactivate the account.
+ *       (`Idempotency-Replayed: true`); a SEPARATE fresh read after it still says
+ *       ACTIVE v9, so the card reports a PAST command's result and the CURRENT state,
+ *       and claims no "left the active list". The old key does NOT re-deactivate the
+ *       account. The three exchanges are proven in NETWORK order: pre-read transfer
+ *       end < replay PUT issue, and post-read issue > replay PUT transfer end.
+ *
+ *   The counts that decide are taken from the FINAL recorders after every barrier:
+ *   main 2, second tab 2, total 4, company B 0, read-only actor 0.
  *
  *   4 PUTs · 2 successful logical updates (v7→v8 deactivate, v8→v9 activate) ·
  *   2 active-state audit events · 3 durable unique keys (K1 Succeeded 204, KS
@@ -73,7 +80,7 @@
  *  - not a re-run of L-01, L-02, L-03 or any closed C006 step. It shares their harness
  *    and nothing else, and the L-03 child-lifecycle result is not an account result.
  */
-import { expect, test, type BrowserContext, type Locator, type Page } from '@playwright/test'
+import { expect, test, type APIResponse, type BrowserContext, type Locator, type Page } from '@playwright/test'
 import {
   DeliveryWithholder,
   LiveRecorder,
@@ -102,12 +109,12 @@ const ACTIVATE_ACTION = 'Bu şirkette aktifleştir'
 const DEACTIVATE_SUBMIT = 'Pasife al'
 const ACTIVATE_SUBMIT = 'Aktifleştir'
 const REFRESH_RECORD = 'Kaydı yenile'
-const READ_AGAIN = 'Kaydı yeniden oku'
+/** The shared state block's own retry — the READ's, on the recovery branch. */
+const READ_RETRY = 'Tekrar dene'
 const SAVED_DEACTIVATED = 'Şirket hesabı pasife alındı'
 const SAVED_ACTIVATED = 'Şirket hesabı aktifleştirildi'
 const SUPERSEDED_TITLE = 'Geçmiş işlemin sonucu bildirildi'
 const REFRESHED_NOTE = /Kayıt güncel sürümle yenilendi/
-const READ_PENDING = /güncel kayıt henüz okunamadı/
 const DISCARD_AND_CLOSE = 'Gerekçeyi bırak ve kapat'
 
 /**
@@ -186,6 +193,128 @@ async function awaitDetailRead(
     }
     await page.waitForTimeout(100)
   }
+}
+
+/** One record matching `where`, waited for with a bound; the recorder is polled, never assumed. */
+async function awaitRecord(
+  page: Page,
+  net: LiveRecorder,
+  where: (r: LiveRecord) => boolean,
+  label: string,
+  timeoutMs = 30_000,
+): Promise<LiveRecord> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const found = net.records.filter(where).at(-1)
+    if (found !== undefined) return found
+    if (Date.now() > deadline) throw new Error(`${label}: no matching record landed in the recorder within ${timeoutMs} ms`)
+    await page.waitForTimeout(100)
+  }
+}
+
+/**
+ * A withheld READ, spec-local: the harness's `DeliveryWithholder` selects its target by
+ * the request's Idempotency-Key, which a detail GET does not carry, so it can never
+ * target one (Dirac L-04 finding 1). This does for ONE detail GET exactly what the
+ * harness does for a command: the real request goes to the real API via `route.fetch`
+ * (no retry, no redirect), its real status, acknowledgment and body are READ, the loss
+ * is reported only as a withheld success when the upstream answer is a 200 acknowledged
+ * under the contract and carries THIS party with the company-A account — and only then
+ * is the delivery cut with `route.abort`. Nothing is fulfilled or synthesised.
+ */
+interface WithheldRead {
+  readonly marker: 'upstream_success_then_delivery_abort' | 'upstream_unexpected_result' | 'upstream_not_reached'
+  readonly label: string
+  readonly at: string
+  readonly method: string
+  readonly path: string
+  readonly companyId: string | null
+  readonly idempotencyKey: null
+  readonly contractDeclaration: string | null
+  readonly upstreamStatus: number
+  readonly contractAck: string | null
+  readonly partyId: string | null
+  readonly account: { version: string | null; isActive: boolean | null } | null
+  readonly deliveredToBrowser: false
+  readonly browserOutcome: 'aborted-by-test'
+  readonly upstreamError: string | null
+}
+
+async function withholdOneDetailRead(
+  page: Page,
+  partyId: string,
+  companyId: string,
+  label: string,
+): Promise<{ readonly withheld: WithheldRead[]; readonly passedThrough: { at: string; method: string; path: string }[] }> {
+  const state = { done: false, withheld: [] as WithheldRead[], passedThrough: [] as { at: string; method: string; path: string }[] }
+  const targetPath = `/api/v1/counterparties/${partyId}`
+  await page.route(
+    (url) => url.pathname === targetPath,
+    async (route) => {
+      const request = route.request()
+      const method = request.method().toUpperCase()
+      const headers = request.headers()
+      const company = headers['x-company-id'] ?? null
+      if (state.done || method !== 'GET' || company !== companyId) {
+        state.passedThrough.push({ at: new Date().toISOString(), method, path: targetPath })
+        await route.continue()
+        return
+      }
+      state.done = true
+      const base = {
+        label,
+        at: new Date().toISOString(),
+        method,
+        path: targetPath,
+        companyId: company,
+        idempotencyKey: null,
+        contractDeclaration: headers['x-erp-counterparty-contract'] ?? null,
+        deliveredToBrowser: false as const,
+        browserOutcome: 'aborted-by-test' as const,
+      }
+      let upstream: APIResponse
+      try {
+        upstream = await route.fetch({ maxRetries: 0, maxRedirects: 0 })
+      } catch (error) {
+        state.withheld.push({
+          ...base,
+          marker: 'upstream_not_reached',
+          upstreamStatus: 0,
+          contractAck: null,
+          partyId: null,
+          account: null,
+          upstreamError: String((error as Error)?.message ?? error).slice(0, 200),
+        })
+        await route.abort('failed')
+        return
+      }
+      const status = upstream.status()
+      const ack = upstream.headers()['x-erp-counterparty-contract'] ?? null
+      let body: DetailBody | null = null
+      try {
+        body = (await upstream.json()) as DetailBody
+      } catch {
+        body = null
+      }
+      const answeredParty = typeof body?.id === 'string' ? body.id : null
+      const account = body === null ? null : accountOf(body, companyId)
+      const expected = status === 200 && ack === CONTRACT && answeredParty === partyId && account?.version !== null
+      state.withheld.push({
+        ...base,
+        marker: expected ? 'upstream_success_then_delivery_abort' : 'upstream_unexpected_result',
+        upstreamStatus: status,
+        contractAck: ack,
+        partyId: answeredParty,
+        account,
+        upstreamError: expected
+          ? null
+          : `upstream answered ${status} with ack ${String(ack)} for party ${String(answeredParty)}; the expected 200 + acknowledgment + this party's company account was not seen`,
+      })
+      // Only the delivery is cut. The server has already answered.
+      await route.abort('failed')
+    },
+  )
+  return state
 }
 
 function statusDialog(page: Page): Locator {
@@ -492,40 +621,63 @@ test('L-04 C-03: the selected company account deactivated for a reason and react
   /**
    * The second tab withholds exactly ONE delivery: the detail GET the 204 triggers. The
    * command itself is delivered normally; what the browser loses is the READ — the case
-   * where the change is applied and the screen must say "saved, current record not yet
-   * read" and offer the read, never a second PUT.
+   * where the change is applied and the screen must say "saved, view not refreshed" and
+   * offer the READ's own retry, never a second PUT. The withholding is spec-local (see
+   * `withholdOneDetailRead`): a GET carries no Idempotency-Key, so the harness's
+   * command withholder cannot target it.
    */
-  const staleWithholder = await DeliveryWithholder.install(stale, [
-    {
-      label: 'post-k2-detail-read',
-      method: 'GET',
-      companyId: A,
-      match: (p) => DETAIL_PATH_RE.test(p) && p.endsWith(`/${partyId}`),
-      expectStatus: 200,
-      requireIdentity: false,
-    },
-  ])
+  const staleWithholder = await withholdOneDetailRead(stale, partyId, A, 'post-k2-detail-read')
   await openStatusWindow(stale, ACTIVATE_ACTION, REASON_K2)
   await expect(statusDialog(stale)).toHaveAttribute('data-intent', 'activate')
+  const beforeK2 = staleNet.currentTick()
   await statusDialog(stale).getByRole('button', { name: ACTIVATE_SUBMIT }).click()
-  await expect(stale.getByText(READ_PENDING), 'applied, and the read it owes did not land: said so, not "saved"').toBeVisible({
-    timeout: 60_000,
-  })
-  await expect(stale.getByText(SAVED_ACTIVATED)).toHaveCount(0)
-  await expect(stale.getByRole('button', { name: ACTIVATE_ACTION })).toBeDisabled()
+
+  /**
+   * The terminal event FIRST: the recorder must have seen the post-204 GET FAIL (its
+   * delivery was cut), and the withholder must have read a real, acknowledged 200 for
+   * this party before cutting it. Only then is the screen asked what it shows — a
+   * pending or paused view caught mid-flight would make this a race.
+   */
+  const lostRead = await awaitRecord(
+    stale,
+    staleNet,
+    (r) => r.method === 'GET' && DETAIL_PATH_RE.test(r.path) && r.path.endsWith(`/${partyId}`) && r.requestTick > beforeK2 && r.transferOutcome === 'failed',
+    'the withheld post-K2 read (requestfailed)',
+    60_000,
+  )
+  expect(lostRead.status, 'a cut delivery has no status in the browser').toBeNull()
+  const withheldRead = staleWithholder.withheld
+  expect(withheldRead, 'exactly one read delivery is withheld on the second tab').toHaveLength(1)
+  expect(
+    withheldRead[0].marker,
+    `the withheld read must be a real, acknowledged upstream success before its delivery was cut: ${String(withheldRead[0].upstreamError)}`,
+  ).toBe('upstream_success_then_delivery_abort')
+  expect(withheldRead[0].upstreamStatus).toBe(200)
+  expect(withheldRead[0].contractAck).toBe(CONTRACT)
+  expect(withheldRead[0].partyId).toBe(partyId)
+  // The answer the browser never received already carried the applied state: v9, ACTIVE.
+  expect(withheldRead[0].account?.version, 'K2 was applied before the read was lost').toBe('9')
+  expect(withheldRead[0].account?.isActive).toBe(true)
   expect(accountStatusPuts(staleNet).length, 'K2 is one PUT; the lost READ is never answered with a second PUT').toBe(2)
   const k2 = accountStatusPuts(staleNet)[1]
   expect(k2.status).toBe(204)
   expect(k2.requestBody).toEqual({ isActive: true, reason: REASON_K2, expectedVersion: '8' })
   expect(k2.idempotencyKey, 'a new intent is a NEW attempt with its own key').not.toBe(conflictPut.idempotencyKey)
-  const withheldRead = staleWithholder.of('post-k2-detail-read')
-  expect(withheldRead, 'exactly one read delivery is withheld on the second tab').toHaveLength(1)
-  expect(withheldRead[0].upstreamStatus).toBe(200)
-  await lShot(stale, SLUG, '06-k2-applied-read-pending')
+
+  // The application's REAL branch for a failed post-204 read: the card leaves `ready`,
+  // says "saved, view not refreshed", and the retry it offers is the read's own.
+  const readRecovery = stale.locator('[data-state="read-recovery"]')
+  await expect(readRecovery, 'applied, and the read it owes failed: said so, not "saved"').toBeVisible({ timeout: 60_000 })
+  await expect(stale.locator('[data-state="network-error"]'), 'the failed read is reported as what it was').toBeVisible({
+    timeout: 30_000,
+  })
+  await expect(stale.getByText(SAVED_ACTIVATED)).toHaveCount(0)
+  expect(await stale.getByRole('button', { name: ACTIVATE_ACTION }).count(), 'no action is mounted on the recovery branch').toBe(0)
+  await lShot(stale, SLUG, '06-k2-applied-read-lost')
 
   const beforeReadAgain = staleNet.currentTick()
-  await stale.getByRole('button', { name: READ_AGAIN }).click()
-  const v9 = await awaitDetailRead(stale, staleNet, partyId, beforeReadAgain, 'read again after K2')
+  await stale.getByRole('button', { name: READ_RETRY }).click()
+  const v9 = await awaitDetailRead(stale, staleNet, partyId, beforeReadAgain, 'read retry after K2')
   expect(v9.version, 'K2 is one logical update').toBe('9')
   expect(v9.isActive).toBe(true)
   const savedActivated = stale.locator('[data-state="account-status-saved"]')
@@ -533,9 +685,15 @@ test('L-04 C-03: the selected company account deactivated for a reason and react
   await expect(savedActivated).toHaveAttribute('data-agrees', 'yes')
   await expect(savedActivated.getByText(SAVED_ACTIVATED)).toBeVisible()
   await expect(cardAccountState(stale)).toHaveAttribute('data-account-state', 'active')
-  expect(accountStatusPuts(staleNet).length, 'the second tab carries two PUTs: the 409 and K2').toBe(2)
   await lShot(stale, SLUG, '07-k2-adopted-v9-active')
+  /**
+   * The barrier FIRST, the count AFTER it: a PUT that started after an early count and
+   * finished inside the quiet window would have entered the record while every later
+   * assertion still passed. The count that decides is the one taken once the page has
+   * gone quiet (Dirac L-04 finding 3).
+   */
   const staleBarrier = await staleNet.quiesce({ settleMs: 1500, timeoutMs: 45_000 })
+  expect(accountStatusPuts(staleNet).length, 'AFTER the barrier: the second tab carries exactly two PUTs, the 409 and K2').toBe(2)
   const stalePutProjection = accountStatusPuts(staleNet).map(putProjection)
   const staleGetProjection = detailGets(staleNet, partyId).map((r) => ({
     seq: r.seq,
@@ -563,9 +721,48 @@ test('L-04 C-03: the selected company account deactivated for a reason and react
     (afterK1[1].responseHeaders['idempotency-replayed'] ?? '').toLowerCase(),
     'the server itself must say this was a replay of the stored result, not a second effect',
   ).toBe('true')
-  const afterReplay = await awaitDetailRead(page, net, partyId, beforeK1Retry, 'after K1 replay')
+
+  /**
+   * THREE exchanges, in NETWORK order (Dirac L-04 finding 4): the fresh read that
+   * licenses the retry must have FINISHED its transfer before the replay PUT was
+   * issued, and a SEPARATE read must have been issued after the replay's transfer
+   * finished. Ordered on `transferTick`/`requestTick` — never on the recorder's own
+   * capture tick, which belongs to the recorder. Both reads must be completed
+   * (acknowledged, body captured) before their content is read.
+   */
+  const replayPut = await awaitRecord(
+    page,
+    net,
+    (r) => r.seq === afterK1[1].seq && r.transferOutcome === 'finished' && r.transferTick !== null,
+    'the replay PUT’s transfer end',
+  )
+  const isCompletedDetailRead = (r: LiveRecord) =>
+    r.method === 'GET' && DETAIL_PATH_RE.test(r.path) && r.path.endsWith(`/${partyId}`) && r.companyId === A && isCompletedRead(r, CONTRACT)
+  const preReplayRead = await awaitRecord(
+    page,
+    net,
+    (r) => isCompletedDetailRead(r) && r.requestTick > beforeK1Retry && r.transferTick !== null && r.transferTick < replayPut.requestTick,
+    'the pre-replay read (finished before the PUT was issued)',
+  )
+  const postReplayRead = await awaitRecord(
+    page,
+    net,
+    (r) => isCompletedDetailRead(r) && r.requestTick > (replayPut.transferTick ?? Number.POSITIVE_INFINITY),
+    'the post-replay read (issued after the replay answered)',
+  )
+  expect(preReplayRead.seq, 'two DIFFERENT reads bracket the replay').not.toBe(postReplayRead.seq)
+  expect(preReplayRead.transferTick!, 'pre-replay read: transfer ended before the PUT went out').toBeLessThan(replayPut.requestTick)
+  expect(postReplayRead.requestTick, 'post-replay read: issued only after the replay answered').toBeGreaterThan(replayPut.transferTick!)
+  const preReplay = accountOf((preReplayRead.responseBody ?? {}) as DetailBody, A)
+  const afterReplay = accountOf((postReplayRead.responseBody ?? {}) as DetailBody, A)
+  expect(preReplay.version, 'the licensing read already saw K2’s state').toBe('9')
   expect(afterReplay.version, 'the old key re-deactivates NOTHING: the record stays where K2 left it').toBe('9')
   expect(afterReplay.isActive).toBe(true)
+  const k1ReplayOrdering = {
+    preRead: { seq: preReplayRead.seq, requestTick: preReplayRead.requestTick, transferTick: preReplayRead.transferTick, account: preReplay },
+    put: { seq: replayPut.seq, requestTick: replayPut.requestTick, transferTick: replayPut.transferTick, status: replayPut.status },
+    postRead: { seq: postReplayRead.seq, requestTick: postReplayRead.requestTick, transferTick: postReplayRead.transferTick, account: afterReplay },
+  }
   // The result is the fresh read's, not the old intent's.
   await expect(supersededSaved).toHaveAttribute('data-agrees', 'no')
   await expect(supersededSaved.getByText(SUPERSEDED_TITLE)).toBeVisible()
@@ -606,6 +803,7 @@ test('L-04 C-03: the selected company account deactivated for a reason and react
   expect(accountStatusPuts(readOnlyNet), 'a read-only actor writes nothing').toEqual([])
   await lShot(readOnlyPage, SLUG, '10-read-only-card')
   const readOnlyBarrier = await readOnlyNet.quiesce({ settleMs: 1000, timeoutMs: 30_000 })
+  expect(accountStatusPuts(readOnlyNet), 'AFTER the barrier: the read-only actor wrote nothing').toEqual([])
   const readOnlyRecords = readOnlyNet.records.map((r) => ({
     seq: r.seq,
     method: r.method,
@@ -618,6 +816,18 @@ test('L-04 C-03: the selected company account deactivated for a reason and react
 
   // ---- 9. the barrier, and the evidence BEFORE the verdict ------------------------
   const barrier = await net.quiesce({ settleMs: 1500, timeoutMs: 45_000 })
+  /**
+   * The counts that DECIDE, taken from the final recorders after every barrier: a
+   * write that landed inside a quiet window is in these numbers, and would fail them.
+   * Asserted after the evidence write below, so a wrong count still leaves its evidence.
+   */
+  const finalCounts = {
+    main: accountStatusPuts(net).length,
+    mainInCompanyB: accountStatusPuts(net).filter((r) => r.companyId === B).length,
+    stale: accountStatusPuts(staleNet).length,
+    readOnly: accountStatusPuts(readOnlyNet).length,
+    total: accountStatusPuts(net).length + accountStatusPuts(staleNet).length + accountStatusPuts(readOnlyNet).length,
+  }
   let evidenceError: unknown = null
   try {
     writeLJson('measurement', `${SLUG}-network.json`, {
@@ -660,8 +870,10 @@ test('L-04 C-03: the selected company account deactivated for a reason and react
         account: accountOf((r.responseBody ?? {}) as DetailBody, A),
       })),
       staleDetailGets: staleGetProjection,
-      withheld: { main: withholder.withheld, stale: staleWithholder.withheld },
-      passedThrough: { main: withholder.passedThrough, stale: staleWithholder.passedThrough },
+      withheld: { main: withholder.withheld, staleRead: staleWithholder.withheld },
+      passedThrough: { main: withholder.passedThrough, staleRead: staleWithholder.passedThrough },
+      k1ReplayOrdering,
+      finalCounts,
       keyboardTabStopsToCard: tabsToCard,
       companyBTerminal: bTerminal,
       readOnly: { actor: READ_ONLY_ACTOR, records: readOnlyRecords, barrier: readOnlyBarrier },
@@ -717,4 +929,11 @@ test('L-04 C-03: the selected company account deactivated for a reason and react
   if (priority.primary === 'evidence') {
     throw new Error(`the barrier held but the mandatory evidence write failed: ${evidenceErrorText(evidenceError)}`)
   }
+
+  // The FINAL counts, after every barrier and after the evidence is on disk.
+  expect(finalCounts.main, 'final: the main page issued exactly K1 and its replay').toBe(2)
+  expect(finalCounts.stale, 'final: the second tab issued exactly the 409 and K2').toBe(2)
+  expect(finalCounts.total, 'final: four status PUTs in the whole journey, no more').toBe(4)
+  expect(finalCounts.mainInCompanyB, 'final: nothing was written in company B').toBe(0)
+  expect(finalCounts.readOnly, 'final: the read-only actor wrote nothing').toBe(0)
 })
