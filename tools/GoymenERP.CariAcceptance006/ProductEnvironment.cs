@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using GoymenERP.Modules.Product.Application.Contracts;
 using Microsoft.Data.SqlClient;
 
 namespace GoymenERP.CariAcceptance006;
@@ -10,6 +12,37 @@ namespace GoymenERP.CariAcceptance006;
 // existing three-file contract, never a second manifest or normal provider.
 public static class ProductEnvironment
 {
+    public static CreateProductDraftRequest DeniedCreateRequest() =>
+        new("Must not be created", ProductEnvironmentSettings.CodeGroupId);
+
+    public static byte[] CreateReadyBytes(JsonElement contract, JsonElement binding, string acceptedHash, string bindingHash)
+    {
+        string[] bindingFields = ["contractId", "runId", "instanceId", "acceptedContractSha256", "source", "ownership", "verifiedAtUtc"];
+        if (!binding.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal).SequenceEqual(bindingFields.Order(StringComparer.Ordinal))
+            || binding.GetProperty("contractId").GetString() != contract.GetProperty("contractId").GetString()
+            || binding.GetProperty("runId").GetString() != contract.GetProperty("runId").GetString()
+            || binding.GetProperty("instanceId").GetString() != contract.GetProperty("instanceId").GetString()
+            || binding.GetProperty("acceptedContractSha256").GetString() != acceptedHash
+            || !JsonElement.DeepEquals(binding.GetProperty("source"), contract.GetProperty("source"))
+            || !binding.GetProperty("verifiedAtUtc").TryGetDateTimeOffset(out var timestamp) || timestamp.Offset != TimeSpan.Zero)
+            throw new InvalidOperationException("Product publication binding differs from the accepted contract.");
+        var ready = new JsonObject();
+        foreach (var name in new[] { "contractId", "taskId", "environmentName", "runId", "instanceId", "apiBaseUrl", "actor",
+            "unauthorizedActor", "companyId", "codeGroupId", "browserPrefix", "erpAccepted", "productionActivated" })
+            ready.Add(name, JsonNode.Parse(contract.GetProperty(name).GetRawText()));
+        ready.Add("readyForBrowser", true);
+        ready.Add("acceptedContractSha256", acceptedHash);
+        ready.Add("sourceBindingSha256", bindingHash);
+        ready.Add("verifiedAtUtc", JsonNode.Parse(binding.GetProperty("verifiedAtUtc").GetRawText()));
+        return JsonSerializer.SerializeToUtf8Bytes(ready, Evidence.Json);
+    }
+
+    public static void ValidateReadyBytes(JsonElement contract, JsonElement binding, byte[] ready, string acceptedHash, string bindingHash)
+    {
+        if (!ready.AsSpan().SequenceEqual(CreateReadyBytes(contract, binding, acceptedHash, bindingHash)))
+            throw new InvalidOperationException("Product immutable readiness bytes differ from the complete accepted publication.");
+    }
+
     public static void ValidateCapabilities(JsonElement body, bool authorized)
     {
         var capabilities = body.GetProperty("capabilities").EnumerateArray().Select(item => item.GetString()).ToArray();
@@ -145,15 +178,13 @@ public static class ProductEnvironment
             ownership, verifiedAtUtc = timestamp }, Evidence.Json);
         settings.WriteBytes("accepted-contract.json", settings.ContractBytes);
         settings.WriteBytes("source-binding.json", binding);
+        using var bindingDocument = JsonDocument.Parse(binding);
+        var ready = CreateReadyBytes(settings.Contract, bindingDocument.RootElement, settings.ContractHash, SourceBinding.Hash(binding));
         settings.Write("backend-verification.json", new { acceptedContractSha256 = settings.ContractHash,
             testsSummarySha256, source = settings.Source, verifiedAtUtc = timestamp,
+            sourceBindingSha256 = SourceBinding.Hash(binding), environmentReadySha256 = SourceBinding.Hash(ready),
             meaning = "Existing C006 validator matched the executed local test-output DLL inventory to this runtime; not browser acceptance." });
-        settings.Write("environment-ready.json", new { contractId = "PRODUCT-U0102-L-v1", taskId = "U-01-U-02", environmentName = "Testing",
-            runId = settings.RunId, instanceId = settings.InstanceId, apiBaseUrl = ProductEnvironmentSettings.ApiBaseUrl,
-            actor = ProductEnvironmentSettings.Actor, unauthorizedActor = ProductEnvironmentSettings.UnauthorizedActor,
-            companyId = ProductEnvironmentSettings.CompanyId, codeGroupId = ProductEnvironmentSettings.CodeGroupId,
-            browserPrefix = settings.BrowserPrefix, erpAccepted = false, productionActivated = false, readyForBrowser = true,
-            acceptedContractSha256 = settings.ContractHash, sourceBindingSha256 = SourceBinding.Hash(binding), verifiedAtUtc = timestamp });
+        settings.WriteBytes("environment-ready.json", ready);
         Console.WriteLine("Product verified three-file publication written in publisher worktree; owner copies exact bytes before browser use.");
     }
 
@@ -162,7 +193,14 @@ public static class ProductEnvironment
         var accepted = File.ReadAllBytes(Path.Combine(settings.EvidenceRoot, "accepted-contract.json"));
         var binding = File.ReadAllBytes(Path.Combine(settings.EvidenceRoot, "source-binding.json"));
         using var b = JsonDocument.Parse(binding);
-        using var ready = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(settings.EvidenceRoot, "environment-ready.json")));
+        var readyBytes = File.ReadAllBytes(Path.Combine(settings.EvidenceRoot, "environment-ready.json"));
+        using var ready = JsonDocument.Parse(readyBytes);
+        ValidateReadyBytes(settings.Contract, b.RootElement, readyBytes, settings.ContractHash, SourceBinding.Hash(binding));
+        using var verification = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(settings.EvidenceRoot, "backend-verification.json")));
+        if (verification.RootElement.GetProperty("sourceBindingSha256").GetString() != SourceBinding.Hash(binding)
+            || verification.RootElement.GetProperty("environmentReadySha256").GetString() != SourceBinding.Hash(readyBytes)
+            || verification.RootElement.GetProperty("acceptedContractSha256").GetString() != settings.ContractHash)
+            throw new InvalidOperationException("Product publication no longer matches the initial publisher receipt.");
         if (SourceBinding.Hash(accepted) != settings.ContractHash
             || b.RootElement.GetProperty("acceptedContractSha256").GetString() != settings.ContractHash
             || ready.RootElement.GetProperty("acceptedContractSha256").GetString() != settings.ContractHash

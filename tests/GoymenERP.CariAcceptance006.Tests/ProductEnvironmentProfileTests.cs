@@ -10,6 +10,85 @@ namespace GoymenERP.CariAcceptance006.Tests;
 public sealed class ProductEnvironmentProfileTests
 {
     [Fact]
+    public void ExistingPythonValidatorPipe_ReceivesUtf8JsonWithoutABom()
+    {
+        // Exercise only the local byte transport used by the existing build
+        // validator. No run files, SQL, HTTP, publication or source claim.
+        var evidence = typeof(ProductEnvironment).Assembly.GetType("GoymenERP.CariAcceptance006.ProductEnvironmentEvidence")!;
+        var run = evidence.GetMethod("RunWithInput", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+        var output = (string)run.Invoke(null, ["{\"value\":\"\u0131\"}", "python", new[]
+        { "-I", "-S", "-B", "-c", "import sys,json; assert json.load(sys.stdin)['value'] == chr(305); print('passed')" }])!;
+        Assert.Equal("passed", output.Trim());
+    }
+
+    [Fact]
+    public void DeniedSmoke_UsesTheActualStrictCreateDtoGroupId()
+    {
+        var request = ProductEnvironment.DeniedCreateRequest();
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(request, JsonSerializerOptions.Web);
+        using var json = JsonDocument.Parse(bytes);
+        Assert.Equal(ProductEnvironmentSettings.CodeGroupId, json.RootElement.GetProperty("groupId").GetGuid());
+        Assert.False(json.RootElement.TryGetProperty("codeGroupId", out _));
+        Assert.Equal(request, JsonSerializer.Deserialize<GoymenERP.Modules.Product.Application.Contracts.CreateProductDraftRequest>(bytes, JsonSerializerOptions.Web));
+    }
+
+    [Theory]
+    [InlineData("contractId")]
+    [InlineData("taskId")]
+    [InlineData("environmentName")]
+    [InlineData("runId")]
+    [InlineData("instanceId")]
+    [InlineData("apiBaseUrl")]
+    [InlineData("actor")]
+    [InlineData("unauthorizedActor")]
+    [InlineData("companyId")]
+    [InlineData("codeGroupId")]
+    [InlineData("browserPrefix")]
+    [InlineData("erpAccepted")]
+    [InlineData("productionActivated")]
+    [InlineData("readyForBrowser")]
+    [InlineData("verifiedAtUtc")]
+    [InlineData("acceptedContractSha256")]
+    [InlineData("sourceBindingSha256")]
+    public void EveryReadinessField_IsBoundEvenWhenTheTwoHashReferencesArePreserved(string field)
+    {
+        var settings = Parse(Candidate());
+        var binding = Binding(settings);
+        var bindingHash = SourceBinding.Hash(JsonSerializer.SerializeToUtf8Bytes(binding));
+        var bytes = ProductEnvironment.CreateReadyBytes(settings.Contract, binding, settings.ContractHash, bindingHash);
+        ProductEnvironment.ValidateReadyBytes(settings.Contract, binding, bytes, settings.ContractHash, bindingHash);
+        var changed = JsonNode.Parse(bytes)!.AsObject(); changed[field] = "changed";
+        Assert.Throws<InvalidOperationException>(() => ProductEnvironment.ValidateReadyBytes(settings.Contract, binding,
+            JsonSerializer.SerializeToUtf8Bytes(changed, Evidence.Json), settings.ContractHash, bindingHash));
+        changed.Remove(field);
+        Assert.Throws<InvalidOperationException>(() => ProductEnvironment.ValidateReadyBytes(settings.Contract, binding,
+            JsonSerializer.SerializeToUtf8Bytes(changed, Evidence.Json), settings.ContractHash, bindingHash));
+    }
+
+    [Fact]
+    public void ReadinessBytes_RejectUnknownMembersWhitespaceAndChangedBindingTime()
+    {
+        var settings = Parse(Candidate()); var binding = Binding(settings);
+        var hash = SourceBinding.Hash(JsonSerializer.SerializeToUtf8Bytes(binding));
+        var bytes = ProductEnvironment.CreateReadyBytes(settings.Contract, binding, settings.ContractHash, hash);
+        var changed = JsonNode.Parse(bytes)!.AsObject(); changed["extra"] = false;
+        Assert.Throws<InvalidOperationException>(() => ProductEnvironment.ValidateReadyBytes(settings.Contract, binding,
+            JsonSerializer.SerializeToUtf8Bytes(changed, Evidence.Json), settings.ContractHash, hash));
+        Assert.Throws<InvalidOperationException>(() => ProductEnvironment.ValidateReadyBytes(settings.Contract, binding,
+            [.. bytes, (byte)' '], settings.ContractHash, hash));
+        var other = JsonNode.Parse(binding.GetRawText())!.AsObject(); other["verifiedAtUtc"] = "2026-09-12T21:01:00+00:00";
+        Assert.Throws<InvalidOperationException>(() => ProductEnvironment.ValidateReadyBytes(settings.Contract,
+            JsonSerializer.SerializeToElement(other), bytes, settings.ContractHash, hash));
+    }
+
+    private static JsonElement Binding(ProductEnvironmentSettings settings) => JsonSerializer.SerializeToElement(new
+    {
+        contractId = "PRODUCT-U0102-L-v1", runId = settings.RunId, instanceId = settings.InstanceId,
+        acceptedContractSha256 = settings.ContractHash, source = settings.Source,
+        ownership = new { controlled = true }, verifiedAtUtc = DateTimeOffset.Parse("2026-09-12T21:00:00+00:00"),
+    });
+
+    [Fact]
     public void ExactProfile_BindsOnlyProductResourcesAndSyntheticActors()
     {
         var settings = Parse(Candidate());

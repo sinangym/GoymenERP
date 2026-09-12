@@ -75,7 +75,7 @@ internal static class ProductEnvironmentEvidence
         using (var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/products"))
         {
             request.Headers.Add("Idempotency-Key", settings.RunId + "-denied-smoke");
-            request.Content = JsonContent.Create(new { name = "Must not be created", codeGroupId = ProductEnvironmentSettings.CodeGroupId });
+            request.Content = JsonContent.Create(ProductEnvironment.DeniedCreateRequest());
             using var response = await denied.SendAsync(request, cancellationToken);
             // A stable forbidden body code is not part of the Product contract.
             if (response.StatusCode != HttpStatusCode.Forbidden) throw new InvalidOperationException("Product company-only write was not denied.");
@@ -197,7 +197,7 @@ internal static class ProductEnvironmentEvidence
     {
         var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = input is not null,
-            StandardInputEncoding = input is null ? null : Encoding.UTF8 };
+            StandardInputEncoding = input is null ? null : new UTF8Encoding(encoderShouldEmitUTF8Identifier: false) };
         foreach (var argument in arguments) start.ArgumentList.Add(argument);
         using var process = Process.Start(start) ?? throw new InvalidOperationException("Product observation could not start.");
         var output = process.StandardOutput.ReadToEndAsync(); var error = process.StandardError.ReadToEndAsync();
