@@ -27,11 +27,40 @@ afterEach(() => {
   // The pending-attempt store outlives a component by design, so a case that ends
   // with an unresolved write would otherwise seed the next one.
   resetPendingAttempts()
+  // The shell remembers the committed company in localStorage. Where storage works
+  // (CI), a case that switched company would otherwise boot the next case in the
+  // other company and a "switch" to it would be a no-op — which is exactly how two
+  // switch cases passed locally and failed on CI.
+  try {
+    window.localStorage.clear()
+  } catch {
+    // Storage unavailable in this environment: nothing was remembered.
+  }
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
 const formVisible = () => waitFor(() => screen.getByRole('heading', { name: 'Yeni ürün' }))
+
+/**
+ * A switch has COMMITTED only when the picker is enabled again on the new value.
+ * The DOM value alone flips the moment the option is picked, before the shell has
+ * done anything — waiting on it proved nothing.
+ */
+const switchedTo = (companyId: string) =>
+  waitFor(() => {
+    const picker = screen.getByLabelText('Şirket') as HTMLSelectElement
+    expect(picker.disabled).toBe(false)
+    expect(picker.value).toBe(companyId)
+  })
+
+/** Makes every stale query refetch through TanStack's own reconnect path. */
+function reconnect() {
+  act(() => {
+    window.dispatchEvent(new Event('offline'))
+    window.dispatchEvent(new Event('online'))
+  })
+}
 
 async function fillMinimum() {
   await userEvent.type(screen.getByLabelText(/Ürün adı/), 'Siyah sac')
@@ -784,16 +813,12 @@ describe('an unknown attempt across a REAL capability re-fence', () => {
     installFetch({ capabilities: CREATE_ONLY, capabilityGeneration: 'gen-2' })
 
     await userEvent.selectOptions(screen.getByLabelText('Şirket'), COMPANY_B)
-    await waitFor(() =>
-      expect((screen.getByLabelText('Şirket') as HTMLSelectElement).value).toBe(COMPANY_B),
-    )
+    await switchedTo(COMPANY_B)
     await reenterAuthorized(router)
     expect(screen.queryByTestId('product-create-unknown')).toBeNull()
 
     await userEvent.selectOptions(screen.getByLabelText('Şirket'), COMPANY_A)
-    await waitFor(() =>
-      expect((screen.getByLabelText('Şirket') as HTMLSelectElement).value).toBe(COMPANY_A),
-    )
+    await switchedTo(COMPANY_A)
     await reenterAuthorized(router)
     await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
   })
@@ -815,16 +840,12 @@ describe('an unknown attempt across a REAL capability re-fence', () => {
     await userEvent.selectOptions(screen.getByLabelText('Şirket'), COMPANY_B)
     const dialog = await waitFor(() => screen.getByRole('dialog'))
     await userEvent.click(within(dialog).getByRole('button', { name: 'Değişiklikleri bırak' }))
-    await waitFor(() =>
-      expect((screen.getByLabelText('Şirket') as HTMLSelectElement).value).toBe(COMPANY_B),
-    )
+    await switchedTo(COMPANY_B)
 
     // Back under the context the attempt was started in: it is gone, because the
     // person was asked and answered.
     await userEvent.selectOptions(screen.getByLabelText('Şirket'), COMPANY_A)
-    await waitFor(() =>
-      expect((screen.getByLabelText('Şirket') as HTMLSelectElement).value).toBe(COMPANY_A),
-    )
+    await switchedTo(COMPANY_A)
     await act(async () => {
       await router.navigate('/urun')
     })
@@ -832,6 +853,124 @@ describe('an unknown attempt across a REAL capability re-fence', () => {
       await router.navigate(PATH)
     })
     await formVisible()
+    expect(screen.queryByTestId('product-create-unknown')).toBeNull()
+  })
+
+  /**
+   * The teardown that is NOT an answer. The shell removes the whole outlet — the
+   * dialog included — when the directory read stops being ready, and it does so
+   * with the switch question still open. Nobody said "bırak".
+   */
+  async function directoryFailsWhileAsking() {
+    installFetch({ capabilities: CREATE_ONLY, onCreate: () => json({}, 503) })
+    const { router } = renderProductApp(PATH)
+
+    await formVisible()
+    await fillMinimum()
+    await userEvent.click(saveButton())
+    await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
+
+    await userEvent.selectOptions(screen.getByLabelText('Şirket'), COMPANY_B)
+    await waitFor(() => screen.getByRole('dialog'))
+
+    installFetch({
+      capabilities: CREATE_ONLY,
+      onDirectory: () => json({}, 503),
+      onCreate: () => json({}, 503),
+    })
+    reconnect()
+    await waitFor(() => expect(document.querySelector('[data-state]')).not.toBeNull())
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByTestId('product-create-unknown')).toBeNull()
+
+    // The directory recovers; the question is still open, and still unanswered.
+    installFetch({ capabilities: CREATE_ONLY, onCreate: () => json({}, 503) })
+    await userEvent.click(screen.getByRole('button', { name: 'Tekrar dene' }))
+    const dialog = await waitFor(() => screen.getByRole('dialog'))
+    return { router, dialog }
+  }
+
+  it('survives a directory failure while the switch question is open, and "Kal" keeps it', async () => {
+    const { dialog } = await directoryFailsWhileAsking()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Kal' }))
+
+    await formVisible()
+    await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
+  })
+
+  it('survives that failure, and is dropped only when the answer is then "bırak"', async () => {
+    const { router, dialog } = await directoryFailsWhileAsking()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Değişiklikleri bırak' }))
+    await switchedTo(COMPANY_B)
+
+    installFetch({ capabilities: CREATE_ONLY })
+    await userEvent.selectOptions(screen.getByLabelText('Şirket'), COMPANY_A)
+    await switchedTo(COMPANY_A)
+    await act(async () => {
+      await router.navigate('/urun')
+    })
+    await act(async () => {
+      await router.navigate(PATH)
+    })
+    await formVisible()
+    expect(screen.queryByTestId('product-create-unknown')).toBeNull()
+  })
+
+  it('keeps a canonical 201 that lands after a reference read closed the screen', async () => {
+    /**
+     * The other way a send outlives its screen: the POST is in flight when a
+     * reference read answers 403, the boundary closes the route, and the server's
+     * 201 then lands in a continuation nobody can see. That answer is the only
+     * record the write succeeded; settling it there left the fresh return an empty
+     * form, one click away from a second key for a product that exists.
+     */
+    let answer: ((response: Response) => void) | null = null
+    installFetch({
+      capabilities: CREATE_ONLY,
+      onCreate: () =>
+        new Promise<Response>((resolve) => {
+          answer = resolve
+        }),
+    })
+    const { router } = renderProductApp(PATH)
+
+    await formVisible()
+    await fillMinimum()
+    await userEvent.click(saveButton())
+    await waitFor(() => expect(answer).not.toBeNull())
+
+    // The next reference read is refused; TanStack's reconnect refetch issues it.
+    installFetch({ capabilities: CREATE_ONLY, onOptions: () => json({ code: 'forbidden' }, 403) })
+    reconnect()
+    await waitFor(() => expect(document.querySelector('[data-state]')).not.toBeNull())
+    expect(screen.queryByRole('button', { name: 'Taslak olarak kaydet' })).toBeNull()
+
+    // The canonical answer, with nobody there to show it.
+    await act(async () => {
+      ;(answer as unknown as (response: Response) => void)(json(mutation(), 201))
+    })
+
+    const { calls } = installFetch({ capabilities: CREATE_ONLY, capabilityGeneration: 'gen-2' })
+    await act(async () => {
+      await router.navigate('/urun')
+    })
+    await act(async () => {
+      await router.navigate(PATH)
+    })
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Taslak kaydedildi' })).toBeTruthy())
+    // The server's code, from the answer that was kept — and no write of our own.
+    expect(screen.getByText(/SAC-42/)).toBeTruthy()
+    expect(calls.filter((call) => call.method === 'POST')).toHaveLength(0)
+
+    // Shown once, settled: the next entry is a fresh form.
+    await act(async () => {
+      await router.navigate('/urun')
+    })
+    await act(async () => {
+      await router.navigate(PATH)
+    })
+    await formVisible()
+    expect(screen.queryByRole('heading', { name: 'Taslak kaydedildi' })).toBeNull()
     expect(screen.queryByTestId('product-create-unknown')).toBeNull()
   })
 

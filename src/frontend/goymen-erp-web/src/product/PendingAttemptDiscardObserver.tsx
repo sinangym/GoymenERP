@@ -9,16 +9,19 @@
  * context were ever committed again.
  *
  * This observer sits OUTSIDE the capability gate, renders nothing, fetches
- * nothing and discloses nothing. It watches for one thing only: the shell was in
- * `confirming-switch` — the user was being asked about THIS screen's pending work
- * — and then left that phase for anything other than `idle`. `idle` is "Kal";
- * everything else is the switch going ahead, which the reducer produces for
- * exactly one event, CONFIRM_SWITCH_DISCARD. The attempt bound to this screen
- * under the context that was being left is then forgotten.
+ * nothing and discloses nothing. It sees the shell's state and does three things:
  *
- * The shell replaces the router outlet while `switching`, so this component is
- * usually unmounted in the same commit and sees the departure from its cleanup
- * rather than from a re-render; both paths apply the same rule.
+ *  - while mounted, a departure from `confirming-switch` to anything but `idle`
+ *    is the discard itself (the reducer produces it for CONFIRM_SWITCH_DISCARD
+ *    alone) and forgets the attempt bound to this screen under the context that
+ *    was being left;
+ *  - a teardown while the question is open only ARMS a discard. The shell
+ *    replaces the router outlet during `switching` — but also whenever the
+ *    identity or directory read stops being ready, dialog open or not — so the
+ *    teardown is not, by itself, the person's answer;
+ *  - on every state it sees, it reconciles armed discards against the shell's
+ *    committed revision: the same context at the same revision disarms, a higher
+ *    revision in the same session confirms. See `pendingAttempt.ts`.
  *
  * A 403 while the dialog is open does not change the phase, and a session reset
  * makes the binding unreachable anyway; neither is a discard the user chose.
@@ -28,12 +31,13 @@ import { useEffect, useRef, type ReactNode } from 'react'
 import { useParams } from 'react-router'
 import { useShellState } from '../shell/shellContext'
 import type { ShellState } from '../shell/shellState'
-import { attemptBindingFor, editScope, forgetAttempt } from './pendingAttempt'
-
-function leftTheQuestion(before: ShellState | null, after: ShellState | null): boolean {
-  if (before === null || before.phase !== 'confirming-switch') return false
-  return after === null || (after.phase !== 'confirming-switch' && after.phase !== 'idle')
-}
+import {
+  armDiscard,
+  attemptBindingFor,
+  editScope,
+  forgetAttempt,
+  reconcileArmedDiscards,
+} from './pendingAttempt'
 
 export function PendingAttemptDiscardObserver({
   scope,
@@ -48,15 +52,25 @@ export function PendingAttemptDiscardObserver({
   useEffect(() => {
     const before = last.current
     last.current = shell
-    // The binding is taken from the state BEFORE the switch: that is the context
-    // the user was asked about, and the only one whose attempt they abandoned.
-    if (leftTheQuestion(before, shell)) forgetAttempt(attemptBindingFor(before as ShellState, scope))
+    reconcileArmedDiscards(shell, scope)
+    if (
+      before !== null &&
+      before.phase === 'confirming-switch' &&
+      shell.phase !== 'confirming-switch' &&
+      shell.phase !== 'idle'
+    ) {
+      // The binding is taken from the state BEFORE the switch: that is the context
+      // the user was asked about, and the only one whose attempt they abandoned.
+      forgetAttempt(attemptBindingFor(before, scope))
+    }
   }, [shell, scope])
 
   useEffect(
     () => () => {
       const before = last.current
-      if (leftTheQuestion(before, null)) forgetAttempt(attemptBindingFor(before as ShellState, scope))
+      if (before !== null && before.phase === 'confirming-switch') {
+        armDiscard(attemptBindingFor(before, scope), before.committedContextRevision)
+      }
     },
     [scope],
   )

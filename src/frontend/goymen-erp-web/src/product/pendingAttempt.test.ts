@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  armDiscard,
   attemptBindingFor,
   createScope,
   editScope,
   forgetAttempt,
   recallAttempt,
+  reconcileArmedDiscards,
   rememberAttempt,
   resetPendingAttempts,
   type AttemptBinding,
@@ -23,6 +25,7 @@ function shellWith(over: {
   readonly companyId?: string | null
   readonly scopeMode?: 'single' | 'group'
   readonly sessionEpoch?: number
+  readonly revision?: number
 }): ShellState {
   return {
     activeContext: {
@@ -31,6 +34,7 @@ function shellWith(over: {
       companyId: over.companyId === undefined ? 'company-a' : over.companyId,
     },
     sessionEpoch: over.sessionEpoch ?? 0,
+    committedContextRevision: over.revision ?? 1,
   } as unknown as ShellState
 }
 
@@ -119,12 +123,33 @@ describe('what is kept', () => {
     expect(recallAttempt<{ name: string }, unknown>(A)?.phase).toBe('failed')
   })
 
-  it('keeps nothing once the attempt is resolved', () => {
+  it('keeps nothing once the attempt is resolved AND seen', () => {
     rememberAttempt(A, unknown)
     rememberAttempt(A, definite)
     expect(recallAttempt(A)).toBeNull()
     rememberAttempt(A, unknown)
     rememberAttempt(A, completed)
+    expect(recallAttempt(A)).toBeNull()
+  })
+
+  it('keeps a success nobody saw, until a screen renders it', () => {
+    /**
+     * The canonical answer to a send whose screen was already torn down is the
+     * only record that the write succeeded. Settling it in a continuation nobody
+     * can see would leave the next screen empty — and inviting a second key for a
+     * product that exists.
+     */
+    rememberAttempt(A, inFlight)
+    rememberAttempt(A, completed, false)
+    expect(recallAttempt<{ name: string }, unknown>(A)?.phase).toBe('completed')
+    // Shown: now it is settled.
+    rememberAttempt(A, completed, true)
+    expect(recallAttempt(A)).toBeNull()
+  })
+
+  it('does NOT keep a definite refusal nobody saw — nothing was created', () => {
+    rememberAttempt(A, inFlight)
+    rememberAttempt(A, definite, false)
     expect(recallAttempt(A)).toBeNull()
   })
 
@@ -160,6 +185,46 @@ describe('who may see or write it', () => {
     rememberAttempt(A, { phase: 'unknown', snapshot: snapshotOf('k2'), reason: 'offline' })
     rememberAttempt(A, completed) // k1, which is not what the slot holds
     expect(recallAttempt<{ name: string }, unknown>(A)).toMatchObject({ snapshot: { key: 'k2' } })
+  })
+})
+
+describe('an armed discard', () => {
+  /**
+   * A teardown while the switch question is open is not the person's answer: the
+   * shell drops the outlet for a failed directory read too. The teardown arms;
+   * the committed revision — which only a new context commit advances — decides.
+   */
+  it('is disarmed when the same context is seen again at the same revision', () => {
+    rememberAttempt(A, unknown)
+    armDiscard(A, 1)
+    reconcileArmedDiscards(shellWith({ revision: 1 }), createScope())
+    expect(recallAttempt(A)).not.toBeNull()
+    // Disarmed for good: a later switch is a new question, not this one.
+    reconcileArmedDiscards(shellWith({ companyId: 'company-b', revision: 2 }), createScope())
+    expect(recallAttempt(A)).not.toBeNull()
+  })
+
+  it('is confirmed by a higher revision in the same session, wherever it is seen', () => {
+    rememberAttempt(A, unknown)
+    armDiscard(A, 1)
+    // Seen from the context the person switched TO.
+    reconcileArmedDiscards(shellWith({ companyId: 'company-b', revision: 2 }), createScope())
+    expect(recallAttempt(A)).toBeNull()
+
+    rememberAttempt(A, { ...unknown, snapshot: snapshotOf('k2') })
+    armDiscard(A, 2)
+    // Or on the way back, after switching there and back again.
+    reconcileArmedDiscards(shellWith({ revision: 4 }), createScope())
+    expect(recallAttempt(A)).toBeNull()
+  })
+
+  it('is not confirmed by another actor, another session or another screen', () => {
+    rememberAttempt(A, unknown)
+    armDiscard(A, 1)
+    reconcileArmedDiscards(shellWith({ userId: 'actor-b', revision: 5 }), createScope())
+    reconcileArmedDiscards(shellWith({ sessionEpoch: 1, revision: 5 }), createScope())
+    reconcileArmedDiscards(shellWith({ revision: 5 }), editScope('p-1'))
+    expect(recallAttempt(A)).not.toBeNull()
   })
 })
 

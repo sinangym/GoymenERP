@@ -290,6 +290,25 @@ function ProductCreateForm({
     attemptRef.current = attempt
   }, [attempt])
 
+  /**
+   * Whether a screen is still here to show an answer. A send can outlive its
+   * component — a reference read answered 403 while the POST was in flight — and a
+   * canonical result that lands then must be KEPT for the next screen, not settled
+   * by a continuation nobody can see.
+   */
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+
+  // A success recalled from the store is settled once THIS screen has rendered it.
+  useEffect(() => {
+    if (attempt.phase === 'completed') rememberAttempt(binding, attempt)
+  }, [attempt, binding])
+
   const send = useCallback(async (snapshot: AttemptSnapshot<CreateProductDraftPayload>) => {
     // Read BEFORE the submitting transition: the ref follows the rendered state, so
     // reading it after would see `submitting` and lose the very history this exists
@@ -315,7 +334,8 @@ function ProductCreateForm({
     const next = nextState(snapshot, outcome, previous)
     // Written BEFORE the boundary hears about a refusal: the report is what
     // unmounts this screen, and the outcome must already be safe when it does.
-    rememberAttempt(binding, next)
+    // `seen` says whether a screen can still show it; an unseen success is kept.
+    rememberAttempt(binding, next, mounted.current)
     if (outcome.type === 'http') boundary.report(outcome.status, securitySnapshot)
     if (next.phase === 'failed' && next.failure === 'validation') {
       /**
@@ -405,7 +425,7 @@ function ProductCreateForm({
   }
 
   if (attempt.phase === 'completed') {
-    // Resolved: `send` already settled the key in the store; nothing left to protect.
+    // Resolved and shown: the effect above settles the key; nothing left to protect.
     const created = attempt.result.card.product
     return (
       <section className={styles.page} aria-labelledby="product-created-heading">

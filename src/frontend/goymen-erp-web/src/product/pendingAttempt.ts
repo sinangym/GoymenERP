@@ -48,6 +48,15 @@
  * route before that commit happens: the outcome that mattered most was the one
  * that never got written. An in-flight send is unresolved work and is kept too.
  *
+ * A RESULT NOBODY SAW IS NOT RESOLVED. A send can outlive its screen — a reference
+ * read answered 403 while the POST was in flight — and its canonical answer then
+ * lands in the continuation of a component that no longer exists. Settling it
+ * there would delete the only record that the write succeeded; the fresh return
+ * would show an empty form and invite a second key for a product that exists. So a
+ * terminal SUCCESS that arrives unseen is kept, and is settled only once a screen
+ * under the same binding has rendered it. A definite refusal arriving unseen is
+ * settled: nothing was created, and a fresh form with a fresh key is the truth.
+ *
  * Memory only. A pending write is not written to storage, a URL or a log: it
  * carries a payload that can name a real product, and a page reload is a
  * legitimate end to a session's in-flight work.
@@ -108,6 +117,11 @@ export function attemptBindingFor(shell: ShellState, scope: string): AttemptBind
   }
 }
 
+/** Same person, same session, same server — the part of a binding a switch keeps. */
+function sameSession(a: AttemptBinding, b: AttemptBinding): boolean {
+  return a.origin === b.origin && a.actorId === b.actorId && a.sessionEpoch === b.sessionEpoch
+}
+
 type Held = Exclude<AttemptState<unknown, unknown>, { phase: 'idle' }>
 
 /** One slot per binding. */
@@ -127,19 +141,21 @@ function settledKey(binding: AttemptBinding, attemptKey: string): string {
  * Record the attempt's current state under its binding.
  *
  * Unresolved (in flight, unknown, or refused with an unresolved history) is kept.
- * Resolved (completed, or a definite refusal) settles the key and clears the slot
- * — but only if the slot still holds THIS attempt; a newer attempt under the same
- * binding is someone else's business.
+ * A success that arrived while no screen could show it (`seen === false`) is kept
+ * too, until a screen renders it. Anything else resolved settles the key and
+ * clears the slot — but only if the slot still holds THIS attempt; a newer attempt
+ * under the same binding is someone else's business.
  */
 export function rememberAttempt<P, R>(
   binding: AttemptBinding | null,
   state: AttemptState<P, R>,
+  seen = true,
 ): void {
   if (binding === null || state.phase === 'idle') return
   const attemptKey = state.snapshot.key
   if (settled.has(settledKey(binding, attemptKey))) return
 
-  if (isOutcomeStillUnknown(state)) {
+  if (isOutcomeStillUnknown(state) || (state.phase === 'completed' && !seen)) {
     slots.set(binding.key, state as Held)
     return
   }
@@ -152,7 +168,8 @@ export function rememberAttempt<P, R>(
  *
  * A send that was still in flight when its screen went away comes back as UNKNOWN:
  * the new screen has no way to receive that answer, so to it the outcome is
- * unknown — and, like every unknown, retryable only with the same key.
+ * unknown — and, like every unknown, retryable only with the same key. A success
+ * that arrived unseen comes back as the success it is, for the screen to show.
  *
  * Reading never deletes. The attempt belongs to the binding that started it.
  */
@@ -178,8 +195,67 @@ export function forgetAttempt(binding: AttemptBinding | null): void {
   slots.delete(binding.key)
 }
 
+/**
+ * THE SWITCH DIALOG'S PROMISE, KEPT WITHOUT GUESSING.
+ *
+ * "Şirket değiştirirseniz … bekleyen işlem bırakılır." The only evidence a
+ * component of this lane can see of that decision is indirect: the shell was in
+ * `confirming-switch` for THIS screen, and then the screen's observer was torn
+ * down. But a teardown alone is not a decision — the shell also removes the whole
+ * outlet when the directory or identity read stops being ready, dialog open or
+ * not — so treating it as one deleted a key the person never chose to drop.
+ *
+ * So the teardown only ARMS a discard, together with the committed revision at
+ * that moment. What confirms it is the shell's own invariant: from
+ * `confirming-switch` the reducer reaches a new committed context (which is the
+ * only thing that advances `committedContextRevision` inside a session) through
+ * exactly one event, CONFIRM_SWITCH_DISCARD; "Kal" returns to `idle`, everything
+ * else leaves the phase where it is. Hence:
+ *
+ *  - the same binding seen again at the SAME revision — the dialog is still open
+ *    after a directory retry, or the person chose "Kal", or the switch itself
+ *    failed and the former context was restored — DISARMS: nothing was switched;
+ *  - the same session seen at a HIGHER revision — the person is now in the context
+ *    they switched to, or came back — CONFIRMS: the switch went ahead, so it went
+ *    ahead through the discard, and the attempt is forgotten.
+ *
+ * A restored former context after a failed switch keeps the attempt on purpose:
+ * the promise was conditional on changing company, and no company changed.
+ */
+interface ArmedDiscard {
+  readonly binding: AttemptBinding
+  readonly revision: number
+}
+const armedDiscards = new Map<string, ArmedDiscard>()
+
+export function armDiscard(binding: AttemptBinding | null, revision: number): void {
+  if (binding === null) return
+  armedDiscards.set(binding.key, { binding, revision })
+}
+
+/** Called by a screen's observer whenever it sees the shell's state. */
+export function reconcileArmedDiscards(shell: ShellState, scope: string): void {
+  const current = attemptBindingFor(shell, scope)
+  if (current === null) return
+  for (const [key, armed] of armedDiscards) {
+    if (armed.binding.scope !== scope) continue
+    if (!sameSession(armed.binding, current)) {
+      // A different session cannot reach the old binding; the arming is moot.
+      if (armed.binding.sessionEpoch < current.sessionEpoch) armedDiscards.delete(key)
+      continue
+    }
+    if (shell.committedContextRevision > armed.revision) {
+      forgetAttempt(armed.binding)
+      armedDiscards.delete(key)
+    } else if (armed.binding.key === current.key) {
+      armedDiscards.delete(key)
+    }
+  }
+}
+
 /** Tests call this between cases; the slots outlive a single render by design. */
 export function resetPendingAttempts(): void {
   slots.clear()
   settled.clear()
+  armedDiscards.clear()
 }

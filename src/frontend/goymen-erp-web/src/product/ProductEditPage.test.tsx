@@ -26,6 +26,12 @@ afterEach(() => {
   // The pending-attempt store outlives a component by design, so a case that ends
   // with an unresolved write would otherwise seed the next one.
   resetPendingAttempts()
+  // See the create tests: the shell's stored company preference must not leak.
+  try {
+    window.localStorage.clear()
+  } catch {
+    // Storage unavailable in this environment: nothing was remembered.
+  }
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
@@ -408,6 +414,51 @@ describe('an unknown edit across a REAL capability re-fence', () => {
     expect(patches[0].idempotencyKey).toBe(firstKey)
     // The snapshot's expectedVersion is still the one the person saw: '7'.
     expect(JSON.parse(patches[0].body ?? '{}').expectedVersion).toBe('7')
+  })
+})
+
+describe('a canonical answer that lands after the screen is gone', () => {
+  it('is kept and shown on the fresh return, with no write of its own', async () => {
+    // The edit twin of the create case: PATCH in flight, a reference read answers
+    // 403, the route closes, the 200 lands unseen.
+    let answer: ((response: Response) => void) | null = null
+    installFetch({
+      capabilities: EDIT_ONLY,
+      onEdit: () =>
+        new Promise<Response>((resolve) => {
+          answer = resolve
+        }),
+    })
+    const { router } = renderProductApp(PATH)
+
+    await formVisible()
+    await changeNameAndReason()
+    await userEvent.click(saveButton())
+    await waitFor(() => expect(answer).not.toBeNull())
+
+    installFetch({ capabilities: EDIT_ONLY, onOptions: () => json({ code: 'forbidden' }, 403) })
+    act(() => {
+      window.dispatchEvent(new Event('offline'))
+      window.dispatchEvent(new Event('online'))
+    })
+    await waitFor(() => expect(document.querySelector('[data-state]')).not.toBeNull())
+    expect(screen.queryByRole('button', { name: 'Değişiklikleri kaydet' })).toBeNull()
+
+    await act(async () => {
+      ;(answer as unknown as (response: Response) => void)(
+        json(mutation({ card: productCard({ product: productCore({ name: 'Galvaniz sac', version: '8' }) }) })),
+      )
+    })
+
+    const { calls } = installFetch({ capabilities: EDIT_ONLY, capabilityGeneration: 'gen-2' })
+    await act(async () => {
+      await router.navigate(`/urun/${PRODUCT_1}`)
+    })
+    await act(async () => {
+      await router.navigate(PATH)
+    })
+    await waitFor(() => expect(screen.getByText('Değişiklikler kaydedildi')).toBeTruthy())
+    expect(calls.filter((call) => call.method === 'PATCH')).toHaveLength(0)
   })
 })
 

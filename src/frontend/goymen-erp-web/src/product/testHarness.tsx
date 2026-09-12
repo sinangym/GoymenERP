@@ -154,6 +154,8 @@ export interface HarnessConfig {
    * across that change re-installs the mock with a different value mid-test.
    */
   readonly capabilityGeneration?: string
+  /** The shell's company-directory read; failing it removes the whole outlet. */
+  readonly onDirectory?: () => Response
   readonly onList?: (url: string) => Response
   readonly onCard?: (url: string) => Response
   readonly onGroups?: () => Response
@@ -186,7 +188,7 @@ export function installFetch(config: HarnessConfig = {}) {
     })
 
     if (url.includes('/identity/me')) return json(IDENTITY)
-    if (url.includes('/organization/companies')) return json(DIRECTORY)
+    if (url.includes('/organization/companies')) return config.onDirectory?.() ?? json(DIRECTORY)
     if (url.includes('/shell/capabilities')) {
       return json({
         contractVersion: SHELL_CAPABILITY_CONTRACT_VERSION,
