@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using GoymenERP.Api.Contracts;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
@@ -63,7 +64,7 @@ public sealed class OrganizationLocationLifecycleSqlServerRelationalAcceptanceTe
             var activateKey = Guid.NewGuid().ToString("N");
             var activateCorrelation = Guid.NewGuid().ToString("N");
             using (var response = await SendCommandAsync(
-                freshClient, initial.Id, activate, activateKey, activateCorrelation))
+                freshClient, initial.Id, activate, activateKey, activateCorrelation, stringVersion: true))
             {
                 await AssertNoContentAsync(response, replay: false);
             }
@@ -86,7 +87,17 @@ public sealed class OrganizationLocationLifecycleSqlServerRelationalAcceptanceTe
                 Assert.Equal("true", response.Headers.GetValues("Idempotency-Replayed").Single());
                 Assert.Equal(staleCorrelation, response.Headers.GetValues("Idempotency-Original-Correlation-Id").Single());
             }
-            Assert.Equal(active, await AssertFreshStateAsync(freshClient, initial, true, active.Version));
+            using (var response = await SendCommandAsync(
+                freshClient, initial.Id, stale with { Reason = "Aynı anahtar farklı gerekçe" },
+                staleKey, Guid.NewGuid().ToString("N")))
+            {
+                Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+                using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                Assert.False(body.RootElement.TryGetProperty("conflict", out _));
+                Assert.False(response.Headers.Contains("Idempotency-Replayed"));
+                Assert.False(response.Headers.Contains("Idempotency-Original-Correlation-Id"));
+            }
+            await AssertFreshStateAsync(freshClient, initial, true, active.Version);
             Assert.Equal(afterActivation, await ReadEffectsAsync(factory, TestCompanyIds.CompanyA));
 
             var noChangeCorrelation = Guid.NewGuid().ToString("N");
@@ -96,7 +107,7 @@ public sealed class OrganizationLocationLifecycleSqlServerRelationalAcceptanceTe
             {
                 await AssertNoContentAsync(response, replay: false);
             }
-            Assert.Equal(active, await AssertFreshStateAsync(freshClient, initial, true, active.Version));
+            await AssertFreshStateAsync(freshClient, initial, true, active.Version);
             Assert.Equal(afterActivation with { Audits = afterActivation.Audits + 1, Executions = afterActivation.Executions + 1 },
                 await ReadEffectsAsync(factory, TestCompanyIds.CompanyA));
             Assert.Equal(sites, await freshClient.GetFromJsonAsync<SiteSummary[]>("/api/v1/organization/sites"));
@@ -155,7 +166,8 @@ public sealed class OrganizationLocationLifecycleSqlServerRelationalAcceptanceTe
                 Assert.DoesNotContain(hidden.Id.ToString(), await response.Content.ReadAsStringAsync());
             }
             var command = new SetLocationActiveState(false, location.Version, "Yetki sınırı kontrolü");
-            using (var response = await viewer.PutAsJsonAsync($"{LocationsRoute}/{location.Id}/active-state", command))
+            using (var response = await SendCommandAsync(viewer, location.Id, command,
+                Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N")))
             {
                 await AssertPlatformErrorAsync(response, HttpStatusCode.Forbidden, "forbidden");
             }
@@ -176,8 +188,8 @@ public sealed class OrganizationLocationLifecycleSqlServerRelationalAcceptanceTe
                 Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
                 Assert.DoesNotContain(location.Id.ToString(), await response.Content.ReadAsStringAsync());
             }
-            using (var response = await client.PutAsJsonAsync($"{LocationsRoute}/{location.Id}/active-state",
-                command with { Reason = "   " }))
+            using (var response = await SendCommandAsync(client, location.Id, command with { Reason = "   " },
+                Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N")))
             {
                 Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
             }
@@ -191,6 +203,7 @@ public sealed class OrganizationLocationLifecycleSqlServerRelationalAcceptanceTe
         var client = factory.CreateClientFor(user, company);
         // The shared factory's Cari handshake is not an Organization contract.
         client.DefaultRequestHeaders.Remove(CounterpartyClientContract.HeaderName);
+        client.DefaultRequestHeaders.Remove("Idempotency-Key");
         return client;
     }
 
@@ -215,10 +228,13 @@ public sealed class OrganizationLocationLifecycleSqlServerRelationalAcceptanceTe
     }
 
     private static async Task<HttpResponseMessage> SendCommandAsync(HttpClient client, Guid id,
-        SetLocationActiveState command, string key, string correlation)
+        SetLocationActiveState command, string key, string correlation, bool stringVersion = false)
     {
         using var request = new HttpRequestMessage(HttpMethod.Put, $"{LocationsRoute}/{id}/active-state");
-        request.Content = JsonContent.Create(command);
+        request.Content = JsonContent.Create(command, options: new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            NumberHandling = stringVersion ? JsonNumberHandling.WriteAsString : JsonNumberHandling.Strict,
+        });
         request.Headers.Add("Idempotency-Key", key);
         request.Headers.Add("X-Correlation-Id", correlation);
         return await client.SendAsync(request);
@@ -283,16 +299,17 @@ public sealed class OrganizationLocationLifecycleSqlServerRelationalAcceptanceTe
         var databaseName = $"GoymenERP_Organization_Locations_{Guid.NewGuid():N}";
         await using var factory = new SqlServerRelationalApiFactory(connection,
             applyTestCompanyBTopologyTemplates: false, databaseName: databaseName);
+        await using var cleanupScope = factory.Services.CreateAsyncScope();
+        var cleanupDb = cleanupScope.ServiceProvider.GetRequiredService<OrganizationDbContext>();
+        // Validate the immutable cleanup target before running assertions, not in their finally path.
+        Assert.Equal(databaseName, cleanupDb.Database.GetDbConnection().Database);
         try
         {
             await test(factory);
         }
         finally
         {
-            await using var scope = factory.Services.CreateAsyncScope();
-            var db = scope.ServiceProvider.GetRequiredService<OrganizationDbContext>();
-            Assert.Equal(databaseName, db.Database.GetDbConnection().Database);
-            await db.Database.EnsureDeletedAsync();
+            await cleanupDb.Database.EnsureDeletedAsync();
         }
     }
 
