@@ -21,22 +21,25 @@ public sealed class ProductDraftParticipant : IAsyncDisposable
     private readonly DbTransaction transaction;
     private readonly GroupSharedMasterCommandContext authority;
     private readonly TimeProvider clock;
+    private readonly Func<CancellationToken, Task>? onStaged;
     private int started;
     private bool disposed;
     private ProductDraftWriteResult? staged;
 
     private ProductDraftParticipant(ProductDbContext context, DbConnection connection, DbTransaction transaction,
-        GroupSharedMasterCommandContext authority, TimeProvider clock)
+        GroupSharedMasterCommandContext authority, TimeProvider clock, Func<CancellationToken, Task>? onStaged)
     {
         this.context = context;
         this.connection = connection;
         this.transaction = transaction;
         this.authority = authority;
         this.clock = clock;
+        this.onStaged = onStaged;
     }
 
     public static async Task<ProductDraftParticipant> EnlistAsync(DbConnection connection, DbTransaction transaction,
-        GroupSharedMasterCommandContext authority, CancellationToken cancellationToken, TimeProvider? clock = null)
+        GroupSharedMasterCommandContext authority, CancellationToken cancellationToken, TimeProvider? clock = null,
+        Func<CancellationToken, Task>? onStaged = null)
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(transaction);
@@ -51,7 +54,7 @@ public sealed class ProductDraftParticipant : IAsyncDisposable
         try
         {
             await context.Database.UseTransactionAsync(transaction, cancellationToken);
-            return new(context, connection, transaction, authority, clock ?? TimeProvider.System);
+            return new(context, connection, transaction, authority, clock ?? TimeProvider.System, onStaged);
         }
         catch
         {
@@ -68,6 +71,11 @@ public sealed class ProductDraftParticipant : IAsyncDisposable
         if (Interlocked.Exchange(ref started, 1) != 0)
             throw new InvalidOperationException("A Product participant can execute only one command attempt.");
         staged = await ProductDraftOperation.StageAsync(context, authority, intent, clock, cancellationToken);
+        // The host may relay this point to its existing attempt observer. It lets
+        // SQL tests pause after the actual read/validation but before any Product
+        // flush, without exposing this context, transaction or request payload.
+        // An exception/cancellation leaves the whole attempt to the owner's rollback.
+        if (onStaged is not null) await onStaged(cancellationToken);
         try
         {
             await context.FlushEnlistedAsync(this, cancellationToken);

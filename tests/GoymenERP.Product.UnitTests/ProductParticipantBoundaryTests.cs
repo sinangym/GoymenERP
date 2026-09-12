@@ -27,9 +27,12 @@ public sealed class ProductParticipantBoundaryTests
     {
         await using var connection = new Connection(ConnectionState.Closed);
         await using var transaction = new Transaction(connection);
+        var observed = 0;
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            ProductDraftParticipant.EnlistAsync(connection, transaction, Authority(), default));
+            ProductDraftParticipant.EnlistAsync(connection, transaction, Authority(), default,
+                onStaged: _ => { observed++; return Task.CompletedTask; }));
         Assert.Equal(0, connection.OpenCalls);
+        Assert.Equal(0, observed);
     }
 
     [Fact]
