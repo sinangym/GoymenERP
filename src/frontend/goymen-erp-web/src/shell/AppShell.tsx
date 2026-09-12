@@ -28,6 +28,14 @@ const NAV_CAPABILITIES: readonly CapabilityId[] = [
   CAPABILITY.cariPartiesList,
   CAPABILITY.cariPartiesCreate,
   CAPABILITY.cariAccountsLink,
+  /**
+   * Listed together with the route that serves it, on purpose: a nav entry whose route
+   * is not mounted is a link to the not-found block. It still renders only where the
+   * server granted the capability, so until Backend #246 publishes `organization.*` it
+   * does not appear. The card is deliberately absent — it is reached from a location
+   * row, never from the sidebar.
+   */
+  CAPABILITY.organizationSitesList,
 ]
 
 export function AppShell() {
