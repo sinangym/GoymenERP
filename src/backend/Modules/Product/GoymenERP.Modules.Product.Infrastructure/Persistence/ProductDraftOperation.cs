@@ -23,15 +23,15 @@ internal static class ProductDraftOperation
     {
         if (context.ChangeTracker.HasChanges())
             throw new InvalidOperationException("A Product attempt requires a fresh write context.");
-        using var document = JsonDocument.Parse(intent.CanonicalRequestJson);
-        var envelope = document.RootElement;
-        var operation = envelope.GetProperty("operation").GetString();
+        var envelope = JsonSerializer.Deserialize<FrozenEnvelope>(intent.CanonicalRequestJson, Json)
+            ?? throw new InvalidOperationException("The frozen Product envelope is missing.");
+        var operation = envelope.Operation;
         var catalog = new ProductCodeOnlyReferenceCatalog(context, authority);
         var validator = new ProductDraftValidator(catalog);
         if (operation == "product.draft.create.v1")
         {
             if (authority.Operation != GroupSharedMasterOperation.DraftCreate) throw WrongOperation();
-            var request = envelope.GetProperty("request").Deserialize<CreateProductDraftRequest>(Json)
+            var request = envelope.Request.Deserialize<CreateProductDraftRequest>(Json)
                 ?? throw new InvalidOperationException("The frozen create request is missing.");
             var validated = await validator.ValidateCreateAsync(request, cancellationToken);
             var code = await new ProductCodeAllocator(context).StageNextAsync(authority, validated.Group.Id, cancellationToken);
@@ -48,8 +48,9 @@ internal static class ProductDraftOperation
         if (operation == "product.draft.basic-edit.v1")
         {
             if (authority.Operation != GroupSharedMasterOperation.DraftBasicEdit) throw WrongOperation();
-            var id = envelope.GetProperty("productId").GetGuid();
-            var request = envelope.GetProperty("request").Deserialize<EditProductDraftRequest>(Json)
+            var id = envelope.ProductId
+                ?? throw new InvalidOperationException("The frozen Product target is missing.");
+            var request = envelope.Request.Deserialize<EditProductDraftRequest>(Json)
                 ?? throw new InvalidOperationException("The frozen edit request is missing.");
             var row = await context.Products.SingleOrDefaultAsync(product => product.Id == id, cancellationToken)
                 ?? throw new ProductOperationException(ProductApiV1.NotFound, 404);
@@ -69,6 +70,8 @@ internal static class ProductDraftOperation
 
     private static ProductCardView Card(ProductStoredRecord record, string groupName) => new(
         ProductDraftView.FromProduct(record.RestoreProduct(), new(groupName, null, null, null)), record.RestoreReferences());
+
+    private sealed record FrozenEnvelope(string Operation, JsonElement Request, Guid? ProductId = null);
 
     private static UnauthorizedAccessException WrongOperation() => new("Product command authority does not match the frozen operation.");
 }
