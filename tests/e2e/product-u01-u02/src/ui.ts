@@ -34,5 +34,19 @@ export async function changeNameAndReason(page: Page, name = 'Galvaniz sac', rea
   await page.getByLabel(/Değişiklik gerekçesi/).fill(reason)
 }
 
+/**
+ * The card's version, read from the `<dt>Sürüm</dt><dd>…</dd>` pair — EXACT text.
+ *
+ * The live run `urun-l-9a4165b-01` failed here: `getByText('Sürüm')` is a
+ * case-insensitive substring match, and the card also shows "Şablon sürümü", whose
+ * `<dd>` is "atanmadı". The T lane never read the version, so nothing caught it before
+ * a real environment did; the T card spec now reads it through this same helper.
+ */
+export async function cardVersion(page: Page): Promise<string> {
+  const dd = page.locator('dt', { hasText: /^Sürüm$/ }).locator('xpath=following-sibling::dd[1]')
+  await expect(dd).toHaveCount(1)
+  return ((await dd.textContent()) ?? '').trim()
+}
+
 /** The contract's Idempotency-Key alphabet: 1..128 printable ASCII, no whitespace, no comma. */
 export const KEY_ALPHABET = /^[\x21-\x2b\x2d-\x7e]{1,128}$/

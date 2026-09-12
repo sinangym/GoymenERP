@@ -25,7 +25,7 @@ import { expect, test } from '@playwright/test'
 import { LiveRecorder, ProductDeliveryWithholder, evidenceIdentity, lShot, liveEnvironment, writeLJson } from '../src/live'
 import { CHECKPOINT_STAGES, DEFAULT_ACK_TIMEOUT_MS, awaitCheckpointAck, boundedMs, writeCheckpointRequest, type CheckpointReceipt, type CheckpointStage } from '../src/checkpoint'
 import { runDir, runId as browserRunId } from '../paths'
-import { retrySame, saveDraft, saveEdit } from '../src/ui'
+import { cardVersion, retrySame, saveDraft, saveEdit } from '../src/ui'
 
 const env = liveEnvironment()
 // Validated once here, before any budget is derived from it: an unbounded or absurd
@@ -73,6 +73,36 @@ test('L-01 live journey: create (lost reply → same-key replay) → list → ca
   ])
   await page.addInitScript((company) => localStorage.setItem('goymen-company-id', company), env.companyId)
 
+  /**
+   * Whatever happens below, the REAL exchanges, the withheld deliveries and the stage
+   * receipts obtained so far are exported. The first live run failed after a real
+   * create and two acknowledged checkpoints, and left no network record and no
+   * handover because both were written only at the end of a successful journey.
+   */
+  const receipts: Partial<Record<CheckpointStage, CheckpointReceipt>> = {}
+  const facts: Record<string, unknown> = {}
+  const exportEvidence = async (status: 'completed' | 'incomplete') => {
+    writeLJson('withheld', 'l01-withheld.json', { ...evidenceIdentity(env), status, withheld: withholder.withheld, passedThrough: withholder.passedThrough })
+    writeLJson('checkpoints', 'l01-handover.json', {
+      ...evidenceIdentity(env), status, ...facts,
+      stages: receipts,
+      exchanges: exchangesOf(recorder), withheld: withholder.withheld,
+      note: status === 'completed'
+        ? 'Baseline, after-create and final are the Backend’s real quiescent snapshots, each acknowledged against the exact request bytes the browser wrote at that quiet stage. The browser ran no SQL and derived no state from responses.'
+        : 'INCOMPLETE journey: only the stages listed under `stages` were acknowledged; exchanges and withheld deliveries are real and complete up to the failure. Nothing here is a pass.',
+    })
+    await recorder.finish(info, 'l01-journey', { ...evidenceIdentity(env), status, ...facts, checkpoints: Object.fromEntries(Object.entries(receipts).map(([k, r]) => [k, r?.ack.snapshotSha256 ?? null])) })
+  }
+  let completed = false
+  try {
+    await journey()
+    completed = true
+  } finally {
+    await exportEvidence(completed ? 'completed' : 'incomplete')
+  }
+
+  async function journey() {
+
   // ── create ────────────────────────────────────────────────────────────────
   await page.goto('/urun/yeni')
   await expect(page.getByRole('heading', { level: 1, name: 'Yeni ürün' })).toBeVisible()
@@ -85,7 +115,7 @@ test('L-01 live journey: create (lost reply → same-key replay) → list → ca
   await lShot(page, 'l01', '01-create-filled')
 
   // ── stage 1: baseline, before the first mutation leaves the browser ─────────
-  const baseline = await handOff('baseline', recorder, { productId: null, code: null, version: null })
+  receipts.baseline = await handOff('baseline', recorder, { productId: null, code: null, version: null })
 
   await saveDraft(page).click()
   // The browser never received the 201: the outcome is unknown, the key is held.
@@ -100,6 +130,7 @@ test('L-01 live journey: create (lost reply → same-key replay) → list → ca
   const productId = createWithheld.identity.id as string
   const createdCode = createWithheld.identity.code as string
   expect(productId).toMatch(UUID_RE)
+  Object.assign(facts, { productId, createdCode })
 
   await retrySame(page).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Taslak kaydedildi' })).toBeVisible()
@@ -117,7 +148,7 @@ test('L-01 live journey: create (lost reply → same-key replay) → list → ca
 
   // ── stage 2: after-create — the create is complete, the edit has not begun ───
   // The Created assertion wants the REAL v1; it cannot be derived from the final v2.
-  const afterCreate = await handOff('after-create', recorder, { productId, code: createdCode, version: createWithheld.identity.version })
+  receipts['after-create'] = await handOff('after-create', recorder, { productId, code: createdCode, version: createWithheld.identity.version })
 
   // ── list → card ───────────────────────────────────────────────────────────
   await page.getByRole('link', { name: 'Listeye dön' }).click()
@@ -128,8 +159,9 @@ test('L-01 live journey: create (lost reply → same-key replay) → list → ca
   await lShot(page, 'l01', '04-list-found')
   await row.click()
   await expect(page.getByRole('heading', { level: 1, name: NAME })).toBeVisible()
-  const versionBefore = (await page.getByText('Sürüm').locator('xpath=following-sibling::dd').first().textContent())?.trim() ?? ''
+  const versionBefore = await cardVersion(page)
   expect(versionBefore).toBe(createWithheld.identity.version)
+  Object.assign(facts, { versionBefore })
   await lShot(page, 'l01', '05-card')
 
   // ── edit ──────────────────────────────────────────────────────────────────
@@ -162,8 +194,9 @@ test('L-01 live journey: create (lost reply → same-key replay) → list → ca
   // ── back to the card, then reopen from the list ───────────────────────────
   await page.getByRole('link', { name: 'Ürün kartına dön' }).click()
   await expect(page.getByRole('heading', { level: 1, name: EDITED_NAME })).toBeVisible()
-  const versionAfter = (await page.getByText('Sürüm').locator('xpath=following-sibling::dd').first().textContent())?.trim() ?? ''
+  const versionAfter = await cardVersion(page)
   expect(versionAfter).toBe(editWithheld?.identity.version)
+  Object.assign(facts, { versionAfter })
   await page.goto('/urun')
   await page.getByLabel('Kod, eski kod veya ad ara').fill(RUN_TOKEN)
   await page.getByRole('link', { name: createdCode, exact: true }).click()
@@ -171,7 +204,7 @@ test('L-01 live journey: create (lost reply → same-key replay) → list → ca
   await lShot(page, 'l01', '08-reopened')
 
   // ── stage 3: final — the edit is complete and the card was reopened ─────────
-  const final = await handOff('final', recorder, { productId, code: createdCode, version: versionAfter })
+  receipts.final = await handOff('final', recorder, { productId, code: createdCode, version: versionAfter })
 
   // Global master with a validated origin: every Product request went as the bound
   // actor under the bound company, and no payload carried a companyId.
@@ -181,16 +214,5 @@ test('L-01 live journey: create (lost reply → same-key replay) → list → ca
     if (r.requestBody !== null && typeof r.requestBody === 'object') expect(r.requestBody).not.toHaveProperty('companyId')
   }
 
-  writeLJson('withheld', 'l01-withheld.json', { ...evidenceIdentity(env), withheld: withholder.withheld, passedThrough: withholder.passedThrough })
-  // ONE handover for the Product owner: the three stage receipts (request/ack paths and
-  // hashes, snapshot hashes), the real create/edit/replay exchanges and the withheld
-  // deliveries — all from this one bound run. A snapshot hash here is the Backend's
-  // artifact, acknowledged against these request bytes; nothing is derived from JSON.
-  writeLJson('checkpoints', 'l01-handover.json', {
-    ...evidenceIdentity(env), productId, createdCode, versionBefore, versionAfter,
-    stages: { baseline, afterCreate, final },
-    exchanges: exchangesOf(recorder), withheld: withholder.withheld,
-    note: 'Baseline, after-create and final are the Backend’s real quiescent snapshots, each acknowledged against the exact request bytes the browser wrote at that quiet stage. The browser ran no SQL and derived no state from responses.',
-  })
-  await recorder.finish(info, 'l01-journey', { ...evidenceIdentity(env), productId, createdCode, versionBefore, versionAfter, checkpoints: { baseline: baseline.ack.snapshotSha256, afterCreate: afterCreate.ack.snapshotSha256, final: final.ack.snapshotSha256 } })
+  }
 })

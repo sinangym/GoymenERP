@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { Lane, json } from '../src/harness'
 import { A_ID, PRODUCT_1, productCore, productPage } from '../src/fixtures'
-import { openList } from '../src/ui'
+import { cardVersion, openList } from '../src/ui'
 
 test('U-01 list → card: rows from the server, the committed company as the validated origin header on every Product request, labels and completeness from the card', async ({ page }, info) => {
   const lane = await Lane.install(page, { slug: 'u01-list-card' })
@@ -20,6 +20,9 @@ test('U-01 list → card: rows from the server, the committed company as the val
     await expect(page.getByTestId('product-completeness')).toContainText('Eksik')
     await expect(page.getByTestId('product-missing-fields')).toContainText('references.units.stock')
     await expect(page.getByRole('link', { name: 'Düzenle' })).toBeVisible()
+    // The same version reader the live journey uses, against the same card DOM: the
+    // fixture card carries version '7' and a null template version ("atanmadı").
+    expect(await cardVersion(page)).toBe('7')
 
     // Global master, validated origin: every Product request carried the committed
     // company as X-Company-Id (§15) — the source of the operation, not its owner.

@@ -2,7 +2,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import type { FullResult, Reporter, TestCase, TestResult } from '@playwright/test/reporter'
-import { runDir, runId, coldStart, role, claimedAtUtc } from './paths'
+import { runDir, runId, coldStart, role, claimedAtUtc, lane, liveBinding } from './paths'
 
 export default class SafeReporter implements Reporter {
   private readonly startedAtUtc = new Date().toISOString()
@@ -18,11 +18,16 @@ export default class SafeReporter implements Reporter {
   onEnd(result: FullResult) {
     mkdirSync(runDir, { recursive: true })
     writeFileSync(path.join(runDir, 'tests.json'), JSON.stringify({
-      task_id: 'U-01-U-02', lane: 'T', runId, role, coldStart, claimedAtUtc, ownerRecord: 'run-owner.json',
+      // The lane is the run's, not a constant: the first live run's tests.json said
+      // `lane: T` / "no live API" about a run that had just created a real product.
+      task_id: 'U-01-U-02', lane, runId, role, coldStart, claimedAtUtc, ownerRecord: 'run-owner.json',
+      liveBinding: liveBinding === null ? null : { contractId: liveBinding.contractId, resourceRunId: liveBinding.resourceRunId, resourceInstanceId: liveBinding.resourceInstanceId, manifestSha256: liveBinding.manifestSha256, acceptedContractSha256: liveBinding.acceptedContractSha256, sourceBindingSha256: liveBinding.sourceBindingSha256, frontendHead: liveBinding.frontendHead },
       startedAtUtc: this.startedAtUtc, finishedAtUtc: new Date().toISOString(), status: result.status, durationMs: result.duration,
       passed: this.tests.filter((t) => t.status === 'passed').length,
       failed: this.tests.filter((t) => t.status !== 'passed').length, globalErrors: this.globalErrors, tests: this.tests,
-      note: 'Controlled T responses in a real Chromium against the unchanged frontend; no live API, SQL, login or capability publication. Not ERP acceptance.',
+      note: lane === 'L'
+        ? 'Live Product API through the same-origin Vite proxy of a publisher-verified, consumer-validated environment; real records were written. The runner status is the test result; Product SQL assertions and snapshot ownership are the Backend/Product owner’s. Not ERP acceptance by itself.'
+        : 'Controlled T responses in a real Chromium against the unchanged frontend; no live API, SQL, login or capability publication. Not ERP acceptance.',
     }, null, 2) + '\n')
   }
 }
