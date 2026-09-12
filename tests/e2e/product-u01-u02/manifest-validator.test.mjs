@@ -20,6 +20,7 @@ import {
   ACCEPTED_FILE, API_BASE_URL, BINDING_ENV, ManifestValidationError, READY_FILE, SOURCE_BINDING_FILE, UI_ORIGIN,
   bindingEnvValue, establishLiveBinding, joinLiveBinding,
 } from './manifest-validator.ts'
+const join = (env, options) => joinLiveBinding(env, FE_WORKTREE, UI_ORIGIN, options)
 
 const tmp = mkdtempSync(path.join(tmpdir(), 'urun-manifest-validator-'))
 after(() => rmSync(tmp, { recursive: true, force: true }))
@@ -116,8 +117,47 @@ test('the exact tuple binds: three hashes frozen, resource identity and actors f
   assert.equal(b.apiBaseUrl, API_BASE_URL)
   assert.equal(b.codeGroupId, GROUP)
   assert.equal(b.actor, 'product-global-admin')
-  const joined = joinLiveBinding({ [BINDING_ENV]: bindingEnvValue(b) })
+  const joined = join({ ...t.env, [BINDING_ENV]: bindingEnvValue(b) }, t.options)
   assert.deepEqual(joined, b)
+})
+
+test('the STARTER always establishes from the files and the handoff hash; an ambient binding never substitutes', () => {
+  const t = tuple()
+  const good = establishLiveBinding(t.env, FE_WORKTREE, UI_ORIGIN, t.options)
+  const forged = bindingEnvValue({ ...good, apiBaseUrl: 'http://127.0.0.1:25080', actor: 'someone-else' })
+  // With valid inputs the ambient binding is ignored and the derived one is returned.
+  const b = establishLiveBinding({ ...t.env, [BINDING_ENV]: forged }, FE_WORKTREE, UI_ORIGIN, t.options)
+  assert.equal(b.apiBaseUrl, API_BASE_URL)
+  assert.equal(b.actor, 'product-global-admin')
+  // Without the inputs, an ambient binding buys nothing: refused before any claim.
+  refused(() => establishLiveBinding({ [BINDING_ENV]: forged }, FE_WORKTREE, UI_ORIGIN, t.options), 'INPUT')
+  refused(() => establishLiveBinding({ [BINDING_ENV]: bindingEnvValue(good), URUN_ENVIRONMENT_MANIFEST: t.env.URUN_ENVIRONMENT_MANIFEST }, FE_WORKTREE, UI_ORIGIN, t.options), 'INPUT')
+})
+
+for (const [field, value] of [
+  ['apiBaseUrl', 'http://127.0.0.1:25080'], ['actor', 'someone-else'], ['unauthorizedActor', 'product-global-admin'], ['uiOrigin', 'http://127.0.0.1:15175'],
+  ['resourceRunId', 'product-u0102-000000000000'], ['resourceInstanceId', '11111111-1111-4111-8111-111111111111'], ['codeGroupId', '22222222-2222-4222-8222-222222222222'],
+  ['companyId', '33333333-3333-4333-8333-333333333333'], ['browserPrefix', 'PRODUCT-U0102-000000000000'], ['databaseName', 'GoymenCariC006_x'], ['frontendHead', H40(5)],
+]) {
+  test(`a MEMBER refuses a carried binding whose ${field} was changed while all three file hashes stay correct`, () => {
+    const t = tuple()
+    const good = establishLiveBinding(t.env, FE_WORKTREE, UI_ORIGIN, t.options)
+    const env = { ...t.env, [BINDING_ENV]: bindingEnvValue({ ...good, [field]: value }) }
+    refused(() => join(env, t.options), 'TAMPERED')
+    // The unchanged binding still joins.
+    assert.deepEqual(join({ ...t.env, [BINDING_ENV]: bindingEnvValue(good) }, t.options), good)
+  })
+}
+
+test('a MEMBER refuses a carried binding with an extra field, and needs the same inputs the starter used', () => {
+  const t = tuple()
+  const good = establishLiveBinding(t.env, FE_WORKTREE, UI_ORIGIN, t.options)
+  refused(() => join({ ...t.env, [BINDING_ENV]: bindingEnvValue({ ...good, proxyOverride: 'x' }) }, t.options), 'TAMPERED')
+  refused(() => join({ [BINDING_ENV]: bindingEnvValue(good) }, t.options), 'BINDING')
+  refused(() => join({ [BINDING_ENV]: bindingEnvValue(good), URUN_ENVIRONMENT_MANIFEST: t.env.URUN_ENVIRONMENT_MANIFEST }, t.options), 'INPUT')
+  const other = tuple()
+  // The carried binding names this run's files; the inputs name another run: not this run.
+  refused(() => join({ ...other.env, [BINDING_ENV]: bindingEnvValue(good) }, other.options), 'BINDING')
 })
 
 test('the handoff hash is required, and a manifest cannot approve itself', () => {
@@ -203,12 +243,12 @@ test('a file edited after binding is refused by every member that re-reads it', 
   const t = tuple()
   const b = establishLiveBinding(t.env, FE_WORKTREE, UI_ORIGIN, t.options)
   writeFileSync(path.join(t.dir, READY_FILE), JSON.stringify({ ...JSON.parse(bindingEnvValue(b)), edited: true }) + '\n')
-  refused(() => joinLiveBinding({ [BINDING_ENV]: bindingEnvValue(b) }), 'DRIFT')
+  refused(() => join({ ...t.env, [BINDING_ENV]: bindingEnvValue(b) }, t.options), 'DRIFT')
   const u = tuple()
   const c = establishLiveBinding(u.env, FE_WORKTREE, UI_ORIGIN, u.options)
   writeFileSync(path.join(u.dir, SOURCE_BINDING_FILE), '{}\n')
-  refused(() => joinLiveBinding({ [BINDING_ENV]: bindingEnvValue(c) }), 'DRIFT')
-  refused(() => joinLiveBinding({}), 'BINDING')
+  refused(() => join({ ...u.env, [BINDING_ENV]: bindingEnvValue(c) }, u.options), 'DRIFT')
+  refused(() => join({}, t.options), 'BINDING')
 })
 
 test('a missing sibling, a non-JSON file or a manifest that is not environment-ready.json is refused before anything else', () => {

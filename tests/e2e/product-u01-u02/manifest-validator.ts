@@ -270,10 +270,12 @@ function samePath(a: string, b: string): boolean {
 }
 
 /**
- * Runner role (contract steps 1–2): validate the three files and the handoff hash, then
- * freeze the snapshot. Called BEFORE the C010 run/cache claim.
+ * Derive the canonical binding from the INPUTS ONLY — the manifest path, the
+ * Orchestrator's accepted-contract hash, this worktree and this UI origin — never from
+ * anything carried in the environment by another process. The starter calls this to
+ * establish; a member calls it again and must obtain the very same object.
  */
-export function establishLiveBinding(env: Env, frontendWorktree: string, uiOrigin: string, options: ValidatorOptions = {}): LiveBinding {
+export function deriveLiveBinding(env: Env, frontendWorktree: string, uiOrigin: string, options: ValidatorOptions = {}): LiveBinding {
   const read = options.readFile ?? ((file: string) => readFileSync(file))
   const base = options.acceptanceRootBase ?? ACCEPTANCE_ROOT_BASE
   const observe = options.observeFrontend ?? observeFrontendWithGit
@@ -338,22 +340,51 @@ export function establishLiveBinding(env: Env, frontendWorktree: string, uiOrigi
   }
 }
 
-/** Member role (Vite web server, workers): take the frozen snapshot as handed; re-hash all three files before use. */
-export function joinLiveBinding(env: Env, options: ValidatorOptions = {}): LiveBinding {
+/**
+ * STARTER role (contract steps 1–2) — the process WITHOUT a C010 run claim. It always
+ * establishes the binding from the accepted files and the Orchestrator's hash; an
+ * ambient `URUN_LIVE_BINDING`, whatever it says, is never a substitute for that
+ * validation and is ignored here. Called BEFORE the C010 run/cache claim.
+ */
+export function establishLiveBinding(env: Env, frontendWorktree: string, uiOrigin: string, options: ValidatorOptions = {}): LiveBinding {
+  return deriveLiveBinding(env, frontendWorktree, uiOrigin, options)
+}
+
+/**
+ * MEMBER role (the Vite web server, the workers) — a process WITH the C010 run claim. It
+ * never trusts the fields it was handed: it re-hashes the three files the carried
+ * binding names, re-derives the canonical binding from the same inputs the starter used
+ * (manifest path, Orchestrator hash, this worktree, this origin) and requires the
+ * carried object to be IDENTICAL, field for field. A carried `apiBaseUrl`, `actor`,
+ * resource identity or `codeGroupId` that differs from what the hash-checked files say
+ * is refused before Vite proxies anything or a worker sends anything.
+ */
+export function joinLiveBinding(env: Env, frontendWorktree: string, uiOrigin: string, options: ValidatorOptions = {}): LiveBinding {
   const raw = env[BINDING_ENV]
   if (!raw) refuse('BINDING', BINDING_ENV + ' is absent; a member process never establishes a binding itself')
-  let binding: LiveBinding
-  try { binding = JSON.parse(raw as string) } catch { return refuse('BINDING', BINDING_ENV + ' is not JSON') }
+  let carried: unknown
+  try { carried = JSON.parse(raw as string) } catch { return refuse('BINDING', BINDING_ENV + ' is not JSON') }
+  if (!isObject(carried)) return refuse('BINDING', BINDING_ENV + ' is not an object')
   const read = options.readFile ?? ((file: string) => readFileSync(file))
-  const check = (file: string, expected: string, name: string) => {
+  const check = (file: unknown, expected: unknown, name: string) => {
+    if (typeof file !== 'string' || typeof expected !== 'string') return refuse('BINDING', name + ' path or hash missing from the carried binding')
     let bytes: Buffer
     try { bytes = read(file) } catch (error) { return refuse('INPUT', name + ' could not be re-read: ' + String((error as Error)?.message ?? error).slice(0, 120)) }
     if (sha256(bytes) !== expected) refuse('DRIFT', name + ' bytes changed after the run was bound')
   }
-  check(binding.manifestPath, binding.manifestSha256, READY_FILE)
-  check(binding.acceptedContractPath, binding.acceptedContractSha256, ACCEPTED_FILE)
-  check(binding.sourceBindingPath, binding.sourceBindingSha256, SOURCE_BINDING_FILE)
-  return binding
+  check(carried.manifestPath, carried.manifestSha256, READY_FILE)
+  check(carried.acceptedContractPath, carried.acceptedContractSha256, ACCEPTED_FILE)
+  check(carried.sourceBindingPath, carried.sourceBindingSha256, SOURCE_BINDING_FILE)
+  // The carried manifest path must be the one this run was started with, and the
+  // derivation happens from the inputs — not from the carried object.
+  if (!samePath(String(env.URUN_ENVIRONMENT_MANIFEST ?? ''), String(carried.manifestPath))) refuse('BINDING', 'the carried manifest path is not URUN_ENVIRONMENT_MANIFEST')
+  const derived = deriveLiveBinding(env, frontendWorktree, uiOrigin, options)
+  if (canonical(derived) !== canonical(carried)) {
+    const derivedJson = derived as unknown as Json
+    const differing = Object.keys(derivedJson).filter((k) => canonical(derivedJson[k]) !== canonical(carried[k]))
+    refuse('TAMPERED', 'the carried binding differs from the one derived from the hash-checked files: ' + (differing.length > 0 ? differing.join(', ') : 'extra or missing fields'))
+  }
+  return derived
 }
 
 export function bindingEnvValue(binding: LiveBinding): string {

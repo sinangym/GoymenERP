@@ -42,8 +42,23 @@ export const origin = `http://127.0.0.1:${uiPort}`
  * so a wrong, stale, edited or missing tuple consumes no run id, directory, cache, web
  * server or browser. Members (the Vite web server, workers) only join and re-hash.
  */
+/**
+ * The role is the C010 one and nothing else: a process WITHOUT `CARI010_RUN_CLAIM` is the
+ * starter and ALWAYS establishes from the accepted files and the Orchestrator hash — an
+ * ambient `URUN_LIVE_BINDING` never stands in for that validation. A process WITH the
+ * claim is a member: it joins, re-hashes, re-derives and must match what it was handed.
+ */
 export const liveBinding: LiveBinding | null =
-  lane === 'L' ? (process.env[BINDING_ENV] ? joinLiveBinding(process.env) : establishLiveBinding(process.env, repo, origin)) : null
+  lane === 'L'
+    ? process.env.CARI010_RUN_CLAIM
+      ? joinLiveBinding(process.env, repo, origin)
+      : establishLiveBinding(process.env, repo, origin)
+    : null
+if (lane === 'L' && !process.env.CARI010_RUN_CLAIM && process.env[BINDING_ENV] !== undefined) {
+  // The starter's environment already carried a binding it did not establish; it was
+  // ignored above and is replaced by the one just derived, so nothing downstream reads it.
+  process.env[BINDING_ENV] = JSON.stringify(liveBinding)
+}
 
 /**
  * Run identity — the C010 ownership module, REUSED rather than re-written: one

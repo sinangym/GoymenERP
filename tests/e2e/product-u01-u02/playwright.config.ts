@@ -11,9 +11,11 @@ const webServerEnv: Record<string, string> = {
   CARI010_COLD_START: coldStart ? '1' : '0', CARI010_RUN_CLAIM: claimId, URUN_LANE: lane,
 }
 if (liveBinding !== null) {
-  // The web server and every worker JOIN this exact binding: the API target and the
-  // bundle's `X-Development-User` come from the validated snapshot and nowhere else.
+  // The web server and every worker JOIN this binding as members: they re-hash the
+  // files and re-derive from the SAME inputs, so the inputs travel with the binding.
   webServerEnv[BINDING_ENV] = bindingEnvValue(liveBinding)
+  webServerEnv.URUN_ENVIRONMENT_MANIFEST = process.env.URUN_ENVIRONMENT_MANIFEST as string
+  webServerEnv.URUN_ACCEPTED_CONTRACT_SHA256 = process.env.URUN_ACCEPTED_CONTRACT_SHA256 as string
   webServerEnv.VITE_DEV_USER = liveBinding.actor
   process.env[BINDING_ENV] = webServerEnv[BINDING_ENV]
 }

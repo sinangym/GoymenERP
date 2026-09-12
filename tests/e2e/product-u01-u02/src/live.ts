@@ -17,16 +17,17 @@
  */
 import type { APIResponse, Page } from '@playwright/test'
 import type { WithheldMarker } from '../../cari-acceptance-009/src/lHarness'
-import { joinLiveBinding, type LiveBinding } from '../manifest-validator'
-import { runId as browserRunId } from '../paths'
+import type { LiveBinding } from '../manifest-validator'
+import { liveBinding, runId as browserRunId } from '../paths'
 
 export { ActorProbe, LiveRecorder, lShot, writeLJson, failurePriority, evidenceErrorText } from '../../cari-acceptance-009/src/lHarness'
 export type { LiveRecord, ActorProbeRecord } from '../../cari-acceptance-009/src/lHarness'
 export type { LiveBinding } from '../manifest-validator'
 
-/** The validated binding this worker joined. Refuses if any of the three files moved since. */
+/** The binding this worker JOINED in `../paths` (re-hashed and re-derived there); available only in the L lane. */
 export function liveEnvironment(): LiveBinding {
-  return joinLiveBinding(process.env)
+  if (liveBinding === null) throw new Error('liveEnvironment() is only available in the L lane')
+  return liveBinding
 }
 
 /**
