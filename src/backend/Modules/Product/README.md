@@ -203,3 +203,10 @@ Server provider translation, which is not real SQL execution evidence.
 actor, origin and authority revision. The host must supply signing material and a
 technical lifetime. No key is committed, generated as a production default or registered
 in the host. Reference labels outside the available code-group catalogue remain null.
+
+`ProductCodeOnlyReferenceCatalog` validates the actual SQL code group for the minimum
+Draft. Missing optional class/family/unit/template/tracking values remain permitted;
+supplied references without an accepted catalogue adapter fail validation. The read
+options endpoint explicitly lists all five catalogues as unavailable, rather than
+claiming that they are valid empty catalogues. This does not complete the separate
+selected-family/unit/template sub-slice. No default group or fake reference is seeded.
