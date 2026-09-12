@@ -34,6 +34,29 @@ export const CAPABILITY = {
    * detail and call its API. Codex caught that on #172.
    */
   cariPartiesDetail: 'cari.parties.detail',
+  /**
+   * U-01 Ürünler listesi. Route `/urun`, owner CLAUDE-FRONTEND-URUN.
+   *
+   * Declared here by the shared-integration owner from that lane's handover
+   * (`src/product/SHARED_MOUNT_HANDOFF.md`, PR #238 head `8689232`); the values are the
+   * ones `src/product/capabilities.ts` declares, and a drift test pins the two together
+   * once the Product source is in the same tree.
+   *
+   * WHAT LISTING IT DOES NOT DO, and it matters more here than for the Cari ids: the
+   * server publishes no `product.*` capability at all yet. So these three grant nothing,
+   * mount nothing and render no nav entry — `CapabilityRoute` closes an ungranted route
+   * onto the same neutral not-found block any unknown path gets. That is the intended
+   * state until Backend publishes the Product registry, not a gap.
+   */
+  productItemsList: 'product.items.list',
+  /**
+   * U-01 Ürün 360. Route `/urun/:productId`. A SEPARATE grant from the list, for the
+   * reason #182/#172 made the Cari detail separate: holding the list must not imply
+   * holding the card.
+   */
+  productItemsDetail: 'product.items.detail',
+  /** U-02 Yeni Ürün — Draft creation only. Route `/urun/yeni`. */
+  productItemsCreate: 'product.items.create',
 } as const
 
 export type CapabilityId = (typeof CAPABILITY)[keyof typeof CAPABILITY]
@@ -44,6 +67,11 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.cariPartiesCreate]: '/cari/yeni',
   [CAPABILITY.cariAccountsLink]: '/cari/sirkete-bagla',
   [CAPABILITY.cariPartiesDetail]: '/cari/:partyId',
+  [CAPABILITY.productItemsList]: '/urun',
+  // Static before the parameter route, the same rule /cari/yeni follows: a deeper
+  // static segment must never be readable as a record id.
+  [CAPABILITY.productItemsCreate]: '/urun/yeni',
+  [CAPABILITY.productItemsDetail]: '/urun/:productId',
 }
 
 /** Nav label per capability. Only rendered when the server granted the capability. */
@@ -53,4 +81,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   [CAPABILITY.cariAccountsLink]: 'Cariyi Şirkete Bağla',
   // No nav entry: the detail is reached from a row, never from the sidebar.
   [CAPABILITY.cariPartiesDetail]: '',
+  [CAPABILITY.productItemsList]: 'Ürünler',
+  [CAPABILITY.productItemsCreate]: 'Yeni Ürün',
+  // Nor this one, for the same reason as the Cari detail.
+  [CAPABILITY.productItemsDetail]: '',
 }
