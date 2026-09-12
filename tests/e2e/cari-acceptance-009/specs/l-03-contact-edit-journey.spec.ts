@@ -171,14 +171,71 @@ function saveButton(page: Page): Locator {
   return page.getByRole('button', { name: SAVE_BUTTON })
 }
 
-/** The 0-based index of the address row whose line1 currently reads `line1`. */
+/**
+ * Rows of ONE collection.
+ *
+ * `data-row-index` is per collection, so once the journey has added both an address and a
+ * contact person there are two rows carrying index 0 and an unscoped locator resolves to
+ * both — a strict-mode failure on the first status button this journey presses. The group
+ * attribute is what makes the locator unambiguous.
+ */
+function addressRows(page: Page): Locator {
+  return page.locator('[data-collection="addresses"][data-row-index]')
+}
+
+function addressRow(page: Page, index: number): Locator {
+  return page.locator(`[data-collection="addresses"][data-row-index="${index}"]`)
+}
+
+/** The 0-based index of the ADDRESS row whose line1 currently reads `line1`. */
 async function addressIndexFor(page: Page, line1: string): Promise<number> {
-  for (const row of await page.locator('[data-row-index]').all()) {
+  for (const row of await addressRows(page).all()) {
     const input = row.locator('input[id$="-line1"]')
     if ((await input.count()) === 0) continue
     if ((await input.inputValue()) === line1) return Number(await row.getAttribute('data-row-index'))
   }
   throw new Error(`no address row currently shows line1 ${JSON.stringify(line1)}`)
+}
+
+/**
+ * What the CURRENT company's editor actually resolved to, waited for properly.
+ *
+ * "No request is outstanding" is not that on its own: between the capability exchange
+ * finishing and the editor's own read starting there is a gap in which nothing is in
+ * flight, and a navigation released in that gap abandons the read it was supposed to be
+ * waiting for. So this waits for a TERMINAL answer about this company — the editor's read
+ * reaching a terminal transfer, or the route closing on a capability the server did not
+ * grant — AND for everything to have drained. The old condition (a completed list page)
+ * is not restored: the editor's read is a single record and can never satisfy it.
+ */
+async function awaitCompanyTerminal(
+  page: Page,
+  net: LiveRecorder,
+  companyId: string,
+  sinceTick: number,
+  label: string,
+): Promise<{ readonly status: number | null; readonly closedByCapability: boolean }> {
+  const deadline = Date.now() + 45_000
+  for (;;) {
+    const answered = contactGets(net).find(
+      (r) => r.requestTick > sinceTick && r.companyId === companyId && r.transferOutcome !== 'pending',
+    )
+    const closed = (await page.locator('[data-state="not-found"]').count()) > 0
+    const outstanding = net.outstanding()
+    if (outstanding.length === 0 && (answered !== undefined || closed)) {
+      return { status: answered?.status ?? null, closedByCapability: answered === undefined && closed }
+    }
+    if (Date.now() > deadline) {
+      throw new Error(
+        `${label}: no terminal outcome for company ${companyId}: outstanding=${JSON.stringify(outstanding)} contactReads=${JSON.stringify(
+          contactGets(net)
+            .filter((r) => r.requestTick > sinceTick)
+            .map((r) => ({ seq: r.seq, companyId: r.companyId, status: r.status, transferOutcome: r.transferOutcome })),
+        )}`,
+      )
+    }
+    await page.waitForTimeout(100)
+  }
 }
 
 /** Save, wait for the confirmation, and return the version the FRESH read carried. */
@@ -429,7 +486,7 @@ test('L-03 C-06: six real updates v1→v7 across two tabs — withheld reply and
 
   // ---- 4. U3: deactivate the TR delivery address ------------------------------------
   const trIndex = await addressIndexFor(page, ADDR_TR_LINE1)
-  const trRow = page.locator(`[data-row-index="${trIndex}"]`)
+  const trRow = addressRow(page, trIndex)
   await trRow.getByRole('button', { name: 'Pasife al' }).click()
   await expect(trRow.getByText('Kaydedildiğinde pasife alınacak.')).toBeVisible()
   // A status operation carries the identity and the operation, and nothing else — so
@@ -464,10 +521,7 @@ test('L-03 C-06: six real updates v1→v7 across two tabs — withheld reply and
 
   // ---- 6. U5: reactivate, explicitly -----------------------------------------------
   const reactivateIndex = await addressIndexFor(page, ADDR_TR_LINE1_UPDATED)
-  await page
-    .locator(`[data-row-index="${reactivateIndex}"]`)
-    .getByRole('button', { name: 'Yeniden etkinleştir' })
-    .click()
+  await addressRow(page, reactivateIndex).getByRole('button', { name: 'Yeniden etkinleştir' }).click()
   const v6 = await saveAndRead(page, net, 'U5')
   expect(v6.version).toBe('6')
   expect(contactPuts(net).at(-1)!.requestBody).toEqual({
@@ -513,6 +567,21 @@ test('L-03 C-06: six real updates v1→v7 across two tabs — withheld reply and
   expect(u6.idempotencyKey, 'the retried intent is a NEW attempt with its own key').not.toBe(conflictPut.idempotencyKey)
   expect(contactPuts(staleNet).length, 'the second tab carries two PUTs: the 409 and U6').toBe(2)
   await lShot(stale, SLUG, '07-u6-saved-v7')
+  /**
+   * The second tab's own barrier, taken BEFORE it is closed and asserted with the rest.
+   * Closing a page with requests still unaccounted for would have thrown its evidence away
+   * and left the run able to pass on the main page's quiet alone.
+   */
+  const staleBarrier = await staleNet.quiesce({ settleMs: 1500, timeoutMs: 45_000 })
+  const stalePutProjection = contactPuts(staleNet).map(putProjection)
+  const staleGetProjection = contactGets(staleNet).map((r) => ({
+    seq: r.seq,
+    companyId: r.companyId,
+    status: r.status,
+    completed: isCompletedRead(r, CONTRACT),
+    version: (r.responseBody as ContactBody | null)?.version ?? null,
+  }))
+  const staleObserved = staleNet.observedEvents()
   await stale.close()
 
   // ---- 8. the real return, reopening the record, and the keyboard ------------------
@@ -557,8 +626,9 @@ test('L-03 C-06: six real updates v1→v7 across two tabs — withheld reply and
   await field(page, 'cari-contact-website').fill('https://example.test/terk-edilecek')
   const putsBeforeB = contactPuts(net).length
   await switchCompany(page, net, B, true)
+  const beforeB = net.currentTick()
   await page.goto(`/cari/${partyId}/bilgiler`)
-  await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => {})
+  const bTerminal = await awaitCompanyTerminal(page, net, B, beforeB, 'company B editor')
   const bEditorOpen = (await field(page, 'cari-contact-website').count()) > 0
   const bWebsite = bEditorOpen ? await field(page, 'cari-contact-website').inputValue() : null
   expect(bWebsite, "the draft prepared in company A must not appear in company B").not.toBe(
@@ -607,6 +677,12 @@ test('L-03 C-06: six real updates v1→v7 across two tabs — withheld reply and
   const readOnlyPuts = contactPuts(readOnlyNet)
   expect(readOnlyPuts, 'a read-only actor writes nothing').toEqual([])
   await lShot(readOnlyPage, SLUG, '10-read-only-deep-link')
+  /**
+   * The barrier FIRST, then the projection: taken the other way round, a request that
+   * landed while the barrier was draining was missing from the record that is supposed to
+   * account for it.
+   */
+  const readOnlyBarrier = await readOnlyNet.quiesce({ settleMs: 1000, timeoutMs: 30_000 })
   const readOnlyRecords = readOnlyNet.records.map((r) => ({
     seq: r.seq,
     method: r.method,
@@ -615,7 +691,6 @@ test('L-03 C-06: six real updates v1→v7 across two tabs — withheld reply and
     status: r.status,
     devIdentityHeader: r.devIdentityHeader,
   }))
-  const readOnlyBarrier = await readOnlyNet.quiesce({ settleMs: 1000, timeoutMs: 30_000 })
   await readOnly.close()
 
   // ---- 11. the barrier, and the evidence BEFORE the verdict ------------------------
@@ -648,7 +723,7 @@ test('L-03 C-06: six real updates v1→v7 across two tabs — withheld reply and
       /** MAIN page: U1 original, U1 replay, U2, U3, U4, U5. `seq` is page-local. */
       contactPuts: contactPuts(net).map(putProjection),
       /** SECOND page: the stale 409 and U6. Same projection; `seq` is page-local. */
-      staleContactPuts: contactPuts(staleNet).map(putProjection),
+      staleContactPuts: stalePutProjection,
       contactGets: contactGets(net).map((r) => ({
         seq: r.seq,
         companyId: r.companyId,
@@ -656,22 +731,18 @@ test('L-03 C-06: six real updates v1→v7 across two tabs — withheld reply and
         completed: isCompletedRead(r, CONTRACT),
         version: (r.responseBody as ContactBody | null)?.version ?? null,
       })),
-      staleContactGets: contactGets(staleNet).map((r) => ({
-        seq: r.seq,
-        companyId: r.companyId,
-        status: r.status,
-        completed: isCompletedRead(r, CONTRACT),
-        version: (r.responseBody as ContactBody | null)?.version ?? null,
-      })),
+      staleContactGets: staleGetProjection,
       withheld: withholder.withheld,
       passedThrough: withholder.passedThrough,
       keyboardTabStopsToEditor: tabs,
       companyBEditorOpened: bEditorOpen,
+      companyBTerminal: bTerminal,
       companyBAddressLines: bLines,
       readOnly: { actor: READ_ONLY_ACTOR, records: readOnlyRecords, barrier: readOnlyBarrier },
+      barriers: { main: barrier, stale: staleBarrier, readOnly: readOnlyBarrier },
       barrier,
       observedEvents: net.observedEvents(),
-      staleObservedEvents: staleNet.observedEvents(),
+      staleObservedEvents: staleObserved,
       boundaries: [
         'No Party and no company account was created: ExpectedNewParties is 0 for this journey.',
         'Six successful logical updates against one account in company A, v1 to v7. The database effect is measured by the environment snapshot, not by this browser.',
@@ -680,6 +751,7 @@ test('L-03 C-06: six real updates v1→v7 across two tabs — withheld reply and
         'A session revocation is NOT measured anywhere in this journey: the isolated Testing host authenticates by X-Development-User and offers no sign-out.',
         'The company-B step records what was observed. It does not claim B holds or lacks an account for this Party; it asserts only that no value or draft from A appeared there and that nothing was written.',
         'seq is page-local in each projection. Joining the browser and the SQL evidence is done on key/company/actor/payload/outcome/response, not on seq.',
+        'Every browser context this journey opened has its own quiescent barrier, and all three are part of the verdict: the main page going quiet while another page still has a request unaccounted for is NOT a pass.',
         'Closed C006, L-01 and L-02 evidence is not reused for this journey and is not re-run by it.',
       ],
       finalTestResult: 'NOT_DECIDED_AT_WRITE_TIME',
@@ -695,17 +767,34 @@ test('L-03 C-06: six real updates v1→v7 across two tabs — withheld reply and
    * symptom: reporting them the other way round once hid a real failure behind its own
    * diagnostic.
    */
-  const priority = failurePriority(barrier.accepted, evidenceError)
+  /**
+   * ALL THREE contexts, or none. This journey opened a second tab and a read-only context,
+   * and both did real work: a verdict resting on the main page's quiet alone would pass a
+   * run whose other pages still had requests nobody could account for.
+   */
+  const allBarriers = [
+    { name: 'main', barrier },
+    { name: 'stale tab', barrier: staleBarrier },
+    { name: 'read-only', barrier: readOnlyBarrier },
+  ] as const
+  const priority = failurePriority(
+    allBarriers.every((entry) => entry.barrier.accepted),
+    evidenceError,
+  )
   const secondary =
     priority.secondary === 'evidence' ? ` — SECONDARY: the evidence write also failed: ${evidenceErrorText(evidenceError)}` : ''
-  expect(
-    barrier.outstanding,
-    `the browser did not go quiet; ${barrier.outstanding.length} request(s) unaccounted for: ${JSON.stringify(barrier.outstanding, null, 1)}${secondary}`,
-  ).toEqual([])
-  expect(
-    barrier.accepted,
-    `the barrier was not accepted (timedOut=${barrier.timedOut}, quietWindowHeld=${barrier.quietWindowHeld}, markedBusy=${barrier.markedBusyAtDecision})${secondary}`,
-  ).toBe(true)
+  for (const entry of allBarriers) {
+    expect(
+      entry.barrier.outstanding,
+      `${entry.name}: the browser did not go quiet; ${entry.barrier.outstanding.length} request(s) unaccounted for: ${JSON.stringify(entry.barrier.outstanding, null, 1)}${secondary}`,
+    ).toEqual([])
+  }
+  for (const entry of allBarriers) {
+    expect(
+      entry.barrier.accepted,
+      `${entry.name}: the barrier was not accepted (timedOut=${entry.barrier.timedOut}, quietWindowHeld=${entry.barrier.quietWindowHeld}, markedBusy=${entry.barrier.markedBusyAtDecision})${secondary}`,
+    ).toBe(true)
+  }
   // The barrier held — so a mandatory evidence write that failed IS the failure.
   if (priority.primary === 'evidence') {
     throw new Error(`the barrier held but the mandatory evidence write failed: ${evidenceErrorText(evidenceError)}`)

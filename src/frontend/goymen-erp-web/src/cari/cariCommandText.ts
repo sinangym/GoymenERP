@@ -167,7 +167,8 @@ export const CARI_CONTACT_TEXT = {
   refreshRecord: 'Kaydı yenile',
   refreshedTitle: 'Kayıt yenilendi',
   refreshedDetail:
-    'Sunucudaki güncel sürüm alındı ve yazdıklarınız korundu. Değişikliklerinizi gözden geçirip yeniden kaydedin; dokunmadığınız alanlar sunucudaki hâliyle kalır.',
+    'Sunucudaki güncel sürüm alındı. Yalnız sizin değiştirdiğiniz alanlar korundu; dokunmadığınız alanlar sunucudaki güncel hâliyle güncellendi. Değişikliklerinizi gözden geçirip yeniden kaydedin.',
+  revalidating: 'Önceki işlem yeniden denenmeden önce kayıt yeniden okunuyor…',
   readRecovery:
     'İşlem sunucuya iletildi, ancak kaydın güncel hâli okunamadı. Aşağıdan yeniden okuyun; okuma başarılı olana kadar yeni kayıt gönderilmez.',
   announceSaved: 'İletişim ve adres bilgileri kaydedildi.',

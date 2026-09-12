@@ -802,3 +802,161 @@ describe('C-06 controlled boundaries — stubbed transport, never an API accepta
     expect(fetchLog.contactUpdates().filter((c) => c.companyId === B_ID)).toHaveLength(0)
   })
 })
+
+describe('C-06 concurrency — a refresh must not re-assert what the user never touched', () => {
+  it('keeps only the user’s own edits and takes every other field from the fresh read', async () => {
+    /**
+     * The failure this closes: v1 holds phone 111, the user changes ONLY the e-mail,
+     * another editor commits phone 222, the save is refused with 409, the user refreshes —
+     * and the patch then carried phone 111 as well, wiping 222 on a save the user believed
+     * was about their e-mail. The same root cause reached address, contact and channel
+     * fields.
+     */
+    const address = (city: string, version: string) =>
+      contactAddress({ city, district: null, version })
+    let version = 1
+    const fetchLog = installFetch({
+      contact: (call) => {
+        if (call.method === 'PUT') {
+          const expected = (call.body as { expectedVersion?: string } | null)?.expectedVersion
+          if (expected !== String(version)) return problem(409, PROBLEM_CODE.versionConflict)
+          version += 1
+          return ack204()
+        }
+        // v1 is what the editor seeds on; v2 is what the OTHER editor left behind.
+        return version === 1
+          ? json(contactView({ phone: '111', email: null, addresses: [address('Eski', '1')] }, { version: '1' }))
+          : json(contactView({ phone: '222', email: null, addresses: [address('Yeni', '2')] }, { version: '2' }))
+      },
+    })
+    const user = userEvent.setup()
+    await openEditor()
+    expect((control('cari-contact-phone') as HTMLInputElement).value).toBe('111')
+    expect((control('cari-address-0-city') as HTMLInputElement).value).toBe('Eski')
+
+    // The user's entire intent: the e-mail, and nothing else.
+    await user.type(control('cari-contact-email'), 'operasyon@example.test')
+    // Somebody else commits in the meantime.
+    version = 2
+
+    await user.click(saveButton())
+    await findByFailure('version-conflict')
+    await user.click(screen.getByRole('button', { name: 'Kaydı yenile' }))
+    await findByState('refreshed')
+
+    // Their values are now on screen — for the fields this user did not touch.
+    expect((control('cari-contact-phone') as HTMLInputElement).value).toBe('222')
+    expect((control('cari-address-0-city') as HTMLInputElement).value).toBe('Yeni')
+    // And the user's own work survived.
+    expect((control('cari-contact-email') as HTMLInputElement).value).toBe('operasyon@example.test')
+
+    await user.click(saveButton())
+    await waitFor(() => {
+      expect(fetchLog.contactUpdates()).toHaveLength(2)
+    }, CHAIN)
+    // The decisive assertion: the patch carries the e-mail and NOTHING else. A rising
+    // version number would not have proved this — the old draft's phone would have
+    // travelled with it.
+    expect(fetchLog.contactUpdates()[1].body).toEqual({
+      expectedVersion: '2',
+      changes: { email: 'operasyon@example.test' },
+    })
+  })
+
+  it('keeps a status operation the user marked across the refresh', async () => {
+    let version = 1
+    const fetchLog = installFetch({
+      contact: (call) => {
+        if (call.method === 'PUT') {
+          const expected = (call.body as { expectedVersion?: string } | null)?.expectedVersion
+          if (expected !== String(version)) return problem(409, PROBLEM_CODE.versionConflict)
+          version += 1
+          return ack204()
+        }
+        return json(
+          contactView({ phone: version === 1 ? '111' : '222', addresses: [contactAddress({ city: null, district: null })] }, { version: String(version) }),
+        )
+      },
+    })
+    const user = userEvent.setup()
+    await openEditor()
+
+    await user.click(screen.getByRole('button', { name: 'Pasife al' }))
+    version = 2
+    await user.click(saveButton())
+    await findByFailure('version-conflict')
+    await user.click(screen.getByRole('button', { name: 'Kaydı yenile' }))
+    await findByState('refreshed')
+    // The marked operation is the user's intent and outlives the refresh; the phone they
+    // never touched is now the server's.
+    expect(screen.getByText('Kaydedildiğinde pasife alınacak.')).toBeTruthy()
+    expect((control('cari-contact-phone') as HTMLInputElement).value).toBe('222')
+
+    await user.click(saveButton())
+    await waitFor(() => {
+      expect(fetchLog.contactUpdates()).toHaveLength(2)
+    }, CHAIN)
+    expect(fetchLog.contactUpdates()[1].body).toEqual({
+      expectedVersion: '2',
+      changes: { addresses: [{ id: 'a1111111-1111-4111-8111-111111111111', operation: 'deactivate' }] },
+    })
+  })
+
+  it('closes the form while the pre-retry read is in flight, so no edit is lost to it', async () => {
+    /**
+     * The retry re-sends a payload that is already frozen. With the form open, an edit made
+     * while its licensing read was in flight was not in what went out — and the success
+     * that followed re-seeded the draft and erased it.
+     */
+    let puts = 0
+    let gets = 0
+    const gate = held()
+    const fetchLog = installFetch({
+      contact: (call) => {
+        if (call.method === 'PUT') {
+          puts += 1
+          if (puts === 1) throw new TypeError('Failed to fetch')
+          return ack204()
+        }
+        gets += 1
+        // The read the retry has to stand on, held open by the test.
+        return gets === 2 ? gate.promise : json(contactView({ phone: '0212 555 00 00' }))
+      },
+    })
+    const user = userEvent.setup()
+    await openEditor()
+
+    await user.clear(control('cari-contact-phone'))
+    await user.type(control('cari-contact-phone'), '+90 212 555 00 01')
+    await user.click(saveButton())
+    await waitFor(() => {
+      expect(document.querySelector('[data-attempt="unknown"]')).toBeTruthy()
+    }, CHAIN)
+    await user.click(screen.getByRole('button', { name: 'İşlemi bırak' }))
+    await user.click(screen.getByRole('button', { name: 'Önceki işlemi yeniden dene' }))
+
+    // While the read is in flight the fields are closed and the screen says why. The
+    // group carries the disabled state, which is what actually stops the interaction —
+    // an input's own disabled property does not reflect an ancestor fieldset.
+    await waitFor(() => {
+      expect(control('cari-contact-phone').closest('fieldset')?.disabled).toBe(true)
+    }, CHAIN)
+    expect(screen.getByText(/kayıt yeniden okunuyor/)).toBeTruthy()
+    expect(saveButton().disabled).toBe(true)
+    // And an attempt to edit during the window changes nothing.
+    await user.type(control('cari-contact-phone'), 'X')
+    expect((control('cari-contact-phone') as HTMLInputElement).value).toBe('+90 212 555 00 01')
+
+    gate.release(json(contactView({ phone: '0212 555 00 00' })))
+    await waitFor(() => {
+      expect(puts).toBe(2)
+    }, CHAIN)
+    // The re-send is the SAME attempt: same key, same payload, and the payload is the one
+    // the user actually submitted.
+    expect(fetchLog.contactUpdates()[1].idempotencyKey).toBe(fetchLog.contactUpdates()[0].idempotencyKey)
+    expect(fetchLog.contactUpdates()[1].body).toEqual({
+      expectedVersion: '1',
+      changes: { phone: '+90 212 555 00 01' },
+    })
+  })
+})

@@ -228,6 +228,75 @@ function originalFromView(view: ContactInformationView) {
   }
 }
 
+/**
+ * ONE field, across three versions of the truth: what the draft was seeded on (base),
+ * what the user has in front of them (mine), and what the record says now (theirs).
+ *
+ * The user's value wins ONLY where they actually changed it. Everywhere else the fresh
+ * server value is taken — and that is the whole point: keeping the entire old draft over
+ * a new baseline silently re-asserted every field the draft still held, including ones
+ * the user never touched. A concurrent editor's corrected phone number was overwritten by
+ * the stale value this form happened to be holding, on a save the user believed was about
+ * their e-mail.
+ */
+function mergeValues(
+  base: Readonly<Record<string, string>>,
+  mine: Readonly<Record<string, string>>,
+  theirs: Readonly<Record<string, string>>,
+): Record<string, string> {
+  const merged: Record<string, string> = { ...theirs }
+  for (const key of Object.keys(mine)) {
+    if (mine[key] !== (base[key] ?? '')) merged[key] = mine[key]
+  }
+  return merged
+}
+
+/**
+ * The same rule for a collection, and for the channels under a contact.
+ *
+ * Order and existence come from the SERVER: a row somebody else added appears, and a row
+ * this draft holds that the record no longer returns is dropped, because the read is the
+ * only authority on what exists. What survives from the draft is the user's own work —
+ * their field edits, their explicitly marked status operations, and the rows they added,
+ * which the server has never seen and cannot speak for.
+ */
+function mergeRows(
+  base: readonly RowState[],
+  mine: readonly RowState[],
+  theirs: readonly RowState[],
+): RowState[] {
+  const baseById = new Map(base.map((row) => [row.id, row]))
+  const mineById = new Map(mine.map((row) => [row.id, row]))
+  const merged = theirs.map((theirRow) => {
+    const myRow = mineById.get(theirRow.id)
+    if (myRow === undefined) return theirRow
+    const baseRow = baseById.get(theirRow.id)
+    return {
+      ...theirRow,
+      // The status operation the user chose is their intent, and it outlives the refresh.
+      intent: myRow.intent,
+      values: mergeValues(baseRow?.values ?? {}, myRow.values, theirRow.values),
+      ...(theirRow.channels === undefined && myRow.channels === undefined
+        ? {}
+        : {
+            channels: mergeRows(baseRow?.channels ?? [], myRow.channels ?? [], theirRow.channels ?? []),
+          }),
+    }
+  })
+  // Rows the user added are not in the server's answer yet; they are still their work.
+  return [...merged, ...mine.filter((row) => row.isNew)]
+}
+
+function mergeDraft(base: ContactInformationView, mine: FormState, theirs: ContactInformationView): FormState {
+  const baseForm = formFromView(base)
+  const theirsForm = formFromView(theirs)
+  return {
+    scalars: mergeValues(baseForm.scalars, mine.scalars, theirsForm.scalars),
+    addresses: mergeRows(baseForm.addresses, mine.addresses, theirsForm.addresses),
+    contacts: mergeRows(baseForm.contacts, mine.contacts, theirsForm.contacts),
+  }
+}
+
 function toEditedRow(row: RowState): EditedRow {
   return {
     id: row.id,
@@ -401,6 +470,15 @@ function ContactEditor({ namespace }: { readonly namespace: string | null }) {
 
   const view = state.kind === 'ready' ? state.data : null
 
+  /**
+   * The base the draft stands on, readable from the adopt effect without making that
+   * effect depend on every keystroke.
+   */
+  const seededRef = useRef<ContactInformationView | null>(null)
+  useEffect(() => {
+    seededRef.current = seeded
+  }, [seeded])
+
   const attempt = useCommandAttempt<Record<string, unknown>, null>()
   const completed = attempt.state.phase === 'completed' ? attempt.state : null
   const frozen = attempt.state.phase === 'submitting' || attempt.state.phase === 'unknown'
@@ -498,9 +576,16 @@ function ContactEditor({ namespace }: { readonly namespace: string | null }) {
       setShowErrors(false)
       setSavedVersion(view.version)
     } else {
-      // The fence moves to what the record now is; the draft stays for the user to review.
+      /**
+       * The fence moves to what the record now IS, and the draft is merged onto it: the
+       * user's own edits are kept, and every field they did not touch takes the fresh
+       * server value. Keeping the whole old draft over a new baseline is what re-asserted
+       * a concurrent editor's field as if this user had asked for it.
+       */
+      const base = seededRef.current
       // oxlint-disable-next-line react/set-state-in-effect -- completes the server-triggered refence above
       setSeeded(view)
+      setForm((current) => (base === null ? formFromView(view) : mergeDraft(base, current, view)))
       setRefreshedVersion(view.version)
       setSavedVersion(null)
     }
@@ -740,7 +825,15 @@ function ContactEditor({ namespace }: { readonly namespace: string | null }) {
    * failed post-save read left the old draft on screen with no feedback at all.
    */
   const adoptReadFailed = pendingAdopt !== null && !query.isFetching && state.kind !== 'ready'
-  const formDisabled = frozen || pendingAdopt !== null
+  /**
+   * Closed while the pre-retry read is in flight, too.
+   *
+   * That read exists to license re-sending an attempt whose payload is already frozen. If
+   * the form stayed open, an edit made during the wait was not in what went out — and the
+   * success that followed re-seeded the draft and erased it. The window is short and the
+   * screen says what it is waiting for.
+   */
+  const formDisabled = frozen || pendingAdopt !== null || attempt.revalidating
   const savedNotice = savedVersion !== null && !body.dirty && pendingAdopt === null
 
   return (
@@ -822,6 +915,7 @@ function ContactEditor({ namespace }: { readonly namespace: string | null }) {
               fields={ADDRESS_FIELDS}
               rules={ADDRESS_FIELD_RULES}
               collection="address"
+              collectionProperty="addresses"
               optionLabels={{ purpose: ADDRESS_PURPOSE_LABEL }}
               problems={showErrors ? body.problems : {}}
               problemPrefix={`addresses.${index}`}
@@ -851,6 +945,7 @@ function ContactEditor({ namespace }: { readonly namespace: string | null }) {
                   fields={CONTACT_FIELDS}
                   rules={CONTACT_FIELD_RULES}
                   collection="contact"
+                  collectionProperty="contacts"
                   optionLabels={{}}
                   problems={showErrors ? body.problems : {}}
                   problemPrefix={`contacts.${index}`}
@@ -959,7 +1054,10 @@ function ContactEditor({ namespace }: { readonly namespace: string | null }) {
           <button type="submit" className={styles.primary} disabled={formDisabled || !body.dirty}>
             {frozen ? TEXT.saving : TEXT.save}
           </button>
-          {!body.dirty ? <span className={styles.hint}>{TEXT.nothingToSave}</span> : null}
+          {attempt.revalidating ? <span className={styles.hint}>{TEXT.revalidating}</span> : null}
+          {!body.dirty && !attempt.revalidating ? (
+            <span className={styles.hint}>{TEXT.nothingToSave}</span>
+          ) : null}
         </div>
       </form>
     </section>
@@ -993,6 +1091,7 @@ function RowBlock({
   fields,
   rules,
   collection,
+  collectionProperty,
   optionLabels,
   problems,
   problemPrefix,
@@ -1007,6 +1106,8 @@ function RowBlock({
   readonly fields: readonly string[]
   readonly rules: Readonly<Record<string, FieldRule>>
   readonly collection: 'address' | 'contact'
+  /** The wire property this row belongs to, so a locator can scope to one collection. */
+  readonly collectionProperty: 'addresses' | 'contacts'
   readonly optionLabels: Readonly<Record<string, Record<string, string>>>
   readonly problems: Readonly<Record<string, FieldProblem | RowProblem>>
   readonly problemPrefix: string
@@ -1026,7 +1127,13 @@ function RowBlock({
    */
   const statusBlocked = hasFieldWork && !statusMarked
   return (
-    <div className={styles.row} data-row={row.id} data-row-index={index} data-intent={row.intent}>
+    <div
+      className={styles.row}
+      data-collection={collectionProperty}
+      data-row={row.id}
+      data-row-index={index}
+      data-intent={row.intent}
+    >
       <div className={styles.rowHead}>
         {row.isNew ? <span className={styles.badge}>{TEXT.newRow}</span> : null}
         {!row.isNew && !row.isActive ? <span className={styles.badge}>{TEXT.passive}</span> : null}
