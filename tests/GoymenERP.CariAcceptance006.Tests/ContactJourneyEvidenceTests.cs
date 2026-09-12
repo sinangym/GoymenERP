@@ -106,6 +106,7 @@ public sealed class ContactJourneyEvidenceTests
     [InlineData("extraReplayReceipt")]
     [InlineData("wrongCompany")]
     [InlineData("wrongActor")]
+    [InlineData("actorAlias")]
     [InlineData("wrongPayload")]
     [InlineData("wrongKey")]
     [InlineData("conflictSuccess")]
@@ -134,6 +135,7 @@ public sealed class ContactJourneyEvidenceTests
             case "extraReplayReceipt": after = after with { ContactExecutionRows = [.. receipts, receipts[0] with { Id = Guid.NewGuid() }] }; break;
             case "wrongCompany": receipts[5] = receipts[5] with { CompanyId = Guid.Parse(value.Identity.CompanyBId) }; break;
             case "wrongActor": receipts[5] = receipts[5] with { ActorId = "another-actor" }; break;
+            case "actorAlias": receipts[5] = receipts[5] with { ActorId = value.Identity.Actor }; break;
             case "wrongPayload": receipts[5] = receipts[5] with { RequestHash = new string('A', 64) }; break;
             case "wrongKey": receipts[5] = receipts[5] with { IdempotencyKeyHash = new string('B', 64) }; break;
             case "conflictSuccess": receipts[5] = receipts[5] with { Outcome = "Succeeded" }; break;
@@ -251,7 +253,7 @@ public sealed class ContactJourneyEvidenceTests
         ContactExecutionRow Receipt(ContactJourneyAttempt attempt, bool conflict = false) => new(
             Guid.NewGuid(), company, IdempotencyHash.ComputeKey(attempt.IdempotencyKey),
             IdempotencyHash.ComputePayload(new { PartyId = party, Command = attempt.Command }),
-            identity.Actor, conflict ? "VersionConflict" : "Succeeded", conflict ? 409 : 204,
+            "20000000-0000-0000-0000-000000000003", conflict ? "VersionConflict" : "Succeeded", conflict ? 409 : 204,
             JsonSerializer.Serialize(new CounterpartyCommandResponse(
                 conflict ? CounterpartyCommandResult.VersionConflict : CounterpartyCommandResult.Succeeded,
                 conflict ? 409 : 204, conflict ? "Version conflict" : null, conflict ? "Read the current version." : null,

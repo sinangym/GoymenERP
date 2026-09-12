@@ -9,6 +9,11 @@ public sealed record ContactJourneyAttempt(string IdempotencyKey, UpdateCounterp
 
 public static partial class DatabaseEvidence
 {
+    // identity-seed.json maps the Testing header alias group-bootstrap-admin to
+    // this internal user ID; actual smoke /identity/me confirms that mapping.
+    // Durable commands persist the resolved ID, never the external alias.
+    private const string ContactJourneyActorId = "20000000-0000-0000-0000-000000000003";
+
     // L-03: six edits, one same-key replay and one durable stale-version refusal.
     // Inputs are the browser's actual requests, not values reverse-engineered from SQL.
     // Client-minted UUIDs vary; every other expected value is fixed by the L-03
@@ -109,7 +114,7 @@ public static partial class DatabaseEvidence
             var matching = receipts!.Where(row => row.IdempotencyKeyHash == key).ToArray();
             var conflict = ReferenceEquals(attempt, stale);
             RequireContact(matching.Length == 1 && matching[0].CompanyId == companyId
-                && matching[0].ActorId == identity.Actor && matching[0].RequestHash == Payload(partyId, attempt)
+                && matching[0].ActorId == ContactJourneyActorId && matching[0].RequestHash == Payload(partyId, attempt)
                 && matching[0].Outcome == (conflict ? "VersionConflict" : "Succeeded")
                 && matching[0].HttpStatusCode == (conflict ? 409 : 204) && matching[0].SchemaVersion == 1,
                 "durable key, payload, company, actor or result differs");
