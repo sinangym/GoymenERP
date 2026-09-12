@@ -19,9 +19,10 @@ public sealed class ProductEnvironmentProfileTests
         var services = CanonicalProviders();
         using (var normal = services.BuildServiceProvider())
         {
-            var registry = new ShellCapabilityRegistry(normal.GetServices<IShellCapabilityProvider>(),
-                new ShellCapabilityAuthorityCatalog([ShellCapabilityRegistryAuthorities.CounterpartyV15AndOrganizationV10]));
-            Assert.Equal(8, registry.Registrations.Count);
+            var providers = normal.GetServices<IShellCapabilityProvider>().ToArray();
+            Assert.Equal(2, providers.Length);
+            Assert.IsType<CounterpartyShellCapabilityProvider>(providers[0]);
+            Assert.IsType<OrganizationShellCapabilityProvider>(providers[1]);
         }
         ProductAcceptanceFactory.ReplaceCanonicalProviders(services);
         using var isolated = services.BuildServiceProvider();
