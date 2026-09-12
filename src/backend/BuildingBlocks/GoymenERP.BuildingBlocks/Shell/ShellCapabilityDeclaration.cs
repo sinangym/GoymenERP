@@ -9,4 +9,5 @@ public sealed record ShellCapabilityDeclaration(
     ShellCapabilityContextRequirement ContextRequirement,
     ShellCapabilityScopeRequirement ScopeRequirement,
     IReadOnlyCollection<string> RequiredPermissions,
-    bool ImplementationAvailable);
+    bool ImplementationAvailable,
+    string? ParentCapabilityId = null);

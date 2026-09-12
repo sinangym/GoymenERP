@@ -1,6 +1,8 @@
+using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Infrastructure.Seeding;
+using GoymenERP.Modules.Organization.Infrastructure.Shell;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,6 +43,7 @@ public static class OrganizationModuleExtensions
         services.AddScoped<OrganizationBootstrapWriteScope>();
         services.AddScoped<IOrganizationService, OrganizationService>();
         services.AddScoped<OrganizationDataSeeder>();
+        services.AddSingleton<IShellCapabilityProvider, OrganizationShellCapabilityProvider>();
 
         return services;
     }
