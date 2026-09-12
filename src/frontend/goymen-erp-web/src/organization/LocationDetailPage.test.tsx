@@ -41,6 +41,7 @@ function stub(
     detail?: Array<() => Response>
     command?: Array<() => Response>
     capabilities?: readonly string[]
+    generations?: readonly string[]
   } = {},
 ): Scenario {
   const detail = options.detail ?? [() => json(location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0'))]
@@ -50,6 +51,7 @@ function stub(
 
   const recorded = installFetch({
     capabilities: options.capabilities,
+    generations: options.generations,
     respond: (url) => {
       if (url.includes('/active-state')) {
         const respond = command[Math.min(commandIndex, command.length - 1)]
@@ -651,7 +653,7 @@ describe('the list behind the card', () => {
 })
 
 describe('the unresolved attempt survives the component lifecycle', () => {
-  const STORE_KEY = attemptStoreKey(IDENTITY.userId, COMPANY_A, LOC_H0)
+  const STORE_KEY = attemptStoreKey(0, IDENTITY.userId, COMPANY_A, LOC_H0)
 
   it('survives a FAILED re-read that unmounts the card, and comes back on recovery', async () => {
     /**
@@ -750,7 +752,7 @@ describe('the unresolved attempt survives the component lifecycle', () => {
     expect(await screen.findByText(/sonuç bilinmiyor/)).toBeTruthy()
 
     expect(recallAttempt(STORE_KEY)).not.toBeNull()
-    expect(recallAttempt(attemptStoreKey(IDENTITY.userId, COMPANY_B, LOC_H0))).toBeNull()
+    expect(recallAttempt(attemptStoreKey(0, IDENTITY.userId, COMPANY_B, LOC_H0))).toBeNull()
   })
 
   it('forgets the attempt once it is resolved', async () => {
@@ -785,5 +787,89 @@ describe('focus cannot escape backwards from a notice', () => {
     notice.focus()
     await userEvent.tab()
     expect(dialog.contains(document.activeElement)).toBe(true)
+  })
+})
+
+describe('the key is reserved BEFORE the request leaves', () => {
+  const STORE_KEY = attemptStoreKey(0, IDENTITY.userId, COMPANY_A, LOC_H0)
+
+  it('has the attempt on record at the moment the request is issued', async () => {
+    /**
+     * The probe has to run INSIDE the transport, not after it.
+     *
+     * `send()` executes in the same tick as the dispatch, while the mirroring effect
+     * runs only after the render commit — so asserting from the test body cannot tell
+     * the two apart: by then the effect has flushed either way. Reading the store from
+     * the fetch responder is the only place that observes the actual ordering, and it
+     * is the ordering that matters: an unmount between the request going out and the
+     * effect running used to lose a key that was already on the wire.
+     */
+    let storedAtRequestTime: string | null | undefined
+    const { recorded } = stub({
+      command: [
+        () => {
+          storedAtRequestTime = recallAttempt(STORE_KEY)?.snapshot.key ?? null
+          return noContent()
+        },
+      ],
+    })
+    renderAt(PATH)
+    await fillAndSubmit()
+
+    await waitFor(() => expect(commandCalls(recorded)).toHaveLength(1))
+    expect(storedAtRequestTime).toBe(commandCalls(recorded)[0].headers['Idempotency-Key'])
+  })
+
+  it('keeps the reservation when the mount is torn down mid-flight', async () => {
+    // Survival across leaving the screen entirely while the command is unresolved.
+    let release: () => void = () => {}
+    const pending = new Promise<Response>((resolve) => {
+      release = () => resolve(noContent())
+    })
+    const { recorded } = stub({ command: [() => pending as unknown as Response] })
+    const { router } = renderAt(PATH)
+    await fillAndSubmit()
+    await waitFor(() => expect(commandCalls(recorded)).toHaveLength(1))
+
+    await router.navigate('/ayarlar/organizasyon')
+
+    expect(recallAttempt(STORE_KEY)?.snapshot.key).toBe(
+      commandCalls(recorded)[0].headers['Idempotency-Key'],
+    )
+    release()
+  })
+})
+
+describe('recovery after a fresh capability generation', () => {
+  const STORE_KEY = attemptStoreKey(0, IDENTITY.userId, COMPANY_A, LOC_H0)
+
+  it('restores the attempt in the SAME session even though the namespace changed', async () => {
+    /**
+     * A refence is followed by a re-verification that returns a NEW capability
+     * generation, which changes the shell context namespace. The attempt must still come
+     * back, because it is bound to session + actor + company + location — not to the
+     * namespace, whose generation is precisely what a refence changes.
+     */
+    const { recorded } = stub({
+      command: [() => problem(503), () => noContent()],
+      generations: ['org-cap-gen-1', 'org-cap-gen-2'],
+    })
+    const { router } = renderAt(PATH)
+    await fillAndSubmit()
+    expect(await screen.findByText(/sonuç bilinmiyor/)).toBeTruthy()
+    const originalKey = commandCalls(recorded)[0].headers['Idempotency-Key']
+
+    // Leave and re-enter: the route entry re-verifies and lands on generation 2.
+    await router.navigate('/ayarlar/organizasyon')
+    await router.navigate(PATH)
+
+    expect(await screen.findByText(/sonuç bilinmiyor/)).toBeTruthy()
+    await userEvent.click(
+      await screen.findByRole('button', { name: /Aynı işlem anahtarıyla tekrar gönder/ }),
+    )
+
+    await waitFor(() => expect(commandCalls(recorded)).toHaveLength(2))
+    expect(commandCalls(recorded)[1].headers['Idempotency-Key']).toBe(originalKey)
+    expect(recallAttempt(STORE_KEY)).toBeNull() // resolved by the 204
   })
 })

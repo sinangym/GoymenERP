@@ -26,7 +26,11 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useLocation, useParams } from 'react-router'
 import { fetchLocation } from './api'
-import { setLocationActiveState, type CommandContext } from './commandApi'
+import {
+  setLocationActiveState,
+  type CommandContext,
+  type CommandUnknown,
+} from './commandApi'
 import type { LocationSummary } from './contract'
 import {
   attemptReducer,
@@ -39,9 +43,10 @@ import {
 import { ORGANIZATION_CAPABILITY } from './capabilities'
 import {
   attemptStoreKey,
-  forgetAttempt,
   recallAttempt,
-  rememberAttempt,
+  releaseAttempt,
+  reserveAttempt,
+  updateAttempt,
 } from './unresolvedAttemptStore'
 import {
   APPLIED_DETAIL,
@@ -114,11 +119,16 @@ function LocationDetail({ namespace }: { readonly namespace: string | null }) {
   const singleCompanyContext = scopeMode === 'single' && activeCompanyId !== null
   const canChangeStatus = hasCapability(shell, ORGANIZATION_CAPABILITY.locationStatus)
   /**
-   * Identity of an outstanding command for THIS actor, company and location. Not the
-   * shell namespace: that carries the capability generation, which a 403 refence
-   * changes — and surviving a refence is half the point. See unresolvedAttemptStore.
+   * Identity of an outstanding command: session + actor + company + location.
+   *
+   * Not the shell namespace — that carries the capability generation, which a 403
+   * refence changes, and surviving a refence is half the point. `sessionEpoch` is a
+   * different dimension and IS included: the 403 branch leaves it alone, while 401 /
+   * logout / actor change advance it, so an attempt survives a revoked capability but
+   * never crosses into a new session. See unresolvedAttemptStore.
    */
   const storeKey = attemptStoreKey(
+    shell.sessionEpoch,
     shell.activeContext?.userId ?? null,
     activeCompanyId,
     locationId ?? '',
@@ -326,7 +336,7 @@ function ActiveStateSection({
    */
   useEffect(() => {
     if (attempt.phase === 'unknown') {
-      rememberAttempt(storeKey, {
+      updateAttempt(storeKey, {
         snapshot: attempt.snapshot,
         reason: attempt.reason,
         resends: attempt.resends,
@@ -335,15 +345,28 @@ function ActiveStateSection({
       return
     }
     if (attempt.phase === 'submitting') {
-      rememberAttempt(storeKey, {
+      // Already reserved synchronously before the request; this only refreshes it.
+      updateAttempt(storeKey, {
         snapshot: attempt.snapshot,
         reason: attempt.unresolvedSince ?? { kind: 'aborted' },
         resends: attempt.resends,
       })
       return
     }
-    // idle / applied / failed are all resolved — nothing outstanding to remember.
-    forgetAttempt(storeKey)
+    if (attempt.phase === 'applied' || attempt.phase === 'failed') {
+      // Terminal — and only THIS attempt is released, never whatever happens to be
+      // stored. A settlement closes one command, not the slot.
+      releaseAttempt(storeKey, attempt.snapshot.key)
+      return
+    }
+    /**
+     * `idle` deliberately does nothing.
+     *
+     * An unmounting or freshly-mounted owner passes through idle, and deleting here let
+     * it erase a newer outstanding command reserved by whoever owns the screen now.
+     * Abandonment is already handled where it happens: the trigger refuses to RESET an
+     * unresolved attempt, and a resolved one was released above.
+     */
   }, [attempt, storeKey])
   const triggerRef = useRef<HTMLButtonElement>(null)
   const successRef = useRef<HTMLDivElement>(null)
@@ -416,6 +439,7 @@ function ActiveStateSection({
           location={location}
           companyId={companyId}
           binding={binding}
+          storeKey={storeKey}
           targetActive={targetActive}
           attempt={attempt}
           dispatch={dispatch}
@@ -463,6 +487,7 @@ function ActiveStateDialog({
   location,
   companyId,
   binding,
+  storeKey,
   targetActive,
   attempt,
   dispatch,
@@ -472,6 +497,7 @@ function ActiveStateDialog({
   readonly location: LocationSummary
   readonly companyId: string
   readonly binding: string
+  readonly storeKey: string | null
   readonly targetActive: boolean
   readonly attempt: AttemptState
   readonly dispatch: React.Dispatch<Parameters<typeof attemptReducer>[1]>
@@ -522,7 +548,23 @@ function ActiveStateDialog({
   }, [phase])
 
   const send = useCallback(
-    async (snapshot: AttemptSnapshot) => {
+    async (snapshot: AttemptSnapshot, resends: number, since?: CommandUnknown) => {
+      /**
+       * RESERVE FIRST, SEND SECOND — and synchronously.
+       *
+       * This runs before the first `await`, so the record exists before the request can
+       * possibly be in flight. Doing it from the mirroring effect instead left a window:
+       * effects run after the render commit, while `send()` is invoked in the same tick
+       * as the dispatch, so a key could already be on the wire with nothing written
+       * anywhere. Unmounting inside that window — the card re-read failing, the boundary
+       * closing the mount — lost exactly the key this store exists to keep.
+       */
+      reserveAttempt(storeKey, {
+        snapshot,
+        reason: since ?? { kind: 'aborted' },
+        resends,
+      })
+
       const context: CommandContext = {
         companyId,
         locationId: location.id,
@@ -555,7 +597,7 @@ function ActiveStateDialog({
       // A 204 says the command was accepted, never what the record now is.
       if (outcome.type === 'applied') await onRefresh()
     },
-    [boundary, companyId, dispatch, location.id, onRefresh],
+    [boundary, companyId, dispatch, location.id, onRefresh, storeKey],
   )
 
   const submit = useCallback(
@@ -585,7 +627,7 @@ function ActiveStateDialog({
         payload: { isActive: targetActive, expectedVersion: location.version, reason: trimmed },
       }
       dispatch({ type: 'SUBMIT', snapshot })
-      void send(snapshot)
+      void send(snapshot, 0)
     },
     [binding, busy, dispatch, location.version, reason, send, targetActive, unresolved],
   )
@@ -593,8 +635,9 @@ function ActiveStateDialog({
   const resend = useCallback(() => {
     if (attempt.phase !== 'unknown') return
     const snapshot = attempt.snapshot
+    const { resends, reason } = attempt
     dispatch({ type: 'RESEND' })
-    void send(snapshot)
+    void send(snapshot, resends + 1, reason)
   }, [attempt, dispatch, send])
 
   /**

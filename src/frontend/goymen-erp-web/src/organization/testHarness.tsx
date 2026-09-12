@@ -184,6 +184,12 @@ function resetCompanyPreference(): void {
 export interface HarnessOptions {
   /** Capability ids the SERVER grants. Defaults to read + status. */
   readonly capabilities?: readonly string[]
+  /**
+   * Capability generation per `/shell/capabilities` call, in order (the last repeats).
+   * A NEW generation changes the shell context namespace, which is what a real
+   * re-verification after a refence looks like.
+   */
+  readonly generations?: readonly string[]
   /** Feature-endpoint responder. Return undefined to fall through to a 404. */
   readonly respond?: (url: string, init: RequestInit | undefined) => Response | undefined
 }
@@ -202,6 +208,7 @@ export function installFetch(options: HarnessOptions = {}): RecordedRequest[] {
   clearAttemptStore()
   const capabilities = options.capabilities ?? OPERATOR_CAPABILITIES
   const recorded: RecordedRequest[] = []
+  let capabilityCalls = 0
 
   vi.stubGlobal(
     'fetch',
@@ -224,9 +231,12 @@ export function installFetch(options: HarnessOptions = {}): RecordedRequest[] {
       if (url.endsWith('/identity/me')) return json(IDENTITY)
       if (url.endsWith('/organization/companies')) return json(DIRECTORY)
       if (url.endsWith('/shell/capabilities')) {
+        const generations = options.generations ?? ['org-cap-gen-1']
+        const generation = generations[Math.min(capabilityCalls, generations.length - 1)]
+        capabilityCalls += 1
         return json({
           contractVersion: SHELL_CAPABILITY_CONTRACT_VERSION,
-          generation: 'org-cap-gen-1',
+          generation,
           capabilities,
         })
       }

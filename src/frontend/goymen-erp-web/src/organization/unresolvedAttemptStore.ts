@@ -17,14 +17,26 @@
  * i.e. possibly the opposite activation.
  *
  * WHAT THE KEY IS, AND WHY IT IS NOT THE SHELL NAMESPACE. Identity here is
- * `actor + company + location` and deliberately NOTHING else. The shell namespace
- * includes the capability generation, which is exactly what a 403 refence changes — so
- * keying on it would throw the attempt away in the very case we are trying to survive.
- * Session epoch is left out for the same reason.
+ * `session + actor + company + location`.
  *
- * What the key DOES guarantee is the boundary the coordinator drew: an attempt never
- * travels to another user or another company. A different actor or a different company
- * simply does not match, so it reads as absent.
+ * The shell namespace is deliberately NOT used: it carries the capability generation,
+ * and a 403 refence is exactly what changes that. Keying on it would throw the attempt
+ * away in the very case we are trying to survive.
+ *
+ * `sessionEpoch` IS included, and the two are not the same dimension — an earlier
+ * version of this comment wrongly lumped them together. In `shellState.ts` the 403
+ * branch returns without touching `sessionEpoch`; only the 401 branch, `SESSION_RESET`
+ * and `SESSION_INVALIDATED` advance it. So including it draws precisely the line that
+ * is wanted:
+ *
+ *   - a 403 inside the SAME session keeps the attempt (the capability was revoked, the
+ *     session was not), and
+ *   - a logout, an actor change or a 401 starts a new epoch, so the same human signing
+ *     back in never inherits the previous session's snapshot or key.
+ *
+ * What the key guarantees on top of that is the boundary the coordinator drew: an
+ * attempt never travels to another user or another company. A different actor, company
+ * or session simply does not match, so it reads as absent.
  *
  * This does NOT weaken the shell's safe close. The boundary still ends the session,
  * still drops the capability and still unmounts the feature; the only thing that
@@ -45,20 +57,49 @@ export interface StoredAttempt {
   readonly lastRefusal?: CommandFailure
 }
 
-/** `actor + company + location`. Structural, so no delimiter can collide. */
+/** `session + actor + company + location`. Structural, so no delimiter can collide. */
 export function attemptStoreKey(
+  sessionEpoch: number,
   actorId: string | null,
   companyId: string | null,
   locationId: string,
 ): string | null {
   if (actorId === null || companyId === null || locationId.length === 0) return null
-  return JSON.stringify([actorId, companyId, locationId])
+  return JSON.stringify([sessionEpoch, actorId, companyId, locationId])
 }
 
 const store = new Map<string, StoredAttempt>()
 
-export function rememberAttempt(key: string | null, attempt: StoredAttempt): void {
+/**
+ * Reserve the key SYNCHRONOUSLY, before the request leaves.
+ *
+ * This must not be done from an effect. An effect runs after the render commit, while
+ * `send()` is called in the same tick as the dispatch — so between the request going
+ * out and the effect running there was a window in which a real Idempotency-Key was
+ * already in flight with nothing recorded anywhere. Unmounting inside that window (the
+ * card re-read failing, the boundary closing the mount) lost exactly the key this store
+ * exists to keep. Reserving first closes the window: the record exists before anything
+ * can be uncertain about it.
+ *
+ * Unconditional on purpose — a submit is a deliberate act by the current owner, and it
+ * is the one moment a new attempt legitimately replaces whatever was there.
+ */
+export function reserveAttempt(key: string | null, attempt: StoredAttempt): void {
   if (key === null) return
+  store.set(key, attempt)
+}
+
+/**
+ * Mirror a later phase change of an attempt ALREADY reserved.
+ *
+ * Identity-guarded: a component instance that is unmounting, or a stale one still
+ * holding an older attempt, must not write over a newer reservation made by whoever
+ * owns the screen now. Only the attempt that is actually stored may update itself.
+ */
+export function updateAttempt(key: string | null, attempt: StoredAttempt): void {
+  if (key === null) return
+  const current = store.get(key)
+  if (current !== undefined && current.snapshot.key !== attempt.snapshot.key) return
   store.set(key, attempt)
 }
 
@@ -67,9 +108,17 @@ export function recallAttempt(key: string | null): StoredAttempt | null {
   return store.get(key) ?? null
 }
 
-/** Called when the attempt reaches a terminal answer, or the user abandons it. */
-export function forgetAttempt(key: string | null): void {
+/**
+ * Release on a terminal answer — and ONLY for the attempt that actually settled.
+ *
+ * A settlement closes one attempt, not "whatever is stored". Deleting unconditionally
+ * let an obsolete or idle owner erase a newer outstanding command; the reducer already
+ * refuses a settle whose key does not match, and this is the same rule at the store.
+ */
+export function releaseAttempt(key: string | null, attemptKey: string): void {
   if (key === null) return
+  const current = store.get(key)
+  if (current === undefined || current.snapshot.key !== attemptKey) return
   store.delete(key)
 }
 

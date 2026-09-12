@@ -391,7 +391,9 @@ describe('returning from a location card', () => {
     await userEvent.click(await screen.findByRole('link', { name: 'GAZ-DEP' }))
     expect(await screen.findByRole('heading', { name: 'Lokasyon' })).toBeTruthy()
 
-    await userEvent.click(screen.getByRole('link', { name: /Organizasyon/ }))
+    // EXACT match, not /Organizasyon/: with the real shell mount the sidebar also
+    // carries an "Organizasyon" nav link, and a loose pattern finds both.
+    await userEvent.click(screen.getByRole('link', { name: '← Organizasyon' }))
 
     expect(await screen.findByText('Sayfa 2 / 2')).toBeTruthy()
     expect(screen.getByRole('link', { name: 'GAZ-DEP' })).toBeTruthy()
@@ -415,7 +417,9 @@ describe('returning from a location card', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Sonraki' }))
     await userEvent.click(await screen.findByRole('link', { name: 'GAZ-DEP' }))
     await screen.findByRole('heading', { name: 'Lokasyon' })
-    await userEvent.click(screen.getByRole('link', { name: /Organizasyon/ }))
+    // EXACT match, not /Organizasyon/: with the real shell mount the sidebar also
+    // carries an "Organizasyon" nav link, and a loose pattern finds both.
+    await userEvent.click(screen.getByRole('link', { name: '← Organizasyon' }))
     expect(await screen.findByText('Sayfa 2 / 2')).toBeTruthy()
 
     await userEvent.selectOptions(screen.getByRole('combobox'), COMPANY_B)
