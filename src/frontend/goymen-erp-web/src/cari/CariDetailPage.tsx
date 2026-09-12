@@ -11,16 +11,17 @@
  * a claim, and we are not entitled to make it.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
 import { fetchCounterpartyDetail } from './detailApi'
 import { PARTY_KIND, PROBLEM_CODE, problemCodeOf } from './contract'
-import { API_BASE } from './clientContract'
+import { API_BASE, isCommandContractReady } from './clientContract'
 import { LEGACY_ROLE_HEADING, NO_COMMERCIAL_ROLE_DETAIL, rolesText } from './roleText'
 import { CARI_ACCOUNT_STATUS_TEXT as STATUS, CARI_CARD_TEXT as CARD } from './cariCommandText'
-import { CARI_CONTROL_CAPABILITY } from './accountStatusContract'
-import { AccountStatusControl, type AccountStatusApplied } from './AccountStatusControl'
+import { CARI_CONTROL_CAPABILITY, targetIsActive } from './accountStatusContract'
+import { AccountStatusControl, AccountStatusRecoveryNotice } from './AccountStatusControl'
+import { useAccountStatusFlow, type AccountStatusApplied } from './useAccountStatusFlow'
 import type { CounterpartyDetail } from './detailContract'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
@@ -90,10 +91,16 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
    * A status change the server APPLIED (204), waiting for the fresh read it owes.
    *
    * The 204 has no body, so nothing about the record's new state is known until that
-   * read lands; while it is pending the action is closed, and if the read FAILS the
-   * screen says "saved, view not refreshed" and offers the read again — never the write.
+   * read LANDS — `baseline` is the detail query's `dataUpdatedAt` at the moment of the
+   * 204, and only a later stamp counts. A read that is paused (offline) or that fails
+   * leaves the cached data exactly where it was, and that data is NOT the fresh read,
+   * however settled the query looks (Dirac #250 P2-2). While it is pending the action
+   * is closed and the screen says so; the retry it offers is the read's, never the write.
    */
-  const [pendingAdopt, setPendingAdopt] = useState<AccountStatusApplied | null>(null)
+  const [pendingAdopt, setPendingAdopt] = useState<{
+    readonly applied: AccountStatusApplied
+    readonly baseline: number
+  } | null>(null)
   /** The last adopted result, shown until the next window opens. */
   const [saved, setSaved] = useState<AccountStatusApplied | null>(null)
 
@@ -135,24 +142,58 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
    * control reports the success; this effect closes the pending state once the detail
    * read has actually landed, and leaves it open (read recovery) while it has not.
    */
+  const readStamp = query.dataUpdatedAt
   const onApplied = useCallback(
     (applied: AccountStatusApplied) => {
       setSaved(null)
-      setPendingAdopt(applied)
+      setPendingAdopt({ applied, baseline: readStamp })
       if (namespace !== null) {
         void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === namespace })
       }
     },
-    [namespace, queryClient],
+    [namespace, queryClient, readStamp],
   )
   const onBeginNewAttempt = useCallback(() => setSaved(null), [])
   const readOutcomeType = query.data?.type ?? null
+  const fetchStatus = query.fetchStatus
   useEffect(() => {
-    if (pendingAdopt === null || query.isFetching || readOutcomeType !== 'ok-single') return
+    if (pendingAdopt === null || fetchStatus !== 'idle') return
+    // Settled, but on the SAME data the 204 was issued against: not the fresh read.
+    if (readStamp <= pendingAdopt.baseline || readOutcomeType !== 'ok-single') return
     // oxlint-disable-next-line react/set-state-in-effect -- adopts the fresh read a definite 204 owes, once
-    setSaved(pendingAdopt)
+    setSaved(pendingAdopt.applied)
     setPendingAdopt(null)
-  }, [pendingAdopt, query.isFetching, readOutcomeType])
+  }, [pendingAdopt, fetchStatus, readStamp, readOutcomeType])
+
+  /**
+   * The action's whole state — attempt, window, reason, dirty scope — lives HERE, above
+   * the branches below, so a read that fails during a same-key retry cannot unmount it.
+   */
+  const contractContext = useMemo(
+    () => (namespace === null ? null : { origin: API_BASE, namespace }),
+    [namespace],
+  )
+  const readyDetail = state.kind === 'ready' ? state.data : null
+  const statusTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const statusSummaryRef = useRef<HTMLParagraphElement | null>(null)
+  const statusUnresolvedRef = useRef<HTMLDivElement | null>(null)
+  const flow = useAccountStatusFlow({
+    triggerRef: statusTriggerRef,
+    summaryRef: statusSummaryRef,
+    unresolvedRef: statusUnresolvedRef,
+    partyId: partyId ?? '',
+    companyId: activeCompanyId,
+    namespace,
+    detail: readyDetail,
+    readStamp,
+    refetch: query.refetch,
+    // Computed each render: the slot moves when the detail read records itself, and
+    // that read is what re-renders this card.
+    contractReady: isCommandContractReady(contractContext),
+    disabled: pendingAdopt !== null,
+    onApplied,
+    onBeginNewAttempt,
+  })
 
   // C-03A is single-company, like C-01A. Group scope has no accepted per-company
   // representation, and a detail screen cannot honestly show "the" account when
@@ -206,6 +247,9 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
           </p>
         ) : null}
         <StateBlock state={state} subject="cari" onRetry={() => void query.refetch()} />
+        {/* An unresolved attempt keeps its recovery — same key, same body, explicit retry
+            or abandon — while the record cannot be read (Dirac #250 P2-1). */}
+        {canChangeStatus ? <AccountStatusRecoveryNotice flow={flow} unresolvedRef={statusUnresolvedRef} /> : null}
       </section>
     )
   }
@@ -292,16 +336,55 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
           </Link>
         ) : null}
 
+        {/**
+          * The result is the FRESH READ's, never the command's. If the read agrees with
+          * what was asked, the outcome is named as asked. If it does not — a replay of a
+          * deactivation the account has since been reactivated out of — the screen says a
+          * past command's result was reported and states the CURRENT state, and it does
+          * not claim the account left an active-only list (Dirac #250 P2-4).
+          */}
         <div aria-live="polite" className={styles.srOnly} data-testid="cari-account-status-announcement">
-          {saved !== null ? STATUS.announceSaved[saved.intent] : ''}
+          {saved !== null
+            ? targetIsActive(saved.intent) === account.isActive
+              ? STATUS.announceSaved[saved.intent]
+              : STATUS.currentStateNote(account.isActive)
+            : ''}
         </div>
 
         {saved !== null ? (
-          <div role="status" className={styles.saved} data-state="account-status-saved" data-intent={saved.intent}>
-            <p className={styles.savedTitle}>{STATUS.savedTitle[saved.intent]}</p>
-            <p>{STATUS.savedDetail}</p>
-            {saved.replayed ? <p data-state="replayed">{STATUS.savedReplayed}</p> : null}
-            {saved.intent === 'deactivate' ? <p>{STATUS.savedListNote}</p> : null}
+          <div
+            role="status"
+            className={styles.saved}
+            data-state="account-status-saved"
+            data-intent={saved.intent}
+            data-agrees={targetIsActive(saved.intent) === account.isActive ? 'yes' : 'no'}
+          >
+            {targetIsActive(saved.intent) === account.isActive ? (
+              <>
+                <p className={styles.savedTitle}>{STATUS.savedTitle[saved.intent]}</p>
+                <p>{STATUS.savedDetail}</p>
+                {saved.replayed ? <p data-state="replayed">{STATUS.savedReplayed}</p> : null}
+              </>
+            ) : (
+              <>
+                <p className={styles.savedTitle}>{STATUS.savedSupersededTitle}</p>
+                <p>{STATUS.savedSupersededDetail}</p>
+                <p data-state="current-state">{STATUS.currentStateNote(account.isActive)}</p>
+              </>
+            )}
+            {!account.isActive ? <p>{STATUS.savedListNote}</p> : null}
+          </div>
+        ) : null}
+
+        {pendingAdopt !== null ? (
+          // Applied, and the fresh read has not landed: the values above are the OLD read's.
+          <div role="status" className={styles.saved} data-state="read-pending">
+            <p className={styles.recovery}>{STATUS.readPending}</p>
+            <p>
+              <button type="button" className={styles.action} onClick={() => void query.refetch()}>
+                {STATUS.readAgain}
+              </button>
+            </p>
           </div>
         ) : null}
 
@@ -311,17 +394,15 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
           * `counterparty.accounts.status.update` on every request, and a button that
           * exists in order to be refused is worse than no button.
           */}
-        {canChangeStatus && activeCompanyId !== null && namespace !== null ? (
+        {canChangeStatus ? (
           <AccountStatusControl
-            partyId={detail.id}
+            flow={flow}
             detail={detail}
             companyLabel={activeCompany === null ? '—' : `${activeCompany.legalName} (${activeCompany.code})`}
-            companyId={activeCompanyId}
-            namespace={namespace}
-            refetch={query.refetch}
-            onApplied={onApplied}
-            onBeginNewAttempt={onBeginNewAttempt}
-            disabled={pendingAdopt !== null}
+            onReadAgain={() => void query.refetch()}
+            triggerRef={statusTriggerRef}
+            summaryRef={statusSummaryRef}
+            unresolvedRef={statusUnresolvedRef}
           />
         ) : null}
       </section>

@@ -346,8 +346,17 @@ export function settleAttempt<P, R>(state: AttemptState<P, R>, outcome: CommandO
        * record the server may already hold. The attempt therefore stays unresolved,
        * with its original reason, key, path, Party, context and normalized payload
        * intact. Only a validated definite result or its replay closes it (§4.5).
+       *
+       * A REPLAY IS THAT VALIDATED DEFINITE RESULT. `Idempotency-Replayed: true` on
+       * the re-send's answer says the server is handing back the STORED terminal
+       * result of the first send — the one whose delivery was lost. A replayed
+       * `version_conflict` is therefore the first send's own verdict, and holding it
+       * as "unknown" left the user with no way to reach the conflict explanation or
+       * the fresh read it calls for. A rejection WITHOUT the replay marker — a 500, an
+       * unacknowledged answer, a compatibility 409 — still says nothing about the first
+       * send and still leaves the attempt unresolved.
        */
-      if (state.unresolvedSince !== undefined) {
+      if (state.unresolvedSince !== undefined && !(outcome.type === 'http' && outcome.replayed === true)) {
         return {
           phase: 'unknown',
           snapshot: state.snapshot,

@@ -290,7 +290,23 @@ export const CARI_ACCOUNT_STATUS_TEXT = {
     'Cari Kartlar listesinde yalnız aktif hesaplar süzülüyorsa bu hesap orada görünmez; kayıt silinmedi.',
   readRecovery:
     'Kaydedildi, görünüm yenilenemedi. Yalnız okuma yeniden denenir; işlem ikinci kez gönderilmez.',
+  readPending:
+    'Kaydedildi; güncel kayıt henüz okunamadı. Ekrandaki değerler eski okumaya ait. Bağlantı yoksa okuma ' +
+    'bağlantı gelince yapılır; işlem ikinci kez gönderilmez.',
+  readAgain: 'Kaydı yeniden oku',
+  contractNotReady:
+    'Bu kayıt için uyumlu istemci teyidi alınmadı; durum işlemi açılmaz. Kaydı yeniden okuyun.',
   refreshRecord: 'Kaydı yenile',
+  refreshing: 'Kayıt yenileniyor…',
+  refreshedNote:
+    'Kayıt güncel sürümle yenilendi; gerekçeniz korundu. Mevcut durumu inceleyip yeniden gönderin — ' +
+    'bu yeni bir işlemdir.',
+  adoptFresh: 'Güncel sürüme geç',
+  savedSupersededTitle: 'Geçmiş işlemin sonucu bildirildi',
+  savedSupersededDetail:
+    'Sunucu daha önce gönderilen işlemin tekrarını bildirdi; hesap o işlemden sonra yeniden değişmiş. ' +
+    'Ekrandaki durum taze okumanındır; ikinci bir değişiklik gönderilmedi.',
+  currentStateNote: (active: boolean) => `Güncel hesap durumu: ${active ? 'Aktif' : 'Pasif'}.`,
   replayedConflict:
     'Bu çatışma yanıtı daha önceki bir girişimin tekrarı; içindeki sürüm güncel sayılmaz. ' +
     'Güncel durum yalnız taze okumayla doğrulanır.',

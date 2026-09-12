@@ -204,9 +204,18 @@ describe('the user chain: deactivate with reason → fresh read → reactivate w
   })
 
   it('a replayed 204 is reported as the earlier attempt’s result, not a second change', async () => {
-    const account: AccountFixture = { version: '8', isActive: false }
+    // The first send's 204 was lost; its replay comes back while the read already
+    // shows the state that send produced (active, v9). The result agrees with the ask,
+    // so it is named as asked — and marked as a replay, not a second change.
+    const account: AccountFixture = { version: '9', isActive: true }
+    let reads = 0
     installFetch({
-      detail: () => json(accountView(account)),
+      detail: () => {
+        reads += 1
+        // The window opens on the stale read (passive v8); the fresh read after the
+        // replay shows what the server actually holds.
+        return json(accountView(reads === 1 ? { version: '8', isActive: false } : account))
+      },
       activeState: () => noContent({ 'Idempotency-Replayed': 'true' }),
     })
     renderAt(DETAIL_PATH)
@@ -215,9 +224,11 @@ describe('the user chain: deactivate with reason → fresh read → reactivate w
     await fillReason(panel, REASON_ACTIVATE)
     await userEvent.click(within(panel).getByRole('button', { name: TEXT.submit.activate }))
     const saved = await findStateBlock('account-status-saved')
+    expect(saved.getAttribute('data-agrees')).toBe('yes')
+    expect(within(saved).getByText(TEXT.savedTitle.activate)).toBeTruthy()
     expect(within(saved).getByText(TEXT.savedReplayed)).toBeTruthy()
-    // The read said nothing moved, so the screen says nothing moved.
-    expect(accountState()).toBe('inactive')
+    // The read is what the screen shows.
+    expect(accountState()).toBe('active')
   })
 })
 
@@ -387,7 +398,7 @@ describe('unknown outcome — same key, explicit retry after a fresh read, never
 })
 
 describe('definite refusals — closed attempts, nothing resent on its own', () => {
-  it('version_conflict: no overwrite, no new key; "Kaydı yenile" re-reads and closes the window', async () => {
+  it('version_conflict: no overwrite, no new key; "Kaydı yenile" re-reads and keeps the window and the reason', async () => {
     const account: AccountFixture = { version: '7', isActive: true }
     const fetches = installFetch({
       detail: () => json(accountView(account)),
@@ -412,12 +423,12 @@ describe('definite refusals — closed attempts, nothing resent on its own', () 
     const readsBefore = fetches.detailReads().length
     await userEvent.click(within(failed).getByRole('button', { name: TEXT.refreshRecord }))
     await waitFor(() => expect(fetches.detailReads().length).toBeGreaterThan(readsBefore), CHAIN)
-    await waitFor(() => expect(dialog()).toBeNull())
+    // A READ, nothing else: one PUT, the window still open for review, the reason kept.
     expect(fetches.activeStateUpdates()).toHaveLength(1)
-    // The account is still active on screen — the read said so — and a new attempt is a
-    // new window on the fresh version.
+    expect(await within(panel).findByText(TEXT.refreshedNote, {}, CHAIN)).toBeTruthy()
+    expect((within(panel).getByLabelText(TEXT.reason) as HTMLTextAreaElement).value).toBe(REASON_DEACTIVATE)
+    expect(document.querySelector('[data-attempt="failed"]')).toBeNull()
     expect(accountState()).toBe('active')
-    expect(actionButton(TEXT.action.deactivate).disabled).toBe(false)
   })
 
   it('a REPLAYED version_conflict is marked as not current', async () => {

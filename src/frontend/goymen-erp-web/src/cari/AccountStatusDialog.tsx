@@ -36,8 +36,20 @@ export interface AccountStatusDialogProps {
    * and to a second submit; closing the window is still allowed, with its own question.
    */
   readonly locked: boolean
+  /** A read the user asked for is on its way; the window waits, the reason stays. */
+  readonly refreshing: boolean
+  /** The window was re-seated on a fresh version; the reason was kept for review. */
+  readonly refreshedNote: boolean
+  /**
+   * The owner's own read in this context has been acknowledged. Without it no command
+   * may leave the client (the transport would refuse it anyway) — so Save is closed
+   * BEFORE the click, not after.
+   */
+  readonly contractReady: boolean
   /** The record moved underneath this window; sending the old fence is refused. */
   readonly changedSinceOpen: boolean
+  /** Move the fence to the version that landed, keeping the reason. */
+  readonly onAdoptFresh: () => void
   readonly onSubmit: () => void
   /** Escape or "Vazgeç". The owner answers with `closeConfirm` or by unmounting. */
   readonly onRequestClose: () => void
@@ -50,8 +62,18 @@ export interface AccountStatusDialogProps {
   readonly summaryRef: React.RefObject<HTMLParagraphElement | null>
 }
 
-const FOCUSABLE =
-  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+const FOCUSABLE = 'a[href], button, textarea, input, select, [tabindex]:not([tabindex="-1"])'
+
+/**
+ * Really focusable: a control disabled through an ancestor `<fieldset disabled>` has
+ * no `disabled` attribute of its own, so an attribute selector kept it in the Tab
+ * ring and the wrap landed on a field that cannot take keys (Dirac #250 P2-7).
+ */
+function focusable(node: HTMLElement): boolean {
+  if (node.matches(':disabled')) return false
+  if (node.closest('fieldset:disabled') !== null) return false
+  return !node.hidden
+}
 
 export function AccountStatusDialog({
   intent,
@@ -64,7 +86,11 @@ export function AccountStatusDialog({
   problem,
   busy,
   locked,
+  refreshing,
+  refreshedNote,
+  contractReady,
   changedSinceOpen,
+  onAdoptFresh,
   onSubmit,
   onRequestClose,
   closeConfirm,
@@ -92,7 +118,11 @@ export function AccountStatusDialog({
       keepRef.current?.focus()
     } else if (hadConfirmRef.current) {
       hadConfirmRef.current = false
-      reasonRef.current?.focus()
+      // The reason only when it can take keys; while the form is locked it cannot,
+      // and the panel itself keeps the window operable.
+      const reason = reasonRef.current
+      if (reason !== null && focusable(reason)) reason.focus()
+      else panelRef.current?.focus()
     }
   }, [closeConfirm])
 
@@ -100,15 +130,16 @@ export function AccountStatusDialog({
   // the focus out of the panel; a keyboard user's next Escape would then reach the
   // document and nothing else. The panel itself takes it, so the window stays operable.
   useEffect(() => {
-    if (!(busy || locked)) return
+    if (!(busy || locked || refreshing)) return
     const panel = panelRef.current
     if (panel === null) return
     const active = document.activeElement
     // A control that was just disabled can stay reported as active without receiving
     // keys any more — that counts as "focus lost" here, not as "still inside".
-    const lost = active === null || !panel.contains(active) || active.matches(':disabled')
+    const lost =
+      active === null || !panel.contains(active) || !(active instanceof HTMLElement) || !focusable(active)
     if (lost) panel.focus()
-  }, [busy, locked])
+  }, [busy, locked, refreshing])
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Escape') {
@@ -118,8 +149,20 @@ export function AccountStatusDialog({
       return
     }
     if (event.key !== 'Tab' || panelRef.current === null) return
-    const nodes = Array.from(panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE))
-    if (nodes.length === 0) return
+    const nodes = Array.from(panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(focusable)
+    if (nodes.length === 0) {
+      event.preventDefault()
+      panelRef.current.focus()
+      return
+    }
+    // From the panel itself (or anything not in the ring), Tab enters at the first
+    // enabled control and Shift+Tab at the last — never at a disabled one.
+    const active = document.activeElement
+    if (!(active instanceof HTMLElement) || !nodes.includes(active)) {
+      event.preventDefault()
+      ;(event.shiftKey ? nodes[nodes.length - 1] : nodes[0]).focus()
+      return
+    }
     const first = nodes[0]
     const last = nodes[nodes.length - 1]
     if (event.shiftKey && document.activeElement === first) {
@@ -143,7 +186,7 @@ export function AccountStatusDialog({
   const reasonId = 'cari-account-status-reason'
   const hintId = 'cari-account-status-reason-hint'
   const errorId = 'cari-account-status-reason-error'
-  const submitBlocked = busy || locked || changedSinceOpen || closeConfirm !== null
+  const submitBlocked = busy || locked || refreshing || !contractReady || changedSinceOpen || closeConfirm !== null
 
   return (
     <div className={styles.backdrop} data-dialog="account-status">
@@ -184,8 +227,31 @@ export function AccountStatusDialog({
         </dl>
 
         {changedSinceOpen ? (
-          <p role="alert" className={styles.blocked} data-state="changed-since-open">
-            {TEXT.changedSinceOpen}
+          <div role="alert" className={styles.blocked} data-state="changed-since-open">
+            <p style={{ margin: 0 }}>{TEXT.changedSinceOpen}</p>
+            <p style={{ margin: '8px 0 0' }}>
+              <button type="button" className={styles.secondary} onClick={onAdoptFresh}>
+                {TEXT.adoptFresh}
+              </button>
+            </p>
+          </div>
+        ) : null}
+
+        {refreshing ? (
+          <p role="status" className={styles.scope} data-state="refreshing">
+            {TEXT.refreshing}
+          </p>
+        ) : null}
+
+        {refreshedNote && !refreshing ? (
+          <p role="status" className={styles.confirm} data-state="refreshed">
+            {TEXT.refreshedNote}
+          </p>
+        ) : null}
+
+        {!contractReady ? (
+          <p role="alert" className={styles.blocked} data-state="contract-not-ready">
+            {TEXT.contractNotReady}
           </p>
         ) : null}
 
@@ -201,7 +267,10 @@ export function AccountStatusDialog({
             if (!submitBlocked) onSubmit()
           }}
         >
-          <fieldset disabled={busy || locked || closeConfirm !== null} style={{ border: 0, padding: 0, margin: 0 }}>
+          <fieldset
+            disabled={busy || locked || refreshing || closeConfirm !== null}
+            style={{ border: 0, padding: 0, margin: 0 }}
+          >
             <div className={styles.field}>
               <label htmlFor={reasonId}>{TEXT.reason}</label>
               <textarea
