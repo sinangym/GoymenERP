@@ -79,9 +79,9 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             "RolelessAuditAndIdempotencyFailures_RollBackAndPermitSameKeyRetry",
         ))
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
-        self.assertEqual(69, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(69, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(76, VERIFIER.BROAD_EXECUTION_COUNT)
+        self.assertEqual(76, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(76, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(83, VERIFIER.BROAD_EXECUTION_COUNT)
         for omitted in required:
             with self.subTest(omitted=omitted):
                 discovery = "\n".join(
@@ -97,9 +97,9 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             "CreateFindDetailAndLinkSecondCompany_PreserveIdentityVisibilityAndExactlyOnceEffects"
         )
         self.assertIn(journey, VERIFIER.BROAD_EXPECTED_TESTS)
-        self.assertEqual(69, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(69, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(76, VERIFIER.BROAD_EXECUTION_COUNT)
+        self.assertEqual(76, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(76, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(83, VERIFIER.BROAD_EXECUTION_COUNT)
         without_journey = [name for name in VERIFIER.BROAD_EXPECTED_TESTS if name != journey]
         with self.assertRaisesRegex(RuntimeError, "exact"):
             VERIFIER.verify_broad_discovery("\n".join(without_journey))

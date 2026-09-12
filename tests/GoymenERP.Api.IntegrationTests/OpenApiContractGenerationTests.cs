@@ -109,6 +109,13 @@ public sealed class OpenApiContractGenerationTests
             AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:"),
             "#/components/schemas/SetCompanyPartyAccountActiveState",
             ["path:partyId:true:type:string;format:uuid;non-empty-uuid:true"]),
+        new("get", "/api/v1/counterparties/{partyId}/contact-information", "GetCounterpartyContactInformationV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json"),
+            ParameterValues: ["path:partyId:true:type:string;format:uuid;non-empty-uuid:true"]),
+        new("put", "/api/v1/counterparties/{partyId}/contact-information", "UpdateCounterpartyContactInformationV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:"),
+            "#/components/schemas/UpdateCounterpartyContactInformation",
+            ["path:partyId:true:type:string;format:uuid;non-empty-uuid:true"]),
         new("get", "/api/v1/shell/capabilities", "GetShellCapabilitiesV1",
             AuthenticatedResponses(
                 "200:application/json",
@@ -136,11 +143,15 @@ public sealed class OpenApiContractGenerationTests
             ["GetCounterpartyV1"] = "ref:CounterpartyDetailView",
             ["CreateCounterpartyCompanyAccountV1"] = "ref:CounterpartyMutationView",
             ["SetCounterpartyCompanyAccountActiveStateV1"] = "none",
+            ["GetCounterpartyContactInformationV1"] = "ref:CounterpartyContactInformationView",
+            ["UpdateCounterpartyContactInformationV1"] = "none",
             ["GetShellCapabilitiesV1"] = "ref:ShellCapabilitySnapshot",
         };
 
     private static readonly HashSet<string> RequiredCompanyOperations =
     [
+        "UpdateCounterpartyContactInformationV1",
+        "GetCounterpartyContactInformationV1",
         "GetAuditEventsV1",
         "GetOrganizationContextV1",
         "GetOrganizationSitesV1",
@@ -163,6 +174,7 @@ public sealed class OpenApiContractGenerationTests
 
     private static readonly HashSet<string> IdempotentOperations =
     [
+        "UpdateCounterpartyContactInformationV1",
         "SetOrganizationLocationActiveStateV1",
         "CreateCounterpartyV1",
         "CreateCounterpartyCompanyAccountV1",
@@ -179,6 +191,8 @@ public sealed class OpenApiContractGenerationTests
                     StatusCodes.Status404NotFound,
                     StatusCodes.Status409Conflict,
                 ],
+                ["UpdateCounterpartyContactInformationV1"] =
+                [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["CreateCounterpartyV1"] = [StatusCodes.Status201Created],
                 ["CreateCounterpartyCompanyAccountV1"] =
                 [
@@ -196,6 +210,7 @@ public sealed class OpenApiContractGenerationTests
 
     private static readonly HashSet<string> EmptyBodyPossible400Operations =
     [
+        "UpdateCounterpartyContactInformationV1",
         "GetAuditEventsV1",
         "GetOrganizationLocationsV1",
         "SetOrganizationLocationActiveStateV1",
@@ -242,6 +257,13 @@ public sealed class OpenApiContractGenerationTests
             ["SetCounterpartyCompanyAccountActiveStateV1:404"] = ["not_found"],
             ["SetCounterpartyCompanyAccountActiveStateV1:409"] =
                 ["client_contract_required", "client_contract_unsupported", "idempotency_conflict", "version_conflict"],
+            ["GetCounterpartyContactInformationV1:400"] = ["validation_failed"],
+            ["GetCounterpartyContactInformationV1:404"] = ["not_found"],
+            ["GetCounterpartyContactInformationV1:409"] = ["client_contract_required", "client_contract_unsupported"],
+            ["UpdateCounterpartyContactInformationV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["UpdateCounterpartyContactInformationV1:404"] = ["not_found"],
+            ["UpdateCounterpartyContactInformationV1:409"] =
+                ["client_contract_required", "client_contract_unsupported", "idempotency_conflict", "version_conflict"],
             ["GetShellCapabilitiesV1:400"] = ["company_context_invalid"],
         };
 
@@ -249,6 +271,51 @@ public sealed class OpenApiContractGenerationTests
         ExpectedSuccessComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["CounterpartyContactInformationView"] = ObjectSchema(
+                    ["partyId", "accountId", "companyId", "version", "isActive", "information"],
+                    ("partyId", "type:string;format:uuid"),
+                    ("accountId", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("version", "type:string"),
+                    ("isActive", "type:boolean"),
+                    ("information", "ref:CounterpartyContactInformation")),
+                ["CounterpartyContactInformation"] = ObjectSchema(
+                    ["phone", "phoneExtension", "email", "website", "addresses", "contacts"],
+                    ("phone", "type:null|string"),
+                    ("phoneExtension", "type:null|string"),
+                    ("email", "type:null|string"),
+                    ("website", "type:null|string"),
+                    ("addresses", "type:array;items:ref:CounterpartyOperationalAddress"),
+                    ("contacts", "type:array;items:ref:CounterpartyOperationalContact")),
+                ["CounterpartyOperationalAddress"] = ObjectSchema(
+                    ["id", "version", "isActive", "purpose", "countryCode", "line1", "line2", "city", "district", "postalCode"],
+                    ("id", "type:string;format:uuid"),
+                    ("version", "type:string"),
+                    ("isActive", "type:boolean"),
+                    ("purpose", "type:string"),
+                    ("countryCode", "type:string"),
+                    ("line1", "type:string"),
+                    ("line2", "type:null|string"),
+                    ("city", "type:null|string"),
+                    ("district", "type:null|string"),
+                    ("postalCode", "type:null|string")),
+                ["CounterpartyOperationalContact"] = ObjectSchema(
+                    ["id", "version", "isActive", "displayName", "jobTitle", "purpose", "channels"],
+                    ("id", "type:string;format:uuid"),
+                    ("version", "type:string"),
+                    ("isActive", "type:boolean"),
+                    ("displayName", "type:string"),
+                    ("jobTitle", "type:null|string"),
+                    ("purpose", "type:string"),
+                    ("channels", "type:array;items:ref:CounterpartyContactChannel")),
+                ["CounterpartyContactChannel"] = ObjectSchema(
+                    ["id", "version", "isActive", "kind", "value", "extension"],
+                    ("id", "type:string;format:uuid"),
+                    ("version", "type:string"),
+                    ("isActive", "type:boolean"),
+                    ("kind", "type:string"),
+                    ("value", "type:string"),
+                    ("extension", "type:null|string")),
                 ["AuditEventItem"] = ObjectSchema(
                 [
                     "id", "companyId", "occurredAtUtc", "eventType", "entityType",
@@ -428,6 +495,44 @@ public sealed class OpenApiContractGenerationTests
         ExpectedRequestComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["UpdateCounterpartyContactInformation"] = ObjectSchema(
+                    ["expectedVersion", "changes"],
+                    ("expectedVersion", "type:string"),
+                    ("changes", "ref:CounterpartyContactInformationChanges")),
+                ["CounterpartyContactInformationChanges"] = ObjectSchema(
+                    [],
+                    ("phone", "type:null|string"),
+                    ("phoneExtension", "type:null|string"),
+                    ("email", "type:null|string"),
+                    ("website", "type:null|string"),
+                    ("addresses", "type:array;items:ref:CounterpartyAddressChange"),
+                    ("contacts", "type:array;items:ref:CounterpartyContactChange")),
+                ["CounterpartyAddressChange"] = ObjectSchema(
+                    ["id", "operation"],
+                    ("id", "type:string;format:uuid;non-empty-uuid:true"),
+                    ("operation", "type:string"),
+                    ("purpose", "type:string"),
+                    ("countryCode", "type:string"),
+                    ("line1", "type:string"),
+                    ("line2", "type:null|string"),
+                    ("city", "type:null|string"),
+                    ("district", "type:null|string"),
+                    ("postalCode", "type:null|string")),
+                ["CounterpartyContactChange"] = ObjectSchema(
+                    ["id", "operation"],
+                    ("id", "type:string;format:uuid;non-empty-uuid:true"),
+                    ("operation", "type:string"),
+                    ("displayName", "type:string"),
+                    ("jobTitle", "type:null|string"),
+                    ("purpose", "type:string"),
+                    ("channels", "type:array;items:ref:CounterpartyContactChannelChange")),
+                ["CounterpartyContactChannelChange"] = ObjectSchema(
+                    ["id", "operation"],
+                    ("id", "type:string;format:uuid;non-empty-uuid:true"),
+                    ("operation", "type:string"),
+                    ("kind", "type:string"),
+                    ("value", "type:string"),
+                    ("extension", "type:null|string")),
                 ["CreateCounterparty"] = ObjectSchema(
                     ["kind", "legalName"],
                     ("kind", "ref:PartyKind"),
@@ -984,9 +1089,9 @@ public sealed class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(17, operations.Count);
+        Assert.Equal(19, operations.Count);
         Assert.Equal(
-            17,
+            19,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
@@ -1646,6 +1751,24 @@ public sealed class OpenApiContractGenerationTests
         AssertPositiveIntegerStringVersion(
             schemas,
             "CounterpartyLinkCandidateSourceAccount");
+
+        foreach (var name in new[] { "CounterpartyContactInformationView", "CounterpartyOperationalAddress",
+                     "CounterpartyOperationalContact", "CounterpartyContactChannel" })
+        {
+            AssertPositiveIntegerStringVersion(schemas, name);
+        }
+
+        var contactCommand = schemas.GetProperty("UpdateCounterpartyContactInformation");
+        Assert.False(contactCommand.GetProperty("additionalProperties").GetBoolean());
+        var contactVersion = contactCommand.GetProperty("properties").GetProperty("expectedVersion");
+        Assert.Equal("string", contactVersion.GetProperty("type").GetString());
+        Assert.Equal("^[1-9][0-9]*$", contactVersion.GetProperty("pattern").GetString());
+        Assert.Equal(19, contactVersion.GetProperty("maxLength").GetInt32());
+        foreach (var name in new[] { "addresses", "contacts" })
+        {
+            Assert.Equal(100, schemas.GetProperty("CounterpartyContactInformationChanges")
+                .GetProperty("properties").GetProperty(name).GetProperty("maxItems").GetInt32());
+        }
 
         var problem = schemas.GetProperty("ErpProblemDetailsContract");
         Assert.Equal(

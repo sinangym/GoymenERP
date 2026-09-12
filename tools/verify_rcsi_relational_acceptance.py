@@ -40,6 +40,13 @@ EXPECTED_TESTS = tuple(
     )
 )
 BROAD_EXPECTED_TESTS = (
+    "GoymenERP.Api.IntegrationTests.CounterpartyContactInformationSqlServerRelationalAcceptanceTests.ContactCard_NoOpKeepsLogicalVersionAndAuditWhilePersistingOneReplayResult",
+    "GoymenERP.Api.IntegrationTests.CounterpartyContactInformationSqlServerRelationalAcceptanceTests.AccountContactCard_RoundTripsExplicitChildrenWithoutChangingPartyOrOtherCompany",
+    "GoymenERP.Api.IntegrationTests.CounterpartyContactInformationSqlServerRelationalAcceptanceTests.ContactCard_AuthorizationNoDefaultGrantAndMissingRelationAreNonDisclosing",
+    "GoymenERP.Api.IntegrationTests.CounterpartyContactInformationSqlServerRelationalAcceptanceTests.ContactCard_RejectsMalformedChangesAndPreservesExactInt64Versions",
+    "GoymenERP.Api.IntegrationTests.CounterpartyContactInformationSqlServerRelationalAcceptanceTests.ContactCard_ConcurrentCommandsHaveOneEffectAndDurableTerminalReplay",
+    "GoymenERP.Api.IntegrationTests.CounterpartyContactInformationSqlServerRelationalAcceptanceTests.ContactCard_AuditAndIdempotencyFailuresRollBackAndAllowSameKeyRetry",
+    "GoymenERP.Api.IntegrationTests.CounterpartyContactInformationSqlServerRelationalAcceptanceTests.ContactCard_MigrationChecksJsonAndBlocksLossyDownWithoutChangingExistingIdentity",
     "GoymenERP.Api.IntegrationTests.CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests.RolelessInactiveAccount_StaleVersionAndPermissionGatesRemainEnforced",
     "GoymenERP.Api.IntegrationTests.CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests.ClientContractGate_BlocksUnnegotiatedWritesAndPreservesSameKeyRetry",
     "GoymenERP.Api.IntegrationTests.CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests.ClientContractGate_WithholdsRolelessReadsWithoutLeakingForeignCompanyState",
@@ -110,8 +117,8 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.UnapprovedLogicalEndpoint_IsRejectedWithoutChangingDatabase",
     "GoymenERP.Api.IntegrationTests.SqlServerRelationalAcceptanceTests.MigrationSeedWriteGuardCompositeForeignKeyAndHttpIsolation_AreEnforced",
 )
-BROAD_DISCOVERY_COUNT = 69
-BROAD_EXECUTION_COUNT = 76
+BROAD_DISCOVERY_COUNT = 76
+BROAD_EXECUTION_COUNT = 83
 
 
 def verify_discovery(standard_output: str) -> None:

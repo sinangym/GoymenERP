@@ -29,6 +29,7 @@ public sealed class CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests
     private const string CandidatesUrl = PartiesUrl + "/company-account-link-candidates";
     private const string PreviousMigration = "20260828150000_AddCounterpartyWriteSupport";
     private const string OptionalRolesMigration = "20260910120000_AllowCounterpartyAccountNoRole";
+    private const string ContactInformationMigration = "20260912003000_AddCompanyAccountContactInformation";
     private const PartyRole AllRoles =
         PartyRole.Customer | PartyRole.Supplier | PartyRole.Tolling | PartyRole.Service;
 
@@ -265,10 +266,8 @@ public sealed class CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests
     {
         await WithDatabaseAsync(async (factory, connection) =>
         {
-            // Startup provisions the isolated database. Downgrade the still-empty
-            // counterparty schema to the actual preceding migration before any fixture write.
-            await MigrateAsync(factory.DatabaseConnectionString, PreviousMigration);
-            Assert.Equal(2, await MigrationCountAsync(connection));
+            // Create durable legacy-role receipts with the model's matching current schema.
+            // Then move the untouched, null-contact fixture to the actual historical boundary.
             using var source = factory.CreateClientFor(TestUsers.GroupAdmin, TestCompanyIds.CompanyA);
             using var target = factory.CreateClientFor(TestUsers.GroupAdmin, TestCompanyIds.CompanyB);
             var legacy = new List<MutationReceipt>();
@@ -290,6 +289,9 @@ public sealed class CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests
 
             Assert.Equal(3, await CountAsync(connection, "[counterparty].[Parties]"));
             Assert.Equal(6, await CountAsync(connection, "[counterparty].[CompanyPartyAccounts]"));
+            var currentModelSnapshot = await ReadSnapshotAsync(connection);
+            await MigrateAsync(factory.DatabaseConnectionString, PreviousMigration);
+            Assert.Equal(2, await MigrationCountAsync(connection));
             var beforeUpgrade = await ReadSnapshotAsync(connection);
             await AssertSqlMaskRejectedAsync(connection, legacy[0].AccountId, PartyRole.None);
             Assert.Equal(beforeUpgrade, await ReadSnapshotAsync(connection));
@@ -300,7 +302,11 @@ public sealed class CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests
             await AssertTrustedRolesConstraintAsync(connection);
             await AssertSqlMaskRejectedAsync(connection, legacy[0].AccountId, (PartyRole)(-1));
             await AssertSqlMaskRejectedAsync(connection, legacy[0].AccountId, (PartyRole)16);
-            await AssertLegacyReplaysAsync(factory, connection, legacy, beforeUpgrade);
+            // Runtime replay uses the current schema, never a new EF model over old columns.
+            // Historical raw rows, rowversions and durable response bytes were compared above.
+            await MigrateAsync(factory.DatabaseConnectionString, ContactInformationMigration);
+            Assert.Equal(4, await MigrationCountAsync(connection));
+            await AssertLegacyReplaysAsync(factory, connection, legacy, currentModelSnapshot);
 
             // A safe down must restore 1..15 without rewriting any identities, timestamps,
             // rowversions, audits, request hashes or stored response bytes.
@@ -309,11 +315,14 @@ public sealed class CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests
             Assert.Equal(beforeUpgrade, await ReadSnapshotAsync(connection));
             await AssertSqlMaskRejectedAsync(connection, legacy[0].AccountId, PartyRole.None);
             await AssertTrustedRolesConstraintAsync(connection);
-            await AssertLegacyReplaysAsync(factory, connection, legacy, beforeUpgrade);
 
             await MigrateAsync(factory.DatabaseConnectionString, OptionalRolesMigration);
             Assert.Equal(3, await MigrationCountAsync(connection));
-            await AssertLegacyReplaysAsync(factory, connection, legacy, beforeUpgrade);
+            Assert.Equal(beforeUpgrade, await ReadSnapshotAsync(connection));
+            await MigrateAsync(factory.DatabaseConnectionString, ContactInformationMigration);
+            Assert.Equal(4, await MigrationCountAsync(connection));
+            await AssertLegacyReplaysAsync(factory, connection, legacy, currentModelSnapshot);
+            await AssertLegacyReplaysAsync(factory, connection, legacy, currentModelSnapshot);
             await CreateReceiptAsync(
                 source, TestCompanyIds.CompanyA, PartiesUrl,
                 CreateJson("SQL Reapplied Optional Roles Fixture"), NewIdentity(), PartyRole.None);
@@ -333,6 +342,11 @@ public sealed class CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests
             var linked = await CreateReceiptAsync(
                 target, TestCompanyIds.CompanyB, LinkUrl(created.PartyId),
                 LinkJson(), NewIdentity(), PartyRole.None);
+            var currentModelSnapshot = await ReadSnapshotAsync(connection);
+            // Isolate the roles migration's own Down preflight; later additive migrations
+            // legitimately have separate journal entries and must not enter this assertion.
+            await MigrateAsync(factory.DatabaseConnectionString, OptionalRolesMigration);
+            Assert.Equal(3, await MigrationCountAsync(connection));
             var beforeDown = await ReadSnapshotAsync(connection);
             var schemaBeforeDown = await ReadRolesSchemaAsync(connection);
             var historyBeforeDown = await ReadMigrationHistoryAsync(connection);
@@ -362,8 +376,7 @@ public sealed class CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests
             await AssertTrustedRolesConstraintAsync(connection);
             await AssertSqlMaskRejectedAsync(connection, created.AccountId, (PartyRole)(-1));
             await AssertSqlMaskRejectedAsync(connection, linked.AccountId, (PartyRole)16);
-            await AssertReplayAsync(source, created, CreateJson("SQL Blocked Down Roleless Fixture", "0"));
-            await AssertReplayAsync(target, linked, LinkJson("0"));
+            // Replay is deferred until the current runtime's schema is restored below.
             Assert.Equal(beforeDown, await ReadSnapshotAsync(connection));
 
             // Forward repair re-executes the real migration's Up operations, without
@@ -387,9 +400,14 @@ public sealed class CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests
             await AssertTrustedRolesConstraintAsync(connection);
             await AssertSqlMaskRejectedAsync(connection, created.AccountId, (PartyRole)(-1));
             await AssertSqlMaskRejectedAsync(connection, linked.AccountId, (PartyRole)16);
+            await MigrateAsync(factory.DatabaseConnectionString, ContactInformationMigration);
+            Assert.Equal(4, await MigrationCountAsync(connection));
+            Assert.Equal(currentModelSnapshot, await ReadSnapshotAsync(connection));
+            await AssertReplayAsync(source, created, CreateJson("SQL Blocked Down Roleless Fixture", "0"));
+            await AssertReplayAsync(target, linked, LinkJson("0"));
             await AssertReplayAsync(source, created, created.Json);
             await AssertReplayAsync(target, linked, linked.Json);
-            Assert.Equal(beforeDown, await ReadSnapshotAsync(connection));
+            Assert.Equal(currentModelSnapshot, await ReadSnapshotAsync(connection));
             await CreateReceiptAsync(
                 source, TestCompanyIds.CompanyA, PartiesUrl,
                 CreateJson("SQL Forward Repair Roleless Fixture", "0"), NewIdentity(), PartyRole.None);

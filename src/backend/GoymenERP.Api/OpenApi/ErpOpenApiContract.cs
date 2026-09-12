@@ -13,7 +13,7 @@ using Microsoft.OpenApi;
 
 namespace GoymenERP.Api.OpenApi;
 
-public static class ErpOpenApiContract
+public static partial class ErpOpenApiContract
 {
     public const string DocumentName = "v1";
 
@@ -93,6 +93,7 @@ public static class ErpOpenApiContract
             options.AddOperationTransformer(TransformOperationAsync);
             options.AddSchemaTransformer((schema, context, _) =>
             {
+                ApplyContactInformationSchema(schema, context.JsonTypeInfo.Type);
                 if (context.JsonTypeInfo.Type == typeof(CreateCounterparty))
                 {
                     schema.Required?.Remove("tradeName");

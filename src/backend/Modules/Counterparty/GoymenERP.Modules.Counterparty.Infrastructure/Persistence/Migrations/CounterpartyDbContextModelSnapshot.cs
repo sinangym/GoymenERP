@@ -178,6 +178,9 @@ partial class CounterpartyDbContextModelSnapshot : ModelSnapshot
             b.Property<DateTimeOffset>("CreatedAtUtc")
                 .HasColumnType("datetimeoffset");
 
+            b.Property<string>("ContactInformationJson")
+                .HasColumnType("nvarchar(max)");
+
             b.Property<string>("ExternalIntegrationCode")
                 .HasMaxLength(128)
                 .HasColumnType("nvarchar(128)");
@@ -217,6 +220,10 @@ partial class CounterpartyDbContextModelSnapshot : ModelSnapshot
 
             b.ToTable("CompanyPartyAccounts", "counterparty", t =>
             {
+                t.HasCheckConstraint(
+                    "CK_CompanyPartyAccounts_ContactInformationJson",
+                    "[ContactInformationJson] IS NULL OR ISJSON([ContactInformationJson]) = 1");
+
                 t.HasCheckConstraint(
                     "CK_CompanyPartyAccounts_Roles",
                     "[Roles] BETWEEN 0 AND 15");

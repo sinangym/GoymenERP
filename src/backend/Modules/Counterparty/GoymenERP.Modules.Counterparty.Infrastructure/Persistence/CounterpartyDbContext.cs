@@ -102,6 +102,9 @@ public sealed class CounterpartyDbContext(
         entity.ToTable("CompanyPartyAccounts", "counterparty", table =>
         {
             table.HasCheckConstraint(
+                "CK_CompanyPartyAccounts_ContactInformationJson",
+                "[ContactInformationJson] IS NULL OR ISJSON([ContactInformationJson]) = 1");
+            table.HasCheckConstraint(
                 "CK_CompanyPartyAccounts_Roles",
                 "[Roles] BETWEEN 0 AND 15");
             table.HasCheckConstraint(
@@ -113,6 +116,7 @@ public sealed class CounterpartyDbContext(
         entity.Property(x => x.Roles)
             .HasConversion<int>()
             .IsRequired();
+        entity.Property(x => x.ContactInformationJson).HasColumnType("nvarchar(max)");
         entity.Property(x => x.ExternalIntegrationCode).HasMaxLength(128);
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.RowVersion).IsRowVersion();

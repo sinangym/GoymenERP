@@ -1,5 +1,8 @@
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Identity.Infrastructure.Seeding;
+using Microsoft.Extensions.Options;
 using GoymenERP.CariAcceptance006;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,7 +19,7 @@ public sealed class ProfileTests
     }
 
     [Fact]
-    public void ExactRun_OpensExactlyFourCapabilities_PreservesPermissionsAndNormalProvider()
+    public void ExactRun_OpensFourReadsAndContactEdit_PreservesPermissionsAndNormalProvider()
     {
         var services = Canonical();
         AcceptanceProfile.Configure(services, "Testing", new RunSettings());
@@ -26,8 +29,16 @@ public sealed class ProfileTests
         var registry = new ShellCapabilityRegistry([provider], catalog);
         Assert.Equal(AcceptanceProfile.Revision, registry.Revision);
         var original = new CounterpartyShellCapabilityProvider().GetDeclarations();
-        Assert.Equal(4, provider.GetDeclarations().Count);
-        foreach (var declaration in provider.GetDeclarations())
+        Assert.Equal(5, provider.GetDeclarations().Count);
+        var edit = Assert.Single(provider.GetDeclarations(), x => x.CapabilityId == "cari.accounts.contact.update");
+        Assert.Equal("cari.contact-edit", edit.RouteId);
+        Assert.Equal("/cari/:partyId/bilgiler", edit.RoutePath);
+        Assert.Equal("C-06", edit.ScreenId);
+        Assert.True(edit.ImplementationAvailable);
+        Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, edit.ContextRequirement);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, edit.ScopeRequirement);
+        Assert.Equal(new[] { ErpPermissions.CounterpartyPartiesRead, ErpPermissions.CounterpartyPartiesUpdateBasic }, edit.RequiredPermissions);
+        foreach (var declaration in provider.GetDeclarations().Where(x => x.CapabilityId != edit.CapabilityId))
         {
             var source = Assert.Single(original, x => x.CapabilityId == declaration.CapabilityId);
             Assert.True(declaration.ImplementationAvailable);
@@ -36,6 +47,36 @@ public sealed class ProfileTests
             Assert.Equal(source.ScopeRequirement, declaration.ScopeRequirement);
         }
         Assert.All(original, x => Assert.False(x.ImplementationAvailable));
+    }
+
+    [Fact]
+    public void BasicPermissionGrant_IsTestOnlyExplicitAndIdempotent()
+    {
+        var services = Canonical();
+        AcceptanceProfile.Configure(services, "Testing", new RunSettings());
+        using var container = services.BuildServiceProvider();
+        var options = new IdentitySeedOptions();
+        options.Roles.Add(new IdentityRoleSeed
+        {
+            Id = Guid.NewGuid(), Code = "SYSTEM_ADMINISTRATOR", Name = "Test only",
+            Permissions = [ErpPermissions.CounterpartyPartiesRead],
+        });
+        options.Roles.Add(new IdentityRoleSeed
+        {
+            Id = Guid.NewGuid(), Code = "ORGANIZATION_OPERATOR", Name = "Existing test operator",
+            Permissions = [ErpPermissions.IdentityProfileRead],
+        });
+        var configure = Assert.Single(container.GetServices<IPostConfigureOptions<IdentitySeedOptions>>());
+        configure.PostConfigure(Options.DefaultName, options);
+        configure.PostConfigure(Options.DefaultName, options);
+        Assert.Single(options.Roles[0].Permissions, permission => permission == ErpPermissions.CounterpartyPartiesUpdateBasic);
+        Assert.Equal("company-a-user", AcceptanceProfile.ReadOnlyActor);
+        Assert.Single(options.Roles[1].Permissions, permission => permission == ErpPermissions.CounterpartyPartiesRead);
+        Assert.DoesNotContain(ErpPermissions.CounterpartyPartiesUpdateBasic, options.Roles[1].Permissions);
+        Assert.DoesNotContain(ErpPermissions.CounterpartyPartiesCreate, options.Roles[1].Permissions);
+        Assert.DoesNotContain(ErpPermissions.CounterpartyAccountsCreate, options.Roles[1].Permissions);
+        Assert.DoesNotContain(ErpPermissions.CounterpartyPartiesUpdateBasic,
+            new IdentityRoleSeed().Permissions);
     }
 
     [Theory]
@@ -73,12 +114,12 @@ public sealed class ProfileTests
     {
         var identity = new RunSettings();
         identity.Validate("Testing");
-        Assert.Equal("c006-fc721a1b9752", identity.RunId);
-        Assert.Equal("7ec92416-5a5d-42ad-9823-3574f27592a8", identity.InstanceId);
-        Assert.Equal("c3cb45e1f85a7079c742bc0abbe62ca3aa805dfe", SourceBinding.FrontendHead);
-        Assert.Equal("a184b46b34b2208dde74c366abe105b54c9d01515aa1930f0a597cb597fd6e53", identity.FrontendDiffSha256);
+        Assert.Equal("c006-db61f4b0aac9", identity.RunId);
+        Assert.Equal("10db1804-6167-4b6a-b49b-d86bdd3cdd57", identity.InstanceId);
+        Assert.Equal("44ae49cd6c54984fb7a52c9c6e4ee5fd67284d6e", SourceBinding.FrontendHead);
+        Assert.Equal("40e5e738367fd983a42b9dcd9eb705f8ccdf87897d494058d907f7c204ffd8d1", identity.FrontendDiffSha256);
         Assert.Equal(SourceBinding.FrontendDiff, identity.FrontendDiffSha256);
-        Assert.Equal("880cae838e5d2f01a988f1e4a89afbe67858f48c", identity.BackendHead);
+        Assert.Equal("9df7f40e3aefc5b02ef42a378c0d1aa800a2fe29", identity.BackendHead);
         var services = Canonical();
         Assert.Throws<InvalidOperationException>(() => AcceptanceProfile.Configure(services, "Testing",
             identity with { BackendHead = "78494ed9bc60692fac6c186aa52b0049bbf4c306" }));
@@ -87,6 +128,10 @@ public sealed class ProfileTests
 
     public static TheoryData<RunSettings> ConsumedRunIdentities => new()
     {
+        new RunSettings { RunId = "c006-fc721a1b9752" },
+        new RunSettings { InstanceId = "7ec92416-5a5d-42ad-9823-3574f27592a8" },
+        new RunSettings { DatabaseName = "GoymenCariC006_fc721a1b9752" },
+        new RunSettings { ComposeProject = "goymen-cari-c006-fc721a1b9752" },
         new RunSettings { RunId = "c006-303760997c6f" },
         new RunSettings { InstanceId = "3a6f9f42-2d52-4874-95d0-7cff415aaf15" },
         new RunSettings { DatabaseName = "GoymenCariC006_303760997c6f" },

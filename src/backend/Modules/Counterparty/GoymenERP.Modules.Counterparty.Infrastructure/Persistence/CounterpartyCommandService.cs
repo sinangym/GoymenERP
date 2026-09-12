@@ -14,7 +14,7 @@ using Microsoft.Extensions.Logging;
 
 namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 
-internal sealed class CounterpartyCommandService(
+internal sealed partial class CounterpartyCommandService(
     CounterpartyDbContext dbContext,
     ICurrentUser currentUser,
     ICompanyContext companyContext,
@@ -22,7 +22,7 @@ internal sealed class CounterpartyCommandService(
     IAuditEventCollector auditEventCollector,
     ICounterpartyActiveStateCommandProbe activeStateCommandProbe,
     ILogger<CounterpartyCommandService> logger)
-    : ICounterpartyCommandService
+    : ICounterpartyCommandService, ICounterpartyContactInformationService
 {
     private const int CommandExecutionSchemaVersion = 1;
     private const string CreateCommandName = "counterparty.party.create.v1";
