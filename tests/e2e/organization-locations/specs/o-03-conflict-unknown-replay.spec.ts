@@ -170,10 +170,10 @@ test.describe('O-03 conflict, unknown and replay', () => {
      * two. That is what the key bought.
      */
     const fresh = await net.waitForAfter(
-      'a detail read issued after the replay settled',
+      'a detail read issued after the replay arrived',
       DETAIL_RE,
       'GET',
-      replay.settledAt!,
+      replay.receivedAt!,
     )
     expect(versionOf(fresh.responseBody)).toBe(versionBefore + 1)
     await expect(page.locator(outcome.replayed)).toBeVisible()
@@ -230,10 +230,10 @@ test.describe('O-03 conflict, unknown and replay', () => {
      * its starting state, so that is what the user must see.
      */
     const fresh = await net.waitForAfter(
-      'a detail read issued after the delayed replay settled',
+      'a detail read issued after the delayed replay arrived',
       DETAIL_RE,
       'GET',
-      replay.settledAt!,
+      replay.receivedAt!,
     )
     expect(fresh.status).toBe(200)
     await expect(page.locator(outcome.replayed)).toBeVisible()

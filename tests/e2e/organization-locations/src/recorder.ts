@@ -67,8 +67,21 @@ export interface LiveRecord {
   failed?: string
   /** True once the exchange is finished: a status plus its body, or a failure. */
   complete: boolean
-  /** Monotonic ticks, so "this GET finished before that PUT was issued" is a comparison. */
+  /** Monotonic ticks, so "this GET was issued after that PUT arrived" is a comparison. */
   issuedAt: number
+  /**
+   * The tick at which the response ARRIVED — assigned synchronously in the `response`
+   * event, before any microtask.
+   *
+   * This is the ordering marker, and it has to be separate from `settledAt`. Body
+   * completion resolves a microtask later, while the application reacts to a 204
+   * immediately: measured, the fresh GET that follows a command can therefore be issued
+   * BEFORE the command's body-completion tick. Comparing against that tick would skip
+   * the genuine fresh read and wait for a second one that never comes — a real run
+   * failing on an artefact of how we timestamp.
+   */
+  receivedAt?: number
+  /** The tick at which the exchange finished: body in, or a failure. */
   settledAt?: number
 }
 
@@ -123,16 +136,30 @@ export class LiveRecorder {
       if (record === undefined) return
       record.status = response.status()
       record.responseHeaders = pick(response.headers(), RECORDED_RESPONSE_HEADERS)
+      // Synchronous: the order marker must not wait on a microtask. See `receivedAt`.
+      record.receivedAt = (recorder.tick += 1)
+
+      /**
+       * A 204 carries no body, so there is nothing to wait for and it completes here.
+       * Keeping it on the body path was the bug: its completion tick landed after the
+       * application had already issued the fresh GET that follows the command.
+       */
+      if (response.status() === 204) {
+        record.settledAt = record.receivedAt
+        record.complete = true
+        return
+      }
+
       const body = response
         .json()
         .then((value: unknown) => {
           record.responseBody = value
         })
         .catch(() => {
-          /* 204 and unparseable problem bodies are legitimately absent. */
+          /* Unparseable or empty problem bodies are legitimately absent. */
         })
         .finally(() => {
-          // Complete only once the BODY is in: headers alone are not a completed read.
+          // For a JSON answer, headers alone are not a completed read.
           record.settledAt = (recorder.tick += 1)
           record.complete = true
         })
@@ -233,7 +260,14 @@ export class LiveRecorder {
     )
   }
 
-  /** A completed read of `pattern` that was ISSUED after `tick`. */
+  /**
+   * A COMPLETED read of `pattern` that was ISSUED after `tick`.
+   *
+   * Callers pass the command's `receivedAt`, not its `settledAt`: the client can only
+   * have started this read once the answer ARRIVED, and that is the fact being asserted.
+   * The read itself must still be complete — a fresh GET whose body has not landed
+   * proves nothing about what the screen now shows.
+   */
   waitForAfter(
     description: string,
     pattern: RegExp,

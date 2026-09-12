@@ -18,8 +18,8 @@
  *
  * WHAT ONLY THE REAL STACK SHOWS HERE:
  *  - a 204 carries NO body and NO version, so the card cannot have come from the
- *    command. We wait for a detail read ISSUED AFTER the command settled and assert the
- *    card against that;
+ *    command. We wait for a completed detail read ISSUED AFTER the command's answer
+ *    ARRIVED, and assert the card against that;
  *  - `version + 1` is never predicted: the second command's `expectedVersion` equals the
  *    version actually READ, compared from the wire;
  *  - the originating page survives a real router round trip, and the list behind the
@@ -112,14 +112,18 @@ test.describe('O-01 location lifecycle', () => {
     // ---- 4. The CURRENT view, which the command could not have supplied ------------
     /**
      * A 204 has no body and no version, so the card must come from a read the app issued
-     * AFTER the command settled. That ordering is the assertion; the success notice is
-     * only a receipt and appears before this read finishes.
+     * AFTER the command's answer arrived. That ordering is the assertion; the success
+     * notice is only a receipt and appears before this read finishes.
+     *
+     * Compared against `receivedAt`, not `settledAt`: the client can only have started
+     * this read once the answer arrived, and for a 204 the two are the same tick anyway
+     * — but saying which one we mean keeps the next reader from reintroducing the race.
      */
     const fresh = await net.waitForAfter(
-      'a detail read issued after the command settled',
+      'a detail read issued after the command arrived',
       DETAIL_RE,
       'GET',
-      deactivate.settledAt!,
+      deactivate.receivedAt!,
     )
     expect(fresh.status).toBe(200)
     const versionAfter = versionOf(fresh.responseBody)
@@ -134,7 +138,7 @@ test.describe('O-01 location lifecycle', () => {
       'a list read issued after the command, i.e. not the pre-change cache',
       LOCATIONS_RE,
       'GET',
-      deactivate.settledAt!,
+      deactivate.receivedAt!,
     )
     expect(listAfter.status).toBe(200)
     await expect(listHeading(page)).toBeVisible()
@@ -172,10 +176,10 @@ test.describe('O-01 location lifecycle', () => {
     )
 
     const finalRead = await net.waitForAfter(
-      'a detail read issued after the reactivation settled',
+      'a detail read issued after the reactivation arrived',
       DETAIL_RE,
       'GET',
-      secondPut.settledAt!,
+      secondPut.receivedAt!,
     )
     expect(versionOf(finalRead.responseBody)).toBe(versionForReactivate + 1)
     await expect(page.locator(outcome.applied)).toBeVisible()

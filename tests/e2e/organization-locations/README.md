@@ -53,11 +53,14 @@ State as of this commit, verified against `main` rather than asserted:
 
 1. **Done.** The shell mounts the routes and the nav entry (#248, `fc14554`), and
    `shell/capabilities.ts` declares the two route ids (#247).
-2. **Outstanding.** The server must publish the `organization.*` capabilities. At
-   `main@fc14554` the only `IShellCapabilityProvider` implementation is still
-   `CounterpartyShellCapabilityProvider`, so until the #246 provider merges these routes
-   mount nothing — `CapabilityRoute` closes them onto the neutral not-found block, by
-   design. Every case here would fail at the first list read, correctly.
+2. **Outstanding, but NOT a merge.** The run needs an API assembly that publishes the
+   `organization.*` capabilities. That is the environment owner's published build
+   (#246 `4f9dab4`), bound in the manifest as `capabilityProviderCommit` — **not** a
+   merge to `main`. Not finding the provider in the frontend's `main` tree says nothing
+   about the separate binary this run is served by; the isolated acceptance binds
+   API `4f9dab4` + this journey/frontend + the shell mount + the fixture/schema as one
+   tuple. Until such an assembly is bound and running, these routes mount nothing —
+   `CapabilityRoute` closes them onto the neutral not-found block, by design.
 3. **Outstanding.** The Organization environment must be stood up and declared ENV_READY
    with the tuple above, per `tests/e2e-fixtures/organization-locations/README.md`;
 4. the `o-02` no-sites case additionally needs a **locations-only actor bound in the
@@ -68,6 +71,13 @@ State as of this commit, verified against `main` rather than asserted:
    **skips** and `artifacts/o-02-scope-and-permissions/coverage.json` records that it was
    not measured. It is never marked observed from a source hash, and never reported as
    covered by the normal seed or by the SQL test's permission reduction.
+
+## Order of operations
+
+Source review and CI on this package → the environment owner observes the actual
+ENV/capability state → **this suite runs the browser** → the environment owner takes the
+SQL result and does cleanup → the coordinator decides the #246 merge. The provider merge
+is the LAST step, not a precondition for the browser run.
 
 ## Who owns port 27173 during a run
 
