@@ -1,5 +1,6 @@
 /**
- * The logical U-02 create attempt — framework-independent.
+ * The logical U-02 write attempt — framework-independent, shared by Draft create
+ * and Draft basic edit.
  *
  * THE RULE, in one line: one idempotency key per submitted SNAPSHOT, never per click.
  *
@@ -26,17 +27,25 @@
  */
 
 import { PLATFORM_PROBLEM_CODE, PRODUCT_PROBLEM_CODE } from './contract'
-import type { CreateOutcome, CreateProductDraftPayload } from './api'
-import type { ProductDraftCreated } from './contract'
+import type { CommandOutcome } from './api'
 
 /** A definite, non-success answer. */
 export type AttemptFailure =
   | 'validation'
-  | 'code-collision'
   | 'metadata'
   | 'unauthenticated'
   | 'forbidden'
   | 'idempotency-conflict'
+  /**
+   * §19.5: the `expectedVersion` we held is no longer current. Kept apart from
+   * `idempotency-conflict` because the user-facing rule differs — a stale edit shows
+   * the current record and waits for the person to review it, and must never be
+   * rebased or overwritten on their behalf.
+   */
+  | 'stale-version'
+  /** Basic edit was aimed at a record that is no longer a Draft. */
+  | 'lifecycle-conflict'
+  | 'not-found'
   | 'unexpected'
 
 /** Why an outcome is unknown. Every one of these is retryable with the SAME key. */
@@ -46,33 +55,40 @@ export type AttemptUnknownReason =
   | 'service-unavailable'
   | 'malformed-response'
 
-export interface AttemptSnapshot {
+export interface AttemptSnapshot<P> {
   /** The single Idempotency-Key for this snapshot. */
   readonly key: string
   /** The normalized payload exactly as sent. */
-  readonly payload: CreateProductDraftPayload
+  readonly payload: P
+  /**
+   * The shell context the attempt was authorized under.
+   *
+   * §19.4: "Origin değişirse eski girişim otomatik taşınmaz." An attempt belongs to
+   * the actor, company context and session it started in; carrying it into a new one
+   * would replay a write under authority that was never granted there.
+   */
+  readonly namespace: string
 }
 
-export type AttemptState =
+export type AttemptState<P, R> =
   | { readonly phase: 'idle' }
-  | { readonly phase: 'submitting'; readonly snapshot: AttemptSnapshot }
+  | { readonly phase: 'submitting'; readonly snapshot: AttemptSnapshot<P> }
   | {
       readonly phase: 'unknown'
-      readonly snapshot: AttemptSnapshot
+      readonly snapshot: AttemptSnapshot<P>
       readonly reason: AttemptUnknownReason
     }
   | {
       readonly phase: 'failed'
-      readonly snapshot: AttemptSnapshot
+      readonly snapshot: AttemptSnapshot<P>
       readonly failure: AttemptFailure
       /** The server's field errors, when it sent any. */
       readonly fieldErrors: Readonly<Record<string, string>>
     }
   | {
       readonly phase: 'completed'
-      readonly snapshot: AttemptSnapshot
-      readonly result: ProductDraftCreated
-      readonly replayed: boolean
+      readonly snapshot: AttemptSnapshot<P>
+      readonly result: R
     }
 
 /** The contract bound: trim → 1..128 characters, not blank. */
@@ -102,25 +118,26 @@ export function generateAttemptKey(
  * so re-typing the same name with different surrounding whitespace is the same
  * attempt, not a new one that would consume a second key and risk a duplicate.
  */
-export function isSamePayload(
-  a: CreateProductDraftPayload,
-  b: CreateProductDraftPayload,
-): boolean {
-  return JSON.stringify(normalizeForCompare(a)) === JSON.stringify(normalizeForCompare(b))
+export function isSamePayload<P>(a: P, b: P): boolean {
+  return stableStringify(a) === stableStringify(b)
 }
 
-function normalizeForCompare(payload: CreateProductDraftPayload) {
-  // Key order is part of `JSON.stringify`, and the roles object is built by
-  // iterating a constant array — but the classification object is written by hand
-  // in two places, so the comparison pins its shape rather than trusting that.
-  return {
-    name: payload.name,
-    class: payload.classification.class,
-    group: payload.classification.group,
-    family: payload.classification.family,
-    roles: payload.roles,
-    trackingPolicy: payload.trackingPolicy,
-  }
+/**
+ * JSON with object keys sorted at every depth.
+ *
+ * `JSON.stringify` preserves insertion order, so two payloads carrying identical
+ * values would compare as different simply because one object literal was written
+ * with its fields in another order. That difference would mint a second idempotency
+ * key for the same business attempt — which is exactly how one click becomes two
+ * products.
+ */
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null'
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(',')}}`
 }
 
 /**
@@ -131,15 +148,15 @@ function normalizeForCompare(payload: CreateProductDraftPayload) {
  * A malformed 201 is deliberately on the unknown side — the server said it created
  * something, we just could not read the description.
  */
-export function nextState(snapshot: AttemptSnapshot, outcome: CreateOutcome): AttemptState {
+export function nextState<P, R>(
+  snapshot: AttemptSnapshot<P>,
+  outcome: CommandOutcome<R>,
+): AttemptState<P, R> {
   switch (outcome.type) {
-    case 'created':
-      return {
-        phase: 'completed',
-        snapshot,
-        result: outcome.data,
-        replayed: outcome.replayed,
-      }
+    case 'succeeded':
+      // `isReplay` lives INSIDE the result in this contract, not beside it, so the
+      // attempt state does not carry a second copy that could disagree with it.
+      return { phase: 'completed', snapshot, result: outcome.data }
     case 'offline':
       return { phase: 'unknown', snapshot, reason: 'offline' }
     case 'network-error':
@@ -155,6 +172,19 @@ export function nextState(snapshot: AttemptSnapshot, outcome: CreateOutcome): At
       if (outcome.status >= 500) {
         return { phase: 'unknown', snapshot, reason: 'service-unavailable' }
       }
+      /**
+       * A 2xx that is NOT the expected success status is uncertainty, not refusal.
+       *
+       * The server reported success, so calling it "failed" would tell the user
+       * their change did not apply when it very likely did. A `204` is the live
+       * case: §19.4 allows it and then requires a fresh GET for the new value and
+       * version, and this client has neither — "Gönderilen taslak server sonucu gibi
+       * boyanmaz". Treating it as unknown is honest and safe: the same key replays
+       * rather than writing twice.
+       */
+      if (outcome.status >= 200 && outcome.status < 300) {
+        return { phase: 'unknown', snapshot, reason: 'malformed-response' }
+      }
       return {
         phase: 'failed',
         snapshot,
@@ -168,10 +198,11 @@ export function nextState(snapshot: AttemptSnapshot, outcome: CreateOutcome): At
 }
 
 function classifyFailure(status: number, code: string | null): AttemptFailure {
-  if (code === PRODUCT_PROBLEM_CODE.productCodeCollision) return 'code-collision'
+  if (code === PRODUCT_PROBLEM_CODE.versionConflict) return 'stale-version'
+  if (code === PRODUCT_PROBLEM_CODE.lifecycleConflict) return 'lifecycle-conflict'
+  if (code === PRODUCT_PROBLEM_CODE.notFound) return 'not-found'
   if (code === PRODUCT_PROBLEM_CODE.validationFailed) return 'validation'
   if (code === PRODUCT_PROBLEM_CODE.idempotencyConflict) return 'idempotency-conflict'
-  if (code === PRODUCT_PROBLEM_CODE.commandMetadataInvalid) return 'metadata'
   if (code === PLATFORM_PROBLEM_CODE.correlationMetadataInvalid) return 'metadata'
   if (code === PLATFORM_PROBLEM_CODE.authenticationRequired) return 'unauthenticated'
   if (code === PLATFORM_PROBLEM_CODE.forbidden) return 'forbidden'
@@ -186,13 +217,14 @@ function classifyFailure(status: number, code: string | null): AttemptFailure {
    */
   if (status === 401) return 'unauthenticated'
   if (status === 403) return 'forbidden'
+  if (status === 404) return 'not-found'
   if (status === 400) return 'validation'
   if (status === 409) return 'idempotency-conflict'
   return 'unexpected'
 }
 
 /** Whether a state leaves the form frozen. */
-export function isFormFrozen(state: AttemptState): boolean {
+export function isFormFrozen<P, R>(state: AttemptState<P, R>): boolean {
   return state.phase === 'submitting' || state.phase === 'completed'
 }
 
@@ -203,7 +235,10 @@ export function isFormFrozen(state: AttemptState): boolean {
  * as unsaved: the Draft may exist, but nothing has confirmed it, and letting the
  * user walk away silently is how an unresolved write is forgotten.
  */
-export function hasUnresolvedWork(state: AttemptState, formDirty: boolean): boolean {
+export function hasUnresolvedWork<P, R>(
+  state: AttemptState<P, R>,
+  formDirty: boolean,
+): boolean {
   if (state.phase === 'completed') return false
   if (state.phase === 'unknown' || state.phase === 'submitting') return true
   return formDirty

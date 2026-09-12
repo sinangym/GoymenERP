@@ -1,30 +1,33 @@
 /**
- * U-02 Yeni Ürün — Draft create.
+ * U-02 Yeni Ürün — Draft create, pinned to `POST /api/v1/products`.
  *
- * Scope (JIT spec §10, §6.1): create a DRAFT. Activation is a separate command with
- * its own audit record (§6.2) and stays fail-closed until `G-PRD-PLATFORM-01`,
- * `G-PRD-PERM-01` and `G-PRD-PERSIST-01` pass (§6.6) — so this screen offers no
- * activate button at all rather than a disabled one whose gate it cannot explain.
+ * Offers exactly the create minimum the contract states — `name` plus a real
+ * `groupId` from `GET /products/code-groups` — and the roles, whose vocabulary the
+ * contract fully defines.
  *
  * Deliberately absent, each for a stated reason:
- *  - a product CODE field. §5.1/§7: the server generates it from a group prefix and
- *    a sequence, and the admin manual-code exception needs a permission string that
- *    does not exist yet;
- *  - AI draft suggestions. U-02's canonical screen card is "AI Destekli Yeni Ürün"
- *    and §12 allows AI to draft fields — but only "Capability açık ve kullanıcı
- *    yetkiliyse", and no AI capability is published. A panel backed by nothing would
- *    be a fabricated feature, so the AI surface is simply not mounted;
- *  - duplicate similarity warnings. §10.2 makes name/technical similarity a
- *    warning produced by a server-side candidate read. There is no such endpoint,
- *    and computing "looks similar" in the browser would be the screen inventing a
- *    judgement. Exact code/alias collision is still handled — from the server's
- *    answer.
+ *  - a product CODE field: the server mints it from the group's prefix, and the
+ *    admin manual-code exception is a later explicit command;
+ *  - `classId`, `familyId`, `references`: accepted by the request, but no catalogue
+ *    read is published, and §19.3 forbids the client producing a reference;
+ *  - activation: the contract includes no activation command;
+ *  - AI drafting and duplicate-similarity warnings: both need a server surface that
+ *    does not exist. Exact collisions are still handled — from the server's answer.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { createProductDraft } from './api'
-import { PRODUCT_ROLE, productFieldErrorsOf, type ProductRoleName } from './contract'
+import { useQuery } from '@tanstack/react-query'
+import { createProductDraft, fetchCodeGroups } from './api'
+import type { CreateProductDraftPayload } from './api'
+import {
+  PRODUCT_PROBLEM_CODE,
+  PRODUCT_ROLE,
+  productFieldErrorsOf,
+  type ProductCodeGroup,
+  type ProductMutationResult,
+  type ProductRoleName,
+} from './contract'
 import {
   CREATE_FIELD,
   CREATE_FIELD_LABEL,
@@ -46,25 +49,70 @@ import {
   nextState,
   type AttemptSnapshot,
   type AttemptState,
-} from './createAttempt'
-import { PRODUCT_CREATE_TEXT, ROLE_LABEL } from './productText'
+} from './commandAttempt'
+import {
+  PENDING_REFERENCE_NOTE,
+  PRODUCT_CREATE_TEXT,
+  ROLE_LABEL,
+  fieldErrorText,
+} from './productText'
 import {
   PRODUCT_CAPABILITY,
   PRODUCT_CAPABILITY_ROUTE,
   productDetailPath,
 } from './capabilities'
 import { useShellState } from '../shell/shellContext'
-import { hasCapability } from '../shell/shellState'
+import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
+import { UnsavedDialog } from './UnsavedDialog'
 import styles from './ProductCreatePage.module.css'
+
+type CreateAttempt = AttemptState<CreateProductDraftPayload, ProductMutationResult>
 
 const ROLE_CHOICES: readonly { readonly value: RoleChoice; readonly label: string }[] = [
   { value: 'yes', label: PRODUCT_CREATE_TEXT.roleYes },
   { value: 'no', label: PRODUCT_CREATE_TEXT.roleNo },
-  // Last, and the initial value. §5.2: an unanswered role stays unanswered.
+  // Last, and the initial value: an unanswered role stays unanswered.
   { value: 'unset', label: PRODUCT_CREATE_TEXT.roleUnset },
 ]
 
 export function ProductCreatePage() {
+  const shell = useShellState()
+  const key = contextKey(shell)
+  const namespace = key === null ? null : contextKeyString(key)
+  const entryGeneration = shell.routeEntryGeneration
+
+  const groupQuery = useQuery({
+    queryKey: [namespace ?? 'no-context', entryGeneration, 'product-code-groups'],
+    enabled: namespace !== null,
+    queryFn: async ({ signal }) => fetchCodeGroups(signal),
+  })
+
+  const groups =
+    groupQuery.data?.type === 'ok' ? (groupQuery.data.data as readonly ProductCodeGroup[]) : null
+
+  return (
+    <ProductCreateForm
+      key={namespace ?? 'no-context'}
+      namespace={namespace}
+      groups={groups}
+      groupsLoading={groupQuery.isPending}
+      onRetryGroups={() => void groupQuery.refetch()}
+    />
+  )
+}
+
+function ProductCreateForm({
+  namespace,
+  groups,
+  groupsLoading,
+  onRetryGroups,
+}: {
+  readonly namespace: string | null
+  /** `null` means the code-group read has not produced a usable list. */
+  readonly groups: readonly ProductCodeGroup[] | null
+  readonly groupsLoading: boolean
+  readonly onRetryGroups: () => void
+}) {
   const shell = useShellState()
   const navigate = useNavigate()
   const canOpenDetail = hasCapability(shell, PRODUCT_CAPABILITY.productsDetail)
@@ -73,56 +121,56 @@ export function ProductCreatePage() {
   const [values, setValues] = useState<CreateFormValues>(EMPTY_CREATE_FORM)
   const [errors, setErrors] = useState<CreateFormErrors>({})
   const [submitted, setSubmitted] = useState(false)
-  const [attempt, setAttempt] = useState<AttemptState>({ phase: 'idle' })
+  const [attempt, setAttempt] = useState<CreateAttempt>({ phase: 'idle' })
   const [leaveIntent, setLeaveIntent] = useState<string | null>(null)
 
   const summaryRef = useRef<HTMLDivElement>(null)
-  const fieldRefs = useRef<Partial<Record<CreateFieldId, HTMLInputElement | null>>>({})
+  const fieldRefs = useRef<Partial<Record<CreateFieldId, HTMLElement | null>>>({})
 
   const dirty = !isCreateFormPristine(values)
   const frozen = isFormFrozen(attempt)
   const unresolved = hasUnresolvedWork(attempt, dirty)
 
   /**
-   * §10.4, browser half. A full page unload cannot be intercepted with a custom
-   * dialog — the browser shows its own — but it can be made to ask at all, which is
-   * the difference between losing the form to a stray Cmd-W and being warned.
+   * §19.4: "Origin değişirse eski girişim otomatik taşınmaz." An attempt belongs to
+   * the context it started in; when the shell commits a different one it is
+   * abandoned visibly rather than silently re-aimed at authority it never had.
    */
+  const attemptNamespace =
+    attempt.phase === 'idle' || attempt.phase === 'completed' ? null : attempt.snapshot.namespace
+  const contextChanged =
+    attemptNamespace !== null && namespace !== null && attemptNamespace !== namespace
+
   useEffect(() => {
     if (!unresolved) return
     function onBeforeUnload(event: BeforeUnloadEvent) {
       event.preventDefault()
-      // Assigning returnValue is what still triggers the prompt in Chromium; the
-      // string itself has been ignored by every browser for years.
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', onBeforeUnload)
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
   }, [unresolved])
 
-  function update<K extends keyof CreateFormValues>(field: K, value: CreateFormValues[K]) {
-    setValues((current) => ({ ...current, [field]: value }))
-  }
+  const groupIds = useMemo(() => (groups ?? []).map((group) => group.id), [groups])
+  /** Creation is impossible without a real code group (§19.3). */
+  const canCreate = groups !== null && groups.length > 0
 
-  function setRole(role: ProductRoleName, choice: RoleChoice) {
-    setValues((current) => ({ ...current, roles: { ...current.roles, [role]: choice } }))
-  }
-
-  /**
-   * Send the frozen snapshot. Used by the first submit AND by the same-key retry,
-   * so the two cannot drift into sending different things.
-   */
-  const send = useCallback(async (snapshot: AttemptSnapshot) => {
+  const send = useCallback(async (snapshot: AttemptSnapshot<CreateProductDraftPayload>) => {
     setAttempt({ phase: 'submitting', snapshot })
-    const outcome = await createProductDraft(snapshot.payload, { idempotencyKey: snapshot.key })
+    const outcome = await createProductDraft(snapshot.payload, {
+      idempotencyKey: snapshot.key,
+    })
     const next = nextState(snapshot, outcome)
     if (next.phase === 'failed' && next.failure === 'validation') {
-      // §10.3: the server is the single truth, and its field errors win over the
-      // client's on any field it names.
-      const serverErrors = productFieldErrorsOf(
-        outcome.type === 'http' ? outcome.body : null,
-        CREATE_FIELD_ORDER,
-      )
+      /**
+       * The server sends machine codes, so the text is produced here. A code this
+       * build has never seen still reaches its input with a general sentence —
+       * losing the field binding is worse than losing message precision.
+       */
+      const serverErrors: Record<string, string> = {}
+      for (const error of productFieldErrorsOf(outcome.type === 'http' ? outcome.body : null)) {
+        serverErrors[error.field] = fieldErrorText(error.code)
+      }
       setErrors((current) => mergeServerErrors(current, serverErrors))
       setAttempt({ ...next, fieldErrors: serverErrors })
       return
@@ -132,20 +180,15 @@ export function ProductCreatePage() {
 
   function onSubmit(event: React.FormEvent) {
     event.preventDefault()
-    if (frozen) return
+    if (frozen || contextChanged || !canCreate) return
     setSubmitted(true)
 
-    const validation = validateCreateForm(values)
+    const validation = validateCreateForm(values, groupIds)
     if (!validation.ok) {
       /**
        * A client-side rejection mints NO key: nothing was sent, so there is nothing
-       * to be idempotent about.
-       *
-       * Focus is NOT moved to the first field here. There is exactly one rule —
-       * the summary takes focus (see the effect below) and offers a jump to each
-       * field. An earlier version did both, and the two fought: the effect ran
-       * last, so the field focus was silently undone and a screen-reader user
-       * heard neither the summary nor the field cleanly.
+       * to be idempotent about. Focus is not moved to the first field — there is
+       * one rule, and it is that the summary takes focus and offers the jump.
        */
       setErrors(validation.errors)
       return
@@ -154,20 +197,23 @@ export function ProductCreatePage() {
 
     /**
      * An unresolved attempt with the SAME payload is THAT attempt. Re-sending it
-     * under a new key is exactly how one click becomes two products, so the
-     * existing key is reused and the server replays.
+     * under a new key is how one click becomes two products — and the contract says
+     * so too: "An unknown outcome must not be retried with a new key."
      */
     if (attempt.phase === 'unknown' && isSamePayload(attempt.snapshot.payload, validation.payload)) {
       void send(attempt.snapshot)
       return
     }
 
-    void send({ key: generateAttemptKey(), payload: validation.payload })
+    void send({
+      key: generateAttemptKey(),
+      payload: validation.payload,
+      namespace: namespace ?? '',
+    })
   }
 
-  /** The same snapshot, the same key. Never a fresh attempt. */
   function retrySameAttempt() {
-    if (attempt.phase !== 'unknown') return
+    if (attempt.phase !== 'unknown' || contextChanged) return
     void send(attempt.snapshot)
   }
 
@@ -180,13 +226,10 @@ export function ProductCreatePage() {
     [errors],
   )
 
-  // Move focus to the summary when a submit produced errors, so a screen-reader
-  // user is told why nothing happened instead of being left on the button.
   useEffect(() => {
     if (submitted && errorList.length > 0) summaryRef.current?.focus()
   }, [submitted, errorList.length])
 
-  /** Navigate, asking first when there is unresolved work (§10.4). */
   function guardedNavigate(to: string) {
     if (unresolved) {
       setLeaveIntent(to)
@@ -196,26 +239,20 @@ export function ProductCreatePage() {
   }
 
   if (attempt.phase === 'completed') {
-    const created = attempt.result
+    const created = attempt.result.card.product
     return (
       <section className={styles.page} aria-labelledby="product-created-heading">
         <div className={styles.successBlock} role="status">
           <h1 id="product-created-heading" className={styles.title}>
             {PRODUCT_CREATE_TEXT.createdTitle}
           </h1>
-          {/*
-            The code is printed only now — §7: the UI must not declare the code
-            before the server's response.
-          */}
+          {/* The code is printed only now, from the server's own response. */}
           <p className={styles.createdCode}>
             {created.code} — {created.name}
           </p>
           <p className={styles.note}>{PRODUCT_CREATE_TEXT.draftNote}</p>
-          {/*
-            A replay is not a second record, and saying so stops the user from
-            hunting for a duplicate they think they just made.
-          */}
-          {attempt.replayed ? (
+          {/* `isReplay` is a response FIELD in this contract, not a header. */}
+          {attempt.result.isReplay ? (
             <p className={styles.note}>{PRODUCT_CREATE_TEXT.replayedNote}</p>
           ) : null}
           <div className={styles.actions}>
@@ -238,6 +275,12 @@ export function ProductCreatePage() {
     )
   }
 
+  const definiteFailure =
+    attempt.phase === 'failed' &&
+    attempt.failure !== 'validation' &&
+    attempt.failure !== 'unauthenticated' &&
+    attempt.failure !== 'forbidden'
+
   return (
     <section className={styles.page} aria-labelledby="product-create-heading">
       <h1 id="product-create-heading" className={styles.title}>
@@ -245,6 +288,39 @@ export function ProductCreatePage() {
       </h1>
       <p className={styles.note}>{PRODUCT_CREATE_TEXT.draftNote}</p>
       <p className={styles.note}>{PRODUCT_CREATE_TEXT.codeNote}</p>
+      {/* The known gap, said on screen rather than left as a silent absence. */}
+      <p className={styles.note}>{PENDING_REFERENCE_NOTE}</p>
+
+      {/*
+        The prerequisite, stated before the form rather than as a save failure: the
+        code group is a real technical dependency of CREATION, not of the screen.
+      */}
+      {!groupsLoading && groups === null ? (
+        <div className={styles.errorSummary} role="alert" data-testid="product-groups-unavailable">
+          <p className={styles.errorSummaryTitle}>{PRODUCT_CREATE_TEXT.groupsUnavailableTitle}</p>
+          <p>{PRODUCT_CREATE_TEXT.groupsUnavailableDetail}</p>
+          <button type="button" className={styles.secondaryAction} onClick={onRetryGroups}>
+            {PRODUCT_CREATE_TEXT.retryGroups}
+          </button>
+        </div>
+      ) : null}
+      {groups !== null && groups.length === 0 ? (
+        <div className={styles.errorSummary} role="alert" data-testid="product-groups-empty">
+          <p className={styles.errorSummaryTitle}>{PRODUCT_CREATE_TEXT.groupsEmptyTitle}</p>
+          <p>{PRODUCT_CREATE_TEXT.groupsEmptyDetail}</p>
+        </div>
+      ) : null}
+
+      {contextChanged ? (
+        <div
+          className={styles.errorSummary}
+          role="alert"
+          data-testid="product-create-context-changed"
+        >
+          <p className={styles.errorSummaryTitle}>{PRODUCT_CREATE_TEXT.contextChangedTitle}</p>
+          <p>{PRODUCT_CREATE_TEXT.contextChangedDetail}</p>
+        </div>
+      ) : null}
 
       {submitted && errorList.length > 0 ? (
         <div
@@ -259,11 +335,6 @@ export function ProductCreatePage() {
           <ul>
             {errorList.map(({ field, message }) => (
               <li key={field}>
-                {/*
-                  A button rather than an anchor: this moves focus inside the page,
-                  it does not navigate, and a link that does not link is a promise
-                  the control cannot keep.
-                */}
                 <button
                   type="button"
                   className={styles.errorLink}
@@ -277,115 +348,141 @@ export function ProductCreatePage() {
         </div>
       ) : null}
 
-      {attempt.phase === 'failed' && attempt.failure === 'code-collision' ? (
-        <div className={styles.errorSummary} role="alert">
-          <p className={styles.errorSummaryTitle}>{PRODUCT_CREATE_TEXT.codeCollisionTitle}</p>
-          <p>{PRODUCT_CREATE_TEXT.codeCollisionDetail}</p>
-          <p>{PRODUCT_CREATE_TEXT.saveFailedRetained}</p>
-        </div>
-      ) : null}
-
       {attempt.phase === 'failed' &&
       (attempt.failure === 'unauthenticated' || attempt.failure === 'forbidden') ? (
         <div className={styles.errorSummary} role="alert">
           <p className={styles.errorSummaryTitle}>
             {attempt.failure === 'forbidden' ? 'Yetkiniz yok' : 'Oturum sonlandı'}
           </p>
-          <p>
-            {attempt.failure === 'forbidden'
-              ? 'Bu işlem için yetkiniz bulunmuyor. Kayıt oluşturulmadı.'
-              : 'Devam etmek için yeniden giriş yapın. Kayıt oluşturulmadı.'}
-          </p>
+          <p>Kayıt oluşturulmadı.</p>
         </div>
       ) : null}
 
-      {attempt.phase === 'failed' &&
-      (attempt.failure === 'unexpected' ||
-        attempt.failure === 'metadata' ||
-        attempt.failure === 'idempotency-conflict') ? (
-        <div className={styles.errorSummary} role="alert">
-          <p className={styles.errorSummaryTitle}>{PRODUCT_CREATE_TEXT.errorSummaryTitle}</p>
+      {definiteFailure ? (
+        <div className={styles.errorSummary} role="alert" data-testid="product-create-failed">
+          <p className={styles.errorSummaryTitle}>
+            {attempt.phase === 'failed' && attempt.failure === 'idempotency-conflict'
+              ? PRODUCT_CREATE_TEXT.codeCollisionTitle
+              : PRODUCT_CREATE_TEXT.errorSummaryTitle}
+          </p>
           <p>{PRODUCT_CREATE_TEXT.saveFailedRetained}</p>
         </div>
       ) : null}
 
       {/*
-        The unknown outcome. Distinct from a failure on purpose: the Draft MAY
-        exist, so the copy must not invite a fresh save, and the retry re-sends the
-        same key rather than starting a new attempt.
+        The unknown outcome. Distinct from a failure on purpose: the Draft MAY exist,
+        so the copy must not invite a fresh save, and the retry re-sends the same key.
       */}
       {attempt.phase === 'unknown' ? (
         <div className={styles.unknownBlock} role="alert" data-testid="product-create-unknown">
           <p className={styles.errorSummaryTitle}>{PRODUCT_CREATE_TEXT.unknownOutcomeTitle}</p>
           <p>{PRODUCT_CREATE_TEXT.unknownOutcomeDetail}</p>
-          <button type="button" className={styles.primaryAction} onClick={retrySameAttempt}>
+          <button
+            type="button"
+            className={styles.primaryAction}
+            disabled={contextChanged}
+            onClick={retrySameAttempt}
+          >
             {PRODUCT_CREATE_TEXT.retrySameAttempt}
           </button>
         </div>
       ) : null}
 
       <form className={styles.form} onSubmit={onSubmit} noValidate>
-        <TextField
-          id={CREATE_FIELD.name}
-          label={PRODUCT_CREATE_TEXT.nameLabel}
-          hint={PRODUCT_CREATE_TEXT.nameHint}
-          required
-          value={values.name}
-          error={errors.name}
-          disabled={frozen}
-          inputRef={(el) => {
-            fieldRefs.current[CREATE_FIELD.name] = el
-          }}
-          onChange={(value) => update('name', value)}
-        />
+        <div className={styles.field}>
+          <label htmlFor={CREATE_FIELD.name}>
+            {PRODUCT_CREATE_TEXT.nameLabel}
+            <span className={styles.required} aria-hidden="true">
+              {' '}
+              *
+            </span>
+          </label>
+          <input
+            id={CREATE_FIELD.name}
+            type="text"
+            value={values.name}
+            required
+            aria-required="true"
+            maxLength={250}
+            disabled={frozen || contextChanged}
+            aria-invalid={errors.name !== undefined || undefined}
+            aria-describedby={`${CREATE_FIELD.name}-hint${
+              errors.name !== undefined ? ` ${CREATE_FIELD.name}-error` : ''
+            }`}
+            ref={(el) => {
+              fieldRefs.current[CREATE_FIELD.name] = el
+            }}
+            onChange={(event) => setValues((v) => ({ ...v, name: event.target.value }))}
+          />
+          <p id={`${CREATE_FIELD.name}-hint`} className={styles.hint}>
+            {PRODUCT_CREATE_TEXT.nameHint}
+          </p>
+          {errors.name !== undefined ? (
+            <p id={`${CREATE_FIELD.name}-error`} className={styles.fieldError}>
+              {errors.name}
+            </p>
+          ) : null}
+        </div>
 
-        <TextField
-          id={CREATE_FIELD.productClass}
-          label={PRODUCT_CREATE_TEXT.classLabel}
-          required
-          value={values.productClass}
-          error={errors.productClass}
-          disabled={frozen}
-          inputRef={(el) => {
-            fieldRefs.current[CREATE_FIELD.productClass] = el
-          }}
-          onChange={(value) => update('productClass', value)}
-        />
-
-        <TextField
-          id={CREATE_FIELD.productGroup}
-          label={PRODUCT_CREATE_TEXT.groupLabel}
-          value={values.productGroup}
-          error={errors.productGroup}
-          disabled={frozen}
-          inputRef={(el) => {
-            fieldRefs.current[CREATE_FIELD.productGroup] = el
-          }}
-          onChange={(value) => update('productGroup', value)}
-        />
-
-        <TextField
-          id={CREATE_FIELD.productFamily}
-          label={PRODUCT_CREATE_TEXT.familyLabel}
-          value={values.productFamily}
-          error={errors.productFamily}
-          disabled={frozen}
-          inputRef={(el) => {
-            fieldRefs.current[CREATE_FIELD.productFamily] = el
-          }}
-          onChange={(value) => update('productFamily', value)}
-        />
+        <div className={styles.field}>
+          <label htmlFor={CREATE_FIELD.groupId}>
+            {PRODUCT_CREATE_TEXT.groupLabel}
+            <span className={styles.required} aria-hidden="true">
+              {' '}
+              *
+            </span>
+          </label>
+          <select
+            id={CREATE_FIELD.groupId}
+            value={values.groupId}
+            required
+            aria-required="true"
+            disabled={frozen || contextChanged || !canCreate}
+            aria-invalid={errors.groupId !== undefined || undefined}
+            aria-describedby={`${CREATE_FIELD.groupId}-hint${
+              errors.groupId !== undefined ? ` ${CREATE_FIELD.groupId}-error` : ''
+            }`}
+            ref={(el) => {
+              fieldRefs.current[CREATE_FIELD.groupId] = el
+            }}
+            onChange={(event) => setValues((v) => ({ ...v, groupId: event.target.value }))}
+          >
+            <option value="">{PRODUCT_CREATE_TEXT.chooseNone}</option>
+            {(groups ?? []).map((group) => (
+              <option key={group.id} value={group.id}>
+                {group.name} ({group.prefix})
+              </option>
+            ))}
+          </select>
+          <p id={`${CREATE_FIELD.groupId}-hint`} className={styles.hint}>
+            {PRODUCT_CREATE_TEXT.groupHint}
+          </p>
+          {errors.groupId !== undefined ? (
+            <p id={`${CREATE_FIELD.groupId}-error`} className={styles.fieldError}>
+              {errors.groupId}
+            </p>
+          ) : null}
+        </div>
 
         {/*
-          The tri-state role picker. A checkbox cannot represent "not answered" —
-          an unticked box and a deliberate "no" are the same state — and §5.2
-          forbids persisting the first as the second.
+          Tri-state. A checkbox cannot represent "not answered" — an unticked box and
+          a deliberate "no" would be the same state, which is the collapse the
+          contract's tagged role input exists to prevent.
         */}
-        <fieldset className={styles.roles}>
+        <fieldset
+          className={styles.roles}
+          ref={(el) => {
+            fieldRefs.current[CREATE_FIELD.roles] = el
+          }}
+          tabIndex={-1}
+        >
           <legend>{PRODUCT_CREATE_TEXT.rolesLabel}</legend>
           <p className={styles.hint} id="product-roles-hint">
             {PRODUCT_CREATE_TEXT.rolesHint}
           </p>
+          {errors.roles !== undefined ? (
+            <p className={styles.fieldError}>{errors.roles}</p>
+          ) : null}
           {PRODUCT_ROLE.map((role) => (
             <fieldset key={role} className={styles.roleRow} aria-describedby="product-roles-hint">
               <legend>{ROLE_LABEL[role]}</legend>
@@ -396,8 +493,8 @@ export function ProductCreatePage() {
                     name={`role-${role}`}
                     value={choice.value}
                     checked={values.roles[role] === choice.value}
-                    disabled={frozen}
-                    onChange={() => setRole(role, choice.value)}
+                    disabled={frozen || contextChanged}
+                    onChange={() => setRole(setValues, role, choice.value)}
                   />
                   {choice.label}
                 </label>
@@ -406,20 +503,12 @@ export function ProductCreatePage() {
           ))}
         </fieldset>
 
-        <TextField
-          id={CREATE_FIELD.trackingPolicy}
-          label={PRODUCT_CREATE_TEXT.trackingPolicyLabel}
-          value={values.trackingPolicy}
-          error={errors.trackingPolicy}
-          disabled={frozen}
-          inputRef={(el) => {
-            fieldRefs.current[CREATE_FIELD.trackingPolicy] = el
-          }}
-          onChange={(value) => update('trackingPolicy', value)}
-        />
-
         <div className={styles.actions}>
-          <button type="submit" className={styles.primaryAction} disabled={frozen}>
+          <button
+            type="submit"
+            className={styles.primaryAction}
+            disabled={frozen || contextChanged || !canCreate}
+          >
             {attempt.phase === 'submitting'
               ? PRODUCT_CREATE_TEXT.submitting
               : PRODUCT_CREATE_TEXT.submit}
@@ -437,13 +526,12 @@ export function ProductCreatePage() {
         </div>
       </form>
 
-      {/*
-        §10.4 unsaved guard, in-app half. Rendered as a dialog with focus moved onto
-        it, and Escape means "stay" — the safe choice, because the destructive option
-        must never be the one a stray key press picks.
-      */}
       {leaveIntent !== null ? (
         <UnsavedDialog
+          title={PRODUCT_CREATE_TEXT.unsavedTitle}
+          detail={PRODUCT_CREATE_TEXT.unsavedDetail}
+          stayLabel={PRODUCT_CREATE_TEXT.unsavedStay}
+          leaveLabel={PRODUCT_CREATE_TEXT.unsavedLeave}
           onStay={() => setLeaveIntent(null)}
           onLeave={() => {
             const to = leaveIntent
@@ -456,139 +544,13 @@ export function ProductCreatePage() {
   )
 }
 
-function TextField({
-  id,
-  label,
-  hint,
-  required = false,
-  value,
-  error,
-  disabled,
-  inputRef,
-  onChange,
-}: {
-  readonly id: CreateFieldId
-  readonly label: string
-  readonly hint?: string
-  readonly required?: boolean
-  readonly value: string
-  readonly error?: string
-  readonly disabled: boolean
-  readonly inputRef: (el: HTMLInputElement | null) => void
-  readonly onChange: (value: string) => void
-}) {
-  const hintId = hint !== undefined ? `${id}-hint` : undefined
-  const errorId = error !== undefined ? `${id}-error` : undefined
-  /**
-   * §10.3: the error is PROGRAMMATICALLY associated with its input. `aria-describedby`
-   * carries both the hint and the error, and `aria-invalid` marks the field itself —
-   * a red border is invisible to a screen reader and to anyone who cannot
-   * distinguish the colour.
-   */
-  const describedBy = [hintId, errorId].filter((part) => part !== undefined).join(' ')
-  return (
-    <div className={styles.field}>
-      <label htmlFor={id}>
-        {label}
-        {required ? (
-          <span className={styles.required} aria-hidden="true">
-            {' '}
-            *
-          </span>
-        ) : (
-          <span className={styles.optional}> ({PRODUCT_CREATE_TEXT.optional})</span>
-        )}
-      </label>
-      <input
-        id={id}
-        type="text"
-        value={value}
-        disabled={disabled}
-        required={required}
-        aria-required={required || undefined}
-        aria-invalid={error !== undefined || undefined}
-        aria-describedby={describedBy.length > 0 ? describedBy : undefined}
-        ref={inputRef}
-        onChange={(event) => onChange(event.target.value)}
-      />
-      {hint !== undefined ? (
-        <p id={hintId} className={styles.hint}>
-          {hint}
-        </p>
-      ) : null}
-      {error !== undefined ? (
-        <p id={errorId} className={styles.fieldError}>
-          {error}
-        </p>
-      ) : null}
-    </div>
-  )
+function setRole(
+  setValues: React.Dispatch<React.SetStateAction<CreateFormValues>>,
+  role: ProductRoleName,
+  choice: RoleChoice,
+) {
+  setValues((current) => ({ ...current, roles: { ...current.roles, [role]: choice } }))
 }
 
-function UnsavedDialog({
-  onStay,
-  onLeave,
-}: {
-  readonly onStay: () => void
-  readonly onLeave: () => void
-}) {
-  const dialogRef = useRef<HTMLDivElement>(null)
-  const stayRef = useRef<HTMLButtonElement>(null)
-
-  useEffect(() => {
-    // Focus lands on the SAFE option, not the destructive one.
-    stayRef.current?.focus()
-  }, [])
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        onStay()
-        return
-      }
-      if (event.key !== 'Tab') return
-      // A minimal focus trap: the dialog has exactly two controls, so cycling
-      // between them is the whole loop.
-      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>('button')
-      if (focusable === undefined || focusable.length === 0) return
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault()
-        last.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault()
-        first.focus()
-      }
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [onStay])
-
-  return (
-    <div className={styles.dialogBackdrop}>
-      <div
-        className={styles.dialog}
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="unsaved-title"
-        aria-describedby="unsaved-detail"
-        ref={dialogRef}
-      >
-        <p id="unsaved-title" className={styles.errorSummaryTitle}>
-          {PRODUCT_CREATE_TEXT.unsavedTitle}
-        </p>
-        <p id="unsaved-detail">{PRODUCT_CREATE_TEXT.unsavedDetail}</p>
-        <div className={styles.actions}>
-          <button type="button" className={styles.primaryAction} ref={stayRef} onClick={onStay}>
-            {PRODUCT_CREATE_TEXT.unsavedStay}
-          </button>
-          <button type="button" className={styles.secondaryAction} onClick={onLeave}>
-            {PRODUCT_CREATE_TEXT.unsavedLeave}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
+/** Exported so the contract test can assert the create screen knows this code. */
+export const CREATE_HANDLED_CODES = PRODUCT_PROBLEM_CODE

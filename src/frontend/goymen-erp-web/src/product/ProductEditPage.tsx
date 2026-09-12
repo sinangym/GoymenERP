@@ -1,0 +1,540 @@
+/**
+ * U-02 temel düzenleme — Draft basic edit, pinned to
+ * `PATCH /api/v1/products/{id}/draft` (`EditProductDraftRequest`).
+ *
+ * This closes the §19.2 journey: list → card → create Draft → server UUID/code →
+ * reopen → correct the basic fields against the CURRENT version with a reason →
+ * back.
+ *
+ * The rules that shape it, each of which is a way to lose someone's work:
+ *  - the payload is a DIFF, not a form. An omitted member is unchanged, and the
+ *    contract models that as `Optional<T>` with no value;
+ *  - `expectedVersion` comes from the card as READ — never from a conflict
+ *    response, which would turn a refusal into a blind overwrite;
+ *  - a stale refusal shows both versions and stops. No rebase, no force;
+ *  - an unknown outcome retries the SAME key and never claims a rollback;
+ *  - a committed context change abandons the attempt visibly.
+ *
+ * Editable here: `name` and the MANUAL roles. Not editable: group and code (the
+ * contract freezes both in basic edit), and `classId`/`familyId`/`references` —
+ * accepted by the request, but no catalogue read is published, so offering only
+ * "clear" would be a destructive half-control.
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router'
+import { useQuery } from '@tanstack/react-query'
+import { editProductDraft, fetchProductCard } from './api'
+import type { EditProductDraftPayload } from './api'
+import {
+  PRODUCT_ROLE,
+  currentVersionOf,
+  productFieldErrorsOf,
+  type ProductCard,
+  type ProductMutationResult,
+} from './contract'
+import {
+  EDIT_FIELD,
+  EDIT_FIELD_LABEL,
+  EDIT_FIELD_ORDER,
+  editFormFrom,
+  isEditDirty,
+  isRoleEditable,
+  mergeServerEditErrors,
+  roleChoiceOf,
+  validateEditForm,
+  type EditFieldId,
+  type EditFormErrors,
+  type EditFormValues,
+} from './editForm'
+import {
+  generateAttemptKey,
+  hasUnresolvedWork,
+  isFormFrozen,
+  isSamePayload,
+  nextState,
+  type AttemptSnapshot,
+  type AttemptState,
+} from './commandAttempt'
+import {
+  PRODUCT_EDIT_TEXT,
+  ROLE_LABEL,
+  ROLE_PROVENANCE_LABEL,
+  fieldErrorText,
+} from './productText'
+import { PRODUCT_CAPABILITY, productDetailPath } from './capabilities'
+import { classifyOutcome } from '../shell/uiState'
+import { useShellState } from '../shell/shellContext'
+import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
+import { StateBlock } from '../shell/StateBlock'
+import { useAuthBoundary } from '../shell/useAuthBoundary'
+import { UnsavedDialog } from './UnsavedDialog'
+import styles from './ProductCreatePage.module.css'
+
+type EditAttempt = AttemptState<EditProductDraftPayload, ProductMutationResult>
+
+const ROLE_CHOICES = [
+  { value: 'yes', label: 'Evet' },
+  { value: 'no', label: 'Hayır' },
+  { value: 'unset', label: 'Belirtilmedi' },
+] as const
+
+export function ProductEditPage() {
+  const shell = useShellState()
+  const { productId } = useParams()
+  const key = contextKey(shell)
+  const namespace = key === null ? null : contextKeyString(key)
+  const boundary = useAuthBoundary()
+  const entryGeneration = shell.routeEntryGeneration
+
+  const cardQuery = useQuery({
+    queryKey: [namespace ?? 'no-context', entryGeneration, 'product-edit-card', productId ?? ''],
+    enabled: namespace !== null && productId !== undefined && productId.length > 0,
+    queryFn: async ({ signal }) => {
+      const snapshot = boundary.capture()
+      const outcome = await fetchProductCard(productId as string, signal)
+      if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
+      return outcome
+    },
+  })
+
+  const outcome = cardQuery.data
+  if (outcome === undefined || outcome.type !== 'ok-single') {
+    return (
+      <section className={styles.page} aria-label={PRODUCT_EDIT_TEXT.title}>
+        <StateBlock
+          state={outcome === undefined ? { kind: 'initial-loading' } : classifyOutcome(outcome)}
+          subject="ürün"
+          onRetry={() => void cardQuery.refetch()}
+        />
+      </section>
+    )
+  }
+
+  return (
+    <ProductEditForm
+      // Remounted per record AND per version AND per context, so a seeded form can
+      // never carry a previous revision's values or a previous actor's authority.
+      key={`${namespace ?? 'no-context'}:${outcome.data.product.id}:${outcome.data.product.version}`}
+      card={outcome.data}
+      namespace={namespace}
+      onReload={() => void cardQuery.refetch()}
+    />
+  )
+}
+
+function ProductEditForm({
+  card,
+  namespace,
+  onReload,
+}: {
+  readonly card: ProductCard
+  readonly namespace: string | null
+  readonly onReload: () => void
+}) {
+  const shell = useShellState()
+  const navigate = useNavigate()
+  const canOpenDetail = hasCapability(shell, PRODUCT_CAPABILITY.productsDetail)
+
+  const [values, setValues] = useState<EditFormValues>(() => editFormFrom(card))
+  const [errors, setErrors] = useState<EditFormErrors>({})
+  const [submitted, setSubmitted] = useState(false)
+  const [attempt, setAttempt] = useState<EditAttempt>({ phase: 'idle' })
+  const [staleCurrentVersion, setStaleCurrentVersion] = useState<string | null>(null)
+  const [leaveIntent, setLeaveIntent] = useState<string | null>(null)
+
+  const summaryRef = useRef<HTMLDivElement>(null)
+  const fieldRefs = useRef<Partial<Record<EditFieldId, HTMLElement | null>>>({})
+
+  const dirty = isEditDirty(card, values)
+  const frozen = isFormFrozen(attempt)
+  const unresolved = hasUnresolvedWork(attempt, dirty)
+
+  const attemptNamespace =
+    attempt.phase === 'idle' || attempt.phase === 'completed' ? null : attempt.snapshot.namespace
+  const contextChanged =
+    attemptNamespace !== null && namespace !== null && attemptNamespace !== namespace
+
+  useEffect(() => {
+    if (!unresolved) return
+    function onBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [unresolved])
+
+  const productId = card.product.id
+  const send = useCallback(
+    async (snapshot: AttemptSnapshot<EditProductDraftPayload>) => {
+      setAttempt({ phase: 'submitting', snapshot })
+      const result = await editProductDraft(productId, snapshot.payload, {
+        idempotencyKey: snapshot.key,
+      })
+      const next = nextState(snapshot, result)
+
+      if (next.phase === 'failed' && next.failure === 'stale-version') {
+        /**
+         * Show the current version, keep the input, and STOP. The client never
+         * adopts the returned version as its own `expectedVersion` — that would
+         * rebase the edit onto a change this person has not seen, which is an
+         * overwrite wearing a conflict's clothes.
+         */
+        setStaleCurrentVersion(result.type === 'http' ? currentVersionOf(result.body) : null)
+        setAttempt(next)
+        return
+      }
+      if (next.phase === 'failed' && next.failure === 'validation') {
+        const serverErrors: Record<string, string> = {}
+        for (const error of productFieldErrorsOf(result.type === 'http' ? result.body : null)) {
+          serverErrors[error.field] = fieldErrorText(error.code)
+        }
+        setErrors((current) => mergeServerEditErrors(current, serverErrors))
+        setAttempt({ ...next, fieldErrors: serverErrors })
+        return
+      }
+      setAttempt(next)
+    },
+    [productId],
+  )
+
+  function onSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    if (frozen || contextChanged) return
+    setSubmitted(true)
+
+    const validation = validateEditForm(card, values)
+    if (!validation.ok) {
+      setErrors(validation.errors)
+      return
+    }
+    setErrors({})
+    setStaleCurrentVersion(null)
+
+    if (attempt.phase === 'unknown' && isSamePayload(attempt.snapshot.payload, validation.payload)) {
+      void send(attempt.snapshot)
+      return
+    }
+    void send({
+      key: generateAttemptKey(),
+      payload: validation.payload,
+      namespace: namespace ?? '',
+    })
+  }
+
+  function retrySameAttempt() {
+    if (attempt.phase !== 'unknown' || contextChanged) return
+    void send(attempt.snapshot)
+  }
+
+  const errorList = useMemo(
+    () =>
+      EDIT_FIELD_ORDER.filter((field) => errors[field] !== undefined).map((field) => ({
+        field,
+        message: errors[field] as string,
+      })),
+    [errors],
+  )
+
+  useEffect(() => {
+    if (submitted && errorList.length > 0) summaryRef.current?.focus()
+  }, [submitted, errorList.length])
+
+  function guardedNavigate(to: string) {
+    if (unresolved) {
+      setLeaveIntent(to)
+      return
+    }
+    void navigate(to)
+  }
+
+  if (attempt.phase === 'completed') {
+    const saved = attempt.result.card.product
+    return (
+      <section className={styles.page} aria-labelledby="product-edited-heading">
+        <div className={styles.successBlock} role="status">
+          <h1 id="product-edited-heading" className={styles.title}>
+            {PRODUCT_EDIT_TEXT.savedTitle}
+          </h1>
+          {/* Canonical values from the SERVER's response, never what was typed. */}
+          <p className={styles.createdCode}>
+            {saved.code} — {saved.name}
+          </p>
+          <p className={styles.note}>
+            {PRODUCT_EDIT_TEXT.currentVersion}: {saved.version}
+          </p>
+          {attempt.result.isReplay ? (
+            <p className={styles.note}>{PRODUCT_EDIT_TEXT.replayedNote}</p>
+          ) : null}
+          <div className={styles.actions}>
+            {canOpenDetail ? (
+              <Link className={styles.primaryAction} to={productDetailPath(saved.id)}>
+                {PRODUCT_EDIT_TEXT.backToCard}
+              </Link>
+            ) : null}
+          </div>
+        </div>
+      </section>
+    )
+  }
+
+  return (
+    <section className={styles.page} aria-labelledby="product-edit-heading">
+      <h1 id="product-edit-heading" className={styles.title}>
+        {PRODUCT_EDIT_TEXT.title}
+      </h1>
+      <p className={styles.note}>
+        {card.product.code} — {card.product.name}
+      </p>
+      <p className={styles.note}>{PRODUCT_EDIT_TEXT.globalImpactNote}</p>
+      <p className={styles.note}>{PRODUCT_EDIT_TEXT.diffNote}</p>
+      <p className={styles.note}>{PRODUCT_EDIT_TEXT.scopeNote}</p>
+
+      {contextChanged ? (
+        <div className={styles.errorSummary} role="alert" data-testid="product-edit-context-changed">
+          <p className={styles.errorSummaryTitle}>{PRODUCT_EDIT_TEXT.contextChangedTitle}</p>
+          <p>{PRODUCT_EDIT_TEXT.contextChangedDetail}</p>
+        </div>
+      ) : null}
+
+      {submitted && errorList.length > 0 ? (
+        <div
+          className={styles.errorSummary}
+          role="alert"
+          tabIndex={-1}
+          ref={summaryRef}
+          data-testid="product-edit-error-summary"
+        >
+          <p className={styles.errorSummaryTitle}>{PRODUCT_EDIT_TEXT.errorSummaryTitle}</p>
+          <p>{PRODUCT_EDIT_TEXT.errorSummaryIntro}</p>
+          <ul>
+            {errorList.map(({ field, message }) => (
+              <li key={field}>
+                <button
+                  type="button"
+                  className={styles.errorLink}
+                  onClick={() => fieldRefs.current[field]?.focus()}
+                >
+                  {EDIT_FIELD_LABEL[field]}: {message}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {attempt.phase === 'failed' && attempt.failure === 'stale-version' ? (
+        <div className={styles.errorSummary} role="alert" data-testid="product-edit-stale">
+          <p className={styles.errorSummaryTitle}>{PRODUCT_EDIT_TEXT.staleTitle}</p>
+          <p>{PRODUCT_EDIT_TEXT.staleDetail}</p>
+          <p>
+            {PRODUCT_EDIT_TEXT.staleReadVersion}: {card.product.version}
+            {staleCurrentVersion !== null
+              ? ` · ${PRODUCT_EDIT_TEXT.staleCurrentVersion}: ${staleCurrentVersion}`
+              : ''}
+          </p>
+          <p>{PRODUCT_EDIT_TEXT.staleKeepDraft}</p>
+          {/*
+            The ONLY way forward is a fresh read. There is deliberately no "save
+            anyway": the other editor's change is a fact this user has not seen.
+          */}
+          <button type="button" className={styles.primaryAction} onClick={onReload}>
+            {PRODUCT_EDIT_TEXT.staleReload}
+          </button>
+        </div>
+      ) : null}
+
+      {attempt.phase === 'failed' && attempt.failure === 'lifecycle-conflict' ? (
+        <div className={styles.errorSummary} role="alert" data-testid="product-edit-lifecycle">
+          <p className={styles.errorSummaryTitle}>{PRODUCT_EDIT_TEXT.lifecycleConflictTitle}</p>
+          <p>{PRODUCT_EDIT_TEXT.lifecycleConflictDetail}</p>
+        </div>
+      ) : null}
+
+      {attempt.phase === 'failed' && attempt.failure === 'not-found' ? (
+        <div className={styles.errorSummary} role="alert">
+          <p className={styles.errorSummaryTitle}>{PRODUCT_EDIT_TEXT.notFoundTitle}</p>
+          <p>{PRODUCT_EDIT_TEXT.notFoundDetail}</p>
+        </div>
+      ) : null}
+
+      {attempt.phase === 'failed' &&
+      (attempt.failure === 'unauthenticated' || attempt.failure === 'forbidden') ? (
+        <div className={styles.errorSummary} role="alert">
+          <p className={styles.errorSummaryTitle}>
+            {attempt.failure === 'forbidden' ? 'Yetkiniz yok' : 'Oturum sonlandı'}
+          </p>
+          <p>Değişiklik uygulanmadı.</p>
+        </div>
+      ) : null}
+
+      {attempt.phase === 'failed' &&
+      (attempt.failure === 'unexpected' ||
+        attempt.failure === 'metadata' ||
+        attempt.failure === 'idempotency-conflict') ? (
+        <div className={styles.errorSummary} role="alert">
+          <p className={styles.errorSummaryTitle}>{PRODUCT_EDIT_TEXT.errorSummaryTitle}</p>
+          <p>{PRODUCT_EDIT_TEXT.saveFailedRetained}</p>
+        </div>
+      ) : null}
+
+      {attempt.phase === 'unknown' ? (
+        <div className={styles.unknownBlock} role="alert" data-testid="product-edit-unknown">
+          <p className={styles.errorSummaryTitle}>{PRODUCT_EDIT_TEXT.unknownOutcomeTitle}</p>
+          {/* No rollback is claimed: the change may have applied. */}
+          <p>{PRODUCT_EDIT_TEXT.unknownOutcomeDetail}</p>
+          <button
+            type="button"
+            className={styles.primaryAction}
+            disabled={contextChanged}
+            onClick={retrySameAttempt}
+          >
+            {PRODUCT_EDIT_TEXT.retrySameAttempt}
+          </button>
+        </div>
+      ) : null}
+
+      <form className={styles.form} onSubmit={onSubmit} noValidate>
+        <div className={styles.field}>
+          <label htmlFor={EDIT_FIELD.name}>{PRODUCT_EDIT_TEXT.nameLabel}</label>
+          <input
+            id={EDIT_FIELD.name}
+            type="text"
+            value={values.name}
+            maxLength={250}
+            disabled={frozen || contextChanged}
+            aria-invalid={errors.name !== undefined || undefined}
+            aria-describedby={errors.name !== undefined ? `${EDIT_FIELD.name}-error` : undefined}
+            ref={(el) => {
+              fieldRefs.current[EDIT_FIELD.name] = el
+            }}
+            onChange={(event) => setValues((v) => ({ ...v, name: event.target.value }))}
+          />
+          {errors.name !== undefined ? (
+            <p id={`${EDIT_FIELD.name}-error`} className={styles.fieldError}>
+              {errors.name}
+            </p>
+          ) : null}
+        </div>
+
+        <fieldset
+          className={styles.roles}
+          ref={(el) => {
+            fieldRefs.current[EDIT_FIELD.roles] = el
+          }}
+          tabIndex={-1}
+        >
+          <legend>{PRODUCT_EDIT_TEXT.rolesLabel}</legend>
+          <p className={styles.hint}>{PRODUCT_EDIT_TEXT.derivedRoleNote}</p>
+          {errors.roles !== undefined ? (
+            <p className={styles.fieldError}>{errors.roles}</p>
+          ) : null}
+          {PRODUCT_ROLE.map((role) => {
+            const editable = isRoleEditable(card, role)
+            return (
+              <fieldset key={role} className={styles.roleRow}>
+                <legend>{ROLE_LABEL[role]}</legend>
+                {editable ? (
+                  ROLE_CHOICES.map((choice) => (
+                    <label key={choice.value} className={styles.radio}>
+                      <input
+                        type="radio"
+                        name={`edit-role-${role}`}
+                        value={choice.value}
+                        checked={values.roles[role] === choice.value}
+                        disabled={frozen || contextChanged}
+                        onChange={() =>
+                          setValues((v) => ({
+                            ...v,
+                            roles: { ...v.roles, [role]: choice.value },
+                          }))
+                        }
+                      />
+                      {choice.label}
+                    </label>
+                  ))
+                ) : (
+                  /*
+                    A derived role is the server's conclusion from a production
+                    relationship, and `PreserveDerived` rejects an overwrite. It is
+                    shown with its provenance and NO control — a disabled radio group
+                    would suggest the value is merely locked right now rather than
+                    not this screen's to set.
+                  */
+                  <span className={styles.hint} data-testid={`edit-role-derived-${role}`}>
+                    {roleChoiceOf(card, role) === 'yes' ? 'Evet' : 'Hayır'} —{' '}
+                    {ROLE_PROVENANCE_LABEL.derived}
+                  </span>
+                )}
+              </fieldset>
+            )
+          })}
+        </fieldset>
+
+        <div className={styles.field}>
+          <label htmlFor={EDIT_FIELD.reason}>{PRODUCT_EDIT_TEXT.reasonLabel}</label>
+          <input
+            id={EDIT_FIELD.reason}
+            type="text"
+            value={values.reason}
+            maxLength={1000}
+            disabled={frozen || contextChanged}
+            aria-required="true"
+            aria-invalid={errors.reason !== undefined || undefined}
+            aria-describedby={`${EDIT_FIELD.reason}-hint${
+              errors.reason !== undefined ? ` ${EDIT_FIELD.reason}-error` : ''
+            }`}
+            ref={(el) => {
+              fieldRefs.current[EDIT_FIELD.reason] = el
+            }}
+            onChange={(event) => setValues((v) => ({ ...v, reason: event.target.value }))}
+          />
+          <p id={`${EDIT_FIELD.reason}-hint`} className={styles.hint}>
+            {PRODUCT_EDIT_TEXT.reasonHint}
+          </p>
+          {errors.reason !== undefined ? (
+            <p id={`${EDIT_FIELD.reason}-error`} className={styles.fieldError}>
+              {errors.reason}
+            </p>
+          ) : null}
+        </div>
+
+        <div className={styles.actions}>
+          <button
+            type="submit"
+            className={styles.primaryAction}
+            disabled={frozen || contextChanged}
+          >
+            {attempt.phase === 'submitting'
+              ? PRODUCT_EDIT_TEXT.submitting
+              : PRODUCT_EDIT_TEXT.submit}
+          </button>
+          <button
+            type="button"
+            className={styles.secondaryAction}
+            disabled={attempt.phase === 'submitting'}
+            onClick={() => guardedNavigate(productDetailPath(card.product.id))}
+          >
+            {PRODUCT_EDIT_TEXT.cancel}
+          </button>
+        </div>
+      </form>
+
+      {leaveIntent !== null ? (
+        <UnsavedDialog
+          title={PRODUCT_EDIT_TEXT.unsavedTitle}
+          detail={PRODUCT_EDIT_TEXT.unsavedDetail}
+          stayLabel={PRODUCT_EDIT_TEXT.unsavedStay}
+          leaveLabel={PRODUCT_EDIT_TEXT.unsavedLeave}
+          onStay={() => setLeaveIntent(null)}
+          onLeave={() => {
+            const to = leaveIntent
+            setLeaveIntent(null)
+            void navigate(to)
+          }}
+        />
+      ) : null}
+    </section>
+  )
+}

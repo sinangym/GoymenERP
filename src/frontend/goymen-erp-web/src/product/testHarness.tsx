@@ -4,13 +4,13 @@
  * Mounts the REAL shell (`AppShell`, `ShellProvider`, `CapabilityRoute`) around the
  * Product routes, so every test goes through the same bootstrap, capability
  * resolution and entry gate the running app does. It does NOT build a second shell
- * or a second router — the Product lane reuses the shared ones and only supplies
- * its own route table (./productRoutes.tsx).
+ * or a second router — the Product lane reuses the shared ones and supplies only
+ * its own route table.
  *
- * The Cari page tests import `shellRoutes` directly because their routes are
- * already in it. The Product routes are not, and mounting them is the shell
- * owner's handoff step (./SHARED_MOUNT_HANDOFF.md), so this harness composes the
- * same layout route here instead.
+ * The fixtures below mirror the PUBLISHED wire shapes (`ProductPage`,
+ * `ProductCardView`, `ProductMutationResponse`, `ProductCodeGroup`). They are
+ * component evidence, not API evidence: no Product service, host mapping or SQL
+ * exists, so nothing here proves a live endpoint.
  */
 
 import { render, type RenderResult } from '@testing-library/react'
@@ -27,6 +27,9 @@ export const COMPANY_A = 'aaaaaaaa-0000-0000-0000-000000000001'
 export const COMPANY_B = 'bbbbbbbb-0000-0000-0000-000000000002'
 export const PRODUCT_1 = '11111111-1111-1111-1111-111111111111'
 export const PRODUCT_2 = '22222222-2222-2222-2222-222222222222'
+export const GROUP_SAC = 'aaaaaaa1-0000-0000-0000-000000000001'
+export const CLASS_FLAT = 'cccccccc-0000-0000-0000-000000000001'
+export const FAMILY_FLAT = 'bbbbbbb1-0000-0000-0000-000000000001'
 
 const IDENTITY = {
   userId: '99999999-9999-9999-9999-999999999999',
@@ -40,82 +43,77 @@ const DIRECTORY = [
   { id: COMPANY_B, code: 'GSP', legalName: 'Göymen B', isPlaceholder: true },
 ]
 
-export function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
+export function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json', ...headers },
+    headers: { 'Content-Type': 'application/json' },
   })
 }
 
-/** A list row with every field the contract declares, overridable per test. */
-export function productItem(over: Record<string, unknown> = {}) {
+/** `ProductCodeGroup[]` — the only reference read the contract publishes. */
+export function codeGroups() {
+  return [{ id: GROUP_SAC, name: 'Sac', prefix: 'SAC' }]
+}
+
+/** `ProductRolesView`: every key present, each a tagged `{value, provenance}`. */
+export function roles(over: Record<string, unknown> = {}) {
   return {
-    id: PRODUCT_1,
-    code: 'SAC-42',
-    name: 'Siyah sac',
-    classification: { class: 'Yassı ürün', group: 'Sac', family: 'Soğuk hadde' },
-    roles: {
-      purchasable: { value: true, provenance: 'manual' },
-      sellable: { value: false, provenance: 'manual' },
-      productionInput: { value: null, provenance: 'not-evaluated' },
-      productionOutput: { value: true, provenance: 'derived' },
-    },
-    lifecycle: 'Active',
-    primaryStockUnit: 'kg',
-    completeness: { template: 'complete', unit: 'incomplete', package: 'unknown' },
-    match: { reason: 'code', matchedAlias: null },
-    lastChangedAt: '2026-09-12T07:00:00Z',
-    version: '7',
+    purchasable: { value: true, provenance: 'manual' },
+    sellable: { value: false, provenance: 'manual' },
+    productionInput: { value: null, provenance: 'not-evaluated' },
+    productionOutput: { value: true, provenance: 'derived' },
     ...over,
   }
 }
 
+/** `ProductDraftView` — the product core, shared by list items and the card. */
+export function productCore(over: Record<string, unknown> = {}) {
+  return {
+    id: PRODUCT_1,
+    code: 'SAC-42',
+    name: 'Siyah sac',
+    groupId: GROUP_SAC,
+    classId: null,
+    familyId: null,
+    roles: roles(),
+    lifecycle: 'Draft',
+    version: '7',
+    createdAtUtc: '2026-01-01T00:00:00+00:00',
+    updatedAtUtc: '2026-09-12T07:00:00+00:00',
+    ...over,
+  }
+}
+
+/** `ProductPage`. */
 export function productPage(over: Record<string, unknown> = {}) {
+  return { items: [productCore()], nextCursor: null, ...over }
+}
+
+/** `ProductReferences`. */
+export function references(over: Record<string, unknown> = {}) {
   return {
-    items: [productItem()],
-    nextCursor: null,
-    hasMore: false,
-    totalCount: null,
-    countScope: null,
+    templateId: null,
+    templateVersion: null,
+    attributes: null,
+    units: { stock: null, purchase: null, sales: null, price: null, production: null, package: null },
+    trackingPolicyId: null,
     ...over,
   }
 }
 
-export function productDetail(over: Record<string, unknown> = {}) {
+/** `ProductCardView`. */
+export function productCard(over: Record<string, unknown> = {}) {
   return {
-    id: PRODUCT_1,
-    code: 'SAC-42',
-    name: 'Siyah sac',
-    classification: { class: 'Yassı ürün', group: 'Sac', family: null },
-    roles: productItem().roles,
-    lifecycle: 'Active',
-    completeness: { template: 'complete', unit: 'incomplete', package: 'unknown' },
-    version: '7',
-    aliases: [{ code: 'ESKI-1', retiredAt: '2026-01-02T00:00:00Z' }],
-    template: {
-      id: '33333333-3333-3333-3333-333333333333',
-      name: 'Yassı ürün şablonu',
-      version: 'v3',
-    },
-    unitRoles: {
-      stock: 'kg',
-      purchase: 'kg',
-      sales: 'kg',
-      price: 'kg',
-      production: null,
-      package: null,
-    },
-    trackingPolicy: 'Parti bazlı',
-    createdAt: '2026-01-01T00:00:00Z',
-    createdBy: 'sinan',
-    updatedAt: '2026-09-12T07:00:00Z',
-    updatedBy: 'sinan',
-    lastActivatedAt: '2026-02-01T00:00:00Z',
-    lastDeactivatedAt: null,
-    deactivationReason: null,
-    availableSections: ['template', 'units', 'aliasHistory'],
+    product: productCore(),
+    references: references(),
+    completeness: { evaluation: 'Incomplete', missingFields: ['references.units.stock'] },
     ...over,
   }
+}
+
+/** `ProductMutationResponse`. */
+export function mutation(over: Record<string, unknown> = {}) {
+  return { card: productCard(), isReplay: false, ...over }
 }
 
 export interface RecordedCall {
@@ -127,14 +125,12 @@ export interface RecordedCall {
 }
 
 export interface HarnessConfig {
-  /** Capabilities the server publishes. Defaults to list + detail. */
   readonly capabilities?: readonly string[]
-  /** Answers `GET /products…`. */
   readonly onList?: (url: string) => Response
-  /** Answers `GET /products/{id}`. */
-  readonly onDetail?: (url: string) => Response
-  /** Answers `POST /products`. Receives the call index, so a retry can differ. */
+  readonly onCard?: (url: string) => Response
+  readonly onGroups?: () => Response
   readonly onCreate?: (attempt: number, body: string | null) => Response | Promise<Response>
+  readonly onEdit?: (attempt: number, body: string | null) => Response | Promise<Response>
 }
 
 /**
@@ -145,6 +141,7 @@ export interface HarnessConfig {
 export function installFetch(config: HarnessConfig = {}) {
   const calls: RecordedCall[] = []
   let createAttempts = 0
+  let editAttempts = 0
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString()
@@ -172,17 +169,24 @@ export function installFetch(config: HarnessConfig = {}) {
           ],
       })
     }
+    if (url.includes('/products/code-groups')) {
+      return config.onGroups?.() ?? json(codeGroups())
+    }
     if (url.includes('/products')) {
-      if (method === 'POST') {
-        createAttempts += 1
+      if (method === 'PATCH') {
+        editAttempts += 1
         return (
-          (await config.onCreate?.(createAttempts, body)) ??
-          json({ id: PRODUCT_1, code: 'SAC-42', name: 'Siyah sac', lifecycle: 'Draft', version: '1' }, 201)
+          (await config.onEdit?.(editAttempts, body)) ??
+          json(mutation({ card: productCard({ product: productCore({ version: '8' }) }) }))
         )
       }
-      // `/products/{id}` has a segment after `products`; `/products?x` does not.
-      const isDetail = /\/products\/[^?]+/.test(url)
-      if (isDetail) return config.onDetail?.(url) ?? json(productDetail())
+      if (method === 'POST') {
+        createAttempts += 1
+        return (await config.onCreate?.(createAttempts, body)) ?? json(mutation(), 201)
+      }
+      // `/products/{id}` (and `/products/{id}/draft`) have a segment after
+      // `products`; `/products?x` does not.
+      if (/\/products\/[^?]+/.test(url)) return config.onCard?.(url) ?? json(productCard())
       return config.onList?.(url) ?? json(productPage())
     }
     throw new Error(`unexpected fetch: ${url}`)

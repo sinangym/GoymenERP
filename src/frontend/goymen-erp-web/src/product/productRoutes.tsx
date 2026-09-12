@@ -22,6 +22,7 @@ import { PRODUCT_CAPABILITY, PRODUCT_CAPABILITY_ROUTE, type ProductCapabilityId 
 import { ProductListPage } from './ProductListPage'
 import { ProductDetailPage } from './ProductDetailPage'
 import { ProductCreatePage } from './ProductCreatePage'
+import { ProductEditPage } from './ProductEditPage'
 
 /**
  * `CapabilityRoute` types its prop as the shell's `CapabilityId` union, which does
@@ -57,6 +58,16 @@ export const productRoutes: RouteObject[] = [
   {
     path: PRODUCT_CAPABILITY_ROUTE[PRODUCT_CAPABILITY.productsCreate].slice(1),
     element: gate(PRODUCT_CAPABILITY.productsCreate, <ProductCreatePage />),
+  },
+  {
+    /**
+     * The edit route is declared BEFORE the bare `:productId` for the same reason
+     * `yeni` is: `/urun/<id>/duzenle` must never be read as a product id. It is
+     * also gated on its own capability — reading a card and rewriting it are
+     * different authorities.
+     */
+    path: PRODUCT_CAPABILITY_ROUTE[PRODUCT_CAPABILITY.productsEdit].slice(1),
+    element: gate(PRODUCT_CAPABILITY.productsEdit, <ProductEditPage />),
   },
   {
     /**

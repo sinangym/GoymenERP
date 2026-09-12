@@ -1,36 +1,38 @@
 /**
- * Product (Ürün) transport — U-01 list, U-01 360 read and U-02 Draft create.
+ * Product (Ürün) transport, pinned to the published backend contract
+ * (PR #237 @ `3a7f2f8`; see ./contract.ts for the exact sources).
  *
- * PROPOSED_JIT: see ./contract.ts for why every path and field name below is a
- * request to CODEX-BACKEND-URUN rather than a merged contract.
+ * Routes, verbatim from `ProductApiV1` / `ProductEndpoints`:
+ *   GET   /api/v1/products              → ProductPage
+ *   GET   /api/v1/products/code-groups  → ProductCodeGroup[]
+ *   GET   /api/v1/products/{id}         → ProductCardView (404 not_found)
+ *   POST  /api/v1/products              → 201 ProductMutationResponse
+ *   PATCH /api/v1/products/{id}/draft   → 200 ProductMutationResponse
  *
  * The transport carries no business logic and invents no field:
- *  - NO `X-Company-Id` on any Product request. `PRD-SCOPE-001=A` makes the Product
- *    master GLOBAL — one UUID/code/card shared by both Göymen companies — and JIT
- *    spec §15 is explicit: "Frontend Product'a CompanyId eklemez". Sending one
- *    would be the client asserting a scope the locked decision removed. Company
- *    scope begins on child records (price, package, stock, label), none of which
- *    this slice reads;
- *  - ONE `Idempotency-Key` per logical create attempt, supplied by the caller. The
- *    transport never mints or rotates one;
- *  - success for the create is EXACTLY 201. A 200 or 202 is not in the request and
- *    is reported as an unknown outcome, never as success;
- *  - success for a read is EXACTLY 200 — `Response.ok` spans the whole 2xx range,
- *    and a 202/206 with a well-formed body is not a resolved read.
+ *  - NO `X-Company-Id` on any Product request. `PRD-SCOPE-001=A` makes the master
+ *    global and §15 is explicit: "Frontend Product'a CompanyId eklemez". The
+ *    contract agrees — `IProductService` requires "server-resolved global
+ *    authorization… No company-scoped grant satisfies this contract";
+ *  - ONE `Idempotency-Key` per logical attempt, supplied by the caller, meeting the
+ *    source rule (1..128 printable ASCII, no whitespace or comma);
+ *  - success is EXACTLY 201 for create and EXACTLY 200 for edit. Any other status
+ *    is reported as a definite refusal or an unknown outcome, never as success.
  *
- * DELIBERATELY NOT COPIED from the Cari transport: the `X-ERP-Counterparty-Contract`
- * client-contract handshake. That gate exists because the Cari server publishes an
- * acknowledgment header; inventing a Product equivalent would be a compatibility
- * claim no server makes. When the Product backend publishes one, it lands here.
+ * These routes are PINNED, not LIVE: the module is not mapped into the host and no
+ * Product service implementation exists.
  */
 
 import {
-  decodeProductDetail,
-  decodeProductDraftCreated,
+  decodeCodeGroupList,
+  decodeProductCard,
+  decodeProductMutation,
   decodeProductPage,
   productProblemCodeOf,
-  type ProductDetail,
-  type ProductDraftCreated,
+  type ProductCard,
+  type ProductCodeGroup,
+  type ProductLifecycle,
+  type ProductMutationResult,
   type ProductPage,
   type ProductProblemCode,
   type ProductRoleName,
@@ -46,52 +48,57 @@ function devHeaders(): Record<string, string> {
   return DEV_IDENTITY_ENABLED ? { 'X-Development-User': DEV_USER } : {}
 }
 
-/* ── Query (spec §8.1) ────────────────────────────────────────────────────── */
+/* ── List query (ProductListQuery) ────────────────────────────────────────── */
 
-export type LifecycleFilter = 'Draft' | 'Active' | 'Inactive' | 'all'
-/** §8.1: "Role filter'ında `any/all` semantiği UI'da açık olur." */
-export type RoleMatch = 'any' | 'all'
-export type CompletenessFilter = 'all' | 'incomplete'
-export type ProductSortField = 'code' | 'name' | 'lastChangedAt'
-export type SortDirection = 'asc' | 'desc'
+/** The endpoint validates `q` at max 200 and rejects control characters. */
+export const SEARCH_MAX = 200
+
+export type LifecycleFilter = ProductLifecycle | 'all'
 
 export interface ProductQuery {
-  /** Free search over code, alias and name (§8.1). Trim follows the server standard. */
   readonly q?: string
   readonly lifecycle?: LifecycleFilter
-  readonly family?: string
-  readonly role?: readonly ProductRoleName[]
-  readonly roleMatch?: RoleMatch
-  /** Narrows to products with an unmet template/unit/package requirement (§8.1). */
-  readonly completeness?: CompletenessFilter
-  readonly sort?: ProductSortField
-  readonly direction?: SortDirection
+  readonly groupId?: string
+  readonly classId?: string
+  readonly familyId?: string
+  /**
+   * ONE role. `ProductListQuery.Role` is a single nullable string and the endpoint
+   * rejects anything outside the four names — there is no `roleMatch` and no
+   * repeated `role`. The any/all semantics §8.1 asks for are not in this contract,
+   * so the screen offers one role rather than a picker whose meaning it would have
+   * to invent.
+   */
+  readonly role?: ProductRoleName
+  /** 1..100, default 50. */
   readonly pageSize?: number
-  /** Opaque server token, echoed verbatim. The client never builds one (§8.3). */
+  /** Opaque server token, echoed verbatim. The client never builds one. */
   readonly cursor?: string
-  readonly includeCount?: boolean
 }
+
+/**
+ * Control characters are stripped before the bound is applied.
+ *
+ * The endpoint rejects a `q` containing any `char.IsControl`, so sending one turns
+ * a stray paste into a 400 the user cannot read. Removing them is safe here — this
+ * is a SEARCH TERM, not a stored value, so nothing is silently persisted in a
+ * changed form.
+ */
+// eslint-disable-next-line no-control-regex -- matching control characters is the point
+const CONTROL_RE = /[\u0000-\u001F\u007F-\u009F]/g
 
 export function buildProductQuery(query: ProductQuery): string {
   const params = new URLSearchParams()
-  if (query.q !== undefined && query.q.trim().length > 0) params.set('q', query.q.trim())
+  const q = query.q?.replace(CONTROL_RE, '').trim() ?? ''
+  if (q.length > 0) params.set('q', q.slice(0, SEARCH_MAX))
   if (query.lifecycle !== undefined && query.lifecycle !== 'all') {
     params.set('lifecycle', query.lifecycle)
   }
-  if (query.family !== undefined && query.family.trim().length > 0) {
-    params.set('family', query.family.trim())
-  }
-  // `role` is repeatable — never comma-joined into a single value.
-  for (const role of query.role ?? []) params.append('role', role)
-  if (query.roleMatch !== undefined) params.set('roleMatch', query.roleMatch)
-  if (query.completeness !== undefined && query.completeness !== 'all') {
-    params.set('completeness', query.completeness)
-  }
-  if (query.sort !== undefined) params.set('sort', query.sort)
-  if (query.direction !== undefined) params.set('direction', query.direction)
+  if (query.groupId !== undefined) params.set('groupId', query.groupId)
+  if (query.classId !== undefined) params.set('classId', query.classId)
+  if (query.familyId !== undefined) params.set('familyId', query.familyId)
+  if (query.role !== undefined) params.set('role', query.role)
   if (query.pageSize !== undefined) params.set('pageSize', String(query.pageSize))
   if (query.cursor !== undefined) params.set('cursor', query.cursor)
-  if (query.includeCount !== undefined) params.set('includeCount', String(query.includeCount))
   const serialized = params.toString()
   return serialized.length > 0 ? `?${serialized}` : ''
 }
@@ -113,9 +120,7 @@ async function rawRead(
   } catch {
     if (signal?.aborted) return { failure: 'aborted' }
     if (!navigator.onLine) return { failure: 'offline' }
-    // Online, but nothing came back. That is a different fact from a bad response
-    // body, and reporting it as `malformed` would blame the server's payload for a
-    // request that never produced one.
+    // Online, but nothing came back — a different fact from a bad response body.
     return { failure: 'unreachable' }
   }
   let body: unknown = null
@@ -136,7 +141,7 @@ function failureOutcome<T>(failure: 'aborted' | 'offline' | 'unreachable'): View
   return { type: 'network-error' }
 }
 
-/** U-01 list. Global scope by design — no company header (see the module note). */
+/** U-01 list. Global scope by design — no company header. */
 export async function fetchProducts(
   query: ProductQuery,
   signal?: AbortSignal,
@@ -144,108 +149,150 @@ export async function fetchProducts(
   const result = await rawRead(`/products${buildProductQuery(query)}`, signal)
   if ('failure' in result) return failureOutcome(result.failure)
   if (result.status !== 200) return { type: 'http', status: result.status, body: result.body }
-  const page = decodeProductPage(result.body, query.includeCount === true)
+  const page = decodeProductPage(result.body)
   if (page === null) return { type: 'malformed' }
   return { type: 'ok-single', data: page }
 }
 
-/** U-01 Product 360. The decoder binds the response to `productId` (§9). */
-export async function fetchProductDetail(
+/** U-01 Product 360. The decoder binds the card to `productId`. */
+export async function fetchProductCard(
   productId: string,
   signal?: AbortSignal,
-): Promise<ViewOutcome<ProductDetail>> {
+): Promise<ViewOutcome<ProductCard>> {
   const result = await rawRead(`/products/${encodeURIComponent(productId)}`, signal)
   if ('failure' in result) return failureOutcome(result.failure)
   if (result.status !== 200) return { type: 'http', status: result.status, body: result.body }
-  const detail = decodeProductDetail(result.body, productId)
-  if (detail === null) return { type: 'malformed' }
-  return { type: 'ok-single', data: detail }
+  const card = decodeProductCard(result.body, productId)
+  if (card === null) return { type: 'malformed' }
+  return { type: 'ok-single', data: card }
 }
 
-/* ── U-02 Draft create ────────────────────────────────────────────────────── */
+/**
+ * The authorized code groups a Draft may be created under.
+ *
+ * §19.3 requires a REAL reference with a known prefix rule: "Sihirli/fake
+ * grup/UUID/default şirket yok". The create form offers a choice from this read and
+ * nothing else; when it fails or returns nothing, creation waits.
+ */
+export async function fetchCodeGroups(
+  signal?: AbortSignal,
+): Promise<ViewOutcome<ProductCodeGroup>> {
+  const result = await rawRead('/products/code-groups', signal)
+  if ('failure' in result) return failureOutcome(result.failure)
+  if (result.status !== 200) return { type: 'http', status: result.status, body: result.body }
+  const groups = decodeCodeGroupList(result.body)
+  if (groups === null) return { type: 'malformed' }
+  return { type: 'ok', data: groups, filterActive: false }
+}
+
+/* ── Writes ───────────────────────────────────────────────────────────────── */
 
 /**
- * The Draft create body.
+ * A role as WRITTEN. `ProductRoleInput` accepts only `manual`+boolean or
+ * `not-evaluated`+null — `derived` is server-only and `PreserveDerived` rejects an
+ * attempt to overwrite one.
  *
- * NOT here, and each for a stated reason:
- *  - `code` — server-generated from a group prefix + sequence (§5.1, §7). The admin
- *    manual-code exception needs a permission string that does not exist yet, and
- *    §6.6 keeps ungated Product commands fail-closed, so this slice does not offer
- *    it at all rather than offering a field the server would refuse;
- *  - `lifecycle` — §6.1, a new record is always born Draft. Sending a state would
- *    be the client choosing one;
- *  - `companyId` — §15, the frontend never adds one;
- *  - units, package standards, template field VALUES — U-07/U-08/U-09 contracts,
- *    each with its own open gate (`G-PRD-UNIT-01`, `G-PRD-PACK-01`,
- *    `G-PRD-TEMPLATE-01`);
- *  - price, stock, lot/label — out of scope by §3, and by DEC-PRD-003 the label
- *    facts belong to the physical package record, never to the Product master.
+ * The tagged shape is the contract's, and it is what keeps §5.2 intact end to end:
+ * a bare boolean could not distinguish "the user said no" from "nobody has looked".
+ */
+export type ProductRoleWrite =
+  | { readonly value: boolean; readonly provenance: 'manual' }
+  | { readonly value: null; readonly provenance: 'not-evaluated' }
+
+export type ProductRoleWrites = Partial<Readonly<Record<ProductRoleName, ProductRoleWrite>>>
+
+/**
+ * `CreateProductDraftRequest{Name, GroupId, ClassId?, FamilyId?, Roles?, References?}`.
+ *
+ * NOT sent, each for a stated reason:
+ *  - `code`, `lifecycle`, `version` — server-authoritative; the source's
+ *    `JsonUnmappedMemberHandling.Disallow` would reject them outright;
+ *  - `expectedVersion` — README: "Create has no expectedVersion";
+ *  - `companyId` — §15;
+ *  - `references` — the source accepts them, but every member is a UUID into a
+ *    catalogue this client has no read for. Sending an invented one is exactly what
+ *    §19.3 forbids, so the first slice sends none.
  */
 export interface CreateProductDraftPayload {
   readonly name: string
-  readonly classification: {
-    readonly class: string
-    readonly group: string | null
-    readonly family: string | null
-  }
-  /**
-   * Only the roles the user actually decided. §5.2 forbids persisting an
-   * unevaluated role as `false`, so an untouched role is ABSENT from the payload
-   * rather than sent as `false` — the server keeps it `not-evaluated`.
-   */
-  readonly roles: Partial<Readonly<Record<ProductRoleName, boolean>>>
-  readonly trackingPolicy: string | null
+  readonly groupId: string
+  readonly classId?: string | null
+  readonly familyId?: string | null
+  readonly roles?: ProductRoleWrites
 }
 
 /**
- * What one create attempt produced. A write has three classes of result and the
- * difference decides whether a retry is safe:
+ * `ProductDraftChanges` — an `Optional<T>` per member: absent means unchanged,
+ * present-and-null clears a nullable scalar reference.
  *
- *  - `created`: the server confirmed the Draft (possibly as a replay);
+ * `JSON.stringify` drops an `undefined` property, so "absent" is expressed by
+ * simply not setting the key. `name` and `roles` are never null: README says the
+ * "name/roles/reference container and attribute/unit collections cannot be null".
+ */
+export interface ProductDraftChanges {
+  readonly name?: string
+  readonly classId?: string | null
+  readonly familyId?: string | null
+  readonly roles?: ProductRoleWrites
+}
+
+/**
+ * `EditProductDraftRequest{ExpectedVersion, Changes, Reason}`.
+ *
+ * `reason` is trimmed, required, max 1000, no controls — and it exists because one
+ * name change on a group-shared card is visible in both Göymen companies.
+ */
+export interface EditProductDraftPayload {
+  readonly expectedVersion: string
+  readonly changes: ProductDraftChanges
+  readonly reason: string
+}
+
+export const REASON_MAX = 1000
+
+/**
+ * What one write produced. Three classes, and the difference decides whether a
+ * retry is safe:
+ *
+ *  - `succeeded`: the server confirmed it (possibly as a replay);
  *  - `http`: a DEFINITE answer that is not success — the stable `code` says what;
  *  - everything else: the outcome is UNKNOWN. The same logical attempt is retried
- *    with the SAME idempotency key, which replays instead of duplicating.
+ *    with the SAME key. README: "An unknown outcome must not be retried with a new
+ *    key."
  */
-export type CreateOutcome =
-  | {
-      readonly type: 'created'
-      readonly data: ProductDraftCreated
-      readonly replayed: boolean
-    }
+export type CommandOutcome<T> =
+  | { readonly type: 'succeeded'; readonly data: T }
   | {
       readonly type: 'http'
       readonly status: number
       readonly code: ProductProblemCode | null
       readonly body: unknown
     }
-  /** A 201 arrived and its body did not match the contract. The record may exist. */
+  /** A success status arrived and its body did not match the contract. It may have applied. */
   | { readonly type: 'malformed' }
   | { readonly type: 'offline' }
   | { readonly type: 'network-error' }
   | { readonly type: 'aborted' }
 
-export interface CreateContext {
+export interface CommandContext {
   /**
    * The attempt's single key, created once per submitted snapshot and never per
-   * click. Re-sending the same snapshot with the same key replays; changing the
-   * form mints a new one.
+   * click. Source rule: 1..128 printable ASCII, no whitespace, no comma.
    */
   readonly idempotencyKey: string
 }
 
-function readReplayed(headers: Headers): boolean {
-  return (headers.get('Idempotency-Replayed') ?? '').trim().toLowerCase() === 'true'
-}
-
-export async function createProductDraft(
-  payload: CreateProductDraftPayload,
-  context: CreateContext,
-  signal?: AbortSignal,
-): Promise<CreateOutcome> {
+async function sendCommand(
+  path: string,
+  method: 'POST' | 'PATCH',
+  payload: unknown,
+  context: CommandContext,
+  signal: AbortSignal | undefined,
+): Promise<RawResult | { readonly failure: 'aborted' | 'offline' | 'unreachable' }> {
   let response: Response
   try {
-    response = await fetch(`${API_BASE}/products`, {
-      method: 'POST',
+    response = await fetch(`${API_BASE}${path}`, {
+      method,
       headers: {
         ...devHeaders(),
         'Content-Type': 'application/json',
@@ -255,31 +302,94 @@ export async function createProductDraft(
       signal,
     })
   } catch {
-    if (signal?.aborted) return { type: 'aborted' }
-    if (!navigator.onLine) return { type: 'offline' }
-    return { type: 'network-error' }
+    if (signal?.aborted) return { failure: 'aborted' }
+    if (!navigator.onLine) return { failure: 'offline' }
+    return { failure: 'unreachable' }
   }
-
   let body: unknown = null
   try {
     body = await response.json()
   } catch {
-    if (signal?.aborted) return { type: 'aborted' }
+    if (signal?.aborted) return { failure: 'aborted' }
     body = null
   }
+  return { status: response.status, body }
+}
 
-  // EXACT 201. A POST answered 200/202 did something this client cannot describe,
-  // and calling it success would navigate the user to a record that may not exist.
-  if (response.status !== 201) {
+function commandFailure<T>(
+  failure: 'aborted' | 'offline' | 'unreachable',
+): CommandOutcome<T> {
+  if (failure === 'aborted') return { type: 'aborted' }
+  if (failure === 'offline') return { type: 'offline' }
+  return { type: 'network-error' }
+}
+
+export async function createProductDraft(
+  payload: CreateProductDraftPayload,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<CommandOutcome<ProductMutationResult>> {
+  const result = await sendCommand('/products', 'POST', payload, context, signal)
+  if ('failure' in result) return commandFailure(result.failure)
+
+  // EXACT 201, replay included. README: "replay remains the original successful
+  // operation status (create 201, edit 200)", so a 200 here is not a replay we can
+  // recognise — it is an answer this client cannot describe.
+  if (result.status !== 201) {
     return {
       type: 'http',
-      status: response.status,
-      code: productProblemCodeOf(body),
-      body,
+      status: result.status,
+      code: productProblemCodeOf(result.body),
+      body: result.body,
     }
   }
 
-  const created = decodeProductDraftCreated(body)
-  if (created === null) return { type: 'malformed' }
-  return { type: 'created', data: created, replayed: readReplayed(response.headers) }
+  // Created id is server-assigned, so there is nothing to bind it to — but the
+  // lifecycle IS fixed: a new record is always born Draft.
+  const mutation = decodeProductMutation(result.body, null, 'Draft')
+  if (mutation === null) return { type: 'malformed' }
+  return { type: 'succeeded', data: mutation }
+}
+
+export async function editProductDraft(
+  productId: string,
+  payload: EditProductDraftPayload,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<CommandOutcome<ProductMutationResult>> {
+  const result = await sendCommand(
+    `/products/${encodeURIComponent(productId)}/draft`,
+    'PATCH',
+    payload,
+    context,
+    signal,
+  )
+  if ('failure' in result) return commandFailure(result.failure)
+
+  /**
+   * EXACT 200, carrying the mutation envelope.
+   *
+   * A 204 would leave this client with no canonical value or version to show, and
+   * painting the submitted draft as the server's result is what §19.4 forbids
+   * ("Gönderilen taslak server sonucu gibi boyanmaz"). The source returns
+   * `Results.Ok(...)`, so an empty body is drift — reported as a definite non-200
+   * and handled as an unknown outcome by the caller.
+   */
+  if (result.status !== 200) {
+    return {
+      type: 'http',
+      status: result.status,
+      code: productProblemCodeOf(result.body),
+      body: result.body,
+    }
+  }
+
+  /**
+   * Bound to the id we edited, and to `Draft`: the domain refuses to basic-edit
+   * anything else (`lifecycle_conflict`), so a 200 describing a non-Draft record is
+   * a state this screen cannot have caused.
+   */
+  const mutation = decodeProductMutation(result.body, productId, 'Draft')
+  if (mutation === null) return { type: 'malformed' }
+  return { type: 'succeeded', data: mutation }
 }

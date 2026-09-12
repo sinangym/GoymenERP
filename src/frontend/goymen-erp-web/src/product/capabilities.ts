@@ -34,6 +34,16 @@ export const PRODUCT_CAPABILITY = {
   productsDetail: 'product.items.detail',
   /** U-02 Yeni ürün — Draft oluşturma. Route `/urun/yeni`. */
   productsCreate: 'product.items.create',
+  /**
+   * U-02 temel düzenleme — Draft basic edit. Route `/urun/:productId/duzenle`.
+   *
+   * A SEPARATE grant from create, and from detail. §19.2 makes basic edit part of
+   * the first slice, but reading a card and rewriting it are different authorities:
+   * `PRD-PERM-001=A` happens to give both to `SYSTEM_ADMINISTRATOR` today, which is
+   * a fact about who holds them, not a reason to fuse them. The day read widens
+   * past admin, a fused id would hand out write with it.
+   */
+  productsEdit: 'product.items.edit',
 } as const
 
 export type ProductCapabilityId = (typeof PRODUCT_CAPABILITY)[keyof typeof PRODUCT_CAPABILITY]
@@ -50,6 +60,7 @@ export const PRODUCT_CAPABILITY_ROUTE: Record<ProductCapabilityId, string> = {
   [PRODUCT_CAPABILITY.productsList]: '/urun',
   [PRODUCT_CAPABILITY.productsCreate]: '/urun/yeni',
   [PRODUCT_CAPABILITY.productsDetail]: '/urun/:productId',
+  [PRODUCT_CAPABILITY.productsEdit]: '/urun/:productId/duzenle',
 }
 
 /** Nav label per capability. Only rendered when the server granted the capability. */
@@ -58,9 +69,16 @@ export const PRODUCT_CAPABILITY_NAV_LABEL: Record<ProductCapabilityId, string> =
   [PRODUCT_CAPABILITY.productsCreate]: 'Yeni Ürün',
   // No nav entry: the 360 is reached from a row, never from the sidebar.
   [PRODUCT_CAPABILITY.productsDetail]: '',
+  // Nor the edit: it is reached from the card it edits.
+  [PRODUCT_CAPABILITY.productsEdit]: '',
 }
 
 /** Build the `/urun/:productId` path for a concrete product. */
 export function productDetailPath(productId: string): string {
   return `/urun/${encodeURIComponent(productId)}`
+}
+
+/** Build the `/urun/:productId/duzenle` path for a concrete product. */
+export function productEditPath(productId: string): string {
+  return `/urun/${encodeURIComponent(productId)}/duzenle`
 }

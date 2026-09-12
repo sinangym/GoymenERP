@@ -49,6 +49,15 @@
   text-align: right;
 }
 
+.editLink {
+  padding: 6px 12px;
+  border: 1px solid #0b6fe8;
+  border-radius: 4px;
+  color: #0b6fe8;
+  text-decoration: none;
+  font-size: 0.88rem;
+}
+
 .badge {
   display: inline-block;
   padding: 1px 8px;
@@ -156,6 +165,21 @@
   color: #55607a;
   font-weight: 600;
   background: #f7f9fc;
+}
+
+/* A raw reference id. Monospace + wrapping because a UUID has to be readable and
+   copyable when no catalogue label exists for it yet. */
+.identifier {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
+.missingList {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 0.88rem;
+  color: #1a2233;
 }
 
 .value {

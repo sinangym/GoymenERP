@@ -1,29 +1,41 @@
 /**
- * U-02 Draft create form rules (JIT spec §10), framework-independent so they can be
- * tested and reused without a DOM.
+ * U-02 Draft create form rules, pinned to the published backend contract
+ * (`CreateProductDraftRequest`, `ProductDraftValidator.ValidateCreateAsync`).
  *
- * §10.3: "Server validation tek gerçektir. Client aynı temel kontrolleri erken geri
- * bildirim için yapabilir fakat server sonucunu ezmez." So everything below mirrors
- * a bound the server will also enforce, and nothing below is a rule of its own.
+ * The server is the authority; everything here mirrors a bound it also enforces.
+ *
+ * WHAT THE FORM OFFERS, and what it deliberately does not:
+ *  - `name` and `groupId` are the create minimum the contract states, and the group
+ *    comes from `GET /products/code-groups` — never typed;
+ *  - `classId` / `familyId` are accepted by the request and validated against
+ *    `IProductReferenceCatalog`, but the contract publishes NO read that would let
+ *    this screen offer a valid one. §19.3 forbids the client producing a reference,
+ *    so the fields are absent rather than free text. Reported as gap 1 of the
+ *    contract review; they return when a class/family read exists;
+ *  - `references` (template, attributes, units, trackingPolicyId) are all UUIDs
+ *    into catalogues with no read either, and the source rejects supplied
+ *    references when the catalogue cannot resolve them. The first slice sends none;
+ *  - roles ARE offered, because their vocabulary is fully defined by the contract.
  */
 
 import { PRODUCT_ROLE, type ProductRoleName } from './contract'
-import type { CreateProductDraftPayload } from './api'
+import type { CreateProductDraftPayload, ProductRoleWrites } from './api'
 import { PRODUCT_CREATE_TEXT } from './productText'
 
+/** `Product.MaximumNameLength`. */
 export const NAME_MAX = 250
-export const CLASS_MAX = 120
-export const GROUP_MAX = 120
-export const FAMILY_MAX = 120
-export const TRACKING_POLICY_MAX = 120
 
 /**
- * A role the user has not answered yet.
+ * A role the user has not answered.
  *
- * §5.2: an unevaluated role is never persisted as `false`. That rule only survives
- * if the FORM can represent "not answered" as a third value — a checkbox cannot,
- * because an unticked box and a deliberate "no" are the same state. So the picker
- * is tri-state and `'unset'` is its initial value.
+ * The contract's write vocabulary is exactly `manual`+boolean or
+ * `not-evaluated`+null, and "Omitted create roles are not-evaluated". So `unset`
+ * maps to OMISSION, not to a `not-evaluated` payload entry — the two are equivalent
+ * server-side and omitting is the smaller claim.
+ *
+ * The picker is tri-state because a checkbox cannot represent "not answered": an
+ * unticked box and a deliberate "no" would be the same state, which is precisely
+ * the collapse §5.2 forbids.
  */
 export type RoleChoice = 'yes' | 'no' | 'unset'
 
@@ -31,46 +43,37 @@ export type CreateFormRoles = Readonly<Record<ProductRoleName, RoleChoice>>
 
 export interface CreateFormValues {
   readonly name: string
-  readonly productClass: string
-  readonly productGroup: string
-  readonly productFamily: string
+  /** A code-group id from `GET /products/code-groups`. `''` means nothing chosen. */
+  readonly groupId: string
   readonly roles: CreateFormRoles
-  readonly trackingPolicy: string
 }
 
 /**
  * Field ids, shared by the validator, the inputs and the server-error mapper.
  *
- * §10.3 requires a field-level error to be programmatically associated with its
- * input. That only holds if all three agree on one set of names — a server error
- * naming a field the form does not render would otherwise attach a message to
- * nothing, which the user can neither see nor clear.
+ * They match the server's `ProductFieldError.field` tokens (`name`, `groupId`,
+ * `roles`) so a server error lands on the input it names. A message attached to a
+ * field the form does not render is one the user can neither see nor clear.
  */
 export const CREATE_FIELD = {
   name: 'name',
-  productClass: 'productClass',
-  productGroup: 'productGroup',
-  productFamily: 'productFamily',
-  trackingPolicy: 'trackingPolicy',
+  groupId: 'groupId',
+  roles: 'roles',
 } as const
 
 export type CreateFieldId = (typeof CREATE_FIELD)[keyof typeof CREATE_FIELD]
 
-/** Declaration order is the DOM order, so "jump to the first error" means the first. */
+/** Declaration order is DOM order, so the summary lists errors as they appear. */
 export const CREATE_FIELD_ORDER: readonly CreateFieldId[] = [
   CREATE_FIELD.name,
-  CREATE_FIELD.productClass,
-  CREATE_FIELD.productGroup,
-  CREATE_FIELD.productFamily,
-  CREATE_FIELD.trackingPolicy,
+  CREATE_FIELD.groupId,
+  CREATE_FIELD.roles,
 ]
 
 export const CREATE_FIELD_LABEL: Record<CreateFieldId, string> = {
   [CREATE_FIELD.name]: PRODUCT_CREATE_TEXT.nameLabel,
-  [CREATE_FIELD.productClass]: PRODUCT_CREATE_TEXT.classLabel,
-  [CREATE_FIELD.productGroup]: PRODUCT_CREATE_TEXT.groupLabel,
-  [CREATE_FIELD.productFamily]: PRODUCT_CREATE_TEXT.familyLabel,
-  [CREATE_FIELD.trackingPolicy]: PRODUCT_CREATE_TEXT.trackingPolicyLabel,
+  [CREATE_FIELD.groupId]: PRODUCT_CREATE_TEXT.groupLabel,
+  [CREATE_FIELD.roles]: PRODUCT_CREATE_TEXT.rolesLabel,
 }
 
 export type CreateFormErrors = Partial<Record<CreateFieldId, string>>
@@ -88,117 +91,93 @@ const EMPTY_ROLES: CreateFormRoles = {
 
 export const EMPTY_CREATE_FORM: CreateFormValues = {
   name: '',
-  productClass: '',
-  productGroup: '',
-  productFamily: '',
+  groupId: '',
   roles: EMPTY_ROLES,
-  trackingPolicy: '',
 }
 
-/** Whether the user has touched anything. Drives the §10.4 unsaved guard. */
+/** Whether the user has touched anything. Drives the unsaved guard. */
 export function isCreateFormPristine(values: CreateFormValues): boolean {
   return (
     values.name === '' &&
-    values.productClass === '' &&
-    values.productGroup === '' &&
-    values.productFamily === '' &&
-    values.trackingPolicy === '' &&
+    values.groupId === '' &&
     PRODUCT_ROLE.every((role) => values.roles[role] === 'unset')
   )
-}
-
-function blankToNull(value: string): string | null {
-  const trimmed = value.trim()
-  return trimmed.length === 0 ? null : trimmed
 }
 
 /**
  * Validate and normalize.
  *
- * Trim is applied exactly as §8.1 says the server applies it, so what is validated
- * is what is sent. Optional fields become `null` rather than `''` — an empty string
- * is a value, and "no group" is the absence of one.
+ * `availableGroupIds` are the ids `GET /products/code-groups` actually returned.
+ * Checking against them is not duplicated server validation: it is the difference
+ * §19.3 draws between a reference the server offered and one the client produced.
+ * A remembered-but-gone selection falls on the wrong side of that line too.
  */
-export function validateCreateForm(values: CreateFormValues): CreateFormValidation {
+export function validateCreateForm(
+  values: CreateFormValues,
+  availableGroupIds: readonly string[],
+): CreateFormValidation {
   const errors: CreateFormErrors = {}
 
   const name = values.name.trim()
   if (name.length === 0) errors.name = PRODUCT_CREATE_TEXT.validation.nameRequired
   else if (name.length > NAME_MAX) errors.name = PRODUCT_CREATE_TEXT.validation.nameTooLong
 
-  const productClass = values.productClass.trim()
-  if (productClass.length === 0) {
-    errors.productClass = PRODUCT_CREATE_TEXT.validation.classRequired
-  } else if (productClass.length > CLASS_MAX) {
-    errors.productClass = PRODUCT_CREATE_TEXT.validation.classTooLong
-  }
-
-  const productGroup = values.productGroup.trim()
-  if (productGroup.length > GROUP_MAX) {
-    errors.productGroup = PRODUCT_CREATE_TEXT.validation.groupTooLong
-  }
-
-  const productFamily = values.productFamily.trim()
-  if (productFamily.length > FAMILY_MAX) {
-    errors.productFamily = PRODUCT_CREATE_TEXT.validation.familyTooLong
-  }
-
-  const trackingPolicy = values.trackingPolicy.trim()
-  if (trackingPolicy.length > TRACKING_POLICY_MAX) {
-    errors.trackingPolicy = PRODUCT_CREATE_TEXT.validation.trackingPolicyTooLong
+  /**
+   * The group is REQUIRED because the server mints the code from its prefix.
+   * Leaving it empty is not an incomplete Draft — it is a create the server cannot
+   * answer at all.
+   */
+  if (values.groupId === '') {
+    errors.groupId = PRODUCT_CREATE_TEXT.validation.groupRequired
+  } else if (!availableGroupIds.includes(values.groupId)) {
+    errors.groupId = PRODUCT_CREATE_TEXT.validation.groupUnknown
   }
 
   /**
-   * NO role is required, and an all-`unset` roles picker is a COMPLETE form.
-   *
-   * DEC-PRD-001 makes roles independent of class and group, and §6.1 lets a Draft be
-   * saved incomplete — "Draft eksik kaydedilebilir; activation completeness
-   * fail-closed'dur". Requiring a role here would move an activation-time check
-   * onto the save, which is precisely the boundary §6.2 keeps separate.
+   * NO role is required. DEC-PRD-001 makes roles independent of the group, and a
+   * Draft may be saved incomplete — requiring one would move an activation-time
+   * check onto the save, which §6.2 keeps separate.
    */
 
   if (Object.keys(errors).length > 0) return { ok: false, errors }
 
+  const roles = rolesPayload(values.roles)
   return {
     ok: true,
     payload: {
       name,
-      classification: {
-        class: productClass,
-        group: blankToNull(values.productGroup),
-        family: blankToNull(values.productFamily),
-      },
-      roles: rolesPayload(values.roles),
-      trackingPolicy: blankToNull(values.trackingPolicy),
+      groupId: values.groupId,
+      // Omitted entirely when nothing was answered: the source treats an absent
+      // `Roles` and an all-not-evaluated one identically, and absent claims less.
+      ...(Object.keys(roles).length > 0 ? { roles } : {}),
     },
   }
 }
 
 /**
- * Only the roles the user actually decided.
+ * The answered roles, in the contract's tagged write vocabulary.
  *
- * An `unset` role is OMITTED from the payload rather than sent as `false`. Sending
- * `false` is exactly the silent persist §5.2 forbids: the server would record a
- * determined "no" for a question nobody answered, and the 360 would then show a
- * decided role with `manual` provenance.
+ * An `unset` role is OMITTED rather than sent as `false`. Sending `false` is the
+ * silent persist §5.2 forbids: the server would record a determined "no" for a
+ * question nobody answered, and the card would then show a decided role with
+ * `manual` provenance.
  */
-export function rolesPayload(
-  roles: CreateFormRoles,
-): Partial<Readonly<Record<ProductRoleName, boolean>>> {
-  const payload: Partial<Record<ProductRoleName, boolean>> = {}
+export function rolesPayload(roles: CreateFormRoles): ProductRoleWrites {
+  const payload: Record<string, { value: boolean; provenance: 'manual' }> = {}
   for (const role of PRODUCT_ROLE) {
     const choice = roles[role]
-    if (choice === 'yes') payload[role] = true
-    else if (choice === 'no') payload[role] = false
+    if (choice === 'yes') payload[role] = { value: true, provenance: 'manual' }
+    else if (choice === 'no') payload[role] = { value: false, provenance: 'manual' }
   }
-  return payload
+  return payload as ProductRoleWrites
 }
 
 /**
  * Merge server field errors over client ones.
  *
- * The server wins on any field it names (§10.3: server validation is the single
- * truth), and client messages survive only on fields the server did not mention.
+ * The server wins on any field it names, and only on fields this form renders. A
+ * `field` the form does not have is dropped rather than shown detached — but the
+ * caller still surfaces it as a general failure, so nothing goes silent.
  */
 export function mergeServerErrors(
   clientErrors: CreateFormErrors,

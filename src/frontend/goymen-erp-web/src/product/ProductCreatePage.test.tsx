@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PRODUCT_CAPABILITY } from './capabilities'
-import { PRODUCT_1, installFetch, json, renderProductApp } from './testHarness'
+import { GROUP_SAC, installFetch, json, mutation, productCard, productCore, renderProductApp } from './testHarness'
 
 const CREATE_ONLY = [PRODUCT_CAPABILITY.productsCreate]
 const PATH = '/urun/yeni'
@@ -13,18 +13,16 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-async function formVisible() {
-  return waitFor(() => screen.getByRole('heading', { name: 'Yeni ürün' }))
-}
+const formVisible = () => waitFor(() => screen.getByRole('heading', { name: 'Yeni ürün' }))
 
 async function fillMinimum() {
   await userEvent.type(screen.getByLabelText(/Ürün adı/), 'Siyah sac')
-  await userEvent.type(screen.getByLabelText(/Ürün sınıfı/), 'Yassı ürün')
+  // The group is a REFERENCE the server offered, never typed text.
+  await waitFor(() => expect(screen.getByRole('option', { name: /Sac \(SAC\)/ })).toBeTruthy())
+  await userEvent.selectOptions(screen.getByLabelText(/Kod grubu/), GROUP_SAC)
 }
 
-function created(over: Record<string, unknown> = {}) {
-  return { id: PRODUCT_1, code: 'SAC-42', name: 'Siyah sac', lifecycle: 'Draft', version: '1', ...over }
-}
+const saveButton = () => screen.getByRole('button', { name: 'Taslak olarak kaydet' })
 
 describe('mounting', () => {
   it('mounts nothing without the create capability', async () => {
@@ -35,16 +33,57 @@ describe('mounting', () => {
   })
 
   it('never resolves the static create path as a product id', async () => {
-    /**
-     * The Cari slice shipped this bug (#172 P1-2): `/cari/yeni` matched the
-     * `:partyId` route, so the detail screen mounted and issued a read for a record
-     * that cannot exist.
-     */
     const { calls } = installFetch({ capabilities: CREATE_ONLY })
     renderProductApp(PATH)
 
     await formVisible()
     expect(calls.some((call) => call.url.includes('/products/yeni'))).toBe(false)
+  })
+})
+
+describe('the code group is a reference', () => {
+  it('is offered as a choice with its prefix, never as free text', async () => {
+    installFetch({ capabilities: CREATE_ONLY })
+    renderProductApp(PATH)
+
+    await formVisible()
+    const group = await waitFor(() => screen.getByLabelText(/Kod grubu/))
+    expect(group.tagName).toBe('SELECT')
+    expect(within(group).getByRole('option', { name: /Sac \(SAC\)/ })).toBeTruthy()
+  })
+
+  it('cannot create at all when the code-group read fails', async () => {
+    // The group is a real technical dependency of CREATION, not of the screen: the
+    // form is shown and the submit is closed, with the reason stated.
+    installFetch({ capabilities: CREATE_ONLY, onGroups: () => json({}, 503) })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await waitFor(() => expect(screen.getByTestId('product-groups-unavailable')).toBeTruthy())
+    expect((saveButton() as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('rejects a group whose prefix is not the canonical format', async () => {
+    /**
+     * README pins uppercase ASCII [A-Z0-9] and names `ÇELİK` as unsupported and
+     * owner-correctable. Offering it would be a dead end presented as a choice.
+     */
+    installFetch({
+      capabilities: CREATE_ONLY,
+      onGroups: () => json([{ id: GROUP_SAC, name: 'Çelik', prefix: 'ÇELİK' }]),
+    })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await waitFor(() => expect(screen.getByTestId('product-groups-unavailable')).toBeTruthy())
+  })
+
+  it('says so when the catalogue is empty', async () => {
+    installFetch({ capabilities: CREATE_ONLY, onGroups: () => json([]) })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await waitFor(() => expect(screen.getByTestId('product-groups-empty')).toBeTruthy())
   })
 })
 
@@ -54,19 +93,31 @@ describe('what the screen deliberately does not offer', () => {
     renderProductApp(PATH)
 
     await formVisible()
-    // §5.1/§7: the code is server-generated, and the admin manual-code exception
-    // needs a permission string that does not exist yet.
     expect(screen.queryByLabelText(/Ürün kodu/)).toBeNull()
-    expect(screen.getByText(/Ürün kodunu sunucu üretir/)).toBeTruthy()
+    expect(screen.getByText(/Ürün kodunu sunucu/)).toBeTruthy()
   })
 
-  it('has no activate action — activation is a separate, gated command', async () => {
+  it('offers no class, family or reference field, and says why', async () => {
+    /**
+     * The request accepts them, but no catalogue read is published — so the client
+     * could only invent a reference, which §19.3 forbids. Saying so is what makes
+     * this a known gap rather than a screen that looks finished.
+     */
     installFetch({ capabilities: CREATE_ONLY })
     renderProductApp(PATH)
 
     await formVisible()
-    // §6.2/§6.6: save and activate are separate commands, and activation stays
-    // fail-closed until the platform/permission/persistence gates pass.
+    expect(screen.queryByLabelText(/Ürün ailesi/)).toBeNull()
+    expect(screen.queryByLabelText(/Ürün sınıfı/)).toBeNull()
+    expect(screen.queryByLabelText(/Takip politikası/)).toBeNull()
+    expect(screen.getByText(/bu sürümde sunulmuyor/)).toBeTruthy()
+  })
+
+  it('has no activate action — the contract includes no activation command', async () => {
+    installFetch({ capabilities: CREATE_ONLY })
+    renderProductApp(PATH)
+
+    await formVisible()
     expect(screen.queryByRole('button', { name: /Aktive/i })).toBeNull()
     expect(screen.getByText(/aktivasyon ayrı bir işlemdir/i)).toBeTruthy()
   })
@@ -76,8 +127,6 @@ describe('what the screen deliberately does not offer', () => {
     const { container } = renderProductApp(PATH)
 
     await formVisible()
-    // §12 allows an AI draft only when the capability is open. A panel backed by
-    // nothing would be a fabricated feature.
     expect((container.textContent ?? '').toLowerCase()).not.toContain('yapay zeka')
     expect(screen.queryByText(/AI öner/i)).toBeNull()
   })
@@ -89,59 +138,65 @@ describe('validation', () => {
     renderProductApp(PATH)
 
     await formVisible()
-    await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
+    await userEvent.click(saveButton())
 
     await waitFor(() => expect(screen.getByTestId('product-create-error-summary')).toBeTruthy())
     // Nothing was sent, so there is nothing to be idempotent about.
     expect(calls.filter((call) => call.method === 'POST')).toHaveLength(0)
   })
 
-  it('associates each error with its input and focuses the first one', async () => {
+  it('associates each error with its input and focuses the summary', async () => {
     installFetch({ capabilities: CREATE_ONLY })
     renderProductApp(PATH)
 
     await formVisible()
-    await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
+    await userEvent.click(saveButton())
 
     const name = await waitFor(() => screen.getByLabelText(/Ürün adı/))
-    // §10.3: programmatically associated, not just a red border.
     expect(name.getAttribute('aria-invalid')).toBe('true')
     expect(name.getAttribute('aria-describedby')).toContain('name-error')
     // ONE focus rule: the summary takes focus and offers the jump, so a screen
-    // reader announces why nothing happened before naming the individual fields.
+    // reader announces why nothing happened before naming the fields.
     await waitFor(() =>
       expect(document.activeElement).toBe(screen.getByTestId('product-create-error-summary')),
     )
   })
 
-  it('jumps to a field from the summary', async () => {
-    installFetch({ capabilities: CREATE_ONLY })
-    renderProductApp(PATH)
-
-    await formVisible()
-    await userEvent.type(screen.getByLabelText(/Ürün adı/), 'Siyah sac')
-    await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
-
-    const summary = await waitFor(() => screen.getByTestId('product-create-error-summary'))
-    await userEvent.click(within(summary).getByRole('button'))
-    expect(document.activeElement).toBe(screen.getByLabelText(/Ürün sınıfı/))
-  })
-
-  it('lets the server win on a field it names, and keeps the user input', async () => {
+  it('maps a server field code to Turkish and keeps the user input', async () => {
     installFetch({
       capabilities: CREATE_ONLY,
-      onCreate: () =>
-        json({ code: 'validation_failed', errors: { name: 'Bu ad başka üründe kullanılıyor.' } }, 400),
+      onCreate: () => json({ code: 'validation_failed', errors: [{ field: 'name', code: 'invalid_name' }] }, 400),
     })
     renderProductApp(PATH)
 
     await formVisible()
     await fillMinimum()
-    await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
+    await userEvent.click(saveButton())
 
-    await waitFor(() => expect(screen.getByText('Bu ad başka üründe kullanılıyor.')).toBeTruthy())
-    // AT-006: a failed save keeps what was typed.
+    await waitFor(() => expect(screen.getByText('Ürün adı geçersiz.')).toBeTruthy())
+    // A failed save keeps what was typed.
     expect((screen.getByLabelText(/Ürün adı/) as HTMLInputElement).value).toBe('Siyah sac')
+  })
+
+  it('falls back to a general sentence for a field code it does not know', async () => {
+    /**
+     * The server sends machine codes, so an unknown one is expected rather than
+     * exceptional. Losing the FIELD binding would be worse than losing message
+     * precision, so the error still reaches its input.
+     */
+    installFetch({
+      capabilities: CREATE_ONLY,
+      onCreate: () =>
+        json({ code: 'validation_failed', errors: [{ field: 'groupId', code: 'brand_new' }] }, 400),
+    })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await fillMinimum()
+    await userEvent.click(saveButton())
+
+    await waitFor(() => expect(screen.getByText('Sunucu bu alanı reddetti.')).toBeTruthy())
+    expect(screen.getByLabelText(/Kod grubu/).getAttribute('aria-invalid')).toBe('true')
   })
 })
 
@@ -151,144 +206,155 @@ describe('roles', () => {
     renderProductApp(PATH)
 
     await formVisible()
-    // A checkbox cannot represent "not answered"; §5.2 forbids persisting that as
-    // a determined no.
     const unset = screen.getAllByRole('radio', { name: 'Belirtilmedi' })
     expect(unset).toHaveLength(4)
     expect(unset.every((radio) => (radio as HTMLInputElement).checked)).toBe(true)
   })
 
-  it('omits an unanswered role from the payload instead of sending false', async () => {
+  it('sends the tagged write shape and omits an unanswered role', async () => {
     const { calls } = installFetch({ capabilities: CREATE_ONLY })
     renderProductApp(PATH)
 
     await formVisible()
     await fillMinimum()
-    // The first "Evet" is `purchasable` — the roles render in declaration order.
+    // The first "Evet" is `purchasable` — roles render in declaration order.
     await userEvent.click(screen.getAllByRole('radio', { name: 'Evet' })[0])
-    await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
-
-    await waitFor(() => expect(calls.some((call) => call.method === 'POST')).toBe(true))
-    const post = calls.find((call) => call.method === 'POST')
-    const body = JSON.parse(post?.body ?? '{}')
-    // Only the answered role travels; the rest stay `not-evaluated` server-side.
-    expect(body.roles).toEqual({ purchasable: true })
-  })
-
-  it('sends an explicit no when the user answered no', async () => {
-    const { calls } = installFetch({ capabilities: CREATE_ONLY })
-    renderProductApp(PATH)
-
-    await formVisible()
-    await fillMinimum()
-    const noRadios = screen.getAllByRole('radio', { name: 'Hayır' })
-    await userEvent.click(noRadios[1])
-    await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
+    await userEvent.click(saveButton())
 
     await waitFor(() => expect(calls.some((call) => call.method === 'POST')).toBe(true))
     const body = JSON.parse(calls.find((call) => call.method === 'POST')?.body ?? '{}')
-    expect(body.roles).toEqual({ sellable: false })
+    expect(body.roles).toEqual({ purchasable: { value: true, provenance: 'manual' } })
+  })
+
+  it('sends an explicit manual false when the user answered no', async () => {
+    const { calls } = installFetch({ capabilities: CREATE_ONLY })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await fillMinimum()
+    await userEvent.click(screen.getAllByRole('radio', { name: 'Hayır' })[1])
+    await userEvent.click(saveButton())
+
+    await waitFor(() => expect(calls.some((call) => call.method === 'POST')).toBe(true))
+    const body = JSON.parse(calls.find((call) => call.method === 'POST')?.body ?? '{}')
+    // "Explicit false is preserved" — and it is never `derived`, which is server-only.
+    expect(body.roles).toEqual({ sellable: { value: false, provenance: 'manual' } })
+  })
+
+  it('omits the roles member entirely when nothing was answered', async () => {
+    const { calls } = installFetch({ capabilities: CREATE_ONLY })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await fillMinimum()
+    await userEvent.click(saveButton())
+
+    await waitFor(() => expect(calls.some((call) => call.method === 'POST')).toBe(true))
+    const body = JSON.parse(calls.find((call) => call.method === 'POST')?.body ?? '{}')
+    expect(Object.hasOwn(body, 'roles')).toBe(false)
   })
 })
 
 describe('the request itself', () => {
-  it('carries no company id and no lifecycle', async () => {
+  it('carries the create minimum, no company id, no server-owned field', async () => {
     const { calls } = installFetch({ capabilities: CREATE_ONLY })
     renderProductApp(PATH)
 
     await formVisible()
     await fillMinimum()
-    await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
+    await userEvent.click(saveButton())
 
     await waitFor(() => expect(calls.some((call) => call.method === 'POST')).toBe(true))
     const post = calls.find((call) => call.method === 'POST')
+    expect(post?.url).toContain('/products')
     expect(post?.companyId).toBeNull()
     const body = JSON.parse(post?.body ?? '{}')
-    // §6.1: the state is the server's to set. §15: the frontend adds no CompanyId.
-    expect(Object.hasOwn(body, 'lifecycle')).toBe(false)
-    expect(Object.hasOwn(body, 'companyId')).toBe(false)
-    expect(Object.hasOwn(body, 'code')).toBe(false)
+    expect(body.name).toBe('Siyah sac')
+    expect(body.groupId).toBe(GROUP_SAC)
+    // `JsonUnmappedMemberHandling.Disallow` would reject any of these outright.
+    for (const forbidden of ['lifecycle', 'companyId', 'code', 'version', 'expectedVersion']) {
+      expect(Object.hasOwn(body, forbidden)).toBe(false)
+    }
   })
 
-  it('carries exactly one idempotency key', async () => {
+  it('carries exactly one idempotency key in the contract’s alphabet', async () => {
     const { calls } = installFetch({ capabilities: CREATE_ONLY })
     renderProductApp(PATH)
 
     await formVisible()
     await fillMinimum()
-    await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
+    await userEvent.click(saveButton())
 
     await waitFor(() => expect(calls.some((call) => call.method === 'POST')).toBe(true))
-    expect(calls.find((call) => call.method === 'POST')?.idempotencyKey).toMatch(/^[0-9a-f]{32}$/)
+    const key = calls.find((call) => call.method === 'POST')?.idempotencyKey ?? ''
+    expect(key).toMatch(/^[0-9a-f]{32}$/)
+    expect(key.length).toBeLessThanOrEqual(128)
   })
 })
 
 describe('success', () => {
   it('reports the Draft and shows the server-assigned code only now', async () => {
-    installFetch({ capabilities: CREATE_ONLY, onCreate: () => json(created(), 201) })
+    installFetch({ capabilities: CREATE_ONLY, onCreate: () => json(mutation(), 201) })
     renderProductApp(PATH)
 
     await formVisible()
     await fillMinimum()
-    await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
+    await userEvent.click(saveButton())
 
     await waitFor(() => expect(screen.getByText('Taslak kaydedildi')).toBeTruthy())
-    // §7: the code was never predicted before the response arrived.
     expect(screen.getByText('SAC-42 — Siyah sac')).toBeTruthy()
   })
 
-  it('says a replay was not a second record', async () => {
+  it('reads isReplay from the response BODY', async () => {
+    // `isReplay` is a response field in this contract, not a header.
     installFetch({
       capabilities: CREATE_ONLY,
-      onCreate: () => json(created(), 201, { 'Idempotency-Replayed': 'true' }),
+      onCreate: () => json(mutation({ isReplay: true }), 201),
     })
     renderProductApp(PATH)
 
     await formVisible()
     await fillMinimum()
-    await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
+    await userEvent.click(saveButton())
 
     await waitFor(() => expect(screen.getByText(/ikinci bir kayıt oluşturulmadı/)).toBeTruthy())
   })
 
-  it('offers the detail only when the detail capability is held', async () => {
-    installFetch({ capabilities: CREATE_ONLY, onCreate: () => json(created(), 201) })
-    const { unmount } = renderProductApp(PATH)
-
-    await formVisible()
-    await fillMinimum()
-    await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
-    await waitFor(() => expect(screen.getByText('Taslak kaydedildi')).toBeTruthy())
-    expect(screen.queryByRole('link', { name: 'Ürün kartını aç' })).toBeNull()
-    unmount()
-    cleanup()
-
-    installFetch({
-      capabilities: [...CREATE_ONLY, PRODUCT_CAPABILITY.productsDetail],
-      onCreate: () => json(created(), 201),
-    })
-    renderProductApp(PATH)
-    await formVisible()
-    await fillMinimum()
-    await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Ürün kartını aç' })).toBeTruthy())
-  })
-
   it('rejects a 201 that says the product was created Active', async () => {
     /**
-     * §6.1/§6.2. Reporting that as an ordinary success would hide an activation
-     * from the person responsible for it. It becomes an UNKNOWN outcome, not a
-     * failure — the record does exist.
+     * A new record is always born Draft; activation is a separate command with its
+     * own audit record. Reporting this as an ordinary success would hide an
+     * activation from the person responsible for it. It becomes an UNKNOWN outcome,
+     * not a failure — the record does exist.
      */
     installFetch({
       capabilities: CREATE_ONLY,
-      onCreate: () => json(created({ lifecycle: 'Active' }), 201),
+      onCreate: () =>
+        json(mutation({ card: productCard({ product: productCore({ lifecycle: 'Active' }) }) }), 201),
     })
     renderProductApp(PATH)
 
     await formVisible()
     await fillMinimum()
-    await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
+    await userEvent.click(saveButton())
+
+    await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
+    expect(screen.queryByText('Taslak kaydedildi')).toBeNull()
+  })
+
+  it('does not accept a 200 as a create — but calls it uncertain, not failed', async () => {
+    /**
+     * "Replay remains the original successful operation status (create 201, edit
+     * 200)", so a 200 here is not a success this client can describe. It is NOT
+     * reported as a failure either: the server said 2xx, so telling the user their
+     * record was not created would very likely be false. The same key replays.
+     */
+    installFetch({ capabilities: CREATE_ONLY, onCreate: () => json(mutation(), 200) })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await fillMinimum()
+    await userEvent.click(saveButton())
 
     await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
     expect(screen.queryByText('Taslak kaydedildi')).toBeNull()
@@ -299,13 +365,13 @@ describe('unknown outcome', () => {
   it('retries the SAME key rather than starting a new attempt', async () => {
     const { calls } = installFetch({
       capabilities: CREATE_ONLY,
-      onCreate: (attempt) => (attempt === 1 ? json({}, 503) : json(created(), 201)),
+      onCreate: (attempt) => (attempt === 1 ? json({}, 503) : json(mutation(), 201)),
     })
     renderProductApp(PATH)
 
     await formVisible()
     await fillMinimum()
-    await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
+    await userEvent.click(saveButton())
 
     await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
     // The copy must not invite a fresh save: the Draft may already exist.
@@ -316,24 +382,23 @@ describe('unknown outcome', () => {
 
     const posts = calls.filter((call) => call.method === 'POST')
     expect(posts).toHaveLength(2)
-    // One key per SNAPSHOT, never per click — the server replays instead of
-    // creating a second product.
+    // "An unknown outcome must not be retried with a new key."
     expect(posts[0].idempotencyKey).toBe(posts[1].idempotencyKey)
   })
 
   it('reuses the key when the unchanged form is submitted again', async () => {
     const { calls } = installFetch({
       capabilities: CREATE_ONLY,
-      onCreate: (attempt) => (attempt === 1 ? json({}, 503) : json(created(), 201)),
+      onCreate: (attempt) => (attempt === 1 ? json({}, 503) : json(mutation(), 201)),
     })
     renderProductApp(PATH)
 
     await formVisible()
     await fillMinimum()
-    await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
+    await userEvent.click(saveButton())
     await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
 
-    await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
+    await userEvent.click(saveButton())
     await waitFor(() => expect(screen.getByText('Taslak kaydedildi')).toBeTruthy())
 
     const posts = calls.filter((call) => call.method === 'POST')
@@ -343,17 +408,17 @@ describe('unknown outcome', () => {
   it('mints a new key once the payload actually changed', async () => {
     const { calls } = installFetch({
       capabilities: CREATE_ONLY,
-      onCreate: (attempt) => (attempt === 1 ? json({}, 503) : json(created(), 201)),
+      onCreate: (attempt) => (attempt === 1 ? json({}, 503) : json(mutation(), 201)),
     })
     renderProductApp(PATH)
 
     await formVisible()
     await fillMinimum()
-    await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
+    await userEvent.click(saveButton())
     await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
 
     await userEvent.type(screen.getByLabelText(/Ürün adı/), ' galvaniz')
-    await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
+    await userEvent.click(saveButton())
     await waitFor(() => expect(screen.getByText('Taslak kaydedildi')).toBeTruthy())
 
     const posts = calls.filter((call) => call.method === 'POST')
@@ -364,32 +429,30 @@ describe('unknown outcome', () => {
 })
 
 describe('definite refusals', () => {
-  it('reports a code collision as a hard block that created nothing', async () => {
-    installFetch({
-      capabilities: CREATE_ONLY,
-      onCreate: () => json({ code: 'product_code_collision' }, 409),
-    })
-    renderProductApp(PATH)
-
-    await formVisible()
-    await fillMinimum()
-    await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
-
-    await waitFor(() => expect(screen.getByText('Bu kod zaten kullanılıyor')).toBeTruthy())
-    expect(screen.getByText(/Kayıt oluşturulmadı/)).toBeTruthy()
-    // A definite refusal is NOT an unknown outcome.
-    expect(screen.queryByTestId('product-create-unknown')).toBeNull()
-  })
-
   it('reports a 403 as unauthorized rather than as an unknown outcome', async () => {
     installFetch({ capabilities: CREATE_ONLY, onCreate: () => json({ code: 'forbidden' }, 403) })
     renderProductApp(PATH)
 
     await formVisible()
     await fillMinimum()
-    await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
+    await userEvent.click(saveButton())
 
     await waitFor(() => expect(screen.getByText('Yetkiniz yok')).toBeTruthy())
+    expect(screen.queryByTestId('product-create-unknown')).toBeNull()
+  })
+
+  it('reports an idempotency conflict as a definite refusal', async () => {
+    installFetch({
+      capabilities: CREATE_ONLY,
+      onCreate: () => json({ code: 'idempotency_conflict' }, 409),
+    })
+    renderProductApp(PATH)
+
+    await formVisible()
+    await fillMinimum()
+    await userEvent.click(saveButton())
+
+    await waitFor(() => expect(screen.getByTestId('product-create-failed')).toBeTruthy())
     expect(screen.queryByTestId('product-create-unknown')).toBeNull()
   })
 })
@@ -407,24 +470,9 @@ describe('unsaved guard', () => {
     // Focus lands on the SAFE option, not the destructive one.
     expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Sayfada kal' }))
 
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Sayfada kal' }))
+    await userEvent.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
     expect((screen.getByLabelText(/Ürün adı/) as HTMLInputElement).value).toBe('Siyah sac')
-  })
-
-  it('treats Escape as "stay"', async () => {
-    installFetch({ capabilities: [...CREATE_ONLY, PRODUCT_CAPABILITY.productsList] })
-    renderProductApp(PATH)
-
-    await formVisible()
-    await userEvent.type(screen.getByLabelText(/Ürün adı/), 'Siyah sac')
-    await userEvent.click(screen.getByRole('button', { name: 'Vazgeç' }))
-    await waitFor(() => screen.getByRole('alertdialog'))
-
-    await userEvent.keyboard('{Escape}')
-    // The destructive option must never be what a stray key press picks.
-    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
-    expect(screen.getByRole('heading', { name: 'Yeni ürün' })).toBeTruthy()
   })
 
   it('does not ask when nothing was typed', async () => {
@@ -446,12 +494,12 @@ describe('unsaved guard', () => {
 
     await formVisible()
     await fillMinimum()
-    await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
+    await userEvent.click(saveButton())
     await waitFor(() => expect(screen.getByTestId('product-create-unknown')).toBeTruthy())
 
     await userEvent.click(screen.getByRole('button', { name: 'Vazgeç' }))
-    // The Draft may exist and nothing confirmed it; walking away silently is how
-    // an unresolved write is forgotten.
+    // The Draft may exist and nothing confirmed it; walking away silently is how an
+    // unresolved write is forgotten.
     expect(screen.getByRole('alertdialog')).toBeTruthy()
   })
 })

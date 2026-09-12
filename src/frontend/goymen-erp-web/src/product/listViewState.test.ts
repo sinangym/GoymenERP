@@ -30,38 +30,32 @@ describe('default view', () => {
 })
 
 describe('isFiltered', () => {
-  it('counts search, lifecycle, family, roles and completeness', () => {
+  it('counts search, lifecycle and the single role filter', () => {
     expect(isFiltered({ ...DEFAULT_PRODUCT_LIST_VIEW, q: '  ' })).toBe(false)
     expect(isFiltered({ ...DEFAULT_PRODUCT_LIST_VIEW, q: 'sac' })).toBe(true)
     expect(isFiltered({ ...DEFAULT_PRODUCT_LIST_VIEW, lifecycle: 'Draft' })).toBe(true)
-    expect(isFiltered({ ...DEFAULT_PRODUCT_LIST_VIEW, family: 'Boru' })).toBe(true)
-    expect(isFiltered({ ...DEFAULT_PRODUCT_LIST_VIEW, roles: ['sellable'] })).toBe(true)
-    expect(isFiltered({ ...DEFAULT_PRODUCT_LIST_VIEW, completeness: 'incomplete' })).toBe(true)
+    expect(isFiltered({ ...DEFAULT_PRODUCT_LIST_VIEW, role: 'sellable' })).toBe(true)
   })
 
-  it('does not count sort — it changes order, never which records match', () => {
-    expect(isFiltered({ ...DEFAULT_PRODUCT_LIST_VIEW, sort: 'name', direction: 'desc' })).toBe(false)
+  it('does not count page size — it changes how many, never which', () => {
+    expect(isFiltered({ ...DEFAULT_PRODUCT_LIST_VIEW, pageSize: 100 })).toBe(false)
   })
 })
 
 describe('clearedFilters', () => {
-  it('clears the filters and keeps the chosen sort and page size', () => {
+  it('clears the filters and keeps the chosen page size', () => {
     const cleared = clearedFilters({
       ...DEFAULT_PRODUCT_LIST_VIEW,
       q: 'sac',
       lifecycle: 'Inactive',
-      roles: ['purchasable'],
-      sort: 'lastChangedAt',
-      direction: 'desc',
+      role: 'purchasable',
       pageSize: 100,
     })
     expect(cleared.q).toBe('')
     expect(cleared.lifecycle).toBe('all')
-    expect(cleared.roles).toEqual([])
-    // Neither is a filter; resetting them would undo a choice the user did not ask
-    // to undo.
-    expect(cleared.sort).toBe('lastChangedAt')
-    expect(cleared.direction).toBe('desc')
+    expect(cleared.role).toBe('')
+    // Page size is not a filter; resetting it would undo a choice the user did not
+    // ask to undo.
     expect(cleared.pageSize).toBe(100)
   })
 })

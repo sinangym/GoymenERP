@@ -1,7 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import { PRODUCT_CAPABILITY } from './capabilities'
-import { PRODUCT_1, installFetch, json, productDetail, renderProductApp } from './testHarness'
+import {
+  FAMILY_FLAT,
+  PRODUCT_1,
+  installFetch,
+  json,
+  productCard,
+  productCore,
+  references,
+  renderProductApp,
+} from './testHarness'
 
 const DETAIL_ONLY = [PRODUCT_CAPABILITY.productsDetail]
 const PATH = `/urun/${PRODUCT_1}`
@@ -12,9 +21,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-async function detailVisible() {
-  return waitFor(() => screen.getByRole('heading', { name: 'Siyah sac' }))
-}
+const cardVisible = () => waitFor(() => screen.getByRole('heading', { name: 'Siyah sac' }))
 
 describe('mounting', () => {
   it('mounts nothing and reads nothing without the detail capability', async () => {
@@ -25,71 +32,53 @@ describe('mounting', () => {
     expect(calls.some((call) => call.url.includes('/products/'))).toBe(false)
   })
 
-  it('reads the 360 with the detail capability', async () => {
-    installFetch({ capabilities: DETAIL_ONLY })
-    renderProductApp(PATH)
-
-    await detailVisible()
-    expect(screen.getByText('SAC-42')).toBeTruthy()
-  })
-
-  it('never attaches a company header to the detail read', async () => {
+  it('reads the card with the detail capability, and sends no company header', async () => {
     const { calls } = installFetch({ capabilities: DETAIL_ONLY })
     renderProductApp(PATH)
 
-    await detailVisible()
-    const detailCalls = calls.filter((call) => call.url.includes('/products/'))
-    expect(detailCalls.length).toBeGreaterThan(0)
-    expect(detailCalls.every((call) => call.companyId === null)).toBe(true)
+    await cardVisible()
+    expect(screen.getByText('SAC-42')).toBeTruthy()
+    const cardCalls = calls.filter((call) => call.url.includes('/products/'))
+    expect(cardCalls.length).toBeGreaterThan(0)
+    expect(cardCalls.every((call) => call.companyId === null)).toBe(true)
   })
 })
 
 describe('lifecycle', () => {
   it('prints what the state MEANS, not only its name', async () => {
-    installFetch({
-      capabilities: DETAIL_ONLY,
-      onDetail: () => json(productDetail({ lifecycle: 'Draft', lastActivatedAt: null })),
-    })
+    installFetch({ capabilities: DETAIL_ONLY })
     renderProductApp(PATH)
 
-    await detailVisible()
+    await cardVisible()
     expect(screen.getByText('Taslak')).toBeTruthy()
     // "Taslak" alone does not tell an operator the product cannot be picked in an
-    // order line, which is the whole point of the state (§6.1, DEC-PRD-010).
+    // order line, which is the whole point of the state.
     expect(screen.getByText('Kesin işlemlerde seçilemez.')).toBeTruthy()
   })
 
-  it('does not claim anything about a status it does not understand', async () => {
+  it('banners an inactive product as closed in BOTH companies', async () => {
     installFetch({
       capabilities: DETAIL_ONLY,
-      onDetail: () => json(productDetail({ lifecycle: 'archived', lastActivatedAt: null })),
+      onCard: () => json(productCard({ product: productCore({ lifecycle: 'Inactive' }) })),
     })
     renderProductApp(PATH)
 
-    await detailVisible()
-    expect(screen.getByText('Bilinmeyen durum: archived')).toBeTruthy()
-    expect(screen.getByText(/Ürünün kullanılabilirliği hakkında bir sonuç çıkarmayın/)).toBeTruthy()
-    // The inactive banner is a claim about a KNOWN state and must not be inherited.
-    expect(screen.queryByText(/her iki şirkette de yeni kullanıma kapalıdır/)).toBeNull()
+    await cardVisible()
+    expect(screen.getByText(/her iki şirkette de yeni kullanıma kapalıdır/)).toBeTruthy()
   })
 
-  it('banners an inactive product as closed in BOTH companies, with its reason', async () => {
+  it('claims nothing about a status it does not understand', async () => {
     installFetch({
       capabilities: DETAIL_ONLY,
-      onDetail: () =>
-        json(
-          productDetail({
-            lifecycle: 'Inactive',
-            deactivationReason: 'Üretimden kaldırıldı',
-            lastDeactivatedAt: '2026-08-01T00:00:00Z',
-          }),
-        ),
+      onCard: () => json(productCard({ product: productCore({ lifecycle: 'archived' }) })),
     })
     renderProductApp(PATH)
 
-    await detailVisible()
-    expect(screen.getByText(/her iki şirkette de yeni kullanıma kapalıdır/)).toBeTruthy()
-    expect(screen.getByText(/Üretimden kaldırıldı/)).toBeTruthy()
+    await cardVisible()
+    expect(screen.getByText('Bilinmeyen durum: archived')).toBeTruthy()
+    expect(screen.getByText(/kullanılabilirliği hakkında bir sonuç çıkarmayın/)).toBeTruthy()
+    // The inactive banner is a claim about a KNOWN state and must not be inherited.
+    expect(screen.queryByText(/her iki şirkette de yeni kullanıma kapalıdır/)).toBeNull()
   })
 })
 
@@ -98,8 +87,7 @@ describe('roles', () => {
     installFetch({ capabilities: DETAIL_ONLY })
     renderProductApp(PATH)
 
-    await detailVisible()
-    // §5.2: an unevaluated role must not be persisted — or shown — as false.
+    await cardVisible()
     expect(screen.getByTestId('product-role-productionInput').textContent).toBe('—')
     expect(screen.getByText('değerlendirilmedi')).toBeTruthy()
     // ...while a determined NO still reads as a determined NO.
@@ -110,7 +98,7 @@ describe('roles', () => {
     installFetch({ capabilities: DETAIL_ONLY })
     renderProductApp(PATH)
 
-    await detailVisible()
+    await cardVisible()
     const row = screen.getByRole('row', { name: /Üretim çıktısı/ })
     // Only one of the two is safe to overwrite by hand.
     expect(within(row).getByText('ilişkiden türetildi')).toBeTruthy()
@@ -118,139 +106,129 @@ describe('roles', () => {
 })
 
 describe('completeness', () => {
-  it('says "bilinmiyor" for what the server could not evaluate', async () => {
+  it('lists the server’s missing fields rather than inventing a score', async () => {
     installFetch({ capabilities: DETAIL_ONLY })
     renderProductApp(PATH)
 
-    await detailVisible()
-    // §9 forbids fabricating a value for unsupported data; "eksik" would send an
-    // operator looking for a gap that may not exist.
-    expect(screen.getByTestId('product-completeness-package').textContent).toBe('bilinmiyor')
-    expect(screen.getByTestId('product-completeness-unit').textContent).toBe('eksik')
+    await cardVisible()
+    expect(screen.getByTestId('product-completeness').textContent).toBe('Eksik')
+    expect(within(screen.getByTestId('product-missing-fields')).getByText(
+      'references.units.stock',
+    )).toBeTruthy()
+  })
+
+  it('never renders NotEvaluated as complete', async () => {
+    // README states this rule explicitly.
+    installFetch({
+      capabilities: DETAIL_ONLY,
+      onCard: () =>
+        json(productCard({ completeness: { evaluation: 'NotEvaluated', missingFields: [] } })),
+    })
+    renderProductApp(PATH)
+
+    await cardVisible()
+    expect(screen.getByTestId('product-completeness').textContent).toBe('Değerlendirilmedi')
+    expect(screen.getByText(/Sunucu eksik alan bildirmedi/)).toBeTruthy()
+  })
+
+  it('names an unknown evaluation token instead of coercing it', async () => {
+    installFetch({
+      capabilities: DETAIL_ONLY,
+      onCard: () => json(productCard({ completeness: { evaluation: 'Partial', missingFields: [] } })),
+    })
+    renderProductApp(PATH)
+
+    await cardVisible()
+    expect(screen.getByTestId('product-completeness').textContent).toContain('Partial')
   })
 })
 
-describe('sections the server cannot serve', () => {
-  it('marks an unlisted section unavailable rather than empty or zero', async () => {
-    installFetch({ capabilities: DETAIL_ONLY })
+describe('references', () => {
+  it('shows an unassigned unit as unassigned, never as the stock unit', async () => {
+    installFetch({
+      capabilities: DETAIL_ONLY,
+      onCard: () =>
+        json(
+          productCard({
+            references: references({
+              units: {
+                stock: FAMILY_FLAT,
+                purchase: null,
+                sales: null,
+                price: null,
+                production: null,
+                package: null,
+              },
+            }),
+          }),
+        ),
+    })
     renderProductApp(PATH)
 
-    await detailVisible()
-    // `packageStandards` is absent from availableSections in the default fixture.
-    const section = screen.getByTestId('section-packageStandards')
-    expect(section.textContent).toContain('Bu bölüm şu anda kullanılamıyor')
-    expect(section.textContent).toContain('Sayı veya özet üretilmez')
-  })
-
-  it('renders a listed section normally', async () => {
-    installFetch({ capabilities: DETAIL_ONLY })
-    renderProductApp(PATH)
-
-    await detailVisible()
-    const units = screen.getByTestId('section-units')
-    expect(units.textContent).not.toContain('kullanılamıyor')
-  })
-})
-
-describe('units', () => {
-  it('shows an unassigned unit role as unassigned, never as the stock unit', async () => {
-    installFetch({ capabilities: DETAIL_ONLY })
-    renderProductApp(PATH)
-
-    await detailVisible()
-    // DEC-PRD-006 makes the six unit roles separate; a fallback to `kg` would be
-    // the screen inventing a conversion.
-    expect(screen.getByTestId('product-unit-stock').textContent).toBe('kg')
+    await cardVisible()
+    // DEC-PRD-006 keeps the six roles separate; a fallback would be the screen
+    // inventing a conversion.
+    expect(screen.getByTestId('product-unit-stock').textContent).toBe(FAMILY_FLAT)
     expect(screen.getByTestId('product-unit-production').textContent).toBe('atanmadı')
   })
-})
 
-describe('template', () => {
-  it('shows the PINNED template version', async () => {
+  it('says why reference ids are shown as ids', async () => {
+    // No catalogue read is published, and guessing a label would be client fan-out.
     installFetch({ capabilities: DETAIL_ONLY })
     renderProductApp(PATH)
 
-    await detailVisible()
-    // DEC-PRDCT-008: a master change must not rewrite what a historical record
-    // meant, so the version is carried, never re-derived from "current".
-    expect(screen.getByText('v3')).toBeTruthy()
+    await cardVisible()
+    expect(screen.getByText(/görünen adları için henüz bir katalog okuması yayımlanmadı/)).toBeTruthy()
+    expect(screen.getByText(/bu sürümde sunulmuyor/)).toBeTruthy()
   })
 })
 
 describe('master vs label boundary', () => {
-  it('says the card holds only the tracking POLICY', async () => {
+  it('says the card holds only the tracking POLICY reference', async () => {
     installFetch({ capabilities: DETAIL_ONLY })
     renderProductApp(PATH)
 
-    await detailVisible()
+    await cardVisible()
     // DEC-PRD-003: lot, origin and quality/defect status belong to the physical
-    // label record. Without this line an empty policy reads as "no lots".
-    expect(screen.getByText(/Parti, menşe ve kalite\/kusur durumu fiziksel etiket kaydında/)).toBeTruthy()
+    // label record. Without this an empty policy reads as "no lots".
+    expect(
+      screen.getByText(/Parti, menşe ve kalite\/kusur durumu fiziksel etiket kaydında/),
+    ).toBeTruthy()
   })
 
   it('shows no stock, price or lot FIGURE anywhere on the card', async () => {
     installFetch({ capabilities: DETAIL_ONLY })
     const { container } = renderProductApp(PATH)
 
-    await detailVisible()
+    await cardVisible()
     const text = container.textContent ?? ''
-    // §3/§9: the 360 does not pull physical stock, price or accounting detail into
-    // the Product aggregate.
     for (const forbidden of ['Stok miktarı', 'Bakiye', 'Parti no', 'Kalite durumu', '₺']) {
       expect(text).not.toContain(forbidden)
     }
     /**
-     * "Fiyat birimi" IS present and is allowed: DEC-PRD-006 makes the price UNIT a
-     * master field (which unit a price is quoted in), while the price itself is a
-     * company/customer-scoped child record. The distinction is the point — the card
-     * says `kg`, never an amount.
+     * "Fiyat birimi" IS present and allowed: the price UNIT is a master reference
+     * (which unit a price is quoted in), while the amount is a company-scoped child
+     * record. The card shows an id or "atanmadı", never a figure.
      */
-    expect(screen.getByTestId('product-unit-price').textContent).toBe('kg')
-  })
-})
-
-describe('alias history', () => {
-  it('labels a retired code as non-reusable', async () => {
-    installFetch({ capabilities: DETAIL_ONLY })
-    renderProductApp(PATH)
-
-    await detailVisible()
-    expect(screen.getByText('ESKI-1')).toBeTruthy()
-    expect(screen.getByText(/tekrar kullanılamaz/)).toBeTruthy()
-  })
-
-  it('says so plainly when there is no alias', async () => {
-    installFetch({
-      capabilities: DETAIL_ONLY,
-      onDetail: () => json(productDetail({ aliases: [] })),
-    })
-    renderProductApp(PATH)
-
-    await detailVisible()
-    expect(screen.getByText('Bu ürünün emekliye ayrılmış kodu yok.')).toBeTruthy()
+    expect(screen.getByTestId('product-unit-price').textContent).toBe('atanmadı')
   })
 })
 
 describe('§13 states', () => {
   it('shows the non-disclosing not-found block for an unknown product', async () => {
-    installFetch({
-      capabilities: DETAIL_ONLY,
-      onDetail: () => json({ code: 'not_found' }, 404),
-    })
+    installFetch({ capabilities: DETAIL_ONLY, onCard: () => json({ code: 'not_found' }, 404) })
     renderProductApp(PATH)
 
     await waitFor(() => expect(screen.getByText('Bulunamadı — ürün')).toBeTruthy())
   })
 
-  it('fails closed when the response describes a different product', async () => {
-    /**
-     * A well-formed 200 about another record would have the user looking at one
-     * product believing it is another — and any edit they then made would be aimed
-     * at the wrong revision.
-     */
+  it('fails closed when the card describes a different product', async () => {
+    // A well-formed 200 about another record would have the user looking at one
+    // record believing it is another.
     installFetch({
       capabilities: DETAIL_ONLY,
-      onDetail: () => json(productDetail({ id: '99999999-9999-9999-9999-999999999999' })),
+      onCard: () =>
+        json(productCard({ product: productCore({ id: '99999999-9999-9999-9999-999999999999' }) })),
     })
     renderProductApp(PATH)
 
@@ -260,7 +238,7 @@ describe('§13 states', () => {
   it('offers a retry on a service failure', async () => {
     installFetch({
       capabilities: DETAIL_ONLY,
-      onDetail: () => json({ code: 'service_unavailable' }, 503),
+      onCard: () => json({ code: 'service_unavailable' }, 503),
     })
     renderProductApp(PATH)
 
@@ -268,18 +246,30 @@ describe('§13 states', () => {
   })
 })
 
-describe('navigation', () => {
-  it('offers the way back only when the list capability is held', async () => {
+describe('edit entry point', () => {
+  it('appears only with the edit capability AND only on a Draft', async () => {
     installFetch({ capabilities: DETAIL_ONLY })
     const { unmount } = renderProductApp(PATH)
-    await detailVisible()
-    expect(screen.queryByRole('link', { name: /Ürün listesine dön/ })).toBeNull()
+    await cardVisible()
+    expect(screen.queryByRole('link', { name: 'Düzenle' })).toBeNull()
     unmount()
     cleanup()
 
-    installFetch({ capabilities: [...DETAIL_ONLY, PRODUCT_CAPABILITY.productsList] })
+    installFetch({ capabilities: [...DETAIL_ONLY, PRODUCT_CAPABILITY.productsEdit] })
+    const second = renderProductApp(PATH)
+    await cardVisible()
+    expect(screen.getByRole('link', { name: 'Düzenle' })).toBeTruthy()
+    second.unmount()
+    cleanup()
+
+    // The domain refuses basic edit on a non-Draft (`lifecycle_conflict`), so
+    // offering the control there would be offering a refusal.
+    installFetch({
+      capabilities: [...DETAIL_ONLY, PRODUCT_CAPABILITY.productsEdit],
+      onCard: () => json(productCard({ product: productCore({ lifecycle: 'Active' }) })),
+    })
     renderProductApp(PATH)
-    await detailVisible()
-    expect(screen.getByRole('link', { name: /Ürün listesine dön/ })).toBeTruthy()
+    await cardVisible()
+    expect(screen.queryByRole('link', { name: 'Düzenle' })).toBeNull()
   })
 })

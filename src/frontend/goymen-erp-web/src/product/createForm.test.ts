@@ -8,59 +8,64 @@ import {
   type CreateFormValues,
 } from './createForm'
 
+const GROUP_A = 'aaaaaaa1-0000-0000-0000-000000000001'
+const GROUP_B = 'aaaaaaa1-0000-0000-0000-000000000002'
+const GROUPS = [GROUP_A, GROUP_B]
+
 function form(over: Partial<CreateFormValues> = {}): CreateFormValues {
-  return { ...EMPTY_CREATE_FORM, name: 'Siyah sac', productClass: 'Yassı ürün', ...over }
+  return { ...EMPTY_CREATE_FORM, name: 'Siyah sac', groupId: GROUP_A, ...over }
 }
 
 describe('validateCreateForm', () => {
-  it('accepts a minimal form and trims what it sends', () => {
-    const result = validateCreateForm(form({ name: '  Siyah sac  ' }))
+  it('accepts the contract’s create minimum and trims what it sends', () => {
+    const result = validateCreateForm(form({ name: '  Siyah sac  ' }), GROUPS)
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.payload.name).toBe('Siyah sac')
-    expect(result.payload.classification.class).toBe('Yassı ürün')
+    expect(result.payload.groupId).toBe(GROUP_A)
   })
 
-  it('requires a name and a class', () => {
-    const result = validateCreateForm(form({ name: '   ', productClass: '' }))
+  it('requires a name and a code group', () => {
+    const result = validateCreateForm(form({ name: '   ', groupId: '' }), GROUPS)
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.errors.name).toBeDefined()
-    expect(result.errors.productClass).toBeDefined()
+    // The code is minted from the group's prefix, so an unchosen group is not an
+    // incomplete Draft — it is a create the server cannot answer at all.
+    expect(result.errors.groupId).toBeDefined()
   })
 
-  it('turns a blank optional field into null rather than an empty string', () => {
-    const result = validateCreateForm(form({ productGroup: '   ', productFamily: 'Sac' }))
-    expect(result.ok).toBe(true)
-    if (!result.ok) return
-    expect(result.payload.classification.group).toBeNull()
-    expect(result.payload.classification.family).toBe('Sac')
+  it('rejects a group that is no longer on the server’s list', () => {
+    // A stale selection falls on the same side of the line as an invented one:
+    // neither is a reference the server offered.
+    const result = validateCreateForm(form({ groupId: GROUP_A }), [GROUP_B])
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.errors.groupId).toBeDefined()
   })
 
-  it('accepts a form where no role was answered', () => {
+  it('accepts a form where no role was answered, and sends no roles member', () => {
     /**
-     * DEC-PRD-001 makes roles independent of class/group, and §6.1 lets a Draft be
-     * saved incomplete. Requiring a role here would move an activation-time check
-     * onto the save, which §6.2 keeps separate.
+     * "Omitted create roles are not-evaluated", so an absent `roles` and an
+     * all-not-evaluated one are identical server-side — and absent claims less.
      */
-    const result = validateCreateForm(form())
+    const result = validateCreateForm(form(), GROUPS)
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    expect(result.payload.roles).toEqual({})
+    expect(Object.hasOwn(result.payload, 'roles')).toBe(false)
   })
 
   it('rejects an over-long name', () => {
-    const result = validateCreateForm(form({ name: 'x'.repeat(251) }))
+    const result = validateCreateForm(form({ name: 'x'.repeat(251) }), GROUPS)
     expect(result.ok).toBe(false)
   })
 })
 
 describe('rolesPayload', () => {
-  it('omits an unanswered role instead of sending false', () => {
+  it('sends the contract’s tagged shape and omits an unanswered role', () => {
     /**
-     * THE RULE §5.2 exists for: sending `false` would make the server record a
-     * determined "no" for a question nobody answered, and the 360 would then show a
-     * decided role with `manual` provenance.
+     * A bare boolean could not distinguish "the user said no" from "nobody has
+     * looked", and sending `false` for an unanswered role is the silent persist the
+     * provenance tag exists to prevent.
      */
     const payload = rolesPayload({
       purchasable: 'yes',
@@ -68,8 +73,23 @@ describe('rolesPayload', () => {
       productionInput: 'unset',
       productionOutput: 'unset',
     })
-    expect(payload).toEqual({ purchasable: true, sellable: false })
+    expect(payload).toEqual({
+      purchasable: { value: true, provenance: 'manual' },
+      sellable: { value: false, provenance: 'manual' },
+    })
     expect(Object.hasOwn(payload, 'productionInput')).toBe(false)
+  })
+
+  it('never writes a derived provenance — that is server-only', () => {
+    const payload = rolesPayload({
+      purchasable: 'yes',
+      sellable: 'unset',
+      productionInput: 'unset',
+      productionOutput: 'unset',
+    })
+    for (const entry of Object.values(payload)) {
+      expect(entry?.provenance).toBe('manual')
+    }
   })
 
   it('sends nothing when nothing was answered', () => {
@@ -81,7 +101,7 @@ describe('isCreateFormPristine', () => {
   it('is pristine at mount and dirty after any answer', () => {
     expect(isCreateFormPristine(EMPTY_CREATE_FORM)).toBe(true)
     expect(isCreateFormPristine({ ...EMPTY_CREATE_FORM, name: 'a' })).toBe(false)
-    // A role answered but every text field empty still counts as work in progress.
+    expect(isCreateFormPristine({ ...EMPTY_CREATE_FORM, groupId: GROUP_A })).toBe(false)
     expect(
       isCreateFormPristine({
         ...EMPTY_CREATE_FORM,
@@ -94,16 +114,15 @@ describe('isCreateFormPristine', () => {
 describe('mergeServerErrors', () => {
   it('lets the server win on a field it names', () => {
     const merged = mergeServerErrors(
-      { name: 'istemci mesajı', productClass: 'istemci sınıf' },
+      { name: 'istemci mesajı', groupId: 'istemci grup' },
       { name: 'sunucu mesajı' },
     )
     expect(merged.name).toBe('sunucu mesajı')
     // ...and leaves the client message standing where the server said nothing.
-    expect(merged.productClass).toBe('istemci sınıf')
+    expect(merged.groupId).toBe('istemci grup')
   })
 
   it('ignores a server field the form does not render', () => {
-    const merged = mergeServerErrors({}, { unknownField: 'x' })
-    expect(merged).toEqual({})
+    expect(mergeServerErrors({}, { references: 'x' })).toEqual({})
   })
 })

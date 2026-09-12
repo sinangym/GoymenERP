@@ -5,7 +5,9 @@
 **Koordinasyon:** #66
 
 Bu dosya bir istek değil, **uygulanmaya hazır kaynak**. Ürün şeridi `src/shell/**` dosyalarına
-yazmıyor; aşağıdaki üç düzenlemeyi shell sahibi kendi branch'inde yapar. Delta tamamen
+yazmıyor; aşağıdaki üç düzenlemeyi shell sahibi kendi branch'inde yapar. **DÖRT capability
+id'si vardır** — liste, 360, oluşturma ve temel düzenleme; sonuncusu Business §19'un ilk
+dilime kattığı Draft basic edit ile geldi. Delta tamamen
 **ekleyicidir** — mevcut Cari satırlarının hiçbiri değişmez, silinmez, yeniden sıralanmaz.
 
 Bu delta uygulanana kadar Ürün ekranları çalışan uygulamada **hiç mount olmaz**. Bu bir
@@ -29,6 +31,11 @@ sunucu grant vermeden ekranlar açılmaz.
   productItemsDetail: 'product.items.detail',
   /** U-02 Yeni Ürün — yalnız Draft oluşturma. Route `/urun/yeni`. */
   productItemsCreate: 'product.items.create',
+  /**
+   * U-02 temel düzenleme — Draft basic edit. Route `/urun/:productId/duzenle`.
+   * AYRI grant: kartı okumak ile yeniden yazmak farklı yetkilerdir.
+   */
+  productItemsEdit: 'product.items.edit',
 ```
 
 `CAPABILITY_ROUTE` nesnesinin sonuna:
@@ -36,6 +43,7 @@ sunucu grant vermeden ekranlar açılmaz.
 ```ts
   [CAPABILITY.productItemsList]: '/urun',
   [CAPABILITY.productItemsCreate]: '/urun/yeni',
+  [CAPABILITY.productItemsEdit]: '/urun/:productId/duzenle',
   [CAPABILITY.productItemsDetail]: '/urun/:productId',
 ```
 
@@ -46,6 +54,8 @@ sunucu grant vermeden ekranlar açılmaz.
   [CAPABILITY.productItemsCreate]: 'Yeni Ürün',
   // Nav girdisi yok: 360 satırdan açılır, kenar çubuğundan değil.
   [CAPABILITY.productItemsDetail]: '',
+  // Düzenleme de düzenlediği karttan açılır.
+  [CAPABILITY.productItemsEdit]: '',
 ```
 
 Değerler `src/product/capabilities.ts` içindeki `PRODUCT_CAPABILITY` ile **birebir aynı**
@@ -69,12 +79,14 @@ import { productRoutes } from '../product/productRoutes'
 Sıra önemli: catch-all her şeyi yakalar, bu yüzden ondan sonra eklenen bir route hiç
 eşleşmez.
 
-`productRoutes` kendi içinde `/urun/yeni`'yi `/urun/:productId`'den önce tanımlıyor, yani
-statik yol hiçbir zaman ürün kimliği olarak okunmaz.
+`productRoutes` kendi içinde sırayı `/urun` → `/urun/yeni` → `/urun/:productId/duzenle` →
+`/urun/:productId` olarak tutuyor: statik ve daha uzun yollar önce, böylece `yeni` ve
+`duzenle` hiçbir zaman ürün kimliği olarak okunmaz.
 
 ## 3. `src/shell/AppShell.tsx`
 
-`NAV_CAPABILITIES` dizisinin sonuna:
+`NAV_CAPABILITIES` dizisinin sonuna — **yalnız iki girdi**; 360 ve düzenleme
+karttan açılır, kenar çubuğundan değil:
 
 ```ts
   CAPABILITY.productItemsList,
@@ -97,6 +109,7 @@ it('the shell mounts exactly the ids the Product lane declares', () => {
   expect(CAPABILITY.productItemsList).toBe(PRODUCT_CAPABILITY.productsList)
   expect(CAPABILITY.productItemsDetail).toBe(PRODUCT_CAPABILITY.productsDetail)
   expect(CAPABILITY.productItemsCreate).toBe(PRODUCT_CAPABILITY.productsCreate)
+  expect(CAPABILITY.productItemsEdit).toBe(PRODUCT_CAPABILITY.productsEdit)
 })
 ```
 
