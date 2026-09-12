@@ -61,6 +61,19 @@ public sealed class ContactJourneyMeasurementTests
         Assert.Throws<InvalidOperationException>(() => SourceBinding.ValidateExternalContract(Element(contract), new string('a', 40), new string('a', 40)));
     }
 
+    [Fact]
+    public void ExternalContractHashComesFromTheSameValidatedByteSnapshot()
+    {
+        var contract = Contract();
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(contract);
+        Assert.Equal(SourceBinding.Hash(bytes), SourceBinding.ValidateAndHashExternalContract(bytes,
+            new string('a', 40), new string('a', 40)));
+        contract["codex"]!["acceptanceHead"] = new string('b', 40);
+        var changed = JsonSerializer.SerializeToUtf8Bytes(contract);
+        Assert.Throws<InvalidOperationException>(() => SourceBinding.ValidateAndHashExternalContract(changed,
+            new string('a', 40), new string('a', 40)));
+    }
+
     [Theory]
     [InlineData("head")]
     [InlineData("compiled")]

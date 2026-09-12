@@ -84,10 +84,7 @@ public static class SourceBinding
         var backendTree = GitText(RunSettings.ApprovedRoot, "rev-parse", "HEAD:src/backend");
         var frontendHead = GitText(FrontendRoot, "rev-parse", "HEAD");
         var contractBytes = File.ReadAllBytes(ContractPath);
-        using (var contract = JsonDocument.Parse(contractBytes))
-        {
-            ValidateExternalContract(contract.RootElement, head, compiledHead);
-        }
+        _ = ValidateAndHashExternalContract(contractBytes, head, compiledHead);
         var frontendDiff = Hash(Git(FrontendRoot, "diff", "--binary", "--full-index", "--no-color",
             "--no-ext-diff", "--no-textconv", FrontendBase, frontendHead, "--",
             "src/frontend/goymen-erp-web", "tests/e2e"));
@@ -169,6 +166,13 @@ public static class SourceBinding
             || ports.GetProperty("api").GetInt32() != 25080 || ports.GetProperty("sql").GetInt32() != 25433
             || ports.GetProperty("ui").GetInt32() != 25173)
             throw new InvalidOperationException("C006 external contract differs from actual source/build pins.");
+    }
+
+    public static string ValidateAndHashExternalContract(byte[] bytes, string head, string compiledHead)
+    {
+        using var contract = JsonDocument.Parse(bytes);
+        ValidateExternalContract(contract.RootElement, head, compiledHead);
+        return Hash(bytes); // The exact validated snapshot, never a second filesystem read.
     }
 
     public static SourceSnapshot Verify(RunSettings identity)

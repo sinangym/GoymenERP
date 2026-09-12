@@ -233,6 +233,46 @@ class PublisherFrontendReviewTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.validate()
 
+    def test_github_json_booleans_cannot_impersonate_counts_or_numeric_review_requirements(self):
+        original = self.evidence['comment']['body']
+        for before, after in [('"requiredIndependentReviews": 1', '"requiredIndependentReviews": true'),
+                              ('"openP2": 0', '"openP2": false'), ('"openP1": 0', '"openP1": 0.0'),
+                              ('"humanApproval": false', '"humanApproval": 0')]:
+            with self.subTest(value=after):
+                self.evidence['comment']['body'] = original.replace(before, after)
+                with self.assertRaises(RuntimeError):
+                    self.validate()
+
+    def test_second_conflicting_or_duplicate_json_block_is_ambiguous(self):
+        original = self.evidence['comment']['body']
+        for extra in ['```json\n{"status":"changes_required"}\n```', original]:
+            with self.subTest(extra=extra):
+                self.evidence['comment']['body'] = original + '\n' + extra
+                with self.assertRaises(RuntimeError):
+                    self.validate()
+
+    def test_duplicate_review_members_cannot_hide_a_conflicting_result(self):
+        self.evidence['comment']['body'] = self.evidence['comment']['body'].replace(
+            '"status": "approved"', '"status": "changes_required", "status": "approved"')
+        with self.assertRaises(RuntimeError):
+            self.validate()
+
+    def test_contract_hash_is_the_hash_of_the_exact_validated_bytes(self):
+        content = b'{"actual":"validated snapshot"}'
+        value = PUBLISHER.hashlib.sha256(content).hexdigest()
+        self.assertEqual(PUBLISHER.bind_validated_contract({'contractSha256': value}, content), value)
+
+    def test_changed_contract_bytes_are_rejected_before_publication(self):
+        value = PUBLISHER.hashlib.sha256(b'{"actual":"validated snapshot"}').hexdigest()
+        for changed in [b'{"actual":"unvalidated replacement"}', b'', b'{"actual":"validated snapshot"}\n']:
+            with self.subTest(changed=changed):
+                with self.assertRaises(RuntimeError):
+                    PUBLISHER.bind_validated_contract({'contractSha256': value}, changed)
+
+    def test_missing_validator_hash_cannot_be_replaced_by_a_fresh_unvalidated_hash(self):
+        with self.assertRaises(RuntimeError):
+            PUBLISHER.bind_validated_contract({}, b'anything')
+
     def test_pr_advanced_after_review_is_rejected(self):
         self.evidence['pullRequest']['head']['sha'] = 'b' * 40
         with self.assertRaises(RuntimeError):

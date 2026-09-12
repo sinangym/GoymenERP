@@ -28,7 +28,21 @@ def require(condition, message):
         raise RuntimeError('C006 ' + message)
 
 def read(path):
-    return json.loads(path.read_text(encoding='utf-8-sig'))
+    return strict_json(path.read_text(encoding='utf-8-sig'))
+
+def strict_json(value):
+    def unique(pairs):
+        result = {}
+        for key, item in pairs:
+            require(key not in result, 'duplicate JSON member is ambiguous')
+            result[key] = item
+        return result
+    def constant(_):
+        raise ValueError('Non-finite JSON number')
+    try:
+        return json.loads(value, object_pairs_hook=unique, parse_constant=constant)
+    except (ValueError, TypeError) as error:
+        raise RuntimeError('C006 malformed JSON evidence') from error
 
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -122,13 +136,12 @@ def validate_frontend_review(source, review, evidence=None, pull_request=235):
             and pr.get('head', {}).get('sha') == source['FrontendHead'],
             'GitHub comment or current PR source differs from the receipt')
     expected = {key: value for key, value in review.items() if key != 'reviewUrls'}
-    payloads = []
-    for block in re.findall(r'```json\s*\n(.*?)\n```', comment['body'], re.DOTALL):
-        try:
-            payloads.append(json.loads(block))
-        except json.JSONDecodeError:
-            continue
-    require(payloads.count(expected) == 1, 'GitHub source does not attest this exact review result')
+    blocks = re.findall(r'```json\s*\n(.*?)\n```', comment['body'], re.DOTALL)
+    require(len(blocks) == 1, 'GitHub source must contain one unambiguous review JSON block')
+    payload = strict_json(blocks[0])
+    # JSON encoding preserves booleans versus numbers, unlike Python == (True == 1).
+    canonical = lambda value: json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False)
+    require(canonical(payload) == canonical(expected), 'GitHub source does not attest this exact typed review result')
     checks = evidence.get('checkRuns', {}).get('check_runs', [])
     require(isinstance(checks, list), 'live frontend check evidence is missing')
     latest = {}
@@ -140,6 +153,13 @@ def validate_frontend_review(source, review, evidence=None, pull_request=235):
     require(set(latest) == REQUIRED_FRONTEND_CHECKS
             and all(check.get('status') == 'completed' and check.get('conclusion') == 'success' for check in latest.values()),
             'fresh required frontend checks have not all passed')
+
+def bind_validated_contract(validated, observed_bytes):
+    value = validated.get('contractSha256') if isinstance(validated, dict) else None
+    require(isinstance(value, str) and re.fullmatch(r'[0-9a-f]{64}', value)
+            and hashlib.sha256(observed_bytes).hexdigest() == value,
+            'external contract changed after byte-bound validation; no readiness published')
+    return value
 
 def main():
     parser = argparse.ArgumentParser()
@@ -216,13 +236,16 @@ def main():
                                  'observedAtUtc': datetime.now(timezone.utc).isoformat()})
     command('dotnet', str(DLL), 'source-check')
     require(json.loads(command('dotnet', str(DLL), 'snapshot')) == current, 'readiness GET produced SQL effects')
+    contract_path = ROOT / 'artifacts/cari-acceptance-006/contact-edit-20260912/contract.json'
+    validated_contract = strict_json(command('dotnet', str(DLL), 'contract-check'))
+    contract_hash = bind_validated_contract(validated_contract, contract_path.read_bytes())
     manifest = {
         'contractId': run['ContractId'], 'taskId': run['TaskId'], 'readyForBrowser': True,
         'preparedAtUtc': datetime.now(timezone.utc).isoformat(), 'runId': run['RunId'],
         'instanceId': run['InstanceId'], 'apiBaseUrl': run['ApiBaseUrl'], 'databaseName': run['DatabaseName'],
         'worktree': str(ROOT), 'sources': source, 'resources': resources, 'host': host,
         'fixtureHash': source['FixtureSha256'], 'baselineSha256': digest(EVIDENCE / 'baseline.json'),
-        'contractSha256': digest(ROOT / 'artifacts/cari-acceptance-006/contact-edit-20260912/contract.json'),
+        'contractSha256': contract_hash,
         'smokeSha256': digest(EVIDENCE / 'smoke.json'),
         'backendTests': {'path': str(args.tests_summary.resolve()), 'sha256': hashlib.sha256(tests_bytes).hexdigest(),
                          'executed': tests['backend_executed'], 'testedArtifacts': tested_artifacts,

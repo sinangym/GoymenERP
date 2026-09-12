@@ -71,6 +71,14 @@ public static class EntryPoint
                     _ = SourceBinding.Verify(identity);
                     Console.WriteLine("C006 exact source/run/build binding verified.");
                     break;
+                case "contract-check":
+                    if (args.Length != 1) throw new InvalidOperationException("C006 unexpected contract check arguments.");
+                    var contractSource = SourceBinding.Verify(identity);
+                    var contractBytes = File.ReadAllBytes(SourceBinding.ContractPath);
+                    var contractHash = SourceBinding.ValidateAndHashExternalContract(contractBytes,
+                        contractSource.AcceptanceHead, contractSource.CompiledHead);
+                    Console.WriteLine(JsonSerializer.Serialize(new { contractSha256 = contractHash }));
+                    break;
                 case "wait-sql":
                     if (args.Length != 1) throw new InvalidOperationException("C006 unexpected SQL readiness arguments.");
                     _ = SourceBinding.Verify(identity);

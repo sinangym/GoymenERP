@@ -440,3 +440,11 @@ measurement and compares all seven durable SQL results. It writes immutable
 The old create/link `-Action verify -ExpectedNewParties 1` remains unchanged and must
 not be used for this zero-new-Party contact journey. Extra retry runs need their own
 explicit expectation and evidence; they cannot be silently added to this fixed run.
+
+Publisher review follow-up on0710: one unambiguous fenced JSON review block is
+required; duplicate members, boolean/numeric impersonation and conflicting extra
+blocks are rejected. The backend `contract-check` validates and hashes the SAME
+byte snapshot; publisher compares the current bytes to that returned hash and
+publishes the validated hash, never a fresh unvalidated replacement. A changed
+contract cannot borrow the preceding source-check result. These corrections leave
+the API, original fixture hash recipe and historical review rules unchanged.
