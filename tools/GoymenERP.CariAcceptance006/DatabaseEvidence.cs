@@ -15,11 +15,13 @@ public sealed record Effects(int Parties, int Accounts, int CreateAudits, int Li
 public sealed record AccountRow(Guid PartyId, string Code, string LegalName, Guid CompanyId, int Roles, string Version,
     string? ContactInformationJson = null, bool IsActive = true);
 public sealed record DatabaseSnapshot(string DatabaseName, bool Rcsi, Effects Effects, IReadOnlyList<AccountRow> Rows,
-    string PartyStateSha256 = "");
+    string PartyStateSha256 = "", IReadOnlyList<ContactExecutionRow>? ContactExecutionRows = null);
+public sealed record ContactExecutionRow(Guid Id, Guid CompanyId, string IdempotencyKeyHash,
+    string RequestHash, string ActorId, string Outcome, int HttpStatusCode, string ResponseJson, int SchemaVersion);
 
 // Fixed read-only queries from the pinned real-SQL test contract, not a SQL console.
 // The connection can only be constructed for this new, exact C006 database.
-public static class DatabaseEvidence
+public static partial class DatabaseEvidence
 {
     public static async Task WaitForServerAsync(RunSettings identity)
     {
@@ -89,7 +91,22 @@ public static class DatabaseEvidence
         partyState.CommandText = "SELECT (SELECT * FROM [counterparty].[Parties] ORDER BY [Id] FOR JSON PATH, INCLUDE_NULL_VALUES);";
         var partyJson = (string)(await partyState.ExecuteScalarAsync())!;
         var partyHash = SourceBinding.Hash(Encoding.UTF8.GetBytes(partyJson));
-        return new(identity.DatabaseName, rcsi, effects, values, partyHash);
+        await using var executions = connection.CreateCommand();
+        executions.CommandText = """
+            SELECT Id, CompanyId, IdempotencyKeyHash, RequestHash, ActorId, Outcome,
+                   HttpStatusCode, ResponseJson, SchemaVersion
+            FROM idempotency.CommandExecutions
+            WHERE CommandName=N'counterparty.company-account.contact-information.update.v1'
+            ORDER BY Id;
+            """;
+        await using var executionReader = await executions.ExecuteReaderAsync();
+        var contactExecutions = new List<ContactExecutionRow>();
+        while (await executionReader.ReadAsync())
+            contactExecutions.Add(new(executionReader.GetGuid(0), executionReader.GetGuid(1),
+                executionReader.GetString(2), executionReader.GetString(3), executionReader.GetString(4),
+                executionReader.GetString(5), executionReader.GetInt32(6), executionReader.GetString(7),
+                executionReader.GetInt32(8)));
+        return new(identity.DatabaseName, rcsi, effects, values, partyHash, contactExecutions);
     }
 
     public static void VerifyContactEdit(

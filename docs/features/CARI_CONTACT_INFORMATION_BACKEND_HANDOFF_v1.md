@@ -287,3 +287,24 @@ after restoring the current schema. The four focused real-SQL reruns passed.
 This is NOT a claim that the new binary supports an unmigrated old schema:
 deploy the additive migration before the new binary; never roll the schema back
 while that binary serves requests.
+
+### L-03 two-edit SQL evidence contract
+
+The four HTTP PUTs in the contact-edit journey mean two successful logical edits,
+one same-key replay, and one stale-version refusal. The refusal changes no business
+data but DOES persist its `VersionConflict`/409 idempotency result. Expected delta:
+zero new Party/accounts, two contact audits, THREE contact executions (two
+`Succeeded`/204 and one `VersionConflict`/409). Replay does not add a fourth receipt.
+
+`DatabaseEvidence.VerifyContactJourney` binds the browser's actual three distinct
+keys and typed request payload hashes to SQL company/actor/outcome/status/schema.
+It checks the same-key retry payload, the initial and subsequent version fences,
+the exact L-03 address/contact/channel values, final phone/extension clear, account
+version +2, unchanged other-company accounts and complete global Party hash.
+It requires a fresh contact baseline; historical evidence or an additional retry
+journey cannot be passed as this run. Snapshot projection is read-only.
+
+The single-edit helper and strict create/link `ExpectedNewParties=1` remain separate.
+The L-03 helper's controlled tests are NOT live SQL or browser acceptance. Source
+pins, measurement CLI wiring, frontend final review, exact local BackendVerify and
+fresh runtime publication remain separate gates. No new ENV_READY is asserted.
