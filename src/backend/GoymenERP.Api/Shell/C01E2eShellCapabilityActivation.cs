@@ -1,5 +1,6 @@
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
+using GoymenERP.Modules.Organization.Infrastructure.Shell;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.Shell;
@@ -28,8 +29,11 @@ internal static class C01E2eShellCapabilityActivation
 
         if (!IsActivationRequested(configuration))
         {
-            return ShellCapabilityRegistryAuthorities
-                .CounterpartyListCreateLinkAndDetailV15;
+            return services.Any(descriptor =>
+                descriptor.ServiceType == typeof(IShellCapabilityProvider)
+                && descriptor.ImplementationType == typeof(OrganizationShellCapabilityProvider))
+                ? ShellCapabilityRegistryAuthorities.CounterpartyV15AndOrganizationV10
+                : ShellCapabilityRegistryAuthorities.CounterpartyListCreateLinkAndDetailV15;
         }
 
         ValidateActivationEnvelope(environment, configuration);
@@ -91,16 +95,25 @@ internal static class C01E2eShellCapabilityActivation
         var providers = services
             .Where(descriptor => descriptor.ServiceType == typeof(IShellCapabilityProvider))
             .ToArray();
-        if (providers.Length != 1
-            || providers[0].Lifetime != ServiceLifetime.Singleton
-            || providers[0].ImplementationType
-                != typeof(CounterpartyShellCapabilityProvider))
+        var counterpartyCount = providers.Count(descriptor =>
+            descriptor.ImplementationType == typeof(CounterpartyShellCapabilityProvider));
+        var organizationCount = providers.Count(descriptor =>
+            descriptor.ImplementationType == typeof(OrganizationShellCapabilityProvider));
+        if (counterpartyCount != 1
+            || organizationCount > 1
+            || providers.Length != counterpartyCount + organizationCount
+            || providers.Any(descriptor => descriptor.Lifetime != ServiceLifetime.Singleton))
         {
             throw new InvalidOperationException(
                 "C-01 disposable capability beklenmeyen shell provider setini değiştiremez.");
         }
 
-        services.Remove(providers[0]);
+        // The disposable C-01 envelope remains strictly list-only, even when
+        // the normal host has additional accepted Organization declarations.
+        foreach (var provider in providers)
+        {
+            services.Remove(provider);
+        }
         services.AddSingleton<IShellCapabilityProvider, C01E2eShellCapabilityProvider>();
     }
 
