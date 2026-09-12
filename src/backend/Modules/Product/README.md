@@ -213,3 +213,36 @@ supplied references without an accepted catalogue adapter fail validation. The r
 options endpoint explicitly lists all five catalogues as unavailable, rather than
 claiming that they are valid empty catalogues. This does not complete the separate
 selected-family/unit/template sub-slice. No default group or fake reference is seeded.
+
+## Draft transaction participant (source; schema/SQL admission still pending)
+
+`ProductService` implements the existing application interface. It delegates reads
+to `ProductReader`; writes use `ProductCommandGateway` and the host implementation
+of `IProductDraftCommandRunner.RunAsync(ProductPreparedCommand, CancellationToken)`.
+Prepared replays also reach the host for fresh authority and original-correlation
+metadata. There is no permissive/default runner or host registration in this module.
+
+`ProductDraftParticipant.EnlistAsync(DbConnection, DbTransaction,
+GroupSharedMasterCommandContext, CancellationToken, TimeProvider? = null)` borrows the
+owner's already-open handles. It rejects a foreign transaction/closed connection and
+creates only a fresh Product context. `ExecuteAsync(ProductCommandIntent, CT)` consumes
+the frozen envelope, validates catalogue/version/lifecycle, stages exactly one Product
+change and flushes that context. Create also stages exactly one code registration and
+prefix counter; edit cannot change the catalogue/counter/code tables. A participant
+executes once; every retry needs a new participant/context. Ordinary SaveChanges stays
+closed, including all public overloads. Disposal never owns commit, rollback or close.
+
+`ProductDraftWriteResult` contains Response, StatusCode, ResponseJson, ProductId,
+VersionBefore/After, BeforeJson/AfterJson, Reason and EventType. Create returns201 and
+`product.draft.created.v1` with the system action label `Ürün taslağı oluşturma`;
+edit returns200 and `product.draft.basic-edited.v1` with the normalized submitted reason.
+The host supplies canonical source/actor/origin/correlation/causation/AI metadata.
+No audit or terminal table is mapped or written by Product.
+
+The returned participant result is **uncommitted**. The accepted shared host must
+flush canonical audit and the matching global terminal before its sole commit;
+any exception rolls back the entire attempt. Product-row concurrency becomes409
+version_conflict; counter concurrency and unique-key races remain whole-attempt
+host retries, with a fresh resolver after rollback. Borrowed SQL handles alone are
+not evidence of audit/idempotency atomicity. Public persistence and real SQL execution
+remain closed until the #104 source/schema gate and shared implementation are accepted.
