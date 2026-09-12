@@ -17,22 +17,7 @@ public static class ProductEndpoints
         group.MapGet("/", async ([AsParameters] ProductListQuery query, IProductService service,
             HttpContext context, CancellationToken cancellationToken) => await ExecuteAsync(context, async () =>
             {
-                var requestedRoles = query.Roles?.Split(',') ?? [];
-                if (query.PageSize is < 1 or > 100 || query.Q?.Length > 200
-                    || query.Q?.Any(char.IsControl) == true
-                    || (query.Lifecycle is not null && query.Lifecycle is not ("Draft" or "Active" or "Inactive"))
-                    || requestedRoles.Length > 4
-                    || requestedRoles.Any(role => role is not ("purchasable" or "sellable" or "productionInput" or "productionOutput"))
-                    || requestedRoles.Distinct(StringComparer.Ordinal).Count() != requestedRoles.Length
-                    || query.RoleMatch is not ("any" or "all")
-                    || query.Sort is not ("code" or "name" or "updatedAtUtc") || query.Direction is not ("asc" or "desc")
-                    || (query.Completeness is not null && query.Completeness is not ("NotEvaluated" or "Incomplete" or "Complete"))
-                    || query.GroupId == Guid.Empty || query.ClassId == Guid.Empty || query.FamilyId == Guid.Empty)
-                {
-                    return Problem(ProductApiV1.ValidationFailed, 400);
-                }
-
-                return Results.Ok(await service.GetPageAsync(query with { Q = query.Q?.Trim() }, cancellationToken));
+                return Results.Ok(await service.GetPageAsync(ProductQueryRules.Normalize(query), cancellationToken));
             })).WithName("GetProductsV1").Produces<ProductPage>();
 
         group.MapGet("/code-groups", async (IProductService service, HttpContext context,

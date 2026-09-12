@@ -18,7 +18,7 @@ DEC-PRD-003/004/010, Master §7.4 and locked #98/#99 remain binding.
 
 The module endpoint source compiles and is exercised using ASP.NET TestServer with
 an explicitly controlled service double. It is NOT mapped into the main host yet.
-No production Product service, global grant, DbContext, migration, or SQL acceptance
+No production Product service, global grant, applied migration, or SQL acceptance
 is claimed. These routes are pinned for frontend integration, not live URLs.
 
 List parameters: q (trimmed, max 200, no controls), lifecycle (exact Draft, Active,
@@ -187,3 +187,19 @@ metadata mapping; no new header or response field is invented. SQL provider/mode
 controlled resolver tests are not real SQL/bootstrap acceptance. The central owner must
 admit the exact DbContext and Idempotency.Domain edge described by ADR-PRD-001 before
 the architecture gate can pass. Global grants and production activation remain closed.
+
+`ProductCodeGroupRow` is an explicitly provisioned catalogue, without a fabricated
+default. `ProductCodeCounter` is keyed by prefix so groups sharing a prefix also share
+the sequence. Allocation stages counter changes and skips the current/retired code
+namespace; the future atomic writer must retry the entire command on a sequence,
+code or terminal-key race. Allocation alone never saves or returns an HTTP result.
+
+`ProductReader` composes SQL reads with fresh global authorization before and after
+the query. `ProductReadStore` applies all list filters and deterministic keyset ordering;
+an EXISTS alias search avoids duplicates. Unavailable completeness evaluation remains
+NotEvaluated. Code/name/updatedAtUtc continuation in both directions is verified by SQL
+Server provider translation, which is not real SQL execution evidence.
+`ProductCursorCodec` authenticates position, normalized query (including page size),
+actor, origin and authority revision. The host must supply signing material and a
+technical lifetime. No key is committed, generated as a production default or registered
+in the host. Reference labels outside the available code-group catalogue remain null.

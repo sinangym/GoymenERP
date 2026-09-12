@@ -13,6 +13,8 @@ public sealed class ProductDbContext(DbContextOptions<ProductDbContext> options)
         + long.MaxValue.ToString(System.Globalization.CultureInfo.InvariantCulture).Length;
     public DbSet<ProductRow> Products => Set<ProductRow>();
     public DbSet<ProductCodeRegistration> CodeRegistrations => Set<ProductCodeRegistration>();
+    public DbSet<ProductCodeGroupRow> CodeGroups => Set<ProductCodeGroupRow>();
+    public DbSet<ProductCodeCounter> CodeCounters => Set<ProductCodeCounter>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -38,6 +40,24 @@ public sealed class ProductDbContext(DbContextOptions<ProductDbContext> options)
         product.HasIndex(row => new { row.Name, row.Id });
         product.HasIndex(row => new { row.UpdatedAtUtc, row.Id });
         product.HasIndex(row => new { row.GroupId, row.Id });
+        product.HasOne<ProductCodeGroupRow>().WithMany().HasForeignKey(row => row.GroupId).OnDelete(DeleteBehavior.Restrict);
+
+        var group = modelBuilder.Entity<ProductCodeGroupRow>();
+        group.ToTable("CodeGroups", "product", table =>
+            table.HasCheckConstraint("CK_CodeGroups_Id", "[Id] <> '00000000-0000-0000-0000-000000000000'"));
+        group.HasKey(row => row.Id);
+        group.Property(row => row.Id).ValueGeneratedNever();
+        group.Property(row => row.Name).HasMaxLength(200).UseCollation("Turkish_100_CI_AS").IsRequired();
+        group.Property(row => row.Prefix).HasMaxLength(ProductCode.MaximumPrefixLength).IsUnicode(false)
+            .UseCollation("Latin1_General_100_BIN2").IsRequired();
+
+        var counter = modelBuilder.Entity<ProductCodeCounter>();
+        counter.ToTable("CodeCounters", "product", table =>
+            table.HasCheckConstraint("CK_CodeCounters_Sequence", "[LastSequence] >= 0"));
+        counter.HasKey(row => row.Prefix);
+        counter.Property(row => row.Prefix).HasMaxLength(ProductCode.MaximumPrefixLength).IsUnicode(false)
+            .UseCollation("Latin1_General_100_BIN2");
+        counter.Property(row => row.LastSequence).IsConcurrencyToken();
 
         var code = modelBuilder.Entity<ProductCodeRegistration>();
         code.ToTable("CodeRegistrations", "product");
