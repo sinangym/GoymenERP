@@ -16,7 +16,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
-public sealed class CounterpartyContactInformationSqlServerRelationalAcceptanceTests
+public sealed class CounterpartyContactInformationSqlServerRelationalAcceptanceTests(Xunit.Abstractions.ITestOutputHelper output)
 {
     private const string CommandName = "counterparty.company-account.contact-information.update.v1";
     private const string EventName = "counterparty.company-account.contact-information.changed.v1";
@@ -26,6 +26,15 @@ public sealed class CounterpartyContactInformationSqlServerRelationalAcceptanceT
     {
         await using var test = new ContactTest();
         using var a = test.Client();
+        // C006 initial snapshot regression: exercise the same query before any Party exists.
+        // Keep the real SQL scalar type and the old cast's stack as failure provenance.
+        var emptyScalar = await test.ScalarAsync<DBNull>(
+            "SELECT (SELECT * FROM [counterparty].[Parties] ORDER BY [Id] FOR JSON PATH, INCLUDE_NULL_VALUES);",
+            Guid.Empty);
+        var legacyCast = Assert.Throws<InvalidCastException>(() => (string)(object)emptyScalar);
+        output.WriteLine("C006 empty Party scalar: " + emptyScalar.GetType().FullName);
+        output.WriteLine(legacyCast.ToString());
+        Assert.Equal(0, await test.ScalarAsync<int>("SELECT COUNT(*) FROM [counterparty].[Parties];", Guid.Empty));
         var party = await CreateAsync(a);
         using var b = test.Client(TestCompanyIds.CompanyB);
         using var link = await b.PostAsJsonAsync($"/api/v1/counterparties/{party}/company-account", new { roles = 0 });

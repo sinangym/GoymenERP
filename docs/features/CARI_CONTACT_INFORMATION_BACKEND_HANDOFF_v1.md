@@ -384,8 +384,8 @@ is checked as present but is not confused with immutable business response data.
 ### Prepared existing C006 command path (not ENV_READY)
 
 Worktree: `C:\src\GoymenERP-cari-party-card-backend-20260912`.
-New unused run `c006-5398ba40f4ea`, instance `49e1a8d6-62b5-4197-9e19-7810f75d7c67`,
-database `GoymenCariC006_5398ba40f4ea`; API/SQL/UI ports 25080/25433/25173.
+New unused run `c006-406abcfedbec`, instance `16a207bd-f437-4960-a151-1f5c1137b180`,
+database `GoymenCariC006_406abcfedbec`; API/SQL/UI ports 25080/25433/25173.
 API dependency is `9df7f40e3aefc5b02ef42a378c0d1aa800a2fe29`, backend subtree
 `d11840bd6c6f18c4b2e282419daa9e75e54a8c1b`. Runtime AcceptanceHead and CompiledHead
 are the final harness commit, observed/built locally, never hard-coded to this file's
@@ -448,3 +448,12 @@ byte snapshot; publisher compares the current bytes to that returned hash and
 publishes the validated hash, never a fresh unvalidated replacement. A changed
 contract cannot borrow the preceding source-check result. These corrections leave
 the API, original fixture hash recipe and historical review rules unchanged.
+
+## Empty initial SQL snapshot correction
+
+The failed f7adbf0 / c006-5398ba40f4ea attempt is preserved, not reused as ENV_READY.
+Its API and owned SQL resources were released after the initial snapshot failed.
+The corrected source accepts SQL DBNull only with an independently counted zero Party set,
+using the canonical empty JSON array fingerprint. Other scalar/type/count mismatches fail closed;
+nonempty JSON fingerprint bytes are unchanged. A fresh run/instance/database above is required.
+API dependency 9df7f40e3aefc5b02ef42a378c0d1aa800a2fe29 and frontend 44ae49cd6c54984fb7a52c9c6e4ee5fd67284d6e remain separate from the corrected harness HEAD.

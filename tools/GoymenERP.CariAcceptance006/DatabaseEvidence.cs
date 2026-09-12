@@ -89,8 +89,7 @@ public static partial class DatabaseEvidence
         await rowReader.DisposeAsync();
         await using var partyState = connection.CreateCommand();
         partyState.CommandText = "SELECT (SELECT * FROM [counterparty].[Parties] ORDER BY [Id] FOR JSON PATH, INCLUDE_NULL_VALUES);";
-        var partyJson = (string)(await partyState.ExecuteScalarAsync())!;
-        var partyHash = SourceBinding.Hash(Encoding.UTF8.GetBytes(partyJson));
+        var partyHash = HashPartyState(await partyState.ExecuteScalarAsync(), effects.Parties);
         await using var executions = connection.CreateCommand();
         executions.CommandText = """
             SELECT Id, CompanyId, IdempotencyKeyHash, RequestHash, ActorId, Outcome,
@@ -107,6 +106,24 @@ public static partial class DatabaseEvidence
                 executionReader.GetString(5), executionReader.GetInt32(6), executionReader.GetString(7),
                 executionReader.GetInt32(8)));
         return new(identity.DatabaseName, rcsi, effects, values, partyHash, contactExecutions);
+    }
+
+    public static string HashPartyState(object? scalar, int partyCount)
+    {
+        // SQL Server's scalar FOR JSON subquery returns DBNull for an empty set.
+        // Only the independently counted empty Party set permits that representation.
+        var json = scalar switch
+        {
+            string value => value,
+            DBNull when partyCount == 0 => "[]",
+            _ => throw new InvalidOperationException("C006 Party snapshot scalar type/count mismatch."),
+        };
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        if (partyCount < 0 || document.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array
+            || document.RootElement.GetArrayLength() != partyCount)
+            throw new InvalidOperationException("C006 Party snapshot array/count mismatch.");
+        // Preserve the exact nonempty JSON bytes; do not reserialize or normalize them.
+        return SourceBinding.Hash(Encoding.UTF8.GetBytes(json));
     }
 
     public static void VerifyContactEdit(

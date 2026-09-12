@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 import urllib.request
 
 ROOT = Path(r'C:\src\GoymenERP-cari-party-card-backend-20260912')
-EVIDENCE = ROOT / 'artifacts/cari-acceptance-006/contact-edit-20260912/c006-5398ba40f4ea'
+EVIDENCE = ROOT / 'artifacts/cari-acceptance-006/contact-edit-20260912/c006-406abcfedbec'
 DLL = ROOT / 'tools/GoymenERP.CariAcceptance006/bin/Release/net10.0-windows/GoymenERP.CariAcceptance006.dll'
 CONTRACT_HEADER = 'X-ERP-Counterparty-Contract'
 CONTRACT_VERSION = 'optional-trade-roles-v1'
