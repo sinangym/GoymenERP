@@ -160,6 +160,33 @@ describe('C-03 core summary (spec §5.1)', () => {
     expect(call?.companyId).toBe(A_ID)
   })
 
+  it('puts each fact under the thing it is about: shared identity vs this account', async () => {
+    installFetch()
+    renderAt(`/cari/${PARTY}`)
+    await screen.findByRole('heading', { name: /Örnek Metal Sanayi/ }, CHAIN)
+
+    const identity = document.querySelector('[data-section="identity"]')
+    const account = document.querySelector('[data-section="account"]')
+    expect(identity).toBeTruthy()
+    expect(account).toBeTruthy()
+    expect(identity?.querySelector('h2')?.textContent).toBe('Kimlik')
+    expect(account?.querySelector('h2')?.textContent).toBe('Bu şirketteki hesap')
+
+    const labels = (root: Element | null) =>
+      [...(root?.querySelectorAll('dt') ?? [])].map((node) => node.textContent)
+    // One Party is shared by every authorized company; the account under it belongs to
+    // one of them. A fact filed under the wrong one is misinformation, not layout.
+    expect(labels(identity)).toEqual(['Cari kodu', 'Hukuki unvan', 'Ticari unvan', 'Tür', 'Taraf durumu'])
+    expect(labels(account)).toEqual(['Aktif şirket', 'Şirket hesabı durumu', 'Geçmiş ticari sınıflandırma'])
+
+    // The global state stays out of the company section and vice versa: a passive
+    // account must never be readable as a passive counterparty.
+    expect(identity?.querySelector('[data-party-state]')).toBeTruthy()
+    expect(identity?.querySelector('[data-account-state]')).toBeNull()
+    expect(account?.querySelector('[data-account-state]')).toBeTruthy()
+    expect(account?.querySelector('[data-party-state]')).toBeNull()
+  })
+
   it('keeps the global Party state and the company account state separate', async () => {
     installFetch({
       detail: () =>
@@ -176,6 +203,30 @@ describe('C-03 core summary (spec §5.1)', () => {
     await screen.findByRole('heading', { name: /Örnek Metal/ }, CHAIN)
     expect(factValue('Taraf durumu')).toBe('Aktif')
     expect(factValue('Şirket hesabı durumu')).toBe('Pasif')
+  })
+
+  it('offers the contact editor only where the server granted its capability', async () => {
+    /**
+     * A button whose only function is to fail is worse than no button. The API
+     * re-authorizes the basic update on every request regardless — this gate decides
+     * what the card OFFERS, and an ungranted editor is simply not advertised.
+     */
+    installFetch({
+      capabilities: [CAPABILITY.cariPartiesList, CAPABILITY.cariPartiesDetail, 'cari.accounts.contact.update'],
+    })
+    renderAt(`/cari/${PARTY}`)
+    await screen.findByRole('heading', { name: /Örnek Metal/ }, CHAIN)
+    const link = screen.getByRole('link', { name: 'İletişim ve adres bilgilerini düzenle' })
+    expect(link.getAttribute('href')).toBe(`/cari/${PARTY}/bilgiler`)
+    // It lives with the account, not with the shared identity: what it edits belongs to
+    // this company alone.
+    expect(document.querySelector('[data-section="account"]')?.contains(link)).toBe(true)
+
+    cleanup()
+    installFetch({ capabilities: [CAPABILITY.cariPartiesList, CAPABILITY.cariPartiesDetail] })
+    renderAt(`/cari/${PARTY}`)
+    await screen.findByRole('heading', { name: /Örnek Metal/ }, CHAIN)
+    expect(screen.queryByRole('link', { name: 'İletişim ve adres bilgilerini düzenle' })).toBeNull()
   })
 
   it('shows no balance, risk, limit, stock or order field (mockTruthForbidden)', async () => {

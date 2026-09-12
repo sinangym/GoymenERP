@@ -39,6 +39,8 @@ public sealed class CompanyPartyAccount
 
     public string? ExternalIntegrationCode { get; private set; }
 
+    public string? ContactInformationJson { get; private set; }
+
     public bool IsActive { get; private set; } = true;
 
     public long Version { get; private set; } = 1;
@@ -104,6 +106,15 @@ public sealed class CompanyPartyAccount
         }
 
         Touch(DateTimeOffset.UtcNow);
+    }
+
+    internal void UpdateContactInformation(string json)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(json);
+        var nextVersion = checked(Version + 1);
+        ContactInformationJson = json;
+        UpdatedAtUtc = DateTimeOffset.UtcNow;
+        Version = nextVersion;
     }
 
     internal void Touch(DateTimeOffset utcNow)
