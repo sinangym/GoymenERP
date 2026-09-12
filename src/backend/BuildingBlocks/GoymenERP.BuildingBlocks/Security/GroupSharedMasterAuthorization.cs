@@ -89,3 +89,34 @@ public sealed record GroupSharedMasterCommandContext
         return new(snapshot);
     }
 }
+
+// Read authority is not mutation authority. This only validates a trusted service
+// result; it neither resolves eligibility nor turns a company role into a global grant.
+public sealed record GroupSharedMasterReadContext
+{
+    private GroupSharedMasterReadContext(GroupSharedMasterAuthorizationSnapshot snapshot)
+    {
+        LocalActorId = snapshot.LocalActorId;
+        OriginCompanyId = snapshot.OriginCompanyId;
+        AuthorityRevision = snapshot.AuthorityRevision;
+    }
+
+    public GroupSharedMasterKind Subject => GroupSharedMasterKind.Product;
+    public GroupSharedMasterOperation Operation => GroupSharedMasterOperation.Read;
+    public Guid LocalActorId { get; }
+    public Guid OriginCompanyId { get; }
+    public string AuthorityRevision { get; }
+
+    public static GroupSharedMasterReadContext FromServerDecision(GroupSharedMasterAuthorizationSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (!snapshot.IsGranted || snapshot.Subject != GroupSharedMasterKind.Product
+            || snapshot.Operation != GroupSharedMasterOperation.Read
+            || snapshot.LocalActorId == Guid.Empty || snapshot.OriginCompanyId == Guid.Empty
+            || string.IsNullOrWhiteSpace(snapshot.AuthorityRevision)
+            || snapshot.AuthorityRevision != snapshot.AuthorityRevision.Trim()
+            || snapshot.AuthorityRevision.Any(char.IsControl))
+            throw new UnauthorizedAccessException("Reviewed global read authority and a server origin are required.");
+        return new(snapshot);
+    }
+}
