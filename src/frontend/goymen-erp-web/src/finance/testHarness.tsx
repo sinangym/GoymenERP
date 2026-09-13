@@ -14,9 +14,9 @@
 
 import { act, render } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useEffect, useState, type ReactNode } from 'react'
-import { ShellStateContext } from '../shell/shellContext'
-import { initialShellState, type ShellState } from '../shell/shellState'
+import { Fragment, useEffect, useReducer, type ReactNode } from 'react'
+import { ShellDispatchContext, ShellStateContext } from '../shell/shellContext'
+import { initialShellState, shellReducer, type ShellEvent, type ShellState } from '../shell/shellState'
 import { FinancePortProvider } from './financePort'
 import type { FinanceReceiptPort, FinanceScope, PortReply } from './port'
 import type { DraftSaveRequest, RecordRequest, ReverseRequest } from './contract'
@@ -109,14 +109,39 @@ export function recordingPort(respond: ReadResponder) {
   return { port, commands, reads }
 }
 
-let commitShell: ((next: ShellState) => void) | null = null
+type HarnessEvent = ShellEvent | { readonly type: '__COMMIT'; readonly state: ShellState }
+
+/** The real shell reducer, plus a test-only commit that installs a verified context. */
+function harnessReducer(state: ShellState, event: HarnessEvent): ShellState {
+  return event.type === '__COMMIT' ? event.state : shellReducer(state, event)
+}
+
+let dispatchShell: ((event: HarnessEvent) => void) | null = null
+let latestShell: ShellState = initialShellState
 
 function ControlledShell({ initial, children }: { readonly initial: ShellState; readonly children: ReactNode }) {
-  const [state, setState] = useState(initial)
+  const [state, dispatch] = useReducer(harnessReducer, initial)
   useEffect(() => {
-    commitShell = setState
+    dispatchShell = dispatch
   }, [])
-  return <ShellStateContext.Provider value={state}>{children}</ShellStateContext.Provider>
+  useEffect(() => {
+    latestShell = state
+  }, [state])
+  return (
+    <ShellDispatchContext.Provider value={dispatch}>
+      <ShellStateContext.Provider value={state}>{children}</ShellStateContext.Provider>
+    </ShellDispatchContext.Provider>
+  )
+}
+
+function tree(ui: ReactNode, port: FinanceReceiptPort | null, shell: ShellState, queryClient: QueryClient) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ControlledShell initial={shell}>
+        {port === null ? ui : <FinancePortProvider port={port}>{ui}</FinancePortProvider>}
+      </ControlledShell>
+    </QueryClientProvider>
+  )
 }
 
 export function renderFinance(
@@ -125,21 +150,38 @@ export function renderFinance(
 ) {
   clearAttemptStore()
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
-  const tree = (
-    <QueryClientProvider client={queryClient}>
-      <ControlledShell initial={options.shell ?? shellFor(COMPANY_A)}>
-        {options.port === null ? ui : <FinancePortProvider port={options.port}>{ui}</FinancePortProvider>}
-      </ControlledShell>
-    </QueryClientProvider>
-  )
-  return { ...render(tree), queryClient }
+  const shell = options.shell ?? shellFor(COMPANY_A)
+  let generation = 0
+  const keyed = (node: ReactNode) => <Fragment key={generation}>{node}</Fragment>
+  const view = render(tree(keyed(ui), options.port, shell, queryClient))
+  /**
+   * Unmount the Finance subtree and mount `next` in its place while the SHELL stays mounted
+   * — what a route change or a closed gate does in the app. Cleanups reach the live shell.
+   */
+  const remount = (next: ReactNode) => {
+    generation += 1
+    view.rerender(tree(keyed(next), options.port, shell, queryClient))
+  }
+  return { ...view, queryClient, remount }
 }
 
 /** Commit a new shell context (e.g. a company switch that the shell already confirmed). */
 export async function commitContext(next: ShellState): Promise<void> {
   await act(async () => {
-    commitShell?.(next)
+    dispatchShell?.({ type: '__COMMIT', state: next })
   })
+}
+
+/** Send a real shell event (e.g. REQUEST_SWITCH) through the real reducer. */
+export async function shellEvent(event: ShellEvent): Promise<void> {
+  await act(async () => {
+    dispatchShell?.(event)
+  })
+}
+
+/** The shell state as last committed. */
+export function currentShell(): ShellState {
+  return latestShell
 }
 
 // ---------------------------------------------------------------------------------

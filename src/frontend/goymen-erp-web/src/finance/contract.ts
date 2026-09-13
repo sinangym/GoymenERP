@@ -19,8 +19,9 @@
  *  - unknown members are rejected (`UnmappedMemberHandling.Disallow`), so a v1 client
  *    never renders a field whose meaning it does not know;
  *  - every id is a non-empty UUID (`Guid.Empty` is an identity error server-side);
- *  - `version` is lossless decimal TEXT of a positive int64 (README "Profile versions are
- *    positive server-owned versions … lossless strings"); never parsed to a number;
+ *  - source/bank `version` is an opaque non-blank string (`string Version`); only the
+ *    profile version is a positive int64 in text (README "Profile versions are positive
+ *    server-owned versions … lossless strings"); neither is ever parsed to a number;
  *  - `Visible` ⇔ money present; `Redacted`/`Unavailable` ⇔ money null. A redacted amount
  *    carrying digits is exactly the "hidden in the DOM" leak the spec forbids (§4);
  *  - allocation `Unavailable` ⇔ amount `Unavailable` with no money — never 0 (#258 test
@@ -44,9 +45,26 @@ export function isBoundUuid(value: unknown): value is string {
   return typeof value === 'string' && UUID_RE.test(value) && value !== NIL_UUID
 }
 
-/** Positive int64 as decimal text: no sign, no leading zero, at most 19 digits. */
-export function isLosslessVersion(value: unknown): value is string {
-  return typeof value === 'string' && value.length <= 19 && /^[1-9][0-9]*$/.test(value)
+/** Int64.MaxValue — C# `long` profile versions (Settings `ProfileVersionV1.Version`). */
+const INT64_MAX = '9223372036854775807'
+
+/**
+ * A positive C# `long` as decimal text: no sign, no leading zero, at most Int64.MaxValue.
+ * Used ONLY for `ProfileReference.version`, which the Backend converts from a `long`.
+ * Compared as text, never parsed: 19-digit values are ordered lexicographically.
+ */
+export function isPositiveInt64Text(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^[1-9][0-9]*$/.test(value) || value.length > INT64_MAX.length) return false
+  return value.length < INT64_MAX.length || value <= INT64_MAX
+}
+
+/**
+ * A source / bank account concurrency token: #258 types it as `string Version` and the
+ * validators only require it to be non-blank. It is OPAQUE — `etag-v1` is as valid as
+ * `9007199254740993` — carried verbatim, never parsed, never compared numerically.
+ */
+export function isOpaqueVersion(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
 }
 
 function isInstant(value: unknown): value is string {
@@ -223,7 +241,7 @@ function decodeUnallocated(value: unknown, currencyId: string): UnallocatedView 
 
 function decodeProfile(value: unknown): ProfileReference | null {
   if (!isRecord(value) || !hasExactKeys(value, ['profileId', 'version'])) return null
-  if (!isBoundUuid(value.profileId) || !isLosslessVersion(value.version)) return null
+  if (!isBoundUuid(value.profileId) || !isPositiveInt64Text(value.version)) return null
   return { profileId: value.profileId, version: value.version }
 }
 
@@ -242,7 +260,7 @@ function decodeSummary(value: unknown, companyId: string): SourceSummary | null 
     v.companyId !== companyId ||
     typeof v.sourceNumber !== 'string' ||
     v.sourceNumber.trim().length === 0 ||
-    !isLosslessVersion(v.version) ||
+    !isOpaqueVersion(v.version) ||
     typeof v.stage !== 'string' ||
     !STAGES.includes(v.stage) ||
     !isBoundUuid(v.partyId) ||
@@ -306,6 +324,17 @@ export function decodeSourceDetail(value: unknown, companyId: string): Decoded<S
   })
 }
 
+/**
+ * A detail read answers ONE source. A well-formed body about another source of the same
+ * company is not that answer and is refused like any other malformed response.
+ */
+export function decodeSourceDetailFor(sourceId: string): (value: unknown, companyId: string) => Decoded<SourceDetail> {
+  return (value, companyId) => {
+    const decoded = decodeSourceDetail(value, companyId)
+    return decoded.ok && decoded.value.source.id === sourceId ? decoded : FAIL
+  }
+}
+
 export function decodeSourcePage(value: unknown, companyId: string): Decoded<SourcePage> {
   if (!isRecord(value) || !hasExactKeys(value, ['companyId', 'items', 'nextCursor'])) return FAIL
   if (value.companyId !== companyId || !Array.isArray(value.items)) return FAIL
@@ -337,7 +366,7 @@ export function decodeBankAccountPage(value: unknown, companyId: string): Decode
       raw.displayName.trim().length === 0 ||
       typeof raw.isActive !== 'boolean' ||
       typeof raw.isUsableForReceipt !== 'boolean' ||
-      !isLosslessVersion(raw.version)
+      !isOpaqueVersion(raw.version)
     ) {
       return FAIL
     }

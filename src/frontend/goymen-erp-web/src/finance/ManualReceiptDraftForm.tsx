@@ -13,6 +13,7 @@
 
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { StateBlock } from '../shell/StateBlock'
+import { useShellDispatch } from '../shell/shellContext'
 import { decodeBankAccountPage, type ProfileReference, type SourceDetail } from './contract'
 import { useFinanceRead, useReceiptCommand } from './financePort'
 import {
@@ -47,6 +48,8 @@ const FIELD_ORDER: readonly (keyof ManualReceiptFields)[] = [
   'description',
 ]
 
+export const FINANCE_DRAFT_DIRTY_SCOPE = 'finance.manual-receipt.draft'
+
 export function ManualReceiptDraftForm({
   party,
   profile,
@@ -61,7 +64,8 @@ export function ManualReceiptDraftForm({
 }) {
   const banks = useFinanceRead('bank-accounts', [], (port, scope, signal) => port.listBankAccounts(scope, signal), decodeBankAccountPage)
   const command = useReceiptCommand('draft-save', draft?.source.id ?? 'new')
-  const [fields, setFields] = useState<ManualReceiptFields>(() => (draft ? fieldsFromDraft(draft) : emptyManualReceiptFields()))
+  const [initialFields] = useState<ManualReceiptFields>(() => (draft ? fieldsFromDraft(draft) : emptyManualReceiptFields()))
+  const [fields, setFields] = useState<ManualReceiptFields>(initialFields)
   const [errors, setErrors] = useState<FieldErrors>({})
   const refs = useRef<Partial<Record<keyof ManualReceiptFields, HTMLElement | null>>>({})
 
@@ -73,6 +77,16 @@ export function ManualReceiptDraftForm({
   useEffect(() => {
     if (command.state.phase === 'succeeded') onSaved?.(command.state.resource)
   }, [command.state, onSaved])
+
+  // Unsaved edits and an unresolved key are dirty work: a company switch must ask first
+  // (ERP-000K §13.1), through the shared shell gate — not a local flag.
+  const edited = command.state.phase !== 'succeeded' && FIELD_ORDER.some((name) => fields[name] !== initialFields[name])
+  const dirty = frozen || edited
+  const shellDispatch = useShellDispatch()
+  useEffect(() => {
+    shellDispatch({ type: dirty ? 'DIRTY_SET' : 'DIRTY_CLEAR', scope: FINANCE_DRAFT_DIRTY_SCOPE })
+  }, [dirty, shellDispatch])
+  useEffect(() => () => shellDispatch({ type: 'DIRTY_CLEAR', scope: FINANCE_DRAFT_DIRTY_SCOPE }), [shellDispatch])
 
   if (banks.state.kind !== 'ready') {
     return <StateBlock state={banks.state} subject={BANK_ACCOUNTS_SUBJECT} onRetry={banks.refetch} />

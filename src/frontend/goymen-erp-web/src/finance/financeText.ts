@@ -115,12 +115,15 @@ export const REVERSE_DONE = 'Ters kayıt yapıldı.'
 export const REREAD_AFTER_SUCCESS =
   'İşlem tamamlandı ancak güncel kayıt okunamadı. İşlem yeniden gönderilmez; yalnız kaydı yeniden okuyun.'
 export const REREAD = 'Kaydı yeniden oku'
+export const REREAD_AFTER_CONFLICT =
+  'Kayıt başka bir işlemle değişti. Güncel kayıt okunmadan aynı sürümle yeniden gönderilmez; güncel kaydı inceleyip yeniden onaylayın.'
 
 export const UNKNOWN_TITLE = 'İşlemin sonucu bilinmiyor'
 export const UNKNOWN_REASON: Readonly<Record<UnknownReason, string>> = {
   'no-reply': 'Sunucudan yanıt alınamadı. İşlem kaydedilmiş olabilir.',
   malformed: 'Sunucu yanıtı beklenen biçimde değildi. İşlem kaydedilmiş olabilir.',
   unavailable: 'Finans servisi işlemi şu anda sonuçlandıramadı. İşlem kaydedilmiş olabilir.',
+  'idempotency-conflict': 'Önceki gönderim aynı anahtarla farklı içerikte çakışmıştı. İşlem kaydedilmiş olabilir.',
 }
 export const RESEND_SAME = 'Aynı işlemi tekrar gönder'
 export const ABANDON = 'Bu girişimi bırak'
@@ -155,6 +158,7 @@ const ISSUE_TEXT: Readonly<Record<string, string>> = {
   settings_profile_invalid: 'Tutar hassasiyet profili geçersiz.',
   finance_period_scope_mismatch: 'Dönem bilgisi bu işlemle eşleşmiyor.',
   finance_period_ineligible: 'İşlem tarihi uygun bir döneme ait değil.',
+  finance_period_metadata_invalid: 'Dönem bilgisi eksik veya geçersiz.',
 }
 
 export function issueText(code: string): string {

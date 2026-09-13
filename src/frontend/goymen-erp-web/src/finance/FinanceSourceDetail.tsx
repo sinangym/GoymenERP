@@ -5,28 +5,35 @@
  *  - Reverse (Recorded only) — `{ sourceId, expectedVersion, occurredOn, reason }`; the
  *    server resolves amount/currency/account from the original.
  *
- * After a `Succeeded` command the detail is re-read. If that re-read fails, the command
- * is NOT offered again in this view — the user gets a re-read, never a second Record
- * (#258 README "Success followed by failed GET does not resubmit Record").
+ * Re-reads are driven by command OUTCOMES, once per attempt key:
+ *  - after `Succeeded` the detail is re-read; if that fails the command is NOT offered
+ *    again in this view (#258 README "Success followed by failed GET does not resubmit");
+ *  - after a `VersionConflict` the detail is re-read, and the action stays closed while the
+ *    shown version is still the one that conflicted. Only a fresh version the user has in
+ *    front of them can be confirmed — never the stale one again.
  *
- * Whether the actor may record or reverse is not published as a read; the buttons are a
- * request, the server's `Denied` is the answer. UI visibility is not authorization.
+ * The read is bound to `sourceId`: a well-formed body about another source is malformed.
+ * Whether the actor may record or reverse is not a published read; the buttons are a
+ * request, the server's `Denied` is the answer.
  */
 
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { StateBlock } from '../shell/StateBlock'
-import { decodeBankAccountPage, decodeSourceDetail, type SourceDetail } from './contract'
+import { useShellDispatch } from '../shell/shellContext'
+import { decodeBankAccountPage, decodeSourceDetailFor, type SourceDetail } from './contract'
 import { useFinanceRead, useReceiptCommand, type ReceiptCommand } from './financePort'
 import {
   BANK_NAME_UNAVAILABLE,
   CANCEL,
   DETAIL,
+  FIELD_ERROR,
   RECORD_ACTION,
   RECORD_CONFIRM,
   RECORD_CONFIRM_TEXT,
   RECORD_CONFIRM_TITLE,
   RECORD_DONE,
   REREAD,
+  REREAD_AFTER_CONFLICT,
   REREAD_AFTER_SUCCESS,
   REVERSE_ACTION,
   REVERSE_CONFIRM,
@@ -35,28 +42,50 @@ import {
   REVERSE_REASON,
   REVERSE_REASON_REQUIRED,
   SOURCE_SUBJECT,
-  FIELD_ERROR,
 } from './financeText'
 import { isDateOnly } from './dateOnly'
-import { isFrozen } from './receiptCommand'
+import { isFrozen, type AttemptState } from './receiptCommand'
 import { statusViewOf } from './sourceView'
 import { SourceStatus } from './SourceStatus'
 import { CommandAttemptPanel } from './CommandAttemptPanel'
 import styles from './Finance.module.css'
 
+export const FINANCE_RECORD_DIRTY_SCOPE = 'finance.source.record'
+export const FINANCE_REVERSE_DIRTY_SCOPE = 'finance.source.reverse'
+
+/** Register dirty work with the SHARED shell gate, so a company switch asks first. */
+function useShellDirty(scope: string, dirty: boolean): void {
+  const dispatch = useShellDispatch()
+  useEffect(() => {
+    dispatch({ type: dirty ? 'DIRTY_SET' : 'DIRTY_CLEAR', scope })
+  }, [dirty, dispatch, scope])
+  useEffect(() => () => dispatch({ type: 'DIRTY_CLEAR', scope }), [dispatch, scope])
+}
+
+/** The `expectedVersion` a refused-for-conflict attempt sent, if that is its state. */
+function conflictedVersion(state: AttemptState): string | null {
+  if (state.phase !== 'refused' || state.reason !== 'version-conflict') return null
+  return state.snapshot.request.body.expectedVersion
+}
+
 export function FinanceSourceDetail({ sourceId }: { readonly sourceId: string }) {
-  const detail = useFinanceRead('source', [sourceId], (port, scope, signal) => port.sourceDetail(scope, { sourceId }, signal), decodeSourceDetail)
+  const detail = useFinanceRead('source', [sourceId], (port, scope, signal) => port.sourceDetail(scope, { sourceId }, signal), decodeSourceDetailFor(sourceId))
   const banks = useFinanceRead('bank-accounts', [], (port, scope, signal) => port.listBankAccounts(scope, signal), decodeBankAccountPage)
   const record = useReceiptCommand('record', sourceId)
   const reverse = useReceiptCommand('reverse', sourceId)
 
-  // Re-read once per successful command — keyed by the attempt key, never repeated.
-  const reread = useRef<string | null>(null)
+  // One re-read per settled attempt key (success or version conflict), for BOTH commands.
+  // A Set, not a single slot: two settled keys must not take turns re-triggering each other.
+  const reread = useRef(new Set<string>())
   const { refetch } = detail
   useEffect(() => {
-    for (const command of [record, reverse]) {
-      if (command.state.phase === 'succeeded' && reread.current !== command.state.snapshot.key) {
-        reread.current = command.state.snapshot.key
+    for (const { state } of [record, reverse]) {
+      const key =
+        state.phase === 'succeeded' || (state.phase === 'refused' && state.reason === 'version-conflict')
+          ? state.snapshot.key
+          : null
+      if (key !== null && !reread.current.has(key)) {
+        reread.current.add(key)
         refetch()
       }
     }
@@ -115,8 +144,12 @@ export function FinanceSourceDetail({ sourceId }: { readonly sourceId: string })
         </p>
       ) : null}
 
-      {data.source.stage === 'Draft' && !recordDone ? <RecordAction command={record} source={data} /> : null}
-      {data.source.stage === 'Recorded' && !reverseDone ? <ReverseAction command={reverse} source={data} /> : null}
+      {data.source.stage === 'Draft' && !recordDone ? (
+        <RecordAction command={record} source={data} onReread={detail.refetch} />
+      ) : null}
+      {data.source.stage === 'Recorded' && !reverseDone ? (
+        <ReverseAction command={reverse} source={data} onReread={detail.refetch} />
+      ) : null}
     </div>
   )
 }
@@ -130,19 +163,41 @@ function Fact({ term, value }: { readonly term: string; readonly value: string |
   )
 }
 
-function RecordAction({ command, source }: { readonly command: ReceiptCommand; readonly source: SourceDetail }) {
+/** Shown while the displayed version is the one that just conflicted. */
+function StaleVersionNotice({ onReread }: { readonly onReread: () => void }) {
+  return (
+    <div className={styles.attempt} role="status" data-attempt="stale-version">
+      <p>{REREAD_AFTER_CONFLICT}</p>
+      <button type="button" onClick={onReread}>
+        {REREAD}
+      </button>
+    </div>
+  )
+}
+
+function RecordAction({
+  command,
+  source,
+  onReread,
+}: {
+  readonly command: ReceiptCommand
+  readonly source: SourceDetail
+  readonly onReread: () => void
+}) {
   const [confirming, setConfirming] = useState(false)
   const confirmRef = useRef<HTMLButtonElement | null>(null)
   useEffect(() => {
     if (confirming) confirmRef.current?.focus()
   }, [confirming])
   const frozen = isFrozen(command.state)
+  const stale = conflictedVersion(command.state) === source.source.version
+  useShellDirty(FINANCE_RECORD_DIRTY_SCOPE, frozen)
 
   return (
     <section className={styles.command} aria-label={RECORD_CONFIRM_TITLE}>
-      <CommandAttemptPanel command={command} />
-      {!confirming || frozen ? (
-        <button type="button" disabled={frozen || !command.available} onClick={() => setConfirming(true)}>
+      {stale ? <StaleVersionNotice onReread={onReread} /> : <CommandAttemptPanel command={command} />}
+      {!confirming || frozen || stale ? (
+        <button type="button" disabled={frozen || stale || !command.available} onClick={() => setConfirming(true)}>
           {RECORD_ACTION}
         </button>
       ) : (
@@ -172,15 +227,26 @@ function RecordAction({ command, source }: { readonly command: ReceiptCommand; r
   )
 }
 
-function ReverseAction({ command, source }: { readonly command: ReceiptCommand; readonly source: SourceDetail }) {
+function ReverseAction({
+  command,
+  source,
+  onReread,
+}: {
+  readonly command: ReceiptCommand
+  readonly source: SourceDetail
+  readonly onReread: () => void
+}) {
   const [open, setOpen] = useState(false)
   const [occurredOn, setOccurredOn] = useState('')
   const [reason, setReason] = useState('')
   const [errors, setErrors] = useState<{ occurredOn?: string; reason?: string }>({})
   const frozen = isFrozen(command.state)
+  const stale = conflictedVersion(command.state) === source.source.version
+  useShellDirty(FINANCE_REVERSE_DIRTY_SCOPE, frozen || (open && (occurredOn.trim().length > 0 || reason.trim().length > 0)))
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault()
+    if (stale) return
     const next: { occurredOn?: string; reason?: string } = {}
     if (occurredOn.trim().length === 0) next.occurredOn = FIELD_ERROR.required
     else if (!isDateOnly(occurredOn.trim())) next.occurredOn = FIELD_ERROR['date-format']
@@ -195,7 +261,7 @@ function ReverseAction({ command, source }: { readonly command: ReceiptCommand; 
 
   return (
     <section className={styles.command} aria-label={REVERSE_ACTION}>
-      <CommandAttemptPanel command={command} />
+      {stale ? <StaleVersionNotice onReread={onReread} /> : <CommandAttemptPanel command={command} />}
       {!open && !frozen ? (
         <button type="button" disabled={!command.available} onClick={() => setOpen(true)}>
           {REVERSE_ACTION}
@@ -237,7 +303,7 @@ function ReverseAction({ command, source }: { readonly command: ReceiptCommand; 
             ) : null}
           </div>
           <div className={styles.actions}>
-            <button type="submit" disabled={frozen || !command.available}>
+            <button type="submit" disabled={frozen || stale || !command.available}>
               {REVERSE_CONFIRM}
             </button>
             {frozen ? null : (

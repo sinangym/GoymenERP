@@ -4,11 +4,8 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { QueryClientProvider } from '@tanstack/react-query'
-import { ShellStateContext } from '../shell/shellContext'
-import { FinancePortProvider } from './financePort'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
-import { ManualReceiptDraftForm } from './ManualReceiptDraftForm'
+import { FINANCE_DRAFT_DIRTY_SCOPE, ManualReceiptDraftForm } from './ManualReceiptDraftForm'
 import {
   ABANDON,
   CONFLICT_TITLE,
@@ -32,10 +29,12 @@ import {
   bankPage,
   body,
   commitContext,
+  currentShell,
   failedOutcome,
   found,
   recordingPort,
   renderFinance,
+  shellEvent,
   shellFor,
   sourceDetail,
   succeeded,
@@ -226,22 +225,78 @@ describe('ManualReceiptDraftForm — unknown outcome keeps key, company, actor a
   })
 })
 
+describe('ManualReceiptDraftForm — abandoned attempts keep their history', () => {
+  it('re-submitting an abandoned payload inherits its uncertainty: a non-replayed refusal does not close it', async () => {
+    const { port, commands } = banksFor()
+    renderFinance(<ManualReceiptDraftForm party={PARTY} profile={EXAMPLE_PROFILE} />, { port })
+    await fillValid()
+    fireEvent.click(saveButton())
+    await commands[0].resolve(NO_REPLY)
+    fireEvent.click(await screen.findByRole('button', { name: ABANDON }))
+
+    fireEvent.click(saveButton())
+    expect(commands[1].key).toBe(commands[0].key)
+    await commands[1].resolve(failedOutcome('Denied'))
+
+    await screen.findByText(REFUSAL_AFTER_UNKNOWN)
+    screen.getByText(UNKNOWN_TITLE)
+    expect(saveButton().disabled).toBe(true)
+  })
+
+  it('a different payload after abandoning does not erase the abandoned key', async () => {
+    const { port, commands } = banksFor()
+    renderFinance(<ManualReceiptDraftForm party={PARTY} profile={EXAMPLE_PROFILE} />, { port })
+    await fillValid()
+    fireEvent.click(saveButton())
+    await commands[0].resolve(NO_REPLY)
+    fireEvent.click(await screen.findByRole('button', { name: ABANDON }))
+
+    fireEvent.change(screen.getByLabelText(FIELD_LABEL.amount), { target: { value: '2000' } })
+    fireEvent.click(saveButton())
+    expect(commands[1].key).not.toBe(commands[0].key)
+    await commands[1].resolve(failedOutcome('ValidationFailed', { issues: [{ field: 'money.amount', code: 'settings_decimal_invalid' }] }))
+    await screen.findByText(issueText('settings_decimal_invalid'))
+
+    fireEvent.change(screen.getByLabelText(FIELD_LABEL.amount), { target: { value: '1000' } })
+    fireEvent.click(saveButton())
+    expect(commands[2].key).toBe(commands[0].key)
+  })
+})
+
+describe('ManualReceiptDraftForm — dirty work reaches the shell gate', () => {
+  it('an edited form makes a company switch ask; a clean form does not register', async () => {
+    const { port } = banksFor()
+    renderFinance(<ManualReceiptDraftForm party={PARTY} profile={EXAMPLE_PROFILE} />, { port })
+    await screen.findByLabelText(FIELD_LABEL.amount)
+    expect(currentShell().dirtyScopes).not.toContain(FINANCE_DRAFT_DIRTY_SCOPE)
+
+    fireEvent.change(screen.getByLabelText(FIELD_LABEL.amount), { target: { value: '1000' } })
+    await waitFor(() => expect(currentShell().dirtyScopes).toContain(FINANCE_DRAFT_DIRTY_SCOPE))
+    await shellEvent({ type: 'REQUEST_SWITCH', target: { scopeMode: 'single', companyId: COMPANY_B } })
+    expect(currentShell().phase).toBe('confirming-switch')
+    expect((screen.getByLabelText(FIELD_LABEL.amount) as HTMLInputElement).value).toBe('1000')
+  })
+
+  it('an unresolved key is dirty even when the fields match what was sent', async () => {
+    const { port, commands } = banksFor()
+    const view = renderFinance(<ManualReceiptDraftForm party={PARTY} profile={EXAMPLE_PROFILE} />, { port })
+    await fillValid()
+    fireEvent.click(saveButton())
+    await commands[0].resolve(NO_REPLY)
+    await screen.findByText(UNKNOWN_TITLE)
+    expect(currentShell().dirtyScopes).toContain(FINANCE_DRAFT_DIRTY_SCOPE)
+    view.remount(<></>)
+    await waitFor(() => expect(currentShell().dirtyScopes).not.toContain(FINANCE_DRAFT_DIRTY_SCOPE))
+  })
+})
+
 describe('ManualReceiptDraftForm — lifecycle', () => {
   it('unmounting while pending loses nothing: the remounted form is frozen on the same key', async () => {
     const { port, commands } = banksFor()
     const view = renderFinance(<ManualReceiptDraftForm party={PARTY} profile={EXAMPLE_PROFILE} />, { port })
     await fillValid()
     fireEvent.click(saveButton())
-    view.rerender(<></>)
-    view.rerender(
-      <QueryClientProvider client={view.queryClient}>
-        <ShellStateContext.Provider value={shellFor(COMPANY_A)}>
-          <FinancePortProvider port={port}>
-            <ManualReceiptDraftForm party={PARTY} profile={EXAMPLE_PROFILE} />
-          </FinancePortProvider>
-        </ShellStateContext.Provider>
-      </QueryClientProvider>,
-    )
+    view.remount(<ManualReceiptDraftForm party={PARTY} profile={EXAMPLE_PROFILE} />)
     fireEvent.click(await screen.findByRole('button', { name: RESEND_SAME }))
     expect(commands).toHaveLength(2)
     expect(commands[1].key).toBe(commands[0].key)

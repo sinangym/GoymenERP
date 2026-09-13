@@ -109,6 +109,7 @@ describe('fail-closed mutations of the normal resource', () => {
     ['zero source amount', (d: Record<string, any>) => (d.source.amount.money.amount = '0')],
     ['instant as occurredOn', (d: Record<string, any>) => (d.source.occurredOn = '2026-09-13T00:00:00Z')],
     ['numeric version', (d: Record<string, any>) => (d.source.version = 9007199254740993)],
+    ['blank version', (d: Record<string, any>) => (d.source.version = '')],
     ['unknown member', (d: Record<string, any>) => (d.balance = '1000')],
     ['missing nullable member', (d: Record<string, any>) => delete d.source.valueOn],
     ['foreign company', (d: Record<string, any>) => (d.source.companyId = 'bbbbbbbb-0000-4000-8000-000000000002')],
@@ -123,6 +124,20 @@ describe('fail-closed mutations of the normal resource', () => {
     ['profile version with leading zero', (d: Record<string, any>) => (d.profile.version = '09')],
   ])('rejects %s', (_label, edit) => {
     expect(decodeSourceDetail(mutated(edit), A).ok).toBe(false)
+  })
+
+  it('source and bank versions are opaque strings: etag-v1 is valid, blank is not', () => {
+    expect(decodeSourceDetail(mutated((d) => (d.source.version = 'etag-v1')), A).ok).toBe(true)
+    expect(decodeSourceDetail(mutated((d) => (d.source.version = '   ')), A).ok).toBe(false)
+    expect(decodeBankAccountPage(bankPage(A, [bankAccount(A, { version: 'etag-v1' })]), A).ok).toBe(true)
+    expect(decodeBankAccountPage(bankPage(A, [bankAccount(A, { version: '' })]), A).ok).toBe(false)
+  })
+
+  it('a profile version is a positive Int64: MaxValue passes, MaxValue + 1 does not', () => {
+    expect(decodeSourceDetail(mutated((d) => (d.profile.version = '9223372036854775807')), A).ok).toBe(true)
+    expect(decodeSourceDetail(mutated((d) => (d.profile.version = '9223372036854775808')), A).ok).toBe(false)
+    expect(decodeSourceDetail(mutated((d) => (d.profile.version = '10000000000000000000')), A).ok).toBe(false)
+    expect(decodeSourceDetail(mutated((d) => (d.profile.version = 'etag-v1')), A).ok).toBe(false)
   })
 
   it('accepts a known zero unallocated amount — nothing left is a real answer', () => {

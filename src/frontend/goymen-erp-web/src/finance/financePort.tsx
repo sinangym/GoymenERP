@@ -21,6 +21,7 @@ import { decodeReadResult, type Decoded } from './contract'
 import type { FinanceReceiptPort, FinanceScope, PortReply } from './port'
 import {
   IDLE,
+  abandonOutstanding,
   attemptIdentity,
   attemptReducer,
   attemptStoreKey,
@@ -29,14 +30,15 @@ import {
   generateAttemptKey,
   isFrozen,
   keyForSubmit,
-  recallAttempt,
-  releaseAttempt,
-  rememberAttempt,
+  recallSlot,
+  setOutstanding,
+  settleStore,
   type AttemptBinding,
   type AttemptSnapshot,
   type AttemptState,
   type CommandRequest,
-  type Settlement,
+  type OutstandingState,
+  type UnknownReason,
 } from './receiptCommand'
 
 const FinancePortContext = createContext<FinanceReceiptPort | null>(null)
@@ -142,22 +144,6 @@ function send(port: FinanceReceiptPort, snapshot: AttemptSnapshot): Promise<Port
   }
 }
 
-/** Mirror a settlement into the survival store — for this key only. */
-function settleStore(storeKey: string, snapshot: AttemptSnapshot, settlement: Settlement): void {
-  const stored = recallAttempt(storeKey)
-  if (stored === null) return
-  if (stored.phase === 'abandoned') {
-    if (stored.snapshot.key !== snapshot.key) return
-    // A definitive late answer settles the abandoned attempt; it never re-opens the UI.
-    if (settlement.type === 'succeeded' || settlement.type === 'refused') releaseAttempt(storeKey, snapshot.key)
-    return
-  }
-  if (stored.state.snapshot.key !== snapshot.key) return
-  const next = attemptReducer(stored.state, { type: 'SETTLE', key: snapshot.key, settlement })
-  if (isFrozen(next) && next.phase !== 'idle') rememberAttempt(storeKey, { phase: 'outstanding', state: next as AttemptState & { snapshot: AttemptSnapshot } })
-  else releaseAttempt(storeKey, snapshot.key)
-}
-
 export type SubmitResult = 'started' | 'blocked'
 
 export interface ReceiptCommand {
@@ -192,20 +178,24 @@ export function useReceiptCommand(operation: CommandRequest['operation'], target
   // Load this slot's own attempt whenever the slot changes (mount, other company/actor/
   // session). Another slot's attempt is never shown here; its key stays in its own slot.
   useEffect(() => {
-    const stored = storeKey === null ? null : recallAttempt(storeKey)
-    if (storeKey === null || stored?.phase !== 'outstanding') {
+    const outstanding = storeKey === null ? null : recallSlot(storeKey).outstanding
+    if (storeKey === null || outstanding === null) {
       dispatch({ type: 'LOAD', state: IDLE })
       return
     }
-    if (stored.state.phase !== 'submitting') {
-      dispatch({ type: 'LOAD', state: stored.state })
+    if (outstanding.phase !== 'submitting') {
+      dispatch({ type: 'LOAD', state: outstanding })
       return
     }
     // The request was sent by an instance that no longer exists; its answer can no longer
     // reach this screen. Show it as unknown AND record it as unknown, so the same-key
     // resend this screen offers is not refused as "still in flight".
-    const unknown = { phase: 'unknown' as const, snapshot: stored.state.snapshot, reason: stored.state.unresolvedSince ?? ('no-reply' as const) }
-    rememberAttempt(storeKey, { phase: 'outstanding', state: unknown })
+    const unknown: OutstandingState = {
+      phase: 'unknown',
+      snapshot: outstanding.snapshot,
+      reason: outstanding.unresolvedSince ?? 'no-reply',
+    }
+    setOutstanding(storeKey, unknown)
     dispatch({ type: 'LOAD', state: unknown })
   }, [storeKey])
 
@@ -221,7 +211,7 @@ export function useReceiptCommand(operation: CommandRequest['operation'], target
       void pending
         .catch((): PortReply => ({ kind: 'no-reply' }))
         .then((reply) => {
-          const settlement = classifyReply(reply, snapshot.binding.companyId)
+          const settlement = classifyReply(reply, snapshot.binding.companyId, snapshot.request)
           settleStore(slot, snapshot, settlement)
           if (shownStoreKey.current !== slot || shownNamespace.current !== namespace) return
           dispatch({ type: 'SETTLE', key: snapshot.key, settlement })
@@ -234,26 +224,28 @@ export function useReceiptCommand(operation: CommandRequest['operation'], target
     if (port === null || bound === null || storeKey === null) return 'blocked'
     if (request.operation !== operation || attemptTarget(request) !== target) return 'blocked'
     if (isFrozen(state)) return 'blocked'
-    const stored = recallAttempt(storeKey)
-    // Checked against the STORE, which is written synchronously: a second click in the
-    // same tick sees the reservation even though React has not re-rendered yet.
-    if (stored?.phase === 'outstanding') return 'blocked'
+    const slot = recallSlot(storeKey)
+    // Checked against the STORE, which is written synchronously: a second submit from the
+    // same stale render sees the reservation even though React has not re-rendered yet.
+    if (slot.outstanding !== null) return 'blocked'
     const identity = attemptIdentity(bound.binding, request)
-    const key = keyForSubmit(stored, identity, generateAttemptKey)
+    const { key, unresolvedSince } = keyForSubmit(slot, identity, generateAttemptKey)
     const snapshot: AttemptSnapshot = { key, binding: bound.binding, request, identity }
-    rememberAttempt(storeKey, { phase: 'outstanding', state: { phase: 'submitting', snapshot } })
-    dispatch({ type: 'SUBMIT', snapshot })
+    setOutstanding(
+      storeKey,
+      unresolvedSince === undefined ? { phase: 'submitting', snapshot } : { phase: 'submitting', snapshot, unresolvedSince },
+    )
+    dispatch({ type: 'SUBMIT', snapshot, unresolvedSince })
     run(snapshot, storeKey, bound.namespace)
     return 'started'
   }
 
   const resend = (): SubmitResult => {
     if (port === null || bound === null || storeKey === null || state.phase !== 'unknown') return 'blocked'
-    const stored = recallAttempt(storeKey)
-    if (stored?.phase !== 'outstanding' || stored.state.phase === 'submitting') return 'blocked'
-    if (stored.state.snapshot.key !== state.snapshot.key) return 'blocked'
+    const outstanding = recallSlot(storeKey).outstanding
+    if (outstanding === null || outstanding.phase !== 'unknown' || outstanding.snapshot.key !== state.snapshot.key) return 'blocked'
     const snapshot = state.snapshot
-    rememberAttempt(storeKey, { phase: 'outstanding', state: { phase: 'submitting', snapshot, unresolvedSince: state.reason } })
+    setOutstanding(storeKey, { phase: 'submitting', snapshot, unresolvedSince: state.reason })
     dispatch({ type: 'RESEND' })
     run(snapshot, storeKey, bound.namespace)
     return 'started'
@@ -261,7 +253,8 @@ export function useReceiptCommand(operation: CommandRequest['operation'], target
 
   const abandon = () => {
     if (storeKey === null || (state.phase !== 'unknown' && state.phase !== 'conflicted')) return
-    rememberAttempt(storeKey, { phase: 'abandoned', snapshot: state.snapshot })
+    const reason: UnknownReason = state.phase === 'unknown' ? state.reason : 'idempotency-conflict'
+    abandonOutstanding(storeKey, { snapshot: state.snapshot, reason })
     dispatch({ type: 'ABANDON' })
   }
 
