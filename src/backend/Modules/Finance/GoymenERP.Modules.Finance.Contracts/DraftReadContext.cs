@@ -1,7 +1,6 @@
 using System.Globalization;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
-using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Finance.Contracts;
@@ -26,7 +25,7 @@ public sealed record DraftReadContextResult(DraftReadOutcome Outcome, DraftReadC
 /// </summary>
 public sealed class DraftReadContextReader(ICompanyContext companyContext, ICurrentUser currentUser,
     IFinancePermissionPort permissions, IFinanceBankAccountReader banks,
-    ICounterpartyReadService parties, ISettingsPrerequisiteProvider settings)
+    IFinancePartyAccountPort parties, ISettingsPrerequisiteProvider settings)
 {
     public async Task<DraftReadContextResult> GetAsync(DraftReadContextRequest request,
         string? acceptedMoneyOperation, string correlationId, CancellationToken cancellationToken = default)
@@ -53,16 +52,18 @@ public sealed class DraftReadContextReader(ICompanyContext companyContext, ICurr
         if (string.IsNullOrWhiteSpace(bank.DisplayName) || string.IsNullOrWhiteSpace(bank.Version))
             return Fail(DraftReadOutcome.Unavailable, "finance_bank_source_invalid");
 
-        var party = await parties.GetAuthorizedPartyAsync(request.PartyId, cancellationToken);
-        if (party is null || party.Id != request.PartyId || !party.IsActive)
+        var partyResult = await parties.GetAuthorizedAsync(context, request.PartyId, request.CompanyAccountId, cancellationToken);
+        if (partyResult.Outcome == ReadOutcome.Denied) return Fail(DraftReadOutcome.Denied);
+        if (partyResult.Outcome == ReadOutcome.NotFound) return Fail(DraftReadOutcome.NotFound);
+        if (partyResult.Outcome != ReadOutcome.Found || partyResult.Resource is not { } party)
+            return Fail(DraftReadOutcome.Unavailable, "finance_party_source_unavailable");
+        // No role-bit requirement: the owner adapter may return an active roles0 account.
+        if (party.PartyId != request.PartyId || party.CompanyAccountId != request.CompanyAccountId ||
+            party.CompanyId != context.CompanyId || !party.IsActive || !party.IsPartyActive)
             return Fail(DraftReadOutcome.NotFound);
-        var accounts = party.CompanyAccounts.Where(account => account.Id == request.CompanyAccountId &&
-            account.CompanyId == context.CompanyId && account.IsActive).ToArray();
-        // No role-bit requirement: an active company account with roles0 is eligible.
-        if (accounts.Length != 1) return Fail(DraftReadOutcome.NotFound);
-        var account = accounts[0];
-        if (string.IsNullOrWhiteSpace(party.Code) || string.IsNullOrWhiteSpace(party.LegalName) ||
-            string.IsNullOrWhiteSpace(party.Version) || string.IsNullOrWhiteSpace(account.Version))
+        if (party.Label is not { } label || label.PartyId != party.PartyId || label.CompanyAccountId != party.CompanyAccountId ||
+            string.IsNullOrWhiteSpace(label.Code) || string.IsNullOrWhiteSpace(label.LegalName) ||
+            string.IsNullOrWhiteSpace(label.PartyVersion) || string.IsNullOrWhiteSpace(label.CompanyAccountVersion))
             return Fail(DraftReadOutcome.Unavailable, "finance_party_source_invalid");
 
         MoneyProfileV1 profile;
@@ -93,7 +94,7 @@ public sealed class DraftReadContextReader(ICompanyContext companyContext, ICurr
             new(bank.CurrencyId, profile.CurrencyCode,
                 new(new(profile.Profile.ProfileId.ToString("D"), profile.Profile.Version.ToString(CultureInfo.InvariantCulture)),
                     profile.Scale, profile.EffectiveFrom, profile.EffectiveThrough)),
-            new(party.Id, account.Id, party.Code, party.LegalName, party.TradeName, party.Version, account.Version)), null);
+            label), null);
     }
 
     private bool HasCompanyAccess() => currentUser.IsAuthenticated && !string.IsNullOrWhiteSpace(currentUser.UserId) &&

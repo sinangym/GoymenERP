@@ -1,7 +1,6 @@
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
-using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
@@ -53,13 +52,15 @@ public sealed class DraftReadContextTests
     [InlineData("bank-inactive")]
     [InlineData("party-company")]
     [InlineData("party-inactive")]
+    [InlineData("account-inactive")]
     public async Task IneligibleOwnerDataHasNoContextPayload(string defect)
     {
         var f = new Fixture();
         if (defect == "bank-company") f.Bank = f.Bank with { CompanyId = Guid.NewGuid() };
         if (defect == "bank-inactive") f.Bank = f.Bank with { IsActive = false };
-        if (defect == "party-company") f.Party = f.Party with { CompanyAccounts = [f.Party.CompanyAccounts[0] with { CompanyId = Guid.NewGuid() }] };
-        if (defect == "party-inactive") f.Party = f.Party with { IsActive = false };
+        if (defect == "party-company") f.Party = f.Party with { CompanyId = Guid.NewGuid() };
+        if (defect == "party-inactive") f.Party = f.Party with { IsPartyActive = false };
+        if (defect == "account-inactive") f.Party = f.Party with { IsActive = false };
         var result = await f.Read();
         Assert.Equal(DraftReadOutcome.NotFound, result.Outcome);
         Assert.Null(result.Resource);
@@ -130,7 +131,7 @@ public sealed class DraftReadContextTests
     }
 
     private sealed class Fixture : ICompanyContext, ICurrentUser, IFinancePermissionPort,
-        IFinanceBankAccountReader, ICounterpartyReadService, ISettingsPrerequisiteProvider
+        IFinanceBankAccountReader, IFinancePartyAccountPort, ISettingsPrerequisiteProvider
     {
         public Guid Company = Guid.NewGuid();
         public bool CompanyAllowed = true;
@@ -141,7 +142,7 @@ public sealed class DraftReadContextTests
         public string? LastOperation;
         public DateOnly LastEffectiveOn;
         public BankAccountView Bank;
-        public CounterpartyDetailView Party;
+        public PartyAccountEligibility Party;
         public MoneyProfileV1 Profile;
         public DraftReadContextRequest Request;
         public Fixture()
@@ -149,8 +150,8 @@ public sealed class DraftReadContextTests
             var currency = Guid.NewGuid();
             Request = new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), new(2026, 9, 13));
             Bank = new(Request.TreasuryAccountId, Company, currency, "SENTETIK bank", true, true, "1");
-            Party = new(Request.PartyId, "SENTETIK-code", default, "SENTETIK legal name", null, true, "1",
-                [new(Request.CompanyAccountId, Company, default, true, "1")]);
+            Party = new(Request.PartyId, Request.CompanyAccountId, Company, true,
+                new(Request.PartyId, Request.CompanyAccountId, "SENTETIK-code", "SENTETIK legal name", null, "1", "1"), true);
             Profile = new(Company, currency, "SENTETIK", "SENTETIK-operation", new(Guid.NewGuid(), 9007199254740993L),
                 0, true, Request.OccurredOn, Request.OccurredOn);
         }
@@ -174,8 +175,8 @@ public sealed class DraftReadContextTests
             return Task.FromResult(new ReadResult<BankAccountView>(ReadOutcome.Found, Bank));
         }
         public Task<ReadResult<BankAccountPage>> ListAuthorizedAsync(FinanceContext context, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<CounterpartyDetailView?> GetAuthorizedPartyAsync(Guid partyId, CancellationToken cancellationToken = default) => Task.FromResult<CounterpartyDetailView?>(Party);
-        public Task<CounterpartyPageExecution> GetAuthorizedPageAsync(CounterpartyReadRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<ReadResult<PartyAccountEligibility>> GetAuthorizedAsync(FinanceContext context, Guid partyId, Guid companyAccountId,
+            CancellationToken cancellationToken) => Task.FromResult(new ReadResult<PartyAccountEligibility>(ReadOutcome.Found, Party));
         public Task<MoneyProfileV1> GetMoneyProfileAsync(Guid currencyId, string operation, DateOnly effectiveOn, CancellationToken cancellationToken = default)
         {
             LastOperation = operation;
