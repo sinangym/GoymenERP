@@ -42,7 +42,11 @@
   <Folder Name="/src/backend/Modules/Sales/">
     <Project Path="src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/GoymenERP.Modules.Sales.Application.csproj" />
   </Folder>
+  <Folder Name="/src/backend/Modules/Settings/">
+    <Project Path="src/backend/Modules/Settings/GoymenERP.Modules.Settings.Application/GoymenERP.Modules.Settings.Application.csproj" />
+  </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/GoymenERP.Settings.UnitTests/GoymenERP.Settings.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.ArchitectureTests/GoymenERP.ArchitectureTests.csproj" />
     <Project Path="tests/GoymenERP.Audit.UnitTests/GoymenERP.Audit.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.C01E2eFixtureTool/GoymenERP.C01E2eFixtureTool.csproj" />
