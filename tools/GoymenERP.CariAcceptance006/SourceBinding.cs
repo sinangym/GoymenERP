@@ -17,7 +17,7 @@ public sealed record SourceSnapshot(
 
 public static partial class SourceBinding
 {
-    public const string ContractPath = RunSettings.ApprovedRoot + @"\artifacts\cari-acceptance-006\account-status-20260913\c006-d861550bfb2e-contract.json";
+    public const string ContractPath = RunSettings.ApprovedRoot + @"\artifacts\cari-acceptance-006\account-status-20260913\c006-7f12ed40ff9a-contract.json";
     public const string FrontendRoot = @"C:\src\GoymenERP-claude";
     public const string FrontendHead = "fbaeaa4c4560f607a10b71ad8adb03cc0099d045";
     public const string FrontendBase = "3e7dd98a5f8b7cb9e6850e05148eb4e7b26f3e3f";

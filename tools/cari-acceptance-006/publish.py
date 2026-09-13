@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 import urllib.request
 
 ROOT = Path(r'C:\src\GoymenERP-cari-acceptance-envelope-20260911')
-EVIDENCE = ROOT / 'artifacts/cari-acceptance-006/account-status-20260913/c006-d861550bfb2e'
+EVIDENCE = ROOT / 'artifacts/cari-acceptance-006/account-status-20260913/c006-7f12ed40ff9a'
 DLL = ROOT / 'tools/GoymenERP.CariAcceptance006/bin/Release/net10.0-windows/GoymenERP.CariAcceptance006.dll'
 CONTRACT_HEADER = 'X-ERP-Counterparty-Contract'
 CONTRACT_VERSION = 'optional-trade-roles-v1'
@@ -324,7 +324,7 @@ def main():
                                  'observedAtUtc': datetime.now(timezone.utc).isoformat()})
     command('dotnet', str(DLL), 'source-check')
     require(json.loads(command('dotnet', str(DLL), 'snapshot')) == current, 'readiness GET produced SQL effects')
-    contract_path = ROOT / 'artifacts/cari-acceptance-006/account-status-20260913/c006-d861550bfb2e-contract.json'
+    contract_path = ROOT / 'artifacts/cari-acceptance-006/account-status-20260913/c006-7f12ed40ff9a-contract.json'
     validated_contract = strict_json(command('dotnet', str(DLL), 'contract-check'))
     contract_hash = bind_validated_contract(validated_contract, contract_path.read_bytes())
     manifest = {

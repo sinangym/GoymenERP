@@ -1,3 +1,5 @@
+The allocated-only c006-d861550bfb2e source candidate is also preserved: its CI failed on a PID substring assertion. No live resources were started for that candidate. This revision fixes that assertion with a deterministic folder-substring regression; all lifecycle state and no-kill checks remain unchanged.
+
 ## L04 retry source candidate (2026-09-13)
 
 Current frontend #250: fbaeaa4c4560f607a10b71ad8adb03cc0099d045.
@@ -9,8 +11,8 @@ https://github.com/sinangym/GoymenERP/pull/250#issuecomment-5652534455
 Body SHA-256: 4651fe4f983e71c61a053fca93a08ce1e6c368eb8335d31f923eb6346281069c.
 This review is not browser/SQL acceptance evidence.
 
-New run: c006-d861550bfb2e; instance: 35bcf6fa-dfeb-45b1-928b-44cf4e20776d.
-External contract: artifacts/cari-acceptance-006/account-status-20260913/c006-d861550bfb2e-contract.json.
+New run: c006-7f12ed40ff9a; instance: 57da248d-7b7b-40df-ab97-ff64903b9915.
+External contract: artifacts/cari-acceptance-006/account-status-20260913/c006-7f12ed40ff9a-contract.json.
 AcceptanceHead and CompiledHead must both identify the final local source.
 BackendDependency remains 9df7f40e3aefc5b02ef42a378c0d1aa800a2fe29.
 Ports remain API/SQL/UI 25080/25433/25173.

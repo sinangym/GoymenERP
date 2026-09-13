@@ -15,8 +15,8 @@ if ($Product) {
 $expectedRoot = 'C:\src\GoymenERP-cari-acceptance-envelope-20260911'
 if ($root -ne $expectedRoot) { throw 'C006 unexpected worktree.' }
 $run = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'run.json') -Raw | ConvertFrom-Json
-if ($run.RunId -ne 'c006-d861550bfb2e' -or $run.InstanceId -ne '35bcf6fa-dfeb-45b1-928b-44cf4e20776d') { throw 'C006 unexpected run.' }
-$evidence = 'C:\src\GoymenERP-cari-acceptance-envelope-20260911\artifacts\cari-acceptance-006\account-status-20260913\c006-d861550bfb2e'
+if ($run.RunId -ne 'c006-7f12ed40ff9a' -or $run.InstanceId -ne '57da248d-7b7b-40df-ab97-ff64903b9915') { throw 'C006 unexpected run.' }
+$evidence = 'C:\src\GoymenERP-cari-acceptance-envelope-20260911\artifacts\cari-acceptance-006\account-status-20260913\c006-7f12ed40ff9a'
 $stateRoot=$evidence
 }
 if (Test-Path -LiteralPath (Join-Path $evidence 'resources.json')) { throw 'C006 resources already recorded; no duplicate setup.' }
