@@ -73,7 +73,7 @@ internal sealed class AuditQueryService(
         var pageEvents = events.Take(normalizedPageSize).ToList();
         var items = pageEvents.Select(x => new AuditEventItem(
             x.Id,
-            x.CompanyId,
+            x.RequireCompanyId(),
             x.OccurredAtUtc,
             x.EventType,
             x.EntityType,

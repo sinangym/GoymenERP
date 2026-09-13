@@ -15,7 +15,7 @@ public sealed record SourceSnapshot(
     string ApiBaseUrl, string SqlEndpoint, bool SourcesClean,
     SortedDictionary<string, string> DiskArtifacts);
 
-public static class SourceBinding
+public static partial class SourceBinding
 {
     public const string ContractPath = RunSettings.ApprovedRoot + @"\artifacts\cari-acceptance-006\contact-edit-20260912\contract.json";
     public const string FrontendRoot = @"C:\src\GoymenERP-claude";
@@ -31,6 +31,7 @@ public static class SourceBinding
     private static readonly string[] BackendBuildInputs =
     [
         "src/backend", "tools/GoymenERP.CariAcceptance006", "tests/GoymenERP.CariAcceptance006.Tests",
+        "tests/GoymenERP.Product.UnitTests/SqlAcceptance",
         ":(top,glob)*.props", ":(top,glob)*.targets", ":(top,glob)*.rsp", "global.json", "NuGet.Config",
         ":(exclude,glob)**/bin/**", ":(exclude,glob)**/obj/**",
     ];

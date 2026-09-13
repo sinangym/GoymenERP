@@ -66,15 +66,21 @@ public sealed class SqlServerRelationalAcceptanceTests
                 connection,
                 "SELECT COUNT(*) FROM [organization].[__EFMigrationsHistory];"));
         Assert.Equal(
-            1,
+            2,
             await ScalarAsync<int>(
                 connection,
                 "SELECT COUNT(*) FROM [identity].[__EFMigrationsHistory];"));
         Assert.Equal(
-            1,
+            2,
             await ScalarAsync<int>(
                 connection,
                 "SELECT COUNT(*) FROM [audit].[__EFMigrationsHistory];"));
+        Assert.Equal(1, await ScalarAsync<int>(connection,
+            "SELECT COUNT(*) FROM [identity].[__EFMigrationsHistory] WHERE [MigrationId] = '20260912175120_AddExplicitProductAssignments';"));
+        Assert.Equal(1, await ScalarAsync<int>(connection,
+            "SELECT COUNT(*) FROM [audit].[__EFMigrationsHistory] WHERE [MigrationId] = '20260912173914_AddGlobalProductAuditSubject';"));
+        Assert.Equal(0, await ScalarAsync<int>(connection,
+            "SELECT COUNT(*) FROM [identity].[ProductMasterAssignments];"));
         Assert.Equal(
             1,
             await ScalarAsync<int>(

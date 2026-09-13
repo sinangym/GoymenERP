@@ -128,9 +128,9 @@ public sealed class AuditSaveChangesInterceptor(
         _eventsAttached = true;
     }
 
-    private void ValidateCompany(Guid companyId)
+    private void ValidateCompany(Guid? companyId)
     {
-        if (companyId == Guid.Empty)
+        if (!companyId.HasValue || companyId == Guid.Empty)
         {
             throw new InvalidOperationException(
                 "Audit kaydı CompanyId olmadan yazılamaz.");

@@ -7,7 +7,7 @@ using GoymenERP.Modules.Organization.Application.Contracts;
 
 namespace GoymenERP.Api.IntegrationTests;
 
-public sealed class ShellCapabilityRegistryTests
+public sealed partial class ShellCapabilityRegistryTests
 {
     [Fact]
     public void AcceptedCounterpartyProvider_MatchesExactOwnerSourceAndAuthority()

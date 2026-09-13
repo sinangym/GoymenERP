@@ -1,9 +1,12 @@
 # U-01 / U-02 backend contract v1
 
-Source: Business #181 `3dfe58e745f064a49d52b118361c757a0882807d`,
+Source: Business #181 `3f5deca6f1c338d44a4e9b52787c27dbab85846e`,
 `PRODUCT_U01_U02_IDENTITY_LIFECYCLE_JIT_SPEC_v1.md` §19 and
 [minimum-field arbitration](https://github.com/sinangym/GoymenERP/issues/100#issuecomment-5646263306).
 DEC-PRD-003/004/010, Master §7.4 and locked #98/#99 remain binding.
+The September 12 pilot grant/revocation decision is Sinan's alone; company admin
+membership never grants global Product authority. This is not a named user grant,
+Identity ID mapping, schema/runtime acceptance or production authorization.
 
 ## Exact module HTTP contract
 
@@ -18,14 +21,14 @@ DEC-PRD-003/004/010, Master §7.4 and locked #98/#99 remain binding.
 
 The module endpoint source compiles and is exercised using ASP.NET TestServer with
 an explicitly controlled service double. It is NOT mapped into the main host yet.
-No production Product service, global grant, DbContext, migration, or SQL acceptance
+No production Product service, global grant, applied migration, or SQL acceptance
 is claimed. These routes are pinned for frontend integration, not live URLs.
 
 List parameters: q (trimmed, max 200, no controls), lifecycle (exact Draft, Active,
 Inactive), optional groupId/classId/familyId, roles (comma-separated distinct purchasable/sellable/productionInput/productionOutput), roleMatch (any/all; default any), sort (code/name/updatedAtUtc; default code), direction (asc/desc; default asc), completeness (NotEvaluated/Incomplete/Complete), pageSize (1..100, default 50), opaque cursor.
-A role filter matches known true values only; any/all applies to the submitted distinct roles. Unknown is not false. nextCursor=null means the final page; a non-null cursor is the only continuation signal. No total count is advertised. Server ordering uses the selected key and immutable UUID tie-breaker in the selected direction. The future persistence
-reader must apply the same authorized scope and all filters on every page. Cursor
-binding/codec remains an explicit persistence dependency, not a client-created offset.
+A role filter matches known true values only; any/all applies to the submitted distinct roles. Unknown is not false. nextCursor=null means the final page; a non-null cursor is the only continuation signal. No total count is advertised. Server ordering uses the selected key and immutable UUID tie-breaker in the selected direction. The persistence
+reader applies the same authorized scope and all filters on every page. Cursor
+binding/codec is implemented below; host registration and real SQL acceptance remain open.
 
 Create minimum: name (trimmed Unicode, 1..250, no controls) and non-nil groupId.
 The group must resolve to a real authorized code group with a valid prefix.
@@ -153,3 +156,93 @@ invalid_reason, invalid_version, derived_role_readonly, template_required. Front
 maps these to Turkish resource strings and keeps a generic unknown-code fallback while
 preserving the field binding. isReplay remains in the response body; no replay header
 is advertised. Lifecycle conflict and reason max1000 remain unchanged.
+
+## Product persistence preparation after #237
+
+`Product.Infrastructure/Persistence/ProductCommandIntent` freezes the submitted
+request, binds edit target/version/reason, preserves omitted/null and array order,
+and sorts JSON object properties before SHA-256 hashing. Numeric lexemes are retained
+without floating-point conversion; a differently written numeric value may conflict
+rather than being silently treated as equivalent. Duplicate nested attribute members
+are rejected. Raw idempotency keys are not retained. Input snapshots are sensitive and
+must not be logged or used as an authority decision.
+
+`ProductStoredRecord` captures/restores Product identity, lifecycle/version, tagged
+roles and an independent reference JSON snapshot. Unknown/corrupt stored role pairs
+and missing reference payloads fail rather than being shown as false/empty.
+The snapshot/fingerprint tests themselves do not prove SQL schema, migration,
+unique constraints, resolver registration or a transaction. The accepted owner replay
+resolver and atomic writer must still reauthorize and commit Product + audit + terminal
+together. `AuthorizedMissing` is never a reservation. No global eligibility or
+production grant is inferred from this code.
+
+The same continuation now contains `ProductDbContext` / `ProductRow` with SQL Server
+mapping for Products and one CodeRegistrations namespace, a version concurrency token,
+role-pair/lifecycle/identity/JSON checks, and stable-order indexes. No migration or DDL
+has run. SaveChanges fails explicitly until the shared atomic writer enrollment exists;
+an arbitrary SQL transaction alone must not enable a partial Product-only commit.
+
+`ProductCommandGateway` consumes the merged #243 resolver (no privileged reader access),
+maps conflict without old data, and validates replay schema, operation status, required
+body members and Product identity/lifecycle/version. Read authority uses the strict
+shared read context. OriginalCorrelationId is retained internally for the owner's host
+metadata mapping; no new header or response field is invented. SQL provider/model and
+controlled resolver tests are not real SQL/bootstrap acceptance. The central owner must
+admit the exact DbContext and Idempotency.Domain edge described by ADR-PRD-001 before
+the architecture gate can pass. Global grants and production activation remain closed.
+
+`ProductCodeGroupRow` is an explicitly provisioned catalogue, without a fabricated
+default. `ProductCodeCounter` is keyed by prefix so groups sharing a prefix also share
+the sequence. Allocation stages counter changes and skips the current/retired code
+namespace; the future atomic writer must retry the entire command on a sequence,
+code or terminal-key race. Allocation alone never saves or returns an HTTP result.
+
+`ProductReader` composes SQL reads with fresh global authorization before and after
+the query. `ProductReadStore` applies all list filters and deterministic keyset ordering;
+an EXISTS alias search avoids duplicates. Unavailable completeness evaluation remains
+NotEvaluated. Code/name/updatedAtUtc continuation in both directions is verified by SQL
+Server provider translation, which is not real SQL execution evidence.
+`ProductCursorCodec` authenticates position, normalized query (including page size),
+actor, origin and authority revision. The host must supply signing material and a
+technical lifetime. No key is committed, generated as a production default or registered
+in the host. Reference labels outside the available code-group catalogue remain null.
+
+`ProductCodeOnlyReferenceCatalog` validates the actual SQL code group for the minimum
+Draft. Missing optional class/family/unit/template/tracking values remain permitted;
+supplied references without an accepted catalogue adapter fail validation. The read
+options endpoint explicitly lists all five catalogues as unavailable, rather than
+claiming that they are valid empty catalogues. This does not complete the separate
+selected-family/unit/template sub-slice. No default group or fake reference is seeded.
+
+## Draft transaction participant (source; schema/SQL admission still pending)
+
+`ProductService` implements the existing application interface. It delegates reads
+to `ProductReader`; writes use `ProductCommandGateway` and the host implementation
+of `IProductDraftCommandRunner.RunAsync(ProductPreparedCommand, CancellationToken)`.
+Prepared replays also reach the host for fresh authority and original-correlation
+metadata. There is no permissive/default runner or host registration in this module.
+
+`ProductDraftParticipant.EnlistAsync(DbConnection, DbTransaction,
+GroupSharedMasterCommandContext, CancellationToken, TimeProvider? = null)` borrows the
+owner's already-open handles. It rejects a foreign transaction/closed connection and
+creates only a fresh Product context. `ExecuteAsync(ProductCommandIntent, CT)` consumes
+the frozen envelope, validates catalogue/version/lifecycle, stages exactly one Product
+change and flushes that context. Create also stages exactly one code registration and
+prefix counter; edit cannot change the catalogue/counter/code tables. A participant
+executes once; every retry needs a new participant/context. Ordinary SaveChanges stays
+closed, including all public overloads. Disposal never owns commit, rollback or close.
+
+`ProductDraftWriteResult` contains Response, StatusCode, ResponseJson, ProductId,
+VersionBefore/After, BeforeJson/AfterJson, Reason and EventType. Create returns201 and
+`product.draft.created.v1` with the system action label `Ürün taslağı oluşturma`;
+edit returns200 and `product.draft.basic-edited.v1` with the normalized submitted reason.
+The host supplies canonical source/actor/origin/correlation/causation/AI metadata.
+No audit or terminal table is mapped or written by Product.
+
+The returned participant result is **uncommitted**. The accepted shared host must
+flush canonical audit and the matching global terminal before its sole commit;
+any exception rolls back the entire attempt. Product-row concurrency becomes409
+version_conflict; counter concurrency and unique-key races remain whole-attempt
+host retries, with a fresh resolver after rollback. Borrowed SQL handles alone are
+not evidence of audit/idempotency atomicity. Public persistence and real SQL execution
+remain closed until the #104 source/schema gate and shared implementation are accepted.

@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Domain.Events;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,6 +10,19 @@ public sealed class AuditDbContext(
     ICompanyContext companyContext)
     : DbContext(options)
 {
+    private Guid? groupSharedProductId;
+    private Guid? QueryCompanyId => groupSharedProductId.HasValue ? null : companyContext.CompanyId;
+    private string? QueryProductId => groupSharedProductId?.ToString("D");
+
+    internal void BindGroupSharedRead(GroupSharedMasterReadContext authority, Guid productId)
+    {
+        ArgumentNullException.ThrowIfNull(authority);
+        if (productId == Guid.Empty) throw new ArgumentException("A Product identity is required.", nameof(productId));
+        if (companyContext.IsResolved || groupSharedProductId.HasValue || ChangeTracker.Entries().Any())
+            throw new InvalidOperationException("A fresh unresolved owner read scope is required.");
+        groupSharedProductId = productId;
+    }
+
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -16,7 +30,19 @@ public sealed class AuditDbContext(
         ArgumentNullException.ThrowIfNull(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: false);
         modelBuilder.Entity<AuditEvent>()
-            .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+            .HasQueryFilter(x => groupSharedProductId.HasValue
+                ? x.SubjectKind == AuditEvent.GroupSharedProductSubject && x.EntityType == AuditEvent.GroupSharedProductEntityType && x.EntityId == QueryProductId
+                : x.SubjectKind == AuditEvent.CompanySubject && x.CompanyId == QueryCompanyId);
+    }
+
+    internal async Task AppendGroupSharedAsync(AuditEvent auditEvent, CancellationToken cancellationToken)
+    {
+        _ = auditEvent.ToGroupSharedIntegrityData();
+        if (!Database.IsRelational() || Database.CurrentTransaction is null || groupSharedProductId.HasValue
+            || ChangeTracker.Entries().Any())
+            throw new InvalidOperationException("A fresh enlisted Audit writer context is required.");
+        AuditEvents.Add(auditEvent);
+        await base.SaveChangesAsync(acceptAllChangesOnSuccess: true, cancellationToken);
     }
 
     public override int SaveChanges()

@@ -185,7 +185,29 @@ public sealed partial class ShellCapabilityRegistry
         var permissions = declaration.RequiredPermissions?.ToArray()
             ?? throw new InvalidOperationException(
                 $"'{owner}' provider permission koleksiyonu sağlamadı.");
-        if (declaration.ImplementationAvailable && permissions.Length == 0)
+        if (declaration.GlobalProductOperation is { } productOperation)
+        {
+            var expected = declaration.CapabilityId switch
+            {
+                "product.items.list" => (GroupSharedMasterOperation.Read, "/urun"),
+                "product.items.detail" => (GroupSharedMasterOperation.Read, "/urun/:productId"),
+                "product.items.create" => (GroupSharedMasterOperation.DraftCreate, "/urun/yeni"),
+                "product.items.edit" => (GroupSharedMasterOperation.DraftBasicEdit, "/urun/:productId/duzenle"),
+                _ => throw new InvalidOperationException("Unknown global Product capability."),
+            };
+            if (owner != "PRODUCT" || productOperation != expected.Item1
+                || declaration.RoutePath != expected.Item2 || permissions.Length != 0
+                || declaration.ParentCapabilityId is not null
+                || declaration.ContextRequirement != ShellCapabilityContextRequirement.SingleCompany
+                || declaration.ScopeRequirement != ShellCapabilityScopeRequirement.AnyGrantedScope)
+                throw new InvalidOperationException("Global Product capabilities require their exact operation and explicit origin, not company permissions.");
+        }
+        else if (declaration.CapabilityId.StartsWith("product.", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Product capability cannot alias a company permission.");
+        }
+        if (declaration.ImplementationAvailable && permissions.Length == 0
+            && declaration.GlobalProductOperation is null)
         {
             throw new InvalidOperationException(
                 $"'{owner}' provider yetkisiz bir capability'yi kullanılabilir ilan etti.");
@@ -356,6 +378,12 @@ public sealed partial class ShellCapabilityRegistry
                          .OrderBy(x => x, StringComparer.Ordinal))
             {
                 Append(canonical, permission);
+            }
+            // Existing company declarations retain byte-identical revisions.
+            if (declaration.GlobalProductOperation is { } productOperation)
+            {
+                Append(canonical, "global-product-operation");
+                Append(canonical, productOperation.ToString());
             }
 
             // Keep all previously accepted route-only revision bytes unchanged.

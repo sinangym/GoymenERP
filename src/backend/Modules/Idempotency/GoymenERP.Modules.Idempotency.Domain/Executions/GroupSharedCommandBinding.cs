@@ -37,16 +37,31 @@ public sealed record GroupSharedCommandKey
             || hash.Any(character => character is not (>= '0' and <= '9' or >= 'A' and <= 'F')))
             throw new ArgumentException("A canonical uppercase SHA-256 hash is required.", nameof(hash));
     }
+
+    internal static GroupSharedCommandKey RestoreStored(string subject, string commandName, string keyHash)
+    {
+        RequireHash(keyHash);
+        if (subject != "Product" || commandName is not
+            ("product.draft.create.v1" or "product.draft.basic-edit.v1"))
+            throw new ArgumentException("The stored shared command identity is not supported.");
+        return new(commandName, keyHash);
+    }
 }
 
 public sealed record GroupSharedCommandBinding
 {
     private GroupSharedCommandBinding(GroupSharedMasterCommandContext context,
         GroupSharedCommandKey key, string requestHash)
+        : this(key, context.LocalActorId, context.OriginCompanyId, requestHash)
+    {
+    }
+
+    private GroupSharedCommandBinding(GroupSharedCommandKey key,
+        Guid localActorId, Guid originCompanyId, string requestHash)
     {
         Key = key;
-        LocalActorId = context.LocalActorId;
-        OriginCompanyId = context.OriginCompanyId;
+        LocalActorId = localActorId;
+        OriginCompanyId = originCompanyId;
         RequestHash = requestHash;
     }
 
@@ -60,6 +75,18 @@ public sealed record GroupSharedCommandBinding
     {
         GroupSharedCommandKey.RequireHash(requestHash);
         return new(context, GroupSharedCommandKey.Create(context, keyHash), requestHash);
+    }
+
+    // Data rehydration only. This does not create an authorization snapshot/context or
+    // authorize disclosure. Only the fresh-authority resolver may release a stored result.
+    public static GroupSharedCommandBinding RestoreStored(string subject, string commandName,
+        string keyHash, Guid localActorId, Guid originCompanyId, string requestHash)
+    {
+        GroupSharedCommandKey.RequireHash(requestHash);
+        if (localActorId == Guid.Empty || originCompanyId == Guid.Empty)
+            throw new ArgumentException("Stored actor and origin identities must be non-empty.");
+        return new(GroupSharedCommandKey.RestoreStored(subject, commandName, keyHash),
+            localActorId, originCompanyId, requestHash);
     }
 
     // Intent matching is NOT authorization and does not read a stored response.

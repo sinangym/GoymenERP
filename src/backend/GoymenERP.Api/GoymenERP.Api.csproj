@@ -12,6 +12,7 @@
     <ProjectReference Include="..\Modules\Identity\GoymenERP.Modules.Identity.Infrastructure\GoymenERP.Modules.Identity.Infrastructure.csproj" />
     <ProjectReference Include="..\Modules\Idempotency\GoymenERP.Modules.Idempotency.Infrastructure\GoymenERP.Modules.Idempotency.Infrastructure.csproj" />
     <ProjectReference Include="..\Modules\Product\GoymenERP.Modules.Product.Application\GoymenERP.Modules.Product.Application.csproj" />
+    <ProjectReference Include="..\Modules\Product\GoymenERP.Modules.Product.Infrastructure\GoymenERP.Modules.Product.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>

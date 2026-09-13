@@ -24,13 +24,17 @@ public sealed class OrganizationAuditEventTenantGuardTests
         AssertCompanyScopedAuditFilter(expression, typeof(OrganizationDbContext));
     }
 
-    [Fact]
-    public async Task DirectAddedAuditEvent_WithEmptyCompany_IsRejected()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DirectAddedAuditEvent_WithEmptyCompany_IsRejected(bool useEmptyGuid)
     {
         var companyContext = ResolvedCompanyContext(Guid.NewGuid());
         await using var dbContext = CreateDbContext(companyContext);
         var auditEvent = Assert.IsType<AuditEvent>(
             Activator.CreateInstance(typeof(AuditEvent), nonPublic: true));
+        if (useEmptyGuid)
+            typeof(AuditEvent).GetProperty(nameof(AuditEvent.CompanyId))!.SetValue(auditEvent, Guid.Empty);
         dbContext.Set<AuditEvent>().Add(auditEvent);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -107,7 +111,12 @@ public sealed class OrganizationAuditEventTenantGuardTests
         Assert.Same(expression.Parameters[0], entityCompanyId.Expression);
         Assert.Equal(nameof(AuditEvent.CompanyId), entityCompanyId.Member.Name);
 
-        var contextCompanyId = Assert.IsAssignableFrom<MemberExpression>(comparison.Right);
+        var nullableCompanyId = Assert.IsAssignableFrom<UnaryExpression>(comparison.Right);
+        Assert.Equal(ExpressionType.Convert, nullableCompanyId.NodeType);
+        Assert.Equal(typeof(Guid?), nullableCompanyId.Type);
+        Assert.Null(nullableCompanyId.Method);
+        Assert.Equal(typeof(Guid), nullableCompanyId.Operand.Type);
+        var contextCompanyId = Assert.IsAssignableFrom<MemberExpression>(nullableCompanyId.Operand);
         Assert.Equal(nameof(ICompanyContext.CompanyId), contextCompanyId.Member.Name);
         Assert.Equal(typeof(ICompanyContext), contextCompanyId.Member.DeclaringType);
         Assert.True(IsCapturedFromContext(contextCompanyId.Expression, contextType));

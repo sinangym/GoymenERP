@@ -1,5 +1,57 @@
 # C006 disposable Cari acceptance environment
 
+## Product U-01/U-02 adapter (PR #251)
+
+The same executable, `setup.ps1`, `control.ps1`, same-handle `Lifecycle`, and tested
+runtime DLL validator now also serve the explicitly selected `-Product` profile.
+Consumed Cari constants and runs are unchanged. No normal Product provider or CORS
+origin is activated. Product uses API/SQL/UI 26080/26433/26173 and only the existing
+`tools/product-u01-u02/ENVIRONMENT_CONTRACT.md` three-file contract. The publisher
+writes its own worktree; the Product owner copies the exact verified bytes.
+
+The source preparation rejects historical frontend `1c48f609b83caa1118b0b274261678b6857088fa`
+for live use because it lacks the origin transport correction. Source capture is
+not ENV_READY. Admit the corrected frontend exact head and existing narrow source
+pin before any live command. `backendDependency` retains the separately accepted
+shared runtime pin; `acceptanceHead` and `compiledHead` bind the final local build.
+
+From `C:\src\GoymenERP-product-owner-boundary-20260912`, after final commit/review/CI:
+
+```powershell
+# Existing backend-only entry: complete discovered SDK rows, no browser or SQL claim.
+./tools/ci/cari-c02-link.ps1 -Mode BackendVerify -OutputParent C:\src\GoymenERP-product-evidence
+# Capture observed source using the final admitted pins and the exact ordinal
+# ProductEnvironmentSettings.FixturePaths list. Send the JSON to the Product owner.
+# dotnet <existing-tool-dll> product-source <backendDependency> <frontendWorktree> <frontendDiffBase> <fixturePaths...>
+
+# The Product owner assembles accepted-contract.json; coordinator supplies its hash.
+# Set these to the REAL returned paths/hash, not example or manifest-derived approval:
+$env:GOYMEN_PRODUCT_ACCEPTED_CONTRACT = '<absolute owner accepted-contract.json>'
+$env:GOYMEN_PRODUCT_ACCEPTED_CONTRACT_SHA256 = '<coordinator-recorded SHA256>'
+$env:GOYMEN_PRODUCT_BACKEND_TESTS_SUMMARY = '<this local BackendVerify summary.json>'
+./tools/cari-acceptance-006/setup.ps1 -Product
+./tools/cari-acceptance-006/control.ps1 -Product -Action start
+./tools/cari-acceptance-006/control.ps1 -Product -Action smoke
+./tools/cari-acceptance-006/control.ps1 -Product -Action publish
+./tools/cari-acceptance-006/control.ps1 -Product -Action live-check
+./tools/cari-acceptance-006/control.ps1 -Product -Action snapshot
+# Claude runs the existing L consumer against the owner's hash-checked three files.
+./tools/cari-acceptance-006/control.ps1 -Product -Action live-check
+./tools/cari-acceptance-006/control.ps1 -Product -Action verify -ExpectedProducts 1 -ExpectedMutations 2
+./tools/cari-acceptance-006/control.ps1 -Product -Action stop
+./tools/cari-acceptance-006/control.ps1 -Product -Action release-check
+./tools/cari-acceptance-006/control.ps1 -Product -Action teardown
+```
+
+Smoke verifies real global assignment capabilities, list/catalog/missing detail and
+company-only denied reads/create with no durable effects. GET never creates Product.
+The live browser performs actual create/edit and replay. `verify` checks aggregate
+Product/registration/audit/terminal effects; it does not replace Product owner's
+typed row assertions or Claude's browser verdict. Extra attempts require explicit
+expectations and distinct browser-run binding; one normal L journey is 1 Product and
+2 mutation effects. Before/after snapshots are observations, not concurrent barriers.
+At source preparation all live ENV, L, effects and owned cleanup remain `NOT_RUN`.
+
 This continues the existing #228 C006 host and lifecycle. It is not a second lifecycle,
 a normal-provider change, production activation, or completed Cari acceptance.
 

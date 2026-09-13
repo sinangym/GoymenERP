@@ -18,6 +18,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string SafeAuditEventConfiguration =
         "modelBuilder.Entity<AuditEvent>()\n"
         + "            .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);";
+    private const string SafeProductAuditLambda =
+        "x => groupSharedProductId.HasValue\n"
+        + "                ? x.SubjectKind == AuditEvent.GroupSharedProductSubject && x.EntityType == AuditEvent.GroupSharedProductEntityType && x.EntityId == QueryProductId\n"
+        + "                : x.SubjectKind == AuditEvent.CompanySubject && x.CompanyId == QueryCompanyId";
+    private const string SafeProductAuditEventConfiguration =
+        "modelBuilder.Entity<AuditEvent>()\n            .HasQueryFilter(" + SafeProductAuditLambda + ");";
+
+    private static string ExpectedAuditConfiguration(string sourcePath) => sourcePath == AuditDbContextPath
+        ? SafeProductAuditEventConfiguration : SafeAuditEventConfiguration;
+    private static string ExpectedAuditLambda(string sourcePath) => sourcePath == AuditDbContextPath
+        ? SafeProductAuditLambda : "x => x.CompanyId == companyContext.CompanyId";
 
     private static readonly IReadOnlyDictionary<string, string> ReviewedAuditEventDbContexts =
         new Dictionary<string, string>(StringComparer.Ordinal)
@@ -152,10 +163,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     public void Adding_a_later_audit_event_filter_override_is_rejected(string sourcePath)
     {
         var source = ReadRepositorySource(sourcePath);
-        Assert.Equal(1, CountAuditOccurrences(source, SafeAuditEventConfiguration));
+        var safeConfiguration = ExpectedAuditConfiguration(sourcePath);
+        Assert.Equal(1, CountAuditOccurrences(source, safeConfiguration));
         var mutated = source.Replace(
-            SafeAuditEventConfiguration,
-            SafeAuditEventConfiguration
+            safeConfiguration,
+            safeConfiguration
             + "\n        modelBuilder.Entity<AuditEvent>()\n"
             + "            .HasQueryFilter(x => true);",
             StringComparison.Ordinal);
@@ -239,7 +251,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             "modelBuilder.",
             "alternateBuilder.",
             StringComparison.Ordinal);
-        var alternateSafeConfiguration = SafeAuditEventConfiguration.Replace(
+        var alternateSafeConfiguration = ExpectedAuditConfiguration(sourcePath).Replace(
             "modelBuilder.",
             "alternateBuilder.",
             StringComparison.Ordinal);
@@ -247,7 +259,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         mutated = mutated.Replace(
             alternateSafeConfiguration,
             alternateSafeConfiguration.Replace(
-                "x => x.CompanyId == companyContext.CompanyId",
+                ExpectedAuditLambda(sourcePath),
                 "x => true",
                 StringComparison.Ordinal),
             StringComparison.Ordinal);
@@ -464,9 +476,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 + ".");
         }
 
-        var expectedFilter = modelBuilderName
-            + ".Entity<AuditEvent>()"
-            + ".HasQueryFilter(x=>x.CompanyId==companyContext.CompanyId);";
+        var expectedFilter = Regex.Replace(ExpectedAuditConfiguration(sourcePath)
+            .Replace("modelBuilder.", modelBuilderName + ".", StringComparison.Ordinal), @"\s+", string.Empty);
         var filterCount = CountAuditOccurrences(compactMethodBody, expectedFilter);
         if (filterCount != 1)
         {
@@ -715,20 +726,41 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         string expectedFragment,
         string replacement)
     {
-        Assert.Equal(1, CountAuditOccurrences(source, SafeAuditEventConfiguration));
-        Assert.Equal(1, CountAuditOccurrences(SafeAuditEventConfiguration, expectedFragment));
-        var mutatedConfiguration = SafeAuditEventConfiguration.Replace(
+        var safeConfiguration = source.Contains(SafeProductAuditEventConfiguration, StringComparison.Ordinal)
+            ? SafeProductAuditEventConfiguration : SafeAuditEventConfiguration;
+        if (safeConfiguration == SafeProductAuditEventConfiguration)
+            expectedFragment = expectedFragment.Replace("x => x.CompanyId == companyContext.CompanyId", SafeProductAuditLambda, StringComparison.Ordinal);
+        Assert.Equal(1, CountAuditOccurrences(source, safeConfiguration));
+        Assert.Equal(1, CountAuditOccurrences(safeConfiguration, expectedFragment));
+        var mutatedConfiguration = safeConfiguration.Replace(
             expectedFragment,
             replacement,
             StringComparison.Ordinal);
-        Assert.NotEqual(SafeAuditEventConfiguration, mutatedConfiguration);
+        Assert.NotEqual(safeConfiguration, mutatedConfiguration);
         var mutated = source.Replace(
-            SafeAuditEventConfiguration,
+            safeConfiguration,
             mutatedConfiguration,
             StringComparison.Ordinal);
         Assert.NotEqual(source, mutated);
-        Assert.Equal(0, CountAuditOccurrences(mutated, SafeAuditEventConfiguration));
+        Assert.Equal(0, CountAuditOccurrences(mutated, safeConfiguration));
         return mutated;
+    }
+
+    [Theory]
+    [InlineData("groupSharedProductId.HasValue", "true")]
+    [InlineData("groupSharedProductId.HasValue", "false")]
+    [InlineData("x.SubjectKind == AuditEvent.GroupSharedProductSubject && ", "")]
+    [InlineData("x.EntityType == AuditEvent.GroupSharedProductEntityType && ", "")]
+    [InlineData("x.EntityId == QueryProductId", "true")]
+    [InlineData("x.EntityId == QueryProductId", "x.EntityId == x.EntityId")]
+    [InlineData("x.SubjectKind == AuditEvent.CompanySubject && ", "")]
+    [InlineData("x.CompanyId == QueryCompanyId", "true")]
+    public void Product_audit_subject_target_and_company_branches_cannot_be_weakened(string expected, string replacement)
+    {
+        var source = ReadRepositorySource(AuditDbContextPath);
+        var mutated = MutateExactAuditEventConfiguration(source, expected, replacement);
+        Assert.Contains(ValidateAuditEventTenantFilter(AuditDbContextPath, mutated),
+            error => error.Contains("AuditEvent CompanyId query filter", StringComparison.Ordinal));
     }
 
     private static int CountAuditOccurrences(string source, string value)

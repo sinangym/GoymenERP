@@ -19,6 +19,7 @@ public sealed class AuditFoundationTests
         companyContext.Set(companyId);
         var options = new DbContextOptionsBuilder<AuditDbContext>()
             .UseInMemoryDatabase($"audit-model-{Guid.NewGuid():N}")
+            .EnableServiceProviderCaching(false)
             .Options;
         using var dbContext = new AuditDbContext(options, companyContext);
         var auditEntity = dbContext.Model.FindEntityType(typeof(AuditEvent));
@@ -28,6 +29,9 @@ public sealed class AuditFoundationTests
         var expression = Assert.IsAssignableFrom<Expression<Func<AuditEvent, bool>>>(
             queryFilter.Expression);
         AssertCompanyScopedAuditFilter(expression, typeof(AuditDbContext));
+        var predicate = expression.Compile();
+        Assert.True(predicate(CreateEvent(companyId)));
+        Assert.False(predicate(CreateEvent(Guid.NewGuid())));
     }
 
     [Fact]
@@ -126,7 +130,30 @@ public sealed class AuditFoundationTests
         Expression<Func<AuditEvent, bool>> expression,
         Type contextType)
     {
-        var comparison = Assert.IsAssignableFrom<BinaryExpression>(expression.Body);
+        var subjectSelection = Assert.IsAssignableFrom<ConditionalExpression>(expression.Body);
+        var hasTarget = Assert.IsAssignableFrom<MemberExpression>(subjectSelection.Test);
+        Assert.Equal("HasValue", hasTarget.Member.Name);
+        var target = Assert.IsAssignableFrom<MemberExpression>(hasTarget.Expression);
+        Assert.Equal("groupSharedProductId", target.Member.Name);
+        Assert.True(IsCapturedFromContext(target.Expression, contextType));
+        var companyBranch = Assert.IsAssignableFrom<BinaryExpression>(subjectSelection.IfFalse);
+        Assert.Equal(ExpressionType.AndAlso, companyBranch.NodeType);
+        AssertAuditConstantComparison(companyBranch.Left, expression.Parameters[0], nameof(AuditEvent.SubjectKind), "Company");
+        var productBranch = Assert.IsAssignableFrom<BinaryExpression>(subjectSelection.IfTrue);
+        Assert.Equal(ExpressionType.AndAlso, productBranch.NodeType);
+        var productKindAndType = Assert.IsAssignableFrom<BinaryExpression>(productBranch.Left);
+        Assert.Equal(ExpressionType.AndAlso, productKindAndType.NodeType);
+        AssertAuditConstantComparison(productKindAndType.Left, expression.Parameters[0], nameof(AuditEvent.SubjectKind), "GroupSharedProduct");
+        AssertAuditConstantComparison(productKindAndType.Right, expression.Parameters[0], nameof(AuditEvent.EntityType), "Product.Product");
+        var targetComparison = Assert.IsAssignableFrom<BinaryExpression>(productBranch.Right);
+        Assert.Equal(ExpressionType.Equal, targetComparison.NodeType);
+        var entityTarget = Assert.IsAssignableFrom<MemberExpression>(targetComparison.Left);
+        Assert.Same(expression.Parameters[0], entityTarget.Expression);
+        Assert.Equal(nameof(AuditEvent.EntityId), entityTarget.Member.Name);
+        var boundTarget = Assert.IsAssignableFrom<MemberExpression>(targetComparison.Right);
+        Assert.Equal("QueryProductId", boundTarget.Member.Name);
+        Assert.True(IsCapturedFromContext(boundTarget.Expression, contextType));
+        var comparison = Assert.IsAssignableFrom<BinaryExpression>(companyBranch.Right);
         Assert.Equal(ExpressionType.Equal, comparison.NodeType);
 
         var entityCompanyId = Assert.IsAssignableFrom<MemberExpression>(comparison.Left);
@@ -134,9 +161,19 @@ public sealed class AuditFoundationTests
         Assert.Equal(nameof(AuditEvent.CompanyId), entityCompanyId.Member.Name);
 
         var contextCompanyId = Assert.IsAssignableFrom<MemberExpression>(comparison.Right);
-        Assert.Equal(nameof(ICompanyContext.CompanyId), contextCompanyId.Member.Name);
-        Assert.Equal(typeof(ICompanyContext), contextCompanyId.Member.DeclaringType);
+        Assert.Equal("QueryCompanyId", contextCompanyId.Member.Name);
+        Assert.Equal(contextType, contextCompanyId.Member.DeclaringType);
         Assert.True(IsCapturedFromContext(contextCompanyId.Expression, contextType));
+    }
+
+    private static void AssertAuditConstantComparison(Expression expression, ParameterExpression parameter, string property, string value)
+    {
+        var comparison = Assert.IsAssignableFrom<BinaryExpression>(expression);
+        Assert.Equal(ExpressionType.Equal, comparison.NodeType);
+        var member = Assert.IsAssignableFrom<MemberExpression>(comparison.Left);
+        Assert.Same(parameter, member.Expression);
+        Assert.Equal(property, member.Member.Name);
+        Assert.Equal(value, Assert.IsAssignableFrom<ConstantExpression>(comparison.Right).Value);
     }
 
     private static bool IsCapturedFromContext(Expression? expression, Type contextType)

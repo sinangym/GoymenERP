@@ -56,11 +56,7 @@ public sealed class ProductDraftValidator(IProductReferenceCatalog catalog)
         {
             throw new ProductValidationException([new("changes", "required")]);
         }
-        if (string.IsNullOrWhiteSpace(request.Reason)
-            || request.Reason.Trim().Length > 1000 || request.Reason.Any(char.IsControl))
-        {
-            throw new ProductValidationException([new("reason", "invalid_reason")]);
-        }
+        _ = NormalizeReason(request.Reason);
 
         long expectedVersion;
         try { expectedVersion = ProductVersion.Parse(request.ExpectedVersion); }
@@ -99,6 +95,13 @@ public sealed class ProductDraftValidator(IProductReferenceCatalog catalog)
             References: references);
         var validated = await ValidateCreateAsync(candidate, cancellationToken);
         return validated with { Roles = roles };
+    }
+
+    public static string NormalizeReason(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Trim().Length > 1000 || value.Any(char.IsControl))
+            throw new ProductValidationException([new("reason", "invalid_reason")]);
+        return value.Trim();
     }
 
     private static void ValidateDerivedPreservation(ProductRoles before, ProductRoles after)

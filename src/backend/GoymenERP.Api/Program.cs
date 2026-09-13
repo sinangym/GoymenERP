@@ -4,6 +4,7 @@ using GoymenERP.Api.Errors;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.Observability;
 using GoymenERP.Api.OpenApi;
+using GoymenERP.Api.ProductRuntime;
 using GoymenERP.Api.Security;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Multitenancy;
@@ -77,6 +78,7 @@ builder.Services.AddOrganizationModule(
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
 builder.Services.AddIdentityModule(builder.Configuration);
+builder.Services.AddProductRuntime(builder.Configuration, builder.Environment);
 builder.Services.AddCounterpartyModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
@@ -120,6 +122,7 @@ app.MapOrganizationEndpoints();
 app.MapIdentityEndpoints();
 app.MapAuditEndpoints();
 app.MapCounterpartyEndpoints();
+app.MapProductEndpoints();
 app.MapShellEndpoints();
 
 if (!isOpenApiDocumentGeneration
@@ -130,6 +133,7 @@ if (!isOpenApiDocumentGeneration
     await app.Services.InitializeAuditModuleAsync();
     await app.Services.InitializeIdempotencyModuleAsync();
     await app.Services.InitializeCounterpartyModuleAsync();
+    await app.Services.InitializeProductRuntimeAsync();
 }
 
 await app.RunAsync();

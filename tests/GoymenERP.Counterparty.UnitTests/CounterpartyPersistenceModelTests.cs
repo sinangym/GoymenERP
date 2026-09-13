@@ -147,7 +147,12 @@ public sealed class CounterpartyPersistenceModelTests
         Assert.Same(expression.Parameters[0], entityCompanyId.Expression);
         Assert.Equal(nameof(AuditEvent.CompanyId), entityCompanyId.Member.Name);
 
-        var contextCompanyId = Assert.IsAssignableFrom<MemberExpression>(comparison.Right);
+        var nullableCompanyId = Assert.IsAssignableFrom<UnaryExpression>(comparison.Right);
+        Assert.Equal(ExpressionType.Convert, nullableCompanyId.NodeType);
+        Assert.Equal(typeof(Guid?), nullableCompanyId.Type);
+        Assert.Null(nullableCompanyId.Method);
+        Assert.Equal(typeof(Guid), nullableCompanyId.Operand.Type);
+        var contextCompanyId = Assert.IsAssignableFrom<MemberExpression>(nullableCompanyId.Operand);
         Assert.Equal(nameof(ICompanyContext.CompanyId), contextCompanyId.Member.Name);
         Assert.Equal(typeof(ICompanyContext), contextCompanyId.Member.DeclaringType);
         Assert.True(IsCapturedFromContext(contextCompanyId.Expression, contextType));

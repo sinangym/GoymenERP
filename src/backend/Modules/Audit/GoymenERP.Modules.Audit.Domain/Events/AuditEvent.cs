@@ -1,6 +1,6 @@
 namespace GoymenERP.Modules.Audit.Domain.Events;
 
-public sealed class AuditEvent
+public sealed partial class AuditEvent
 {
     private AuditEvent()
     {
@@ -53,7 +53,7 @@ public sealed class AuditEvent
             envelope.IdempotencyKeyHash,
             nameof(envelope.IdempotencyKeyHash));
         Outcome = RequireText(envelope.Outcome, nameof(envelope.Outcome), 32);
-        SchemaVersion = envelope.SchemaVersion > 0
+        SchemaVersion = envelope.SchemaVersion == 1
             ? envelope.SchemaVersion
             : throw new ArgumentOutOfRangeException(nameof(envelope.SchemaVersion));
         IntegrityHash = RequireSha256(data.IntegrityHash, nameof(data.IntegrityHash));
@@ -70,7 +70,7 @@ public sealed class AuditEvent
 
     public Guid Id { get; private set; }
 
-    public Guid CompanyId { get; private set; }
+    public Guid? CompanyId { get; private set; }
 
     public DateTimeOffset OccurredAtUtc { get; private set; }
 
@@ -134,7 +134,7 @@ public sealed class AuditEvent
     {
         return new AuditEventEnvelope(
             Id,
-            CompanyId,
+            RequireCompanyId(),
             OccurredAtUtc,
             EventType,
             EntityType,
