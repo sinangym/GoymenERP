@@ -1,0 +1,12 @@
+{
+  "status": 403,
+  "title": "settings_access_denied",
+  "code": "settings_access_denied",
+  "correlationId": "example-attempt-1",
+  "errors": [
+    {
+      "field": "currencyId",
+      "code": "settings_access_denied"
+    }
+  ]
+}

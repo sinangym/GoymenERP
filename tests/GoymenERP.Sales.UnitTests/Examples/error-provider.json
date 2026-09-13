@@ -1,0 +1,12 @@
+{
+  "status": 503,
+  "title": "settings_provider_unavailable",
+  "code": "settings_provider_unavailable",
+  "correlationId": "example-attempt-1",
+  "errors": [
+    {
+      "field": "currencyId",
+      "code": "settings_provider_unavailable"
+    }
+  ]
+}
