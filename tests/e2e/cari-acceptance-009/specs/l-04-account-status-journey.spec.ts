@@ -730,10 +730,21 @@ test('L-04 C-03: the selected company account deactivated for a reason and react
    * capture tick, which belongs to the recorder. Both reads must be completed
    * (acknowledged, body captured) before their content is read.
    */
+  /**
+   * A body-less 204 has NO `requestfinished` in this recorder: Chromium closes the
+   * empty body stream after the headers and Playwright reports the exchange as
+   * `requestfailed` / `net::ERR_ABORTED` — every 204 of L-03 (seq 17–25 of its network
+   * capture) and both 204s of the first real L-04 run (c006-5b7b30940e9a) look exactly
+   * like that, headers, status, acknowledgment and replay marker all present. So the
+   * PUT's terminal transfer is its `transferTick` under EITHER outcome, and what makes
+   * it a real answer is the 204 + acknowledgment read from its headers — which the
+   * assertions above already required. Requiring `finished` here made the first real run
+   * time out AFTER the server and the screen had done exactly what this step measures.
+   */
   const replayPut = await awaitRecord(
     page,
     net,
-    (r) => r.seq === afterK1[1].seq && r.transferOutcome === 'finished' && r.transferTick !== null,
+    (r) => r.seq === afterK1[1].seq && r.transferTick !== null && r.status === 204 && r.contractAck === CONTRACT,
     'the replay PUT’s transfer end',
   )
   const isCompletedDetailRead = (r: LiveRecord) =>
