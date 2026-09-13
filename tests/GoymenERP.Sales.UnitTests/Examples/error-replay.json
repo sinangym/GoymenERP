@@ -1,0 +1,12 @@
+{
+  "status": 409,
+  "title": "same_key_payload_mismatch",
+  "code": "same_key_payload_mismatch",
+  "correlationId": "example-attempt-1",
+  "errors": [
+    {
+      "field": "idempotencyKey",
+      "code": "same_key_payload_mismatch"
+    }
+  ]
+}

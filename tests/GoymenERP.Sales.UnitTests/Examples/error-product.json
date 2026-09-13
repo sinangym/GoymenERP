@@ -1,0 +1,12 @@
+{
+  "status": 422,
+  "title": "unsupported_product",
+  "code": "unsupported_product",
+  "correlationId": "example-attempt-1",
+  "errors": [
+    {
+      "field": "lines[0].productId",
+      "code": "unsupported_product"
+    }
+  ]
+}
