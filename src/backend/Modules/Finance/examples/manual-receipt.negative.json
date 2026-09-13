@@ -1,0 +1,18 @@
+{
+  "label": "SENTETIK/NOT_ENV",
+  "negativeCases": [
+    { "field": "money.amount", "value": 1000, "expected": "JSON rejection: string required" },
+    { "field": "money.amount", "value": "-1", "expected": "settings_decimal_invalid" },
+    { "field": "money.amount", "value": "1e3", "expected": "settings_decimal_invalid" },
+    { "field": "occurredOn", "value": "2026-09-13T00:00:00Z", "expected": "JSON rejection: date-only required" },
+    { "field": "profile", "value": null, "expected": "settings_provider_unavailable from owner resolution" },
+    { "field": "treasuryAccountId", "condition": "foreign company or currency", "expected": "bank_account_ineligible" },
+    { "field": "companyAccountId", "condition": "foreign company or inactive", "expected": "party_account_ineligible" },
+    { "field": "money.amount", "value": "1.1234", "syntheticProfileScale": 3, "expected": "settings_decimal_scale_exceeded" }
+  ],
+  "unavailableResult": { "outcome": "Unavailable", "resource": null, "isReplay": false, "originalCorrelationId": "SENTETIK-attempt-1", "issues": [] },
+  "conflictResult": { "outcome": "VersionConflict", "resource": null, "isReplay": false, "originalCorrelationId": "SENTETIK-attempt-1", "issues": [] },
+  "idempotencyConflictResult": { "outcome": "IdempotencyConflict", "resource": null, "isReplay": false, "originalCorrelationId": "SENTETIK-attempt-1", "issues": [] },
+  "redactedAmount": { "disclosure": "Redacted", "money": null },
+  "unavailableAllocation": { "knowledge": "Unavailable", "amount": { "disclosure": "Unavailable", "money": null } }
+}
