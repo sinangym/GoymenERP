@@ -17,11 +17,11 @@ public sealed record SourceSnapshot(
 
 public static partial class SourceBinding
 {
-    public const string ContractPath = RunSettings.ApprovedRoot + @"\artifacts\cari-acceptance-006\account-status-20260913\c006-7f12ed40ff9a-contract.json";
+    public const string ContractPath = RunSettings.ApprovedRoot + @"\artifacts\cari-acceptance-006\account-status-20260913\c006-c79a094df633-contract.json";
     public const string FrontendRoot = @"C:\src\GoymenERP-claude";
-    public const string FrontendHead = "fbaeaa4c4560f607a10b71ad8adb03cc0099d045";
+    public const string FrontendHead = "0d20850562d271ea934c04ff8c002679030dfaf2";
     public const string FrontendBase = "3e7dd98a5f8b7cb9e6850e05148eb4e7b26f3e3f";
-    public const string FrontendDiff = "6f4f733f98bb0ff56137fe41177efdbf5641ba8e0832bc54c2b56caea36c5094";
+    public const string FrontendDiff = "311edcb5a7a45ffcda20fc04adbbf16e126347dfe185cfff879824ea4fbc6faa";
     public const string BackendTree = "330b62e0d1f5f86a8aeff5d52308fccc6bcf7272";
     public const string OpenApiHash = "baa0fdde0dcffe31b9fdf1e0e3960b2ecaf0f8ad38ae595622497c8796511fa3";
     public const string MigrationHash = "c4fc980e3d58c564f8818caee4f7523e28256be9e7e6aecea6f0a266c32e3183";

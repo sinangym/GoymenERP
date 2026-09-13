@@ -20,17 +20,17 @@ if ($Product) {
     $evidence=$run.EvidenceRoot
 } else {
 if ($root -ne 'C:\src\GoymenERP-cari-acceptance-envelope-20260911') { throw 'C006 wrong worktree.' }
-$evidence='C:\src\GoymenERP-cari-acceptance-envelope-20260911\artifacts\cari-acceptance-006\account-status-20260913\c006-7f12ed40ff9a'
+$evidence='C:\src\GoymenERP-cari-acceptance-envelope-20260911\artifacts\cari-acceptance-006\account-status-20260913\c006-c79a094df633'
 $run=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'run.json') -Raw | ConvertFrom-Json
 }
 $resources=Get-Content -LiteralPath (Join-Path $evidence 'resources.json') -Raw | ConvertFrom-Json
 if ($ResumeC012) {
     if ($Action -notin @('start','snapshot','verify','stop')) { throw 'C006 resume supports only start, snapshot, verify and stop; teardown and the original empty-DB smoke stay with the C006 owner.' }
-    $evidence='C:\src\GoymenERP-cari-acceptance-envelope-20260911\artifacts\cari-acceptance-006\account-status-20260913\c006-7f12ed40ff9a\resume'
+    $evidence='C:\src\GoymenERP-cari-acceptance-envelope-20260911\artifacts\cari-acceptance-006\account-status-20260913\c006-c79a094df633\resume'
     $execution=Get-Content -LiteralPath (Join-Path $evidence 'started.json') -Raw | ConvertFrom-Json
     if ($execution.task_id -ne 'C-DESKTOP-012' -or $execution.resourceRunId -ne $run.RunId -or $execution.instanceId -ne $run.InstanceId -or $execution.status -ne 'in_progress' -or $execution.executionRunId -cnotmatch '\Ac012-[0-9a-f]{12}\z') { throw 'C006 resume record identity mismatch.' }
 }
-if ((-not $Product -and ($run.RunId -ne 'c006-7f12ed40ff9a' -or $run.InstanceId -ne '57da248d-7b7b-40df-ab97-ff64903b9915')) -or $resources.instanceId -ne $run.InstanceId -or ($Product -and ($resources.runId -ne $run.RunId -or $resources.databaseName -ne $run.DatabaseName))) { throw 'C006 identity mismatch.' }
+if ((-not $Product -and ($run.RunId -ne 'c006-c79a094df633' -or $run.InstanceId -ne 'a226ca3a-08b3-4efd-92ec-b22333778557')) -or $resources.instanceId -ne $run.InstanceId -or ($Product -and ($resources.runId -ne $run.RunId -or $resources.databaseName -ne $run.DatabaseName))) { throw 'C006 identity mismatch.' }
 $container=& docker inspect --format '{"id":{{json .Id}},"labels":{{json .Config.Labels}}}' $run.ContainerName | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or $container.id -ne $resources.container.id -or $container.labels.'com.goymen.acceptance.instance' -ne $run.InstanceId) { throw 'C006 container ownership mismatch.' }
 $dll=Join-Path $root 'tools/GoymenERP.CariAcceptance006/bin/Release/net10.0-windows/GoymenERP.CariAcceptance006.dll'
@@ -83,7 +83,7 @@ if ($Action -eq 'teardown') {
         if ($private -ne $expectedPrivate) { throw 'Product private path mismatch.' }
     } else {
         $private=[IO.Path]::GetFullPath((Join-Path $root ('secrets/cari-acceptance-006/'+$run.RunId+'/password.dpapi')))
-        if ($private -ne 'C:\src\GoymenERP-cari-acceptance-envelope-20260911\secrets\cari-acceptance-006\c006-7f12ed40ff9a\password.dpapi') { throw 'C006 private path mismatch.' }
+        if ($private -ne 'C:\src\GoymenERP-cari-acceptance-envelope-20260911\secrets\cari-acceptance-006\c006-c79a094df633\password.dpapi') { throw 'C006 private path mismatch.' }
     }
     & docker rm --force $resources.container.id
     if ($LASTEXITCODE -ne 0) { throw 'C006 owned container removal failed.' }

@@ -1,18 +1,20 @@
+The c006-7f12ed40ff9a browser run FAILED at the company discard dialog. Final measurement was absent; the poststate source guard rejected capture, and final SQL verification was NOT_RUN. Owned stop/release-check/teardown succeeded. Its evidence and former readiness remain immutable historical records, not this candidate's acceptance.
+
 The allocated-only c006-d861550bfb2e source candidate is also preserved: its CI failed on a PID substring assertion. No live resources were started for that candidate. This revision fixes that assertion with a deterministic folder-substring regression; all lifecycle state and no-kill checks remain unchanged.
 
 ## L04 retry source candidate (2026-09-13)
 
-Current frontend #250: fbaeaa4c4560f607a10b71ad8adb03cc0099d045.
+Current frontend #250: 0d20850562d271ea934c04ff8c002679030dfaf2.
 Committed frontend+harness diff SHA-256:
-6f4f733f98bb0ff56137fe41177efdbf5641ba8e0832bc54c2b56caea36c5094
+311edcb5a7a45ffcda20fc04adbbf16e126347dfe185cfff879824ea4fbc6faa
 against base 3e7dd98a5f8b7cb9e6850e05148eb4e7b26f3e3f.
 Source-only independent review:
-https://github.com/sinangym/GoymenERP/pull/250#issuecomment-5652534455
-Body SHA-256: 4651fe4f983e71c61a053fca93a08ce1e6c368eb8335d31f923eb6346281069c.
+https://github.com/sinangym/GoymenERP/pull/250#issuecomment-5652761056
+Body SHA-256: af9a9c17e3e0132aa90d02d264703d14f983f92123a70e315768694750965650.
 This review is not browser/SQL acceptance evidence.
 
-New run: c006-7f12ed40ff9a; instance: 57da248d-7b7b-40df-ab97-ff64903b9915.
-External contract: artifacts/cari-acceptance-006/account-status-20260913/c006-7f12ed40ff9a-contract.json.
+New run: c006-c79a094df633; instance: a226ca3a-08b3-4efd-92ec-b22333778557.
+External contract: artifacts/cari-acceptance-006/account-status-20260913/c006-c79a094df633-contract.json.
 AcceptanceHead and CompiledHead must both identify the final local source.
 BackendDependency remains 9df7f40e3aefc5b02ef42a378c0d1aa800a2fe29.
 Ports remain API/SQL/UI 25080/25433/25173.

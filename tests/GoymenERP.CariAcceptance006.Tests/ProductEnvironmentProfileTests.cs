@@ -159,7 +159,7 @@ public sealed class ProductEnvironmentProfileTests
         Assert.Equal(26080, settings.LifecycleIdentity.ApiPort);
         Assert.Equal(settings.RunId, settings.LifecycleIdentity.RunId);
         Assert.Throws<InvalidOperationException>(() => settings.LifecycleIdentity.Validate("Testing"));
-        Assert.Equal("c006-7f12ed40ff9a", RunSettings.ExpectedRun);
+        Assert.Equal("c006-c79a094df633", RunSettings.ExpectedRun);
         Assert.Equal(25080, new RunSettings().ApiPort);
     }
 

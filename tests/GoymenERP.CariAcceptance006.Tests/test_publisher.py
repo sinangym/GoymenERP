@@ -377,10 +377,10 @@ class PublisherFrontendReviewTests(unittest.TestCase):
     def test_l04_prose_review_requires_exact_text_head_attribution_and_fresh_checks(self):
         body = 'Controlled independent source-only L04 review; browser and SQL NOT_RUN.'
         review = {**self.review, 'pullRequest': 250, 'head': PUBLISHER.L04_HEAD,
-                  'reviewUrls': ['https://github.com/sinangym/GoymenERP/pull/250#issuecomment-5652534455']}
+                  'reviewUrls': ['https://github.com/sinangym/GoymenERP/pull/250#issuecomment-5652761056']}
         source = {**self.source, 'FrontendHead': PUBLISHER.L04_HEAD}
         evidence = copy.deepcopy(self.evidence)
-        evidence['comment'].update(id=5652534455, body=body, html_url=review['reviewUrls'][0],
+        evidence['comment'].update(id=5652761056, body=body, html_url=review['reviewUrls'][0],
                                   issue_url='https://api.github.com/repos/sinangym/GoymenERP/issues/250')
         evidence['pullRequest'].update(number=250, head={'sha': PUBLISHER.L04_HEAD},
                                       html_url='https://github.com/sinangym/GoymenERP/pull/250')

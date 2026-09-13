@@ -10,14 +10,14 @@ from datetime import datetime, timezone
 import urllib.request
 
 ROOT = Path(r'C:\src\GoymenERP-cari-acceptance-envelope-20260911')
-EVIDENCE = ROOT / 'artifacts/cari-acceptance-006/account-status-20260913/c006-7f12ed40ff9a'
+EVIDENCE = ROOT / 'artifacts/cari-acceptance-006/account-status-20260913/c006-c79a094df633'
 DLL = ROOT / 'tools/GoymenERP.CariAcceptance006/bin/Release/net10.0-windows/GoymenERP.CariAcceptance006.dll'
 CONTRACT_HEADER = 'X-ERP-Counterparty-Contract'
 CONTRACT_VERSION = 'optional-trade-roles-v1'
 TEST_OUTPUT = 'tests/GoymenERP.CariAcceptance006.Tests/bin/Release/net10.0-windows/'
 TEST_ASSEMBLY = 'GoymenERP.CariAcceptance006.Tests.dll'
-L04_HEAD = 'fbaeaa4c4560f607a10b71ad8adb03cc0099d045'
-L04_REVIEW_BODY_SHA256 = '4651fe4f983e71c61a053fca93a08ce1e6c368eb8335d31f923eb6346281069c'
+L04_HEAD = '0d20850562d271ea934c04ff8c002679030dfaf2'
+L04_REVIEW_BODY_SHA256 = 'af9a9c17e3e0132aa90d02d264703d14f983f92123a70e315768694750965650'
 REQUIRED_FRONTEND_CHECKS = {
     'Backend build, test and migration', 'Frontend lint, test and build',
     'SQL Server relational acceptance', 'Container build',
@@ -146,8 +146,8 @@ def validate_frontend_review(source, review, evidence=None, pull_request=235):
         # Bind the exact reviewed text and head; attribution comes from coordinator's
         # existing /root/frontend_final_review_one agent record, not the transport login.
         require(source['FrontendHead'] == L04_HEAD
-                and urls == ['https://github.com/sinangym/GoymenERP/pull/250#issuecomment-5652534455']
-                and comment.get('id') == 5652534455
+                and urls == ['https://github.com/sinangym/GoymenERP/pull/250#issuecomment-5652761056']
+                and comment.get('id') == 5652761056
                 and hashlib.sha256(comment['body'].encode('utf-8')).hexdigest() == L04_REVIEW_BODY_SHA256,
                 'L04 source-only review text or exact head differs')
     else:
@@ -260,7 +260,7 @@ def main():
     tested_artifacts = validate_tested_build(source, host, tests)
     urls = review.get('reviewUrls', [])
     require(isinstance(urls, list) and len(urls) == 1 and isinstance(urls[0], str)
-            and urls[0] == 'https://github.com/sinangym/GoymenERP/pull/250#issuecomment-5652534455',
+            and urls[0] == 'https://github.com/sinangym/GoymenERP/pull/250#issuecomment-5652761056',
             'exact #250 review comment URL is required')
     comment_id = urls[0].rsplit('-', 1)[1]
     github_responses = {
@@ -324,7 +324,7 @@ def main():
                                  'observedAtUtc': datetime.now(timezone.utc).isoformat()})
     command('dotnet', str(DLL), 'source-check')
     require(json.loads(command('dotnet', str(DLL), 'snapshot')) == current, 'readiness GET produced SQL effects')
-    contract_path = ROOT / 'artifacts/cari-acceptance-006/account-status-20260913/c006-7f12ed40ff9a-contract.json'
+    contract_path = ROOT / 'artifacts/cari-acceptance-006/account-status-20260913/c006-c79a094df633-contract.json'
     validated_contract = strict_json(command('dotnet', str(DLL), 'contract-check'))
     contract_hash = bind_validated_contract(validated_contract, contract_path.read_bytes())
     manifest = {
