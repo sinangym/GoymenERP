@@ -1,0 +1,12 @@
+{
+  "status": 409,
+  "title": "passive_company_account",
+  "code": "passive_company_account",
+  "correlationId": "example-attempt-1",
+  "errors": [
+    {
+      "field": "companyAccountId",
+      "code": "passive_company_account"
+    }
+  ]
+}
