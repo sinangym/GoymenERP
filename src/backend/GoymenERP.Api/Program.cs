@@ -79,15 +79,18 @@ builder.Services.AddScoped<ShellCapabilityService>();
 builder.Services.AddScoped<ISettingsPrerequisiteProvider, UnavailableSettingsPrerequisiteProvider>();
 builder.Services.AddScoped<ISalesAccountSelectionSourceV1, CounterpartySalesAccountSelectionSourceV1>();
 builder.Services.AddSingleton(new SalesReferenceReadBindings());
-builder.Services.AddScoped<ISalesReferenceReadService>(services => new SalesReferenceReadHandler(
+builder.Services.AddScoped<ISalesReferenceReadService>(CreateSalesReferenceReadService);
+builder.Services.AddAuditModule(builder.Configuration);
+
+static ISalesReferenceReadService CreateSalesReferenceReadService(IServiceProvider services) =>
+    new SalesReferenceReadHandler(
     services.GetRequiredService<ICompanyContext>(),
     services.GetRequiredService<ICurrentUser>(),
     services.GetRequiredService<IErpAuthorizationService>(),
     services.GetRequiredService<ISalesAccountSelectionSourceV1>(),
     services.GetRequiredService<ISettingsPrerequisiteProvider>(),
     services.GetService<IProductSalesEligibilityV1>(),
-    services.GetRequiredService<SalesReferenceReadBindings>()));
-builder.Services.AddAuditModule(builder.Configuration);
+    services.GetRequiredService<SalesReferenceReadBindings>());
 builder.Services.AddIdempotencyModule(builder.Configuration);
 builder.Services.AddOrganizationModule(
     builder.Configuration,
