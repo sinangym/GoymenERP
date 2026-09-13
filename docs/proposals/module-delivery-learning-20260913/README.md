@@ -2,7 +2,7 @@
 
 Status: PROPOSAL — insan incelemesine sunulan çalışma rehberi; yeni merge/CI politikası değildir.
 Owner: mevcut danışman görevi; Business ve implementation sahipliği devralınmaz.
-Tarih: 2026-09-13. İncelenen main: `60e584d3255aa034060538f4413dc4aafa051a7c`.
+Tarih: 2026-09-13. İlk kod örneği taraması main `60e584d3255aa034060538f4413dc4aafa051a7c`; teslim durumu güncellemesi main `f6fa07d026403649d6c815b84fd850e7ceeaf092`.
 
 ## İstek ve kapsam
 
@@ -18,6 +18,7 @@ Bu paket model eğitimi veya hatasızlık garantisi değildir. Öğrenme, yeni a
 - [Başlangıç ve teslim akışı](WORKFLOW.md): bir küçük kullanıcı akışı için uygulanır; yeni kapı sistemi kurmaz.
 - [Dört rolün promptları](PROMPTS.md): aynı Orchestrator ve Business, ayrı yazarlık, mevcut proje.
 - [Sipariş / Stok / Finans / Üretim başlangıç ekleri](MODULE_BRIEFS.md): iş spec'i veya uygulama yetkisi değil, sonraki yetkili işe hazırlık.
+- [Teslim durumu ve düşük tüketimli yol haritası](ROADMAP.md): üç çiftin dar teslimi, bir aktif çift önerisi ve bağımlılık kontrolü.
 
 ## Kaynak ve yetki
 
@@ -25,12 +26,12 @@ Son açık kullanıcı kararı > tarihli kullanıcı kararları > [karar sicili]
 
 K1/K2 için mevcut tek bağımsız review; yalnız AGENTS'te tanımlı K3 için iki review uygulanır. Zorunlu CI, migration/para/yetki/contract ve ilgili gerçek SQL/browser kapıları azaltılmaz. Governance, CI, karar sicili, backlog ve mevcut acceptance durumları bu pakette değiştirilmez. Bu öneri otomatik merge edilmez.
 
-Aktif hedef Ürün U01/U02 teslimi ardından Cari L04 kapanışıdır. Yeni modüllerin promptlarının hazırlanması onları başlatmaz. L04'ün incelenen son kaydında gerçek koşum başarısız, düzeltme çalışması aktiftir; paket onu tamamlandı ilan etmez. B otomatik-account önerisi, #229 ve production insan sınırları korunur. Mobilin toplu değerlendirmesini sona alma kullanıcı tercihi, mevcut masaüstü/klavye ve sözleşmede gerekli erişilebilirlik kontrollerini kaldırmaz; mobil tamamlandı denmez.
+Son durum kontrolünde Ürün U01/U02 ve Cari L04 dar işleri birleşmiş, gerçek kabul ve sahipli temizlik teslim edilmiştir. L04'ün eski failure'ları tarihsel kalır; yeni başarı onları silmez. Son main CI sonucu ayrıca kontrol edilir; görevin hedefini yalnız kendi koordinatörü kapatır. Yeni modüllerin promptlarının hazırlanması onları başlatmaz. B otomatik-account önerisi, #229 ve production insan sınırları korunur. Mobilin toplu değerlendirmesini sona alma kullanıcı tercihi, mevcut masaüstü/klavye ve sözleşmede gerekli erişilebilirlik kontrollerini kaldırmaz; mobil tamamlandı denmez.
 
 ## Kullanıma alma
 
 1. Öneri paketi insan tarafından incelenir; normatif dosyalara sessizce taşınmaz.
-2. Koordinatör mevcut L04 işini kesmez. Sonraki yetkili dilimde PROMPTS ve ilgili MODULE_BRIEFS bölümünü kullanır; görev adı, kaynaklar ve yazılabilir yolları kendisi güncel kayıttan doldurur.
+2. Koordinatör tamamlanmış L04/Ürün/Organizasyon işlerini tekrar açmaz. ROADMAP'teki kısa bağımlılık kontrolüyle sonraki yetkili dilimde PROMPTS ve ilgili MODULE_BRIEFS bölümünü kullanır; görev adı, kaynaklar ve yazılabilir yolları kendisi güncel kayıttan doldurur.
 3. Ajanlar başlangıç notunda kullanılacak örnekleri ve modüle özgü farkı belirtir. Sadece "okudum" makbuzu üretmez.
 4. Kapanışta gerçekten yeni ders varsa LESSONS'a aynı sahip/normal review yoluyla kısa ek önerilir. Her başarılı turda yeni belge, commit veya yeni hatırlama sistemi üretilmez.
 
@@ -38,4 +39,4 @@ Bu paket mevcut [bilgi aktarım alanının](../../knowledge/README.md) yerine ge
 
 ## Paket doğrulaması
 
-Yalnız beş yeni öneri dosyası. 54 yerel Markdown bağlantısı gerçek dosyalara çözümlendi; kırık bağlantı yok. Örnek semboller ve kritik davranışlar kaynakta incelendi; bu işlem tam kod incelemesi değildir. Markdown/diff ve yazılabilir yüzey kontrolü yapıldı. Ürün kodu değişmediği için ürün testleri, SQL, browser, ortam ve geçmiş acceptance tekrar çalıştırılmadı. Uzak CI ve insan review sonucu bu yerel kontrollerden türetilmez.
+Yalnız altı öneri dosyası. İlk sürümün 54 yerel Markdown bağlantısı doğrulanmıştı; güncellenen pakette 56 yerel bağlantı kontrol edildi, kırık bağlantı yok. Örnek semboller ve kritik davranışlar kaynakta incelendi; bu işlem tam kod incelemesi değildir. Markdown/diff ve yazılabilir yüzey kontrolü yapıldı. Ürün kodu değişmediği için ürün testleri, SQL, browser, ortam ve geçmiş acceptance elle tekrar çalıştırılmadı. Uzak CI ve insan review sonucu bu yerel kontrollerden türetilmez; eski commit'in CI sonucu yeni commit'e taşınmaz.

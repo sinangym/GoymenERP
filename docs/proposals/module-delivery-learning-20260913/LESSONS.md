@@ -20,12 +20,14 @@ Gecikmenin tamamı iş kuralı karmaşıklığı değildi. Gerçek ürün hatala
 | Node 26 yerel sonuçları pinli Node 24 ile ayrıştı | Runtime ve lockfile'ı ilk kontrolde doğrula | [CI](../../../.github/workflows/ci.yml), [frontend package](../../../src/frontend/goymen-erp-web/package.json), [SDK pin](../../../global.json) | Gelecekte pin değişebilir; eski sohbet sürümünü zorlamadan güncel repo kullanılır. |
 | Donör devir bekleyişi, policy reddi ve OAuth süresi dolması birbirine karıştı | Sahiplik / araç izni / connector login / CI / işletme kararı ayrı engel olarak kaydet | [83 yol insan devri](https://github.com/sinangym/GoymenERP/pull/228#issuecomment-5632970696), bu konuşmadaki C006 ve GitHub yeniden bağlantı kayıtları | Eski `never` veya eski OAuth hatası bugünkü durum değildir; yeni başarı yalnız doğrulanan işlem için geçerli. Ret başka araçla aşılmaz. |
 
-## Henüz kapalı şablon sayılmayan L04 dersleri
+## L04 dersleri — failure tarihçesi ve sonraki dar kapanış
 
 - İlk L04 failure: test, replay PUT için yalnız belirli transfer bitişini bekledi. `fbaeaa4` düzeltmesi terminal/204/ACK eşlemesini hedefledi; bu main snapshot'ında değildir. [Yazar kaydı](https://github.com/sinangym/GoymenERP/pull/250#issuecomment-5652467156). Yanıt başlığı veya timeout tek başına kullanılabilir response/işlem sonucu değildir; metoda göre gövde gereksinimi ayrılır.
-- Sonraki `7f12` koşumu 601.4 saniyede başarısız: Cari dialog katmanı şirket değiştirme onayını örttü. [Yazar failure kaydı](https://github.com/sinangym/GoymenERP/pull/250#issuecomment-5652718423). Düzeltme ve controlled browser hedefi aktif sahipte; burada kapanmış ilan edilmez.
+- Sonraki `7f12` koşumu 601.4 saniyede başarısız: Cari dialog katmanı şirket değiştirme onayını örttü. [Yazar failure kaydı](https://github.com/sinangym/GoymenERP/pull/250#issuecomment-5652718423). İlk belge sürümünde düzeltme aktifteydi; aşağıdaki yeni sonuçla tarihsel hale geldi.
 - Erken kontrol adayı: form/dialog açıkken şirket değiştir -> gerçek kullanıcı tıklamasıyla bırak/kal -> focus ve doğru katman. Force click veya DOM enjeksiyonu ile başarı yaratılmaz. Yerel eylem timeout'u, sorunu bütün senaryonun uzun timeout'una kadar gizlememeli.
 - Başarısız koşumda ölçüm dosyası yoksa SQL delta veya hiç yan etki yok iddiası üretilemez. Mevcut guardlı partial snapshot uygunsa ayrı tanı kanıtı; değilse NOT_RUN. Cleanup, iş kabulünden ayrı raporlanır.
+
+2026-09-13 kapanışı: [FE gerçek L04 teslimi](https://github.com/sinangym/GoymenERP/pull/250#issuecomment-5652855593) `c79` koşumunda exit 0 / 1 PASS, normal tıklamayla şirket değiştirme ve v7→v8→v9/replay sırasını kaydeder. [Backend coordinator kapısı](https://github.com/sinangym/GoymenERP/pull/252#issuecomment-5652948432) typed SQL ve sahipli cleanup sonucunu ayrı doğrular. #252 ve #250 merge edilmiştir. Bu danışman turunda PR/teslim kayıtları okundu; raw SQL/trace tekrar koşulmadı. [T09 regresyon kaynağı](https://github.com/sinangym/GoymenERP/blob/0d20850562d271ea934c04ff8c002679030dfaf2/tests/e2e/cari-acceptance-009/specs/t-09-account-status-switch-layering.spec.ts) artık yeni modal/şirket değiştirme işi için incelenecek somut örnektir; gerçek IdP/logout veya tüm Cari kabulüne genişletilmez.
 
 ## Yeniden kullanım haritası
 

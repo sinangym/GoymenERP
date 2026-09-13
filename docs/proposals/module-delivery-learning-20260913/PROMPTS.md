@@ -12,6 +12,14 @@ Mevcut yöneticiler (2026-09-13'te doğrulanan görev kimlikleri):
 
 Kimlikler gelecekte bulunamazsa mevcut görev listesinden doğrula; başka görevi benzer başlığa göre yanlışlıkla hedefleme. Backend/Claude alıcılarını koordinatör mevcut atanmış şeritten seçer; bu paket yeni oturum açmaz. Model değiştirmek sahiplik, araç erişimi veya kullanıcı yetkisi kazandırmaz.
 
+## Düşük tüketimli kullanım
+
+Varsayılan öneri bir aktif Backend/Frontend çifti + mevcut Business + mevcut koordinatördür. Üç çifti yalnız oturumlar açık diye çalıştırma. Bitmiş Cari/Ürün/Organizasyon görevleri korunan teslim noktalarıdır; otomatik durum turları ve yeniden tanışma işleri verilmez. Bekleyen oturumun kendisi ile yeni model çağrıları aynı şey değildir; tasarruf aktif tekrarları azaltarak ölçülür.
+
+Yeni yetkili modül için tercihen temiz bağlamlı tek çift, ayrı worktree ve aşağıdaki kısa ortak girdi kullanılır; kullanıcı yeni görev açılmasını istemeden bu paket oturum yaratmaz. Kota/araç kısıtı varsa tamamlanmış çift, açık sahiplik/devam kaydı ve yeni worktree ile yeniden atanabilir. İki yöntem birlikte uygulanıp aynı işi yapan iki çift oluşturulmaz. Önceki tüm sohbetler veya bu dört promptun tamamı her ajana tekrar yapıştırılmaz: kendi rolü + ilgili modül eki + gerekli kaynaklar yeterlidir. İlk gerekli kaynak incelemesinden sonra yalnız değişiklikler ve ilgili yeni dosyalar okunur; zorunlu kaynak erişimi atlanmaz.
+
+Sırf daha fazla kredi var diye sahiplik değiştirme. Rutin uygulama mevcut contract/örüntüyle yürür; karmaşık migration, yetki, transaction ve formül kararı uygun bağımsız incelemeye gider. Belirli modelin sınırsız veya belli oranda ucuz olduğu varsayılmaz; hesap penceresi ve gerçek görev tüketimi ayrıca ölçülür.
+
 ## Ortak girdi
 
 ```text
@@ -28,7 +36,7 @@ Boş girdiler izin veya API adı üretmez. Ajan önce erişilebilir kaynaktan ta
 ## CODEX-ORCHESTRATOR
 
 ```text
-Aynı GöymenERP projesinin mevcut koordinatörü olarak devam et. Bu görevin onaylı hedefini koru; Cari L04 kapanmadan veya sonraki dilim ayrıca yetkilendirilmeden yeni modül başlatma.
+Aynı GöymenERP projesinin mevcut koordinatörü olarak devam et. Bu görevin onaylı hedefini koru; tamamlanmış L04/Ürün/Organizasyon işlerini yeniden açma. Kalan post-merge kontrolü varsa tamamla; sonraki dilim ayrıca yetkilendirilmeden yeni modül başlatma.
 
 Önce AGENTS, geçerli Hızlı Teslim v3, güvenlik için v2, son kullanıcı kararları ve bu paketin README/WORKFLOW belgelerini oku. Canlı main/PR/sahiplik durumunu bir kez doğrula; eski prompt SHA'larını güncel sanma. Paket öneri durumundaysa politika yerine koyma.
 
@@ -36,7 +44,7 @@ Yetkili sonraki küçük kullanıcı akışı için ortak girdiyi doldur. Mevcut
 
 Mevcut sahipleri araçlarla koordine et; Sinan'ı normal mesaj taşıyıcısına çevirme. Gönderildi/alındı/uygulandı ayrı durumlardır. Rutin teknik düzeltme için yeniden işletme onayı isteme; gerçek araç izni ve açık iş kararı sınırlarına uy.
 
-Her bekleyen işin tek sahibi, tek çıkış şartı ve tek izleyicisi olsun. Aynı başarılı CI/test/review'ı gerekçesiz tekrarlatma. K1/K2 tek bağımsız review; yalnız mevcut dar K3 iki review. Geçerli son kaynak doğrulaması korunur. Kapanış şartına sonradan kapsam dışı özellik ekleme; gerçek hatayı gizleme.
+Her bekleyen işin tek sahibi, tek çıkış şartı ve tek izleyicisi olsun. Bir aktif geliştirme çiftiyle başla; ikinci çift ancak gerçekten bağımsız hazır iş ve çakışmayan kaynak/ortam varsa gerekçeli atanır. Altı geliştiriciyi otomatik uyandırma. Aynı başarılı CI/test/review'ı gerekçesiz tekrarlatma. K1/K2 tek bağımsız review; yalnız mevcut dar K3 iki review. Geçerli son kaynak doğrulaması korunur. Kapanış şartına sonradan kapsam dışı özellik ekleme; gerçek hatayı gizleme.
 
 Gerekli kaynak/gerçek kabul/SQL/cleanup kapıları tamamlanınca mevcut standing yetkiyle expected-head merge'i değerlendir; yazarın kendi PR'ını merge etmesine izin verme. Açık işletme kararları ve production insanda kalır. Bu öneri paketinin kendisini otomatik merge etme.
 
