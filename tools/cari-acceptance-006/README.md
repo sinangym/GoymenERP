@@ -1,3 +1,29 @@
+## L04 retry source candidate (2026-09-13)
+
+Current frontend #250: fbaeaa4c4560f607a10b71ad8adb03cc0099d045.
+Committed frontend+harness diff SHA-256:
+6f4f733f98bb0ff56137fe41177efdbf5641ba8e0832bc54c2b56caea36c5094
+against base 3e7dd98a5f8b7cb9e6850e05148eb4e7b26f3e3f.
+Source-only independent review:
+https://github.com/sinangym/GoymenERP/pull/250#issuecomment-5652534455
+Body SHA-256: 4651fe4f983e71c61a053fca93a08ce1e6c368eb8335d31f923eb6346281069c.
+This review is not browser/SQL acceptance evidence.
+
+New run: c006-d861550bfb2e; instance: 35bcf6fa-dfeb-45b1-928b-44cf4e20776d.
+External contract: artifacts/cari-acceptance-006/account-status-20260913/c006-d861550bfb2e-contract.json.
+AcceptanceHead and CompiledHead must both identify the final local source.
+BackendDependency remains 9df7f40e3aefc5b02ef42a378c0d1aa800a2fe29.
+Ports remain API/SQL/UI 25080/25433/25173.
+Use the existing bind/setup/start/smoke/publish/stop/release-check/teardown flow
+with the new run evidence directory and a fresh root-locked contract.
+Do not start live resources before the root lock.
+
+The older L04 section below describes the preserved c006-5b7b30940e9a run,
+not current readiness. Its browser journey FAILED; final SQL effects
+verification was NOT_RUN because no final measurement was produced.
+Stop/release-check/teardown succeeded. Its contract, logs and ENV_READY bytes
+are immutable historical evidence and must not be reused for this candidate.
+This pin update does not claim a new ENV_READY or browser/SQL pass.
 # C006 disposable Cari acceptance environment
 
 ## Current Cari L04 source preparation (2026-09-13)
