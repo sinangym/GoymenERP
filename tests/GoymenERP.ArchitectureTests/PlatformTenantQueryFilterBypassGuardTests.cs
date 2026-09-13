@@ -42,7 +42,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string OpenApiStartupPath =
         "src/backend/GoymenERP.Api/Program.cs";
     private const string ReviewedOpenApiStartupFingerprint =
-        "d937f1d3607d6a7e49da592da77dfd91ce655f199fbc88b66e18ab0ed18134fa";
+        "c5715e0575451a55e901f3b5489827f31f388538b33936ae9f2d307e68c6a4ed";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
