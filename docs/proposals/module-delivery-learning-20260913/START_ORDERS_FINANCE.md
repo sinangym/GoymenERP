@@ -5,7 +5,7 @@ Tarih: 2026-09-13. Bu kayıt Sinan'ın iki yeni Backend–Claude çiftini başla
 
 | İş | Görev / çalışma alanı | Başlangıç |
 |---|---|---|
-| SİPARİŞ BACKEND | Codex `01a09afa-9af2-7521-9a0a-dc851e496133`; `C:/Users/goyme/.codex/worktrees/c1f7/GoymenERP-codex` | Spark medium ile oluşturuldu. İlk tur geniş kaynak okumasında context-window hatası; aynı görevde tek kısa kurtarma mesajı gönderildi. |
+| SİPARİŞ BACKEND | Codex `01a09afa-9af2-7521-9a0a-dc851e496133`; `C:/Users/goyme/.codex/worktrees/c1f7/GoymenERP-codex` | Spark medium ile oluşturuldu. İlk tur context-window hatasından sonra aynı görev/modelde dar kurtarma tamamlandı; 11 satırlık kaynak/eksik/owner tablosu koordinatöre iletildi. Kod/test/runtime değişmedi. |
 | FİNANS BACKEND | Codex `01a09afa-9af2-7521-9a0a-dca3f1da0e6a`; `C:/Users/goyme/.codex/worktrees/a583/GoymenERP-codex` | Spark medium, `codex/w4-finans-start-20260913`; başlangıç envanteri çıktı, coordinator kaynak/öncül sınırını daralttı. |
 | SIPARIS-FRONTEND | [Claude Remote Control](https://claude.ai/code/session_01TKB6kmZnZc6ZZzWhKhuUTH); `C:/src/GoymenERP-siparis-frontend-20260913` | `claude/orders-frontend-20260913`; yerel session `a9de0095-3f39-46d3-9215-b3e9cb2c7021`; prompt okuma/kaynak incelemesi gerçekten başladı. |
 | FINANS-FRONTEND | [Claude Remote Control](https://claude.ai/code/session_01XNySWYntuKPGW7DKu38Bhq); `C:/src/GoymenERP-finans-frontend-20260913` | `claude/finance-frontend-20260913`; yerel session `217ee592-b7a9-4fd9-9116-f05fcf8b12bc`; prompt okuma/kaynak incelemesi gerçekten başladı. |
@@ -47,4 +47,3 @@ Cari'nin optional-role ACK'i Finance standardı değildir. Product'ın grup-gene
 Kapanan teslimleri/başarılı CI'ı yeni tanışma veya makbuz için tekrar çalıştırma. İlk başlangıçta Sipariş Spark bağlam sınırı gerçekten görüldü; aynı geniş repo çıktısını tekrar etmek yerine bounded recovery coordinator'a bildirildi. Finans ilk keşfindeki kaynaksız somut flag/limit adları ham öneridir, contract değildir. Bunlar profesyonel teslimde review/gerçek test gereğini kaldırmayan erken teşhislerdir.
 
 Bu dosya anlık sürekli status registry değildir. Sonraki görev/PR/kanıt/merge gerçekliği mevcut coordinator ve Issue #66 üzerinden takip edilir; source kabulü, runtime kabulü, tam modül ve production birbirinin yerine geçmez.
-
