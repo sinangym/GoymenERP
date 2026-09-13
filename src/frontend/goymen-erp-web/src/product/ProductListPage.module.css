@@ -1,0 +1,261 @@
+/* U-01 list. Tokens follow docs/ui/UI_DESIGN_SYSTEM.md §2 and match the values the
+   C-01 list already uses, so the two screens read as one application. */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.title {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+/* The global-master note. Sits directly under the title because the shell's company
+   selector is two rows above it, and the list would otherwise read as that
+   company's products. */
+.scopeNote {
+  margin: 4px 0 0;
+  max-width: 68ch;
+  font-size: 0.85rem;
+  color: #55607a;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-end;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid #d5dbe6;
+  border-radius: 6px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: #55607a;
+}
+
+.field input,
+.field select {
+  padding: 6px 10px;
+  border: 1px solid #d5dbe6;
+  border-radius: 4px;
+  font: inherit;
+  color: #1a2233;
+}
+
+.hint {
+  margin: 0;
+  max-width: 40ch;
+  font-size: 0.78rem;
+  color: #6b7688;
+}
+
+.roleFilter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  border: 1px solid #d5dbe6;
+  border-radius: 4px;
+  padding: 6px 10px 8px;
+}
+
+.roleFilter legend {
+  font-size: 0.8rem;
+  color: #55607a;
+  padding: 0 4px;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.88rem;
+  color: #1a2233;
+}
+
+/* What narrowed the list, and the way out of it. Sits between the controls and the
+   results because that is where the cause of an empty result is looked for. */
+.activeFilters {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #55607a;
+}
+
+.activeFiltersLead {
+  font-weight: 600;
+  color: #1a2233;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border: 1px solid #d5dbe6;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.caption {
+  caption-side: top;
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  color: #55607a;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid #eef1f6;
+  vertical-align: top;
+}
+
+.table th {
+  font-weight: 600;
+  color: #55607a;
+  background: #f7f9fc;
+}
+
+/* Lifecycle badge. Colour never carries the meaning on its own — the label is the
+   state name, per the design system §2 and WCAG 2.2 AA. */
+.badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  border: 1px solid #d5dbe6;
+  background: #f1f4f9;
+  color: #1a2233;
+}
+
+.badge[data-lifecycle='Active'] {
+  border-color: #9dd3b0;
+  background: #eaf7ef;
+  color: #15803d;
+}
+
+.badge[data-lifecycle='Inactive'] {
+  border-color: #d9dee8;
+  background: #f1f4f9;
+  color: #55607a;
+}
+
+.badge[data-lifecycle='Draft'] {
+  border-color: #f0cf9a;
+  background: #fdf5e7;
+  color: #9a5b06;
+}
+
+/* A status this build does not recognise. Deliberately the most conspicuous badge:
+   it is a signal to whoever can reconcile the contract, not a neutral state. */
+.badge[data-lifecycle='unknown'] {
+  border-color: #e4a9a9;
+  background: #fdf3f3;
+  color: #b91c1c;
+}
+
+/* Names the retired code that matched, so "eski kod" cannot be read as a label on
+   the current one. */
+.aliasBadge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  border: 1px solid #cfe0f6;
+  background: #eef5fe;
+  color: #075bc4;
+}
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid #d5dbe6;
+  border-radius: 6px;
+}
+
+.blockTitle {
+  margin: 0;
+  font-weight: 600;
+  color: #1a2233;
+}
+
+.blockDetail {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #55607a;
+}
+
+.primaryAction {
+  display: inline-block;
+  padding: 7px 14px;
+  border: 1px solid #0b6fe8;
+  border-radius: 4px;
+  background: #0b6fe8;
+  color: #fff;
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.primaryAction:hover {
+  background: #075bc4;
+  border-color: #075bc4;
+}
+
+.secondaryAction {
+  padding: 6px 12px;
+  border: 1px solid #d5dbe6;
+  border-radius: 4px;
+  background: #fff;
+  color: #1a2233;
+  font: inherit;
+  cursor: pointer;
+}
+
+.secondaryAction:disabled {
+  color: #97a0b2;
+  cursor: default;
+}
+
+/* Visible focus is mandatory (design system §9); the default outline is kept and
+   only offset so it clears the cell border. */
+.page :focus-visible {
+  outline: 2px solid #0b6fe8;
+  outline-offset: 2px;
+}
+
+/* <768px: one column, and the table scrolls horizontally inside its own box rather
+   than pushing the page sideways (design system §9). */
+@media (max-width: 767px) {
+  .filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .table {
+    display: block;
+    overflow-x: auto;
+  }
+}
