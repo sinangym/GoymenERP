@@ -108,8 +108,14 @@ public static partial class PreparationValidator
         if (profile is null) Reject("profile", "settings_provider_unavailable");
         else
         {
+            if (profile.Profile is null || profile.Profile.ProfileId == Guid.Empty || profile.Profile.Version <= 0)
+            {
+                Reject("profile", "settings_profile_invalid");
+                return issues;
+            }
             if (profile.CompanyId != companyId || profile.CurrencyId != request.Money.CurrencyId ||
                 profile.Operation != operation || !profile.IsActive ||
+                request.Profile is null ||
                 profile.Profile.ProfileId.ToString("D") != request.Profile.ProfileId ||
                 profile.Profile.Version.ToString(CultureInfo.InvariantCulture) != request.Profile.Version ||
                 request.OccurredOn < profile.EffectiveFrom ||

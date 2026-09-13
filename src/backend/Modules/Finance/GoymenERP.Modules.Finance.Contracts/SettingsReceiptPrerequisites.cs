@@ -10,6 +10,9 @@ public sealed class SettingsReceiptPrerequisites(ISettingsPrerequisiteProvider p
         DateOnly occurredOn, DateOnly? valueOn, CancellationToken cancellationToken = default)
     {
         var period = await provider.GetPeriodEligibilityAsync(operation, occurredOn, valueOn, cancellationToken);
+        if (period is null || period.PeriodId == Guid.Empty || period.Policy is null ||
+            period.Policy.ProfileId == Guid.Empty || period.Policy.Version <= 0)
+            throw new SettingsPrerequisiteException("finance_period_metadata_invalid");
         if (period.CompanyId != context.CompanyId || period.Operation != operation ||
             period.OccurredOn != occurredOn || period.ValueOn != valueOn)
             throw new SettingsPrerequisiteException("finance_period_scope_mismatch");
