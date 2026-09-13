@@ -16,7 +16,7 @@ import {
 type Payload = { readonly kind: string; readonly lines: readonly { quantity: string }[] }
 type State = OrderAttemptState<Payload, { id: string }>
 
-const PATH = '/sales/orders'
+const PATH = '/sales/drafts'
 const COMPANY_A = 'company-a'
 const COMPANY_B = 'company-b'
 const PAYLOAD: Payload = { kind: 'Order', lines: [{ quantity: '1000' }] }
@@ -61,7 +61,6 @@ function send(state: State, outcome: OrderCommandOutcome<{ id: string }>, mint: 
   return applyOutcome(inFlight, decision.snapshot, BINDING_A, outcome, state)
 }
 
-const NO_FIELDS = {}
 
 describe('orderAttemptBinding', () => {
   it('binds actor, session and company — and refuses a group view as a write target', () => {
@@ -105,8 +104,8 @@ describe('one key per snapshot', () => {
     ['no response', { type: 'network-error' } as const],
     ['offline', { type: 'offline' } as const],
     ['our own abort', { type: 'aborted' } as const],
-    ['a 5xx', { type: 'http', status: 503, fieldErrors: NO_FIELDS } as const],
-    ['a 2xx that is not the pinned success', { type: 'http', status: 204, fieldErrors: NO_FIELDS } as const],
+    ['a 5xx', { type: 'http', status: 503, problem: null } as const],
+    ['a 2xx that is not the pinned success', { type: 'http', status: 204, problem: null } as const],
     ['a success body the decoder refused', { type: 'malformed' } as const],
   ])('treats %s as unknown, never as a refusal', (_, outcome) => {
     const state = send({ phase: 'idle' }, outcome, keys().next)
@@ -150,10 +149,10 @@ describe('definite answers', () => {
     const k = keys()
     const failed = send(
       { phase: 'idle' },
-      { type: 'http', status: 400, fieldErrors: { businessDate: 'x' } },
+      { type: 'http', status: 400, problem: { status: 400, title: 't', code: 'validation_failed', correlationId: null, errors: [{ field: 'businessDate', code: 'validation_failed' }] } },
       k.next,
     )
-    expect(failed).toMatchObject({ phase: 'failed', failure: 'validation', fieldErrors: { businessDate: 'x' } })
+    expect(failed).toMatchObject({ phase: 'failed', failure: 'validation', problem: { errors: [{ field: 'businessDate' }] } })
     expect(isOutcomeStillUnknown(failed)).toBe(false)
     expect(decideSubmit(failed, request(), k.next)).toMatchObject({ type: 'send', reusedKey: false })
     expect(k.minted).toEqual(['key-1', 'key-2'])
@@ -162,7 +161,7 @@ describe('definite answers', () => {
   it('a 409 answering a retry of an unknown outcome does not claim the first send wrote nothing', () => {
     const k = keys()
     const unknown = send({ phase: 'idle' }, { type: 'network-error' }, k.next)
-    const refused = send(unknown, { type: 'http', status: 409, fieldErrors: NO_FIELDS }, k.next)
+    const refused = send(unknown, { type: 'http', status: 409, problem: null }, k.next)
     expect(refused).toMatchObject({ phase: 'failed', failure: 'conflict', unresolvedSince: 'network-error' })
     expect(isOutcomeStillUnknown(refused)).toBe(true)
     // The snapshot stays live: resubmitting the same payload is still the same key.
@@ -172,8 +171,8 @@ describe('definite answers', () => {
 
   it('a 403 on a retry is a denial of replay access, not evidence of rollback', () => {
     const k = keys()
-    const unknown = send({ phase: 'idle' }, { type: 'http', status: 502, fieldErrors: NO_FIELDS }, k.next)
-    const refused = send(unknown, { type: 'http', status: 403, fieldErrors: NO_FIELDS }, k.next)
+    const unknown = send({ phase: 'idle' }, { type: 'http', status: 502, problem: null }, k.next)
+    const refused = send(unknown, { type: 'http', status: 403, problem: null }, k.next)
     expect(refused).toMatchObject({ phase: 'failed', failure: 'forbidden', unresolvedSince: 'service-unavailable' })
   })
 

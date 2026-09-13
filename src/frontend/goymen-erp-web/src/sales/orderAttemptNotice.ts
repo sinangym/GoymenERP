@@ -11,7 +11,7 @@
  */
 
 import type { OrderAttemptFailure, OrderAttemptState } from './orderAttempt'
-import { ORDER_DRAFT_TEXT } from './salesText'
+import { ORDER_DRAFT_TEXT, problemCodeText } from './salesText'
 
 export type NoticeAction = 'retry' | 'abandon'
 
@@ -30,6 +30,21 @@ const FAILURE_MESSAGE: Record<OrderAttemptFailure, string> = {
   'not-found': ORDER_DRAFT_TEXT.attempt.notFound,
   conflict: ORDER_DRAFT_TEXT.attempt.conflict,
   unexpected: ORDER_DRAFT_TEXT.attempt.unexpected,
+}
+
+/**
+ * The class says that nothing was saved; the stable code, when this build knows it,
+ * says why. Both are shown — a code never replaces the verdict.
+ */
+function refusalNotice(failure: OrderAttemptFailure, code: string | null): AttemptNotice {
+  const reason = problemCodeText(code)
+  const message = FAILURE_MESSAGE[failure]
+  return {
+    tone: 'error',
+    live: 'assertive',
+    message: reason === null ? message : `${message} ${reason}`,
+    actions: [],
+  }
 }
 
 /**
@@ -65,7 +80,7 @@ export function attemptNotice<P, R>(
           actions: ['retry', 'abandon'],
         }
       }
-      return { tone: 'error', live: 'assertive', message: FAILURE_MESSAGE[state.failure], actions: [] }
+      return refusalNotice(state.failure, state.problem?.code ?? null)
     case 'completed':
       return { tone: 'success', live: 'polite', message: text.completed, actions: [] }
     default:

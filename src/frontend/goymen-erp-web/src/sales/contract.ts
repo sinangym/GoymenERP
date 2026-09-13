@@ -1,49 +1,453 @@
 /**
- * The Sales order draft contract, as far as it is known — and no further.
+ * The Sales order draft contract — the only file that spells a Sales wire name.
  *
- * STATUS: `LOGICAL_SPEC`. Every wire name below comes from the logical example in
- * `docs/features/SALES_ORDER_DRAFT_JIT_SPEC_v1.md` §3 (#254 @ 290624d), which says
- * in so many words that it is "mantıksal contract girdisi; mevcut endpoint/DTO
- * iddiası değildir". The Sales Backend pins route, DTO, status/error map, version
- * and permission names; when its examples land, THIS is the one file whose names
- * change. Screens and the form never spell a wire name themselves.
+ * STATUS: `PINNED_SOURCE`, not live. Pinned to Sales Backend draft #257 @ 2c1239e
+ * (`src/backend/Modules/Sales/CONTRACT_V1.md`, `SalesDraftContractsV1.cs`, and the 13
+ * JSON examples copied verbatim into ./examples), on Business #254 @ 6f0cd10. The
+ * Backend says it plainly: "local DTO/decoder/example preparation, not an implemented
+ * HTTP API". No route is mapped, no permission exists, nothing here proves a server.
  *
- * What is intentionally absent until the Backend pins it:
- *  - response DTOs (list, detail, create result) and their decoders;
- *  - the replay indicator, the problem codes and the success status;
- *  - line identity: §2 leaves "client/server tek sahibi" to the Backend, and the
- *    Cari child-UUID rule is explicitly not carried over;
- *  - optional create fields §2 names but §3's example does not carry (internal note,
- *    header due date, delivery address, contact, sales owner, payment term, price).
+ * Rules taken from the source rather than assumed:
+ *  - request optionality does not make a response member optional: every response
+ *    member must be PRESENT, nullable ones as explicit null; unknown members, wrong
+ *    case and numbers standing in for decimal/version strings are refused;
+ *  - decimal and version text is kept verbatim, never parsed into a JS number;
+ *  - `version` (concurrency) and `revision` (commercial, `Rev.0`) are separate facts;
+ *  - consumers must check non-empty server ids, positive version text, kind, state,
+ *    revision and line identities before treating a response as success.
+ *
+ * A decoder returns null for anything it cannot vouch for; the caller fails closed.
  */
 
-export const SALES_CONTRACT_STATUS = 'LOGICAL_SPEC' as const
+import { unplannedQuantity } from './deliveryPlan'
+import { isDateOnly, isReferenceId, isVersionString } from './wirePrimitives'
 
-/** §2: the first command carries an explicit Order intent; the server makes it a Draft. */
+export const SALES_CONTRACT_STATUS = 'PINNED_SOURCE' as const
+
+export const SALES_DRAFT_PATH = '/sales/drafts'
+export const salesDraftDetailPath = (id: string) => `${SALES_DRAFT_PATH}/${encodeURIComponent(id)}`
+
+/** `SalesDraftApiV1`: a first commit answers 201, the same accepted attempt 200 + isReplay. */
+export const CREATED_STATUS = 201
+export const REPLAY_STATUS = 200
+export const REV_0 = 'Rev.0'
 export const ORDER_KIND = 'Order' as const
+export const DRAFT_STATE = 'Draft' as const
 
-export interface OrderDraftLineRequest {
-  readonly productId: string
-  /** Canonical positive decimal string (see ./wirePrimitives.ts). */
-  readonly quantity: string
+/** Technical bounds from `SalesDraftJson.ReadCreate`. Not owner scale or precision. */
+export const LIMITS = {
+  lines: 500,
+  slices: 500,
+  note: 4000,
+  decimalText: 128,
+  versionText: 128,
+} as const
+
+/* ── Request ──────────────────────────────────────────────────────────────── */
+
+export interface OwnerReference {
+  readonly id: string
+  readonly expectedVersion: string
+}
+
+export interface DeliverySlice {
+  /** Client-owned, minted once when the slice is added, preserved on retry. */
+  readonly sliceId: string
   readonly orderUnitId: string
-  /**
-   * `YYYY-MM-DD`, or null when unknown. §2: "bilinmeyen termin null, bugüne/vadeye
-   * dönüştürülmez". Whether the DTO wants null or omission is a Backend pin.
-   */
+  readonly quantity: string
+  readonly requestedDeliveryDate: string
+}
+
+export interface DraftLineRequest {
+  /** Client-owned, minted once when the line is added, preserved on retry. */
+  readonly lineId: string
+  readonly productId: string
+  readonly expectedProductVersion: string
+  readonly orderUnitId: string
+  readonly quantity: string
+  /** A supplied price requires its own `priceUnitId`; null is unknown, `0` is not null. */
+  readonly unitPrice: string | null
+  readonly priceUnitId: string | null
   readonly requestedDeliveryDate: string | null
+  readonly note: string | null
+  /** null: unknown plan. []: no planned slices. Neither is a delivery. */
+  readonly requestedDeliverySlices: readonly DeliverySlice[] | null
+  /** null is unknown, never zero. */
+  readonly discountPercent: string | null
 }
 
 /**
- * The create body. Carries NO company, actor, version, status, number or revision:
- * §2 puts the company in the verified request context and every one of the others
- * on the server.
+ * `CreateSalesOrderDraftRequest`. Every optional member is SENT, as null when unknown.
+ * The source treats missing and null alike on create; sending both forms the same way
+ * keeps the frozen snapshot — and so the idempotency comparison — one shape only.
+ * No company, actor, version, state or approval: the server's scope owns those.
  */
-export interface OrderDraftCreateRequest {
+export interface DraftCreateRequest {
   readonly kind: typeof ORDER_KIND
   readonly partyId: string
   readonly companyAccountId: string
   readonly businessDate: string
   readonly currencyId: string
-  readonly lines: readonly OrderDraftLineRequest[]
+  readonly lines: readonly DraftLineRequest[]
+  readonly requestedDeliveryDate: string | null
+  readonly note: string | null
+  readonly deliveryAddress: OwnerReference | null
+  readonly contact: OwnerReference | null
+  readonly responsible: OwnerReference | null
+  readonly paymentTerms: OwnerReference | null
+  readonly sourceStrategy: OwnerReference | null
+  readonly package: OwnerReference | null
+}
+
+export const OWNER_REFERENCE_FIELDS = [
+  'deliveryAddress',
+  'contact',
+  'responsible',
+  'paymentTerms',
+  'sourceStrategy',
+  'package',
+] as const
+
+/* ── Responses ────────────────────────────────────────────────────────────── */
+
+export interface DraftSummary {
+  readonly id: string
+  readonly companyId: string
+  /** Opaque display text; its format is illustrative in the source. */
+  readonly documentNo: string
+  readonly kind: typeof ORDER_KIND
+  readonly state: typeof DRAFT_STATE
+  readonly version: string
+  readonly revision: string
+  readonly partyId: string
+  readonly companyAccountId: string
+  readonly currencyId: string
+  readonly businessDate: string
+  readonly createdAtUtc: string
+  readonly lineCount: number
+}
+
+export interface DraftLine {
+  readonly lineId: string
+  readonly lineNo: number
+  readonly productId: string
+  readonly productVersion: string
+  readonly productCode: string
+  readonly productName: string
+  readonly orderUnitId: string
+  readonly quantity: string
+  readonly unitPrice: string | null
+  readonly priceUnitId: string | null
+  readonly requestedDeliveryDate: string | null
+  readonly note: string | null
+  readonly requestedDeliverySlices: readonly DeliverySlice[] | null
+  readonly discountPercent: string | null
+}
+
+export interface DraftDetail {
+  readonly draft: DraftSummary
+  readonly requestedDeliveryDate: string | null
+  readonly note: string | null
+  readonly lines: readonly DraftLine[]
+  readonly deliveryAddress: OwnerReference | null
+  readonly contact: OwnerReference | null
+  readonly responsible: OwnerReference | null
+  readonly paymentTerms: OwnerReference | null
+  readonly sourceStrategy: OwnerReference | null
+  readonly package: OwnerReference | null
+}
+
+export interface DraftMutation {
+  readonly detail: DraftDetail
+  readonly isReplay: boolean
+  readonly originalCorrelationId: string
+}
+
+export interface DraftPage {
+  readonly items: readonly DraftSummary[]
+  /** null is the end of the collection. Opaque; the client never builds one. */
+  readonly nextCursor: string | null
+}
+
+export interface SalesFieldError {
+  readonly field: string
+  readonly code: string
+}
+
+export interface SalesProblem {
+  readonly status: number
+  readonly title: string
+  readonly code: string | null
+  readonly correlationId: string | null
+  readonly errors: readonly SalesFieldError[]
+}
+
+/** `SalesDraftFieldCodesV1.All`. */
+export const SALES_PROBLEM_CODE = {
+  validationFailed: 'validation_failed',
+  companyMismatch: 'company_mismatch',
+  passiveCompanyAccount: 'passive_company_account',
+  unsupportedProduct: 'unsupported_product',
+  unsupportedUnit: 'unsupported_unit',
+  invalidQuantity: 'invalid_quantity',
+  invalidDecimalText: 'invalid_decimal_text',
+  sameKeyPayloadMismatch: 'same_key_payload_mismatch',
+  settingsProviderUnavailable: 'settings_provider_unavailable',
+  settingsAccessDenied: 'settings_access_denied',
+} as const
+
+export type SalesProblemCode = (typeof SALES_PROBLEM_CODE)[keyof typeof SALES_PROBLEM_CODE]
+
+/* ── Decoding ─────────────────────────────────────────────────────────────── */
+
+type Obj = Record<string, unknown>
+
+/** Exactly these members, all present. A missing nullable is as wrong as an extra one. */
+function exact(value: unknown, keys: readonly string[]): Obj | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const obj = value as Obj
+  const own = Object.keys(obj)
+  if (own.length !== keys.length) return null
+  for (const key of keys) if (!Object.hasOwn(obj, key)) return null
+  return obj
+}
+
+const DECIMAL_RE = /^[0-9]+(?:\.[0-9]+)?$/
+const INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/
+const REVISION_RE = /^Rev\.(?:0|[1-9][0-9]*)$/
+
+const isDecimal = (v: unknown, positive: boolean): v is string =>
+  typeof v === 'string' &&
+  v.length <= LIMITS.decimalText &&
+  DECIMAL_RE.test(v) &&
+  (!positive || /[1-9]/.test(v))
+const isNullable = <T>(v: unknown, check: (x: unknown) => x is T): v is T | null => v === null || check(v)
+const isText = (v: unknown, max: number): v is string => typeof v === 'string' && v.length > 0 && v.length <= max
+const isNote = (v: unknown): v is string | null => v === null || (typeof v === 'string' && v.length <= LIMITS.note)
+const isOwnerVersion = (v: unknown): v is string =>
+  typeof v === 'string' && v.trim().length > 0 && v.length <= LIMITS.versionText
+const isPositiveInt = (v: unknown, max: number): v is number =>
+  typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= max
+
+function decodeOwnerReference(value: unknown): OwnerReference | null | undefined {
+  if (value === null) return null
+  const o = exact(value, ['id', 'expectedVersion'])
+  if (o === null || !isReferenceId(o.id) || !isOwnerVersion(o.expectedVersion)) return undefined
+  return { id: o.id, expectedVersion: o.expectedVersion }
+}
+
+function decodeSlices(value: unknown): readonly DeliverySlice[] | null | undefined {
+  if (value === null) return null
+  if (!Array.isArray(value) || value.length > LIMITS.slices) return undefined
+  const ids = new Set<string>()
+  const slices: DeliverySlice[] = []
+  for (const entry of value) {
+    const o = exact(entry, ['sliceId', 'orderUnitId', 'quantity', 'requestedDeliveryDate'])
+    if (
+      o === null ||
+      !isReferenceId(o.sliceId) ||
+      ids.has(o.sliceId) ||
+      !isReferenceId(o.orderUnitId) ||
+      !isDecimal(o.quantity, true) ||
+      !isDateOnly(o.requestedDeliveryDate)
+    ) {
+      return undefined
+    }
+    ids.add(o.sliceId)
+    slices.push({
+      sliceId: o.sliceId,
+      orderUnitId: o.orderUnitId,
+      quantity: o.quantity,
+      requestedDeliveryDate: o.requestedDeliveryDate,
+    })
+  }
+  return slices
+}
+
+const SUMMARY_KEYS = [
+  'id', 'companyId', 'documentNo', 'kind', 'state', 'version', 'revision', 'partyId',
+  'companyAccountId', 'currencyId', 'businessDate', 'createdAtUtc', 'lineCount',
+] as const
+
+export function decodeDraftSummary(value: unknown): DraftSummary | null {
+  const o = exact(value, SUMMARY_KEYS)
+  if (
+    o === null ||
+    !isReferenceId(o.id) ||
+    !isReferenceId(o.companyId) ||
+    !isText(o.documentNo, 200) ||
+    // The first slice creates goods Orders in Draft only. Any other kind or state is a
+    // meaning this build was not written for, and is not shown as if it were a Draft.
+    o.kind !== ORDER_KIND ||
+    o.state !== DRAFT_STATE ||
+    !isVersionString(o.version) ||
+    (o.version as string).length > LIMITS.versionText ||
+    typeof o.revision !== 'string' ||
+    !REVISION_RE.test(o.revision) ||
+    !isReferenceId(o.partyId) ||
+    !isReferenceId(o.companyAccountId) ||
+    !isReferenceId(o.currencyId) ||
+    !isDateOnly(o.businessDate) ||
+    typeof o.createdAtUtc !== 'string' ||
+    !INSTANT_RE.test(o.createdAtUtc) ||
+    Number.isNaN(Date.parse(o.createdAtUtc)) ||
+    !isPositiveInt(o.lineCount, LIMITS.lines)
+  ) {
+    return null
+  }
+  return {
+    id: o.id,
+    companyId: o.companyId,
+    documentNo: o.documentNo,
+    kind: ORDER_KIND,
+    state: DRAFT_STATE,
+    version: o.version as string,
+    revision: o.revision,
+    partyId: o.partyId,
+    companyAccountId: o.companyAccountId,
+    currencyId: o.currencyId,
+    businessDate: o.businessDate,
+    createdAtUtc: o.createdAtUtc,
+    lineCount: o.lineCount,
+  }
+}
+
+const LINE_KEYS = [
+  'lineId', 'lineNo', 'productId', 'productVersion', 'productCode', 'productName', 'orderUnitId',
+  'quantity', 'unitPrice', 'priceUnitId', 'requestedDeliveryDate', 'note',
+  'requestedDeliverySlices', 'discountPercent',
+] as const
+
+function decodeLine(value: unknown): DraftLine | null {
+  const o = exact(value, LINE_KEYS)
+  if (o === null) return null
+  const slices = decodeSlices(o.requestedDeliverySlices)
+  if (
+    !isReferenceId(o.lineId) ||
+    !isPositiveInt(o.lineNo, LIMITS.lines) ||
+    !isReferenceId(o.productId) ||
+    !isOwnerVersion(o.productVersion) ||
+    !isText(o.productCode, 200) ||
+    !isText(o.productName, 500) ||
+    !isReferenceId(o.orderUnitId) ||
+    !isDecimal(o.quantity, true) ||
+    !isNullable(o.unitPrice, (v): v is string => isDecimal(v, false)) ||
+    !isNullable(o.priceUnitId, isReferenceId) ||
+    // The source pairs them: a price without its unit, or a unit without a price, is refused.
+    (o.unitPrice === null) !== (o.priceUnitId === null) ||
+    !isNullable(o.requestedDeliveryDate, isDateOnly) ||
+    !isNote(o.note) ||
+    slices === undefined ||
+    !isNullable(o.discountPercent, (v): v is string => isDecimal(v, false))
+  ) {
+    return null
+  }
+  // A plan the server accepted cannot exceed the line or use another unit.
+  if (!unplannedQuantity({ orderUnitId: o.orderUnitId, quantity: o.quantity }, slices).ok) return null
+  return {
+    lineId: o.lineId,
+    lineNo: o.lineNo,
+    productId: o.productId,
+    productVersion: o.productVersion,
+    productCode: o.productCode,
+    productName: o.productName,
+    orderUnitId: o.orderUnitId,
+    quantity: o.quantity,
+    unitPrice: o.unitPrice,
+    priceUnitId: o.priceUnitId,
+    requestedDeliveryDate: o.requestedDeliveryDate,
+    note: o.note,
+    requestedDeliverySlices: slices,
+    discountPercent: o.discountPercent,
+  }
+}
+
+const DETAIL_KEYS = ['draft', 'requestedDeliveryDate', 'note', 'lines', ...OWNER_REFERENCE_FIELDS] as const
+
+/** `expectedId`: the record the caller asked for. A detail of another record is not an answer. */
+export function decodeDraftDetail(value: unknown, expectedId: string | null): DraftDetail | null {
+  const o = exact(value, DETAIL_KEYS)
+  if (o === null) return null
+  const draft = decodeDraftSummary(o.draft)
+  if (draft === null || (expectedId !== null && draft.id !== expectedId)) return null
+  if (!isNullable(o.requestedDeliveryDate, isDateOnly) || !isNote(o.note)) return null
+  if (!Array.isArray(o.lines) || o.lines.length !== draft.lineCount) return null
+  const lines: DraftLine[] = []
+  const lineIds = new Set<string>()
+  const lineNos = new Set<number>()
+  for (const entry of o.lines) {
+    const line = decodeLine(entry)
+    if (line === null || lineIds.has(line.lineId) || lineNos.has(line.lineNo)) return null
+    lineIds.add(line.lineId)
+    lineNos.add(line.lineNo)
+    lines.push(line)
+  }
+  const references: Partial<Record<(typeof OWNER_REFERENCE_FIELDS)[number], OwnerReference | null>> = {}
+  for (const field of OWNER_REFERENCE_FIELDS) {
+    const reference = decodeOwnerReference(o[field])
+    if (reference === undefined) return null
+    references[field] = reference
+  }
+  return {
+    draft,
+    requestedDeliveryDate: o.requestedDeliveryDate,
+    note: o.note,
+    lines,
+    deliveryAddress: references.deliveryAddress ?? null,
+    contact: references.contact ?? null,
+    responsible: references.responsible ?? null,
+    paymentTerms: references.paymentTerms ?? null,
+    sourceStrategy: references.sourceStrategy ?? null,
+    package: references.package ?? null,
+  }
+}
+
+export function decodeDraftMutation(value: unknown): DraftMutation | null {
+  const o = exact(value, ['detail', 'isReplay', 'originalCorrelationId'])
+  if (o === null || typeof o.isReplay !== 'boolean' || !isText(o.originalCorrelationId, 200)) return null
+  const detail = decodeDraftDetail(o.detail, null)
+  if (detail === null) return null
+  return { detail, isReplay: o.isReplay, originalCorrelationId: o.originalCorrelationId }
+}
+
+export function decodeDraftPage(value: unknown): DraftPage | null {
+  const o = exact(value, ['items', 'nextCursor'])
+  if (o === null || !Array.isArray(o.items) || !isNullable(o.nextCursor, (v): v is string => isText(v, 4096))) {
+    return null
+  }
+  const items: DraftSummary[] = []
+  const ids = new Set<string>()
+  for (const entry of o.items) {
+    const item = decodeDraftSummary(entry)
+    if (item === null || ids.has(item.id)) return null
+    ids.add(item.id)
+    items.push(item)
+  }
+  return { items, nextCursor: o.nextCursor }
+}
+
+/**
+ * A problem body, read leniently: platform 401/403/404 may be plain ProblemDetails
+ * with extra members and no `code`. Only what the contract names is taken, and a
+ * body that is not a problem at all yields null — the status still speaks.
+ */
+export function decodeProblem(value: unknown, status: number): SalesProblem | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const o = value as Obj
+  if (o.status !== undefined && o.status !== status) return null
+  const errors: SalesFieldError[] = []
+  if (Array.isArray(o.errors)) {
+    for (const entry of o.errors) {
+      if (typeof entry !== 'object' || entry === null) continue
+      const e = entry as Obj
+      if (typeof e.field === 'string' && typeof e.code === 'string') errors.push({ field: e.field, code: e.code })
+    }
+  }
+  return {
+    status,
+    title: typeof o.title === 'string' ? o.title : '',
+    code: typeof o.code === 'string' ? o.code : null,
+    correlationId: typeof o.correlationId === 'string' ? o.correlationId : null,
+    errors,
+  }
 }

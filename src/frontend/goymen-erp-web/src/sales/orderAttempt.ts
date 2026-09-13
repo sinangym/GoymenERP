@@ -30,6 +30,7 @@
  */
 
 import type { ShellState } from '../shell/shellState'
+import type { SalesProblem } from './contract'
 
 export type OrderAttemptFailure =
   | 'validation'
@@ -54,7 +55,8 @@ export type OrderCommandOutcome<R> =
   | {
       readonly type: 'http'
       readonly status: number
-      readonly fieldErrors: Readonly<Record<string, string>>
+      /** The decoded problem body, when there was one. The status speaks either way. */
+      readonly problem: SalesProblem | null
     }
   | { readonly type: 'offline' }
   | { readonly type: 'network-error' }
@@ -84,7 +86,7 @@ export type OrderAttemptState<P, R> =
       readonly phase: 'failed'
       readonly snapshot: OrderAttemptSnapshot<P>
       readonly failure: OrderAttemptFailure
-      readonly fieldErrors: Readonly<Record<string, string>>
+      readonly problem: SalesProblem | null
       /** Set when this refusal answered a retry of an outcome that was already unknown. */
       readonly unresolvedSince?: OrderAttemptUnknownReason
     }
@@ -201,7 +203,7 @@ export function applyOutcome<P, R>(
         phase: 'failed',
         snapshot,
         failure: failureForStatus(outcome.status),
-        fieldErrors: outcome.fieldErrors,
+        problem: outcome.problem,
         ...(unresolvedSince !== undefined ? { unresolvedSince } : {}),
       }
     default:
@@ -210,9 +212,10 @@ export function applyOutcome<P, R>(
 }
 
 /**
- * Status-only classification. The Sales problem codes are a Backend pin that has not
- * landed; until it does, the status is the only fact the client may rely on, and a
- * platform 403 is not required to carry a code at all (§3).
+ * The class of a definite refusal, from the status map #257 pins: 400 shape, 401, 403,
+ * 404, 409 company/account state or same-key-different-payload, 422 owner reference.
+ * The stable `code` (when present) refines the MESSAGE, never the class — a platform
+ * 403 need not carry one, and an unknown code must not turn a refusal into success.
  */
 function failureForStatus(status: number): OrderAttemptFailure {
   if (status === 400 || status === 422) return 'validation'

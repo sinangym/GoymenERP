@@ -17,9 +17,9 @@ const ALL_STATES: readonly State[] = [
   { phase: 'submitting', snapshot },
   { phase: 'unknown', snapshot, reason: 'network-error' },
   { phase: 'abandoned', snapshot, reason: 'network-error' },
-  { phase: 'failed', snapshot, failure: 'conflict', fieldErrors: {}, unresolvedSince: 'offline' },
-  { phase: 'failed', snapshot, failure: 'forbidden', fieldErrors: {} },
-  { phase: 'failed', snapshot, failure: 'validation', fieldErrors: {} },
+  { phase: 'failed', snapshot, failure: 'conflict', problem: null, unresolvedSince: 'offline' },
+  { phase: 'failed', snapshot, failure: 'forbidden', problem: null },
+  { phase: 'failed', snapshot, failure: 'validation', problem: null },
   { phase: 'completed', snapshot, result: {} },
 ]
 

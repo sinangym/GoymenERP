@@ -1,235 +1,285 @@
 import { describe, expect, it } from 'vitest'
+import createRequestRaw from './examples/create-request.json?raw'
 import {
+  ORDER_FIELD,
   addLine,
+  addSlice,
+  browserIds,
   emptyOrderDraftForm,
+  formFieldForServerPath,
   isOrderDraftPristine,
   lineFieldId,
-  ORDER_FIELD,
+  linePlanHint,
   removeLine,
+  removeSlice,
   setLineProduct,
+  sliceFieldId,
+  updateSlice,
   validateOrderDraft,
   type OrderDraftFormValues,
   type OrderDraftOptions,
 } from './orderDraftForm'
 import { ORDER_DRAFT_TEXT } from './salesText'
 
-// Stand-ins for the spec's `<placeholder>` values. Not fixtures of any environment.
-const PARTY = '3f2a9c10-5b7e-4d21-9a0c-6e8f1b2c3d41'
-const ACCOUNT_A = '3f2a9c10-5b7e-4d21-9a0c-6e8f1b2c3d42'
-const PASSIVE_ACCOUNT = '3f2a9c10-5b7e-4d21-9a0c-6e8f1b2c3d43'
-const CURRENCY = '3f2a9c10-5b7e-4d21-9a0c-6e8f1b2c3d44'
-const PRODUCT = '3f2a9c10-5b7e-4d21-9a0c-6e8f1b2c3d45'
-const DRAFT_PRODUCT = '3f2a9c10-5b7e-4d21-9a0c-6e8f1b2c3d46'
-const KG = '3f2a9c10-5b7e-4d21-9a0c-6e8f1b2c3d47'
-const PIECE = '3f2a9c10-5b7e-4d21-9a0c-6e8f1b2c3d48'
-const OTHER_PRODUCT = '3f2a9c10-5b7e-4d21-9a0c-6e8f1b2c3d49'
+// The ids of #257's create-request.json. Synthetic schema values, not fixtures.
+const PARTY = '11111111-1111-1111-1111-111111111111'
+const ACCOUNT = '55555555-5555-5555-5555-555555555555'
+const CURRENCY = '33333333-3333-3333-3333-333333333333'
+const PRODUCT = '22222222-2222-2222-2222-222222222222'
+const KG = '44444444-4444-4444-4444-444444444444'
+const LINE = '66666666-6666-6666-6666-666666666666'
+const SLICE_1 = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+const SLICE_2 = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
+const OTHER_ACCOUNT = '55555555-5555-5555-5555-555555555556'
+const DRAFT_PRODUCT = '22222222-2222-2222-2222-222222222223'
+const OTHER_PRODUCT = '22222222-2222-2222-2222-222222222224'
+const PIECE = '44444444-4444-4444-4444-444444444445'
 
 const OPTIONS: OrderDraftOptions = {
-  accounts: [{ partyId: PARTY, companyAccountId: ACCOUNT_A }],
-  currencyIds: [CURRENCY],
-  productIds: [PRODUCT, OTHER_PRODUCT],
-  unitIdsByProduct: { [PRODUCT]: [KG], [OTHER_PRODUCT]: [PIECE] },
+  accounts: [{ partyId: PARTY, companyAccountId: ACCOUNT, label: 'Cari A' }],
+  currencies: [{ currencyId: CURRENCY, label: 'TRY' }],
+  products: [
+    { productId: PRODUCT, productVersion: '7', label: 'P', orderUnits: [{ unitId: KG, label: 'kg' }] },
+    { productId: OTHER_PRODUCT, productVersion: '3', label: 'Q', orderUnits: [{ unitId: PIECE, label: 'adet' }] },
+  ],
 }
 
-function filled(over: Partial<OrderDraftFormValues> = {}): OrderDraftFormValues {
+/** The form a person fills to produce #257's example request. */
+function exampleForm(over: Partial<OrderDraftFormValues> = {}): OrderDraftFormValues {
   return {
     partyId: PARTY,
-    companyAccountId: ACCOUNT_A,
+    companyAccountId: ACCOUNT,
     businessDate: '2026-09-13',
     currencyId: CURRENCY,
+    requestedDeliveryDate: '',
+    note: '',
     lines: [
       {
-        key: 'l1',
+        lineId: LINE,
         productId: PRODUCT,
         quantityText: '1000',
         orderUnitId: KG,
         requestedDeliveryDate: '2026-09-20',
+        note: '',
+        slices: [
+          { sliceId: SLICE_1, quantityText: '400', requestedDeliveryDate: '2026-09-20' },
+          { sliceId: SLICE_2, quantityText: '600', requestedDeliveryDate: '2026-09-22' },
+        ],
       },
     ],
     ...over,
   }
 }
 
-describe('validateOrderDraft — the spec §3 logical example', () => {
-  it('produces exactly the example body, and nothing the server owns', () => {
-    const result = validateOrderDraft(filled(), OPTIONS)
+function withSlices(quantities: readonly string[]): OrderDraftFormValues {
+  const form = exampleForm()
+  return {
+    ...form,
+    lines: [
+      {
+        ...form.lines[0],
+        slices: quantities.map((quantityText, i) => ({
+          sliceId: `bbbbbbbb-bbbb-bbbb-bbbb-00000000000${i + 1}`,
+          quantityText,
+          requestedDeliveryDate: '2026-09-20',
+        })),
+      },
+    ],
+  }
+}
+
+describe('validateOrderDraft — consumes #257 create-request.json', () => {
+  it('produces exactly the example body: every member present, unknowns as null', () => {
+    const result = validateOrderDraft(exampleForm(), OPTIONS)
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    // Deep equality on the whole object: an extra member (companyId, actor, version,
-    // status, number, revision) fails this just like a wrong value does.
-    expect(result.payload).toEqual({
-      kind: 'Order',
-      partyId: PARTY,
-      companyAccountId: ACCOUNT_A,
-      businessDate: '2026-09-13',
-      currencyId: CURRENCY,
-      lines: [
-        { productId: PRODUCT, quantity: '1000', orderUnitId: KG, requestedDeliveryDate: '2026-09-20' },
-      ],
+    // Deep equality with the Backend's own example, including explicit nulls and the
+    // absence of company, actor, version, state and approval members.
+    expect(result.payload).toEqual(JSON.parse(createRequestRaw))
+    // …and the same member order, so the serialized snapshot is the example's shape.
+    expect(Object.keys(result.payload)).toEqual(Object.keys(JSON.parse(createRequestRaw)))
+  })
+
+  it('carries the offered product version as expectedProductVersion', () => {
+    const result = validateOrderDraft(exampleForm(), {
+      ...OPTIONS,
+      products: [{ ...OPTIONS.products[0], productVersion: '8' }],
     })
+    expect(result.ok && result.payload.lines[0].expectedProductVersion).toBe('8')
   })
 
-  it('sends an unknown due date as null, never as today', () => {
-    const form = filled()
+  it('sends notes verbatim, a blank note as null, and never price or discount', () => {
+    const form = exampleForm({ note: '  Tır ile  ' })
     const result = validateOrderDraft(
-      { ...form, lines: [{ ...form.lines[0], requestedDeliveryDate: '' }] },
+      { ...form, lines: [{ ...form.lines[0], note: '   ', slices: null }] },
       OPTIONS,
     )
     expect(result.ok).toBe(true)
-    if (result.ok) expect(result.payload.lines[0].requestedDeliveryDate).toBeNull()
-  })
-
-  it('sends the quantity as canonical decimal text', () => {
-    const form = filled()
-    const result = validateOrderDraft(
-      { ...form, lines: [{ ...form.lines[0], quantityText: '1000,50' }] },
-      OPTIONS,
-    )
-    expect(result.ok).toBe(true)
-    if (result.ok) expect(result.payload.lines[0].quantity).toBe('1000.5')
+    if (!result.ok) return
+    expect(result.payload.note).toBe('  Tır ile  ')
+    expect(result.payload.lines[0]).toMatchObject({
+      note: null,
+      unitPrice: null,
+      priceUnitId: null,
+      discountPercent: null,
+      requestedDeliverySlices: null,
+    })
   })
 })
 
-describe('validateOrderDraft — references are chosen, never assumed', () => {
-  it('refuses an account the projection does not offer (passive, or another company)', () => {
-    const result = validateOrderDraft(filled({ companyAccountId: PASSIVE_ACCOUNT }), OPTIONS)
-    expect(result.ok).toBe(false)
-    if (!result.ok) {
-      expect(result.errors[ORDER_FIELD.customer]).toBe(ORDER_DRAFT_TEXT.validation.customerNotOffered)
-    }
+describe('delivery slices — the #254 §5 golden in the form', () => {
+  it('1000 = 400 + 600 is accepted and leaves 0 unplanned', () => {
+    expect(validateOrderDraft(withSlices(['400', '600']), OPTIONS).ok).toBe(true)
+    expect(linePlanHint(withSlices(['400', '600']).lines[0])).toEqual({ unplanned: '0' })
   })
 
-  it('refuses a party paired with an account that is not offered for it', () => {
-    // The party IS offered, but only with another account: the pair is what is chosen.
-    const result = validateOrderDraft(filled(), {
-      ...OPTIONS,
-      accounts: [{ partyId: PARTY, companyAccountId: PASSIVE_ACCOUNT }],
-    })
+  it('400 + 700 is refused on the line before anything is sent', () => {
+    const result = validateOrderDraft(withSlices(['400', '700']), OPTIONS)
     expect(result.ok).toBe(false)
     if (!result.ok) {
-      expect(result.errors[ORDER_FIELD.customer]).toBe(ORDER_DRAFT_TEXT.validation.customerNotOffered)
+      expect(result.errors[lineFieldId(LINE, 'slices')]).toBe(ORDER_DRAFT_TEXT.validation.slicesExceedOrder)
     }
+    expect(linePlanHint(withSlices(['400', '700']).lines[0])).toEqual({ exceeds: true })
   })
 
-  it('refuses a product the owner does not report as usable (a Draft, for one)', () => {
-    const form = filled()
-    const result = validateOrderDraft(
-      { ...form, lines: [{ ...form.lines[0], productId: DRAFT_PRODUCT }] },
-      OPTIONS,
-    )
+  it('400 + 400 is accepted and shows 200 unplanned — not delivered', () => {
+    expect(validateOrderDraft(withSlices(['400', '400']), OPTIONS).ok).toBe(true)
+    expect(linePlanHint(withSlices(['400', '400']).lines[0])).toEqual({ unplanned: '200' })
+  })
+
+  it('gives every slice the line unit, and requires a real slice date', () => {
+    const form = withSlices(['400'])
+    const undated = updateSlice(form, LINE, form.lines[0].slices![0].sliceId, { requestedDeliveryDate: '' })
+    const result = validateOrderDraft(undated, OPTIONS)
     expect(result.ok).toBe(false)
     if (!result.ok) {
-      expect(result.errors[lineFieldId('l1', 'productId')]).toBe(
-        ORDER_DRAFT_TEXT.validation.productNotOffered,
+      expect(result.errors[sliceFieldId(LINE, form.lines[0].slices![0].sliceId, 'requestedDeliveryDate')]).toBe(
+        ORDER_DRAFT_TEXT.validation.sliceDateRequired,
       )
-      // One message per cause: the unit is not judged against a product nobody offered.
-      expect(result.errors[lineFieldId('l1', 'orderUnitId')]).toBeUndefined()
+    }
+    const ok = validateOrderDraft(form, OPTIONS)
+    expect(ok.ok && ok.payload.lines[0].requestedDeliverySlices?.[0].orderUnitId).toBe(KG)
+  })
+
+  it('removing the last slice returns to an unknown plan, not "no planned slices"', () => {
+    let form = addSlice(exampleForm({ lines: [{ ...exampleForm().lines[0], slices: null }] }), LINE, SLICE_1)
+    expect(form.lines[0].slices).toHaveLength(1)
+    form = removeSlice(form, LINE, SLICE_1)
+    expect(form.lines[0].slices).toBeNull()
+  })
+})
+
+describe('references are chosen, never assumed', () => {
+  it('refuses an account pair the source does not offer (passive, or another company)', () => {
+    const result = validateOrderDraft(exampleForm({ companyAccountId: OTHER_ACCOUNT }), OPTIONS)
+    expect(!result.ok && result.errors[ORDER_FIELD.customer]).toBe(ORDER_DRAFT_TEXT.validation.customerNotOffered)
+  })
+
+  it('refuses a product the owner did not report usable, without a second unit message', () => {
+    const form = exampleForm()
+    const result = validateOrderDraft({ ...form, lines: [{ ...form.lines[0], productId: DRAFT_PRODUCT }] }, OPTIONS)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.errors[lineFieldId(LINE, 'productId')]).toBe(ORDER_DRAFT_TEXT.validation.productNotOffered)
+      expect(result.errors[lineFieldId(LINE, 'orderUnitId')]).toBeUndefined()
     }
   })
 
   it('refuses a unit the chosen product does not offer, and never assumes kg', () => {
-    const form = filled()
-    const result = validateOrderDraft(
-      { ...form, lines: [{ ...form.lines[0], orderUnitId: PIECE }] },
-      OPTIONS,
+    const form = exampleForm()
+    const result = validateOrderDraft({ ...form, lines: [{ ...form.lines[0], orderUnitId: PIECE }] }, OPTIONS)
+    expect(!result.ok && result.errors[lineFieldId(LINE, 'orderUnitId')]).toBe(
+      ORDER_DRAFT_TEXT.validation.orderUnitNotOffered,
     )
-    expect(result.ok).toBe(false)
-    if (!result.ok) {
-      expect(result.errors[lineFieldId('l1', 'orderUnitId')]).toBe(
-        ORDER_DRAFT_TEXT.validation.orderUnitNotOffered,
-      )
-    }
   })
 
-  it('treats an empty projection as nothing offered, not as anything allowed', () => {
-    const empty: OrderDraftOptions = { accounts: [], currencyIds: [], productIds: [], unitIdsByProduct: {} }
-    const result = validateOrderDraft(filled(), empty)
-    expect(result.ok).toBe(false)
-    if (!result.ok) {
-      expect(Object.keys(result.errors)).toEqual([
-        ORDER_FIELD.customer,
-        ORDER_FIELD.currency,
-        lineFieldId('l1', 'productId'),
-      ])
-    }
+  it('treats an empty source as nothing offered', () => {
+    const result = validateOrderDraft(exampleForm(), { accounts: [], currencies: [], products: [] })
+    expect(!result.ok && Object.keys(result.errors)).toEqual([
+      ORDER_FIELD.customer,
+      ORDER_FIELD.currency,
+      lineFieldId(LINE, 'productId'),
+    ])
   })
 })
 
-describe('validateOrderDraft — required fields and dates', () => {
-  it('lists every missing field, header first and then line by line', () => {
-    const result = validateOrderDraft(emptyOrderDraftForm('l1'), OPTIONS)
-    expect(result.ok).toBe(false)
-    if (!result.ok) {
-      expect(Object.keys(result.errors)).toEqual([
-        ORDER_FIELD.customer,
-        ORDER_FIELD.businessDate,
-        ORDER_FIELD.currency,
-        lineFieldId('l1', 'productId'),
-        lineFieldId('l1', 'quantity'),
-        lineFieldId('l1', 'orderUnitId'),
-      ])
-    }
+describe('required fields, dates and bounds', () => {
+  it('lists every missing field, header first then line by line', () => {
+    const result = validateOrderDraft(emptyOrderDraftForm(LINE), OPTIONS)
+    expect(!result.ok && Object.keys(result.errors)).toEqual([
+      ORDER_FIELD.customer,
+      ORDER_FIELD.businessDate,
+      ORDER_FIELD.currency,
+      lineFieldId(LINE, 'productId'),
+      lineFieldId(LINE, 'quantity'),
+      lineFieldId(LINE, 'orderUnitId'),
+    ])
   })
 
   it('needs at least one line', () => {
-    const result = validateOrderDraft(filled({ lines: [] }), OPTIONS)
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.errors[ORDER_FIELD.lines]).toBe(ORDER_DRAFT_TEXT.validation.linesRequired)
+    const result = validateOrderDraft(exampleForm({ lines: [] }), OPTIONS)
+    expect(!result.ok && result.errors[ORDER_FIELD.lines]).toBe(ORDER_DRAFT_TEXT.validation.linesRequired)
   })
 
-  it('refuses dates that are not on the calendar', () => {
-    const form = filled({ businessDate: '2026-02-29' })
+  it('refuses off-calendar dates and an over-long note', () => {
     const result = validateOrderDraft(
-      { ...form, lines: [{ ...form.lines[0], requestedDeliveryDate: '2026-04-31' }] },
+      exampleForm({ businessDate: '2026-02-29', requestedDeliveryDate: '2026-04-31', note: 'x'.repeat(4001) }),
       OPTIONS,
     )
     expect(result.ok).toBe(false)
     if (!result.ok) {
       expect(result.errors[ORDER_FIELD.businessDate]).toBe(ORDER_DRAFT_TEXT.validation.dateInvalid)
-      expect(result.errors[lineFieldId('l1', 'requestedDeliveryDate')]).toBe(
-        ORDER_DRAFT_TEXT.validation.dateInvalid,
-      )
+      expect(result.errors[ORDER_FIELD.requestedDeliveryDate]).toBe(ORDER_DRAFT_TEXT.validation.dateInvalid)
+      expect(result.errors[ORDER_FIELD.note]).toBe(ORDER_DRAFT_TEXT.validation.noteTooLong)
     }
   })
 
   it('surfaces the ambiguous thousands separator instead of guessing', () => {
-    const form = filled()
-    const result = validateOrderDraft(
-      { ...form, lines: [{ ...form.lines[0], quantityText: '1.000' }] },
-      OPTIONS,
-    )
-    expect(result.ok).toBe(false)
-    if (!result.ok) {
-      expect(result.errors[lineFieldId('l1', 'quantity')]).toBe(
-        ORDER_DRAFT_TEXT.validation.quantityAmbiguous,
-      )
-    }
+    const form = exampleForm()
+    const result = validateOrderDraft({ ...form, lines: [{ ...form.lines[0], quantityText: '1.000' }] }, OPTIONS)
+    expect(!result.ok && result.errors[lineFieldId(LINE, 'quantity')]).toBe(ORDER_DRAFT_TEXT.validation.quantityAmbiguous)
   })
 })
 
-describe('line editing', () => {
-  it('keeps each line identity stable across add, edit and remove', () => {
-    let form = addLine(filled(), 'l2')
-    form = setLineProduct(form, 'l2', OTHER_PRODUCT)
-    form = removeLine(form, 'l1')
-    expect(form.lines.map((line) => line.key)).toEqual(['l2'])
-    expect(form.lines[0].productId).toBe(OTHER_PRODUCT)
+describe('line editing and server paths', () => {
+  it('mints distinct v4 UUIDs without needing a secure context', () => {
+    const original = globalThis.crypto.randomUUID
+    // Simulate a plain-HTTP host, where randomUUID is absent.
+    Object.defineProperty(globalThis.crypto, 'randomUUID', { value: undefined, configurable: true })
+    try {
+      const ids = new Set(Array.from({ length: 50 }, () => browserIds()))
+      expect(ids.size).toBe(50)
+      for (const id of ids) expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    } finally {
+      Object.defineProperty(globalThis.crypto, 'randomUUID', { value: original, configurable: true })
+    }
+  })
+
+  it('keeps line identities stable across add, product change and remove', () => {
+    let form = addLine(exampleForm(), 'line-2')
+    form = setLineProduct(form, 'line-2', OTHER_PRODUCT)
+    form = removeLine(form, LINE)
+    expect(form.lines.map((line) => line.lineId)).toEqual(['line-2'])
   })
 
   it('clears the unit when the product changes, and only then', () => {
-    const changed = setLineProduct(filled(), 'l1', OTHER_PRODUCT)
-    expect(changed.lines[0].orderUnitId).toBe('')
-    const same = setLineProduct(filled(), 'l1', PRODUCT)
-    expect(same.lines[0].orderUnitId).toBe(KG)
+    expect(setLineProduct(exampleForm(), LINE, OTHER_PRODUCT).lines[0].orderUnitId).toBe('')
+    expect(setLineProduct(exampleForm(), LINE, PRODUCT).lines[0].orderUnitId).toBe(KG)
   })
 
-  it('is pristine only while nothing was typed or chosen', () => {
-    expect(isOrderDraftPristine(emptyOrderDraftForm('l1'))).toBe(true)
-    expect(isOrderDraftPristine(addLine(emptyOrderDraftForm('l1'), 'l2'))).toBe(true)
-    const typed = emptyOrderDraftForm('l1')
-    expect(
-      isOrderDraftPristine({ ...typed, lines: [{ ...typed.lines[0], quantityText: '5' }] }),
-    ).toBe(false)
-    expect(isOrderDraftPristine({ ...typed, businessDate: '2026-09-13' })).toBe(false)
+  it('is pristine only while nothing was typed, chosen or planned', () => {
+    expect(isOrderDraftPristine(emptyOrderDraftForm(LINE))).toBe(true)
+    expect(isOrderDraftPristine(addSlice(emptyOrderDraftForm(LINE), LINE, SLICE_1))).toBe(false)
+    expect(isOrderDraftPristine({ ...emptyOrderDraftForm(LINE), note: 'x' })).toBe(false)
+  })
+
+  it('places a server field path on the SENT line, not on the form as it is now', () => {
+    const sent = [{ lineId: LINE }, { lineId: 'line-2' }]
+    expect(formFieldForServerPath('lines[1].productId', sent)).toBe(lineFieldId('line-2', 'productId'))
+    expect(formFieldForServerPath('lines[0].expectedProductVersion', sent)).toBe(lineFieldId(LINE, 'productId'))
+    expect(formFieldForServerPath('lines[0].requestedDeliverySlices', sent)).toBe(lineFieldId(LINE, 'slices'))
+    expect(formFieldForServerPath('companyAccountId', sent)).toBe(ORDER_FIELD.customer)
+    expect(formFieldForServerPath('lines[5].quantity', sent)).toBeNull()
+    expect(formFieldForServerPath('idempotencyKey', sent)).toBeNull()
   })
 })

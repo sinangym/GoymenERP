@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "companyId": "99999999-9999-9999-9999-999999999999",
+      "documentNo": "SO-2026-0001",
+      "kind": "Order",
+      "state": "Draft",
+      "version": "9007199254740993",
+      "revision": "Rev.0",
+      "partyId": "11111111-1111-1111-1111-111111111111",
+      "companyAccountId": "55555555-5555-5555-5555-555555555555",
+      "currencyId": "33333333-3333-3333-3333-333333333333",
+      "businessDate": "2026-09-13",
+      "createdAtUtc": "2026-09-13T09:00:00Z",
+      "lineCount": 1
+    }
+  ],
+  "nextCursor": null
+}

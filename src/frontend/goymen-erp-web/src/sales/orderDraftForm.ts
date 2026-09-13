@@ -1,49 +1,77 @@
 /**
  * Sales order draft form: values, validation and the one normalized create body.
  *
- * Source: `SALES_ORDER_DRAFT_JIT_SPEC_v1.md` §2–§3 (#254 @ 290624d). Wire names live
- * in ./contract.ts; this file never spells one the contract does not.
+ * Pinned to #257 @ 2c1239e (`CreateSalesOrderDraftRequest`) on #254 @ 6f0cd10. Wire
+ * names live in ./contract.ts.
  *
  * THE RULES THIS FORM ENCODES, and where each comes from:
- *  - every reference (Cari account, currency, product, order unit) is CHOSEN from a
- *    server projection and never typed. A reference the projection no longer offers
- *    is refused client-side exactly like an invented one: a passive account (AT-013),
- *    an account of another company, a Draft product or a unit the product does not
- *    offer are all simply absent from what the owner offers (§3, §5);
- *  - the company is NOT a form value. It comes from the committed shell context and
- *    travels as request context, never in the body (§2);
- *  - a quantity stays text end to end and is canonicalized losslessly;
- *  - an empty due date is null — unknown — and never becomes today (§2);
- *  - nothing is priced, totalled or converted here. §2: without an approved price,
- *    tax, rate and discount order, no total or margin is produced.
+ *  - every reference (Cari account, currency, product + its version, order unit) is
+ *    CHOSEN from what an owner offers and never typed. Not offered is refused exactly
+ *    like invented: a passive account, another company's account, a product the
+ *    Product owner did not report usable, a unit the product does not offer;
+ *  - `lineId` and `sliceId` are client-owned UUIDs minted ONCE when the row is added
+ *    and kept for the life of the form, so a retry sends the same identities (§Create);
+ *  - the company is not a form value: it is the committed shell context, sent as
+ *    request context, never in the body;
+ *  - quantities stay text end to end; an empty date is null — unknown — never today;
+ *  - price, price unit and discount are NOT offered: the contract represents them,
+ *    but price-read permission, a price-unit source and pricing policy do not exist,
+ *    so they go out as null (unknown), which is not zero and not free of charge;
+ *  - the six commercial owner references go out as null for the same reason: no
+ *    authorized address/contact/responsible/payment/source/package read exists.
  */
 
-import { ORDER_KIND, type OrderDraftCreateRequest, type OrderDraftLineRequest } from './contract'
+import {
+  LIMITS,
+  ORDER_KIND,
+  type DeliverySlice,
+  type DraftCreateRequest,
+  type DraftLineRequest,
+} from './contract'
+import { unplannedQuantity } from './deliveryPlan'
 import { ORDER_DRAFT_TEXT } from './salesText'
 import { isDateOnly, parseQuantityInput, type QuantityInputError } from './wirePrimitives'
 
-/** What the owners currently offer for selection. Filled from projections the Backend pins. */
+/** What the owners currently offer. Filled only from a real selection source. */
 export interface OrderDraftOptions {
-  /** Active Party + an active account of the COMMITTED company, as offered together. */
-  readonly accounts: readonly { readonly partyId: string; readonly companyAccountId: string }[]
-  readonly currencyIds: readonly string[]
-  /** Products the Product owner reports as usable for sales. Draft/Sellable alone is not. */
-  readonly productIds: readonly string[]
-  /** Order units the owner offers per product. A unit is never assumed to be kg. */
-  readonly unitIdsByProduct: Readonly<Record<string, readonly string[]>>
+  /** Active Party + an active account of the COMMITTED company, offered as a pair. */
+  readonly accounts: readonly {
+    readonly partyId: string
+    readonly companyAccountId: string
+    readonly label: string
+  }[]
+  readonly currencies: readonly { readonly currencyId: string; readonly label: string }[]
+  /** Products the Product owner reports usable for sales, at a specific version. */
+  readonly products: readonly {
+    readonly productId: string
+    readonly productVersion: string
+    readonly label: string
+    /** Order units the owner offers for this product. Never assumed to be kg. */
+    readonly orderUnits: readonly { readonly unitId: string; readonly label: string }[]
+  }[]
 }
 
-export interface OrderDraftLineValues {
-  /**
-   * Local, stable identity of the row: React key and field-id stem. It is NOT the
-   * wire line id — who mints that is still a Backend pin (§2).
-   */
-  readonly key: string
+export interface SliceValues {
+  /** The wire `sliceId`, minted when the slice was added. */
+  readonly sliceId: string
+  readonly quantityText: string
+  readonly requestedDeliveryDate: string
+}
+
+export interface LineValues {
+  /** The wire `lineId`, minted when the line was added. Also the React key and field-id stem. */
+  readonly lineId: string
   readonly productId: string
   readonly quantityText: string
   readonly orderUnitId: string
-  /** `YYYY-MM-DD` from a date input, or `''`. */
   readonly requestedDeliveryDate: string
+  readonly note: string
+  /**
+   * null until the person plans a first slice: an unknown plan. Removing the last
+   * slice returns to null rather than sending `[]` ("no planned slices"), because a
+   * person who deleted their rows has not stated that nothing is planned.
+   */
+  readonly slices: readonly SliceValues[] | null
 }
 
 export interface OrderDraftFormValues {
@@ -52,94 +80,149 @@ export interface OrderDraftFormValues {
   readonly companyAccountId: string
   readonly businessDate: string
   readonly currencyId: string
-  readonly lines: readonly OrderDraftLineValues[]
+  readonly requestedDeliveryDate: string
+  readonly note: string
+  readonly lines: readonly LineValues[]
 }
 
-export type LineField = 'productId' | 'quantity' | 'orderUnitId' | 'requestedDeliveryDate'
+export type LineField = 'productId' | 'quantity' | 'orderUnitId' | 'requestedDeliveryDate' | 'note' | 'slices'
+export type SliceField = 'quantity' | 'requestedDeliveryDate'
 
-/** Field ids shared by inputs, the error summary and (later) the server-error mapper. */
 export const ORDER_FIELD = {
   customer: 'customer',
   businessDate: 'businessDate',
   currency: 'currency',
+  requestedDeliveryDate: 'requestedDeliveryDate',
+  note: 'note',
   lines: 'lines',
 } as const
 
-export function lineFieldId(lineKey: string, field: LineField): string {
-  return `lines.${lineKey}.${field}`
-}
+export const lineFieldId = (lineId: string, field: LineField) => `lines.${lineId}.${field}`
+export const sliceFieldId = (lineId: string, sliceId: string, field: SliceField) =>
+  `lines.${lineId}.slices.${sliceId}.${field}`
 
 export type OrderDraftErrors = Readonly<Record<string, string>>
 
 export type OrderDraftValidation =
-  | { readonly ok: true; readonly payload: OrderDraftCreateRequest }
+  | { readonly ok: true; readonly payload: DraftCreateRequest }
   | { readonly ok: false; readonly errors: OrderDraftErrors }
 
-export function emptyLine(key: string): OrderDraftLineValues {
-  return { key, productId: '', quantityText: '', orderUnitId: '', requestedDeliveryDate: '' }
+/** Mints a UUID. Injected so tests can prove an identity was minted once. */
+export type IdSource = () => string
+
+/**
+ * A random (v4) UUID from `getRandomValues`. Not `crypto.randomUUID`: that exists only
+ * in a secure context, and a plain-HTTP intranet host would throw at "add line".
+ */
+export const browserIds: IdSource = () => {
+  const bytes = new Uint8Array(16)
+  globalThis.crypto.getRandomValues(bytes)
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+export function emptyLine(lineId: string): LineValues {
+  return {
+    lineId,
+    productId: '',
+    quantityText: '',
+    orderUnitId: '',
+    requestedDeliveryDate: '',
+    note: '',
+    slices: null,
+  }
 }
 
 /**
- * The starting form: one blank line, because the first positive path needs at least
- * one goods line. The business date is left blank on purpose — "today" in the
- * browser's zone is not necessarily the company's business day, and the spec keeps
- * business date and record time apart.
+ * The starting form: one blank line. The business date is blank on purpose — the
+ * browser's "today" is not necessarily the company's business day, and the contract
+ * says "no default today".
  */
-export function emptyOrderDraftForm(firstLineKey: string): OrderDraftFormValues {
+export function emptyOrderDraftForm(firstLineId: string): OrderDraftFormValues {
   return {
     partyId: '',
     companyAccountId: '',
     businessDate: '',
     currencyId: '',
-    lines: [emptyLine(firstLineKey)],
+    requestedDeliveryDate: '',
+    note: '',
+    lines: [emptyLine(firstLineId)],
   }
 }
 
-/** Nothing typed or chosen yet. Drives the unsaved and company-switch guards. */
 export function isOrderDraftPristine(values: OrderDraftFormValues): boolean {
   return (
     values.partyId === '' &&
     values.companyAccountId === '' &&
     values.businessDate === '' &&
     values.currencyId === '' &&
+    values.requestedDeliveryDate === '' &&
+    values.note.trim() === '' &&
     values.lines.every(
       (line) =>
         line.productId === '' &&
         line.quantityText.trim() === '' &&
         line.orderUnitId === '' &&
-        line.requestedDeliveryDate === '',
+        line.requestedDeliveryDate === '' &&
+        line.note.trim() === '' &&
+        line.slices === null,
     )
   )
 }
 
-export function addLine(values: OrderDraftFormValues, key: string): OrderDraftFormValues {
-  return { ...values, lines: [...values.lines, emptyLine(key)] }
-}
+const mapLine = (values: OrderDraftFormValues, lineId: string, change: (line: LineValues) => LineValues) => ({
+  ...values,
+  lines: values.lines.map((line) => (line.lineId === lineId ? change(line) : line)),
+})
 
-export function removeLine(values: OrderDraftFormValues, key: string): OrderDraftFormValues {
-  return { ...values, lines: values.lines.filter((line) => line.key !== key) }
-}
+export const addLine = (values: OrderDraftFormValues, lineId: string): OrderDraftFormValues => ({
+  ...values,
+  lines: [...values.lines, emptyLine(lineId)],
+})
+
+export const removeLine = (values: OrderDraftFormValues, lineId: string): OrderDraftFormValues => ({
+  ...values,
+  lines: values.lines.filter((line) => line.lineId !== lineId),
+})
+
+export const updateLine = (
+  values: OrderDraftFormValues,
+  lineId: string,
+  patch: Partial<Omit<LineValues, 'lineId' | 'slices' | 'productId'>>,
+): OrderDraftFormValues => mapLine(values, lineId, (line) => ({ ...line, ...patch }))
 
 /**
- * Choosing another product clears the line's unit.
- *
- * Units are offered PER product; a unit chosen for the previous product riding along
- * onto the new one is a reference nobody offered for it.
+ * Choosing another product clears the line's unit. Units are offered PER product; a
+ * unit chosen for the previous one riding onto the new one is a reference nobody
+ * offered for it.
  */
-export function setLineProduct(
+export const setLineProduct = (values: OrderDraftFormValues, lineId: string, productId: string) =>
+  mapLine(values, lineId, (line) => (line.productId === productId ? line : { ...line, productId, orderUnitId: '' }))
+
+export const addSlice = (values: OrderDraftFormValues, lineId: string, sliceId: string) =>
+  mapLine(values, lineId, (line) => ({
+    ...line,
+    slices: [...(line.slices ?? []), { sliceId, quantityText: '', requestedDeliveryDate: '' }],
+  }))
+
+export const updateSlice = (
   values: OrderDraftFormValues,
-  key: string,
-  productId: string,
-): OrderDraftFormValues {
-  return {
-    ...values,
-    lines: values.lines.map((line) =>
-      line.key !== key || line.productId === productId
-        ? line
-        : { ...line, productId, orderUnitId: '' },
-    ),
-  }
-}
+  lineId: string,
+  sliceId: string,
+  patch: Partial<Omit<SliceValues, 'sliceId'>>,
+) =>
+  mapLine(values, lineId, (line) => ({
+    ...line,
+    slices: (line.slices ?? []).map((slice) => (slice.sliceId === sliceId ? { ...slice, ...patch } : slice)),
+  }))
+
+export const removeSlice = (values: OrderDraftFormValues, lineId: string, sliceId: string) =>
+  mapLine(values, lineId, (line) => {
+    const rest = (line.slices ?? []).filter((slice) => slice.sliceId !== sliceId)
+    return { ...line, slices: rest.length === 0 ? null : rest }
+  })
 
 const QUANTITY_MESSAGE: Record<QuantityInputError, string> = {
   required: ORDER_DRAFT_TEXT.validation.quantityRequired,
@@ -148,13 +231,26 @@ const QUANTITY_MESSAGE: Record<QuantityInputError, string> = {
   'not-positive': ORDER_DRAFT_TEXT.validation.quantityNotPositive,
 }
 
+const noteOrNull = (text: string) => (text.trim() === '' ? null : text)
+
+/** A line's plan as the person can currently read it, for the "still unplanned" hint. */
+export function linePlanHint(line: LineValues): { readonly unplanned: string } | { readonly exceeds: true } | null {
+  const quantity = parseQuantityInput(line.quantityText)
+  if (!quantity.ok || line.slices === null) return null
+  const slices: { orderUnitId: string; quantity: string }[] = []
+  for (const slice of line.slices) {
+    const value = parseQuantityInput(slice.quantityText)
+    if (!value.ok) return null
+    slices.push({ orderUnitId: 'line', quantity: value.value })
+  }
+  const result = unplannedQuantity({ orderUnitId: 'line', quantity: quantity.value }, slices)
+  if (result.ok) return { unplanned: result.unplanned }
+  return result.error === 'exceeds-order' ? { exceeds: true } : null
+}
+
 /**
  * Validate and normalize. Errors are keyed in DOM order: header first, then each
- * line's fields in the order they are rendered.
- *
- * MISSING and NOT OFFERED are different messages on purpose: the first asks for a
- * choice, the second says a choice the person made is no longer available — which
- * is what a passive account or a product that stopped being usable looks like.
+ * line's fields and its slices in the order they are rendered.
  */
 export function validateOrderDraft(
   values: OrderDraftFormValues,
@@ -167,8 +263,7 @@ export function validateOrderDraft(
     errors[ORDER_FIELD.customer] = text.customerRequired
   } else if (
     !options.accounts.some(
-      (account) =>
-        account.partyId === values.partyId && account.companyAccountId === values.companyAccountId,
+      (a) => a.partyId === values.partyId && a.companyAccountId === values.companyAccountId,
     )
   ) {
     errors[ORDER_FIELD.customer] = text.customerNotOffered
@@ -178,42 +273,84 @@ export function validateOrderDraft(
   else if (!isDateOnly(values.businessDate)) errors[ORDER_FIELD.businessDate] = text.dateInvalid
 
   if (values.currencyId === '') errors[ORDER_FIELD.currency] = text.currencyRequired
-  else if (!options.currencyIds.includes(values.currencyId)) {
+  else if (!options.currencies.some((c) => c.currencyId === values.currencyId)) {
     errors[ORDER_FIELD.currency] = text.currencyNotOffered
   }
 
-  if (values.lines.length === 0) errors[ORDER_FIELD.lines] = text.linesRequired
+  if (values.requestedDeliveryDate !== '' && !isDateOnly(values.requestedDeliveryDate)) {
+    errors[ORDER_FIELD.requestedDeliveryDate] = text.dateInvalid
+  }
+  if (values.note.length > LIMITS.note) errors[ORDER_FIELD.note] = text.noteTooLong
 
-  const lines: OrderDraftLineRequest[] = []
+  if (values.lines.length === 0) errors[ORDER_FIELD.lines] = text.linesRequired
+  else if (values.lines.length > LIMITS.lines) errors[ORDER_FIELD.lines] = text.tooManyLines
+
+  const lines: DraftLineRequest[] = []
   for (const line of values.lines) {
-    const productOffered = options.productIds.includes(line.productId)
-    if (line.productId === '') errors[lineFieldId(line.key, 'productId')] = text.productRequired
-    else if (!productOffered) errors[lineFieldId(line.key, 'productId')] = text.productNotOffered
+    const product = options.products.find((p) => p.productId === line.productId)
+    if (line.productId === '') errors[lineFieldId(line.lineId, 'productId')] = text.productRequired
+    else if (product === undefined) errors[lineFieldId(line.lineId, 'productId')] = text.productNotOffered
 
     const quantity = parseQuantityInput(line.quantityText)
-    if (!quantity.ok) errors[lineFieldId(line.key, 'quantity')] = QUANTITY_MESSAGE[quantity.error]
+    if (!quantity.ok) errors[lineFieldId(line.lineId, 'quantity')] = QUANTITY_MESSAGE[quantity.error]
 
     if (line.orderUnitId === '') {
-      errors[lineFieldId(line.key, 'orderUnitId')] = text.orderUnitRequired
-    } else if (
-      // Judged only against a product that is itself offered; otherwise the product
-      // error already says what is wrong and a second message would only add noise.
-      productOffered &&
-      !(options.unitIdsByProduct[line.productId] ?? []).includes(line.orderUnitId)
-    ) {
-      errors[lineFieldId(line.key, 'orderUnitId')] = text.orderUnitNotOffered
+      errors[lineFieldId(line.lineId, 'orderUnitId')] = text.orderUnitRequired
+    } else if (product !== undefined && !product.orderUnits.some((u) => u.unitId === line.orderUnitId)) {
+      // Judged only against an offered product; otherwise the product error already says it.
+      errors[lineFieldId(line.lineId, 'orderUnitId')] = text.orderUnitNotOffered
     }
 
     if (line.requestedDeliveryDate !== '' && !isDateOnly(line.requestedDeliveryDate)) {
-      errors[lineFieldId(line.key, 'requestedDeliveryDate')] = text.dateInvalid
+      errors[lineFieldId(line.lineId, 'requestedDeliveryDate')] = text.dateInvalid
+    }
+    if (line.note.length > LIMITS.note) errors[lineFieldId(line.lineId, 'note')] = text.noteTooLong
+
+    let slices: DeliverySlice[] | null = null
+    if (line.slices !== null) {
+      slices = []
+      if (line.slices.length > LIMITS.slices) errors[lineFieldId(line.lineId, 'slices')] = text.tooManySlices
+      for (const slice of line.slices) {
+        const sliceQuantity = parseQuantityInput(slice.quantityText)
+        if (!sliceQuantity.ok) {
+          errors[sliceFieldId(line.lineId, slice.sliceId, 'quantity')] = QUANTITY_MESSAGE[sliceQuantity.error]
+        }
+        // A slice IS a dated quantity: unlike the line's own due date it cannot be unknown.
+        if (slice.requestedDeliveryDate === '') {
+          errors[sliceFieldId(line.lineId, slice.sliceId, 'requestedDeliveryDate')] = text.sliceDateRequired
+        } else if (!isDateOnly(slice.requestedDeliveryDate)) {
+          errors[sliceFieldId(line.lineId, slice.sliceId, 'requestedDeliveryDate')] = text.dateInvalid
+        }
+        if (sliceQuantity.ok) {
+          slices.push({
+            sliceId: slice.sliceId,
+            orderUnitId: line.orderUnitId,
+            quantity: sliceQuantity.value,
+            requestedDeliveryDate: slice.requestedDeliveryDate,
+          })
+        }
+      }
+      if (quantity.ok && slices.length === line.slices.length) {
+        const plan = unplannedQuantity({ orderUnitId: line.orderUnitId, quantity: quantity.value }, slices)
+        if (!plan.ok && plan.error === 'exceeds-order') {
+          errors[lineFieldId(line.lineId, 'slices')] = text.slicesExceedOrder
+        }
+      }
     }
 
-    if (quantity.ok) {
+    if (quantity.ok && product !== undefined) {
       lines.push({
+        lineId: line.lineId,
         productId: line.productId,
-        quantity: quantity.value,
+        expectedProductVersion: product.productVersion,
         orderUnitId: line.orderUnitId,
+        quantity: quantity.value,
+        unitPrice: null,
+        priceUnitId: null,
         requestedDeliveryDate: line.requestedDeliveryDate === '' ? null : line.requestedDeliveryDate,
+        note: noteOrNull(line.note),
+        requestedDeliverySlices: slices,
+        discountPercent: null,
       })
     }
   }
@@ -229,6 +366,43 @@ export function validateOrderDraft(
       businessDate: values.businessDate,
       currencyId: values.currencyId,
       lines,
+      requestedDeliveryDate: values.requestedDeliveryDate === '' ? null : values.requestedDeliveryDate,
+      note: noteOrNull(values.note),
+      deliveryAddress: null,
+      contact: null,
+      responsible: null,
+      paymentTerms: null,
+      sourceStrategy: null,
+      package: null,
     },
   }
+}
+
+/**
+ * Where a server field error belongs on this form.
+ *
+ * The server names fields by wire path (`lines[0].productId`, `companyAccountId`). The
+ * index is resolved against the SENT snapshot, not the form as it is now — the person
+ * may have added or removed rows since. A path this form does not render returns null
+ * and the caller shows the message in the summary, so nothing goes silent.
+ */
+export function formFieldForServerPath(path: string, sentLines: readonly { readonly lineId: string }[]): string | null {
+  if (path === 'partyId' || path === 'companyAccountId') return ORDER_FIELD.customer
+  if (path === 'currencyId') return ORDER_FIELD.currency
+  if (path === 'businessDate') return ORDER_FIELD.businessDate
+  if (path === 'requestedDeliveryDate') return ORDER_FIELD.requestedDeliveryDate
+  if (path === 'note') return ORDER_FIELD.note
+  if (path === 'lines') return ORDER_FIELD.lines
+  const match = /^lines\[(\d+)\]\.(productId|expectedProductVersion|orderUnitId|quantity|requestedDeliveryDate|note|requestedDeliverySlices)/.exec(path)
+  if (match === null) return null
+  const line = sentLines[Number(match[1])]
+  if (line === undefined) return null
+  const member = match[2]
+  const field: LineField =
+    member === 'expectedProductVersion'
+      ? 'productId'
+      : member === 'requestedDeliverySlices'
+        ? 'slices'
+        : (member as LineField)
+  return lineFieldId(line.lineId, field)
 }
