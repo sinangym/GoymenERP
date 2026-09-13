@@ -27,7 +27,15 @@ public sealed class FinanceDraftContextHttpAcceptanceTests(
         + $"&companyAccountId={CompanyAccountId:D}&occurredOn={OccurredOn:yyyy-MM-dd}";
 
     [Fact]
-    public async Task Default_runtime_is_explicitly_unavailable_without_accepted_mappings()
+    public void Central_binding_uses_the_owner_pinned_manual_receipt_operation()
+    {
+        var binding = new UnavailableFinanceDraftReadBinding();
+        Assert.Equal(FinanceMoneyOperations.ManualBankReceiptV1, binding.MoneyOperation);
+        Assert.Equal("finance.manual-bank-receipt.v1", binding.MoneyOperation);
+    }
+
+    [Fact]
+    public async Task Default_runtime_is_unavailable_without_required_permission_bank_and_profile_sources()
     {
         using var client = factory.CreateClientFor(TestUsers.GroupAdmin, TestCompanyIds.CompanyA);
         using var response = await client.GetAsync(Endpoint);

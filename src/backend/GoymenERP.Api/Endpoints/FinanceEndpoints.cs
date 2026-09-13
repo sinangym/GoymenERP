@@ -65,7 +65,7 @@ public interface IFinanceDraftReadBinding
 
 public sealed class UnavailableFinanceDraftReadBinding : IFinanceDraftReadBinding
 {
-    public string? MoneyOperation => null;
+    public string? MoneyOperation => FinanceMoneyOperations.ManualBankReceiptV1;
 }
 
 public interface IFinanceDraftContextEndpointService
