@@ -5,6 +5,12 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Finance.Contracts;
 
+public static class FinanceMoneyOperations
+{
+    // Technical Settings lookup key. It does not select scale, currency, grant or period policy.
+    public const string ManualBankReceiptV1 = "finance.manual-bank-receipt.v1";
+}
+
 public sealed record DraftReadContextRequest(Guid TreasuryAccountId, Guid PartyId,
     Guid CompanyAccountId, DateOnly OccurredOn);
 public sealed record DraftPartyLabel(Guid PartyId, Guid CompanyAccountId, string Code,

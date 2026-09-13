@@ -9,6 +9,14 @@ namespace GoymenERP.Finance.UnitTests;
 public sealed class DraftReadContextTests
 {
     [Fact]
+    public void ManualReceiptMoneyOperationIsPinnedWithoutBusinessValues()
+    {
+        Assert.Equal("finance.manual-bank-receipt.v1", FinanceMoneyOperations.ManualBankReceiptV1);
+        Assert.DoesNotContain("currency", FinanceMoneyOperations.ManualBankReceiptV1, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("scale", FinanceMoneyOperations.ManualBankReceiptV1, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task OwnerReadsSupplyEffectiveProfileCurrencyAndPartyLabels()
     {
         var f = new Fixture();
