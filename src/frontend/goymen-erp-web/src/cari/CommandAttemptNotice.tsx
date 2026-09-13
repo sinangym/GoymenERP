@@ -19,9 +19,13 @@
  */
 
 import type { ReactNode, Ref } from 'react'
-import type { AttemptState } from './commandAttempt'
+import type { AttemptFailure, AttemptState } from './commandAttempt'
 import { CARI_COMMAND_TEXT as TEXT } from './cariCommandText'
 import styles from './CommandAttemptNotice.module.css'
+
+export type AttemptFailureMessages = Partial<
+  Record<AttemptFailure, { readonly title: string; readonly detail: string }>
+>
 
 export function CommandAttemptNotice<P, R>({
   state,
@@ -31,6 +35,7 @@ export function CommandAttemptNotice<P, R>({
   extra,
   repeatsUnresolved = false,
   unresolvedRef,
+  messages,
 }: {
   readonly state: AttemptState<P, R>
   readonly onRetry: () => void
@@ -42,6 +47,12 @@ export function CommandAttemptNotice<P, R>({
   readonly repeatsUnresolved?: boolean
   /** Lets the owner move focus onto the abandoned-attempt box after a refused submit. */
   readonly unresolvedRef?: Ref<HTMLDivElement>
+  /**
+   * Per-failure wording for the OWNER's command, where the shared text describes another
+   * command's situation — the shared `not-found`, for one, says a candidate list was
+   * refreshed, which is true for a link and false for a status change.
+   */
+  readonly messages?: AttemptFailureMessages
 }) {
   if (state.phase === 'abandoned') {
     if (!repeatsUnresolved) return null
@@ -84,7 +95,7 @@ export function CommandAttemptNotice<P, R>({
   }
 
   if (state.phase === 'failed' && state.failure !== 'unauthenticated' && state.failure !== 'forbidden') {
-    const message = TEXT.failure[state.failure]
+    const message = messages?.[state.failure] ?? TEXT.failure[state.failure]
     return (
       <div role="alert" className={styles.failed} data-attempt="failed" data-failure={state.failure}>
         <p className={styles.title}>{message.title}</p>

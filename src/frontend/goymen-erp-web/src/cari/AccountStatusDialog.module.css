@@ -1,0 +1,188 @@
+/* A modal by hand, like the shell's switch confirmation: one backdrop, one panel,
+   focus kept inside, Escape asks the owner to close. Nothing here is decorative
+   colour-only — the state words carry the meaning, the colour only reinforces it. */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 28, 46, 0.45);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 48px 16px 16px;
+  /* BELOW the shell's own dialogs (SwitchConfirmDialog: z-index 20) and above the
+     shell chrome (nav/toolbar: 10). This window is a FEATURE modal; the shell's
+     company-switch question is the shell's and must stay on top of it. At 40 it
+     painted over that question, and a user with a typed reason who changed the
+     company could see the shell ask and could not answer — the first real L-04 run
+     spent its whole budget on exactly that click (c006-7f12ed40ff9a). */
+  z-index: 15;
+  overflow-y: auto;
+}
+
+.panel {
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #b9c1d1;
+  box-shadow: 0 12px 32px rgba(20, 28, 46, 0.25);
+  width: min(100%, 36rem);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.panel h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.scope {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #55607a;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: 1px;
+  margin: 0;
+  background: #d5dbe6;
+  border: 1px solid #d5dbe6;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.fact {
+  background: #fff;
+  padding: 10px 12px;
+  min-width: 0;
+}
+.fact dt {
+  font-size: 0.78rem;
+  color: #55607a;
+  margin-bottom: 3px;
+}
+.fact dd {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #1a2233;
+  overflow-wrap: anywhere;
+}
+.fact dd[data-state='inactive'] {
+  color: #a3592f;
+  font-weight: 600;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.field label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.field textarea {
+  font: inherit;
+  min-height: 6rem;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid #b9c1d1;
+  border-radius: 4px;
+}
+.field textarea:focus-visible {
+  outline: 2px solid #1f5fd0;
+  outline-offset: 1px;
+}
+.field textarea[aria-invalid='true'] {
+  border-color: #a3321f;
+}
+.hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #55607a;
+}
+.count {
+  font-size: 0.8rem;
+  color: #55607a;
+  align-self: flex-end;
+}
+.error {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #7a2517;
+  font-weight: 600;
+}
+
+.summary,
+.blocked {
+  border: 1px solid #a3321f;
+  border-left-width: 4px;
+  border-radius: 4px;
+  padding: 10px 12px;
+  color: #7a2517;
+  font-weight: 600;
+  margin: 0;
+}
+.summary:focus-visible {
+  outline: 2px solid #a3321f;
+  outline-offset: 2px;
+}
+
+.confirm {
+  border: 1px solid #b9c1d1;
+  border-left: 4px solid #a3592f;
+  border-radius: 4px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.confirmTitle {
+  margin: 0;
+  font-weight: 600;
+}
+.confirm p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.primary,
+.secondary {
+  font: inherit;
+  border-radius: 4px;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+.primary {
+  background: #1f5fd0;
+  border: 1px solid #1f5fd0;
+  color: #fff;
+  font-weight: 600;
+}
+.primary:disabled {
+  background: #aab4c8;
+  border-color: #aab4c8;
+  cursor: not-allowed;
+}
+.secondary {
+  background: #fff;
+  border: 1px solid #b9c1d1;
+  color: #1a2233;
+}
+.secondary:disabled {
+  color: #8a93a8;
+  cursor: not-allowed;
+}
+.primary:focus-visible,
+.secondary:focus-visible {
+  outline: 2px solid #1f5fd0;
+  outline-offset: 2px;
+}

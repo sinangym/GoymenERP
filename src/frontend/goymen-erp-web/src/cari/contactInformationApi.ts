@@ -27,7 +27,12 @@ import {
   recordContractReadFailure,
   type ContractContext,
 } from './clientContract'
-import { putVersionedCommand, type CommandContext, type CommandOutcome } from './commandApi'
+import {
+  VERSIONED_UPDATE_REPLAYABLE_FAILURES,
+  putVersionedCommand,
+  type CommandContext,
+  type CommandOutcome,
+} from './commandApi'
 import {
   contactInformationPath,
   decodeContactInformation,
@@ -130,5 +135,8 @@ export function updateContactInformation(
     expectedVersion,
     { changes },
     signal,
+    // The contact-information update stores 204 / 404 / 409 (version_conflict) — its own
+    // table, named here rather than inherited (`CounterpartyEndpoints.ContactInformation.cs`).
+    VERSIONED_UPDATE_REPLAYABLE_FAILURES,
   )
 }

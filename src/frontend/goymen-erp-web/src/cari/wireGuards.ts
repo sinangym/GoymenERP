@@ -23,7 +23,7 @@ export const MAX_VERSION_DIGITS = 19
  * token the server can never have issued — as a decoded version, as a child version,
  * and as the fence on a write.
  */
-const INT64_MAX_DECIMAL = '9223372036854775807'
+export const INT64_MAX_DECIMAL = '9223372036854775807'
 
 /** Customer | Supplier | Tolling | Service. */
 export const ALL_ROLE_FLAGS = 1 | 2 | 4 | 8

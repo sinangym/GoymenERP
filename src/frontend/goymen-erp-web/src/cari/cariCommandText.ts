@@ -223,6 +223,125 @@ export const CARI_CONTACT_TEXT = {
   },
 } as const
 
+/**
+ * The selected company account's active-state action and modal inside C-03.
+ *
+ * Every line says which state it is about: the COMPANY ACCOUNT's, never the shared
+ * Party's and never an address's. The saved messages name the fresh read as the source
+ * of what is on screen, because a 204 carries no body and the command is not the truth.
+ */
+export const CARI_ACCOUNT_STATUS_TEXT = {
+  action: {
+    deactivate: 'Bu şirkette pasife al',
+    activate: 'Bu şirkette aktifleştir',
+  },
+  actionBlockedUnresolved: 'Sonucu belirsiz bir durum işlemi var; yeni bir işlem başlatmadan önce onu çözün.',
+  title: {
+    deactivate: 'Şirket hesabını pasife al',
+    activate: 'Şirket hesabını aktifleştir',
+  },
+  scopeNote:
+    'Yalnız seçili şirketteki hesabın durumu değişir. Ortak taraf kaydı, diğer şirket ' +
+    'hesapları, adresler ve muhataplar etkilenmez.',
+  target: 'Cari',
+  company: 'Şirket',
+  currentState: 'Mevcut hesap durumu',
+  targetState: 'Yeni hesap durumu',
+  active: 'Aktif',
+  inactive: 'Pasif',
+  reason: 'Gerekçe',
+  reasonHint:
+    'Zorunlu; boşluklar kırpıldıktan sonra 1–1000 karakter. Gizli banka veya kimlik bilgisi yazmayın.',
+  reasonCount: (length: number) => `${length} / 1000`,
+  reasonRequired: 'Gerekçe zorunludur.',
+  reasonTooLong: (length: number) =>
+    `Gerekçe boşluklar kırpıldıktan sonra en çok 1000 karakter olabilir (şu an ${length}).`,
+  errorSummary: 'İşlem gönderilmedi; işaretli alanı düzeltin.',
+  submit: {
+    deactivate: 'Pasife al',
+    activate: 'Aktifleştir',
+  },
+  submitting: 'Gönderiliyor…',
+  cancel: 'Vazgeç',
+  closeConfirmTitle: 'Gerekçe kaydedilmedi',
+  closeConfirmDetail:
+    'Pencereyi kapatırsanız yazdığınız gerekçe silinir. Sunucuya hiçbir şey gönderilmedi.',
+  closeConfirmKeep: 'Yazmaya devam et',
+  closeConfirmDiscard: 'Gerekçeyi bırak ve kapat',
+  closeUnresolvedTitle: 'İşlemin sonucu belirsiz',
+  closeUnresolvedDetail:
+    'Pencereyi kapatmak işlemi iptal etmez ve geri almaz; sonuç yalnız aynı işlemi ' +
+    'yeniden deneyerek ya da taze okumayla öğrenilir. İşlem uyarısı hesap bölümünde kalır.',
+  closeUnresolvedKeep: 'Pencerede kal',
+  closeUnresolvedClose: 'Pencereyi kapat',
+  changedSinceOpen:
+    'Kayıt bu pencere açıldıktan sonra güncellendi. Pencereyi kapatıp güncel kayıtla ' +
+    'yeniden açın; eski sürümle gönderim yapılmaz.',
+  savedTitle: {
+    deactivate: 'Şirket hesabı pasife alındı',
+    activate: 'Şirket hesabı aktifleştirildi',
+  },
+  savedDetail:
+    'Güncel durum ve sürüm taze yetkili okumadan alındı; bu ekrandaki değerler o okumaya aittir.',
+  savedReplayed:
+    'Sunucu bu sonucu daha önce gönderilen aynı işlemin tekrarı olarak bildirdi; ikinci bir ' +
+    'değişiklik yapılmadı.',
+  savedListNote:
+    'Cari Kartlar listesinde yalnız aktif hesaplar süzülüyorsa bu hesap orada görünmez; kayıt silinmedi.',
+  readRecovery:
+    'Kaydedildi, görünüm yenilenemedi. Yalnız okuma yeniden denenir; işlem ikinci kez gönderilmez.',
+  readPending:
+    'Kaydedildi; güncel kayıt henüz okunamadı. Ekrandaki değerler eski okumaya ait. Bağlantı yoksa okuma ' +
+    'bağlantı gelince yapılır; işlem ikinci kez gönderilmez.',
+  readAgain: 'Kaydı yeniden oku',
+  contractNotReady:
+    'Bu kayıt için uyumlu istemci teyidi alınmadı; durum işlemi açılmaz. Kaydı yeniden okuyun.',
+  refreshRecord: 'Kaydı yenile',
+  refreshing: 'Kayıt yenileniyor…',
+  refreshedNote:
+    'Kayıt güncel sürümle yenilendi; gerekçeniz korundu. Mevcut durumu inceleyip yeniden gönderin — ' +
+    'bu yeni bir işlemdir.',
+  adoptFresh: 'Güncel sürüme geç',
+  changedWhileFrozen:
+    'Kayıt bu pencere açıldıktan sonra güncellendi. Sonucu belirsiz işlem çözülene kadar burada ' +
+    'gösterilen hedef ve sürüm, gönderilen işleminkiyle aynı kalır; yeni sürüme geçiş ancak kesin ' +
+    'sonuç ya da işlemi bırakma sonrasında yapılır.',
+  readAgainInPlace: 'Kaydı bu ekranda yeniden oku',
+  contractRefusalRecovery:
+    'Bekleyen işlem ve anahtarı bu ekranda korunuyor; sayfayı yenilemek onları kaybettirir. Uyumlu ' +
+    'istemci sözleşmesi yeniden sağlandığında kaydı buradan yeniden okuyun; işlem otomatik tekrarlanmaz.',
+  savedThenChangedTitle: 'İşlem uygulandı; kayıt sonrasında yeniden değişmiş',
+  savedThenChangedDetail:
+    'Sunucu bu işlemi uyguladı, ancak taze okuma hesabı farklı bir durumda gösteriyor — kayıt sizden ' +
+    'sonra yeniden değiştirilmiş olabilir. Ekrandaki durum taze okumanındır; ikinci bir değişiklik ' +
+    'gönderilmedi.',
+  savedSupersededTitle: 'Geçmiş işlemin sonucu bildirildi',
+  savedSupersededDetail:
+    'Sunucu daha önce gönderilen işlemin tekrarını bildirdi; hesap o işlemden sonra yeniden değişmiş. ' +
+    'Ekrandaki durum taze okumanındır; ikinci bir değişiklik gönderilmedi.',
+  currentStateNote: (active: boolean) => `Güncel hesap durumu: ${active ? 'Aktif' : 'Pasif'}.`,
+  replayedConflict:
+    'Bu çatışma yanıtı daha önceki bir girişimin tekrarı; içindeki sürüm güncel sayılmaz. ' +
+    'Güncel durum yalnız taze okumayla doğrulanır.',
+  announceSaved: {
+    deactivate: 'Şirket hesabı pasife alındı.',
+    activate: 'Şirket hesabı aktifleştirildi.',
+  },
+  /** Where the shared command texts describe another command's situation. */
+  failure: {
+    'not-found': {
+      title: 'Şirket hesabı bulunamadı',
+      detail:
+        'Seçili şirkette bu cariye ait bir hesap yok ya da görünmüyor; yeni hesap oluşturulmadı. ' +
+        'Güncel durum yalnız yetkili okumayla doğrulanır.',
+    },
+    validation: {
+      title: 'Sunucu doğrulaması başarısız',
+      detail: 'Sunucu gerekçeyi veya sürümü kabul etmedi; yazdığınız gerekçe korundu.',
+    },
+  },
+} as const
+
 export const CARI_COMMAND_TEXT = {
   unknown: {
     title: 'İşlem sonucu belirsiz',

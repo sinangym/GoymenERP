@@ -346,8 +346,27 @@ export function settleAttempt<P, R>(state: AttemptState<P, R>, outcome: CommandO
        * record the server may already hold. The attempt therefore stays unresolved,
        * with its original reason, key, path, Party, context and normalized payload
        * intact. Only a validated definite result or its replay closes it (§4.5).
+       *
+       * A VERIFIED REPLAY IS THAT VALIDATED DEFINITE RESULT. `outcome.replayed` is set
+       * by the transport only for an acknowledged answer whose decoded stable code is
+       * one the endpoint stores as terminal (`verifiedReplay`): the server is handing
+       * back the STORED result of the first send — the one whose delivery was lost. A
+       * replayed `version_conflict` or `not_found` is therefore the first send's own
+       * verdict, and holding it as "unknown" left the user with no way to reach the
+       * conflict explanation or the fresh read it calls for. A rejection the transport
+       * could not verify as a replay — a 500 with or without the header, an
+       * unacknowledged answer, a compatibility 409, a body that did not decode — still
+       * says nothing about the first send and still leaves the attempt unresolved. The
+       * failure kind is checked here as well, so a future transport change cannot widen
+       * this on its own.
        */
-      if (state.unresolvedSince !== undefined) {
+      const verifiedReplay =
+        outcome.type === 'http' &&
+        outcome.replayed === true &&
+        (resolution.failure === 'version-conflict' ||
+          resolution.failure === 'not-found' ||
+          resolution.failure === 'already-linked')
+      if (state.unresolvedSince !== undefined && !verifiedReplay) {
         return {
           phase: 'unknown',
           snapshot: state.snapshot,
