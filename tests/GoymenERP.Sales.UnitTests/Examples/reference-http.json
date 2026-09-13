@@ -1,0 +1,64 @@
+{
+  "evidence": "synthetic wire examples; not offered master records or runtime acceptance",
+  "accounts": {
+    "method": "GET",
+    "path": "/api/v1/sales/references/accounts?pageSize=50",
+    "status": 200,
+    "body": {
+      "companyId": "99999999-9999-9999-9999-999999999999",
+      "accounts": [
+        {
+          "partyId": "11111111-1111-1111-1111-111111111111",
+          "companyAccountId": "55555555-5555-5555-5555-555555555555",
+          "label": "EXAMPLE-C001 - Example Party",
+          "partyVersion": "7",
+          "accountVersion": "9007199254740993"
+        }
+      ],
+      "nextCursor": null
+    }
+  },
+  "currency": {
+    "method": "GET",
+    "path": "/api/v1/sales/references/currency?currencyId=33333333-3333-3333-3333-333333333333&effectiveOn=2026-09-13",
+    "status": 200,
+    "body": {
+      "companyId": "99999999-9999-9999-9999-999999999999",
+      "effectiveOn": "2026-09-13",
+      "currencyId": "33333333-3333-3333-3333-333333333333",
+      "code": "EXAMPLE-CURRENCY",
+      "label": "EXAMPLE-CURRENCY",
+      "profileId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "profileVersion": "7"
+    }
+  },
+  "product": {
+    "method": "GET",
+    "path": "/api/v1/sales/references/product?productId=22222222-2222-2222-2222-222222222222&expectedProductVersion=7&orderUnitId=44444444-4444-4444-4444-444444444444&effectiveOn=2026-09-13",
+    "status": 200,
+    "body": {
+      "companyId": "99999999-9999-9999-9999-999999999999",
+      "effectiveOn": "2026-09-13",
+      "productId": "22222222-2222-2222-2222-222222222222",
+      "productVersion": "7",
+      "label": "EXAMPLE-P001 - Example Product",
+      "orderUnits": [
+        {
+          "unitId": "44444444-4444-4444-4444-444444444444",
+          "label": "EXAMPLE-UNIT",
+          "profileId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+          "profileVersion": "9"
+        }
+      ]
+    }
+  },
+  "forbidden": { "status": 403, "body": { "status": 403, "title": "Forbidden" } },
+  "providerUnavailable": {
+    "status": 503,
+    "body": { "status": 503, "title": "Service unavailable", "code": "settings_provider_unavailable" }
+  },
+  "invalidCursor": {
+    "status": 400,
+    "body": { "status": 400, "title": "Invalid query", "code": "invalid_cursor" }
+  }
+}
