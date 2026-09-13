@@ -1,8 +1,5 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
-using GoymenERP.Modules.Counterparty.Application.Contracts;
-using GoymenERP.Modules.Counterparty.Domain.Accounts;
-using GoymenERP.Modules.Counterparty.Domain.Parties;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
@@ -45,21 +42,21 @@ public sealed class SalesReferenceReadHandlerTests
         Assert.Equal(f.Company, result.Value.CompanyId);
         Assert.Equal("C001 - Example Party", account.Label);
         Assert.Equal("9007199254740993", account.AccountVersion);
-        Assert.Equal(PartyRole.None, f.Accounts.Request!.Query.Roles);
-        Assert.Equal(CounterpartyRecordState.Active, f.Accounts.Request.Query.PartyState);
-        Assert.Equal(CounterpartyRecordState.Active, f.Accounts.Request.Query.AccountState);
+        Assert.Equal(f.Company, f.Accounts.Request!.CompanyId);
+        Assert.Equal("search", f.Accounts.Request.Q);
+        Assert.Equal(10, f.Accounts.Request.PageSize);
         Assert.Equal("actor", f.Accounts.Request.ActorId);
         Assert.Equal("server-session", f.Accounts.Request.SessionBinding);
     }
 
     [Theory]
-    [InlineData(CounterpartyPageResult.Forbidden, 403)]
-    [InlineData(CounterpartyPageResult.InvalidCursor, 400)]
-    [InlineData(CounterpartyPageResult.ServiceUnavailable, 503)]
-    public async Task Owner_failure_never_becomes_empty_success(CounterpartyPageResult ownerStatus, int expected)
+    [InlineData(403, 403)]
+    [InlineData(400, 400)]
+    [InlineData(503, 503)]
+    public async Task Owner_failure_never_becomes_empty_success(int ownerStatus, int expected)
     {
         var f = new Fixture();
-        f.Accounts.Result = new(ownerStatus, null);
+        f.Accounts.Result = new(ownerStatus, null, null);
         var result = await f.Handler().GetAccountsAsync(new(), "session");
         Assert.Equal(expected, result.StatusCode);
         Assert.Null(result.Value);
@@ -69,7 +66,7 @@ public sealed class SalesReferenceReadHandlerTests
     public async Task Authorized_empty_page_remains_distinct_from_unavailable()
     {
         var f = new Fixture();
-        f.Accounts.Result = CounterpartyPageExecution.Succeeded(new([], null, false, null, null));
+        f.Accounts.Result = new(200, new([], null), null);
         var result = await f.Handler().GetAccountsAsync(new(), "session");
         Assert.Equal(200, result.StatusCode);
         Assert.Empty(result.Value!.Accounts);
@@ -214,12 +211,12 @@ public sealed class SalesReferenceReadHandlerTests
         {
             Context.Set(Company);
             User.Company = Company;
-            var active = new CounterpartyListAccount(Guid.NewGuid(), Company, PartyRole.None, true, 9007199254740993);
+            var active = new SalesAccountSelectionAccountV1(Guid.NewGuid(), Company, 0, true, "9007199254740993");
             var foreign = active with { Id = Guid.NewGuid(), CompanyId = Guid.NewGuid() };
             var passive = active with { Id = Guid.NewGuid(), IsActive = false };
-            var party = new CounterpartyListItem(Guid.NewGuid(), "C001", (PartyKind)1,
-                "Example Party", null, true, 1, [active, foreign, passive]);
-            Accounts.Result = CounterpartyPageExecution.Succeeded(new([party, party with { IsActive = false }], null, false, null, null));
+            var party = new SalesAccountSelectionPartyV1(Guid.NewGuid(), "C001", 1,
+                "Example Party", null, true, "1", [active, foreign, passive]);
+            Accounts.Result = new(200, new([party, party with { IsActive = false }], null), null);
             Settings.Money = new(Company, Currency, "XYZ", "controlled.operation",
                 new(Profile, 9007199254740993), 2, true, Day.AddDays(-1), null);
             Settings.Unit = new(Company, Unit, "owner-unit", "owner-dimension", false,
@@ -256,15 +253,14 @@ public sealed class SalesReferenceReadHandlerTests
         public Task<PermissionScope> GetPermissionScopeAsync(string permission, Guid companyId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
-    private sealed class Accounts : ICounterpartyReadService
+    private sealed class Accounts : ISalesAccountSelectionSourceV1
     {
         public int Calls { get; private set; }
         public Action? OnRead { get; set; }
-        public CounterpartyReadRequest? Request { get; private set; }
-        public CounterpartyPageExecution Result { get; set; } = CounterpartyPageExecution.Forbidden();
-        public Task<CounterpartyPageExecution> GetAuthorizedPageAsync(CounterpartyReadRequest request, CancellationToken cancellationToken = default)
+        public SalesAccountSelectionRequestV1? Request { get; private set; }
+        public SalesReferenceReadResult<SalesAccountSelectionPageV1> Result { get; set; } = new(403, null, null);
+        public Task<SalesReferenceReadResult<SalesAccountSelectionPageV1>> GetPageAsync(SalesAccountSelectionRequestV1 request, CancellationToken cancellationToken = default)
         { Calls++; Request = request; OnRead?.Invoke(); return Task.FromResult(Result); }
-        public Task<CounterpartyDetailView?> GetAuthorizedPartyAsync(Guid partyId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
     private sealed class Settings : ISettingsPrerequisiteProvider
     {

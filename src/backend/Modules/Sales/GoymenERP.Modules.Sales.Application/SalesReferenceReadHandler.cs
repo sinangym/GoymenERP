@@ -1,8 +1,6 @@
 using System.Globalization;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
-using GoymenERP.Modules.Counterparty.Application.Contracts;
-using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
@@ -12,7 +10,7 @@ namespace GoymenERP.Modules.Sales.Application;
 // Read-only orchestration over actual owner ports. No table access or writes.
 public sealed class SalesReferenceReadHandler(
     ICompanyContext companyContext, ICurrentUser currentUser,
-    IErpAuthorizationService authorization, ICounterpartyReadService counterparties,
+    IErpAuthorizationService authorization, ISalesAccountSelectionSourceV1 counterparties,
     ISettingsPrerequisiteProvider settings, IProductSalesEligibilityV1? products,
     SalesReferenceReadBindings bindings) : ISalesReferenceReadService
 {
@@ -24,33 +22,30 @@ public sealed class SalesReferenceReadHandler(
         if (query.PageSize is < 1 or > 100 || query.Q?.Length > 200
             || query.Cursor?.Length > 8192 || string.IsNullOrWhiteSpace(sessionBinding))
             return Failure<SalesAccountOptionsV1>(400, "validation_failed");
-        var page = await counterparties.GetAuthorizedPageAsync(new CounterpartyReadRequest(
-            new CounterpartyPageQuery(query.Q, null, PartyRole.None, CounterpartyRoleMatch.Any,
-                CounterpartyRecordState.Active, CounterpartyRecordState.Active,
-                CounterpartySort.Code, CounterpartySortDirection.Ascending, query.PageSize,
-                query.Cursor, false), scope.Actor!, sessionBinding), cancellationToken);
+        var page = await counterparties.GetPageAsync(new SalesAccountSelectionRequestV1(
+            scope.Company, scope.Actor!, sessionBinding, query.Q, query.PageSize, query.Cursor), cancellationToken);
         if (!await StillAuthorizedAsync(scope, bindings.AccountsPermission, cancellationToken))
             return Failure<SalesAccountOptionsV1>(403);
-        if (page.Result != CounterpartyPageResult.Succeeded || page.Page is null)
-            return page.Result switch
+        if (page.StatusCode != 200 || page.Value is null)
+            return page.StatusCode switch
             {
-                CounterpartyPageResult.Forbidden => Failure<SalesAccountOptionsV1>(403),
-                CounterpartyPageResult.InvalidCursor => Failure<SalesAccountOptionsV1>(400, "invalid_cursor"),
+                401 => Failure<SalesAccountOptionsV1>(401),
+                403 => Failure<SalesAccountOptionsV1>(403),
+                400 => Failure<SalesAccountOptionsV1>(400, "invalid_cursor"),
                 _ => Failure<SalesAccountOptionsV1>(503, "counterparty_provider_unavailable")
             };
         var options = new List<SalesAccountOptionV1>();
-        foreach (var party in page.Page.Items.Where(p => p.IsActive))
+        foreach (var party in page.Value.Items.Where(p => p.IsActive))
         foreach (var account in party.CompanyAccounts.Where(a => a.IsActive && a.CompanyId == scope.Company))
         {
-            if (party.Id == Guid.Empty || account.Id == Guid.Empty || party.Version <= 0
-                || account.Version <= 0 || string.IsNullOrWhiteSpace(party.Code)
+            if (party.Id == Guid.Empty || account.Id == Guid.Empty || !ValidVersion(party.Version)
+                || !ValidVersion(account.Version) || string.IsNullOrWhiteSpace(party.Code)
                 || string.IsNullOrWhiteSpace(party.LegalName))
                 return Failure<SalesAccountOptionsV1>(503, "reference_provider_invalid");
             options.Add(new(party.Id, account.Id, $"{party.Code} - {party.LegalName}",
-                party.Version.ToString(CultureInfo.InvariantCulture),
-                account.Version.ToString(CultureInfo.InvariantCulture)));
+                party.Version, account.Version));
         }
-        return Success(new SalesAccountOptionsV1(scope.Company, options, page.Page.NextCursor));
+        return Success(new SalesAccountOptionsV1(scope.Company, options, page.Value.NextCursor));
     }
 
     public async Task<SalesReferenceReadResult<SalesCurrencyReferenceV1>> GetCurrencyAsync(
@@ -171,6 +166,9 @@ public sealed class SalesReferenceReadHandler(
         && currentUser.CanAccessCompany(scope.Company);
     private static bool Effective(DateOnly on, DateOnly from, DateOnly? through) => on >= from && (through is null || on <= through);
     private static bool ValidProfile(ProfileVersionV1 profile) => profile.ProfileId != Guid.Empty && profile.Version > 0;
+    private static bool ValidVersion(string version) => !string.IsNullOrEmpty(version)
+        && version.Length <= 128 && version[0] is >= '1' and <= '9'
+        && version.All(c => c is >= '0' and <= '9');
     private static SalesReferenceReadResult<T> Success<T>(T value) where T : class => new(200, value, null);
     private static SalesReferenceReadResult<T> Failure<T>(int status, string? code = null) where T : class => new(status, null, code);
     private static SalesReferenceReadResult<T> SettingsFailure<T>(SettingsPrerequisiteException exception) where T : class =>

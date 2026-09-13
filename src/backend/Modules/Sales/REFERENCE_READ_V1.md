@@ -10,7 +10,7 @@ Backend owns routes, DI, capability and OpenAPI. No shared file is edited here.
 
 ISalesReferenceReadService is implemented by SalesReferenceReadHandler. DI inputs
 are existing ICompanyContext, ICurrentUser, IErpAuthorizationService,
-ICounterpartyReadService, ISettingsPrerequisiteProvider and nullable
+ISalesAccountSelectionSourceV1, ISettingsPrerequisiteProvider and nullable
 IProductSalesEligibilityV1, plus SalesReferenceReadBindings. Nullable Product
 dependency explicitly represents its absent runtime, not a permissive fallback.
 
@@ -21,7 +21,15 @@ are not permissions. Central must not pass those IDs as assumed accepted policy.
 No permission/role/operation is registered by this package. A controlled binding
 in a test is not a user grant. No global Product permission is borrowed.
 
-Accounts call real GetAuthorizedPageAsync with authenticated actor and server
+Accounts use a Sales-owned consumer boundary implemented by central API over
+real ICounterpartyReadService.GetAuthorizedPageAsync. Direct Sales-to-Counterparty
+ProjectReference is deliberately absent: the existing guard allows only API's
+exact two composition-root edges. No guard/allowlist is expanded. The adapter
+receives server-selected CompanyId/ActorId/SessionBinding/Q/PageSize/Cursor, verifies
+context matches, and maps owner result without catalogue caching or table writes.
+It returns id/code/kind/legal/trade/active/version and visible account
+id/company/roles/active/version using invariant string versions. Adapter queries
+GetAuthorizedPageAsync with authenticated actor and server
 session binding, active Party/account filters and roles=None. Roles0 is valid.
 Response projection includes only active selected-company accounts and labels
 from owner Code/LegalName. Owner cursor is forwarded unchanged; it retains its
@@ -106,6 +114,13 @@ They explain the wire, not available production options or permissions.
 No second owner catalogue/port, table read/write or fabricated options were added.
 
 ## Actual targeted evidence
+
+After the central-owner-directed consumer adapter boundary correction, the same
+18 changed-handler tests passed (exit0,108ms). The exact failed architecture test
+Platform_non_counterparty_bypass_surfaces_match_the_reviewed_inventory passed
+separately (1PASS,exit0). The earlier CI failure at d2d024e remains evidence of
+the forbidden direct Sales-to-Counterparty edge, not a waived guard. The API
+adapter's actual query/HTTP behavior is still central integration work.
 
 `dotnet test tests/GoymenERP.Sales.UnitTests/GoymenERP.Sales.UnitTests.csproj --nologo --verbosity minimal --filter FullyQualifiedName~SalesReferenceReadHandlerTests`
 
