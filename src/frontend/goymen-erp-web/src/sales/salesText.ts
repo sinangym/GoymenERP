@@ -31,6 +31,12 @@ export const ORDER_DRAFT_TEXT = {
   unplannedNote: 'Planlanmamış miktar teslim edilmiş miktar değildir.',
   save: 'Taslak olarak kaydet',
   errorSummary: 'Taslak gönderilmedi. Şu alanları düzeltin:',
+  /**
+   * The same summary while an earlier send is still unresolved. "Gönderilmedi" would be
+   * true of this click and false about the draft: the earlier send may already be saved.
+   */
+  errorSummaryUnresolved:
+    'Şu alanları düzeltin. Önceki gönderimin sonucu hâlâ bilinmiyor; taslak kaydedilmiş olabilir.',
   referencesUnavailable:
     'Cari hesabı, satışa uygun ürün, birim ve para birimi seçenekleri henüz yayımlanmadı. Seçenekler olmadan taslak oluşturulamaz.',
   validation: {

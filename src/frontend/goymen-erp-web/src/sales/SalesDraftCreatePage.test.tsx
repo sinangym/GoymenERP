@@ -235,6 +235,38 @@ describe('refusals and validation', () => {
     expect(screen.getByText(/Taslak kaydedilmedi\. İşaretli alanları düzeltin\./)).toBeTruthy()
   })
 
+  it('after a lost POST, an invalid field does not claim the draft was not sent', async () => {
+    const fetch = installFetch({ onCreate: () => Promise.reject(new TypeError('lost')) })
+    renderSalesApp(PATH)
+    await fillExample()
+    await userEvent.click(saveButton())
+    await screen.findByText(T.attempt.unknown)
+
+    await userEvent.clear(screen.getByLabelText(T.field.quantity))
+    await userEvent.click(saveButton())
+
+    expect(await screen.findByText(T.errorSummaryUnresolved)).toBeTruthy()
+    expect(screen.queryByText(T.errorSummary)).toBeNull()
+    expect(document.body.textContent).not.toMatch(/gönderilmedi|kaydedilmedi[.;]/)
+    expect(fetch.salesCalls()).toHaveLength(1)
+  })
+
+  it('a field 422 answering the same-key retry of a lost POST does not claim the draft was not sent', async () => {
+    installFetch({
+      onCreate: (attempt) => (attempt === 1 ? Promise.reject(new TypeError('lost')) : json(errorProductRaw, 422)),
+    })
+    renderSalesApp(PATH)
+    await fillExample()
+    await userEvent.click(saveButton())
+    await screen.findByText(T.attempt.unknown)
+    await userEvent.click(screen.getByRole('button', { name: T.attempt.retry }))
+
+    expect(await screen.findByText(T.errorSummaryUnresolved)).toBeTruthy()
+    await waitFor(() => expect(screen.getByLabelText(T.field.product).getAttribute('aria-invalid')).toBe('true'))
+    expect(screen.getByText(T.attempt.refusedAfterUnknown)).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/gönderilmedi|kaydedilmedi[.;]/)
+  })
+
   it('400 + 700 on a 1000 line is refused before anything is sent, and the summary takes focus', async () => {
     const fetch = installFetch({ onCreate: () => json('{}', 500) })
     renderSalesApp(PATH)

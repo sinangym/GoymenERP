@@ -11,10 +11,10 @@
  * version text, company/attempt binding, kind/state/revision and line identities
  * before treating a response as success":
  *  - a create answer is success only when status and `isReplay` agree (201/false,
- *    200/true) AND the body describes THIS attempt: the company it was sent under,
- *    the party, account, currency, dates and notes it carried, and exactly the line
- *    and slice identities it minted. Anything else is `malformed` — the draft may
- *    exist, so the caller keeps the key;
+ *    200/true) AND the body describes THIS attempt: the company it was sent under
+ *    and, by value, every request member the detail reflects — header, owner
+ *    references, each line and each slice's content, not just their ids. Anything
+ *    else is `malformed` — the draft may exist, so the caller keeps the key;
  *  - a list or detail read is data only when every record belongs to the company it
  *    was read under, and a detail only when it is the record that was asked for.
  *
@@ -23,6 +23,7 @@
 
 import {
   CREATED_STATUS,
+  OWNER_REFERENCE_FIELDS,
   REPLAY_STATUS,
   REV_0,
   SALES_DRAFT_PATH,
@@ -31,10 +32,12 @@ import {
   decodeDraftPage,
   decodeProblem,
   salesDraftDetailPath,
+  type DeliverySlice,
   type DraftCreateRequest,
   type DraftDetail,
   type DraftMutation,
   type DraftPage,
+  type OwnerReference,
 } from './contract'
 import type { OrderCommandOutcome } from './orderAttempt'
 import type { ViewOutcome } from '../shell/uiState'
@@ -121,45 +124,70 @@ export interface CreateContext {
   readonly companyId: string
 }
 
-const sameSet = (a: readonly string[], b: readonly string[]) =>
-  a.length === b.length && [...a].sort().join('|') === [...b].sort().join('|')
+const sameOwnerReference = (a: OwnerReference | null, b: OwnerReference | null) =>
+  a === null || b === null ? a === b : a.id === b.id && a.expectedVersion === b.expectedVersion
 
-/** Whether a decoded answer describes the attempt that was sent. */
+/**
+ * The same slices, compared by CONTENT and matched by `sliceId`: an answer that keeps
+ * the ids but moves 400+600 to 500+500, or shifts a date, is a different plan.
+ */
+function sameSlices(answered: readonly DeliverySlice[] | null, sent: readonly DeliverySlice[] | null): boolean {
+  if (answered === null || sent === null) return answered === sent
+  if (answered.length !== sent.length) return false
+  return sent.every((slice) => {
+    const match = answered.find((s) => s.sliceId === slice.sliceId)
+    return (
+      match !== undefined &&
+      match.orderUnitId === slice.orderUnitId &&
+      match.quantity === slice.quantity &&
+      match.requestedDeliveryDate === slice.requestedDeliveryDate
+    )
+  })
+}
+
+/**
+ * Whether a decoded answer describes the attempt that was sent.
+ *
+ * Every request member the detail reflects is compared by value — ids alone prove
+ * nothing. Decimal text is retained verbatim by the server, so it must come back as
+ * sent. `productVersion` is the owner's snapshot of the version the line expected.
+ * Price, discount and owner references are compared too: the client sends them null
+ * today, and an answer that fills one in is not the draft this person saved.
+ */
 export function describesAttempt(mutation: DraftMutation, sent: DraftCreateRequest, companyId: string): boolean {
   const { detail } = mutation
   const draft = detail.draft
   if (
     draft.companyId !== companyId ||
+    draft.kind !== sent.kind ||
     draft.revision !== REV_0 ||
     draft.partyId !== sent.partyId ||
     draft.companyAccountId !== sent.companyAccountId ||
     draft.currencyId !== sent.currencyId ||
     draft.businessDate !== sent.businessDate ||
     detail.requestedDeliveryDate !== sent.requestedDeliveryDate ||
-    detail.note !== sent.note
+    detail.note !== sent.note ||
+    !OWNER_REFERENCE_FIELDS.every((field) => sameOwnerReference(detail[field], sent[field])) ||
+    detail.lines.length !== sent.lines.length
   ) {
     return false
   }
-  if (!sameSet(detail.lines.map((l) => l.lineId), sent.lines.map((l) => l.lineId))) return false
-  for (const line of sent.lines) {
+  return sent.lines.every((line) => {
     const answered = detail.lines.find((l) => l.lineId === line.lineId)
-    if (
-      answered === undefined ||
-      answered.productId !== line.productId ||
-      answered.orderUnitId !== line.orderUnitId ||
-      // Decimal text is retained verbatim by the server, so the text must come back as sent.
-      answered.quantity !== line.quantity ||
-      answered.requestedDeliveryDate !== line.requestedDeliveryDate ||
-      (answered.requestedDeliverySlices === null) !== (line.requestedDeliverySlices === null) ||
-      !sameSet(
-        (answered.requestedDeliverySlices ?? []).map((s) => s.sliceId),
-        (line.requestedDeliverySlices ?? []).map((s) => s.sliceId),
-      )
-    ) {
-      return false
-    }
-  }
-  return true
+    return (
+      answered !== undefined &&
+      answered.productId === line.productId &&
+      answered.productVersion === line.expectedProductVersion &&
+      answered.orderUnitId === line.orderUnitId &&
+      answered.quantity === line.quantity &&
+      answered.unitPrice === line.unitPrice &&
+      answered.priceUnitId === line.priceUnitId &&
+      answered.requestedDeliveryDate === line.requestedDeliveryDate &&
+      answered.note === line.note &&
+      answered.discountPercent === line.discountPercent &&
+      sameSlices(answered.requestedDeliverySlices, line.requestedDeliverySlices)
+    )
+  })
 }
 
 export async function createDraft(

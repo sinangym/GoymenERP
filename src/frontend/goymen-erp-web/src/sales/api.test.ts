@@ -71,6 +71,25 @@ describe('createDraft — 201 first commit vs 200 replay', () => {
     ['another slice id', (b: any) => (b.detail.lines[0].requestedDeliverySlices[0].sliceId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbd')],
     ['a rewritten quantity text', (b: any) => (b.detail.lines[0].quantity = '1000.0')],
     ['a later revision', (b: any) => (b.detail.draft.revision = 'Rev.1')],
+    // Same ids, different content: the review's counter-examples.
+    ['the same slice ids planned as 500 + 500', (b: any) => {
+      b.detail.lines[0].requestedDeliverySlices[0].quantity = '500'
+      b.detail.lines[0].requestedDeliverySlices[1].quantity = '500'
+    }],
+    ['a slice moved to another date', (b: any) => (b.detail.lines[0].requestedDeliverySlices[1].requestedDeliveryDate = '2026-09-23')],
+    ['a plan that became unknown', (b: any) => (b.detail.lines[0].requestedDeliverySlices = null)],
+    ['another line due date', (b: any) => (b.detail.lines[0].requestedDeliveryDate = '2026-09-21')],
+    ['another header due date', (b: any) => (b.detail.requestedDeliveryDate = '2026-09-30')],
+    ['a line note the person did not write', (b: any) => (b.detail.lines[0].note = 'x')],
+    ['a header note the person did not write', (b: any) => (b.detail.note = 'x')],
+    ['a price filled in', (b: any) => {
+      b.detail.lines[0].unitPrice = '0'
+      b.detail.lines[0].priceUnitId = '44444444-4444-4444-4444-444444444444'
+    }],
+    ['a discount filled in', (b: any) => (b.detail.lines[0].discountPercent = '0')],
+    ['another product version', (b: any) => (b.detail.lines[0].productVersion = '8')],
+    ['an owner reference filled in', (b: any) => (b.detail.paymentTerms = { id: '12121212-1212-1212-1212-121212121212', expectedVersion: '1' })],
+    ['another business date', (b: any) => (b.detail.draft.businessDate = '2026-09-14')],
   ])('a body describing %s is not an answer to this attempt', async (_, change) => {
     respond(201, tweak(createResponseRaw, change))
     expect((await createDraft(REQUEST, CONTEXT)).type).toBe('malformed')

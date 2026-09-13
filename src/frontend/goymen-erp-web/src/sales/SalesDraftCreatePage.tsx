@@ -324,7 +324,7 @@ function CreateForm({
         <form onSubmit={onSubmit} noValidate>
           {errorEntries.length > 0 || serverMessages.length > 0 ? (
             <div ref={summaryRef} tabIndex={-1} role="alert" className={styles.errorSummary}>
-              <p>{T.errorSummary}</p>
+              <p>{isOutcomeStillUnknown(attempt) ? T.errorSummaryUnresolved : T.errorSummary}</p>
               <ul>
                 {errorEntries.map(([id, message]) => (
                   <li key={id}>
