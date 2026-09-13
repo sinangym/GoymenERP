@@ -14,9 +14,12 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure;
+using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Idempotency.Infrastructure;
 using GoymenERP.Modules.Organization.Infrastructure;
 using GoymenERP.Modules.Identity.Infrastructure;
+using GoymenERP.Modules.Settings.Application;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -71,6 +74,13 @@ builder.Services.AddSingleton<ShellCapabilityGenerationProtector>();
 builder.Services.AddSingleton<ShellCapabilityRegistry>();
 builder.Services.AddScoped<IActorSessionBindingResolver, ActorSessionBindingResolver>();
 builder.Services.AddScoped<ShellCapabilityService>();
+builder.Services.AddScoped<IFinancePermissionPort, UnavailableFinancePermissionPort>();
+builder.Services.AddScoped<IFinanceBankAccountReader, UnavailableFinanceBankAccountReader>();
+builder.Services.AddScoped<IFinancePartyAccountPort, CounterpartyFinancePartyAccountPort>();
+builder.Services.AddScoped<ISettingsPrerequisiteProvider, UnavailableSettingsPrerequisiteProvider>();
+builder.Services.AddScoped<DraftReadContextReader>();
+builder.Services.AddScoped<IFinanceDraftContextEndpointService, FinanceDraftContextEndpointService>();
+builder.Services.AddSingleton<IFinanceDraftReadBinding, UnavailableFinanceDraftReadBinding>();
 builder.Services.AddAuditModule(builder.Configuration);
 builder.Services.AddIdempotencyModule(builder.Configuration);
 builder.Services.AddOrganizationModule(
@@ -123,6 +133,7 @@ app.MapIdentityEndpoints();
 app.MapAuditEndpoints();
 app.MapCounterpartyEndpoints();
 app.MapProductEndpoints();
+app.MapFinanceEndpoints();
 app.MapShellEndpoints();
 
 if (!isOpenApiDocumentGeneration

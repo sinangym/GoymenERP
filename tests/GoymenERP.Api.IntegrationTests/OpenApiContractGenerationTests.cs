@@ -121,6 +121,17 @@ public sealed partial class OpenApiContractGenerationTests
                 "200:application/json",
                 "400:application/problem+json",
                 "503:application/problem+json")),
+        new("get", "/api/v1/finance/manual-receipts/draft-context",
+            "GetFinanceManualReceiptDraftContextV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json",
+                "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues:
+            [
+                "query:treasuryAccountId:true:type:string;format:uuid",
+                "query:partyId:true:type:string;format:uuid",
+                "query:companyAccountId:true:type:string;format:uuid",
+                "query:occurredOn:true:type:string;format:date",
+            ]),
         .. ProductOperations,
     ];
 
@@ -147,6 +158,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetCounterpartyContactInformationV1"] = "ref:CounterpartyContactInformationView",
             ["UpdateCounterpartyContactInformationV1"] = "none",
             ["GetShellCapabilitiesV1"] = "ref:ShellCapabilitySnapshot",
+            ["GetFinanceManualReceiptDraftContextV1"] = "ref:DraftReadContextView",
         };
 
     private static readonly HashSet<string> RequiredCompanyOperations =
@@ -164,6 +176,7 @@ public sealed partial class OpenApiContractGenerationTests
         "CreateCounterpartyV1",
         "CreateCounterpartyCompanyAccountV1",
         "SetCounterpartyCompanyAccountActiveStateV1",
+        "GetFinanceManualReceiptDraftContextV1",
     ];
 
     private static readonly HashSet<string> OptionalCompanyOperations =
@@ -218,6 +231,7 @@ public sealed partial class OpenApiContractGenerationTests
         "CreateCounterpartyV1",
         "CreateCounterpartyCompanyAccountV1",
         "SetCounterpartyCompanyAccountActiveStateV1",
+        "GetFinanceManualReceiptDraftContextV1",
     ];
 
     private static readonly HashSet<string> CodeLessProblemResponses =
@@ -225,12 +239,14 @@ public sealed partial class OpenApiContractGenerationTests
         "GetOrganizationLocationV1:404",
         "SetOrganizationLocationActiveStateV1:404",
         "SetOrganizationLocationActiveStateV1:409",
+        "GetFinanceManualReceiptDraftContextV1:404",
     ];
 
     private static readonly HashSet<string> MixedProblemResponses =
     [
         "GetAuditEventsV1:400",
         "SetOrganizationLocationActiveStateV1:400",
+        "GetFinanceManualReceiptDraftContextV1:400",
     ];
 
     private static readonly IReadOnlyDictionary<string, string[]> AdditionalProblemCodes =
@@ -272,6 +288,34 @@ public sealed partial class OpenApiContractGenerationTests
         ExpectedSuccessComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["BankAccountView"] = ObjectSchema(
+                    ["id", "companyId", "currencyId", "displayName", "isActive", "isUsableForReceipt", "version"],
+                    ("id", "type:string;format:uuid"), ("companyId", "type:string;format:uuid"),
+                    ("currencyId", "type:string;format:uuid"), ("displayName", "type:string"),
+                    ("isActive", "type:boolean"), ("isUsableForReceipt", "type:boolean"),
+                    ("version", "type:string")),
+                ["DraftCurrencyContext"] = ObjectSchema(
+                    ["currencyId", "displayCode", "profile"],
+                    ("currencyId", "type:string;format:uuid"), ("displayCode", "type:string"),
+                    ("profile", "ref:DraftEffectiveProfile")),
+                ["DraftEffectiveProfile"] = ObjectSchema(
+                    ["reference", "scale", "effectiveFrom", "effectiveThrough"],
+                    ("reference", "ref:ProfileReference"), ("scale", "type:integer|string;format:int32"),
+                    ("effectiveFrom", "type:string;format:date"),
+                    ("effectiveThrough", "type:null|string;format:date")),
+                ["DraftPartyLabel"] = ObjectSchema(
+                    ["partyId", "companyAccountId", "code", "legalName", "tradeName", "partyVersion", "companyAccountVersion"],
+                    ("partyId", "type:string;format:uuid"),
+                    ("companyAccountId", "type:string;format:uuid"), ("code", "type:string"),
+                    ("legalName", "type:string"), ("tradeName", "type:null|string"),
+                    ("partyVersion", "type:string"), ("companyAccountVersion", "type:string")),
+                ["DraftReadContextView"] = ObjectSchema(
+                    ["companyId", "occurredOn", "bankAccount", "currency", "party"],
+                    ("companyId", "type:string;format:uuid"), ("occurredOn", "type:string;format:date"),
+                    ("bankAccount", "ref:BankAccountView"), ("currency", "ref:DraftCurrencyContext"),
+                    ("party", "ref:DraftPartyLabel")),
+                ["ProfileReference"] = ObjectSchema(
+                    ["profileId", "version"], ("profileId", "type:string"), ("version", "type:string")),
                 ["CounterpartyContactInformationView"] = ObjectSchema(
                     ["partyId", "accountId", "companyId", "version", "isActive", "information"],
                     ("partyId", "type:string;format:uuid"),
@@ -1090,9 +1134,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(25, operations.Count);
+        Assert.Equal(26, operations.Count);
         Assert.Equal(
-            25,
+            26,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
