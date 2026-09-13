@@ -792,12 +792,15 @@ public sealed class LifecycleTests
         os.Add(4242, "dotnet", Started.AddSeconds(1));
         var uncertain = os.Add(4343);
         uncertain.MetadataUnreadable = true;
-        var outcome = Lifecycle.PlanRelease([(absent.Folder, absent), (foreign.Folder, foreign), (unreadable.Folder, unreadable), ("C-DESKTOP-006", null)], os.Probe);
+        // The reporting path may contain a different PID as ordinary folder text.
+        var unreadableFolder = Path.Combine(unreadable.Folder, "d5dc490f967ec89bc7824242");
+        var outcome = Lifecycle.PlanRelease([(absent.Folder, absent), (foreign.Folder, foreign), (unreadableFolder, unreadable), ("C-DESKTOP-006", null)], os.Probe);
         Assert.False(outcome.Allowed);
         Assert.Equal(1, outcome.ExitCode);
         Assert.Equal([HostState.Gone, HostState.Foreign, HostState.Uncertain, HostState.NoRecord], outcome.Hosts.Select(status => status.State));
-        Assert.Contains("4343", outcome.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain("4242", outcome.Message, StringComparison.Ordinal);
+        Assert.Contains(unreadableFolder, outcome.Message, StringComparison.Ordinal);
+        Assert.Contains(" pid 4343 (", outcome.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(" pid 4242 (", outcome.Message, StringComparison.Ordinal);
         Assert.Empty(os.Killed);
     }
 

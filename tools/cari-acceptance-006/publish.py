@@ -9,13 +9,15 @@ import subprocess
 from datetime import datetime, timezone
 import urllib.request
 
-ROOT = Path(r'C:\src\GoymenERP-cari-party-card-backend-20260912')
-EVIDENCE = ROOT / 'artifacts/cari-acceptance-006/contact-edit-20260912/c006-db61f4b0aac9'
+ROOT = Path(r'C:\src\GoymenERP-cari-acceptance-envelope-20260911')
+EVIDENCE = ROOT / 'artifacts/cari-acceptance-006/account-status-20260913/c006-c79a094df633'
 DLL = ROOT / 'tools/GoymenERP.CariAcceptance006/bin/Release/net10.0-windows/GoymenERP.CariAcceptance006.dll'
 CONTRACT_HEADER = 'X-ERP-Counterparty-Contract'
 CONTRACT_VERSION = 'optional-trade-roles-v1'
 TEST_OUTPUT = 'tests/GoymenERP.CariAcceptance006.Tests/bin/Release/net10.0-windows/'
 TEST_ASSEMBLY = 'GoymenERP.CariAcceptance006.Tests.dll'
+L04_HEAD = '0d20850562d271ea934c04ff8c002679030dfaf2'
+L04_REVIEW_BODY_SHA256 = 'af9a9c17e3e0132aa90d02d264703d14f983f92123a70e315768694750965650'
 REQUIRED_FRONTEND_CHECKS = {
     'Backend build, test and migration', 'Frontend lint, test and build',
     'SQL Server relational acceptance', 'Container build',
@@ -120,10 +122,10 @@ def validate_frontend_review(source, review, evidence=None, pull_request=235):
         require(len(set(urls)) >= 2 and all(url.startswith('https://github.com/sinangym/GoymenERP/pull/233#') for url in urls),
                 'historical #233 two-review gate is missing')
         return
-    require(pull_request == 235 and review.get('pullRequest') == 235
+    require(pull_request in (235, 250) and review.get('pullRequest') == pull_request
             and review.get('riskClass') == 'K2' and type(review.get('requiredIndependentReviews')) is int
             and review['requiredIndependentReviews'] == 1 and len(urls) == 1
-            and re.fullmatch(r'https://github\.com/sinangym/GoymenERP/pull/235#issuecomment-[0-9]+', urls[0]),
+            and re.fullmatch(r'https://github\.com/sinangym/GoymenERP/pull/' + str(pull_request) + r'#issuecomment-[0-9]+', urls[0]),
             'unexpected #235 review profile or source')
     require(review.get('reviewerId') == '/root/frontend_final_review_one'
             and review.get('reviewerKind') == 'ai-non-author' and review.get('authorAgent') == 'CLAUDE-FRONTEND'
@@ -133,18 +135,28 @@ def validate_frontend_review(source, review, evidence=None, pull_request=235):
     require(isinstance(evidence, dict), 'live GitHub review evidence is missing')
     comment, pr = evidence.get('comment', {}), evidence.get('pullRequest', {})
     require(comment.get('html_url') == urls[0]
-            and comment.get('issue_url') == 'https://api.github.com/repos/sinangym/GoymenERP/issues/235'
+            and comment.get('issue_url') == 'https://api.github.com/repos/sinangym/GoymenERP/issues/' + str(pull_request)
             and comment.get('author_association') in ['OWNER', 'MEMBER', 'COLLABORATOR']
-            and isinstance(comment.get('body'), str) and pr.get('number') == 235
+            and isinstance(comment.get('body'), str) and pr.get('number') == pull_request
             and pr.get('head', {}).get('sha') == source['FrontendHead'],
             'GitHub comment or current PR source differs from the receipt')
     expected = {key: value for key, value in review.items() if key != 'reviewUrls'}
-    blocks = re.findall(r'```json\s*\n(.*?)\n```', comment['body'], re.DOTALL)
-    require(len(blocks) == 1, 'GitHub source must contain one unambiguous review JSON block')
-    payload = strict_json(blocks[0])
-    # JSON encoding preserves booleans versus numbers, unlike Python == (True == 1).
-    canonical = lambda value: json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False)
-    require(canonical(payload) == canonical(expected), 'GitHub source does not attest this exact typed review result')
+    if pull_request == 250:
+        # Existing Dirac source-only review is prose, not a fabricated JSON attestation.
+        # Bind the exact reviewed text and head; attribution comes from coordinator's
+        # existing /root/frontend_final_review_one agent record, not the transport login.
+        require(source['FrontendHead'] == L04_HEAD
+                and urls == ['https://github.com/sinangym/GoymenERP/pull/250#issuecomment-5652761056']
+                and comment.get('id') == 5652761056
+                and hashlib.sha256(comment['body'].encode('utf-8')).hexdigest() == L04_REVIEW_BODY_SHA256,
+                'L04 source-only review text or exact head differs')
+    else:
+        blocks = re.findall(r'```json\s*\n(.*?)\n```', comment['body'], re.DOTALL)
+        require(len(blocks) == 1, 'GitHub source must contain one unambiguous review JSON block')
+        payload = strict_json(blocks[0])
+        # JSON encoding preserves booleans versus numbers, unlike Python == (True == 1).
+        canonical = lambda value: json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False)
+        require(canonical(payload) == canonical(expected), 'GitHub source does not attest this exact typed review result')
     checks = evidence.get('checkRuns', {}).get('check_runs', [])
     require(isinstance(checks, list), 'live frontend check evidence is missing')
     latest = {}
@@ -168,7 +180,8 @@ def prepare_frontend_review_evidence(source, review, run, responses):
             and all(isinstance(value, str) for value in responses.values()),
             'complete GitHub response texts are required')
     evidence = {name: strict_json(value) for name, value in responses.items()}
-    validate_frontend_review(source, review, evidence)
+    pull_request = review.get('pullRequest', 235)
+    validate_frontend_review(source, review, evidence, pull_request=pull_request)
     require(source.get('RunId') == run.get('RunId')
             and source.get('InstanceId') == run.get('InstanceId')
             and isinstance(run.get('RunId'), str) and isinstance(run.get('InstanceId'), str),
@@ -178,7 +191,7 @@ def prepare_frontend_review_evidence(source, review, run, responses):
     require(type(comment.get('id')) is int and comment['id'] > 0
             and str(comment['id']) == comment_id
             and type(pr.get('id')) is int and pr['id'] > 0
-            and pr.get('html_url') == 'https://github.com/sinangym/GoymenERP/pull/235'
+            and pr.get('html_url') == 'https://github.com/sinangym/GoymenERP/pull/' + str(pull_request)
             and isinstance(comment.get('user'), dict)
             and type(comment['user'].get('id')) is int and comment['user']['id'] > 0,
             'GitHub projected identities are malformed')
@@ -198,7 +211,7 @@ def prepare_frontend_review_evidence(source, review, run, responses):
     raw_bytes = encode(raw_record)
     body_hash = lambda value: hashlib.sha256(value.encode('utf-8')).hexdigest()
     projection = {
-        'pullRequest': {'id': pr['id'], 'number': 235, 'html_url': pr['html_url'],
+        'pullRequest': {'id': pr['id'], 'number': pull_request, 'html_url': pr['html_url'],
                         'head': {'sha': source['FrontendHead']}, 'bodySha256': body_hash(pr.get('body') or '')},
         'comment': {'id': comment['id'], 'html_url': comment['html_url'], 'issue_url': comment['issue_url'],
                     'author_association': comment['author_association'], 'authorId': comment['user']['id'],
@@ -247,12 +260,12 @@ def main():
     tested_artifacts = validate_tested_build(source, host, tests)
     urls = review.get('reviewUrls', [])
     require(isinstance(urls, list) and len(urls) == 1 and isinstance(urls[0], str)
-            and re.fullmatch(r'https://github\.com/sinangym/GoymenERP/pull/235#issuecomment-[0-9]+', urls[0]),
-            'exact #235 review comment URL is required')
+            and urls[0] == 'https://github.com/sinangym/GoymenERP/pull/250#issuecomment-5652761056',
+            'exact #250 review comment URL is required')
     comment_id = urls[0].rsplit('-', 1)[1]
     github_responses = {
         'comment': command(args.github_cli, 'api', 'repos/sinangym/GoymenERP/issues/comments/' + comment_id),
-        'pullRequest': command(args.github_cli, 'api', 'repos/sinangym/GoymenERP/pulls/235'),
+        'pullRequest': command(args.github_cli, 'api', 'repos/sinangym/GoymenERP/pulls/250'),
         'checkRuns': command(args.github_cli, 'api', 'repos/sinangym/GoymenERP/commits/' + source['FrontendHead'] + '/check-runs?per_page=100'),
     }
     github_projection, github_raw_bytes = prepare_frontend_review_evidence(source, review, run, github_responses)
@@ -278,6 +291,19 @@ def main():
     require(current['Rcsi'] and current['DatabaseName'] == run['DatabaseName']
             and len(current['Rows']) == 2 and all(type(row['Roles']) is int and row['Roles'] == 0 for row in current['Rows']),
             'fresh roleless SQL baseline is missing')
+    status_baseline = read(EVIDENCE / 'status-baseline.json')
+    require(status_baseline == strict_json(command('dotnet', str(DLL), 'status-snapshot'))
+            and status_baseline['Database'] == current
+            and status_baseline['Executions'] == [] and status_baseline['Audits'] == [],
+            'fresh status baseline is missing or changed')
+    by_company = {row['CompanyId']: row for row in current['Rows']}
+    require(set(by_company) == {run['CompanyAId'], run['CompanyBId']}
+            and by_company[run['CompanyAId']]['Version'] == '7'
+            and by_company[run['CompanyAId']]['IsActive'] is True
+            and bool(by_company[run['CompanyAId']]['ContactInformationJson'])
+            and by_company[run['CompanyBId']]['Version'] == '1'
+            and by_company[run['CompanyBId']]['IsActive'] is True,
+            'L04 A active v7 / B active v1 fixture differs')
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     observations = []
     for company in [run['CompanyAId'], run['CompanyBId']]:
@@ -298,7 +324,7 @@ def main():
                                  'observedAtUtc': datetime.now(timezone.utc).isoformat()})
     command('dotnet', str(DLL), 'source-check')
     require(json.loads(command('dotnet', str(DLL), 'snapshot')) == current, 'readiness GET produced SQL effects')
-    contract_path = ROOT / 'artifacts/cari-acceptance-006/contact-edit-20260912/contract.json'
+    contract_path = ROOT / 'artifacts/cari-acceptance-006/account-status-20260913/c006-c79a094df633-contract.json'
     validated_contract = strict_json(command('dotnet', str(DLL), 'contract-check'))
     contract_hash = bind_validated_contract(validated_contract, contract_path.read_bytes())
     manifest = {
@@ -307,6 +333,7 @@ def main():
         'instanceId': run['InstanceId'], 'apiBaseUrl': run['ApiBaseUrl'], 'databaseName': run['DatabaseName'],
         'worktree': str(ROOT), 'sources': source, 'resources': resources, 'host': host,
         'fixtureHash': source['FixtureSha256'], 'baselineSha256': digest(EVIDENCE / 'baseline.json'),
+        'statusBaselineSha256': digest(EVIDENCE / 'status-baseline.json'),
         'contractSha256': contract_hash,
         'smokeSha256': digest(EVIDENCE / 'smoke.json'),
         'backendTests': {'path': str(args.tests_summary.resolve()), 'sha256': hashlib.sha256(tests_bytes).hexdigest(),
@@ -314,14 +341,14 @@ def main():
                          'publisherExecuted': tests['publisher_executed']},
         'frontendReviewReceipt': review, 'reviewReceiptMeaning': 'Coordinator-supplied receipt; not a new independent review.',
         'frontendReviewEvidence': github_projection,
-        'contactEdit': {'logicalUpdates': 6, 'expectedNewParties': 0, 'expectedDurableResults': 7,
+        'accountStatus': {'logicalUpdates': 2, 'expectedNewParties': 0, 'expectedNewAccounts': 0, 'expectedDurableResults': 3,
                         'readOnlyActor': 'company-a-user', 'browserVerdict': 'NOT_RUN'},
         'freshGetObservations': observations, 'companyAId': run['CompanyAId'], 'companyBId': run['CompanyBId'],
         'actor': run['Actor'], 'browserPrefix': run['BrowserPrefix'],
         'clientContractHeader': CONTRACT_HEADER, 'clientContractVersion': CONTRACT_VERSION,
         'commands': {'control': str(ROOT / 'tools/cari-acceptance-006/control.ps1'),
-                     'start': '-Action start', 'verify': '-Action verify -ExpectedNewParties 1',
-                     'verifyContactEdit': '-Action verify-contact-edit -BrowserMeasurement <actual-l03-measurement.json>',
+                     'start': '-Action start',
+                     'verifyAccountStatus': '-Action verify-account-status -BrowserMeasurement <actual-l04-measurement.json>',
                      'stop': '-Action stop', 'releaseCheck': '-Action release-check', 'teardown': '-Action teardown'},
         'browserAcceptance': 'NOT_RUN', 'erpAccepted': False, 'productionActivated': False,
         'topology': 'One loopback API process and one newly owned disposable SQL container. No mixed-node claim.',

@@ -33,7 +33,7 @@ public static class LiveSmoke
             var replayed = response.Headers.TryGetValues("Idempotency-Replayed", out var replay) ? replay.Single() : null;
             var originalCorrelation = response.Headers.TryGetValues("Idempotency-Original-Correlation-Id", out var original) ? original.Single() : null;
             exchanges.Add(new { method, route, company, status, contract, acknowledgment, replayed, originalCorrelation, body = text });
-            if (route == "/health/live") return default;
+            if (route == "/health/live" || status == 204) return default;
             using var document = JsonDocument.Parse(text);
             return document.RootElement.Clone();
         }
@@ -76,7 +76,7 @@ public static class LiveSmoke
             Require(initialList.GetProperty("items").GetArrayLength() == 0
                 && initialList.GetProperty("totalCount").GetInt64() == 0, "Fresh validated GET handshake must be empty.");
             var text = capabilities.GetRawText();
-            foreach (var capability in new[] { "cari.parties.list", "cari.parties.create", "cari.parties.detail", "cari.accounts.link" })
+            foreach (var capability in new[] { "cari.parties.list", "cari.parties.create", "cari.parties.detail", "cari.accounts.link", "cari.accounts.status.update" })
                 Require(text.Contains('"' + capability + '"', StringComparison.Ordinal), "Missing live capability: " + capability);
         }
         await Call("GET", "/api/v1/counterparties/", identity.CompanyBId, null, 403, actor: "company-a-user");
@@ -150,6 +150,34 @@ public static class LiveSmoke
         var afterReadOnly = await DatabaseEvidence.ReadAsync(identity);
         Require(JsonSerializer.Serialize(afterReadOnly) == JsonSerializer.Serialize(final),
             "Read-only read/refused PUT produced database effects.");
+        // The browser starts on an existing populated A account v7. Six explicit
+        // contact mutations use the existing API; no direct database seeding or status effects.
+        for (var version = 1; version <= 6; version++)
+            await Call("PUT", contactPath, identity.CompanyAId,
+                new { expectedVersion = version.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    changes = new { phone = "001230" + version, email = "l04-fixture@example.test" } },
+                204, Guid.NewGuid().ToString("N"));
+        var statusBaseline = await DatabaseEvidence.ReadStatusJourneyAsync(identity);
+        var seeded = statusBaseline.Database.Rows.Single(x => x.PartyId == Guid.Parse(id) && x.CompanyId == Guid.Parse(identity.CompanyAId));
+        Require(seeded.Version == "7" && seeded.Roles == 0 && seeded.IsActive
+            && !string.IsNullOrWhiteSpace(seeded.ContactInformationJson)
+            && statusBaseline.Executions.Count == 0 && statusBaseline.Audits.Count == 0,
+            "L04 must begin at active/roleless v7 with no status history.");
+        Require(statusBaseline.Database.Rows.Single(x => x.CompanyId == Guid.Parse(identity.CompanyBId))
+            == final.Rows.Single(x => x.CompanyId == Guid.Parse(identity.CompanyBId)), "L04 preparation changed B.");
+        var readerCapabilities = await Call("GET", "/api/v1/shell/capabilities", identity.CompanyAId,
+            null, 200, actor: AcceptanceProfile.ReadOnlyActor);
+        Require(!readerCapabilities.GetRawText().Contains("\"cari.accounts.status.update\"", StringComparison.Ordinal),
+            "Reader must not receive status control.");
+        var deniedStatus = await Call("PUT", detail + "/company-account/active-state", identity.CompanyAId,
+            new { isActive = false, expectedVersion = "7", reason = identity.SmokePrefix + " denied status" },
+            403, Guid.NewGuid().ToString("N"), AcceptanceProfile.ReadOnlyActor);
+        Require(deniedStatus.GetProperty("code").GetString() == "forbidden", "Reader status write must be server denied.");
+        await Call("GET", detail, identity.CompanyAId, null, 200, actor: AcceptanceProfile.ReadOnlyActor);
+        Require(JsonSerializer.Serialize(statusBaseline) == JsonSerializer.Serialize(await DatabaseEvidence.ReadStatusJourneyAsync(identity)),
+            "Reader status refusal/GET changed SQL state.");
+        final = statusBaseline.Database;
+        Evidence.Write("status-baseline.json", statusBaseline);
         Evidence.Write("baseline.json", final);
         var evidence = new { observedAtUtc = DateTimeOffset.UtcNow, identity.RunId, identity.InstanceId,
             transport = "real TCP HttpClient -> loopback Kestrel -> new SQL Server", before, afterCreate, afterLink, final, exchanges, passed = true };

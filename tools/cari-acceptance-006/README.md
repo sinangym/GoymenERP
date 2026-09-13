@@ -1,4 +1,82 @@
+The c006-7f12ed40ff9a browser run FAILED at the company discard dialog. Final measurement was absent; the poststate source guard rejected capture, and final SQL verification was NOT_RUN. Owned stop/release-check/teardown succeeded. Its evidence and former readiness remain immutable historical records, not this candidate's acceptance.
+
+The allocated-only c006-d861550bfb2e source candidate is also preserved: its CI failed on a PID substring assertion. No live resources were started for that candidate. This revision fixes that assertion with a deterministic folder-substring regression; all lifecycle state and no-kill checks remain unchanged.
+
+## L04 retry source candidate (2026-09-13)
+
+Current frontend #250: 0d20850562d271ea934c04ff8c002679030dfaf2.
+Committed frontend+harness diff SHA-256:
+311edcb5a7a45ffcda20fc04adbbf16e126347dfe185cfff879824ea4fbc6faa
+against base 3e7dd98a5f8b7cb9e6850e05148eb4e7b26f3e3f.
+Source-only independent review:
+https://github.com/sinangym/GoymenERP/pull/250#issuecomment-5652761056
+Body SHA-256: af9a9c17e3e0132aa90d02d264703d14f983f92123a70e315768694750965650.
+This review is not browser/SQL acceptance evidence.
+
+New run: c006-c79a094df633; instance: a226ca3a-08b3-4efd-92ec-b22333778557.
+External contract: artifacts/cari-acceptance-006/account-status-20260913/c006-c79a094df633-contract.json.
+AcceptanceHead and CompiledHead must both identify the final local source.
+BackendDependency remains 9df7f40e3aefc5b02ef42a378c0d1aa800a2fe29.
+Ports remain API/SQL/UI 25080/25433/25173.
+Use the existing bind/setup/start/smoke/publish/stop/release-check/teardown flow
+with the new run evidence directory and a fresh root-locked contract.
+Do not start live resources before the root lock.
+
+The older L04 section below describes the preserved c006-5b7b30940e9a run,
+not current readiness. Its browser journey FAILED; final SQL effects
+verification was NOT_RUN because no final measurement was produced.
+Stop/release-check/teardown succeeded. Its contract, logs and ENV_READY bytes
+are immutable historical evidence and must not be reused for this candidate.
+This pin update does not claim a new ENV_READY or browser/SQL pass.
 # C006 disposable Cari acceptance environment
+
+## Current Cari L04 source preparation (2026-09-13)
+
+This worktree's Cari constants now select `c006-5b7b30940e9a`, instance
+`1bd0f50d-f882-45b6-8d24-175f032ef1d5`, database `GoymenCariC006_5b7b30940e9a`.
+Historical sections below describe preserved runs, not current readiness.
+Owner worktree: `C:\src\GoymenERP-cari-acceptance-envelope-20260911`.
+Base main: `60e584d3255aa034060538f4413dc4aafa051a7c`.
+The separately locked Cari API dependency remains `9df7f40e3aefc5b02ef42a378c0d1aa800a2fe29`.
+Final acceptance/compiled head must match the actual new commit and local DLLs.
+
+Frontend owner #250: `b9f094c437b4d3be61c9c8e2d1ebc451a8451b6f` in
+`C:\src\GoymenERP-claude`; diff base `3e7dd98a5f8b7cb9e6850e05148eb4e7b26f3e3f`.
+Raw committed frontend+harness diff: 760095 bytes,
+SHA256 `8f7bf0c538dfeffd37adbd0609a707003e0e5aa06bf55dd1a3a6ea7e44f5684b`.
+The existing independent source-only review is #250/comment-5649036177;
+the publisher binds its exact prose hash, reviewer attribution and current required CI.
+It does not represent a human approval or executed browser/SQL test.
+
+External contract: `artifacts/cari-acceptance-006/account-status-20260913/contract.json`.
+Backend owns preparation; coordinator receives the actual final source/contract hashes.
+Existing contract shape/ports remain API 25080, SQL 25433, UI 25173.
+Evidence: `artifacts/cari-acceptance-006/account-status-20260913/c006-5b7b30940e9a`.
+The one-node setup/start/smoke/publish/stop/release-check/teardown flow is unchanged.
+
+Smoke creates exactly one Party with A/B roles=0 accounts. Six existing contact API
+commands populate A at active v7, B remains active v1. It verifies the existing reader
+`company-a-user` can read and receives server 403 for status writes with no SQL effect.
+Only the isolated Testing provider advertises `cari.accounts.status.update`, using the
+existing permission and detail-parent control contract. Normal providers/CORS are unchanged.
+
+After final source tests, review and CI, run the existing `BackendVerify` command, bind,
+setup, start and smoke. Publish using `publish.py --tests-summary <actual-local-summary>
+--frontend-review <coordinator-receipt> --github-cli <gh>`. Claude runs only L04 after
+validating the published manifest. Then:
+
+```powershell
+./tools/cari-acceptance-006/control.ps1 -Action verify-account-status -BrowserMeasurement <actual-l04-measurement.json>
+./tools/cari-acceptance-006/control.ps1 -Action stop
+./tools/cari-acceptance-006/control.ps1 -Action release-check
+./tools/cari-acceptance-006/control.ps1 -Action teardown
+```
+
+The typed verifier joins actual page-local requests, original lost 204, delivered 204
+with lost GET, fresh reads around historical replay, three durable keys and two audit
+transitions. Expected: 4 PUT, 2 mutations, A active v9, 1 replay, 0 NoChange,
+0 new Party/account, B unchanged, reader writes 0. SQL evidence is separate from the
+browser verdict. At source preparation live ENV/browser/SQL/cleanup are `NOT_RUN`.
 
 ## Product U-01/U-02 adapter (PR #251)
 

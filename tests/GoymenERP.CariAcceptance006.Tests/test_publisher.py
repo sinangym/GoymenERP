@@ -374,6 +374,37 @@ class PublisherFrontendReviewTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             PUBLISHER.validate_frontend_review(self.source, review, self.evidence)
 
+    def test_l04_prose_review_requires_exact_text_head_attribution_and_fresh_checks(self):
+        body = 'Controlled independent source-only L04 review; browser and SQL NOT_RUN.'
+        review = {**self.review, 'pullRequest': 250, 'head': PUBLISHER.L04_HEAD,
+                  'reviewUrls': ['https://github.com/sinangym/GoymenERP/pull/250#issuecomment-5652761056']}
+        source = {**self.source, 'FrontendHead': PUBLISHER.L04_HEAD}
+        evidence = copy.deepcopy(self.evidence)
+        evidence['comment'].update(id=5652761056, body=body, html_url=review['reviewUrls'][0],
+                                  issue_url='https://api.github.com/repos/sinangym/GoymenERP/issues/250')
+        evidence['pullRequest'].update(number=250, head={'sha': PUBLISHER.L04_HEAD},
+                                      html_url='https://github.com/sinangym/GoymenERP/pull/250')
+        for check in evidence['checkRuns']['check_runs']:
+            check['head_sha'] = PUBLISHER.L04_HEAD
+        with patch.object(PUBLISHER, 'L04_REVIEW_BODY_SHA256', PUBLISHER.hashlib.sha256(body.encode()).hexdigest()):
+            PUBLISHER.validate_frontend_review(source, review, evidence, pull_request=250)
+            original = copy.deepcopy(evidence)
+            for mutation in ['body', 'id', 'head', 'failed']:
+                with self.subTest(mutation=mutation):
+                    changed = copy.deepcopy(original)
+                    if mutation == 'body': changed['comment']['body'] += ' changed'
+                    elif mutation == 'id': changed['comment']['id'] = 123
+                    elif mutation == 'head': changed['pullRequest']['head']['sha'] = 'b' * 40
+                    else: changed['checkRuns']['check_runs'][0]['conclusion'] = 'failure'
+                    with self.assertRaises(RuntimeError):
+                        PUBLISHER.validate_frontend_review(source, review, changed, pull_request=250)
+            responses = {name: json.dumps(value) for name, value in evidence.items()}
+            projection, raw = PUBLISHER.prepare_frontend_review_evidence(source, review, source, responses)
+            self.assertEqual(projection['pullRequest']['number'], 250)
+            self.assertEqual(projection['sourceArtifact']['sha256'], PUBLISHER.hashlib.sha256(raw).hexdigest())
+            with self.assertRaises(RuntimeError):
+                PUBLISHER.validate_frontend_review(source, {**review, 'humanApproval': True}, evidence, pull_request=250)
+
 
 if __name__ == '__main__':
     unittest.main()

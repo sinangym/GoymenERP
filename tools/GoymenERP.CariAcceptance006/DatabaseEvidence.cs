@@ -13,7 +13,7 @@ public sealed record Effects(int Parties, int Accounts, int CreateAudits, int Li
         ContactAudits, ContactExecutions);
 }
 public sealed record AccountRow(Guid PartyId, string Code, string LegalName, Guid CompanyId, int Roles, string Version,
-    string? ContactInformationJson = null, bool IsActive = true);
+    string? ContactInformationJson = null, bool IsActive = true, Guid AccountId = default);
 public sealed record DatabaseSnapshot(string DatabaseName, bool Rcsi, Effects Effects, IReadOnlyList<AccountRow> Rows,
     string PartyStateSha256 = "", IReadOnlyList<ContactExecutionRow>? ContactExecutionRows = null);
 public sealed record ContactExecutionRow(Guid Id, Guid CompanyId, string IdempotencyKeyHash,
@@ -75,7 +75,7 @@ public static partial class DatabaseEvidence
         await reader.DisposeAsync();
         await using var rows = connection.CreateCommand();
         rows.CommandText = """
-            SELECT p.Id, p.Code, p.LegalName, a.CompanyId, a.Roles, a.Version, a.ContactInformationJson, a.IsActive
+            SELECT p.Id, p.Code, p.LegalName, a.CompanyId, a.Roles, a.Version, a.ContactInformationJson, a.IsActive, a.Id
             FROM counterparty.Parties AS p
             JOIN counterparty.CompanyPartyAccounts AS a ON a.PartyId=p.Id
             ORDER BY p.Id,a.CompanyId;
@@ -85,7 +85,7 @@ public static partial class DatabaseEvidence
         while (await rowReader.ReadAsync())
             values.Add(new(rowReader.GetGuid(0), rowReader.GetString(1), rowReader.GetString(2),
                 rowReader.GetGuid(3), rowReader.GetInt32(4), rowReader.GetInt64(5).ToString(CultureInfo.InvariantCulture),
-                rowReader.IsDBNull(6) ? null : rowReader.GetString(6), rowReader.GetBoolean(7)));
+                rowReader.IsDBNull(6) ? null : rowReader.GetString(6), rowReader.GetBoolean(7), rowReader.GetGuid(8)));
         await rowReader.DisposeAsync();
         await using var partyState = connection.CreateCommand();
         partyState.CommandText = "SELECT (SELECT * FROM [counterparty].[Parties] ORDER BY [Id] FOR JSON PATH, INCLUDE_NULL_VALUES);";

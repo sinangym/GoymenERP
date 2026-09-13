@@ -1,5 +1,5 @@
 param(
-    [Parameter(Mandatory=$true)][ValidateSet('start','smoke','snapshot','verify','verify-contact-edit','stop','release-check','teardown','publish','live-check')][string]$Action,
+    [Parameter(Mandatory=$true)][ValidateSet('start','smoke','snapshot','status-snapshot','verify','verify-contact-edit','verify-account-status','stop','release-check','teardown','publish','live-check')][string]$Action,
     [ValidateRange(1,100)][int]$ExpectedNewParties=1,
     [string]$BrowserMeasurement,
     [switch]$ResumeC012,
@@ -11,7 +11,7 @@ $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $toolPrefix=@()
 if ($Product) {
-    if ($ResumeC012 -or $Action -eq 'verify-contact-edit') { throw 'Product cannot enter a Cari resume or verifier.' }
+    if ($ResumeC012 -or $Action -in @('verify-contact-edit','verify-account-status','status-snapshot')) { throw 'Product cannot enter a Cari resume or verifier.' }
     if ($root -ne 'C:\src\GoymenERP-product-owner-boundary-20260912') { throw 'Product unexpected worktree.' }
     $dll=Join-Path $root 'tools/GoymenERP.CariAcceptance006/bin/Release/net10.0-windows/GoymenERP.CariAcceptance006.dll'
     $run=(& dotnet $dll product-env profile) | ConvertFrom-Json
@@ -19,18 +19,18 @@ if ($Product) {
     $toolPrefix=@('product-env')
     $evidence=$run.EvidenceRoot
 } else {
-if ($root -ne 'C:\src\GoymenERP-cari-party-card-backend-20260912') { throw 'C006 wrong worktree.' }
-$evidence='C:\src\GoymenERP-cari-party-card-backend-20260912\artifacts\cari-acceptance-006\contact-edit-20260912\c006-db61f4b0aac9'
+if ($root -ne 'C:\src\GoymenERP-cari-acceptance-envelope-20260911') { throw 'C006 wrong worktree.' }
+$evidence='C:\src\GoymenERP-cari-acceptance-envelope-20260911\artifacts\cari-acceptance-006\account-status-20260913\c006-c79a094df633'
 $run=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'run.json') -Raw | ConvertFrom-Json
 }
 $resources=Get-Content -LiteralPath (Join-Path $evidence 'resources.json') -Raw | ConvertFrom-Json
 if ($ResumeC012) {
     if ($Action -notin @('start','snapshot','verify','stop')) { throw 'C006 resume supports only start, snapshot, verify and stop; teardown and the original empty-DB smoke stay with the C006 owner.' }
-    $evidence='C:\src\GoymenERP-cari-party-card-backend-20260912\artifacts\cari-acceptance-006\contact-edit-20260912\c006-db61f4b0aac9\resume'
+    $evidence='C:\src\GoymenERP-cari-acceptance-envelope-20260911\artifacts\cari-acceptance-006\account-status-20260913\c006-c79a094df633\resume'
     $execution=Get-Content -LiteralPath (Join-Path $evidence 'started.json') -Raw | ConvertFrom-Json
     if ($execution.task_id -ne 'C-DESKTOP-012' -or $execution.resourceRunId -ne $run.RunId -or $execution.instanceId -ne $run.InstanceId -or $execution.status -ne 'in_progress' -or $execution.executionRunId -cnotmatch '\Ac012-[0-9a-f]{12}\z') { throw 'C006 resume record identity mismatch.' }
 }
-if ((-not $Product -and ($run.RunId -ne 'c006-db61f4b0aac9' -or $run.InstanceId -ne '10db1804-6167-4b6a-b49b-d86bdd3cdd57')) -or $resources.instanceId -ne $run.InstanceId -or ($Product -and ($resources.runId -ne $run.RunId -or $resources.databaseName -ne $run.DatabaseName))) { throw 'C006 identity mismatch.' }
+if ((-not $Product -and ($run.RunId -ne 'c006-c79a094df633' -or $run.InstanceId -ne 'a226ca3a-08b3-4efd-92ec-b22333778557')) -or $resources.instanceId -ne $run.InstanceId -or ($Product -and ($resources.runId -ne $run.RunId -or $resources.databaseName -ne $run.DatabaseName))) { throw 'C006 identity mismatch.' }
 $container=& docker inspect --format '{"id":{{json .Id}},"labels":{{json .Config.Labels}}}' $run.ContainerName | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or $container.id -ne $resources.container.id -or $container.labels.'com.goymen.acceptance.instance' -ne $run.InstanceId) { throw 'C006 container ownership mismatch.' }
 $dll=Join-Path $root 'tools/GoymenERP.CariAcceptance006/bin/Release/net10.0-windows/GoymenERP.CariAcceptance006.dll'
@@ -82,8 +82,8 @@ if ($Action -eq 'teardown') {
         $expectedPrivate=[IO.Path]::GetFullPath((Join-Path $root ('secrets/product-u01-u02/'+$run.RunId+'/password.dpapi')))
         if ($private -ne $expectedPrivate) { throw 'Product private path mismatch.' }
     } else {
-        $private=[IO.Path]::GetFullPath((Join-Path $root 'secrets/cari-acceptance-006/password.dpapi'))
-        if ($private -ne 'C:\src\GoymenERP-cari-party-card-backend-20260912\secrets\cari-acceptance-006\password.dpapi') { throw 'C006 private path mismatch.' }
+        $private=[IO.Path]::GetFullPath((Join-Path $root ('secrets/cari-acceptance-006/'+$run.RunId+'/password.dpapi')))
+        if ($private -ne 'C:\src\GoymenERP-cari-acceptance-envelope-20260911\secrets\cari-acceptance-006\c006-c79a094df633\password.dpapi') { throw 'C006 private path mismatch.' }
     }
     & docker rm --force $resources.container.id
     if ($LASTEXITCODE -ne 0) { throw 'C006 owned container removal failed.' }
@@ -95,9 +95,9 @@ if ($Action -eq 'teardown') {
     Write-Output 'Only the recorded C006 container/volume/network and its new private password file were removed; the recorded API hosts were already stopped. No Docker Desktop shutdown.'
     exit 0
 }
-if ($Action -eq 'verify-contact-edit') {
+if ($Action -in @('verify-contact-edit','verify-account-status')) {
     if ([string]::IsNullOrWhiteSpace($BrowserMeasurement)) { throw 'C006 actual browser measurement path is required.' }
-    & 'C:\Program Files\dotnet\dotnet.exe' $dll verify-contact-edit ([IO.Path]::GetFullPath($BrowserMeasurement))
+    & 'C:\Program Files\dotnet\dotnet.exe' $dll $Action ([IO.Path]::GetFullPath($BrowserMeasurement))
 }
 elseif ($Product -and $Action -eq 'verify') {
     & 'C:\Program Files\dotnet\dotnet.exe' $dll @toolPrefix verify $ExpectedProducts $ExpectedMutations

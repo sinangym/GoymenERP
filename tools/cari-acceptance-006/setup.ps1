@@ -12,11 +12,12 @@ if ($Product) {
     $evidence=$run.EvidenceRoot
     $stateRoot=$evidence
 } else {
-$expectedRoot = 'C:\src\GoymenERP-cari-party-card-backend-20260912'
+$expectedRoot = 'C:\src\GoymenERP-cari-acceptance-envelope-20260911'
 if ($root -ne $expectedRoot) { throw 'C006 unexpected worktree.' }
 $run = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'run.json') -Raw | ConvertFrom-Json
-if ($run.RunId -ne 'c006-db61f4b0aac9' -or $run.InstanceId -ne '10db1804-6167-4b6a-b49b-d86bdd3cdd57') { throw 'C006 unexpected run.' }
-$evidence = 'C:\src\GoymenERP-cari-party-card-backend-20260912\artifacts\cari-acceptance-006\contact-edit-20260912\c006-db61f4b0aac9'
+if ($run.RunId -ne 'c006-c79a094df633' -or $run.InstanceId -ne 'a226ca3a-08b3-4efd-92ec-b22333778557') { throw 'C006 unexpected run.' }
+$evidence = 'C:\src\GoymenERP-cari-acceptance-envelope-20260911\artifacts\cari-acceptance-006\account-status-20260913\c006-c79a094df633'
+$stateRoot=$evidence
 }
 if (Test-Path -LiteralPath (Join-Path $evidence 'resources.json')) { throw 'C006 resources already recorded; no duplicate setup.' }
 $dll=Join-Path $root 'tools/GoymenERP.CariAcceptance006/bin/Release/net10.0-windows/GoymenERP.CariAcceptance006.dll'
@@ -44,7 +45,7 @@ $encoding = [Text.UTF8Encoding]::new($false)
 if ($Product) { New-Item -ItemType Directory -Path $evidence -Force | Out-Null }
 $composePath = Join-Path $stateRoot 'compose.json'
 [IO.File]::WriteAllText($composePath,($compose|ConvertTo-Json -Depth 8),$encoding)
-$private = if ($Product) { $run.PrivateRoot } else { Join-Path $root 'secrets/cari-acceptance-006' }
+$private = if ($Product) { $run.PrivateRoot } else { Join-Path $root ('secrets/cari-acceptance-006/'+$run.RunId) }
 if (Test-Path -LiteralPath $private) { throw 'C006 private state already exists; no overwrite.' }
 New-Item -ItemType Directory -Path $private -Force | Out-Null
 $password = 'Aa!' + [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
