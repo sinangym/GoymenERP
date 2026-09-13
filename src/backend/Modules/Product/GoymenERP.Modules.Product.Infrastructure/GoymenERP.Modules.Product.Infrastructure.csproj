@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="../../../BuildingBlocks/GoymenERP.BuildingBlocks/GoymenERP.BuildingBlocks.csproj" />
     <ProjectReference Include="../../Idempotency/GoymenERP.Modules.Idempotency.Domain/GoymenERP.Modules.Idempotency.Domain.csproj" />
+    <ProjectReference Include="../../Settings/GoymenERP.Modules.Settings.Application/GoymenERP.Modules.Settings.Application.csproj" />
     <ProjectReference Include="../GoymenERP.Modules.Product.Application/GoymenERP.Modules.Product.Application.csproj" />
     <ProjectReference Include="../GoymenERP.Modules.Product.Domain/GoymenERP.Modules.Product.Domain.csproj" />
   </ItemGroup>
