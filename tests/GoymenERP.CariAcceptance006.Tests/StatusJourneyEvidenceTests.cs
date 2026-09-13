@@ -37,6 +37,7 @@ public sealed class StatusJourneyEvidenceTests
     [InlineData("wrongAuditFence")]
     [InlineData("staleAudit")]
     [InlineData("wrongAuditAccount")]
+    [InlineData("consistentlyWrongAuditAccount")]
     [InlineData("oldBaseline")]
     [InlineData("foreignDatabase")]
     [InlineData("rcsi")]
@@ -68,6 +69,17 @@ public sealed class StatusJourneyEvidenceTests
             case "wrongAuditFence": after = after with { Audits = [after.Audits[0] with { VersionAfter = 9 }, after.Audits[1]] }; break;
             case "staleAudit": after = after with { Audits = [after.Audits[0] with { IdempotencyKeyHash = after.Executions[1].IdempotencyKeyHash }, after.Audits[1]] }; break;
             case "wrongAuditAccount": after = after with { Audits = [after.Audits[0] with { EntityId = Guid.NewGuid().ToString("D") }, after.Audits[1]] }; break;
+            case "consistentlyWrongAuditAccount":
+                var wrongId = Guid.NewGuid();
+                after = after with { Audits = after.Audits.Select(audit =>
+                {
+                    var oldState = JsonNode.Parse(audit.BeforeJson)!;
+                    var newState = JsonNode.Parse(audit.AfterJson)!;
+                    oldState["Id"] = wrongId;
+                    newState["Id"] = wrongId;
+                    return audit with { EntityId = wrongId.ToString("D"), BeforeJson = oldState.ToJsonString(), AfterJson = newState.ToJsonString() };
+                }).ToArray() };
+                break;
             case "oldBaseline": value = value with { Before = value.Before with { Executions = [after.Executions[0]] } }; break;
             case "foreignDatabase": database = database with { DatabaseName = "other" }; break;
             case "rcsi": database = database with { Rcsi = false }; break;
@@ -235,7 +247,7 @@ public sealed class StatusJourneyEvidenceTests
         var account = Guid.NewGuid();
         var a = Guid.Parse(identity.CompanyAId);
         var b = Guid.Parse(identity.CompanyBId);
-        var row = new AccountRow(party, "C1", identity.SmokePrefix, a, 0, "7", "{\"Phone\":\"00123\"}");
+        var row = new AccountRow(party, "C1", identity.SmokePrefix, a, 0, "7", "{\"Phone\":\"00123\"}", AccountId: account);
         var database = new DatabaseSnapshot(identity.DatabaseName, true, new(1, 2, 1, 1, 1, 1, 6, 6),
             [row, new(party, "C1", identity.SmokePrefix, b, 0, "1")], new string('a', 64), []);
         var first = new StatusJourneyAttempt("k1", new(false, 7,

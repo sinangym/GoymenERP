@@ -84,6 +84,7 @@ public static partial class DatabaseEvidence
         var initial = before.Rows.SingleOrDefault(row => row.PartyId == partyId && row.CompanyId == a);
         var other = before.Rows.SingleOrDefault(row => row.PartyId == partyId && row.CompanyId == b);
         RequireStatus(initial is { Roles: 0, IsActive: true, Version: "7" }
+            && initial.AccountId != Guid.Empty
             && !string.IsNullOrWhiteSpace(initial.ContactInformationJson)
             && other is { Roles: 0, IsActive: true, Version: "1" }, "A v7 / B v1 roleless fixture required");
         RequireStatus(first.Command == new SetCompanyPartyAccountActiveState(false, 7,
@@ -132,8 +133,8 @@ public static partial class DatabaseEvidence
                 && audit.Reason == attempt.Command.Reason, "audit authority/reason/transition differs");
             using var oldState = JsonDocument.Parse(audit.BeforeJson);
             using var newState = JsonDocument.Parse(audit.AfterJson);
-            ValidateStatusAuditState(oldState.RootElement, audit, partyId, !attempt.Command.IsActive, version);
-            ValidateStatusAuditState(newState.RootElement, audit, partyId, attempt.Command.IsActive, version + 1);
+            ValidateStatusAuditState(oldState.RootElement, audit, partyId, initial!.AccountId, !attempt.Command.IsActive, version);
+            ValidateStatusAuditState(newState.RootElement, audit, partyId, initial!.AccountId, attempt.Command.IsActive, version + 1);
             RequireStatus(oldState.RootElement.GetProperty("ExternalIntegrationCode").GetRawText()
                 == newState.RootElement.GetProperty("ExternalIntegrationCode").GetRawText(), "audit changed integration identity");
         }
@@ -142,10 +143,11 @@ public static partial class DatabaseEvidence
     }
 
     private static void ValidateStatusAuditState(JsonElement state, StatusAuditRow audit,
-        Guid party, bool active, long version)
+        Guid party, Guid account, bool active, long version)
     {
         RequireStatus(state.ValueKind == JsonValueKind.Object && state.EnumerateObject().Count() == 7
             && Guid.TryParse(audit.EntityId, out var id) && id != Guid.Empty
+            && id == account
             && state.GetProperty("Id").GetGuid() == id
             && state.GetProperty("CompanyId").GetGuid() == audit.CompanyId
             && state.GetProperty("PartyId").GetGuid() == party && state.GetProperty("Roles").GetInt32() == 0

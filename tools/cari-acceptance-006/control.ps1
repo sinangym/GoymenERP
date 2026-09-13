@@ -82,8 +82,8 @@ if ($Action -eq 'teardown') {
         $expectedPrivate=[IO.Path]::GetFullPath((Join-Path $root ('secrets/product-u01-u02/'+$run.RunId+'/password.dpapi')))
         if ($private -ne $expectedPrivate) { throw 'Product private path mismatch.' }
     } else {
-        $private=[IO.Path]::GetFullPath((Join-Path $root 'secrets/cari-acceptance-006/password.dpapi'))
-        if ($private -ne 'C:\src\GoymenERP-cari-acceptance-envelope-20260911\secrets\cari-acceptance-006\password.dpapi') { throw 'C006 private path mismatch.' }
+        $private=[IO.Path]::GetFullPath((Join-Path $root ('secrets/cari-acceptance-006/'+$run.RunId+'/password.dpapi')))
+        if ($private -ne 'C:\src\GoymenERP-cari-acceptance-envelope-20260911\secrets\cari-acceptance-006\c006-5b7b30940e9a\password.dpapi') { throw 'C006 private path mismatch.' }
     }
     & docker rm --force $resources.container.id
     if ($LASTEXITCODE -ne 0) { throw 'C006 owned container removal failed.' }

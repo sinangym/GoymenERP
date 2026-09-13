@@ -12,6 +12,21 @@ namespace GoymenERP.CariAcceptance006.Tests;
 
 public sealed class ProfileTests
 {
+    [Fact]
+    public void L04PreservesTheBrowserFixtureRecipeAndUsesANewPrivateRunDirectory()
+    {
+        Assert.Equal(new[]
+        {
+            "tools/GoymenERP.CariAcceptance006/AcceptanceFactory.cs",
+            "tools/GoymenERP.CariAcceptance006/AcceptanceProfile.cs",
+            "tools/cari-acceptance-006/run.json",
+        }, SourceBinding.CariFixturePaths);
+        Assert.Equal(RunSettings.PrivatePasswordPath, Path.Combine(RunSettings.ApprovedRoot, "secrets", "cari-acceptance-006",
+            RunSettings.ExpectedRun, "password.dpapi"));
+        Assert.NotEqual(RunSettings.PrivatePasswordPath,
+            Path.Combine(RunSettings.ApprovedRoot, "secrets", "cari-acceptance-006", "password.dpapi"));
+    }
+
     private static ServiceCollection Canonical()
     {
         var services = new ServiceCollection();

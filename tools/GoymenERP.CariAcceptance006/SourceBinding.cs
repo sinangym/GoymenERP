@@ -28,6 +28,15 @@ public static partial class SourceBinding
     public const string ClientContractHeader = "X-ERP-Counterparty-Contract";
     public const string ClientContractVersion = "optional-trade-roles-v1";
 
+    // Existing b9 browser verifier recomputes this exact three-file recipe.
+    // Other sources remain bound by the clean commit and tested runtime DLL hashes.
+    public static IReadOnlyList<string> CariFixturePaths { get; } = Array.AsReadOnly(new[]
+    {
+        "tools/GoymenERP.CariAcceptance006/AcceptanceFactory.cs",
+        "tools/GoymenERP.CariAcceptance006/AcceptanceProfile.cs",
+        "tools/cari-acceptance-006/run.json",
+    });
+
     private static readonly string[] BackendBuildInputs =
     [
         "src/backend", "tools/GoymenERP.CariAcceptance006", "tests/GoymenERP.CariAcceptance006.Tests",
@@ -91,15 +100,8 @@ public static partial class SourceBinding
             "src/frontend/goymen-erp-web", "tests/e2e"));
         var migrations = GitText(RunSettings.ApprovedRoot, "ls-tree", "-r", "HEAD", "--", "src/backend")
             .Split('\n').Where(line => line.Contains("/Migrations/", StringComparison.Ordinal));
-        var fixture = string.Join('\n', new[]
-        {
-            "tools/GoymenERP.CariAcceptance006/AcceptanceFactory.cs",
-            "tools/GoymenERP.CariAcceptance006/AcceptanceProfile.cs",
-            "tools/GoymenERP.CariAcceptance006/LiveSmoke.cs",
-            "tools/GoymenERP.CariAcceptance006/DatabaseEvidence.StatusJourney.cs",
-            "tools/GoymenERP.CariAcceptance006/StatusJourneyMeasurement.cs",
-            "tools/cari-acceptance-006/run.json",
-        }.Select(path => path + "=" + Hash(File.ReadAllBytes(Path.Combine(RunSettings.ApprovedRoot, path))))) + "\n";
+        var fixture = string.Join('\n', CariFixturePaths.Select(path => path + "="
+            + Hash(File.ReadAllBytes(Path.Combine(RunSettings.ApprovedRoot, path))))) + "\n";
         var clean = IsBackendSourceClean(RunSettings.ApprovedRoot)
             && Git(FrontendRoot, "diff", "--name-only", "HEAD", "--", "src/frontend/goymen-erp-web", "tests/e2e").Length == 0
             && Git(FrontendRoot, "ls-files", "--others", "--exclude-standard", "--", "src/frontend/goymen-erp-web", "tests/e2e").Length == 0;
