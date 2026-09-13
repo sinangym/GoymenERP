@@ -331,9 +331,9 @@ function cardAccountState(page: Page): Locator {
 
 /** Open the card's status window and type the reason; nothing is sent yet. */
 async function openStatusWindow(page: Page, action: string, reason: string): Promise<void> {
-  await page.getByRole('button', { name: action }).click()
+  await page.getByRole('button', { name: action }).click({ timeout: 30_000 })
   await expect(statusDialog(page)).toBeVisible({ timeout: 30_000 })
-  await reasonField(page).fill(reason)
+  await reasonField(page).fill(reason, { timeout: 30_000 })
 }
 
 /**
@@ -410,11 +410,17 @@ async function switchCompany(page: Page, net: LiveRecorder, companyId: string, d
   // The SHELL's switch confirmation, not the status window: the status window carries
   // `data-intent`, the shell dialog does not.
   const dialog = page.locator('[role="dialog"]:not([data-intent])')
+  /**
+   * A REAL click, bounded. No `force`: if the shell's question is painted under the
+   * feature window, a user cannot answer it and neither may this journey — the first
+   * real run (c006-7f12ed40ff9a) found exactly that and, with no action timeout, spent
+   * its whole 600 s budget retrying the click. Thirty seconds says the same thing honestly.
+   */
   if (discardDraft) {
     await expect(dialog.first(), 'an unsaved reason must be defended by a real warning').toBeVisible({ timeout: 30_000 })
-    await dialog.first().getByRole('button', { name: 'Değişiklikleri bırak' }).click()
+    await dialog.first().getByRole('button', { name: 'Değişiklikleri bırak' }).click({ timeout: 30_000 })
   } else if (await dialog.count()) {
-    await dialog.first().getByRole('button', { name: 'Değişiklikleri bırak' }).click()
+    await dialog.first().getByRole('button', { name: 'Değişiklikleri bırak' }).click({ timeout: 30_000 })
   }
   await expect(picker).toHaveValue(companyId, { timeout: 30_000 })
   const settled = await net.settleSince(beforeAction, { timeoutMs: 20_000, contractVersion: CONTRACT })

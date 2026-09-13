@@ -10,7 +10,13 @@
   align-items: flex-start;
   justify-content: center;
   padding: 48px 16px 16px;
-  z-index: 40;
+  /* BELOW the shell's own dialogs (SwitchConfirmDialog: z-index 20) and above the
+     shell chrome (nav/toolbar: 10). This window is a FEATURE modal; the shell's
+     company-switch question is the shell's and must stay on top of it. At 40 it
+     painted over that question, and a user with a typed reason who changed the
+     company could see the shell ask and could not answer — the first real L-04 run
+     spent its whole budget on exactly that click (c006-7f12ed40ff9a). */
+  z-index: 15;
   overflow-y: auto;
 }
 
