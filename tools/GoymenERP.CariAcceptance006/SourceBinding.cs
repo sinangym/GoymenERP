@@ -17,14 +17,14 @@ public sealed record SourceSnapshot(
 
 public static partial class SourceBinding
 {
-    public const string ContractPath = RunSettings.ApprovedRoot + @"\artifacts\cari-acceptance-006\contact-edit-20260912\contract.json";
+    public const string ContractPath = RunSettings.ApprovedRoot + @"\artifacts\cari-acceptance-006\account-status-20260913\contract.json";
     public const string FrontendRoot = @"C:\src\GoymenERP-claude";
-    public const string FrontendHead = "44ae49cd6c54984fb7a52c9c6e4ee5fd67284d6e";
+    public const string FrontendHead = "b9f094c437b4d3be61c9c8e2d1ebc451a8451b6f";
     public const string FrontendBase = "3e7dd98a5f8b7cb9e6850e05148eb4e7b26f3e3f";
-    public const string FrontendDiff = "40e5e738367fd983a42b9dcd9eb705f8ccdf87897d494058d907f7c204ffd8d1";
-    public const string BackendTree = "d11840bd6c6f18c4b2e282419daa9e75e54a8c1b";
-    public const string OpenApiHash = "6caaeed76f63c49efa63be04b66a043fa843932c1b7a792b80e07f776c81a3d6";
-    public const string MigrationHash = "8ddf6db888521e0b6d253b5e1cc0de04a73ba23f0b2a012801ff108b165bb291";
+    public const string FrontendDiff = "8f7bf0c538dfeffd37adbd0609a707003e0e5aa06bf55dd1a3a6ea7e44f5684b";
+    public const string BackendTree = "330b62e0d1f5f86a8aeff5d52308fccc6bcf7272";
+    public const string OpenApiHash = "baa0fdde0dcffe31b9fdf1e0e3960b2ecaf0f8ad38ae595622497c8796511fa3";
+    public const string MigrationHash = "c4fc980e3d58c564f8818caee4f7523e28256be9e7e6aecea6f0a266c32e3183";
     public const string ClientContractHeader = "X-ERP-Counterparty-Contract";
     public const string ClientContractVersion = "optional-trade-roles-v1";
 
@@ -95,6 +95,9 @@ public static partial class SourceBinding
         {
             "tools/GoymenERP.CariAcceptance006/AcceptanceFactory.cs",
             "tools/GoymenERP.CariAcceptance006/AcceptanceProfile.cs",
+            "tools/GoymenERP.CariAcceptance006/LiveSmoke.cs",
+            "tools/GoymenERP.CariAcceptance006/DatabaseEvidence.StatusJourney.cs",
+            "tools/GoymenERP.CariAcceptance006/StatusJourneyMeasurement.cs",
             "tools/cari-acceptance-006/run.json",
         }.Select(path => path + "=" + Hash(File.ReadAllBytes(Path.Combine(RunSettings.ApprovedRoot, path))))) + "\n";
         var clean = IsBackendSourceClean(RunSettings.ApprovedRoot)

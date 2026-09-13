@@ -5,6 +5,7 @@ using GoymenERP.Modules.Identity.Infrastructure.Seeding;
 using Microsoft.Extensions.Options;
 using GoymenERP.CariAcceptance006;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
+using GoymenERP.Modules.Organization.Infrastructure.Shell;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.CariAcceptance006.Tests;
@@ -15,6 +16,7 @@ public sealed class ProfileTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<IShellCapabilityProvider, CounterpartyShellCapabilityProvider>();
+        services.AddSingleton<IShellCapabilityProvider, OrganizationShellCapabilityProvider>();
         return services;
     }
 
@@ -29,7 +31,10 @@ public sealed class ProfileTests
         var registry = new ShellCapabilityRegistry([provider], catalog);
         Assert.Equal(AcceptanceProfile.Revision, registry.Revision);
         var original = new CounterpartyShellCapabilityProvider().GetDeclarations();
-        Assert.Equal(5, provider.GetDeclarations().Count);
+        Assert.Equal(6, provider.GetDeclarations().Count);
+        var status = Assert.Single(provider.GetDeclarations(), x => x.CapabilityId == "cari.accounts.status.update");
+        Assert.Equal(CounterpartyShellCapabilityProvider.DetailCapabilityId, status.ParentCapabilityId);
+        Assert.Contains(ErpPermissions.CounterpartyAccountsStatusUpdate, status.RequiredPermissions);
         var edit = Assert.Single(provider.GetDeclarations(), x => x.CapabilityId == "cari.accounts.contact.update");
         Assert.Equal("cari.contact-edit", edit.RouteId);
         Assert.Equal("/cari/:partyId/bilgiler", edit.RoutePath);
@@ -38,7 +43,7 @@ public sealed class ProfileTests
         Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, edit.ContextRequirement);
         Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, edit.ScopeRequirement);
         Assert.Equal(new[] { ErpPermissions.CounterpartyPartiesRead, ErpPermissions.CounterpartyPartiesUpdateBasic }, edit.RequiredPermissions);
-        foreach (var declaration in provider.GetDeclarations().Where(x => x.CapabilityId != edit.CapabilityId))
+        foreach (var declaration in provider.GetDeclarations().Where(x => x.CapabilityId != edit.CapabilityId && x.CapabilityId != status.CapabilityId))
         {
             var source = Assert.Single(original, x => x.CapabilityId == declaration.CapabilityId);
             Assert.True(declaration.ImplementationAvailable);
@@ -70,6 +75,8 @@ public sealed class ProfileTests
         configure.PostConfigure(Options.DefaultName, options);
         configure.PostConfigure(Options.DefaultName, options);
         Assert.Single(options.Roles[0].Permissions, permission => permission == ErpPermissions.CounterpartyPartiesUpdateBasic);
+        Assert.Single(options.Roles[0].Permissions, permission => permission == ErpPermissions.CounterpartyAccountsStatusUpdate);
+        Assert.DoesNotContain(ErpPermissions.CounterpartyAccountsStatusUpdate, options.Roles[1].Permissions);
         Assert.Equal("company-a-user", AcceptanceProfile.ReadOnlyActor);
         Assert.Single(options.Roles[1].Permissions, permission => permission == ErpPermissions.CounterpartyPartiesRead);
         Assert.DoesNotContain(ErpPermissions.CounterpartyPartiesUpdateBasic, options.Roles[1].Permissions);
@@ -88,7 +95,8 @@ public sealed class ProfileTests
     {
         var services = Canonical();
         Assert.Throws<InvalidOperationException>(() => AcceptanceProfile.Configure(services, environment, new RunSettings()));
-        Assert.Equal(typeof(CounterpartyShellCapabilityProvider), Assert.Single(services).ImplementationType);
+        Assert.Equal(2, services.Count);
+        Assert.Contains(services, x => x.ImplementationType == typeof(CounterpartyShellCapabilityProvider));
     }
 
     public static TheoryData<RunSettings> WrongIdentities => new()
@@ -106,7 +114,8 @@ public sealed class ProfileTests
     {
         var services = Canonical();
         Assert.Throws<InvalidOperationException>(() => AcceptanceProfile.Configure(services, "Testing", identity));
-        Assert.Equal(typeof(CounterpartyShellCapabilityProvider), Assert.Single(services).ImplementationType);
+        Assert.Equal(2, services.Count);
+        Assert.Contains(services, x => x.ImplementationType == typeof(CounterpartyShellCapabilityProvider));
     }
 
     [Fact]
@@ -114,16 +123,17 @@ public sealed class ProfileTests
     {
         var identity = new RunSettings();
         identity.Validate("Testing");
-        Assert.Equal("c006-db61f4b0aac9", identity.RunId);
-        Assert.Equal("10db1804-6167-4b6a-b49b-d86bdd3cdd57", identity.InstanceId);
-        Assert.Equal("44ae49cd6c54984fb7a52c9c6e4ee5fd67284d6e", SourceBinding.FrontendHead);
-        Assert.Equal("40e5e738367fd983a42b9dcd9eb705f8ccdf87897d494058d907f7c204ffd8d1", identity.FrontendDiffSha256);
+        Assert.Equal("c006-5b7b30940e9a", identity.RunId);
+        Assert.Equal("1bd0f50d-f882-45b6-8d24-175f032ef1d5", identity.InstanceId);
+        Assert.Equal("b9f094c437b4d3be61c9c8e2d1ebc451a8451b6f", SourceBinding.FrontendHead);
+        Assert.Equal("8f7bf0c538dfeffd37adbd0609a707003e0e5aa06bf55dd1a3a6ea7e44f5684b", identity.FrontendDiffSha256);
         Assert.Equal(SourceBinding.FrontendDiff, identity.FrontendDiffSha256);
         Assert.Equal("9df7f40e3aefc5b02ef42a378c0d1aa800a2fe29", identity.BackendHead);
         var services = Canonical();
         Assert.Throws<InvalidOperationException>(() => AcceptanceProfile.Configure(services, "Testing",
             identity with { BackendHead = "78494ed9bc60692fac6c186aa52b0049bbf4c306" }));
-        Assert.Equal(typeof(CounterpartyShellCapabilityProvider), Assert.Single(services).ImplementationType);
+        Assert.Equal(2, services.Count);
+        Assert.Contains(services, x => x.ImplementationType == typeof(CounterpartyShellCapabilityProvider));
     }
 
     public static TheoryData<RunSettings> ConsumedRunIdentities => new()
@@ -158,7 +168,8 @@ public sealed class ProfileTests
     {
         var services = Canonical();
         Assert.Throws<InvalidOperationException>(() => AcceptanceProfile.Configure(services, "Testing", identity));
-        Assert.Equal(typeof(CounterpartyShellCapabilityProvider), Assert.Single(services).ImplementationType);
+        Assert.Equal(2, services.Count);
+        Assert.Contains(services, x => x.ImplementationType == typeof(CounterpartyShellCapabilityProvider));
     }
 
     [Fact]

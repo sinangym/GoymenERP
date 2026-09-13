@@ -8,7 +8,7 @@ namespace GoymenERP.CariAcceptance006;
 public static class Evidence
 {
     public static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
-    public const string ResumeEvidence = @"C:\src\GoymenERP-cari-party-card-backend-20260912\artifacts\cari-acceptance-006\contact-edit-20260912\c006-db61f4b0aac9\resume";
+    public const string ResumeEvidence = @"C:\src\GoymenERP-cari-acceptance-envelope-20260911\artifacts\cari-acceptance-006\account-status-20260913\c006-5b7b30940e9a\resume";
 
     public static string ValidateResumeRecord(string json)
     {
@@ -163,6 +163,43 @@ public static class EntryPoint
                     break;
                 case "snapshot":
                     Console.WriteLine(JsonSerializer.Serialize(await DatabaseEvidence.ReadAsync(identity), Evidence.Json));
+                    break;
+                case "status-snapshot":
+                    _ = SourceBinding.Verify(identity);
+                    Console.WriteLine(JsonSerializer.Serialize(await DatabaseEvidence.ReadStatusJourneyAsync(identity), Evidence.Json));
+                    break;
+                case "verify-account-status":
+                    if (args.Length != 2) throw new InvalidOperationException("C006 status verification needs the actual browser measurement path.");
+                    var statusSource = SourceBinding.Verify(identity);
+                    var statusEnvironmentBytes = File.ReadAllBytes(Path.Combine(RunSettings.ApprovedEvidence, "environment.json"));
+                    using (var statusEnvironment = JsonDocument.Parse(statusEnvironmentBytes))
+                    using (var statusReady = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(RunSettings.ApprovedEvidence, "ENV_READY.json"))))
+                    {
+                        var baseBytes = File.ReadAllBytes(Path.Combine(RunSettings.ApprovedEvidence, "baseline.json"));
+                        ContactJourneyMeasurement.ValidatePublication(identity, statusSource,
+                            statusEnvironment.RootElement, statusReady.RootElement, SourceBinding.Hash(statusEnvironmentBytes),
+                            SourceBinding.Hash(baseBytes), SourceBinding.Hash(File.ReadAllBytes(SourceBinding.ContractPath)));
+                        var statusBaseBytes = File.ReadAllBytes(Path.Combine(RunSettings.ApprovedEvidence, "status-baseline.json"));
+                        if (statusEnvironment.RootElement.GetProperty("statusBaselineSha256").GetString() != SourceBinding.Hash(statusBaseBytes))
+                            throw new InvalidOperationException("C006 status baseline changed since publication.");
+                        var statusBase = JsonSerializer.Deserialize<StatusJourneySnapshot>(statusBaseBytes)!;
+                        if (JsonSerializer.Serialize(statusBase.Database) != JsonSerializer.Serialize(JsonSerializer.Deserialize<DatabaseSnapshot>(baseBytes)))
+                            throw new InvalidOperationException("C006 baseline projections differ.");
+                        var measurementBytes = File.ReadAllBytes(Path.GetFullPath(args[1]));
+                        using var measurement = JsonDocument.Parse(measurementBytes);
+                        var statusCurrent = await DatabaseEvidence.ReadStatusJourneyAsync(identity);
+                        StatusJourneyMeasurement.Verify(identity, statusBase, statusCurrent, measurement.RootElement);
+                        Evidence.Write("status-verification.json", new
+                        {
+                            identity.RunId, identity.InstanceId, observedAtUtc = DateTimeOffset.UtcNow,
+                            source = statusSource, sqlEffectsVerified = true, expectedNewParties = 0, expectedNewAccounts = 0,
+                            expectedLogicalUpdates = 2, expectedDurableResults = 3, expectedAudits = 2,
+                            measurementPath = Path.GetFullPath(args[1]), measurementSha256 = SourceBinding.Hash(measurementBytes),
+                            baselineSha256 = SourceBinding.Hash(statusBaseBytes), current = statusCurrent,
+                            browserAcceptance = "NOT_ASSESSED_BY_SQL_VERIFIER", erpAccepted = false,
+                        });
+                    }
+                    Console.WriteLine("C006 L-04 SQL effects verified; browser verdict remains a separate gate.");
                     break;
                 case "verify":
                 case "verify-resume":

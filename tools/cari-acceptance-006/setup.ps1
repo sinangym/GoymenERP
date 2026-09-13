@@ -12,11 +12,11 @@ if ($Product) {
     $evidence=$run.EvidenceRoot
     $stateRoot=$evidence
 } else {
-$expectedRoot = 'C:\src\GoymenERP-cari-party-card-backend-20260912'
+$expectedRoot = 'C:\src\GoymenERP-cari-acceptance-envelope-20260911'
 if ($root -ne $expectedRoot) { throw 'C006 unexpected worktree.' }
 $run = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'run.json') -Raw | ConvertFrom-Json
-if ($run.RunId -ne 'c006-db61f4b0aac9' -or $run.InstanceId -ne '10db1804-6167-4b6a-b49b-d86bdd3cdd57') { throw 'C006 unexpected run.' }
-$evidence = 'C:\src\GoymenERP-cari-party-card-backend-20260912\artifacts\cari-acceptance-006\contact-edit-20260912\c006-db61f4b0aac9'
+if ($run.RunId -ne 'c006-5b7b30940e9a' -or $run.InstanceId -ne '1bd0f50d-f882-45b6-8d24-175f032ef1d5') { throw 'C006 unexpected run.' }
+$evidence = 'C:\src\GoymenERP-cari-acceptance-envelope-20260911\artifacts\cari-acceptance-006\account-status-20260913\c006-5b7b30940e9a'
 }
 if (Test-Path -LiteralPath (Join-Path $evidence 'resources.json')) { throw 'C006 resources already recorded; no duplicate setup.' }
 $dll=Join-Path $root 'tools/GoymenERP.CariAcceptance006/bin/Release/net10.0-windows/GoymenERP.CariAcceptance006.dll'

@@ -6,6 +6,7 @@ using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Identity.Infrastructure.Seeding;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
+using GoymenERP.Modules.Organization.Infrastructure.Shell;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -15,19 +16,19 @@ namespace GoymenERP.CariAcceptance006;
 // This executable is a local test host, never referenced by the production API.
 public sealed record RunSettings
 {
-    public const string ApprovedRoot = @"C:\src\GoymenERP-cari-party-card-backend-20260912";
-    public const string ApprovedEvidence = @"C:\src\GoymenERP-cari-party-card-backend-20260912\artifacts\cari-acceptance-006\contact-edit-20260912\c006-db61f4b0aac9";
-    public const string ExpectedRun = "c006-db61f4b0aac9";
-    public const string ExpectedInstance = "10db1804-6167-4b6a-b49b-d86bdd3cdd57";
+    public const string ApprovedRoot = @"C:\src\GoymenERP-cari-acceptance-envelope-20260911";
+    public const string ApprovedEvidence = @"C:\src\GoymenERP-cari-acceptance-envelope-20260911\artifacts\cari-acceptance-006\account-status-20260913\c006-5b7b30940e9a";
+    public const string ExpectedRun = "c006-5b7b30940e9a";
+    public const string ExpectedInstance = "1bd0f50d-f882-45b6-8d24-175f032ef1d5";
     public const string ExpectedHead = "9df7f40e3aefc5b02ef42a378c0d1aa800a2fe29";
-    public const string ExpectedDatabase = "GoymenCariC006_db61f4b0aac9";
-    public const string ExpectedProject = "goymen-cari-c006-db61f4b0aac9";
+    public const string ExpectedDatabase = "GoymenCariC006_5b7b30940e9a";
+    public const string ExpectedProject = "goymen-cari-c006-5b7b30940e9a";
     public string ContractId { get; init; } = "CARI-AB-20260905-006-009";
     public string TaskId { get; init; } = "C-DESKTOP-006";
     public string RunId { get; init; } = ExpectedRun;
     public string InstanceId { get; init; } = ExpectedInstance;
     public string BackendHead { get; init; } = ExpectedHead;
-    public string FrontendDiffSha256 { get; init; } = "40e5e738367fd983a42b9dcd9eb705f8ccdf87897d494058d907f7c204ffd8d1";
+    public string FrontendDiffSha256 { get; init; } = "8f7bf0c538dfeffd37adbd0609a707003e0e5aa06bf55dd1a3a6ea7e44f5684b";
     public string ComposeProject { get; init; } = ExpectedProject;
     public string DatabaseName { get; init; } = ExpectedDatabase;
     public string EnvironmentName { get; init; } = "Testing";
@@ -42,8 +43,8 @@ public sealed record RunSettings
     public string CompanyAId { get; init; } = "10000000-0000-0000-0000-000000000001";
     public string CompanyBId { get; init; } = "10000000-0000-0000-0000-000000000002";
     public string Actor { get; init; } = "group-bootstrap-admin";
-    public string SmokePrefix { get; init; } = "C006-SMOKE-db61f4b0aac9";
-    public string BrowserPrefix { get; init; } = "CARI-JOURNEY-db61f4b0aac9";
+    public string SmokePrefix { get; init; } = "C006-SMOKE-5b7b30940e9a";
+    public string BrowserPrefix { get; init; } = "CARI-JOURNEY-5b7b30940e9a";
 
     public static RunSettings Load()
     {
@@ -67,8 +68,8 @@ public sealed record RunSettings
             || CompanyAId != "10000000-0000-0000-0000-000000000001"
             || CompanyBId != "10000000-0000-0000-0000-000000000002"
             || Actor != "group-bootstrap-admin"
-            || SmokePrefix != "C006-SMOKE-db61f4b0aac9" || BrowserPrefix != "CARI-JOURNEY-db61f4b0aac9"
-            || FrontendDiffSha256 != "40e5e738367fd983a42b9dcd9eb705f8ccdf87897d494058d907f7c204ffd8d1")
+            || SmokePrefix != "C006-SMOKE-5b7b30940e9a" || BrowserPrefix != "CARI-JOURNEY-5b7b30940e9a"
+            || FrontendDiffSha256 != "8f7bf0c538dfeffd37adbd0609a707003e0e5aa06bf55dd1a3a6ea7e44f5684b")
         {
             throw new InvalidOperationException("C006 requires the exact approved Testing/run/instance/SHA/loopback/database identity.");
         }
@@ -97,26 +98,29 @@ public static class AcceptanceProfile
 {
     // Existing company-scoped bootstrap identity; only this isolated profile adds Cari read.
     public const string ReadOnlyActor = "company-a-user";
-    // Offline canonical fingerprint for these five exact, single-company declarations.
+    // Offline canonical fingerprint for these six exact, single-company declarations.
     // The real registry checks it. It is NOT derived from arbitrary providers at runtime.
-    public const string Revision = "sha256:VgK2rm5DemWYcc50HvrUcElPoDcymsCMdawVI137j4A";
+    public const string Revision = "sha256:Nlre07D02B9tlVJzDEm4WG8YbpWf8ntitbKEMslCnDE";
     public static void Configure(IServiceCollection services, string environment, RunSettings identity)
     {
         identity.Validate(environment);
         var providers = services.Where(x => x.ServiceType == typeof(IShellCapabilityProvider)).ToArray();
-        if (providers.Length != 1 || providers[0].ImplementationType != typeof(CounterpartyShellCapabilityProvider)
-            || providers[0].Lifetime != ServiceLifetime.Singleton)
+        if (providers.Length != 2 || providers.Any(x => x.Lifetime != ServiceLifetime.Singleton)
+            || providers.Count(x => x.ImplementationType == typeof(CounterpartyShellCapabilityProvider)) != 1
+            || providers.Count(x => x.ImplementationType == typeof(OrganizationShellCapabilityProvider)) != 1)
             throw new InvalidOperationException("C006 cannot replace an unexpected or C01 provider.");
         services.PostConfigure<IdentitySeedOptions>(options =>
         {
             var administrator = options.Roles.Single(role => role.Code == "SYSTEM_ADMINISTRATOR");
             if (!administrator.Permissions.Contains(ErpPermissions.CounterpartyPartiesUpdateBasic))
                 administrator.Permissions.Add(ErpPermissions.CounterpartyPartiesUpdateBasic);
+            if (!administrator.Permissions.Contains(ErpPermissions.CounterpartyAccountsStatusUpdate))
+                administrator.Permissions.Add(ErpPermissions.CounterpartyAccountsStatusUpdate);
             var operatorRole = options.Roles.Single(role => role.Code == "ORGANIZATION_OPERATOR");
             if (!operatorRole.Permissions.Contains(ErpPermissions.CounterpartyPartiesRead))
                 operatorRole.Permissions.Add(ErpPermissions.CounterpartyPartiesRead);
         });
-        services.Remove(providers[0]);
+        foreach (var provider in providers) services.Remove(provider);
         services.AddSingleton<IShellCapabilityProvider, CariAcceptanceProvider>();
         services.RemoveAll<ShellCapabilityAuthorityCatalog>();
         services.AddSingleton(new ShellCapabilityAuthorityCatalog([Revision]));
@@ -139,5 +143,11 @@ public sealed class CariAcceptanceProvider : IShellCapabilityProvider
             ShellCapabilityContextRequirement.SingleCompany,
             ShellCapabilityScopeRequirement.CompanyWide,
             [ErpPermissions.CounterpartyPartiesRead, ErpPermissions.CounterpartyPartiesUpdateBasic],
-            ImplementationAvailable: true)).ToArray());
+            ImplementationAvailable: true)).Append(new ShellCapabilityDeclaration(
+            "cari.accounts.status.update", "cari.detail", "/cari/:partyId", "C-03",
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [ErpPermissions.CounterpartyPartiesRead, ErpPermissions.CounterpartyAccountsStatusUpdate],
+            ImplementationAvailable: true, ParentCapabilityId: CounterpartyShellCapabilityProvider.DetailCapabilityId)).ToArray());
 }
