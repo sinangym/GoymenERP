@@ -1,0 +1,12 @@
+{
+  "status": 409,
+  "title": "company_mismatch",
+  "code": "company_mismatch",
+  "correlationId": "example-attempt-1",
+  "errors": [
+    {
+      "field": "companyAccountId",
+      "code": "company_mismatch"
+    }
+  ]
+}
