@@ -1,6 +1,6 @@
 # Teslim durumu ve düşük tüketimli devam önerisi
 
-Durum: 2026-09-13 danışmanlık önerisi; yeni uygulama/görev başlatma veya kanonik backlog değiştirme yetkisi değil. GitHub main kontrolü: `f6fa07d026403649d6c815b84fd850e7ceeaf092`. Bu inceleme kod/teslim kayıtlarını esas alır; tüm eski oturumlar ve ham artefaktlar yeniden denetlenmez.
+Durum: 2026-09-13 danışmanlık önerisi; kendi başına kanonik backlog/iş politikası değiştirme yetkisi değil. Son kullanıcı talimatıyla Sipariş ve Finans için iki yeni çift başlatılır; aşağıdaki önceki tek-çift önerisinin bu işe ait yerini [gerçek başlangıç kaydı](START_ORDERS_FINANCE.md) alır. Uygulama yalnız hazır bağımlılığa bağlı küçük akışta, eski modül öncülleri mevcut sahiplerinde yürür. GitHub main kontrolü: `f6fa07d026403649d6c815b84fd850e7ceeaf092`. Tüm eski oturumlar ve ham artefaktlar yeniden denetlenmez.
 
 ## Üç çiftin durumu
 
@@ -10,7 +10,7 @@ Durum: 2026-09-13 danışmanlık önerisi; yeni uygulama/görev başlatma veya k
 | 2 — Ürün | [#251](https://github.com/sinangym/GoymenERP/pull/251) merged; #245 kaynak devriyle closed, merged değil | [#238](https://github.com/sinangym/GoymenERP/pull/238) merged | U01/U02 dar liste/kart/taslak oluşturma/temel düzenleme teslim edilmiş. |
 | 3 — Organizasyon | [#246](https://github.com/sinangym/GoymenERP/pull/246) ve ilgili fixture/lifecycle değişiklikleri merged | [#242](https://github.com/sinangym/GoymenERP/pull/242), [#249](https://github.com/sinangym/GoymenERP/pull/249) merged | Liste/lokasyon detay/durum değiştirme ve dar gerçek kabul/cleanup teslim edilmiş. |
 
-Altı görevin atanmış dar geliştirme işleri ile tüm modüller aynı şey değildir. Ürün nitelik/birim/fiyat/import/lifecycle, Cari'nin geniş banka/vergi/mükerrer/risk yüzeyi veya Organizasyon'un bütün yönetimi bu tabloda tamamlandı sayılmaz. Uygulamada `idle/notLoaded` görülmesi tek başına done kanıtı değildir; yukarıdaki PR ve teslimler dayanak alınmıştır. İncelemenin ilk main CI okumasında CI ve C01 sürüyordu; nihai sonuç görev sahibi tarafından güncellenir.
+Altı görevin atanmış dar geliştirme işleri ile tüm modüller aynı şey değildir. Ürün nitelik/birim/fiyat/import/lifecycle, Cari'nin geniş banka/vergi/mükerrer/risk yüzeyi veya Organizasyon'un bütün yönetimi bu tabloda tamamlandı sayılmaz. Uygulamada `idle/notLoaded` görülmesi tek başına done kanıtı değildir; yukarıdaki PR ve teslimler dayanak alınmıştır. İlk main CI okumasındaki bekleme tarihsel kaldı: 13 Eylül takip okumasında `f6fa07d` için CI `34754261547`, C01 `34754261536`, C006 `34754261533`, UI golden `34754261527` push workflow'ları completed/success. Yeni test koşulmadı; mevcut sonuç okundu.
 
 ## Sırada ne olmalı?
 
@@ -36,6 +36,8 @@ Dar teslimler bütün W1-CARI/W1-URUN'u done yapmaz. Business mevcut backlog/spe
 Finansın daha bağımsız olduğu varsayımı mevcut bağımlılıklarla doğrulanmıyor. Stok ve Üretim için MODULE_BRIEFS hazır tutulur; ekip boş diye başlatılmaz. Yeni modülün uygulaması ayrı kullanıcı/koordinasyon yetkisi gerektirir; bu danışmanlık turunda başlatılmamıştır.
 
 ## Oturum ve tüketim düzeni
+
+Ayrıntılı yeni/eski konuşma, Spark/Astra, bütün ERP tasarımı ve paralel uygulama önerisi [oturum/model planında](SESSION_MODEL_PLAN.md). Kullanıcı karar hazırlığıdır; yeni modül veya oturum bu güncellemeyle başlatılmadı.
 
 - **1 aktif geliştirme çifti + 1 ortak koordinatör + 1 tam-zamanında Business.** Business bir akış önde; koordinatör değişiklik/teslim/engel geldiğinde çalışır. Her biri sürekli durum raporu üretmez.
 - Bitmiş üç çift, kendi modülünün geri dönülebilir teslim noktası olarak korunur. Silme/branch temizleme veya yeniden tüm projeyi öğrenme görevi yok. Kullanıcı yeni görev açmayı seçerse yalnız bir temiz çift açılır; aksi halde açık yeniden atama ve ayrı worktree ile tek bitmiş çift kullanılır. Aynı işi iki çifte verme.

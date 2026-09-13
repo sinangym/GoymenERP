@@ -19,6 +19,8 @@ Bu paket model eğitimi veya hatasızlık garantisi değildir. Öğrenme, yeni a
 - [Dört rolün promptları](PROMPTS.md): aynı Orchestrator ve Business, ayrı yazarlık, mevcut proje.
 - [Sipariş / Stok / Finans / Üretim başlangıç ekleri](MODULE_BRIEFS.md): iş spec'i veya uygulama yetkisi değil, sonraki yetkili işe hazırlık.
 - [Teslim durumu ve düşük tüketimli yol haritası](ROADMAP.md): üç çiftin dar teslimi, bir aktif çift önerisi ve bağımlılık kontrolü.
+- [Oturum/model ve paralel teslim planı](SESSION_MODEL_PLAN.md): mevcut/yeni konuşma seçimi, Spark/Astra iş dağılımı ve erken Backend katılımı. Son kullanıcı tercihi: mevcut Business/koordinatör Astra, yeni Backend'ler Spark.
+- [Sipariş ve Finans gerçek başlangıcı](START_ORDERS_FINANCE.md): açık kullanıcı talimatıyla yeni iki çift, ayrı worktree'ler, altı görev promptu ve mevcut sahiplerdeki somut öncül ihtiyaçları. Ortam hazırlığı runtime veya ürün kabulü değildir.
 
 ## Kaynak ve yetki
 
@@ -26,7 +28,7 @@ Son açık kullanıcı kararı > tarihli kullanıcı kararları > [karar sicili]
 
 K1/K2 için mevcut tek bağımsız review; yalnız AGENTS'te tanımlı K3 için iki review uygulanır. Zorunlu CI, migration/para/yetki/contract ve ilgili gerçek SQL/browser kapıları azaltılmaz. Governance, CI, karar sicili, backlog ve mevcut acceptance durumları bu pakette değiştirilmez. Bu öneri otomatik merge edilmez.
 
-Son durum kontrolünde Ürün U01/U02 ve Cari L04 dar işleri birleşmiş, gerçek kabul ve sahipli temizlik teslim edilmiştir. L04'ün eski failure'ları tarihsel kalır; yeni başarı onları silmez. Son main CI sonucu ayrıca kontrol edilir; görevin hedefini yalnız kendi koordinatörü kapatır. Yeni modüllerin promptlarının hazırlanması onları başlatmaz. B otomatik-account önerisi, #229 ve production insan sınırları korunur. Mobilin toplu değerlendirmesini sona alma kullanıcı tercihi, mevcut masaüstü/klavye ve sözleşmede gerekli erişilebilirlik kontrollerini kaldırmaz; mobil tamamlandı denmez.
+Son durum kontrolünde Ürün U01/U02 ve Cari L04 dar işleri birleşmiş, gerçek kabul ve sahipli temizlik teslim edilmiştir. Eski failure'lar tarihsel kalır. Son main CI sonucu ayrıca kontrol edilir; hedefi yalnız kendi koordinatörü kapatır. Genel prompt hazırlığı başlatma yetkisi değildir; Sipariş/Finans ise sonraki açık kullanıcı talimatıyla gerçekten başlatılmıştır, kesin durum başlangıç kaydındadır. B otomatik-account önerisi, #229 ve production insan sınırları korunur. Mobilin toplu değerlendirmesini sona alma tercihi mevcut masaüstü/klavye ve gerekli erişilebilirlik kontrollerini kaldırmaz.
 
 ## Kullanıma alma
 
@@ -39,4 +41,4 @@ Bu paket mevcut [bilgi aktarım alanının](../../knowledge/README.md) yerine ge
 
 ## Paket doğrulaması
 
-Yalnız altı öneri dosyası. İlk sürümün 54 yerel Markdown bağlantısı doğrulanmıştı; güncellenen pakette 56 yerel bağlantı kontrol edildi, kırık bağlantı yok. Örnek semboller ve kritik davranışlar kaynakta incelendi; bu işlem tam kod incelemesi değildir. Markdown/diff ve yazılabilir yüzey kontrolü yapıldı. Ürün kodu değişmediği için ürün testleri, SQL, browser, ortam ve geçmiş acceptance elle tekrar çalıştırılmadı. Uzak CI ve insan review sonucu bu yerel kontrollerden türetilmez; eski commit'in CI sonucu yeni commit'e taşınmaz.
+Önceki `1bb9fed` sürümü altı öneri dosyası ve 56 doğrulanmış yerel bağlantı içerir. Sipariş/Finans başlangıç güncellemesiyle yerelde 15 Markdown dosyası, 77 yerel bağlantı (kırık 0), dengeli kod blokları ve diff/yazılabilir yüzey doğrulandı. İlk gönderilen tam promptlar yerel artefaktlarda, Git'teki tekrar kullanılabilir kopya ortak bölümü tekilleştirerek saklanır. Örnek sembollerin kaynak incelemesi tam kod denetimi değildir. Ürün kodu değişmediği için ürün testleri, SQL, browser ve geçmiş acceptance elle tekrar çalıştırılmadı. Uzak CI/insan review bu yerel kontrolden türetilmez; eski commit'in CI sonucu yeni değişikliğe taşınmaz.
