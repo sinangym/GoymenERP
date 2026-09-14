@@ -17,14 +17,18 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
-import { fetchProductCard } from './api'
+import { fetchProductCard, fetchProductHistory } from './api'
 import { PRODUCT_ROLE, UNIT_ROLE, isComplete, type ProductCard } from './contract'
 import {
   COMPLETENESS_LABEL,
   COMPLETENESS_UNKNOWN_LABEL,
   PENDING_REFERENCE_NOTE,
   PRODUCT_DETAIL_TEXT,
+  PRODUCT_HISTORY_TEXT,
   ROLE_LABEL,
+  historyFieldLabel,
+  historyOperationLabel,
+  historyVersionText,
   ROLE_PROVENANCE_LABEL,
   UNASSIGNED,
   UNIT_ROLE_LABEL,
@@ -108,6 +112,14 @@ export function ProductDetailPage() {
   return (
     <ProductCardView
       card={card}
+      history={
+        <ProductHistorySection
+          productId={card.product.id}
+          namespace={namespace as string}
+          entryGeneration={entryGeneration}
+          origin={origin as string}
+        />
+      }
       backLink={backLink}
       editLink={
         canEdit ? (
@@ -120,12 +132,100 @@ export function ProductDetailPage() {
   )
 }
 
+/**
+ * U-01 §9 item 6: the version/change timeline, read from the server's projection of
+ * the canonical audit record. Its own query, so a history that cannot be read never
+ * takes the card down with it — and the card never waits for the history.
+ */
+function ProductHistorySection({
+  productId,
+  namespace,
+  entryGeneration,
+  origin,
+}: {
+  readonly productId: string
+  readonly namespace: string
+  readonly entryGeneration: number
+  readonly origin: string
+}) {
+  const boundary = useAuthBoundary()
+  const query = useQuery({
+    queryKey: [namespace, entryGeneration, 'product-history', productId],
+    queryFn: async ({ signal }) => {
+      const snapshot = boundary.capture()
+      const outcome = await fetchProductHistory(productId, { companyId: origin }, signal)
+      if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
+      return outcome
+    },
+  })
+
+  const outcome = query.data
+  let body: React.ReactNode
+  if (outcome === undefined) {
+    body = <p className={styles.note}>{PRODUCT_HISTORY_TEXT.loading}</p>
+  } else if (outcome.type === 'ok-single') {
+    const history = outcome.data
+    body = (
+      <>
+        <ol className={styles.historyList} data-testid="product-history">
+          {history.entries.map((entry) => (
+            <li key={entry.eventId} className={styles.historyEntry}>
+              <p className={styles.historyTitle}>
+                <strong>{historyOperationLabel(entry.operation)}</strong>
+                {' · '}
+                <span>{historyVersionText(entry.versionBefore, entry.versionAfter)}</span>
+                {' · '}
+                <time dateTime={entry.occurredAtUtc}>{formatInstant(entry.occurredAtUtc)}</time>
+              </p>
+              <p className={styles.historyLine}>
+                {PRODUCT_HISTORY_TEXT.reason}: {entry.reason}
+              </p>
+              {entry.operation.known && entry.operation.value === 'DraftCreate' ? null : (
+                <p className={styles.historyLine}>
+                  {PRODUCT_HISTORY_TEXT.changedFields}:{' '}
+                  {entry.changedFields.length > 0
+                    ? entry.changedFields.map(historyFieldLabel).join(', ')
+                    : PRODUCT_HISTORY_TEXT.noTrackedChange}
+                </p>
+              )}
+            </li>
+          ))}
+        </ol>
+        {history.truncated ? <p className={styles.note}>{PRODUCT_HISTORY_TEXT.truncated}</p> : null}
+        <p className={styles.note}>{PRODUCT_HISTORY_TEXT.actorNote}</p>
+      </>
+    )
+  } else if (outcome.type === 'http' && outcome.status === 404) {
+    body = <p className={styles.note}>{PRODUCT_HISTORY_TEXT.unavailable}</p>
+  } else if (outcome.type === 'fence-stale') {
+    body = <p className={styles.note}>{PRODUCT_HISTORY_TEXT.loading}</p>
+  } else {
+    body = (
+      <div role="alert" className={styles.historyError}>
+        <p>{outcome.type === 'malformed' ? PRODUCT_HISTORY_TEXT.malformed : PRODUCT_HISTORY_TEXT.failed}</p>
+        <button type="button" onClick={() => void query.refetch()}>
+          {PRODUCT_HISTORY_TEXT.retry}
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <section className={styles.section} aria-labelledby="product-history-heading">
+      <h2 id="product-history-heading">{PRODUCT_HISTORY_TEXT.heading}</h2>
+      {body}
+    </section>
+  )
+}
+
 function ProductCardView({
   card,
+  history,
   backLink,
   editLink,
 }: {
   readonly card: ProductCard
+  readonly history: React.ReactNode
   readonly backLink: React.ReactNode
   readonly editLink: React.ReactNode
 }) {
@@ -326,6 +426,8 @@ function ProductCardView({
           </div>
         </dl>
       </section>
+
+      {history}
     </article>
   )
 }

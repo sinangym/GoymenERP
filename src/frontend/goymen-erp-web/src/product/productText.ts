@@ -9,7 +9,10 @@
 
 import {
   PRODUCT_ROLE,
+  isHistoryField,
   type CompletenessEvaluation,
+  type HistoryField,
+  type HistoryOperationValue,
   type ProductFieldCode,
   type ProductLifecycle,
   type ProductLifecycleValue,
@@ -435,3 +438,59 @@ export const PRODUCT_EDIT_TEXT = {
     nothingChanged: 'Değişen bir alan yok.',
   },
 } as const
+
+/* ── Change history (U-01 §9 item 6) ──────────────────────────────────────── */
+
+export const PRODUCT_HISTORY_TEXT = {
+  heading: 'Değişiklik geçmişi',
+  loading: 'Değişiklik geçmişi yükleniyor…',
+  /**
+   * 404 AFTER the card loaded: the history read is not served here. Saying "not
+   * found" would contradict the card the user is looking at.
+   */
+  unavailable: 'Değişiklik geçmişi bu ortamda henüz okunamıyor.',
+  failed: 'Değişiklik geçmişi okunamadı.',
+  malformed: 'Sunucudan gelen değişiklik geçmişi beklenen biçimde değil; gösterilmedi.',
+  retry: 'Tekrar dene',
+  reason: 'Gerekçe',
+  changedFields: 'Değişen alanlar',
+  noTrackedChange: 'İzlenen alanlarda değişiklik görünmüyor.',
+  truncated: 'Yalnız son 50 değişiklik gösteriliyor.',
+  /** The wire carries no actor; say so instead of leaving the reader to wonder. */
+  actorNote: 'Değişikliği yapan kişi bu görünümde gösterilmez.',
+  unknownOperation: 'Tanınmayan değişiklik türü',
+  unknownField: 'Tanınmayan alan',
+} as const
+
+export function historyOperationLabel(operation: HistoryOperationValue): string {
+  if (!operation.known) return `${PRODUCT_HISTORY_TEXT.unknownOperation} (${operation.raw})`
+  return operation.value === 'DraftCreate' ? 'Taslak oluşturuldu' : 'Temel bilgiler düzenlendi'
+}
+
+export function historyVersionText(before: string | null, after: string): string {
+  return before === null ? `Sürüm ${after}` : `Sürüm ${before} → ${after}`
+}
+
+const HISTORY_FIELD_LABEL: Record<HistoryField, string> = {
+  name: 'Ürün adı',
+  classId: 'Sınıf',
+  familyId: 'Aile',
+  'roles.purchasable': `Rol: ${ROLE_LABEL.purchasable}`,
+  'roles.sellable': `Rol: ${ROLE_LABEL.sellable}`,
+  'roles.productionInput': `Rol: ${ROLE_LABEL.productionInput}`,
+  'roles.productionOutput': `Rol: ${ROLE_LABEL.productionOutput}`,
+  'references.templateId': 'Şablon',
+  'references.templateVersion': 'Şablon sürümü',
+  'references.attributes': 'Teknik nitelikler',
+  'references.units.stock': UNIT_ROLE_LABEL.stock,
+  'references.units.purchase': UNIT_ROLE_LABEL.purchase,
+  'references.units.sales': UNIT_ROLE_LABEL.sales,
+  'references.units.price': UNIT_ROLE_LABEL.price,
+  'references.units.production': UNIT_ROLE_LABEL.production,
+  'references.units.package': UNIT_ROLE_LABEL.package,
+  'references.trackingPolicyId': 'Takip politikası',
+}
+
+export function historyFieldLabel(field: string): string {
+  return isHistoryField(field) ? HISTORY_FIELD_LABEL[field] : `${PRODUCT_HISTORY_TEXT.unknownField} (${field})`
+}
