@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.Shell;
@@ -43,7 +44,8 @@ public static class SalesEndpoints
             SetPrivateNoStore(httpContext.Response);
             var effectivePageSize = pageSize ?? 50;
             if (!HasOnlySingleQuery(httpContext.Request.Query, AccountQueryNames, Array.Empty<string>())
-                || effectivePageSize is < 1 or > 100 || q?.Length > 200 || cursor?.Length > 8192)
+                || effectivePageSize is < 1 or > 100 || cursor?.Length > 8192
+                || !TryNormalizeAccountSearch(q, out var normalizedQuery))
             {
                 return Problem(StatusCodes.Status400BadRequest, "validation_failed");
             }
@@ -55,7 +57,7 @@ public static class SalesEndpoints
             }
 
             return ToHttpResult(await service.GetAccountsAsync(
-                new(q, effectivePageSize, cursor), sessionBinding, cancellationToken),
+                new(normalizedQuery, effectivePageSize, cursor), sessionBinding, cancellationToken),
                 [400, 401, 403, 503],
                 ["validation_failed", "invalid_cursor"]);
         })
@@ -129,6 +131,37 @@ public static class SalesEndpoints
             .ProducesErpAuthenticatedProblems();
 
         return endpoints;
+    }
+
+    /// <summary>
+    /// The accounts search text, normalized exactly like the Cari list's own search
+    /// (<see cref="CounterpartyPageQueryParser"/>): trimmed, Unicode FormC, empty or
+    /// whitespace-only means no search, and the 200 limit counts Unicode scalar values
+    /// (runes), not UTF-16 code units. Without it, <c>q="ACME "</c> or a decomposed
+    /// <c>ş</c> returned an empty page where the Cari screen finds the same record, and a
+    /// 200-character search made of astral characters was refused on its UTF-16 length.
+    /// </summary>
+    internal static bool TryNormalizeAccountSearch(string? raw, out string? normalized)
+    {
+        normalized = null;
+        if (raw is null)
+        {
+            return true;
+        }
+
+        var candidate = raw.Trim().Normalize(NormalizationForm.FormC);
+        if (candidate.Length == 0)
+        {
+            return true;
+        }
+
+        if (candidate.EnumerateRunes().Count() > 200)
+        {
+            return false;
+        }
+
+        normalized = candidate;
+        return true;
     }
 
     private static bool HasOnlySingleQuery(IQueryCollection query, IReadOnlySet<string> allowed,
