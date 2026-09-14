@@ -47,6 +47,56 @@ public sealed class DraftReadContextTests
     }
 
     [Fact]
+    public async Task CompanyAccessIsCheckedBeforeThePermissionPortOrAnyOwner()
+    {
+        var f = new Fixture { CompanyAllowed = false, Permission = PermissionDecision.Allowed };
+        var result = await f.Read();
+        Assert.Equal(DraftReadOutcome.Denied, result.Outcome);
+        Assert.Null(result.Resource);
+        Assert.Equal(0, f.PermissionChecks);
+        Assert.Equal(0, f.BankReads);
+    }
+
+    [Theory]
+    [InlineData("treasury")]
+    [InlineData("party")]
+    [InlineData("account")]
+    public async Task EmptyRequestIdentityIsInvalidBeforeOwnerReads(string field)
+    {
+        var f = new Fixture();
+        f.Request = field switch
+        {
+            "treasury" => f.Request with { TreasuryAccountId = Guid.Empty },
+            "party" => f.Request with { PartyId = Guid.Empty },
+            _ => f.Request with { CompanyAccountId = Guid.Empty },
+        };
+        var result = await f.Read();
+        Assert.Equal(DraftReadOutcome.InvalidRequest, result.Outcome);
+        Assert.Equal("finance_draft_context_invalid", result.Code);
+        Assert.Equal(0, f.BankReads);
+    }
+
+    [Theory]
+    [InlineData("bank", "denied", DraftReadOutcome.Denied, null)]
+    [InlineData("bank", "not-found", DraftReadOutcome.NotFound, null)]
+    [InlineData("bank", "unavailable", DraftReadOutcome.Unavailable, "finance_bank_source_unavailable")]
+    [InlineData("party", "denied", DraftReadOutcome.Denied, null)]
+    [InlineData("party", "not-found", DraftReadOutcome.NotFound, null)]
+    [InlineData("party", "unavailable", DraftReadOutcome.Unavailable, "finance_party_source_unavailable")]
+    public async Task OwnerOutcomesPropagateWithoutReachingTheNextOwner(string stage, string completion,
+        DraftReadOutcome expected, string? code)
+    {
+        var f = new Fixture();
+        f.Complete(stage, completion);
+        var result = await f.Read();
+        Assert.Equal(expected, result.Outcome);
+        Assert.Equal(code, result.Code);
+        Assert.Null(result.Resource);
+        if (stage == "bank") Assert.Equal(0, f.PartyReads);
+        Assert.Equal(0, f.SettingsReads);
+    }
+
+    [Fact]
     public async Task MissingOperationMappingIsUnavailableBeforeOwnerReads()
     {
         var f = new Fixture();
@@ -58,6 +108,9 @@ public sealed class DraftReadContextTests
     [Theory]
     [InlineData("bank-company")]
     [InlineData("bank-inactive")]
+    [InlineData("bank-not-usable")]
+    [InlineData("bank-id-mismatch")]
+    [InlineData("bank-currency-empty")]
     [InlineData("party-company")]
     [InlineData("party-inactive")]
     [InlineData("account-inactive")]
@@ -66,6 +119,9 @@ public sealed class DraftReadContextTests
         var f = new Fixture();
         if (defect == "bank-company") f.Bank = f.Bank with { CompanyId = Guid.NewGuid() };
         if (defect == "bank-inactive") f.Bank = f.Bank with { IsActive = false };
+        if (defect == "bank-not-usable") f.Bank = f.Bank with { IsUsableForReceipt = false };
+        if (defect == "bank-id-mismatch") f.Bank = f.Bank with { Id = Guid.NewGuid() };
+        if (defect == "bank-currency-empty") f.Bank = f.Bank with { CurrencyId = Guid.Empty };
         if (defect == "party-company") f.Party = f.Party with { CompanyId = Guid.NewGuid() };
         if (defect == "party-inactive") f.Party = f.Party with { IsPartyActive = false };
         if (defect == "account-inactive") f.Party = f.Party with { IsActive = false };
@@ -76,12 +132,37 @@ public sealed class DraftReadContextTests
     }
 
     [Theory]
+    [InlineData("label-party")]
+    [InlineData("label-account")]
+    [InlineData("label-missing")]
+    public async Task PartyLabelNotBoundToTheAccountIsUnavailable(string defect)
+    {
+        var f = new Fixture();
+        f.Party = defect switch
+        {
+            "label-party" => f.Party with { Label = f.Party.Label! with { PartyId = Guid.NewGuid() } },
+            "label-account" => f.Party with { Label = f.Party.Label! with { CompanyAccountId = Guid.NewGuid() } },
+            _ => f.Party with { Label = null },
+        };
+        var result = await f.Read();
+        Assert.Equal(DraftReadOutcome.Unavailable, result.Outcome);
+        Assert.Equal("finance_party_source_invalid", result.Code);
+        Assert.Null(result.Resource);
+        Assert.Equal(0, f.SettingsReads);
+    }
+
+    [Theory]
     [InlineData("company")]
     [InlineData("currency")]
     [InlineData("expired")]
     [InlineData("future")]
     [InlineData("operation")]
     [InlineData("metadata")]
+    [InlineData("profile-id-empty")]
+    [InlineData("version-zero")]
+    [InlineData("inactive")]
+    [InlineData("scale-negative")]
+    [InlineData("currency-code-blank")]
     public async Task WrongOrStaleProfileFailsClosed(string defect)
     {
         var f = new Fixture();
@@ -92,6 +173,11 @@ public sealed class DraftReadContextTests
             "expired" => f.Profile with { EffectiveThrough = f.Request.OccurredOn.AddDays(-1) },
             "future" => f.Profile with { EffectiveFrom = f.Request.OccurredOn.AddDays(1) },
             "operation" => f.Profile with { Operation = "other" },
+            "profile-id-empty" => f.Profile with { Profile = new(Guid.Empty, 1) },
+            "version-zero" => f.Profile with { Profile = new(Guid.NewGuid(), 0) },
+            "inactive" => f.Profile with { IsActive = false },
+            "scale-negative" => f.Profile with { Scale = -1 },
+            "currency-code-blank" => f.Profile with { CurrencyCode = " " },
             _ => f.Profile with { Profile = null! }
         };
         var result = await f.Read();
@@ -126,6 +212,65 @@ public sealed class DraftReadContextTests
         Assert.Equal(DraftReadOutcome.Denied, (await f.Read()).Outcome);
     }
 
+    public static TheoryData<string, string, string> PendingOwnerCompletions()
+    {
+        var data = new TheoryData<string, string, string>();
+        foreach (var stage in new[] { "bank", "party", "settings" })
+            foreach (var completion in new[] { "found", "not-found", "unavailable", "throws" })
+                foreach (var change in new[] { "company", "actor", "permission" })
+                    data.Add(stage, completion, change);
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(PendingOwnerCompletions))]
+    public async Task AuthorityChangeWhileAnOwnerIsPendingDeniesWithoutTheStaleOutcomeOrTheNextOwner(
+        string stage, string completion, string change)
+    {
+        var f = new Fixture();
+        f.Complete(stage, completion);
+        f.During(stage, () =>
+        {
+            if (change == "company") f.Company = Guid.NewGuid();
+            else if (change == "actor") f.Actor = "SENTETIK-other";
+            else f.Permission = PermissionDecision.Denied;
+        });
+
+        var result = await f.Read();
+
+        Assert.Equal(DraftReadOutcome.Denied, result.Outcome);
+        Assert.Null(result.Resource);
+        Assert.Null(result.Code);
+        if (stage == "bank") Assert.Equal(0, f.PartyReads);
+        if (stage != "settings") Assert.Equal(0, f.SettingsReads);
+    }
+
+    [Theory]
+    [InlineData("bank")]
+    [InlineData("party")]
+    [InlineData("settings")]
+    public async Task PermissionPortTurningUnavailableWhileAnOwnerIsPendingReportsItsOwnCode(string stage)
+    {
+        var f = new Fixture();
+        f.Complete(stage, "not-found");
+        f.During(stage, () => f.Permission = PermissionDecision.Unavailable);
+        var result = await f.Read();
+        Assert.Equal(DraftReadOutcome.Unavailable, result.Outcome);
+        Assert.Equal("finance_read_mapping_unavailable", result.Code);
+        Assert.Null(result.Resource);
+    }
+
+    [Theory]
+    [InlineData("bank")]
+    [InlineData("party")]
+    [InlineData("settings")]
+    public async Task AnOwnerFailureUnderCurrentAuthorityIsNotHidden(string stage)
+    {
+        var f = new Fixture();
+        f.Complete(stage, "throws");
+        await Assert.ThrowsAsync<InvalidOperationException>(() => f.Read());
+    }
+
     [Fact]
     public async Task ActualUnavailableBankAdapterNeverReturnsEmptySuccess()
     {
@@ -146,7 +291,16 @@ public sealed class DraftReadContextTests
         public PermissionDecision Permission = PermissionDecision.Allowed;
         public string? SettingsError;
         public Action? AfterSettings;
+        public Action? DuringBank;
+        public Action? DuringParty;
+        public string BankCompletion = "found";
+        public string PartyCompletion = "found";
+        public string SettingsCompletion = "found";
+        public string Actor = "SENTETIK";
         public int BankReads;
+        public int PartyReads;
+        public int SettingsReads;
+        public int PermissionChecks;
         public string? LastOperation;
         public DateOnly LastEffectiveOn;
         public BankAccountView Bank;
@@ -164,33 +318,68 @@ public sealed class DraftReadContextTests
                 0, true, Request.OccurredOn, Request.OccurredOn);
         }
         public DraftReadContextReader Reader => new(this, this, this, this, this, this);
+        public void Complete(string stage, string completion)
+        {
+            if (stage == "bank") BankCompletion = completion;
+            else if (stage == "party") PartyCompletion = completion;
+            else SettingsCompletion = completion;
+        }
+        public void During(string stage, Action action)
+        {
+            if (stage == "bank") DuringBank = action;
+            else if (stage == "party") DuringParty = action;
+            else AfterSettings = action;
+        }
+        private static ReadResult<T> Owner<T>(string completion, T resource) where T : class => completion switch
+        {
+            "found" => new(ReadOutcome.Found, resource),
+            "not-found" => new(ReadOutcome.NotFound, null),
+            "unavailable" => new(ReadOutcome.Unavailable, null),
+            "denied" => new(ReadOutcome.Denied, null),
+            _ => throw new InvalidOperationException("SENTETIK owner failure"),
+        };
         public Task<DraftReadContextResult> Read() => Reader.GetAsync(Request, "SENTETIK-operation", "SENTETIK");
         public bool IsResolved => true;
         public Guid CompanyId => Company;
         public void Set(Guid companyId) => Company = companyId;
         public bool IsAuthenticated => true;
-        public string? UserId => "SENTETIK";
+        public string? UserId => Actor;
         public IReadOnlySet<Guid> AllowedCompanyIds => new HashSet<Guid> { Company };
         public bool CanAccessCompany(Guid companyId) => CompanyAllowed && companyId == Company;
         public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction action, Guid? sourceId, CancellationToken cancellationToken)
         {
             Assert.Equal(FinanceAction.ReadBankAccounts, action);
+            PermissionChecks++;
             return Task.FromResult(Permission);
         }
         public Task<ReadResult<BankAccountView>> GetAuthorizedAsync(FinanceContext context, Guid accountId, CancellationToken cancellationToken)
         {
             BankReads++;
-            return Task.FromResult(new ReadResult<BankAccountView>(ReadOutcome.Found, Bank));
+            DuringBank?.Invoke();
+            return Task.FromResult(Owner(BankCompletion, Bank));
         }
         public Task<ReadResult<BankAccountPage>> ListAuthorizedAsync(FinanceContext context, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<ReadResult<PartyAccountEligibility>> GetAuthorizedAsync(FinanceContext context, Guid partyId, Guid companyAccountId,
-            CancellationToken cancellationToken) => Task.FromResult(new ReadResult<PartyAccountEligibility>(ReadOutcome.Found, Party));
+            CancellationToken cancellationToken)
+        {
+            PartyReads++;
+            DuringParty?.Invoke();
+            return Task.FromResult(Owner(PartyCompletion, Party));
+        }
         public Task<MoneyProfileV1> GetMoneyProfileAsync(Guid currencyId, string operation, DateOnly effectiveOn, CancellationToken cancellationToken = default)
         {
             LastOperation = operation;
             LastEffectiveOn = effectiveOn;
+            SettingsReads++;
             AfterSettings?.Invoke();
-            return SettingsError is { } code ? Task.FromException<MoneyProfileV1>(new SettingsPrerequisiteException(code)) : Task.FromResult(Profile);
+            if (SettingsError is { } code) return Task.FromException<MoneyProfileV1>(new SettingsPrerequisiteException(code));
+            return SettingsCompletion switch
+            {
+                "found" => Task.FromResult(Profile),
+                "not-found" => Task.FromException<MoneyProfileV1>(new SettingsPrerequisiteException("settings_profile_not_found")),
+                "unavailable" => Task.FromException<MoneyProfileV1>(new SettingsPrerequisiteException("settings_provider_unavailable")),
+                _ => Task.FromException<MoneyProfileV1>(new InvalidOperationException("SENTETIK owner failure")),
+            };
         }
         public Task<UnitProfileV1> GetUnitProfileAsync(Guid unitId, DateOnly effectiveOn, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<PeriodEligibilityV1> GetPeriodEligibilityAsync(string operation, DateOnly occurredOn, DateOnly? valueOn, CancellationToken cancellationToken = default) => throw new NotSupportedException();

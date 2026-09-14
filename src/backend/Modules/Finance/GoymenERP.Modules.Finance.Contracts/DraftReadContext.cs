@@ -47,7 +47,21 @@ public sealed class DraftReadContextReader(ICompanyContext companyContext, ICurr
         if (string.IsNullOrWhiteSpace(acceptedMoneyOperation))
             return Fail(DraftReadOutcome.Unavailable, "finance_operation_mapping_unavailable");
 
-        var bankResult = await banks.GetAuthorizedAsync(context, request.TreasuryAccountId, cancellationToken);
+        // Every owner await is followed by a fresh company/actor/permission fence BEFORE any
+        // outcome derived from it (success, failure or exception) is returned and before the next
+        // owner is invoked. Otherwise a pending call can leak NotFound-versus-Unavailable, or reach
+        // another owner, under an authorization snapshot that is no longer current.
+        ReadResult<BankAccountView> bankResult;
+        try
+        {
+            bankResult = await banks.GetAuthorizedAsync(context, request.TreasuryAccountId, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            if (await FenceAsync(context, cancellationToken) is { } fenced) return fenced;
+            throw;
+        }
+        if (await FenceAsync(context, cancellationToken) is { } afterBank) return afterBank;
         if (bankResult.Outcome == ReadOutcome.Denied) return Fail(DraftReadOutcome.Denied);
         if (bankResult.Outcome == ReadOutcome.NotFound) return Fail(DraftReadOutcome.NotFound);
         if (bankResult.Outcome != ReadOutcome.Found || bankResult.Resource is not { } bank)
@@ -58,7 +72,17 @@ public sealed class DraftReadContextReader(ICompanyContext companyContext, ICurr
         if (string.IsNullOrWhiteSpace(bank.DisplayName) || string.IsNullOrWhiteSpace(bank.Version))
             return Fail(DraftReadOutcome.Unavailable, "finance_bank_source_invalid");
 
-        var partyResult = await parties.GetAuthorizedAsync(context, request.PartyId, request.CompanyAccountId, cancellationToken);
+        ReadResult<PartyAccountEligibility> partyResult;
+        try
+        {
+            partyResult = await parties.GetAuthorizedAsync(context, request.PartyId, request.CompanyAccountId, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            if (await FenceAsync(context, cancellationToken) is { } fenced) return fenced;
+            throw;
+        }
+        if (await FenceAsync(context, cancellationToken) is { } afterParty) return afterParty;
         if (partyResult.Outcome == ReadOutcome.Denied) return Fail(DraftReadOutcome.Denied);
         if (partyResult.Outcome == ReadOutcome.NotFound) return Fail(DraftReadOutcome.NotFound);
         if (partyResult.Outcome != ReadOutcome.Found || partyResult.Resource is not { } party)
@@ -80,10 +104,18 @@ public sealed class DraftReadContextReader(ICompanyContext companyContext, ICurr
         }
         catch (SettingsPrerequisiteException exception)
         {
+            if (await FenceAsync(context, cancellationToken) is { } fenced) return fenced;
             return exception.Code == "settings_access_denied"
                 ? Fail(DraftReadOutcome.Denied)
                 : Fail(DraftReadOutcome.Unavailable, exception.Code);
         }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            if (await FenceAsync(context, cancellationToken) is { } fenced) return fenced;
+            throw;
+        }
+        // This fence is also the final disclosure check: nothing below awaits again.
+        if (await FenceAsync(context, cancellationToken) is { } afterSettings) return afterSettings;
         if (profile is null || profile.Profile is null || profile.Profile.ProfileId == Guid.Empty ||
             profile.Profile.Version <= 0 || profile.CompanyId != context.CompanyId ||
             profile.CurrencyId != bank.CurrencyId || profile.Operation != acceptedMoneyOperation ||
@@ -92,10 +124,6 @@ public sealed class DraftReadContextReader(ICompanyContext companyContext, ICurr
             (profile.EffectiveThrough is { } through && request.OccurredOn > through))
             return Fail(DraftReadOutcome.Unavailable, "settings_profile_invalid");
 
-        if (!SameContext(context)) return Fail(DraftReadOutcome.Denied);
-        permission = await permissions.CheckAsync(context, FinanceAction.ReadBankAccounts, null, cancellationToken);
-        if (permission != PermissionDecision.Allowed) return PermissionFailure(permission);
-        if (!SameContext(context)) return Fail(DraftReadOutcome.Denied);
         return new(DraftReadOutcome.Found, new(context.CompanyId, request.OccurredOn, bank,
             new(bank.CurrencyId, profile.CurrencyCode,
                 new(new(profile.Profile.ProfileId.ToString("D"), profile.Profile.Version.ToString(CultureInfo.InvariantCulture)),
@@ -107,6 +135,20 @@ public sealed class DraftReadContextReader(ICompanyContext companyContext, ICurr
         companyContext.IsResolved && companyContext.CompanyId != Guid.Empty && currentUser.CanAccessCompany(companyContext.CompanyId);
     private bool SameContext(FinanceContext context) => HasCompanyAccess() &&
         companyContext.CompanyId == context.CompanyId && currentUser.UserId == context.ActorId;
+
+    /// <summary>
+    /// Current company/actor plus a fresh Finance read decision. Returns the terminal result to use
+    /// instead of anything derived from the preceding owner await, or null when access is still current.
+    /// A context change is Denied; a permission port that cannot answer stays its own Unavailable
+    /// code and never the owner's stale outcome.
+    /// </summary>
+    private async Task<DraftReadContextResult?> FenceAsync(FinanceContext context, CancellationToken cancellationToken)
+    {
+        if (!SameContext(context)) return Fail(DraftReadOutcome.Denied);
+        var permission = await permissions.CheckAsync(context, FinanceAction.ReadBankAccounts, null, cancellationToken);
+        if (permission != PermissionDecision.Allowed) return PermissionFailure(permission);
+        return SameContext(context) ? null : Fail(DraftReadOutcome.Denied);
+    }
     private static DraftReadContextResult PermissionFailure(PermissionDecision permission) => permission == PermissionDecision.Denied
         ? Fail(DraftReadOutcome.Denied)
         : Fail(DraftReadOutcome.Unavailable, "finance_read_mapping_unavailable");
