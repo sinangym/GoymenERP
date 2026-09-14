@@ -1,0 +1,228 @@
+using System.Text.Json;
+using GoymenERP.Modules.Product.Application;
+using GoymenERP.Modules.Product.Application.Contracts;
+
+namespace GoymenERP.Product.UnitTests;
+
+public sealed class ProductHistoryTests
+{
+    private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
+    private static readonly Guid ProductId = Guid.Parse("59c57d4c-9890-4dad-823c-b3b4030b42d1");
+    private static readonly Guid GroupId = Guid.Parse("f4fc7672-0b46-41ba-a017-393401ba61dd");
+    private static readonly DateTimeOffset T0 = new(2026, 9, 13, 0, 3, 0, TimeSpan.Zero);
+
+    [Fact]
+    public void Create_and_edit_project_newest_first_with_exact_changed_keys_and_no_request_metadata()
+    {
+        var v1 = Card(1);
+        var v2 = Card(2, name: "Galvaniz bant — düzeltilen", familyId: Guid.NewGuid(),
+            sellable: new(true, "manual"), units: new(Sales: Guid.NewGuid()));
+        var history = ProductHistoryProjector.Project(ProductId,
+        [
+            Edit(v1, v2, T0.AddMinutes(2), "Ad ve aile düzeltmesi"),
+            Create(v1, T0),
+        ]);
+
+        Assert.False(history.Truncated);
+        Assert.Equal(2, history.Entries.Count);
+        var edit = history.Entries[0];
+        Assert.Equal((ProductHistoryApiV1.DraftBasicEdit, "1", "2", "Ad ve aile düzeltmesi"),
+            (edit.Operation, edit.VersionBefore, edit.VersionAfter, edit.Reason));
+        Assert.Equal(["name", "familyId", "roles.sellable", "references.units.sales"], edit.ChangedFields);
+        var create = history.Entries[1];
+        Assert.Equal((ProductHistoryApiV1.DraftCreate, (string?)null, "1"), (create.Operation, create.VersionBefore, create.VersionAfter));
+        Assert.Empty(create.ChangedFields);
+
+        // The wire shape carries no actor, address, agent, correlation or key material.
+        var names = JsonDocument.Parse(JsonSerializer.Serialize(edit, Web)).RootElement.EnumerateObject().Select(p => p.Name);
+        Assert.Equal(["eventId", "operation", "occurredAtUtc", "versionBefore", "versionAfter", "reason", "changedFields"], names);
+    }
+
+    [Fact]
+    public void Edit_that_changes_no_tracked_field_has_an_empty_change_list_not_a_guess()
+    {
+        var history = ProductHistoryProjector.Project(ProductId, [Edit(Card(1), Card(2), T0.AddMinutes(1), "Gerekçe"), Create(Card(1), T0)]);
+        Assert.Empty(history.Entries[0].ChangedFields);
+    }
+
+    [Fact]
+    public void Missing_unit_container_and_explicit_null_unit_are_the_same_value()
+    {
+        var before = Card(1, units: null);
+        var after = Card(2, units: new(Stock: null));
+        var history = ProductHistoryProjector.Project(ProductId, [Edit(before, after, T0, "Birim bağı")]);
+        Assert.Empty(history.Entries[0].ChangedFields);
+    }
+
+    [Fact]
+    public void Role_provenance_change_is_a_change_even_when_the_value_is_the_same()
+    {
+        var history = ProductHistoryProjector.Project(ProductId,
+            [Edit(Card(1, sellable: new(null, "not-evaluated")), Card(2, sellable: new(null, "not-evaluated")) with { }, T0, "x"),]);
+        Assert.Empty(history.Entries[0].ChangedFields);
+        var changed = ProductHistoryProjector.Project(ProductId,
+            [Edit(Card(1, sellable: new(false, "manual")), Card(2, sellable: new(false, "derived")), T0, "x")]);
+        Assert.Equal(["roles.sellable"], changed.Entries[0].ChangedFields);
+    }
+
+    [Fact]
+    public void Versions_above_javascript_precision_stay_lossless_strings()
+    {
+        var history = ProductHistoryProjector.Project(ProductId,
+            [Edit(Card(9007199254740992), Card(9007199254740993), T0, "Sürüm")]);
+        Assert.Equal(("9007199254740992", "9007199254740993"), (history.Entries[0].VersionBefore, history.Entries[0].VersionAfter));
+    }
+
+    [Fact]
+    public void More_than_one_page_is_cut_to_the_page_size_and_marked_truncated()
+    {
+        var records = Enumerable.Range(0, ProductHistoryApiV1.PageSize + 1)
+            .Select(i => Edit(Card(100 - i), Card(101 - i), T0.AddMinutes(-i), $"Değişiklik {i}"))
+            .ToArray();
+        var history = ProductHistoryProjector.Project(ProductId, records);
+        Assert.True(history.Truncated);
+        Assert.Equal(ProductHistoryApiV1.PageSize, history.Entries.Count);
+        Assert.Equal("101", history.Entries[0].VersionAfter);
+    }
+
+    [Theory]
+    [InlineData("other-product")]
+    [InlineData("unknown-operation")]
+    [InlineData("create-with-before-version")]
+    [InlineData("create-not-version-1")]
+    [InlineData("create-with-before-snapshot")]
+    [InlineData("edit-version-gap")]
+    [InlineData("edit-without-before-version")]
+    [InlineData("after-snapshot-version")]
+    [InlineData("before-snapshot-product")]
+    [InlineData("malformed-json")]
+    [InlineData("missing-references")]
+    [InlineData("blank-reason")]
+    [InlineData("non-utc")]
+    [InlineData("out-of-order")]
+    [InlineData("duplicate-event")]
+    [InlineData("empty-event-id")]
+    public void Integrity_faults_fail_closed_instead_of_being_skipped(string fault)
+    {
+        var create = Create(Card(1), T0);
+        var edit = Edit(Card(1), Card(2), T0.AddMinutes(1), "Gerekçe");
+        IReadOnlyList<ProductAuditRecordV1> records = fault switch
+        {
+            "other-product" => [edit with { ProductId = Guid.NewGuid() }, create],
+            "unknown-operation" => [edit with { Operation = "Activate" }, create],
+            "create-with-before-version" => [create with { VersionBefore = 0 }],
+            "create-not-version-1" => [Create(Card(2), T0) with { VersionAfter = 2 }],
+            "create-with-before-snapshot" => [create with { BeforeJson = Json(Card(1)) }],
+            "edit-version-gap" => [Edit(Card(1), Card(3), T0, "x") with { VersionAfter = 3 }],
+            "edit-without-before-version" => [edit with { VersionBefore = null }],
+            "after-snapshot-version" => [edit with { AfterJson = Json(Card(5)) }],
+            "before-snapshot-product" => [edit with { BeforeJson = Json(Card(1) with { Product = Card(1).Product with { Id = Guid.NewGuid() } }) }],
+            "malformed-json" => [edit with { AfterJson = "{" }],
+            "missing-references" => [edit with { AfterJson = """{"product":{"id":"59c57d4c-9890-4dad-823c-b3b4030b42d1","version":"2"}}""" }],
+            "blank-reason" => [edit with { Reason = " " }],
+            "non-utc" => [edit with { OccurredAtUtc = new DateTimeOffset(2026, 9, 13, 3, 0, 0, TimeSpan.FromHours(3)) }],
+            "out-of-order" => [create, edit],
+            "duplicate-event" => [edit, create with { EventId = edit.EventId }],
+            _ => [edit with { EventId = Guid.Empty }],
+        };
+        Assert.Throws<InvalidOperationException>(() => ProductHistoryProjector.Project(ProductId, records));
+    }
+
+    [Fact]
+    public async Task Reader_reads_one_extra_row_and_projects_after_the_card_proves_existence()
+    {
+        var products = new Products(Card(2));
+        var audit = new Audit([Edit(Card(1), Card(2), T0.AddMinutes(1), "Gerekçe"), Create(Card(1), T0)]);
+        var history = await new ProductHistoryReader(products, audit).GetAsync(ProductId, default);
+        Assert.Equal(2, history.Entries.Count);
+        Assert.Equal((ProductId, ProductHistoryApiV1.PageSize + 1), (audit.RequestedProduct, audit.RequestedLimit));
+        Assert.Equal(1, products.Reads);
+    }
+
+    [Fact]
+    public async Task Missing_card_is_not_found_and_the_audit_owner_is_never_read()
+    {
+        var audit = new Audit([Create(Card(1), T0)]);
+        var error = await Assert.ThrowsAsync<ProductOperationException>(() =>
+            new ProductHistoryReader(new Products(null), audit).GetAsync(ProductId, default));
+        Assert.Equal((404, ProductApiV1.NotFound), (error.StatusCode, error.Code));
+        Assert.Equal(0, audit.Reads);
+    }
+
+    [Fact]
+    public async Task Denied_card_read_propagates_before_any_audit_read()
+    {
+        var audit = new Audit([Create(Card(1), T0)]);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            new ProductHistoryReader(new Products(null, deny: true), audit).GetAsync(ProductId, default));
+        Assert.Equal(0, audit.Reads);
+    }
+
+    [Fact]
+    public async Task Existing_card_without_any_audit_event_is_an_integrity_fault_not_an_empty_history()
+    {
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new ProductHistoryReader(new Products(Card(1)), new Audit([])).GetAsync(ProductId, default));
+    }
+
+    [Fact]
+    public async Task Empty_product_id_is_not_found_without_reads()
+    {
+        var products = new Products(Card(1));
+        var audit = new Audit([]);
+        var error = await Assert.ThrowsAsync<ProductOperationException>(() =>
+            new ProductHistoryReader(products, audit).GetAsync(Guid.Empty, default));
+        Assert.Equal(404, error.StatusCode);
+        Assert.Equal((0, 0), (products.Reads, audit.Reads));
+    }
+
+    private static ProductAuditRecordV1 Create(ProductCardView after, DateTimeOffset at) =>
+        new(Guid.NewGuid(), ProductId, ProductHistoryApiV1.DraftCreate, at, null, long.Parse(after.Product.Version),
+            "Ürün taslağı oluşturma", "{}", Json(after));
+
+    private static ProductAuditRecordV1 Edit(ProductCardView before, ProductCardView after, DateTimeOffset at, string reason) =>
+        new(Guid.NewGuid(), ProductId, ProductHistoryApiV1.DraftBasicEdit, at, long.Parse(before.Product.Version),
+            long.Parse(after.Product.Version), reason, Json(before), Json(after));
+
+    private static string Json(ProductCardView card) => JsonSerializer.Serialize(card, Web);
+
+    private static ProductCardView Card(long version, string name = "Galvaniz bant", Guid? familyId = null,
+        ProductRoleView? sellable = null, ProductUnitReferences? units = null) =>
+        new(new ProductDraftView(ProductId, "PSQL-1", name, GroupId, null, familyId,
+                new(new(null, "not-evaluated"), sellable ?? new(null, "not-evaluated"), new(null, "not-evaluated"), new(null, "not-evaluated")),
+                "Draft", version.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                T0, T0.AddMinutes(version % 1000), new("Sac", null, null, null), new("NotEvaluated", [])),
+            new ProductReferences(Units: units));
+
+    private sealed class Products(ProductCardView? card, bool deny = false) : IProductService
+    {
+        public int Reads { get; private set; }
+
+        public Task<ProductCardView?> GetAsync(Guid id, CancellationToken cancellationToken)
+        {
+            Reads++;
+            if (deny) throw new UnauthorizedAccessException();
+            return Task.FromResult(card);
+        }
+
+        public Task<ProductPage> GetPageAsync(ProductListQuery query, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<IReadOnlyList<ProductCodeGroup>> GetCodeGroupsAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<ProductReferenceOptions> GetReferenceOptionsAsync(ProductReferenceQuery query, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<ProductMutationResponse> CreateDraftAsync(CreateProductDraftRequest request, string idempotencyKey, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<ProductMutationResponse> EditDraftAsync(Guid id, EditProductDraftRequest request, string idempotencyKey, CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
+    private sealed class Audit(IReadOnlyList<ProductAuditRecordV1> records) : IProductAuditHistorySourceV1
+    {
+        public int Reads { get; private set; }
+        public Guid RequestedProduct { get; private set; }
+        public int RequestedLimit { get; private set; }
+
+        public Task<IReadOnlyList<ProductAuditRecordV1>> ReadNewestAsync(Guid productId, int limit, CancellationToken cancellationToken)
+        {
+            Reads++;
+            (RequestedProduct, RequestedLimit) = (productId, limit);
+            return Task.FromResult(records);
+        }
+    }
+}
