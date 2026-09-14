@@ -246,3 +246,42 @@ version_conflict; counter concurrency and unique-key races remain whole-attempt
 host retries, with a fresh resolver after rollback. Borrowed SQL handles alone are
 not evidence of audit/idempotency atomicity. Public persistence and real SQL execution
 remain closed until the #104 source/schema gate and shared implementation are accepted.
+
+## Sales eligibility runtime (operational selection)
+
+`ProductSalesEligibilityService` implements `IProductSalesEligibilityV1` (#255 port) for an
+operational Sales selection. It is not the global master read and borrows no global Product
+grant: it requires an authenticated actor with access to the server-resolved company, and the
+consuming module's own selector permission gates the use case (Sales keeps a default-deny
+binding). Every awaited result, including failures, is released only after the same
+company/actor is re-verified.
+
+Order and outcomes:
+
+| Step | Outcome |
+|---|---|
+| Scope missing/foreign | `ProductOperationException` 403 `product_access_denied`, before any read |
+| Product missing / empty id | error `productId invalid_reference` |
+| Draft or Inactive, unknown/false sellable, stale version, missing stock/sales unit | `ProductSalesPreconditions` errors |
+| Order unit is not the Product's own sales unit | error `orderUnitId unsupported_order_unit` |
+| Family-required rules | `IProductFamilyRequirementPolicyV1`; the shipped policy throws 503 `product_family_policy_unavailable` |
+| Stock/sales unit profiles | Settings via `ProductUnitProfileAdapter`; stock must be the owner's kilogram profile |
+| All pass | `ProductSalesSnapshotV1` with the owner's exact profile ids/versions; order unit = sales unit |
+
+Fail-closed limits at this base, not policy choices:
+
+- No first family rule set is accepted (#254 comment 5654539215, NEEDS-SINAN), so an
+  otherwise valid Active selection is 503, never usable.
+- No offered-unit or conversion policy is accepted (U-08), so only the sales unit is offered.
+- There is no activation command, so real rows are Draft and are rejected with
+  `lifecycle_conflict`.
+- The runtime is not yet composed in the API host. Host wiring (DI, the reviewed-source
+  fingerprint and its composition test) is requested from the central writer; until then
+  Sales resolves no runtime and answers 503.
+
+Candidate/offered-unit enumeration for a company user is not implemented: without an accepted
+family policy its only honest answer would be 503.
+
+```powershell
+dotnet test tests/GoymenERP.Product.UnitTests/GoymenERP.Product.UnitTests.csproj --filter FullyQualifiedName~ProductSalesEligibilityServiceTests
+```
