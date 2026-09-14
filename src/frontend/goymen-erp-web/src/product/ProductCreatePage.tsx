@@ -11,14 +11,20 @@
  *  - `references` (template + version, attributes, the six units, tracking policy):
  *    §19.6 and the coordinator keep attribute/unit completeness in the NEXT slice;
  *  - activation: the contract includes no activation command;
- *  - AI drafting and duplicate-similarity warnings: both need a server surface that
+ *  - AI drafting and technical-attribute similarity: both need a server surface that
  *    does not exist. Exact collisions are still handled — from the server's answer.
+ *
+ * Name matches (§10.2, CASE-PRD-U02-014) ARE shown: after the name field is left, the
+ * server's own list search for that name is read and its matches are listed as a
+ * warning to compare against. It never blocks the save, and no similarity measure is
+ * invented here — only exact equality after trimming and Turkish case folding is
+ * labelled "aynı ad", as a reading aid over the server's result.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
-import { createProductDraft, fetchCodeGroups, fetchReferenceOptions } from './api'
+import { SEARCH_MAX, createProductDraft, fetchCodeGroups, fetchProducts, fetchReferenceOptions } from './api'
 import type { CreateProductDraftPayload } from './api'
 import {
   PRODUCT_PROBLEM_CODE,
@@ -26,9 +32,11 @@ import {
   productFieldErrorsOf,
   type ProductCodeGroup,
   type ProductMutationResult,
+  type ProductPage,
   type ProductReferenceOptions,
   type ProductRoleName,
 } from './contract'
+import type { ViewOutcome } from '../shell/uiState'
 import {
   CREATE_FIELD,
   CREATE_FIELD_LABEL,
@@ -81,6 +89,75 @@ import {
 import styles from './ProductCreatePage.module.css'
 
 type CreateAttempt = AttemptState<CreateProductDraftPayload, ProductMutationResult>
+
+/** Shorter terms match too broadly to be a useful warning. A reading choice, not a rule. */
+const NAME_MATCH_MIN = 2
+const NAME_MATCH_PAGE = 20
+
+// eslint-disable-next-line no-control-regex -- matching control characters is the point
+const NAME_CONTROL_RE = /[\u0000-\u001F\u007F-\u009F]/g
+
+/** The search term: control characters removed, trimmed, bounded like the list search. */
+function nameMatchTerm(name: string): string {
+  return name.replace(NAME_CONTROL_RE, '').trim().slice(0, SEARCH_MAX)
+}
+
+function foldName(name: string): string {
+  return name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('tr-TR')
+}
+
+/**
+ * The server's matches for the typed name, as a WARNING. Polite live region: it must
+ * be announced, but it must not interrupt typing or take focus from the form.
+ */
+function NameMatches({
+  term,
+  outcome,
+  canOpenDetail,
+}: {
+  readonly term: string
+  readonly outcome: ViewOutcome<ProductPage> | undefined
+  readonly canOpenDetail: boolean
+}) {
+  let body: React.ReactNode
+  if (outcome === undefined || outcome.type === 'fence-stale') {
+    body = <p>{PRODUCT_CREATE_TEXT.nameMatchesChecking}</p>
+  } else if (outcome.type === 'ok-single') {
+    const { items, nextCursor } = outcome.data
+    if (items.length === 0) {
+      body = <p>{PRODUCT_CREATE_TEXT.nameMatchesNone}</p>
+    } else {
+      const folded = foldName(term)
+      body = (
+        <>
+          <p className={styles.errorSummaryTitle}>{PRODUCT_CREATE_TEXT.nameMatchesTitle}</p>
+          <p>{PRODUCT_CREATE_TEXT.nameMatchesDetail}</p>
+          <ul data-testid="product-name-matches">
+            {items.map((item) => (
+              <li key={item.id}>
+                {canOpenDetail ? (
+                  <Link to={productDetailPath(item.id)}>{item.code}</Link>
+                ) : (
+                  <span>{item.code}</span>
+                )}{' '}
+                {item.name}
+                {foldName(item.name) === folded ? ` (${PRODUCT_CREATE_TEXT.nameMatchesSameName})` : null}
+              </li>
+            ))}
+          </ul>
+          {nextCursor !== null ? <p>{PRODUCT_CREATE_TEXT.nameMatchesMore}</p> : null}
+        </>
+      )
+    }
+  } else {
+    body = <p>{PRODUCT_CREATE_TEXT.nameMatchesFailed}</p>
+  }
+  return (
+    <div className={styles.note} role="status" aria-live="polite" data-testid="product-name-match-check">
+      {body}
+    </div>
+  )
+}
 
 /**
  * The shell's dirty scope for this screen.
@@ -257,6 +334,29 @@ function ProductCreateForm({
       const outcome = await fetchReferenceOptions(
         values.groupId,
         values.classId === '' ? null : values.classId,
+        { companyId: origin as string },
+        signal,
+      )
+      if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
+      return outcome
+    },
+  })
+
+  /**
+   * The name the match check runs for: set when the name field is LEFT, not on every
+   * keystroke, so typing does not fire a read per letter. Only with the list
+   * capability — the check is a list read, and a create-only actor has no business
+   * provoking a list refusal that would close the screen it is working in.
+   */
+  const [checkedName, setCheckedName] = useState('')
+  const canCheckNames = hasCapability(shell, PRODUCT_CAPABILITY.productsList)
+  const nameMatchesQuery = useQuery({
+    queryKey: [namespace ?? 'no-context', entryGeneration, 'product-name-matches', checkedName],
+    enabled: canCheckNames && namespace !== null && origin !== null && checkedName.length >= NAME_MATCH_MIN,
+    queryFn: async ({ signal }) => {
+      const snapshot = boundary.capture()
+      const outcome = await fetchProducts(
+        { q: checkedName, sort: 'name', pageSize: NAME_MATCH_PAGE },
         { companyId: origin as string },
         signal,
       )
@@ -616,10 +716,18 @@ function ProductCreateForm({
               fieldRefs.current[CREATE_FIELD.name] = el
             }}
             onChange={(event) => setValues((v) => ({ ...v, name: event.target.value }))}
+            onBlur={() => setCheckedName(nameMatchTerm(values.name))}
           />
           <p id={`${CREATE_FIELD.name}-hint`} className={styles.hint}>
             {PRODUCT_CREATE_TEXT.nameHint}
           </p>
+          {canCheckNames && checkedName.length >= NAME_MATCH_MIN ? (
+            <NameMatches
+              term={checkedName}
+              outcome={nameMatchesQuery.data}
+              canOpenDetail={canOpenDetail}
+            />
+          ) : null}
           {errors.name !== undefined ? (
             <p id={`${CREATE_FIELD.name}-error`} className={styles.fieldError}>
               {errors.name}
