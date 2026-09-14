@@ -88,9 +88,9 @@ public static class ProductHistoryProjector
     private static JsonElement Read(JsonElement card, string field)
     {
         var path = field.Split('.');
-        var current = path[0] is "roles" or "references"
-            ? card.GetProperty(path[0] == "roles" ? "product" : "references")
-            : card.GetProperty("product");
+        // RequireSnapshot has already proven both containers exist.
+        if (!card.TryGetProperty(path[0] == "references" ? "references" : "product", out var current))
+            throw Invalid();
         var segments = path[0] == "references" ? path.Skip(1) : path;
         foreach (var segment in segments)
         {
