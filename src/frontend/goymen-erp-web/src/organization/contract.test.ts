@@ -4,6 +4,8 @@ import {
   decodeLocationPage,
   decodeSites,
   decodeVersionConflict,
+  decodeWorkCenter,
+  decodeWorkCenters,
   pageCount,
   versionToken,
 } from './contract'
@@ -190,5 +192,67 @@ describe('pageCount', () => {
 
   it('is exact on a full boundary', () => {
     expect(pageCount({ items: [], page: 1, pageSize: 4, totalCount: 8 })).toBe(2)
+  })
+})
+
+describe('decodeWorkCenters', () => {
+  const ROW = {
+    id: '88888888-8888-8888-8888-888888888881',
+    locationId: '33333333-3333-3333-3333-333333333333',
+    code: 'WC-PAINT',
+    name: 'Boyama Hattı',
+    kind: 'Paint',
+    isActive: true,
+  }
+
+  it('reads the six declared fields and nothing else', () => {
+    expect(decodeWorkCenter({ ...ROW, capacity: 120 })).toEqual(ROW)
+  })
+
+  it('accepts a kind token this build does not know', () => {
+    // `kind` is an open string in the OpenAPI schema. A kind added server-side is data,
+    // not corruption — the label layer shows the token verbatim.
+    const decoded = decodeWorkCenter({ ...ROW, kind: 'Galvanizing' })
+    expect(decoded?.kind).toBe('Galvanizing')
+  })
+
+  it('keeps a passive work center — isActive is a state, not a filter', () => {
+    expect(decodeWorkCenter({ ...ROW, isActive: false })?.isActive).toBe(false)
+  })
+
+  it('rejects a row whose ids are not the UUIDs we would send back', () => {
+    expect(decodeWorkCenter({ ...ROW, id: 'WC-PAINT' })).toBeNull()
+    expect(decodeWorkCenter({ ...ROW, locationId: '' })).toBeNull()
+    expect(decodeWorkCenter({ ...ROW, locationId: null })).toBeNull()
+  })
+
+  it('rejects a row missing a label the screen would otherwise render blank', () => {
+    expect(decodeWorkCenter({ ...ROW, code: '   ' })).toBeNull()
+    expect(decodeWorkCenter({ ...ROW, name: '' })).toBeNull()
+    expect(decodeWorkCenter({ ...ROW, kind: '' })).toBeNull()
+  })
+
+  it('rejects a non-boolean status rather than coercing it', () => {
+    expect(decodeWorkCenter({ ...ROW, isActive: 'true' })).toBeNull()
+    expect(decodeWorkCenter({ ...ROW, isActive: 1 })).toBeNull()
+  })
+
+  it('fails the WHOLE list on one bad row', () => {
+    /**
+     * The endpoint is UNPAGED, so the array is the caller's entire authorized set.
+     * Dropping a row would produce a list that is silently short and indistinguishable
+     * from a correct one — the same rule `decodeSites` follows.
+     */
+    expect(decodeWorkCenters([ROW, { ...ROW, kind: 42 }])).toBeNull()
+    expect(decodeWorkCenters([ROW])).toEqual([ROW])
+  })
+
+  it('reads an empty list as a real empty list, not as a failure', () => {
+    expect(decodeWorkCenters([])).toEqual([])
+  })
+
+  it('rejects a body that is not an array at all', () => {
+    expect(decodeWorkCenters({ items: [ROW] })).toBeNull()
+    expect(decodeWorkCenters(null)).toBeNull()
   })
 })

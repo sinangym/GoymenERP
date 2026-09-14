@@ -41,6 +41,7 @@ import {
   type AttemptState,
 } from './activeStateAttempt'
 import { ORGANIZATION_CAPABILITY } from './capabilities'
+import { backTarget } from './detailReturn'
 import {
   attemptStoreKey,
   recallAttempt,
@@ -178,7 +179,7 @@ function LocationDetail({ namespace }: { readonly namespace: string | null }) {
 
   if (!singleCompanyContext) {
     return (
-      <Frame>
+      <Frame namespace={namespace}>
         <StateBlock
           state={{ kind: 'no-authorized-company' }}
           subject="lokasyon kartı için tek şirket bağlamı"
@@ -194,7 +195,7 @@ function LocationDetail({ namespace }: { readonly namespace: string | null }) {
      * change never happened.
      */
     return (
-      <Frame>
+      <Frame namespace={namespace}>
         <StateBlock state={state} subject="lokasyon" onRetry={() => void query.refetch()} />
         <OutstandingCommandBanner storeKey={storeKey} />
       </Frame>
@@ -202,7 +203,7 @@ function LocationDetail({ namespace }: { readonly namespace: string | null }) {
   }
 
   return (
-    <Frame>
+    <Frame namespace={namespace}>
       <LocationCard location={state.data} />
       {canChangeStatus ? (
         <ActiveStateSection
@@ -219,20 +220,35 @@ function LocationDetail({ namespace }: { readonly namespace: string | null }) {
 }
 
 /**
- * The back link carries the list's return state straight through.
+ * The back link carries the list's return state straight through, and now also asks it
+ * WHICH list to go back to.
  *
  * The row that opened this card recorded which page it was on, bound to the context
  * namespace. Passing it back unchanged is what makes "page 2 → card → change → back"
  * land on page 2; the list re-checks the namespace, so the same state after a company
  * switch is ignored and resets to page 1. Neither screen has to know the other's rule.
+ *
+ * TWO LISTS NOW OPEN THIS CARD (ORG-01's locations and ORG-03's work centers), so a
+ * hardcoded `/ayarlar/organizasyon` would send a `work-centers.read`-only holder to a
+ * route they do not hold — the neutral not-found block, which reads as a broken app
+ * rather than as a scope boundary. `backTarget` resolves an ORIGIN TOKEN through a
+ * frozen table and defaults to the location list for anything it does not recognise;
+ * see ./detailReturn.ts for why a path is never taken from router state.
  */
-function Frame({ children }: { readonly children: React.ReactNode }) {
+function Frame({
+  namespace,
+  children,
+}: {
+  readonly namespace: string | null
+  readonly children: React.ReactNode
+}) {
   const routerLocation = useLocation()
+  const back = backTarget(routerLocation.state, namespace)
   return (
     <section aria-labelledby="org-location-heading" className={styles.page}>
       <nav aria-label="Geri" className={styles.breadcrumb}>
-        <Link to="/ayarlar/organizasyon" state={routerLocation.state}>
-          ← Organizasyon
+        <Link to={back.path} state={routerLocation.state}>
+          ← {back.label}
         </Link>
       </nav>
       <h1 id="org-location-heading">Lokasyon</h1>

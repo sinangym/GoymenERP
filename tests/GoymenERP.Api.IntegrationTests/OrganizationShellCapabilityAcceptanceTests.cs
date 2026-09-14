@@ -24,12 +24,12 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
         var services = CanonicalServices();
         var authority = C01E2eShellCapabilityActivation.Configure(
             services, new TestingEnvironment(), new ConfigurationBuilder().Build());
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15AndOrganizationV10, authority);
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15AndOrganizationV11, authority);
         using var container = services.BuildServiceProvider();
         var providers = container.GetServices<IShellCapabilityProvider>().ToArray();
         var registry = new ShellCapabilityRegistry(providers, new ShellCapabilityAuthorityCatalog([authority]));
         Assert.Equal(authority, registry.Revision);
-        Assert.Equal(8, registry.Registrations.Count);
+        Assert.Equal(9, registry.Registrations.Count);
         Assert.Throws<InvalidOperationException>(() => new ShellCapabilityRegistry(
             providers, new ShellCapabilityAuthorityCatalog(
                 [ShellCapabilityRegistryAuthorities.CounterpartyListCreateLinkAndDetailV15])));
@@ -56,9 +56,13 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
             duplicate, new TestingEnvironment(), configuration));
     }
 
+    // Bit 1 locations.read, 2 sites.read, 4 locations.status.update, 8 work-centers.read.
+    // The work-centers bit is enumerated ACROSS the whole matrix on purpose: the one
+    // claim this slice makes is that the ORG-03 route neither needs nor is withheld by
+    // any of the other three, and only every combination shows that.
     public static IEnumerable<object[]> PermissionCases()
     {
-        for (var permissions = 0; permissions < 8; permissions++)
+        for (var permissions = 0; permissions < 16; permissions++)
         for (var scope = 0; scope < 4; scope++)
             yield return [permissions, scope];
     }
@@ -81,6 +85,10 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
             if ((permissions & 4) != 0)
                 expected.Add(OrganizationShellCapabilityProvider.StatusCapabilityId);
         }
+
+        // Independent of the locations branch above, in BOTH directions.
+        if ((permissions & 8) != 0)
+            expected.Add(OrganizationShellCapabilityProvider.WorkCenterListCapabilityId);
 
         Assert.Equal(expected.Order(StringComparer.Ordinal), snapshot.Capabilities);
     }
@@ -107,6 +115,59 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
             new { isActive = false, expectedVersion = first.GetProperty("version").GetInt64(), reason = "Controlled denied command" });
         Assert.Equal(HttpStatusCode.Forbidden, command.StatusCode);
         Assert.DoesNotContain(TestCompanyIds.CompanyB.ToString("D"), await command.Content.ReadAsStringAsync());
+    }
+
+    /// <summary>
+    /// The acceptance this slice exists for: a user holding ONLY
+    /// `organization.work-centers.read` gets the ORG-03 route, and the absence of
+    /// `organization.locations.read` does not close it. The location reads stay 403 —
+    /// seeing a work center is not seeing its location — and the refusal discloses
+    /// nothing about the other company.
+    /// </summary>
+    [Fact]
+    public async Task WorkCentersOnly_PublishesTheListRouteWhileEveryLocationReadStays403()
+    {
+        await using var host = ControlledHost(new ControlledAuthority(8, 0));
+        using var client = Client(host);
+        var snapshot = await Snapshot(client);
+        Assert.Equal(
+            OrganizationShellCapabilityProvider.WorkCenterListCapabilityId,
+            Assert.Single(snapshot.Capabilities));
+
+        using var workCenters = await client.GetAsync("/api/v1/organization/work-centers");
+        Assert.Equal(HttpStatusCode.OK, workCenters.StatusCode);
+        var rows = await workCenters.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(JsonValueKind.Array, rows.ValueKind);
+        // The seeded company A topology carries five; the point is that this caller
+        // reads them with no locations grant at all.
+        Assert.Equal(5, rows.GetArrayLength());
+        var locationId = rows[0].GetProperty("locationId").GetGuid();
+
+        using var list = await client.GetAsync("/api/v1/organization/locations?page=1&pageSize=25");
+        Assert.Equal(HttpStatusCode.Forbidden, list.StatusCode);
+        // The id the work-center row exposes is still not a key to the location card.
+        using var detail = await client.GetAsync($"/api/v1/organization/locations/{locationId:D}");
+        Assert.Equal(HttpStatusCode.Forbidden, detail.StatusCode);
+        Assert.DoesNotContain(
+            TestCompanyIds.CompanyB.ToString("D"),
+            await detail.Content.ReadAsStringAsync());
+    }
+
+    /// <summary>
+    /// The mirror image: locations without work centers. ORG-01/ORG-02 keep working and
+    /// the work-center read is refused, so neither list is a back door into the other.
+    /// </summary>
+    [Fact]
+    public async Task LocationsOnly_DoesNotPublishTheWorkCenterRouteAndItsReadStays403()
+    {
+        await using var host = ControlledHost(new ControlledAuthority(1, 0));
+        using var client = Client(host);
+        var snapshot = await Snapshot(client);
+        Assert.DoesNotContain(
+            OrganizationShellCapabilityProvider.WorkCenterListCapabilityId,
+            snapshot.Capabilities);
+        using var workCenters = await client.GetAsync("/api/v1/organization/work-centers");
+        Assert.Equal(HttpStatusCode.Forbidden, workCenters.StatusCode);
     }
 
     [Fact]
@@ -175,6 +236,7 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
                 ErpPermissions.OrganizationLocationsRead => 1,
                 ErpPermissions.OrganizationSitesRead => 2,
                 ErpPermissions.OrganizationLocationsStatusUpdate => 4,
+                ErpPermissions.OrganizationWorkCentersRead => 8,
                 _ => 0,
             };
             if (companyId != TestCompanyIds.CompanyA || bit == 0 || (Permissions & bit) == 0)

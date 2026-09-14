@@ -856,6 +856,10 @@ public sealed class ShellCapabilitySqlServerRelationalAcceptanceTests
         {
             OrganizationShellCapabilityProvider.ListCapabilityId,
             OrganizationShellCapabilityProvider.DetailCapabilityId,
+            // Unconditional: no case here revokes `organization.work-centers.read`, and
+            // both seeded Organization roles hold it. ORG-03 stands on that permission
+            // alone, so removing the sites or status grant below must not move it.
+            OrganizationShellCapabilityProvider.WorkCenterListCapabilityId,
         };
         if (includeSites)
             expected.Add(OrganizationShellCapabilityProvider.SitesReadCapabilityId);

@@ -1,5 +1,5 @@
 /**
- * Organization read transport — sites, the location page, one location.
+ * Organization read transport — sites, work centers, the location page, one location.
  *
  * Thin and hand-written, like `../shell/api.ts` and `../cari/api.ts`.
  * HANDOFF: when the generated client lands (Issue #122) these fetch calls move to
@@ -21,9 +21,11 @@ import {
   decodeLocation,
   decodeLocationPage,
   decodeSites,
+  decodeWorkCenters,
   type LocationPage,
   type LocationSummary,
   type SiteSummary,
+  type WorkCenterSummary,
 } from './contract'
 import type { ViewOutcome } from '../shell/uiState'
 
@@ -96,6 +98,27 @@ export async function fetchSites(
   const sites = decodeSites(result.body)
   if (sites === null) return { type: 'malformed' }
   return { type: 'ok-single', data: sites }
+}
+
+/**
+ * `GET /api/v1/organization/work-centers` — the caller's authorized work centers.
+ *
+ * UNPAGED and UNFILTERED, like `/sites` and unlike `/locations`: the endpoint takes no
+ * `page`, `pageSize`, `q`, `locationId` or `kind` parameter (`OrganizationEndpoints.cs`
+ * at `main@eacbfe7`). So the array that comes back IS the whole authorized set, and the
+ * screen must neither offer a server filter it cannot send nor imply a page boundary
+ * that does not exist.
+ */
+export async function fetchWorkCenters(
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<readonly WorkCenterSummary[]>> {
+  const result = await read('/organization/work-centers', companyId, signal)
+  if (typeof result === 'string') return transportOutcome(result)
+  if (!result.isOk200) return { type: 'http', status: result.status, body: result.body }
+  const workCenters = decodeWorkCenters(result.body)
+  if (workCenters === null) return { type: 'malformed' }
+  return { type: 'ok-single', data: workCenters }
 }
 
 export interface LocationPageQuery {

@@ -32,7 +32,7 @@ internal static class C01E2eShellCapabilityActivation
             return services.Any(descriptor =>
                 descriptor.ServiceType == typeof(IShellCapabilityProvider)
                 && descriptor.ImplementationType == typeof(OrganizationShellCapabilityProvider))
-                ? ShellCapabilityRegistryAuthorities.CounterpartyV15AndOrganizationV10
+                ? ShellCapabilityRegistryAuthorities.CounterpartyV15AndOrganizationV11
                 : ShellCapabilityRegistryAuthorities.CounterpartyListCreateLinkAndDetailV15;
         }
 

@@ -87,15 +87,15 @@ public sealed partial class ShellCapabilityRegistryTests
             new GoymenERP.Modules.Counterparty.Infrastructure.Shell.CounterpartyShellCapabilityProvider(),
             new GoymenERP.Modules.Organization.Infrastructure.Shell.OrganizationShellCapabilityProvider(),
         ];
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15AndOrganizationV10,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15AndOrganizationV11,
             ShellCapabilityRegistry.ComputeCandidateRevision(normal));
         var combined = AuthorizedRegistry([.. normal, Provider("PRODUCT", ProductDeclarations())]);
-        Assert.Equal(12, combined.Registrations.Count);
+        Assert.Equal(13, combined.Registrations.Count);
         Assert.Equal(4, combined.Registrations.Count(item => item.Declaration.GlobalProductOperation is not null));
         Assert.Equal(2, combined.Registrations.Count(item => item.Declaration.ParentCapabilityId is not null));
         Assert.All(combined.Registrations.Where(item => item.Declaration.ParentCapabilityId is not null),
             item => Assert.Null(item.Declaration.GlobalProductOperation));
-        Assert.NotEqual(ShellCapabilityRegistryAuthorities.CounterpartyV15AndOrganizationV10, combined.Revision);
+        Assert.NotEqual(ShellCapabilityRegistryAuthorities.CounterpartyV15AndOrganizationV11, combined.Revision);
     }
 
     [Fact]

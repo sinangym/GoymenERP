@@ -7,7 +7,7 @@
  * decoded object, never from a localized `title`/`detail` the server sent.
  */
 
-import { SITE_TYPE } from './contract'
+import { SITE_TYPE, WORK_CENTER_KIND } from './contract'
 import type { CommandFailure, CommandUnknown } from './commandApi'
 
 /**
@@ -23,6 +23,55 @@ const SITE_TYPE_LABEL: Record<string, string> = {
 
 export function siteTypeLabel(type: string): string {
   return SITE_TYPE_LABEL[type] ?? type
+}
+
+/**
+ * `WorkCenterKind` enum names as they reach the wire. An UNKNOWN token is shown
+ * verbatim for the reason `siteTypeLabel` gives: a kind the backend added is a fact
+ * about the data, and inventing a Turkish label for it would be inventing meaning.
+ */
+const WORK_CENTER_KIND_LABEL: Record<string, string> = {
+  [WORK_CENTER_KIND.paint]: 'Boyama',
+  [WORK_CENTER_KIND.tubeProfile]: 'Boru / Profil',
+  [WORK_CENTER_KIND.slitting]: 'Dilme',
+  [WORK_CENTER_KIND.coldRolling]: 'Soğuk hadde',
+  [WORK_CENTER_KIND.cutToLength]: 'Boy kesme',
+}
+
+export function workCenterKindLabel(kind: string): string {
+  return WORK_CENTER_KIND_LABEL[kind] ?? kind
+}
+
+export const WORK_CENTER_HEADING = 'İş Merkezleri'
+
+export const WORK_CENTER_LEAD =
+  'Bu şirket bağlamında yetkiniz dâhilindeki iş merkezleri. Bir iş merkezinin ' +
+  'lokasyonunu açmak için satırdaki lokasyon bağlantısını kullanın.'
+
+/**
+ * The count line. It names its own scope for the reason the location summary does: the
+ * server already scoped the rows to this caller, and a bare number would read as the
+ * company's total.
+ */
+export function workCenterCountText(count: number): string {
+  return `Yetkiniz dâhilindeki ${count} iş merkezi gösteriliyor.`
+}
+
+/**
+ * Shown in the location column when the caller does not hold the location-card
+ * capability.
+ *
+ * It is a SCOPE STATEMENT, not a failure and not a disclosure: no request was made, so
+ * we know nothing about that location beyond the id the work-center row already
+ * carried, and this text claims nothing more. Rendering a dead link or a link that only
+ * 404s at the server would both be worse — one lies about what is available, the other
+ * spends a refusal to say what the capability already said.
+ */
+export const WORK_CENTER_LOCATION_UNAVAILABLE = 'Lokasyon kartı kapsam dışı'
+
+/** Accessible name for a row's location link — the id is never shown as a label. */
+export function workCenterLocationLinkLabel(code: string): string {
+  return `${code} iş merkezinin lokasyonunu aç`
 }
 
 export const ACTIVE_LABEL = 'Aktif'

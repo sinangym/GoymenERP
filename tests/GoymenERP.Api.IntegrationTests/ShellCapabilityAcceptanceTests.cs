@@ -373,6 +373,10 @@ public sealed class ShellCapabilityAcceptanceTests(
         OrganizationShellCapabilityProvider.StatusCapabilityId,
         OrganizationShellCapabilityProvider.ListCapabilityId,
         OrganizationShellCapabilityProvider.SitesReadCapabilityId,
+        // Ordinal order: "work-centers" sorts after "sites". Both seeded Organization
+        // roles already hold `organization.work-centers.read`, so ORG-03 is published
+        // to exactly the users who were already reading the endpoint.
+        OrganizationShellCapabilityProvider.WorkCenterListCapabilityId,
     ];
 
     private static async Task<string> ReadGenerationAsync(HttpClient client)

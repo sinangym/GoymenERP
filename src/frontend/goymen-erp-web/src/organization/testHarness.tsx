@@ -7,10 +7,10 @@
  * secret. Same status as `../shell/fixtures.ts` and `../cari/commandPageHarness.ts`:
  * not used by production code.
  *
- * It uses `organizationRoutes` rather than the shared `shellRoutes` because the shell
- * owner has not mounted these routes yet (that is the handoff). Everything above the
- * route table is the real thing, so the gate, the fence and the boundary are exercised
- * as they will run in the app.
+ * It uses `organizationRoutes` — the very array `shell/router.tsx` spreads — rather than
+ * the shared `shellRoutes`, so a case mounts this lane's screens without dragging in
+ * Cari and Ürün fixtures. Everything above the route table is the real thing, so the
+ * gate, the fence and the boundary are exercised as they will run in the app.
  *
  * WHAT THIS HARNESS IS NOT: evidence of real API, real SQL or browser acceptance.
  * A fixture is not a record. Every assertion built on it is a component/DOM claim and
@@ -43,6 +43,9 @@ export const LOC_GAZ = '55555555-5555-5555-5555-555555555555'
 /** A location whose site is NOT in the /sites response — a real scope combination. */
 export const LOC_ORPHAN = '66666666-6666-6666-6666-666666666666'
 export const SITE_UNSEEN = '77777777-7777-7777-7777-777777777777'
+export const WC_PAINT = '88888888-8888-8888-8888-888888888881'
+export const WC_TUBE = '88888888-8888-8888-8888-888888888882'
+export const WC_SLIT = '88888888-8888-8888-8888-888888888883'
 
 export const IDENTITY = {
   userId: '99999999-9999-9999-9999-999999999999',
@@ -79,6 +82,19 @@ export const LOCATIONS_ONLY_CAPABILITIES = [
   ORGANIZATION_CAPABILITY.locationStatus,
 ]
 
+/**
+ * Entitled to the WORK CENTERS and nothing else — the configuration ORG-03 exists for.
+ * `organization.work-centers.list` is published on `organization.work-centers.read`
+ * alone, so the absence of every locations id here is the point, not an omission.
+ */
+export const WORK_CENTERS_ONLY_CAPABILITIES = [ORGANIZATION_CAPABILITY.workCenterList]
+
+/** Work centers PLUS the location card, so the step out of ORG-03 is available. */
+export const WORK_CENTERS_WITH_LOCATION_CAPABILITIES = [
+  ORGANIZATION_CAPABILITY.workCenterList,
+  ORGANIZATION_CAPABILITY.locationDetail,
+]
+
 export function site(id: string, code: string, name: string, type = 'Factory', isActive = true) {
   return { id, code, name, type, isActive }
 }
@@ -98,6 +114,23 @@ export function location(
     isExternal: overrides.isExternal ?? false,
     isActive: overrides.isActive ?? true,
     version: overrides.version ?? 1,
+  }
+}
+
+export function workCenter(
+  id: string,
+  locationId: string,
+  code: string,
+  name: string,
+  overrides: { kind?: string; isActive?: boolean } = {},
+) {
+  return {
+    id,
+    locationId,
+    code,
+    name,
+    kind: overrides.kind ?? 'Paint',
+    isActive: overrides.isActive ?? true,
   }
 }
 
@@ -190,8 +223,17 @@ export interface HarnessOptions {
    * re-verification after a refence looks like.
    */
   readonly generations?: readonly string[]
-  /** Feature-endpoint responder. Return undefined to fall through to a 404. */
-  readonly respond?: (url: string, init: RequestInit | undefined) => Response | undefined
+  /**
+   * Feature-endpoint responder. Return undefined to fall through to a 404.
+   *
+   * A PROMISE is allowed so a case can hold one company's answer open across a switch:
+   * "the late response does not leak" is only a real assertion when the response is
+   * genuinely still in flight when the context changes.
+   */
+  readonly respond?: (
+    url: string,
+    init: RequestInit | undefined,
+  ) => Response | Promise<Response> | undefined
 }
 
 /**
