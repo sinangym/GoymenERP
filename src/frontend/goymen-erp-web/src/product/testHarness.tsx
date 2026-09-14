@@ -138,6 +138,25 @@ export function mutation(over: Record<string, unknown> = {}) {
   return { card: productCard(), isReplay: false, ...over }
 }
 
+/** `ProductHistoryEntryView`, a creation by default. */
+export function historyEntry(over: Record<string, unknown> = {}) {
+  return {
+    eventId: 'eeeeeeee-0000-0000-0000-000000000001',
+    operation: 'DraftCreate',
+    occurredAtUtc: '2026-09-10T08:00:00Z',
+    versionBefore: null,
+    versionAfter: '1',
+    reason: 'Ürün taslağı oluşturma',
+    changedFields: [],
+    ...over,
+  }
+}
+
+/** `ProductHistoryView` for PRODUCT_1: one creation. */
+export function productHistory(over: Record<string, unknown> = {}) {
+  return { productId: PRODUCT_1, entries: [historyEntry()], truncated: false, ...over }
+}
+
 export interface RecordedCall {
   readonly url: string
   readonly method: string
@@ -158,6 +177,7 @@ export interface HarnessConfig {
   readonly onDirectory?: () => Response
   readonly onList?: (url: string) => Response | Promise<Response>
   readonly onCard?: (url: string) => Response | Promise<Response>
+  readonly onHistory?: (url: string) => Response | Promise<Response>
   readonly onGroups?: () => Response | Promise<Response>
   /** May be deferred, so a test can resolve it in the same batch as a command's answer. */
   readonly onOptions?: (url: string) => Response | Promise<Response>
@@ -219,6 +239,9 @@ export function installFetch(config: HarnessConfig = {}) {
       if (method === 'POST') {
         createAttempts += 1
         return (await config.onCreate?.(createAttempts, body)) ?? json(mutation(), 201)
+      }
+      if (/\/products\/[^/?]+\/history/.test(url)) {
+        return (await config.onHistory?.(url)) ?? json(productHistory())
       }
       // `/products/{id}` (and `/products/{id}/draft`) have a segment after
       // `products`; `/products?x` does not.

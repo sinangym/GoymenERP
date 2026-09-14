@@ -9,6 +9,7 @@
  *   GET   /api/v1/products/{id}         → ProductCardView (404 not_found)
  *   POST  /api/v1/products              → 201 ProductMutationResponse
  *   PATCH /api/v1/products/{id}/draft   → 200 ProductMutationResponse
+ *   GET   /api/v1/products/{id}/history → ProductHistoryView (module contract; host endpoint requested)
  *
  * The transport carries no business logic and invents no field:
  *  - `X-Company-Id` on EVERY Product request, from the shell's committed context.
@@ -34,6 +35,7 @@
 import {
   decodeCodeGroupList,
   decodeProductCard,
+  decodeProductHistory,
   decodeProductMutation,
   decodeProductPage,
   decodeReferenceOptions,
@@ -41,6 +43,7 @@ import {
   type CompletenessEvaluation,
   type ProductCard,
   type ProductCodeGroup,
+  type ProductHistory,
   type ProductLifecycle,
   type ProductMutationResult,
   type ProductPage,
@@ -214,6 +217,26 @@ export async function fetchProductCard(
   const card = decodeProductCard(result.body, productId)
   if (card === null) return { type: 'malformed' }
   return { type: 'ok-single', data: card }
+}
+
+/**
+ * U-01 Product 360 change history, `GET /api/v1/products/{id}/history`.
+ *
+ * Bound to `productId` like the card. A 404 here, once the card itself has loaded,
+ * means the history read is not available on this server — the caller must not
+ * turn it into "this product does not exist".
+ */
+export async function fetchProductHistory(
+  productId: string,
+  origin: ProductOrigin,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<ProductHistory>> {
+  const result = await rawRead(`/products/${encodeURIComponent(productId)}/history`, origin, signal)
+  if ('failure' in result) return failureOutcome(result.failure)
+  if (result.status !== 200) return { type: 'http', status: result.status, body: result.body }
+  const history = decodeProductHistory(result.body, productId)
+  if (history === null) return { type: 'malformed' }
+  return { type: 'ok-single', data: history }
 }
 
 /**
