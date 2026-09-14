@@ -10,6 +10,7 @@ using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Services;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -65,7 +66,22 @@ public static class ProductRuntimeExtensions
         services.TryAddSingleton<IProductCommandAttemptObserver, NullProductCommandAttemptObserver>();
         services.AddScoped<IProductService>(provider => provider.GetRequiredService<ProductRuntimeOptions>().IsEnabled
             ? provider.GetRequiredService<ProductService>() : new UnconfiguredProductService());
+        // Operational Sales selection: no global master grant, no Settings registration of its own.
+        // Without the configured runtime or a registered Settings provider it stays unavailable.
+        services.TryAddScoped<IProductFamilyRequirementPolicyV1, UnacceptedProductFamilyRequirementPolicyV1>();
+        services.AddScoped<IProductSalesEligibilityV1>(CreateSalesEligibility);
         return services;
+    }
+
+    private static IProductSalesEligibilityV1 CreateSalesEligibility(IServiceProvider provider)
+    {
+        var settings = provider.GetService<ISettingsPrerequisiteProvider>();
+        if (!provider.GetRequiredService<ProductRuntimeOptions>().IsEnabled || settings is null)
+            return new UnconfiguredProductSalesEligibility();
+        var company = provider.GetRequiredService<ICompanyContext>();
+        return new ProductSalesEligibilityService(company, provider.GetRequiredService<ICurrentUser>(),
+            provider.GetRequiredService<ProductReadStore>(), provider.GetRequiredService<IProductFamilyRequirementPolicyV1>(),
+            new ProductUnitProfileAdapter(settings, company));
     }
 
     private static SqlProductMasterAuthorizationService CreateIdentityAuthority(IServiceProvider provider) =>
@@ -82,6 +98,17 @@ public static class ProductRuntimeExtensions
         // Owned migrations only; no grant, company account, Product row or code group is seeded.
         await product.Database.MigrateAsync(cancellationToken);
         await terminal.Database.MigrateAsync(cancellationToken);
+    }
+}
+
+internal sealed class UnconfiguredProductSalesEligibility : IProductSalesEligibilityV1
+{
+    public const string UnavailableCode = "product_runtime_unconfigured";
+
+    public Task<ProductSalesEligibilityV1> EvaluateAsync(ProductSalesSelectionV1 selection, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromException<ProductSalesEligibilityV1>(new ProductOperationException(UnavailableCode, 503));
     }
 }
 
