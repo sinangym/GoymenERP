@@ -36,6 +36,7 @@ export const FIELD_ERROR: Readonly<Record<FieldError, string>> = {
   'not-positive': 'Tutar sıfırdan büyük olmalıdır.',
   'date-format': 'Geçerli bir tarih girin (YYYY-AA-GG).',
   'bank-account-ineligible': 'Bu banka hesabı tahsilat için kullanılamıyor.',
+  'scale-exceeded': 'İzin verilenden fazla ondalık basamak var; tutar yuvarlanmaz, düzeltin.',
 }
 
 export const BANK_ACCOUNT_PLACEHOLDER = 'Banka hesabı seçin'
@@ -92,8 +93,32 @@ export const DETAIL = {
   none: '—',
 } as const
 
-export const PROFILE_MISSING =
-  'Tutar hassasiyet profili bu ekrana sağlanmadı; yeni taslak kaydı kapalı. Profil sunucudan gelmeden tutar kaydedilemez.'
+export const PARTY_LABEL = 'Cari hesabı'
+export const PARTY_LABEL_PENDING = 'Banka hesabı ve işlem tarihi seçilince cari etiketi okunur.'
+
+/** Amount label with the server's currency display code, when the context is known. */
+export function amountLabelFor(displayCode: string | null): string {
+  return displayCode === null ? 'Tutar' : `Tutar (${displayCode})`
+}
+
+export function scaleHintFor(scale: number): string {
+  return scale === 0 ? 'Bu para biriminde ondalık basamak kullanılmaz.' : `En fazla ${scale} ondalık basamak.`
+}
+
+/** Why saving is closed while the draft read context is not ready. Never claims a balance or grant. */
+export const DRAFT_CONTEXT_TEXT = {
+  'needs-selection': 'Para birimi ve tutar profili, banka hesabı ile işlem tarihi seçilince okunur. O zamana kadar taslak kaydedilemez.',
+  loading: 'Para birimi, tutar profili ve cari etiketi okunuyor…',
+  'invalid-request': 'Seçim geçersiz; banka hesabı ve işlem tarihini yeniden seçin.',
+  forbidden: 'Bu taslak bağlamını okuma yetkiniz yok; taslak kaydedilemez.',
+  'not-found': 'Seçilen banka hesabı veya cari hesap bu şirkette bu işlem için uygun değil.',
+  unavailable:
+    'Tutar profili, banka kaynağı veya finans okuma yetkisi şu anda sağlanamıyor; taslak kaydı kapalı. Bu bir bakiye veya sıfır tutar bilgisi değildir.',
+  unauthenticated: 'Oturum sonlandı; yeniden giriş yapın.',
+  malformed: 'Sunucu yanıtı beklenen biçimde değil; taslak kaydı güvenli biçimde kapatıldı.',
+  'network-error': 'Sunucuya ulaşılamadı; taslak kaydı kapalı.',
+} as const
+export const DRAFT_CONTEXT_RETRY = 'Bağlamı yeniden oku'
 export const SAVE_DRAFT = 'Taslağı kaydet'
 export const DRAFT_SAVED = 'Taslak kaydedildi — para etkisi yok.'
 

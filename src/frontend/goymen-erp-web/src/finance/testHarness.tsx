@@ -19,9 +19,11 @@ import { ShellDispatchContext, ShellStateContext } from '../shell/shellContext'
 import { initialShellState, shellReducer, type ShellEvent, type ShellState } from '../shell/shellState'
 import { FinancePortProvider } from './financePort'
 import type { FinanceReceiptPort, FinanceScope, PortReply } from './port'
+import type { HttpReadReply } from './http'
+import type { DraftContextRequest } from './draftContext'
 import type { DraftSaveRequest, RecordRequest, ReverseRequest } from './contract'
 import { clearAttemptStore } from './receiptCommand'
-import { EXAMPLE_BANK, EXAMPLE_COMPANY, EXAMPLE_CURRENCY, NEGATIVE_EXAMPLE, NORMAL_EXAMPLE } from './contractExamples'
+import { DRAFT_CONTEXT_EXAMPLE, EXAMPLE_BANK, EXAMPLE_COMPANY, EXAMPLE_CURRENCY, NEGATIVE_EXAMPLE, NORMAL_EXAMPLE } from './contractExamples'
 
 export const COMPANY_A = EXAMPLE_COMPANY
 export const COMPANY_B = 'bbbbbbbb-0000-4000-8000-000000000002'
@@ -39,7 +41,7 @@ export function shellFor(companyId: string, revision = 1): ShellState {
 }
 
 type CommandName = 'draftSave' | 'record' | 'reverse'
-type ReadName = 'listBankAccounts' | 'listSources' | 'sourceDetail'
+type ReadName = 'listBankAccounts' | 'listSources' | 'sourceDetail' | 'draftContext'
 
 export interface CommandCall {
   readonly method: CommandName
@@ -56,7 +58,11 @@ export interface ReadCall {
   readonly request: unknown
 }
 
-export type ReadResponder = (method: ReadName, scope: FinanceScope, request: unknown) => PortReply
+export type ReadResponder = (
+  method: ReadName,
+  scope: FinanceScope,
+  request: unknown,
+) => PortReply | HttpReadReply | Promise<PortReply | HttpReadReply>
 
 export function body(value: unknown): PortReply {
   return { kind: 'body', body: value }
@@ -99,9 +105,10 @@ export function recordingPort(respond: ReadResponder) {
   }
 
   const port: FinanceReceiptPort = {
-    listBankAccounts: read('listBankAccounts'),
-    listSources: read('listSources'),
-    sourceDetail: read('sourceDetail'),
+    listBankAccounts: read('listBankAccounts') as FinanceReceiptPort['listBankAccounts'],
+    listSources: read('listSources') as FinanceReceiptPort['listSources'],
+    sourceDetail: read('sourceDetail') as FinanceReceiptPort['sourceDetail'],
+    draftContext: read('draftContext') as FinanceReceiptPort['draftContext'],
     draftSave: command('draftSave'),
     record: command('record'),
     reverse: command('reverse'),
@@ -219,6 +226,31 @@ export function sourceDetail(companyId: string, overrides: { source?: Json } & J
     source: sourceSummary(companyId, source ?? {}),
     ...rest,
   }
+}
+
+/** A 200 draft read context answering `request` in `companyId` (verbatim #261 example shape). */
+export function draftContextBody(companyId: string, request: DraftContextRequest, overrides: Json = {}): Json {
+  const example = DRAFT_CONTEXT_EXAMPLE.response
+  return {
+    ...example,
+    companyId,
+    occurredOn: request.occurredOn,
+    bankAccount: { ...example.bankAccount, id: request.treasuryAccountId, companyId },
+    currency: {
+      ...example.currency,
+      profile: { ...example.currency.profile, effectiveFrom: request.occurredOn },
+    },
+    party: { ...example.party, partyId: request.partyId, companyAccountId: request.companyAccountId },
+    ...overrides,
+  }
+}
+
+export function contextOk(body: unknown): HttpReadReply {
+  return { kind: 'ok', body }
+}
+
+export function contextStatus(status: number): HttpReadReply {
+  return { kind: 'status', status }
 }
 
 export function succeeded(resource: Json, isReplay = false): PortReply {
