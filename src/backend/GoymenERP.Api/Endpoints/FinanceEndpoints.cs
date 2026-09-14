@@ -89,10 +89,7 @@ public sealed class CounterpartyFinancePartyAccountPort(ICompanyContext companyC
         Guid partyId, Guid companyAccountId, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!currentUser.IsAuthenticated || string.IsNullOrWhiteSpace(currentUser.UserId)
-            || currentUser.UserId != context.ActorId || !companyContext.IsResolved
-            || companyContext.CompanyId == Guid.Empty || companyContext.CompanyId != context.CompanyId
-            || !currentUser.CanAccessCompany(context.CompanyId))
+        if (!IsCurrent(context))
         {
             return new(ReadOutcome.Denied, null);
         }
@@ -103,6 +100,18 @@ public sealed class CounterpartyFinancePartyAccountPort(ICompanyContext companyC
             party = await counterparties.GetAuthorizedPartyAsync(partyId, cancellationToken);
         }
         catch (UnauthorizedAccessException)
+        {
+            return new(ReadOutcome.Denied, null);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            if (!IsCurrent(context)) return new(ReadOutcome.Denied, null);
+            throw;
+        }
+
+        // The owner answered for the context captured before the await. If company or actor
+        // changed meanwhile, neither its data nor its NotFound may be released.
+        if (!IsCurrent(context))
         {
             return new(ReadOutcome.Denied, null);
         }
@@ -129,4 +138,10 @@ public sealed class CounterpartyFinancePartyAccountPort(ICompanyContext companyC
                 party.Version, account.Version),
             party.IsActive));
     }
+
+    private bool IsCurrent(FinanceContext context) =>
+        currentUser.IsAuthenticated && !string.IsNullOrWhiteSpace(currentUser.UserId)
+        && currentUser.UserId == context.ActorId && companyContext.IsResolved
+        && companyContext.CompanyId != Guid.Empty && companyContext.CompanyId == context.CompanyId
+        && currentUser.CanAccessCompany(context.CompanyId);
 }
