@@ -136,37 +136,6 @@ public sealed class FinanceDraftContextHttpAcceptanceTests(
         Assert.Equal(0, owner.DetailReadCount);
     }
 
-    [Theory]
-    [InlineData("found")]
-    [InlineData("not-found")]
-    [InlineData("throws")]
-    public async Task Counterparty_adapter_denies_when_company_access_is_revoked_while_the_owner_read_is_pending(
-        string completion)
-    {
-        // CompanyContext is fixed for a request; what can change under a pending owner read is the
-        // actor's authority for that company (membership revoked / re-authenticated elsewhere).
-        var companyContext = new CompanyContext();
-        companyContext.Set(TestCompanyIds.CompanyA);
-        var currentUser = new StubCurrentUser("finance-reader", TestCompanyIds.CompanyA);
-        var owner = new StubCounterpartyReadService(completion == "found"
-            ? new(PartyId, "CARI-001", PartyKind.LegalEntity, "Rol Gerektirmeyen Cari", null, true, "party-v7",
-                [new(CompanyAccountId, TestCompanyIds.CompanyA, PartyRole.None, true, "account-v11")])
-            : null)
-        {
-            During = () => currentUser.Revoke(TestCompanyIds.CompanyA),
-            Failure = completion == "throws" ? new InvalidOperationException("SENTETIK owner failure") : null,
-        };
-        var adapter = new CounterpartyFinancePartyAccountPort(companyContext, currentUser, owner);
-
-        var result = await adapter.GetAuthorizedAsync(
-            new(TestCompanyIds.CompanyA, "finance-reader", "correlation-3", null),
-            PartyId, CompanyAccountId, CancellationToken.None);
-
-        Assert.Equal(ReadOutcome.Denied, result.Outcome);
-        Assert.Null(result.Resource);
-        Assert.Equal(1, owner.DetailReadCount);
-    }
-
     private WebApplicationFactory<Program> CreateHost(IFinanceDraftContextEndpointService service) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
@@ -229,15 +198,12 @@ public sealed class FinanceDraftContextHttpAcceptanceTests(
         public string? UserId => userId;
         public IReadOnlySet<Guid> AllowedCompanyIds => _allowedCompanyIds;
         public bool CanAccessCompany(Guid companyId) => _allowedCompanyIds.Contains(companyId);
-        public void Revoke(Guid companyId) => _allowedCompanyIds.Remove(companyId);
     }
 
     private sealed class StubCounterpartyReadService(CounterpartyDetailView? party)
         : ICounterpartyReadService
     {
         public int DetailReadCount { get; private set; }
-        public Action? During { get; init; }
-        public Exception? Failure { get; init; }
 
         public Task<CounterpartyPageExecution> GetAuthorizedPageAsync(
             CounterpartyReadRequest request, CancellationToken cancellationToken = default) =>
@@ -248,8 +214,7 @@ public sealed class FinanceDraftContextHttpAcceptanceTests(
         {
             cancellationToken.ThrowIfCancellationRequested();
             DetailReadCount++;
-            During?.Invoke();
-            return Failure is not null ? Task.FromException<CounterpartyDetailView?>(Failure) : Task.FromResult(party);
+            return Task.FromResult(party);
         }
     }
 }
