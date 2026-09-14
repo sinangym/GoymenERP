@@ -121,6 +121,32 @@ export const CARI_CARD_TEXT = {
 } as const
 
 /**
+ * The C-03 company relationships panel (spec §14.2 "Aynı Party'nin şirket ilişkilerini gör").
+ *
+ * The note carries the rule the panel exists to make visible: the Party is one, the
+ * accounts are per company, and an account's state is a fact about ITS company only.
+ * "Okuma yetkiniz olan" is precise, not modest: the server lists exactly the companies
+ * the actor may read in, so a company missing here is not a claim that no account exists.
+ */
+export const CARI_RELATIONSHIPS_TEXT = {
+  heading: 'Şirket ilişkileri',
+  note:
+    'Aynı cari kimliğinin, okuma yetkiniz olan şirketlerdeki hesapları. ' +
+    'Her hesabın durumu yalnız kendi şirketine aittir.',
+  show: 'Diğer şirketlerdeki hesapları göster',
+  hide: 'Şirket ilişkilerini gizle',
+  subject: 'şirket ilişkileri',
+  caption: 'Bu carinin şirket hesapları',
+  columnCompany: 'Şirket',
+  columnState: 'Şirket hesabı durumu',
+  columnAction: 'İşlem',
+  current: 'Şu an açık olan şirket',
+  openIn: (companyLabel: string) => `${companyLabel} şirketinde aç`,
+  onlyThisCompany:
+    'Okuma yetkiniz olan diğer şirketlerde bu carinin hesabı görünmüyor.',
+} as const
+
+/**
  * C-06 — the selected company's operational contact and address editor.
  *
  * Every problem message says what the client actually knows. The e-mail and country

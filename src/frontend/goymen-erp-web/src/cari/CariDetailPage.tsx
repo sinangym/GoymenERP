@@ -21,6 +21,7 @@ import { LEGACY_ROLE_HEADING, NO_COMMERCIAL_ROLE_DETAIL, rolesText } from './rol
 import { CARI_ACCOUNT_STATUS_TEXT as STATUS, CARI_CARD_TEXT as CARD } from './cariCommandText'
 import { CARI_CONTROL_CAPABILITY, targetIsActive } from './accountStatusContract'
 import { AccountStatusControl, AccountStatusRecoveryNotice } from './AccountStatusControl'
+import { CariCompanyRelationships } from './CariCompanyRelationships'
 import { useAccountStatusFlow, type AccountStatusApplied } from './useAccountStatusFlow'
 import type { CounterpartyDetail } from './detailContract'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
@@ -437,6 +438,21 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
           />
         ) : null}
       </section>
+
+      {/**
+        * Offered only where the actor can see more than one company: with one, the panel
+        * could only ever repeat the section above. Closed until asked for, so opening the
+        * card still sends exactly one read, bound to the active company.
+        */}
+      {directory.length > 1 && namespace !== null && activeCompanyId !== null ? (
+        <CariCompanyRelationships
+          partyId={detail.id}
+          namespace={namespace}
+          entryGeneration={entryGeneration}
+          activeCompanyId={activeCompanyId}
+          directory={directory}
+        />
+      ) : null}
     </section>
   )
 }
