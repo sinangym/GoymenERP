@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient } from '@tanstack/react-query'
 import { RouterProvider, createMemoryRouter } from 'react-router'
@@ -32,6 +32,7 @@ const IDENTITY = {
 }
 const COMPANY_A = { id: A_ID, code: 'GDC', legalName: 'Göymen Demir Çelik', isPlaceholder: false }
 const COMPANY_B = { id: B_ID, code: 'GSP', legalName: 'Göymen Sac Profil', isPlaceholder: false }
+const COMPANY_C = { id: C_ID, code: 'GIN', legalName: 'Göymen İnşaat', isPlaceholder: true }
 const B_LABEL = 'Göymen Sac Profil (GSP)'
 
 const CHAIN = { timeout: 5000 } as const
@@ -57,7 +58,8 @@ function party(accounts: unknown[]) {
 }
 
 interface Config {
-  directory?: readonly unknown[]
+  /** A function when a case changes the directory the shell reads next. */
+  directory?: readonly unknown[] | (() => readonly unknown[])
   /** The group read (no company header). */
   group?: () => Response | Promise<Response>
 }
@@ -77,7 +79,10 @@ function installFetch(config: Config = {}) {
       const companyId = headers['X-Company-Id'] ?? null
       calls.push({ url, companyId })
       if (url.includes('/identity/me')) return json(IDENTITY)
-      if (url.includes('/organization/companies')) return json(config.directory ?? [COMPANY_A, COMPANY_B])
+      if (url.includes('/organization/companies')) {
+        const directory = typeof config.directory === 'function' ? config.directory() : config.directory
+        return json(directory ?? [COMPANY_A, COMPANY_B])
+      }
       if (url.includes('/shell/capabilities'))
         return json({
           contractVersion: SHELL_CAPABILITY_CONTRACT_VERSION,
@@ -265,13 +270,56 @@ describe('C-03 company relationships (spec §14.2)', () => {
     }
   })
 
+  it('shows the card’s client-contract refusal, not a record conflict, and re-sends nothing', async () => {
+    for (const code of ['client_contract_unsupported', 'client_contract_required']) {
+      const fetches = installFetch({ group: () => json({ code }, 409) })
+      const view = renderAt(`/cari/${PARTY}`)
+      await openPanel()
+
+      const refusal = await waitFor(() => {
+        const node = panel().querySelector<HTMLElement>('[data-state="client-contract"]')
+        expect(node, code).toBeTruthy()
+        return node as HTMLElement
+      }, CHAIN)
+      // The card's wording and meaning: this client is not compatible; the record did not change.
+      expect(refusal.textContent).toContain('Uyumlu istemci gerekli')
+      expect(refusal.textContent).toContain('Sayfayı yenileyin')
+      expect(panel().querySelector('[data-state="conflict"]')).toBeNull()
+      expect(panel().textContent).not.toContain('Çakışma')
+      // The card's recovery too: a reloaded client, never a second send of this one.
+      expect(within(panel()).queryByRole('button', { name: 'Tekrar dene' })).toBeNull()
+
+      const capabilityReads = fetches.calls.filter((c) => c.url.includes('/shell/capabilities')).length
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      expect(fetches.groupCalls()).toHaveLength(1)
+      // Not reported to the auth boundary, and the card above is untouched.
+      expect(fetches.calls.filter((c) => c.url.includes('/shell/capabilities')).length).toBe(capabilityReads)
+      expect(screen.getByRole('heading', { name: /Örnek Metal Sanayi/ })).toBeTruthy()
+      expect(
+        document.querySelector('[data-section="account"] [data-account-state]')?.getAttribute('data-account-state'),
+      ).toBe('active')
+
+      view.router.dispose()
+      cleanup()
+      vi.unstubAllGlobals()
+      vi.stubGlobal('navigator', { onLine: true })
+    }
+  })
+
   it('never shows a late group answer under the company switched to meanwhile', async () => {
-    let release: (response: Response) => void = () => {}
-    const pending = new Promise<Response>((resolve) => {
-      release = resolve
+    let releaseA: (response: Response) => void = () => {}
+    const pendingA = new Promise<Response>((resolve) => {
+      releaseA = resolve
     })
-    const fetches = installFetch({ group: () => pending })
-    renderAt(`/cari/${PARTY}`)
+    let groupCall = 0
+    const fetches = installFetch({
+      group: () => {
+        groupCall += 1
+        // A's question is held; B's own question never answers, so B has nothing of its own.
+        return groupCall === 1 ? pendingA : new Promise<Response>(() => {})
+      },
+    })
+    renderAt(`/cari/${PARTY}`, { keepCache: true })
     await openPanel()
     await waitFor(() => expect(fetches.groupCalls()).toHaveLength(1), CHAIN)
 
@@ -281,12 +329,15 @@ describe('C-03 company relationships (spec §14.2)', () => {
         document.querySelector('[data-section="account"] [data-account-state]')?.getAttribute('data-account-state'),
       ).toBe('inactive')
     }, CHAIN)
+    // B's panel is OPEN while A's answer is still out: the one place a late answer could paint.
+    await userEvent.click(await screen.findByRole('button', { name: TEXT.show }, CHAIN))
 
-    release(json(party([ACCOUNT_A, ACCOUNT_B])))
-    await new Promise((resolve) => setTimeout(resolve, 50))
-    // B's card has a closed panel and no rows from A's question.
-    expect(screen.getByRole('button', { name: TEXT.show })).toBeTruthy()
+    releaseA(json(party([ACCOUNT_A, ACCOUNT_B])))
+    await new Promise((resolve) => setTimeout(resolve, 150))
     expect(panel().querySelector('table')).toBeNull()
+    expect(panel().querySelector('[data-state="initial-loading"]')).toBeTruthy()
+    // B asked its own question; A's answer was never taken for it.
+    expect(fetches.groupCalls()).toHaveLength(2)
   })
 
   it('never paints a group answer cached in one company context inside another', async () => {
@@ -314,6 +365,47 @@ describe('C-03 company relationships (spec §14.2)', () => {
     // B asked its own question; until B's answer lands there is nothing to show.
     expect(panel().querySelector('[data-state="initial-loading"]')).toBeTruthy()
     expect(panel().querySelector('table')).toBeNull()
+  })
+
+  it('keeps the toggle’s aria-controls target in the document while the panel is closed', async () => {
+    installFetch()
+    renderAt(`/cari/${PARTY}`)
+    await openCard()
+    const toggle = await screen.findByRole('button', { name: TEXT.show }, CHAIN)
+    const targetId = toggle.getAttribute('aria-controls') ?? ''
+
+    const closed = document.getElementById(targetId)
+    expect(closed).toBeTruthy()
+    expect(closed?.hidden).toBe(true)
+    expect(panel().contains(closed)).toBe(true)
+
+    await userEvent.click(toggle)
+    const opened = document.getElementById(targetId)
+    expect(opened?.hidden).toBe(false)
+    expect(opened?.textContent).toContain(TEXT.note)
+  })
+
+  it('offers no switch into a company the refreshed directory no longer lists', async () => {
+    let directory: readonly unknown[] = [COMPANY_A, COMPANY_B, COMPANY_C]
+    const fetches = installFetch({ directory: () => directory })
+    const view = renderAt(`/cari/${PARTY}`)
+    await openPanel()
+    await within(panel()).findByRole('button', { name: TEXT.openIn(B_LABEL) }, CHAIN)
+
+    // The shell reads its directory again while the panel is open, and B is no longer in it.
+    directory = [COMPANY_A, COMPANY_C]
+    const directoryReads = fetches.calls.filter((c) => c.url.includes('/organization/companies')).length
+    await act(async () => {
+      await view.queryClient.invalidateQueries({ queryKey: ['shell', 'directory'] })
+    })
+    await waitFor(() => {
+      expect(fetches.calls.filter((c) => c.url.includes('/organization/companies')).length).toBeGreaterThan(
+        directoryReads,
+      )
+      expect(within(panel()).queryAllByRole('button', { name: /şirketinde aç$/ })).toHaveLength(0)
+    }, CHAIN)
+    // Nothing else was asked of the server on the directory's behalf.
+    expect(fetches.groupCalls()).toHaveLength(1)
   })
 
   it('is not offered to an actor who sees a single company', async () => {

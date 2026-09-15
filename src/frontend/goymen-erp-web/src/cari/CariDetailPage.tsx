@@ -18,7 +18,11 @@ import { fetchCounterpartyDetail } from './detailApi'
 import { PARTY_KIND, PROBLEM_CODE, problemCodeOf } from './contract'
 import { API_BASE, isCommandContractReady } from './clientContract'
 import { LEGACY_ROLE_HEADING, NO_COMMERCIAL_ROLE_DETAIL, rolesText } from './roleText'
-import { CARI_ACCOUNT_STATUS_TEXT as STATUS, CARI_CARD_TEXT as CARD } from './cariCommandText'
+import {
+  CARI_ACCOUNT_STATUS_TEXT as STATUS,
+  CARI_CARD_TEXT as CARD,
+  CARI_CONTRACT_REFUSAL_TEXT as CONTRACT_REFUSAL,
+} from './cariCommandText'
 import { CARI_CONTROL_CAPABILITY, targetIsActive } from './accountStatusContract'
 import { AccountStatusControl, AccountStatusRecoveryNotice } from './AccountStatusControl'
 import { CariCompanyRelationships } from './CariCompanyRelationships'
@@ -38,11 +42,6 @@ const CONTRACT_PROBLEM_CODES = new Set<string>([
   PROBLEM_CODE.clientContractRequired,
   PROBLEM_CODE.clientContractUnsupported,
 ])
-
-const CONTRACT_REFUSAL_TITLE = 'Uyumlu istemci gerekli'
-const CONTRACT_REFUSAL_DETAIL =
-  'Bu cari işlemi desteklenen istemci sözleşmesi ile yeniden açılmalıdır. ' +
-  'Sayfayı yenileyin; bekleyen bir işlemi otomatik tekrarlamayın.'
 
 const KIND_LABEL: Record<number, string> = {
   [PARTY_KIND.LegalEntity]: 'Tüzel kişi',
@@ -239,9 +238,9 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
         <BackToList />
         <div role="alert" data-state="client-contract">
           <p>
-            <strong>{CONTRACT_REFUSAL_TITLE}</strong>
+            <strong>{CONTRACT_REFUSAL.title}</strong>
           </p>
-          <p>{CONTRACT_REFUSAL_DETAIL}</p>
+          <p>{CONTRACT_REFUSAL.detail}</p>
         </div>
         {/**
           * An unresolved status attempt keeps its recovery HERE too. "Sayfayı yenileyin"

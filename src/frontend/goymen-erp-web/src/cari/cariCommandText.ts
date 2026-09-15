@@ -121,6 +121,18 @@ export const CARI_CARD_TEXT = {
 } as const
 
 /**
+ * C-03's client-contract refusal, shared by the card's own read and the company
+ * relationships panel's group read. It is one fact about THIS client in both places — never
+ * about the record — so it has one wording and one recovery: reload, not resend.
+ */
+export const CARI_CONTRACT_REFUSAL_TEXT = {
+  title: 'Uyumlu istemci gerekli',
+  detail:
+    'Bu cari işlemi desteklenen istemci sözleşmesi ile yeniden açılmalıdır. ' +
+    'Sayfayı yenileyin; bekleyen bir işlemi otomatik tekrarlamayın.',
+} as const
+
+/**
  * The C-03 company relationships panel (spec §14.2 "Aynı Party'nin şirket ilişkilerini gör").
  *
  * The note carries the rule the panel exists to make visible: the Party is one, the

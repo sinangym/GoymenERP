@@ -17,13 +17,15 @@
  * "Open in company X" is a shell company SWITCH, not a URL trick. The shell verifies the
  * new context, asks first if a form is dirty, and C-03 then reads the card company-bound
  * in X under X's own capability. This panel never renders another company's card itself.
+ * A company the shell's CURRENT directory no longer lists is not offered as a target.
  */
 
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchCompanyRelationships } from './companyRelationshipsApi'
 import type { CompanyRelationships } from './companyRelationshipsContract'
-import { CARI_RELATIONSHIPS_TEXT as TEXT } from './cariCommandText'
+import { PROBLEM_CODE, problemCodeOf } from './contract'
+import { CARI_CONTRACT_REFUSAL_TEXT as CONTRACT_REFUSAL, CARI_RELATIONSHIPS_TEXT as TEXT } from './cariCommandText'
 import { NO_COMMERCIAL_ROLE_LIST, LEGACY_ROLE_HEADING, rolesText } from './roleText'
 import type { CompanySummary } from '../shell/api'
 import { useShellDispatch, useShellState } from '../shell/shellContext'
@@ -31,6 +33,18 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { StateBlock } from '../shell/StateBlock'
 import styles from './CariCompanyRelationships.module.css'
+
+/** The toggle's `aria-controls` target. Rendered while closed too, so the reference resolves. */
+const BODY_ID = 'cari-company-relationships-body'
+
+/**
+ * Classified as the card classifies its own read: a client-contract refusal is about THIS
+ * client, never about the record, so it is not a conflict (ÜRÜN #267 P2-1).
+ */
+const CONTRACT_PROBLEM_CODES = new Set<string>([
+  PROBLEM_CODE.clientContractRequired,
+  PROBLEM_CODE.clientContractUnsupported,
+])
 
 export function CariCompanyRelationships({
   partyId,
@@ -78,7 +92,7 @@ export function CariCompanyRelationships({
       type="button"
       className={styles.toggle}
       aria-expanded={open}
-      aria-controls="cari-company-relationships-body"
+      aria-controls={BODY_ID}
       onClick={() => setOpen((value) => !value)}
     >
       {open ? TEXT.hide : TEXT.show}
@@ -92,6 +106,7 @@ export function CariCompanyRelationships({
           {TEXT.heading}
         </h2>
         {toggle}
+        <div id={BODY_ID} hidden />
       </section>
     )
   }
@@ -100,13 +115,12 @@ export function CariCompanyRelationships({
     query.isPending ? { kind: 'initial-loading' } : classifyOutcome(query.data ?? { type: 'malformed' })
   ) as RemoteViewState<CompanyRelationships>
 
+  const contractRefusal =
+    query.data?.type === 'http' &&
+    query.data.status === 409 &&
+    CONTRACT_PROBLEM_CODES.has(problemCodeOf(query.data.body) ?? '')
+
   const switchable = shell.phase === 'idle'
-  const companyLabel = (companyId: string) => {
-    const company = companyById.get(companyId)
-    // The decoder refused any company the directory does not list, so this is present;
-    // the fallback exists only so a directory refresh between render passes cannot crash.
-    return company === undefined ? '—' : `${company.legalName} (${company.code})`
-  }
 
   return (
     <section aria-labelledby="cari-relationships-heading" className={styles.block} data-section="company-relationships">
@@ -114,9 +128,18 @@ export function CariCompanyRelationships({
         {TEXT.heading}
       </h2>
       {toggle}
-      <div id="cari-company-relationships-body" className={styles.body}>
+      <div id={BODY_ID} className={styles.body}>
         <p className={styles.note}>{TEXT.note}</p>
-        {state.kind !== 'ready' ? (
+        {contractRefusal ? (
+          // The card's refusal and the card's recovery: a reloaded client, so no retry is
+          // offered here and nothing is sent again.
+          <div role="alert" data-state="client-contract">
+            <p>
+              <strong>{CONTRACT_REFUSAL.title}</strong>
+            </p>
+            <p>{CONTRACT_REFUSAL.detail}</p>
+          </div>
+        ) : state.kind !== 'ready' ? (
           <StateBlock state={state} subject={TEXT.subject} onRetry={() => void query.refetch()} />
         ) : (
           <>
@@ -134,7 +157,10 @@ export function CariCompanyRelationships({
                 <tbody>
                   {state.data.accounts.map((account) => {
                     const current = account.companyId === activeCompanyId
-                    const label = companyLabel(account.companyId)
+                    // Listed when the answer was decoded, but a directory refresh since may have
+                    // dropped the company: then there is no name to show and no switch to offer.
+                    const company = companyById.get(account.companyId)
+                    const label = company === undefined ? '—' : `${company.legalName} (${company.code})`
                     return (
                       <tr
                         key={account.accountId}
@@ -149,7 +175,7 @@ export function CariCompanyRelationships({
                         <td>
                           {current ? (
                             <span className={styles.current}>{TEXT.current}</span>
-                          ) : (
+                          ) : company === undefined ? null : (
                             <button
                               type="button"
                               className={styles.open}
