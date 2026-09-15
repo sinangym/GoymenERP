@@ -93,6 +93,8 @@ public sealed class SalesReferenceReadHandler(
                 query.ExpectedProductVersion, query.OrderUnitId, query.EffectiveOn), cancellationToken);
             if (!await StillAuthorizedAsync(scope, bindings.ProductPermission, cancellationToken))
                 return Failure<SalesProductReferenceV1>(403);
+            if (result.Errors.Any(IsSelectionConflict))
+                return Failure<SalesProductReferenceV1>(409, "product_selection_changed");
             if (result.Snapshot is null)
                 return Failure<SalesProductReferenceV1>(result.Errors.Count == 0 ? 503 : 422,
                     result.Errors.Count == 0 ? "product_provider_unavailable" : "unsupported_product");
@@ -130,6 +132,10 @@ public sealed class SalesReferenceReadHandler(
         {
             return SettingsFailure<SalesProductReferenceV1>(exception);
         }
+        catch (ProductValidationException)
+        {
+            return Failure<SalesProductReferenceV1>(422, "unsupported_product");
+        }
         catch (ProductOperationException exception)
         {
             return exception.StatusCode switch
@@ -137,10 +143,20 @@ public sealed class SalesReferenceReadHandler(
                 401 => Failure<SalesProductReferenceV1>(401),
                 403 => Failure<SalesProductReferenceV1>(403),
                 404 => Failure<SalesProductReferenceV1>(404),
+                409 => Failure<SalesProductReferenceV1>(409, "product_selection_changed"),
+                400 or 422 => Failure<SalesProductReferenceV1>(422, "unsupported_product"),
                 _ => Failure<SalesProductReferenceV1>(503, "product_provider_unavailable")
             };
         }
+        catch (UnauthorizedAccessException)
+        {
+            return Failure<SalesProductReferenceV1>(403);
+        }
     }
+
+    // Product's published conflict codes: the known selection is stale, not malformed.
+    private static bool IsSelectionConflict(ProductFieldError error) =>
+        error.Code is ProductApiV1.VersionConflict or ProductApiV1.LifecycleConflict;
 
     private sealed record Scope(int Status, Guid Company, string? Actor);
     private async Task<Scope> GetScopeAsync(string? permission, CancellationToken cancellationToken)

@@ -3,8 +3,11 @@
 Owner: existing Sales backend. Base main cb11d5de6f718f3f1389f41628b543ba0581ad7f.
 Business: #254 at6f0cd10259aeb2a44d32a92535464ed2ce096cf7 sections2-4.
 Consumer: FE99ee918, src/frontend/goymen-erp-web/src/sales/referenceSource.ts
-and orderDraftForm.ts. This package adds module contracts/handler only; central
-Backend owns routes, DI, capability and OpenAPI. No shared file is edited here.
+and orderDraftForm.ts. Module contracts and the handler live in Modules/Sales.
+#262 also wires the three GET routes, the DI factory, OpenAPI and the Counterparty
+consumer adapter in central API files (SalesEndpoints.cs, Program.cs, the OpenAPI
+contract); later changes to those files belong to the sole central writer. No
+capability, permission or role is registered.
 
 ## Actual owner connections
 
@@ -46,11 +49,27 @@ matched by company, unit, profile ID, invariant string version and effective dat
 Only the validated selected order unit is returned, labelled with owner UnitCode.
 No conversion, kg assumption, Active/Draft inference or candidate enumeration.
 
+Product owner outcomes map as follows. An owner field error with Product's
+published `version_conflict` or `lifecycle_conflict` code, or a
+ProductOperationException 409, is 409 product_selection_changed: the known
+selection is stale, so this wins over other field errors in the same result. Any
+other owner field error, with or without a snapshot, ProductValidationException
+and ProductOperationException 400/422 are 422 unsupported_product.
+ProductOperationException 401/403/404 keep their status without a code, and
+UnauthorizedAccessException is 403. A missing runtime, a result with neither
+snapshot nor errors, and every other owner status are 503. A snapshot that differs
+from the requested product, version, order unit or date is 409. An inactive or
+out-of-range unit profile is 422 unsupported_unit; a unit binding or profile of
+another company is 403. Product.Domain's ProductVersionConflictException is not
+caught: Sales code uses no Product.Domain type, the eligibility port reports
+conflicts as field errors, and a Domain exception crossing that Application port
+stays a platform-redacted 500.
+
 Every operation checks server company/user/current permission before reads and
 again after awaited successful reads. Changed company/user or permission loss
 discards the response. No query/body companyId or client actor is trusted.
 
-## Proposed HTTP adapter, for the sole central writer
+## Implemented HTTP boundary
 
 | Request | Handler | Success body |
 |---|---|---|
@@ -58,27 +77,45 @@ discards the response. No query/body companyId or client actor is trusted.
 | GET /api/v1/sales/references/currency?currencyId=...&effectiveOn=2026-09-13 | GetCurrencyAsync(query, ct) | SalesCurrencyReferenceV1 |
 | GET /api/v1/sales/references/product?productId=...&expectedProductVersion=7&orderUnitId=...&effectiveOn=2026-09-13 | GetProductAsync(query, ct) | SalesProductReferenceV1 |
 
-These are proposed GET adapter paths, not implemented endpoints or catalogue-list
-claims. Map result.StatusCode=200 to result.Value only, not the internal result
-wrapper. Map non200 to existing platform ProblemDetails; Code is optional and
-Value is null. Do not serialize a cached positive body for an error. Anonymous401;
-unresolved/foreign company, denied/missing binding403 without required code;
-invalid IDs/query400; invalid cursor400 invalid_cursor; owner-invalid selection422;
-changed Product selection409; unavailable runtime/provider503. Settings denial
-preserves settings_access_denied/403, unavailable preserves
-settings_provider_unavailable/503. Unexpected exceptions remain platform-redacted
-500; cancellation propagates. No provider internals or arbitrary error text leaks.
+These routes are implemented in SalesEndpoints.cs; they are not catalogue listings.
+Status 200 serializes result.Value only, never the internal result wrapper. Every
+other status is ProblemDetails with no value, and each route's allowlist decides
+which handler code reaches the client:
 
-Central parser: strict UUID and YYYY-MM-DD dates, required product version/unit,
-pageSize1-100, q up to200 characters, cursor up to8192; reject unknown/repeated
-query fields. Context/company header and current request/session follow the existing
-platform boundary. Response headers should prevent shared caching of these
-company/actor-sensitive selections. No side effects, idempotency key or mutation
-capability is introduced for GET.
+| Route | Public statuses | Public codes |
+|---|---|---|
+| accounts | 400, 401, 403, 503 | validation_failed, invalid_cursor |
+| currency | 400, 401, 403, 422, 503 | validation_failed, unsupported_currency |
+| product | 400, 401, 403, 404, 409, 422, 503 | validation_failed, product_selection_changed, unsupported_product, unsupported_unit |
+
+The platform writer owns 401/403/500/503 bodies and replaces any handler code with
+authentication_required, forbidden, internal_error or service_unavailable. So
+settings_access_denied, settings_provider_unavailable, settings_operation_unavailable,
+product_provider_unavailable, counterparty_provider_unavailable and
+reference_provider_invalid are internal handler codes: the client sees forbidden
+(403) or service_unavailable (503), and 403 still differs from 503. A code outside a
+route allowlist is dropped; a status outside it fails as a redacted 500.
+Anonymous 401; unresolved/foreign company or denied/missing binding 403; invalid
+IDs/query 400 validation_failed; invalid cursor 400 invalid_cursor. Cancellation
+propagates. No provider internals or arbitrary error text leak.
+
+Parser: strict UUID and YYYY-MM-DD dates, required product version/unit,
+pageSize1-100, q up to200 UTF-16 code units, cursor up to8192; reject
+unknown/repeated query fields. The handler rechecks the same q and cursor bounds.
+Accounts q is forwarded as received. Normalization and a 200-rune limit are the
+central writer's separate item-5 change (7063843); when it lands, the handler's own
+q bound must count runes too, or a search of at most 200 runes but more than 200
+UTF-16 units, which the route then accepts, is refused with 400. Context/company
+header and current request/session follow the existing
+platform boundary. The route handlers set `Cache-Control: private, no-store` and
+`Pragma: no-cache`. No side effects, idempotency key or mutation capability is
+introduced for GET.
 
 Physical examples: tests/GoymenERP.Sales.UnitTests/Examples/reference-http.json.
 Example IDs, accepted test profiles and successful snapshots are synthetic only.
-They explain the wire, not available production options or permissions.
+They explain the wire, not available production options or permissions. Error
+examples carry only the public status and code; SalesReferenceHttpAcceptanceTests
+compares them with responses of the real handler behind the routes.
 
 ## FE mapping and command revalidation
 
@@ -115,19 +152,28 @@ No second owner catalogue/port, table read/write or fabricated options were adde
 
 ## Actual targeted evidence
 
-After the central-owner-directed consumer adapter boundary correction, the same
-18 changed-handler tests passed (exit0,108ms). The exact failed architecture test
+Earlier state: after the consumer adapter boundary correction the then 18 handler
+tests passed (exit0,108ms) and
 Platform_non_counterparty_bypass_surfaces_match_the_reviewed_inventory passed
-separately (1PASS,exit0). The earlier CI failure at d2d024e remains evidence of
-the forbidden direct Sales-to-Counterparty edge, not a waived guard. The API
-adapter's actual query/HTTP behavior is still central integration work.
+(1PASS,exit0). The CI failure at d2d024e remains evidence of the forbidden direct
+Sales-to-Counterparty edge, not a waived guard.
 
-`dotnet test tests/GoymenERP.Sales.UnitTests/GoymenERP.Sales.UnitTests.csproj --nologo --verbosity minimal --filter FullyQualifiedName~SalesReferenceReadHandlerTests`
+#262 review patch items 1-4 and 6 (issuecomment-5667129884), LOCAL runs with
+Windows dotnet.exe on the WSL worktree, not CI:
 
-Actual18PASS/0FAIL/0SKIP,exit0,112ms. Tests use controlled doubles of real owner
-interfaces: active roles0/company filtering, owner query binding, authentic empty
-page versus forbidden/invalid-cursor/unavailable, anonymous/foreign/default-deny,
-late company/permission changes, exact code/profile labels, absent operation,
-inactive/expired currency, absent Product runtime/empty errors, three unit profile
-revalidations, stale Product/profile versions and no global authorization fallback.
-This is local handler behavior evidence, not real owner data or HTTP/browser/SQL.
+- Sales.UnitTests: 81 passed, 0 failed (37 in SalesReferenceReadHandlerTests).
+  Against the handler without this change, 7 of them fail.
+- Api.IntegrationTests filtered to SalesReferenceHttpAcceptanceTests: 25 passed,
+  0 failed. Build-time OpenAPI document generation was switched off on the command
+  line; no OpenAPI input changed.
+- ArchitectureTests: 278 passed, 0 failed.
+- Temporary mutations, each restored from git, turned named tests red: removing
+  each new owner-outcome mapping, the errors-with-snapshot rejection, the unit
+  active check or the unit-binding company check; reading unit or money profiles
+  with a default date, or the order unit three times; dropping the cursor in the
+  handler or the adapter; skipping the adapter's post-read context check; mapping
+  InvalidCursor to 503; rethrowing the owner's UnauthorizedAccessException; and
+  restoring the old error example codes.
+
+Tests use controlled doubles of real owner interfaces and test-host permission
+bindings. This is not real owner data, SQL, browser or environment acceptance.

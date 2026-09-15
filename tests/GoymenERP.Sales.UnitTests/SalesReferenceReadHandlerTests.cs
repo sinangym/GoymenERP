@@ -1,3 +1,4 @@
+using System.Globalization;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Product.Application.Contracts;
@@ -102,7 +103,7 @@ public sealed class SalesReferenceReadHandlerTests
         Assert.Equal("XYZ", result.Value!.Label);
         Assert.Equal(result.Value.Code, result.Value.Label);
         Assert.Equal("9007199254740993", result.Value.ProfileVersion);
-        Assert.Equal("controlled.operation", f.Settings.LastOperation);
+        Assert.Equal(new[] { (f.Currency, "controlled.operation", f.Day) }, f.Settings.MoneyCalls);
     }
 
     [Theory]
@@ -160,8 +161,9 @@ public sealed class SalesReferenceReadHandlerTests
         Assert.Equal(200, result.StatusCode);
         Assert.Equal(new ProductSalesSelectionV1(f.Product, "7", f.Unit, f.Day), f.Products.Selection);
         Assert.Equal("P001 - Example Product", result.Value!.Label);
-        Assert.Equal("owner-unit", Assert.Single(result.Value.OrderUnits).Label);
-        Assert.Equal(3, f.Settings.Calls);
+        Assert.Equal(new SalesUnitReferenceV1(f.Unit, "order-unit", f.OrderProfile, "3"),
+            Assert.Single(result.Value.OrderUnits));
+        Assert.Equal(new[] { (f.StockUnit, f.Day), (f.SalesUnit, f.Day), (f.Unit, f.Day) }, f.Settings.UnitCalls);
         Assert.Equal(5, f.Auth.Calls);
     }
 
@@ -172,9 +174,137 @@ public sealed class SalesReferenceReadHandlerTests
         f.Products.Result = new(f.Products.Result.Snapshot! with { ProductVersion = "8" }, []);
         Assert.Equal(409, (await f.Handler().GetProductAsync(f.ProductQuery)).StatusCode);
         f.Products.Result = new(f.Products.Result.Snapshot! with { ProductVersion = "7" }, []);
-        f.Settings.Unit = f.Settings.Unit with { Profile = new(f.Profile, 2) };
+        f.Settings.Units[f.Unit] = f.Settings.Units[f.Unit] with { Profile = new(f.OrderProfile, 4) };
         var result = await f.Handler().GetProductAsync(f.ProductQuery);
         Assert.Equal(503, result.StatusCode);
+        Assert.Null(result.Value);
+    }
+
+    [Theory]
+    [InlineData(401, 401, null)]
+    [InlineData(403, 403, null)]
+    [InlineData(404, 404, null)]
+    [InlineData(409, 409, "product_selection_changed")]
+    [InlineData(400, 422, "unsupported_product")]
+    [InlineData(422, 422, "unsupported_product")]
+    [InlineData(500, 503, "product_provider_unavailable")]
+    [InlineData(503, 503, "product_provider_unavailable")]
+    public async Task Owner_operation_outcome_maps_to_the_reference_boundary(
+        int ownerStatus, int expectedStatus, string? expectedCode)
+    {
+        var f = new Fixture();
+        f.Products.Error = new ProductOperationException("owner-internal-code", ownerStatus);
+        var result = await f.Handler().GetProductAsync(f.ProductQuery);
+        Assert.Equal(expectedStatus, result.StatusCode);
+        Assert.Equal(expectedCode, result.Code);
+        Assert.Null(result.Value);
+        Assert.Empty(f.Settings.UnitCalls);
+    }
+
+    [Fact]
+    public async Task Owner_validation_exception_is_an_unsupported_product_not_an_outage()
+    {
+        var f = new Fixture();
+        f.Products.Error = new ProductValidationException([new("productId", "invalid_reference")]);
+        var result = await f.Handler().GetProductAsync(f.ProductQuery);
+        Assert.Equal(422, result.StatusCode);
+        Assert.Equal("unsupported_product", result.Code);
+        Assert.Null(result.Value);
+        Assert.Empty(f.Settings.UnitCalls);
+    }
+
+    [Fact]
+    public async Task Owner_authorization_exception_is_forbidden_without_detail()
+    {
+        var f = new Fixture();
+        f.Products.Error = new UnauthorizedAccessException("owner-internal-detail");
+        var result = await f.Handler().GetProductAsync(f.ProductQuery);
+        Assert.Equal(403, result.StatusCode);
+        Assert.Null(result.Code);
+        Assert.Null(result.Value);
+    }
+
+    [Theory]
+    [InlineData("expectedProductVersion", ProductApiV1.VersionConflict)]
+    [InlineData("productId", ProductApiV1.LifecycleConflict)]
+    public async Task Owner_version_or_lifecycle_conflict_is_a_changed_selection(string field, string code)
+    {
+        var f = new Fixture();
+        f.Products.Result = new(null, [new(field, code), new("productId", "not_sellable")]);
+        var result = await f.Handler().GetProductAsync(f.ProductQuery);
+        Assert.Equal(409, result.StatusCode);
+        Assert.Equal("product_selection_changed", result.Code);
+        Assert.Null(result.Value);
+        Assert.Empty(f.Settings.UnitCalls);
+    }
+
+    [Fact]
+    public async Task Owner_errors_reject_a_returned_snapshot()
+    {
+        var f = new Fixture();
+        f.Products.Result = f.Products.Result with { Errors = [new("productId", "not_sellable")] };
+        var result = await f.Handler().GetProductAsync(f.ProductQuery);
+        Assert.Equal(422, result.StatusCode);
+        Assert.Equal("unsupported_product", result.Code);
+        Assert.Null(result.Value);
+        Assert.Empty(f.Settings.UnitCalls);
+    }
+
+    [Fact]
+    public async Task Owner_errors_without_a_snapshot_are_unsupported_not_unavailable()
+    {
+        var f = new Fixture();
+        f.Products.Result = new(null, [new("orderUnitId", "unsupported_order_unit")]);
+        var result = await f.Handler().GetProductAsync(f.ProductQuery);
+        Assert.Equal(422, result.StatusCode);
+        Assert.Equal("unsupported_product", result.Code);
+        Assert.Null(result.Value);
+        Assert.Empty(f.Settings.UnitCalls);
+    }
+
+    [Theory]
+    [InlineData(0, "inactive")]
+    [InlineData(1, "expired")]
+    [InlineData(2, "not-yet-effective")]
+    public async Task Inactive_or_out_of_range_unit_profile_is_an_unsupported_unit(int position, string variant)
+    {
+        var f = new Fixture();
+        var unitId = f.UnitIds[position];
+        var profile = f.Settings.Units[unitId];
+        f.Settings.Units[unitId] = variant switch
+        {
+            "inactive" => profile with { IsActive = false },
+            "expired" => profile with { EffectiveThrough = f.Day.AddDays(-1) },
+            _ => profile with { EffectiveFrom = f.Day.AddDays(1) },
+        };
+        var result = await f.Handler().GetProductAsync(f.ProductQuery);
+        Assert.Equal(422, result.StatusCode);
+        Assert.Equal("unsupported_unit", result.Code);
+        Assert.Null(result.Value);
+        Assert.Equal(f.UnitIds.Take(position + 1).Select(id => (id, f.Day)), f.Settings.UnitCalls);
+    }
+
+    [Fact]
+    public async Task Foreign_company_unit_binding_is_denied_before_its_profile_read()
+    {
+        var f = new Fixture();
+        var snapshot = f.Products.Result.Snapshot!;
+        f.Products.Result = new(snapshot with { SalesUnit = snapshot.SalesUnit with { CompanyId = Guid.NewGuid() } }, []);
+        var result = await f.Handler().GetProductAsync(f.ProductQuery);
+        Assert.Equal(403, result.StatusCode);
+        Assert.Null(result.Code);
+        Assert.Null(result.Value);
+        Assert.Equal(new[] { (f.StockUnit, f.Day) }, f.Settings.UnitCalls);
+    }
+
+    [Fact]
+    public async Task Foreign_company_unit_profile_is_denied()
+    {
+        var f = new Fixture();
+        f.Settings.Units[f.Unit] = f.Settings.Units[f.Unit] with { CompanyId = Guid.NewGuid() };
+        var result = await f.Handler().GetProductAsync(f.ProductQuery);
+        Assert.Equal(403, result.StatusCode);
+        Assert.Null(result.Code);
         Assert.Null(result.Value);
     }
 
@@ -196,8 +326,12 @@ public sealed class SalesReferenceReadHandlerTests
         public Guid Company { get; } = Guid.NewGuid();
         public Guid Currency { get; } = Guid.NewGuid();
         public Guid Product { get; } = Guid.NewGuid();
+        public Guid StockUnit { get; } = Guid.NewGuid();
+        public Guid SalesUnit { get; } = Guid.NewGuid();
         public Guid Unit { get; } = Guid.NewGuid();
         public Guid Profile { get; } = Guid.NewGuid();
+        public Guid OrderProfile { get; } = Guid.NewGuid();
+        public Guid[] UnitIds => [StockUnit, SalesUnit, Unit];
         public DateOnly Day { get; } = new(2026, 9, 13);
         public Context Context { get; } = new();
         public User User { get; } = new();
@@ -219,13 +353,20 @@ public sealed class SalesReferenceReadHandlerTests
             Accounts.Result = new(200, new([party, party with { IsActive = false }], null), null);
             Settings.Money = new(Company, Currency, "XYZ", "controlled.operation",
                 new(Profile, 9007199254740993), 2, true, Day.AddDays(-1), null);
-            Settings.Unit = new(Company, Unit, "owner-unit", "owner-dimension", false,
-                new(Profile, 1), 3, true, Day.AddDays(-1), null);
-            var unit = new ProductSalesUnitProfileV1(Company, Unit, Profile, "1");
-            Products.Result = new(new(Product, "7", "P001", "Example Product", unit, unit, unit, Day), []);
+            // Three distinct units and profiles, so a lookup of the wrong binding cannot pass.
+            var stock = AddUnit(StockUnit, "stock-unit", Guid.NewGuid(), 1);
+            var sales = AddUnit(SalesUnit, "sales-unit", Guid.NewGuid(), 2);
+            var order = AddUnit(Unit, "order-unit", OrderProfile, 3);
+            Products.Result = new(new(Product, "7", "P001", "Example Product", stock, sales, order, Day), []);
         }
         public SalesReferenceReadHandler Handler(SalesReferenceReadBindings? bindings = null, bool productMissing = false) =>
             new(Context, User, Auth, Accounts, Settings, productMissing ? null : Products, bindings ?? Bindings);
+        private ProductSalesUnitProfileV1 AddUnit(Guid unitId, string code, Guid profileId, long version)
+        {
+            Settings.Units[unitId] = new(Company, unitId, code, "owner-dimension", false,
+                new(profileId, version), 3, true, Day.AddDays(-1), null);
+            return new(Company, unitId, profileId, version.ToString(CultureInfo.InvariantCulture));
+        }
     }
 
     private sealed class Context : ICompanyContext
@@ -264,17 +405,24 @@ public sealed class SalesReferenceReadHandlerTests
     }
     private sealed class Settings : ISettingsPrerequisiteProvider
     {
-        public int Calls { get; private set; }
+        public List<(Guid UnitId, DateOnly EffectiveOn)> UnitCalls { get; } = [];
+        public List<(Guid CurrencyId, string Operation, DateOnly EffectiveOn)> MoneyCalls { get; } = [];
+        public int Calls => UnitCalls.Count + MoneyCalls.Count;
         public Action? OnRead { get; set; }
         public Exception? Error { get; set; }
         public MoneyProfileV1 Money { get; set; } = null!;
-        public UnitProfileV1 Unit { get; set; } = null!;
-        public string? LastOperation { get; private set; }
-        private void Read(CancellationToken token) { token.ThrowIfCancellationRequested(); Calls++; OnRead?.Invoke(); if (Error is not null) throw Error; }
+        public Dictionary<Guid, UnitProfileV1> Units { get; } = [];
+        private void Read(CancellationToken token) { token.ThrowIfCancellationRequested(); OnRead?.Invoke(); if (Error is not null) throw Error; }
         public Task<UnitProfileV1> GetUnitProfileAsync(Guid unitId, DateOnly effectiveOn, CancellationToken cancellationToken = default)
-        { Read(cancellationToken); return Task.FromResult(Unit); }
+        {
+            UnitCalls.Add((unitId, effectiveOn));
+            Read(cancellationToken);
+            // An unknown id fails the test instead of silently serving another unit's profile.
+            return Units.TryGetValue(unitId, out var profile) ? Task.FromResult(profile)
+                : throw new InvalidOperationException($"Unexpected unit profile read {unitId:D}.");
+        }
         public Task<MoneyProfileV1> GetMoneyProfileAsync(Guid currencyId, string operation, DateOnly effectiveOn, CancellationToken cancellationToken = default)
-        { Read(cancellationToken); LastOperation = operation; return Task.FromResult(Money); }
+        { MoneyCalls.Add((currencyId, operation, effectiveOn)); Read(cancellationToken); return Task.FromResult(Money); }
         public Task<PeriodEligibilityV1> GetPeriodEligibilityAsync(string operation, DateOnly occurredOn, DateOnly? valueOn,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
