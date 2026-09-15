@@ -2,10 +2,14 @@ using System.Net;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
+using GoymenERP.Modules.Identity.Domain.Assignments;
+using GoymenERP.Modules.Identity.Domain.Roles;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
+using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -22,6 +26,9 @@ namespace GoymenERP.Api.IntegrationTests;
 /// active state, roles (0 included) and lossless string version, never the Party's;</item>
 /// <item>an actor authorized in one company gets exactly that company's account and no
 /// trace of the other company's account id or company id;</item>
+/// <item>a company in the actor's directory is listed only where the actor holds
+/// COMPANY-WIDE <c>counterparty.parties.read</c>: membership without it, or a narrow grant,
+/// lists nothing there;</item>
 /// <item>the same read WITH a company header is bound to that company (the drill-down);</item>
 /// <item>a GET changes nothing: the second read is identical and no account row moves.</item>
 /// </list>
@@ -32,9 +39,16 @@ public sealed class CounterpartyCompanyRelationshipsReadAcceptanceTests(GoymenEr
     private const string ContractHeader = "X-ERP-Counterparty-Contract";
     private const string ContractVersion = "optional-trade-roles-v1";
 
+    // Seeded bootstrap users no other case in this class uses. Their extra assignments are
+    // created by PrepareMixedScopeActorsAsync in this class's own in-memory identity store.
+    private const string MemberWithoutReadInB = TestUsers.CompanyAViewer;
+    private const string NarrowReadInB = TestUsers.SiteAuditReader;
+
     private static readonly Guid PartyId = Guid.Parse("53000000-0000-0000-0000-000000000001");
     private static readonly Guid AccountAId = Guid.Parse("54000000-0000-0000-0000-000000000001");
     private static readonly Guid AccountBId = Guid.Parse("54000000-0000-0000-0000-000000000002");
+    private static readonly Guid PartiesReaderRoleId = Guid.Parse("55000000-0000-0000-0000-000000000001");
+    private static readonly Guid MemberRoleId = Guid.Parse("55000000-0000-0000-0000-000000000002");
 
     [Fact]
     public async Task Group_read_lists_every_authorized_company_account_with_its_own_state()
@@ -102,6 +116,51 @@ public sealed class CounterpartyCompanyRelationshipsReadAcceptanceTests(GoymenEr
         Assert.DoesNotContain(otherAccountId.ToString("D"), body, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Membership is not read authority (FİNANS #267 P2-1). Company B is in this actor's
+    /// directory through a role that carries no <c>counterparty.parties.read</c>; read is
+    /// company-wide only in A. Only the per-company check can keep B out of the answer.
+    /// </summary>
+    [Fact]
+    public async Task Group_read_lists_no_member_company_without_parties_read()
+    {
+        await PrepareScenarioAsync();
+        await PrepareMixedScopeActorsAsync();
+        using var client = ContractClient(MemberWithoutReadInB);
+        await AssertDirectoryListsBothCompaniesAsync(client);
+
+        using var response = await client.GetAsync($"/api/v1/counterparties/{PartyId}");
+
+        await AssertOnlyCompanyAAccountAsync(response);
+    }
+
+    /// <summary>
+    /// Only a COMPANY-WIDE grant counts (ÜRÜN #267 P2-2). The actor reads company-wide in A and
+    /// only site-scoped in B: the header-less read lists A alone, and the drill-down into B is
+    /// the same non-disclosing 404 a missing record gets.
+    /// </summary>
+    [Fact]
+    public async Task Group_read_lists_no_company_where_parties_read_is_narrow()
+    {
+        await PrepareScenarioAsync();
+        await PrepareMixedScopeActorsAsync();
+        using var client = ContractClient(NarrowReadInB);
+        await AssertDirectoryListsBothCompaniesAsync(client);
+
+        using var response = await client.GetAsync($"/api/v1/counterparties/{PartyId}");
+        await AssertOnlyCompanyAAccountAsync(response);
+
+        using var drillDownClient = ContractClient(NarrowReadInB, TestCompanyIds.CompanyB);
+        using var drillDown = await drillDownClient.GetAsync($"/api/v1/counterparties/{PartyId}");
+        var drillDownBody = await drillDown.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.NotFound, drillDown.StatusCode);
+        using var problem = JsonDocument.Parse(drillDownBody);
+        Assert.Equal(
+            CounterpartyProblemCodesV1.NotFound,
+            problem.RootElement.GetProperty("code").GetString());
+        Assert.DoesNotContain(AccountBId.ToString("D"), drillDownBody, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public async Task Drill_down_read_with_a_company_header_is_bound_to_that_company()
     {
@@ -143,6 +202,32 @@ public sealed class CounterpartyCompanyRelationshipsReadAcceptanceTests(GoymenEr
         {
             Assert.Fail($"Expected 200, got {(int)response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
         }
+    }
+
+    private static async Task AssertDirectoryListsBothCompaniesAsync(HttpClient client)
+    {
+        // The precondition that makes the case mean something: B IS in this actor's directory.
+        using var response = await client.GetAsync("/api/v1/organization/companies");
+        await AssertOkAsync(response);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var companyIds = json.RootElement
+            .EnumerateArray()
+            .Select(company => company.GetProperty("id").GetGuid())
+            .ToArray();
+        Assert.Contains(TestCompanyIds.CompanyA, companyIds);
+        Assert.Contains(TestCompanyIds.CompanyB, companyIds);
+    }
+
+    private static async Task AssertOnlyCompanyAAccountAsync(HttpResponseMessage response)
+    {
+        await AssertOkAsync(response);
+        var body = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(body);
+        var account = Assert.Single(json.RootElement.GetProperty("companyAccounts").EnumerateArray());
+        Assert.Equal(TestCompanyIds.CompanyA, account.GetProperty("companyId").GetGuid());
+        Assert.Equal(AccountAId, account.GetProperty("id").GetGuid());
+        Assert.DoesNotContain(TestCompanyIds.CompanyB.ToString("D"), body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(AccountBId.ToString("D"), body, StringComparison.OrdinalIgnoreCase);
     }
 
     private HttpClient ContractClient(string userId, Guid? companyId = null)
@@ -231,5 +316,81 @@ public sealed class CounterpartyCompanyRelationshipsReadAcceptanceTests(GoymenEr
             dbContext.CompanyPartyAccounts.Add(accountB);
             await dbContext.SaveChangesAsync();
         }
+    }
+
+    /// <summary>
+    /// Test-local roles and assignments for the two mixed-scope actors. Nothing shared moves:
+    /// no seed file, no system role, no actor another case here uses. Runs once per fixture.
+    /// </summary>
+    private async Task PrepareMixedScopeActorsAsync()
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+        if (await identity.Roles.AnyAsync(role => role.Id == PartiesReaderRoleId))
+        {
+            return;
+        }
+
+        var organization = scope.ServiceProvider.GetRequiredService<OrganizationDbContext>();
+        var companyBSiteId = await organization.Sites
+            .IgnoreQueryFilters()
+            .Where(site => site.CompanyId == TestCompanyIds.CompanyB)
+            .OrderBy(site => site.Id)
+            .Select(site => site.Id)
+            .FirstAsync();
+
+        var partiesReader = new RoleDefinition(
+            PartiesReaderRoleId,
+            "TEST_RELATIONSHIPS_PARTIES_READER",
+            "İlişkiler Cari Okuma Test Rolü",
+            isSystem: false);
+        partiesReader.AddPermission(ErpPermissions.CounterpartyPartiesRead);
+        // Company membership through a role that holds no counterparty permission at all.
+        var member = new RoleDefinition(
+            MemberRoleId,
+            "TEST_RELATIONSHIPS_MEMBER",
+            "İlişkiler Üyelik Test Rolü",
+            isSystem: false);
+        member.AddPermission(ErpPermissions.OrganizationContextRead);
+        identity.Roles.AddRange(partiesReader, member);
+
+        var memberWithoutRead = await UserIdOfAsync(identity, MemberWithoutReadInB);
+        identity.RoleAssignments.AddRange(
+            Assignment(memberWithoutRead, PartiesReaderRoleId, TestCompanyIds.CompanyA, AccessScopeType.Company, TestCompanyIds.CompanyA),
+            Assignment(memberWithoutRead, MemberRoleId, TestCompanyIds.CompanyB, AccessScopeType.Company, TestCompanyIds.CompanyB));
+
+        var narrowRead = await UserIdOfAsync(identity, NarrowReadInB);
+        identity.RoleAssignments.AddRange(
+            Assignment(narrowRead, PartiesReaderRoleId, TestCompanyIds.CompanyA, AccessScopeType.Company, TestCompanyIds.CompanyA),
+            Assignment(narrowRead, PartiesReaderRoleId, TestCompanyIds.CompanyB, AccessScopeType.Site, companyBSiteId));
+
+        await identity.SaveChangesAsync();
+    }
+
+    private static async Task<Guid> UserIdOfAsync(IdentityDbContext identity, string subject)
+    {
+        return await identity.ExternalIdentities
+            .Where(external => external.Subject == subject)
+            .Select(external => external.UserId)
+            .SingleAsync();
+    }
+
+    private static RoleAssignment Assignment(
+        Guid userId,
+        Guid roleId,
+        Guid companyId,
+        AccessScopeType scopeType,
+        Guid scopeId)
+    {
+        var assignment = new RoleAssignment(
+            Guid.NewGuid(),
+            userId,
+            roleId,
+            companyId,
+            DateTimeOffset.UtcNow.AddMinutes(-1),
+            null,
+            null);
+        assignment.AddScope(scopeType, scopeId);
+        return assignment;
     }
 }
