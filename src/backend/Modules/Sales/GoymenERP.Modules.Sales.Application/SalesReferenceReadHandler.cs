@@ -201,10 +201,10 @@ public sealed class SalesReferenceReadHandler(
         SalesReferenceReadResult<T> failure, CancellationToken cancellationToken) where T : class =>
         await StillAuthorizedAsync(scope, permission, cancellationToken) ? failure : Failure<T>(403);
 
-    // Counted in runes, like the Cari list parser. The route still counts UTF-16 units
-    // today, so it is the stricter of the two until the central item-5 change lands;
-    // after that both count runes and this bound is no longer the one that refuses a
-    // search the route accepted.
+    // Counted in runes, like the Cari list parser. The accounts route already normalizes q
+    // the same way (SalesEndpoints.TryNormalizeAccountSearch: trimmed, FormC, blank means no
+    // search) and refuses more than 200 runes, so over HTTP this bound never refuses a search
+    // the route accepted. It stays as the defence for callers that do not go through the route.
     private static bool WithinSearchBound(string? query) =>
         query is null || query.EnumerateRunes().Count() <= SearchRuneLimit;
 

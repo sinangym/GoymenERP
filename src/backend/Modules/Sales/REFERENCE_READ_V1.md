@@ -113,14 +113,15 @@ IDs/query 400 validation_failed; invalid cursor 400 invalid_cursor. Cancellation
 propagates. No provider internals or arbitrary error text leak.
 
 Parser: strict UUID and YYYY-MM-DD dates, required product version/unit,
-pageSize1-100, q up to200 UTF-16 code units at the route, cursor up to8192; reject
-unknown/repeated query fields. The handler rechecks the cursor bound and counts q in
-runes, like the Cari list parser; it also refuses an expectedProductVersion that the
-owner's own rule (ProductVersion.Parse: positive, no leading zero, inside Int64)
-cannot parse, with 400 validation_failed and no owner read. Accounts q is forwarded
-as received; normalization and the route's own 200-rune limit are the central
-writer's separate item-5 change (7063843). Until that lands the route's UTF-16 bound
-is the stricter of the two, so it decides; after it both count runes. Context/company
+pageSize1-100, q up to200 runes at the route, cursor up to8192; reject
+unknown/repeated query fields. The accounts route normalizes q like the Cari list's
+CounterpartyPageQueryParser (SalesEndpoints.TryNormalizeAccountSearch: trimmed, Unicode
+FormC, empty or whitespace-only means no search) before the handler sees it. The handler
+rechecks the cursor bound and counts q in runes as well, a defence for callers that do
+not go through the route; over HTTP it never refuses a search the route accepted. It
+also refuses an expectedProductVersion that the owner's own rule (ProductVersion.Parse:
+positive, no leading zero, inside Int64) cannot parse, with 400 validation_failed and no
+owner read. Context/company
 header and current request/session follow the existing
 platform boundary. The route handlers set `Cache-Control: private, no-store` and
 `Pragma: no-cache`. No side effects, idempotency key or mutation capability is
