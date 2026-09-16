@@ -162,11 +162,53 @@ public sealed class ProductSalesEligibilityServiceTests
         Assert.Equal([(StockUnitId, On), (SalesUnitId, On)], world.Settings.Requests);
     }
 
+    [Theory]
+    [InlineData("stock-not-kilogram", "references.units.stock")]
+    [InlineData("stock-expired", "references.units.stock")]
+    [InlineData("sales-inactive", "references.units.sales")]
+    [InlineData("sales-not-yet-effective", "references.units.sales")]
+    public async Task Owner_profile_that_cannot_be_used_on_the_date_rejects_the_reference(string fault, string field)
+    {
+        // A business answer about a well-formed profile: an error the consumer reports as a
+        // rejected selection, never an exception it would report as an unavailable provider.
+        var world = new World();
+        switch (fault)
+        {
+            case "stock-not-kilogram": world.Settings.KilogramUnits.Clear(); break;
+            case "stock-expired": world.Settings.Shape = (unit, p) => unit == StockUnitId ? p with { EffectiveThrough = On.AddDays(-1) } : p; break;
+            case "sales-inactive": world.Settings.Shape = (unit, p) => unit == SalesUnitId ? p with { IsActive = false } : p; break;
+            default: world.Settings.Shape = (unit, p) => unit == SalesUnitId ? p with { EffectiveFrom = On.AddDays(1) } : p; break;
+        }
+
+        var result = await world.Service().EvaluateAsync(Selection, default);
+        AssertRejected(result, field, "invalid_reference");
+    }
+
     [Fact]
-    public async Task Stock_unit_without_owner_kilogram_identity_cannot_pass()
+    public async Task Both_unusable_profiles_are_reported_together()
     {
         var world = new World();
         world.Settings.KilogramUnits.Clear();
+        world.Settings.Shape = (unit, p) => unit == SalesUnitId ? p with { IsActive = false } : p;
+        var result = await world.Service().EvaluateAsync(Selection, default);
+        Assert.Null(result.Snapshot);
+        Assert.Equal([("references.units.stock", "invalid_reference"), ("references.units.sales", "invalid_reference")],
+            result.Errors.Select(error => (error.Field, error.Code)));
+    }
+
+    [Theory]
+    [InlineData("reversed-window")]
+    [InlineData("empty-profile-id")]
+    [InlineData("foreign-company")]
+    public async Task Corrupt_provider_profile_stays_an_invalid_profile_exception(string fault)
+    {
+        var world = new World();
+        world.Settings.Shape = fault switch
+        {
+            "reversed-window" => (_, p) => p with { EffectiveThrough = p.EffectiveFrom.AddDays(-1) },
+            "empty-profile-id" => (_, p) => p with { Profile = p.Profile with { ProfileId = Guid.Empty } },
+            _ => (_, p) => p with { CompanyId = Guid.NewGuid() },
+        };
         var error = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() => world.Service().EvaluateAsync(Selection, default));
         Assert.Equal("settings_profile_invalid", error.Code);
     }
@@ -221,6 +263,59 @@ public sealed class ProductSalesEligibilityServiceTests
         if (fail) world.Settings.Failure = new SettingsPrerequisiteException("settings_provider_unavailable");
         var error = await Assert.ThrowsAsync<ProductOperationException>(() => world.Service().EvaluateAsync(Selection, default));
         Assert.Equal(403, error.StatusCode);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Scope_change_during_the_sales_unit_profile_read_alone_hides_its_result(bool fail)
+    {
+        // The stock read completes under the original caller; only the second read sees the
+        // change, so only a fence around that read can catch it (the adapter checks company,
+        // not actor).
+        var world = new World();
+        world.Settings.DuringUnit = SalesUnitId;
+        world.Settings.During = () => world.Change("actor");
+        if (fail) world.Settings.Failure = new SettingsPrerequisiteException("settings_provider_unavailable");
+        var error = await Assert.ThrowsAsync<ProductOperationException>(() => world.Service().EvaluateAsync(Selection, default));
+        Assert.Equal((403, ProductSalesEligibilityService.AccessDeniedCode), (error.StatusCode, error.Code));
+        Assert.Equal([(StockUnitId, On), (SalesUnitId, On)], world.Settings.Requests);
+    }
+
+    [Fact]
+    public async Task Conflicts_are_field_errors_on_the_result_and_arrive_together()
+    {
+        // Channel pin: a stale version and a non-Active product are answers, not exceptions;
+        // in particular Product.Domain's ProductVersionConflictException is never thrown here.
+        var world = new World { Record = StoredProduct(lifecycle: 0) };
+        var result = await world.Service().EvaluateAsync(Selection with { ExpectedProductVersion = "1" }, default);
+        Assert.Null(result.Snapshot);
+        Assert.Contains(result.Errors, error => (error.Field, error.Code) == ("expectedProductVersion", ProductApiV1.VersionConflict));
+        Assert.Contains(result.Errors, error => (error.Field, error.Code) == ("productId", ProductApiV1.LifecycleConflict));
+    }
+
+    [Theory]
+    [InlineData("lifecycle")]
+    [InlineData("missing-references")]
+    [InlineData("malformed-references")]
+    [InlineData("code")]
+    [InlineData("name")]
+    public async Task Stored_record_that_cannot_be_restored_is_an_integrity_fault_on_one_channel(string fault)
+    {
+        var stored = StoredProduct();
+        var world = new World
+        {
+            Record = fault switch
+            {
+                "lifecycle" => stored with { Lifecycle = 99 },
+                "missing-references" => stored with { ReferencesJson = "null" },
+                "malformed-references" => stored with { ReferencesJson = "{" },
+                "code" => stored with { Code = "not-a-code" },
+                _ => stored with { Name = " " },
+            },
+        };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => world.Service().EvaluateAsync(Selection, default));
+        Assert.Equal(0, world.Family.Calls);
     }
 
     [Fact]
@@ -341,6 +436,9 @@ public sealed class ProductSalesEligibilityServiceTests
         public HashSet<Guid> KilogramUnits { get; } = [StockUnitId];
         public List<(Guid, DateOnly)> Requests { get; } = [];
         public Action? During { get; set; }
+        /// <summary>When set, <see cref="During"/> and <see cref="Failure"/> apply to this unit's read only.</summary>
+        public Guid? DuringUnit { get; set; }
+        public Func<Guid, UnitProfileV1, UnitProfileV1>? Shape { get; set; }
         public Exception? Failure { get; set; }
         public int Calls => Requests.Count;
 
@@ -356,8 +454,10 @@ public sealed class ProductSalesEligibilityServiceTests
             var profile = new UnitProfileV1(company.CompanyId, unitId, unitId == StockUnitId ? "synthetic-kg" : "synthetic-sales",
                 "synthetic-mass", KilogramUnits.Contains(unitId), new(ProfileIdFor(unitId), 9007199254740993L), 3, true,
                 effectiveOn.AddDays(-1), null);
-            During?.Invoke();
-            return Failure is null ? Task.FromResult(profile) : Task.FromException<UnitProfileV1>(Failure);
+            if (Shape is not null) profile = Shape(unitId, profile);
+            var applies = DuringUnit is null || DuringUnit == unitId;
+            if (applies) During?.Invoke();
+            return Failure is null || !applies ? Task.FromResult(profile) : Task.FromException<UnitProfileV1>(Failure);
         }
 
         public Task<MoneyProfileV1> GetMoneyProfileAsync(Guid currencyId, string operation, DateOnly effectiveOn,

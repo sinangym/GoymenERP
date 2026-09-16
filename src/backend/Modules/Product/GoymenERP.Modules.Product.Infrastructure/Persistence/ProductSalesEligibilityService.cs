@@ -32,6 +32,9 @@ public interface IProductSalesRecordReader
 /// unit profiles (stock must be kilogram) → snapshot. Every awaited result, success or
 /// failure, is released only after the same company/actor is re-verified.
 ///
+/// Which outcome travels on which channel is part of the port contract; see
+/// <see cref="IProductSalesEligibilityV1"/>.
+///
 /// Fail-closed limits at this base: only the Product's own sales unit may be ordered,
 /// because no accepted offered-unit/conversion policy exists (U-08); and no family rule
 /// set is accepted, so the shipped policy makes every otherwise-valid selection 503.
@@ -57,7 +60,7 @@ public sealed class ProductSalesEligibilityService(ICompanyContext companyContex
             () => records.ReadForSalesSelectionAsync(scope, selection.ProductId, cancellationToken), cancellationToken);
         if (record is null) return Rejected("productId", "invalid_reference");
 
-        var card = new ProductCardView(ProductDraftView.FromProduct(record.RestoreProduct()), record.RestoreReferences());
+        var card = Restore(record);
         var local = ProductSalesPreconditions.Check(card, selection);
         if (local.Count > 0) return new(null, local);
 
@@ -77,9 +80,33 @@ public sealed class ProductSalesEligibilityService(ICompanyContext companyContex
             () => unitProfiles.ReadAsync(salesUnitId, selection.EffectiveOn, requiresKilogram: false, cancellationToken),
             cancellationToken);
 
-        var salesReference = Reference(sales);
+        // A well-formed profile the owner says cannot be used on this date (inactive, out of
+        // window, stock not kilogram) rejects the reference; it is not an unavailable provider.
+        var unusable = new List<ProductFieldError>();
+        if (!stock.IsUsable) unusable.Add(new("references.units.stock", "invalid_reference"));
+        if (!sales.IsUsable) unusable.Add(new("references.units.sales", "invalid_reference"));
+        if (unusable.Count > 0) return new(null, unusable);
+
+        var salesReference = Reference(sales.Profile);
         return new(new ProductSalesSnapshotV1(card.Product.Id, card.Product.Version, card.Product.Code,
-            card.Product.Name, Reference(stock), salesReference, salesReference, selection.EffectiveOn), []);
+            card.Product.Name, Reference(stock.Profile), salesReference, salesReference, selection.EffectiveOn), []);
+    }
+
+    /// <summary>
+    /// A stored record that cannot be restored is an integrity fault, reported on one
+    /// channel: the Domain's own argument and the JSON reader's failures are folded into
+    /// <see cref="InvalidOperationException"/> so no corrupt value reads as a rejection.
+    /// </summary>
+    private static ProductCardView Restore(ProductStoredRecord record)
+    {
+        try
+        {
+            return new ProductCardView(ProductDraftView.FromProduct(record.RestoreProduct()), record.RestoreReferences());
+        }
+        catch (Exception exception) when (exception is ArgumentException or System.Text.Json.JsonException)
+        {
+            throw new InvalidOperationException("The stored Product record could not be restored.", exception);
+        }
     }
 
     private async Task<T> FencedAsync<T>(ProductSalesReadScope scope, Func<Task<T>> read,

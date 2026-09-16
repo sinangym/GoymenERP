@@ -261,12 +261,46 @@ Order and outcomes:
 | Step | Outcome |
 |---|---|
 | Scope missing/foreign | `ProductOperationException` 403 `product_access_denied`, before any read |
+| Company/actor changed during any read | `ProductOperationException` 403 `product_access_denied`, replacing that read's result or failure |
+| Stored record cannot be restored | `InvalidOperationException` |
 | Product missing / empty id | error `productId invalid_reference` |
 | Draft or Inactive, unknown/false sellable, stale version, missing stock/sales unit | `ProductSalesPreconditions` errors |
 | Order unit is not the Product's own sales unit | error `orderUnitId unsupported_order_unit` |
-| Family-required rules | `IProductFamilyRequirementPolicyV1`; the shipped policy throws 503 `product_family_policy_unavailable` |
-| Stock/sales unit profiles | Settings via `ProductUnitProfileAdapter`; stock must be the owner's kilogram profile |
+| Family-required rules | `IProductFamilyRequirementPolicyV1`; the shipped policy throws 503 `product_family_policy_unavailable`; a null answer is 503 `product_family_policy_invalid` |
+| Stock/sales unit profile inactive, not effective on the date, or stock not kilogram | error `references.units.stock` / `references.units.sales` `invalid_reference` |
+| Settings provider failure | `SettingsPrerequisiteException` with the provider's code (`settings_access_denied`, `settings_provider_unavailable`, …); `settings_profile_invalid` only for malformed, foreign or self-contradictory profile data |
 | All pass | `ProductSalesSnapshotV1` with the owner's exact profile ids/versions; order unit = sales unit |
+
+### Error channel
+
+The channel is part of the port contract (`IProductSalesEligibilityV1` documents it and
+`ProductSalesEligibilityServiceTests` pins it). A result with `Errors` is the owner's answer about
+this selection; an exception is not.
+
+Codes that arrive in `Errors` at this base:
+
+| Field | Codes |
+|---|---|
+| `productId` | `invalid_reference`, `lifecycle_conflict`, `not_sellable` |
+| `expectedProductVersion` | `version_conflict`, `invalid_version` |
+| `references.units.stock`, `references.units.sales` | `invalid_reference` (binding missing, or the owner's profile cannot be used on `EffectiveOn`) |
+| `orderUnitId` | `invalid_reference`, `unsupported_order_unit` |
+| family policy fields | whatever an accepted family policy returns (none is accepted) |
+
+- `version_conflict` and `lifecycle_conflict` arrive in `Errors`; neither is thrown, and
+  Product.Domain's `ProductVersionConflictException` never crosses this read path.
+- Several errors can arrive together and their order carries no precedence. The consumer maps
+  them. Sales (#262, decision in issuecomment-5687324032): `version_conflict` anywhere in the
+  list is 409 `product_selection_changed`; any other error, `lifecycle_conflict` included, is 422
+  `unsupported_product`. An unusable unit profile therefore reaches a Sales client as 422
+  `unsupported_product`, not as Sales's own `unsupported_unit`; Product does not publish a
+  separate unit code.
+- `SettingsPrerequisiteException` reaches the consumer unchanged, after the same company/actor
+  fence as every other read. Sales maps `settings_access_denied` to 403 and every other Settings
+  code to 503 `settings_provider_unavailable`, which is why business-level profile answers are
+  errors and not this exception.
+- `InvalidOperationException` (corrupt stored record) and `OperationCanceledException` are not
+  owner outcomes; the platform handles them.
 
 Fail-closed limits at this base, not policy choices:
 
@@ -276,8 +310,10 @@ Fail-closed limits at this base, not policy choices:
 - There is no activation command, so real rows are Draft and are rejected with
   `lifecycle_conflict`.
 - The runtime is not yet composed in the API host. Host wiring (DI, the reviewed-source
-  fingerprint and its composition test) is requested from the central writer; until then
-  Sales resolves no runtime and answers 503.
+  fingerprint and its composition test) is requested from the central writer. Until then the
+  Sales product read never reaches this runtime: with its default binding (no product selector
+  permission) it answers 403 before looking for a runtime, and only once that permission is
+  bound would a missing runtime answer 503 `product_provider_unavailable`.
 
 Candidate/offered-unit enumeration for a company user is not implemented: without an accepted
 family policy its only honest answer would be 503.
