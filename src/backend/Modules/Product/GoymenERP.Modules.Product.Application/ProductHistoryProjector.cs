@@ -9,6 +9,11 @@ namespace GoymenERP.Modules.Product.Application;
 /// Fails closed: an event that does not belong to the Product, has an unknown operation,
 /// an inconsistent version transition, out-of-order time or a snapshot that contradicts
 /// its own envelope is an integrity fault, never a silently skipped or repaired row.
+///
+/// The records are also checked AGAINST EACH OTHER, because a per-record check cannot see
+/// a missing event: the list must be one unbroken version chain, and an uncut list must
+/// reach back to the creation event. Without those two rules a history with a hole, or one
+/// that starts in the middle, is returned as if it were the whole story.
 /// </summary>
 public static class ProductHistoryProjector
 {
@@ -30,6 +35,24 @@ public static class ProductHistoryProjector
                 throw Invalid();
             previous = record.OccurredAtUtc;
             entries.Add(Entry(productId, record));
+        }
+
+        // ONE CHAIN, newest first: every record's predecessor is the next older record.
+        // A gap (a missing 2 -> 3), a creation event that is not the oldest, and equal-time
+        // records in the wrong order all break this equality; each of them would otherwise
+        // read as a complete history. No per-record rule can see any of the three.
+        for (var i = 0; i + 1 < records.Length; i++)
+        {
+            if (records[i].VersionBefore != records[i + 1].VersionAfter) throw Invalid();
+        }
+
+        // An UNCUT list reaches back to the creation event. Only the page cut may hide it,
+        // and that case is reported separately as Truncated. A creation is version 1 by the
+        // per-record rule above, so the operation is the whole test here.
+        if (!truncated && records.Length > 0
+            && records[^1].Operation != ProductHistoryApiV1.DraftCreate)
+        {
+            throw Invalid();
         }
 
         return new(productId, entries, truncated);

@@ -1,3 +1,4 @@
+using System.Globalization;
 using GoymenERP.Modules.Product.Application.Contracts;
 
 namespace GoymenERP.Modules.Product.Application;
@@ -24,6 +25,23 @@ public sealed class ProductHistoryReader(IProductService products, IProductAudit
         // A Product always has its creation event. An empty history for an existing card is an
         // audit integrity gap, not "nothing happened".
         if (history.Entries.Count == 0) throw new InvalidOperationException("The Product has no recorded history.");
+
+        // The newest recorded version must at least reach the card this caller just read.
+        // GREATER is legitimate: an edit can commit between the two reads. SMALLER means the
+        // newest events are missing, which no per-record or chain rule can see — the chain is
+        // intact, it just stops early. This reader is the only layer holding both the card
+        // and the events, so the comparison belongs here.
+        if (!TryVersion(card.Product.Version, out var cardVersion)
+            || !TryVersion(history.Entries[0].VersionAfter, out var newest)
+            || newest < cardVersion)
+        {
+            throw new InvalidOperationException("The Product history does not reach the card's version.");
+        }
+
         return history;
     }
+
+    /// <summary>A stored version is a positive int64 in canonical decimal form, never a double.</summary>
+    private static bool TryVersion(string value, out long parsed) =>
+        long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out parsed) && parsed >= 1;
 }
