@@ -50,26 +50,38 @@ public sealed class ProductHistoryTests
     {
         var before = Card(1, units: null);
         var after = Card(2, units: new(Stock: null));
-        var history = ProductHistoryProjector.Project(ProductId, [Edit(before, after, T0, "Birim bağı")]);
+        var history = ProductHistoryProjector.Project(ProductId,
+            [Edit(before, after, T0.AddMinutes(1), "Birim bağı"), Create(before, T0)]);
         Assert.Empty(history.Entries[0].ChangedFields);
     }
 
     [Fact]
     public void Role_provenance_change_is_a_change_even_when_the_value_is_the_same()
     {
+        var unchangedCreate = Card(1, sellable: new(null, "not-evaluated"));
         var history = ProductHistoryProjector.Project(ProductId,
-            [Edit(Card(1, sellable: new(null, "not-evaluated")), Card(2, sellable: new(null, "not-evaluated")) with { }, T0, "x"),]);
+        [
+            Edit(unchangedCreate, Card(2, sellable: new(null, "not-evaluated")) with { }, T0.AddMinutes(1), "x"),
+            Create(unchangedCreate, T0),
+        ]);
         Assert.Empty(history.Entries[0].ChangedFields);
+        var changedCreate = Card(1, sellable: new(false, "manual"));
         var changed = ProductHistoryProjector.Project(ProductId,
-            [Edit(Card(1, sellable: new(false, "manual")), Card(2, sellable: new(false, "derived")), T0, "x")]);
+        [
+            Edit(changedCreate, Card(2, sellable: new(false, "derived")), T0.AddMinutes(1), "x"),
+            Create(changedCreate, T0),
+        ]);
         Assert.Equal(["roles.sellable"], changed.Entries[0].ChangedFields);
     }
 
     [Fact]
     public void Versions_above_javascript_precision_stay_lossless_strings()
     {
+        // A history this far from v1 can only be a cut list: an uncut one must reach the
+        // creation event, and 9 quadrillion edits do not fit in a page.
         var history = ProductHistoryProjector.Project(ProductId,
-            [Edit(Card(9007199254740992), Card(9007199254740993), T0, "Sürüm")]);
+            Descending(9007199254740993, ProductHistoryApiV1.PageSize + 1));
+        Assert.True(history.Truncated);
         Assert.Equal(("9007199254740992", "9007199254740993"), (history.Entries[0].VersionBefore, history.Entries[0].VersionAfter));
     }
 
@@ -83,6 +95,18 @@ public sealed class ProductHistoryTests
         Assert.True(history.Truncated);
         Assert.Equal(ProductHistoryApiV1.PageSize, history.Entries.Count);
         Assert.Equal("101", history.Entries[0].VersionAfter);
+    }
+
+    [Fact]
+    public void Exactly_one_page_is_the_whole_history_and_one_more_is_cut()
+    {
+        var full = ProductHistoryProjector.Project(ProductId, Complete(ProductHistoryApiV1.PageSize - 1));
+        Assert.False(full.Truncated);
+        Assert.Equal(ProductHistoryApiV1.PageSize, full.Entries.Count);
+
+        var cut = ProductHistoryProjector.Project(ProductId, Complete(ProductHistoryApiV1.PageSize));
+        Assert.True(cut.Truncated);
+        Assert.Equal(ProductHistoryApiV1.PageSize, cut.Entries.Count);
     }
 
     [Theory]
@@ -102,6 +126,10 @@ public sealed class ProductHistoryTests
     [InlineData("out-of-order")]
     [InlineData("duplicate-event")]
     [InlineData("empty-event-id")]
+    [InlineData("missing-create-untruncated")]
+    [InlineData("version-gap-between-entries")]
+    [InlineData("equal-time-reverse-order")]
+    [InlineData("create-not-oldest")]
     public void Integrity_faults_fail_closed_instead_of_being_skipped(string fault)
     {
         var create = Create(Card(1), T0);
@@ -113,16 +141,32 @@ public sealed class ProductHistoryTests
             "create-with-before-version" => [create with { VersionBefore = 0 }],
             "create-not-version-1" => [Create(Card(2), T0) with { VersionAfter = 2 }],
             "create-with-before-snapshot" => [create with { BeforeJson = Json(Card(1)) }],
-            "edit-version-gap" => [Edit(Card(1), Card(3), T0, "x") with { VersionAfter = 3 }],
-            "edit-without-before-version" => [edit with { VersionBefore = null }],
-            "after-snapshot-version" => [edit with { AfterJson = Json(Card(5)) }],
-            "before-snapshot-product" => [edit with { BeforeJson = Json(Card(1) with { Product = Card(1).Product with { Id = Guid.NewGuid() } }) }],
-            "malformed-json" => [edit with { AfterJson = "{" }],
-            "missing-references" => [edit with { AfterJson = """{"product":{"id":"59c57d4c-9890-4dad-823c-b3b4030b42d1","version":"2"}}""" }],
-            "blank-reason" => [edit with { Reason = " " }],
-            "non-utc" => [edit with { OccurredAtUtc = new DateTimeOffset(2026, 9, 13, 3, 0, 0, TimeSpan.FromHours(3)) }],
+            "edit-version-gap" => [Edit(Card(1), Card(3), T0, "x") with { VersionAfter = 3 }, create],
+            "edit-without-before-version" => [edit with { VersionBefore = null }, create],
+            "after-snapshot-version" => [edit with { AfterJson = Json(Card(5)) }, create],
+            "before-snapshot-product" =>
+                [edit with { BeforeJson = Json(Card(1) with { Product = Card(1).Product with { Id = Guid.NewGuid() } }) }, create],
+            "malformed-json" => [edit with { AfterJson = "{" }, create],
+            "missing-references" =>
+                [edit with { AfterJson = """{"product":{"id":"59c57d4c-9890-4dad-823c-b3b4030b42d1","version":"2"}}""" }, create],
+            "blank-reason" => [edit with { Reason = " " }, create],
+            "non-utc" =>
+            [
+                edit with { OccurredAtUtc = new DateTimeOffset(2026, 9, 13, 3, 0, 0, TimeSpan.FromHours(3)) },
+                create with { OccurredAtUtc = T0.AddHours(-1) },
+            ],
             "out-of-order" => [create, edit],
             "duplicate-event" => [edit, create with { EventId = edit.EventId }],
+            // The creation event is simply absent and the server did not cut the list.
+            "missing-create-untruncated" => [edit],
+            // 2 -> 3 never happened as far as this list is concerned.
+            "version-gap-between-entries" =>
+                [Edit(Card(3), Card(4), T0.AddMinutes(2), "x"), Edit(Card(1), Card(2), T0.AddMinutes(1), "y"), create],
+            // Same instant, reversed: the Audit owner orders equal times by a random Guid.
+            "equal-time-reverse-order" =>
+                [Edit(Card(1), Card(2), T0, "x"), Edit(Card(2), Card(3), T0, "y"), Create(Card(1), T0)],
+            // A creation in the middle of the list has events "before" the product existed.
+            "create-not-oldest" => [Create(Card(1), T0.AddMinutes(1)), Edit(Card(1), Card(2), T0, "x")],
             _ => [edit with { EventId = Guid.Empty }],
         };
         Assert.Throws<InvalidOperationException>(() => ProductHistoryProjector.Project(ProductId, records));
@@ -137,6 +181,37 @@ public sealed class ProductHistoryTests
         Assert.Equal(2, history.Entries.Count);
         Assert.Equal((ProductId, ProductHistoryApiV1.PageSize + 1), (audit.RequestedProduct, audit.RequestedLimit));
         Assert.Equal(1, products.Reads);
+    }
+
+    [Fact]
+    public async Task History_that_stops_before_the_card_version_is_an_integrity_fault()
+    {
+        // The chain is intact and reaches the creation event; it just stops early, so only
+        // the card can reveal that the newest events are missing.
+        var products = new Products(Card(3));
+        var audit = new Audit([Edit(Card(1), Card(2), T0.AddMinutes(1), "Gerekçe"), Create(Card(1), T0)]);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new ProductHistoryReader(products, audit).GetAsync(ProductId, default));
+    }
+
+    [Fact]
+    public async Task History_ahead_of_the_card_is_an_edit_between_the_two_reads_not_a_fault()
+    {
+        var products = new Products(Card(1));
+        var audit = new Audit([Edit(Card(1), Card(2), T0.AddMinutes(1), "Gerekçe"), Create(Card(1), T0)]);
+        var history = await new ProductHistoryReader(products, audit).GetAsync(ProductId, default);
+        Assert.Equal("2", history.Entries[0].VersionAfter);
+    }
+
+    [Fact]
+    public async Task Card_version_that_is_not_a_canonical_number_is_an_integrity_fault()
+    {
+        // "+1" is the same number to a lenient parser; a stored version is canonical decimal
+        // or nothing, because the comparison above decides whether newer events are missing.
+        var card = Card(1);
+        var products = new Products(card with { Product = card.Product with { Version = "+1" } });
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new ProductHistoryReader(products, new Audit([Create(Card(1), T0)])).GetAsync(ProductId, default));
     }
 
     [Fact]
@@ -175,6 +250,21 @@ public sealed class ProductHistoryTests
         Assert.Equal(404, error.StatusCode);
         Assert.Equal((0, 0), (products.Reads, audit.Reads));
     }
+
+    /// <summary>A whole history: <paramref name="edits"/> edits above the creation, newest first.</summary>
+    private static ProductAuditRecordV1[] Complete(int edits) =>
+    [
+        .. Enumerable.Range(0, edits)
+            .Select(i => Edit(Card(edits - i), Card(edits - i + 1), T0.AddMinutes(edits - i), $"Değişiklik {edits - i}")),
+        Create(Card(1), T0),
+    ];
+
+    /// <summary>Edits chaining down from <paramref name="newestAfter"/>, newest first, no creation.</summary>
+    private static ProductAuditRecordV1[] Descending(long newestAfter, int count) =>
+    [
+        .. Enumerable.Range(0, count)
+            .Select(i => Edit(Card(newestAfter - i - 1), Card(newestAfter - i), T0.AddMinutes(-i), $"Değişiklik {i}")),
+    ];
 
     private static ProductAuditRecordV1 Create(ProductCardView after, DateTimeOffset at) =>
         new(Guid.NewGuid(), ProductId, ProductHistoryApiV1.DraftCreate, at, null, long.Parse(after.Product.Version),

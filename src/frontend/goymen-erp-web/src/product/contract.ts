@@ -913,7 +913,18 @@ function decodeHistoryEntry(raw: unknown): ProductHistoryEntry | null {
   }
 }
 
-/** Decode a history, bound to the Product that was requested. */
+/**
+ * Decode a history, bound to the Product that was requested.
+ *
+ * Entry rules alone cannot see a MISSING event, so the entries are also read against each
+ * other: one unbroken version chain, and — unless the server says it cut the list — an
+ * oldest entry that is the creation. A history with a hole in it, or one that starts in
+ * the middle, otherwise reaches the screen as if it were the whole story.
+ *
+ * The card's own version is deliberately NOT compared here: this decoder is given the
+ * history alone, and the server's reader is the only layer that holds both. A history that
+ * stops short of the card fails there, before it is serialized.
+ */
 export function decodeProductHistory(raw: unknown, expectedId: string): ProductHistory | null {
   if (typeof raw !== 'object' || raw === null) return null
   const h = raw as Record<string, unknown>
@@ -934,5 +945,22 @@ export function decodeProductHistory(raw: unknown, expectedId: string): ProductH
     seen.add(entry.eventId)
     entries.push(entry)
   }
+
+  // ONE CHAIN: each entry's predecessor is the next older entry. A gap, a creation event
+  // that is not the oldest, and equal-time entries in the wrong order all break this.
+  for (let index = 0; index + 1 < entries.length; index += 1) {
+    if (entries[index].versionBefore !== entries[index + 1].versionAfter) return null
+  }
+
+  const oldest = entries[entries.length - 1]
+  if (h.truncated) {
+    // The server reports a cut only when it actually cut at the page size; a shorter list
+    // that still claims to be cut is drift, and it would hide the missing creation event.
+    if (entries.length !== HISTORY_PAGE_SIZE) return null
+  } else if (!(oldest.operation.known && oldest.operation.value === 'DraftCreate')) {
+    // An uncut list reaches back to the creation event (which the entry rules pin at 1).
+    return null
+  }
+
   return { productId: expectedId, entries, truncated: h.truncated }
 }
