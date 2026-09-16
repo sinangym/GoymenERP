@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient } from '@tanstack/react-query'
 import { RouterProvider, createMemoryRouter } from 'react-router'
@@ -8,6 +8,7 @@ import { shellRoutes } from './router'
 import { SHELL_CAPABILITY_CONTRACT_VERSION } from './api'
 import { useShellOrchestrator } from './useShellOrchestrator'
 import { useShellState } from './shellContext'
+import { ORGANIZATION_MOUNTED_NAV_LABEL, ORGANIZATION_MOUNTED_ROUTE } from '../organization/capabilities'
 
 const A_ID = 'aaaaaaaa-0000-0000-0000-000000000001'
 const B_ID = 'bbbbbbbb-0000-0000-0000-000000000002'
@@ -445,5 +446,45 @@ describe('SHELL-PILOT-01 company switch', () => {
     renderShell()
     await screen.findByText(/şirket bağlamı kurulamadı/i)
     expect(screen.queryByRole('combobox')).toBeNull()
+  })
+})
+
+describe('sidebar entries follow the server’s grant', () => {
+  /**
+   * The drift test pins the capability IDS. Nothing pinned that a mounted list route is
+   * also REACHABLE from the sidebar: dropping an id from `NAV_CAPABILITIES` left every test
+   * green (#268, mutant N2), while the `work-centers.read`-only user lost the only way in.
+   * So every Organization route the lane gives a nav label must be a sidebar link to that
+   * route once the server grants it — read from the lane's own tables, not restated here.
+   */
+  const labelled = Object.entries(ORGANIZATION_MOUNTED_NAV_LABEL).filter(([, label]) => label !== '')
+
+  function granted(capabilities: readonly string[]): Responder {
+    return () => json({ contractVersion: SHELL_CAPABILITY_CONTRACT_VERSION, generation: 'gen-a-1', capabilities })
+  }
+
+  it('shows every labelled Organization list as a sidebar link to its route when granted', async () => {
+    // Not a vacuous loop: the settings list and ORG-03's work centres are both labelled.
+    expect(labelled.map(([id]) => id)).toEqual(
+      expect.arrayContaining(['organization.sites.list', 'organization.work-centers.list']),
+    )
+    installFetch({ capabilities: granted(labelled.map(([id]) => id)) })
+    renderShell()
+
+    const nav = await screen.findByRole('navigation', { name: 'Modül navigasyonu' })
+    for (const [id, label] of labelled) {
+      const link = await within(nav).findByRole('link', { name: label })
+      expect(link.getAttribute('href')).toBe(ORGANIZATION_MOUNTED_ROUTE[id])
+    }
+  })
+
+  it('keeps İş Merkezleri out of the sidebar while the server has not granted it', async () => {
+    installFetch({ capabilities: granted(['organization.sites.list']) })
+    renderShell()
+
+    // The sidebar is drawn — its granted neighbour is there — before the absence is judged.
+    const nav = await screen.findByRole('navigation', { name: 'Modül navigasyonu' })
+    await within(nav).findByRole('link', { name: 'Organizasyon' })
+    expect(within(nav).queryByRole('link', { name: 'İş Merkezleri' })).toBeNull()
   })
 })

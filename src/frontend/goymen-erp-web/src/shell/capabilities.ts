@@ -182,8 +182,9 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   [CAPABILITY.productItemsDetail]: '',
   [CAPABILITY.productItemsEdit]: '',
   [CAPABILITY.organizationSitesList]: 'Organizasyon',
-  // Nor this one: the card is reached from a location row, never from the sidebar. So
-  // `NAV_CAPABILITIES` gains exactly ONE Organization entry when the routes are mounted.
+  // Nor this one: the card is reached from a location row, never from the sidebar. So the
+  // sidebar carries the Organization LIST routes only — the settings list and ORG-03's work
+  // centres, two entries — and never the card.
   [CAPABILITY.organizationLocationsDetail]: '',
   [CAPABILITY.organizationWorkCentersList]: 'İş Merkezleri',
 }

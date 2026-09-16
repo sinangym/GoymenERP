@@ -90,7 +90,7 @@ describe('shell ↔ Organization lane capability ids', () => {
     expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.organizationSitesList], url)).toBeNull()
   })
 
-  it('gives the card no nav entry, so the sidebar gains exactly one entry', () => {
+  it('gives the card no nav entry, so only list routes reach the sidebar', () => {
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.organizationSitesList]).toBe('Organizasyon')
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.organizationLocationsDetail]).toBe('')
   })
