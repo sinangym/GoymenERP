@@ -17,7 +17,6 @@
 
 import type { RouteObject } from 'react-router'
 import { CapabilityRoute } from '../shell/CapabilityRoute'
-import type { CapabilityId } from '../shell/capabilities'
 import {
   ORGANIZATION_CAPABILITY,
   ORGANIZATION_MOUNTED_ROUTE,
@@ -38,17 +37,7 @@ export const organizationRoutes: RouteObject[] = [
   {
     path: ORGANIZATION_MOUNTED_ROUTE[ORGANIZATION_CAPABILITY.workCenterList].slice(1),
     element: (
-      /*
-       * The cast is TEMPORARY and is the same one the ORG-01/ORG-02 routes carried
-       * before the shell mirrored their ids: `CapabilityRoute` types its prop as the
-       * shell's `CapabilityId` union, and `organization.work-centers.list` is not in
-       * that union until the shell owner applies WORKCENTER_SHELL_MOUNT_HANDOFF.md.
-       *
-       * It widens NOTHING at runtime. `hasCapability` compares the string against the
-       * server's snapshot either way, so an ungranted id closes this route exactly like
-       * any other. This lane removes the cast once the shell declares the id.
-       */
-      <CapabilityRoute capability={ORGANIZATION_CAPABILITY.workCenterList as CapabilityId}>
+      <CapabilityRoute capability={ORGANIZATION_CAPABILITY.workCenterList}>
         <WorkCenterListPage />
       </CapabilityRoute>
     ),

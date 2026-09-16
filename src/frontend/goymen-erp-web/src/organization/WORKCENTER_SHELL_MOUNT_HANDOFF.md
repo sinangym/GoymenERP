@@ -66,7 +66,7 @@ Yeni sıra, tek satırlık bir uyarlamayla:
    - `ORGANIZATION_NAV_LABEL` → `ORGANIZATION_MOUNTED_NAV_LABEL`
 
    İkisi de `src/organization/capabilities.ts`'te zaten export edilmiş durumda ve girdinin hangi geçiş tablosunda durduğundan bağımsız olarak doğru. Küme eşitliği kontrolü aynen kalır; yalnız karşılaştırdığı taraf değişir. Böylece testiniz sizin commit'inizde yeşil olur ve benim dosyalarıma dokunmanız gerekmez.
-2. **Benim takip commit'im** iki tabloyu birleştirir: `ORGANIZATION_ROUTE_AWAITING_SHELL` ve `ORGANIZATION_NAV_LABEL_AWAITING_SHELL` boşalır, `organizationMount.test.ts`'teki "hâlâ shell'i bekleyen tek route" beklentisi boş diziye döner ve `organizationRoutes.tsx`'teki geçici `as CapabilityId` cast'i kalkar. Birleşim tabloları değişmediği için, (1) inmiş olduğu sürece sizin drift testiniz bu commit'te de yeşil kalır.
+2. **Benim takip commit'im** iki tabloyu birleştirir: `ORGANIZATION_ROUTE_AWAITING_SHELL` ve `ORGANIZATION_NAV_LABEL_AWAITING_SHELL` boşalır, `organizationMount.test.ts`'teki "hâlâ shell'i bekleyen tek route" beklentisi boş diziye döner ve `organizationRoutes.tsx`'teki geçici `as CapabilityId` cast'i **artık kullanılmayan `CapabilityId` import'uyla birlikte** kalkar. Import kalırsa `noUnusedLocals` altında `tsc` TS6133 ile düşer; vitest bunu görmez (bulut Organizasyon ölçümü, #268 issuecomment-5701784768). Birleşim tabloları değişmediği için, (1) inmiş olduğu sürece sizin drift testiniz bu commit'te de yeşil kalır.
 
 **Sıra bağlayıcıdır: önce (1) iner; (2) ondan sonra ya da onunla aynı entegrasyonda.**
 

@@ -92,6 +92,7 @@ export type OrganizationCapabilityId =
 export const ORGANIZATION_ROUTE: Record<string, string> = {
   [ORGANIZATION_CAPABILITY.settingsList]: '/ayarlar/organizasyon',
   [ORGANIZATION_CAPABILITY.locationDetail]: '/ayarlar/organizasyon/lokasyon/:locationId',
+  [ORGANIZATION_CAPABILITY.workCenterList]: '/ayarlar/organizasyon/is-merkezleri',
 }
 
 /**
@@ -119,10 +120,12 @@ export const ORGANIZATION_ROUTE: Record<string, string> = {
  * AFTERWARDS is load-bearing. Emptying this table before the shell commit has landed
  * turns the shell's drift test red (measured), and this lane cannot repair a file it
  * does not own.
+ *
+ * EMPTY NOW: the shell commit declared `organization.work-centers.list`, so ORG-03 moved
+ * into the table above (handoff §4(2)). The table stays as the place the next route
+ * waits, and the union below reads it either way.
  */
-export const ORGANIZATION_ROUTE_AWAITING_SHELL: Record<string, string> = {
-  [ORGANIZATION_CAPABILITY.workCenterList]: '/ayarlar/organizasyon/is-merkezleri',
-}
+export const ORGANIZATION_ROUTE_AWAITING_SHELL: Record<string, string> = {}
 
 /**
  * Merges one of this lane's shell-handshake table PAIRS — the ids the shell already
@@ -152,6 +155,7 @@ export const ORGANIZATION_MOUNTED_ROUTE: Record<string, string> = mergeMountedTa
 export const ORGANIZATION_NAV_LABEL: Record<string, string> = {
   [ORGANIZATION_CAPABILITY.settingsList]: 'Organizasyon',
   [ORGANIZATION_CAPABILITY.locationDetail]: '',
+  [ORGANIZATION_CAPABILITY.workCenterList]: 'İş Merkezleri',
 }
 
 /**
@@ -161,10 +165,11 @@ export const ORGANIZATION_NAV_LABEL: Record<string, string> = {
  * the whole point of this slice is the user who holds `work-centers.read` WITHOUT it.
  * For that user a link that only exists inside ORG-01 is no link at all, so the work
  * centers are reached from the sidebar and the location card is reached from a row.
+ *
+ * EMPTY NOW, for the same reason as the route table: the label moved into
+ * `ORGANIZATION_NAV_LABEL` once the shell declared the id (handoff §4(2)).
  */
-export const ORGANIZATION_NAV_LABEL_AWAITING_SHELL: Record<string, string> = {
-  [ORGANIZATION_CAPABILITY.workCenterList]: 'İş Merkezleri',
-}
+export const ORGANIZATION_NAV_LABEL_AWAITING_SHELL: Record<string, string> = {}
 
 /**
  * Every nav-label decision this lane has made, whichever table currently holds it.

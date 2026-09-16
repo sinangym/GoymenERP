@@ -45,13 +45,15 @@ describe('the lane’s route tables', () => {
     )
   })
 
-  it('has exactly one route still waiting on the shell — ORG-03', () => {
-    // This lane empties the table in its OWN commit, after the shell owner's commit has
-    // declared the id (WORKCENTER_SHELL_MOUNT_HANDOFF.md §4). This line is the one that
-    // makes forgetting that step impossible; the shell owner never edits it.
-    expect(Object.keys(ORGANIZATION_ROUTE_AWAITING_SHELL)).toEqual([
-      ORGANIZATION_CAPABILITY.workCenterList,
-    ])
+  it('has no route still waiting on the shell — ORG-03 is mirrored', () => {
+    // This lane emptied the table in its OWN commit, after the shell owner's commit
+    // declared the id (WORKCENTER_SHELL_MOUNT_HANDOFF.md §4(2)). The next route that
+    // waits on the shell has to change this line, which is the point of it.
+    expect(Object.keys(ORGANIZATION_ROUTE_AWAITING_SHELL)).toEqual([])
+    expect(Object.keys(ORGANIZATION_NAV_LABEL_AWAITING_SHELL)).toEqual([])
+    expect(ORGANIZATION_ROUTE[ORGANIZATION_CAPABILITY.workCenterList]).toBe(
+      '/ayarlar/organizasyon/is-merkezleri',
+    )
   })
 
   it('resolves ORG-03 through the union in BOTH handshake states, today', () => {
