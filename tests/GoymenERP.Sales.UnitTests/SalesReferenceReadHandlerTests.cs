@@ -400,6 +400,42 @@ public sealed class SalesReferenceReadHandlerTests
     }
 
     [Fact]
+    public async Task An_owner_401_keeps_its_status_even_after_the_permission_is_lost()
+    {
+        var f = new Fixture();
+        f.Products.OnRead = () => f.Auth.Allowed = false;
+        f.Products.Error = new ProductOperationException("owner-internal-code", 401);
+        var result = await f.Handler().GetProductAsync(f.ProductQuery);
+        Assert.Equal(401, result.StatusCode);
+        Assert.Null(result.Code);
+        Assert.Null(result.Value);
+    }
+
+    [Fact]
+    public async Task An_owner_validation_failure_is_not_released_after_the_permission_is_lost()
+    {
+        var f = new Fixture();
+        f.Products.OnRead = () => f.Auth.Allowed = false;
+        f.Products.Error = new ProductValidationException([new("productId", "invalid_reference")]);
+        var result = await f.Handler().GetProductAsync(f.ProductQuery);
+        Assert.Equal(403, result.StatusCode);
+        Assert.Null(result.Code);
+        Assert.Null(result.Value);
+    }
+
+    [Fact]
+    public async Task A_settings_failure_on_the_product_path_is_not_released_after_the_permission_is_lost()
+    {
+        var f = new Fixture();
+        f.Settings.Error = new SettingsPrerequisiteException("settings_provider_unavailable");
+        f.Settings.OnRead = () => f.Auth.Allowed = false;
+        var result = await f.Handler().GetProductAsync(f.ProductQuery);
+        Assert.Equal(403, result.StatusCode);
+        Assert.Null(result.Code);
+        Assert.Null(result.Value);
+    }
+
+    [Fact]
     public async Task A_settings_failure_is_not_released_after_the_permission_is_lost()
     {
         var f = new Fixture();

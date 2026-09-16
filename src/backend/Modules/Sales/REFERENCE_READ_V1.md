@@ -55,8 +55,13 @@ product_selection_changed: the known selection is stale, so this wins over other
 field errors in the same result. `lifecycle_conflict` without a version conflict is
 422 unsupported_product instead: the owner raises it for every non-Active product,
 including a Draft that was never selectable, and reading again would not change it.
-An activation or deactivation bumps the version, so a selection that really moved on
-still arrives here as a version conflict. Any other owner field error, with or
+That split is the decision in #262 issuecomment-5687324032, not an inference from an
+owner guarantee: Product publishes no activation or deactivation transition today, so
+nothing promises that a lifecycle change also bumps the version. If it does once
+activation lands, a selection that really moved on keeps arriving here as a version
+conflict; if it does not, a product that goes inactive after it was offered answers
+422 instead of 409. Either way the answer is a refusal, never a usable selection, and
+publishing that version rule belongs to Product. Any other owner field error, with or
 without a snapshot, ProductValidationException and ProductOperationException 400/422
 are 422 unsupported_product.
 ProductOperationException 401/403/404 keep their status without a code, and
@@ -72,8 +77,10 @@ stays a platform-redacted 500.
 Every operation checks server company/user/current permission before reads, again
 after awaited successful reads, and again before an owner failure is released, since
 a 409 or 422 code also describes a global Product. Changed company/user or permission
-loss discards the response and answers 403. No query/body companyId or client actor
-is trusted.
+loss discards the response and answers 403. An owner 401 is the one status that keeps
+its meaning through that last check: it says the caller is not authenticated at all, so
+answering 403 would send the client to re-authorize when it has to re-authenticate. No
+query/body companyId or client actor is trusted.
 
 ## Implemented HTTP boundary
 
@@ -166,22 +173,26 @@ Platform_non_counterparty_bypass_surfaces_match_the_reviewed_inventory passed
 (1PASS,exit0). The CI failure at d2d024e remains evidence of the forbidden direct
 Sales-to-Counterparty edge, not a waived guard.
 
-#262 review patch items 1-4 and 6 (issuecomment-5667129884), LOCAL runs with
-Windows dotnet.exe on the WSL worktree, not CI:
+#262 review patch items 1-4 and 6 (issuecomment-5667129884) and the two delta rounds
+that followed (the coordinator's reconciliation in issuecomment-5687324032, then the
+FİNANS closure notes in issuecomment-5693515516). LOCAL runs with Windows dotnet.exe
+on the WSL worktree, not CI:
 
-- Sales.UnitTests: 81 passed, 0 failed (37 in SalesReferenceReadHandlerTests).
-  Against the handler without this change, 7 of them fail.
+- Sales.UnitTests: 100 passed, 0 failed, of which 56 in SalesReferenceReadHandlerTests.
 - Api.IntegrationTests filtered to SalesReferenceHttpAcceptanceTests: 25 passed,
   0 failed. Build-time OpenAPI document generation was switched off on the command
   line; no OpenAPI input changed.
 - ArchitectureTests: 278 passed, 0 failed.
 - Temporary mutations, each restored from git, turned named tests red: removing
-  each new owner-outcome mapping, the errors-with-snapshot rejection, the unit
-  active check or the unit-binding company check; reading unit or money profiles
-  with a default date, or the order unit three times; dropping the cursor in the
-  handler or the adapter; skipping the adapter's post-read context check; mapping
-  InvalidCursor to 503; rethrowing the owner's UnauthorizedAccessException; and
-  restoring the old error example codes.
+  each owner-outcome mapping, the errors-with-snapshot rejection, the unit active or
+  effective check at any single binding, and the unit-binding company check; reading
+  unit or money profiles with a default date, or the order unit three times; dropping
+  the cursor in the handler or the adapter; skipping the adapter's post-read context
+  check; mapping InvalidCursor to 503; rethrowing the owner's
+  UnauthorizedAccessException; restoring the old error example codes; counting the
+  account search in UTF-16 units; reducing the version rule to a length check; and
+  releasing a failure without the authority re-check on each of the four arms
+  separately.
 
 Tests use controlled doubles of real owner interfaces and test-host permission
 bindings. This is not real owner data, SQL, browser or environment acceptance.

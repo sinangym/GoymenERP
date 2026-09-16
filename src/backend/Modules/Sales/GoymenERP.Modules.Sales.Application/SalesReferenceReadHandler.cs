@@ -144,9 +144,12 @@ public sealed class SalesReferenceReadHandler(
         }
         catch (ProductOperationException exception)
         {
+            // 401 says the caller is not authenticated at all. Re-checking a permission
+            // it no longer has would answer 403 and send the client to re-authorize
+            // instead of re-authenticate, so this status keeps its meaning.
+            if (exception.StatusCode == 401) return Failure<SalesProductReferenceV1>(401);
             return await ReleaseFailureAsync(scope, bindings.ProductPermission, exception.StatusCode switch
             {
-                401 => Failure<SalesProductReferenceV1>(401),
                 403 => Failure<SalesProductReferenceV1>(403),
                 404 => Failure<SalesProductReferenceV1>(404),
                 409 => Failure<SalesProductReferenceV1>(409, "product_selection_changed"),
@@ -162,9 +165,10 @@ public sealed class SalesReferenceReadHandler(
 
     // Only the owner's version conflict means the known selection moved on. Its
     // lifecycle_conflict covers every non-Active product, including a Draft that was
-    // never selectable, so that is an unsupported product, not a changed one; an
-    // activation or deactivation bumps the version, so a real change still arrives
-    // here as a version conflict.
+    // never selectable, so that is an unsupported product, not a changed one. Decided
+    // in #262 issuecomment-5687324032; Product publishes no activation transition yet,
+    // so whether a lifecycle change also bumps the version is that owner's rule to
+    // publish, not an assumption this mapping leans on.
     private static bool IsStaleSelection(ProductFieldError error) => error.Code == ProductApiV1.VersionConflict;
 
     private sealed record Scope(int Status, Guid Company, string? Actor);
@@ -197,7 +201,9 @@ public sealed class SalesReferenceReadHandler(
         SalesReferenceReadResult<T> failure, CancellationToken cancellationToken) where T : class =>
         await StillAuthorizedAsync(scope, permission, cancellationToken) ? failure : Failure<T>(403);
 
-    // The route's own bound counts runes, so counting UTF-16 units here would refuse a
+    // Counted in runes, like the Cari list parser. The route still counts UTF-16 units
+    // today, so it is the stricter of the two until the central item-5 change lands;
+    // after that both count runes and this bound is no longer the one that refuses a
     // search the route accepted.
     private static bool WithinSearchBound(string? query) =>
         query is null || query.EnumerateRunes().Count() <= SearchRuneLimit;
