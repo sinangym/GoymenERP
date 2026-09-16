@@ -20,8 +20,8 @@ import { matchPath } from 'react-router'
 import { CAPABILITY, CAPABILITY_ROUTE, CAPABILITY_NAV_LABEL } from './capabilities'
 import {
   ORGANIZATION_CAPABILITY,
-  ORGANIZATION_ROUTE,
-  ORGANIZATION_NAV_LABEL,
+  ORGANIZATION_MOUNTED_ROUTE,
+  ORGANIZATION_MOUNTED_NAV_LABEL,
   locationDetailPath,
 } from '../organization/capabilities'
 
@@ -44,7 +44,7 @@ describe('shell ↔ Organization lane capability ids', () => {
      * an omission — and it is asserted by SYMBOL, so a rename on their side that turned
      * a control into a route would surface here rather than pass unnoticed.
      */
-    const laneRouteIds = new Set(Object.keys(ORGANIZATION_ROUTE))
+    const laneRouteIds = new Set(Object.keys(ORGANIZATION_MOUNTED_ROUTE))
     const shellOrganizationIds = new Set(
       (Object.values(CAPABILITY) as string[]).filter((id) => id.startsWith('organization.')),
     )
@@ -53,8 +53,8 @@ describe('shell ↔ Organization lane capability ids', () => {
     expect(shellOrganizationIds.has(ORGANIZATION_CAPABILITY.sitesRead)).toBe(false)
     // ...and the lane keeps them out of its own route and nav tables too; if one ever
     // moved in, the set equality above would fail for the right reason.
-    expect(ORGANIZATION_ROUTE[ORGANIZATION_CAPABILITY.locationStatus]).toBeUndefined()
-    expect(ORGANIZATION_ROUTE[ORGANIZATION_CAPABILITY.sitesRead]).toBeUndefined()
+    expect(ORGANIZATION_MOUNTED_ROUTE[ORGANIZATION_CAPABILITY.locationStatus]).toBeUndefined()
+    expect(ORGANIZATION_MOUNTED_ROUTE[ORGANIZATION_CAPABILITY.sitesRead]).toBeUndefined()
   })
 
   it('agrees with the lane on both routes and nav labels, value by value', () => {
@@ -65,8 +65,8 @@ describe('shell ↔ Organization lane capability ids', () => {
       [CAPABILITY.organizationSitesList, ORGANIZATION_CAPABILITY.settingsList],
       [CAPABILITY.organizationLocationsDetail, ORGANIZATION_CAPABILITY.locationDetail],
     ] as const) {
-      expect(CAPABILITY_ROUTE[shellId]).toBe(ORGANIZATION_ROUTE[laneId])
-      expect(CAPABILITY_NAV_LABEL[shellId]).toBe(ORGANIZATION_NAV_LABEL[laneId])
+      expect(CAPABILITY_ROUTE[shellId]).toBe(ORGANIZATION_MOUNTED_ROUTE[laneId])
+      expect(CAPABILITY_NAV_LABEL[shellId]).toBe(ORGANIZATION_MOUNTED_NAV_LABEL[laneId])
     }
   })
 

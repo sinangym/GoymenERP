@@ -123,6 +123,16 @@ export const CAPABILITY = {
    * that is a fact about who holds them, not an argument for one id.
    */
   organizationLocationsDetail: 'organization.locations.detail',
+  /**
+   * ORG-03 Ayarlar > Organizasyon > İş Merkezleri — yetkili iş merkezi listesi.
+   * Route `/ayarlar/organizasyon/is-merkezleri`, owner CLAUDE-ORGANIZASYON.
+   *
+   * Taşıyıcı izin: YALNIZ `organization.work-centers.read`. ORG-01'in
+   * `organization.locations.read`'i bu route'un şartı DEĞİLDİR ve tersi de doğrudur:
+   * lokasyon ekranlarını tutmak buraya giriş sağlamaz. Backend registry'si bunu tam
+   * olarak böyle yayımlıyor (`OrganizationShellCapabilityProvider`, ORG-03, 1.1).
+   */
+  organizationWorkCentersList: 'organization.work-centers.list',
 } as const
 
 export type CapabilityId = (typeof CAPABILITY)[keyof typeof CAPABILITY]
@@ -150,6 +160,9 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   // rule the Cari and Ürün routes already follow. The Organization lane fixes that
   // shape in `organizationRoutes.tsx` rather than leaving it to this consumer.
   [CAPABILITY.organizationLocationsDetail]: '/ayarlar/organizasyon/lokasyon/:locationId',
+  // Statik kardeş. `/ayarlar/organizasyon` ile aynı segment sayısında değil, kartla da
+  // değil; hiçbir url ikisine birden uyamaz (#172 P1-2 kuralı).
+  [CAPABILITY.organizationWorkCentersList]: '/ayarlar/organizasyon/is-merkezleri',
 }
 
 /** Nav label per capability. Only rendered when the server granted the capability. */
@@ -172,4 +185,5 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // Nor this one: the card is reached from a location row, never from the sidebar. So
   // `NAV_CAPABILITIES` gains exactly ONE Organization entry when the routes are mounted.
   [CAPABILITY.organizationLocationsDetail]: '',
+  [CAPABILITY.organizationWorkCentersList]: 'İş Merkezleri',
 }

@@ -36,6 +36,7 @@ const NAV_CAPABILITIES: readonly CapabilityId[] = [
    * row, never from the sidebar.
    */
   CAPABILITY.organizationSitesList,
+  CAPABILITY.organizationWorkCentersList,
 ]
 
 export function AppShell() {
