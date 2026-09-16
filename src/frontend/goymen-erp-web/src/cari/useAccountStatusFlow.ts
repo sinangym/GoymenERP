@@ -58,8 +58,12 @@ export interface AccountStatusFlowInput {
   readonly namespace: string | null
   /** The latest READY detail, or null while the read is not ready. */
   readonly detail: CounterpartyDetail | null
-  /** `dataUpdatedAt` of the detail query: moves only when a read actually lands. */
-  readonly readStamp: number
+  /**
+   * The detail query's own read COUNT: rises by one whenever a read lands, and never
+   * collides with itself. A `Date.now()` stamp does: two reads inside one millisecond
+   * are indistinguishable from no read at all, which left this window waiting forever.
+   */
+  readonly readCount: number
   readonly refetch: () => Promise<unknown>
   /** `isCommandContractReady` for this context, computed by the owner each render. */
   readonly contractReady: boolean
@@ -113,7 +117,7 @@ export function useAccountStatusFlow({
   companyId,
   namespace,
   detail,
-  readStamp,
+  readCount,
   refetch,
   contractReady,
   disabled,
@@ -196,12 +200,12 @@ export function useAccountStatusFlow({
   }, [completed, onApplied, attempt, triggerRef])
 
   /**
-   * Re-seating the open window once the requested read has LANDED — `readStamp` moved
+   * Re-seating the open window once the requested read has LANDED — the read COUNT moved
    * past the baseline taken when the read was asked for. A read that never completes
    * (offline, failed) leaves the window on its old fence, with the reason intact.
    */
   useEffect(() => {
-    if (refresh === null || detail === null || readStamp <= refresh.baseline) return
+    if (refresh === null || detail === null || readCount <= refresh.baseline) return
     // A refresh is only ever requested from a definite failure, but the guard is
     // explicit: a frozen snapshot is never re-seated underneath.
     if (frozen || attempt.revalidating) return
@@ -217,7 +221,7 @@ export function useAccountStatusFlow({
     )
     setRefreshedNote(true)
     setRefresh(null)
-  }, [refresh, detail, readStamp, frozen, attempt.revalidating])
+  }, [refresh, detail, readCount, frozen, attempt.revalidating])
 
   useEffect(() => {
     if (summaryFocusRequest === 0) return
@@ -352,9 +356,9 @@ export function useAccountStatusFlow({
   const refreshRecord = useCallback(() => {
     if (failed !== null) attempt.abandon()
     setRefreshedNote(false)
-    setRefresh({ baseline: readStamp })
+    setRefresh({ baseline: readCount })
     void refetch()
-  }, [failed, attempt, readStamp, refetch])
+  }, [failed, attempt, readCount, refetch])
 
   /**
    * A read that landed underneath the open window: move the fence to it, keep the reason.
