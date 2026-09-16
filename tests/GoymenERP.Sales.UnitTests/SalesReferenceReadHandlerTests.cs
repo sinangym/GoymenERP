@@ -224,16 +224,45 @@ public sealed class SalesReferenceReadHandlerTests
         Assert.Null(result.Value);
     }
 
-    [Theory]
-    [InlineData("expectedProductVersion", ProductApiV1.VersionConflict)]
-    [InlineData("productId", ProductApiV1.LifecycleConflict)]
-    public async Task Owner_version_or_lifecycle_conflict_is_a_changed_selection(string field, string code)
+    [Fact]
+    public async Task Owner_version_conflict_is_a_changed_selection()
     {
         var f = new Fixture();
-        f.Products.Result = new(null, [new(field, code), new("productId", "not_sellable")]);
+        f.Products.Result = new(null,
+            [new("expectedProductVersion", ProductApiV1.VersionConflict), new("productId", "not_sellable")]);
         var result = await f.Handler().GetProductAsync(f.ProductQuery);
         Assert.Equal(409, result.StatusCode);
         Assert.Equal("product_selection_changed", result.Code);
+        Assert.Null(result.Value);
+        Assert.Empty(f.Settings.UnitCalls);
+    }
+
+    [Fact]
+    public async Task A_version_conflict_beside_a_lifecycle_conflict_is_still_a_changed_selection()
+    {
+        var f = new Fixture();
+        f.Products.Result = new(null,
+            [new("productId", ProductApiV1.LifecycleConflict), new("expectedProductVersion", ProductApiV1.VersionConflict)]);
+        var result = await f.Handler().GetProductAsync(f.ProductQuery);
+        Assert.Equal(409, result.StatusCode);
+        Assert.Equal("product_selection_changed", result.Code);
+        Assert.Null(result.Value);
+    }
+
+    [Theory]
+    // A Draft was never selectable, and an Inactive product read at its current version
+    // has not changed under the caller; neither is a changed selection.
+    [InlineData("draft")]
+    [InlineData("inactive")]
+    public async Task A_lifecycle_conflict_at_the_current_version_is_an_unsupported_product(string state)
+    {
+        var f = new Fixture();
+        f.Products.Result = new(null, state == "draft"
+            ? [new("productId", ProductApiV1.LifecycleConflict), new("productId", "not_sellable")]
+            : [new("productId", ProductApiV1.LifecycleConflict)]);
+        var result = await f.Handler().GetProductAsync(f.ProductQuery);
+        Assert.Equal(422, result.StatusCode);
+        Assert.Equal("unsupported_product", result.Code);
         Assert.Null(result.Value);
         Assert.Empty(f.Settings.UnitCalls);
     }
@@ -263,8 +292,15 @@ public sealed class SalesReferenceReadHandlerTests
     }
 
     [Theory]
+    // Every state, at every binding: stock, sales and the selected order unit.
     [InlineData(0, "inactive")]
+    [InlineData(0, "expired")]
+    [InlineData(0, "not-yet-effective")]
+    [InlineData(1, "inactive")]
     [InlineData(1, "expired")]
+    [InlineData(1, "not-yet-effective")]
+    [InlineData(2, "inactive")]
+    [InlineData(2, "expired")]
     [InlineData(2, "not-yet-effective")]
     public async Task Inactive_or_out_of_range_unit_profile_is_an_unsupported_unit(int position, string variant)
     {
@@ -317,6 +353,62 @@ public sealed class SalesReferenceReadHandlerTests
         Assert.Equal(403, result.StatusCode);
         Assert.Null(result.Code);
         Assert.Equal(0, f.Settings.Calls);
+    }
+
+    [Fact]
+    public async Task The_account_search_bound_counts_runes_not_utf16_units()
+    {
+        var f = new Fixture();
+        // 150 astral characters are 300 UTF-16 units: inside the bound, as on the route.
+        var astral = string.Concat(Enumerable.Repeat("\U0001F600", 150));
+        var accepted = await f.Handler().GetAccountsAsync(new(astral), "server-session");
+        Assert.Equal(200, accepted.StatusCode);
+        Assert.Equal(astral, f.Accounts.Request!.Q);
+
+        var refused = await f.Handler().GetAccountsAsync(
+            new(string.Concat(Enumerable.Repeat("\U0001F600", 201))), "server-session");
+        Assert.Equal(400, refused.StatusCode);
+        Assert.Equal("validation_failed", refused.Code);
+        Assert.Equal(1, f.Accounts.Calls);
+    }
+
+    [Theory]
+    [InlineData("abc")]
+    [InlineData("007")]
+    [InlineData("0")]
+    [InlineData("99999999999999999999")]
+    [InlineData(" ")]
+    public async Task A_version_the_owner_could_not_parse_is_refused_before_the_owner_read(string version)
+    {
+        var f = new Fixture();
+        var result = await f.Handler().GetProductAsync(f.ProductQuery with { ExpectedProductVersion = version });
+        Assert.Equal(400, result.StatusCode);
+        Assert.Equal("validation_failed", result.Code);
+        Assert.Equal(0, f.Products.Calls);
+    }
+
+    [Fact]
+    public async Task An_owner_failure_is_not_released_after_the_permission_is_lost()
+    {
+        var f = new Fixture();
+        f.Products.OnRead = () => f.Auth.Allowed = false;
+        f.Products.Error = new ProductOperationException("owner-internal-code", 409);
+        var result = await f.Handler().GetProductAsync(f.ProductQuery);
+        Assert.Equal(403, result.StatusCode);
+        Assert.Null(result.Code);
+        Assert.Null(result.Value);
+    }
+
+    [Fact]
+    public async Task A_settings_failure_is_not_released_after_the_permission_is_lost()
+    {
+        var f = new Fixture();
+        f.Settings.Error = new SettingsPrerequisiteException("settings_provider_unavailable");
+        f.Settings.OnRead = () => f.Auth.Allowed = false;
+        var result = await f.Handler().GetCurrencyAsync(f.CurrencyQuery);
+        Assert.Equal(403, result.StatusCode);
+        Assert.Null(result.Code);
+        Assert.Null(result.Value);
     }
 
     private sealed class Fixture
@@ -429,10 +521,11 @@ public sealed class SalesReferenceReadHandlerTests
     private sealed class Products : IProductSalesEligibilityV1
     {
         public int Calls { get; private set; }
+        public Action? OnRead { get; set; }
         public ProductSalesSelectionV1? Selection { get; private set; }
         public ProductSalesEligibilityV1 Result { get; set; } = new(null, []);
         public Exception? Error { get; set; }
         public Task<ProductSalesEligibilityV1> EvaluateAsync(ProductSalesSelectionV1 selection, CancellationToken cancellationToken)
-        { Calls++; Selection = selection; if (Error is not null) throw Error; return Task.FromResult(Result); }
+        { Calls++; Selection = selection; OnRead?.Invoke(); if (Error is not null) throw Error; return Task.FromResult(Result); }
     }
 }

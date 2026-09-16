@@ -50,11 +50,15 @@ Only the validated selected order unit is returned, labelled with owner UnitCode
 No conversion, kg assumption, Active/Draft inference or candidate enumeration.
 
 Product owner outcomes map as follows. An owner field error with Product's
-published `version_conflict` or `lifecycle_conflict` code, or a
-ProductOperationException 409, is 409 product_selection_changed: the known
-selection is stale, so this wins over other field errors in the same result. Any
-other owner field error, with or without a snapshot, ProductValidationException
-and ProductOperationException 400/422 are 422 unsupported_product.
+published `version_conflict` code, or a ProductOperationException 409, is 409
+product_selection_changed: the known selection is stale, so this wins over other
+field errors in the same result. `lifecycle_conflict` without a version conflict is
+422 unsupported_product instead: the owner raises it for every non-Active product,
+including a Draft that was never selectable, and reading again would not change it.
+An activation or deactivation bumps the version, so a selection that really moved on
+still arrives here as a version conflict. Any other owner field error, with or
+without a snapshot, ProductValidationException and ProductOperationException 400/422
+are 422 unsupported_product.
 ProductOperationException 401/403/404 keep their status without a code, and
 UnauthorizedAccessException is 403. A missing runtime, a result with neither
 snapshot nor errors, and every other owner status are 503. A snapshot that differs
@@ -65,9 +69,11 @@ caught: Sales code uses no Product.Domain type, the eligibility port reports
 conflicts as field errors, and a Domain exception crossing that Application port
 stays a platform-redacted 500.
 
-Every operation checks server company/user/current permission before reads and
-again after awaited successful reads. Changed company/user or permission loss
-discards the response. No query/body companyId or client actor is trusted.
+Every operation checks server company/user/current permission before reads, again
+after awaited successful reads, and again before an owner failure is released, since
+a 409 or 422 code also describes a global Product. Changed company/user or permission
+loss discards the response and answers 403. No query/body companyId or client actor
+is trusted.
 
 ## Implemented HTTP boundary
 
@@ -100,12 +106,14 @@ IDs/query 400 validation_failed; invalid cursor 400 invalid_cursor. Cancellation
 propagates. No provider internals or arbitrary error text leak.
 
 Parser: strict UUID and YYYY-MM-DD dates, required product version/unit,
-pageSize1-100, q up to200 UTF-16 code units, cursor up to8192; reject
-unknown/repeated query fields. The handler rechecks the same q and cursor bounds.
-Accounts q is forwarded as received. Normalization and a 200-rune limit are the
-central writer's separate item-5 change (7063843); when it lands, the handler's own
-q bound must count runes too, or a search of at most 200 runes but more than 200
-UTF-16 units, which the route then accepts, is refused with 400. Context/company
+pageSize1-100, q up to200 UTF-16 code units at the route, cursor up to8192; reject
+unknown/repeated query fields. The handler rechecks the cursor bound and counts q in
+runes, like the Cari list parser; it also refuses an expectedProductVersion that the
+owner's own rule (ProductVersion.Parse: positive, no leading zero, inside Int64)
+cannot parse, with 400 validation_failed and no owner read. Accounts q is forwarded
+as received; normalization and the route's own 200-rune limit are the central
+writer's separate item-5 change (7063843). Until that lands the route's UTF-16 bound
+is the stricter of the two, so it decides; after it both count runes. Context/company
 header and current request/session follow the existing
 platform boundary. The route handlers set `Cache-Control: private, no-store` and
 `Pragma: no-cache`. No side effects, idempotency key or mutation capability is
