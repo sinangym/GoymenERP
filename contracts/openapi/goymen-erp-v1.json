@@ -8429,7 +8429,8 @@
           "code",
           "name",
           "kind",
-          "isActive"
+          "isActive",
+          "canOpenLocationDetail"
         ],
         "type": "object",
         "properties": {
@@ -8451,6 +8452,9 @@
             "type": "string"
           },
           "isActive": {
+            "type": "boolean"
+          },
+          "canOpenLocationDetail": {
             "type": "boolean"
           }
         }

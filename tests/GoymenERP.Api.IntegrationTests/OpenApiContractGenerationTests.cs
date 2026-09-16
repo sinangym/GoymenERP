@@ -483,13 +483,14 @@ public sealed partial class OpenApiContractGenerationTests
                     ("type", "type:string"),
                     ("isActive", "type:boolean")),
                 ["WorkCenterSummary"] = ObjectSchema(
-                    ["id", "locationId", "code", "name", "kind", "isActive"],
+                    ["id", "locationId", "code", "name", "kind", "isActive", "canOpenLocationDetail"],
                     ("id", "type:string;format:uuid"),
                     ("locationId", "type:string;format:uuid"),
                     ("code", "type:string"),
                     ("name", "type:string"),
                     ("kind", "type:string"),
-                    ("isActive", "type:boolean")),
+                    ("isActive", "type:boolean"),
+                    ("canOpenLocationDetail", "type:boolean")),
             };
 
     private static readonly IReadOnlyDictionary<string, ComponentSchemaExpectation>
