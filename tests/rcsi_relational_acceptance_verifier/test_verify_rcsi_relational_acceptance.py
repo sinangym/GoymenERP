@@ -79,9 +79,9 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             "RolelessAuditAndIdempotencyFailures_RollBackAndPermitSameKeyRetry",
         ))
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
-        self.assertEqual(84, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(84, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(91, VERIFIER.BROAD_EXECUTION_COUNT)
+        self.assertEqual(87, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(87, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(94, VERIFIER.BROAD_EXECUTION_COUNT)
         for omitted in required:
             with self.subTest(omitted=omitted):
                 discovery = "\n".join(
@@ -97,9 +97,9 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             "CreateFindDetailAndLinkSecondCompany_PreserveIdentityVisibilityAndExactlyOnceEffects"
         )
         self.assertIn(journey, VERIFIER.BROAD_EXPECTED_TESTS)
-        self.assertEqual(84, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(84, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(91, VERIFIER.BROAD_EXECUTION_COUNT)
+        self.assertEqual(87, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(87, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(94, VERIFIER.BROAD_EXECUTION_COUNT)
         without_journey = [name for name in VERIFIER.BROAD_EXPECTED_TESTS if name != journey]
         with self.assertRaisesRegex(RuntimeError, "exact"):
             VERIFIER.verify_broad_discovery("\n".join(without_journey))
@@ -114,9 +114,31 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             prefix + "ScopedPagingAndRejectedCommands_PreserveLocationAndExposeNoForeignState",
         }
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
-        self.assertEqual(84, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(84, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(91, VERIFIER.BROAD_EXECUTION_COUNT)
+        self.assertEqual(87, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(87, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(94, VERIFIER.BROAD_EXECUTION_COUNT)
+        for omitted in required:
+            with self.subTest(omitted=omitted):
+                discovery = "\n".join(
+                    name for name in VERIFIER.BROAD_EXPECTED_TESTS if name != omitted
+                )
+                with self.assertRaisesRegex(RuntimeError, "exact"):
+                    VERIFIER.verify_broad_discovery(discovery)
+
+    def test_organization_work_center_read_is_mandatory_and_rejects_omission(self) -> None:
+        prefix = (
+            "GoymenERP.Api.IntegrationTests."
+            "OrganizationWorkCenterReadSqlServerRelationalAcceptanceTests."
+        )
+        required = {
+            prefix + "AuthorizedListAndLocationStep_ReturnScopedRowsAndChangeNothing",
+            prefix + "NarrowScopeForeignCompanyAndUnauthenticated_ExposeNoForeignWorkCenter",
+            prefix + "LocationScopedReader_SeesExactlyThatLocationsWorkCenters",
+        }
+        self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
+        self.assertEqual(87, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(87, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(94, VERIFIER.BROAD_EXECUTION_COUNT)
         for omitted in required:
             with self.subTest(omitted=omitted):
                 discovery = "\n".join(
@@ -136,9 +158,9 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             )
         }
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
-        self.assertEqual(84, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(84, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(91, VERIFIER.BROAD_EXECUTION_COUNT)
+        self.assertEqual(87, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(87, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(94, VERIFIER.BROAD_EXECUTION_COUNT)
         for omitted in required:
             with self.subTest(omitted=omitted):
                 with self.assertRaises(RuntimeError):

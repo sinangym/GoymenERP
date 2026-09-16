@@ -48,6 +48,9 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.ProductGlobalRuntimeSqlServerRelationalAcceptanceTests.ProductGlobalRuntime_TwoEditsStagedAtVersionOne_ProduceOneLateEfConflict",
     "GoymenERP.Api.IntegrationTests.OrganizationLocationLifecycleSqlServerRelationalAcceptanceTests.ListDetailDeactivateReactivateAndDelayedReplay_ReturnFreshStateAndSingleAuditPerCommand",
     "GoymenERP.Api.IntegrationTests.OrganizationLocationLifecycleSqlServerRelationalAcceptanceTests.ScopedPagingAndRejectedCommands_PreserveLocationAndExposeNoForeignState",
+    "GoymenERP.Api.IntegrationTests.OrganizationWorkCenterReadSqlServerRelationalAcceptanceTests.AuthorizedListAndLocationStep_ReturnScopedRowsAndChangeNothing",
+    "GoymenERP.Api.IntegrationTests.OrganizationWorkCenterReadSqlServerRelationalAcceptanceTests.NarrowScopeForeignCompanyAndUnauthenticated_ExposeNoForeignWorkCenter",
+    "GoymenERP.Api.IntegrationTests.OrganizationWorkCenterReadSqlServerRelationalAcceptanceTests.LocationScopedReader_SeesExactlyThatLocationsWorkCenters",
     "GoymenERP.Api.IntegrationTests.CounterpartyContactInformationSqlServerRelationalAcceptanceTests.ContactCard_NoOpKeepsLogicalVersionAndAuditWhilePersistingOneReplayResult",
     "GoymenERP.Api.IntegrationTests.CounterpartyContactInformationSqlServerRelationalAcceptanceTests.AccountContactCard_RoundTripsExplicitChildrenWithoutChangingPartyOrOtherCompany",
     "GoymenERP.Api.IntegrationTests.CounterpartyContactInformationSqlServerRelationalAcceptanceTests.ContactCard_AuthorizationNoDefaultGrantAndMissingRelationAreNonDisclosing",
@@ -125,8 +128,8 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.UnapprovedLogicalEndpoint_IsRejectedWithoutChangingDatabase",
     "GoymenERP.Api.IntegrationTests.SqlServerRelationalAcceptanceTests.MigrationSeedWriteGuardCompositeForeignKeyAndHttpIsolation_AreEnforced",
 )
-BROAD_DISCOVERY_COUNT = 84
-BROAD_EXECUTION_COUNT = 91
+BROAD_DISCOVERY_COUNT = 87
+BROAD_EXECUTION_COUNT = 94
 
 
 def verify_discovery(standard_output: str) -> None:
