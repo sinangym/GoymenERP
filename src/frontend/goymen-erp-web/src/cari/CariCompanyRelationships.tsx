@@ -17,7 +17,12 @@
  * "Open in company X" is a shell company SWITCH, not a URL trick. The shell verifies the
  * new context, asks first if a form is dirty, and C-03 then reads the card company-bound
  * in X under X's own capability. This panel never renders another company's card itself.
- * A company the shell's CURRENT directory no longer lists is not offered as a target.
+ *
+ * The answer is only ever read against the shell's CURRENT directory (Business, #66
+ * 5699124918 §5). When the directory changes while the panel is open, the answer read
+ * under the old one is stale: it is neither kept nor repainted from cache, and the group
+ * read is asked again. A company the directory no longer lists has no row at all — no
+ * "—" label, no raw id, no switch.
  */
 
 import { useMemo, useState } from 'react'
@@ -66,12 +71,18 @@ export function CariCompanyRelationships({
 
   const knownCompanyIds = useMemo(() => new Set(directory.map((c) => c.id)), [directory])
   const companyById = useMemo(() => new Map(directory.map((c) => [c.id, c])), [directory])
+  /** The directory the answer is decoded against, as part of the question itself. */
+  const directoryKey = useMemo(() => [...knownCompanyIds].sort().join(','), [knownCompanyIds])
 
   const query = useQuery({
     // Context- and entry-scoped exactly like the card's own read: this panel is remounted
     // with the card on every context change, and a late group answer can never be shown
-    // under a different company, actor or entry than the one that asked.
-    queryKey: [namespace, entryGeneration, 'counterparty-company-relationships', partyId],
+    // under a different company, actor or entry than the one that asked. The directory is
+    // in the key too: a changed directory is a new question, never the old answer.
+    queryKey: [namespace, entryGeneration, 'counterparty-company-relationships', partyId, directoryKey],
+    // An answer read under a directory that has since changed must not come back from
+    // cache if that directory returns: it would offer a switch nobody re-verified.
+    gcTime: 0,
     enabled: open,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
@@ -157,10 +168,11 @@ export function CariCompanyRelationships({
                 <tbody>
                   {state.data.accounts.map((account) => {
                     const current = account.companyId === activeCompanyId
-                    // Listed when the answer was decoded, but a directory refresh since may have
-                    // dropped the company: then there is no name to show and no switch to offer.
+                    // Decoded against this same directory, so every company is listed. Should
+                    // one not be, the row is not drawn: no placeholder label, no switch.
                     const company = companyById.get(account.companyId)
-                    const label = company === undefined ? '—' : `${company.legalName} (${company.code})`
+                    if (company === undefined) return null
+                    const label = `${company.legalName} (${company.code})`
                     return (
                       <tr
                         key={account.accountId}
@@ -175,7 +187,7 @@ export function CariCompanyRelationships({
                         <td>
                           {current ? (
                             <span className={styles.current}>{TEXT.current}</span>
-                          ) : company === undefined ? null : (
+                          ) : (
                             <button
                               type="button"
                               className={styles.open}

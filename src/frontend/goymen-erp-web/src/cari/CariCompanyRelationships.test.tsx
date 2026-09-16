@@ -16,6 +16,7 @@ import { shellRoutes } from '../shell/router'
 import { SHELL_CAPABILITY_CONTRACT_VERSION } from '../shell/api'
 import { CAPABILITY } from '../shell/capabilities'
 import { CARI_RELATIONSHIPS_TEXT as TEXT } from './cariCommandText'
+import { LEGACY_ROLE_HEADING } from './roleText'
 
 const A_ID = 'aaaaaaaa-0000-0000-0000-000000000001'
 const B_ID = 'bbbbbbbb-0000-0000-0000-000000000002'
@@ -23,6 +24,7 @@ const C_ID = 'cccccccc-0000-0000-0000-000000000003'
 const PARTY = '11111111-1111-1111-1111-111111111111'
 const ACC_A = 'aaaaaaaa-1111-1111-1111-111111111111'
 const ACC_B = 'bbbbbbbb-1111-1111-1111-111111111111'
+const ACC_C = 'cccccccc-1111-1111-1111-111111111111'
 
 const IDENTITY = {
   userId: '99999999-9999-9999-9999-999999999999',
@@ -34,6 +36,7 @@ const COMPANY_A = { id: A_ID, code: 'GDC', legalName: 'Göymen Demir Çelik', is
 const COMPANY_B = { id: B_ID, code: 'GSP', legalName: 'Göymen Sac Profil', isPlaceholder: false }
 const COMPANY_C = { id: C_ID, code: 'GIN', legalName: 'Göymen İnşaat', isPlaceholder: true }
 const B_LABEL = 'Göymen Sac Profil (GSP)'
+const C_LABEL = 'Göymen İnşaat (GIN)'
 
 const CHAIN = { timeout: 5000 } as const
 
@@ -43,6 +46,7 @@ function json(body: unknown, status = 200): Response {
 
 const ACCOUNT_A = { id: ACC_A, companyId: A_ID, roles: 1, isActive: true, version: '2' }
 const ACCOUNT_B = { id: ACC_B, companyId: B_ID, roles: 0, isActive: false, version: '5' }
+const ACCOUNT_C = { id: ACC_C, companyId: C_ID, roles: 2, isActive: true, version: '1' }
 
 function party(accounts: unknown[]) {
   return {
@@ -62,11 +66,14 @@ interface Config {
   directory?: readonly unknown[] | (() => readonly unknown[])
   /** The group read (no company header). */
   group?: () => Response | Promise<Response>
+  /** When a case must hold one company's capability read, i.e. keep a switch unverified. */
+  capabilities?: (companyId: string | null, answer: () => Response) => Response | Promise<Response>
 }
 
 interface Call {
   readonly url: string
   readonly companyId: string | null
+  readonly method: string
 }
 
 function installFetch(config: Config = {}) {
@@ -77,18 +84,21 @@ function installFetch(config: Config = {}) {
       const url = typeof input === 'string' ? input : input.toString()
       const headers = (init?.headers as Record<string, string> | undefined) ?? {}
       const companyId = headers['X-Company-Id'] ?? null
-      calls.push({ url, companyId })
+      calls.push({ url, companyId, method: init?.method ?? 'GET' })
       if (url.includes('/identity/me')) return json(IDENTITY)
       if (url.includes('/organization/companies')) {
         const directory = typeof config.directory === 'function' ? config.directory() : config.directory
         return json(directory ?? [COMPANY_A, COMPANY_B])
       }
-      if (url.includes('/shell/capabilities'))
-        return json({
-          contractVersion: SHELL_CAPABILITY_CONTRACT_VERSION,
-          generation: `gen-${companyId?.slice(-1) ?? 'x'}`,
-          capabilities: [CAPABILITY.cariPartiesList, CAPABILITY.cariPartiesDetail],
-        })
+      if (url.includes('/shell/capabilities')) {
+        const answer = () =>
+          json({
+            contractVersion: SHELL_CAPABILITY_CONTRACT_VERSION,
+            generation: `gen-${companyId?.slice(-1) ?? 'x'}`,
+            capabilities: [CAPABILITY.cariPartiesList, CAPABILITY.cariPartiesDetail],
+          })
+        return config.capabilities === undefined ? answer() : config.capabilities(companyId, answer)
+      }
       if (url.includes(`/counterparties/${PARTY}`)) {
         // The company-bound card read: exactly the requested company's account.
         if (companyId === A_ID) return json(party([ACCOUNT_A]))
@@ -162,7 +172,7 @@ describe('C-03 company relationships (spec §14.2)', () => {
     await openCard()
     const toggle = await screen.findByRole('button', { name: TEXT.show }, CHAIN)
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(fetches.partyCalls()).toEqual([{ url: expect.stringContaining(PARTY), companyId: A_ID }])
+    expect(fetches.partyCalls()).toEqual([{ url: expect.stringContaining(PARTY), companyId: A_ID, method: 'GET' }])
     expect(fetches.groupCalls()).toHaveLength(0)
     expect(panel().querySelector('table')).toBeNull()
   })
@@ -192,6 +202,7 @@ describe('C-03 company relationships (spec §14.2)', () => {
     expect(within(b).getByRole('rowheader').textContent).toBe(B_LABEL)
     // B's passive account is B's fact. The card's own account section (A) is untouched.
     expect(b.querySelector('[data-account-state]')?.getAttribute('data-account-state')).toBe('inactive')
+    expect(within(b).getByText('Pasif')).toBeTruthy()
     expect(within(b).getByText('Ticari rol yok')).toBeTruthy()
     expect(within(b).getByRole('button', { name: TEXT.openIn(B_LABEL) })).toBeTruthy()
     expect(
@@ -201,7 +212,7 @@ describe('C-03 company relationships (spec §14.2)', () => {
     expect(panel().querySelector('[data-state="only-this-company"]')).toBeNull()
     // No figure stands in for Finance's amounts, and no internal id is printed.
     expect(panel().textContent).not.toMatch(/bakiye|tutar|risk|limit|₺|TRY/i)
-    expect(panel().textContent).not.toContain(ACC_B)
+    for (const id of [A_ID, B_ID, ACC_A, ACC_B]) expect(panel().textContent).not.toContain(id)
   })
 
   it('opens the card in another company through a verified shell switch', async () => {
@@ -385,34 +396,199 @@ describe('C-03 company relationships (spec §14.2)', () => {
     expect(opened?.textContent).toContain(TEXT.note)
   })
 
-  it('offers no switch into a company the refreshed directory no longer lists', async () => {
+  /** Business #66 5699124918 §5: a company the directory no longer lists leaves no trace. */
+  function expectNoTraceOfB() {
+    expect(panel().querySelector(`[data-company-id="${B_ID}"]`)).toBeNull()
+    expect(panel().textContent).not.toContain('Göymen Sac Profil')
+    expect(panel().textContent).not.toContain(B_ID)
+    expect(panel().querySelector('table')?.textContent ?? '').not.toContain('—')
+    expect(within(panel()).queryAllByRole('button', { name: /şirketinde aç$/ })).toHaveLength(0)
+  }
+
+  async function refreshDirectory(view: { queryClient: QueryClient }) {
+    await act(async () => {
+      await view.queryClient.invalidateQueries({ queryKey: ['shell', 'directory'] })
+    })
+  }
+
+  it('drops a company the refreshed directory no longer lists, and asks the group read again', async () => {
     let directory: readonly unknown[] = [COMPANY_A, COMPANY_B, COMPANY_C]
-    const fetches = installFetch({ directory: () => directory })
+    let releaseSecond: (response: Response) => void = () => {}
+    let groupCall = 0
+    const fetches = installFetch({
+      directory: () => directory,
+      group: () => {
+        groupCall += 1
+        if (groupCall === 1) return json(party([ACCOUNT_A, ACCOUNT_B]))
+        return new Promise<Response>((resolve) => {
+          releaseSecond = resolve
+        })
+      },
+    })
     const view = renderAt(`/cari/${PARTY}`)
     await openPanel()
     await within(panel()).findByRole('button', { name: TEXT.openIn(B_LABEL) }, CHAIN)
 
     // The shell reads its directory again while the panel is open, and B is no longer in it.
     directory = [COMPANY_A, COMPANY_C]
-    const directoryReads = fetches.calls.filter((c) => c.url.includes('/organization/companies')).length
-    await act(async () => {
-      await view.queryClient.invalidateQueries({ queryKey: ['shell', 'directory'] })
+    await refreshDirectory(view)
+
+    // The answer read under the old directory is stale: it is asked again, not kept, and
+    // nothing of it is painted while the new answer is out.
+    await waitFor(() => expect(fetches.groupCalls()).toHaveLength(2), CHAIN)
+    expect(panel().querySelector('table')).toBeNull()
+    expectNoTraceOfB()
+
+    releaseSecond(json(party([ACCOUNT_A])))
+    await waitFor(() => expect(rows()).toHaveLength(1), CHAIN)
+    expect(rows()[0].dataset.companyId).toBe(A_ID)
+    expectNoTraceOfB()
+  })
+
+  it('never brings back a stale answer from cache when a dropped company returns', async () => {
+    let directory: readonly unknown[] = [COMPANY_A, COMPANY_B, COMPANY_C]
+    let groupCall = 0
+    const fetches = installFetch({
+      directory: () => directory,
+      group: () => {
+        groupCall += 1
+        if (groupCall === 1) return json(party([ACCOUNT_A, ACCOUNT_B]))
+        if (groupCall === 2) return json(party([ACCOUNT_A]))
+        return new Promise<Response>(() => {})
+      },
     })
-    await waitFor(() => {
-      expect(fetches.calls.filter((c) => c.url.includes('/organization/companies')).length).toBeGreaterThan(
-        directoryReads,
-      )
-      expect(within(panel()).queryAllByRole('button', { name: /şirketinde aç$/ })).toHaveLength(0)
-    }, CHAIN)
-    // Nothing else was asked of the server on the directory's behalf.
-    expect(fetches.groupCalls()).toHaveLength(1)
+    // The app's garbage-collection window, so a cached answer COULD come back.
+    const view = renderAt(`/cari/${PARTY}`, { keepCache: true })
+    await openPanel()
+    await within(panel()).findByRole('button', { name: TEXT.openIn(B_LABEL) }, CHAIN)
+
+    directory = [COMPANY_A, COMPANY_C]
+    await refreshDirectory(view)
+    await waitFor(() => expect(rows()).toHaveLength(1), CHAIN)
+
+    // B is listed again. The answer read before B was dropped is not the answer now.
+    directory = [COMPANY_A, COMPANY_B, COMPANY_C]
+    await refreshDirectory(view)
+    await waitFor(() => expect(fetches.groupCalls()).toHaveLength(3), CHAIN)
+    expect(panel().querySelector('[data-state="initial-loading"]')).toBeTruthy()
+    expect(panel().querySelector('table')).toBeNull()
+    expectNoTraceOfB()
+  })
+
+  it('disappears entirely when the refreshed directory leaves the actor a single company', async () => {
+    let directory: readonly unknown[] = [COMPANY_A, COMPANY_B]
+    installFetch({ directory: () => directory })
+    const view = renderAt(`/cari/${PARTY}`)
+    await openPanel()
+    await waitFor(() => expect(rows()).toHaveLength(2), CHAIN)
+
+    directory = [COMPANY_A]
+    await refreshDirectory(view)
+    await waitFor(
+      () => expect(document.querySelector('[data-section="company-relationships"]')).toBeNull(),
+      CHAIN,
+    )
+    expect(screen.queryByRole('button', { name: TEXT.show })).toBeNull()
+    expect(screen.queryByRole('button', { name: TEXT.hide })).toBeNull()
+    expect(document.body.textContent).not.toContain(TEXT.heading)
   })
 
   it('is not offered to an actor who sees a single company', async () => {
-    installFetch({ directory: [COMPANY_A] })
+    const fetches = installFetch({ directory: [COMPANY_A] })
     renderAt(`/cari/${PARTY}`)
     await openCard()
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    // The card is fully drawn — its own account section is there — before anything is judged absent.
+    await waitFor(
+      () => expect(document.querySelector('[data-section="account"] [data-account-state]')).toBeTruthy(),
+      CHAIN,
+    )
     expect(document.querySelector('[data-section="company-relationships"]')).toBeNull()
+    expect(screen.queryByRole('button', { name: TEXT.show })).toBeNull()
+    expect(document.body.textContent).not.toContain(TEXT.heading)
+    expect(fetches.groupCalls()).toHaveLength(0)
+  })
+
+  it('does not count the card as switched, nor offer another switch, until the shell verifies the target', async () => {
+    let releaseB: () => void = () => {}
+    const fetches = installFetch({
+      directory: [COMPANY_A, COMPANY_B, COMPANY_C],
+      group: () => json(party([ACCOUNT_A, ACCOUNT_B, ACCOUNT_C])),
+      capabilities: (companyId, answer) =>
+        companyId === B_ID
+          ? new Promise<Response>((resolve) => {
+              releaseB = () => resolve(answer())
+            })
+          : answer(),
+    })
+    renderAt(`/cari/${PARTY}`)
+    await openPanel()
+    await waitFor(() => expect(rows()).toHaveLength(3), CHAIN)
+    // Two switch targets are on offer before one is chosen.
+    expect(within(panel()).getByRole('button', { name: TEXT.openIn(C_LABEL) })).toBeTruthy()
+
+    await userEvent.click(within(panel()).getByRole('button', { name: TEXT.openIn(B_LABEL) }))
+    await waitFor(
+      () =>
+        expect(fetches.calls.some((c) => c.url.includes('/shell/capabilities') && c.companyId === B_ID)).toBe(true),
+      CHAIN,
+    )
+    // Asked, not done: nothing was read in B, B's account is not painted as the card's, and
+    // no switch is offered while this one is being verified.
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(fetches.partyCalls().some((c) => c.companyId === B_ID)).toBe(false)
+    expect(
+      document.querySelector('[data-section="account"] [data-account-state]')?.getAttribute('data-account-state'),
+    ).not.toBe('inactive')
+    expect(
+      screen
+        .queryAllByRole('button', { name: /şirketinde aç$/ })
+        .filter((button) => !(button as HTMLButtonElement).disabled),
+    ).toHaveLength(0)
+
+    releaseB()
+    await waitFor(() => {
+      expect((screen.getByRole('combobox', { name: 'Şirket' }) as HTMLSelectElement).value).toBe(B_ID)
+      expect(
+        document.querySelector('[data-section="account"] [data-account-state]')?.getAttribute('data-account-state'),
+      ).toBe('inactive')
+    }, CHAIN)
+    // Reading the relationships and switching wrote nothing, anywhere.
+    expect(fetches.calls.filter((c) => c.method !== 'GET')).toEqual([])
+  })
+
+  it('works from the keyboard, with a purposeful disclosure, semantic headers and named row actions', async () => {
+    installFetch()
+    renderAt(`/cari/${PARTY}`)
+    await openCard()
+    const toggle = await screen.findByRole('button', { name: TEXT.show }, CHAIN)
+    toggle.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+
+    const table = await within(panel()).findByRole('table', { name: TEXT.caption }, CHAIN)
+    expect(within(table).getAllByRole('columnheader').map((header) => header.textContent)).toEqual([
+      TEXT.columnCompany,
+      TEXT.columnState,
+      LEGACY_ROLE_HEADING,
+      TEXT.columnAction,
+    ])
+    await waitFor(
+      () =>
+        expect(within(table).getAllByRole('rowheader').map((header) => header.textContent)).toEqual([
+          'Göymen Demir Çelik (GDC)',
+          B_LABEL,
+        ]),
+      CHAIN,
+    )
+
+    // From the disclosure, Tab reaches B's action; its name carries the company, and Enter switches.
+    const action = within(table).getByRole('button', { name: TEXT.openIn(B_LABEL) })
+    for (let step = 0; step < 6 && document.activeElement !== action; step += 1) await userEvent.tab()
+    expect(document.activeElement).toBe(action)
+    await userEvent.keyboard('{Enter}')
+    await waitFor(
+      () => expect((screen.getByRole('combobox', { name: 'Şirket' }) as HTMLSelectElement).value).toBe(B_ID),
+      CHAIN,
+    )
   })
 })
