@@ -1,7 +1,9 @@
 /**
  * Draft read context — the one PUBLISHED Finance HTTP read so far.
  *
- * SOURCE, pinned: Finance Backend #261 (head 1c15d59; contract unchanged since 448e420)
+ * SOURCE, pinned: Finance Backend #261 (head edbdf8d; contract unchanged since 448e420 —
+ *   the first label here named 1c15d59, which the revert left on no branch; the blobs
+ *   below are the actual pin and are the same on edbdf8d)
  *   GET /api/v1/finance/manual-receipts/draft-context
  *       ?treasuryAccountId=<uuid>&partyId=<uuid>&companyAccountId=<uuid>&occurredOn=YYYY-MM-DD
  *   header X-Company-Id (required); 200 DraftReadContextView | 400 | 401 | 403 | 404 | 500 | 503

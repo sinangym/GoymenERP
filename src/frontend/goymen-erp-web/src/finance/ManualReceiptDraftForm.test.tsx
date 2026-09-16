@@ -68,6 +68,21 @@ function contextWithScale(companyId: string, request: DraftContextRequest, scale
 
 const PARTY_TEXT = 'SENTETIK-code — SENTETIK legal name'
 
+/** Per-company Cari legal names, so a stale label cannot be mistaken for a fresh one. */
+const LEGAL_NAME: Readonly<Record<string, string>> = {
+  [COMPANY_A]: 'SENTETIK A ünvanı',
+  [COMPANY_B]: 'SENTETIK B ünvanı',
+}
+
+function labelFor(companyId: string): string {
+  return `SENTETIK-code — ${LEGAL_NAME[companyId]}`
+}
+
+function contextWithLegalName(companyId: string, request: DraftContextRequest): Record<string, unknown> {
+  const body = contextWithScale(companyId, request, TEST_SCALE)
+  return { ...body, party: { ...(body.party as Record<string, unknown>), legalName: LEGAL_NAME[companyId] } }
+}
+
 
 async function fillValid(amount = '1000') {
   const select = await screen.findByLabelText(FIELD_LABEL.treasuryAccountId)
@@ -486,5 +501,82 @@ describe('ManualReceiptDraftForm — company context', () => {
     fireEvent.click(await screen.findByRole('button', { name: RESEND_SAME }))
     expect(commands[1].key).toBe(commands[0].key)
     expect(commands[1].scope).toEqual({ companyId: COMPANY_A })
+  })
+
+  it('the context is fenced by the shell namespace: B waits for its own answer instead of reading A’s', async () => {
+    /**
+     * The selection (bank, party, account, date) is identical in both companies, so the
+     * shell namespace at the head of the query key is the ONLY thing separating the two
+     * reads. Take it out and A's currency, profile and Cari label are what company B
+     * renders — from cache, without a request anyone could refuse.
+     *
+     * B's answer is held on purpose: "B shows nothing yet" is the state that tells the
+     * two apart, because once both answers have arrived the screen looks the same either
+     * way.
+     */
+    const heldB: { release: (() => void) | null } = { release: null }
+    const { port, reads } = recordingPort((method, scope, request) => {
+      if (method === 'listBankAccounts') return found(bankPage(scope.companyId))
+      if (method !== 'draftContext') return NO_REPLY
+      const answer = contextOk(contextWithLegalName(scope.companyId, request as DraftContextRequest))
+      if (scope.companyId === COMPANY_A) return answer
+      return new Promise<HttpReadReply>((resolve) => {
+        heldB.release = () => resolve(answer)
+      })
+    })
+    renderFinance(<ManualReceiptDraftForm party={PARTY} />, { port, shell: shellFor(COMPANY_A, 1) })
+    fireEvent.change(await screen.findByLabelText(FIELD_LABEL.treasuryAccountId), { target: { value: EXAMPLE_BANK } })
+    fireEvent.change(screen.getByLabelText(FIELD_LABEL.occurredOn), { target: { value: '2026-09-13' } })
+    await screen.findByText(labelFor(COMPANY_A))
+
+    await commitContext(shellFor(COMPANY_B, 2))
+    await screen.findByLabelText(FIELD_LABEL.treasuryAccountId)
+
+    expect(screen.queryByText(labelFor(COMPANY_A))).toBeNull()
+    expect(screen.getByText(DRAFT_CONTEXT_TEXT.loading)).toBeTruthy()
+    expect(saveButton().disabled).toBe(true)
+    const contextReads = reads.filter((read) => read.method === 'draftContext')
+    expect(contextReads).toHaveLength(2)
+    expect(contextReads[1].scope).toEqual({ companyId: COMPANY_B })
+    expect(contextReads[1].request).toEqual(contextReads[0].request)
+
+    await act(async () => heldB.release?.())
+    await screen.findByText(labelFor(COMPANY_B))
+    expect(screen.queryByText(labelFor(COMPANY_A))).toBeNull()
+  })
+})
+
+describe('ManualReceiptDraftForm — auth boundary', () => {
+  /**
+   * A refused context read is not this screen's private business: 401 ends the session
+   * for the whole app and 403 means the capability this read ran under is no longer
+   * trustworthy. The screen's own closed text proves neither, so these cases assert the
+   * SHELL state the boundary produces — the effect a person actually experiences.
+   */
+  it.each([
+    [401, 'session-reset'],
+    [403, 'capability-refence'],
+  ] as const)('HTTP %s from the context read reaches the shell auth boundary', async (status, effect) => {
+    const { port } = recordingPort((method, scope) =>
+      method === 'listBankAccounts'
+        ? found(bankPage(scope.companyId))
+        : method === 'draftContext'
+          ? contextStatus(status)
+          : NO_REPLY,
+    )
+    renderFinance(<ManualReceiptDraftForm party={PARTY} />, { port, shell: shellFor(COMPANY_A, 1) })
+    fireEvent.change(await screen.findByLabelText(FIELD_LABEL.treasuryAccountId), { target: { value: EXAMPLE_BANK } })
+    fireEvent.change(screen.getByLabelText(FIELD_LABEL.occurredOn), { target: { value: '2026-09-13' } })
+
+    await waitFor(() => expect(currentShell().lastSecurityEffect?.kind).toBe(effect))
+    if (status === 401) {
+      expect(currentShell().sessionInvalid).toBe(true)
+      expect(currentShell().activeContext).toBeNull()
+      expect(currentShell().sessionEpoch).toBe(2)
+    } else {
+      expect(currentShell().activeContext?.capabilityGeneration).toBeNull()
+      expect(currentShell().activeContext?.capabilities).toEqual([])
+      expect(currentShell().requestFenceGeneration).toBe(1)
+    }
   })
 })
