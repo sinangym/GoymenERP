@@ -115,16 +115,38 @@ export const ORGANIZATION_ROUTE: Record<string, string> = {
  * the two tables afterwards in its own commit. The drift test still forces the halves to
  * agree; it just no longer forces one lane to write in the other's files, which the
  * single-writer rule for this branch does not allow.
+ *
+ * AFTERWARDS is load-bearing. Emptying this table before the shell commit has landed
+ * turns the shell's drift test red (measured), and this lane cannot repair a file it
+ * does not own.
  */
 export const ORGANIZATION_ROUTE_AWAITING_SHELL: Record<string, string> = {
   [ORGANIZATION_CAPABILITY.workCenterList]: '/ayarlar/organizasyon/is-merkezleri',
 }
 
-/** Every route this lane mounts, whichever table currently holds it. */
-export const ORGANIZATION_MOUNTED_ROUTE: Record<string, string> = {
-  ...ORGANIZATION_ROUTE,
-  ...ORGANIZATION_ROUTE_AWAITING_SHELL,
+/**
+ * Merges one of this lane's shell-handshake table PAIRS — the ids the shell already
+ * mirrors plus the ones still awaiting it — into the single table the lane reads from.
+ *
+ * It is a pure function on purpose, and that is the point of it. An entry MOVES between
+ * the two tables as the handshake completes, and only a function can be handed both
+ * states in one test run. While the entry still waits in the awaiting table, "read the
+ * awaiting table" and "read the union" return the same value, so a check against today's
+ * tables alone cannot tell the correct helper from the regression it exists to prevent
+ * (#268 delta closure, issuecomment-5693745204).
+ */
+export function mergeMountedTables(
+  mirrored: Readonly<Record<string, string>>,
+  awaiting: Readonly<Record<string, string>>,
+): Record<string, string> {
+  return { ...mirrored, ...awaiting }
 }
+
+/** Every route this lane mounts, whichever table currently holds it. */
+export const ORGANIZATION_MOUNTED_ROUTE: Record<string, string> = mergeMountedTables(
+  ORGANIZATION_ROUTE,
+  ORGANIZATION_ROUTE_AWAITING_SHELL,
+)
 
 /** Nav label. Only the list gets one — the card is reached from a row, never the sidebar. */
 export const ORGANIZATION_NAV_LABEL: Record<string, string> = {
@@ -147,15 +169,16 @@ export const ORGANIZATION_NAV_LABEL_AWAITING_SHELL: Record<string, string> = {
 /**
  * Every nav-label decision this lane has made, whichever table currently holds it.
  *
- * The shell's drift test compares ITS tables against these unions, so the shell owner's
+ * Once the shell's drift test compares ITS tables against these unions, the shell owner's
  * commit touches only `src/shell/**` and this lane merges its own two tables afterwards
- * without either commit turning the other's file red. See
+ * without turning the shell's file red. The order is binding — the shell commit first —
+ * because until it lands that test still reads `ORGANIZATION_ROUTE`. See
  * `WORKCENTER_SHELL_MOUNT_HANDOFF.md` §4.
  */
-export const ORGANIZATION_MOUNTED_NAV_LABEL: Record<string, string> = {
-  ...ORGANIZATION_NAV_LABEL,
-  ...ORGANIZATION_NAV_LABEL_AWAITING_SHELL,
-}
+export const ORGANIZATION_MOUNTED_NAV_LABEL: Record<string, string> = mergeMountedTables(
+  ORGANIZATION_NAV_LABEL,
+  ORGANIZATION_NAV_LABEL_AWAITING_SHELL,
+)
 
 /** Concrete path to one location's card. */
 export function locationDetailPath(locationId: string): string {
@@ -165,12 +188,18 @@ export function locationDetailPath(locationId: string): string {
 /**
  * Concrete path to the work-center list. Read from the table, never retyped.
  *
- * It reads `ORGANIZATION_MOUNTED_ROUTE` — the UNION — on purpose: the entry moves between
- * the two tables as the shell handshake completes, and a helper bound to one of them
- * would start returning `undefined` the moment the entry left it. TypeScript cannot catch
- * that (`Record<string, string>` types a missing key as `string`), so the failure would
- * surface as a card whose back link goes nowhere. The union is true in every state.
+ * It reads the UNION — `ORGANIZATION_MOUNTED_ROUTE` unless a table is passed — on purpose:
+ * the entry moves between the two tables as the shell handshake completes, and a helper
+ * bound to one of them would start returning `undefined` the moment the entry left it.
+ * TypeScript cannot catch that (`Record<string, string>` types a missing key as
+ * `string`), so the failure would surface as a card whose back link goes nowhere.
+ *
+ * The parameter exists for one reason: so a test can hand this SAME function the table
+ * of either handshake state, built by `mergeMountedTables`. Every production caller
+ * passes nothing and gets today's union.
  */
-export function workCenterListPath(): string {
-  return ORGANIZATION_MOUNTED_ROUTE[ORGANIZATION_CAPABILITY.workCenterList]
+export function workCenterListPath(
+  mounted: Readonly<Record<string, string>> = ORGANIZATION_MOUNTED_ROUTE,
+): string {
+  return mounted[ORGANIZATION_CAPABILITY.workCenterList]
 }

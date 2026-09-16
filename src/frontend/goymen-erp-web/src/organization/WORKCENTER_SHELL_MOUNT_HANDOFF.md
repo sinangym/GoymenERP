@@ -66,9 +66,25 @@ Yeni sıra, tek satırlık bir uyarlamayla:
    - `ORGANIZATION_NAV_LABEL` → `ORGANIZATION_MOUNTED_NAV_LABEL`
 
    İkisi de `src/organization/capabilities.ts`'te zaten export edilmiş durumda ve girdinin hangi geçiş tablosunda durduğundan bağımsız olarak doğru. Küme eşitliği kontrolü aynen kalır; yalnız karşılaştırdığı taraf değişir. Böylece testiniz sizin commit'inizde yeşil olur ve benim dosyalarıma dokunmanız gerekmez.
-2. **Benim takip commit'im** iki tabloyu birleştirir: `ORGANIZATION_ROUTE_AWAITING_SHELL` ve `ORGANIZATION_NAV_LABEL_AWAITING_SHELL` boşalır, `organizationMount.test.ts`'teki "hâlâ shell'i bekleyen tek route" beklentisi boş diziye döner ve `organizationRoutes.tsx`'teki geçici `as CapabilityId` cast'i kalkar. Birleşim tabloları değişmediği için sizin drift testiniz bu commit'te de yeşil kalır.
+2. **Benim takip commit'im** iki tabloyu birleştirir: `ORGANIZATION_ROUTE_AWAITING_SHELL` ve `ORGANIZATION_NAV_LABEL_AWAITING_SHELL` boşalır, `organizationMount.test.ts`'teki "hâlâ shell'i bekleyen tek route" beklentisi boş diziye döner ve `organizationRoutes.tsx`'teki geçici `as CapabilityId` cast'i kalkar. Birleşim tabloları değişmediği için, (1) inmiş olduğu sürece sizin drift testiniz bu commit'te de yeşil kalır.
 
-Sıra bu yüzden katı değil: (1) ve (2) bağımsız olarak inebilir, hangi sırayla inerse insin iki taraf da yeşil kalır. Ölçüldü: bu paket harfiyen uygulanmış bir kopyada `tsc -b` 0 ve `vitest run src/organization src/shell` tamamen yeşil.
+**Sıra bağlayıcıdır: önce (1) iner; (2) ondan sonra ya da onunla aynı entegrasyonda.**
+
+- (1) inince drift testi birleşim tablolarını okumaya başlar. (2) birleşimi değiştirmediği için ondan sonra inmesi testi yeşil bırakır.
+- Ters sıra kırar. (1) inmeden (2) uygulanırsa drift testi hâlâ `ORGANIZATION_ROUTE`'u okur: o tablo 3 id'ye çıkar, shell `CAPABILITY` 2 id'de kalır ve `organizationMountDrift.test.ts` kırmızıya döner. O dosya sizin olduğu için ben bunu kendi commit'imde onaramam; bu yüzden (2)'yi (1) ana dala girmeden açmıyorum.
+- Cast'in kalkması da (1)'e bağlı: id shell'in `CapabilityId` birliğine girmeden cast'siz satır derlenmez.
+
+Bu paragrafın önceki sürümü "(1) ve (2) bağımsız olarak inebilir, hangi sırayla inerse insin iki taraf da yeşil kalır" diyordu. **Bu yanlıştı:** yalnız (1)'i ve (1)+(2)'yi ölçmüş, yalnız (2)'yi ölçmemiştim.
+
+Ölçüldü (yerel, CI değil — Node 24.21.0, `tsc -b --force` ve `vitest run src/organization src/shell`, bu dosyanın bulunduğu head'in kopyalarında):
+
+| Kopyaya uygulanan | Sonuç |
+|---|---|
+| yalnız (1) | `tsc` 0 · **340/340 yeşil** |
+| (1), ardından (2) — cast'in kalkması dahil | `tsc` 0 · **340/340 yeşil** |
+| yalnız (2), (1) olmadan — tablolar taşındı ve beklenti boşaldı; cast (1)'e bağlı olduğu için yerinde | `tsc` 0 · **1 kırmızı** — `shell/organizationMountDrift.test.ts` › "mounts every ROUTE the lane declares, and nothing that is only a control" |
+
+Aynı sonucu bağımsız olarak bulut Organizasyon oturumu (#268 issuecomment-5693505653), ÜRÜN (-5693745204) ve FİNANS (-5693752681) da ölçtü.
 
 `organizationRoutes.tsx`'teki cast'e **dokunmayın** — (2)'de ben kaldırıyorum. Runtime'da hiçbir şeyi genişletmiyor; `hasCapability` her hâlükârda string'i sunucu snapshot'ına karşı okuyor.
 

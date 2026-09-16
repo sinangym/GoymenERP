@@ -19,6 +19,7 @@ import {
   ORGANIZATION_ROUTE,
   ORGANIZATION_ROUTE_AWAITING_SHELL,
   locationDetailPath,
+  mergeMountedTables,
   workCenterListPath,
 } from './capabilities'
 import { organizationRoutes } from './organizationRoutes'
@@ -53,18 +54,42 @@ describe('the lane’s route tables', () => {
     ])
   })
 
-  it('resolves every lane link from the union, so the table move cannot break one', () => {
+  it('resolves ORG-03 through the union in BOTH handshake states, today', () => {
     /**
      * The failure this pins is the one TypeScript cannot: `Record<string, string>` types
      * a MISSING key as `string`, so a helper reading the table the entry has just left
      * returns `undefined` and every link built from it lands on the not-found block —
-     * with `tsc` still green. Reading the union keeps the helper true in both handshake
-     * states, which is exactly what the handoff now asks the shell owner to rely on.
+     * with `tsc` still green.
+     *
+     * A check against today's tables cannot see it: while the entry still waits in the
+     * awaiting table, reading that table and reading the union give the same value
+     * (measured by the #268 delta closure — the regressed helper left every test green).
+     * So both states are BUILT here, through the same `mergeMountedTables` the app uses,
+     * and handed to the same `workCenterListPath`. The value is a SENTINEL, never the real
+     * path, so a helper that ignores the table it is given and reads module state instead
+     * cannot pass by coincidence.
      */
+    const id = ORGANIZATION_CAPABILITY.workCenterList
+    const sentinel = '/sentinel/is-merkezleri'
+    const beforeMove = mergeMountedTables({}, { [id]: sentinel })
+    const afterMove = mergeMountedTables({ [id]: sentinel }, {})
+
+    expect(workCenterListPath(beforeMove)).toBe(sentinel)
+    expect(workCenterListPath(afterMove)).toBe(sentinel)
+  })
+
+  it('builds the tables the app reads with that same helper', () => {
+    // Ties the two cases above to production: the constants ARE the helper's output over
+    // today's tables, and the parameterless call reads exactly that union.
+    expect(ORGANIZATION_MOUNTED_ROUTE).toEqual(
+      mergeMountedTables(ORGANIZATION_ROUTE, ORGANIZATION_ROUTE_AWAITING_SHELL),
+    )
+    expect(ORGANIZATION_MOUNTED_NAV_LABEL).toEqual(
+      mergeMountedTables(ORGANIZATION_NAV_LABEL, ORGANIZATION_NAV_LABEL_AWAITING_SHELL),
+    )
     expect(workCenterListPath()).toBe(
       ORGANIZATION_MOUNTED_ROUTE[ORGANIZATION_CAPABILITY.workCenterList],
     )
-    expect(Object.values(ORGANIZATION_MOUNTED_ROUTE)).toContain(workCenterListPath())
   })
 
   it('gives every mounted route a nav label decision, in one table or the other', () => {
@@ -88,10 +113,6 @@ describe('the lane’s route tables', () => {
   it('publishes one union per decision, which is what the shell compares against', () => {
     // The shell's drift test reads these unions rather than the transitional tables, so
     // its commit stays inside `src/shell/**` and this lane merges its tables later.
-    expect(ORGANIZATION_MOUNTED_NAV_LABEL).toEqual({
-      ...ORGANIZATION_NAV_LABEL,
-      ...ORGANIZATION_NAV_LABEL_AWAITING_SHELL,
-    })
     expect([...Object.keys(ORGANIZATION_MOUNTED_NAV_LABEL)].sort()).toEqual(
       [...Object.keys(ORGANIZATION_MOUNTED_ROUTE)].sort(),
     )
