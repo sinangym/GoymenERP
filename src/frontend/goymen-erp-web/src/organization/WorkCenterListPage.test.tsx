@@ -28,7 +28,11 @@ import {
   requestsFor,
   workCenter,
 } from './testHarness'
-import { WORK_CENTER_LOCATION_UNAVAILABLE } from './organizationText'
+import {
+  WORK_CENTER_LOCATION_LINK_TEXT,
+  WORK_CENTER_LOCATION_UNAVAILABLE,
+  workCenterLeadText,
+} from './organizationText'
 import { workCenterListPath } from './capabilities'
 
 const PATH = workCenterListPath()
@@ -130,19 +134,20 @@ describe('reading the authorized work centers', () => {
 describe('the step to a location, and the step back', () => {
   it('opens the card and returns to THIS list, by keyboard alone', async () => {
     /**
-     * The whole journey, driven the way a keyboard user drives it: Tab to the row's
-     * location link, Enter to open, then Tab to the card's back link and Enter to
-     * return. Both are anchors, so this exercises real focus order and real activation
-     * rather than a click handler.
+     * The whole journey, driven the way a keyboard user drives it: TAB until the row's
+     * location link has focus, Enter to open, then Tab to the card's back link and Enter
+     * to return. Both are anchors, so real focus ORDER and real activation are exercised
+     * — an earlier version of this case called `.focus()` directly, which proved Enter
+     * works but said nothing about whether Tab ever reaches the link.
      *
-     * The return target is the assertion that matters: a hardcoded `/ayarlar/organizasyon`
-     * would strand a `work-centers.read`-only user on a route they do not hold.
+     * The return target is the assertion that matters: a hardcoded
+     * `/ayarlar/organizasyon` would drop a user who arrived from the work centers onto a
+     * list they never opened.
      */
     const { router } = stubAndRender({ capabilities: WORK_CENTERS_WITH_LOCATION_CAPABILITIES })
-    const link = await screen.findByRole('link', { name: 'WC-PAINT iş merkezinin lokasyonunu aç' })
+    const link = await screen.findByRole('link', { name: 'Lokasyonu aç: WC-PAINT' })
 
-    link.focus()
-    expect(document.activeElement).toBe(link)
+    await tabTo(link)
     await userEvent.keyboard('{Enter}')
 
     await waitFor(() =>
@@ -150,8 +155,8 @@ describe('the step to a location, and the step back', () => {
     )
     expect(await screen.findByText('OSM-H0')).toBeTruthy()
 
-    const back = await screen.findByRole('link', { name: /İş Merkezleri/ })
-    back.focus()
+    const back = await backLink()
+    await tabTo(back)
     await userEvent.keyboard('{Enter}')
 
     await waitFor(() => expect(router.state.location.pathname).toBe(PATH))
@@ -169,7 +174,7 @@ describe('the step to a location, and the step back', () => {
     renderAt(PATH)
 
     await screen.findByRole('table', { name: /İş Merkezleri/ })
-    expect(screen.queryAllByRole('link', { name: /lokasyonunu aç/ })).toHaveLength(0)
+    expect(screen.queryAllByRole('link', { name: /^Lokasyonu aç/ })).toHaveLength(0)
     expect(screen.getAllByText(WORK_CENTER_LOCATION_UNAVAILABLE).length).toBe(ROWS.length)
     expect(screen.queryByText(LOC_H0)).toBeNull()
     expect(requestsFor(recorded, '/organization/locations')).toHaveLength(0)
@@ -183,16 +188,43 @@ describe('the step to a location, and the step back', () => {
     expect(screen.queryByText('Bulunamadı — sayfa')).toBeNull()
   })
 
-  it('names the work center in each link, not just “Lokasyonu aç”', async () => {
-    // One repeated accessible name down a column tells a screen-reader user nothing
-    // about which row they are on.
+  it('starts each link’s accessible name with its visible text, then names the row', async () => {
+    /**
+     * WCAG 2.2 SC 2.5.3 (Label in Name, level A): a speech-input user says the words they
+     * SEE. The first version of this screen labelled the link
+     * "WC-PAINT iş merkezinin lokasyonunu aç" while showing "Lokasyonu aç" — the visible
+     * phrase is not contained in that name ("lokasyonunu" is a different word), so
+     * "Lokasyonu aç" matched nothing. This case pins both halves: the name CONTAINS the
+     * visible text, and it still identifies the row, because one repeated name down a
+     * column tells a screen-reader user nothing about where they are.
+     */
     stubAndRender({ capabilities: WORK_CENTERS_WITH_LOCATION_CAPABILITIES })
-    const links = await screen.findAllByRole('link', { name: /lokasyonunu aç/ })
+    const links = await screen.findAllByRole('link', { name: /^Lokasyonu aç: / })
     expect(links.map((item) => item.getAttribute('aria-label'))).toEqual([
-      'WC-PAINT iş merkezinin lokasyonunu aç',
-      'WC-TUBE iş merkezinin lokasyonunu aç',
-      'WC-SLIT iş merkezinin lokasyonunu aç',
+      'Lokasyonu aç: WC-PAINT',
+      'Lokasyonu aç: WC-TUBE',
+      'Lokasyonu aç: WC-SLIT',
     ])
+    for (const item of links) {
+      const visible = (item.textContent ?? '').trim()
+      expect(visible).toBe(WORK_CENTER_LOCATION_LINK_TEXT)
+      expect(item.getAttribute('aria-label')?.includes(visible)).toBe(true)
+    }
+  })
+
+  it('points the lead at the location link only when this caller has one', async () => {
+    // The screen's own target user holds work centers WITHOUT the card, so a lead telling
+    // them to use "the location link in the row" names something no row shows.
+    stub()
+    renderAt(PATH)
+    expect(await screen.findByRole('table', { name: /İş Merkezleri/ })).toBeTruthy()
+    expect(screen.getByText(workCenterLeadText(false))).toBeTruthy()
+    expect(screen.queryByText(workCenterLeadText(true))).toBeNull()
+  })
+
+  it('does point the lead at the link when the card capability is present', async () => {
+    stubAndRender({ capabilities: WORK_CENTERS_WITH_LOCATION_CAPABILITIES })
+    expect(await screen.findByText(workCenterLeadText(true))).toBeTruthy()
   })
 })
 
@@ -367,12 +399,12 @@ describe('this whole flow is a read', () => {
     const recorded = stub({ capabilities: WORK_CENTERS_WITH_LOCATION_CAPABILITIES })
     const { router } = renderAt(PATH)
 
-    const link = await screen.findByRole('link', { name: 'WC-PAINT iş merkezinin lokasyonunu aç' })
+    const link = await screen.findByRole('link', { name: 'Lokasyonu aç: WC-PAINT' })
     await userEvent.click(link)
     await waitFor(() =>
       expect(router.state.location.pathname).toBe(`/ayarlar/organizasyon/lokasyon/${LOC_H0}`),
     )
-    await userEvent.click(await screen.findByRole('link', { name: /İş Merkezleri/ }))
+    await userEvent.click(await backLink())
     await waitFor(() => expect(router.state.location.pathname).toBe(PATH))
 
     expect(recorded.length).toBeGreaterThan(0)
@@ -384,6 +416,34 @@ describe('this whole flow is a read', () => {
     expect(screen.queryByRole('button', { name: /Pasife al|Aktifleştir/ })).toBeNull()
   })
 })
+
+/**
+ * The card's BACK link, found inside the card's own breadcrumb.
+ *
+ * Deliberately not `screen.findByRole('link', { name: /İş Merkezleri/ })`: once the shell
+ * owner applies WORKCENTER_SHELL_MOUNT_HANDOFF.md the sidebar carries a link with that
+ * exact name, and a page-wide query would then match two elements and fail for a reason
+ * that has nothing to do with this journey. Measured — the handoff applied literally
+ * turned these two cases red before this helper existed.
+ */
+function backLink(): Promise<HTMLElement> {
+  return within(screen.getByRole('navigation', { name: 'Geri' })).findByRole('link', {
+    name: /İş Merkezleri/,
+  })
+}
+
+/**
+ * Tabs until `target` holds focus, so a case asserts REACHABILITY BY KEYBOARD rather than
+ * assigning focus itself. The bound is generous but finite: the shell's own header and
+ * nav sit ahead of the table, and an unreachable target must fail the case instead of
+ * looping forever.
+ */
+async function tabTo(target: HTMLElement, limit = 40): Promise<void> {
+  for (let step = 0; step < limit && document.activeElement !== target; step += 1) {
+    await userEvent.tab()
+  }
+  expect(document.activeElement).toBe(target)
+}
 
 /** Installs the stub and renders at ORG-03, returning the router for navigation cases. */
 function stubAndRender(overrides: Parameters<typeof stub>[0] = {}) {

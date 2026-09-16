@@ -44,9 +44,22 @@ export function workCenterKindLabel(kind: string): string {
 
 export const WORK_CENTER_HEADING = 'İş Merkezleri'
 
-export const WORK_CENTER_LEAD =
-  'Bu şirket bağlamında yetkiniz dâhilindeki iş merkezleri. Bir iş merkezinin ' +
-  'lokasyonunu açmak için satırdaki lokasyon bağlantısını kullanın.'
+const WORK_CENTER_LEAD_BASE = 'Bu şirket bağlamında yetkiniz dâhilindeki iş merkezleri.'
+
+/**
+ * The lead, which depends on what this caller can actually do here.
+ *
+ * The screen's own target user holds `organization.work-centers.read` WITHOUT the
+ * location card, and for that user a sentence pointing at "the location link in the row"
+ * names something no row shows. So the link sentence is added only when the card
+ * capability is present; the column's own scope note carries the other case.
+ */
+export function workCenterLeadText(canOpenLocation: boolean): string {
+  return canOpenLocation
+    ? `${WORK_CENTER_LEAD_BASE} Bir iş merkezinin lokasyonunu açmak için satırdaki ` +
+        'lokasyon bağlantısını kullanın.'
+    : WORK_CENTER_LEAD_BASE
+}
 
 /**
  * The count line. It names its own scope for the reason the location summary does: the
@@ -69,9 +82,22 @@ export function workCenterCountText(count: number): string {
  */
 export const WORK_CENTER_LOCATION_UNAVAILABLE = 'Lokasyon kartı kapsam dışı'
 
-/** Accessible name for a row's location link — the id is never shown as a label. */
+/** The link's VISIBLE text. One string, so the name below cannot drift from it. */
+export const WORK_CENTER_LOCATION_LINK_TEXT = 'Lokasyonu aç'
+
+/**
+ * Accessible name for a row's location link.
+ *
+ * It STARTS WITH THE VISIBLE TEXT and then names the work center. WCAG 2.2 SC 2.5.3
+ * (Label in Name, level A) requires the visible label to be contained in the accessible
+ * name: a speech-input user says what they see ("Lokasyonu aç"), and a name that
+ * rephrased it — "… iş merkezinin lokasyonunu aç" — does not contain that phrase, so the
+ * command matched nothing. The code still follows, because one repeated name down a
+ * column tells a screen-reader user nothing about which row they are on. The id is never
+ * shown as a label.
+ */
 export function workCenterLocationLinkLabel(code: string): string {
-  return `${code} iş merkezinin lokasyonunu aç`
+  return `${WORK_CENTER_LOCATION_LINK_TEXT}: ${code}`
 }
 
 export const ACTIVE_LABEL = 'Aktif'

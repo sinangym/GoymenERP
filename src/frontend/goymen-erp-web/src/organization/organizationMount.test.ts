@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest'
 import { matchPath } from 'react-router'
 import {
   ORGANIZATION_CAPABILITY,
+  ORGANIZATION_MOUNTED_NAV_LABEL,
   ORGANIZATION_MOUNTED_ROUTE,
   ORGANIZATION_NAV_LABEL,
   ORGANIZATION_NAV_LABEL_AWAITING_SHELL,
@@ -44,11 +45,26 @@ describe('the lane’s route tables', () => {
   })
 
   it('has exactly one route still waiting on the shell — ORG-03', () => {
-    // When the shell owner applies WORKCENTER_SHELL_MOUNT_HANDOFF.md this becomes an
-    // empty table and this expectation is the line they update, deliberately.
+    // This lane empties the table in its OWN commit, after the shell owner's commit has
+    // declared the id (WORKCENTER_SHELL_MOUNT_HANDOFF.md §4). This line is the one that
+    // makes forgetting that step impossible; the shell owner never edits it.
     expect(Object.keys(ORGANIZATION_ROUTE_AWAITING_SHELL)).toEqual([
       ORGANIZATION_CAPABILITY.workCenterList,
     ])
+  })
+
+  it('resolves every lane link from the union, so the table move cannot break one', () => {
+    /**
+     * The failure this pins is the one TypeScript cannot: `Record<string, string>` types
+     * a MISSING key as `string`, so a helper reading the table the entry has just left
+     * returns `undefined` and every link built from it lands on the not-found block —
+     * with `tsc` still green. Reading the union keeps the helper true in both handshake
+     * states, which is exactly what the handoff now asks the shell owner to rely on.
+     */
+    expect(workCenterListPath()).toBe(
+      ORGANIZATION_MOUNTED_ROUTE[ORGANIZATION_CAPABILITY.workCenterList],
+    )
+    expect(Object.values(ORGANIZATION_MOUNTED_ROUTE)).toContain(workCenterListPath())
   })
 
   it('gives every mounted route a nav label decision, in one table or the other', () => {
@@ -61,7 +77,25 @@ describe('the lane’s route tables', () => {
     // reached from a row, never from the sidebar.
     expect(ORGANIZATION_NAV_LABEL[ORGANIZATION_CAPABILITY.settingsList]).toBe('Organizasyon')
     expect(ORGANIZATION_NAV_LABEL[ORGANIZATION_CAPABILITY.locationDetail]).toBe('')
-    expect(ORGANIZATION_NAV_LABEL_AWAITING_SHELL[ORGANIZATION_CAPABILITY.workCenterList]).toBe(
+    // Asserted through the union, so the LANE's own follow-up commit (which empties the
+    // awaiting tables) does not have to edit this line as well. The route-table
+    // expectation above is the one that deliberately forces that commit to happen.
+    expect(ORGANIZATION_MOUNTED_NAV_LABEL[ORGANIZATION_CAPABILITY.workCenterList]).toBe(
+      'İş Merkezleri',
+    )
+  })
+
+  it('publishes one union per decision, which is what the shell compares against', () => {
+    // The shell's drift test reads these unions rather than the transitional tables, so
+    // its commit stays inside `src/shell/**` and this lane merges its tables later.
+    expect(ORGANIZATION_MOUNTED_NAV_LABEL).toEqual({
+      ...ORGANIZATION_NAV_LABEL,
+      ...ORGANIZATION_NAV_LABEL_AWAITING_SHELL,
+    })
+    expect([...Object.keys(ORGANIZATION_MOUNTED_NAV_LABEL)].sort()).toEqual(
+      [...Object.keys(ORGANIZATION_MOUNTED_ROUTE)].sort(),
+    )
+    expect(ORGANIZATION_MOUNTED_NAV_LABEL[ORGANIZATION_CAPABILITY.workCenterList]).toBe(
       'İş Merkezleri',
     )
   })

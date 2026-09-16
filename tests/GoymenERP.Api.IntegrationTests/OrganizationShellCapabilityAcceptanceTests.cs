@@ -2,11 +2,14 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using GoymenERP.Api.Shell;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
+using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Infrastructure.Shell;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -188,6 +191,90 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
         Assert.Empty((await Snapshot(client)).Capabilities);
     }
 
+    /// <summary>
+    /// The SCOPE half of "yalnız yetkili şirket/scope kayıtları", measured rather than
+    /// assumed.
+    ///
+    /// A caller whose `organization.work-centers.read` is granted on a scope that matches
+    /// NO record still gets the ROUTE — the capability stands on the permission, and
+    /// closing the screen would tell the caller something about rows they cannot read —
+    /// and gets an EMPTY list rather than the company's rows.
+    ///
+    /// Why this case is needed at all: the seeded company A topology puts all five work
+    /// centers under the single SITE-OSM site, so the site-scoped seeded reader sees
+    /// exactly what a company-wide reader sees. Deleting the scope filter in
+    /// <c>OrganizationService.GetWorkCentersAsync</c> therefore left every existing test
+    /// green. This case and the positive theory below fail when it is deleted.
+    /// </summary>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public async Task WorkCentersGrantedOnAnEmptyScope_PublishesTheRouteAndListsNothing(int scopeKind)
+    {
+        await using var host = ControlledHost(new ControlledAuthority(8, scopeKind));
+        using var client = Client(host);
+        Assert.Equal(
+            OrganizationShellCapabilityProvider.WorkCenterListCapabilityId,
+            Assert.Single((await Snapshot(client)).Capabilities));
+        Assert.Empty(await ReadCodesAsync(client));
+    }
+
+    /// <summary>
+    /// Each branch of the scope filter, against REAL seeded ids: a site scope answers with
+    /// that site's work centers, a location scope with that location's, and a work-center
+    /// scope with exactly itself.
+    ///
+    /// The expected sets come from the seed, not from the endpoint:
+    /// <c>Seed/organization-seed.json</c> places WC-SLIT and WC-CR on OSM-H3, WC-PAINT on
+    /// OSM-H0, WC-TUBE on OSM-H1 and WC-CUT on OSM-H6, with all of them under SITE-OSM.
+    /// </summary>
+    [Theory]
+    [InlineData(1, "SITE-OSM", "WC-CR,WC-CUT,WC-PAINT,WC-SLIT,WC-TUBE")]
+    [InlineData(2, "OSM-H3", "WC-CR,WC-SLIT")]
+    [InlineData(2, "OSM-H0", "WC-PAINT")]
+    [InlineData(3, "WC-TUBE", "WC-TUBE")]
+    public async Task WorkCentersGrantedOnOneScope_ListExactlyThatScopesRecords(
+        int scopeKind, string code, string expected)
+    {
+        var authority = new ControlledAuthority(8, scopeKind);
+        await using var host = ControlledHost(authority);
+        authority.ScopeId = await ResolveScopeIdAsync(host, scopeKind, code);
+        using var client = Client(host);
+        Assert.Equal(expected.Split(','), await ReadCodesAsync(client));
+    }
+
+    /// <summary>Work-center codes as the endpoint returns them, in server order.</summary>
+    private static async Task<string[]> ReadCodesAsync(HttpClient client)
+    {
+        using var response = await client.GetAsync("/api/v1/organization/work-centers");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var rows = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(JsonValueKind.Array, rows.ValueKind);
+        return [.. rows.EnumerateArray().Select(row => row.GetProperty("code").GetString()!)];
+    }
+
+    /// <summary>
+    /// The seeded id behind a code, read from the database the host itself serves — so the
+    /// scope points at a record that exists rather than at a value this test invented.
+    /// </summary>
+    private static async Task<Guid> ResolveScopeIdAsync(
+        WebApplicationFactory<Program> host, int scopeKind, string code)
+    {
+        await using var scope = host.Services.CreateAsyncScope();
+        scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(TestCompanyIds.CompanyA);
+        var database = scope.ServiceProvider.GetRequiredService<OrganizationDbContext>();
+        return scopeKind switch
+        {
+            1 => (await database.Sites.AsNoTracking()
+                .SingleAsync(site => site.Code == code)).Id,
+            2 => (await database.Locations.AsNoTracking()
+                .SingleAsync(location => location.Code == code)).Id,
+            _ => (await database.WorkCenters.AsNoTracking()
+                .SingleAsync(workCenter => workCenter.Code == code)).Id,
+        };
+    }
+
     private WebApplicationFactory<Program> ControlledHost(ControlledAuthority authority) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {
@@ -227,7 +314,13 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
     private sealed class ControlledAuthority(int permissions, int scopeKind) : IErpAuthorizationService
     {
         public int Permissions { get; set; } = permissions;
-        private static readonly Guid ScopeId = Guid.Parse("76000000-0000-0000-0000-000000000001");
+
+        /// <summary>
+        /// The id the narrow scope carries. It defaults to one that matches NO seeded
+        /// record — the out-of-scope case — and a case that wants the opposite points it
+        /// at a real site/location/work-center id read from the database.
+        /// </summary>
+        public Guid ScopeId { get; set; } = Guid.Parse("76000000-0000-0000-0000-000000000001");
 
         private PermissionScope Scope(string permission, Guid companyId)
         {

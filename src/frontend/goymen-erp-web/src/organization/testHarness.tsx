@@ -7,10 +7,15 @@
  * secret. Same status as `../shell/fixtures.ts` and `../cari/commandPageHarness.ts`:
  * not used by production code.
  *
- * It uses `organizationRoutes` — the very array `shell/router.tsx` spreads — rather than
- * the shared `shellRoutes`, so a case mounts this lane's screens without dragging in
- * Cari and Ürün fixtures. Everything above the route table is the real thing, so the
- * gate, the fence and the boundary are exercised as they will run in the app.
+ * By default it uses `organizationRoutes` — the very array `shell/router.tsx` spreads —
+ * rather than the shared `shellRoutes`, so a case mounts this lane's screens without
+ * dragging in Cari and Ürün fixtures. Everything above the route table is the real thing,
+ * so the gate, the fence and the boundary are exercised as they will run in the app.
+ *
+ * `renderAt(path, { routeTable })` overrides that default, and exists for exactly one
+ * case: mounting the REAL `shellRoutes` to prove this lane's screens are reachable
+ * through the router the app actually builds. Without it nothing here would notice the
+ * shell dropping the `...organizationRoutes` spread.
  *
  * WHAT THIS HARNESS IS NOT: evidence of real API, real SQL or browser acceptance.
  * A fixture is not a record. Every assertion built on it is a component/DOM claim and
@@ -313,9 +318,14 @@ export function renderAt(
      * request anyway. Use this whenever the point is that a CACHED page was dropped.
      */
     readonly retainCache?: boolean
+    /**
+     * Mount this table instead of the lane's own. Pass `shellRoutes` to exercise the
+     * app's real router, including its catch-all and its spread of this lane's routes.
+     */
+    readonly routeTable?: RouteObject[]
   } = {},
 ) {
-  const router = createMemoryRouter(routes(), { initialEntries: [path] })
+  const router = createMemoryRouter(options.routeTable ?? routes(), { initialEntries: [path] })
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: options.retainCache

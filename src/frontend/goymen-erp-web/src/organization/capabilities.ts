@@ -109,10 +109,12 @@ export const ORGANIZATION_ROUTE: Record<string, string> = {
  * screen is reachable by URL the moment Backend publishes the id. What is still missing
  * without the shell delta is only the SIDEBAR ENTRY, which is the shell owner's to add.
  *
- * `WORKCENTER_SHELL_MOUNT_HANDOFF.md` carries that delta. Applying it means adding the
- * three shell lines AND moving this entry into `ORGANIZATION_ROUTE` above, in the SAME
- * commit — the drift test is what forces the two halves to land together, which is the
- * property worth keeping rather than working around.
+ * `WORKCENTER_SHELL_MOUNT_HANDOFF.md` carries that delta. Its §4 asks the shell owner to
+ * compare against `ORGANIZATION_MOUNTED_ROUTE` — the union below — instead of
+ * `ORGANIZATION_ROUTE`, so their commit stays inside `src/shell/**` and this lane merges
+ * the two tables afterwards in its own commit. The drift test still forces the halves to
+ * agree; it just no longer forces one lane to write in the other's files, which the
+ * single-writer rule for this branch does not allow.
  */
 export const ORGANIZATION_ROUTE_AWAITING_SHELL: Record<string, string> = {
   [ORGANIZATION_CAPABILITY.workCenterList]: '/ayarlar/organizasyon/is-merkezleri',
@@ -142,12 +144,33 @@ export const ORGANIZATION_NAV_LABEL_AWAITING_SHELL: Record<string, string> = {
   [ORGANIZATION_CAPABILITY.workCenterList]: 'İş Merkezleri',
 }
 
+/**
+ * Every nav-label decision this lane has made, whichever table currently holds it.
+ *
+ * The shell's drift test compares ITS tables against these unions, so the shell owner's
+ * commit touches only `src/shell/**` and this lane merges its own two tables afterwards
+ * without either commit turning the other's file red. See
+ * `WORKCENTER_SHELL_MOUNT_HANDOFF.md` §4.
+ */
+export const ORGANIZATION_MOUNTED_NAV_LABEL: Record<string, string> = {
+  ...ORGANIZATION_NAV_LABEL,
+  ...ORGANIZATION_NAV_LABEL_AWAITING_SHELL,
+}
+
 /** Concrete path to one location's card. */
 export function locationDetailPath(locationId: string): string {
   return `/ayarlar/organizasyon/lokasyon/${encodeURIComponent(locationId)}`
 }
 
-/** Concrete path to the work-center list. Read from the table, never retyped. */
+/**
+ * Concrete path to the work-center list. Read from the table, never retyped.
+ *
+ * It reads `ORGANIZATION_MOUNTED_ROUTE` — the UNION — on purpose: the entry moves between
+ * the two tables as the shell handshake completes, and a helper bound to one of them
+ * would start returning `undefined` the moment the entry left it. TypeScript cannot catch
+ * that (`Record<string, string>` types a missing key as `string`), so the failure would
+ * surface as a card whose back link goes nowhere. The union is true in every state.
+ */
 export function workCenterListPath(): string {
-  return ORGANIZATION_ROUTE_AWAITING_SHELL[ORGANIZATION_CAPABILITY.workCenterList]
+  return ORGANIZATION_MOUNTED_ROUTE[ORGANIZATION_CAPABILITY.workCenterList]
 }

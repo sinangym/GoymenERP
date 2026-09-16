@@ -10,7 +10,7 @@ Bu paketi ben uygulamadım. `src/shell/**` içinde tek satır değiştirmedim; `
 
 ## 1. Neden bir delta gerekiyor — ve neden yalnız nav girdisi
 
-Route **zaten mount oluyor**: `shell/router.tsx` `...organizationRoutes` spread ediyor ve ORG-03 o dizinin üçüncü elemanı. `CapabilityRoute` diğer ikisiyle aynı şekilde kapatıyor. Yani backend `organization.work-centers.list` yayımladığı an ekran **URL ile erişilebilir**.
+Route **zaten mount oluyor**: `shell/router.tsx` `...organizationRoutes` spread ediyor ve ORG-03 o dizinin **ikinci** elemanı (`organizationRoutes.tsx:38-55`). `CapabilityRoute` diğer ikisiyle aynı şekilde kapatıyor. Yani backend `organization.work-centers.list` yayımladığı an ekran **URL ile erişilebilir**. Bu iddia artık testle korunuyor: `src/organization/shellRouteReachability.test.tsx` gerçek `shellRoutes` üzerinden ORG-03'ü açıyor; spread silinirse kırmızıya döner.
 
 Eksik olan tek şey **nav girdisi**, ve bu kozmetik değil:
 
@@ -55,22 +55,22 @@ Eksik olan tek şey **nav girdisi**, ve bu kozmetik değil:
 
 `organizationSitesList`'in hemen ardına. Sunucu grant etmeden görünmez; ORG-02 kartı girmez.
 
-## 4. Benim dosyamda taşınması gereken TEK satır — aynı commit'te
+## 4. Benim dosyamda taşınması gereken satır — ve neden artık sizin commit'inizde değil
 
-`src/organization/capabilities.ts` içinde `organization.work-centers.list` girdisi şu an `ORGANIZATION_ROUTE_AWAITING_SHELL` tablosunda duruyor, `ORGANIZATION_ROUTE`'ta değil. Sebebi mekanik:
+`src/organization/capabilities.ts` içinde `organization.work-centers.list` girdisi şu an `ORGANIZATION_ROUTE_AWAITING_SHELL` tablosunda duruyor. Önceki sürümde sizden, aynı commit'te benim iki dosyamı da değiştirmenizi istemiştim. **Bunu geri alıyorum:** bu dalda tek yazar kuralı var ve o istek şerit sınırını aşıyordu.
 
-`shell/organizationMountDrift.test.ts` **sizin dosyanız** ve `Object.keys(ORGANIZATION_ROUTE)` ile `shell/capabilities.ts`'teki `organization.*` id'leri arasında **küme eşitliği** iddia ediyor. O test doğru ve iki yarıyı birlikte inmeye zorlayan mekanizma tam olarak o. Yani:
+Yeni sıra, tek satırlık bir uyarlamayla:
 
-- girdiyi bugün `ORGANIZATION_ROUTE`'a koysaydım, sizin testiniz **kırmızı** olurdu;
-- siz §2'yi uygulayıp benim satırımı taşımasaydınız, yine kırmızı olurdu.
+1. **Sizin commit'iniz yalnız `src/shell/**` içinde kalır.** §2 ve §3'ü uygularsınız, ek olarak `shell/organizationMountDrift.test.ts` şeridimin **birleşik** tablolarını okur:
+   - `ORGANIZATION_ROUTE` → `ORGANIZATION_MOUNTED_ROUTE`
+   - `ORGANIZATION_NAV_LABEL` → `ORGANIZATION_MOUNTED_NAV_LABEL`
 
-İkisi aynı commit'te olmalı. Uygulama anında yapılacaklar:
+   İkisi de `src/organization/capabilities.ts`'te zaten export edilmiş durumda ve girdinin hangi geçiş tablosunda durduğundan bağımsız olarak doğru. Küme eşitliği kontrolü aynen kalır; yalnız karşılaştırdığı taraf değişir. Böylece testiniz sizin commit'inizde yeşil olur ve benim dosyalarıma dokunmanız gerekmez.
+2. **Benim takip commit'im** iki tabloyu birleştirir: `ORGANIZATION_ROUTE_AWAITING_SHELL` ve `ORGANIZATION_NAV_LABEL_AWAITING_SHELL` boşalır, `organizationMount.test.ts`'teki "hâlâ shell'i bekleyen tek route" beklentisi boş diziye döner ve `organizationRoutes.tsx`'teki geçici `as CapabilityId` cast'i kalkar. Birleşim tabloları değişmediği için sizin drift testiniz bu commit'te de yeşil kalır.
 
-1. `ORGANIZATION_ROUTE_AWAITING_SHELL`'deki satırı `ORGANIZATION_ROUTE`'a taşıyın (tablo boş kalır).
-2. `ORGANIZATION_NAV_LABEL_AWAITING_SHELL`'deki satırı `ORGANIZATION_NAV_LABEL`'a taşıyın.
-3. `src/organization/organizationMount.test.ts` içindeki `has exactly one route still waiting on the shell — ORG-03` beklentisini boş diziye çevirin. O satır bilerek oradadır: taşımayı sessizce unutmayı imkânsız kılar.
+Sıra bu yüzden katı değil: (1) ve (2) bağımsız olarak inebilir, hangi sırayla inerse insin iki taraf da yeşil kalır. Ölçüldü: bu paket harfiyen uygulanmış bir kopyada `tsc -b` 0 ve `vitest run src/organization src/shell` tamamen yeşil.
 
-`organizationRoutes.tsx`'teki geçici `as CapabilityId` cast'ine **dokunmayın** — sizin girdiniz merge olduktan sonra gereksizleşir ve onu ben kaldırırım (runtime'da hiçbir şeyi genişletmiyor; `hasCapability` her hâlükârda string'i sunucu snapshot'ına karşı okuyor).
+`organizationRoutes.tsx`'teki cast'e **dokunmayın** — (2)'de ben kaldırıyorum. Runtime'da hiçbir şeyi genişletmiyor; `hasCapability` her hâlükârda string'i sunucu snapshot'ına karşı okuyor.
 
 ## 5. Ortak transport / generated-client ihtiyacı — yok
 
@@ -84,6 +84,12 @@ Yeni bir `DIRTY_SET` scope'u yok — ORG-03 salt okuma, hiçbir taslak tutmuyor.
 
 ## 7. Delta uygulanmadan durum
 
-PR'ım yeşil ve güvenli. Sunucu ORG-03'ü yayımladıktan sonra ekran URL ile çalışır, kenar çubuğunda **görünmez**. Bunu "çalışıyor" diye raporlamıyorum: `work-centers.read`-only kullanıcı için keşfedilebilir bir giriş noktası olmadan dilim tamamlanmış sayılmaz.
+PR'ımın kanıtı **yereldir**: bu head'de zorunlu CI hiç koşmadı (Actions `startup_failure`), `[SqlServerFact]` kabul testleri koşulmadı. "Yeşil" dediğim yer yalnız yerel component/DOM testleri ve yerel backend koşusudur.
+
+Sunucu ORG-03'ü yayımladıktan sonra ekran URL ile çalışır, kenar çubuğunda **görünmez**. Bunu "çalışıyor" diye raporlamıyorum: `work-centers.read`-only kullanıcı için keşfedilebilir bir giriş noktası olmadan dilim tamamlanmış sayılmaz.
+
+## 8. Lokasyon bağlantısının görünürlüğü — capability seviyesi (bilgi)
+
+Satırdaki lokasyon bağlantısı **capability seviyesinde** gösterilir: `organization.locations.detail` yoksa ne bağlantı ne de istek vardır. İki izin **farklı kapsamlarda** verildiğinde (ör. iş merkezleri şirket geneli, lokasyonlar tek tesis) bağlantı yine her satırda görünür; kapsam dışındaki bir lokasyona tıklanırsa sunucu **sızıntısız 404** döner — veri yok, kapsam bilgisi yok, yazma yok. Bu, Business matrisinin "lokasyon linki yalnız kendi mevcut izni/capability'siyle" kuralına uygundur. Satır bazında gizleme, hiçbir merged endpoint'in yayımlamadığı satır-kapsam sinyalini gerektirir; ayrı dilim adayıdır ve bu pakette yoktur.
 
 Sizden ping beklemiyorum; **uygulama zamanını siz seçin.**

@@ -31,11 +31,12 @@ import { ORGANIZATION_CAPABILITY, locationDetailPath } from './capabilities'
 import { workCenterReturnState } from './detailReturn'
 import {
   WORK_CENTER_HEADING,
-  WORK_CENTER_LEAD,
+  WORK_CENTER_LOCATION_LINK_TEXT,
   WORK_CENTER_LOCATION_UNAVAILABLE,
   activeStateLabel,
   workCenterCountText,
   workCenterKindLabel,
+  workCenterLeadText,
   workCenterLocationLinkLabel,
 } from './organizationText'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
@@ -78,6 +79,16 @@ function WorkCenterList({ namespace }: { readonly namespace: string | null }) {
    * rendered: the `locationId` on a work-center row is an identifier the caller happens
    * to hold, never an entitlement to read that location, and firing a call we have been
    * told is unavailable would spend a refusal to learn what we already know.
+   *
+   * THE DECISION IS AT CAPABILITY LEVEL, AND THAT IS THE SPEC, NOT A SHORTCUT. The
+   * Business package states it as "lokasyon linki yalnız kendi mevcut izni/capability'siyle"
+   * (#66 Org row). So when `work-centers.read` and `locations.read` are granted at
+   * DIFFERENT SCOPES — company-wide work centers, one site's locations — every row still
+   * offers the link, and following it for a location outside the locations scope answers
+   * the server's non-disclosing 404: no row data, no scope disclosure, no write. Hiding
+   * the link per row would need a per-row scope signal no merged endpoint publishes, and
+   * inventing a response field or a second read for it is outside this slice; it is
+   * recorded as a separate slice candidate rather than guessed at here.
    */
   const canOpenLocation = hasCapability(shell, ORGANIZATION_CAPABILITY.locationDetail)
 
@@ -116,7 +127,7 @@ function WorkCenterList({ namespace }: { readonly namespace: string | null }) {
     <section aria-labelledby="org-wc-heading" className={styles.page}>
       <header className={styles.header}>
         <h1 id="org-wc-heading">{WORK_CENTER_HEADING}</h1>
-        <p className={styles.lead}>{WORK_CENTER_LEAD}</p>
+        <p className={styles.lead}>{workCenterLeadText(canOpenLocation)}</p>
       </header>
 
       {state.kind !== 'ready' ? (
@@ -199,8 +210,9 @@ function WorkCenterTable({
  * control (which would still be announced as an action the user might earn), and not the
  * raw `locationId` (a UUID is not a label a person can use).
  *
- * The link's accessible name names the WORK CENTER, because "Lokasyonu aç" repeated down
- * a column tells a screen-reader user nothing about which row they are on.
+ * The link's accessible name STARTS WITH THE VISIBLE TEXT and then names the work center:
+ * WCAG 2.2 SC 2.5.3 wants the visible label inside the name, and "Lokasyonu aç" repeated
+ * down a column tells a screen-reader user nothing about which row they are on.
  */
 function LocationCell({
   workCenter,
@@ -219,11 +231,13 @@ function LocationCell({
       className={styles.rowLink}
       to={locationDetailPath(workCenter.locationId)}
       aria-label={workCenterLocationLinkLabel(workCenter.code)}
-      // Tells the card to come BACK here rather than to ORG-01, which this user may
-      // not even hold. Namespaced, so a company switch drops it.
+      // Tells the card to come BACK to THIS list rather than to ORG-01. Both screens
+      // stand on `organization.locations.read`, so this is a usability decision, not an
+      // authority one: whoever can open the card can open ORG-01 too, and would simply
+      // land somewhere they did not come from. Namespaced, so a company switch drops it.
       state={workCenterReturnState(namespace)}
     >
-      Lokasyonu aç
+      {WORK_CENTER_LOCATION_LINK_TEXT}
     </Link>
   )
 }

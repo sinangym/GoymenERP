@@ -229,11 +229,12 @@ function LocationDetail({ namespace }: { readonly namespace: string | null }) {
  * switch is ignored and resets to page 1. Neither screen has to know the other's rule.
  *
  * TWO LISTS NOW OPEN THIS CARD (ORG-01's locations and ORG-03's work centers), so a
- * hardcoded `/ayarlar/organizasyon` would send a `work-centers.read`-only holder to a
- * route they do not hold — the neutral not-found block, which reads as a broken app
- * rather than as a scope boundary. `backTarget` resolves an ORIGIN TOKEN through a
- * frozen table and defaults to the location list for anything it does not recognise;
- * see ./detailReturn.ts for why a path is never taken from router state.
+ * hardcoded `/ayarlar/organizasyon` would drop a user who arrived from the work centers
+ * onto a list they never opened. That is a USABILITY cost, not an authority one: this
+ * card and ORG-01 stand on the same `organization.locations.read`, so whoever opened the
+ * card holds ORG-01 as well. `backTarget` resolves an ORIGIN TOKEN through a frozen table
+ * and defaults to the location list for anything it does not recognise; see
+ * ./detailReturn.ts for why a path is never taken from router state.
  */
 function Frame({
   namespace,

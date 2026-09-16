@@ -3,9 +3,14 @@
  *
  * Two screens now open the same card: ORG-01's location list and ORG-03's work-center
  * list. "Back" has to mean the list the user actually came from, or the work-center
- * journey dead-ends on a screen the user may not even be entitled to — a
- * `work-centers.read`-only holder sent to `/ayarlar/organizasyon` lands on the neutral
- * not-found block, which reads as a broken app rather than as a scope boundary.
+ * journey ends on a screen the user never opened.
+ *
+ * THIS IS A USABILITY DECISION, NOT AN AUTHORITY ONE, and the earlier wording here got
+ * that wrong: the card and ORG-01 stand on the SAME permission
+ * (`organization.locations.read`, `OrganizationShellCapabilityProvider` ORG-01/ORG-02),
+ * so anyone who can open this card can open ORG-01 too, and a `work-centers.read`-only
+ * holder never reaches the card at all. What a hardcoded `/ayarlar/organizasyon` would
+ * cost is the user's place in the journey, not their access.
  *
  * THE ORIGIN IS A TOKEN, NEVER A PATH. React Router's `location.state` survives history
  * entries and is attacker-influenceable in the same way a URL is: it is whatever the
