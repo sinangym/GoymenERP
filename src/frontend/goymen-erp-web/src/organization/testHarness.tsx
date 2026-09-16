@@ -127,7 +127,7 @@ export function workCenter(
   locationId: string,
   code: string,
   name: string,
-  overrides: { kind?: string; isActive?: boolean } = {},
+  overrides: { kind?: string; isActive?: boolean; canOpenLocationDetail?: boolean } = {},
 ) {
   return {
     id,
@@ -136,6 +136,7 @@ export function workCenter(
     name,
     kind: overrides.kind ?? 'Paint',
     isActive: overrides.isActive ?? true,
+    canOpenLocationDetail: overrides.canOpenLocationDetail ?? true,
   }
 }
 

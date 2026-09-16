@@ -394,6 +394,181 @@ describe('company fence', () => {
   })
 })
 
+describe('row-level location eligibility (#66 5700319744)', () => {
+  /**
+   * Business put the link decision at ROW level: the card capability is necessary, and
+   * the row's server-computed `canOpenLocationDetail` decides. These fixtures stand in
+   * for the Organization owner's answer with the two permissions on DIFFERENT scopes —
+   * work centers on OSM-H0 + OSM-H1 (L-A + L-B), the card on OSM-H0 (L-A) only. The
+   * server-side computation itself is measured by the InMemory theory and the SQL case,
+   * not here.
+   */
+  const MIXED = [
+    workCenter(WC_PAINT, LOC_H0, 'WC-PAINT', 'Boyama Hattı', { canOpenLocationDetail: true }),
+    workCenter(WC_TUBE, LOC_H1, 'WC-TUBE', 'Boru / Profil Hattı', {
+      kind: 'TubeProfile',
+      canOpenLocationDetail: false,
+    }),
+    workCenter(WC_SLIT, LOC_H1, 'WC-SLIT', 'Dilme Hattı', {
+      kind: 'Slitting',
+      canOpenLocationDetail: false,
+    }),
+  ]
+
+  function rowOf(code: string): HTMLElement {
+    return within(screen.getByRole('table', { name: /İş Merkezleri/ }))
+      .getByText(code)
+      .closest('tr') as HTMLElement
+  }
+
+  it('links L-A, offers nothing on L-B, and never calls L-B’s card', async () => {
+    const recorded = stub({
+      capabilities: WORK_CENTERS_WITH_LOCATION_CAPABILITIES,
+      workCenters: () => json(MIXED),
+    })
+    const { router } = renderAt(PATH)
+
+    const link = await screen.findByRole('link', { name: 'Lokasyonu aç: WC-PAINT' })
+    expect(
+      screen.getAllByRole('link', { name: /^Lokasyonu aç/ }).map((item) => item.getAttribute('aria-label')),
+    ).toEqual(['Lokasyonu aç: WC-PAINT'])
+    for (const code of ['WC-TUBE', 'WC-SLIT']) {
+      // Both rows stay listed; only the action is absent — not disabled, not a raw id.
+      expect(within(rowOf(code)).queryByRole('link')).toBeNull()
+      expect(within(rowOf(code)).queryByRole('button')).toBeNull()
+      expect(within(rowOf(code)).getByText(WORK_CENTER_LOCATION_UNAVAILABLE)).toBeTruthy()
+      expect(within(rowOf(code)).queryByText(LOC_H1)).toBeNull()
+    }
+    // Rendering asked no card anything: eligibility came with the rows, not from probing.
+    expect(requestsFor(recorded, '/organization/locations')).toHaveLength(0)
+
+    await userEvent.click(link)
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(`/ayarlar/organizasyon/lokasyon/${LOC_H0}`),
+    )
+    expect(await screen.findByText('OSM-H0')).toBeTruthy()
+    expect(requestsFor(recorded, `/organization/locations/${LOC_H1}`)).toHaveLength(0)
+    // ...and the whole journey is still a read.
+    expect(recorded.every((request) => request.method.toUpperCase() === 'GET')).toBe(true)
+  })
+
+  it('without locations.read the list still works, with no link and no location GET', async () => {
+    const recorded = stub({
+      capabilities: WORK_CENTERS_ONLY_CAPABILITIES,
+      workCenters: () =>
+        json(ROWS.map((row) => ({ ...row, canOpenLocationDetail: false }))),
+    })
+    renderAt(PATH)
+
+    expect(await screen.findByText('Yetkiniz dâhilindeki 3 iş merkezi gösteriliyor.')).toBeTruthy()
+    expect(screen.queryAllByRole('link', { name: /^Lokasyonu aç/ })).toHaveLength(0)
+    expect(screen.getAllByText(WORK_CENTER_LOCATION_UNAVAILABLE)).toHaveLength(ROWS.length)
+    expect(requestsFor(recorded, '/organization/locations')).toHaveLength(0)
+  })
+
+  it('links every row when both scopes cover both locations', async () => {
+    stub({ capabilities: WORK_CENTERS_WITH_LOCATION_CAPABILITIES })
+    renderAt(PATH)
+
+    const links = await screen.findAllByRole('link', { name: /^Lokasyonu aç: / })
+    expect(links).toHaveLength(ROWS.length)
+    expect(screen.queryByText(WORK_CENTER_LOCATION_UNAVAILABLE)).toBeNull()
+    expect(screen.getByText(workCenterLeadText(true))).toBeTruthy()
+  })
+
+  it('does not point the lead at a link when the capability exists but no row has one', async () => {
+    stub({
+      capabilities: WORK_CENTERS_WITH_LOCATION_CAPABILITIES,
+      workCenters: () =>
+        json(ROWS.map((row) => ({ ...row, canOpenLocationDetail: false }))),
+    })
+    renderAt(PATH)
+
+    await screen.findByRole('table', { name: /İş Merkezleri/ })
+    expect(screen.getByText(workCenterLeadText(false))).toBeTruthy()
+    expect(screen.queryByText(workCenterLeadText(true))).toBeNull()
+  })
+
+  it('leaves no stale link while a refreshed authorization re-reads the rows', async () => {
+    /**
+     * Generation 1 lets WC-PAINT open its card; the route is left and re-entered, the
+     * shell re-verifies onto generation 2, and the new read — which says WC-PAINT may
+     * NOT — is held open. For as long as it is held, the only link the screen could show
+     * is generation 1's, from the retained cache. It must show none.
+     */
+    let calls = 0
+    let release = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const recorded = installFetch({
+      capabilities: WORK_CENTERS_WITH_LOCATION_CAPABILITIES,
+      generations: ['org-cap-gen-1', 'org-cap-gen-2'],
+      respond: (url) => {
+        if (!url.includes('/organization/work-centers')) return undefined
+        calls += 1
+        return calls === 1
+          ? json([ROWS[0]])
+          : held.then(() => json([{ ...ROWS[0], canOpenLocationDetail: false }]))
+      },
+    })
+    const { router } = renderAt(PATH, { retainCache: true })
+    expect(await screen.findByRole('link', { name: 'Lokasyonu aç: WC-PAINT' })).toBeTruthy()
+
+    // Each entry re-verifies; wait for the one on the way out so the return is a NEW entry
+    // that lands on generation 2, rather than two navigations the router folds into one.
+    const verified = requestsFor(recorded, '/shell/capabilities').length
+    await router.navigate('/ayarlar/organizasyon')
+    await waitFor(() =>
+      expect(requestsFor(recorded, '/shell/capabilities').length).toBeGreaterThan(verified),
+    )
+    await router.navigate(PATH)
+    await waitFor(() => expect(calls).toBe(2))
+    expect(screen.queryAllByRole('link', { name: /^Lokasyonu aç/ })).toHaveLength(0)
+
+    release()
+    expect(await screen.findByText(WORK_CENTER_LOCATION_UNAVAILABLE)).toBeTruthy()
+    expect(screen.queryAllByRole('link', { name: /^Lokasyonu aç/ })).toHaveLength(0)
+  })
+
+  it('never lets company A’s late eligibility produce a link under company B', async () => {
+    let releaseA = () => {}
+    const heldA = new Promise<void>((resolve) => {
+      releaseA = resolve
+    })
+    const recorded = stub({
+      capabilities: WORK_CENTERS_WITH_LOCATION_CAPABILITIES,
+      workCenters: (_url, init) => {
+        const headers = (init?.headers ?? {}) as Record<string, string>
+        return headers['X-Company-Id'] === COMPANY_A
+          ? heldA.then(() => json(ROWS))
+          : json([
+              workCenter(WC_TUBE, LOC_H1, 'GSP-WC', 'Sac Profil Hattı', {
+                canOpenLocationDetail: false,
+              }),
+            ])
+      },
+    })
+    renderAt(PATH, { retainCache: true })
+
+    await waitFor(() =>
+      expect(requestsFor(recorded, '/organization/work-centers')[0]?.headers['X-Company-Id']).toBe(
+        COMPANY_A,
+      ),
+    )
+    await userEvent.selectOptions(screen.getByRole('combobox'), COMPANY_B)
+    expect(await screen.findByText('GSP-WC')).toBeTruthy()
+
+    releaseA()
+    await heldA
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(screen.queryAllByRole('link', { name: /^Lokasyonu aç/ })).toHaveLength(0)
+    expect(screen.getByText(WORK_CENTER_LOCATION_UNAVAILABLE)).toBeTruthy()
+    expect(requestsFor(recorded, '/organization/locations')).toHaveLength(0)
+  })
+})
+
 describe('this whole flow is a read', () => {
   it('issues GETs only — no POST, no PUT, no command anywhere in the journey', async () => {
     const recorded = stub({ capabilities: WORK_CENTERS_WITH_LOCATION_CAPABILITIES })

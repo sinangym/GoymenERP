@@ -71,24 +71,12 @@ function WorkCenterList({ namespace }: { readonly namespace: string | null }) {
   const enabled = namespace !== null && singleCompanyContext
 
   /**
-   * Whether a row may offer its location.
-   *
-   * This is the ORG-02 ROUTE capability, not a locally invented one — the link goes to
-   * that route, so the question "may this user open it" has exactly one right answer and
-   * the shell already holds it. Without the capability NO REQUEST IS MADE and no link is
-   * rendered: the `locationId` on a work-center row is an identifier the caller happens
-   * to hold, never an entitlement to read that location, and firing a call we have been
-   * told is unavailable would spend a refusal to learn what we already know.
-   *
-   * THE DECISION IS AT CAPABILITY LEVEL, AND THAT IS THE SPEC, NOT A SHORTCUT. The
-   * Business package states it as "lokasyon linki yalnız kendi mevcut izni/capability'siyle"
-   * (#66 Org row). So when `work-centers.read` and `locations.read` are granted at
-   * DIFFERENT SCOPES — company-wide work centers, one site's locations — every row still
-   * offers the link, and following it for a location outside the locations scope answers
-   * the server's non-disclosing 404: no row data, no scope disclosure, no write. Hiding
-   * the link per row would need a per-row scope signal no merged endpoint publishes, and
-   * inventing a response field or a second read for it is outside this slice; it is
-   * recorded as a separate slice candidate rather than guessed at here.
+   * Whether the location-card ROUTE exists for this user at all — the ORG-02 capability.
+   * It is necessary, not sufficient: Business #66 5700319744 puts the decision at ROW
+   * level, so a row links only when this holds AND the server marked that row
+   * `canOpenLocationDetail` (see `LocationCell`). Without the capability no row links,
+   * whatever the rows say, and NO REQUEST IS MADE: the `locationId` on a work-center row
+   * is an identifier the caller happens to hold, never an entitlement to read it.
    */
   const canOpenLocation = hasCapability(shell, ORGANIZATION_CAPABILITY.locationDetail)
 
@@ -111,6 +99,10 @@ function WorkCenterList({ namespace }: { readonly namespace: string | null }) {
       : classifyOutcome(query.data ?? { type: 'malformed' })
   ) as RemoteViewState<readonly WorkCenterSummary[]>
 
+  // The lead points at "the link in the row" only when a row on screen actually has one.
+  const leadOffersLink =
+    canOpenLocation && state.kind === 'ready' && state.data.some(isLocationOpenable)
+
   if (!singleCompanyContext) {
     return (
       <section aria-labelledby="org-wc-heading" className={styles.page}>
@@ -127,7 +119,7 @@ function WorkCenterList({ namespace }: { readonly namespace: string | null }) {
     <section aria-labelledby="org-wc-heading" className={styles.page}>
       <header className={styles.header}>
         <h1 id="org-wc-heading">{WORK_CENTER_HEADING}</h1>
-        <p className={styles.lead}>{workCenterLeadText(canOpenLocation)}</p>
+        <p className={styles.lead}>{workCenterLeadText(leadOffersLink)}</p>
       </header>
 
       {state.kind !== 'ready' ? (
@@ -202,10 +194,23 @@ function WorkCenterTable({
   )
 }
 
+/** The row's own server-computed eligibility; never derived from scope on this side. */
+function isLocationOpenable(workCenter: WorkCenterSummary): boolean {
+  return workCenter.canOpenLocationDetail === true
+}
+
 /**
  * The location column.
  *
- * With the capability it is a real link — an anchor, so Tab reaches it and Enter follows
+ * ROW-LEVEL, FAIL-CLOSED (#66 5700319744). The link exists only when the card route is
+ * granted AND this row's `canOpenLocationDetail` is true — the Organization owner's
+ * answer, computed with the card read's own scope predicate, so a link here is a card
+ * that answers 200. A row outside the caller's location scope gets the scope note and
+ * no request: the screen neither parses scope nor probes the card to learn it. The flag
+ * arrives in the same response as the row, so a row can never be paired with another
+ * read's (older, other-company or other-generation) eligibility.
+ *
+ * With both, it is a real link — an anchor, so Tab reaches it and Enter follows
  * it with no key handler of our own. Without it, a plain scope statement: not a disabled
  * control (which would still be announced as an action the user might earn), and not the
  * raw `locationId` (a UUID is not a label a person can use).
@@ -223,7 +228,7 @@ function LocationCell({
   readonly namespace: string | null
   readonly canOpenLocation: boolean
 }) {
-  if (!canOpenLocation) {
+  if (!canOpenLocation || !isLocationOpenable(workCenter)) {
     return <span className={styles.scopeNote}>{WORK_CENTER_LOCATION_UNAVAILABLE}</span>
   }
   return (

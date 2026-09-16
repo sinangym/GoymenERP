@@ -203,9 +203,10 @@ describe('decodeWorkCenters', () => {
     name: 'Boyama Hattı',
     kind: 'Paint',
     isActive: true,
+    canOpenLocationDetail: true,
   }
 
-  it('reads the six declared fields and nothing else', () => {
+  it('reads the seven declared fields and nothing else', () => {
     expect(decodeWorkCenter({ ...ROW, capacity: 120 })).toEqual(ROW)
   })
 
@@ -230,6 +231,20 @@ describe('decodeWorkCenters', () => {
     expect(decodeWorkCenter({ ...ROW, code: '   ' })).toBeNull()
     expect(decodeWorkCenter({ ...ROW, name: '' })).toBeNull()
     expect(decodeWorkCenter({ ...ROW, kind: '' })).toBeNull()
+  })
+
+  it('keeps a row the caller may not open, and never defaults the eligibility', () => {
+    // A false flag is a fact about this caller, not corruption: the row stays listed.
+    expect(decodeWorkCenter({ ...ROW, canOpenLocationDetail: false })?.canOpenLocationDetail).toBe(
+      false,
+    )
+    // Absent or coerced values would have to be guessed one way or the other; neither
+    // guess is the screen's to make, so the row is unreadable instead.
+    const { canOpenLocationDetail: _omitted, ...withoutFlag } = ROW
+    expect(decodeWorkCenter(withoutFlag)).toBeNull()
+    expect(decodeWorkCenter({ ...ROW, canOpenLocationDetail: 'true' })).toBeNull()
+    expect(decodeWorkCenter({ ...ROW, canOpenLocationDetail: 1 })).toBeNull()
+    expect(decodeWorkCenter({ ...ROW, canOpenLocationDetail: null })).toBeNull()
   })
 
   it('rejects a non-boolean status rather than coercing it', () => {

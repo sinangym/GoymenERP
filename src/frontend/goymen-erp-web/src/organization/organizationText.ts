@@ -51,8 +51,9 @@ const WORK_CENTER_LEAD_BASE = 'Bu şirket bağlamında yetkiniz dâhilindeki iş
  *
  * The screen's own target user holds `organization.work-centers.read` WITHOUT the
  * location card, and for that user a sentence pointing at "the location link in the row"
- * names something no row shows. So the link sentence is added only when the card
- * capability is present; the column's own scope note carries the other case.
+ * names something no row shows. So the link sentence is added only when a row on screen
+ * actually links — the card capability AND at least one row the server marked
+ * `canOpenLocationDetail`; the column's own scope note carries every other case.
  */
 export function workCenterLeadText(canOpenLocation: boolean): string {
   return canOpenLocation

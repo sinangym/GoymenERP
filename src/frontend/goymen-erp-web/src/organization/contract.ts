@@ -125,8 +125,8 @@ export interface WorkCenterSummary {
    * The location this work center sits in. It is an IDENTIFIER, not an entitlement:
    * the work-center read is authorized by `organization.work-centers.read` and the
    * location read by `organization.locations.read`, so holding this id says nothing
-   * about whether the caller may open that location. The screen decides that from the
-   * capability, and the server re-authorizes it regardless.
+   * about whether the caller may open that location. `canOpenLocationDetail` says that,
+   * and the server re-authorizes the card read regardless.
    */
   readonly locationId: string
   readonly code: string
@@ -134,16 +134,25 @@ export interface WorkCenterSummary {
   /** Raw server token. Never parsed for business meaning, only labelled. */
   readonly kind: string
   readonly isActive: boolean
+  /**
+   * The Organization owner's answer to "may THIS caller open THIS row's location card"
+   * (#66 5700319744): true exactly when `GET /organization/locations/{locationId}` would
+   * answer 200, computed server-side with the card read's own scope predicate. The
+   * screen never derives it — no scope parsing, no probing GET — and a missing or
+   * non-boolean value makes the row unreadable rather than defaulting either way.
+   */
+  readonly canOpenLocationDetail: boolean
 }
 
 export function decodeWorkCenter(raw: unknown): WorkCenterSummary | null {
   if (!isRecord(raw)) return null
-  const { id, locationId, code, name, kind, isActive } = raw
+  const { id, locationId, code, name, kind, isActive, canOpenLocationDetail } = raw
   if (!isUuid(id) || !isUuid(locationId)) return null
   if (!isNonEmptyString(code) || !isNonEmptyString(name)) return null
   if (!isNonEmptyString(kind)) return null
   if (typeof isActive !== 'boolean') return null
-  return { id, locationId, code, name, kind, isActive }
+  if (typeof canOpenLocationDetail !== 'boolean') return null
+  return { id, locationId, code, name, kind, isActive, canOpenLocationDetail }
 }
 
 export function decodeWorkCenters(raw: unknown): readonly WorkCenterSummary[] | null {

@@ -19,10 +19,11 @@ namespace GoymenERP.Api.IntegrationTests;
 /// The ORG-03 read journey against real SQL Server: the authorized work-center list,
 /// the step from a work-center row to the location it names, and the return.
 ///
-/// It adds NO endpoint. <c>GET /api/v1/organization/work-centers</c> and
-/// <c>GetWorkCentersAsync</c> are merged and unchanged; what was never measured is that
-/// this read is company- and scope-bound, that its <c>locationId</c> is not a key past
-/// the caller's own location authority, and that the whole journey writes nothing.
+/// It adds NO endpoint. <c>GET /api/v1/organization/work-centers</c> is merged; what was
+/// never measured is that this read is company- and scope-bound, that its
+/// <c>locationId</c> is not a key past the caller's own location authority — each row's
+/// <c>canOpenLocationDetail</c> must agree with what the card read answers — and that the
+/// whole journey writes nothing.
 /// </summary>
 public sealed class OrganizationWorkCenterReadSqlServerRelationalAcceptanceTests
 {
@@ -59,6 +60,7 @@ public sealed class OrganizationWorkCenterReadSqlServerRelationalAcceptanceTests
             var locations = await ReadPageAsync(client);
             foreach (var workCenter in workCenters)
             {
+                Assert.True(workCenter.CanOpenLocationDetail);
                 var listed = Assert.Single(locations.Items, item => item.Id == workCenter.LocationId);
                 Assert.Equal(listed, await ReadLocationAsync(client, workCenter.LocationId));
             }
@@ -93,6 +95,7 @@ public sealed class OrganizationWorkCenterReadSqlServerRelationalAcceptanceTests
             var scopedLocations = await ReadPageAsync(viewer);
             Assert.All(scoped, item =>
                 Assert.Contains(scopedLocations.Items, location => location.Id == item.LocationId));
+            Assert.All(scoped, item => Assert.True(item.CanOpenLocationDetail));
 
             // Company B carries no work centers of its own and must not borrow A's.
             using var foreign = CreateClient(factory, TestUsers.CompanyB, TestCompanyIds.CompanyB);
@@ -153,14 +156,17 @@ public sealed class OrganizationWorkCenterReadSqlServerRelationalAcceptanceTests
             var all = await ReadWorkCentersAsync(companyWide);
             var baseline = await ReadEffectsAsync(factory, TestCompanyIds.CompanyA);
             var locationId = await ResolveLocationIdAsync(factory, "OSM-H3");
-            await GrantWorkCenterReadOnLocationAsync(factory, TestUsers.SiteAuditReader, locationId);
+            await GrantOnLocationAsync(
+                factory, TestUsers.SiteAuditReader, locationId, ErpPermissions.OrganizationWorkCentersRead);
 
             using var scoped = CreateClient(factory, TestUsers.SiteAuditReader, TestCompanyIds.CompanyA);
             var rows = await ReadWorkCentersAsync(scoped);
 
             Assert.Equal(new[] { "WC-CR", "WC-SLIT" }, rows.Select(item => item.Code).ToArray());
             Assert.All(rows, item => Assert.Equal(locationId, item.LocationId));
-            Assert.All(rows, item => Assert.Contains(all, row => row == item));
+            // Same records as the company-wide read; only the caller's own eligibility may differ.
+            Assert.All(rows, item => Assert.Contains(
+                all, row => row with { CanOpenLocationDetail = item.CanOpenLocationDetail } == item));
 
             // The excluded rows are absent as VALUES, not merely dropped by a shape.
             using var response = await scoped.GetAsync(WorkCentersRoute);
@@ -171,7 +177,37 @@ public sealed class OrganizationWorkCenterReadSqlServerRelationalAcceptanceTests
                 Assert.DoesNotContain(hidden.Code, body);
             }
 
-            // A read stays a read, including the grant this case added.
+            // ORG-03 row eligibility (#66 5700319744), measured on the same actor as its
+            // grants widen. No `locations.read` at all: the list still answers, no row may
+            // open its card, and the card read is refused.
+            Assert.All(rows, item => Assert.False(item.CanOpenLocationDetail));
+            await AssertCardStatusAsync(scoped, locationId, HttpStatusCode.Forbidden);
+
+            // The two permissions on DIFFERENT locations: work centers on OSM-H3 + OSM-H0,
+            // the card only on OSM-H3. Both rows sets are listed; only OSM-H3's link, and
+            // the flag agrees with what the card read actually answers for each location.
+            var otherLocationId = await ResolveLocationIdAsync(factory, "OSM-H0");
+            await GrantOnLocationAsync(
+                factory, TestUsers.SiteAuditReader, otherLocationId, ErpPermissions.OrganizationWorkCentersRead);
+            await GrantOnLocationAsync(
+                factory, TestUsers.SiteAuditReader, locationId, ErpPermissions.OrganizationLocationsRead);
+            Assert.Equal(
+                new[] { "WC-CR:True", "WC-PAINT:False", "WC-SLIT:True" },
+                (await ReadWorkCentersAsync(scoped))
+                    .Select(item => $"{item.Code}:{item.CanOpenLocationDetail}").ToArray());
+            await AssertCardStatusAsync(scoped, locationId, HttpStatusCode.OK);
+            await AssertCardStatusAsync(scoped, otherLocationId, HttpStatusCode.NotFound);
+
+            // Both locations in the card scope as well: every row may open its card.
+            await GrantOnLocationAsync(
+                factory, TestUsers.SiteAuditReader, otherLocationId, ErpPermissions.OrganizationLocationsRead);
+            Assert.Equal(
+                new[] { "WC-CR:True", "WC-PAINT:True", "WC-SLIT:True" },
+                (await ReadWorkCentersAsync(scoped))
+                    .Select(item => $"{item.Code}:{item.CanOpenLocationDetail}").ToArray());
+            await AssertCardStatusAsync(scoped, otherLocationId, HttpStatusCode.OK);
+
+            // A read stays a read, including the grants this case added.
             Assert.Equal(baseline, await ReadEffectsAsync(factory, TestCompanyIds.CompanyA));
         });
     }
@@ -187,16 +223,26 @@ public sealed class OrganizationWorkCenterReadSqlServerRelationalAcceptanceTests
             .SingleAsync(location => location.Code == code)).Id;
     }
 
+    private static async Task AssertCardStatusAsync(
+        HttpClient client,
+        Guid locationId,
+        HttpStatusCode expected)
+    {
+        using var response = await client.GetAsync($"{LocationsRoute}/{locationId}");
+        Assert.Equal(expected, response.StatusCode);
+    }
+
     /// <summary>
     /// Grants one permission on one LOCATION scope. It adds a role rather than reusing a
-    /// seeded one so the actor's only work-center authority is this scope; a seeded
-    /// Organization role would carry the site scope as well and the union would answer
-    /// with the whole site.
+    /// seeded one so the actor's only authority for that permission is the scopes granted
+    /// here; a seeded Organization role would carry the site scope as well and the union
+    /// would answer with the whole site.
     /// </summary>
-    private static async Task GrantWorkCenterReadOnLocationAsync(
+    private static async Task GrantOnLocationAsync(
         SqlServerRelationalApiFactory factory,
         string subject,
-        Guid locationId)
+        Guid locationId,
+        string permission)
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
@@ -209,7 +255,7 @@ public sealed class OrganizationWorkCenterReadSqlServerRelationalAcceptanceTests
             $"SQL_WORKCENTER_LOCATION_SCOPE_{Guid.NewGuid():N}",
             "SQL ORG-03 Lokasyon Kapsamlı Okuyucu",
             isSystem: false);
-        role.AddPermission(ErpPermissions.OrganizationWorkCentersRead);
+        role.AddPermission(permission);
         var assignment = new RoleAssignment(
             Guid.NewGuid(),
             userId,
@@ -246,6 +292,10 @@ public sealed class OrganizationWorkCenterReadSqlServerRelationalAcceptanceTests
         // a label the client cannot show, so the shape is asserted, not assumed.
         Assert.All(body.RootElement.EnumerateArray(), item =>
             Assert.Equal(JsonValueKind.String, item.GetProperty("kind").ValueKind));
+        // The row eligibility is a real JSON boolean the client decodes strictly.
+        Assert.All(body.RootElement.EnumerateArray(), item =>
+            Assert.True(item.GetProperty("canOpenLocationDetail").ValueKind
+                is JsonValueKind.True or JsonValueKind.False));
         return Assert.IsType<WorkCenterSummary[]>(body.RootElement.Deserialize<WorkCenterSummary[]>(
             new JsonSerializerOptions(JsonSerializerDefaults.Web)));
     }

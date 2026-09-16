@@ -104,8 +104,15 @@ PR'ımın kanıtı **yereldir**: bu head'de zorunlu CI hiç koşmadı (Actions `
 
 Sunucu ORG-03'ü yayımladıktan sonra ekran URL ile çalışır, kenar çubuğunda **görünmez**. Bunu "çalışıyor" diye raporlamıyorum: `work-centers.read`-only kullanıcı için keşfedilebilir bir giriş noktası olmadan dilim tamamlanmış sayılmaz.
 
-## 8. Lokasyon bağlantısının görünürlüğü — capability seviyesi (bilgi)
+## 8. Lokasyon bağlantısının görünürlüğü — satır seviyesi (bilgi)
 
-Satırdaki lokasyon bağlantısı **capability seviyesinde** gösterilir: `organization.locations.detail` yoksa ne bağlantı ne de istek vardır. İki izin **farklı kapsamlarda** verildiğinde (ör. iş merkezleri şirket geneli, lokasyonlar tek tesis) bağlantı yine her satırda görünür; kapsam dışındaki bir lokasyona tıklanırsa sunucu **sızıntısız 404** döner — veri yok, kapsam bilgisi yok, yazma yok. Bu, Business matrisinin "lokasyon linki yalnız kendi mevcut izni/capability'siyle" kuralına uygundur. Satır bazında gizleme, hiçbir merged endpoint'in yayımlamadığı satır-kapsam sinyalini gerektirir; ayrı dilim adayıdır ve bu pakette yoktur.
+Business #66 5700319744 ile satırdaki lokasyon bağlantısı **satır seviyesinde** gösterilir. Önceki capability-seviyesi kararı bu hükümle geçersizdir. Bağlantı yalnız iki koşul birlikte sağlanınca çizilir:
+
+- `organization.locations.detail` capability'si var;
+- sunucu o satırı `canOpenLocationDetail: true` olarak işaretlemiş.
+
+Bayrak Organization sahibinin projeksiyonudur. `GetWorkCentersAsync`, kart okumasının (`GetLocationAsync`) kullandığı aynı `ApplyLocationScope` yüklemiyle hesaplar; bu yüzden "bağlantı var" ile "kart 200 döner" ayrışamaz. İki izin **farklı kapsamlarda** verildiğinde kapsam dışı satırda bağlantı da istek de yoktur. İstemci kapsam ayrıştırmaz, 404 denemesi yapmaz. Ham kapsam veya izin listesi wire'a çıkmaz.
+
+Bu değişiklik shell entegrasyonunu etkilemez: route, nav etiketi ve capability kimlikleri aynıdır.
 
 Sizden ping beklemiyorum; **uygulama zamanını siz seçin.**

@@ -244,6 +244,91 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
         Assert.Equal(expected.Split(','), await ReadCodesAsync(client));
     }
 
+    /// <summary>
+    /// ORG-03 row eligibility (#66 5700319744) with the two permissions on DIFFERENT
+    /// scopes. `work-centers.read` always covers OSM-H3 + OSM-H0 (L-A + L-B), so the rows
+    /// are WC-CR, WC-PAINT and WC-SLIT in every case; only `locations.read` moves.
+    ///
+    /// Each row's <c>canOpenLocationDetail</c> is then held against the card read itself:
+    /// true must mean the card answers 200, false must mean it does not (404 inside a
+    /// granted permission, 403 without one). The site and work-center cases pin the other
+    /// two branches of the location scope, so a flag computed from location ids alone, or
+    /// from the work-center scope, fails here. The seed places WC-CR and WC-SLIT on OSM-H3
+    /// and WC-PAINT on OSM-H0, all under SITE-OSM.
+    /// </summary>
+    [Theory]
+    [InlineData("none", "WC-CR:false,WC-PAINT:false,WC-SLIT:false")]
+    [InlineData("location:OSM-H3", "WC-CR:true,WC-PAINT:false,WC-SLIT:true")]
+    [InlineData("location:OSM-H0", "WC-CR:false,WC-PAINT:true,WC-SLIT:false")]
+    [InlineData("location:OSM-H3+OSM-H0", "WC-CR:true,WC-PAINT:true,WC-SLIT:true")]
+    [InlineData("site:SITE-OSM", "WC-CR:true,WC-PAINT:true,WC-SLIT:true")]
+    [InlineData("work-center:WC-PAINT", "WC-CR:false,WC-PAINT:true,WC-SLIT:false")]
+    [InlineData("company", "WC-CR:true,WC-PAINT:true,WC-SLIT:true")]
+    [InlineData("location:unknown", "WC-CR:false,WC-PAINT:false,WC-SLIT:false")]
+    public async Task WorkCenterRows_OfferTheLocationCardExactlyWhereTheCardAnswers(
+        string locationsScope, string expected)
+    {
+        var authority = new ControlledAuthority(8, 0);
+        await using var host = ControlledHost(authority);
+        authority.ScopeOverrides[ErpPermissions.OrganizationWorkCentersRead] = Scope(
+            locations: [
+                await ResolveScopeIdAsync(host, 2, "OSM-H3"),
+                await ResolveScopeIdAsync(host, 2, "OSM-H0")]);
+        var locationsGranted = locationsScope != "none";
+        if (locationsGranted)
+        {
+            var parts = locationsScope.Split(':');
+            var codes = parts.Length > 1 ? parts[1].Split('+') : [];
+            async Task<Guid[]> Ids(int scopeKind) => codes[0] == "unknown"
+                ? [authority.ScopeId]
+                : await Task.WhenAll(codes.Select(code => ResolveScopeIdAsync(host, scopeKind, code)));
+            authority.Permissions |= 1;
+            authority.ScopeOverrides[ErpPermissions.OrganizationLocationsRead] = parts[0] switch
+            {
+                "company" => Scope(companyWide: true),
+                "site" => Scope(sites: await Ids(1)),
+                "location" => Scope(locations: await Ids(2)),
+                _ => Scope(workCenters: await Ids(3)),
+            };
+        }
+
+        using var client = Client(host);
+        using var response = await client.GetAsync("/api/v1/organization/work-centers");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var rows = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var actual = new List<string>();
+        foreach (var row in rows.EnumerateArray())
+        {
+            // The signal is one boolean beside the six row fields — no scope list, no
+            // permission list, nothing about any record the caller does not already see.
+            Assert.Equal(
+                ["id", "locationId", "code", "name", "kind", "isActive", "canOpenLocationDetail"],
+                row.EnumerateObject().Select(property => property.Name).ToArray());
+            var flag = row.GetProperty("canOpenLocationDetail");
+            Assert.True(flag.ValueKind is JsonValueKind.True or JsonValueKind.False);
+            actual.Add($"{row.GetProperty("code").GetString()}:{(flag.GetBoolean() ? "true" : "false")}");
+
+            using var card = await client.GetAsync(
+                $"/api/v1/organization/locations/{row.GetProperty("locationId").GetGuid():D}");
+            Assert.Equal(
+                flag.GetBoolean() ? HttpStatusCode.OK
+                    : locationsGranted ? HttpStatusCode.NotFound : HttpStatusCode.Forbidden,
+                card.StatusCode);
+        }
+
+        Assert.Equal(expected, string.Join(',', actual));
+    }
+
+    private static PermissionScope Scope(
+        bool companyWide = false,
+        Guid[]? sites = null,
+        Guid[]? locations = null,
+        Guid[]? workCenters = null) =>
+        new(true, companyWide, new HashSet<string>(),
+            new HashSet<Guid>(sites ?? []),
+            new HashSet<Guid>(locations ?? []),
+            new HashSet<Guid>(workCenters ?? []));
+
     /// <summary>Work-center codes as the endpoint returns them, in server order.</summary>
     private static async Task<string[]> ReadCodesAsync(HttpClient client)
     {
@@ -322,6 +407,12 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
         /// </summary>
         public Guid ScopeId { get; set; } = Guid.Parse("76000000-0000-0000-0000-000000000001");
 
+        /// <summary>
+        /// A per-permission scope that replaces the shared one, so a case can put two
+        /// permissions on DIFFERENT scopes. The permission bit still decides the grant.
+        /// </summary>
+        public Dictionary<string, PermissionScope> ScopeOverrides { get; } = new(StringComparer.Ordinal);
+
         private PermissionScope Scope(string permission, Guid companyId)
         {
             var bit = permission switch
@@ -334,6 +425,8 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(GoymenErpApiFacto
             };
             if (companyId != TestCompanyIds.CompanyA || bit == 0 || (Permissions & bit) == 0)
                 return PermissionScope.Denied;
+            if (ScopeOverrides.TryGetValue(permission, out var overridden))
+                return overridden;
             return new PermissionScope(true, scopeKind == 0, new HashSet<string>(),
                 scopeKind == 1 ? new HashSet<Guid> { ScopeId } : new HashSet<Guid>(),
                 scopeKind == 2 ? new HashSet<Guid> { ScopeId } : new HashSet<Guid>(),
