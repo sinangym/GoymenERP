@@ -325,6 +325,8 @@ export const ACTIVE_STATE_RE = /^\/api\/v1\/organization\/locations\/[^/]+\/acti
 export const SITES_RE = /^\/api\/v1\/organization\/sites$/
 export const LOCATIONS_RE = /^\/api\/v1\/organization\/locations$/
 export const DETAIL_RE = /^\/api\/v1\/organization\/locations\/[0-9a-fA-F-]+$/
+export const WORK_CENTERS_RE = /^\/api\/v1\/organization\/work-centers$/
+export const COMPANIES_RE = /^\/api\/v1\/organization\/companies$/
 
 /**
  * Sends ONE real command, reads the server's real answer, then withholds the browser's

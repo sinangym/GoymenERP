@@ -11,6 +11,9 @@ import { expect, type Locator, type Page } from '@playwright/test'
 
 export const ORG_LIST_PATH = '/ayarlar/organizasyon'
 
+/** ORG-03. The same literal the frontend's `workCenterListPath()` and the backend registry pin. */
+export const WORK_CENTERS_PATH = '/ayarlar/organizasyon/is-merkezleri'
+
 export function locationCardPath(locationId: string): string {
   return `/ayarlar/organizasyon/lokasyon/${locationId}`
 }
@@ -30,6 +33,32 @@ export const outcome = {
 
 export function listHeading(page: Page): Locator {
   return page.getByRole('heading', { name: 'Organizasyon', exact: true })
+}
+
+export function workCentersHeading(page: Page): Locator {
+  return page.getByRole('heading', { name: 'İş Merkezleri', exact: true })
+}
+
+/** The sidebar entry, inside the shell's own module navigation — not a page-wide match. */
+export function workCentersNavLink(page: Page): Locator {
+  return page
+    .getByRole('navigation', { name: 'Modül navigasyonu' })
+    .getByRole('link', { name: 'İş Merkezleri', exact: true })
+}
+
+/** A work-center row's location link. Its accessible name starts with the visible text. */
+export function workCenterLocationLink(page: Page, workCenterCode: string): Locator {
+  return page.getByRole('link', { name: `Lokasyonu aç: ${workCenterCode}`, exact: true })
+}
+
+/** Every row location link on the page, whatever the row. */
+export function anyWorkCenterLocationLink(page: Page): Locator {
+  return page.getByRole('link', { name: /^Lokasyonu aç/ })
+}
+
+/** The card's back link, inside the card's own breadcrumb navigation. */
+export function cardBackLink(page: Page, label: string): Locator {
+  return page.getByRole('navigation', { name: 'Geri' }).getByRole('link', { name: `← ${label}`, exact: true })
 }
 
 export function cardHeading(page: Page): Locator {
@@ -97,6 +126,36 @@ export function idOf(body: unknown): string {
   const id = (body as { id?: unknown }).id
   if (typeof id !== 'string') throw new Error('detail body carries no id')
   return id
+}
+
+/** The work-center rows of one `GET /organization/work-centers` answer, in server order. */
+export interface WorkCenterRow {
+  readonly id: string
+  readonly locationId: string
+  readonly code: string
+  readonly name: string
+  readonly kind: string
+  readonly isActive: boolean
+  readonly canOpenLocationDetail: boolean
+}
+
+export function workCenterRows(body: unknown): WorkCenterRow[] {
+  if (!Array.isArray(body)) throw new Error('work-center body is not an array')
+  return body as WorkCenterRow[]
+}
+
+/**
+ * Presses Tab until `target` holds focus, bounded. Reaching it this way is the claim —
+ * `.focus()` would say nothing about the real tab order (#66 5698360588 item 8).
+ */
+export async function tabTo(page: Page, target: Locator, limit = 60): Promise<void> {
+  const handle = await target.elementHandle()
+  if (handle === null) throw new Error('tab target is not in the document')
+  for (let step = 0; step < limit; step += 1) {
+    if (await handle.evaluate((element) => element === document.activeElement)) return
+    await page.keyboard.press('Tab')
+  }
+  expect(await handle.evaluate((element) => element === document.activeElement)).toBe(true)
 }
 
 /** Locations on the page the app currently shows, in server order. */

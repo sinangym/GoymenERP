@@ -18,6 +18,40 @@ this package's.
 Owner: `CLAUDE-FRONTEND-ORGANIZASYON`, sole writer of `tests/e2e/organization-locations/**`.
 The environment, the SQL side and cleanup belong to the Organization backend owner.
 
+## ORG-03 — `o-04-work-center-journey` (#268)
+
+Status: **SOURCE_PREPARED · NOT_RUN.** No browser has run this spec yet; nothing below is
+an observation. The run window is the coordinator's to open, against the #268 head that
+carries the shell sidebar entry.
+
+Source: Business's ORG-03 browser JIT (#66 5698360588, items 1–8), with item 4 changed
+by the row-scope ruling (#66 5700319744): a row whose location the actor cannot read
+offers **no link and no card GET**.
+
+| Item | Case | Actor (from the manifest) | Without that actor |
+|---|---|---|---|
+| 1, 2, 7, 8 | sidebar → list → a flagged row's card by **Tab/Enter** → back by keyboard to the list; seven-field rows; every write method 0; accessible names contain the visible text | `operatorActor` | — (always runs) |
+| 3 | no card capability: list works, links 0, `/organization/locations/{id}` **issued** 0 | `workCentersOnlyActor` | SKIP, recorded |
+| 4 | card capability, row out of scope: that row has no link and its card is never issued; the in-scope link answers 200 | `rowScopedActor` | SKIP, recorded |
+| 5 (+6 empty) | A's work-center read HELD in the browser across a switch to B: A's rows 0 in B, B reads for itself; an empty company shows the empty state | `multiCompanyActor` | SKIP, recorded |
+| 6 forbidden / unavailable | — | — | **NOT MEASURABLE here**, recorded as such |
+
+Actors, honestly:
+
+- **Seeded today:** `operatorActor` (`company-a-user`, company-wide) and a
+  `multiCompanyActor` candidate (`group-bootstrap-admin`, SYSTEM_ADMINISTRATOR in GDC, GSP
+  and GIN). Binding them is the environment owner's manifest decision.
+- **NOT in the normal seed:** a work-centers-only subject (item 3) and a row-scoped subject
+  (item 4). Every seeded Organization role carries both `work-centers.read` and
+  `locations.read` on the same scope, and every seeded work center sits under the viewer's
+  SITE-OSM. This package does not invent them; creating either is a seed decision for the
+  coordinator, the same way the locations-only actor was.
+
+The HOLD in case 5 delays the browser's own request and then sends it on with
+`route.continue()`. The server answers it unchanged; nothing is fulfilled locally.
+`coverage.json` records whether the held read reached the server or was cancelled by the
+switch, because both are legitimate and they are different observations.
+
 ## What this measures, and why a browser is needed for it
 
 The screens already have 177 component/DOM cases in `src/organization/**`. Those prove

@@ -44,6 +44,25 @@ export interface OrganizationEnvironmentManifest {
    * fabrication the fixture forbids.
    */
   readonly locationsOnlyActor?: string
+  /**
+   * ORG-03 (#66 5698360588 item 5 and the empty half of item 6): a subject authorized in
+   * BOTH companies with `organization.work-centers.read`. The normal Development seed
+   * already carries one (`group-bootstrap-admin`, SYSTEM_ADMINISTRATOR in GDC, GSP and
+   * GIN); this package still takes it from the manifest rather than naming it.
+   */
+  readonly multiCompanyActor?: string
+  /**
+   * ORG-03 item 3: `organization.work-centers.read` WITHOUT `organization.locations.read`.
+   * The normal seed has NO such subject. Optional, and absent means the case SKIPS and
+   * `coverage.json` says so — this package adds no actor, role or grant.
+   */
+  readonly workCentersOnlyActor?: string
+  /**
+   * ORG-03 item 4 as changed by #66 5700319744: `work-centers.read` on two locations and
+   * `locations.read` on only one of them. The normal seed has NO such subject either;
+   * same rule as above.
+   */
+  readonly rowScopedActor?: string
   readonly companyACode: string
   readonly companyBCode: string
   /** Prefix stamped into every reason this run writes, so rows are attributable. */
@@ -134,10 +153,9 @@ export function readOrganizationManifest(): OrganizationEnvironmentManifest {
     ...Object.fromEntries(TEXT_FIELDS.map((f) => [f, requireText(bindingRaw[f], `binding.${f}`)])),
   } as unknown as OrganizationRunBinding
 
-  const locationsOnlyActor =
-    typeof raw.locationsOnlyActor === 'string' && raw.locationsOnlyActor.trim().length > 0
-      ? raw.locationsOnlyActor.trim()
-      : undefined
+  const optionalActor = (value: unknown): string | undefined =>
+    typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
+  const locationsOnlyActor = optionalActor(raw.locationsOnlyActor)
 
   return {
     envReady: true,
@@ -146,6 +164,9 @@ export function readOrganizationManifest(): OrganizationEnvironmentManifest {
     viewerActor: requireText(raw.viewerActor, 'viewerActor'),
     foreignActor: requireText(raw.foreignActor, 'foreignActor'),
     locationsOnlyActor,
+    multiCompanyActor: optionalActor(raw.multiCompanyActor),
+    workCentersOnlyActor: optionalActor(raw.workCentersOnlyActor),
+    rowScopedActor: optionalActor(raw.rowScopedActor),
     companyACode: requireText(raw.companyACode, 'companyACode'),
     companyBCode: requireText(raw.companyBCode, 'companyBCode'),
     runPrefix: requireText(raw.runPrefix, 'runPrefix'),
