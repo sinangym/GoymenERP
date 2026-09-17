@@ -426,3 +426,10 @@ Yayın doğrulaması uygulama kabulü değildir. Bu docs-only paket uygulama dos
 - T2: [Microsoft EF Core concurrency](https://learn.microsoft.com/en-us/ef/core/saving/concurrency): update/delete sürüm çakışması ve insert unique yarışının ayrımı.
 
 Kod referansları §4.3'te belirtilen main ve açık PR fotoğrafındadır. Yeni işte güncel kaynak ve full SHA ile yeniden bağlanırlar. İşlev tasarımı hiçbir zaman kod/SQL/browser kabulünün yerine geçmez.
+
+
+## 21. 18 Eylül 2026 kullanıcı kabul eki — önceki öneri statülerini dar günceller
+
+[Ö1–Ö8 kabul ve son aşama kararı](../decisions/SINAN_KARARLARI_2026-09-18_O1_O8_VE_SON_ASAMA.md), bu raporun ilgili “karar bekliyor” cümlelerinden üstündür. Ö1–Ö7 kabul; Ö8 resmî belge kapalıyken ERP içi cari kaynak hareketleri/bakiye güncellemesi açık şartıyla kabul. `InvoiceCapable=false` iç finans kaydı için genel ret anahtarı değildir. Gerçek kişiler, ilk ürün verisi, saha sayıları ve kalan dar değerler ayrı kaynaktan tamamlanır; onaylanmış seçimler yeniden sorulmaz.
+
+T25 ve diğer ileri kapsam **kalıcı olarak kapsamdan çıkarılmadı**: ayrıntılı maliyet, ileri nakit/13 hafta, çek kırdırma–USD/kâr koruma, 15 günlük çevrim ve sonraki tam İK/Bakım/CAPA/CRM/Sabit Kıymet modülleri son geliştirme aşamasında yapılır. Çekirdek ilk teslim, ileri kapsam son teslim evresidir; ham veri/temel kalite/Finance/Accounting şimdi korunur. Bu sıralama yeni formül/tolerans/grant veya bütün son evre ayrıntılarının bugünden onayı değildir. Eski metin ve T00–T34 numaraları değiştirilmeden korunmuştur.

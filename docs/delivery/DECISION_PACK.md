@@ -243,3 +243,15 @@ Belgeli/sertifikalı sevk şartının ihlali 'bir yönetici onayladı' diyerek a
 - [TCMB Gösterge Niteliğindeki Kurlar](https://www.tcmb.gov.tr/wps/wcm/connect/TR/TCMB%2BTR/Main%2BMenu/Temel%2BFaaliyetler/Doviz%2BEfektif/Doviz%2Bve%2BEfektif%2BPiyasalari/Gosterge%2BNiteligindeki%2BKurlar): yayımlama takvimi ve kurların gösterge niteliği; ticari anlaşma/yasal değerleme kurunu otomatik belirlemez.
 
 Mevcut kaynak bağları: `ACIK_KARARLAR.md`; `SINAN_KARARLARI_2026-08-31.md`; `CARI_CORE_USER_DECISIONS_v1.md` CARI-DEC-004; #232 `adb9842fee07908c6d690c58057b97fa81fd8bfb` §14.6 ortak master kapsamı; ilk aile kartı #254 / 5654539215; K-1(a) / 5719251344. Eski `CARI_ACCOUNT_CREATE_PERMISSION_DECISION_v1.md` tarihsel seçenek tablosu tek başına güncel grant kararı kabul edilmedi.
+
+
+## DECISION-ROUND-2026-09-18-v2 — KULLANICI ONAYI ALINDI / UYGULAMA AYRI
+
+- Revision: `v2`; karar sahibi Sinan Göymen; derleyen mevcut `CHATGPT-BUSINESS`.
+- Durum: **Ö1–Ö7 kabul, Ö8 iç cari bakiye açık ek şartıyla kabul.** Önceki v1'in bu sekiz yaklaşım için onay bekliyor durumunu supersede eder; eski içerik değişmedi.
+- Kaynak: [Sinan'ın doğrudan onayı / 5722637822](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-5722637822).
+- Tam bağlayıcı kayıt: [18 Eylül Ö1–Ö8 ve son aşama](../decisions/SINAN_KARARLARI_2026-09-18_O1_O8_VE_SON_ASAMA.md).
+- Ö8: gerçek resmî kimlik yoksa resmî belge düzenleme kapalı; **yetkili ERP içi cari kaynak hareketleri ve bakiye değişimleri açık**. Bakiye üzerine ham yazma, otomatik mahsup veya resmî belge iddiası yok; kaynak/audit/onay/şirket/para/tek etki korunur.
+- Gelişmiş maliyet, ileri nakit/13 hafta, kur-kâr koruma, 15 günlük çevrim ve sonraki İK/Bakım/CAPA/CRM/Sabit Kıymet gibi tam modüller **son geliştirme aşamasında yapılacak**, kalıcı iptal/kapsam dışı değil. Çekirdek önce; ham veri/temel kalite/para/muhasebe şimdi.
+- Kalan veri: ilk gerçek ürün/sözlük, gerçek kişi/şirket atamaları, canlı açık dönem, saha tolerans/formül sayıları, gerçek GIN kimliği, son ticari yuvarlama yöntemi/aşaması. Bunların tamamı bu toplu yaklaşım kabulüyle doldurulmuş sayılmaz; %1/%2/%3 ve ±%2 nihai onay değildir.
+- Bu v2 kabul kaydı yazılım uygulanmış, testler geçmiş, gerçek grant verilmiş veya production açılmış demek değildir. Kapanan seçimleri yeniden sorma; kalan somut veriyi ilgili dilimde kaynakla tamamla.
