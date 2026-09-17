@@ -73,6 +73,12 @@ depoların sahibi değildir.
 
 - Yetki değişikliği token yenilemeyi beklemeden sonraki istekte etkili olabilir.
 - Yetki sorgusu istek içinde cache edilir; süreçler arası kalıcı cache yoktur.
+- Eldeki bir sonucu bırakmadan önce güncel yetkiyi ölçmesi gereken sahip,
+  `IErpAuthorityRevalidationService` üzerinden sorar. Bu cache'i atlatmaz: okuduğu cevap aynı
+  (aktör, şirket, izin) için cache'lenmiş cevabın yerine yazılır, yani isteğin görüntüsü ileri
+  taşınır ve iptal edilmiş bir yetki aynı istek içinde geri gelemez. Bedeli çağrı başına bir
+  veritabanı okumasıdır; capability snapshot'ı sözleşmesi gereği istek görüntüsü olarak kalır.
+  Kaynak: Business #66 5720113915, ölçüm #265 5719822744.
 - Daha dar tesis/lokasyon kapsamı liste toplamlarına ve doğrudan kayda aynı şekilde
   uygulanır.
 - Production SSO E2E testi, gerçek sağlayıcı ve MFA politikası `OPEN-013` ile seçildikten

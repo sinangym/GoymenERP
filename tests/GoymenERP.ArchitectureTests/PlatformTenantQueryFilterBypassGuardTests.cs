@@ -182,8 +182,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 ["src/backend/Modules/Identity/"
                  + "GoymenERP.Modules.Identity.Infrastructure/IdentityModuleExtensions.cs"] =
+                    // Re-fingerprinted for the fresh-authority registration (Business #66
+                    // 5720113915): the scoped authorization service is now resolved by its
+                    // concrete type and bound to both the cached and the revalidation port, and
+                    // a null permission-scope read observer is registered. The database surface
+                    // below is unchanged, which is what the API counts hold.
                     new(
-                        "6a938e96c3a23333bf94e4b15a4c5630305176c7acde8e001cf701cde00355e4",
+                        "a657cd98242229d68661ed6c56fee726c98c719ea1c25c3437b2f823b8c3be46",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
