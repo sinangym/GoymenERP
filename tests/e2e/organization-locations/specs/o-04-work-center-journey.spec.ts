@@ -64,7 +64,8 @@ import {
   writeEvidence,
   type LiveRecord,
 } from '../src/recorder.js'
-import { readOrganizationManifest, type ActorGrant } from '../src/manifest.js'
+import { UNSETTLED, settleClaimed, type ItemEvidence } from '../src/coverage.js'
+import { readOrganizationManifest } from '../src/manifest.js'
 
 const manifest = readOrganizationManifest()
 const GROUP = 'o-04-work-center-journey'
@@ -202,16 +203,6 @@ async function listFromSidebar(page: Page, net: LiveRecorder): Promise<LiveRecor
 }
 
 type ItemKey = '1-2-7-8' | '3' | '4' | '5' | '6-empty' | '6-forbidden' | '6-provider-unavailable'
-type ItemStatus = 'MEASURED' | 'SKIPPED' | 'FAILED' | 'NOT_MEASURED'
-
-interface ItemEvidence {
-  status: ItemStatus
-  detail: string
-  actor: string | null
-  /** As declared in the manifest for this actor; null for normal-seed actors. */
-  grant: ActorGrant | null
-  observed?: Record<string, unknown>
-}
 
 const notStarted = (): ItemEvidence => ({
   status: 'NOT_MEASURED',
@@ -241,8 +232,7 @@ const coverage: Record<ItemKey, ItemEvidence> = {
   },
 }
 
-/** The items the running case answers for; settled in `afterEach` unless measured. */
-const UNSETTLED = 'the case started and did not reach its end'
+/** The items the running case answers for; `afterEach` settles them against the case's outcome. */
 let claimed: readonly ItemKey[] = []
 
 function claim(keys: readonly ItemKey[], actor: string | undefined): void {
@@ -257,6 +247,7 @@ function claim(keys: readonly ItemKey[], actor: string | undefined): void {
   }
 }
 
+/** Called only as a case's LAST step, after its evidence files are written. */
 function settle(key: ItemKey, status: 'MEASURED' | 'NOT_MEASURED', detail: string, observed?: Record<string, unknown>): void {
   coverage[key] = { ...coverage[key], status, detail, observed }
 }
@@ -312,6 +303,8 @@ test.describe('O-04 work centers (ORG-03)', () => {
     await expect(page).toHaveURL(new RegExp(`${WORK_CENTERS_PATH}$`))
     await expect(workCentersHeading(page)).toBeVisible()
     await shot(page, GROUP, '03-back-on-list')
+    // The list is mounted again on return; its rows are drawn before anything is asserted absent.
+    await expectRowsRendered(page, rows)
 
     // Every row without the flag offered no link, and none of their cards was asked for.
     for (const row of rows.filter((candidate) => !candidate.canOpenLocationDetail)) {
@@ -319,12 +312,12 @@ test.describe('O-04 work centers (ORG-03)', () => {
       expect(net.issued(detailPathOf(row.locationId), 'GET')).toHaveLength(0)
     }
     expectReadOnly(net)
+    await net.write(GROUP, 'operator-journey.json')
     settle('1-2-7-8', 'MEASURED', 'operator journey completed', {
       companyId: read.requestHeaders['x-company-id'],
       rows: rows.map((row) => ({ code: row.code, canOpenLocationDetail: row.canOpenLocationDetail })),
       followedRow: openable!.code,
     })
-    await net.write(GROUP, 'operator-journey.json')
   })
 
   test('without the card capability the list works, offers no link and asks no card', async ({
@@ -360,13 +353,13 @@ test.describe('O-04 work centers (ORG-03)', () => {
     expectReadOnly(net)
     await net.drain()
     expectEveryAnswerRewritten(rewrites)
+    await shot(page, GROUP, '04-work-centers-only')
+    await net.write(GROUP, 'work-centers-only.json')
     settle('3', 'MEASURED', 'list 200 without the card capability; links 0; card GET issued 0', {
       companyId,
       capabilitySnapshots: snapshots.length,
       rows: rows.map((row) => ({ code: row.code, canOpenLocationDetail: row.canOpenLocationDetail })),
     })
-    await shot(page, GROUP, '04-work-centers-only')
-    await net.write(GROUP, 'work-centers-only.json')
   })
 
   test('with the card capability, an out-of-scope row offers no link and its card is never asked', async ({
@@ -427,6 +420,7 @@ test.describe('O-04 work centers (ORG-03)', () => {
     expectReadOnly(net)
     await net.drain()
     expectEveryAnswerRewritten(rewrites)
+    await net.write(GROUP, 'row-scoped.json')
     settle('4', 'MEASURED', 'one list answered both ways; in-scope card 200; out-of-scope links 0 and card GET issued 0', {
       companyId,
       capabilitySnapshots: snapshots.length,
@@ -434,7 +428,6 @@ test.describe('O-04 work centers (ORG-03)', () => {
       followedRow: target.code,
       cardStatus: detail.status,
     })
-    await net.write(GROUP, 'row-scoped.json')
   })
 
   test('a late answer from company A leaves nothing in company B, and B reads for itself', async ({
@@ -537,6 +530,8 @@ test.describe('O-04 work centers (ORG-03)', () => {
     }
     expectReadOnly(net)
     expectEveryAnswerRewritten(rewrites)
+    await shot(page, GROUP, '06-company-b-after-late-a')
+    await net.write(GROUP, 'late-company-a.json')
     // Item 6, the part a browser can produce honestly: a real empty company is shown as
     // empty — not as an error, and not as the other company's rows.
     if (rowsB.length === 0) {
@@ -552,26 +547,16 @@ test.describe('O-04 work centers (ORG-03)', () => {
       companyB: companyB!.id,
       heldOutcome,
     })
-    await shot(page, GROUP, '06-company-b-after-late-a')
-    await net.write(GROUP, 'late-company-a.json')
   })
 
   test.afterEach(async ({}, testInfo) => {
-    const skipped = testInfo.status === 'skipped'
-    for (const key of claimed) {
-      if (coverage[key].detail !== UNSETTLED) continue
-      coverage[key] = skipped
-        ? {
-            ...coverage[key],
-            status: 'SKIPPED',
-            detail: testInfo.annotations.find((a) => a.type === 'skip')?.description ?? 'skipped',
-          }
-        : {
-            ...coverage[key],
-            status: 'FAILED',
-            detail: testInfo.error?.message?.split('\n')[0] ?? UNSETTLED,
-          }
-    }
+    // A red case turns every item it claimed FAILED, even one it settled before failing.
+    settleClaimed(coverage, claimed, {
+      status: testInfo.status ?? 'unknown',
+      expectedStatus: testInfo.expectedStatus,
+      skipReason: testInfo.annotations.find((a) => a.type === 'skip')?.description,
+      error: testInfo.error?.message?.split('\n')[0],
+    })
     claimed = []
     if (active !== null && testInfo.status !== testInfo.expectedStatus) {
       await attachEvidence(testInfo, active, GROUP)

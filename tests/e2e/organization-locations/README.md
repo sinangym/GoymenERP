@@ -45,7 +45,10 @@ request the identity rewrite sent** as the bound actor; an answer about the ambi
 manifest declared for it, what was observed, `runId` and `browserJourneyCommit`. Read the
 status, never search the text. Business #66 5705730345: ORG-03 browser acceptance needs
 items 3 **and** 4 each `MEASURED` (`itemsThreeAndFourMeasured`); a green exit with either
-`SKIPPED` is `NOT_VERIFIED`.
+`SKIPPED` is `NOT_VERIFIED`. A case marks an item `MEASURED` only as its last step, after
+its evidence files are written, and `afterEach` (`src/coverage.ts` `settleClaimed`) turns
+every item of a case that did not end as expected into `FAILED` — so a red case never
+leaves a `MEASURED` behind.
 
 A manifest that binds `workCentersOnlyActor` or `rowScopedActor` must also declare
 `actorGrants[actor] = { roles: [...], scopes: ["Type:id", ...] }` (non-empty lists), or it is
