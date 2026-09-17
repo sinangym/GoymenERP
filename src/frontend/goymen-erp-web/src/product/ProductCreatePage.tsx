@@ -29,6 +29,7 @@ import {
   type ProductReferenceOptions,
   type ProductRoleName,
 } from './contract'
+import type { ViewOutcome } from '../shell/uiState'
 import {
   CREATE_FIELD,
   CREATE_FIELD_LABEL,
@@ -240,7 +241,7 @@ function ProductCreateForm({
    * Not fetched until a group is picked: there is nothing to scope by, and asking
    * without one would be a read whose answer could not be trusted.
    */
-  const optionsQuery = useQuery({
+  const optionsQuery = useQuery<ViewOutcome<ProductReferenceOptions>>({
     queryKey: [
       namespace ?? 'no-context',
       entryGeneration,
@@ -249,6 +250,20 @@ function ProductCreateForm({
       values.classId,
     ],
     enabled: namespace !== null && origin !== null && values.groupId !== '',
+    /**
+     * While a class-scoped read is out, the classes the owner offered for the SAME group
+     * (same company context) stay on screen, so the chosen class does not vanish into
+     * "— seçilmedi —". Only the class list is carried: families, catalogue availability and
+     * validation read the settled answer alone. Another group or context never carries.
+     */
+    placeholderData: (previous, previousQuery) =>
+      previous?.type === 'ok-single' &&
+      previousQuery !== undefined &&
+      previousQuery.queryKey[0] === (namespace ?? 'no-context') &&
+      previousQuery.queryKey[1] === entryGeneration &&
+      previousQuery.queryKey[3] === values.groupId
+        ? previous
+        : undefined,
     queryFn: async ({ signal }) => {
       // Same authority as every other read on this screen — a refusal here is the
       // same fact and must reach the same boundary. This one was missed when the
@@ -265,8 +280,25 @@ function ProductCreateForm({
     },
   })
 
-  const options: ProductReferenceOptions | null =
-    optionsQuery.data?.type === 'ok-single' ? optionsQuery.data.data : null
+  /**
+   * Business #66 5706740724: a read that has not settled, or that failed, is not an
+   * answer about the chosen class. `settled` is the answer for exactly the current group
+   * and class; a placeholder is never one.
+   */
+  const settled = optionsQuery.isPlaceholderData ? undefined : optionsQuery.data
+  const options: ProductReferenceOptions | null = settled?.type === 'ok-single' ? settled.data : null
+  const referencesPending =
+    values.groupId !== '' && (settled === undefined || settled.type === 'fence-stale')
+  const referencesFailed =
+    values.groupId !== '' &&
+    settled !== undefined &&
+    settled.type !== 'ok-single' &&
+    settled.type !== 'fence-stale'
+  const shownClasses =
+    options?.classes ??
+    (optionsQuery.isPlaceholderData && optionsQuery.data?.type === 'ok-single'
+      ? optionsQuery.data.data.classes
+      : [])
   const classIds = useMemo(() => (options?.classes ?? []).map((entry) => entry.id), [options])
   const familyIds = useMemo(() => (options?.families ?? []).map((entry) => entry.id), [options])
   /**
@@ -279,6 +311,20 @@ function ProductCreateForm({
   const familiesUnavailable = options?.unavailableCatalogs.includes('families') ?? false
 
   /**
+   * The chosen class as it was OFFERED, so it stays visible — in error if a fresh answer
+   * dropped it, waiting if the answer is out — instead of silently reading as unchosen.
+   */
+  const [chosenClass, setChosenClass] = useState<{ id: string; displayName: string } | null>(null)
+  /** Only a SETTLED owner answer can say the chosen class is no longer offered. */
+  const classStale = options !== null && values.classId !== '' && !classIds.includes(values.classId)
+  const classMissingFromShown =
+    values.classId !== '' && !shownClasses.some((entry) => entry.id === values.classId)
+  /** A save tried while the chosen references could not be checked yet. */
+  const [referenceHold, setReferenceHold] = useState(false)
+  const referencesChosen = values.classId !== '' || values.familyId !== ''
+  const referencesUnsettled = referencesPending || referencesFailed
+
+  /**
    * A class chosen under one group is meaningless under another, and the family
    * list is scoped by class. Clearing on change prevents submitting a reference the
    * current options never offered — which the validator would reject anyway, but as
@@ -286,9 +332,13 @@ function ProductCreateForm({
    */
   function chooseGroup(groupId: string) {
     setValues((current) => ({ ...current, groupId, classId: '', familyId: '' }))
+    setChosenClass(null)
+    setReferenceHold(false)
   }
   function chooseClass(classId: string) {
     setValues((current) => ({ ...current, classId, familyId: '' }))
+    setChosenClass(shownClasses.find((entry) => entry.id === classId) ?? null)
+    setReferenceHold(false)
   }
 
   /**
@@ -370,6 +420,20 @@ function ProductCreateForm({
     event.preventDefault()
     if (frozen || !canCreate || origin === null) return
     setSubmitted(true)
+
+    /**
+     * A chosen class or family cannot be judged while its read is out or failed. The save
+     * waits with a neutral note — never a false "no longer on the list", never a payload
+     * with the choice dropped. The other fields are still checked now, with the chosen
+     * references taken as they are. Nothing chosen: an incomplete Draft saves as before.
+     */
+    if (referencesChosen && referencesUnsettled) {
+      const others = validateCreateForm(values, groupIds, [values.classId], [values.familyId])
+      setErrors(others.ok ? {} : others.errors)
+      setReferenceHold(true)
+      return
+    }
+    setReferenceHold(false)
 
     const validation = validateCreateForm(values, groupIds, classIds, familyIds)
     if (!validation.ok) {
@@ -681,7 +745,7 @@ function ProductCreateForm({
             id={CREATE_FIELD.classId}
             value={values.classId}
             disabled={frozen || values.groupId === '' || classesUnavailable}
-            aria-invalid={errors.classId !== undefined || undefined}
+            aria-invalid={errors.classId !== undefined || classStale || undefined}
             aria-describedby={`${CREATE_FIELD.classId}-hint`}
             ref={(el) => {
               fieldRefs.current[CREATE_FIELD.classId] = el
@@ -689,23 +753,39 @@ function ProductCreateForm({
             onChange={(event) => chooseClass(event.target.value)}
           >
             <option value="">{PRODUCT_CREATE_TEXT.chooseNone}</option>
-            {(options?.classes ?? []).map((entry) => (
+            {shownClasses.map((entry) => (
               <option key={entry.id} value={entry.id}>
                 {entry.displayName}
               </option>
             ))}
+            {classMissingFromShown && chosenClass?.id === values.classId ? (
+              <option value={chosenClass.id}>{chosenClass.displayName}</option>
+            ) : null}
           </select>
           <p id={`${CREATE_FIELD.classId}-hint`} className={styles.hint}>
             {values.groupId === ''
               ? PRODUCT_CREATE_TEXT.chooseGroupFirst
-              : classesUnavailable
-                ? CATALOG_UNAVAILABLE
-                : (options?.classes.length ?? 0) === 0
-                  ? CATALOG_EMPTY
-                  : PRODUCT_CREATE_TEXT.referenceHint}
+              : referencesFailed
+                ? PRODUCT_CREATE_TEXT.referenceOptionsFailed
+                : classesUnavailable
+                  ? CATALOG_UNAVAILABLE
+                  : options !== null && options.classes.length === 0
+                    ? CATALOG_EMPTY
+                    : PRODUCT_CREATE_TEXT.referenceHint}
           </p>
+          {referencesFailed ? (
+            <button
+              type="button"
+              className={styles.secondaryAction}
+              onClick={() => void optionsQuery.refetch()}
+            >
+              {PRODUCT_CREATE_TEXT.retryReferenceOptions}
+            </button>
+          ) : null}
           {errors.classId !== undefined ? (
             <p className={styles.fieldError}>{errors.classId}</p>
+          ) : classStale ? (
+            <p className={styles.fieldError}>{PRODUCT_CREATE_TEXT.validation.classUnknown}</p>
           ) : null}
         </div>
 
@@ -717,7 +797,13 @@ function ProductCreateForm({
           <select
             id={CREATE_FIELD.familyId}
             value={values.familyId}
-            disabled={frozen || values.groupId === '' || familiesUnavailable}
+            disabled={
+              frozen ||
+              values.groupId === '' ||
+              familiesUnavailable ||
+              referencesUnsettled ||
+              classStale
+            }
             aria-invalid={errors.familyId !== undefined || undefined}
             aria-describedby={`${CREATE_FIELD.familyId}-hint`}
             ref={(el) => {
@@ -726,7 +812,7 @@ function ProductCreateForm({
             onChange={(event) => setValues((v) => ({ ...v, familyId: event.target.value }))}
           >
             <option value="">{PRODUCT_CREATE_TEXT.chooseNone}</option>
-            {(options?.families ?? []).map((entry) => (
+            {(classStale ? [] : (options?.families ?? [])).map((entry) => (
               <option key={entry.id} value={entry.id}>
                 {entry.displayName}
               </option>
@@ -735,11 +821,13 @@ function ProductCreateForm({
           <p id={`${CREATE_FIELD.familyId}-hint`} className={styles.hint}>
             {values.groupId === ''
               ? PRODUCT_CREATE_TEXT.chooseGroupFirst
-              : familiesUnavailable
-                ? CATALOG_UNAVAILABLE
-                : (options?.families.length ?? 0) === 0
-                  ? CATALOG_EMPTY
-                  : PRODUCT_CREATE_TEXT.referenceHint}
+              : referencesPending
+                ? PRODUCT_CREATE_TEXT.referenceOptionsChecking
+                : referencesFailed || familiesUnavailable
+                  ? CATALOG_UNAVAILABLE
+                  : options !== null && options.families.length === 0
+                    ? CATALOG_EMPTY
+                    : PRODUCT_CREATE_TEXT.referenceHint}
           </p>
           {errors.familyId !== undefined ? (
             <p className={styles.fieldError}>{errors.familyId}</p>
@@ -784,6 +872,14 @@ function ProductCreateForm({
             </fieldset>
           ))}
         </fieldset>
+
+        {referenceHold && referencesChosen && referencesUnsettled ? (
+          <p className={styles.note} role="status" data-testid="product-create-reference-hold">
+            {referencesPending
+              ? PRODUCT_CREATE_TEXT.referenceOptionsHold
+              : PRODUCT_CREATE_TEXT.referenceOptionsFailedHold}
+          </p>
+        ) : null}
 
         <div className={styles.actions}>
           <button
