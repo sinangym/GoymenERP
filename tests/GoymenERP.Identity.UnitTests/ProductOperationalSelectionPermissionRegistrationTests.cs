@@ -4,8 +4,10 @@ using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Domain.Roles;
 using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
+using GoymenERP.Modules.Identity.Infrastructure.Seeding;
 using GoymenERP.Modules.Identity.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace GoymenERP.Identity.UnitTests;
 
@@ -69,6 +71,49 @@ public sealed class ProductOperationalSelectionPermissionRegistrationTests
             seed.GetProperty("Roles").EnumerateArray()
                 .SelectMany(role => role.GetProperty("Permissions").EnumerateArray())
                 .Select(permission => permission.GetString()));
+    }
+
+    [Fact]
+    public async Task The_seeder_itself_hands_it_to_no_role_and_to_no_seeded_actor()
+    {
+        // The claim is about what the bootstrap PRODUCES, not only about what the file says: a
+        // seeder that added this name in code would leave the file-level case above green.
+        var seed = LoadShippedSeed();
+        await using var dbContext = CreateDbContext();
+        await new IdentityDataSeeder(dbContext, Options.Create(seed)).SeedAsync(CancellationToken.None);
+
+        var seededRoles = await dbContext.Roles.Include(role => role.Permissions).ToListAsync();
+        var seededAssignments = await dbContext.RoleAssignments.Include(x => x.Scopes).ToListAsync();
+
+        // The run really produced roles, permissions and assignments, so an empty answer below
+        // cannot come from an empty database.
+        Assert.NotEmpty(seededRoles);
+        Assert.NotEmpty(seededAssignments);
+        Assert.Contains(
+            ErpPermissions.OrganizationLocationsRead,
+            seededRoles.SelectMany(role => role.Permissions).Select(x => x.PermissionCode));
+
+        Assert.Empty(seededRoles
+            .Where(role => role.Permissions.Any(x => x.PermissionCode == Permission))
+            .Select(role => role.Code));
+
+        // Asked the way the runtime asks: every seeded actor, in every company it was assigned to.
+        foreach (var assignment in seededAssignments)
+        {
+            Assert.False(
+                await Service(dbContext, assignment.UserId, assignment.CompanyId)
+                    .HasPermissionAsync(ErpPermissions.ProductOperationalSelectionRead, assignment.CompanyId),
+                $"seeded actor {assignment.UserId} must not hold {Permission} in {assignment.CompanyId}");
+        }
+
+        // Positive control in the SAME seeded database: an explicitly assigned actor is granted,
+        // so the "false" answers above are a real denial and not a broken query.
+        var actor = Guid.NewGuid();
+        var company = Guid.NewGuid();
+        Grant(dbContext, actor, company, ErpPermissions.ProductOperationalSelectionRead);
+        await dbContext.SaveChangesAsync();
+        Assert.True(await Service(dbContext, actor, company)
+            .HasPermissionAsync(ErpPermissions.ProductOperationalSelectionRead, company));
     }
 
     [Fact]
@@ -148,6 +193,19 @@ public sealed class ProductOperationalSelectionPermissionRegistrationTests
 
         Assert.False(await Service(dbContext, actor, company)
             .HasPermissionAsync(ErpPermissions.ProductOperationalSelectionRead, company));
+    }
+
+    /// <summary>The seed the API actually ships, deserialized into the options the seeder takes.</summary>
+    private static IdentitySeedOptions LoadShippedSeed()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(
+            Path.Combine(FindRepositoryRoot(), SeedPath)));
+        var section = document.RootElement.GetProperty(IdentitySeedOptions.SectionName).GetRawText();
+        var seed = JsonSerializer.Deserialize<IdentitySeedOptions>(
+            section,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        Assert.NotNull(seed);
+        return seed;
     }
 
     private static ErpAuthorizationService Service(
