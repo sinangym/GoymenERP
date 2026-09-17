@@ -332,6 +332,45 @@ describe('name match warning', () => {
     expect(nameSearches(calls).filter((call) => call.companyId === COMPANY_B)).toHaveLength(0)
   })
 
+  it('an answer already in hand for company A is not shown while the same name is checked under B', async () => {
+    // The switch remounts the form, but the query cache outlives it. Only the company
+    // context in the check's key keeps A's finished answer for "Siyah sac" from being read
+    // back as B's answer for the same name while B's own read is still out.
+    const heldForB = deferred()
+    let nameReads = 0
+    const { calls } = installFetch({
+      capabilities: CREATE_AND_LIST,
+      onList: (url) => {
+        if (!url.includes('q=')) return json(productPage())
+        nameReads += 1
+        return nameReads === 1
+          ? json(productPage({ items: [productCore({ name: 'A-ONLY Siyah sac' })] }))
+          : heldForB.promise
+      },
+    })
+    renderProductApp(PATH)
+    await formVisible()
+    await typeNameAndLeave('Siyah sac')
+    await waitFor(() => expect(screen.getByTestId('product-name-matches').textContent).toContain('A-ONLY'))
+
+    await userEvent.selectOptions(screen.getByLabelText('Şirket'), COMPANY_B)
+    const dialog = await waitFor(() => screen.getByRole('dialog'))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Değişiklikleri bırak' }))
+    await waitFor(() => {
+      const picker = screen.getByLabelText('Şirket') as HTMLSelectElement
+      expect(picker.disabled).toBe(false)
+      expect(picker.value).toBe(COMPANY_B)
+    })
+    await formVisible()
+    await typeNameAndLeave('Siyah sac')
+
+    // B asked for itself, and that answer has not arrived: nothing from A may stand in for it.
+    await waitFor(() => expect(nameSearches(calls).map((call) => call.companyId)).toEqual([COMPANY_A, COMPANY_B]))
+    await new Promise((settle) => setTimeout(settle, 50))
+    expect(screen.queryByText(/A-ONLY/)).toBeNull()
+    expect(screen.queryByTestId('product-name-matches')).toBeNull()
+  })
+
   it('a 403 on the check goes through the capability boundary like every other read', async () => {
     const { calls } = installFetch({ capabilities: CREATE_AND_LIST, onList: () => json({ code: 'forbidden' }, 403) })
     renderProductApp(PATH)
