@@ -10,8 +10,18 @@ namespace GoymenERP.Modules.Settings.Application;
 /// Company access is checked before revealing source availability.
 /// </summary>
 public sealed class UnavailableSettingsPrerequisiteProvider(
-    ICompanyContext companyContext, ICurrentUser currentUser) : ISettingsPrerequisiteProvider
+    ICompanyContext companyContext, ICurrentUser currentUser)
+    : ISettingsPrerequisiteProvider, ISettingsMoneyCandidateReader
 {
+    /// <summary>
+    /// No currency source exists, so there are no candidates to offer — which is an
+    /// exception, never an empty list: an empty list reads as "this company has no
+    /// currency" and a consumer could treat it as a settled answer.
+    /// </summary>
+    public Task<IReadOnlyList<MoneyCurrencyCandidateV1>> GetMoneyCurrencyCandidatesAsync(
+        CancellationToken cancellationToken = default) =>
+        Unavailable<IReadOnlyList<MoneyCurrencyCandidateV1>>(cancellationToken);
+
     public Task<UnitProfileV1> GetUnitProfileAsync(Guid unitId, DateOnly effectiveOn,
         CancellationToken cancellationToken = default) => Unavailable<UnitProfileV1>(cancellationToken);
 
