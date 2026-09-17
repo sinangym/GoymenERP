@@ -3,7 +3,7 @@ import { act, cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PRODUCT_CAPABILITY } from './capabilities'
 import { resetPendingAttempts } from './pendingAttempt'
-import { CATALOG_EMPTY } from './productText'
+import { CATALOG_EMPTY, CATALOG_UNAVAILABLE } from './productText'
 import {
   CLASS_FLAT,
   COMPANY_A,
@@ -34,6 +34,9 @@ const CHECKING_HOLD = 'Sınıf/aile seçenekleri doğrulanıyor; tamamlanınca k
 const CHECKING_FIELD = 'Seçenekler doğrulanıyor…'
 const FAILED_FIELD = 'Sınıf/aile seçenekleri okunamadı; seçiminiz silinmedi.'
 const STALE_CLASS = 'Seçilen ürün sınıfı artık listede yok. Listeyi yenileyip tekrar seçin.'
+const FAILED_HOLD =
+  'Sınıf/aile seçenekleri okunamadı. Seçili sınıf veya aileyle kaydetmek için önce seçenekleri yeniden okuyun.'
+const holdNote = () => screen.queryByTestId('product-create-reference-hold')
 
 afterEach(() => {
   cleanup()
@@ -122,7 +125,8 @@ describe('a chosen class while its scoped reference read is out', () => {
     await waitFor(() => screen.getByRole('option', { name: 'Taze aile' }))
     expect(classSelect().value).toBe(CLASS_FLAT)
     expect(within(familySelect()).queryByRole('option', { name: 'Soğuk hadde' })).toBeNull()
-    expect(screen.queryByText(CHECKING_HOLD)).toBeNull()
+    // Settled: the hold note is gone, whatever text it would have had.
+    expect(holdNote()).toBeNull()
     expect(posts(calls)).toHaveLength(0)
 
     await userEvent.selectOptions(familySelect(), FAMILY_FRESH)
@@ -191,14 +195,76 @@ describe('a chosen class while its scoped reference read is out', () => {
     await new Promise((settle) => setTimeout(settle, 30))
     expect(posts(calls)).toHaveLength(0)
     expect(screen.queryByText(/artık listede yok/)).toBeNull()
+    // A failed read does not complete by itself: the note asks for the re-read, it does
+    // not promise that saving will open on its own.
+    expect(holdNote()?.textContent).toBe(FAILED_HOLD)
+    expect(screen.queryByText(CHECKING_HOLD)).toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: 'Seçenekleri yeniden oku' }))
     await waitFor(() => screen.getByRole('option', { name: 'Soğuk hadde' }))
     expect(screen.queryByText(FAILED_FIELD)).toBeNull()
+    expect(holdNote()).toBeNull()
     expect(classSelect().value).toBe(CLASS_FLAT)
     await userEvent.click(saveButton())
     await waitFor(() => expect(posts(calls)).toHaveLength(1))
     expect(JSON.parse(posts(calls)[0].body ?? '{}').classId).toBe(CLASS_FLAT)
+  })
+
+  it('keeps the group’s other offered classes choosable while one class’s read is out, and a new pick drops the old hold', async () => {
+    // The only thing the carried class list does on its own: the list does not collapse to
+    // the chosen class while its read is out, so the person can still change their mind.
+    const held = deferred()
+    const { calls } = installFetch({
+      capabilities: CREATE_ONLY,
+      onOptions: (url) =>
+        classParam(url) === CLASS_FLAT
+          ? held.promise
+          : classParam(url) === CLASS_OTHER
+            ? new Promise<Response>(() => {})
+            : json(
+                referenceOptions({
+                  classes: [
+                    { id: CLASS_FLAT, displayName: 'Yassı ürün' },
+                    { id: CLASS_OTHER, displayName: 'Başka sınıf' },
+                  ],
+                }),
+              ),
+    })
+    renderProductApp(PATH)
+    await formVisible()
+    await chooseOfferedClass(calls)
+    await userEvent.click(saveButton())
+    expect(holdNote()?.textContent).toBe(CHECKING_HOLD)
+
+    expect(within(classSelect()).getByRole('option', { name: 'Başka sınıf' })).toBeTruthy()
+    await userEvent.selectOptions(classSelect(), CLASS_OTHER)
+    expect(classSelect().value).toBe(CLASS_OTHER)
+    expect(shownLabel(classSelect())).toBe('Başka sınıf')
+    // A new choice is a new question; the answer to the old save attempt does not apply.
+    expect(holdNote()).toBeNull()
+    await waitFor(() => expect(classReads(calls, CLASS_OTHER)).toHaveLength(1))
+    expect(posts(calls)).toHaveLength(0)
+  })
+
+  it('says the catalogue could not be read — not that a choice was kept — when no class is chosen', async () => {
+    const { calls } = installFetch({
+      capabilities: CREATE_ONLY,
+      onOptions: () => json({ code: 'service_unavailable' }, 503),
+    })
+    renderProductApp(PATH)
+    await formVisible()
+    await userEvent.type(screen.getByLabelText(/Ürün adı/), 'Siyah sac')
+    await waitFor(() => expect(screen.getByRole('option', { name: /Sac \(SAC\)/ })).toBeTruthy())
+    await userEvent.selectOptions(screen.getByLabelText(/Kod grubu/), GROUP_SAC)
+
+    await waitFor(() => screen.getByRole('button', { name: 'Seçenekleri yeniden oku' }))
+    expect(classSelect().value).toBe('')
+    expect(screen.queryByText(FAILED_FIELD)).toBeNull()
+    expect(screen.getAllByText(CATALOG_UNAVAILABLE).length).toBeGreaterThan(0)
+    expect(screen.queryByText(CATALOG_EMPTY)).toBeNull()
+    // Nothing chosen: the incomplete Draft rule is unchanged.
+    await userEvent.click(saveButton())
+    await waitFor(() => expect(posts(calls)).toHaveLength(1))
   })
 
   it('still lets a Draft be saved without a class when the person clears it', async () => {

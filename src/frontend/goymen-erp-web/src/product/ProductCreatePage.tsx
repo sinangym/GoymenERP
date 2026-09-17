@@ -765,9 +765,9 @@ function ProductCreateForm({
           <p id={`${CREATE_FIELD.classId}-hint`} className={styles.hint}>
             {values.groupId === ''
               ? PRODUCT_CREATE_TEXT.chooseGroupFirst
-              : referencesFailed
+              : referencesFailed && values.classId !== ''
                 ? PRODUCT_CREATE_TEXT.referenceOptionsFailed
-                : classesUnavailable
+                : referencesFailed || classesUnavailable
                   ? CATALOG_UNAVAILABLE
                   : options !== null && options.classes.length === 0
                     ? CATALOG_EMPTY
