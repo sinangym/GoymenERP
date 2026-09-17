@@ -11,8 +11,15 @@ namespace GoymenERP.Modules.Settings.Application.Contracts.V1;
 /// for its operation and business date) before any write.
 /// </para>
 /// <para>
-/// The company is never a request input. A missing source throws — never an empty list, a
-/// hard-coded currency, or a first entry chosen as the default.
+/// The company is never a request input. Outcomes (Business #66 5713672616, error 1):
+/// a reachable source with no candidates for the company answers an empty list, meaning
+/// "no candidates"; a missing, unreachable, forbidden or malformed source throws and is
+/// never an empty list, a hard-coded currency or a default. A list is malformed when
+/// <see cref="MoneyCurrencyCandidatesV1.EnsureWellFormed"/> rejects it.
+/// </para>
+/// <para>
+/// Candidate order is undefined. The first row is not a default, and no candidate — not
+/// even a single one — is selected automatically.
 /// </para>
 /// </summary>
 public interface ISettingsMoneyCandidateReader
@@ -27,3 +34,39 @@ public interface ISettingsMoneyCandidateReader
 /// real code, and its display label. The code is a label, never an identity.
 /// </summary>
 public sealed record MoneyCurrencyCandidateV1(Guid CurrencyId, string Code, string DisplayLabel);
+
+public static class MoneyCurrencyCandidatesV1
+{
+    /// <summary>
+    /// The one shape check for a candidate list, for a provider before it answers and a
+    /// consumer before it shows one. A missing list or row, an empty <c>CurrencyId</c>, an
+    /// empty or whitespace <c>Code</c> or <c>DisplayLabel</c>, or a <c>CurrencyId</c> listed
+    /// twice rejects the whole list as <c>settings_provider_unavailable</c>: a malformed
+    /// source is unavailable, not partly usable. An empty list is well formed. The list is
+    /// returned as given — never filtered, reordered or defaulted.
+    /// </summary>
+    public static IReadOnlyList<MoneyCurrencyCandidateV1> EnsureWellFormed(
+        IReadOnlyList<MoneyCurrencyCandidateV1>? candidates)
+    {
+        if (candidates is null)
+        {
+            throw Malformed();
+        }
+
+        var seen = new HashSet<Guid>();
+        foreach (var candidate in candidates)
+        {
+            if (candidate is null || candidate.CurrencyId == Guid.Empty
+                || string.IsNullOrWhiteSpace(candidate.Code)
+                || string.IsNullOrWhiteSpace(candidate.DisplayLabel)
+                || !seen.Add(candidate.CurrencyId))
+            {
+                throw Malformed();
+            }
+        }
+
+        return candidates;
+    }
+
+    private static SettingsPrerequisiteException Malformed() => new("settings_provider_unavailable");
+}

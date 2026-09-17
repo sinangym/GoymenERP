@@ -60,12 +60,26 @@ chosen `CurrencyId` through its known-id resolution (`GetMoneyProfileAsync` for 
 operation and business date, e.g. the #262 Sales currency reference read); only that
 result decides scale/profile/effective validity.
 
-No currency list is hard-coded anywhere, and no first or single candidate is selected
-automatically. A missing, unavailable or forbidden source is an exception
-(`settings_provider_unavailable`, `settings_access_denied` after the same actor and
-company-membership check), never an empty list or a default currency: unavailable is
-not empty. The consumer owns the context fence: candidates read for one actor/company
-are discarded when that context changes and are never shown under another.
+No currency list is hard-coded anywhere. Outcomes (Business #66 comment 5713672616,
+error 1):
+
+- A reachable source with no candidates for the company answers an empty list, which
+  means "no candidates".
+- A missing, unreachable, forbidden or malformed source is an exception
+  (`settings_provider_unavailable`, or `settings_access_denied` after the same actor and
+  company-membership check), never an empty list or a default currency: unavailable is
+  not empty.
+- A list is malformed when a row is missing, a `CurrencyId` is empty, a `Code` or
+  `DisplayLabel` is empty or whitespace, or a `CurrencyId` appears twice. The whole list
+  is rejected, not filtered. `MoneyCurrencyCandidatesV1.EnsureWellFormed` is that one
+  check, for a provider before it answers and a consumer before it shows candidates; it
+  reports `settings_provider_unavailable` because Business treats a malformed source as
+  unavailable.
+- Candidate order is undefined. The first row is not a default, and no candidate, not
+  even a single one, is selected automatically.
+
+The consumer owns the context fence: candidates read for one actor/company are discarded
+when that context changes and are never shown under another.
 
 Open question, not decided here: whether candidates are narrowed by operation (money
 profiles bind currency and operation) or by business date. No approved source defines
@@ -73,8 +87,9 @@ it, so the port takes neither; if a source decides it, an additional V1 method c
 those inputs without changing this one.
 
 The unavailable adapter implements this port too, with the same behaviour as the
-prerequisite port. No HTTP route, OpenAPI, DI registration, persistent provider,
-database, seed, currency data or grant is introduced.
+prerequisite port: it always throws, and never answers an empty list. No HTTP route,
+OpenAPI, DI registration, persistent provider, database, seed, currency data or grant
+is introduced.
 
 Outstanding approved-source data: real unit/currency identities and effective
 profiles (quantity/money scale), and company/operation/date period eligibility

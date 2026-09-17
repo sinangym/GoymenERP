@@ -18,7 +18,7 @@ public sealed class MoneyCandidateContractTests
     [InlineData(true, false, true, true, "settings_access_denied")]
     [InlineData(true, true, false, true, "settings_access_denied")]
     [InlineData(true, true, true, false, "settings_access_denied")]
-    public async Task Candidates_fail_explicitly_after_the_company_access_check_and_are_never_an_empty_list(
+    public async Task Unavailable_candidates_fail_explicitly_after_the_company_access_check_and_are_never_an_empty_list(
         bool authenticated, bool resolved, bool allowed, bool companyBound, string expectedCode)
     {
         var company = Guid.NewGuid();
@@ -30,6 +30,17 @@ public sealed class MoneyCandidateContractTests
         var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
             () => reader.GetMoneyCurrencyCandidatesAsync());
         Assert.Equal(expectedCode, failure.Code);
+    }
+
+    [Fact]
+    public async Task An_empty_company_is_denied_on_its_own_even_for_an_actor_allowed_that_identifier()
+    {
+        // Membership would pass here, so only the empty-company check can deny.
+        ISettingsMoneyCandidateReader reader = new UnavailableSettingsPrerequisiteProvider(
+            new CompanyContext(Guid.Empty, true), new CurrentUser(true, Guid.Empty));
+
+        Assert.Equal("settings_access_denied", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => reader.GetMoneyCurrencyCandidatesAsync())).Code);
     }
 
     [Fact]
@@ -72,6 +83,64 @@ public sealed class MoneyCandidateContractTests
                 ["DisplayLabel"] = typeof(string),
             },
             properties);
+
+        // Business defines both as the owner's real code and visible name, so neither may be null.
+        var nullability = new NullabilityInfoContext();
+        Assert.All(
+            new[] { nameof(MoneyCurrencyCandidateV1.Code), nameof(MoneyCurrencyCandidateV1.DisplayLabel) },
+            name => Assert.Equal(NullabilityState.NotNull,
+                nullability.Create(typeof(MoneyCurrencyCandidateV1).GetProperty(name)!).ReadState));
+    }
+
+    [Fact]
+    public void A_reachable_source_with_no_candidates_is_a_well_formed_empty_answer()
+    {
+        IReadOnlyList<MoneyCurrencyCandidateV1> none = [];
+
+        Assert.Same(none, MoneyCurrencyCandidatesV1.EnsureWellFormed(none));
+    }
+
+    [Fact]
+    public void A_well_formed_list_is_returned_as_given_without_reordering_or_a_default()
+    {
+        IReadOnlyList<MoneyCurrencyCandidateV1> candidates =
+        [
+            new(Guid.NewGuid(), "synthetic-code-b", "Synthetic label B"),
+            new(Guid.NewGuid(), "synthetic-code-a", "Synthetic label A"),
+        ];
+
+        Assert.Same(candidates, MoneyCurrencyCandidatesV1.EnsureWellFormed(candidates));
+    }
+
+    [Theory]
+    [InlineData("missing list")]
+    [InlineData("missing row")]
+    [InlineData("empty identity")]
+    [InlineData("empty code")]
+    [InlineData("whitespace code")]
+    [InlineData("empty label")]
+    [InlineData("whitespace label")]
+    [InlineData("identity listed twice")]
+    public void A_malformed_list_is_rejected_whole_as_unavailable_never_filtered(string malformation)
+    {
+        var id = Guid.NewGuid();
+        var valid = new MoneyCurrencyCandidateV1(Guid.NewGuid(), "synthetic-code", "Synthetic label");
+        IReadOnlyList<MoneyCurrencyCandidateV1>? candidates = malformation switch
+        {
+            "missing list" => null,
+            "missing row" => [valid, null!],
+            "empty identity" => [valid, valid with { CurrencyId = Guid.Empty }],
+            "empty code" => [valid, new(id, "", "Synthetic label")],
+            "whitespace code" => [valid, new(id, " \t", "Synthetic label")],
+            "empty label" => [valid, new(id, "synthetic-code-2", "")],
+            "whitespace label" => [valid, new(id, "synthetic-code-2", "  ")],
+            "identity listed twice" => [new(id, "synthetic-code-1", "Label 1"), new(id, "synthetic-code-2", "Label 2")],
+            _ => throw new ArgumentOutOfRangeException(nameof(malformation)),
+        };
+
+        // A valid row beside the bad one does not survive: the source is unavailable, not partly usable.
+        Assert.Equal("settings_provider_unavailable", Assert.Throws<SettingsPrerequisiteException>(
+            () => MoneyCurrencyCandidatesV1.EnsureWellFormed(candidates)).Code);
     }
 
     [Fact]
@@ -87,13 +156,28 @@ public sealed class MoneyCandidateContractTests
     [Fact]
     public void The_existing_prerequisite_port_is_unchanged_for_the_modules_that_implement_it()
     {
-        // Finance and Product test doubles implement ISettingsPrerequisiteProvider; a new
-        // member there would break them. The candidate read is a separate port instead.
+        // Finance and Product test doubles implement ISettingsPrerequisiteProvider; a new or
+        // re-signed member there would break them. The candidate read is a separate port
+        // instead. Whole signatures are pinned here; compiling those doubles remains the
+        // cross-module guard.
         Assert.Equal(
-            ["GetMoneyProfileAsync", "GetPeriodEligibilityAsync", "GetUnitProfileAsync"],
-            typeof(ISettingsPrerequisiteProvider).GetMethods().Select(m => m.Name).Order());
+            new[]
+            {
+                Signature(typeof(Task<MoneyProfileV1>), "GetMoneyProfileAsync",
+                    typeof(Guid), typeof(string), typeof(DateOnly), typeof(CancellationToken)),
+                Signature(typeof(Task<PeriodEligibilityV1>), "GetPeriodEligibilityAsync",
+                    typeof(string), typeof(DateOnly), typeof(DateOnly?), typeof(CancellationToken)),
+                Signature(typeof(Task<UnitProfileV1>), "GetUnitProfileAsync",
+                    typeof(Guid), typeof(DateOnly), typeof(CancellationToken)),
+            },
+            typeof(ISettingsPrerequisiteProvider).GetMethods()
+                .Select(m => Signature(m.ReturnType, m.Name, [.. m.GetParameters().Select(p => p.ParameterType)]))
+                .Order(StringComparer.Ordinal));
         Assert.False(typeof(ISettingsPrerequisiteProvider).IsAssignableFrom(typeof(ISettingsMoneyCandidateReader)));
     }
+
+    private static string Signature(Type returns, string name, params Type[] parameters) =>
+        $"{returns} {name}({string.Join(", ", parameters.Select(p => p.ToString()))})";
 
     private sealed class CompanyContext(Guid companyId, bool resolved) : ICompanyContext
     {
