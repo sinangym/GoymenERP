@@ -14,11 +14,12 @@
  *  - AI drafting and technical-attribute similarity: both need a server surface that
  *    does not exist. Exact collisions are still handled — from the server's answer.
  *
- * Name matches (§10.2, CASE-PRD-U02-014) ARE shown: after the name field is left, the
- * server's own list search for that name is read and its matches are listed as a
- * warning to compare against. It never blocks the save, and no similarity measure is
- * invented here — only exact equality after trimming and Turkish case folding is
- * labelled "aynı ad", as a reading aid over the server's result.
+ * Name matches (§10.2, CASE-PRD-U02-014) ARE shown: after the name field is left (or the
+ * form is submitted), the server's own list search for that name is read and its matches
+ * are listed as a warning to compare against. It never blocks the save, and no similarity
+ * measure is invented here — only exact equality after Turkish case folding is labelled
+ * "aynı ad", as a reading aid over the server's result. The server matches the term in
+ * the name OR the code/alias, so the panel says exactly that.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -97,18 +98,28 @@ const NAME_MATCH_PAGE = 20
 // eslint-disable-next-line no-control-regex -- matching control characters is the point
 const NAME_CONTROL_RE = /[\u0000-\u001F\u007F-\u009F]/g
 
-/** The search term: control characters removed, trimmed, bounded like the list search. */
+/**
+ * The checked name: control characters removed and trimmed, the way the server trims a
+ * stored name and a search term. It is NOT bounded here — the list search sends only the
+ * first `SEARCH_MAX` characters, but "aynı ad" compares the whole name. Inner whitespace
+ * is kept: the server keeps it in stored names and in `q`, so collapsing it would claim
+ * matches the server never returns and hide the identically spaced one it does.
+ */
 function nameMatchTerm(name: string): string {
-  return name.replace(NAME_CONTROL_RE, '').trim().slice(0, SEARCH_MAX)
+  return name.replace(NAME_CONTROL_RE, '').trim()
 }
 
 function foldName(name: string): string {
-  return name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('tr-TR')
+  return name.toLocaleLowerCase('tr-TR')
 }
 
+/** The shown result's id, for the name field's `aria-describedby`. */
+const NAME_MATCH_ID = 'product-name-match-check'
+
 /**
- * The server's matches for the typed name, as a WARNING. Polite live region: it must
- * be announced, but it must not interrupt typing or take focus from the form.
+ * The server's matches for the checked name, as a WARNING. It renders INSIDE a polite
+ * live region that is already on the page, so the result is announced as an update
+ * without interrupting typing or taking focus from the form.
  */
 function NameMatches({
   term,
@@ -153,7 +164,7 @@ function NameMatches({
     body = <p>{PRODUCT_CREATE_TEXT.nameMatchesFailed}</p>
   }
   return (
-    <div className={styles.note} role="status" aria-live="polite" data-testid="product-name-match-check">
+    <div id={NAME_MATCH_ID} className={styles.note} data-testid="product-name-match-check">
       {body}
     </div>
   )
@@ -350,13 +361,19 @@ function ProductCreateForm({
    */
   const [checkedName, setCheckedName] = useState('')
   const canCheckNames = hasCapability(shell, PRODUCT_CAPABILITY.productsList)
+  /**
+   * Shown only while the field still holds the checked name: once it is edited, that
+   * result describes another name, and nothing has been checked for this one yet.
+   */
+  const showNameMatches =
+    canCheckNames && checkedName.length >= NAME_MATCH_MIN && nameMatchTerm(values.name) === checkedName
   const nameMatchesQuery = useQuery({
     queryKey: [namespace ?? 'no-context', entryGeneration, 'product-name-matches', checkedName],
     enabled: canCheckNames && namespace !== null && origin !== null && checkedName.length >= NAME_MATCH_MIN,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
       const outcome = await fetchProducts(
-        { q: checkedName, sort: 'name', pageSize: NAME_MATCH_PAGE },
+        { q: checkedName.slice(0, SEARCH_MAX), sort: 'name', pageSize: NAME_MATCH_PAGE },
         { companyId: origin as string },
         signal,
       )
@@ -470,6 +487,9 @@ function ProductCreateForm({
     event.preventDefault()
     if (frozen || !canCreate || origin === null) return
     setSubmitted(true)
+    // An Enter-submit never leaves the name field: check the name being sent, too. The
+    // check is still only a warning — the send below does not wait for it.
+    setCheckedName(nameMatchTerm(values.name))
 
     const validation = validateCreateForm(values, groupIds, classIds, familyIds)
     if (!validation.ok) {
@@ -709,7 +729,7 @@ function ProductCreateForm({
             maxLength={250}
             disabled={frozen}
             aria-invalid={errors.name !== undefined || undefined}
-            aria-describedby={`${CREATE_FIELD.name}-hint${
+            aria-describedby={`${CREATE_FIELD.name}-hint${showNameMatches ? ` ${NAME_MATCH_ID}` : ''}${
               errors.name !== undefined ? ` ${CREATE_FIELD.name}-error` : ''
             }`}
             ref={(el) => {
@@ -721,12 +741,16 @@ function ProductCreateForm({
           <p id={`${CREATE_FIELD.name}-hint`} className={styles.hint}>
             {PRODUCT_CREATE_TEXT.nameHint}
           </p>
-          {canCheckNames && checkedName.length >= NAME_MATCH_MIN ? (
-            <NameMatches
-              term={checkedName}
-              outcome={nameMatchesQuery.data}
-              canOpenDetail={canOpenDetail}
-            />
+          {canCheckNames ? (
+            <div role="status" aria-live="polite" data-testid="product-name-match-live">
+              {showNameMatches ? (
+                <NameMatches
+                  term={checkedName}
+                  outcome={nameMatchesQuery.data}
+                  canOpenDetail={canOpenDetail}
+                />
+              ) : null}
+            </div>
           ) : null}
           {errors.name !== undefined ? (
             <p id={`${CREATE_FIELD.name}-error`} className={styles.fieldError}>

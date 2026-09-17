@@ -291,8 +291,9 @@ export const PRODUCT_CREATE_TEXT = {
    * blocks or merges. The matches are the server's own search result for the typed
    * name, not a similarity score this client made up.
    */
-  nameMatchesChecking: 'Bu adı içeren ürünler aranıyor…',
-  nameMatchesTitle: 'Bu adı içeren ürünler var',
+  // The server matches the term in the name OR the code/alias; the title says so.
+  nameMatchesChecking: 'Adında veya kodunda bu ifade geçen ürünler aranıyor…',
+  nameMatchesTitle: 'Adında veya kodunda bu ifade geçen ürünler var',
   nameMatchesDetail:
     'Kaydı engellemez. Aynı ürünü ikinci kez oluşturmadığınızı kontrol edin; kod çakışması ayrıca sunucuda reddedilir.',
   nameMatchesSameName: 'aynı ad',
