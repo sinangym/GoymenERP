@@ -70,8 +70,19 @@ public sealed class ProductSalesEligibilityServiceTests
     }
 
     [Fact]
-    public async Task A_permission_lost_in_flight_turns_the_result_in_hand_into_a_refusal()
+    public async Task An_answer_that_stops_granting_refuses_the_result_in_hand()
     {
+        /*
+         * What this pins: the SERVICE asks again after the read and refuses the result it
+         * already holds when the answer it gets back is "no".
+         *
+         * What it does NOT pin: that a revocation is seen inside one request. The platform's
+         * ErpAuthorizationService is request-scoped and caches per (actor, company,
+         * permission), so a grant revoked mid-request keeps answering "yes" until the next
+         * request. This double answers each question freshly on purpose, which is what makes
+         * the service's own re-ask observable at all. Company and actor ARE live (the scope
+         * comparison reads them again); the permission is the request's view.
+         */
         var world = new World();
         world.Records.During = () => world.Authorization.Granted = false;
 
@@ -83,6 +94,39 @@ public sealed class ProductSalesEligibilityServiceTests
         Assert.Equal(1, world.Records.Reads);
         Assert.Equal(0, world.Family.Calls);
         Assert.Equal(0, world.Settings.Calls);
+    }
+
+    [Fact]
+    public async Task The_permission_question_carries_the_caller_s_cancellation_token()
+    {
+        // The real question is a database read: it must be cancellable with the call it
+        // belongs to, not run on past a caller that has already gone away.
+        using var caller = new CancellationTokenSource();
+        var world = new World();
+
+        var result = await world.Service().EvaluateAsync(Selection, caller.Token);
+
+        Assert.NotNull(result.Snapshot);
+        Assert.NotEmpty(world.Authorization.AskedWith);
+        Assert.All(world.Authorization.AskedWith, token => Assert.Equal(caller.Token, token));
+    }
+
+    [Fact]
+    public async Task A_null_selection_is_refused_as_denied_before_it_is_looked_at()
+    {
+        // Without the permission, a bad argument and a valid one answer the same way; the
+        // caller learns nothing about this port from the difference.
+        var denied = new World();
+        denied.Authorization.Granted = false;
+        var error = await Assert.ThrowsAsync<ProductOperationException>(
+            () => denied.Service().EvaluateAsync(null!, default));
+        Assert.Equal((403, ProductSalesEligibilityService.AccessDeniedCode), (error.StatusCode, error.Code));
+        Assert.Equal(0, denied.Records.Reads);
+
+        // With it, a null selection is still the caller's own bug.
+        var allowed = new World();
+        await Assert.ThrowsAsync<ArgumentNullException>(
+            () => allowed.Service().EvaluateAsync(null!, default));
     }
 
     [Fact]
@@ -488,6 +532,8 @@ public sealed class ProductSalesEligibilityServiceTests
         /// <summary>Companies the narrow permission was asked for, in order.</summary>
         public List<Guid> AskedFor { get; } = [];
         public List<string> AskedPermissions { get; } = [];
+        /// <summary>The token each question carried; the real service reads a database.</summary>
+        public List<CancellationToken> AskedWith { get; } = [];
         public int Calls => AskedFor.Count;
 
         public Task<bool> HasPermissionAsync(string permission, Guid companyId,
@@ -495,6 +541,7 @@ public sealed class ProductSalesEligibilityServiceTests
         {
             AskedPermissions.Add(permission);
             AskedFor.Add(companyId);
+            AskedWith.Add(cancellationToken);
             return Task.FromResult(Granted && companyId == ProductSalesEligibilityServiceTests.CompanyId);
         }
 

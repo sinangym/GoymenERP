@@ -31,12 +31,20 @@ public interface IProductSalesRecordReader
 /// consuming module's own selector permission is still required on its side; that gate is
 /// not this port's business.
 ///
-/// The permission is re-asked on EVERY read and on every fenced revalidation, from
-/// <see cref="ICompanyContext"/> — never from request or selection data, and never from a
-/// scope the caller supplies. Losing it mid-flight turns the result in hand into 403,
-/// exactly as a company or actor change does. The refusal is the same
-/// <c>product_access_denied</c> 403 as a missing scope and happens before any record,
-/// policy or profile read, so no id, code, version or field error can leak.
+/// The company and the actor are re-read LIVE on every fenced revalidation, so a company
+/// or actor change mid-flight turns the result in hand into 403. The permission is asked
+/// again at each of those points too, always for the freshly read company and never from
+/// request data or a captured scope — but it is asked against THE REQUEST'S AUTHORIZATION
+/// VIEW: the platform's <c>ErpAuthorizationService</c> is request-scoped and caches its
+/// answer per (actor, company, permission), so a grant revoked while one request is in
+/// flight is not observed by that request; it takes effect on the next one. Asking without
+/// that cache would be a change to the central authorization port, which this slice does
+/// not make. So the three are not equivalent: company and actor are live, the permission
+/// is per request.
+///
+/// The refusal is the same <c>product_access_denied</c> 403 as a missing scope and happens
+/// before any record, policy or profile read, so no id, code, version or field error can
+/// leak — including for a null selection, which is rejected only after the gate.
 ///
 /// The check goes straight to <see cref="IErpAuthorizationService"/>, as Organization,
 /// Counterparty and Audit do, rather than through a Product-owned authorizer port: a new
@@ -48,8 +56,17 @@ public interface IProductSalesRecordReader
 ///
 /// Order: scope → stored Product → local preconditions (lifecycle, sellable role,
 /// version, stock/sales unit bindings) → order unit → family-required policy → Settings
-/// unit profiles (stock must be kilogram) → snapshot. Every awaited result, success or
-/// failure, is released only after the same company/actor is re-verified.
+/// unit profiles (stock must be kilogram) → snapshot. Every AWAITED result, success or
+/// failure, is released only after the same company/actor is re-verified at that point.
+/// What is then derived locally from an already re-verified read — the preconditions, the
+/// order-unit comparison, <see cref="Restore"/>'s integrity fault and the final snapshot —
+/// is returned without a further check: the guarantee is per read, not per returned value,
+/// and the window after the last fence cannot be closed from inside this service.
+///
+/// Cancellation: the caller's token reaches the authorization question too. Because the
+/// revalidation in the catch path is awaited, a token cancelled while a read is failing can
+/// surface <see cref="OperationCanceledException"/> in place of that read's own failure.
+/// Cancellation discloses nothing, and the success path still checks the token first.
 ///
 /// Which outcome travels on which channel is part of the port contract; see
 /// <see cref="IProductSalesEligibilityV1"/>.
@@ -71,9 +88,11 @@ public sealed class ProductSalesEligibilityService(ICompanyContext companyContex
     public async Task<ProductSalesEligibilityV1> EvaluateAsync(ProductSalesSelectionV1 selection,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(selection);
         cancellationToken.ThrowIfCancellationRequested();
+        // The gate first: a caller without the narrow permission must not be able to tell a
+        // bad argument from a refusal, even on an in-process call.
         var scope = await RequireScopeAsync(cancellationToken);
+        ArgumentNullException.ThrowIfNull(selection);
         if (selection.ProductId == Guid.Empty) return Rejected("productId", "invalid_reference");
 
         var record = await FencedAsync(scope,

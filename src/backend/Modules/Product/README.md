@@ -253,11 +253,23 @@ remain closed until the #104 source/schema gate and shared implementation are ac
 operational Sales selection. It is not the global master read and borrows no global Product
 grant. K-1(a) (Sinan's decision, Business #66 5719251344): it requires an authenticated actor
 with access to the server-resolved company AND the narrow `product.operational-selection.read`
-permission for that same company, asked again on every read and every revalidation through
-`IErpAuthorizationService`, never from request data. The consuming module's own selector
-permission is still required on its side (Sales keeps a default-deny binding). Every awaited
-result, including failures, is released only after the same company/actor/permission is
-re-verified.
+permission for that same company, asked through `IErpAuthorizationService` for the freshly read
+company and never from request data. The consuming module's own selector permission is still
+required on its side (Sales keeps a default-deny binding).
+
+What each of those three means in one request, measured rather than assumed:
+
+- **Company and actor are live.** They are re-read on every fenced revalidation, so a change
+  mid-flight turns the result in hand into 403.
+- **The permission is the request's authorization view.** The platform service is
+  request-scoped and caches its answer per (actor, company, permission), so the service asks
+  again at every fence but a grant revoked during that request is not observed by it; the
+  revocation takes effect on the next request. Asking without that cache would change the
+  central authorization port and is not this slice's work.
+- **The guarantee is per awaited read.** A read's result, success or failure, is released only
+  after the check at that point. Values derived locally afterwards — preconditions, the
+  order-unit comparison, the restore integrity fault, the final snapshot — are returned
+  without a further check; the window after the last fence cannot be closed here.
 
 The narrow name is declared in `ProductPermissionManifestV1` only. This slice does not touch
 `ErpPermissions`, the Identity seed, the shell capability manifest, DI/host wiring or OpenAPI:
@@ -271,7 +283,9 @@ Order and outcomes:
 |---|---|
 | Scope missing/foreign | `ProductOperationException` 403 `product_access_denied`, before any read |
 | Narrow selection permission missing for the server company | `ProductOperationException` 403 `product_access_denied`, before any read; same code, no separate signal |
-| Company/actor changed, or the permission was lost, during any read | `ProductOperationException` 403 `product_access_denied`, replacing that read's result or failure |
+| Company or actor changed during any read | `ProductOperationException` 403 `product_access_denied`, replacing that read's result or failure |
+| Permission revoked while the request is in flight | Not observed by this request (the platform's per-request authorization view); it refuses the next one |
+| Null selection from a caller without the permission | `ProductOperationException` 403 `product_access_denied`: the gate runs before the argument is looked at |
 | Stored record cannot be restored | `InvalidOperationException` |
 | Product missing / empty id | error `productId invalid_reference` |
 | Draft or Inactive, unknown/false sellable, stale version, missing stock/sales unit | `ProductSalesPreconditions` errors |
