@@ -17,6 +17,12 @@ namespace GoymenERP.BuildingBlocks.Security;
 /// answer per request, and this is how it is refreshed.
 /// </para>
 /// <para>
+/// The refresh works in both directions, because it reports what the database says at that
+/// moment: a grant revoked during the request becomes visible to the rest of it, and so does a
+/// grant ADDED during the request. Neither direction opens anything the stored authority does not
+/// already say, and only a caller that asks for a fresh measurement moves its own view.
+/// </para>
+/// <para>
 /// <b>Who uses it:</b> an owner-owned read that fences results it already holds — it asks once
 /// before the first read and again at each fence before releasing what a read produced. A
 /// capability or menu snapshot does not use it: that is a per-request image by contract, and it

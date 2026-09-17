@@ -81,13 +81,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.cs";
     private const string SqlServerRcsiVerifierPath =
         "tools/verify_rcsi_relational_acceptance.py";
+    // Re-fingerprinted with the broad inventory entry for the central fresh-authority SQL
+    // acceptance class: two names added, discovery 84 -> 86, execution 91 -> 93. The verifier's
+    // logic is unchanged.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "e619dd4bc1dbc5db0d06701ca3479814682e4ec3e3384a4a411151719380f44e";
+        "c2d26a4a81dbb9cc0af98d0549f26b4f9f058e88bca2a13405c656e0e693332f";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
+    // Re-fingerprinted for the same inventory change: updated counts plus one case pinning the
+    // new class as mandatory.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "2306be3f642beb148e86ad59103c851376775b2354477238f9a86adec6fee120";
+        "5b0ea24faee6c49d43cf8a47c1fdfdb78c609d76def76a6992438eefd4f06c4d";
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "91a665e6e8982e5a9b66f5d16a14d9fc4d7f98d63775de959a8cc6b2dea2b018";

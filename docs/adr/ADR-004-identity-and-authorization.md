@@ -76,7 +76,9 @@ depoların sahibi değildir.
 - Eldeki bir sonucu bırakmadan önce güncel yetkiyi ölçmesi gereken sahip,
   `IErpAuthorityRevalidationService` üzerinden sorar. Bu cache'i atlatmaz: okuduğu cevap aynı
   (aktör, şirket, izin) için cache'lenmiş cevabın yerine yazılır, yani isteğin görüntüsü ileri
-  taşınır ve iptal edilmiş bir yetki aynı istek içinde geri gelemez. Bedeli çağrı başına bir
+  taşınır ve iptal edilmiş bir yetki aynı istek içinde geri gelemez. Yön simetriktir: istek
+  sırasında iptal edilen yetki de, istek sırasında verilen yetki de bir sonraki revalidation'dan
+  sonra o isteğin görüntüsüne girer — ölçülen şey veritabanının o anki halidir. Bedeli çağrı başına bir
   veritabanı okumasıdır; capability snapshot'ı sözleşmesi gereği istek görüntüsü olarak kalır.
   Kaynak: Business #66 5720113915, ölçüm #265 5719822744.
 - Daha dar tesis/lokasyon kapsamı liste toplamlarına ve doğrudan kayda aynı şekilde
