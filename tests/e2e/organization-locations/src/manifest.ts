@@ -63,6 +63,15 @@ export interface OrganizationEnvironmentManifest {
    * same rule as above.
    */
   readonly rowScopedActor?: string
+  /**
+   * What each bound ORG-03 test actor was GIVEN, copied verbatim into `coverage.json`
+   * (Business #66 5705730345: actor, role, scope and run identity are bound to the
+   * evidence). Declared by the environment owner from the run's seed override; this
+   * package does not check it against the server — the capability snapshot and the rows
+   * each case observes are what is measured. REQUIRED for `workCentersOnlyActor` and
+   * `rowScopedActor`: an item-3/4 run whose grant is undeclared is refused, not recorded.
+   */
+  readonly actorGrants: Readonly<Record<string, ActorGrant>>
   readonly companyACode: string
   readonly companyBCode: string
   /** Prefix stamped into every reason this run writes, so rows are attributable. */
@@ -83,6 +92,12 @@ export interface OrganizationRunBinding {
   readonly containerName: string
   readonly ownerLabel: string
   readonly databaseName: string
+}
+
+/** One actor's declared grant: role codes, and `Type:id` scopes per assignment. */
+export interface ActorGrant {
+  readonly roles: readonly string[]
+  readonly scopes: readonly string[]
 }
 
 const COMMIT_FIELDS = [
@@ -156,6 +171,32 @@ export function readOrganizationManifest(): OrganizationEnvironmentManifest {
   const optionalActor = (value: unknown): string | undefined =>
     typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
   const locationsOnlyActor = optionalActor(raw.locationsOnlyActor)
+  const workCentersOnlyActor = optionalActor(raw.workCentersOnlyActor)
+  const rowScopedActor = optionalActor(raw.rowScopedActor)
+
+  const grantsRaw = (raw.actorGrants ?? {}) as Record<string, unknown>
+  const textList = (value: unknown, field: string): string[] => {
+    if (!Array.isArray(value) || value.length === 0) {
+      throw new Error(`environment manifest field "${field}" must be a non-empty list`)
+    }
+    return value.map((item, index) => requireText(item, `${field}[${index}]`))
+  }
+  const actorGrants: Record<string, ActorGrant> = {}
+  for (const [actor, grant] of Object.entries(grantsRaw)) {
+    const entry = (grant ?? {}) as Record<string, unknown>
+    actorGrants[actor] = {
+      roles: textList(entry.roles, `actorGrants.${actor}.roles`),
+      scopes: textList(entry.scopes, `actorGrants.${actor}.scopes`),
+    }
+  }
+  for (const [field, actor] of [
+    ['workCentersOnlyActor', workCentersOnlyActor],
+    ['rowScopedActor', rowScopedActor],
+  ] as const) {
+    if (actor !== undefined && actorGrants[actor] === undefined) {
+      throw new Error(`environment manifest binds ${field} "${actor}" but declares no actorGrants entry for it`)
+    }
+  }
 
   return {
     envReady: true,
@@ -165,8 +206,9 @@ export function readOrganizationManifest(): OrganizationEnvironmentManifest {
     foreignActor: requireText(raw.foreignActor, 'foreignActor'),
     locationsOnlyActor,
     multiCompanyActor: optionalActor(raw.multiCompanyActor),
-    workCentersOnlyActor: optionalActor(raw.workCentersOnlyActor),
-    rowScopedActor: optionalActor(raw.rowScopedActor),
+    workCentersOnlyActor,
+    rowScopedActor,
+    actorGrants,
     companyACode: requireText(raw.companyACode, 'companyACode'),
     companyBCode: requireText(raw.companyBCode, 'companyBCode'),
     runPrefix: requireText(raw.runPrefix, 'runPrefix'),

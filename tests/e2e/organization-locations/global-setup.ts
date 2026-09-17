@@ -43,6 +43,12 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
         apiBaseUrl: manifest.apiBaseUrl,
         binding: manifest.binding,
         locationsOnlyActorPrepared: manifest.locationsOnlyActor !== undefined,
+        org03Actors: {
+          multiCompanyActor: manifest.multiCompanyActor ?? null,
+          workCentersOnlyActor: manifest.workCentersOnlyActor ?? null,
+          rowScopedActor: manifest.rowScopedActor ?? null,
+        },
+        actorGrants: manifest.actorGrants,
       },
       null,
       2,

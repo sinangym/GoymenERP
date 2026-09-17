@@ -31,10 +31,26 @@ offers **no link and no card GET**.
 | Item | Case | Actor (from the manifest) | Without that actor |
 |---|---|---|---|
 | 1, 2, 7, 8 | sidebar → list → a flagged row's card by **Tab/Enter** → back by keyboard to the list; seven-field rows; every write method 0; accessible names contain the visible text | `operatorActor` | — (always runs) |
-| 3 | no card capability: list works, links 0, `/organization/locations/{id}` **issued** 0 | `workCentersOnlyActor` | SKIP, recorded |
-| 4 | card capability, row out of scope: that row has no link and its card is never issued; the in-scope link answers 200 | `rowScopedActor` | SKIP, recorded |
-| 5 (+6 empty) | A's work-center read HELD in the browser across a switch to B: A's rows 0 in B, B reads for itself; an empty company shows the empty state | `multiCompanyActor` | SKIP, recorded |
-| 6 forbidden / unavailable | — | — | **NOT MEASURABLE here**, recorded as such |
+| 3 | capability snapshot has the list and NOT the card; list works; rows drawn, then links 0 and `/organization/locations/{id}` **issued** 0 | `workCentersOnlyActor` | SKIP, recorded |
+| 4 | capability snapshot has both; one list answers both ways; rows drawn, in-scope links first, then the out-of-scope row has no link and its card is never issued; the in-scope link answers 200 | `rowScopedActor` | SKIP, recorded |
+| 5 (+6 empty) | A's work-center read HELD in the browser across a switch to B: B's answer drawn, then A's rows 0 in B; B reads for itself; an empty company shows the empty state | `multiCompanyActor` | SKIP, recorded |
+| 6 forbidden / unavailable | — | — | **NOT_MEASURED here**, recorded as such |
+
+Items 3, 4 and 5 also assert that **every API answer the page received belongs to a
+request the identity rewrite sent** as the bound actor; an answer about the ambient
+`VITE_DEV_USER` fails the case.
+
+`coverage.json` gives each item a `status` from a closed set — `MEASURED`, `SKIPPED`,
+`FAILED`, `NOT_MEASURED` — with free text only in `detail`, plus the actor, the grant the
+manifest declared for it, what was observed, `runId` and `browserJourneyCommit`. Read the
+status, never search the text. Business #66 5705730345: ORG-03 browser acceptance needs
+items 3 **and** 4 each `MEASURED` (`itemsThreeAndFourMeasured`); a green exit with either
+`SKIPPED` is `NOT_VERIFIED`.
+
+A manifest that binds `workCentersOnlyActor` or `rowScopedActor` must also declare
+`actorGrants[actor] = { roles: [...], scopes: ["Type:id", ...] }` (non-empty lists), or it is
+refused. The grant is copied into `run.json` and `coverage.json` as declared; what the case
+measures is the server's capability snapshot and rows.
 
 Actors, honestly:
 
@@ -47,10 +63,14 @@ Actors, honestly:
   SITE-OSM. This package does not invent them; creating either is a seed decision for the
   coordinator, the same way the locations-only actor was.
 
-The HOLD in case 5 delays the browser's own request and then sends it on with
-`route.continue()`. The server answers it unchanged; nothing is fulfilled locally.
-`coverage.json` records whether the held read reached the server or was cancelled by the
-switch, because both are legitimate and they are different observations.
+The HOLD in case 5 delays the browser's own request and then hands it on with
+`route.fallback()`, never `route.continue()`. A page route runs before the context route
+and `continue` ends the chain (Playwright 1.62.1: `continue` reports the route handled,
+`fallback` does not, and `Page._onRoute` stops at a handled route), so a continued read
+would skip the identity rewrite and go out as the operator. The server answers it
+unchanged; nothing is fulfilled locally. `coverage.json` records whether the held read
+reached the server or was cancelled by the switch — taken from the identity rewrite's own
+record of that request — because both are legitimate and they are different observations.
 
 ## What this measures, and why a browser is needed for it
 
