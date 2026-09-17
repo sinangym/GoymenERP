@@ -251,17 +251,27 @@ remain closed until the #104 source/schema gate and shared implementation are ac
 
 `ProductSalesEligibilityService` implements `IProductSalesEligibilityV1` (#255 port) for an
 operational Sales selection. It is not the global master read and borrows no global Product
-grant: it requires an authenticated actor with access to the server-resolved company, and the
-consuming module's own selector permission gates the use case (Sales keeps a default-deny
-binding). Every awaited result, including failures, is released only after the same
-company/actor is re-verified.
+grant. K-1(a) (Sinan's decision, Business #66 5719251344): it requires an authenticated actor
+with access to the server-resolved company AND the narrow `product.operational-selection.read`
+permission for that same company, asked again on every read and every revalidation through
+`IErpAuthorizationService`, never from request data. The consuming module's own selector
+permission is still required on its side (Sales keeps a default-deny binding). Every awaited
+result, including failures, is released only after the same company/actor/permission is
+re-verified.
+
+The narrow name is declared in `ProductPermissionManifestV1` only. This slice does not touch
+`ErpPermissions`, the Identity seed, the shell capability manifest, DI/host wiring or OpenAPI:
+registering the name and granting it are the central/Identity owner's and a human's steps. Until
+then the platform answers `PermissionScope.Denied` for an unknown name, so every caller is
+denied — the decision's default-closed rule, not an implicit grant.
 
 Order and outcomes:
 
 | Step | Outcome |
 |---|---|
 | Scope missing/foreign | `ProductOperationException` 403 `product_access_denied`, before any read |
-| Company/actor changed during any read | `ProductOperationException` 403 `product_access_denied`, replacing that read's result or failure |
+| Narrow selection permission missing for the server company | `ProductOperationException` 403 `product_access_denied`, before any read; same code, no separate signal |
+| Company/actor changed, or the permission was lost, during any read | `ProductOperationException` 403 `product_access_denied`, replacing that read's result or failure |
 | Stored record cannot be restored | `InvalidOperationException` |
 | Product missing / empty id | error `productId invalid_reference` |
 | Draft or Inactive, unknown/false sellable, stale version, missing stock/sales unit | `ProductSalesPreconditions` errors |
@@ -310,10 +320,12 @@ Fail-closed limits at this base, not policy choices:
 - There is no activation command, so real rows are Draft and are rejected with
   `lifecycle_conflict`.
 - The runtime is not yet composed in the API host. Host wiring (DI, the reviewed-source
-  fingerprint and its composition test) is requested from the central writer. Until then the
-  Sales product read never reaches this runtime: with its default binding (no product selector
-  permission) it answers 403 before looking for a runtime, and only once that permission is
-  bound would a missing runtime answer 503 `product_provider_unavailable`.
+  fingerprint and its composition test) is requested from the central writer, and now also the
+  central registration of `product.operational-selection.read`. Until then the Sales product
+  read never reaches this runtime: with its default binding (no product selector permission) it
+  answers 403 before looking for a runtime, and only once that permission is bound would a
+  missing runtime answer 503 `product_provider_unavailable`. K-1(a) is not complete until the
+  code, the independent reviews and CI are done; this slice is the Product-side part.
 
 Candidate/offered-unit enumeration for a company user is not implemented: without an accepted
 family policy its only honest answer would be 503.

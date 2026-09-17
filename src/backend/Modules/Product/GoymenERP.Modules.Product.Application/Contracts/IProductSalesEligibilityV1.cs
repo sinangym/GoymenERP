@@ -30,7 +30,10 @@ namespace GoymenERP.Modules.Product.Application.Contracts;
 /// <para><b>Exceptions</b>, which are not answers about the selection:</para>
 /// <list type="bullet">
 /// <item><c>ProductOperationException</c> 403 <c>product_access_denied</c>: no server scope,
-/// or the company/actor changed during any read; it replaces whatever that read produced.</item>
+/// the caller lacks the narrow operational product-selection permission for the
+/// server-resolved company, or the company/actor/permission changed during any read; it
+/// replaces whatever that read produced. One code for all of them: which of the three it
+/// was is not disclosed.</item>
 /// <item><c>ProductOperationException</c> 503 <c>product_family_policy_unavailable</c> /
 /// <c>product_family_policy_invalid</c>: no accepted family policy, or it answered nothing.</item>
 /// <item><c>SettingsPrerequisiteException</c>: the Settings provider's own codes pass through

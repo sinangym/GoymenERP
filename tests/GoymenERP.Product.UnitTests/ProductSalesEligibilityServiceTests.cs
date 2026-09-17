@@ -19,6 +19,88 @@ public sealed class ProductSalesEligibilityServiceTests
 
     internal static ProductSalesSelectionV1 Selection => new(ProductId, Version, SalesUnitId, On);
 
+    [Fact]
+    public async Task Without_the_narrow_selection_permission_nothing_is_read_and_nothing_leaks()
+    {
+        // K-1(a): the narrow permission is its own gate. A denied caller must not learn
+        // whether the Product exists, what its code or version is, or which field is wrong.
+        var world = new World();
+        world.Authorization.Granted = false;
+
+        var error = await Assert.ThrowsAsync<ProductOperationException>(
+            () => world.Service().EvaluateAsync(Selection, default));
+
+        Assert.Equal((403, ProductSalesEligibilityService.AccessDeniedCode), (error.StatusCode, error.Code));
+        Assert.Equal(0, world.Records.Reads);
+        Assert.Equal(0, world.Family.Calls);
+        Assert.Equal(0, world.Settings.Calls);
+        Assert.Equal([ProductPermissionManifestV1.OperationalSelectionRead], world.Authorization.AskedPermissions);
+        // Not the master read, and not a name this slice invents twice over.
+        Assert.NotEqual(ProductPermissionManifestV1.Read, ProductPermissionManifestV1.OperationalSelectionRead);
+        Assert.Contains(ProductPermissionManifestV1.OperationalSelectionRead, ProductPermissionManifestV1.Names);
+    }
+
+    [Fact]
+    public async Task An_empty_id_is_still_refused_as_denied_when_the_permission_is_missing()
+    {
+        // The permission is asked BEFORE the selection is looked at: a denied caller gets
+        // the same 403 for a selection that would otherwise be a field error.
+        var world = new World();
+        world.Authorization.Granted = false;
+
+        var error = await Assert.ThrowsAsync<ProductOperationException>(
+            () => world.Service().EvaluateAsync(Selection with { ProductId = Guid.Empty }, default));
+        Assert.Equal((403, ProductSalesEligibilityService.AccessDeniedCode), (error.StatusCode, error.Code));
+    }
+
+    [Fact]
+    public async Task The_permission_is_asked_for_the_server_company_again_on_every_read()
+    {
+        var world = new World();
+        var result = await world.Service().EvaluateAsync(Selection, default);
+
+        // Unchanged answer with the permission in hand.
+        Assert.NotNull(result.Snapshot);
+        // Once before the first read and once with every fenced result: record, family and
+        // the two unit profiles. A single early yes would leave this at 1.
+        Assert.Equal(5, world.Authorization.Calls);
+        Assert.All(world.Authorization.AskedFor, asked => Assert.Equal(CompanyId, asked));
+        Assert.All(world.Authorization.AskedPermissions,
+            asked => Assert.Equal(ProductPermissionManifestV1.OperationalSelectionRead, asked));
+    }
+
+    [Fact]
+    public async Task A_permission_lost_in_flight_turns_the_result_in_hand_into_a_refusal()
+    {
+        var world = new World();
+        world.Records.During = () => world.Authorization.Granted = false;
+
+        var error = await Assert.ThrowsAsync<ProductOperationException>(
+            () => world.Service().EvaluateAsync(Selection, default));
+
+        Assert.Equal((403, ProductSalesEligibilityService.AccessDeniedCode), (error.StatusCode, error.Code));
+        // The record was read, and its result is not released; nothing after it runs.
+        Assert.Equal(1, world.Records.Reads);
+        Assert.Equal(0, world.Family.Calls);
+        Assert.Equal(0, world.Settings.Calls);
+    }
+
+    [Fact]
+    public async Task A_company_changed_in_flight_is_re_asked_for_the_new_server_company()
+    {
+        // The check never reuses the company captured at the start: it reads the server's
+        // current one, which is also what makes a mid-flight company change a refusal.
+        var world = new World();
+        world.Records.During = () => world.Change("company");
+
+        await Assert.ThrowsAsync<ProductOperationException>(
+            () => world.Service().EvaluateAsync(Selection, default));
+
+        Assert.Equal(2, world.Authorization.Calls);
+        Assert.Equal(CompanyId, world.Authorization.AskedFor[0]);
+        Assert.NotEqual(CompanyId, world.Authorization.AskedFor[1]);
+    }
+
     [Theory]
     [InlineData("anonymous")]
     [InlineData("no-user-id")]
@@ -217,7 +299,8 @@ public sealed class ProductSalesEligibilityServiceTests
     public async Task Real_unavailable_settings_provider_stays_unavailable()
     {
         var world = new World();
-        var service = new ProductSalesEligibilityService(world.Company, world.User, world.Records, world.Family,
+        var service = new ProductSalesEligibilityService(world.Company, world.User, world.Authorization,
+            world.Records, world.Family,
             new ProductUnitProfileAdapter(new UnavailableSettingsPrerequisiteProvider(world.Company, world.User), world.Company));
         var error = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() => service.EvaluateAsync(Selection, default));
         Assert.Equal("settings_provider_unavailable", error.Code);
@@ -350,6 +433,7 @@ public sealed class ProductSalesEligibilityServiceTests
         public Records Records { get; } = new();
         public Family Family { get; } = new();
         public Settings Settings { get; }
+        public Authorization Authorization { get; } = new();
         public ProductStoredRecord? Record { get => Records.Record; init => Records.Record = value; }
 
         public World()
@@ -359,7 +443,8 @@ public sealed class ProductSalesEligibilityServiceTests
         }
 
         public ProductSalesEligibilityService Service(IProductFamilyRequirementPolicyV1? policy = null) =>
-            new(Company, User, Records, policy ?? Family, new ProductUnitProfileAdapter(Settings, Company));
+            new(Company, User, Authorization, Records, policy ?? Family,
+                new ProductUnitProfileAdapter(Settings, Company));
 
         public void Change(string change)
         {
@@ -390,6 +475,35 @@ public sealed class ProductSalesEligibilityServiceTests
         public string? UserId { get; set; } = "sales-actor";
         public IReadOnlySet<Guid> AllowedCompanyIds => Allowed;
         public bool CanAccessCompany(Guid companyId) => Allowed.Contains(companyId);
+    }
+
+    /// <summary>
+    /// The platform authorization service. It records every question, because the real
+    /// implementation caches per request and a single early "yes" would look the same as a
+    /// check that is asked again on every read.
+    /// </summary>
+    internal sealed class Authorization : IErpAuthorizationService
+    {
+        public bool Granted { get; set; } = true;
+        /// <summary>Companies the narrow permission was asked for, in order.</summary>
+        public List<Guid> AskedFor { get; } = [];
+        public List<string> AskedPermissions { get; } = [];
+        public int Calls => AskedFor.Count;
+
+        public Task<bool> HasPermissionAsync(string permission, Guid companyId,
+            CancellationToken cancellationToken = default)
+        {
+            AskedPermissions.Add(permission);
+            AskedFor.Add(companyId);
+            return Task.FromResult(Granted && companyId == ProductSalesEligibilityServiceTests.CompanyId);
+        }
+
+        public Task<AuthorizationSnapshot> GetAuthorizationSnapshotAsync(Guid companyId,
+            IReadOnlyCollection<string> permissions, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<PermissionScope> GetPermissionScopeAsync(string permission, Guid companyId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     internal sealed class Records : IProductSalesRecordReader

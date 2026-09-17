@@ -23,9 +23,28 @@ public interface IProductSalesRecordReader
 /// <summary>
 /// Product-owned runtime for <see cref="IProductSalesEligibilityV1"/>.
 ///
-/// Authority: an authenticated actor with access to the server-resolved company. The
-/// global Product master grant is deliberately NOT borrowed; the consuming module's own
-/// selector permission (for Sales, its default-deny binding) gates the use case.
+/// Authority (K-1(a), Sinan's decision relayed in Business #66 5719251344): an
+/// authenticated actor with access to the server-resolved company AND the narrow
+/// <see cref="ProductPermissionManifestV1.OperationalSelectionRead"/> permission for that
+/// same server-resolved company. The global Product master grant is deliberately NOT
+/// borrowed, and the narrow one is not a master, cost, audit or listing read. The
+/// consuming module's own selector permission is still required on its side; that gate is
+/// not this port's business.
+///
+/// The permission is re-asked on EVERY read and on every fenced revalidation, from
+/// <see cref="ICompanyContext"/> — never from request or selection data, and never from a
+/// scope the caller supplies. Losing it mid-flight turns the result in hand into 403,
+/// exactly as a company or actor change does. The refusal is the same
+/// <c>product_access_denied</c> 403 as a missing scope and happens before any record,
+/// policy or profile read, so no id, code, version or field error can leak.
+///
+/// The check goes straight to <see cref="IErpAuthorizationService"/>, as Organization,
+/// Counterparty and Audit do, rather than through a Product-owned authorizer port: a new
+/// port would need a central DI registration this slice must not make, and the platform
+/// service already fails closed for a name it does not know
+/// (<c>GetPermissionScopeAsync</c> answers <c>PermissionScope.Denied</c> for any name
+/// outside <c>ErpPermissions</c>). Until the central owner registers the name and a human
+/// grants it, every caller is denied — which is the decision's default-closed rule.
 ///
 /// Order: scope → stored Product → local preconditions (lifecycle, sellable role,
 /// version, stock/sales unit bindings) → order unit → family-required policy → Settings
@@ -41,8 +60,9 @@ public interface IProductSalesRecordReader
 /// No snapshot is ever produced from completeness labels, examples or defaults.
 /// </summary>
 public sealed class ProductSalesEligibilityService(ICompanyContext companyContext, ICurrentUser currentUser,
-    IProductSalesRecordReader records, IProductFamilyRequirementPolicyV1 familyPolicy,
-    ProductUnitProfileAdapter unitProfiles) : IProductSalesEligibilityV1
+    IErpAuthorizationService authorization, IProductSalesRecordReader records,
+    IProductFamilyRequirementPolicyV1 familyPolicy, ProductUnitProfileAdapter unitProfiles)
+    : IProductSalesEligibilityV1
 {
     public const string AccessDeniedCode = "product_access_denied";
     public const string UnsupportedOrderUnitCode = "unsupported_order_unit";
@@ -53,7 +73,7 @@ public sealed class ProductSalesEligibilityService(ICompanyContext companyContex
     {
         ArgumentNullException.ThrowIfNull(selection);
         cancellationToken.ThrowIfCancellationRequested();
-        var scope = RequireScope();
+        var scope = await RequireScopeAsync(cancellationToken);
         if (selection.ProductId == Guid.Empty) return Rejected("productId", "invalid_reference");
 
         var record = await FencedAsync(scope,
@@ -123,28 +143,37 @@ public sealed class ProductSalesEligibilityService(ICompanyContext companyContex
         }
         catch
         {
-            // A failure observed under a stale caller can disclose as much as a success.
-            RequireSameScope(scope);
+            // A failure observed under a stale or no-longer-permitted caller can disclose as
+            // much as a success.
+            await RequireSameScopeAsync(scope, cancellationToken);
             throw;
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        RequireSameScope(scope);
+        await RequireSameScopeAsync(scope, cancellationToken);
         return result;
     }
 
-    private ProductSalesReadScope RequireScope()
+    private async Task<ProductSalesReadScope> RequireScopeAsync(CancellationToken cancellationToken)
     {
         if (!currentUser.IsAuthenticated || string.IsNullOrWhiteSpace(currentUser.UserId)
             || !companyContext.IsResolved || companyContext.CompanyId == Guid.Empty
             || !currentUser.CanAccessCompany(companyContext.CompanyId))
             throw new ProductOperationException(AccessDeniedCode, 403);
-        return new(companyContext.CompanyId, currentUser.UserId);
+
+        // The company is the server's, read again here: a scope captured earlier could be
+        // one the actor has since lost, and request data never decides authority.
+        var companyId = companyContext.CompanyId;
+        if (!await authorization.HasPermissionAsync(
+                ProductPermissionManifestV1.OperationalSelectionRead, companyId, cancellationToken))
+            throw new ProductOperationException(AccessDeniedCode, 403);
+
+        return new(companyId, currentUser.UserId);
     }
 
-    private void RequireSameScope(ProductSalesReadScope scope)
+    private async Task RequireSameScopeAsync(ProductSalesReadScope scope, CancellationToken cancellationToken)
     {
-        var current = RequireScope();
+        var current = await RequireScopeAsync(cancellationToken);
         if (current.CompanyId != scope.CompanyId || !string.Equals(current.ActorId, scope.ActorId, StringComparison.Ordinal))
             throw new ProductOperationException(AccessDeniedCode, 403);
     }
