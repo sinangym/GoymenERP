@@ -13,9 +13,13 @@ Source of truth: #275 plan v2 §7.3, §13, R3, R6 and `SINAN_KARARLARI_2026-09-1
   - `OutputDeclaration`: bound to an issued parent roll of this order; a class out of good product, second quality, usable remnant, scrap or process loss; the same id twice is refused.
   - `WipMeasurement`: the latest reading is the roll's WIP; a reading that is not strictly later than the latest is refused (`manufacturing_wip_measurement_not_latest`); the same id twice is refused.
 - `MassBalance` per parent roll: `issued − returned = Σ outputs + WIP + unexplained`. The unexplained difference keeps its sign and is never folded into any class ("açıklanamayan fark otomatik fire olmaz").
-- `Close`:
-  - refused while any roll has WIP (`manufacturing_wip_open`, **TEMPORARY — awaiting Business: "Üretim emri, işlemde kütle (WIP) varken kapanabilir mi?"**);
-  - refused while any roll has an unexplained difference (`manufacturing_unexplained_difference`; no Ö7 tolerance is approved).
+- `Close` (MFG-4; Business #66 [5728619644](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-5728619644), [5730092974](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-5730092974), #299 [5730573197](https://github.com/sinangym/GoymenERP/pull/299#issuecomment-5730573197), on DEC-PRDCT-006/007 and Master v3 §28.9):
+  - **every parent roll reconciles on its own**: `issued − returned = good + second quality + usable remnant + scrap + process loss + remaining WIP + unexplained`; rolls never offset each other;
+  - refused while ANY roll has a non-zero unexplained difference (`manufacturing_unexplained_difference`; no Ö7 tolerance is approved, none is invented);
+  - **remaining WIP does not block the close** when it is explicit, never negative and bound to an issued parent roll of this order, and the roll's unexplained difference is 0. The WIP stays on the closed order as its own position (`BalanceOf(roll).WorkInProgress`): never zeroed, scrapped or turned into good output;
+  - WIP is never assumed: with no reading, mass nobody measured or declared stays an unexplained difference and the close is refused; writing WIP down to 0 without declaring or returning the mass does the same; WIP of a roll outside the order or of a roll nothing was issued from cannot be recorded;
+  - a closed order takes no new realization (`manufacturing_order_closed`).
+  - Real WIP stock/label persistence is proven later in the Inventory integration (T15); this slice proves the domain semantics.
 - `RemainingTarget`: only in the basis the plan declared; `Unavailable` otherwise.
 - `Kilograms`: non-negative, at most three decimals (Ö2); a fourth decimal is refused (`manufacturing_kilogram_precision_exceeded`), never rounded or cut.
 - `CostResult`: R6 status only; every output is `NotCalculated`, an unknown cost has no amount (never 0), and no known cost can be built in this slice.
@@ -35,7 +39,6 @@ Source of truth: #275 plan v2 §7.3, §13, R3, R6 and `SINAN_KARARLARI_2026-09-1
 ## Behaviour kept on purpose — Business decision pending
 
 - **One approved plan can open more than one order** (`FromApprovedPlan` does not mark the plan as converted). §7.3 does not say whether a plan becomes one order or several partial ones; the question is open with Business (#66 5728934213, the same principle as Purchasing's request → several orders). Pinned by a test; changes only by that decision. The physical guard is Inventory's.
-- **WIP > 0 blocks `Close`** — TEMPORARY, see above.
 
 ## What this module is not
 

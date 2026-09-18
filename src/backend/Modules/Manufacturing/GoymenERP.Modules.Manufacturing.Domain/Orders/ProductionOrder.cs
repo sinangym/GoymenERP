@@ -214,10 +214,23 @@ public sealed class ProductionOrder
     }
 
     /// <summary>
-    /// Plan v2 §7.3 and Ö7: with no approved tolerance profile, every non-zero unexplained
-    /// difference is an exception. An order with one does not close; the difference stays on the
-    /// order under its own name and is never written off as loss. The Ö7 exception path (reason +
-    /// single approval) needs a named approver and is a recorded dependency, not built here.
+    /// Closes the order when EVERY parent roll reconciles on its own (Business #66 5728619644 on
+    /// DEC-PRDCT-006/007 and Master v3 §28.9): issued − returned = good + second quality + usable
+    /// remnant + scrap + process loss + remaining WIP + unexplained, per roll; rolls never offset
+    /// each other.
+    /// <list type="bullet">
+    /// <item>Plan v2 §7.3 and Ö7: with no approved tolerance, a non-zero unexplained difference on
+    /// any roll refuses the close; the difference stays on the order under its own name and is
+    /// never written off as loss. The Ö7 exception path (reason + single approval) needs a named
+    /// approver and is a recorded dependency, not built here.</item>
+    /// <item>Remaining WIP does NOT block the close. A WIP reading is explicit, never negative
+    /// (<see cref="Kilograms"/>) and bound to an issued parent roll of this order
+    /// (<see cref="RecordWorkInProgress"/>). After the close it stays on the order as its own
+    /// position — never zeroed, scrapped or turned into good output — and no new realization can
+    /// be written (<see cref="ManufacturingRuleCodes.OrderClosed"/>). WIP is not an automatic loss
+    /// or output that could hide a difference: writing it down without declaring or returning the
+    /// mass makes the difference reappear and refuses the close.</item>
+    /// </list>
     /// </summary>
     public void Close(long expectedVersion, Guid closedByUserId, DateTimeOffset closedAt)
     {
@@ -227,20 +240,7 @@ public sealed class ProductionOrder
 
         var balances = _plannedInputs.Select(input => BalanceOf(input.ParentRollId)).ToList();
 
-        // TEMPORARY — awaiting Business confirmation ("Üretim emri, işlemde kütle (WIP) varken
-        // kapanabilir mi?"). Mass still in process would be left in an ownerless position, so the
-        // order stays open until that mass is declared as output or returned. Recording the WIP
-        // as zero without doing either does not help: the same mass then shows up as an
-        // unexplained difference, which also keeps the order open.
-        var inProcess = balances.Where(balance => balance.WorkInProgress.Value != 0m).ToList();
-        if (inProcess.Count > 0)
-        {
-            throw new ManufacturingRuleException(
-                ManufacturingRuleCodes.WipOpen,
-                "İşlemde kütle (WIP) varken emir kapatılamaz: "
-                + string.Join(", ", inProcess.Select(balance => $"{balance.ParentRollId} ({balance.WorkInProgress})")));
-        }
-
+        // Each roll on its own: a surplus on one roll never covers a gap on another.
         var unaccounted = balances.Where(balance => !balance.IsFullyAccounted).ToList();
         if (unaccounted.Count > 0)
         {

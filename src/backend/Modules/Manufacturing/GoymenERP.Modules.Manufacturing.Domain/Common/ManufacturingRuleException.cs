@@ -32,9 +32,6 @@ public static class ManufacturingRuleCodes
     public const string WipAlreadyMeasured = "manufacturing_wip_already_measured";
     public const string WipMeasurementNotLatest = "manufacturing_wip_measurement_not_latest";
 
-    /// <summary>TEMPORARY rule, awaiting Business (README): an order does not close while mass is in process.</summary>
-    public const string WipOpen = "manufacturing_wip_open";
-
     public const string UnexplainedDifference = "manufacturing_unexplained_difference";
 
     /// <summary>Raised as <see cref="ManufacturingVersionConflictException"/>, not as a rule refusal.</summary>
