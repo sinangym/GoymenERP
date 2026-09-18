@@ -24,7 +24,7 @@ public sealed class OrderTargetAndCloseTests
     {
         var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
             inputs.Length == 0 ? new[] { new PlannedInput(MasterRoll, Kg(10_000m)) } : inputs, target);
-        plan.Approve(Planner, DateTimeOffset.UnixEpoch);
+        plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
         return ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
     }
 
@@ -94,7 +94,7 @@ public sealed class OrderTargetAndCloseTests
         order.Declare(MasterRoll, OutputClass.GoodProduct, Kg(9_700m));
         order.Declare(MasterRoll, OutputClass.Scrap, Kg(200m));
 
-        var error = Assert.Throws<ManufacturingRuleException>(() => order.Close(Closer, DateTimeOffset.UnixEpoch));
+        var error = Assert.Throws<ManufacturingRuleException>(() => order.Close(order.Version, Closer, DateTimeOffset.UnixEpoch));
 
         Assert.Equal(ManufacturingRuleCodes.UnexplainedDifference, error.Code);
         Assert.Equal(OrderStatus.Open, order.Status);
@@ -113,7 +113,7 @@ public sealed class OrderTargetAndCloseTests
         order.Declare(MasterRoll, OutputClass.GoodProduct, Kg(10_000m));
         order.Declare(OtherRoll, OutputClass.GoodProduct, Kg(4_999m));
 
-        var error = Assert.Throws<ManufacturingRuleException>(() => order.Close(Closer, DateTimeOffset.UnixEpoch));
+        var error = Assert.Throws<ManufacturingRuleException>(() => order.Close(order.Version, Closer, DateTimeOffset.UnixEpoch));
         Assert.Equal(ManufacturingRuleCodes.UnexplainedDifference, error.Code);
         Assert.Contains(OtherRoll.ToString(), error.Message);
     }
@@ -127,7 +127,7 @@ public sealed class OrderTargetAndCloseTests
         order.Declare(MasterRoll, OutputClass.Scrap, Kg(200m));
         order.Declare(MasterRoll, OutputClass.ProcessLoss, Kg(100m));
 
-        order.Close(Closer, DateTimeOffset.UnixEpoch);
+        order.Close(order.Version, Closer, DateTimeOffset.UnixEpoch);
 
         Assert.Equal(OrderStatus.Closed, order.Status);
         Assert.Equal(Closer, order.ClosedByUserId);
@@ -140,7 +140,7 @@ public sealed class OrderTargetAndCloseTests
         Assert.Equal(ManufacturingRuleCodes.OrderClosed, Assert.Throws<ManufacturingRuleException>(
             () => order.MeasureWip(MasterRoll, Kg(1m))).Code);
         Assert.Equal(ManufacturingRuleCodes.OrderClosed, Assert.Throws<ManufacturingRuleException>(
-            () => order.Close(Closer, DateTimeOffset.UnixEpoch)).Code);
+            () => order.Close(order.Version, Closer, DateTimeOffset.UnixEpoch)).Code);
     }
 
     [Fact]
@@ -153,7 +153,7 @@ public sealed class OrderTargetAndCloseTests
         order.MeasureWip(MasterRoll, Kg(7_000m));
         Assert.True(order.BalanceOf(MasterRoll).IsFullyAccounted);
 
-        var wipOpen = Assert.Throws<ManufacturingRuleException>(() => order.Close(Closer, DateTimeOffset.UnixEpoch));
+        var wipOpen = Assert.Throws<ManufacturingRuleException>(() => order.Close(order.Version, Closer, DateTimeOffset.UnixEpoch));
         Assert.Equal(ManufacturingRuleCodes.WipOpen, wipOpen.Code);
         Assert.Equal(OrderStatus.Open, order.Status);
         Assert.Equal(7_000m, order.BalanceOf(MasterRoll).WorkInProgress.Value);
@@ -162,12 +162,12 @@ public sealed class OrderTargetAndCloseTests
         // order: the 7.000 kg reappears as an unexplained difference.
         order.MeasureWip(MasterRoll, Kilograms.Zero);
         Assert.Equal(ManufacturingRuleCodes.UnexplainedDifference, Assert.Throws<ManufacturingRuleException>(
-            () => order.Close(Closer, DateTimeOffset.UnixEpoch)).Code);
+            () => order.Close(order.Version, Closer, DateTimeOffset.UnixEpoch)).Code);
 
         // Declared and returned, the mass is accounted for and the order closes.
         order.Declare(MasterRoll, OutputClass.GoodProduct, Kg(5_000m));
         order.Return(MasterRoll, Kg(2_000m));
-        order.Close(Closer, DateTimeOffset.UnixEpoch);
+        order.Close(order.Version, Closer, DateTimeOffset.UnixEpoch);
         Assert.Equal(OrderStatus.Closed, order.Status);
     }
 

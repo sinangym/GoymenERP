@@ -70,14 +70,22 @@ public sealed class ProductionPlan
 
     public PlanStatus Status { get; private set; }
 
+    /// <summary>Optimistic concurrency, as on the production order (MFG-3): Approve names the version it read.</summary>
+    public long Version { get; private set; } = 1;
+
     public Guid? ApprovedByUserId { get; private set; }
 
     public DateTimeOffset? ApprovedAtUtc { get; private set; }
 
     public IReadOnlyList<PlannedInput> Inputs => _inputs.AsReadOnly();
 
-    public void Approve(Guid approvedByUserId, DateTimeOffset approvedAtUtc)
+    public void Approve(long expectedVersion, Guid approvedByUserId, DateTimeOffset approvedAtUtc)
     {
+        if (expectedVersion != Version)
+        {
+            throw new ManufacturingVersionConflictException(expectedVersion, Version);
+        }
+
         if (Status != PlanStatus.Draft)
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanNotDraft, "Yalnız taslak plan onaylanabilir.");
@@ -86,6 +94,7 @@ public sealed class ProductionPlan
         ApprovedByUserId = RequireId(approvedByUserId, nameof(approvedByUserId));
         ApprovedAtUtc = approvedAtUtc.ToUniversalTime();
         Status = PlanStatus.Approved;
+        Version++;
     }
 
     private static Guid RequireId(Guid value, string parameterName) =>
