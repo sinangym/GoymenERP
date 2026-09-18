@@ -19,24 +19,37 @@ public enum MeasurementKind
 }
 
 /// <summary>
-/// A loading instruction for one company towards one customer Party (#275 §7.4). An
-/// instruction is NOT a definite shipment: it says what should be loaded. What actually gets
+/// A loading instruction for one company towards one customer (#275 §7.4, §5). The customer is
+/// named twice on purpose: the Party (who) and the CompanyPartyAccount (the commercial
+/// relationship of that Party in THIS company, which holds its active state) — a Party alone is
+/// not a customer of a company. Both are identities only; that the account belongs to the Party
+/// and is active is Cari's check at integration (dependency_wait).
+/// <para>
+/// An instruction is NOT a definite shipment: it says what should be loaded. What actually gets
 /// loaded, shipped and delivered are separate shares per line, each capped by the one before
 /// it, so a loaded sub-share is never subtracted twice (§13: 6.000 allocated, 4.000 loaded,
-/// 3.800 shipped → 200 loaded-not-shipped stays visible). The physical stock exit and the
-/// allocation consumption of a definite shipment belong to Inventory (T11/T12); this record
-/// books nothing physical. Vehicle, driver and weighing tickets are later slices.
+/// 3.800 shipped → 200 loaded-not-shipped stays visible). A delivery names its source shipment
+/// (§7.4: shortage, damage, rejection and return are tied to the shipment they belong to). The
+/// physical stock exit and the allocation consumption of a definite shipment belong to
+/// Inventory (T11/T12) and are one transaction with the shipped share; this record books
+/// nothing physical.
+/// </para>
+/// <para>
+/// This aggregate is the single authority for every share bound; each refusal carries a
+/// <see cref="LogisticsRuleCodes"/> code.
+/// </para>
 /// </summary>
 public sealed class LoadingInstruction
 {
     private readonly List<LoadingInstructionLine> lines = [];
     private readonly List<LoadingShare> shares = [];
 
-    private LoadingInstruction(Guid id, Guid companyId, Guid customerPartyId, DateTimeOffset now)
+    private LoadingInstruction(Guid id, Guid companyId, Guid customerPartyId, Guid companyAccountId, DateTimeOffset now)
     {
         Id = Identity.Require(id, nameof(id));
         CompanyId = Identity.Require(companyId, nameof(companyId));
         CustomerPartyId = Identity.Require(customerPartyId, nameof(customerPartyId));
+        CompanyAccountId = Identity.Require(companyAccountId, nameof(companyAccountId));
         CreatedAtUtc = now.ToUniversalTime();
         UpdatedAtUtc = CreatedAtUtc;
     }
@@ -44,30 +57,40 @@ public sealed class LoadingInstruction
     public Guid Id { get; }
     public Guid CompanyId { get; }
     public Guid CustomerPartyId { get; }
+
+    /// <summary>The customer's CompanyPartyAccount in this company (Cari identity only).</summary>
+    public Guid CompanyAccountId { get; }
+
     public LoadingInstructionStatus Status { get; private set; } = LoadingInstructionStatus.Draft;
     public long Version { get; private set; } = 1;
     public DateTimeOffset CreatedAtUtc { get; }
     public DateTimeOffset UpdatedAtUtc { get; private set; }
+
+    /// <summary>Read-only views; the lists behind them never leave this record.</summary>
     public IReadOnlyList<LoadingInstructionLine> Lines => lines.AsReadOnly();
 
     /// <summary>Every recorded load, shipment and delivery share, in order.</summary>
     public IReadOnlyList<LoadingShare> Shares => shares.AsReadOnly();
 
-    public static LoadingInstruction Create(Guid id, Guid companyId, Guid customerPartyId, DateTimeOffset now) =>
-        new(id, companyId, customerPartyId, now);
+    public static LoadingInstruction Create(Guid id, Guid companyId, Guid customerPartyId, Guid companyAccountId, DateTimeOffset now) =>
+        new(id, companyId, customerPartyId, companyAccountId, now);
 
     /// <summary>
-    /// What should be loaded for one product, optionally drawing from one Inventory allocation
-    /// (identity only). The allocation is the source; loading is a sub-share of it, never a
+    /// What should be loaded for one product, from the sales order line it serves (identity only,
+    /// §5 "her olayın kaynak kimliği vardır"), in a Settings unit (identity only; the unit's
+    /// profile and the quantity's scale are verified by the Application layer), optionally
+    /// drawing from one Inventory allocation. Loading is a sub-share of the allocation, never a
     /// second reservation.
     /// </summary>
-    public LoadingInstructionLine AddLine(long expectedVersion, Guid lineId, Guid productId, Guid? allocationId,
-        Quantity instructed, DateTimeOffset now)
+    public LoadingInstructionLine AddLine(long expectedVersion, Guid lineId, Guid sourceOrderLineId, Guid productId, Guid unitId,
+        Guid? allocationId, Quantity instructed, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
-        RequireStatus(LoadingInstructionStatus.Draft, "Yalnız taslak talimata satır eklenebilir.");
+        RequireStatus(LoadingInstructionStatus.Draft, LogisticsRuleCodes.InstructionNotDraft, "Yalnız taslak talimata satır eklenebilir.");
         Identity.Require(lineId, nameof(lineId));
+        Identity.Require(sourceOrderLineId, nameof(sourceOrderLineId));
         Identity.Require(productId, nameof(productId));
+        Identity.Require(unitId, nameof(unitId));
         if (allocationId == Guid.Empty)
         {
             throw new ArgumentException("Kimlik boş olamaz.", nameof(allocationId));
@@ -80,10 +103,10 @@ public sealed class LoadingInstruction
 
         if (lines.Any(line => line.Id == lineId))
         {
-            throw new InvalidOperationException("Aynı talimat satırı kimliği ikinci kez eklenemez.");
+            throw new LogisticsRuleException(LogisticsRuleCodes.DuplicateLineId, "Aynı talimat satırı kimliği ikinci kez eklenemez.");
         }
 
-        var line = new LoadingInstructionLine(lineId, productId, allocationId, instructed);
+        var line = new LoadingInstructionLine(lineId, sourceOrderLineId, productId, unitId, allocationId, instructed);
         lines.Add(line);
         Touch(now);
         return line;
@@ -92,17 +115,17 @@ public sealed class LoadingInstruction
     public void Issue(long expectedVersion, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
-        RequireStatus(LoadingInstructionStatus.Draft, "Yalnız taslak talimat yayımlanabilir.");
+        RequireStatus(LoadingInstructionStatus.Draft, LogisticsRuleCodes.InstructionNotDraft, "Yalnız taslak talimat yayımlanabilir.");
         if (lines.Count == 0)
         {
-            throw new InvalidOperationException("Satırsız talimat yayımlanamaz.");
+            throw new LogisticsRuleException(LogisticsRuleCodes.InstructionWithoutLines, "Satırsız talimat yayımlanamaz.");
         }
 
         Status = LoadingInstructionStatus.Issued;
         Touch(now);
     }
 
-    /// <summary>A quality or ownership block on a line (its source is Inventory/Quality): loads are refused while it stands.</summary>
+    /// <summary>A quality or ownership block on a line (its source is Inventory/Quality): loads and shipments are refused while it stands.</summary>
     public void BlockLine(long expectedVersion, Guid lineId, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
@@ -125,19 +148,16 @@ public sealed class LoadingInstruction
         MeasurementKind measurement, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
-        RequireStatus(LoadingInstructionStatus.Issued, "Yükleme yalnız yayımlanmış talimata kaydedilir.");
+        RequireStatus(LoadingInstructionStatus.Issued, LogisticsRuleCodes.InstructionNotIssued, "Yükleme yalnız yayımlanmış talimata kaydedilir.");
         if (!Enum.IsDefined(measurement))
         {
-            throw new ArgumentException("Ölçüm niteliği belirtilmelidir.", nameof(measurement));
+            throw new LogisticsRuleException(LogisticsRuleCodes.MeasurementRequired, "Ölçüm niteliği belirtilmelidir.");
         }
 
         var line = FindLine(lineId);
-        if (line.IsBlocked)
-        {
-            throw new InvalidOperationException("Bloklu satıra yükleme kaydedilemez.");
-        }
-
-        RequirePositiveShare(loadId, loaded, line.RemainingToLoad, "Yüklenen pay talimatın yüklenmemiş kalanını aşamaz.");
+        RequireNotBlocked(line, "Bloklu satıra yükleme kaydedilemez.");
+        RequirePositiveShare(loadId, loaded, line.RemainingToLoad, LogisticsRuleCodes.LoadExceedsInstructed,
+            "Yüklenen pay talimatın yüklenmemiş kalanını aşamaz.");
         line.AddLoaded(loaded);
         return Add(new LoadingShare(loadId, line.Id, LoadingShareKind.Loaded, loaded, measurement, null, now.ToUniversalTime()), now);
     }
@@ -146,49 +166,47 @@ public sealed class LoadingInstruction
     /// Marks part of the loaded share as definitely shipped. Shipped is taken from LOADED only,
     /// never from the instruction again, so nothing is decremented twice. A blocked line ships
     /// nothing, even when it was loaded before the block (§7.4 "kalite bloku … engellenir", Ö3
-    /// "sevk serbestliği yok"): the block matters most at the moment goods would leave. The stock
-    /// exit and the allocation consumption that go with a definite shipment are Inventory's
-    /// (T11/T12) and belong in the same transaction as this share.
+    /// "sevk serbestliği yok"). The stock exit and the allocation consumption that go with a
+    /// definite shipment are Inventory's (T11/T12) and belong in the same transaction as this share.
     /// </summary>
     public LoadingShare MarkShipped(long expectedVersion, Guid shipmentId, Guid lineId, Quantity shipped, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
-        RequireStatus(LoadingInstructionStatus.Issued, "Sevk yalnız yayımlanmış talimatta kaydedilir.");
+        RequireStatus(LoadingInstructionStatus.Issued, LogisticsRuleCodes.InstructionNotIssued, "Sevk yalnız yayımlanmış talimatta kaydedilir.");
         var line = FindLine(lineId);
-        if (line.IsBlocked)
-        {
-            throw new InvalidOperationException("Bloklu satırdan sevk kaydedilemez.");
-        }
-
-        RequirePositiveShare(shipmentId, shipped, line.LoadedNotShipped, "Sevk edilen pay yüklenmiş ama sevk edilmemiş payı aşamaz.");
+        RequireNotBlocked(line, "Bloklu satırdan sevk kaydedilemez.");
+        RequirePositiveShare(shipmentId, shipped, line.LoadedNotShipped, LogisticsRuleCodes.ShipmentExceedsLoaded,
+            "Sevk edilen pay yüklenmiş ama sevk edilmemiş payı aşamaz.");
         line.AddShipped(shipped);
         return Add(new LoadingShare(shipmentId, line.Id, LoadingShareKind.Shipped, shipped, null, null, now.ToUniversalTime()), now);
     }
 
     /// <summary>
-    /// Marks part of the shipped share as delivered; delivery never exceeds what was shipped. A
-    /// block on the line does NOT stop this record: the goods have already left, and §7.4 ties
-    /// shortage, damage, rejection and return to the source shipment as facts about it, so a
-    /// delivery record is that kind of fact. Whether a later block should also flag the delivery
-    /// is an open question for Business (README); until then the record is not refused.
+    /// Marks part of a definite shipment as delivered. The delivery names its source shipment and
+    /// is bounded by that shipment's undelivered remainder first (§7.4), then by the line as a
+    /// whole. A block on the line does NOT stop this record: the goods have already left, and
+    /// §7.4 ties shortage, damage, rejection and return to the source shipment as facts about it.
+    /// Whether a later block should also flag the delivery is an open question for Business
+    /// (README); until then the record is not refused.
     /// </summary>
     public LoadingShare MarkDelivered(long expectedVersion, Guid deliveryId, Guid lineId, Guid shipmentId,
         Quantity delivered, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
-        RequireStatus(LoadingInstructionStatus.Issued, "Teslim yalnız yayımlanmış talimatta kaydedilir.");
+        RequireStatus(LoadingInstructionStatus.Issued, LogisticsRuleCodes.InstructionNotIssued, "Teslim yalnız yayımlanmış talimatta kaydedilir.");
         var line = FindLine(lineId);
         var shipment = FindShipment(shipmentId);
         if (shipment.LineId != line.Id)
         {
-            throw new InvalidOperationException("Teslim, başka satırın sevkine bağlanamaz.");
+            throw new LogisticsRuleException(LogisticsRuleCodes.ShipmentOfAnotherLine, "Teslim, başka satırın sevkine bağlanamaz.");
         }
 
-        // Bound by the source shipment first (§7.4), then by the line as a whole.
-        RequirePositiveShare(deliveryId, delivered, UndeliveredOf(shipment), "Teslim edilen pay kaynak sevkin teslim edilmemiş kalanını aşamaz.");
+        RequirePositiveShare(deliveryId, delivered, UndeliveredOf(shipment), LogisticsRuleCodes.DeliveryExceedsShipment,
+            "Teslim edilen pay kaynak sevkin teslim edilmemiş kalanını aşamaz.");
         if (delivered.IsGreaterThan(line.ShippedNotDelivered))
         {
-            throw new InvalidOperationException("Teslim edilen pay sevk edilmiş ama teslim edilmemiş payı aşamaz.");
+            throw new LogisticsRuleException(LogisticsRuleCodes.DeliveryExceedsLine,
+                "Teslim edilen pay sevk edilmiş ama teslim edilmemiş payı aşamaz.");
         }
 
         line.AddDelivered(delivered);
@@ -205,14 +223,14 @@ public sealed class LoadingInstruction
 
     private LoadingShare FindShipment(Guid shipmentId) =>
         shares.FirstOrDefault(share => share.ShareId == shipmentId && share.Kind == LoadingShareKind.Shipped)
-        ?? throw new InvalidOperationException("Kaynak sevk kaydı bulunamadı.");
+        ?? throw new LogisticsRuleException(LogisticsRuleCodes.ShipmentNotFound, "Kaynak sevk kaydı bulunamadı.");
 
-    private void RequirePositiveShare(Guid shareId, Quantity quantity, Quantity available, string tooMuch)
+    private void RequirePositiveShare(Guid shareId, Quantity quantity, Quantity available, string tooMuchCode, string tooMuch)
     {
         Identity.Require(shareId, nameof(shareId));
         if (shares.Any(share => share.ShareId == shareId))
         {
-            throw new InvalidOperationException("Aynı pay kaydı ikinci kez işlenemez.");
+            throw new LogisticsRuleException(LogisticsRuleCodes.DuplicateShareId, "Aynı pay kaydı ikinci kez işlenemez.");
         }
 
         if (quantity.IsZero)
@@ -222,7 +240,15 @@ public sealed class LoadingInstruction
 
         if (quantity.IsGreaterThan(available))
         {
-            throw new InvalidOperationException(tooMuch);
+            throw new LogisticsRuleException(tooMuchCode, tooMuch);
+        }
+    }
+
+    private static void RequireNotBlocked(LoadingInstructionLine line, string message)
+    {
+        if (line.IsBlocked)
+        {
+            throw new LogisticsRuleException(LogisticsRuleCodes.LineBlocked, message);
         }
     }
 
@@ -235,13 +261,13 @@ public sealed class LoadingInstruction
 
     private LoadingInstructionLine FindLine(Guid lineId) =>
         lines.FirstOrDefault(line => line.Id == lineId)
-        ?? throw new InvalidOperationException("Talimat satırı bulunamadı.");
+        ?? throw new LogisticsRuleException(LogisticsRuleCodes.LineNotFound, "Talimat satırı bulunamadı.");
 
-    private void RequireStatus(LoadingInstructionStatus required, string message)
+    private void RequireStatus(LoadingInstructionStatus required, string code, string message)
     {
         if (Status != required)
         {
-            throw new InvalidOperationException(message);
+            throw new LogisticsRuleException(code, message);
         }
     }
 

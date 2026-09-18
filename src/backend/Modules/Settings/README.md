@@ -45,6 +45,54 @@ Parse("1.001", 2) throws settings_decimal_scale_exceeded. These examples do not
 approve kg scale 0 or currency scale 2. Profile versions are positive server-owned
 versions; any future HTTP adapter must encode them as lossless strings.
 
+## Money currency candidates (read-only)
+
+Source: Business issue #66 comment 5702138790 (SALES-FS1 minimal owner input) and
+coordinator comment 5704482629 (owner: central Backend).
+
+`ISettingsMoneyCandidateReader` is a separate V1 port, so `ISettingsPrerequisiteProvider`
+and the test doubles other modules keep for it do not change. It lists money currency
+candidates for the server-resolved company. The company is never a request input.
+
+Each row is only `CurrencyId` (the owner's stable identity and the sole reference for
+selection and revalidation), `Code` (the owner's real code, a label, never an identity)
+and `DisplayLabel`. A row carries no scale, profile, version, operation or effective
+range: being listed is not validity. Before any write, a consumer revalidates the
+chosen `CurrencyId` through its known-id resolution (`GetMoneyProfileAsync` for its
+operation and business date, e.g. the #262 Sales currency reference read); only that
+result decides scale/profile/effective validity.
+
+No currency list is hard-coded anywhere. Outcomes (Business #66 comment 5713672616,
+error 1):
+
+- A reachable source with no candidates for the company answers an empty list, which
+  means "no candidates".
+- A missing, unreachable, forbidden or malformed source is an exception
+  (`settings_provider_unavailable`, or `settings_access_denied` after the same actor and
+  company-membership check), never an empty list or a default currency: unavailable is
+  not empty.
+- A list is malformed when a row is missing, a `CurrencyId` is empty, a `Code` or
+  `DisplayLabel` is empty or whitespace, or a `CurrencyId` appears twice. The whole list
+  is rejected, not filtered. `MoneyCurrencyCandidatesV1.EnsureWellFormed` is that one
+  check, for a provider before it answers and a consumer before it shows candidates; it
+  reports `settings_provider_unavailable` because Business treats a malformed source as
+  unavailable.
+- Candidate order is undefined. The first row is not a default, and no candidate, not
+  even a single one, is selected automatically.
+
+The consumer owns the context fence: candidates read for one actor/company are discarded
+when that context changes and are never shown under another.
+
+Open question, not decided here: whether candidates are narrowed by operation (money
+profiles bind currency and operation) or by business date. No approved source defines
+it, so the port takes neither; if a source decides it, an additional V1 method can take
+those inputs without changing this one.
+
+The unavailable adapter implements this port too, with the same behaviour as the
+prerequisite port: it always throws, and never answers an empty list. No HTTP route,
+OpenAPI, DI registration, persistent provider, database, seed, currency data or grant
+is introduced.
+
 Outstanding approved-source data: real currency identities and effective money
 profiles, and company/operation/date period eligibility source. Unit profiles now
 have one approved source (GDC kg, below); Master 28.1's rounding (`AwayFromZero`)

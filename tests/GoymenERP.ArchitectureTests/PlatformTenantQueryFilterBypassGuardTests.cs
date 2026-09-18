@@ -77,25 +77,27 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "0a5d40cdf5b24b687eb6acbf6f96d4b70d050a24e9268498aa6a12007bb9e525";
     private const string SqlServerRcsiIntegrationProjectPath =
         "tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj";
+    // Re-fingerprinted for one ProjectReference to Inventory.Infrastructure (INV-2, #293: the
+    // Inventory SQL acceptance class). Publish target and discovery contract unchanged.
     private const string ReviewedSqlServerRcsiIntegrationProjectFingerprint =
-        "ab69dc2cd05e0221e603ad9374f6ccdb5ca41003582251581a370e74305ca042";
+        "f6ee188026003558443ef2ac0131cd7560af67cd90ade48462445116715801e7";
     private const string SqlServerRcsiRelationalAcceptancePath =
         "tests/GoymenERP.Api.IntegrationTests/"
         + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.cs";
     private const string SqlServerRcsiVerifierPath =
         "tools/verify_rcsi_relational_acceptance.py";
     // Re-fingerprinted with the broad inventory entry for the Inventory SQL acceptance class
-    // (INV-2, #293): five names added, discovery 86 -> 91, execution 93 -> 98. The verifier's
-    // logic is unchanged.
+    // (INV-2, #293) on top of #265's: five names added, discovery 89 -> 94, execution
+    // 96 -> 101. The verifier's logic is unchanged.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "6ed6629c2703c1d3486cd958887dfe0d3d74bda0d27ca8082b05fba39a376a0b";
+        "17eb68758a5b06d515f729d1aa62f739383344e5fc144d74411884216c3645cd";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
     // Re-fingerprinted for the same inventory change: updated counts plus one case pinning the
     // new class as mandatory.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "3c7f87dfe6b4dee9e8c0e1e629d80ce6149cb155862c0bc9526fa775dafba173";
+        "e7f74795e64cb62ee54984824cf862f002af792e5c2a9217b3e8b30e8be28a67";
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "91a665e6e8982e5a9b66f5d16a14d9fc4d7f98d63775de959a8cc6b2dea2b018";
@@ -260,7 +262,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
                     new(
-                        "2e0a20c7f00700cca3368d12ba3ac02237e03bdb3a718d939846b18d39406ace",
+                        "2e0df8bb2c47de5479878476df5040b59cfa2f836aba6c409a2ae3caf93fc0e9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -6183,14 +6185,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedContextConstructionRegex();
 
-    // InventoryDbContext is deliberately absent here (INV-2, #293): this identifier list drives the
-    // target-typed `new(` heuristic, and InventoryStore uses `new(...)` for its own records, which
-    // would read as six DbContext constructions. Explicit `new InventoryDbContext(` and aliases are
-    // still caught by the construction and alias regexes; adding it here needs those `new(` calls
-    // written with their types first (an Inventory-owned change).
     [GeneratedRegex(
         @"(?<![\p{L}\p{Nd}_])@?(?<type>AuditDbContext|CommandExecutionDbContext|"
-        + @"IdentityDbContext|OrganizationDbContext)(?![\p{L}\p{Nd}_])",
+        + @"IdentityDbContext|OrganizationDbContext|InventoryDbContext)(?![\p{L}\p{Nd}_])",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedContextTypeIdentifierRegex();
 

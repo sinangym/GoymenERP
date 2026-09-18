@@ -9,7 +9,6 @@ using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Sales.Application.Contracts;
-using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -318,7 +317,7 @@ public sealed class SalesReferenceHttpAcceptanceTests(GoymenErpApiFactory factor
         var orderUnitId = Guid.Parse("44444444-4444-4444-4444-444444444444");
         var products = new StubProductEligibility(new(new ProductSalesSnapshotV1(productId, "7", "EXAMPLE-CODE", "Example",
             Unit(Guid.NewGuid()), Unit(Guid.NewGuid()), Unit(orderUnitId), new DateOnly(2026, 9, 13)), []));
-        var settings = new StubSettings(new SettingsPrerequisiteException(ApprovedSettingsPrerequisiteProvider.UnitProfileNotFoundCode));
+        var settings = new StubSettings(new SettingsPrerequisiteException(SettingsPrerequisiteCodesV1.UnitProfileNotFound));
         var owner = new StubCounterpartyReadService(CounterpartyPageExecution.ServiceUnavailable());
         using var host = CreateRealHandlerHost(owner, products, settings);
         using var client = CreateClient(host, true);
@@ -328,7 +327,7 @@ public sealed class SalesReferenceHttpAcceptanceTests(GoymenErpApiFactory factor
         await AssertMatchesExampleAsync(example, response);
         Assert.Equal(1, products.Calls);
         Assert.Equal(1, settings.UnitReads);
-        Assert.DoesNotContain(ApprovedSettingsPrerequisiteProvider.UnitProfileNotFoundCode,
+        Assert.DoesNotContain(SettingsPrerequisiteCodesV1.UnitProfileNotFound,
             await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
 
         static ProductSalesUnitProfileV1 Unit(Guid unitId) => new(TestCompanyIds.CompanyA, unitId, Guid.NewGuid(), "1");

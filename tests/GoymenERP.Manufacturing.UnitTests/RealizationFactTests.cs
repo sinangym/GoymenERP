@@ -38,7 +38,7 @@ public sealed class RealizationFactTests
         var error = Assert.Throws<ManufacturingRuleException>(
             () => order.IssueInput(slip, MasterRoll, Kg(10_000m), Morning.AddMinutes(1)));
 
-        Assert.Equal("input_already_issued", error.Code);
+        Assert.Equal(ManufacturingRuleCodes.InputAlreadyIssued, error.Code);
         Assert.Equal(10_000m, order.BalanceOf(MasterRoll).Issued.Value);
         Assert.Single(order.Issues);
     }
@@ -54,7 +54,7 @@ public sealed class RealizationFactTests
         var error = Assert.Throws<ManufacturingRuleException>(
             () => order.ReturnUnusedInput(returnId, MasterRoll, Kg(2_000m), Morning.AddMinutes(1)));
 
-        Assert.Equal("return_already_recorded", error.Code);
+        Assert.Equal(ManufacturingRuleCodes.ReturnAlreadyRecorded, error.Code);
         Assert.Equal(2_000m, order.BalanceOf(MasterRoll).Returned.Value);
     }
 
@@ -89,11 +89,11 @@ public sealed class RealizationFactTests
 
         var stale = Assert.Throws<ManufacturingRuleException>(
             () => order.RecordWorkInProgress(Guid.NewGuid(), MasterRoll, Kg(9_000m), Morning.AddMinutes(30)));
-        Assert.Equal("wip_measurement_not_latest", stale.Code);
+        Assert.Equal(ManufacturingRuleCodes.WipMeasurementNotLatest, stale.Code);
 
         var tie = Assert.Throws<ManufacturingRuleException>(
             () => order.RecordWorkInProgress(Guid.NewGuid(), MasterRoll, Kg(9_000m), Morning.AddHours(1)));
-        Assert.Equal("wip_measurement_not_latest", tie.Code);
+        Assert.Equal(ManufacturingRuleCodes.WipMeasurementNotLatest, tie.Code);
 
         Assert.Equal(4_000m, order.BalanceOf(MasterRoll).WorkInProgress.Value);
         // Both accepted readings stay as history.
@@ -111,7 +111,7 @@ public sealed class RealizationFactTests
         var error = Assert.Throws<ManufacturingRuleException>(
             () => order.RecordWorkInProgress(measurementId, MasterRoll, Kg(6_000m), Morning.AddHours(1)));
 
-        Assert.Equal("wip_already_measured", error.Code);
+        Assert.Equal(ManufacturingRuleCodes.WipAlreadyMeasured, error.Code);
         Assert.Equal(7_000m, order.BalanceOf(MasterRoll).WorkInProgress.Value);
     }
 
@@ -165,7 +165,7 @@ public sealed class RealizationFactTests
     {
         var order = Order();
         var error = Assert.Throws<ManufacturingRuleException>(() => order.MeasureWip(MasterRoll, Kg(1m)));
-        Assert.Equal("roll_not_issued", error.Code);
+        Assert.Equal(ManufacturingRuleCodes.RollNotIssued, error.Code);
         Assert.Empty(order.WipMeasurements);
     }
 }

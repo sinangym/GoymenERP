@@ -246,3 +246,110 @@ version_conflict; counter concurrency and unique-key races remain whole-attempt
 host retries, with a fresh resolver after rollback. Borrowed SQL handles alone are
 not evidence of audit/idempotency atomicity. Public persistence and real SQL execution
 remain closed until the #104 source/schema gate and shared implementation are accepted.
+
+## Sales eligibility runtime (operational selection)
+
+`ProductSalesEligibilityService` implements `IProductSalesEligibilityV1` (#255 port) for an
+operational Sales selection. It is not the global master read and borrows no global Product
+grant. K-1(a) (Sinan's decision, Business #66 5719251344): it requires an authenticated actor
+with access to the server-resolved company AND the narrow `product.operational-selection.read`
+permission for that same company, measured through the central fresh-authority port
+`IErpAuthorityRevalidationService` (#276) for the freshly read company and never from request
+data. The consuming module's own selector permission is still
+required on its side (Sales keeps a default-deny binding).
+
+What each of those three means in one request, measured rather than assumed:
+
+- **Company and actor are live.** They are re-read on every fenced revalidation, so a change
+  mid-flight turns the result in hand into 403.
+- **The permission is measured again at every fence.** The service asks the central
+  revalidation port (#276), which re-reads the stored authority and replaces the request's
+  cached answer. A grant revoked by another request while this one is in flight is therefore
+  seen at the next fence and turns the result in hand into 403; it cannot come back later in the
+  same request. This closes the per-request limit measured in #265 5719822744. The price is one
+  authority read per fence (five for a full evaluation). The answer is used as the cached path
+  uses it (`PermissionScope.IsGranted`); this service decides no scope semantics. A grant added
+  mid-request is seen the same way; it opens nothing the stored authority does not say.
+- **The guarantee is per awaited read.** A read's result, success or failure, is released only
+  after the check at that point. Values derived locally afterwards — preconditions, the
+  order-unit comparison, the restore integrity fault, the final snapshot — are returned
+  without a further check; the window after the last fence cannot be closed here.
+
+The narrow name is declared in `ProductPermissionManifestV1` and registered centrally in
+`ErpPermissions` (#277) — registered, not granted: no seeded role or assignment carries it. This
+slice does not touch `ErpPermissions`, the Identity seed, the shell capability manifest, DI/host
+wiring or OpenAPI. Granting it is a human's step; until then every caller is denied — the
+decision's default-closed rule, not an implicit grant.
+
+Order and outcomes:
+
+| Step | Outcome |
+|---|---|
+| Scope missing/foreign | `ProductOperationException` 403 `product_access_denied`, before any read |
+| Narrow selection permission missing for the server company | `ProductOperationException` 403 `product_access_denied`, before any read; same code, no separate signal |
+| Company or actor changed during any read | `ProductOperationException` 403 `product_access_denied`, replacing that read's result or failure |
+| Permission revoked while the request is in flight | `ProductOperationException` 403 `product_access_denied` at the next fence, replacing the result or failure in hand (re-measured through #276's port) |
+| Null selection from a caller without the permission | `ProductOperationException` 403 `product_access_denied`: the gate runs before the argument is looked at |
+| Stored record cannot be restored | `InvalidOperationException` |
+| Product missing / empty id | error `productId invalid_reference` |
+| Draft or Inactive, unknown/false sellable, stale version, missing stock/sales unit | `ProductSalesPreconditions` errors |
+| Order unit is not the Product's own sales unit | error `orderUnitId unsupported_order_unit` |
+| Family-required rules | `IProductFamilyRequirementPolicyV1`; the shipped policy throws 503 `product_family_policy_unavailable`; a null answer is 503 `product_family_policy_invalid` |
+| Stock/sales unit profile inactive, not effective on the date, or stock not kilogram | error `references.units.stock` / `references.units.sales` `invalid_reference` |
+| Settings provider failure | `SettingsPrerequisiteException` with the provider's code (`settings_access_denied`, `settings_provider_unavailable`, …); `settings_profile_invalid` only for malformed, foreign or self-contradictory profile data |
+| All pass | `ProductSalesSnapshotV1` with the owner's exact profile ids/versions; order unit = sales unit |
+
+### Error channel
+
+The channel is part of the port contract (`IProductSalesEligibilityV1` documents it and
+`ProductSalesEligibilityServiceTests` pins it). A result with `Errors` is the owner's answer about
+this selection; an exception is not.
+
+Codes that arrive in `Errors` at this base:
+
+| Field | Codes |
+|---|---|
+| `productId` | `invalid_reference`, `lifecycle_conflict`, `not_sellable` |
+| `expectedProductVersion` | `version_conflict`, `invalid_version` |
+| `references.units.stock`, `references.units.sales` | `invalid_reference` (binding missing, or the owner's profile cannot be used on `EffectiveOn`) |
+| `orderUnitId` | `invalid_reference`, `unsupported_order_unit` |
+| family policy fields | whatever an accepted family policy returns (none is implemented yet) |
+
+- `version_conflict` and `lifecycle_conflict` arrive in `Errors`; neither is thrown, and
+  Product.Domain's `ProductVersionConflictException` never crosses this read path.
+- Several errors can arrive together and their order carries no precedence. The consumer maps
+  them; Product does not publish a separate unit code.
+- `SettingsPrerequisiteException` reaches the consumer unchanged, after the same company/actor
+  fence as every other read: Product neither reinterprets nor renames a Settings code (including
+  `settings_unit_profile_not_found`). A profile the owner does return but that cannot be used on
+  `EffectiveOn` is an answer about this selection, so it is an error, not this exception.
+- How a consumer turns these channels and codes into its own public answers is that consumer's
+  contract, not Product's. For Sales it is defined in `src/backend/Modules/Sales/REFERENCE_READ_V1.md`
+  (and `CONTRACT_V1.md`); this README does not restate it.
+- `InvalidOperationException` (corrupt stored record) and `OperationCanceledException` are not
+  owner outcomes; the platform handles them.
+
+Fail-closed limits at this base, not policy choices:
+
+- The first family's rules are accepted (Business #265 5722701085: GDC band/coil, kg→kg —
+  thickness and width > 0 mm, a controlled quality and an explicit coating status) but not
+  implemented yet; that policy is the next slice, after this one. Until then the shipped
+  policy answers 503, so an otherwise valid Active selection is never usable. No other family
+  is accepted, and nothing here infers one.
+- No offered-unit or conversion policy is accepted (U-08), so only the sales unit is offered.
+- There is no activation command, so real rows are Draft and are rejected with
+  `lifecycle_conflict`.
+- The runtime is not yet composed in the API host. Host wiring (DI, the reviewed-source
+  fingerprint and its composition test) is the central writer's; the name is registered (#277)
+  and a real grant is a human gate. Until then the Sales product
+  read never reaches this runtime: with its default binding (no product selector permission) it
+  answers 403 before looking for a runtime, and only once that permission is bound would a
+  missing runtime answer 503 `product_provider_unavailable`. K-1(a) is not complete until the
+  code, the independent reviews and CI are done; this slice is the Product-side part.
+
+Candidate/offered-unit enumeration for a company user is not implemented: without an accepted
+family policy its only honest answer would be 503.
+
+```powershell
+dotnet test tests/GoymenERP.Product.UnitTests/GoymenERP.Product.UnitTests.csproj --filter FullyQualifiedName~ProductSalesEligibilityServiceTests
+```

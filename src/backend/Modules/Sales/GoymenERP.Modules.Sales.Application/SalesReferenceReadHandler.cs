@@ -4,7 +4,6 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Sales.Application.Contracts;
-using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Sales.Application;
@@ -114,11 +113,14 @@ public sealed class SalesReferenceReadHandler(
             foreach (var unit in new[] { snapshot.StockUnit, snapshot.SalesUnit, snapshot.OrderUnit })
             {
                 if (unit.CompanyId != scope.Company) return Failure<SalesProductReferenceV1>(403);
+                // A snapshot without a unit identity is the owner's malformed answer, not a unit
+                // Settings should be asked about: refused here, before any provider read.
+                if (unit.UnitId == Guid.Empty) return Failure<SalesProductReferenceV1>(503, "reference_provider_invalid");
                 var profile = await settings.GetUnitProfileAsync(unit.UnitId, query.EffectiveOn, cancellationToken);
                 if (!await StillAuthorizedAsync(scope, bindings.ProductPermission, cancellationToken))
                     return Failure<SalesProductReferenceV1>(403);
                 if (profile.CompanyId != scope.Company) return Failure<SalesProductReferenceV1>(403);
-                if (unit.UnitId == Guid.Empty || profile.UnitId != unit.UnitId || !ValidProfile(profile.Profile)
+                if (profile.UnitId != unit.UnitId || !ValidProfile(profile.Profile)
                     || profile.Profile.ProfileId != unit.ProfileId
                     || profile.Profile.Version.ToString(CultureInfo.InvariantCulture) != unit.Version
                     || profile.Scale < 0 || string.IsNullOrWhiteSpace(profile.UnitCode))
@@ -236,13 +238,13 @@ public sealed class SalesReferenceReadHandler(
         exception.Code == "settings_access_denied" ? Failure<T>(403, "settings_access_denied")
             : Failure<T>(503, "settings_provider_unavailable");
 
-    // The approved provider (#279) answers a unit the company's source has no profile for
-    // with its own code, kept apart from "unavailable". For this read that is a permanent
-    // refusal of the selection, the same 422 unsupported_unit an inactive or out-of-range
-    // profile gets, not a transient 503 the client would retry. Only the product path
-    // reads unit profiles; every other Settings code keeps the mapping above.
+    // The Settings contract (#287) publishes the code for a unit the company's source has no
+    // profile for, kept apart from "unavailable". For this read that is a permanent refusal
+    // of the selection, the same 422 unsupported_unit an inactive or out-of-range profile
+    // gets, not a transient 503 the client would retry. Only the product path reads unit
+    // profiles; every other Settings code keeps the mapping above.
     private static SalesReferenceReadResult<SalesProductReferenceV1> ProductSettingsFailure(SettingsPrerequisiteException exception) =>
-        exception.Code == ApprovedSettingsPrerequisiteProvider.UnitProfileNotFoundCode
+        exception.Code == SettingsPrerequisiteCodesV1.UnitProfileNotFound
             ? Failure<SalesProductReferenceV1>(422, "unsupported_unit")
             : SettingsFailure<SalesProductReferenceV1>(exception);
 }
