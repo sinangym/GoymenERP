@@ -73,6 +73,12 @@ public sealed record StockPosition
     {
         ArgumentNullException.ThrowIfNull(label);
         CompanyId = StockIds.Require(companyId, "İşlem şirketi");
+        if (label.CompanyId != CompanyId)
+        {
+            throw new InventoryRuleException(InventoryRuleCodes.LabelCompanyMismatch,
+                "Bir etiket yalnız kendi şirketinin pozisyonunda bulunur.");
+        }
+
         Owner = owner.Id == Guid.Empty
             ? throw new InventoryRuleException(InventoryRuleCodes.MissingReference, "Mal sahibi zorunludur.")
             : owner;
@@ -108,7 +114,8 @@ public sealed record StockPosition
     /// <summary>The physical location (Organization identity).</summary>
     public Guid LocationId { get; }
 
-    /// <summary>The label's product; never given separately, so it cannot disagree with the label.</summary>
+    /// <summary>The label's product; never given separately, so it cannot disagree with the label.
+    /// The label is also of this position's company (<see cref="InventoryRuleCodes.LabelCompanyMismatch"/>).</summary>
     public Guid ProductId { get; }
 
     /// <summary>The physical identity of the material (<see cref="MaterialLabel"/>).</summary>

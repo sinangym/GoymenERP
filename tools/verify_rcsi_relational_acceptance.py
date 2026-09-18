@@ -129,9 +129,14 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.ProductSalesEligibilityAuthoritySqlServerRelationalAcceptanceTests.A_standing_grant_passes_every_fence_with_one_authority_read_per_fence",
     "GoymenERP.Api.IntegrationTests.ProductSalesEligibilityAuthoritySqlServerRelationalAcceptanceTests.A_revocation_by_another_request_during_the_read_is_seen_at_the_next_fence",
     "GoymenERP.Api.IntegrationTests.ProductSalesEligibilityAuthoritySqlServerRelationalAcceptanceTests.Without_a_grant_the_registered_name_denies_before_any_read",
+    "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Receipt_issue_block_and_release_are_durable_replayable_audited_and_reconcile",
+    "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Each_company_sees_only_its_own_labels_and_a_code_is_unique_per_company_only",
+    "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.A_source_causes_one_movement_per_kind_and_a_stock_bearing_label_is_not_received_again",
+    "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Two_writers_that_read_the_same_piece_cannot_both_commit",
+    "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
 )
-BROAD_DISCOVERY_COUNT = 89
-BROAD_EXECUTION_COUNT = 96
+BROAD_DISCOVERY_COUNT = 94
+BROAD_EXECUTION_COUNT = 101
 
 
 def verify_discovery(standard_output: str) -> None:

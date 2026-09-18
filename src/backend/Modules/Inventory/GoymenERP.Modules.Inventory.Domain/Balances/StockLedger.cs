@@ -20,12 +20,16 @@ public sealed record StockBalance(StockPosition Position, Kilograms Quantity);
 /// <item>A label is one physical piece: at any time all of its non-zero buckets share one
 /// company, owner, custodian, location and product; only the block state may differ (a
 /// partly blocked coil). Moving it is a transfer (T13), a second piece is a split (T13).</item>
-/// <item>Balances are only ever changed by applying a movement; there is no "set quantity".</item>
+/// <item>A receipt never names a label that already holds stock: a piece arrives once (ORG #281
+/// P3-1). Once all its stock has left, it may be received again.</item>
+/// <item>Balances are only ever changed by applying a movement; there is no "set quantity".
+/// <see cref="FromStoredBalances"/> seeds a ledger from balances that were themselves written
+/// only through movements, so a store can apply the next movement against them.</item>
 /// <item><see cref="Reconcile"/> compares stored balances with the movements, bucket by
 /// bucket.</item>
 /// </list>
-/// This is the in-memory domain rule. The persistent race guard (SQL rowversion/lock) is
-/// INV-2's work and is not claimed here.
+/// This is the in-memory domain rule. The persistent race guard is the store's (INV-2: a
+/// concurrency token on every touched label, and SQL unique indexes).
 /// </summary>
 public sealed class StockLedger
 {
@@ -34,6 +38,37 @@ public sealed class StockLedger
     private readonly HashSet<Guid> appliedIds = [];
 
     public IReadOnlyList<StockMovement> AppliedMovements => applied.AsReadOnly();
+
+    /// <summary>
+    /// A ledger holding exactly these stored balances and no applied movements. The balances
+    /// must themselves be a valid state: one bucket per position, and every label in one
+    /// physical place (a <see cref="Kilograms"/> value is never negative).
+    /// </summary>
+    public static StockLedger FromStoredBalances(IEnumerable<StockBalance> storedBalances)
+    {
+        ArgumentNullException.ThrowIfNull(storedBalances);
+        var ledger = new StockLedger();
+        foreach (var balance in storedBalances)
+        {
+            ArgumentNullException.ThrowIfNull(balance);
+            if (!ledger.balances.TryAdd(balance.Position, balance.Quantity.Value))
+            {
+                throw new InventoryRuleException(
+                    InventoryRuleCodes.InvalidMovement, "Aynı pozisyon için iki kayıtlı bakiye olamaz.");
+            }
+        }
+
+        var split = ledger.balances.Where(entry => entry.Value != 0m)
+            .GroupBy(entry => entry.Key.LabelId)
+            .Any(label => label.Select(entry => entry.Key.PhysicalPlace).Distinct().Count() > 1);
+        if (split)
+        {
+            throw new InventoryRuleException(
+                InventoryRuleCodes.LabelInTwoPositions, "Kayıtlı bakiyelerde bir etiket iki fiziksel yerde görünüyor.");
+        }
+
+        return ledger;
+    }
 
     /// <summary>Every non-zero bucket.</summary>
     public IReadOnlyList<StockBalance> Balances =>
@@ -89,6 +124,10 @@ public sealed class StockLedger
         }
 
         RequireOnePhysicalPlacePerLabel(next);
+        if (movement.Kind == StockMovementKind.Receipt)
+        {
+            RequireNoStockBeforeReceipt(movement);
+        }
 
         foreach (var (position, quantity) in next)
         {
@@ -97,6 +136,20 @@ public sealed class StockLedger
 
         appliedIds.Add(movement.Id);
         applied.Add(movement);
+    }
+
+    /// <summary>A received label must hold no stock before the receipt, in any bucket.</summary>
+    private void RequireNoStockBeforeReceipt(StockMovement movement)
+    {
+        foreach (var labelId in movement.Lines.Select(line => line.Position.LabelId).Distinct())
+        {
+            if (balances.Any(entry => entry.Key.LabelId == labelId && entry.Value != 0m))
+            {
+                throw new InventoryRuleException(
+                    InventoryRuleCodes.LabelAlreadyInStock,
+                    "Stok taşıyan bir etiket yeniden giriş alamaz; bir parça bir kez gelir.");
+            }
+        }
     }
 
     /// <summary>

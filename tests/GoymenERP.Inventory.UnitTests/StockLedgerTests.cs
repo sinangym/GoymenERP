@@ -147,9 +147,9 @@ public sealed class StockLedgerTests
         var ledger = new StockLedger();
         ledger.Apply(Receipt(Position(), 100m));
         ledger.Apply(Movement(StockMovementKind.Block, Out(Position(), 30m), In(Position(block: BlockState.Blocked), 30m)));
-        ledger.Apply(Receipt(Position(), 5m));
+        ledger.Apply(Issue(Position(), 5m));
 
-        Assert.Equal(75m, ledger.QuantityAt(Position()).Value);
+        Assert.Equal(65m, ledger.QuantityAt(Position()).Value);
         Assert.Equal(30m, ledger.QuantityAt(Position(block: BlockState.Blocked)).Value);
     }
 
@@ -238,5 +238,78 @@ public sealed class StockLedgerTests
                 && name != nameof(StockLedger.FreeTotal))
             .ToArray();
         Assert.Equal([nameof(StockLedger.Apply)], writable);
+    }
+
+    [Fact]
+    public void A_label_that_holds_stock_cannot_be_received_again()
+    {
+        // ORG #281 P3-1: one piece arrives once. A second receipt of a stock-bearing label — even
+        // to the same place, even partly blocked — is a double count and is refused whole.
+        var ledger = new StockLedger();
+        ledger.Apply(Receipt(Position(), 100m));
+
+        Assert.Equal(InventoryRuleCodes.LabelAlreadyInStock,
+            Assert.Throws<InventoryRuleException>(() => ledger.Apply(Receipt(Position(), 1m))).Code);
+        ledger.Apply(Movement(StockMovementKind.Block, Out(Position(), 100m), In(Position(block: BlockState.Blocked), 100m)));
+        Assert.Equal(InventoryRuleCodes.LabelAlreadyInStock,
+            Assert.Throws<InventoryRuleException>(() => ledger.Apply(Receipt(Position(), 1m))).Code);
+        Assert.Equal(100m, ledger.PhysicalTotal(CompanyA, OwnedByA, BandProduct).Value);
+    }
+
+    [Fact]
+    public void A_label_whose_stock_has_all_left_may_be_received_again()
+    {
+        var ledger = new StockLedger();
+        ledger.Apply(Receipt(Position(), 100m));
+        ledger.Apply(Issue(Position(), 100m));
+
+        ledger.Apply(Receipt(Position(), 40m));
+
+        Assert.Equal(40m, ledger.QuantityAt(Position()).Value);
+    }
+
+    [Fact]
+    public void A_second_label_in_the_same_receipt_is_checked_on_its_own()
+    {
+        // The rule is per label: a new label beside a stock-bearing one is still refused whole.
+        var ledger = new StockLedger();
+        ledger.Apply(Receipt(Position(), 100m));
+        var both = Movement(StockMovementKind.Receipt, In(Position(label: Label2), 5m), In(Position(), 5m));
+
+        Assert.Equal(InventoryRuleCodes.LabelAlreadyInStock,
+            Assert.Throws<InventoryRuleException>(() => ledger.Apply(both)).Code);
+        Assert.Equal(Kilograms.Zero, ledger.QuantityAt(Position(label: Label2)));
+    }
+
+    [Fact]
+    public void A_ledger_seeded_from_stored_balances_applies_the_next_movement_against_them()
+    {
+        var stored = StockLedger.FromStoredBalances([
+            new StockBalance(Position(), Kilograms.Of(70m)),
+            new StockBalance(Position(block: BlockState.Blocked), Kilograms.Of(30m)),
+        ]);
+
+        Assert.Empty(stored.AppliedMovements);
+        Assert.Equal(100m, stored.PhysicalTotal(CompanyA, OwnedByA, BandProduct).Value);
+        Assert.Equal(InventoryRuleCodes.NegativePhysicalStock,
+            Assert.Throws<InventoryRuleException>(() => stored.Apply(Issue(Position(), 70.001m))).Code);
+        Assert.Equal(InventoryRuleCodes.LabelAlreadyInStock,
+            Assert.Throws<InventoryRuleException>(() => stored.Apply(Receipt(Position(), 1m))).Code);
+        stored.Apply(Issue(Position(), 70m));
+        Assert.Equal(30m, stored.PhysicalTotal(CompanyA, OwnedByA, BandProduct).Value);
+    }
+
+    [Theory]
+    [InlineData("duplicate-bucket")]
+    [InlineData("label-in-two-places")]
+    public void Stored_balances_that_are_not_a_valid_state_are_refused(string fault)
+    {
+        StockBalance[] balances = fault == "duplicate-bucket"
+            ? [new(Position(), Kilograms.Of(1m)), new(Position(), Kilograms.Of(2m))]
+            : [new(Position(), Kilograms.Of(1m)), new(Position(location: Warehouse2), Kilograms.Of(2m))];
+
+        var error = Assert.Throws<InventoryRuleException>(() => StockLedger.FromStoredBalances(balances));
+        Assert.Equal(fault == "duplicate-bucket" ? InventoryRuleCodes.InvalidMovement : InventoryRuleCodes.LabelInTwoPositions,
+            error.Code);
     }
 }
