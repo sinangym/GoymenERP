@@ -104,6 +104,22 @@ internal sealed class FactRow : IManufacturingTenantRow
 }
 
 /// <summary>Organization's company table, referenced for the foreign key only; not migrated here.</summary>
+/// <summary>
+/// One completed command attempt (ADR-011): (company, command, key hash) is its key; the key itself
+/// is never stored, only its uppercase SHA-256. Append-only.
+/// </summary>
+internal sealed class CommandRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public string CommandName { get; set; } = string.Empty;
+    public string IdempotencyKeyHash { get; set; } = string.Empty;
+    public string ActorId { get; set; } = string.Empty;
+    public string RequestHash { get; set; } = string.Empty;
+    public string ResultJson { get; set; } = string.Empty;
+    public string OriginalCorrelationId { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+}
+
 internal sealed class OrganizationCompanyReference
 {
     public Guid Id { get; set; }

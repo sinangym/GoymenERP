@@ -38,7 +38,7 @@ public sealed class ManufacturingStore(
     ManufacturingDbContext dbContext,
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
-    TimeProvider timeProvider) : IManufacturingPlanStore, IManufacturingOrderStore
+    TimeProvider timeProvider) : IManufacturingPlanStore, IManufacturingOrderStore, IManufacturingCommandLog
 {
     private const string PlanEntityType = "Manufacturing.ProductionPlan";
     private const string OrderEntityType = "Manufacturing.ProductionOrder";
@@ -100,6 +100,7 @@ public sealed class ManufacturingStore(
 
         Audit(metadata, plan.CompanyId, PlanEntityType, plan.Id, "manufacturing.plan.created.v1", "Create",
             versionBefore: null, versionAfter: plan.Version, before: "{}", after: PlanAudit(plan), "Üretim planı kaydı");
+        Complete(metadata, companyId: plan.CompanyId, plan);
         await SaveAsync(cancellationToken);
         return ManufacturingWriteOutcome.Recorded;
     }
@@ -125,6 +126,7 @@ public sealed class ManufacturingStore(
         row.UpdatedAtUtc = timeProvider.GetUtcNow();
         Audit(metadata, companyId, PlanEntityType, plan.Id, "manufacturing.plan.approved.v1", "Approve",
             versionBefore, plan.Version, before, PlanAudit(plan), "Üretim planı onayı");
+        Complete(metadata, companyId, plan);
         await SaveAsync(cancellationToken);
         return plan;
     }
@@ -188,6 +190,7 @@ public sealed class ManufacturingStore(
             versionBefore: null, versionAfter: order.Version, before: "{}",
             after: JsonSerializer.Serialize(new { order.Id, order.PlanId, order.WorkCenterId, rolls = order.PlannedInputs.Count }, Json),
             "Üretim emri kaydı");
+        Complete(metadata, companyId, order);
         await SaveAsync(cancellationToken);
         return ManufacturingWriteOutcome.Recorded;
     }
@@ -277,8 +280,25 @@ public sealed class ManufacturingStore(
     public async Task<ProductionOrder?> FindOrderAsync(Guid orderId, CancellationToken cancellationToken = default)
     {
         RequireResolvedCompany();
-        var row = await dbContext.Orders.AsNoTracking().SingleOrDefaultAsync(candidate => candidate.Id == orderId, cancellationToken);
-        return row is null ? null : await RestoreOrderAsync(row, cancellationToken);
+        // A read that meets a write committing between the order row and its facts reads again.
+        for (var attempt = 1; ; attempt++)
+        {
+            var row = await dbContext.Orders.AsNoTracking()
+                .SingleOrDefaultAsync(candidate => candidate.Id == orderId, cancellationToken);
+            if (row is null)
+            {
+                return null;
+            }
+
+            try
+            {
+                return await RestoreOrderAsync(row, cancellationToken);
+            }
+            catch (ManufacturingStoreException exception)
+                when (exception.Code == ManufacturingStoreCodes.ConcurrentChange && attempt < 3)
+            {
+            }
+        }
     }
 
     private async Task<ManufacturingWriteOutcome> RecordFactAsync(Guid orderId, FactKind kind, Guid factId,
@@ -344,9 +364,55 @@ public sealed class ManufacturingStore(
                 payloadHash,
             }, Json),
             "Üretim gerçekleşme olgusu");
+        Complete(metadata, companyId, order);
         await SaveAsync(cancellationToken);
         return ManufacturingWriteOutcome.Recorded;
     }
+
+    public async Task<ManufacturingCommandRecord?> FindCommandAsync(string commandName, string idempotencyKeyHash,
+        CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        var row = await dbContext.Commands.AsNoTracking().SingleOrDefaultAsync(
+            candidate => candidate.CommandName == commandName && candidate.IdempotencyKeyHash == idempotencyKeyHash,
+            cancellationToken);
+        return row is null
+            ? null
+            : new ManufacturingCommandRecord(row.CommandName, row.IdempotencyKeyHash, row.ActorId, row.RequestHash,
+                row.ResultJson, row.OriginalCorrelationId);
+    }
+
+    public async Task RecordCommandAsync(ManufacturingCommandRecord record, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        AddCommand(RequireResolvedCompany(), record);
+        await SaveAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// ADR-011 §6: the completed command's record joins the business change and its audit event in
+    /// the same save. Without a completion (a caller outside the HTTP surface) nothing is added.
+    /// </summary>
+    private void Complete(ManufacturingCommandMetadata metadata, Guid companyId, object result)
+    {
+        if (metadata.Completion is { } completion)
+        {
+            AddCommand(companyId, completion(result));
+        }
+    }
+
+    private void AddCommand(Guid companyId, ManufacturingCommandRecord record) =>
+        dbContext.Commands.Add(new CommandRow
+        {
+            CompanyId = companyId,
+            CommandName = record.CommandName,
+            IdempotencyKeyHash = record.IdempotencyKeyHash,
+            ActorId = record.ActorId,
+            RequestHash = record.RequestHash,
+            ResultJson = record.ResultJson,
+            OriginalCorrelationId = record.OriginalCorrelationId,
+            RecordedAtUtc = timeProvider.GetUtcNow(),
+        });
 
     private async Task<ProductionPlan> RestorePlanAsync(PlanRow row, CancellationToken cancellationToken)
     {
@@ -370,7 +436,33 @@ public sealed class ManufacturingStore(
             .ToListAsync(cancellationToken);
         IEnumerable<FactRow> Of(FactKind kind) => facts.Where(fact => fact.Kind == (int)kind);
 
-        return ProductionOrder.Restore(
+        try
+        {
+            return RestoreOrder(row, inputs, Of);
+        }
+        catch (ManufacturingRuleException exception) when (exception.Code == ManufacturingRuleCodes.StoredRecordInvalid)
+        {
+            // Under read-committed snapshot each statement reads its own committed state: a writer
+            // that commits between the order row and its facts leaves facts newer than the row's
+            // version. That is a concurrent change, not a broken record; only an unchanged order
+            // that still fails to rebuild is invalid.
+            var current = await dbContext.Orders.AsNoTracking()
+                .Where(candidate => candidate.Id == row.Id)
+                .Select(candidate => (long?)candidate.Version)
+                .SingleOrDefaultAsync(cancellationToken);
+            if (current != row.Version)
+            {
+                throw Refused(ManufacturingStoreCodes.ConcurrentChange,
+                    "Emir okunurken başka bir yazma kaydedildi; hiçbir şey kaydedilmedi.", exception);
+            }
+
+            throw;
+        }
+    }
+
+    private static ProductionOrder RestoreOrder(OrderRow row, IReadOnlyList<OrderInputRow> inputs,
+        Func<FactKind, IEnumerable<FactRow>> Of) =>
+        ProductionOrder.Restore(
             row.Id, row.PlanId, row.CompanyId, row.WorkCenterId, (ManufacturingProcess)row.Process,
             Target(row.TargetBasis, row.TargetKg),
             inputs.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg))),
@@ -383,7 +475,6 @@ public sealed class ManufacturingStore(
             Of(FactKind.WipMeasurement).Select(fact => new WipMeasurement(fact.Id, fact.ParentRollId, new Kilograms(fact.MassKg),
                 fact.OccurredAtUtc)),
             row.ClosedByUserId, row.ClosedAtUtc, row.Version);
-    }
 
     private static ProductionTarget? Target(int? basis, decimal? kilograms) =>
         basis is null && kilograms is null
@@ -462,10 +553,25 @@ public sealed class ManufacturingStore(
             throw Refused(ManufacturingStoreCodes.ConcurrentChange,
                 "Aynı plan ya da emir başka bir yazmayla değişti; hiçbir şey kaydedilmedi.", exception);
         }
-        catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 })
+        catch (DbUpdateException exception) when (exception.InnerException is SqlException sql)
         {
-            throw Refused(ManufacturingStoreCodes.ConcurrentChange,
-                "Kalıcı tekillik kuralı başka bir yazmanın lehine sonuçlandı; hiçbir şey kaydedilmedi.", exception);
+            // A unique key lost to another writer, or a plan naming a work center that is not this
+            // company's (the composite foreign key, 547). Anything else stays the database's error.
+            var code = sql.Number switch
+            {
+                2601 or 2627 => ManufacturingStoreCodes.ConcurrentChange,
+                547 when sql.Message.Contains("FK_Plans_WorkCenters_CompanyId_WorkCenterId", StringComparison.Ordinal)
+                    => ManufacturingStoreCodes.WorkCenterNotFound,
+                _ => null,
+            };
+            if (code is null)
+            {
+                throw;
+            }
+
+            throw Refused(code, code == ManufacturingStoreCodes.WorkCenterNotFound
+                ? "Plan bu şirketin bir iş merkezine bağlı değil; hiçbir şey kaydedilmedi."
+                : "Kalıcı tekillik kuralı başka bir yazmanın lehine sonuçlandı; hiçbir şey kaydedilmedi.", exception);
         }
     }
 

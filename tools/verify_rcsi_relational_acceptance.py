@@ -172,9 +172,15 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.SalesDraftSqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
     "GoymenERP.Api.IntegrationTests.SalesDraftSqlServerRelationalAcceptanceTests.A_key_that_differs_only_by_surrounding_whitespace_is_refused_and_never_replays_the_stored_attempt",
     "GoymenERP.Api.IntegrationTests.ProductShellCapabilitySqlServerRelationalAcceptanceTests.Product_screens_follow_the_global_Product_authority_through_the_real_provider",
+    "GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.An_authorized_user_plans_approves_orders_records_facts_and_reads_the_roll_balance",
+    "GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.Each_endpoint_needs_its_own_grant_and_a_refused_write_stores_nothing",
+    "GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.Another_companys_order_is_not_found_and_the_company_comes_only_from_the_context",
+    "GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.Stale_versions_reused_ids_masses_outside_the_profile_and_foreign_work_centers_are_refused",
+    "GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.The_idempotency_key_replays_one_attempt_and_refuses_another_request_or_actor",
+    "GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.Two_attempts_racing_on_one_key_store_one_command_and_both_answer_it",
 )
-BROAD_DISCOVERY_COUNT = 132
-BROAD_EXECUTION_COUNT = 139
+BROAD_DISCOVERY_COUNT = 138
+BROAD_EXECUTION_COUNT = 145
 
 
 def verify_discovery(standard_output: str) -> None:
