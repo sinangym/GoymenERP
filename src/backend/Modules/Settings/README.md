@@ -30,6 +30,8 @@ Consumers must check active/valid profile and exact identity/company/operation,
 then revalidate with their command transaction and preserve the applied snapshot.
 This slice does not implement a persistent provider or transaction locking.
 It therefore cannot enable a real Sales draft, Product activation or money write.
+(Unit profiles later got an approved, non-persistent source — see "Approved unit
+profiles" below.)
 
 ExactPositiveDecimalV1 preserves a positive digit string byte-for-byte, including
 trailing zeros. It rejects signs, exponent/group separators, whitespace, zero,
@@ -43,10 +45,73 @@ Parse("1.001", 2) throws settings_decimal_scale_exceeded. These examples do not
 approve kg scale 0 or currency scale 2. Profile versions are positive server-owned
 versions; any future HTTP adapter must encode them as lossless strings.
 
-Outstanding approved-source data: real unit/currency identities and effective
-profiles (quantity/money scale), and company/operation/date period eligibility
-source. Master 28.1's kg scale/rounding is a proposal, not approved data. No TRY2,
-kg3, default-open period, FX or Finance OPEN-009 permission is inferred.
+Outstanding approved-source data: real currency identities and effective money
+profiles, and company/operation/date period eligibility source. Unit profiles now
+have one approved source (GDC kg, below); Master 28.1's rounding (`AwayFromZero`)
+is still a proposal, not approved data. No TRY2, default-open period, FX or Finance
+OPEN-009 permission is inferred.
+
+## Approved unit profiles (T02-a)
+
+Source: Sinan's decisions of 2026-09-18, Ö1 and Ö2 (#66 comment 5722637822;
+`docs/decisions/SINAN_KARARLARI_2026-09-18_O1_O8_VE_SON_ASAMA.md` on #275), and
+Master §28.1 for the dimension. Task: coordinator T02-a.
+
+`ApprovedSettingsPrerequisiteProvider` is the real provider for what is approved:
+unit profiles. Money profiles and period eligibility stay exactly as the unavailable
+adapter answers them — the Sales money operation identity is still an owner input
+(#66 5715011050).
+
+The one approved profile, `ApprovedUnitProfileCatalog.GdcKilogramV1`:
+
+| Field | Value | Source |
+|---|---|---|
+| Company | GDC `10000000-0000-0000-0000-000000000001` | Organization seed and its migration guard (permanent GDC identity) |
+| Unit | kg `c5ef643e-a6e8-51f3-89f2-8e68b00cb983` (`SettingsUnitIdentitiesV1.Kilogram`) | Ö1 (GDC band/coil, kg→kg); id is technical (Ö2) |
+| Code / dimension | `kg` / `weight`, kilogram identity true | Master §28.1 "Ağırlık → kg" |
+| Scale | 3 | Ö2 "kg … en fazla 3 ondalık" |
+| Profile | `4a790fdc-2a6b-5126-835f-d3a13d28b71c`, version 1 | technical (Ö2) |
+| Window | from 2026-09-18, no end (explicitly open-ended) | Ö2 "onaydan itibaren sürümlü, bitişsizse açıkça süresiz" |
+
+Technical ids are UUIDv5 in namespace `18b5cbb9-98ca-5999-b418-aa53c41f0ffb`
+(= UUIDv5(URL, "https://github.com/sinangym/GoymenERP/settings/unit-profiles")),
+names `unit:kg` and `unit-profile:<company id>:kg:v1`; assigned once, never reused.
+A unit identity is company-independent; the profile is per company. GSP and other
+companies have no approved profile yet.
+
+**Data source: versioned source code, not a table.** One profile is approved and
+nothing may edit it at runtime; a new approval is a new version, reviewed like code.
+So there is no migration, seed write, DbContext, guard pin or host change, and every
+value is visible in the diff that introduces it. When profiles become
+user-maintained, a persistent provider replaces the catalog behind the same port.
+
+Outcomes of `GetUnitProfileAsync`, in order:
+
+| Case | Result |
+|---|---|
+| cancelled | `OperationCanceledException` |
+| no authenticated actor / actor id, unresolved or empty company, not a member | `settings_access_denied`, before anything about the source is revealed |
+| no approved source for the server-resolved company | `settings_provider_unavailable` (unreachable) |
+| source exists but no profile for this unit (including an empty id) | `settings_unit_profile_not_found` (reachable but empty) |
+| malformed catalog | `settings_profile_invalid`, raised when the catalog is built; nothing repaired or skipped |
+| otherwise | the exact profile version in force on the date |
+
+A date outside every window (for example before the approval) returns the real
+version with its real window; the provider never widens a window to fit the
+question. Consumers check activity, window and kilogram identity themselves, as the
+port requires, so such a date is rejected by them — the Product adapter on main
+reports it as `settings_profile_invalid`. A later approved version takes over from
+its own start date and never rewrites an earlier answer.
+
+`settings_unit_profile_not_found` is new. It exists because a reachable source that
+has no profile for an identity is neither unavailable nor malformed; consumers that
+pass Settings codes through (Product) carry it unchanged.
+
+Not in this slice: DI/host registration (no host consumer of the port is composed on
+main), Product's own unit catalogue (it must use `SettingsUnitIdentitiesV1.Kilogram`
+when it lists kg — ÜRÜN's follow-up), money and period sources, any rounding method,
+any grant or production data. A returned profile is reference metadata, not an
+authorization: the consuming use case still checks its own permission.
 
 Validation: Settings unit/contract tests are synthetic, not SQL or browser UAT.
 No persistence changed, so new slice-specific SQL scenarios are not applicable;

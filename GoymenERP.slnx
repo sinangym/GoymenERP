@@ -36,6 +36,9 @@
   <Folder Name="/src/backend/Modules/Inventory/">
     <Project Path="src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Domain/GoymenERP.Modules.Inventory.Domain.csproj" />
   </Folder>
+  <Folder Name="/src/backend/Modules/Manufacturing/">
+    <Project Path="src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Domain/GoymenERP.Modules.Manufacturing.Domain.csproj" />
+  </Folder>
   <Folder Name="/src/backend/Modules/Organization/">
     <Project Path="src/backend/Modules/Organization/GoymenERP.Modules.Organization.Application/GoymenERP.Modules.Organization.Application.csproj" />
     <Project Path="src/backend/Modules/Organization/GoymenERP.Modules.Organization.Domain/GoymenERP.Modules.Organization.Domain.csproj" />
@@ -44,6 +47,9 @@
   <Folder Name="/src/backend/Modules/Product/">
     <Project Path="src/backend/Modules/Product/GoymenERP.Modules.Product.Application/GoymenERP.Modules.Product.Application.csproj" />
     <Project Path="src/backend/Modules/Product/GoymenERP.Modules.Product.Domain/GoymenERP.Modules.Product.Domain.csproj" />
+  </Folder>
+  <Folder Name="/src/backend/Modules/Purchasing/">
+    <Project Path="src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Domain/GoymenERP.Modules.Purchasing.Domain.csproj" />
   </Folder>
   <Folder Name="/src/backend/Modules/Sales/">
     <Project Path="src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/GoymenERP.Modules.Sales.Application.csproj" />
@@ -59,8 +65,10 @@
     <Project Path="tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj" />
     <Project Path="tests/GoymenERP.Counterparty.UnitTests/GoymenERP.Counterparty.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.Finance.UnitTests/GoymenERP.Finance.UnitTests.csproj" />
+    <Project Path="tests/GoymenERP.Manufacturing.UnitTests/GoymenERP.Manufacturing.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.Organization.UnitTests/GoymenERP.Organization.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.Product.UnitTests/GoymenERP.Product.UnitTests.csproj" />
+    <Project Path="tests/GoymenERP.Purchasing.UnitTests/GoymenERP.Purchasing.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.Sales.UnitTests/GoymenERP.Sales.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.SqlServerRcsiReadiness.Tests/GoymenERP.SqlServerRcsiReadiness.Tests.csproj" />
     <Project Path="tests/GoymenERP.Identity.UnitTests/GoymenERP.Identity.UnitTests.csproj" />
