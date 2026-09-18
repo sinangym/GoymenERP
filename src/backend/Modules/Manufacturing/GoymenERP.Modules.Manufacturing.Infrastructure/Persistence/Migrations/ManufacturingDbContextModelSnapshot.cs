@@ -162,6 +162,63 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
             });
         });
 
+        modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.CommandRow", b =>
+        {
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("CommandName")
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<string>("IdempotencyKeyHash")
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<string>("ActorId")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)")
+                .UseCollation("Latin1_General_100_BIN2");
+
+            b.Property<string>("OriginalCorrelationId")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<DateTimeOffset>("RecordedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("RequestHash")
+                .IsRequired()
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<string>("ResultJson")
+                .IsRequired()
+                .HasColumnType("nvarchar(max)");
+
+            b.HasKey("CompanyId", "CommandName", "IdempotencyKeyHash");
+
+            b.ToTable("Commands", "manufacturing", t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_Commands_Hashes",
+                    "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+
+                t.HasCheckConstraint(
+                    "CK_Commands_ResultJson",
+                    "ISJSON([ResultJson]) = 1");
+
+                t.HasCheckConstraint(
+                    "CK_Commands_Text",
+                    "LEN([CommandName]) > 0 AND LEN([ActorId]) > 0 AND LEN([OriginalCorrelationId]) > 0");
+            });
+        });
+
         modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.FactRow", b =>
         {
             b.Property<Guid>("CompanyId")
@@ -508,6 +565,15 @@ partial class ManufacturingDbContextModelSnapshot : ModelSnapshot
                     "CK_Plans_Version",
                     "[Version] >= 1");
             });
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.CommandRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                .WithMany()
+                .HasForeignKey("CompanyId")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
         });
 
         modelBuilder.Entity("GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.FactRow", b =>

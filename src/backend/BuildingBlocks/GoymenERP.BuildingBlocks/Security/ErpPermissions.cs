@@ -28,6 +28,56 @@ public static class ErpPermissions
     /// </summary>
     public const string ProductOperationalSelectionRead = "product.operational-selection.read";
 
+    /// <summary>
+    /// T07(a) Inventory reads (#310): a label's view and its stock position by position. Registering
+    /// the names makes them KNOWN, not granted: no role and no user receives them here; the grant is
+    /// a human gate. Company-wide scope is required because the reads are not filtered by site or
+    /// location — a site-scoped assignment would otherwise see every location's stock of the company.
+    /// Not critical: read-only, no stock, money or identity effect.
+    /// </summary>
+    public const string InventoryLabelsRead = "inventory.labels.read";
+
+    /// <inheritdoc cref="InventoryLabelsRead"/>
+    public const string InventoryBalancesRead = "inventory.balances.read";
+
+    /// <summary>
+    /// Finance bank-account master (FS0, #312): names are the Finance owner's technical mapping
+    /// (Business #254 5654539215). Registering them makes them KNOWN, not granted: no role and no
+    /// user receives them here, and who holds which is a human gate. All three are company-wide
+    /// only: a bank account belongs to the server-resolved company and has no site, location or
+    /// work-center dimension. Propose and approve are Critical: the security contract lists the
+    /// bank account among critical permissions (docs/security/AI_YETKI_SOZLESMESI.md) and Sinan's
+    /// Ö4 (#66 5722637822) makes the approval maker-checker, so their GRANT follows ADR-004 §6
+    /// (the requester or target cannot approve their own request). Read is not Critical: it shows
+    /// only the label and currency of approved and proposed accounts (a proposal is listed, not
+    /// usable, so its approver can see it).
+    /// </summary>
+    public const string FinanceBankAccountRead = "finance.bank-account.read";
+    public const string FinanceBankAccountPropose = "finance.bank-account.propose";
+    public const string FinanceBankAccountApprove = "finance.bank-account.approve";
+
+    /// <summary>
+    /// Manufacturing API (MFG-API, #313): the owner's technical mapping of its routes (Business
+    /// #254 5654539215), accepted by the coordinator (K-1). Registering the names makes them KNOWN,
+    /// not granted: no role and no user receives them here; the grant is a human gate (K-3).
+    /// Company-wide scope is required (K-1): the routes do not filter by work center, so a
+    /// work-center-scoped assignment would otherwise reach every work center of the company. Not
+    /// Critical: no source makes plan creation and approval a segregated duty (K-2).
+    /// </summary>
+    public const string ManufacturingPlansWrite = "manufacturing.plans.write";
+
+    /// <inheritdoc cref="ManufacturingPlansWrite"/>
+    public const string ManufacturingPlansApprove = "manufacturing.plans.approve";
+
+    /// <inheritdoc cref="ManufacturingPlansWrite"/>
+    public const string ManufacturingOrdersCreate = "manufacturing.orders.create";
+
+    /// <inheritdoc cref="ManufacturingPlansWrite"/>
+    public const string ManufacturingFactsRecord = "manufacturing.facts.record";
+
+    /// <inheritdoc cref="ManufacturingPlansWrite"/>
+    public const string ManufacturingOrdersRead = "manufacturing.orders.read";
+
     public const string IdentityProfileRead = "identity.profile.read";
     public const string IdentityAccessRequest = "identity.access.request";
     public const string IdentityAccessApprove = "identity.access.approve";
@@ -47,6 +97,16 @@ public static class ErpPermissions
             CounterpartyAccountsCreate,
             CounterpartyAccountsStatusUpdate,
             ProductOperationalSelectionRead,
+            ManufacturingPlansWrite,
+            ManufacturingPlansApprove,
+            ManufacturingOrdersCreate,
+            ManufacturingFactsRecord,
+            ManufacturingOrdersRead,
+            InventoryLabelsRead,
+            InventoryBalancesRead,
+            FinanceBankAccountRead,
+            FinanceBankAccountPropose,
+            FinanceBankAccountApprove,
             IdentityProfileRead,
             IdentityAccessRequest,
             IdentityAccessApprove,
@@ -60,6 +120,8 @@ public static class ErpPermissions
             IdentityAccessApprove,
             IdentityRolesManage,
             IdentityAuditRead,
+            FinanceBankAccountPropose,
+            FinanceBankAccountApprove,
         ],
         StringComparer.Ordinal);
 
@@ -71,6 +133,16 @@ public static class ErpPermissions
             CounterpartyAccountsCreate,
             CounterpartyAccountsStatusUpdate,
             ProductOperationalSelectionRead,
+            ManufacturingPlansWrite,
+            ManufacturingPlansApprove,
+            ManufacturingOrdersCreate,
+            ManufacturingFactsRecord,
+            ManufacturingOrdersRead,
+            InventoryLabelsRead,
+            InventoryBalancesRead,
+            FinanceBankAccountRead,
+            FinanceBankAccountPropose,
+            FinanceBankAccountApprove,
             IdentityAuditRead,
         ],
         StringComparer.Ordinal);

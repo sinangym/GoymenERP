@@ -19,7 +19,7 @@ public sealed class ManufacturingPersistenceModelTests
     private static readonly DateTimeOffset At = new(2026, 9, 18, 8, 0, 0, TimeSpan.Zero);
 
     private static readonly Type[] TenantRows =
-        [typeof(PlanRow), typeof(PlanInputRow), typeof(OrderRow), typeof(OrderInputRow), typeof(FactRow)];
+        [typeof(PlanRow), typeof(PlanInputRow), typeof(OrderRow), typeof(OrderInputRow), typeof(FactRow), typeof(CommandRow)];
 
     [Fact]
     public void Every_manufacturing_table_is_in_its_schema_and_filtered_by_the_active_company()
@@ -77,6 +77,8 @@ public sealed class ManufacturingPersistenceModelTests
         using var context = Context();
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_InitialManufacturing", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingCommands", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -101,6 +103,8 @@ public sealed class ManufacturingPersistenceModelTests
     [InlineData("edit-order-plan")]
     [InlineData("edit-order-input")]
     [InlineData("edit-order-company")]
+    [InlineData("edit-command-result")]
+    [InlineData("delete-command")]
     public void Stored_manufacturing_is_never_deleted_and_only_its_allowed_fields_change(string fault)
     {
         using var context = Context();
@@ -123,6 +127,12 @@ public sealed class ManufacturingPersistenceModelTests
                 {
                     CompanyId = CompanyA, OrderId = Guid.NewGuid(), ParentRollId = Guid.NewGuid(), Sequence = 1, PlannedKg = 1m,
                 }).PlannedKg = 2m;
+                break;
+            case "edit-command-result":
+                Attach(context, Command()).ResultJson = "{}";
+                break;
+            case "delete-command":
+                context.Commands.Remove(Attach(context, Command()));
                 break;
             default:
                 Attach(context, Order()).CompanyId = CompanyB;
@@ -184,6 +194,27 @@ public sealed class ManufacturingPersistenceModelTests
         context.Attach(row);
         return row;
     }
+
+    [Fact]
+    public void A_command_is_one_per_company_command_and_key_hash_and_the_actor_compares_exactly()
+    {
+        // ADR-011 §2: the key is (company, command name, key hash); the raw key has no column.
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var commands = model.FindEntityType(typeof(CommandRow))!;
+        Assert.Equal(["CompanyId", "CommandName", "IdempotencyKeyHash"],
+            commands.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.DoesNotContain(commands.GetProperties(), property => property.Name == "IdempotencyKey");
+        Assert.Equal(ManufacturingDbContext.IdentityCollation, commands.FindProperty(nameof(CommandRow.ActorId))!.GetCollation());
+        Assert.Contains(commands.GetCheckConstraints(), check => check.Name == "CK_Commands_Hashes");
+    }
+
+    private static CommandRow Command() => new()
+    {
+        CompanyId = CompanyA, CommandName = "manufacturing.input.issue.v1", IdempotencyKeyHash = new string('A', 64),
+        ActorId = "synthetic-actor", RequestHash = new string('B', 64), ResultJson = "{\"status\":2}",
+        OriginalCorrelationId = "synthetic-correlation", RecordedAtUtc = At,
+    };
 
     private static PlanRow Plan() => new()
     {

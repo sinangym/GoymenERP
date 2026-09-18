@@ -30,8 +30,8 @@ Consumers must check active/valid profile and exact identity/company/operation,
 then revalidate with their command transaction and preserve the applied snapshot.
 This slice does not implement a persistent provider or transaction locking.
 It therefore cannot enable a real Sales draft, Product activation or money write.
-(Unit profiles later got an approved, non-persistent source — see "Approved unit
-profiles" below.)
+(Unit and money profiles later got approved, non-persistent sources — see "Approved unit
+profiles" and "Approved money profiles" below.)
 
 ExactPositiveDecimalV1 preserves a positive digit string byte-for-byte, including
 trailing zeros. It rejects signs, exponent/group separators, whitespace, zero,
@@ -93,11 +93,11 @@ prerequisite port: it always throws, and never answers an empty list. No HTTP ro
 OpenAPI, DI registration, persistent provider, database, seed, currency data or grant
 is introduced.
 
-Outstanding approved-source data: real currency identities and effective money
-profiles, and company/operation/date period eligibility source. Unit profiles now
-have one approved source (GDC kg, below); Master 28.1's rounding (`AwayFromZero`)
-is still a proposal, not approved data. No TRY2, default-open period, FX or Finance
-OPEN-009 permission is inferred.
+Outstanding approved-source data: the company/operation/date period eligibility
+source. Unit and money profiles now have one approved source each (GDC kg and
+GDC/TRY, below), and since T02-b the approved provider also serves this candidate
+port from the money catalog (see "Approved money profiles"); Master 28.1's rounding (`AwayFromZero`) is still a proposal, not
+approved data. No default-open period, FX or Finance OPEN-009 permission is inferred.
 
 ## Approved unit profiles (T02-a)
 
@@ -106,9 +106,8 @@ Source: Sinan's decisions of 2026-09-18, Ö1 and Ö2 (#66 comment 5722637822;
 Master §28.1 for the dimension. Task: coordinator T02-a.
 
 `ApprovedSettingsPrerequisiteProvider` is the real provider for what is approved:
-unit profiles. Money profiles and period eligibility stay exactly as the unavailable
-adapter answers them — the Sales money operation identity is still an owner input
-(#66 5715011050).
+unit profiles, and since T02-b money profiles (next section). Period eligibility
+stays exactly as the unavailable adapter answers it.
 
 The one approved profile, `ApprovedUnitProfileCatalog.GdcKilogramV1`:
 
@@ -157,8 +156,8 @@ has no profile for an identity is neither unavailable nor malformed; consumers t
 pass Settings codes through (Product) carry it unchanged.
 
 Not in this slice: Product's own unit catalogue (it must use
-`SettingsUnitIdentitiesV1.Kilogram` when it lists kg — ÜRÜN's follow-up), money and
-period sources, any rounding method, any grant or production data. A returned profile is
+`SettingsUnitIdentitiesV1.Kilogram` when it lists kg — ÜRÜN's follow-up), the
+period source, any rounding method, any grant or production data. A returned profile is
 reference metadata, not an authorization: the consuming use case still checks its own
 permission.
 
@@ -166,7 +165,7 @@ permission.
 `ApprovedSettingsPrerequisiteProvider` (previously the unavailable adapter). Its only
 consumer there is the Sales reference read. Sales asks for unit profiles only after a
 Product sales-eligibility snapshot, and no such runtime is composed in the host yet, so the
-swap changes no reachable Sales answer until it is; money and period answers are unchanged.
+swap changes no reachable Sales answer until it is; money and period answers were unchanged by that swap (money: see T02-b below).
 On its product path Sales maps `settings_unit_profile_not_found` to `422 unsupported_unit`
 (#285), the same permanent refusal an inactive or out-of-range profile gets; every other
 Settings code keeps Sales' earlier mapping (`settings_access_denied` → 403, the rest → `503
@@ -175,6 +174,76 @@ settings_provider_unavailable`). The code is published as
 provider class. Only the reviewed catalog is reachable from outside
 Settings: the catalog-taking constructors are internal and visible to
 `GoymenERP.Settings.UnitTests` only.
+
+## Approved money profiles (T02-b)
+
+Source: Sinan's Ö2 of 2026-09-18 (#66 comment 5722637822): "TL/USD/EUR nihai tutar 2,
+birim fiyat gerektiğinde 6 ondalığa kadar … İlk kabul profili GDC/TRY; profil
+geçerliliği açık onaydan itibaren sürümlü ve bitişsizse açıkça süresiz". Task:
+coordinator T02-b.
+
+The one approved profile, `ApprovedMoneyProfileCatalog.GdcTurkishLiraV1`:
+
+| Field | Value | Source |
+|---|---|---|
+| Company | GDC `10000000-0000-0000-0000-000000000001` | Ö2 "ilk kabul profili GDC/TRY" |
+| Currency | TRY `9e60dcf0-f4bd-5bca-b464-f9a2db98e31a` (`SettingsCurrencyIdentitiesV1.TurkishLira`) | Ö2; id is technical |
+| Operations | `finance.manual-bank-receipt.v1`, `sales.order-draft.v1` | the Finance and Sales owners' keys (Business #254 5654539215) |
+| Scale | 2 (final amount) | Ö2 "nihai tutar 2" |
+| Profile | `7f836492-a54f-512f-a8f4-5f556b3f0f9d`, version 1 | technical (Ö2) |
+| Window | from 2026-09-18, no end (explicitly open-ended) | Ö2 |
+
+Technical ids are UUIDv5 in namespace `9df84417-8c25-59c8-a67a-959ac880a890`
+(= UUIDv5(URL, "https://github.com/sinangym/GoymenERP/settings/money-profiles")),
+names `currency:TRY` and `money-profile:<company id>:TRY:v1`; assigned once, never
+reused. The data source is versioned source code, as for units, for the same reasons.
+
+**Operations belong to their owners.** A profile answers only for the operation keys
+listed on it. Settings references neither Finance nor Sales; the API integration test
+`The_money_catalog_answers_exactly_the_owners_published_operation_keys` pins the
+literals to `FinanceMoneyOperations.ManualBankReceiptV1` and
+`SalesMoneyOperations.OrderDraftV1`. The profile answers for the operation asked, so
+consumers' exact-operation check holds.
+
+Not published, because `MoneyProfileV1` has no field for them and nothing is guessed:
+Ö2's unit-price scale ("gerektiğinde 6 ondalığa kadar": a priced write needs its own
+contract field), a rounding method, exchange rates, tax, and USD/EUR profiles (Ö2
+names their final-amount scale, but approves only GDC/TRY as a profile).
+
+Outcomes of `GetMoneyProfileAsync`, in order:
+
+| Case | Result |
+|---|---|
+| cancelled | `OperationCanceledException` |
+| no authenticated actor / actor id, unresolved or empty company, not a member | `settings_access_denied` |
+| no approved money source for the company, or an operation key no approved profile answers for (exact, ordinal) | `settings_provider_unavailable` |
+| approved operation, but no profile for the currency (USD, EUR, an empty or unknown id) | `settings_money_profile_not_found` (`SettingsPrerequisiteCodesV1.MoneyProfileNotFound`) |
+| malformed catalog | `settings_profile_invalid`, raised when the catalog is built |
+| otherwise | the exact version in force on the date, with its real window |
+
+As for units, a date before the approval returns the real window and the consumer
+rejects it; a later version takes over from its own start date.
+
+**Candidates.** The same provider implements `ISettingsMoneyCandidateReader` from the
+same catalog: each currency with an approved profile for the server company, one
+candidate per currency — GDC: `(TRY id, "TRY", "TRY")`. The label is the approved code
+itself, since no approved source names a longer one. Access first
+(`settings_access_denied`); a company without an approved money source (GSP, GIN) →
+`settings_provider_unavailable`, never an empty list or GDC's TRY; the list passes
+`MoneyCurrencyCandidatesV1.EnsureWellFormed`. Being listed is not validity: consumers
+still resolve the chosen currency with `GetMoneyProfileAsync`. FS0 (#312) checks a bank
+account's currency against this list.
+
+**Host wiring.** `ISettingsMoneyCandidateReader` is registered as the approved provider,
+and `SalesReferenceReadBindings` binds the Sales owner's money operation
+(`SalesMoneyOperations.OrderDraftV1`, a Sales decision). Reachable effect today: none. The
+host's Finance draft read context checks its permission port first, and that port is the
+unavailable one; the Sales currency route binds no currency permission, so it answers 403
+before asking Settings. `SettingsHostWiringTests` shows the Sales read, with only a
+synthetic permission and the host's own operation, provider and account source, reaching
+the approved TRY profile, while any other currency stays fail-closed. `settings_money_profile_not_found` is new: consumers that map Settings
+codes must decide its public answer. Today Finance's draft read reports any other code as
+Unavailable carrying the code, and Sales' reference read as `503 settings_provider_unavailable`.
 
 Validation: Settings unit/contract tests are synthetic, not SQL or browser UAT.
 No persistence changed, so new slice-specific SQL scenarios are not applicable;

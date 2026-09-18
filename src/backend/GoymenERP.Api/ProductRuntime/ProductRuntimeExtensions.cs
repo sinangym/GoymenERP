@@ -2,14 +2,18 @@ using System.Security.Cryptography;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.OpenApi;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Idempotency.Infrastructure.Executions;
 using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Services;
+using GoymenERP.Modules.Product.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
+using GoymenERP.Modules.Product.Infrastructure.Shell;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -65,7 +69,40 @@ public static class ProductRuntimeExtensions
         services.TryAddSingleton<IProductCommandAttemptObserver, NullProductCommandAttemptObserver>();
         services.AddScoped<IProductService>(provider => provider.GetRequiredService<ProductRuntimeOptions>().IsEnabled
             ? provider.GetRequiredService<ProductService>() : new UnconfiguredProductService());
+        // Product's four screens in the shell, granted only from the global Product authority.
+        services.AddSingleton<IShellCapabilityProvider, ProductShellCapabilityProvider>();
+        // C3: the Product owner's operational-selection runtimes (sales and stock), composed as the
+        // owner decided. The accepted GDC band/coil rule set over the shipped unavailable definition
+        // source: until the authorised data exists every otherwise-valid selection is 503
+        // product_family_policy_unavailable. No grant, no Settings registration of its own; without
+        // the configured runtime or a registered Settings provider both ports answer 503.
+        services.TryAddScoped<IGdcBandCoilFamilyDefinitionSourceV1, UnavailableGdcBandCoilFamilyDefinitionSourceV1>();
+        services.TryAddScoped<IProductFamilyRequirementPolicyV1, GdcBandCoilFamilyRequirementPolicyV1>();
+        services.AddScoped<IProductSalesEligibilityV1>(provider => CreateEligibility<IProductSalesEligibilityV1>(provider,
+            (company, user, authority, records, policy, units) =>
+                new ProductSalesEligibilityService(company, user, authority, records, policy, units),
+            () => new UnconfiguredProductEligibility()));
+        services.AddScoped<IProductStockEligibilityV1>(provider => CreateEligibility<IProductStockEligibilityV1>(provider,
+            (company, user, authority, records, policy, units) =>
+                new ProductStockEligibilityService(company, user, authority, records, policy, units),
+            () => new UnconfiguredProductEligibility()));
         return services;
+    }
+
+    private static T CreateEligibility<T>(IServiceProvider provider,
+        Func<ICompanyContext, ICurrentUser, IErpAuthorityRevalidationService, IProductSalesRecordReader,
+            IProductFamilyRequirementPolicyV1, ProductUnitProfileAdapter, T> configured,
+        Func<T> unconfigured)
+    {
+        var settings = provider.GetService<ISettingsPrerequisiteProvider>();
+        if (!provider.GetRequiredService<ProductRuntimeOptions>().IsEnabled || settings is null)
+            return unconfigured();
+        var company = provider.GetRequiredService<ICompanyContext>();
+        return configured(company, provider.GetRequiredService<ICurrentUser>(),
+            provider.GetRequiredService<IErpAuthorityRevalidationService>(),
+            provider.GetRequiredService<ProductReadStore>(),
+            provider.GetRequiredService<IProductFamilyRequirementPolicyV1>(),
+            new ProductUnitProfileAdapter(settings, company));
     }
 
     private static SqlProductMasterAuthorizationService CreateIdentityAuthority(IServiceProvider provider) =>
@@ -82,6 +119,25 @@ public static class ProductRuntimeExtensions
         // Owned migrations only; no grant, company account, Product row or code group is seeded.
         await product.Database.MigrateAsync(cancellationToken);
         await terminal.Database.MigrateAsync(cancellationToken);
+    }
+}
+
+/// <summary>Both eligibility ports when the Product runtime or the Settings provider is absent: 503, never a positive answer.</summary>
+internal sealed class UnconfiguredProductEligibility : IProductSalesEligibilityV1, IProductStockEligibilityV1
+{
+    /// <summary>A host-level 503 code; the Product owner documents it on the ports.</summary>
+    public const string UnavailableCode = "product_runtime_unconfigured";
+
+    public Task<ProductSalesEligibilityV1> EvaluateAsync(ProductSalesSelectionV1 selection, CancellationToken cancellationToken) =>
+        Unavailable<ProductSalesEligibilityV1>(cancellationToken);
+
+    public Task<ProductStockEligibilityV1> EvaluateAsync(ProductStockSelectionV1 selection, CancellationToken cancellationToken) =>
+        Unavailable<ProductStockEligibilityV1>(cancellationToken);
+
+    private static Task<T> Unavailable<T>(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromException<T>(new ProductOperationException(UnavailableCode, 503));
     }
 }
 

@@ -162,6 +162,75 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
             });
         });
 
+        modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.BankAccountRow", b =>
+        {
+            b.Property<Guid>("Id")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<DateTimeOffset?>("ApprovedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("ApprovedBy")
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)")
+                .UseCollation("Latin1_General_100_BIN2");
+
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("CurrencyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("DisplayName")
+                .IsRequired()
+                .HasMaxLength(200)
+                .HasColumnType("nvarchar(200)");
+
+            b.Property<DateTimeOffset>("ProposedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("ProposedBy")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)")
+                .UseCollation("Latin1_General_100_BIN2");
+
+            b.Property<int>("Status")
+                .HasColumnType("int");
+
+            b.Property<DateTimeOffset>("UpdatedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<long>("Version")
+                .IsConcurrencyToken()
+                .HasColumnType("bigint");
+
+            b.HasKey("Id");
+
+            b.HasAlternateKey("CompanyId", "Id");
+
+            b.HasIndex("CompanyId", "Status");
+
+            b.ToTable("BankAccounts", "finance", t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_BankAccounts_Approval",
+                    "([Status] = 1 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL) OR ([Status] = 2 AND [ApprovedBy] IS NOT NULL AND [ApprovedAtUtc] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedBy] <> [ProposedBy])");
+
+                t.HasCheckConstraint(
+                    "CK_BankAccounts_Identity",
+                    "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                t.HasCheckConstraint(
+                    "CK_BankAccounts_Text",
+                    "LEN([DisplayName]) > 0 AND LEN([ProposedBy]) > 0");
+
+                t.HasCheckConstraint(
+                    "CK_BankAccounts_Version",
+                    "[Version] >= 1");
+            });
+        });
+
         modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceCommandRow", b =>
         {
             b.Property<Guid>("CompanyId")
@@ -177,6 +246,9 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 .HasColumnType("nvarchar(128)")
                 .UseCollation("Latin1_General_100_BIN2");
 
+            b.Property<Guid?>("BankAccountId")
+                .HasColumnType("uniqueidentifier");
+
             b.Property<string>("CommandName")
                 .IsRequired()
                 .HasMaxLength(64)
@@ -187,7 +259,7 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 .HasMaxLength(128)
                 .HasColumnType("nvarchar(128)");
 
-            b.Property<Guid>("DraftId")
+            b.Property<Guid?>("DraftId")
                 .HasColumnType("uniqueidentifier");
 
             b.Property<string>("PayloadHash")
@@ -205,13 +277,15 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
 
             b.HasKey("CompanyId", "ActorId", "IdempotencyKey");
 
+            b.HasIndex("CompanyId", "BankAccountId");
+
             b.HasIndex("CompanyId", "DraftId");
 
             b.ToTable("Commands", "finance", t =>
             {
                 t.HasCheckConstraint(
                     "CK_Commands_Identity",
-                    "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND LEN([ActorId]) > 0 AND LEN([IdempotencyKey]) > 0 AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0");
+                    "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([ActorId]) > 0 AND LEN([IdempotencyKey]) > 0 AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0");
 
                 t.HasCheckConstraint(
                     "CK_Commands_PayloadHash",
@@ -220,6 +294,10 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 t.HasCheckConstraint(
                     "CK_Commands_ResultJson",
                     "ISJSON([ResultJson]) = 1");
+
+                t.HasCheckConstraint(
+                    "CK_Commands_Target",
+                    "([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [BankAccountId] IS NULL) OR ([BankAccountId] IS NOT NULL AND [BankAccountId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL)");
             });
         });
 
@@ -330,6 +408,15 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
             });
         });
 
+        modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.BankAccountRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                .WithMany()
+                .HasForeignKey("CompanyId")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+        });
+
         modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.FinanceCommandRow", b =>
         {
             b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.OrganizationCompanyReference", null)
@@ -338,12 +425,17 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 .OnDelete(DeleteBehavior.Restrict)
                 .IsRequired();
 
+            b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.BankAccountRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "BankAccountId")
+                .HasPrincipalKey("CompanyId", "Id")
+                .OnDelete(DeleteBehavior.Restrict);
+
             b.HasOne("GoymenERP.Modules.Finance.Infrastructure.Persistence.ReceiptDraftRow", null)
                 .WithMany()
                 .HasForeignKey("CompanyId", "DraftId")
                 .HasPrincipalKey("CompanyId", "Id")
-                .OnDelete(DeleteBehavior.Restrict)
-                .IsRequired();
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity("GoymenERP.Modules.Finance.Infrastructure.Persistence.ReceiptDraftRow", b =>

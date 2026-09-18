@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.8" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../BuildingBlocks/GoymenERP.BuildingBlocks/GoymenERP.BuildingBlocks.csproj" />
+    <ProjectReference Include="../../Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj" />
+    <ProjectReference Include="../GoymenERP.Modules.Sales.Application/GoymenERP.Modules.Sales.Application.csproj" />
+    <ProjectReference Include="../GoymenERP.Modules.Sales.Domain/GoymenERP.Modules.Sales.Domain.csproj" />
+  </ItemGroup>
+</Project>

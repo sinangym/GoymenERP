@@ -35,9 +35,32 @@ internal sealed class ReceiptDraftRow : IFinanceTenantRow
 }
 
 /// <summary>
-/// One accepted command attempt (idempotency): (company, actor, key) is its key. It keeps the
-/// canonical payload hash and the result it answered, so the same key with the same payload
-/// returns that result and another payload is refused. Append-only.
+/// A Finance bank account (FS0, card #66 5731563923): exactly the fields of the reviewed
+/// <c>BankAccountView</c>. Proposed (1) is neither active nor usable; Approved (2) is both, and
+/// only a user other than the proposer approves it (Ö4, #66 5722637822). The display name and
+/// currency never change here; nothing is deleted. It holds no balance and moves no money.
+/// </summary>
+internal sealed class BankAccountRow : IFinanceTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid CurrencyId { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+    public int Status { get; set; }
+    public long Version { get; set; }
+    public string ProposedBy { get; set; } = string.Empty;
+    public DateTimeOffset ProposedAtUtc { get; set; }
+    public string? ApprovedBy { get; set; }
+    public DateTimeOffset? ApprovedAtUtc { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+/// <summary>
+/// One accepted command attempt (idempotency): (company, actor, key) is its key, shared by every
+/// Finance command, so one key is one attempt whatever the command. It keeps the canonical payload
+/// hash and the result it answered, so the same key with the same payload returns that result and
+/// another payload or command is refused. It names exactly one target: a draft or a bank account.
+/// Append-only.
 /// </summary>
 internal sealed class FinanceCommandRow : IFinanceTenantRow
 {
@@ -46,7 +69,8 @@ internal sealed class FinanceCommandRow : IFinanceTenantRow
     public string IdempotencyKey { get; set; } = string.Empty;
     public string CommandName { get; set; } = string.Empty;
     public string PayloadHash { get; set; } = string.Empty;
-    public Guid DraftId { get; set; }
+    public Guid? DraftId { get; set; }
+    public Guid? BankAccountId { get; set; }
     public string ResultJson { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
