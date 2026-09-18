@@ -27,8 +27,9 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// validity is still the profile's, at draft save. An unavailable Settings source refuses, fail-closed.</item>
 /// <item><b>Authority:</b> server company/actor must be the request's; the action is checked before
 /// anything is read and again after every owner await, replay included.</item>
-/// <item><b>Idempotency and concurrency:</b> the shared (company, actor, key) command record with the
-/// canonical payload hash; the same key and payload replays, another payload or command conflicts.
+/// <item><b>Idempotency and concurrency (ADR-011):</b> the shared command record keyed by (company,
+/// command, key hash) with the actor and the canonical payload hash; the same key, payload and actor
+/// replays, another payload or actor conflicts.
 /// Approve needs the expected version. One save covers the account, the command and the audit event.</item>
 /// </list>
 /// </summary>
@@ -271,19 +272,22 @@ public sealed class FinanceBankAccountService(
             : null;
     }
 
-    /// <summary>The same key again: its stored answer as a replay, or a conflict for another payload or command.</summary>
+    /// <summary>
+    /// ADR-011: the same (command, key hash) again answers its stored result as a replay with its first
+    /// correlation; another payload or actor is a conflict that discloses nothing of the earlier result.
+    /// </summary>
     private async Task<BankAccountCommandResult?> PriorAsync(FinanceContext context, CommandMetadata metadata,
         FinanceAction action, string command, string payloadHash, CancellationToken cancellationToken)
     {
-        var key = metadata.IdempotencyKey;
+        var keyHash = FinanceCommandKeys.Hash(metadata.IdempotencyKey);
         var prior = await dbContext.Commands.AsNoTracking()
-            .SingleOrDefaultAsync(row => row.ActorId == context.ActorId && row.IdempotencyKey == key, cancellationToken);
+            .SingleOrDefaultAsync(row => row.CommandName == command && row.IdempotencyKeyHash == keyHash, cancellationToken);
         if (prior is null)
         {
             return null;
         }
 
-        if (prior.CommandName != command || prior.PayloadHash != payloadHash)
+        if (prior.PayloadHash != payloadHash || !string.Equals(prior.ActorId, context.ActorId, StringComparison.Ordinal))
         {
             return Refused(context, CommandOutcome.IdempotencyConflict);
         }
@@ -377,9 +381,9 @@ public sealed class FinanceBankAccountService(
         dbContext.Commands.Add(new FinanceCommandRow
         {
             CompanyId = context.CompanyId,
-            ActorId = context.ActorId,
-            IdempotencyKey = metadata.IdempotencyKey,
             CommandName = command,
+            IdempotencyKeyHash = FinanceCommandKeys.Hash(metadata.IdempotencyKey),
+            ActorId = context.ActorId,
             PayloadHash = payloadHash,
             BankAccountId = accountId,
             ResultJson = JsonSerializer.Serialize(result, Json),

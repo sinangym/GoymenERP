@@ -236,23 +236,23 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
             b.Property<Guid>("CompanyId")
                 .HasColumnType("uniqueidentifier");
 
-            b.Property<string>("ActorId")
-                .HasMaxLength(128)
-                .HasColumnType("nvarchar(128)")
-                .UseCollation("Latin1_General_100_BIN2");
+            b.Property<string>("CommandName")
+                .HasMaxLength(64)
+                .HasColumnType("nvarchar(64)");
 
-            b.Property<string>("IdempotencyKey")
+            b.Property<string>("IdempotencyKeyHash")
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<string>("ActorId")
+                .IsRequired()
                 .HasMaxLength(128)
                 .HasColumnType("nvarchar(128)")
                 .UseCollation("Latin1_General_100_BIN2");
 
             b.Property<Guid?>("BankAccountId")
                 .HasColumnType("uniqueidentifier");
-
-            b.Property<string>("CommandName")
-                .IsRequired()
-                .HasMaxLength(64)
-                .HasColumnType("nvarchar(64)");
 
             b.Property<string>("CorrelationId")
                 .IsRequired()
@@ -275,7 +275,7 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
                 .IsRequired()
                 .HasColumnType("nvarchar(max)");
 
-            b.HasKey("CompanyId", "ActorId", "IdempotencyKey");
+            b.HasKey("CompanyId", "CommandName", "IdempotencyKeyHash");
 
             b.HasIndex("CompanyId", "BankAccountId");
 
@@ -285,7 +285,11 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
             {
                 t.HasCheckConstraint(
                     "CK_Commands_Identity",
-                    "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([ActorId]) > 0 AND LEN([IdempotencyKey]) > 0 AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0");
+                    "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([ActorId]) > 0 AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0");
+
+                t.HasCheckConstraint(
+                    "CK_Commands_KeyHash",
+                    "LEN([IdempotencyKeyHash]) = 64");
 
                 t.HasCheckConstraint(
                     "CK_Commands_PayloadHash",
@@ -389,6 +393,8 @@ partial class FinanceDbContextModelSnapshot : ModelSnapshot
             b.HasKey("Id");
 
             b.HasAlternateKey("CompanyId", "Id");
+
+            b.HasIndex("CompanyId", "CreatedAtUtc", "Id");
 
             b.HasIndex("CompanyId", "UpdatedAtUtc", "Id");
 

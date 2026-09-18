@@ -34,8 +34,8 @@ _spec.loader.exec_module(c01)
 ContractError = c01.ContractError
 require = c01.require
 
-SUITES = ("smoke", "c03", "org03", "u02")
-READ_ONLY_SUITES = ("smoke", "c03")
+SUITES = ("smoke", "c03", "org03", "u02", "s03")
+READ_ONLY_SUITES = ("smoke", "c03", "s03")
 _SUITE_PATTERN = re.compile(r"^[a-z0-9]+$")
 
 PROFILES = ("c01-list-only", "cari-staged", "normal")
@@ -44,6 +44,8 @@ SUITE_PROFILES = {
     "c03": "cari-staged",
     "org03": "normal",
     "u02": "normal",
+    # S-03 v1 (#321): fail-closed evidence on the normal host (staged Sales screens, no grant).
+    "s03": "normal",
 }
 PROFILE_COMPOSE_FILES = {
     "c01-list-only": "infra/docker-compose.c01-e2e.yml",

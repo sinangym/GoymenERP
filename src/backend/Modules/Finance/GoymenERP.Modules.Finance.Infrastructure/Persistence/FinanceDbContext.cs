@@ -15,8 +15,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence;
 /// deleted. A command record is append-only.</item>
 /// <item>A bank account (FS0) changes only by its one approval; the database itself refuses an
 /// approval by the proposer (<c>CK_BankAccounts_Approval</c>, Ö4).</item>
-/// <item>Idempotency: (company, actor, key) is the command record's key, so one key is one attempt
-/// per actor and company under a race.</item>
+/// <item>Idempotency (ADR-011): (company, command, key hash) is the command record's key, so one key
+/// is one attempt per command and company under a race; the actor is kept and must match.</item>
 /// </list>
 /// The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// </summary>
@@ -25,7 +25,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 {
     public const string Schema = "finance";
 
-    /// <summary>Binary collation: an idempotency key and an actor id compare exactly (no case folding).</summary>
+    /// <summary>Binary collation: an actor id compares exactly (no case folding).</summary>
     public const string IdentityCollation = "Latin1_General_100_BIN2";
 
     internal DbSet<ReceiptDraftRow> ReceiptDrafts => Set<ReceiptDraftRow>();
@@ -94,6 +94,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.Property(x => x.CreatedBy).HasMaxLength(128).IsRequired();
         entity.Property(x => x.UpdatedBy).HasMaxLength(128).IsRequired();
         entity.HasIndex(x => new { x.CompanyId, x.UpdatedAtUtc, x.Id });
+        // The list's stable order (FIN-T04b): newest created first; an edit never moves a draft between pages.
+        entity.HasIndex(x => new { x.CompanyId, x.CreatedAtUtc, x.Id });
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -135,7 +137,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         {
             table.HasCheckConstraint("CK_Commands_Identity",
                 "[CompanyId] <> '00000000-0000-0000-0000-000000000000' "
-                + "AND LEN([ActorId]) > 0 AND LEN([IdempotencyKey]) > 0 AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0");
+                + "AND LEN([ActorId]) > 0 AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_Commands_KeyHash", "LEN([IdempotencyKeyHash]) = 64");
             // Exactly one target: a receipt draft or a bank account (FS0).
             table.HasCheckConstraint("CK_Commands_Target",
                 "([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [BankAccountId] IS NULL) OR "
@@ -143,10 +146,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
             table.HasCheckConstraint("CK_Commands_PayloadHash", "LEN([PayloadHash]) = 64");
             table.HasCheckConstraint("CK_Commands_ResultJson", "ISJSON([ResultJson]) = 1");
         });
-        entity.HasKey(x => new { x.CompanyId, x.ActorId, x.IdempotencyKey });
-        entity.Property(x => x.ActorId).HasMaxLength(128).UseCollation(IdentityCollation);
-        entity.Property(x => x.IdempotencyKey).HasMaxLength(128).UseCollation(IdentityCollation);
-        entity.Property(x => x.CommandName).HasMaxLength(64).IsRequired();
+        entity.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        entity.Property(x => x.CommandName).HasMaxLength(64);
+        entity.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false);
+        entity.Property(x => x.ActorId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
         entity.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
         entity.Property(x => x.ResultJson).HasColumnType("nvarchar(max)").IsRequired();
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();

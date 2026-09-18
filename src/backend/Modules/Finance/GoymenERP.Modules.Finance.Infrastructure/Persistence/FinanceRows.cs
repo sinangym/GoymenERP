@@ -56,18 +56,18 @@ internal sealed class BankAccountRow : IFinanceTenantRow
 }
 
 /// <summary>
-/// One accepted command attempt (idempotency): (company, actor, key) is its key, shared by every
-/// Finance command, so one key is one attempt whatever the command. It keeps the canonical payload
-/// hash and the result it answered, so the same key with the same payload returns that result and
-/// another payload or command is refused. It names exactly one target: a draft or a bank account.
-/// Append-only.
+/// One accepted command attempt (ADR-011): (company, command, key hash) is its key. The raw
+/// Idempotency-Key is never stored, only its upper-case SHA-256 (§2). The actor, the canonical
+/// payload hash, the answered result and the first correlation are kept, so the same key with the
+/// same payload and actor replays that result, and another payload or actor is refused (§3–§4).
+/// It names exactly one target: a draft or a bank account. Append-only.
 /// </summary>
 internal sealed class FinanceCommandRow : IFinanceTenantRow
 {
     public Guid CompanyId { get; set; }
-    public string ActorId { get; set; } = string.Empty;
-    public string IdempotencyKey { get; set; } = string.Empty;
     public string CommandName { get; set; } = string.Empty;
+    public string IdempotencyKeyHash { get; set; } = string.Empty;
+    public string ActorId { get; set; } = string.Empty;
     public string PayloadHash { get; set; } = string.Empty;
     public Guid? DraftId { get; set; }
     public Guid? BankAccountId { get; set; }
