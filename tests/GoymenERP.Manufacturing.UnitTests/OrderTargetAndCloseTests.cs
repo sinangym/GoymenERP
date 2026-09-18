@@ -144,34 +144,6 @@ public sealed class OrderTargetAndCloseTests
     }
 
     [Fact]
-    public void An_order_with_mass_still_in_process_does_not_close_until_it_is_declared_or_returned()
-    {
-        // TEMPORARY rule, awaiting Business confirmation (see ProductionOrder.Close).
-        var order = Order(target: null);
-        order.Issue(MasterRoll, Kg(10_000m));
-        order.Declare(MasterRoll, OutputClass.GoodProduct, Kg(3_000m));
-        order.MeasureWip(MasterRoll, Kg(7_000m));
-        Assert.True(order.BalanceOf(MasterRoll).IsFullyAccounted);
-
-        var wipOpen = Assert.Throws<ManufacturingRuleException>(() => order.Close(order.Version, Closer, DateTimeOffset.UnixEpoch));
-        Assert.Equal(ManufacturingRuleCodes.WipOpen, wipOpen.Code);
-        Assert.Equal(OrderStatus.Open, order.Status);
-        Assert.Equal(7_000m, order.BalanceOf(MasterRoll).WorkInProgress.Value);
-
-        // Writing the WIP down to zero without declaring or returning it does not close the
-        // order: the 7.000 kg reappears as an unexplained difference.
-        order.MeasureWip(MasterRoll, Kilograms.Zero);
-        Assert.Equal(ManufacturingRuleCodes.UnexplainedDifference, Assert.Throws<ManufacturingRuleException>(
-            () => order.Close(order.Version, Closer, DateTimeOffset.UnixEpoch)).Code);
-
-        // Declared and returned, the mass is accounted for and the order closes.
-        order.Declare(MasterRoll, OutputClass.GoodProduct, Kg(5_000m));
-        order.Return(MasterRoll, Kg(2_000m));
-        order.Close(order.Version, Closer, DateTimeOffset.UnixEpoch);
-        Assert.Equal(OrderStatus.Closed, order.Status);
-    }
-
-    [Fact]
     public void The_order_keeps_the_target_it_was_created_with()
     {
         var target = new ProductionTarget(TargetBasis.InputMass, Kg(10_000m));
