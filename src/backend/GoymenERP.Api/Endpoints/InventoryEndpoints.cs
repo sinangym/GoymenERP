@@ -23,13 +23,21 @@ public static class InventoryEndpoints
                 Guid labelId,
                 HttpContext httpContext,
                 IInventoryLabelStore labels,
+                IInventoryLotStore lots,
                 CancellationToken cancellationToken) =>
             {
                 httpContext.Response.Headers.CacheControl = "private, no-store";
                 var label = await labels.FindLabelAsync(labelId, cancellationToken);
-                return label is null
-                    ? NotFound()
-                    : Results.Ok(InventoryReadModelsV1.LabelView(label));
+                if (label is null)
+                {
+                    return NotFound();
+                }
+
+                // The (company, lot) foreign key keeps every stored label's lot in its own company, so a
+                // missing lot here is a broken store, not an answer.
+                var lot = await lots.FindLotAsync(label.LotId, cancellationToken)
+                    ?? throw new InvalidOperationException("Kayıtlı etiketin lotu bulunamadı.");
+                return Results.Ok(InventoryReadModelsV1.LabelView(label, lot));
             })
             .RequireCompanyContext()
             .RequireAuthorization(ErpPermissions.InventoryLabelsRead)
