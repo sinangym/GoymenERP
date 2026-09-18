@@ -4,6 +4,8 @@ using GoymenERP.Modules.Inventory.Domain.Costing;
 using GoymenERP.Modules.Inventory.Domain.Movements;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using static GoymenERP.Inventory.UnitTests.InventoryFixture;
 
 namespace GoymenERP.Inventory.UnitTests;
@@ -76,7 +78,9 @@ public sealed class InventoryPersistenceModelTests
         Assert.Equal(["CompanyId", "Kind", "SourceKind", "SourceId", "Grain"],
             reference.PrincipalKey.Properties.Select(property => property.Name));
         Assert.Equal(DeleteBehavior.Restrict, reference.DeleteBehavior);
-        Assert.Contains(movements.GetCheckConstraints(), check => check.Name == "CK_Movements_SourceGrain");
+        // Check constraints live in the design-time model only; SQL proves the constraint itself (547).
+        var design = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(MovementRow))!;
+        Assert.Contains(design.GetCheckConstraints(), check => check.Name == "CK_Movements_SourceGrain");
     }
 
     [Fact]
