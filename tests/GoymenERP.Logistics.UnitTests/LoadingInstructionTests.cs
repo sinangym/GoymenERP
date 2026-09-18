@@ -141,6 +141,46 @@ public sealed class LoadingInstructionTests
     }
 
     [Fact]
+    public void A_blocked_line_ships_nothing_even_when_it_was_loaded_before_the_block()
+    {
+        // §7.4 "kalite bloku … engellenir", Ö3 "sevk serbestliği yok": the certificate problem is
+        // found after loading; the loaded share must not leave as a definite shipment.
+        var (instruction, line) = Issued(6_000m);
+        instruction.RecordLoad(3, Guid.NewGuid(), line.Id, Kg(4_000m), MeasurementKind.Measured, T0);
+        instruction.BlockLine(4, line.Id, T0);
+
+        var refused = Assert.Throws<InvalidOperationException>(() =>
+            instruction.MarkShipped(5, Guid.NewGuid(), line.Id, Kg(1_000m), T0));
+
+        Assert.Contains("Bloklu", refused.Message);
+        Assert.True(line.ShippedQuantity.IsZero);
+        Assert.Equal(Kg(4_000m), line.LoadedNotShipped);
+        Assert.Equal(5, instruction.Version);
+        Assert.Single(instruction.Shares);
+
+        instruction.UnblockLine(5, line.Id, T0);
+        instruction.MarkShipped(6, Guid.NewGuid(), line.Id, Kg(1_000m), T0);
+        Assert.Equal(Kg(1_000m), line.ShippedQuantity);
+    }
+
+    [Fact]
+    public void Delivery_of_goods_already_shipped_is_still_recorded_when_the_line_is_blocked_afterwards()
+    {
+        // Pinned behaviour, open question for Business (README): the goods have left; a delivery
+        // record is a fact about the source shipment (§7.4), so a later block does not refuse it.
+        var (instruction, line) = Issued(6_000m);
+        instruction.RecordLoad(3, Guid.NewGuid(), line.Id, Kg(4_000m), MeasurementKind.Measured, T0);
+        instruction.MarkShipped(4, Guid.NewGuid(), line.Id, Kg(3_800m), T0);
+        instruction.BlockLine(5, line.Id, T0);
+
+        instruction.MarkDelivered(6, Guid.NewGuid(), line.Id, Kg(3_000m), T0);
+
+        Assert.Equal((Kg(3_000m), Kg(800m)), (line.DeliveredQuantity, line.ShippedNotDelivered));
+        Assert.Throws<InvalidOperationException>(() =>
+            instruction.MarkShipped(7, Guid.NewGuid(), line.Id, Kg(100m), T0));
+    }
+
+    [Fact]
     public void The_same_share_id_is_one_share_across_loads_shipments_and_deliveries()
     {
         var (instruction, line) = Issued(6_000m);

@@ -48,10 +48,10 @@ public sealed class LoadingInstruction
     public long Version { get; private set; } = 1;
     public DateTimeOffset CreatedAtUtc { get; }
     public DateTimeOffset UpdatedAtUtc { get; private set; }
-    public IReadOnlyList<LoadingInstructionLine> Lines => lines;
+    public IReadOnlyList<LoadingInstructionLine> Lines => lines.AsReadOnly();
 
     /// <summary>Every recorded load, shipment and delivery share, in order.</summary>
-    public IReadOnlyList<LoadingShare> Shares => shares;
+    public IReadOnlyList<LoadingShare> Shares => shares.AsReadOnly();
 
     public static LoadingInstruction Create(Guid id, Guid companyId, Guid customerPartyId, DateTimeOffset now) =>
         new(id, companyId, customerPartyId, now);
@@ -144,20 +144,34 @@ public sealed class LoadingInstruction
 
     /// <summary>
     /// Marks part of the loaded share as definitely shipped. Shipped is taken from LOADED only,
-    /// never from the instruction again, so nothing is decremented twice. The stock exit and the
-    /// allocation consumption that go with a definite shipment are Inventory's (T11/T12).
+    /// never from the instruction again, so nothing is decremented twice. A blocked line ships
+    /// nothing, even when it was loaded before the block (§7.4 "kalite bloku … engellenir", Ö3
+    /// "sevk serbestliği yok"): the block matters most at the moment goods would leave. The stock
+    /// exit and the allocation consumption that go with a definite shipment are Inventory's
+    /// (T11/T12) and belong in the same transaction as this share.
     /// </summary>
     public LoadingShare MarkShipped(long expectedVersion, Guid shipmentId, Guid lineId, Quantity shipped, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
         RequireStatus(LoadingInstructionStatus.Issued, "Sevk yalnız yayımlanmış talimatta kaydedilir.");
         var line = FindLine(lineId);
+        if (line.IsBlocked)
+        {
+            throw new InvalidOperationException("Bloklu satırdan sevk kaydedilemez.");
+        }
+
         RequirePositiveShare(shipmentId, shipped, line.LoadedNotShipped, "Sevk edilen pay yüklenmiş ama sevk edilmemiş payı aşamaz.");
         line.AddShipped(shipped);
         return Add(new LoadingShare(shipmentId, line.Id, LoadingShareKind.Shipped, shipped, null, now.ToUniversalTime()), now);
     }
 
-    /// <summary>Marks part of the shipped share as delivered; delivery never exceeds what was shipped.</summary>
+    /// <summary>
+    /// Marks part of the shipped share as delivered; delivery never exceeds what was shipped. A
+    /// block on the line does NOT stop this record: the goods have already left, and §7.4 ties
+    /// shortage, damage, rejection and return to the source shipment as facts about it, so a
+    /// delivery record is that kind of fact. Whether a later block should also flag the delivery
+    /// is an open question for Business (README); until then the record is not refused.
+    /// </summary>
     public LoadingShare MarkDelivered(long expectedVersion, Guid deliveryId, Guid lineId, Quantity delivered, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
