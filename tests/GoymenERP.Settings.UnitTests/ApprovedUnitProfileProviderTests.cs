@@ -224,6 +224,19 @@ public sealed class ApprovedUnitProfileProviderTests
         Assert.Equal(new DateOnly(2027, 1, 1), (await provider.GetUnitProfileAsync(Kg, Approval)).EffectiveThrough);
     }
 
+    [Fact]
+    public void Only_the_reviewed_catalog_is_reachable_from_outside_Settings()
+    {
+        // FİNANS #279 P3-1: a module that references Settings must not be able to build an
+        // "approved" provider or catalog over profiles it made up.
+        var providerConstructors = typeof(ApprovedSettingsPrerequisiteProvider).GetConstructors();
+        var publicProvider = Assert.Single(providerConstructors);
+        Assert.Equal(
+            [typeof(ICompanyContext), typeof(ICurrentUser)],
+            publicProvider.GetParameters().Select(parameter => parameter.ParameterType));
+        Assert.Empty(typeof(ApprovedUnitProfileCatalog).GetConstructors());
+    }
+
     private static ApprovedSettingsPrerequisiteProvider Provider(Guid company) =>
         new(new Context(company, true), new Actor(true, "synthetic-settings-actor", company));
 

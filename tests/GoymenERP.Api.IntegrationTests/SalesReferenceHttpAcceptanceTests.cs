@@ -9,6 +9,8 @@ using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Settings.Application;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -305,6 +307,33 @@ public sealed class SalesReferenceHttpAcceptanceTests(GoymenErpApiFactory factor
         Assert.Equal(1, products.Calls);
     }
 
+    [Fact]
+    public async Task Documented_unsupported_unit_example_matches_the_real_pipeline()
+    {
+        // The approved Settings provider (#279) reports a unit the company's source has no
+        // profile for with its own code; the handler turns that into 422 unsupported_unit and
+        // the product route passes the code through.
+        var example = ReadReferenceExample("unsupportedUnit");
+        var productId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        var orderUnitId = Guid.Parse("44444444-4444-4444-4444-444444444444");
+        var products = new StubProductEligibility(new(new ProductSalesSnapshotV1(productId, "7", "EXAMPLE-CODE", "Example",
+            Unit(Guid.NewGuid()), Unit(Guid.NewGuid()), Unit(orderUnitId), new DateOnly(2026, 9, 13)), []));
+        var settings = new StubSettings(new SettingsPrerequisiteException(ApprovedSettingsPrerequisiteProvider.UnitProfileNotFoundCode));
+        var owner = new StubCounterpartyReadService(CounterpartyPageExecution.ServiceUnavailable());
+        using var host = CreateRealHandlerHost(owner, products, settings);
+        using var client = CreateClient(host, true);
+
+        using var response = await client.GetAsync(example.GetProperty("path").GetString());
+
+        await AssertMatchesExampleAsync(example, response);
+        Assert.Equal(1, products.Calls);
+        Assert.Equal(1, settings.UnitReads);
+        Assert.DoesNotContain(ApprovedSettingsPrerequisiteProvider.UnitProfileNotFoundCode,
+            await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+
+        static ProductSalesUnitProfileV1 Unit(Guid unitId) => new(TestCompanyIds.CompanyA, unitId, Guid.NewGuid(), "1");
+    }
+
     private static CounterpartyPageQuery ExpectedOwnerQuery(string? q, int pageSize, string? cursor) =>
         new(q, null, PartyRole.None, CounterpartyRoleMatch.Any, CounterpartyRecordState.Active,
             CounterpartyRecordState.Active, CounterpartySort.Code, CounterpartySortDirection.Ascending,
@@ -332,7 +361,7 @@ public sealed class SalesReferenceHttpAcceptanceTests(GoymenErpApiFactory factor
     }
 
     private WebApplicationFactory<Program> CreateRealHandlerHost(ICounterpartyReadService owner,
-        IProductSalesEligibilityV1? products = null) => factory.WithWebHostBuilder(builder =>
+        IProductSalesEligibilityV1? products = null, ISettingsPrerequisiteProvider? settings = null) => factory.WithWebHostBuilder(builder =>
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<ICounterpartyReadService>();
@@ -341,6 +370,11 @@ public sealed class SalesReferenceHttpAcceptanceTests(GoymenErpApiFactory factor
             {
                 services.RemoveAll<IProductSalesEligibilityV1>();
                 services.AddSingleton(products);
+            }
+            if (settings is not null)
+            {
+                services.RemoveAll<ISettingsPrerequisiteProvider>();
+                services.AddSingleton(settings);
             }
             services.RemoveAll<SalesReferenceReadBindings>();
             services.AddSingleton(new SalesReferenceReadBindings(
@@ -431,6 +465,18 @@ public sealed class SalesReferenceHttpAcceptanceTests(GoymenErpApiFactory factor
             return Error is null ? Task.FromResult(execution) : Task.FromException<CounterpartyPageExecution>(Error);
         }
         public Task<CounterpartyDetailView?> GetAuthorizedPartyAsync(Guid partyId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    // Raises the given Settings error on every unit read; the money read is never reached here.
+    private sealed class StubSettings(SettingsPrerequisiteException error) : ISettingsPrerequisiteProvider
+    {
+        public int UnitReads { get; private set; }
+        public Task<UnitProfileV1> GetUnitProfileAsync(Guid unitId, DateOnly effectiveOn, CancellationToken cancellationToken = default)
+        { UnitReads++; return Task.FromException<UnitProfileV1>(error); }
+        public Task<MoneyProfileV1> GetMoneyProfileAsync(Guid currencyId, string operation, DateOnly effectiveOn,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PeriodEligibilityV1> GetPeriodEligibilityAsync(string operation, DateOnly occurredOn, DateOnly? valueOn,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 

@@ -81,8 +81,9 @@ companies have no approved profile yet.
 
 **Data source: versioned source code, not a table.** One profile is approved and
 nothing may edit it at runtime; a new approval is a new version, reviewed like code.
-So there is no migration, seed write, DbContext, guard pin or host change, and every
-value is visible in the diff that introduces it. When profiles become
+So there is no migration, seed write or DbContext, and every value is visible in the
+diff that introduces it; the only host change is the registration described under
+"Host wiring" below. When profiles become
 user-maintained, a persistent provider replaces the catalog behind the same port.
 
 Outcomes of `GetUnitProfileAsync`, in order:
@@ -107,11 +108,22 @@ its own start date and never rewrites an earlier answer.
 has no profile for an identity is neither unavailable nor malformed; consumers that
 pass Settings codes through (Product) carry it unchanged.
 
-Not in this slice: DI/host registration (no host consumer of the port is composed on
-main), Product's own unit catalogue (it must use `SettingsUnitIdentitiesV1.Kilogram`
-when it lists kg — ÜRÜN's follow-up), money and period sources, any rounding method,
-any grant or production data. A returned profile is reference metadata, not an
-authorization: the consuming use case still checks its own permission.
+Not in this slice: Product's own unit catalogue (it must use
+`SettingsUnitIdentitiesV1.Kilogram` when it lists kg — ÜRÜN's follow-up), money and
+period sources, any rounding method, any grant or production data. A returned profile is
+reference metadata, not an authorization: the consuming use case still checks its own
+permission.
+
+**Host wiring.** The API host registers `ISettingsPrerequisiteProvider` as
+`ApprovedSettingsPrerequisiteProvider` (previously the unavailable adapter). Its only
+consumer there is the Sales reference read. Sales asks for unit profiles only after a
+Product sales-eligibility snapshot, and no such runtime is composed in the host yet, so the
+swap changes no reachable Sales answer until it is; money and period answers are unchanged.
+Sales currently reports every Settings code other than `settings_access_denied` as `503
+settings_provider_unavailable`, so an unknown unit will surface there as 503 — a Sales-side
+mapping choice, not changed here. Only the reviewed catalog is reachable from outside
+Settings: the catalog-taking constructors are internal and visible to
+`GoymenERP.Settings.UnitTests` only.
 
 Validation: Settings unit/contract tests are synthetic, not SQL or browser UAT.
 No persistence changed, so new slice-specific SQL scenarios are not applicable;
