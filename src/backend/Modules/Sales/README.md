@@ -113,8 +113,11 @@ names until they are in the catalogue), `SalesShellCapabilityProviderContractTes
 frontend's problem codes/texts (`contract.ts`, `salesText.ts`), and the browser suite `s03`
 (`tests/e2e/sales-s03`). **s03 v2a (S03 slice)** runs against the real API on the `normal` profile and is
 *explicitly negative* evidence: the granted actor reads the real empty list; a create attempt ends in the
-honest refusal (references withheld or the save refused) and writes nothing; the ungranted profile is
-closed out. It is not a positive sales delivery — v2b (create → detail → list → same key 201 +
+honest refusal and writes nothing; the ungranted profile is closed out. The create form reads its customer
+options from the real `/api/v1/sales/references/accounts` list (`useHttpReferenceOptions`, S03) and the
+suite measures that answer; the currency and product reference routes on main validate one chosen id
+and offer no list, so the form is withheld naming those sources (`no-list-route`) until their owners
+publish lists (v2b) — nothing is guessed. It is not a positive sales delivery — v2b (create → detail → list → same key 201 +
 `Idempotency-Replayed` → reopen) waits for the Product activation path (DEC-PRD-010) and the GDC family
 data. The suite needs the shell mount and the published (`ImplementationAvailable: true`) Sales
 capabilities: `ShellCapabilityService` never publishes a staged declaration, so the flip is a

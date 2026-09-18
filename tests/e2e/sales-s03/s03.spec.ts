@@ -8,9 +8,11 @@ import { expect, test, type Page } from '@playwright/test'
  * family source answers Unavailable (503) — so:
  *
  *  - S03-V2A-01 the granted actor reads the real, EMPTY draft list from the API;
- *  - S03-V2A-02 the granted actor's create attempt ends in the honest refusal (the references are
- *    not offered, or the save is refused) and NOTHING is written: no 2xx on the draft route, the
- *    list stays empty;
+ *  - S03-V2A-02 the granted actor's create attempt ends in the honest refusal: the accounts reference
+ *    route's REAL answer is measured (200 with a list, or 403/503 with its code); currencies and
+ *    products have no list route on main, so the form is withheld naming them (or, once offered,
+ *    the save is refused by the owners) — NOTHING is written: no 2xx on the draft route, the list
+ *    stays empty;
  *  - S03-V2A-03 the ungranted profile is closed out of the Sales screens and reads no draft.
  *
  * This is not a positive sales delivery. v2b (create → detail → list → the same key answers 201 +
@@ -58,19 +60,29 @@ test('S03-V2A-01 the granted actor reads the real, empty draft list', async ({ p
   expect(traffic.writes).toBe(0)
 })
 
-test('S03-V2A-02 the granted actor\'s create attempt is refused honestly and writes nothing', async ({ page }) => {
+test('S03-V2A-02 the granted actor\'s create attempt is refused honestly by the real owners and writes nothing', async ({ page }) => {
   const traffic = watchDrafts(page)
+  // The form reads its customer options from the REAL accounts reference route (ÜRÜN #327 P2-1, a):
+  // the answer is measured here, whatever it is. Currencies and products have no list route on main
+  // (their Sales routes validate one chosen id), so the form is withheld with that reason.
+  const accountsAnswer = page.waitForResponse((response) =>
+    new URL(response.url()).pathname === '/api/v1/sales/references/accounts' && response.request().method() === 'GET')
   await page.goto('/satis/siparisler/yeni')
   await expect(page.getByRole('heading', { level: 1, name: 'Yeni satış siparişi taslağı' })).toBeVisible({ timeout: 30_000 })
 
-  // Either the real providers offer no complete option set (the form is withheld with the honest
-  // notice), or they do and the save itself is refused by the owners. Both are the negative path;
-  // neither writes.
+  const accounts = await accountsAnswer
+  expect([200, 403, 503], `accounts reference answered ${accounts.status()}`).toContain(accounts.status())
+  const body = (await accounts.json()) as { accounts?: unknown; code?: unknown }
+  if (accounts.status() === 200) expect(Array.isArray(body.accounts)).toBe(true)
+  else expect(typeof body.code).toBe('string')
+
   const withheld = page.locator('[data-tone="unknown"][role="status"]')
   const form = page.locator('form')
   await expect(withheld.or(form)).toBeVisible({ timeout: 30_000 })
 
   if (await form.count()) {
+    // Only reachable once the owners publish currency and product lists (v2b): then the save itself
+    // must be refused by the owners today, never stored.
     const customer = page.getByLabel('Cari ve şirket hesabı')
     const currency = page.getByLabel('Para birimi')
     const product = page.getByLabel('Ürün').first()
@@ -84,10 +96,16 @@ test('S03-V2A-02 the granted actor\'s create attempt is refused honestly and wri
       if ((await unit.locator('option:not([value=""])').count()) > 0) await unit.selectOption({ index: 1 })
     }
     await page.getByRole('button', { name: /kaydet/i }).click()
-
-    // A refused save or a client-side validation: an alert, never the "saved" heading.
     await expect(page.getByRole('alert').or(page.locator('[data-tone="unknown"]'))).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole('heading', { level: 1, name: 'Sipariş taslağı kaydedildi.' })).toHaveCount(0)
+  } else {
+    // The withheld notice names the missing sources from the real answers: the accounts answer's
+    // status when it refused, and the owners' missing list routes.
+    const detail = page.getByTestId('sales-references-missing')
+    await expect(detail).toBeVisible()
+    await expect(detail).toContainText('para birimleri')
+    await expect(detail).toContainText('satışa uygun ürünler ve birimler')
+    if (accounts.status() !== 200) await expect(detail).toContainText(`gerçek yanıt http-${accounts.status()}`)
   }
 
   expect(traffic.writeStatuses.filter((status) => status >= 200 && status < 300), 'no draft may be stored today').toHaveLength(0)

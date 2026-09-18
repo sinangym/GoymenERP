@@ -41,6 +41,8 @@ import {
 } from './contract'
 import type { OrderCommandOutcome } from './orderAttempt'
 import type { ViewOutcome } from '../shell/uiState'
+import type { OrderDraftOptions } from './orderDraftForm'
+import { isReferenceId } from './wirePrimitives'
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
@@ -124,6 +126,54 @@ export async function fetchDraftDetail(
   const detail = decodeDraftDetail(raw.body, draftId)
   if (detail === null || detail.draft.companyId !== companyId) return { type: 'malformed' }
   return { type: 'ok-single', data: detail }
+}
+
+/* ── Reference options (S03) ─────────────────────────────────────────────── */
+
+/**
+ * The Sales reference routes on main: `/sales/references/accounts` is a LIST (the Cari owner's
+ * authorized party accounts, bound to `sales.drafts.create`); `/sales/references/currency` and
+ * `/sales/references/product` VALIDATE one chosen id for a business date and offer no list. So only
+ * the accounts options can be read from the real API in this slice; currencies and products have no
+ * list source on main (see ./referenceSource.ts).
+ */
+export const SALES_REFERENCE_ACCOUNTS_PATH = '/sales/references/accounts'
+
+export type AccountOption = OrderDraftOptions['accounts'][number]
+
+export type AccountOptionsOutcome =
+  | { readonly type: 'ready'; readonly accounts: readonly AccountOption[] }
+  | { readonly type: 'http'; readonly status: number; readonly code: string | null }
+  | { readonly type: 'network' }
+  | { readonly type: 'malformed' }
+
+function decodeAccountOptions(value: unknown, companyId: string): readonly AccountOption[] | null {
+  if (typeof value !== 'object' || value === null) return null
+  const o = value as Record<string, unknown>
+  if (o.companyId !== companyId || !Array.isArray(o.accounts)) return null
+  if (o.nextCursor !== null && o.nextCursor !== undefined && typeof o.nextCursor !== 'string') return null
+  const accounts: AccountOption[] = []
+  for (const item of o.accounts) {
+    if (typeof item !== 'object' || item === null) return null
+    const a = item as Record<string, unknown>
+    if (!isReferenceId(a.partyId) || !isReferenceId(a.companyAccountId)) return null
+    if (typeof a.label !== 'string' || a.label.trim() === '' || a.label.length > 400) return null
+    accounts.push({ partyId: a.partyId, companyAccountId: a.companyAccountId, label: a.label })
+  }
+  return accounts
+}
+
+/** The first page of the Cari owner's authorized accounts for the form's customer select; never a default. */
+export async function fetchAccountOptions(companyId: string, signal?: AbortSignal): Promise<AccountOptionsOutcome> {
+  const params = new URLSearchParams({ pageSize: String(PAGE_SIZE) })
+  const raw = await request(`${SALES_REFERENCE_ACCOUNTS_PATH}?${params.toString()}`, { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return { type: 'network' }
+  if (raw.status !== 200) {
+    const problem = decodeProblem(raw.body, raw.status)
+    return { type: 'http', status: raw.status, code: problem?.code ?? null }
+  }
+  const accounts = decodeAccountOptions(raw.body, companyId)
+  return accounts === null ? { type: 'malformed' } : { type: 'ready', accounts }
 }
 
 /* ── Create ───────────────────────────────────────────────────────────────── */
