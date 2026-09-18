@@ -340,8 +340,10 @@ public sealed class ReceiptDraftService(
                 return new ReadResult<SourcePage>(ReadOutcome.NotFound, null);
             }
 
-            query = query.Where(row => row.CreatedAtUtc < after.CreatedAtUtc
-                || (row.CreatedAtUtc == after.CreatedAtUtc && row.Id.CompareTo(after.Id) < 0));
+            var afterCreatedAtUtc = after.CreatedAtUtc;
+            var afterId = after.Id;
+            query = query.Where(row => row.CreatedAtUtc < afterCreatedAtUtc
+                || (row.CreatedAtUtc == afterCreatedAtUtc && row.Id.CompareTo(afterId) < 0));
         }
 
         var rows = await query
