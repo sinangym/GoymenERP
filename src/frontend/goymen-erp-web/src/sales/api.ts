@@ -224,6 +224,8 @@ export async function createDraft(
     return { type: 'network-error' }
   }
   if (raw.status !== CREATED_STATUS) {
+    // Any other 2xx is outside the contract: the draft may exist, so the outcome is unknown.
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
     return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
   }
   const mutation = decodeDraftMutation(raw.body)

@@ -150,10 +150,12 @@ describe('saving — one key per snapshot, real pending requests', () => {
     await screen.findByRole('heading', { name: T.attempt.completed })
   })
 
-  it('an unknown outcome retries the SAME key, company and body; the 200 replay completes once', async () => {
+  it('an unknown outcome retries the SAME key, company and body; the 201 replay (header) completes once', async () => {
     const fetch = installFetch({
       onCreate: (attempt, call) =>
-        attempt === 1 ? Promise.reject(new TypeError('Failed to fetch')) : json(answerFor(replayResponseRaw, call.body), 200),
+        attempt === 1
+          ? Promise.reject(new TypeError('Failed to fetch'))
+          : json(answerFor(replayResponseRaw, call.body), 201, { 'Idempotency-Replayed': 'true' }),
     })
     renderSalesApp(PATH)
     await fillExample()
