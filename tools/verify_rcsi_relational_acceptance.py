@@ -156,6 +156,12 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.A_fact_id_is_one_fact_in_the_store_and_in_the_database",
     "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.Two_writers_that_read_the_same_order_cannot_both_commit",
     "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
+    "GoymenERP.Api.IntegrationTests.FinanceBankAccountSqlServerRelationalAcceptanceTests.A_proposal_is_not_usable_until_another_user_approves_it_once_and_moves_no_money",
+    "GoymenERP.Api.IntegrationTests.FinanceBankAccountSqlServerRelationalAcceptanceTests.Company_B_can_neither_see_nor_approve_company_A_account",
+    "GoymenERP.Api.IntegrationTests.FinanceBankAccountSqlServerRelationalAcceptanceTests.The_same_key_replays_and_another_payload_or_command_conflicts",
+    "GoymenERP.Api.IntegrationTests.FinanceBankAccountSqlServerRelationalAcceptanceTests.A_currency_outside_the_settings_candidates_or_an_unavailable_source_stores_nothing",
+    "GoymenERP.Api.IntegrationTests.FinanceBankAccountSqlServerRelationalAcceptanceTests.Two_racing_approvals_store_one_and_the_database_refuses_a_self_approval",
+    "GoymenERP.Api.IntegrationTests.FinanceBankAccountSqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
     "GoymenERP.Api.IntegrationTests.SalesDraftSqlServerRelationalAcceptanceTests.A_draft_with_lines_and_slices_is_stored_replayed_and_audited_in_one_save",
     "GoymenERP.Api.IntegrationTests.SalesDraftSqlServerRelationalAcceptanceTests.The_same_key_with_other_content_is_refused_and_a_racing_same_key_loses_cleanly",
     "GoymenERP.Api.IntegrationTests.SalesDraftSqlServerRelationalAcceptanceTests.Company_B_can_neither_see_nor_replay_company_A_draft_and_the_same_key_is_its_own_attempt",
@@ -163,8 +169,8 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.SalesDraftSqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
     "GoymenERP.Api.IntegrationTests.SalesDraftSqlServerRelationalAcceptanceTests.A_key_that_differs_only_by_surrounding_whitespace_is_refused_and_never_replays_the_stored_attempt",
 )
-BROAD_DISCOVERY_COUNT = 122
-BROAD_EXECUTION_COUNT = 129
+BROAD_DISCOVERY_COUNT = 128
+BROAD_EXECUTION_COUNT = 135
 
 
 def verify_discovery(standard_output: str) -> None:

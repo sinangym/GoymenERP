@@ -84,8 +84,9 @@ builder.Services.AddScoped<DraftReadContextReader>();
 builder.Services.AddScoped<IFinanceDraftContextEndpointService, FinanceDraftContextEndpointService>();
 builder.Services.AddSingleton<IFinanceDraftReadBinding, ManualReceiptDraftReadBinding>();
 builder.Services.AddScoped<ISettingsPrerequisiteProvider, ApprovedSettingsPrerequisiteProvider>();
+builder.Services.AddScoped<ISettingsMoneyCandidateReader, ApprovedSettingsPrerequisiteProvider>();
 builder.Services.AddScoped<ISalesAccountSelectionSourceV1, CounterpartySalesAccountSelectionSourceV1>();
-builder.Services.AddSingleton(new SalesReferenceReadBindings());
+builder.Services.AddSingleton(new SalesReferenceReadBindings(MoneyOperation: SalesMoneyOperations.OrderDraftV1));
 builder.Services.AddScoped<ISalesReferenceReadService>(CreateSalesReferenceReadService);
 builder.Services.AddAuditModule(builder.Configuration);
 

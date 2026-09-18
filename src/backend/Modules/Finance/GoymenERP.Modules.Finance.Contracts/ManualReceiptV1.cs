@@ -35,7 +35,7 @@ public sealed record ReverseRequest(Guid SourceId, string ExpectedVersion, DateO
 public sealed record SourceListRequest(string? Cursor);
 public sealed record SourceDetailRequest(Guid SourceId);
 
-public enum FinanceAction { ReadBankAccounts, ReadSources, ReadAmount, SaveDraft, Record, Reverse }
+public enum FinanceAction { ReadBankAccounts, ReadSources, ReadAmount, SaveDraft, Record, Reverse, ProposeBankAccount, ApproveBankAccount }
 public enum PermissionDecision { Unavailable, Denied, Allowed }
 
 public enum ReadOutcome { Unavailable, Denied, NotFound, Found }
