@@ -71,8 +71,10 @@ public sealed class FinanceDraftSqlServerRelationalAcceptanceTests
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.Commands"));
         Assert.Equal(2, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Finance.ReceiptDraft' AND CorrelationId = @c", ("@c", run.Correlation)));
-        // Money effect 0: the finance schema holds drafts and command records only; no source, balance or journal table.
-        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'finance')"));
+        // Money effect 0: the finance schema holds drafts and command records only (beside its own
+        // migration history); no source, balance or journal table.
+        Assert.Equal("Commands,ReceiptDrafts,__EFMigrationsHistory", await run.ScalarAsync<string>(
+            "SELECT STRING_AGG(name, ',') WITHIN GROUP (ORDER BY name COLLATE Latin1_General_BIN2) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'finance')"));
     }
 
     [SqlServerFact]

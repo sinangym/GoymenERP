@@ -49,7 +49,7 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
 
 **Needed for a real user outcome** (none of these is OPEN-009; OPEN-009 concerns Record/Reverse authority):
 1. **FS0 treasury account owner (Finance).** Its currency needs Settings' currency source, which is Unavailable today.
-2. **Settings money profile data** for `finance.manual-bank-receipt.v1`. The owner of the money operation identity is a #66 NEEDS-SINAN.
+2. **Settings' approved money profile data** for `finance.manual-bank-receipt.v1`. The operation key itself is on main; mapping money operations is the backend owners' technical work (Business #254 / 5654539215). What is missing is Settings' approved profile, which is Settings' work (T02-b, central writer). Until it lands, Finance's money answer stays Unavailable.
 3. **Finance permission registration** (central writer) and **the grant** (human).
 4. **Host wiring** (central writer):
    - DI of the service and the ports;
