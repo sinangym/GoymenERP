@@ -462,10 +462,25 @@ public sealed class ManufacturingStore(
             throw Refused(ManufacturingStoreCodes.ConcurrentChange,
                 "Aynı plan ya da emir başka bir yazmayla değişti; hiçbir şey kaydedilmedi.", exception);
         }
-        catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 })
+        catch (DbUpdateException exception) when (exception.InnerException is SqlException sql)
         {
-            throw Refused(ManufacturingStoreCodes.ConcurrentChange,
-                "Kalıcı tekillik kuralı başka bir yazmanın lehine sonuçlandı; hiçbir şey kaydedilmedi.", exception);
+            // A unique key lost to another writer, or a plan naming a work center that is not this
+            // company's (the composite foreign key, 547). Anything else stays the database's error.
+            var code = sql.Number switch
+            {
+                2601 or 2627 => ManufacturingStoreCodes.ConcurrentChange,
+                547 when sql.Message.Contains("FK_Plans_WorkCenters_CompanyId_WorkCenterId", StringComparison.Ordinal)
+                    => ManufacturingStoreCodes.WorkCenterNotFound,
+                _ => null,
+            };
+            if (code is null)
+            {
+                throw;
+            }
+
+            throw Refused(code, code == ManufacturingStoreCodes.WorkCenterNotFound
+                ? "Plan bu şirketin bir iş merkezine bağlı değil; hiçbir şey kaydedilmedi."
+                : "Kalıcı tekillik kuralı başka bir yazmanın lehine sonuçlandı; hiçbir şey kaydedilmedi.", exception);
         }
     }
 

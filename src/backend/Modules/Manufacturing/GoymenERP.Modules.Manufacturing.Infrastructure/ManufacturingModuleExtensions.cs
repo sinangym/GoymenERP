@@ -8,10 +8,9 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace GoymenERP.Modules.Manufacturing.Infrastructure;
 
 /// <summary>
-/// Manufacturing's module registration (MFG-5). The API host does not call it yet: host wiring,
-/// permissions and HTTP are a later slice, and the central writer's reviewed-inventory registration
-/// of this DbContext and initializer comes with it. The audit interceptor is the host's to add
-/// through <paramref name="configureDbContext"/>, as for every module.
+/// Manufacturing's module registration (MFG-5, MFG-API). The host calls it with the audit
+/// interceptor through <paramref name="configureDbContext"/>, as for every module, and runs the
+/// initializer after Organization's.
 /// </summary>
 public static class ManufacturingModuleExtensions
 {
@@ -45,6 +44,10 @@ public static class ManufacturingModuleExtensions
         services.AddScoped<ManufacturingStore>();
         services.AddScoped<IManufacturingPlanStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         services.AddScoped<IManufacturingOrderStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        // MFG-API (#313): the command surface. Settings' kilogram profile and the fresh authority
+        // port are the host's registrations.
+        services.AddScoped<ManufacturingMassVerifier>();
+        services.AddScoped<ManufacturingCommandService>();
         return services;
     }
 

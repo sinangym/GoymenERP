@@ -59,6 +59,29 @@ Deliberate limits of this slice:
 - **Cost** is stored as a status only; every output is `NotCalculated` and a stored known cost is refused.
 - The migration and model snapshot were written by hand (no local `dotnet ef`, memory gate closed); CI's `HasPendingModelChanges` check is the verification.
 
+## MFG-API — authorized HTTP surface (#313, approved card)
+
+`src/backend/GoymenERP.Api/Endpoints/ManufacturingEndpoints.cs` → `ManufacturingCommandService` (Application) → the MFG-5 store. All endpoints are under `/api/v1/manufacturing`, need the company context (`X-Company-Id`) and their own **company-wide** permission. The names are registered by the central writer; the grant is a human gate.
+
+| Endpoint | Permission | Answer |
+|---|---|---|
+| `POST /plans` | `manufacturing.plans.write` | 201 `PlanViewV1` (a slitting plan, Draft) |
+| `POST /plans/{planId}/approval` | `manufacturing.plans.approve` | 200 `PlanViewV1` |
+| `POST /orders` | `manufacturing.orders.create` | 201 `OrderViewV1` |
+| `POST /orders/{orderId}/input-issues` · `input-returns` · `wip-measurements` · `outputs` | `manufacturing.facts.record` | 200 `OrderViewV1` |
+| `GET /orders/{orderId}` | `manufacturing.orders.read` | 200 `OrderViewV1`: each roll's issued − returned = outputs by class + WIP + unexplained (signed), cost `NotCalculated` |
+
+Rules held here:
+
+- **Company:** only from the context; no request carries one. Another company's plan or order is the same code-less 404 as an unknown id.
+- **Kilograms (Ö2):** plain invariant decimal text (no sign, exponent or grouping), checked against the company's kilogram profile (`ManufacturingMassVerifier`) before anything is written. Facts use their own UTC date; plan masses use the server's date. More decimals than the profile allows is `manufacturing_mass_scale_exceeded` (422), never rounded. Settings `settings_access_denied` → 403; `settings_provider_unavailable` / `settings_profile_invalid` → 503 (for example a company with no approved kilogram source); any other Settings or mass refusal → 422 with its code.
+- **Authority (#276):** the endpoint policy answers first. After the Settings read, the permission is measured again with `IErpAuthorityRevalidationService`, and only a fresh, company-wide grant writes. Its role codes and the endpoint's permission go into the ADR-009 audit envelope with the request's correlation, causation, channel and `Idempotency-Key`.
+- **Replay (R3):** the caller's plan / order / fact id plus the canonical content, as in MFG-5. The same id with the same content answers the stored record with `Idempotency-Replayed: true`; other content is 409 (`*_id_conflict`). The `Idempotency-Key` header is required and audited; it is not a second replay identity.
+- **Concurrency:** `expectedVersion` → 409 `manufacturing_version_conflict` with `expectedVersion` / `currentVersion`; a lost race → 409 `manufacturing_concurrent_change`.
+- **Refusals:** a domain rule → 422 with its code; a work center that is not this company's → 422 `manufacturing_work_center_not_found`; a malformed request → 400 `manufacturing_request_invalid` with `field`.
+
+Not here: closing an order, a list or search, cost, Inventory movements (T15), or any role assignment.
+
 ## Behaviour kept on purpose — Business decision pending
 
 - **One approved plan can open more than one order** (`FromApprovedPlan` does not mark the plan as converted). §7.3 does not say whether a plan becomes one order or several partial ones; the question is open with Business (#66 5728934213, the same principle as Purchasing's request → several orders). Pinned by a test; changes only by that decision. The physical guard is Inventory's.
@@ -67,7 +90,7 @@ Deliberate limits of this slice:
 
 - No stock movement, lot or label: Inventory owns those.
 - No formula, trim/kerf, tolerance, template, rounding stage or roll-substitution policy.
-- No HTTP, host DI, permission, UI or pin (persistence since MFG-5, above).
+- No UI yet (the normal screen is the next card); HTTP since MFG-API, persistence since MFG-5 (above).
 - No other engine (cold rolling, tube/profile, painting, cut-to-length).
 
 ## dependency_wait

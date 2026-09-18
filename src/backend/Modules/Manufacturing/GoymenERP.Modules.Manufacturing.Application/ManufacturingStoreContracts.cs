@@ -40,6 +40,12 @@ public static class ManufacturingStoreCodes
     /// <summary>This company has no such order (another company's order is not found either).</summary>
     public const string OrderNotFound = "manufacturing_order_not_found";
 
+    /// <summary>
+    /// The plan names a work center that is not one of this company's (Organization's composite key
+    /// refused it). Nothing was stored.
+    /// </summary>
+    public const string WorkCenterNotFound = "manufacturing_work_center_not_found";
+
     /// <summary>The same plan id was offered again with a different content.</summary>
     public const string PlanIdConflict = "manufacturing_plan_id_conflict";
 
