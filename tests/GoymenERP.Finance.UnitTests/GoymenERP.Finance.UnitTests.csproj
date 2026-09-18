@@ -11,5 +11,6 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
     <Using Include="Xunit" />
     <ProjectReference Include="../../src/backend/Modules/Finance/GoymenERP.Modules.Finance.Contracts/GoymenERP.Modules.Finance.Contracts.csproj" />
+    <ProjectReference Include="../../src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/GoymenERP.Modules.Finance.Infrastructure.csproj" />
   </ItemGroup>
 </Project>
