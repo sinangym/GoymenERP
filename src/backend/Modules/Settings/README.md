@@ -119,9 +119,12 @@ permission.
 consumer there is the Sales reference read. Sales asks for unit profiles only after a
 Product sales-eligibility snapshot, and no such runtime is composed in the host yet, so the
 swap changes no reachable Sales answer until it is; money and period answers are unchanged.
-Sales currently reports every Settings code other than `settings_access_denied` as `503
-settings_provider_unavailable`, so an unknown unit will surface there as 503 — a Sales-side
-mapping choice, not changed here. Only the reviewed catalog is reachable from outside
+On its product path Sales maps `settings_unit_profile_not_found` to `422 unsupported_unit`
+(#285), the same permanent refusal an inactive or out-of-range profile gets; every other
+Settings code keeps Sales' earlier mapping (`settings_access_denied` → 403, the rest → `503
+settings_provider_unavailable`). The code is published as
+`SettingsPrerequisiteCodesV1.UnitProfileNotFound`; consumers map that constant, not the
+provider class. Only the reviewed catalog is reachable from outside
 Settings: the catalog-taking constructors are internal and visible to
 `GoymenERP.Settings.UnitTests` only.
 

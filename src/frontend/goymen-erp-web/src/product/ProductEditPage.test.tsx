@@ -40,6 +40,15 @@ afterEach(() => {
 const formVisible = () => waitFor(() => screen.getByRole('heading', { name: 'Ürünü düzenle' }))
 const saveButton = () => screen.getByRole('button', { name: 'Değişiklikleri kaydet' })
 
+/**
+ * The form's reference-options read has ANSWERED. A reconnect while it is still in
+ * flight joins that request (TanStack de-duplicates) instead of issuing a new one, so
+ * a case that swaps the fake fetch and reconnects must wait for this first — on a slow
+ * machine the first read can still be pending and the swapped answer is never asked for.
+ */
+const referencesAnswered = () =>
+  waitFor(() => expect(screen.getByRole('option', { name: 'Yassı ürün' })).toBeTruthy())
+
 async function changeNameAndReason() {
   const name = screen.getByLabelText(/Ürün adı/)
   await userEvent.clear(name)
@@ -443,6 +452,7 @@ describe('a canonical answer that lands after the screen is gone', () => {
     await changeNameAndReason()
     await userEvent.click(saveButton())
     await waitFor(() => expect(answer).not.toBeNull())
+    await referencesAnswered()
 
     installFetch({ capabilities: EDIT_ONLY, onOptions: () => json({ code: 'forbidden' }, 403) })
     act(() => {
@@ -488,6 +498,7 @@ describe('a 200 that resolves in the SAME batch as the refusal that closes the s
     await changeNameAndReason()
     await userEvent.click(saveButton())
     await waitFor(() => expect(answerEdit).not.toBeNull())
+    await referencesAnswered()
 
     installFetch({
       capabilities: EDIT_ONLY,
