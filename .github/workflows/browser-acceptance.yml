@@ -74,8 +74,8 @@ jobs:
             pr="$EVENT_PR"
           fi
           case "$suite" in
-            smoke|c03|s03) read_only=true ;;
-            org03|u02) read_only=false ;;
+            smoke|c03) read_only=true ;;
+            org03|u02|s03) read_only=false ;;
             *) echo "::error::BROWSER_SUITE_UNKNOWN: '$suite'"; exit 1 ;;
           esac
           [[ "$pr" =~ ^[1-9][0-9]*$ ]] || { echo "::error::BROWSER_PR_INVALID: '$pr'"; exit 1; }
@@ -192,13 +192,17 @@ jobs:
           profile="$(sed -n 's/^profile=//p' <<<"$selection")"
           compose_file="$(sed -n 's/^compose_file=//p' <<<"$selection")"
           override_file="$(sed -n 's/^override_file=//p' <<<"$selection")"
+          fixture="$(sed -n 's/^fixture=//p' <<<"$selection")"
           test -n "$profile" && test -f "$compose_file"
           test -z "$override_file" || test -f "$override_file"
+          test "$fixture" = "true" || test "$fixture" = "false"
           {
             echo "BROWSER_E2E_PROFILE=$profile"
             echo "C01_E2E_COMPOSE_FILE=$compose_file"
             # Stage 2 (a2): the suite's own closed-list API extensions, validated with the merged model.
             echo "BROWSER_E2E_COMPOSE_OVERRIDE=$override_file"
+            # Stage 2 (a2 part 2): whether the suite owner seeds data through the fixture runner.
+            echo "BROWSER_E2E_SUITE_FIXTURE=$fixture"
           } >> "$GITHUB_ENV"
           echo "Suite '$BROWSER_SUITE' runs under capability profile '$profile' ($compose_file)."
 
@@ -256,6 +260,14 @@ jobs:
             -noAutoResponse \
             --configfile NuGet.Config
 
+      - name: Restore suite fixture runner
+        if: env.BROWSER_E2E_SUITE_FIXTURE == 'true'
+        run: |
+          dotnet restore \
+            tests/GoymenERP.BrowserSuiteFixtureTool/GoymenERP.BrowserSuiteFixtureTool.csproj \
+            -noAutoResponse \
+            --configfile NuGet.Config
+
       - name: Build and start disposable SQL/API
         shell: bash
         run: |
@@ -287,6 +299,38 @@ jobs:
             --configuration Release \
             --no-restore \
             -- materialize
+
+      - name: Materialize the suite's fixture
+        # Stage 2 (a2 part 2): the suite owner's seed runs through the real API host (in process, the
+        # container's validated environment, the disposable database over loopback): real endpoints and
+        # services only, no SQL writes. Its outputs reach the browser suite as BROWSER_E2E_<SUITE>_SEED.
+        if: env.BROWSER_E2E_SUITE_FIXTURE == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          compose_model="$RUNNER_TEMP/browser-suite-compose.json"
+          api_environment="$RUNNER_TEMP/browser-suite-api-environment.json"
+          trap 'rm -f "$compose_model" "$api_environment"' EXIT
+          docker compose \
+            -p "$C01_E2E_COMPOSE_PROJECT" \
+            -f "$C01_E2E_COMPOSE_FILE" ${BROWSER_E2E_COMPOSE_OVERRIDE:+-f "$BROWSER_E2E_COMPOSE_OVERRIDE"} \
+            config --format json > "$compose_model"
+          python3 -I -S -B tools/validate_browser_acceptance.py api-environment \
+            --suite "$BROWSER_SUITE" \
+            --expected-commit "$C01_E2E_TESTED_COMMIT" \
+            --expected-project "$C01_E2E_COMPOSE_PROJECT" \
+            --out "$api_environment" < "$compose_model"
+          BROWSER_E2E_API_ENVIRONMENT="$api_environment" \
+          BROWSER_E2E_SUITE_FIXTURE_EVIDENCE="$GITHUB_WORKSPACE/artifacts/browser-suite-fixture-evidence.json" \
+          BROWSER_E2E_SUITE_SEED_FILE="$GITHUB_WORKSPACE/artifacts/browser-suite-seed.json" \
+          dotnet run \
+            --project tests/GoymenERP.BrowserSuiteFixtureTool/GoymenERP.BrowserSuiteFixtureTool.csproj \
+            --configuration Release \
+            --no-restore \
+            -- materialize --suite "$BROWSER_SUITE"
+          python3 -I -S -B tools/validate_browser_acceptance.py seed-export \
+            --suite "$BROWSER_SUITE" \
+            --seed "$GITHUB_WORKSPACE/artifacts/browser-suite-seed.json" >> "$GITHUB_ENV"
 
       - name: Build and start authorized and unauthorized web profiles
         shell: bash
@@ -410,6 +454,8 @@ jobs:
           path: |
             artifacts/browser-${{ needs.resolve.outputs.suite }}-junit.xml
             artifacts/browser-fixture-evidence.json
+            artifacts/browser-suite-fixture-evidence.json
+            artifacts/browser-suite-seed.json
             artifacts/browser-post-browser-sql-evidence.json
             artifacts/container-logs/compose-ps.txt
           if-no-files-found: warn

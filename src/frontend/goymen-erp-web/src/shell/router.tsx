@@ -19,6 +19,7 @@ import { CariDetailPage } from '../cari/CariDetailPage'
 import { CariContactEditPage } from '../cari/CariContactEditPage'
 import { productRoutes } from '../product/productRoutes'
 import { organizationRoutes } from '../organization/organizationRoutes'
+import { salesRoutes } from '../sales/salesRoutes'
 import { StateBlock } from './StateBlock'
 
 export const shellRoutes: RouteObject[] = [
@@ -132,6 +133,12 @@ export const shellRoutes: RouteObject[] = [
        * `:locationId`, so no static segment is read as a record id.
        */
       ...organizationRoutes,
+      /**
+       * The Sales lane's own routes, declared in `src/sales/salesRoutes.tsx` (list, `yeni`, then
+       * `:draftId`) and mounted here by the shared-integration owner (S03 handoff), before the
+       * catch-all. Each is wrapped in `CapabilityRoute`: an unpublished capability reads nothing.
+       */
+      ...salesRoutes,
       {
         /**
          * Catch-all. Without it react-router renders its own error boundary —

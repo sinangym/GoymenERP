@@ -47,6 +47,12 @@ const NAV_CAPABILITIES: readonly CapabilityId[] = [
    * row, never from the sidebar.
    */
   CAPABILITY.organizationSitesList,
+  /**
+   * Listed together with the routes that serve them (S03). Each renders only where the server's
+   * snapshot carries the capability; the 360 is reached from a row, never from the sidebar.
+   */
+  CAPABILITY.salesDraftsList,
+  CAPABILITY.salesDraftsCreate,
 ]
 
 export function AppShell() {

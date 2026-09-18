@@ -55,6 +55,61 @@ public sealed class C01E2eActivationBoundaryTests
         }
     }
 
+    // BROWSER-CI a2 part 2 (decision W1): the gated fixture writers. Their keys, their activation and
+    // Identity's fixture port registration are named nowhere else in the backend; only the fixture runner
+    // (tests/GoymenERP.BrowserSuiteFixtureTool) sets the keys.
+    [Fact]
+    public void FixtureWriterKeys_AreNamedOnlyByTheGatedActivation()
+    {
+        Assert.Equal(
+            ["src/backend/GoymenERP.Api/Shell/C01E2eFixtureWriterActivation.cs"],
+            BackendFilesContaining("BrowserSuiteFixture:"));
+        Assert.Equal(
+            [
+                "src/backend/GoymenERP.Api/Program.cs",
+                "src/backend/GoymenERP.Api/Shell/C01E2eFixtureWriterActivation.cs",
+            ],
+            BackendFilesContaining("C01E2eFixtureWriterActivation"));
+        Assert.Equal(
+            [
+                "src/backend/GoymenERP.Api/Shell/C01E2eFixtureWriterActivation.cs",
+                "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Fixtures/"
+                + "ProductMasterAssignmentFixtureStore.cs",
+            ],
+            BackendFilesContaining("AddProductMasterAssignmentFixtureStore"));
+    }
+
+    [Fact]
+    public void ProductionRuntimeConfiguration_DoesNotCarryTheFixtureWriterGate()
+    {
+        foreach (var path in new[]
+                 {
+                     "infra/docker-compose.yml",
+                     "infra/docker-compose.c01-e2e.yml",
+                     "infra/docker-compose.browser-normal.yml",
+                     "infra/docker-compose.browser-cari-staged.yml",
+                     "src/backend/GoymenERP.Api/Dockerfile",
+                     "src/backend/GoymenERP.Api/appsettings.json",
+                     "src/backend/GoymenERP.Api/appsettings.Development.json",
+                 })
+        {
+            Assert.DoesNotContain("BrowserSuiteFixture", ReadRepositoryFile(path), StringComparison.Ordinal);
+        }
+    }
+
+    private static string[] BackendFilesContaining(string value)
+    {
+        var root = FindRepositoryRoot();
+        return Directory
+            .EnumerateFiles(Path.Combine(root, "src", "backend"), "*.cs", SearchOption.AllDirectories)
+            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                           && !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                           && File.ReadAllText(path).Contains(value, StringComparison.Ordinal))
+            .Select(path => Path.GetRelativePath(root, path).Replace(Path.DirectorySeparatorChar, '/'))
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+    }
+
     private static int Count(string source, string value)
     {
         var count = 0;
