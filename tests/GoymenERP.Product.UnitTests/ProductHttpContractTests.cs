@@ -202,5 +202,8 @@ public sealed class ProductHttpContractTests
         public Task<ProductMutationResponse> EditDraftAsync(Guid id, EditProductDraftRequest request,
             string idempotencyKey, CancellationToken cancellationToken) =>
             throw new ProductVersionConflictException(1, 9007199254740993L);
+        public Task<ProductMutationResponse> ActivateAsync(Guid id, ActivateProductRequest request,
+            string idempotencyKey, CancellationToken cancellationToken) =>
+            throw new ProductOperationException(ProductApiV1.LifecycleConflict, 409);
     }
 }

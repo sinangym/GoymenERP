@@ -43,4 +43,11 @@ public sealed class ProductService(ProductReader reader, ProductCommandGateway g
         var prepared = await gateway.PrepareEditAsync(idempotencyKey, id, request, cancellationToken);
         return await commands.RunAsync(prepared, cancellationToken);
     }
+
+    public async Task<ProductMutationResponse> ActivateAsync(Guid id, ActivateProductRequest request,
+        string idempotencyKey, CancellationToken cancellationToken)
+    {
+        var prepared = await gateway.PrepareActivateAsync(idempotencyKey, id, request, cancellationToken);
+        return await commands.RunAsync(prepared, cancellationToken);
+    }
 }
