@@ -10,10 +10,16 @@ internal static class ShellCapabilityRegistryAuthorities
     internal const string CounterpartyV15OrganizationV10AndProductV10 =
         "sha256:vJnKkOnDipYXkO3hllw5Nc_rBrJ11OYnd6H51NOzFPM";
 
-    // Counterparty 1.5 + Organization 1.0 + Product 1.0 + Sales 1.0 (#321): the normal host once Sales
-    // registers its (staged) draft screens. Computed by the ComputeRevision reproduction, pinned by test.
+    // Counterparty 1.5 + Organization 1.0 + Product 1.0 + Sales 1.0 (#321): the normal host while Sales'
+    // draft screens were staged. Superseded by the published set below (#328); no host serves it now.
     internal const string CounterpartyV15OrganizationV10ProductV10AndSalesV10 =
         "sha256:b6YPCP_FsrRvvQ-V6nM8bH6q96qEvqHghZEu40Ihsps";
+
+    // Counterparty 1.5 + Organization 1.0 + Product 1.0 + Sales 1.0 PUBLISHED (#328, S03-c): the three Sales
+    // draft screens available. Computed by the ComputeRevision reproduction (which re-derives every accepted
+    // constant) and, independently, by ORG (5735275571) and SİPARİŞ; pinned by test.
+    internal const string CounterpartyV15OrganizationV10ProductV10AndPublishedSalesV10 =
+        "sha256:s7e0XuCBiWqF91AlcvWRfLJfxr7busxD4WZuvgj9J4E";
 
     internal const string CounterpartyListCreateLinkAndDetailV15 =
         "sha256:3GiwcHV6aVuN1Y-wBzElxLJLCok2bblGc6pRruhqTx4";

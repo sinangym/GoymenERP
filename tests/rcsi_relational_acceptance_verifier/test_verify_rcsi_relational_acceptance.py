@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 from pathlib import Path
 import subprocess
 import sys
@@ -15,6 +17,23 @@ SPEC = importlib.util.spec_from_file_location("verify_rcsi_relational_acceptance
 assert SPEC is not None and SPEC.loader is not None
 VERIFIER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(VERIFIER)
+
+
+def broad_trx(executions: dict[str, int], outcome: str = "Passed") -> str:
+    """A TRX with one result per execution (theory rows carry their arguments) and exact counters."""
+    results = []
+    for name, count in executions.items():
+        for row in range(count):
+            display = name if count == 1 else f'{name}(row: {row})'
+            results.append(f'<UnitTestResult testName="{display}" outcome="{outcome}" />')
+    total = sum(executions.values())
+    return (
+        '<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><Results>'
+        + "".join(results)
+        + f'</Results><ResultSummary><Counters total="{total}" executed="{total}" '
+        f'passed="{total}" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" '
+        'notExecuted="0" /></ResultSummary></TestRun>'
+    )
 
 
 class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
@@ -79,9 +98,6 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             "RolelessAuditAndIdempotencyFailures_RollBackAndPermitSameKeyRetry",
         ))
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
-        self.assertEqual(146, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(146, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(153, VERIFIER.BROAD_EXECUTION_COUNT)
         for omitted in required:
             with self.subTest(omitted=omitted):
                 discovery = "\n".join(
@@ -97,9 +113,6 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             "CreateFindDetailAndLinkSecondCompany_PreserveIdentityVisibilityAndExactlyOnceEffects"
         )
         self.assertIn(journey, VERIFIER.BROAD_EXPECTED_TESTS)
-        self.assertEqual(146, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(146, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(153, VERIFIER.BROAD_EXECUTION_COUNT)
         without_journey = [name for name in VERIFIER.BROAD_EXPECTED_TESTS if name != journey]
         with self.assertRaisesRegex(RuntimeError, "exact"):
             VERIFIER.verify_broad_discovery("\n".join(without_journey))
@@ -114,9 +127,6 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             prefix + "ScopedPagingAndRejectedCommands_PreserveLocationAndExposeNoForeignState",
         }
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
-        self.assertEqual(146, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(146, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(153, VERIFIER.BROAD_EXECUTION_COUNT)
         for omitted in required:
             with self.subTest(omitted=omitted):
                 discovery = "\n".join(
@@ -136,9 +146,6 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             )
         }
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
-        self.assertEqual(146, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(146, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(153, VERIFIER.BROAD_EXECUTION_COUNT)
         for omitted in required:
             with self.subTest(omitted=omitted):
                 with self.assertRaises(RuntimeError):
@@ -387,6 +394,27 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
                         name for name in VERIFIER.BROAD_EXPECTED_TESTS if name != omitted
                     ))
 
+    def test_sales_draft_api_cases_are_mandatory_and_reject_omission(self) -> None:
+        prefix = (
+            "GoymenERP.Api.IntegrationTests."
+            "SalesDraftApiSqlServerRelationalAcceptanceTests."
+        )
+        required = {
+            prefix + name for name in (
+                "The_draft_routes_answer_only_with_fresh_sales_grants_and_only_for_the_context_company",
+                "A_create_reaches_its_real_owners_in_order_and_answers_the_first_refusal_without_storing_anything",
+                "A_stored_draft_is_read_by_its_company_only_and_its_cursor_binds_the_company",
+                "A_same_key_race_stores_one_draft_and_every_replay_holds_in_the_real_host",
+            )
+        }
+        self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
+        for omitted in required:
+            with self.subTest(omitted=omitted):
+                with self.assertRaisesRegex(RuntimeError, "exact"):
+                    VERIFIER.verify_broad_discovery("\n".join(
+                        name for name in VERIFIER.BROAD_EXPECTED_TESTS if name != omitted
+                    ))
+
     def test_finance_draft_list_case_is_mandatory_and_rejects_omission(self) -> None:
         prefix = (
             "GoymenERP.Api.IntegrationTests."
@@ -415,27 +443,6 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
                 "The_draft_routes_answer_only_with_fresh_finance_grants_and_only_for_the_context_company",
                 "A_save_reaches_its_real_owners_and_answers_their_refusal_without_storing_anything",
                 "Another_companys_draft_is_not_found_and_its_cursor_reads_nothing",
-            )
-        }
-        self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
-        for omitted in required:
-            with self.subTest(omitted=omitted):
-                with self.assertRaisesRegex(RuntimeError, "exact"):
-                    VERIFIER.verify_broad_discovery("\n".join(
-                        name for name in VERIFIER.BROAD_EXPECTED_TESTS if name != omitted
-                    ))
-
-    def test_sales_draft_api_cases_are_mandatory_and_reject_omission(self) -> None:
-        prefix = (
-            "GoymenERP.Api.IntegrationTests."
-            "SalesDraftApiSqlServerRelationalAcceptanceTests."
-        )
-        required = {
-            prefix + name for name in (
-                "The_draft_routes_answer_only_with_fresh_sales_grants_and_only_for_the_context_company",
-                "A_create_reaches_its_real_owners_in_order_and_answers_the_first_refusal_without_storing_anything",
-                "A_stored_draft_is_read_by_its_company_only_and_its_cursor_binds_the_company",
-                "A_same_key_race_stores_one_draft_and_every_replay_holds_in_the_real_host",
             )
         }
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
@@ -487,13 +494,8 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
                 argument.startswith("trx;") for argument in arguments
             ):
                 results_directory = Path(arguments[arguments.index("--results-directory") + 1])
-                execution_count = VERIFIER.BROAD_EXECUTION_COUNT
                 (results_directory / "rcsi.trx").write_text(
-                    f'<TestRun><Counters total="{execution_count}" '
-                    f'executed="{execution_count}" passed="{execution_count}" '
-                    'failed="0" error="0" timeout="0" aborted="0" '
-                    'inconclusive="0" notExecuted="0" /></TestRun>',
-                    encoding="utf-8",
+                    broad_trx(VERIFIER.BROAD_EXECUTIONS), encoding="utf-8"
                 )
             return subprocess.CompletedProcess(arguments, 0, stdout="", stderr="")
 
@@ -506,8 +508,26 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
                 clear=False,
             ),
         ):
-            self.assertEqual(0, VERIFIER.main())
+            # SELFTEST: the synthetic run's verdict is captured, never written to the CI log, so the
+            # log's only SQLSERVER_RELATIONAL_ACCEPTANCE lines are the real run's.
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(0, VERIFIER.main())
 
+        lines = output.getvalue().splitlines()
+        self.assertEqual(len(VERIFIER.INVENTORY_MODULES) + 1, len(lines))
+        for module, line in zip(VERIFIER.INVENTORY_MODULES, lines):
+            tests = VERIFIER.BROAD_INVENTORY[module]
+            self.assertEqual(
+                f"SQLSERVER_RELATIONAL_ACCEPTANCE module={module} tests={len(tests)} "
+                f"discovered={len(tests)} executions={sum(tests.values())} "
+                f"executed={sum(tests.values())}",
+                line,
+            )
+        self.assertEqual(
+            f"SQLSERVER_RELATIONAL_ACCEPTANCE: PASS total={VERIFIER.BROAD_EXECUTION_COUNT} "
+            f"passed={VERIFIER.BROAD_EXECUTION_COUNT} failed=0 skipped=0",
+            lines[-1],
+        )
         self.assertEqual(4, len(calls))
         self.assertIn("tools/validate_dotnet_bootstrap_integrity.py", calls[0])
         self.assertIn("--list-tests", calls[1])
@@ -521,6 +541,181 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             path.write_text(contents, encoding="utf-8")
             VERIFIER.verify_trx(path, expected_total)
 
+
+
+class RelationalInventoryLoaderTests(unittest.TestCase):
+    """The per-module inventory files: grammar, ownership by class prefix, and fail-closed loading."""
+
+    def setUp(self) -> None:
+        self._directory = tempfile.TemporaryDirectory(prefix="goymen-relational-inventory-")
+        self.root = Path(self._directory.name)
+        for module in VERIFIER.INVENTORY_MODULES:
+            name = f"{module}.txt"
+            (self.root / name).write_text(
+                (VERIFIER.INVENTORY_DIRECTORY / name).read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+
+    def tearDown(self) -> None:
+        self._directory.cleanup()
+
+    def _append(self, module: str, line: str) -> None:
+        path = self.root / f"{module}.txt"
+        path.write_text(path.read_text(encoding="utf-8") + line + "\n", encoding="utf-8")
+
+    def _rejects(self, pattern: str) -> None:
+        with self.assertRaisesRegex(RuntimeError, pattern):
+            VERIFIER.load_broad_inventory(self.root)
+
+    def test_checked_in_files_load_and_the_totals_are_computed_from_them(self) -> None:
+        self.assertIsNone(VERIFIER.BROAD_INVENTORY_ERROR)
+        self.assertEqual(VERIFIER.BROAD_INVENTORY, VERIFIER.load_broad_inventory(self.root))
+        self.assertEqual(tuple(VERIFIER.INVENTORY_MODULES), tuple(VERIFIER.BROAD_INVENTORY))
+        self.assertEqual(len(VERIFIER.BROAD_EXPECTED_TESTS), VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(
+            sum(sum(tests.values()) for tests in VERIFIER.BROAD_INVENTORY.values()),
+            VERIFIER.BROAD_EXECUTION_COUNT,
+        )
+
+    def test_every_inventory_test_is_mandatory(self) -> None:
+        for omitted in VERIFIER.BROAD_EXPECTED_TESTS:
+            with self.subTest(omitted=omitted):
+                with self.assertRaisesRegex(RuntimeError, "exact"):
+                    VERIFIER.verify_broad_discovery("\n".join(
+                        name for name in VERIFIER.BROAD_EXPECTED_TESTS if name != omitted
+                    ))
+
+    def test_every_multi_execution_line_states_its_reason(self) -> None:
+        for module in VERIFIER.INVENTORY_MODULES:
+            for line in (VERIFIER.INVENTORY_DIRECTORY / f"{module}.txt").read_text(
+                encoding="utf-8"
+            ).splitlines():
+                if line and not line.startswith("#") and " " in line:
+                    with self.subTest(line=line):
+                        self.assertRegex(line, r"^\S+  x[2-9][0-9]*  # \S")
+
+    def test_classes_map_to_their_module_and_the_cari_journey_is_counterparty(self) -> None:
+        prefix = VERIFIER.TEST_NAMESPACE
+        self.assertEqual(
+            "counterparty",
+            VERIFIER.module_of(prefix + "SqlServerRelationalAcceptanceTests.Journey"),
+        )
+        self.assertEqual(
+            "sales",
+            VERIFIER.module_of(prefix + "SalesDraftApiSqlServerRelationalAcceptanceTests.Case"),
+        )
+        self.assertEqual(
+            "platform",
+            VERIFIER.module_of(prefix + "ShellCapabilitySqlServerRelationalAcceptanceTests.Case"),
+        )
+        for module, tests in VERIFIER.BROAD_INVENTORY.items():
+            for name in tests:
+                with self.subTest(name=name):
+                    self.assertEqual(module, VERIFIER.module_of(name))
+
+    def test_a_test_in_another_modules_file_is_rejected(self) -> None:
+        self._append(
+            "finance",
+            VERIFIER.TEST_NAMESPACE + "SalesZzzSqlServerRelationalAcceptanceTests.Misplaced",
+        )
+        self._rejects("belongs in sales.txt")
+
+    def test_a_name_repeated_in_one_file_is_rejected(self) -> None:
+        last = sorted(VERIFIER.BROAD_INVENTORY["sales"])[-1]
+        self._append("sales", last)
+        self._rejects("out of order|repeats")
+
+    def test_an_unsorted_file_is_rejected(self) -> None:
+        self._append(
+            "sales",
+            VERIFIER.TEST_NAMESPACE + "SalesAaaSqlServerRelationalAcceptanceTests.Early",
+        )
+        self._rejects("out of order")
+
+    def test_malformed_lines_are_rejected(self) -> None:
+        name = VERIFIER.TEST_NAMESPACE + "SalesZzzSqlServerRelationalAcceptanceTests.Case"
+        for line, pattern in (
+            ("not a test name", "malformed"),
+            ("GoymenERP.Api.IntegrationTests.SalesZzzOtherTests.Case", "malformed"),
+            (name + " x2  # single spaces", "malformed"),
+            (name + "  x2", "malformed"),
+            (name + "  x2  #", "malformed"),
+            (name + "  # a comment without a count", "malformed"),
+            (name + "  x1  # one run needs no count", "x1"),
+            (name + "  x0  # never runs", "x0"),
+            (name + " ", "trailing"),
+            ("\t" + name, "tab"),
+        ):
+            with self.subTest(line=line):
+                self.tearDown()
+                self.setUp()
+                self._append("sales", line)
+                self._rejects(pattern)
+
+    def test_a_multi_execution_line_with_its_reason_is_accepted(self) -> None:
+        name = VERIFIER.TEST_NAMESPACE + "SalesZzzSqlServerRelationalAcceptanceTests.Case"
+        self._append("sales", name + "  x3  # MemberData Rows: 3 rows")
+        self.assertEqual(3, VERIFIER.load_broad_inventory(self.root)["sales"][name])
+
+    def test_unknown_missing_and_empty_files_are_rejected(self) -> None:
+        (self.root / "shipping.txt").write_text("", encoding="utf-8")
+        self._rejects("Unknown \\['shipping.txt'\\]")
+        (self.root / "shipping.txt").unlink()
+        (self.root / "identity.txt").unlink()
+        self._rejects("missing \\['identity.txt'\\]")
+        (self.root / "identity.txt").write_text("# comments only\n\n", encoding="utf-8")
+        self._rejects("names no test")
+
+    def test_a_broken_checked_in_inventory_fails_the_broad_run_before_any_dotnet_call(self) -> None:
+        with (
+            mock.patch.object(VERIFIER, "BROAD_INVENTORY_ERROR", RuntimeError("inventory broken")),
+            mock.patch.object(VERIFIER, "run_checked") as run_checked,
+            mock.patch.object(sys, "argv", [str(MODULE_PATH), "--broad"]),
+            mock.patch.dict(
+                "os.environ",
+                {"GOYMEN_ERP_TEST_SQLSERVER_CONNECTION": "test-only"},
+                clear=False,
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "inventory broken"):
+                VERIFIER.main()
+        run_checked.assert_not_called()
+
+
+class BroadTrxResultTests(unittest.TestCase):
+    """The TRX must hold exactly the declared executions per test, all passed."""
+
+    def _report(self, contents: str) -> list[str]:
+        with tempfile.TemporaryDirectory(prefix="goymen-rcsi-verifier-unit-") as directory:
+            path = Path(directory) / "results.trx"
+            path.write_text(contents, encoding="utf-8")
+            return VERIFIER.verify_broad_trx_results(path, VERIFIER.BROAD_EXPECTED_TESTS)
+
+    def test_exact_executions_report_one_line_per_module(self) -> None:
+        report = self._report(broad_trx(VERIFIER.BROAD_EXECUTIONS))
+        self.assertEqual(
+            [f"SQLSERVER_RELATIONAL_ACCEPTANCE module={module} " for module in VERIFIER.INVENTORY_MODULES],
+            [line.split("tests=", 1)[0] for line in report],
+        )
+
+    def test_a_missing_or_extra_theory_row_is_rejected(self) -> None:
+        multi = next(name for name, count in VERIFIER.BROAD_EXECUTIONS.items() if count > 1)
+        for delta in (-1, 1):
+            with self.subTest(delta=delta):
+                executions = dict(VERIFIER.BROAD_EXECUTIONS)
+                executions[multi] += delta
+                with self.assertRaisesRegex(RuntimeError, "per test"):
+                    self._report(broad_trx(executions))
+
+    def test_a_test_outside_the_inventory_is_rejected(self) -> None:
+        executions = dict(VERIFIER.BROAD_EXECUTIONS)
+        executions[VERIFIER.TEST_NAMESPACE + "ExtraSqlServerRelationalAcceptanceTests.Case"] = 1
+        with self.assertRaisesRegex(RuntimeError, "per test"):
+            self._report(broad_trx(executions))
+
+    def test_a_result_that_did_not_pass_is_rejected(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "not Passed"):
+            self._report(broad_trx(VERIFIER.BROAD_EXECUTIONS, outcome="NotExecuted"))
 
 if __name__ == "__main__":
     unittest.main()

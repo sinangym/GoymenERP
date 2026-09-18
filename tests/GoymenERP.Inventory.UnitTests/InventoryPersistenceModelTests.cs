@@ -19,7 +19,7 @@ public sealed class InventoryPersistenceModelTests
 {
     private static readonly Type[] TenantRows =
         [
-            typeof(LabelRow), typeof(LabelPrintRow), typeof(LabelDocumentRow), typeof(MovementRow), typeof(MovementLineRow),
+            typeof(LotRow), typeof(LabelRow), typeof(LabelPrintRow), typeof(LabelDocumentRow), typeof(MovementRow), typeof(MovementLineRow),
             typeof(BalanceRow), typeof(SourceGrainRow),
         ];
 
@@ -112,7 +112,33 @@ public sealed class InventoryPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_InitialInventory", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddInventorySourceGrain", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddMaterialLots", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public void A_label_belongs_to_a_lot_of_its_own_company()
+    {
+        using var context = Context();
+        var labels = context.Model.FindEntityType(typeof(LabelRow))!;
+        // DEC-PRD-003: (company, lot) against the lot's (company, id), so another company's lot cannot be named.
+        var lot = Assert.Single(labels.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(LotRow));
+        Assert.Equal(["CompanyId", "LotId"], lot.Properties.Select(property => property.Name));
+        Assert.Equal(["CompanyId", "Id"], lot.PrincipalKey.Properties.Select(property => property.Name));
+        Assert.Equal(DeleteBehavior.Restrict, lot.DeleteBehavior);
+        Assert.True(lot.IsRequired);
+
+        var lots = context.Model.FindEntityType(typeof(LotRow))!;
+        Assert.Equal(("Lots", 64, 64), (lots.GetTableName(), lots.FindProperty(nameof(LotRow.HeatNumber))!.GetMaxLength(),
+            lots.FindProperty(nameof(LotRow.CoilNumber))!.GetMaxLength()));
+        Assert.True(lots.FindProperty(nameof(LotRow.HeatNumber))!.IsNullable);
+        Assert.True(lots.FindProperty(nameof(LotRow.CoilNumber))!.IsNullable);
+        // Constraint names are design-time facts: read from the design-time model.
+        var design = context.GetService<IDesignTimeModel>().Model;
+        Assert.Contains(design.FindEntityType(typeof(LotRow))!.GetCheckConstraints(), check => check.Name == "CK_Lots_Trace");
+        Assert.Equal("FK_Labels_Lots_CompanyId_LotId", Assert.Single(design.FindEntityType(typeof(LabelRow))!.GetForeignKeys(),
+            key => key.PrincipalEntityType.ClrType == typeof(LotRow)).GetConstraintName());
     }
 
     [Theory]
@@ -141,6 +167,8 @@ public sealed class InventoryPersistenceModelTests
     [InlineData("edit-label-code")]
     [InlineData("edit-balance-company")]
     [InlineData("edit-source-grain")]
+    [InlineData("edit-lot-heat")]
+    [InlineData("delete-lot")]
     public void Stored_stock_is_never_deleted_and_only_its_allowed_field_changes(string fault)
     {
         using var context = Context();
@@ -154,6 +182,13 @@ public sealed class InventoryPersistenceModelTests
                 break;
             case "edit-label-code":
                 Attach(context, Label()).Code = "SYN-CHANGED";
+                break;
+            case "edit-lot-heat":
+                // Business #66 5734060341 (Q3): no path changes a lot's heat or coil afterwards.
+                Attach(context, Lot()).HeatNumber = "SYN-CHANGED";
+                break;
+            case "delete-lot":
+                context.Lots.Remove(Attach(context, Lot()));
                 break;
             case "edit-source-grain":
                 Attach(context, new SourceGrainRow
@@ -208,6 +243,11 @@ public sealed class InventoryPersistenceModelTests
         context.Attach(row);
         return row;
     }
+
+    private static LotRow Lot() => new()
+    {
+        Id = Guid.NewGuid(), CompanyId = CompanyA, ProductId = BandProduct, Version = 1, CreatedAtUtc = At, CreatedBy = "synthetic-actor",
+    };
 
     private static LabelRow Label() => new()
     {

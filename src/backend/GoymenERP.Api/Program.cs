@@ -150,6 +150,12 @@ var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
     builder.Services,
     builder.Environment,
     builder.Configuration);
+// BROWSER-CI a2 part 2: the gated fixture writers exist only inside the browser-suite fixture runner's
+// in-process host (Testing + its exact run binding); nowhere else are they registered.
+C01E2eFixtureWriterActivation.Configure(
+    builder.Services,
+    builder.Environment,
+    builder.Configuration);
 builder.Services.AddSingleton(new ShellCapabilityAuthorityCatalog(
     [shellCapabilityAuthority]));
 builder.Services.AddErpAuthentication(builder.Configuration, builder.Environment);

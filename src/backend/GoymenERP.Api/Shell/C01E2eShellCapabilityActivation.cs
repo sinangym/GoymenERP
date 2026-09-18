@@ -81,7 +81,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
                 typeof(SalesShellCapabilityProvider),
             },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10AndSalesV10),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10AndPublishedSalesV10),
     ];
 
     private static string NormalAuthority(IServiceCollection services)

@@ -2,7 +2,9 @@
 
 Owner: GOYMEN-URUN (Product owner, assigned Inventory by the coordinator on 2026-09-18).
 Source: integrated plan v2 (#275 `a5b8143b`) §5, §7.1, §13, R3 and R6; Sinan's decisions of
-2026-09-18 Ö1–Ö3 (`docs/decisions/SINAN_KARARLARI_2026-09-18_O1_O8_VE_SON_ASAMA.md`).
+2026-09-18 Ö1–Ö3 (`docs/decisions/SINAN_KARARLARI_2026-09-18_O1_O8_VE_SON_ASAMA.md`). Both files
+are on the #275 branch at `a5b8143b`, **not on main**; the decision text is Business's record on
+#66 (5722637822).
 
 ## INV-1 — first independent slice of T07 (domain + tests only)
 
@@ -94,20 +96,47 @@ Notes carried from the #293 review (INFO; no change in this slice):
 
 | Route | Permission (company-scoped) | Answer |
 |---|---|---|
-| `GET /api/v1/inventory/labels/{labelId}` | `inventory.labels.read` | `InventoryLabelViewV1`: identity, product, lot, heat/coil, required documents and status (Ö3), and print/document history as sequence, time and kind. Actor ids stay in audit. |
+| `GET /api/v1/inventory/labels/{labelId}` | `inventory.labels.read` | `InventoryLabelViewV1`: identity, product, lot, heat/coil, required documents and status (Ö3), print/document history as sequence, time and kind, and (T07 lot record, below) `lot {id, heatNumber, coilNumber}`. Actor ids stay in audit. |
 | `GET /api/v1/inventory/labels/{labelId}/balances` | `inventory.balances.read` | `InventoryLabelBalancesV1`: positions (owner, custodian, location, product, block) with exact kg text, and physical/free/blocked totals. |
 
 - **Company.** Both routes need `X-Company-Id` and the actor's access to it. A label of another company is the same `404` as an unknown id; the tenant filter never shows it.
 - **Separate permissions.** Seeing a label does not show its stock, and seeing stock does not show the label's facts.
 - **Scope.** Reads are not filtered by site, so these permissions belong in `CompanyWideOnly` (central).
 - **Evidence and outcome.** The evidence is real SQL through the real host with synthetic grants and synthetic stock written through the store. It is **not a user outcome**: no real product card and no accepted opening stock source exist yet (plan §14 T07, Ö1).
-- **No write here.** The receipt (T07 write) waits for the opening-acceptance question on #66. Lots become a minimal `MaterialLot` record (DEC-PRD-003), with attributes nullable and "documents pending" (Ö3).
+- **No write here.** The receipt (T07 write) waits for the opening-acceptance question on #66 (NEEDS-SINAN 5731613477). The lot record is the next section.
+
+## T07 lot record: `MaterialLot`
+
+Card: #66 5733503803 (ÜRÜN). Business accepted it as an independent core slice and set its boundary in #66 5734060341; that text is the contract of this section. It closes none of Q1–Q3 and chooses no policy.
+
+| Rule | Where | Held by |
+|---|---|---|
+| A label belongs to a real lot record of its own company (DEC-PRD-003); a lot is one company and one product (the product by id only) | `Lots/MaterialLot`, `inventory.Lots` | domain + tenant filter + write guard |
+| A label can never name another company's lot, and never exists without its lot | `FK_Labels_Lots_CompanyId_LotId`: (company, lot) → the lot's (company, id) alternate key | SQL (547), and the store first (`inventory_lot_not_found`) |
+| A label and its lot are of the same product | `InventoryStore` (`inventory_lot_product_mismatch`) | store |
+| A first arrival stores the lot, its labels and their audit events in one save, or nothing | `IInventoryLotStore.SaveLotAsync` | one `SaveChanges` (SQL transaction) |
+| The lot id is the R3 identity: the same id with the same facts is a replay (labels given with it are saved as `SaveLabelAsync` would); other facts are `inventory_lot_conflict` | `InventoryStore.SaveLotAsync` | store + PK |
+| Two first arrivals of one lot: one wins, the other stores nothing (`inventory_concurrent_change` via `PK_Lots`); retried, it is a replay | `PK_Lots` | SQL |
+| Heat and coil are the lot's own real values; null = unknown, never empty or 0 (Ö3); a text longer than 64 is refused, never cut | `MaterialLot`, `CK_Lots_Trace` | domain + store + SQL |
+| A lot is append-only: nothing changes its heat or coil afterwards, nothing deletes it | `InventoryDbContext` write guard | write guard |
+
+Business #66 5734060341, held exactly (open until answered; fail-closed meanwhile):
+
+- **Q1** — no equality or derivation between a label's heat/coil and its lot's: separate real values. The label view shows both, unrelated.
+- **Q2** — the Ö3 document status (`PendingDocuments`) stays on the label; it is not moved to the lot.
+- **Q3** — no endpoint or command changes a lot's heat or coil afterwards.
+- **Not here:** origin (menşe) as free text (its dictionary is an open DATA item), fake heat/coil/MTC, quality release, a lot display number, cost; no new permission or grant, no `/lots` route, no UI, no production data. The label view's `lot` block is read under `inventory.labels.read`.
+
+**Migration `AddMaterialLots`.** Creates `inventory.Lots` and adds the label foreign key. A stored label whose lot does not exist makes the migration fail when the key is added: the orphan is reported, never repaired with an invented lot. Labels are written only through the store and the SQL tests (there is no write route), so no deployed table is expected to hold one. `Down` drops the key, its index and the table and leaves labels untouched.
+
+**Idempotency.** The store's R3 identity (lot id + facts) is what exists today. The ADR-011 command record (company, command, key hash; actor compared; first correlation; terminal replay; one exit for a race) comes with the HTTP receipt write, which waits for 5731613477; this slice has no HTTP write and no command table.
 
 ## dependency_wait
 
 - **Central registration (CARİ, same branch, sequential):** the tenant guard's reviewed inventory (this DbContext's fingerprint, the design-time factory and the initializer's `Migrate`/`EnsureCreated` branch); the module-dependency allowlist edge `Inventory.Infrastructure → Audit.Infrastructure` (ADR-009); the `Api.IntegrationTests` project reference to Inventory; and the relational verifier's BROAD list and counts for `InventorySqlServerRelationalAcceptanceTests`.
 - **INV-3 central follow-up (CARİ):** re-pin the tenant guard fingerprints of `InventoryDbContext.cs` and `InventoryStore.cs`, which changed here (no new raw SQL; the SqlClient use is unchanged); add the four new names of `InventorySqlServerRelationalAcceptanceTests` to the relational verifier's BROAD list and counts.
 - **INV-3:** command/query surface, permissions (registered centrally, granted by a human), host wiring with the audit interceptor, and UI.
+- **T07 lot record central follow-up (CARİ):** re-pin the tenant guard fingerprints of `InventoryDbContext.cs`, `InventoryStore.cs` (no new raw SQL, connection or command; the SqlClient use is unchanged) and `InventoryModuleExtensions.cs` (one more store registration; the provider branch is unchanged); add the five new `InventorySqlServerRelationalAcceptanceTests` names to the relational verifier's BROAD list and counts; regenerate the OpenAPI contract from CI (the label view's `lot` block) and the `OpenApiContractGenerationTests` schema expectations (`InventoryLabelViewV1.lot`, `InventoryLotV1`). No permission, `Program.cs` or allowlist change.
 - **The first real product (Ö1's authorised source):** Ö1 fixes the first path as GDC band/coil kg→kg, but the real product, quality and size dictionaries come from its authorised card/label/document. Every identity in the tests is a synthetic fixture, never seeded anywhere.
 
 ```bash
