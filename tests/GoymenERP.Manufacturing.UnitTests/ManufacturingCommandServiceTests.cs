@@ -359,6 +359,27 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Empty(fixture.Store.Writes);
     }
 
+    [Fact]
+    public async Task A_rule_refusal_after_the_winner_committed_answers_from_the_winners_record()
+    {
+        // §8, one exit: the other attempt of this key commits while this one runs; this one's rule then
+        // refuses against the winner's state (here: a roll the order does not have, as the state it
+        // read). The winner's record is the answer, not the rule's 422.
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        var fact = new RecordFactRequestV1(Guid.NewGuid(), order.Version, Guid.NewGuid(), "10", At);
+        fixture.Store.OnWrite = metadata =>
+        {
+            var record = metadata.Completion!(order) with { OriginalCorrelationId = "corr-winner" };
+            fixture.Store.Commands[(record.CommandName, record.IdempotencyKeyHash)] = record;
+        };
+
+        var result = await fixture.Service.IssueInputAsync(order.Id, fact, "key-1", Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Ok, true, "corr-winner"), (result.Status, result.IsReplay, result.OriginalCorrelationId));
+        Assert.Empty(fixture.Store.Writes);
+    }
+
     private static RecordFactRequestV1 Fact(long version, string kg) => new(Guid.NewGuid(), version, Roll, kg, At);
 
     private static PermissionScope Scope(bool companyWide, params string[] roles) => new(true, companyWide,
@@ -481,6 +502,9 @@ public sealed class ManufacturingCommandServiceTests
     {
         public Dictionary<(string Command, string KeyHash), ManufacturingCommandRecord> Commands { get; } = [];
 
+        /// <summary>Runs when a write starts: another attempt of the same key committing meanwhile.</summary>
+        public Action<ManufacturingCommandMetadata>? OnWrite { get; set; }
+
         /// <summary>Another attempt of the same key that commits first (ADR-011 §8).</summary>
         public Func<ManufacturingCommandMetadata, object, ManufacturingCommandRecord>? RaceWinner { get; set; }
 
@@ -548,6 +572,7 @@ public sealed class ManufacturingCommandServiceTests
             CancellationToken cancellationToken = default)
         {
             Guard();
+            OnWrite?.Invoke(metadata);
             var order = Orders.GetValueOrDefault(orderId)
                 ?? throw new ManufacturingStoreException(ManufacturingStoreCodes.OrderNotFound, "yok");
             order.IssueInput(expectedVersion, issueId, parentRollId, mass, issuedAt);

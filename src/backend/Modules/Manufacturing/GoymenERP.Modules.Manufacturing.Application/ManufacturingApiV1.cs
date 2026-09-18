@@ -435,7 +435,7 @@ public sealed partial class ManufacturingCommandService(
         }
         catch (ManufacturingRuleException exception)
         {
-            return new ManufacturingApiResult<T>(ManufacturingApiStatus.Unprocessable, null, false, exception.Code);
+            result = new ManufacturingApiResult<T>(ManufacturingApiStatus.Unprocessable, null, false, exception.Code);
         }
         catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
         {
@@ -466,9 +466,10 @@ public sealed partial class ManufacturingCommandService(
             return Invalid<T>(exception.ParamName ?? "request");
         }
 
-        if (completed is not null)
+        if (completed is not null && result.Status == successStatus)
         {
-            // The success was recorded in the business save (§6).
+            // The success was recorded in the business save (§6). A record built for a save that then
+            // failed was never stored, so that attempt falls through like any other refusal.
             return result;
         }
 
@@ -480,7 +481,15 @@ public sealed partial class ManufacturingCommandService(
             || result.Status == successStatus;
         if (!terminal)
         {
-            return result;
+            // §8, one exit whatever the refusal: another attempt of this key may have committed while
+            // this one ran (its rule, version or read then saw the winner's state). Its record is the
+            // answer; only without one does this refusal stand.
+            return result.Status is ManufacturingApiStatus.Invalid or ManufacturingApiStatus.Denied
+                    or ManufacturingApiStatus.Unavailable
+                ? result
+                : await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner
+                    ? Answer<T>(winner, actorId, requestHash)
+                    : result;
         }
 
         try

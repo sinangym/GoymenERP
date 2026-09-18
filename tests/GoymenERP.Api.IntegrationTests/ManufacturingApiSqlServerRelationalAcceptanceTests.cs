@@ -306,9 +306,13 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         var (orderId, roll) = await run.OpenOrderAsync(userA);
         var fact = new RecordFactRequestV1(Guid.NewGuid(), 1, roll, "250", At);
 
+        // Both attempts are released together. Whatever the interleaving, the answer is the same:
+        // one records, the other answers from its record (a replay before the write, or §8 after it).
+        using var start = new Barrier(2);
         async Task<HttpResponseMessage> AttemptAsync()
         {
             using var client = run.ClientFor(userA, CompanyA);
+            start.SignalAndWait(TimeSpan.FromSeconds(30));
             return await client.PostWithKeyAsync($"{Base}/orders/{orderId}/input-issues", fact, "race-1");
         }
 
