@@ -502,6 +502,27 @@ class WorkflowTests(unittest.TestCase):
         restore = self._step("Restore suite fixture runner")
         self.assertIn("if: env.BROWSER_E2E_SUITE_FIXTURE == 'true'", restore)
 
+    def test_the_runner_is_built_without_the_envelope_and_run_without_building(self):
+        # Run 35392194453: building the runner builds the Api, whose build-time OpenAPI generation starts
+        # Program with the step's environment; the run's C-01 envelope variables made it request the envelope
+        # outside Testing. The build removes every envelope variable by prefix; materialize never builds.
+        build = self._step("Build the suite fixture runner")
+        self.assertIn("if: env.BROWSER_E2E_SUITE_FIXTURE == 'true'", build)
+        self.assertIn("compgen -e | grep -E '^(GOYMEN_ERP_C01_E2E_|C01E2e__)'", build)
+        self.assertIn('env "${envelope[@]}" dotnet build', build)
+        self.assertIn("tests/GoymenERP.BrowserSuiteFixtureTool/GoymenERP.BrowserSuiteFixtureTool.csproj", build)
+        materialize = self._step("Materialize the suite's fixture")
+        self.assertIn("--no-build", materialize)
+        order = [WORKFLOW.index(f"      - name: {name}\n")
+                 for name in ("Restore suite fixture runner", "Build the suite fixture runner",
+                              "Materialize the suite's fixture")]
+        self.assertEqual(sorted(order), order)
+        # No other step may build anything that references the Api with the envelope in its environment.
+        for step in re.split(r"\n      - name: ", WORKFLOW)[1:]:
+            if "BrowserSuiteFixtureTool.csproj" in step and not step.startswith("Restore suite fixture runner"):
+                with self.subTest(step=step.split("\n", 1)[0]):
+                    self.assertTrue("--no-build" in step or 'env "${envelope[@]}" dotnet build' in step)
+
     def test_the_profile_step_exports_a_boolean_fixture_flag(self):
         step = self._step("Select the suite's capability profile")
         self.assertIn('test "$fixture" = "true" || test "$fixture" = "false"', step)
