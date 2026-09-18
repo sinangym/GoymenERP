@@ -26,7 +26,7 @@ The current main API Errors/ErpProblemCodes.cs and ErpProblemDetailsExtensions.c
 Missing sources, exactly:
 
 - Finance bank owner: no persisted TreasuryAccount projection/data/lifecycle source implementing the existing IFinanceBankAccountReader exists. The supplied UnavailableFinanceBankAccountReader returns unavailable (or denied for wrong company/actor), never an empty catalog success.
-- Settings owner: ISettingsPrerequisiteProvider exists, but accepted company/currency/code/profile ID/version/scale/effective-date data does not. UnavailableSettingsPrerequisiteProvider remains unavailable.
+- Settings owner: ISettingsPrerequisiteProvider exists, but accepted company/currency/code/profile ID/version/scale/effective-date data does not. The host now registers ApprovedSettingsPrerequisiteProvider; it approves unit profiles only, and its money-profile and period reads (the only ones Finance makes) still answer exactly as the unavailable adapter did (settings_provider_unavailable), so this read stays unavailable.
 - Identity/Business owner: no accepted Finance read grant/action mapping or manual-receipt MoneyProfile operation identifier exists. The supplied UnavailableFinancePermissionPort never grants access; central may register this adapter until an accepted mapping arrives. Read metadata preparation does not resolve OPEN-009.
 
 No second catalog, seed data, grant, role, operation constant, period-open fallback or database write is introduced. Central can expose an honest unavailable read contract without asserting that a user can prepare/save real bank receipts.
