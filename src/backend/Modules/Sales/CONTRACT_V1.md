@@ -93,8 +93,14 @@ invisible detail; 409 company/account state or same-key different-payload confli
 Sales problems carry status/title, optional code/correlationId/errors. Field errors
 carry field/code. Platform 401/403/404 need not include code or field errors.
 Settings errors preserve `settings_provider_unavailable` versus
-`settings_access_denied`; neither becomes an empty selection or success.
+`settings_access_denied`; neither becomes an empty selection or success. A unit the
+approved provider has no profile for (`settings_unit_profile_not_found`) is 422
+`unsupported_unit` on the product reference read, never a 503 to retry.
 Examples validate wire decoding, not real HTTP status or business enforcement.
+The implemented platform writer replaces 401/403/500/503 body codes with its own
+(`forbidden`, `service_unavailable`, ...), as the reference reads in
+REFERENCE_READ_V1.md show; the create route must reconcile the two Settings
+examples with that boundary when it is implemented.
 
 Unknown result keeps the same key, path, exact request, line IDs, actor, company
 and session attempt. Never generate a replacement key after timeout or malformed
@@ -151,7 +157,10 @@ Organization supplies company/location context, not unit/currency registry.
 List, detail, create, price-read and each owner selector need distinct current
 authority checks with the existing Identity owner. No Sales permission names are
 invented, no Product global grant is borrowed. Absent mappings default deny.
-There is deliberately no fabricated Sales selection endpoint/second owner port.
+Form reference reads are specified in REFERENCE_READ_V1.md: an accounts page over
+the authorized Cari read, and known-ID currency and product resolves over the
+Settings and Product owner ports. They are not a second owner port, catalogue or
+currency/product enumeration, and they authorize no write.
 
 ## Evidence boundary
 
