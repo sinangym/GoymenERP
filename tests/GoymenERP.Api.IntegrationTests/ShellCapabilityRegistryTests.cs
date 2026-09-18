@@ -339,12 +339,15 @@ public sealed partial class ShellCapabilityRegistryTests
     [Fact]
     public void UnknownPermissionMalformedIdentityAndPermissionlessAvailability_AreRejected()
     {
+        // Must stay unregistered, or the unknown-permission declaration below would be accepted.
+        const string unregisteredPermission = "unknown.permission";
+        Assert.DoesNotContain(unregisteredPermission, ErpPermissions.All);
         var unknownPermission = Declaration(
             "owner.a.read",
             "OWNER-A-ROUTE",
             "/owner/a",
             "OWNER-A-01",
-            requiredPermissions: ["unknown.permission"]);
+            requiredPermissions: [unregisteredPermission]);
         var malformedCapability = Declaration(
             "Owner A Read",
             "OWNER-A-ROUTE",

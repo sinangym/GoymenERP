@@ -91,8 +91,8 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
    * A status change the server APPLIED (204), waiting for the fresh read it owes.
    *
    * The 204 has no body, so nothing about the record's new state is known until that
-   * read LANDS — `baseline` is the detail query's `dataUpdatedAt` at the moment of the
-   * 204, and only a later stamp counts. A read that is paused (offline) or that fails
+   * read LANDS — `baseline` is the detail query's own READ COUNT at the moment of the
+   * 204, and only a higher count counts. A read that is paused (offline) or that fails
    * leaves the cached data exactly where it was, and that data is NOT the fresh read,
    * however settled the query looks (Dirac #250 P2-2). While it is pending the action
    * is closed and the screen says so; the retry it offers is the read's, never the write.
@@ -104,8 +104,8 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
   /** The last adopted result, shown until the next window opens. */
   const [saved, setSaved] = useState<AccountStatusApplied | null>(null)
 
-  const query = useQuery({
-    queryKey: [
+  const detailQueryKey = useMemo(
+    () => [
       namespace ?? 'no-context',
       // Entry-scoped for the same reason as C-01: a Back within the stale window
       // must not paint the previous entry's record while its authorization is
@@ -114,6 +114,10 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
       'counterparty-detail',
       partyId ?? '',
     ],
+    [namespace, entryGeneration, partyId],
+  )
+  const query = useQuery({
+    queryKey: detailQueryKey,
     enabled: namespace !== null && singleCompanyContext && (partyId ?? '').length > 0,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
@@ -142,16 +146,28 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
    * control reports the success; this effect closes the pending state once the detail
    * read has actually landed, and leaves it open (read recovery) while it has not.
    */
-  const readStamp = query.dataUpdatedAt
+  /**
+   * How many results THIS query has taken — the query's own monotonic counter, never a
+   * clock. `dataUpdatedAt` is `Date.now()`, so two reads that land inside the same
+   * millisecond carry the same stamp and a stamp comparison then reads as "no read
+   * landed at all": the 204 above stayed pending forever and the screen waited for a
+   * read that had already arrived. A count cannot collide with itself.
+   *
+   * It lives on the query's STATE, not on the observer's result, so it is read from the
+   * client rather than off `query`. The render that reads it is guaranteed: a read that
+   * lands moves `fetchStatus` below through fetching -> idle, and that one IS part of
+   * the result this component tracks.
+   */
+  const readCount = queryClient.getQueryState(detailQueryKey)?.dataUpdateCount ?? 0
   const onApplied = useCallback(
     (applied: AccountStatusApplied) => {
       setSaved(null)
-      setPendingAdopt({ applied, baseline: readStamp })
+      setPendingAdopt({ applied, baseline: readCount })
       if (namespace !== null) {
         void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === namespace })
       }
     },
-    [namespace, queryClient, readStamp],
+    [namespace, queryClient, readCount],
   )
   const onBeginNewAttempt = useCallback(() => setSaved(null), [])
   const readOutcomeType = query.data?.type ?? null
@@ -159,11 +175,11 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
   useEffect(() => {
     if (pendingAdopt === null || fetchStatus !== 'idle') return
     // Settled, but on the SAME data the 204 was issued against: not the fresh read.
-    if (readStamp <= pendingAdopt.baseline || readOutcomeType !== 'ok-single') return
+    if (readCount <= pendingAdopt.baseline || readOutcomeType !== 'ok-single') return
     // oxlint-disable-next-line react/set-state-in-effect -- adopts the fresh read a definite 204 owes, once
     setSaved(pendingAdopt.applied)
     setPendingAdopt(null)
-  }, [pendingAdopt, fetchStatus, readStamp, readOutcomeType])
+  }, [pendingAdopt, fetchStatus, readCount, readOutcomeType])
 
   /**
    * The action's whole state — attempt, window, reason, dirty scope — lives HERE, above
@@ -185,7 +201,7 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
     companyId: activeCompanyId,
     namespace,
     detail: readyDetail,
-    readStamp,
+    readCount,
     refetch: query.refetch,
     // Computed each render: the slot moves when the detail read records itself, and
     // that read is what re-renders this card.

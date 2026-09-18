@@ -5,27 +5,39 @@
  * here says "para etkisi yok". Recording money is a different command on the detail
  * screen with its own key.
  *
- * Bank accounts come from the FS0 reader; only active, receipt-usable accounts of the
- * current company are offered. Party/account arrive from the entry context (no Finance
- * party reader exists). The profile reference is required by the contract; without one
- * a NEW draft cannot be saved and the form says so instead of inventing one.
+ * Where each value comes from:
+ *  - bank accounts: the FS0 reader; only active, receipt-usable accounts are offered;
+ *  - party + company account: the entry context (no Finance party picker exists);
+ *  - currency, effective money profile (reference + approved scale) and the Cari label: the
+ *    published draft read context (#261) for EXACTLY the chosen bank, party, account and
+ *    transaction date. Changing the bank or the date is a new context; until its own answer
+ *    arrives nothing can be saved, so a profile read for another date is never sent.
+ *
+ * Without a ready context the form stays closed and says why — it never invents a profile,
+ * a currency code or a scale.
  */
 
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { StateBlock } from '../shell/StateBlock'
 import { useShellDispatch } from '../shell/shellContext'
-import { decodeBankAccountPage, type ProfileReference, type SourceDetail } from './contract'
-import { useFinanceRead, useReceiptCommand } from './financePort'
+import { decodeBankAccountPage, type SourceDetail } from './contract'
+import { draftContextRequestFor, partyLabelText } from './draftContext'
+import { useDraftContext, useFinanceRead, useReceiptCommand } from './financePort'
 import {
   BANK_ACCOUNTS_SUBJECT,
   BANK_ACCOUNT_PLACEHOLDER,
+  DRAFT_CONTEXT_RETRY,
+  DRAFT_CONTEXT_TEXT,
   DRAFT_SAVED,
   FIELD_ERROR,
   FIELD_HINT,
   FIELD_LABEL,
   NO_USABLE_BANK_ACCOUNT,
-  PROFILE_MISSING,
+  PARTY_LABEL,
+  PARTY_LABEL_PENDING,
   SAVE_DRAFT,
+  amountLabelFor,
+  scaleHintFor,
 } from './financeText'
 import {
   buildDraftSaveRequest,
@@ -50,15 +62,14 @@ const FIELD_ORDER: readonly (keyof ManualReceiptFields)[] = [
 
 export const FINANCE_DRAFT_DIRTY_SCOPE = 'finance.manual-receipt.draft'
 
+const RETRYABLE_CONTEXT = new Set(['unavailable', 'network-error', 'malformed'])
+
 export function ManualReceiptDraftForm({
   party,
-  profile,
   draft,
   onSaved,
 }: {
   readonly party: ReceiptParty
-  /** Server-supplied. `null` closes a create; an update uses the draft's own profile. */
-  readonly profile: ProfileReference | null
   readonly draft?: SourceDetail
   readonly onSaved?: (detail: SourceDetail) => void
 }) {
@@ -69,7 +80,10 @@ export function ManualReceiptDraftForm({
   const [errors, setErrors] = useState<FieldErrors>({})
   const refs = useRef<Partial<Record<keyof ManualReceiptFields, HTMLElement | null>>>({})
 
-  const effectiveProfile = draft?.profile ?? profile
+  const contextRequest = draftContextRequestFor(fields.treasuryAccountId, party, fields.occurredOn)
+  const draftContext = useDraftContext(contextRequest)
+  const context = draftContext.state.kind === 'ready' ? draftContext.state.context : null
+
   const frozen = isFrozen(command.state)
   // A saved CREATE is done: submitting the same form again would be a second draft.
   const closedAfterCreate = draft === undefined && command.state.phase === 'succeeded'
@@ -95,12 +109,16 @@ export function ManualReceiptDraftForm({
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault()
-    if (effectiveProfile === null || frozen || closedAfterCreate) return
+    // The context must belong to the CURRENT selection; the query key guarantees that a ready
+    // context is for these exact values, and a changed selection has no ready context yet.
+    if (context === null || frozen || closedAfterCreate) return
     const built = buildDraftSaveRequest(fields, {
       party,
       identity: draft ? { draftId: draft.source.id, expectedVersion: draft.source.version } : { draftId: null, expectedVersion: null },
-      profile: effectiveProfile,
-      bankAccounts: usable,
+      profile: context.currency.profile.reference,
+      // The context's own bank view is authoritative for currency and eligibility.
+      bankAccounts: [context.bankAccount],
+      scale: context.currency.profile.scale,
     })
     if (!built.ok) {
       setErrors(built.errors)
@@ -112,6 +130,11 @@ export function ManualReceiptDraftForm({
     command.submit({ operation: 'draft-save', body: built.request })
   }
 
+  const hintFor = (name: keyof ManualReceiptFields): string | null => {
+    if (name === 'amount' && context !== null) return `${FIELD_HINT.amount ?? ''} ${scaleHintFor(context.currency.profile.scale)}`.trim()
+    return FIELD_HINT[name] ?? null
+  }
+
   const bind = (name: keyof ManualReceiptFields) => ({
     id: `finance-${name}`,
     ref: (element: HTMLElement | null) => {
@@ -120,41 +143,50 @@ export function ManualReceiptDraftForm({
     value: fields[name],
     disabled: frozen,
     'aria-invalid': errors[name] !== undefined,
-    'aria-describedby': [FIELD_HINT[name] ? `finance-${name}-hint` : null, errors[name] ? `finance-${name}-error` : null]
+    'aria-describedby': [hintFor(name) ? `finance-${name}-hint` : null, errors[name] ? `finance-${name}-error` : null]
       .filter(Boolean)
       .join(' ') || undefined,
     onChange: (event: { target: { value: string } }) => setFields((current) => ({ ...current, [name]: event.target.value })),
   })
 
-  const row = (name: keyof ManualReceiptFields, control: ReactNode) => (
-    <div className={styles.field} key={name}>
-      <label htmlFor={`finance-${name}`}>{FIELD_LABEL[name]}</label>
-      {control}
-      {FIELD_HINT[name] ? (
-        <p id={`finance-${name}-hint`} className={styles.hint}>
-          {FIELD_HINT[name]}
-        </p>
-      ) : null}
-      {errors[name] ? (
-        <p id={`finance-${name}-error`} className={styles.error}>
-          {FIELD_ERROR[errors[name]]}
-        </p>
-      ) : null}
-    </div>
-  )
+  const row = (name: keyof ManualReceiptFields, control: ReactNode, label: string = FIELD_LABEL[name]) => {
+    const hint = hintFor(name)
+    return (
+      <div className={styles.field} key={name}>
+        <label htmlFor={`finance-${name}`}>{label}</label>
+        {control}
+        {hint ? (
+          <p id={`finance-${name}-hint`} className={styles.hint}>
+            {hint}
+          </p>
+        ) : null}
+        {errors[name] ? (
+          <p id={`finance-${name}-error`} className={styles.error}>
+            {FIELD_ERROR[errors[name]]}
+          </p>
+        ) : null}
+      </div>
+    )
+  }
 
+  const contextKind = draftContext.state.kind
   return (
     <form className={styles.form} onSubmit={onSubmit} noValidate aria-busy={command.state.phase === 'submitting'}>
-      {effectiveProfile === null ? (
-        <p className={styles.notice} role="status">
-          {PROFILE_MISSING}
-        </p>
-      ) : null}
       {usable.length === 0 ? (
         <p className={styles.notice} role="status">
           {NO_USABLE_BANK_ACCOUNT}
         </p>
       ) : null}
+
+      <div className={styles.field}>
+        <span className={styles.term} id="finance-party-label">
+          {PARTY_LABEL}
+        </span>
+        <p aria-labelledby="finance-party-label" data-party-label={context === null ? 'pending' : 'ready'}>
+          {context === null ? PARTY_LABEL_PENDING : partyLabelText(context.party)}
+        </p>
+      </div>
+
       {row(
         'treasuryAccountId',
         <select {...bind('treasuryAccountId')}>
@@ -166,11 +198,22 @@ export function ManualReceiptDraftForm({
           ))}
         </select>,
       )}
-      {row('amount', <input {...bind('amount')} inputMode="decimal" autoComplete="off" />)}
       {row('occurredOn', <input {...bind('occurredOn')} type="date" />)}
+      {row('amount', <input {...bind('amount')} inputMode="decimal" autoComplete="off" />, amountLabelFor(context?.currency.displayCode ?? null))}
       {row('valueOn', <input {...bind('valueOn')} type="date" />)}
       {row('bankReference', <input {...bind('bankReference')} autoComplete="off" />)}
       {row('description', <textarea {...bind('description')} rows={3} />)}
+
+      {contextKind === 'ready' ? null : (
+        <div className={styles.notice} role="status" data-draft-context={contextKind}>
+          <p>{DRAFT_CONTEXT_TEXT[contextKind]}</p>
+          {RETRYABLE_CONTEXT.has(contextKind) ? (
+            <button type="button" onClick={draftContext.refetch}>
+              {DRAFT_CONTEXT_RETRY}
+            </button>
+          ) : null}
+        </div>
+      )}
 
       <CommandAttemptPanel command={command} />
       {command.state.phase === 'succeeded' ? (
@@ -180,7 +223,7 @@ export function ManualReceiptDraftForm({
       ) : null}
 
       <div className={styles.actions}>
-        <button type="submit" disabled={effectiveProfile === null || frozen || closedAfterCreate || !command.available}>
+        <button type="submit" disabled={context === null || frozen || closedAfterCreate || !command.available}>
           {SAVE_DRAFT}
         </button>
       </div>

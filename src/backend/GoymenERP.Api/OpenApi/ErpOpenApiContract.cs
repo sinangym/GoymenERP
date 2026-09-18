@@ -66,7 +66,8 @@ public static partial class ErpOpenApiContract
         + "forbidden|internal_error|service_unavailable|validation_failed|"
         + "command_metadata_invalid|invalid_cursor|not_found|already_linked|"
         + "version_conflict|idempotency_conflict|client_contract_required|"
-        + "client_contract_unsupported)$";
+        + "client_contract_unsupported|product_selection_changed|unsupported_currency|"
+        + "unsupported_product|unsupported_unit)$";
 
     public static IServiceCollection AddErpOpenApi(this IServiceCollection services)
     {
@@ -358,6 +359,23 @@ public static partial class ErpOpenApiContract
             "application/problem+json");
     }
 
+    public static RouteHandlerBuilder ProducesErpUnprocessableEntity(
+        this RouteHandlerBuilder builder,
+        params string[] stableCodes)
+    {
+        if (stableCodes.Length == 0)
+        {
+            throw new InvalidOperationException(
+                "Coded 422 OpenAPI responses require at least one stable code.");
+        }
+
+        builder.Produces<ErpProblemDetailsContract>(
+            StatusCodes.Status422UnprocessableEntity,
+            "application/problem+json");
+        AddProblemCodeMetadata(builder, StatusCodes.Status422UnprocessableEntity, stableCodes);
+        return builder;
+    }
+
     public static RouteHandlerBuilder ProducesErpConflict(
         this RouteHandlerBuilder builder,
         params string[] stableCodes)
@@ -574,6 +592,19 @@ public static partial class ErpOpenApiContract
                 ParameterLocation.Query,
                 "entityId",
                 maximumLength: 128);
+        }
+
+        if (string.Equals(operation.OperationId, "GetSalesAccountReferencesV1", StringComparison.Ordinal))
+        {
+            SetNormalizedIntegerParameter(operation, ParameterLocation.Query, "pageSize", 1, 100);
+            SetStringLengthParameter(operation, ParameterLocation.Query, "q", null, 200);
+            SetStringLengthParameter(operation, ParameterLocation.Query, "cursor", 1, 8192);
+        }
+
+        if (string.Equals(operation.OperationId, "GetSalesProductReferenceV1", StringComparison.Ordinal))
+        {
+            SetStringLengthParameter(
+                operation, ParameterLocation.Query, "expectedProductVersion", 1, 128);
         }
 
 
@@ -1023,6 +1054,14 @@ public static partial class ErpOpenApiContract
             schema,
             NormalizedMaximumExtensionName,
             JsonValue.Create(maximum)!);
+    }
+
+    private static void SetStringLengthParameter(OpenApiOperation operation,
+        ParameterLocation location, string parameterName, int? minimum, int? maximum)
+    {
+        var schema = GetConcreteParameterSchema(operation, location, parameterName);
+        schema.MinLength = minimum;
+        schema.MaxLength = maximum;
     }
 
     private static OpenApiSchema GetConcreteParameterSchema(

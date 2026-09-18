@@ -1,0 +1,36 @@
+# Logistics (LOG-1 + LOG-2 — the ready part of T12: loading instruction)
+
+Source of truth: #275 v2 plan §5, §7.4, §13 (production example), R3 and Ö2 (`SINAN_KARARLARI_2026-09-18_O1_O8_VE_SON_ASAMA.md`), read at exact head `a5b8143b`; the approved GDC kg unit profile (#279, #284, #287) for unit verification.
+
+## What is here
+
+### Domain (`GoymenERP.Modules.Logistics.Domain`)
+- `Quantity` — the Ö2 rule (kg ≤ 3 decimals, pieces whole, exact, no silent cut; trailing zeros dropped so equal quantities print equally). Repeated from Purchasing on purpose: a Domain project must not reference another module's Domain.
+- `LoadingInstruction` (+ lines) — one company, one customer: Draft → Issued. **An instruction is not a definite shipment.**
+  - **Customer = Party + CompanyPartyAccount (LOG-2, CARİ #282 P3-2):** the instruction carries both identities and both are required (§5: a Party alone is not a customer of a company; the account holds the commercial relationship and its active state). Each line carries the **sales order line** it serves (`SourceOrderLineId`, required) and its **Settings unit** (`UnitId`). All are identities only; that the account belongs to the Party and is active in this company, and that the order line exists, are Cari's and Sales' checks at integration (dependency_wait).
+  - **Four separate shares per line** (§7.4): instructed → loaded → shipped → delivered. Each transition is capped by the share before it, so a loaded sub-share is never subtracted twice (§13: 6.000 allocated, 4.000 loaded, 3.800 shipped → 200 loaded-not-shipped stays visible).
+  - **A delivery names its source shipment** (§7.4 "eksik/hasarlı/ret/iade kaynak sevke bağlı"): unknown id, load share or another line's shipment refused; capped by that shipment's undelivered remainder before the line-level cap. `LoadingShare.SourceShipmentId` keeps the link.
+  - **Measurement kind** on every load: measured on the package, or allocated from a vehicle weighing.
+  - **Blocked line refuses loads and definite shipments** (§7.4 "kalite bloku … engellenir", Ö3 "sevk serbestliği yok"), even when loaded before the block. Block placeholder: `BlockLine`/`UnblockLine` toggle a local flag with no source, reason or authority until the block is read from its owner (Inventory/Quality).
+  - **Delivery under a later block — decided by Business (#66 [5730092974](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-5730092974), LOG-3):** a block acts **forward** — it refuses new loads, definite shipments and use — and never erases a shipment that happened before it. For a shipment `S` recorded before the block, `MarkDelivered` bound to `S` may still succeed, only up to `S`'s shipped-not-delivered remainder. That record creates no new load, shipment or stock exit and lifts no block; while blocked, new `RecordLoad`/`MarkShipped` are always refused, so the delivery path cannot bypass a shipment. No shipment id, another line's shipment, above-remainder quantity → fail-closed with **no record and no version effect**; the same delivery command again (same id) creates no second share. After a partial delivery, a block leaves only the already-shipped remainder completable; more needs an unblock. Pinned by tests. The next persistence/HTTP slice carries this into real-SQL acceptance with event order + replay; there the integration layer re-validates `CompanyAccountId + SourceOrderLineId + ShipmentId`, and the block state for new load/ship comes from its owner (Inventory/Quality).
+  - **Stable rule codes (LOG-2, ORG #282 P3-2):** every refusal is a `LogisticsRuleException` with a `LogisticsRuleCodes` code; tests assert the code. The aggregate is the single authority for every share bound; the line-level checks are a second guard that reports `logistics_internal_invariant`. The "shipment of another line" rule has its own code and its own test with a real shipment on the other line (ORG #282 P3-1). **LOG-3 (ORG #291 P3-1):** the delivery-vs-line cap inside `MarkDelivered` is unreachable (the per-shipment cap already bounds it), so it no longer carries a rule code; it reports `logistics_internal_invariant` like every other second guard, and `logistics_delivery_exceeds_line` is removed (16 codes: 15 rules + the invariant).
+  - **Read-only views:** `Lines` and `Shares` are wrappers; a cast cannot reach the backing lists (pinned).
+  - `expectedVersion` on every mutation; duplicate load/shipment/delivery ids refused.
+- **§7.4 "yanlış ürün/sahip/tahsis engellenir" is not enforceable in this slice:** `RecordLoad` carries no identity of the loaded goods; that check arrives with `LoadScan` (dependency_wait).
+
+### Application (`GoymenERP.Modules.Logistics.Application`, LOG-2)
+- `LoadingUnitVerifier` — verifies a line's unit and quantity against the Settings unit profile through `ISettingsPrerequisiteProvider` (Contracts.V1) before a line is added, the same pattern as Purchasing's verifier: fail-closed with the owner's codes kept verbatim (`settings_access_denied`, `settings_provider_unavailable`, `SettingsPrerequisiteCodesV1.UnitProfileNotFound`, `settings_profile_invalid`); server-resolved company, unit identity, validity and window checked; only kilogram profiles approved today (another dimension → `logistics_unit_unsupported`, no guessed count unit); precision from the profile's scale capped by Ö2's 3, never rounded. The result carries the owner's `ProfileScale` and the applied `Scale` = min(profile, 3), so an input limit built from it matches what the domain accepts (LOG-3; the PUR-3/MFG-3 shape).
+
+## What this module is not
+- No physical effect: no stock exit, no allocation consumption, no label scan, no weighing ticket. Definite shipment's stock exit + allocation consumption belong to Inventory (T11/T12) and are **one transaction** with the shipped share (§7.4); `MarkShipped` is never wired on its own.
+- No vehicle/driver data (authorization and audit scope), no documents/invoices, no HTTP, DI, persistence or permissions.
+
+## dependency_wait
+- Definite shipment → stock exit + allocation consumption: Inventory T11/T12 on main.
+- Block source (Inventory/Quality record) replacing the local flag.
+- `LoadScan`: identity of the loaded goods and the wrong-product/owner/allocation refusal of §7.4.
+- Cari: `CompanyAccountId` belongs to `CustomerPartyId` and is active in this company; Sales: `SourceOrderLineId` exists and is this customer's — both at integration, when those owners' read contracts are consumed.
+- Count/piece units: a Settings-approved count dimension.
+- **Verifier → `AddLine` binding (FİNANS #291 P3-1):** the domain's `AddLine` takes a `UnitId` and a `Quantity` as given and does not check that the id is a verified Settings unit or that `Quantity.Unit` matches its dimension (a kilogram id with a piece quantity is accepted). `LoadingUnitVerifier` is the single entry for both; the first command handler is the only place that can make it mandatory (line only from `VerifiedLoadingUnit`, company from `ICompanyContext`) and pin it with a test. Until then "verifier before line" is a contract, not an invariant.
+- Delivery under a later block in real SQL: event order + replay acceptance with the persistence/HTTP slice (the rule itself is decided, above).
+- Persistence: central writer (CARİ).

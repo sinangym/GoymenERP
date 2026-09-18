@@ -1,0 +1,625 @@
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.Modules.Audit.Application.Contracts;
+using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Inventory.Domain;
+using GoymenERP.Modules.Inventory.Domain.Balances;
+using GoymenERP.Modules.Inventory.Domain.Costing;
+using GoymenERP.Modules.Inventory.Domain.Labels;
+using GoymenERP.Modules.Inventory.Domain.Movements;
+using GoymenERP.Modules.Inventory.Domain.Quantities;
+using GoymenERP.Modules.Inventory.Domain.Stock;
+using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+
+namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
+
+/// <summary>
+/// The Inventory store of the server-resolved company (INV-2). Every write is one save: the
+/// stock fact, the balances it changes, the label versions it bumps and its audit event commit
+/// together or not at all.
+/// <list type="bullet">
+/// <item><b>Company:</b> a record of any other company than the resolved context is refused
+/// before anything is read (<see cref="InventoryStoreCodes.CompanyContextMismatch"/>); every read
+/// runs under the tenant filter.</item>
+/// <item><b>Replay (R3):</b> the movement id is the idempotency identity. The same id with the same
+/// canonical content is a replay with no second effect; with another content it is refused.</item>
+/// <item><b>Source:</b> one source (or source line) causes at most one movement of each kind —
+/// checked first for a clear answer, and held by two filtered unique indexes under a race. A source
+/// is answered whole or line by line per kind, never both: the source's grain row, written with its
+/// first movement and referenced by every movement (<see cref="InventoryStoreCodes.SourceGrainMismatch"/>).</item>
+/// <item><b>Label code:</b> one comparison, the code column's collation: another spelling of a stored
+/// code is <see cref="InventoryStoreCodes.LabelCodeTaken"/> whether it comes with a new id (the
+/// unique index) or with the same id (the same comparison, asked of SQL).</item>
+/// <item><b>Race:</b> every write bumps the version of each label it touches. Two writes that read
+/// the same stock of one piece cannot both commit; the second is refused whole
+/// (<see cref="InventoryStoreCodes.ConcurrentChange"/>) and may be retried.</item>
+/// <item><b>Rules:</b> the domain ledger decides, seeded from the stored balances: no negative
+/// stock, one physical place per label, no re-receipt of a stock-bearing label.</item>
+/// <item><b>Scale:</b> quantities are checked against the company's approved kilogram profile
+/// (<see cref="InventoryKilogramScale"/>) on the movement's date; fail-closed.</item>
+/// <item><b>Audit:</b> ADR-009 envelope from <see cref="InventoryCommandMetadata"/>, in the same save.</item>
+/// </list>
+/// </summary>
+public sealed class InventoryStore(
+    InventoryDbContext dbContext,
+    ICompanyContext companyContext,
+    IAuditEventCollector auditEvents,
+    InventoryKilogramScale kilogramScale,
+    TimeProvider timeProvider) : IInventoryLabelStore, IInventoryMovementStore
+{
+    private const string LabelEntityType = "Inventory.MaterialLabel";
+    private const string MovementEntityType = "Inventory.StockMovement";
+    private const int ActorMaximumLength = 128;
+    private const int ReasonMaximumLength = 1000;
+    private const int DocumentKindMaximumLength = 64;
+    private const int CostScaleMaximum = 18;
+
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+
+    public async Task<InventoryWriteOutcome> SaveLabelAsync(MaterialLabel label, InventoryCommandMetadata metadata,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(label);
+        RequireMetadata(metadata);
+        RequireCompany(label.CompanyId);
+        RequireLabelFits(label);
+
+        var stored = await dbContext.Labels.SingleOrDefaultAsync(row => row.Id == label.Id, cancellationToken);
+        var now = timeProvider.GetUtcNow();
+        if (stored is null)
+        {
+            dbContext.Labels.Add(new LabelRow
+            {
+                Id = label.Id,
+                CompanyId = label.CompanyId,
+                Code = label.Code,
+                ProductId = label.ProductId,
+                LotId = label.LotId,
+                HeatNumber = label.HeatNumber,
+                CoilNumber = label.CoilNumber,
+                RequiredDocumentsJson = JsonSerializer.Serialize(label.RequiredDocuments.Order(StringComparer.Ordinal), Json),
+                Version = 1,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now,
+            });
+            AddPrints(label, fromSequence: 1);
+            AddDocuments(label, fromSequence: 1);
+            Audit(metadata, label.CompanyId, LabelEntityType, label.Id, "inventory.label.registered.v1", "Register",
+                versionBefore: null, versionAfter: 1, before: "{}", after: LabelAudit(label), "Etiket kaydı");
+            await SaveAsync(cancellationToken);
+            return InventoryWriteOutcome.Recorded;
+        }
+
+        if (!string.Equals(stored.Code, label.Code, StringComparison.Ordinal)
+            && await dbContext.Labels.AnyAsync(row => row.Id == label.Id && row.Code == label.Code, cancellationToken))
+        {
+            // The column's collation calls it the stored code, written another way: the same answer
+            // a new label with this spelling gets from the unique index.
+            throw Refused(InventoryStoreCodes.LabelCodeTaken, "Bu kod kayıtlı bir etiket kodunun başka yazımı.");
+        }
+
+        if (!SameIdentity(stored, label))
+        {
+            throw Refused(InventoryStoreCodes.LabelConflict, "Aynı etiket kimliği farklı kimlik bilgileriyle verildi.");
+        }
+
+        var storedPrints = await dbContext.LabelPrints.Where(row => row.LabelId == label.Id)
+            .OrderBy(row => row.Sequence).ToListAsync(cancellationToken);
+        var storedDocuments = await dbContext.LabelDocuments.Where(row => row.LabelId == label.Id)
+            .OrderBy(row => row.Sequence).ToListAsync(cancellationToken);
+        if (storedPrints.Count > label.Prints.Count || storedDocuments.Count > label.DocumentAttachments.Count
+            || storedPrints.Where((row, index) => ToPrint(row) != label.Prints[index]).Any()
+            || storedDocuments.Where((row, index) => ToAttachment(row) != label.DocumentAttachments[index]).Any())
+        {
+            throw Refused(InventoryStoreCodes.LabelConflict, "Etiketin baskı ve belge geçmişi kayıtlı geçmişi uzatmıyor.");
+        }
+
+        if (storedPrints.Count == label.Prints.Count && storedDocuments.Count == label.DocumentAttachments.Count)
+        {
+            return InventoryWriteOutcome.Replayed;
+        }
+
+        AddPrints(label, fromSequence: storedPrints.Count + 1);
+        AddDocuments(label, fromSequence: storedDocuments.Count + 1);
+        var before = stored.Version;
+        stored.Version = checked(before + 1);
+        stored.UpdatedAtUtc = now;
+        Audit(metadata, label.CompanyId, LabelEntityType, label.Id, "inventory.label.history-extended.v1", "Extend",
+            versionBefore: before, versionAfter: stored.Version,
+            before: JsonSerializer.Serialize(new { prints = storedPrints.Count, documents = storedDocuments.Count }, Json),
+            after: LabelAudit(label), "Etiket baskı/belge geçmişi");
+        await SaveAsync(cancellationToken);
+        return InventoryWriteOutcome.Recorded;
+    }
+
+    public async Task<MaterialLabel?> FindLabelAsync(Guid labelId, CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        var rows = await dbContext.Labels.AsNoTracking().Where(row => row.Id == labelId).ToListAsync(cancellationToken);
+        return rows.Count == 0 ? null : (await RestoreLabelsAsync(rows, cancellationToken))[labelId];
+    }
+
+    public async Task<InventoryWriteOutcome> RecordMovementAsync(StockMovement movement, InventoryCommandMetadata metadata,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(movement);
+        RequireMetadata(metadata);
+        RequireCompany(movement.CompanyId);
+        RequireCostFits(movement.Cost);
+
+        var payloadHash = PayloadHash(movement);
+        var existing = await dbContext.Movements.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.Id == movement.Id, cancellationToken);
+        if (existing is not null)
+        {
+            return string.Equals(existing.PayloadHash, payloadHash, StringComparison.Ordinal)
+                ? InventoryWriteOutcome.Replayed
+                : throw Refused(InventoryStoreCodes.MovementIdConflict, "Aynı hareket kimliği farklı içerikle verildi.");
+        }
+
+        if (await SourceTakenAsync(movement, cancellationToken))
+        {
+            throw Refused(InventoryStoreCodes.DuplicateSource, "Bu kaynak bu türde zaten bir hareket doğurdu.");
+        }
+
+        var grain = (int)movement.Source.Grain;
+        var storedGrain = await SourceGrainAsync(movement, cancellationToken);
+        if (storedGrain is { } fixedGrain && fixedGrain != grain)
+        {
+            throw Refused(InventoryStoreCodes.SourceGrainMismatch,
+                "Bu kaynak bu türde başka ayrıntı düzeyinde (bütün/satır) karşılandı; aynı miktar iki kez sayılmaz.");
+        }
+
+        var scale = await kilogramScale.CheckAsync(movement.CompanyId, DateOnly.FromDateTime(movement.OccurredAtUtc.UtcDateTime),
+            movement.Lines.Select(line => line.Quantity), cancellationToken);
+        if (!scale.IsAccepted)
+        {
+            throw Refused(scale.Code!, "Miktar şirketin onaylı kilogram profiline uymuyor.");
+        }
+
+        var labelIds = movement.Lines.Select(line => line.Position.LabelId).Distinct().ToArray();
+        var labels = await dbContext.Labels.Where(row => labelIds.Contains(row.Id)).ToListAsync(cancellationToken);
+        foreach (var line in movement.Lines)
+        {
+            var label = labels.SingleOrDefault(row => row.Id == line.Position.LabelId)
+                ?? throw Refused(InventoryStoreCodes.LabelNotRegistered, "Hareket kayıtlı olmayan bir etiketi adlandırıyor.");
+            if (label.ProductId != line.Position.ProductId)
+            {
+                throw Refused(InventoryStoreCodes.LabelConflict, "Hareketteki etiket kayıtlı etiketle aynı ürün değil.");
+            }
+        }
+
+        var balanceRows = await dbContext.Balances.Where(row => labelIds.Contains(row.LabelId)).ToListAsync(cancellationToken);
+        var labelObjects = labels.ToDictionary(row => row.Id, IdentityOnly);
+        var ledger = StockLedger.FromStoredBalances(balanceRows.Select(row =>
+            new StockBalance(Position(row.CompanyId, row.OwnerKind, row.OwnerId, row.CustodianKind, row.CustodianId,
+                row.LocationId, labelObjects[row.LabelId], row.Block), Kilograms.Of(row.QuantityKg))));
+
+        // The domain decides; nothing below runs for a refused movement.
+        ledger.Apply(movement);
+
+        foreach (var position in movement.Lines.Select(line => line.Position).Distinct())
+        {
+            var quantity = ledger.QuantityAt(position).Value;
+            var row = balanceRows.SingleOrDefault(candidate => Matches(candidate, position));
+            if (row is null)
+            {
+                dbContext.Balances.Add(new BalanceRow
+                {
+                    Id = Guid.NewGuid(),
+                    CompanyId = position.CompanyId,
+                    OwnerKind = (int)position.Owner.Kind,
+                    OwnerId = position.Owner.Id,
+                    CustodianKind = (int)position.Custodian.Kind,
+                    CustodianId = position.Custodian.Id,
+                    LocationId = position.LocationId,
+                    LabelId = position.LabelId,
+                    ProductId = position.ProductId,
+                    Block = (int)position.Block,
+                    QuantityKg = quantity,
+                });
+            }
+            else
+            {
+                row.QuantityKg = quantity;
+            }
+        }
+
+        var now = timeProvider.GetUtcNow();
+        foreach (var label in labels)
+        {
+            label.Version = checked(label.Version + 1);
+            label.UpdatedAtUtc = now;
+        }
+
+        if (storedGrain is null)
+        {
+            dbContext.SourceGrains.Add(new SourceGrainRow
+            {
+                CompanyId = movement.CompanyId,
+                Kind = (int)movement.Kind,
+                SourceKind = movement.Source.Kind,
+                SourceId = movement.Source.Id,
+                Grain = grain,
+            });
+        }
+
+        dbContext.Movements.Add(new MovementRow
+        {
+            Id = movement.Id,
+            CompanyId = movement.CompanyId,
+            Kind = (int)movement.Kind,
+            OccurredAtUtc = movement.OccurredAtUtc,
+            SourceKind = movement.Source.Kind,
+            SourceId = movement.Source.Id,
+            SourceLineId = movement.Source.LineId,
+            SourceGrain = grain,
+            CostStatus = (int)movement.Cost.Status,
+            CostAmount = movement.Cost.Amount,
+            CostCurrencyId = movement.Cost.CurrencyId,
+            PayloadHash = payloadHash,
+            RecordedAtUtc = now,
+            RecordedBy = metadata.ActorId.Trim(),
+            CorrelationId = metadata.CorrelationId.Trim(),
+        });
+        var number = 0;
+        foreach (var line in movement.Lines)
+        {
+            var position = line.Position;
+            dbContext.MovementLines.Add(new MovementLineRow
+            {
+                CompanyId = movement.CompanyId,
+                MovementId = movement.Id,
+                LineNumber = ++number,
+                Direction = (int)line.Direction,
+                OwnerKind = (int)position.Owner.Kind,
+                OwnerId = position.Owner.Id,
+                CustodianKind = (int)position.Custodian.Kind,
+                CustodianId = position.Custodian.Id,
+                LocationId = position.LocationId,
+                LabelId = position.LabelId,
+                ProductId = position.ProductId,
+                Block = (int)position.Block,
+                QuantityKg = line.Quantity.Value,
+            });
+        }
+
+        Audit(metadata, movement.CompanyId, MovementEntityType, movement.Id, "inventory.movement.recorded.v1", "Record",
+            versionBefore: null, versionAfter: 1, before: "{}", after: MovementAudit(movement, payloadHash),
+            $"Stok hareketi ({movement.Kind})");
+        await SaveAsync(cancellationToken);
+        return InventoryWriteOutcome.Recorded;
+    }
+
+    public async Task<IReadOnlyList<StockBalance>> ReadBalancesAsync(Guid labelId, CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        var label = await dbContext.Labels.AsNoTracking().SingleOrDefaultAsync(row => row.Id == labelId, cancellationToken);
+        if (label is null)
+        {
+            return [];
+        }
+
+        var identity = IdentityOnly(label);
+        var rows = await dbContext.Balances.AsNoTracking()
+            .Where(row => row.LabelId == labelId && row.QuantityKg != 0m)
+            .ToListAsync(cancellationToken);
+        return [.. rows.Select(row => new StockBalance(Position(row.CompanyId, row.OwnerKind, row.OwnerId, row.CustodianKind,
+            row.CustodianId, row.LocationId, identity, row.Block), Kilograms.Of(row.QuantityKg)))];
+    }
+
+    public async Task<IReadOnlyList<StockMovement>> ReadMovementsAsync(Guid labelId, CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        var movementIds = await dbContext.MovementLines.AsNoTracking()
+            .Where(line => line.LabelId == labelId)
+            .Select(line => line.MovementId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        var movements = await dbContext.Movements.AsNoTracking()
+            .Where(row => movementIds.Contains(row.Id))
+            .OrderBy(row => row.RecordedAtUtc).ThenBy(row => row.Id)
+            .ToListAsync(cancellationToken);
+        var lines = await dbContext.MovementLines.AsNoTracking()
+            .Where(line => movementIds.Contains(line.MovementId))
+            .ToListAsync(cancellationToken);
+        var touchedLabels = lines.Select(line => line.LabelId).Distinct().ToArray();
+        var labels = (await dbContext.Labels.AsNoTracking().Where(row => touchedLabels.Contains(row.Id)).ToListAsync(cancellationToken))
+            .ToDictionary(row => row.Id, IdentityOnly);
+
+        return [.. movements.Select(row => new StockMovement(row.Id, row.CompanyId, (StockMovementKind)row.Kind, row.OccurredAtUtc,
+            new StockSourceReference(row.SourceKind, row.SourceId, row.SourceLineId),
+            lines.Where(line => line.MovementId == row.Id).OrderBy(line => line.LineNumber).Select(line => new StockMovementLine(
+                Position(line.CompanyId, line.OwnerKind, line.OwnerId, line.CustodianKind, line.CustodianId, line.LocationId,
+                    labels[line.LabelId], line.Block),
+                (StockDirection)line.Direction, Kilograms.Positive(line.QuantityKg))),
+            Cost(row)))];
+    }
+
+    private async Task SaveAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException exception)
+        {
+            throw Refused(InventoryStoreCodes.ConcurrentChange,
+                "Aynı parçanın stoğu başka bir yazmayla değişti; hiçbir şey kaydedilmedi.", exception);
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 } sql)
+        {
+            var code = sql.Message switch
+            {
+                var message when message.Contains("UX_Movements_Source", StringComparison.Ordinal) => InventoryStoreCodes.DuplicateSource,
+                var message when message.Contains("IX_Labels_CompanyId_Code", StringComparison.Ordinal) => InventoryStoreCodes.LabelCodeTaken,
+                var message when message.Contains("PK_Movements", StringComparison.Ordinal) => InventoryStoreCodes.ConcurrentChange,
+                // Two first movements of one source raced for its grain: retried, the loser reads it.
+                var message when message.Contains("PK_SourceGrains", StringComparison.Ordinal) => InventoryStoreCodes.ConcurrentChange,
+                _ => InventoryStoreCodes.ConcurrentChange,
+            };
+            throw Refused(code, "Kayıt tekillik kuralına takıldı; hiçbir şey kaydedilmedi.", exception);
+        }
+    }
+
+    private async Task<bool> SourceTakenAsync(StockMovement movement, CancellationToken cancellationToken)
+    {
+        var source = movement.Source;
+        var kind = (int)movement.Kind;
+        return source.LineId is { } lineId
+            ? await dbContext.Movements.AsNoTracking().AnyAsync(row => row.Kind == kind && row.SourceKind == source.Kind
+                && row.SourceId == source.Id && row.SourceLineId == lineId, cancellationToken)
+            : await dbContext.Movements.AsNoTracking().AnyAsync(row => row.Kind == kind && row.SourceKind == source.Kind
+                && row.SourceId == source.Id && row.SourceLineId == null, cancellationToken);
+    }
+
+    private async Task<int?> SourceGrainAsync(StockMovement movement, CancellationToken cancellationToken)
+    {
+        var source = movement.Source;
+        var kind = (int)movement.Kind;
+        return await dbContext.SourceGrains.AsNoTracking()
+            .Where(row => row.Kind == kind && row.SourceKind == source.Kind && row.SourceId == source.Id)
+            .Select(row => (int?)row.Grain)
+            .SingleOrDefaultAsync(cancellationToken);
+    }
+
+    private async Task<Dictionary<Guid, MaterialLabel>> RestoreLabelsAsync(IReadOnlyList<LabelRow> rows,
+        CancellationToken cancellationToken)
+    {
+        var ids = rows.Select(row => row.Id).ToArray();
+        var prints = await dbContext.LabelPrints.AsNoTracking().Where(row => ids.Contains(row.LabelId)).ToListAsync(cancellationToken);
+        var documents = await dbContext.LabelDocuments.AsNoTracking().Where(row => ids.Contains(row.LabelId))
+            .ToListAsync(cancellationToken);
+        return rows.ToDictionary(row => row.Id, row => MaterialLabel.Restore(row.Id, row.CompanyId, row.Code, row.ProductId,
+            row.LotId, JsonSerializer.Deserialize<string[]>(row.RequiredDocumentsJson, Json)
+                ?? throw new InvalidOperationException("Kayıtlı etiketin belge gereksinimi okunamadı."),
+            row.HeatNumber, row.CoilNumber,
+            prints.Where(print => print.LabelId == row.Id).OrderBy(print => print.Sequence).Select(ToPrint),
+            documents.Where(document => document.LabelId == row.Id).OrderBy(document => document.Sequence).Select(ToAttachment)));
+    }
+
+    private void AddPrints(MaterialLabel label, int fromSequence)
+    {
+        foreach (var print in label.Prints.Where(print => print.Sequence >= fromSequence))
+        {
+            dbContext.LabelPrints.Add(new LabelPrintRow
+            {
+                CompanyId = label.CompanyId,
+                LabelId = label.Id,
+                Sequence = print.Sequence,
+                PrintedAtUtc = print.PrintedAtUtc,
+                PrintedBy = print.PrintedBy,
+                Reason = print.Reason,
+            });
+        }
+    }
+
+    private void AddDocuments(MaterialLabel label, int fromSequence)
+    {
+        var sequence = 0;
+        foreach (var attachment in label.DocumentAttachments)
+        {
+            if (++sequence < fromSequence)
+            {
+                continue;
+            }
+
+            dbContext.LabelDocuments.Add(new LabelDocumentRow
+            {
+                CompanyId = label.CompanyId,
+                LabelId = label.Id,
+                Sequence = sequence,
+                Kind = attachment.Kind,
+                AttachedAtUtc = attachment.AttachedAtUtc,
+                AttachedBy = attachment.AttachedBy,
+            });
+        }
+    }
+
+    private void Audit(InventoryCommandMetadata metadata, Guid companyId, string entityType, Guid entityId, string eventType,
+        string operation, long? versionBefore, long? versionAfter, string before, string after, string reason)
+    {
+        auditEvents.Enqueue(new AuditEventDraft(
+            companyId,
+            eventType,
+            entityType,
+            entityId.ToString("D"),
+            operation,
+            versionBefore,
+            versionAfter,
+            AuditActorTypes.User,
+            metadata.ActorId,
+            metadata.PermissionCode,
+            metadata.RoleCodes,
+            before,
+            after,
+            reason,
+            ApprovalContextJson: null,
+            AuditAiInvolvement.None,
+            AiContextJson: null,
+            metadata.SourceChannel,
+            metadata.ClientIpAddress,
+            metadata.UserAgent,
+            metadata.CorrelationId,
+            metadata.CausationId,
+            metadata.IdempotencyKey));
+    }
+
+    private void RequireCompany(Guid companyId)
+    {
+        if (!companyContext.IsResolved || companyContext.CompanyId != companyId)
+        {
+            throw Refused(InventoryStoreCodes.CompanyContextMismatch, "Kayıt aktif şirket bağlamının şirketine ait değil.");
+        }
+    }
+
+    private void RequireResolvedCompany()
+    {
+        if (!companyContext.IsResolved)
+        {
+            throw Refused(InventoryStoreCodes.CompanyContextMismatch, "Aktif şirket bağlamı olmadan stok okunmaz.");
+        }
+    }
+
+    private static void RequireMetadata(InventoryCommandMetadata metadata)
+    {
+        ArgumentNullException.ThrowIfNull(metadata);
+        if (string.IsNullOrWhiteSpace(metadata.ActorId) || string.IsNullOrWhiteSpace(metadata.PermissionCode)
+            || string.IsNullOrWhiteSpace(metadata.CorrelationId) || string.IsNullOrWhiteSpace(metadata.IdempotencyKey)
+            || string.IsNullOrWhiteSpace(metadata.SourceChannel) || metadata.RoleCodes is null)
+        {
+            throw new ArgumentException("Stok yazması aktör, izin, correlation, idempotency ve kanal bilgisi ister.", nameof(metadata));
+        }
+
+        if (metadata.ActorId.Trim().Length > ActorMaximumLength || metadata.CorrelationId.Trim().Length > ActorMaximumLength)
+        {
+            throw Refused(InventoryStoreCodes.ValueDoesNotFit, "Aktör ya da correlation değeri kayıt alanına sığmıyor.");
+        }
+    }
+
+    private static void RequireLabelFits(MaterialLabel label)
+    {
+        var tooLong = (label.HeatNumber?.Length ?? 0) > 64 || (label.CoilNumber?.Length ?? 0) > 64
+            || label.RequiredDocuments.Any(kind => kind.Length > DocumentKindMaximumLength)
+            || label.Prints.Any(print => print.PrintedBy.Length > ActorMaximumLength || (print.Reason?.Length ?? 0) > ReasonMaximumLength)
+            || label.DocumentAttachments.Any(document => document.Kind.Length > DocumentKindMaximumLength
+                || document.AttachedBy.Length > ActorMaximumLength);
+        if (tooLong)
+        {
+            throw Refused(InventoryStoreCodes.ValueDoesNotFit, "Etiketin bir metni kayıt alanına sığmıyor; kesilmez, reddedilir.");
+        }
+    }
+
+    private static void RequireCostFits(CostResult cost)
+    {
+        // Not a money policy: the stored column holds 18 decimals and 20 integer digits, and a value
+        // that does not fit is refused rather than rounded by the database.
+        if (cost.Amount is { } amount && (Scale(amount) > CostScaleMaximum || Math.Abs(amount) >= 100_000_000_000_000_000_000m))
+        {
+            throw Refused(InventoryStoreCodes.ValueDoesNotFit, "Maliyet tutarı kayıt alanına sığmıyor; yuvarlanmaz, reddedilir.");
+        }
+    }
+
+    private static int Scale(decimal value) => (decimal.GetBits(value)[3] >> 16) & 0xFF;
+
+    /// <summary>A replay repeats the stored facts exactly; the code's spelling included.</summary>
+    private static bool SameIdentity(LabelRow row, MaterialLabel label) =>
+        row.CompanyId == label.CompanyId && string.Equals(row.Code, label.Code, StringComparison.Ordinal)
+        && row.ProductId == label.ProductId && row.LotId == label.LotId
+        && string.Equals(row.HeatNumber, label.HeatNumber, StringComparison.Ordinal)
+        && string.Equals(row.CoilNumber, label.CoilNumber, StringComparison.Ordinal)
+        && string.Equals(row.RequiredDocumentsJson,
+            JsonSerializer.Serialize(label.RequiredDocuments.Order(StringComparer.Ordinal), Json), StringComparison.Ordinal);
+
+    /// <summary>The label facts a position needs (company, product, id); prints and documents do not matter there.</summary>
+    private static MaterialLabel IdentityOnly(LabelRow row) =>
+        new MaterialLabel(row.Id, row.CompanyId, row.Code, row.ProductId, row.LotId);
+
+    private static StockPosition Position(Guid companyId, int ownerKind, Guid ownerId, int custodianKind, Guid custodianId,
+        Guid locationId, MaterialLabel label, int block) =>
+        new StockPosition(companyId, new StockOwner((StockPartyKind)ownerKind, ownerId),
+            new StockCustodian((StockPartyKind)custodianKind, custodianId), locationId, label, (BlockState)block);
+
+    private static bool Matches(BalanceRow row, StockPosition position) =>
+        row.CompanyId == position.CompanyId && row.OwnerKind == (int)position.Owner.Kind && row.OwnerId == position.Owner.Id
+        && row.CustodianKind == (int)position.Custodian.Kind && row.CustodianId == position.Custodian.Id
+        && row.LocationId == position.LocationId && row.LabelId == position.LabelId
+        && row.ProductId == position.ProductId && row.Block == (int)position.Block;
+
+    private static LabelPrint ToPrint(LabelPrintRow row) => new LabelPrint(row.Sequence, row.PrintedAtUtc, row.PrintedBy, row.Reason);
+
+    private static LabelDocumentAttachment ToAttachment(LabelDocumentRow row) => new LabelDocumentAttachment(row.Kind, row.AttachedAtUtc, row.AttachedBy);
+
+    private static CostResult Cost(MovementRow row) => (CostStatus)row.CostStatus switch
+    {
+        CostStatus.NotCalculated => CostResult.NotCalculated,
+        CostStatus.WaitingPolicy => CostResult.WaitingPolicy,
+        CostStatus.Known => CostResult.Known(row.CostAmount!.Value, row.CostCurrencyId!.Value),
+        _ => throw new InvalidOperationException("Kayıtlı hareketin maliyet durumu tanımsız."),
+    };
+
+    /// <summary>
+    /// The canonical content of a movement: kind, time, source, cost and every line in order. Numbers
+    /// are written without trailing zeros, so 5.00 and 5 are the same content (#293 SİPARİŞ P3-2).
+    /// </summary>
+    internal static string PayloadHash(StockMovement movement)
+    {
+        var canonical = JsonSerializer.Serialize(new
+        {
+            kind = (int)movement.Kind,
+            occurredAtUtc = movement.OccurredAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
+            source = new { kind = movement.Source.Kind, id = movement.Source.Id, lineId = movement.Source.LineId },
+            cost = new
+            {
+                status = (int)movement.Cost.Status,
+                amount = movement.Cost.Amount is { } known
+                    ? (known / 1.000000000000000000000000000000000m).ToString(CultureInfo.InvariantCulture)
+                    : null,
+                currencyId = movement.Cost.CurrencyId,
+            },
+            lines = movement.Lines.Select(line => new
+            {
+                direction = (int)line.Direction,
+                ownerKind = (int)line.Position.Owner.Kind,
+                ownerId = line.Position.Owner.Id,
+                custodianKind = (int)line.Position.Custodian.Kind,
+                custodianId = line.Position.Custodian.Id,
+                locationId = line.Position.LocationId,
+                labelId = line.Position.LabelId,
+                productId = line.Position.ProductId,
+                block = (int)line.Position.Block,
+                quantityKg = line.Quantity.ToString(),
+            }),
+        }, Json);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+    }
+
+    private static string LabelAudit(MaterialLabel label) => JsonSerializer.Serialize(new
+    {
+        label.Id,
+        label.Code,
+        label.ProductId,
+        label.LotId,
+        requiredDocuments = label.RequiredDocuments.Order(StringComparer.Ordinal),
+        documentStatus = label.DocumentStatus.ToString(),
+        prints = label.Prints.Count,
+        documents = label.DocumentAttachments.Count,
+    }, Json);
+
+    private static string MovementAudit(StockMovement movement, string payloadHash) => JsonSerializer.Serialize(new
+    {
+        movement.Id,
+        kind = movement.Kind.ToString(),
+        movement.OccurredAtUtc,
+        source = new { movement.Source.Kind, movement.Source.Id, movement.Source.LineId },
+        costStatus = movement.Cost.Status.ToString(),
+        lines = movement.Lines.Count,
+        payloadHash,
+    }, Json);
+
+    private static InventoryStoreException Refused(string code, string message, Exception? inner = null) => new InventoryStoreException(code, message, inner);
+}
