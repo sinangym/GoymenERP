@@ -1,6 +1,7 @@
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 using GoymenERP.Modules.Organization.Infrastructure.Shell;
+using GoymenERP.Modules.Product.Infrastructure.Shell;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.Shell;
@@ -36,11 +37,7 @@ internal static class C01E2eShellCapabilityActivation
 
         if (!IsActivationRequested(configuration))
         {
-            return services.Any(descriptor =>
-                descriptor.ServiceType == typeof(IShellCapabilityProvider)
-                && descriptor.ImplementationType == typeof(OrganizationShellCapabilityProvider))
-                ? ShellCapabilityRegistryAuthorities.CounterpartyV15AndOrganizationV10
-                : ShellCapabilityRegistryAuthorities.CounterpartyListCreateLinkAndDetailV15;
+            return NormalAuthority(services);
         }
 
         ValidateActivationEnvelope(environment, configuration);
@@ -56,6 +53,45 @@ internal static class C01E2eShellCapabilityActivation
                 throw new InvalidOperationException(
                     "C-01 disposable capability profili tanınmıyor.");
         }
+    }
+
+    // The module providers the normal host may register beside the one required Counterparty
+    // provider, each at most once. A module that joins the shell adds one row here and one accepted
+    // authority below; the C-01 envelope removes all of them and stays list-only.
+    private static readonly Type[] OptionalModuleProviders =
+    [
+        typeof(OrganizationShellCapabilityProvider),
+        typeof(ProductShellCapabilityProvider),
+    ];
+
+    // The accepted normal-host authority for each set of optional module providers present (in the
+    // order above). An unlisted set keeps the Counterparty-only authority, which the registry then
+    // refuses for the providers it actually holds: startup fails closed, nothing unreviewed is served.
+    private static readonly (Type[] Providers, string Authority)[] NormalAuthorities =
+    [
+        (Type.EmptyTypes, ShellCapabilityRegistryAuthorities.CounterpartyListCreateLinkAndDetailV15),
+        (new[] { typeof(OrganizationShellCapabilityProvider) },
+            ShellCapabilityRegistryAuthorities.CounterpartyV15AndOrganizationV10),
+        (new[] { typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider) },
+            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10AndProductV10),
+    ];
+
+    private static string NormalAuthority(IServiceCollection services)
+    {
+        var present = OptionalModuleProviders
+            .Where(type => services.Any(descriptor =>
+                descriptor.ServiceType == typeof(IShellCapabilityProvider)
+                && descriptor.ImplementationType == type))
+            .ToArray();
+        foreach (var (providers, authority) in NormalAuthorities)
+        {
+            if (providers.SequenceEqual(present))
+            {
+                return authority;
+            }
+        }
+
+        return ShellCapabilityRegistryAuthorities.CounterpartyListCreateLinkAndDetailV15;
     }
 
     private static bool IsActivationRequested(IConfiguration configuration) =>
@@ -115,11 +151,12 @@ internal static class C01E2eShellCapabilityActivation
             .ToArray();
         var counterpartyCount = providers.Count(descriptor =>
             descriptor.ImplementationType == typeof(CounterpartyShellCapabilityProvider));
-        var organizationCount = providers.Count(descriptor =>
-            descriptor.ImplementationType == typeof(OrganizationShellCapabilityProvider));
+        var optionalCounts = OptionalModuleProviders
+            .Select(type => providers.Count(descriptor => descriptor.ImplementationType == type))
+            .ToArray();
         if (counterpartyCount != 1
-            || organizationCount > 1
-            || providers.Length != counterpartyCount + organizationCount
+            || optionalCounts.Any(count => count > 1)
+            || providers.Length != counterpartyCount + optionalCounts.Sum()
             || providers.Any(descriptor => descriptor.Lifetime != ServiceLifetime.Singleton))
         {
             throw new InvalidOperationException(
@@ -127,7 +164,7 @@ internal static class C01E2eShellCapabilityActivation
         }
 
         // The disposable C-01 envelope remains strictly list-only, even when
-        // the normal host has additional accepted Organization declarations.
+        // the normal host has additional accepted module declarations.
         foreach (var provider in providers)
         {
             services.Remove(provider);

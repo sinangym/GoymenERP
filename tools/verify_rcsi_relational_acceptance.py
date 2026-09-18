@@ -171,13 +171,14 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.SalesDraftSqlServerRelationalAcceptanceTests.A_stored_draft_is_rebuilt_through_the_domain_and_listed_newest_first_with_a_company_bound_cursor",
     "GoymenERP.Api.IntegrationTests.SalesDraftSqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
     "GoymenERP.Api.IntegrationTests.SalesDraftSqlServerRelationalAcceptanceTests.A_key_that_differs_only_by_surrounding_whitespace_is_refused_and_never_replays_the_stored_attempt",
+    "GoymenERP.Api.IntegrationTests.ProductShellCapabilitySqlServerRelationalAcceptanceTests.Product_screens_follow_the_global_Product_authority_through_the_real_provider",
     "GoymenERP.Api.IntegrationTests.FinanceDraftSqlServerRelationalAcceptanceTests.Drafts_are_listed_newest_first_across_pages_with_a_company_bound_cursor",
     "GoymenERP.Api.IntegrationTests.FinanceDraftApiSqlServerRelationalAcceptanceTests.The_draft_routes_answer_only_with_fresh_finance_grants_and_only_for_the_context_company",
     "GoymenERP.Api.IntegrationTests.FinanceDraftApiSqlServerRelationalAcceptanceTests.A_save_reaches_its_real_owners_and_answers_their_refusal_without_storing_anything",
     "GoymenERP.Api.IntegrationTests.FinanceDraftApiSqlServerRelationalAcceptanceTests.Another_companys_draft_is_not_found_and_its_cursor_reads_nothing",
 )
-BROAD_DISCOVERY_COUNT = 135
-BROAD_EXECUTION_COUNT = 142
+BROAD_DISCOVERY_COUNT = 136
+BROAD_EXECUTION_COUNT = 143
 
 
 def verify_discovery(standard_output: str) -> None:
