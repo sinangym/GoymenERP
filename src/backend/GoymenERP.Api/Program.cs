@@ -16,6 +16,7 @@ using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Idempotency.Infrastructure;
+using GoymenERP.Modules.Inventory.Infrastructure;
 using GoymenERP.Modules.Organization.Infrastructure;
 using GoymenERP.Modules.Identity.Infrastructure;
 using GoymenERP.Modules.Product.Application.Contracts;
@@ -114,6 +115,10 @@ builder.Services.AddCounterpartyModule(
         builder.Environment.IsDevelopment()
         || builder.Environment.IsEnvironment("Testing")
         || isOpenApiDocumentGeneration);
+builder.Services.AddInventoryModule(
+    builder.Configuration,
+    (services, options) => options.AddInterceptors(
+        services.GetRequiredService<AuditSaveChangesInterceptor>()));
 var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
     builder.Services,
     builder.Environment,
@@ -152,6 +157,7 @@ app.MapCounterpartyEndpoints();
 app.MapProductEndpoints();
 app.MapFinanceEndpoints();
 app.MapSalesEndpoints();
+app.MapInventoryEndpoints();
 app.MapShellEndpoints();
 
 if (!isOpenApiDocumentGeneration
@@ -162,6 +168,8 @@ if (!isOpenApiDocumentGeneration
     await app.Services.InitializeAuditModuleAsync();
     await app.Services.InitializeIdempotencyModuleAsync();
     await app.Services.InitializeCounterpartyModuleAsync();
+    // After Organization: Inventory's composite foreign keys reference its tables.
+    await app.Services.InitializeInventoryModuleAsync();
     await app.Services.InitializeProductRuntimeAsync();
 }
 

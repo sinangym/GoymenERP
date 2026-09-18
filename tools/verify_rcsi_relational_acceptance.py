@@ -162,9 +162,12 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.FinanceBankAccountSqlServerRelationalAcceptanceTests.A_currency_outside_the_settings_candidates_or_an_unavailable_source_stores_nothing",
     "GoymenERP.Api.IntegrationTests.FinanceBankAccountSqlServerRelationalAcceptanceTests.Two_racing_approvals_store_one_and_the_database_refuses_a_self_approval",
     "GoymenERP.Api.IntegrationTests.FinanceBankAccountSqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
+    "GoymenERP.Api.IntegrationTests.InventoryReadApiSqlServerRelationalAcceptanceTests.A_reader_with_both_grants_sees_the_label_and_its_stock_position_by_position",
+    "GoymenERP.Api.IntegrationTests.InventoryReadApiSqlServerRelationalAcceptanceTests.Each_read_needs_its_own_grant",
+    "GoymenERP.Api.IntegrationTests.InventoryReadApiSqlServerRelationalAcceptanceTests.Another_companys_label_is_not_found_and_the_company_context_is_required",
 )
-BROAD_DISCOVERY_COUNT = 122
-BROAD_EXECUTION_COUNT = 129
+BROAD_DISCOVERY_COUNT = 125
+BROAD_EXECUTION_COUNT = 132
 
 
 def verify_discovery(standard_output: str) -> None:
