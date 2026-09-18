@@ -1,0 +1,187 @@
+using GoymenERP.Modules.Manufacturing.Domain.Common;
+using GoymenERP.Modules.Manufacturing.Domain.Orders;
+using GoymenERP.Modules.Manufacturing.Domain.Plans;
+using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
+
+namespace GoymenERP.Manufacturing.UnitTests;
+
+/// <summary>
+/// MFG-5: a stored plan or order is rebuilt through the rules that wrote it. A faithful record
+/// comes back with the same state and the same answers (the MFG-4 close rule included); a record
+/// that breaks a rule is refused, never repaired. The canonical content hash treats 5.00 kg and
+/// 5 kg as one content and a different instant, roll or class as another.
+/// </summary>
+public sealed class StoredRecordTests
+{
+    private static readonly Guid Company = Guid.Parse("10000000-0000-0000-0000-000000000001");
+    private static readonly Guid WorkCenter = Guid.Parse("20000000-0000-0000-0000-00000000c001");
+    private static readonly Guid RollA = Guid.Parse("30000000-0000-0000-0000-00000000a001");
+    private static readonly Guid RollB = Guid.Parse("30000000-0000-0000-0000-00000000a002");
+    private static readonly Guid Planner = Guid.Parse("40000000-0000-0000-0000-00000000b001");
+    private static readonly Guid Closer = Guid.Parse("40000000-0000-0000-0000-00000000b002");
+    private static readonly DateTimeOffset T0 = new(2026, 9, 18, 8, 0, 0, TimeSpan.Zero);
+
+    private static Kilograms Kg(decimal value) => new(value);
+
+    private static PlannedInput[] Inputs() => [new(RollA, Kg(10_000m)), new(RollB, Kg(5_000m))];
+
+    private static ProductionOrder Restore(
+        IEnumerable<InputIssue>? issues = null,
+        IEnumerable<InputReturn>? returns = null,
+        IEnumerable<OutputDeclaration>? outputs = null,
+        IEnumerable<WipMeasurement>? wips = null,
+        Guid? closedBy = null,
+        DateTimeOffset? closedAt = null,
+        long version = 1) =>
+        ProductionOrder.Restore(Guid.NewGuid(), Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
+            new ProductionTarget(TargetBasis.InputMass, Kg(15_000m)), Inputs(),
+            issues ?? [], returns ?? [], outputs ?? [], wips ?? [], closedBy, closedAt, version);
+
+    [Fact]
+    public void A_stored_plan_comes_back_draft_or_approved_with_its_version()
+    {
+        var draft = ProductionPlan.Restore(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting, Inputs(), null,
+            null, null, 1);
+        Assert.Equal((PlanStatus.Draft, 1L), (draft.Status, draft.Version));
+
+        var approved = ProductionPlan.Restore(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting, Inputs(), null,
+            Planner, T0, 2);
+        Assert.Equal((PlanStatus.Approved, 2L, Planner, T0), (approved.Status, approved.Version, approved.ApprovedByUserId,
+            approved.ApprovedAtUtc));
+    }
+
+    [Theory]
+    [InlineData("approver-without-instant")]
+    [InlineData("instant-without-approver")]
+    [InlineData("draft-with-version-2")]
+    [InlineData("approved-with-version-1")]
+    public void A_stored_plan_that_breaks_a_rule_is_refused(string fault)
+    {
+        (Guid? By, DateTimeOffset? At, long Version) stored = fault switch
+        {
+            "approver-without-instant" => (Planner, null, 2L),
+            "instant-without-approver" => (null, T0, 2L),
+            "draft-with-version-2" => (null, null, 2L),
+            _ => (Planner, T0, 1L),
+        };
+        var (by, at, version) = stored;
+
+        var error = Assert.Throws<ManufacturingRuleException>(() => ProductionPlan.Restore(Guid.NewGuid(), Company, WorkCenter,
+            ManufacturingProcess.Slitting, Inputs(), null, by, at, version));
+
+        Assert.Equal(ManufacturingRuleCodes.StoredRecordInvalid, error.Code);
+    }
+
+    [Fact]
+    public void A_stored_order_replays_its_facts_and_answers_as_it_did()
+    {
+        // Facts arrive in any order from storage; issues are replayed first, the rest in time order.
+        var issueA = new InputIssue(Guid.NewGuid(), RollA, Kg(10_000m), T0);
+        var issueB = new InputIssue(Guid.NewGuid(), RollB, Kg(5_000m), T0.AddMinutes(1));
+        var back = new InputReturn(Guid.NewGuid(), RollB, Kg(1_000m), T0.AddHours(2));
+        var goodA = new OutputDeclaration(Guid.NewGuid(), RollA, OutputClass.GoodProduct, Kg(9_700m), T0.AddHours(1),
+            CostResult.NotCalculated);
+        var scrapA = new OutputDeclaration(Guid.NewGuid(), RollA, OutputClass.Scrap, Kg(300m), T0.AddHours(1).AddMinutes(1),
+            CostResult.NotCalculated);
+        var goodB = new OutputDeclaration(Guid.NewGuid(), RollB, OutputClass.GoodProduct, Kg(2_500m), T0.AddHours(3),
+            CostResult.NotCalculated);
+        var wipB = new WipMeasurement(Guid.NewGuid(), RollB, Kg(1_500m), T0.AddHours(4));
+
+        var order = Restore([issueB, issueA], [back], [goodB, scrapA, goodA], [wipB], Closer, T0.AddHours(5), version: 9);
+
+        Assert.Equal((OrderStatus.Closed, 9L, Closer, T0.AddHours(5)), (order.Status, order.Version, order.ClosedByUserId,
+            order.ClosedAtUtc));
+        Assert.Equal(0m, order.BalanceOf(RollA).Unexplained);
+        Assert.Equal((1_500m, 0m), (order.BalanceOf(RollB).WorkInProgress.Value, order.BalanceOf(RollB).Unexplained));
+        Assert.Equal(ManufacturingRuleCodes.OrderClosed, Assert.Throws<ManufacturingRuleException>(
+            () => order.IssueInput(order.Version, Guid.NewGuid(), RollA, Kg(1m), T0.AddHours(6))).Code);
+    }
+
+    [Fact]
+    public void A_stored_close_must_still_reconcile_roll_by_roll()
+    {
+        // A "closed" order whose roll does not reconcile is not what the domain could have closed.
+        var issue = new InputIssue(Guid.NewGuid(), RollA, Kg(10_000m), T0);
+        var good = new OutputDeclaration(Guid.NewGuid(), RollA, OutputClass.GoodProduct, Kg(9_000m), T0.AddHours(1),
+            CostResult.NotCalculated);
+
+        var error = Assert.Throws<ManufacturingRuleException>(() => Restore([issue], outputs: [good], closedBy: Closer,
+            closedAt: T0.AddHours(2), version: 4));
+
+        Assert.Equal(ManufacturingRuleCodes.UnexplainedDifference, error.Code);
+    }
+
+    [Theory]
+    [InlineData("version-too-high")]
+    [InlineData("version-too-low")]
+    [InlineData("closer-without-instant")]
+    [InlineData("cost-the-domain-does-not-write")]
+    public void A_stored_order_that_breaks_a_rule_is_refused_not_repaired(string fault)
+    {
+        var issue = new InputIssue(Guid.NewGuid(), RollA, Kg(10_000m), T0);
+        var good = new OutputDeclaration(Guid.NewGuid(), RollA, OutputClass.GoodProduct, Kg(10_000m), T0.AddHours(1),
+            fault == "cost-the-domain-does-not-write" ? CostResult.WaitingPolicy : CostResult.NotCalculated);
+
+        var error = Assert.Throws<ManufacturingRuleException>(() => fault switch
+        {
+            "version-too-high" => Restore([issue], outputs: [good], version: 4),
+            "version-too-low" => Restore([issue], outputs: [good], version: 2),
+            "closer-without-instant" => Restore([issue], outputs: [good], closedBy: Closer, version: 3),
+            _ => Restore([issue], outputs: [good], version: 3),
+        });
+
+        Assert.Equal(ManufacturingRuleCodes.StoredRecordInvalid, error.Code);
+    }
+
+    [Fact]
+    public void Stored_facts_that_break_a_rule_are_refused_with_that_rule()
+    {
+        var issue = new InputIssue(Guid.NewGuid(), RollA, Kg(1_000m), T0);
+
+        Assert.Equal(ManufacturingRuleCodes.ReturnExceedsIssued, Assert.Throws<ManufacturingRuleException>(() => Restore([issue],
+            returns: [new InputReturn(Guid.NewGuid(), RollA, Kg(1_001m), T0.AddHours(1))], version: 3)).Code);
+        Assert.Equal(ManufacturingRuleCodes.InputAlreadyIssued, Assert.Throws<ManufacturingRuleException>(
+            () => Restore([issue, issue with { IssuedAtUtc = T0.AddMinutes(1) }], version: 3)).Code);
+        Assert.Equal(ManufacturingRuleCodes.RollNotIssued, Assert.Throws<ManufacturingRuleException>(() => Restore([issue],
+            wips: [new WipMeasurement(Guid.NewGuid(), RollB, Kg(1m), T0.AddHours(1))], version: 3)).Code);
+    }
+
+    [Fact]
+    public void The_fact_content_hash_is_canonical()
+    {
+        var order = Guid.NewGuid();
+        var at = new DateTimeOffset(2026, 9, 18, 11, 0, 0, TimeSpan.FromHours(3));
+        var hash = ManufacturingStore.FactHash(FactKind.OutputDeclaration, order, RollA, Kg(5.00m), at, OutputClass.Scrap);
+
+        // Trailing zeros and the offset of the same instant are not content.
+        Assert.Equal(hash, ManufacturingStore.FactHash(FactKind.OutputDeclaration, order, RollA, Kg(5m), at.ToUniversalTime(),
+            OutputClass.Scrap));
+        Assert.Equal(64, hash.Length);
+
+        // Everything else is.
+        Assert.NotEqual(hash, ManufacturingStore.FactHash(FactKind.OutputDeclaration, order, RollA, Kg(5.001m), at, OutputClass.Scrap));
+        Assert.NotEqual(hash, ManufacturingStore.FactHash(FactKind.OutputDeclaration, order, RollB, Kg(5m), at, OutputClass.Scrap));
+        Assert.NotEqual(hash, ManufacturingStore.FactHash(FactKind.OutputDeclaration, order, RollA, Kg(5m), at.AddSeconds(1),
+            OutputClass.Scrap));
+        Assert.NotEqual(hash, ManufacturingStore.FactHash(FactKind.OutputDeclaration, order, RollA, Kg(5m), at,
+            OutputClass.ProcessLoss));
+        Assert.NotEqual(hash, ManufacturingStore.FactHash(FactKind.OutputDeclaration, Guid.NewGuid(), RollA, Kg(5m), at,
+            OutputClass.Scrap));
+        Assert.NotEqual(hash, ManufacturingStore.FactHash(FactKind.WipMeasurement, order, RollA, Kg(5m), at, null));
+    }
+
+    [Fact]
+    public void The_plan_content_hash_is_canonical()
+    {
+        var id = Guid.NewGuid();
+        var plan = new ProductionPlan(id, Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(RollA, Kg(10_000.000m))], new ProductionTarget(TargetBasis.InputMass, Kg(10_000.0m)));
+        var same = new ProductionPlan(id, Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(RollA, Kg(10_000m))], new ProductionTarget(TargetBasis.InputMass, Kg(10_000m)));
+        var other = new ProductionPlan(id, Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(RollA, Kg(10_000m))], new ProductionTarget(TargetBasis.GoodOutputMass, Kg(10_000m)));
+
+        Assert.Equal(ManufacturingStore.PlanHash(plan), ManufacturingStore.PlanHash(same));
+        Assert.NotEqual(ManufacturingStore.PlanHash(plan), ManufacturingStore.PlanHash(other));
+    }
+}
