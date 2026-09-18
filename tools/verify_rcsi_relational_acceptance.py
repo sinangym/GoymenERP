@@ -171,9 +171,10 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.SalesDraftSqlServerRelationalAcceptanceTests.A_stored_draft_is_rebuilt_through_the_domain_and_listed_newest_first_with_a_company_bound_cursor",
     "GoymenERP.Api.IntegrationTests.SalesDraftSqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
     "GoymenERP.Api.IntegrationTests.SalesDraftSqlServerRelationalAcceptanceTests.A_key_that_differs_only_by_surrounding_whitespace_is_refused_and_never_replays_the_stored_attempt",
+    "GoymenERP.Api.IntegrationTests.ProductShellCapabilitySqlServerRelationalAcceptanceTests.Product_screens_follow_the_global_Product_authority_through_the_real_provider",
 )
-BROAD_DISCOVERY_COUNT = 131
-BROAD_EXECUTION_COUNT = 138
+BROAD_DISCOVERY_COUNT = 132
+BROAD_EXECUTION_COUNT = 139
 
 
 def verify_discovery(standard_output: str) -> None:

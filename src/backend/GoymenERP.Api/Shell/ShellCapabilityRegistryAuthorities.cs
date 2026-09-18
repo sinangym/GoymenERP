@@ -5,6 +5,11 @@ internal static class ShellCapabilityRegistryAuthorities
     internal const string CounterpartyV15AndOrganizationV10 =
         "sha256:RH0MyBCLUsF7pYSmDBPtIe5Kj8HmrZN9dZUxo3pM7JI";
 
+    // Counterparty 1.5 + Organization 1.0 + Product 1.0 (#316): the normal host's set once Product
+    // publishes its four screens.
+    internal const string CounterpartyV15OrganizationV10AndProductV10 =
+        "sha256:vJnKkOnDipYXkO3hllw5Nc_rBrJ11OYnd6H51NOzFPM";
+
     internal const string CounterpartyListCreateLinkAndDetailV15 =
         "sha256:3GiwcHV6aVuN1Y-wBzElxLJLCok2bblGc6pRruhqTx4";
 
