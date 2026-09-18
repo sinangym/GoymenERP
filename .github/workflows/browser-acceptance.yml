@@ -24,6 +24,7 @@ on:
           - org03
           - u02
           - s03
+          - mfg
       pr:
         description: Pull request number whose exact head is tested (same-repo branches only)
         required: true
@@ -75,7 +76,7 @@ jobs:
           fi
           case "$suite" in
             smoke|c03|s03) read_only=true ;;
-            org03|u02) read_only=false ;;
+            org03|u02|mfg) read_only=false ;;
             *) echo "::error::BROWSER_SUITE_UNKNOWN: '$suite'"; exit 1 ;;
           esac
           [[ "$pr" =~ ^[1-9][0-9]*$ ]] || { echo "::error::BROWSER_PR_INVALID: '$pr'"; exit 1; }

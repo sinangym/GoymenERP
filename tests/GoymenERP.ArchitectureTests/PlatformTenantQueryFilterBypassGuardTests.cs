@@ -41,13 +41,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "OpenApiDocumentGenerationMode.cs";
     private const string OpenApiStartupPath =
         "src/backend/GoymenERP.Api/Program.cs";
-    // Re-fingerprinted for BROWSER-CI a2 part 2 (decision W1) on top of SALES-API (#321): one call to
-    // C01E2eFixtureWriterActivation.Configure after the shell authority is chosen, which registers the
-    // gated fixture writers only in the fixture runner's in-process host (Testing + its exact run
-    // binding; a boundary test pins the names). No OpenAPI-generation, network or hosted-service surface
-    // of the startup source changed otherwise.
+    // Re-fingerprinted for MFG-UI (#323) on top of BROWSER-CI a2 part 2 (#330) and SALES-API (#321): the
+    // staged Manufacturing shell provider registered before the shell authority is chosen (C+O+P+S+M
+    // row), beside #330's one call to C01E2eFixtureWriterActivation.Configure. No OpenAPI-generation,
+    // network or hosted-service surface of the startup source changed otherwise.
     private const string ReviewedOpenApiStartupFingerprint =
-        "c149a2caabfb374f2d536f7cb1184994ff4add05f37e333ee158d90e5a013bc4";
+        "120fc394a972dd830e6a6cd73090953a28b6944fad75f85c96be7c1d611339bf";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -131,7 +130,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
-                "8b8b3bcd8cd5dc3598cfe1c84caa0fb78c724a4b1134e580a456ed92cb58f7ee",
+                "117270f5953021654cdbdc2986ad353582c9d4060a5cd3766a1a8bf699ea8cf3",
 
             // organization
             ["tools/relational_inventory/organization.txt"] =

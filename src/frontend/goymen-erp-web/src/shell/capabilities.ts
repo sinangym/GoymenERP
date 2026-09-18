@@ -122,6 +122,13 @@ export const CAPABILITY = {
    * that is a fact about who holds them, not an argument for one id.
    */
   organizationLocationsDetail: 'organization.locations.detail',
+  /**
+   * MFG-01 production order (technical sub-view, MFG-UI D1). Route `/uretim/emir/:orderId`.
+   *
+   * `manufacturing.orders.facts` is a CONTROL inside that screen (read with `hasCapability`,
+   * the `organization.locations.status` precedent), not a route, so it is not in this table.
+   */
+  manufacturingOrdersDetail: 'manufacturing.orders.detail',
 } as const
 
 export type CapabilityId = (typeof CAPABILITY)[keyof typeof CAPABILITY]
@@ -149,6 +156,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   // rule the Cari and Ürün routes already follow. The Organization lane fixes that
   // shape in `organizationRoutes.tsx` rather than leaving it to this consumer.
   [CAPABILITY.organizationLocationsDetail]: '/ayarlar/organizasyon/lokasyon/:locationId',
+  [CAPABILITY.manufacturingOrdersDetail]: '/uretim/emir/:orderId',
 }
 
 /** Nav label per capability. Only rendered when the server granted the capability. */
@@ -171,4 +179,6 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // Nor this one: the card is reached from a location row, never from the sidebar. So
   // `NAV_CAPABILITIES` gains exactly ONE Organization entry when the routes are mounted.
   [CAPABILITY.organizationLocationsDetail]: '',
+  // Nor this one: an order is opened by its id, never from the sidebar.
+  [CAPABILITY.manufacturingOrdersDetail]: '',
 }

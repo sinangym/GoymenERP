@@ -19,6 +19,7 @@ import { CariDetailPage } from '../cari/CariDetailPage'
 import { CariContactEditPage } from '../cari/CariContactEditPage'
 import { productRoutes } from '../product/productRoutes'
 import { organizationRoutes } from '../organization/organizationRoutes'
+import { manufacturingRoutes } from '../manufacturing/manufacturingRoutes'
 import { StateBlock } from './StateBlock'
 
 export const shellRoutes: RouteObject[] = [
@@ -132,6 +133,13 @@ export const shellRoutes: RouteObject[] = [
        * `:locationId`, so no static segment is read as a record id.
        */
       ...organizationRoutes,
+      /**
+       * The Manufacturing lane's own routes, declared in
+       * `src/manufacturing/manufacturingRoutes.tsx` and mounted here by the shared-integration
+       * owner (MFG-UI handoff). Each is wrapped in `CapabilityRoute`, so while the server keeps the
+       * capability staged the route renders the neutral not-found block and reads nothing.
+       */
+      ...manufacturingRoutes,
       {
         /**
          * Catch-all. Without it react-router renders its own error boundary —
