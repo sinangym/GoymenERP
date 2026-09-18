@@ -23,7 +23,7 @@ public sealed class OrderTargetAndCloseTests
     private static ProductionOrder Order(ProductionTarget? target, params PlannedInput[] inputs)
     {
         var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
-            inputs.Length == 0 ? [new PlannedInput(MasterRoll, Kg(10_000m))] : inputs, target);
+            inputs.Length == 0 ? new[] { new PlannedInput(MasterRoll, Kg(10_000m)) } : inputs, target);
         plan.Approve(Planner, DateTimeOffset.UnixEpoch);
         return ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
     }

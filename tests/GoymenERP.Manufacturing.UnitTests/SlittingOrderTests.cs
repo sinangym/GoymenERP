@@ -21,7 +21,7 @@ public sealed class SlittingOrderTests
 
     private static ProductionPlan DraftPlan(params PlannedInput[] inputs) =>
         new(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
-            inputs.Length == 0 ? [new PlannedInput(MasterRoll, Kg(10_000m))] : inputs);
+            inputs.Length == 0 ? new[] { new PlannedInput(MasterRoll, Kg(10_000m)) } : inputs);
 
     private static ProductionOrder ApprovedOrder(params PlannedInput[] inputs)
     {
