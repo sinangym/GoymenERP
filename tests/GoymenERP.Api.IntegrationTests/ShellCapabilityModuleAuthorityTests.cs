@@ -90,6 +90,47 @@ public sealed class ShellCapabilityModuleAuthorityTests
             C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(), Envelope()));
     }
 
+    [Fact]
+    public void The_normal_profile_serves_Product_capabilities_beside_Counterparty_and_Organization()
+    {
+        // Stage 2 "normal" is the host without the envelope: the module table's authority, with Product.
+        var services = Services("counterparty+organization+product");
+        var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
+            new ConfigurationBuilder().Build());
+
+        using var container = services.BuildServiceProvider();
+        var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
+            new ShellCapabilityAuthorityCatalog([authority]));
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10AndProductV10, authority);
+        Assert.Equal(
+            new[] { "product.items.create", "product.items.detail", "product.items.edit", "product.items.list" },
+            registry.Registrations.Where(item => item.Owner == ProductShellCapabilityProvider.OwnerId)
+                .Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal));
+        Assert.Contains(registry.Registrations, item => item.Owner == OrganizationShellCapabilityProvider.OwnerId);
+    }
+
+    [Fact]
+    public void The_cari_staged_profile_removes_every_module_provider_and_opens_only_Cari_list_and_detail()
+    {
+        var services = Services("counterparty+organization+product");
+        var values = C01E2eShellCapabilityActivationTests.ExactEnvelope();
+        values[C01E2eShellCapabilityActivation.ProfileConfigurationKey] = C01E2eShellCapabilityActivation.CariListDetailProfile;
+
+        var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
+            new ConfigurationBuilder().AddInMemoryCollection(values).Build());
+
+        Assert.Equal(ShellCapabilityRegistryAuthorities.C01DisposableCariListDetailV1, authority);
+        var descriptor = Assert.Single(services, item => item.ServiceType == typeof(IShellCapabilityProvider));
+        Assert.Equal(typeof(C01E2eCariListDetailShellCapabilityProvider), descriptor.ImplementationType);
+        using var container = services.BuildServiceProvider();
+        var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
+            new ShellCapabilityAuthorityCatalog([authority]));
+        Assert.Equal(
+            new[] { CounterpartyShellCapabilityProvider.DetailCapabilityId, CounterpartyShellCapabilityProvider.ListCapabilityId },
+            registry.Registrations.Where(item => item.Declaration.ImplementationAvailable)
+                .Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal));
+    }
+
     private static ServiceCollection Services(string set)
     {
         var services = new ServiceCollection();

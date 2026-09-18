@@ -19,6 +19,13 @@ internal static class C01E2eShellCapabilityActivation
     internal const string ComposeProjectConfigurationKey =
         "GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT";
 
+    // BROWSER-CI stage 2: which Counterparty declarations the disposable envelope opens. Absent is
+    // the canonical list-only C-01. "cari-list-detail" is the activation step the Cari specs
+    // (CARI_C02_LINK_JIT_SPEC_v1, CARI_C02_LINK_ACCEPTANCE_v1) put before any normal-runtime
+    // availability: list and detail, still only inside this disposable envelope.
+    internal const string ProfileConfigurationKey = "C01E2e:Profile";
+    internal const string CariListDetailProfile = "cari-list-detail";
+
     internal static string Configure(
         IServiceCollection services,
         IHostEnvironment environment,
@@ -34,8 +41,18 @@ internal static class C01E2eShellCapabilityActivation
         }
 
         ValidateActivationEnvelope(environment, configuration);
-        ReplaceExactCounterpartyProvider(services);
-        return ShellCapabilityRegistryAuthorities.C01DisposableListOnlyV1;
+        switch (configuration[ProfileConfigurationKey])
+        {
+            case null:
+                ReplaceExactCounterpartyProvider<C01E2eShellCapabilityProvider>(services);
+                return ShellCapabilityRegistryAuthorities.C01DisposableListOnlyV1;
+            case CariListDetailProfile:
+                ReplaceExactCounterpartyProvider<C01E2eCariListDetailShellCapabilityProvider>(services);
+                return ShellCapabilityRegistryAuthorities.C01DisposableCariListDetailV1;
+            default:
+                throw new InvalidOperationException(
+                    "C-01 disposable capability profili tanınmıyor.");
+        }
     }
 
     // The module providers the normal host may register beside the one required Counterparty
@@ -126,7 +143,8 @@ internal static class C01E2eShellCapabilityActivation
         }
     }
 
-    private static void ReplaceExactCounterpartyProvider(IServiceCollection services)
+    private static void ReplaceExactCounterpartyProvider<TDisposable>(IServiceCollection services)
+        where TDisposable : class, IShellCapabilityProvider
     {
         var providers = services
             .Where(descriptor => descriptor.ServiceType == typeof(IShellCapabilityProvider))
@@ -151,7 +169,7 @@ internal static class C01E2eShellCapabilityActivation
         {
             services.Remove(provider);
         }
-        services.AddSingleton<IShellCapabilityProvider, C01E2eShellCapabilityProvider>();
+        services.AddSingleton<IShellCapabilityProvider, TDisposable>();
     }
 
     private static void RequireExact(
@@ -186,6 +204,7 @@ internal static class C01E2eShellCapabilityActivation
         TestedCommitConfigurationKey,
         RunIdConfigurationKey,
         ComposeProjectConfigurationKey,
+        ProfileConfigurationKey,
     ];
 }
 
@@ -198,14 +217,41 @@ internal sealed class C01E2eShellCapabilityProvider : IShellCapabilityProvider
     public string ContractVersion => _source.ContractVersion;
 
     public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
-        Array.AsReadOnly(_source.GetDeclarations()
-            .Select(declaration => declaration.CapabilityId
-                == CounterpartyShellCapabilityProvider.ListCapabilityId
-                ? declaration with
+        C01E2eStagedDeclarations.Open(_source, detail: false);
+}
+
+/// <summary>The disposable "cari-list-detail" profile: the C-01 list plus the Cari detail (C-03).</summary>
+internal sealed class C01E2eCariListDetailShellCapabilityProvider : IShellCapabilityProvider
+{
+    private readonly CounterpartyShellCapabilityProvider _source = new();
+
+    public string Owner => _source.Owner;
+
+    public string ContractVersion => _source.ContractVersion;
+
+    public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
+        C01E2eStagedDeclarations.Open(_source, detail: true);
+}
+
+internal static class C01E2eStagedDeclarations
+{
+    // The list is opened exactly as C-01 always has (single company); the detail only changes its
+    // availability and keeps the canonical declaration's own context, scope and permission.
+    internal static IReadOnlyCollection<ShellCapabilityDeclaration> Open(
+        CounterpartyShellCapabilityProvider source, bool detail) =>
+        Array.AsReadOnly(source.GetDeclarations()
+            .Select(declaration => declaration.CapabilityId switch
+            {
+                CounterpartyShellCapabilityProvider.ListCapabilityId => declaration with
                 {
                     ContextRequirement = ShellCapabilityContextRequirement.SingleCompany,
                     ImplementationAvailable = true,
-                }
-                : declaration)
+                },
+                CounterpartyShellCapabilityProvider.DetailCapabilityId when detail => declaration with
+                {
+                    ImplementationAvailable = true,
+                },
+                _ => declaration,
+            })
             .ToArray());
 }

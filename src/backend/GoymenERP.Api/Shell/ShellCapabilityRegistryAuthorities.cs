@@ -15,4 +15,10 @@ internal static class ShellCapabilityRegistryAuthorities
 
     internal const string C01DisposableListOnlyV1 =
         "sha256:SXjogFbPGJiI4BxV5pC3wL7ywOTKV1fdsWR-nb5kreg";
+
+    // The disposable "cari-list-detail" profile (BROWSER-CI stage 2, C-03): Counterparty 1.5 with
+    // list (as C-01) and detail available. Computed by reproducing ComputeRevision (which yields the
+    // three accepted constants exactly) and pinned by a test against ComputeCandidateRevision.
+    internal const string C01DisposableCariListDetailV1 =
+        "sha256:LM81M4d4tKOqR9OaKvZM_uT5HQIcoffoTMEzMFH4atg";
 }
