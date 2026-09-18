@@ -11,8 +11,16 @@ public sealed record ProductListPosition(Guid Id, string? Text, DateTimeOffset? 
 public sealed record ProductStoredPage(IReadOnlyList<ProductStoredRecord> Items, ProductListPosition? Next);
 
 /// <summary>Product-only relational reads; the application caller rechecks current authority before releasing results.</summary>
-public sealed class ProductReadStore(ProductDbContext context)
+public sealed class ProductReadStore(ProductDbContext context) : IProductSalesRecordReader
 {
+    public async Task<ProductStoredRecord?> ReadForSalesSelectionAsync(ProductSalesReadScope scope, Guid productId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        var row = await context.Products.AsNoTracking().SingleOrDefaultAsync(product => product.Id == productId, cancellationToken);
+        return row?.ToRecord();
+    }
+
     public async Task<ProductStoredRecord?> ReadByIdAsync(GroupSharedMasterReadContext authority, Guid id,
         CancellationToken cancellationToken)
     {

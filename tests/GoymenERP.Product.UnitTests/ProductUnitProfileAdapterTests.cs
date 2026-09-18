@@ -22,7 +22,18 @@ public sealed class ProductUnitProfileAdapterTests
             Assert.Equal(Date, date);
             return Task.FromResult(profile);
         });
-        Assert.Same(profile, await new ProductUnitProfileAdapter(provider, new Context()).ReadAsync(UnitId, Date, true));
+        var read = await new ProductUnitProfileAdapter(provider, new Context()).ReadAsync(UnitId, Date, true);
+        Assert.Same(profile, read.Profile);
+        Assert.True(read.IsUsable);
+    }
+
+    [Fact]
+    public async Task Kilogram_is_required_only_where_the_caller_requires_it()
+    {
+        var profile = Profile with { IsKilogram = false };
+        var adapter = new ProductUnitProfileAdapter(new Provider((_, _, _) => Task.FromResult(profile)), new Context());
+        Assert.True((await adapter.ReadAsync(UnitId, Date, requiresKilogram: false)).IsUsable);
+        Assert.False((await adapter.ReadAsync(UnitId, Date, requiresKilogram: true)).IsUsable);
     }
 
     [Theory]
@@ -31,14 +42,10 @@ public sealed class ProductUnitProfileAdapterTests
     [InlineData("profileId")]
     [InlineData("version")]
     [InlineData("scale")]
-    [InlineData("inactive")]
-    [InlineData("future")]
-    [InlineData("expired")]
     [InlineData("reversed")]
-    [InlineData("kilogram")]
     [InlineData("dimension")]
     [InlineData("code")]
-    public async Task Invalid_profile_cannot_pass_as_stock_unit(string fault)
+    public async Task Malformed_foreign_or_contradictory_provider_data_is_an_invalid_profile(string fault)
     {
         var profile = Profile;
         profile = fault switch
@@ -48,11 +55,8 @@ public sealed class ProductUnitProfileAdapterTests
             "profileId" => profile with { Profile = profile.Profile with { ProfileId = Guid.Empty } },
             "version" => profile with { Profile = profile.Profile with { Version = 0 } },
             "scale" => profile with { Scale = -1 },
-            "inactive" => profile with { IsActive = false },
-            "future" => profile with { EffectiveFrom = Date.AddDays(1) },
-            "expired" => profile with { EffectiveThrough = Date.AddDays(-1) },
+            // Ends before it starts, and also before the date: still corrupt, never "expired".
             "reversed" => profile with { EffectiveThrough = Date.AddDays(-2) },
-            "kilogram" => profile with { IsKilogram = false },
             "dimension" => profile with { DimensionCode = " " },
             "code" => profile with { UnitCode = " " },
             _ => throw new InvalidOperationException(),
@@ -60,6 +64,36 @@ public sealed class ProductUnitProfileAdapterTests
         var adapter = new ProductUnitProfileAdapter(new Provider((_, _, _) => Task.FromResult(profile)), new Context());
         Assert.Equal("settings_profile_invalid", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
             () => adapter.ReadAsync(UnitId, Date, true))).Code);
+    }
+
+    [Theory]
+    [InlineData("inactive")]
+    [InlineData("future")]
+    [InlineData("expired")]
+    [InlineData("kilogram")]
+    public async Task Well_formed_profile_the_owner_does_not_allow_on_the_date_is_unusable_not_invalid(string fault)
+    {
+        var profile = Profile;
+        profile = fault switch
+        {
+            "inactive" => profile with { IsActive = false },
+            "future" => profile with { EffectiveFrom = Date.AddDays(1), EffectiveThrough = Date.AddDays(2) },
+            "expired" => profile with { EffectiveThrough = Date.AddDays(-1) },
+            "kilogram" => profile with { IsKilogram = false },
+            _ => throw new InvalidOperationException(),
+        };
+        var adapter = new ProductUnitProfileAdapter(new Provider((_, _, _) => Task.FromResult(profile)), new Context());
+        var read = await adapter.ReadAsync(UnitId, Date, true);
+        Assert.False(read.IsUsable);
+        Assert.Same(profile, read.Profile);
+    }
+
+    [Fact]
+    public async Task Both_ends_of_the_effective_window_are_inclusive()
+    {
+        var profile = Profile with { EffectiveFrom = Date, EffectiveThrough = Date };
+        var adapter = new ProductUnitProfileAdapter(new Provider((_, _, _) => Task.FromResult(profile)), new Context());
+        Assert.True((await adapter.ReadAsync(UnitId, Date, true)).IsUsable);
     }
 
     [Theory]
