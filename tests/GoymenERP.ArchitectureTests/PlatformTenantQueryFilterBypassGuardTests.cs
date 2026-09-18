@@ -41,12 +41,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "OpenApiDocumentGenerationMode.cs";
     private const string OpenApiStartupPath =
         "src/backend/GoymenERP.Api/Program.cs";
-    // Re-fingerprinted for T07(a) (#310): Inventory joins the host — AddInventoryModule with the
-    // audit interceptor, InitializeInventoryModuleAsync after Organization (its composite foreign keys
-    // reference Organization's tables) and MapInventoryEndpoints. No OpenAPI-generation, network or
-    // hosted-service surface of the startup source changed otherwise.
+    // Re-fingerprinted for T07(a) (#310) on top of T02-b: Inventory joins the host — AddInventoryModule
+    // with the audit interceptor, InitializeInventoryModuleAsync after Organization (its composite foreign
+    // keys reference Organization's tables) and MapInventoryEndpoints. No OpenAPI-generation, network
+    // or hosted-service surface of the startup source changed otherwise.
     private const string ReviewedOpenApiStartupFingerprint =
-        "2f625dd468e039dbcc66ce712d09695c289bc49eb0a89dec5f846a1fe23e2ad9";
+        "07d4306b6656c27b1e553ded1170553ee0f9fcd7f805896deaf3df83a021fd4e";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -88,16 +88,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string SqlServerRcsiVerifierPath =
         "tools/verify_rcsi_relational_acceptance.py";
     // Re-fingerprinted for T07(a) (#310): three InventoryReadApiSqlServerRelationalAcceptanceTests
-    // names on top of main's 116 / 123, discovery 116 -> 119, execution 123 -> 126. Logic unchanged.
+    // names on top of main's 122 / 129, discovery 122 -> 125, execution 129 -> 132. Logic unchanged.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "625a1c0fd9b55ef2781789c82f2c33deaec978235403d6484f7527cab2c3ced1";
+        "4c9061d08207ee5387e83581afb2a6e4534ad774e65662f5dea62d43c58d7195";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
     // Re-fingerprinted for the same inventory change: updated counts plus one case pinning the
     // new class as mandatory.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "ea4da6ebb1414fb9012b3d8a08b3bab07b74fc002cc65414e6b48e04fc8afe53";
+        "4efe99032eee170a26278b5199af8813719dc3414d926aea92981fd574ed2077";
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "91a665e6e8982e5a9b66f5d16a14d9fc4d7f98d63775de959a8cc6b2dea2b018";
@@ -133,7 +133,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-                "771d8d1c1a55262efe1e8bf3505223430882d7dd83dfdb89be0cdd9dc3293a98",
+                "a8892d62f1b83647a6b0fc5224735f19ddffcf0b38202699be0ea87e703ba02a",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/"
@@ -160,8 +160,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedRuntimeDatabaseBypassSources =
             new Dictionary<string, ReviewedRuntimeDatabaseBypassSource>(StringComparer.Ordinal)
             {
+                // Re-measured for C3: the Product owner's sales and stock eligibility runtimes are composed
+                // here (no new database capability; MigrateAsync stays 2).
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs"] =
-                    new("e89e8869bed6d7706781ee3c86f09bc59963d0ef26da32c7e06d63449ae8ef27",
+                    new("915b90891b281747aabeca4c25b3866ce2fa44d627d1d4704bfa06fc82988ef5",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductSqlCommandRunner.cs"] =
@@ -323,6 +325,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs"] =
                     new(
                         "f3d3344f4e96af40219809450faeb81c6e84ff9aac5e3b303e804d6bda32d700",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
+                // FS0 (#312): the bank-account master is the module's second writer; the SqlClient
+                // namespace only to recognise a unique-key violation (SqlException 2601/2627) after
+                // SaveChanges, as ReceiptDraftService does. No connection, command or raw SQL.
+                ["src/backend/Modules/Finance/"
+                 + "GoymenERP.Modules.Finance.Infrastructure/FinanceBankAccountService.cs"] =
+                    new(
+                        "ce1b89e9875a21ada6ea78a9e41e474f9615cef50b2bf57adf9e298d675be406",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

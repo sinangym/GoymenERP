@@ -40,6 +40,22 @@ public static class ErpPermissions
     /// <inheritdoc cref="InventoryLabelsRead"/>
     public const string InventoryBalancesRead = "inventory.balances.read";
 
+    /// <summary>
+    /// Finance bank-account master (FS0, #312): names are the Finance owner's technical mapping
+    /// (Business #254 5654539215). Registering them makes them KNOWN, not granted: no role and no
+    /// user receives them here, and who holds which is a human gate. All three are company-wide
+    /// only: a bank account belongs to the server-resolved company and has no site, location or
+    /// work-center dimension. Propose and approve are Critical: the security contract lists the
+    /// bank account among critical permissions (docs/security/AI_YETKI_SOZLESMESI.md) and Sinan's
+    /// Ö4 (#66 5722637822) makes the approval maker-checker, so their GRANT follows ADR-004 §6
+    /// (the requester or target cannot approve their own request). Read is not Critical: it shows
+    /// only the label and currency of approved and proposed accounts (a proposal is listed, not
+    /// usable, so its approver can see it).
+    /// </summary>
+    public const string FinanceBankAccountRead = "finance.bank-account.read";
+    public const string FinanceBankAccountPropose = "finance.bank-account.propose";
+    public const string FinanceBankAccountApprove = "finance.bank-account.approve";
+
     public const string IdentityProfileRead = "identity.profile.read";
     public const string IdentityAccessRequest = "identity.access.request";
     public const string IdentityAccessApprove = "identity.access.approve";
@@ -61,6 +77,9 @@ public static class ErpPermissions
             ProductOperationalSelectionRead,
             InventoryLabelsRead,
             InventoryBalancesRead,
+            FinanceBankAccountRead,
+            FinanceBankAccountPropose,
+            FinanceBankAccountApprove,
             IdentityProfileRead,
             IdentityAccessRequest,
             IdentityAccessApprove,
@@ -74,6 +93,8 @@ public static class ErpPermissions
             IdentityAccessApprove,
             IdentityRolesManage,
             IdentityAuditRead,
+            FinanceBankAccountPropose,
+            FinanceBankAccountApprove,
         ],
         StringComparer.Ordinal);
 
@@ -87,6 +108,9 @@ public static class ErpPermissions
             ProductOperationalSelectionRead,
             InventoryLabelsRead,
             InventoryBalancesRead,
+            FinanceBankAccountRead,
+            FinanceBankAccountPropose,
+            FinanceBankAccountApprove,
             IdentityAuditRead,
         ],
         StringComparer.Ordinal);

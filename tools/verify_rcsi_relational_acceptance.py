@@ -156,12 +156,18 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.A_fact_id_is_one_fact_in_the_store_and_in_the_database",
     "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.Two_writers_that_read_the_same_order_cannot_both_commit",
     "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
+    "GoymenERP.Api.IntegrationTests.FinanceBankAccountSqlServerRelationalAcceptanceTests.A_proposal_is_not_usable_until_another_user_approves_it_once_and_moves_no_money",
+    "GoymenERP.Api.IntegrationTests.FinanceBankAccountSqlServerRelationalAcceptanceTests.Company_B_can_neither_see_nor_approve_company_A_account",
+    "GoymenERP.Api.IntegrationTests.FinanceBankAccountSqlServerRelationalAcceptanceTests.The_same_key_replays_and_another_payload_or_command_conflicts",
+    "GoymenERP.Api.IntegrationTests.FinanceBankAccountSqlServerRelationalAcceptanceTests.A_currency_outside_the_settings_candidates_or_an_unavailable_source_stores_nothing",
+    "GoymenERP.Api.IntegrationTests.FinanceBankAccountSqlServerRelationalAcceptanceTests.Two_racing_approvals_store_one_and_the_database_refuses_a_self_approval",
+    "GoymenERP.Api.IntegrationTests.FinanceBankAccountSqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
     "GoymenERP.Api.IntegrationTests.InventoryReadApiSqlServerRelationalAcceptanceTests.A_reader_with_both_grants_sees_the_label_and_its_stock_position_by_position",
     "GoymenERP.Api.IntegrationTests.InventoryReadApiSqlServerRelationalAcceptanceTests.Each_read_needs_its_own_grant",
     "GoymenERP.Api.IntegrationTests.InventoryReadApiSqlServerRelationalAcceptanceTests.Another_companys_label_is_not_found_and_the_company_context_is_required",
 )
-BROAD_DISCOVERY_COUNT = 119
-BROAD_EXECUTION_COUNT = 126
+BROAD_DISCOVERY_COUNT = 125
+BROAD_EXECUTION_COUNT = 132
 
 
 def verify_discovery(standard_output: str) -> None:
