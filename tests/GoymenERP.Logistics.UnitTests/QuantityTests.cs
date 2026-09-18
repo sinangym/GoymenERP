@@ -1,3 +1,4 @@
+using GoymenERP.Modules.Logistics.Domain;
 using GoymenERP.Modules.Logistics.Domain.Quantities;
 
 namespace GoymenERP.Logistics.UnitTests;
@@ -23,11 +24,22 @@ public sealed class QuantityTests
     }
 
     [Fact]
-    public void Units_never_mix_and_subtraction_cannot_go_negative()
+    public void Units_never_mix_and_subtraction_cannot_go_negative_by_code()
     {
         var kg = Quantity.Of(4m, QuantityUnit.Kilogram);
-        Assert.Throws<InvalidOperationException>(() => kg.Add(Quantity.Of(1m, QuantityUnit.Piece)));
-        Assert.Throws<InvalidOperationException>(() => kg.Subtract(Quantity.Of(4.001m, QuantityUnit.Kilogram)));
+        Assert.Equal(LogisticsRuleCodes.UnitMismatch,
+            Assert.Throws<LogisticsRuleException>(() => kg.Add(Quantity.Of(1m, QuantityUnit.Piece))).Code);
+        Assert.Equal(LogisticsRuleCodes.QuantityBelowZero,
+            Assert.Throws<LogisticsRuleException>(() => kg.Subtract(Quantity.Of(4.001m, QuantityUnit.Kilogram))).Code);
         Assert.True(kg.Subtract(kg).IsZero);
+    }
+
+    [Fact]
+    public void Equal_values_with_different_scales_are_the_same_quantity_and_print_the_same()
+    {
+        Assert.Equal(Quantity.Of(12.5m, QuantityUnit.Kilogram), Quantity.Of(12.500m, QuantityUnit.Kilogram));
+        Assert.Equal("12.5 Kilogram", Quantity.Of(12.500m, QuantityUnit.Kilogram).ToString());
+        Assert.Equal(1, Quantity.SignificantDecimals(12.5000m));
+        Assert.Equal(4, Quantity.SignificantDecimals(12.5001m));
     }
 }

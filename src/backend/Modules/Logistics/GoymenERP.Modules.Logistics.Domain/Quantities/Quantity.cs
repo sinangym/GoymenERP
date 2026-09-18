@@ -10,9 +10,11 @@ public enum QuantityUnit
 /// <summary>
 /// An exact non-negative quantity in one unit. Kilograms carry at most three decimals and
 /// pieces are whole numbers (Ö2). The value is never rounded or truncated: extra digits are
-/// refused, only trailing zeros are dropped. This is the same rule Purchasing applies; it is
-/// repeated here because a Domain project must not reference another module's Domain.
-/// A Logistics quantity is a share, not a physical stock quantity; Inventory owns those.
+/// refused, only trailing zeros are dropped, so equal quantities also print equally. This is
+/// the same rule Purchasing applies; it is repeated here because a Domain project must not
+/// reference another module's Domain. A Logistics quantity is a share, not a physical stock
+/// quantity; Inventory owns those. Which Settings unit a line is in, and that unit's approved
+/// scale, are checked by the Application layer's verifier against the Settings profile.
 /// </summary>
 public readonly record struct Quantity : IComparable<Quantity>
 {
@@ -49,12 +51,28 @@ public readonly record struct Quantity : IComparable<Quantity>
                 : $"Kilogram en fazla {scale} ondalık taşıyabilir.", nameof(value));
         }
 
-        return new Quantity(withinScale, unit);
+        return new Quantity(Normalize(withinScale), unit);
+    }
+
+    public static Quantity Positive(decimal value, QuantityUnit unit)
+    {
+        var quantity = Of(value, unit);
+        if (quantity.IsZero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), "Miktar sıfırdan büyük olmalıdır.");
+        }
+
+        return quantity;
     }
 
     public static Quantity Zero(QuantityUnit unit) => Of(0m, unit);
 
     public static int AllowedScale(QuantityUnit unit) => unit == QuantityUnit.Piece ? 0 : KilogramScale;
+
+    /// <summary>The number of decimals that carry a non-zero digit: 12.5000 → 1, 12.5001 → 4, 1000 → 0.</summary>
+    public static int SignificantDecimals(decimal value) => Normalize(value).Scale;
+
+    private static decimal Normalize(decimal value) => value / 1.0000000000000000000000000000m;
 
     public Quantity Add(Quantity other)
     {
@@ -67,7 +85,8 @@ public readonly record struct Quantity : IComparable<Quantity>
         RequireSameUnit(other);
         if (other.Value > Value)
         {
-            throw new InvalidOperationException("Çıkarılan miktar eldeki miktardan büyük olamaz.");
+            throw new LogisticsRuleException(LogisticsRuleCodes.QuantityBelowZero,
+                "Çıkarılan miktar eldeki miktardan büyük olamaz.");
         }
 
         return new Quantity(Value - other.Value, Unit);
@@ -85,7 +104,8 @@ public readonly record struct Quantity : IComparable<Quantity>
     {
         if (other.Unit != Unit)
         {
-            throw new InvalidOperationException("Miktar birimleri farklı; kg ile adet birlikte işlenemez.");
+            throw new LogisticsRuleException(LogisticsRuleCodes.UnitMismatch,
+                "Miktar birimleri farklı; kg ile adet birlikte işlenemez.");
         }
     }
 
