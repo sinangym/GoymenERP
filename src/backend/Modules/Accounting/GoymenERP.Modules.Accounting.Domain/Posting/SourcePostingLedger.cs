@@ -62,6 +62,11 @@ public sealed class SourcePostingLedger
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(period);
         RequireOwnCompany(request.Source.CompanyId);
+        if (request.Lines is null || request.Lines.Any(line => line is null))
+        {
+            throw new ArgumentException("A posting request needs its proposed lines.", nameof(request));
+        }
+
         var delivery = Delivery(request.Consumer, request.MessageId);
         if (_inbox.TryGetValue(delivery, out var recorded))
         {
@@ -75,32 +80,28 @@ public sealed class SourcePostingLedger
             return Record(delivery, new PostingOutcome(PostingOutcomeKind.AlreadyPosted, Journal: existing));
         }
 
+        // Each queue reflects the LATEST delivery of the fact: an exception entry while some line
+        // has no mapping, a pending entry while some amount is unknown. A delivery with both gaps
+        // keeps both entries current; one that closes a gap removes that entry.
         var missing = request.Lines
             .Where(line => line.Account is null)
             .Select(line => line.MappingKey)
             .ToArray();
+        var unvalued = request.Lines.Count(line => line.Amount is null);
         if (missing.Length > 0)
         {
+            var keys = Array.AsReadOnly(missing);
             var queued = _exceptions.TryGetValue(key, out var open)
-                ? open with { PostingRuleVersion = request.PostingRuleVersion, MissingMappingKeys = missing }
-                : new PostingException(request.Source, request.PostingRuleVersion, missing, request.MessageId);
+                ? open with { PostingRuleVersion = request.PostingRuleVersion, MissingMappingKeys = keys }
+                : new PostingException(request.Source, request.PostingRuleVersion, keys, request.MessageId);
             _exceptions[key] = queued;
-            if (request.Lines.All(line => line.Amount is not null))
-            {
-                // This delivery's amounts are all known, so an earlier "waiting valuation" is stale.
-                _pending.Remove(key);
-            }
-
+            SyncPending(key, request, unvalued);
             return Record(delivery, new PostingOutcome(PostingOutcomeKind.ExceptionQueued, Exception: queued));
         }
 
-        var unvalued = request.Lines.Count(line => line.Amount is null);
         if (unvalued > 0)
         {
-            var pending = _pending.TryGetValue(key, out var waiting)
-                ? waiting with { PostingRuleVersion = request.PostingRuleVersion, LinesAwaitingAmount = unvalued }
-                : new PendingValuation(request.Source, request.PostingRuleVersion, unvalued, request.MessageId);
-            _pending[key] = pending;
+            var pending = SyncPending(key, request, unvalued);
             // Every line of this delivery is mapped, so an earlier missing-mapping entry is stale.
             _exceptions.Remove(key);
             return Record(delivery, new PostingOutcome(PostingOutcomeKind.WaitingValuation, Pending: pending));
@@ -189,7 +190,10 @@ public sealed class SourcePostingLedger
     /// decision itself, not its delivery. The same correction delivered again under another
     /// message id answers <see cref="PostingOutcomeKind.AlreadyPosted"/> with the journal it
     /// already produced; a different correction of the same journal gets its own id and posts.
-    /// Reusing a correction id for a different journal is refused.
+    /// Reusing a correction id for a different journal is refused, and so is the same id with
+    /// different content: other lines (compared as a set of account, debit and credit) or other
+    /// business dates (transaction, accounting, value). The recording instant, the posting rule
+    /// version and the journal id a redelivery proposes are delivery details, not content.
     /// </para>
     /// </summary>
     public PostingOutcome Correct(
@@ -206,6 +210,12 @@ public sealed class SourcePostingLedger
         ArgumentNullException.ThrowIfNull(dates);
         ArgumentNullException.ThrowIfNull(lines);
         ArgumentNullException.ThrowIfNull(period);
+        var correctionLines = lines.ToArray();
+        if (correctionLines.Any(line => line is null))
+        {
+            throw new ArgumentException("A journal line cannot be null.", nameof(lines));
+        }
+
         var delivery = Delivery(consumer, messageId);
         if (_inbox.TryGetValue(delivery, out var recorded))
         {
@@ -228,6 +238,13 @@ public sealed class SourcePostingLedger
                     "This correction id already corrected another journal.");
             }
 
+            if (!SameContent(earlier, correctionLines, dates))
+            {
+                throw new AccountingDomainException(
+                    AccountingErrorCodes.CorrectionContentConflict,
+                    "This correction id already carries other lines or dates.");
+            }
+
             return Record(delivery, new PostingOutcome(PostingOutcomeKind.AlreadyPosted, Journal: earlier));
         }
 
@@ -238,7 +255,7 @@ public sealed class SourcePostingLedger
             postingRuleVersion,
             target.CurrencyId,
             dates,
-            lines,
+            correctionLines,
             period,
             linkedJournalId: target.Id);
 
@@ -272,6 +289,38 @@ public sealed class SourcePostingLedger
         _inbox[delivery] = outcome;
         return outcome;
     }
+
+    /// <summary>
+    /// Keeps the pending-valuation entry equal to this delivery's facts: removed when every amount
+    /// is known, otherwise created or refreshed with this delivery's rule version and count. The
+    /// first message that raised it stays recorded.
+    /// </summary>
+    private PendingValuation? SyncPending((Guid, string) key, PostingRequest request, int unvalued)
+    {
+        if (unvalued == 0)
+        {
+            _pending.Remove(key);
+            return null;
+        }
+
+        var pending = _pending.TryGetValue(key, out var waiting)
+            ? waiting with { PostingRuleVersion = request.PostingRuleVersion, LinesAwaitingAmount = unvalued }
+            : new PendingValuation(request.Source, request.PostingRuleVersion, unvalued, request.MessageId);
+        _pending[key] = pending;
+        return pending;
+    }
+
+    private static bool SameContent(Journal earlier, JournalLine[] lines, PostingDates dates) =>
+        earlier.Dates.TransactionDate == dates.TransactionDate
+        && earlier.Dates.AccountingDate == dates.AccountingDate
+        && earlier.Dates.ValueDate == dates.ValueDate
+        && Canonical(earlier.Lines).SequenceEqual(Canonical(lines));
+
+    private static IEnumerable<JournalLine> Canonical(IEnumerable<JournalLine> lines) =>
+        lines.OrderBy(line => line.Account.CompanyId)
+            .ThenBy(line => line.Account.AccountId)
+            .ThenBy(line => line.Debit)
+            .ThenBy(line => line.Credit);
 
     private void RequireOwnCompany(Guid companyId)
     {

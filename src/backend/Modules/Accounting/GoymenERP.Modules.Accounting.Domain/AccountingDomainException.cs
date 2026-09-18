@@ -9,7 +9,12 @@ public sealed class AccountingDomainException(string code, string message) : Exc
     public string Code { get; } = code;
 }
 
-/// <summary>Stable codes raised by <see cref="AccountingDomainException"/>.</summary>
+/// <summary>
+/// Stable codes raised by <see cref="AccountingDomainException"/>: each names the rule that
+/// refused, so a test or a later application layer tells WHICH rule held without parsing the
+/// message. A null argument stays an <see cref="ArgumentNullException"/>: a caller error, not a
+/// rule.
+/// </summary>
 public static class AccountingErrorCodes
 {
     public const string InvalidReference = "accounting_invalid_reference";
@@ -21,9 +26,9 @@ public static class AccountingErrorCodes
     public const string PeriodDoesNotCover = "accounting_period_does_not_cover_date";
     public const string PeriodInvalid = "accounting_period_invalid";
     public const string JournalNotFound = "accounting_journal_not_found";
-    public const string JournalAlreadyReversed = "accounting_journal_already_reversed";
     public const string ReversalOfReversal = "accounting_reversal_of_reversal";
     public const string InvalidDates = "accounting_invalid_dates";
     public const string PeriodAlreadyClosed = "accounting_period_already_closed";
     public const string CorrectionIdentityConflict = "accounting_correction_identity_conflict";
+    public const string CorrectionContentConflict = "accounting_correction_content_conflict";
 }
