@@ -13,7 +13,8 @@ namespace GoymenERP.BrowserSuiteFixtureTool;
 internal sealed class BrowserSuiteHost(
     string repositoryRoot,
     IReadOnlyDictionary<string, string> apiEnvironment,
-    string loopbackConnectionString) : WebApplicationFactory<global::Program>
+    string loopbackConnectionString,
+    BrowserSuiteRunBinding runBinding) : WebApplicationFactory<global::Program>
 {
     private const string ConnectionKey = "DB_CONNECTION_STRING";
     private const string EnvironmentKey = "ASPNETCORE_ENVIRONMENT";
@@ -36,9 +37,22 @@ internal sealed class BrowserSuiteHost(
                 .Select(pair => new KeyValuePair<string, string?>(
                     pair.Key.Replace("__", ":", StringComparison.Ordinal),
                     pair.Value))
-                .Concat(MaskedProcessEnvelope())));
+                .Concat(MaskedProcessEnvelope())
+                .Concat(FixtureWriterBinding())));
         builder.ConfigureLogging(logging => logging.ClearProviders());
     }
+
+    /// <summary>
+    /// Opens the gated fixture writers (Api/Shell/C01E2eFixtureWriterActivation) in this host only: the
+    /// runner is the one place these keys are set, from its already validated disposable run.
+    /// </summary>
+    private IEnumerable<KeyValuePair<string, string?>> FixtureWriterBinding() =>
+    [
+        new("BrowserSuiteFixture:Host", "CONFIRMED"),
+        new("BrowserSuiteFixture:TestedCommit", runBinding.TestedCommit),
+        new("BrowserSuiteFixture:RunId", runBinding.RunId),
+        new("BrowserSuiteFixture:ComposeProject", runBinding.ComposeProject),
+    ];
 
     /// <summary>
     /// The runner's own process carries the run's C-01 envelope variables (the workflow exports them for
@@ -56,3 +70,6 @@ internal sealed class BrowserSuiteHost(
                 name.Replace("__", ":", StringComparison.Ordinal),
                 null));
 }
+
+/// <summary>The validated disposable run the in-process host is bound to.</summary>
+internal sealed record BrowserSuiteRunBinding(string TestedCommit, string RunId, string ComposeProject);

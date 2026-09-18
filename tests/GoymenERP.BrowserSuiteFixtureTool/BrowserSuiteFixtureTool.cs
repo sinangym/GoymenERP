@@ -51,7 +51,11 @@ internal static partial class BrowserSuiteFixtureTool
             await using (var host = new BrowserSuiteHost(
                              settings.RepositoryRoot,
                              settings.ApiEnvironment,
-                             connection.ConnectionString))
+                             connection.ConnectionString,
+                             new BrowserSuiteRunBinding(
+                                 settings.TestedCommit,
+                                 settings.RunId,
+                                 settings.ComposeProject)))
             {
                 using (host.CreateClient())
                 {

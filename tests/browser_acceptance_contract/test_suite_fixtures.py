@@ -124,6 +124,20 @@ class SeedSourceTests(unittest.TestCase):
         self.assertNotIn("ConfigureServices", host)
         self.assertNotIn("ConfigureTestServices", host)
 
+    def test_only_the_runner_opens_the_fixture_writer_gate(self):
+        # Decision W1: the BrowserSuiteFixture:* keys come only from the runner's in-memory configuration.
+        host = (TOOL / "BrowserSuiteHost.cs").read_text(encoding="utf-8")
+        for key in ("Host", "TestedCommit", "RunId", "ComposeProject"):
+            with self.subTest(key=key):
+                self.assertIn(f'new("BrowserSuiteFixture:{key}", ', host)
+        for suite in ("s03", "org03", "smoke"):
+            for key in ("BrowserSuiteFixture__Host", "BrowserSuiteFixture__TestedCommit"):
+                with self.subTest(suite=suite, key=key):
+                    model = profile_tests.model(browser.profile_of(suite))
+                    model["services"]["api"]["environment"][key] = "CONFIRMED"
+                    with self.assertRaises(browser.ContractError):
+                        browser.validate_suite_compose(model, suite, profile_tests.COMMIT, profile_tests.PROJECT)
+
     def test_the_host_masks_envelope_keys_the_container_does_not_carry(self):
         # The runner process has the run's GOYMEN_ERP_C01_E2E_* variables for every suite; a normal-profile
         # container has none, and any one of them would make the in-process host request the C-01 envelope.

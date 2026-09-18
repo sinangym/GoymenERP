@@ -41,13 +41,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "OpenApiDocumentGenerationMode.cs";
     private const string OpenApiStartupPath =
         "src/backend/GoymenERP.Api/Program.cs";
-    // Re-fingerprinted for SALES-API (#321) on top of FIN-T04b (#320), T02-b, T07(a) and MFG-API:
-    // AddSalesModule with the audit interceptor, the Cari account port, the Sales reference bindings
-    // (sales.drafts.create), the staged Sales shell provider registered before the shell authority is
-    // chosen, and InitializeSalesModuleAsync after Organization (after Finance's initializer). No
-    // OpenAPI-generation, network or hosted-service surface of the startup source changed otherwise.
+    // Re-fingerprinted for BROWSER-CI a2 part 2 (decision W1) on top of SALES-API (#321): one call to
+    // C01E2eFixtureWriterActivation.Configure after the shell authority is chosen, which registers the
+    // gated fixture writers only in the fixture runner's in-process host (Testing + its exact run
+    // binding; a boundary test pins the names). No OpenAPI-generation, network or hosted-service surface
+    // of the startup source changed otherwise.
     private const string ReviewedOpenApiStartupFingerprint =
-        "47a9d002c2b93b0dd0f6210e0948b0dbd710844c602ec9d4018735ce1f814dd6";
+        "c149a2caabfb374f2d536f7cb1184994ff4add05f37e333ee158d90e5a013bc4";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
