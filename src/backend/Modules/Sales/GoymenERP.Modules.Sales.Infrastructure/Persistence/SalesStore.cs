@@ -51,6 +51,8 @@ public sealed class SalesStore(
     private const int KeyMaximumLength = 200;
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
+    private const int AttemptOutcomeRecorded = 1;
+    private const int AttemptOutcomeRefused = 2;
 
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
@@ -78,7 +80,13 @@ public sealed class SalesStore(
                     "Aynı Idempotency-Key başka bir istekle geldi; ilk cevap bu isteğe verilmez.");
             }
 
-            var stored = await FindDraftAsync(attempt.DraftId, cancellationToken)
+            if (attempt.Outcome != AttemptOutcomeRecorded || attempt.DraftId is not { } draftId)
+            {
+                // ADR-011 §7: the key holds a recorded terminal refusal; the caller replays it through FindReplayAsync.
+                throw Refused(SalesDraftStoreCodes.ConcurrentChange, "Bu anahtar kayıtlı bir terminal reddi taşıyor; tekrar aynı reddi alır.");
+            }
+
+            var stored = await FindDraftAsync(draftId, cancellationToken)
                 ?? throw new InvalidOperationException("Kayıtlı deneme kaydının taslağı bulunamadı.");
             return new SalesDraftStoreResult(stored, SalesDraftWriteOutcome.Replayed, attempt.CorrelationId);
         }
@@ -115,6 +123,7 @@ public sealed class SalesStore(
             IdempotencyKeyHash = keyHash,
             RequestHash = requestHash,
             ActorId = actorId,
+            Outcome = AttemptOutcomeRecorded,
             DraftId = draft.Id,
             CorrelationId = envelope.CorrelationId.Trim(),
             RecordedAtUtc = now,
@@ -122,6 +131,81 @@ public sealed class SalesStore(
         Audit(envelope, companyId, draft, now);
         await SaveAsync(cancellationToken);
         return new SalesDraftStoreResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
+    }
+
+    public async Task<SalesDraftReplay?> FindReplayAsync(SalesDraftWriteEnvelope envelope, string requestHash,
+        CancellationToken cancellationToken = default)
+    {
+        RequireEnvelope(envelope);
+        RequireHash(requestHash);
+        RequireResolvedCompany();
+        var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
+        var actorId = envelope.ActorId.Trim();
+        var attempt = await dbContext.DraftAttempts.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.CommandName == SalesDraftCommands.CreateV1 && row.IdempotencyKeyHash == keyHash,
+                cancellationToken);
+        if (attempt is null)
+        {
+            return null;
+        }
+
+        if (!string.Equals(attempt.ActorId, actorId, StringComparison.Ordinal)
+            || !string.Equals(attempt.RequestHash, requestHash, StringComparison.Ordinal))
+        {
+            throw Refused(SalesDraftStoreCodes.SameKeyPayloadMismatch,
+                "Aynı Idempotency-Key başka bir istekle geldi; ilk cevap bu isteğe verilmez.");
+        }
+
+        if (attempt.Outcome == AttemptOutcomeRecorded && attempt.DraftId is { } draftId)
+        {
+            var stored = await FindDraftAsync(draftId, cancellationToken)
+                ?? throw new InvalidOperationException("Kayıtlı deneme kaydının taslağı bulunamadı.");
+            return new SalesDraftReplay(stored, null, attempt.CorrelationId);
+        }
+
+        var refusal = attempt.RefusalJson is null ? null : JsonSerializer.Deserialize<SalesDraftTerminalRefusal>(attempt.RefusalJson, Json);
+        if (refusal is null || refusal.Status is < 400 or > 599 || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null)
+        {
+            throw new InvalidOperationException("Kayıtlı terminal ret okunamadı.");
+        }
+
+        return new SalesDraftReplay(null, refusal, attempt.CorrelationId);
+    }
+
+    public async Task RecordRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash, SalesDraftTerminalRefusal refusal,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(refusal);
+        RequireEnvelope(envelope);
+        RequireHash(requestHash);
+        var companyId = RequireResolvedCompany();
+        if (refusal.Status is < 400 or > 599 || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null
+            || refusal.Errors.Any(error => error is null || string.IsNullOrWhiteSpace(error.Field) || string.IsNullOrWhiteSpace(error.Code)))
+        {
+            throw new ArgumentException("Terminal ret bir durum, bir kod ve tam alan hataları taşır.", nameof(refusal));
+        }
+
+        var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
+        if (await dbContext.DraftAttempts.AsNoTracking()
+                .AnyAsync(row => row.CommandName == SalesDraftCommands.CreateV1 && row.IdempotencyKeyHash == keyHash, cancellationToken))
+        {
+            throw Refused(SalesDraftStoreCodes.ConcurrentChange, "Bu anahtar zaten bir deneme taşıyor; tekrar onu alır.");
+        }
+
+        dbContext.DraftAttempts.Add(new DraftAttemptRow
+        {
+            CompanyId = companyId,
+            CommandName = SalesDraftCommands.CreateV1,
+            IdempotencyKeyHash = keyHash,
+            RequestHash = requestHash,
+            ActorId = envelope.ActorId.Trim(),
+            Outcome = AttemptOutcomeRefused,
+            DraftId = null,
+            RefusalJson = JsonSerializer.Serialize(refusal, Json),
+            CorrelationId = envelope.CorrelationId.Trim(),
+            RecordedAtUtc = timeProvider.GetUtcNow(),
+        });
+        await SaveAsync(cancellationToken);
     }
 
     public async Task<SalesOrderDraft?> FindDraftAsync(Guid draftId, CancellationToken cancellationToken = default)

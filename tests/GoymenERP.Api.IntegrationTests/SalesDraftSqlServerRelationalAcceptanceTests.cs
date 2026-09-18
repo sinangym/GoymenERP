@@ -81,7 +81,7 @@ public sealed class SalesDraftSqlServerRelationalAcceptanceTests
         Assert.Equal("DraftAttempts,DraftDeliverySlices,DraftLines,DraftNumbers,Drafts,__EFMigrationsHistory", await run.ScalarAsync<string>(
             "SELECT STRING_AGG(name, ',') WITHIN GROUP (ORDER BY name COLLATE Latin1_General_BIN2) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'sales')"));
         // ADR-011 §2: the raw key is not a column; the attempt row holds the command name, the key hash and the actor.
-        Assert.Equal("ActorId,CommandName,CorrelationId,DraftId,IdempotencyKeyHash,RecordedAtUtc,RequestHash", await run.ScalarAsync<string>(
+        Assert.Equal("ActorId,CommandName,CorrelationId,DraftId,IdempotencyKeyHash,Outcome,RecordedAtUtc,RefusalJson,RequestHash", await run.ScalarAsync<string>(
             "SELECT STRING_AGG(name, ',') WITHIN GROUP (ORDER BY name COLLATE Latin1_General_BIN2) FROM sys.columns WHERE object_id = OBJECT_ID(N'sales.DraftAttempts') AND name <> N'CompanyId'"));
         Assert.Equal(SalesStore.IdempotencyKeyHash("k-1"), await run.ScalarAsync<string>(
             "SELECT IdempotencyKeyHash FROM sales.DraftAttempts WHERE DraftId = @id", ("@id", first.Draft.Id)));
@@ -138,10 +138,40 @@ public sealed class SalesDraftSqlServerRelationalAcceptanceTests
         {
             var retry = await a.Store.StoreDraftAsync(run.Envelope("k-race"), Hash("payload-race"), _ => throw new InvalidOperationException("a replay never builds"));
             Assert.Equal((SalesDraftWriteOutcome.Replayed, "SO-2026-000002"), (retry.Outcome, retry.Draft.DocumentNo));
+            // FindReplayAsync answers the stored draft too, with its first correlation, for the same actor and content.
+            var found = await a.Store.FindReplayAsync(run.Envelope("k-race"), Hash("payload-race"));
+            Assert.Equal((retry.Draft.Id, run.Correlation), (found!.Draft!.Id, found.OriginalCorrelationId));
+            Assert.Null(found.Refusal);
+            Assert.Null(await a.Store.FindReplayAsync(run.Envelope("k-new"), Hash("payload-new")));
         }
 
+        // ADR-011 §7: a terminal refusal is recorded under its key and replayed as the same answer; the key
+        // cannot then store a draft, and another content under it is the same 409 as for a stored draft.
+        var refusal = new SalesDraftTerminalRefusal(409, "version_conflict", [new("lines[0].productId", "version_conflict")]);
+        await using (var a = run.Store(CompanyA))
+        {
+            await a.Store.RecordRefusalAsync(run.Envelope("k-stale"), Hash("payload-stale"), refusal);
+        }
+
+        await using (var a = run.Store(CompanyA))
+        {
+            var replayed = await a.Store.FindReplayAsync(run.Envelope("k-stale"), Hash("payload-stale"));
+            Assert.Null(replayed!.Draft);
+            Assert.Equal((409, "version_conflict", "lines[0].productId", run.Correlation),
+                (replayed.Refusal!.Status, replayed.Refusal.Code, replayed.Refusal.Errors[0].Field, replayed.OriginalCorrelationId));
+            var taken = await Assert.ThrowsAsync<SalesDraftStoreException>(() => a.Store.StoreDraftAsync(run.Envelope("k-stale"), Hash("payload-stale"),
+                documentNo => Draft(owners, documentNo, T0.AddMinutes(5))));
+            Assert.Equal(SalesDraftStoreCodes.ConcurrentChange, taken.Code);
+            var other = await Assert.ThrowsAsync<SalesDraftStoreException>(() => a.Store.FindReplayAsync(run.Envelope("k-stale"), Hash("payload-other")));
+            Assert.Equal(SalesDraftStoreCodes.SameKeyPayloadMismatch, other.Code);
+            var again = await Assert.ThrowsAsync<SalesDraftStoreException>(() => a.Store.RecordRefusalAsync(run.Envelope("k-stale"), Hash("payload-stale"), refusal));
+            Assert.Equal(SalesDraftStoreCodes.ConcurrentChange, again.Code);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE [Outcome] = 2 AND [DraftId] IS NULL AND ISJSON([RefusalJson]) = 1"));
+
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Drafts"));
-        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts"));
+        Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts"));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE ActorId = N'SENTETIK-other-actor'"));
         Assert.Equal(3L, await run.ScalarAsync<long>("SELECT [Next] FROM sales.DraftNumbers"));
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Sales.OrderDraft'"));

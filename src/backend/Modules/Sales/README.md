@@ -12,8 +12,10 @@ Source of truth: plan #275 `a5b8143b` T03 (§14), R3, §13; Business #254 §2–
 | `GoymenERP.Modules.Sales.Domain` | **SALES-P1** | the `SalesOrderDraft` aggregate: header + lines + delivery slices, stable rule codes, `Version` ≠ `Rev.0`, Ö2 quantity |
 | `GoymenERP.Modules.Sales.Infrastructure` | **SALES-P2** | the `sales` schema (drafts, lines, slices, attempts, number counter), `SalesStore : ISalesOrderDraftStore`, hand-written migration + snapshot, audit sidecar in the same save |
 
-There is still no HTTP, host wiring, permission or UI change in the backend: the host does not call
-`AddSalesModule` yet, and the frontend of #260 mounts nothing (`SHARED_MOUNT_HANDOFF.md`).
+Since the Sales API slice the three draft routes exist (`SalesEndpoints.MapDraftEndpoints`) over
+`SalesDraftService`; the host wiring (`AddSalesModule`, the Cari port, the permission registration,
+the shell provider) is the central writer's sequential step, and the frontend of #260 mounts nothing
+until the shell owner applies `SHARED_MOUNT_HANDOFF.md`. See "Draft API" below.
 
 ## Domain (`GoymenERP.Modules.Sales.Domain`, SALES-P1)
 
@@ -50,7 +52,7 @@ Audit's table, written through `IAuditEventCollector` in the same save (ADR-009)
 | `Drafts` | `Id`; alternate `(CompanyId, Id)`; `UX_Drafts_DocumentNo` | header, owner references (id + expected version, paired by check), money profile snapshot, `Version` token + `rowversion`, creator and correlation |
 | `DraftLines` | `(CompanyId, DraftId, LineNo)`; `UX_DraftLines_LineId` | Product snapshot, the three unit bindings, the order unit's Settings profile (scale = min(profile, 3)), `Quantity decimal(18,3)` + the client's `QuantityText`, commercial text |
 | `DraftDeliverySlices` | `(CompanyId, DraftId, LineNo, SliceNo)`; `UX_DraftDeliverySlices_SliceId` | the requested delivery plan |
-| `DraftAttempts` | `(CompanyId, CommandName, IdempotencyKeyHash)` under `Latin1_General_100_BIN2`; `UX_DraftAttempts_DraftId` | the ADR-011 attempt record: no raw key — uppercase SHA-256 of the trimmed key (`varchar(64)`), canonical request hash (`varchar(64)`), actor (compared on replay), draft, correlation |
+| `DraftAttempts` | `(CompanyId, CommandName, IdempotencyKeyHash)` under `Latin1_General_100_BIN2`; `UX_DraftAttempts_DraftId` (filtered to stored drafts) | the ADR-011 attempt record: no raw key — uppercase SHA-256 of the trimmed key (`varchar(64)`), canonical request hash (`varchar(64)`), actor (compared on replay), correlation; `Outcome` 1 = stored draft (`DraftId`) / 2 = recorded terminal refusal (`RefusalJson`, §7 — API slice) |
 
 - **Replay (ADR-011 §2–§5, R3):** the attempt is read first, by (company, command name, key hash).
   The same key with the same hash **and the same actor** answers the stored draft (`Replayed`,
@@ -82,6 +84,38 @@ Audit's table, written through `IAuditEventCollector` in the same save (ADR-009)
   Server: store + replay + audit + schema inventory, same-key mismatch + race, company boundary,
   domain round-trip + paging, foreign-key rollback, canonical key). The SQL cases build drafts from
   **synthetic owner snapshots**: they prove the store, not any owner's rule, and claim no user outcome.
+
+## Draft API (Sales API slice; card #66 with decisions 1–6)
+
+The user path of #257 over HTTP: `POST /api/v1/sales/drafts`, `GET /api/v1/sales/drafts`,
+`GET /api/v1/sales/drafts/{id}` (`SalesEndpoints.MapDraftEndpoints`, the Sales lane's host
+file) over `SalesDraftService : ISalesDraftService` (Application). The route binds only the
+server context; the service decides.
+
+| Concern | Rule |
+|---|---|
+| Authority | A fresh central measurement (#276, `IErpAuthorityRevalidationService`) of the Sales name before anything is read and after every awaited owner read; granted **and** company-wide scope of the request's company and actor. Names are `SalesPermissionManifestV1`: `sales.drafts.create` (POST and the form's reference reads), `sales.drafts.read` (list + detail). Registration and classification are the central writer's; the grant is a human gate; selecting a product also needs the Product owner's `product.operational-selection.read` (measured by that owner). An unregistered name is 503 `permission_unregistered`, never a grant. |
+| Idempotency (ADR-011) | Exactly one canonical `Idempotency-Key` (≤128, no comma) → else 400 `command_metadata_invalid`; content hash `SalesDraftRequestHash`; the attempt key of SALES-P2. Authority comes before the replay is read (§5); the stored draft replays as 200 + `Idempotency-Replayed: true` + `Idempotency-Original-Correlation-Id` (§4); another content or actor is one 409 `same_key_payload_mismatch` (§3). |
+| ADR-011 §7 | A **terminal refusal** — the Product owner's stale `version_conflict` (409) — is recorded under the attempt key (`DraftAttempts.Outcome = 2`, `RefusalJson`; migration `20260919100000_AddAttemptOutcome`) and replayed as the same 409 with the replay headers; a key holding a refusal never stores a draft. Non-terminal refusals (422 owner answers, 503 outages) are not recorded: the next attempt asks the owners again. |
+| Owners, in order | Cari (`ISalesPartyAccountPortV1`, the host's `CounterpartySalesPartyAccountPortV1` over the authorized party read): party + account of that party + this company + both active, else 409 `account_state`. Settings money profile for `sales.order-draft.v1` on the business date: not found → 422 `unsupported_currency`; not in effect → domain `sales_money_profile_not_in_effect` (422); access → 403; else 503. Per line the Product eligibility (three bindings) and the order unit's Settings profile: field errors → 422 `unsupported_product` / `unsupported_unit`; runtime absent or outage → 503 `product_eligibility_unavailable`. A malformed owner answer (another company, another unit, empty identity) is 503 `reference_provider_invalid`. Nothing is cached, defaulted or copied. |
+| Contract deltas (fail-closed) | Decision 2: any `unitPrice` / `priceUnitId` / `discountPercent` → 422 `commercial_not_available` (T28; nothing of a price is stored). Decision 3: any owner reference (delivery address, contact, responsible, payment terms, source strategy, package) → 422 `owner_reference_unavailable` until its owner port exists. Both are marked deltas on #257; the #260 form sends these as null. |
+| List / detail | `pageSize` 1–100 (default 50), opaque company-bound cursor → 400 `invalid_cursor`; another company's draft → 404 (never 403). Kind/state/revision on the wire: `Order` / `Draft` / `Rev.0`; `version` is the concurrency token text. |
+| Problems | `SalesDraftProblem`: status/title, `code`, `correlationId`, field `errors`; platform 401/403/404 code-less (#257). |
+| Shell | `SalesShellCapabilityProvider` (Infrastructure/Shell) declares `sales.drafts.list` / `create` / `detail` with the frontend's routes, **staged** (`ImplementationAvailable: false`; the Cari pattern — Sales documents carry no other activation rule); `true` comes after the shell mount and the `s03` browser acceptance, in a separate exact-head change. The host registers it once the names are in the catalogue (one row in the optional module providers, one normal-host authority). |
+| Honest runtime today | With the real owners on main a create answers the **first owner that cannot**: an unknown customer is 409 `account_state`; with a real customer, the money profile (T02-b, GDC/TRY) answers and the Product runtime — composed by C3 but unconfigured in this host — is 503 `product_eligibility_unavailable`. Measured by `SalesDraftApiSqlServerRelationalAcceptanceTests`; no green is painted. |
+
+Evidence: `SalesDraftServiceTests` (synthetic ports; registered platform names stand in for the Sales
+names until they are in the catalogue), `SalesShellCapabilityProviderContractTests` (pinned to
+`src/sales/capabilities.ts`), `SalesDraftSqlServerRelationalAcceptanceTests` (§7 refusal replay),
+`SalesDraftApiSqlServerRelationalAcceptanceTests` (real host + real owners, synthetic grants), the
+frontend's problem codes/texts (`contract.ts`, `salesText.ts`), and the browser suite `s03` v1
+(`tests/e2e/sales-s03`, fail-closed; v2 with BROWSER-CI stage 2).
+
+Central (the central writer's sequential commit): `Program.cs` — `AddSalesModule` + `InitializeSalesModuleAsync`
+(after Organization), `ISalesPartyAccountPortV1` → `CounterpartySalesPartyAccountPortV1`, the reference-read
+bindings' three permissions → `sales.drafts.create`; `ErpPermissions` registration of the two names (company-wide,
+not critical, no seeded role); the shell provider registration + authority; OpenAPI pinned document; guard pins;
+verifier names (+3 `SalesDraftApi…`); the browser workflow's `suite` option `s03` (read-only).
 
 ## Deliberate limits of this slice (not policy choices)
 

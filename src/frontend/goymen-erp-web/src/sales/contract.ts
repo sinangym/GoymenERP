@@ -194,6 +194,21 @@ export const SALES_PROBLEM_CODE = {
   sameKeyPayloadMismatch: 'same_key_payload_mismatch',
   settingsProviderUnavailable: 'settings_provider_unavailable',
   settingsAccessDenied: 'settings_access_denied',
+  // The Sales API slice's own answers (#66 card, decisions 2–4; ADR-011 §3/§7): each one is a
+  // contract delta on #257, marked in the backend README. Unknown codes still decode; they only
+  // lose their text.
+  unsupportedCurrency: 'unsupported_currency',
+  accountState: 'account_state',
+  versionConflict: 'version_conflict',
+  concurrentChange: 'concurrent_change',
+  commercialNotAvailable: 'commercial_not_available',
+  ownerReferenceUnavailable: 'owner_reference_unavailable',
+  productEligibilityUnavailable: 'product_eligibility_unavailable',
+  counterpartyProviderUnavailable: 'counterparty_provider_unavailable',
+  referenceProviderInvalid: 'reference_provider_invalid',
+  permissionUnregistered: 'permission_unregistered',
+  commandMetadataInvalid: 'command_metadata_invalid',
+  invalidCursor: 'invalid_cursor',
 } as const
 
 export type SalesProblemCode = (typeof SALES_PROBLEM_CODE)[keyof typeof SALES_PROBLEM_CODE]

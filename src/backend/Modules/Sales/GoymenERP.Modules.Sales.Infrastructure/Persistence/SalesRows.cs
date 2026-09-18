@@ -147,7 +147,11 @@ internal sealed class DraftAttemptRow : ISalesTenantRow
     public string IdempotencyKeyHash { get; set; } = string.Empty;
     public string RequestHash { get; set; } = string.Empty;
     public string ActorId { get; set; } = string.Empty;
-    public Guid DraftId { get; set; }
+
+    /// <summary>1 = a stored draft (<see cref="DraftId"/> set); 2 = a recorded terminal refusal (<see cref="RefusalJson"/> set) — ADR-011 §7.</summary>
+    public int Outcome { get; set; }
+    public Guid? DraftId { get; set; }
+    public string? RefusalJson { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
 }

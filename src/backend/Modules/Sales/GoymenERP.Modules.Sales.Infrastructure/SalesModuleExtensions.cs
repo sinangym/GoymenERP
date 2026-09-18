@@ -1,5 +1,11 @@
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Observability;
+using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -8,10 +14,11 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace GoymenERP.Modules.Sales.Infrastructure;
 
 /// <summary>
-/// Sales's module registration. The API host does not call it yet: host wiring, permissions and
-/// the draft endpoints are the next Sales slice, and the central writer's reviewed-inventory
-/// registration of this DbContext and initializer comes with it. The audit interceptor is the
-/// host's to add through <paramref name="configureDbContext"/>, as for every module.
+/// Sales's module registration: the DbContext, the store and the draft service of the API slice.
+/// The host calls it (the central writer's step) with the audit interceptor through
+/// <paramref name="configureDbContext"/>, as for every module, and supplies the Cari account port,
+/// the Settings provider, the optional Product eligibility port and the central authority. The
+/// shell capability provider is registered by the host once the Sales names are in the catalogue.
 /// </summary>
 public static class SalesModuleExtensions
 {
@@ -44,6 +51,21 @@ public static class SalesModuleExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<SalesStore>();
         services.AddScoped<ISalesOrderDraftStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        // The draft use cases (Sales API slice). The host supplies the Cari account port, the Settings
+        // provider, the optional Product eligibility port and the central authority; the shell
+        // capability provider is registered by the host once the Sales names are in the catalogue.
+        services.TryAddSingleton(new SalesDraftServiceBindings());
+        services.AddScoped<ISalesDraftService>(serviceProvider => new SalesDraftService(
+            serviceProvider.GetRequiredService<ICompanyContext>(),
+            serviceProvider.GetRequiredService<ICurrentUser>(),
+            serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
+            serviceProvider.GetRequiredService<ICorrelationContext>(),
+            serviceProvider.GetRequiredService<ISalesPartyAccountPortV1>(),
+            serviceProvider.GetRequiredService<ISettingsPrerequisiteProvider>(),
+            serviceProvider.GetService<IProductSalesEligibilityV1>(),
+            serviceProvider.GetRequiredService<ISalesOrderDraftStore>(),
+            serviceProvider.GetRequiredService<SalesDraftServiceBindings>(),
+            serviceProvider.GetRequiredService<TimeProvider>()));
         return services;
     }
 
