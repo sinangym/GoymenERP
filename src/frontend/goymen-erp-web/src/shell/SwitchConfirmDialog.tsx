@@ -8,6 +8,14 @@
  * they are; "Değişiklikleri bırak" clears every dirty scope and begins the
  * switch, which remounts the feature under the new context.
  *
+ * WHAT THE TEXT MAY AND MAY NOT SAY (Business #66 comment 5653637829, AT-005/006/008):
+ * switching is leaving the screen. It discards UNSAVED edits; it does not cancel or
+ * roll back a request that has already been SENT to the server, and it does not make
+ * that request a success either — the result is checked on return. The dialog cannot
+ * tell whether a command is in flight (the dirty scope is one flag, and that is all it
+ * should be), so its one sentence is written to be true in both cases: an earlier
+ * "bekleyen işlem bırakılır" read as a cancellation and is gone.
+ *
  * Modal semantics by hand: focus lands on the safe choice ("Kal"), Escape means
  * stay, Tab cycles inside the two actions, and the shell returns focus to the
  * company picker (stay) or the main region (discard) when this closes (§13.8).
@@ -19,9 +27,9 @@ import styles from './SwitchConfirmDialog.module.css'
 const SWITCH_CONFIRM_TEXT = {
   title: 'Kaydedilmemiş değişiklikler var',
   detail: (targetCompanyLabel: string | null) =>
-    targetCompanyLabel === null
-      ? 'Şirket değiştirirseniz bu ekrandaki değişiklikler ve bekleyen işlem bırakılır.'
-      : `${targetCompanyLabel} şirketine geçerseniz bu ekrandaki değişiklikler ve bekleyen işlem bırakılır.`,
+    `${targetCompanyLabel === null ? 'Şirket değiştirirseniz' : `${targetCompanyLabel} şirketine geçerseniz`} ` +
+    'bu ekrandaki kaydedilmemiş değişiklikler bırakılır. Şirketi değiştirmek, sunucuya gönderilmiş bir ' +
+    'isteği iptal etmez; sonucunu bu şirkete döndüğünüzde kontrol edebilirsiniz.',
   stay: 'Kal',
   discard: 'Değişiklikleri bırak',
 } as const
