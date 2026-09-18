@@ -369,6 +369,22 @@ family policy its only honest answer would be 503.
 - **Not wired yet.** The host registration is a central step, together with C3. The port is **not registered** and no Inventory command calls it yet.
 - **Tests.** `ProductStockEligibilityServiceTests` reuses the sales tests' synthetic world.
 
+## Shell capabilities (the normal screens)
+
+`ProductShellCapabilityProvider` publishes Product's four screens to the shell, so an actor holding the global Product authority reaches them in the normal runtime:
+
+| Capability | Route | Screen | Granted by (global Product authority) |
+|---|---|---|---|
+| `product.items.list` | `/urun` | U-01 | `Read` |
+| `product.items.detail` | `/urun/:productId` | U-01-360 | `Read` |
+| `product.items.create` | `/urun/yeni` | U-02 | `DraftCreate` |
+| `product.items.edit` | `/urun/:productId/duzenle` | U-02-EDIT | `DraftBasicEdit` |
+
+- **No company permission and no new permission name.** The central registry accepts a Product capability only with its exact operation, owner `PRODUCT`, single-company context and no company permission. The shell grants it from the explicit global Product assignments, the same authority every Product API call already enforces.
+- **Unconfigured means nothing is shown.** Without the Product runtime configuration there is no Product authority, so no screen is granted.
+- **C-01 stays list-only.** The disposable C-01 browser stack replaces the providers and remains Counterparty list-only.
+- **Evidence.** A registry test, a host test, the C-01 activation test and a real-SQL grant/revoke test through the real provider. The browser evidence comes with the U-02 suite (BROWSER-CI stage 2).
+
 ## GDC band/coil family policy (first accepted family)
 
 Source: Business #265 5722701085 (Sinan Ö1/Ö2 of 2026-09-18, #66 5722637822). The rule set is
