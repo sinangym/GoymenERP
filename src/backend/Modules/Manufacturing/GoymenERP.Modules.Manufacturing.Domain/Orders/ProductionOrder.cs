@@ -164,10 +164,23 @@ public sealed class ProductionOrder
             throw new ArgumentException("Kimlik boş olamaz.", nameof(closedByUserId));
         }
 
-        var unaccounted = _plannedInputs
-            .Select(input => BalanceOf(input.ParentRollId))
-            .Where(balance => !balance.IsFullyAccounted)
-            .ToList();
+        var balances = _plannedInputs.Select(input => BalanceOf(input.ParentRollId)).ToList();
+
+        // TEMPORARY — awaiting Business confirmation ("Üretim emri, işlemde kütle (WIP) varken
+        // kapanabilir mi?"). Mass still in process would be left in an ownerless position, so the
+        // order stays open until that mass is declared as output or returned. Recording the WIP
+        // as zero without doing either does not help: the same mass then shows up as an
+        // unexplained difference, which also keeps the order open.
+        var inProcess = balances.Where(balance => balance.WorkInProgress.Value != 0m).ToList();
+        if (inProcess.Count > 0)
+        {
+            throw new ManufacturingRuleException(
+                "wip_open",
+                "İşlemde kütle (WIP) varken emir kapatılamaz: "
+                + string.Join(", ", inProcess.Select(balance => $"{balance.ParentRollId} ({balance.WorkInProgress})")));
+        }
+
+        var unaccounted = balances.Where(balance => !balance.IsFullyAccounted).ToList();
         if (unaccounted.Count > 0)
         {
             throw new ManufacturingRuleException(
