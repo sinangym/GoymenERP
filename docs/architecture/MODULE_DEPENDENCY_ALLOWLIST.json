@@ -42,6 +42,12 @@
       "target": "src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj",
       "adr": "docs/adr/ADR-009-audit-and-correlation.md",
       "reason": "Audit insert and Accounting ledger writes share one EF SaveChanges and SQL transaction (ACC-3, #298; same pattern as Organization)."
+    },
+    {
+      "source": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/GoymenERP.Modules.Finance.Infrastructure.csproj",
+      "target": "src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj",
+      "adr": "docs/adr/ADR-009-audit-and-correlation.md",
+      "reason": "Audit insert and Finance receipt-draft writes share one EF SaveChanges and SQL transaction (FIN-T04a, #305; same pattern as Organization)."
     }
   ]
 }
