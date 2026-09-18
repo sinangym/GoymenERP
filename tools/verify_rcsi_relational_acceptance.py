@@ -126,9 +126,12 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.SqlServerRelationalAcceptanceTests.MigrationSeedWriteGuardCompositeForeignKeyAndHttpIsolation_AreEnforced",
     "GoymenERP.Api.IntegrationTests.CentralAuthorityRevalidationSqlServerRelationalAcceptanceTests.A_revocation_is_measured_inside_the_request_and_refuses_the_next_one",
     "GoymenERP.Api.IntegrationTests.CentralAuthorityRevalidationSqlServerRelationalAcceptanceTests.A_standing_grant_is_answered_the_same_by_both_ports_and_an_unknown_name_reads_nothing",
+    "GoymenERP.Api.IntegrationTests.ProductSalesEligibilityAuthoritySqlServerRelationalAcceptanceTests.A_standing_grant_passes_every_fence_with_one_authority_read_per_fence",
+    "GoymenERP.Api.IntegrationTests.ProductSalesEligibilityAuthoritySqlServerRelationalAcceptanceTests.A_revocation_by_another_request_during_the_read_is_seen_at_the_next_fence",
+    "GoymenERP.Api.IntegrationTests.ProductSalesEligibilityAuthoritySqlServerRelationalAcceptanceTests.Without_a_grant_the_registered_name_denies_before_any_read",
 )
-BROAD_DISCOVERY_COUNT = 86
-BROAD_EXECUTION_COUNT = 93
+BROAD_DISCOVERY_COUNT = 89
+BROAD_EXECUTION_COUNT = 96
 
 
 def verify_discovery(standard_output: str) -> None:
