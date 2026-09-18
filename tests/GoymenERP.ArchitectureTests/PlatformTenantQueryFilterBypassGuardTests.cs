@@ -41,17 +41,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "OpenApiDocumentGenerationMode.cs";
     private const string OpenApiStartupPath =
         "src/backend/GoymenERP.Api/Program.cs";
-    // Re-fingerprinted for the #261 merge: the Finance draft-context registrations and
-    // MapFinanceEndpoints() join main's Sales/Settings wiring. #261's own
-    // ISettingsPrerequisiteProvider line is dropped, so the provider keeps exactly one
-    // registration: ApprovedSettingsPrerequisiteProvider (T02-a host wiring).
-    // Re-measured once more for ORG P3-C: the binding registration is renamed to
-    // ManualReceiptDraftReadBinding (same type, same lifetime, no behaviour change).
-    // Re-measured for T02-b: ISettingsMoneyCandidateReader is registered as the approved provider
-    // (GDC's approved money currencies), and SalesReferenceReadBindings binds the Sales owner's
-    // money operation (SalesMoneyOperations.OrderDraftV1, Sales decision). No route or OpenAPI change.
+    // Re-fingerprinted for T07(a) (#310) on top of T02-b: Inventory joins the host — AddInventoryModule
+    // with the audit interceptor, InitializeInventoryModuleAsync after Organization (its composite foreign
+    // keys reference Organization's tables) and MapInventoryEndpoints. No OpenAPI-generation, network
+    // or hosted-service surface of the startup source changed otherwise.
     private const string ReviewedOpenApiStartupFingerprint =
-        "b33f72a65dd583e0a1e84040e6c2df1beee2a73bedd4c98543c2a2709d721d30";
+        "07d4306b6656c27b1e553ded1170553ee0f9fcd7f805896deaf3df83a021fd4e";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -93,16 +88,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string SqlServerRcsiVerifierPath =
         "tools/verify_rcsi_relational_acceptance.py";
     // Re-fingerprinted for SALES-P2 (#315): six SalesDraftSqlServerRelationalAcceptanceTests names on
-    // top of main's 122 / 129, discovery 122 -> 128, execution 129 -> 135. Logic unchanged.
+    // top of main's 125 / 132, discovery 125 -> 131, execution 132 -> 138. Logic unchanged.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "fa800f404ef9a65b319dc77036c82747015483de70fa79c551dddcae6398677e";
+        "46d79808ef8b689f9755f71dd941cf44aee9653918bc7fc5da534394f0b0e187";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
     // Re-fingerprinted for the same inventory change: updated counts plus one case pinning the
     // new class as mandatory.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "4f5a109f00b149333e43a3088117bdab6e9a138359faf946c1e4b82d0c992884";
+        "e7f7d8bde03f0e2bdb4d98aa90cc4bbf744b3eb9068f638d9920a6fb4eae0b7b";
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "91a665e6e8982e5a9b66f5d16a14d9fc4d7f98d63775de959a8cc6b2dea2b018";

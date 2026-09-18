@@ -51,6 +51,12 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/organization/locations/{id}", "GetOrganizationLocationV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
             ParameterValues: ["path:id:true:type:string;format:uuid"]),
+        new("get", "/api/v1/inventory/labels/{labelId}", "GetInventoryLabelV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
+            ParameterValues: ["path:labelId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/inventory/labels/{labelId}/balances", "GetInventoryLabelBalancesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
+            ParameterValues: ["path:labelId:true:type:string;format:uuid"]),
         new("put", "/api/v1/organization/locations/{id}/active-state", "SetOrganizationLocationActiveStateV1",
             AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:"),
             "#/components/schemas/SetLocationActiveState",
@@ -173,6 +179,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetOrganizationSitesV1"] = "array:SiteSummary",
             ["GetOrganizationLocationsV1"] = "ref:PageResultOfLocationSummary",
             ["GetOrganizationLocationV1"] = "ref:LocationSummary",
+            ["GetInventoryLabelV1"] = "ref:InventoryLabelViewV1",
+            ["GetInventoryLabelBalancesV1"] = "ref:InventoryLabelBalancesV1",
             ["SetOrganizationLocationActiveStateV1"] = "none",
             ["GetOrganizationWorkCentersV1"] = "array:WorkCenterSummary",
             ["GetCurrentIdentityV1"] = "ref:IdentityProfile",
@@ -203,6 +211,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetOrganizationLocationV1",
         "SetOrganizationLocationActiveStateV1",
         "GetOrganizationWorkCentersV1",
+        "GetInventoryLabelV1",
+        "GetInventoryLabelBalancesV1",
         "GetCounterpartyCompanyAccountLinkCandidatesV1",
         "CreateCounterpartyV1",
         "CreateCounterpartyCompanyAccountV1",
@@ -274,6 +284,8 @@ public sealed partial class OpenApiContractGenerationTests
     private static readonly HashSet<string> CodeLessProblemResponses =
     [
         "GetOrganizationLocationV1:404",
+        "GetInventoryLabelV1:404",
+        "GetInventoryLabelBalancesV1:404",
         "SetOrganizationLocationActiveStateV1:404",
         "SetOrganizationLocationActiveStateV1:409",
         "GetFinanceManualReceiptDraftContextV1:404",
@@ -570,6 +582,34 @@ public sealed partial class OpenApiContractGenerationTests
                     ("displayName", "type:string"),
                     ("email", "type:null|string"),
                     ("allowedCompanyIds", "type:array;items:type:string;format:uuid")),
+                ["InventoryLabelViewV1"] = ObjectSchema(
+                    ["labelId", "companyId", "code", "productId", "lotId", "heatNumber", "coilNumber",
+                        "documentStatus", "requiredDocuments", "documents", "prints"],
+                    ("labelId", "type:string;format:uuid"), ("companyId", "type:string;format:uuid"),
+                    ("code", "type:string"), ("productId", "type:string;format:uuid"),
+                    ("lotId", "type:string;format:uuid"), ("heatNumber", "type:null|string"),
+                    ("coilNumber", "type:null|string"), ("documentStatus", "type:string"),
+                    ("requiredDocuments", "type:array;items:type:string"),
+                    ("documents", "type:array;items:ref:InventoryLabelDocumentV1"),
+                    ("prints", "type:array;items:ref:InventoryLabelPrintV1")),
+                ["InventoryLabelDocumentV1"] = ObjectSchema(
+                    ["kind", "attachedAtUtc"],
+                    ("kind", "type:string"), ("attachedAtUtc", "type:string;format:date-time")),
+                ["InventoryLabelPrintV1"] = ObjectSchema(
+                    ["sequence", "printedAtUtc", "reason"],
+                    ("sequence", "type:integer|string;format:int32"),
+                    ("printedAtUtc", "type:string;format:date-time"), ("reason", "type:null|string")),
+                ["InventoryLabelBalancesV1"] = ObjectSchema(
+                    ["labelId", "physicalKg", "freeKg", "blockedKg", "positions"],
+                    ("labelId", "type:string;format:uuid"), ("physicalKg", "type:string"),
+                    ("freeKg", "type:string"), ("blockedKg", "type:string"),
+                    ("positions", "type:array;items:ref:InventoryPositionV1")),
+                ["InventoryPositionV1"] = ObjectSchema(
+                    ["ownerKind", "ownerId", "custodianKind", "custodianId", "locationId", "productId", "block", "quantityKg"],
+                    ("ownerKind", "type:string"), ("ownerId", "type:string;format:uuid"),
+                    ("custodianKind", "type:string"), ("custodianId", "type:string;format:uuid"),
+                    ("locationId", "type:string;format:uuid"), ("productId", "type:string;format:uuid"),
+                    ("block", "type:string"), ("quantityKg", "type:string")),
                 ["LocationSummary"] = ObjectSchema(
                     ["id", "siteId", "code", "name", "isExternal", "isActive", "version"],
                     ("id", "type:string;format:uuid"),
@@ -1207,9 +1247,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(29, operations.Count);
+        Assert.Equal(31, operations.Count);
         Assert.Equal(
-            29,
+            31,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

@@ -79,9 +79,9 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             "RolelessAuditAndIdempotencyFailures_RollBackAndPermitSameKeyRetry",
         ))
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
-        self.assertEqual(128, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(128, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(135, VERIFIER.BROAD_EXECUTION_COUNT)
+        self.assertEqual(131, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(131, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(138, VERIFIER.BROAD_EXECUTION_COUNT)
         for omitted in required:
             with self.subTest(omitted=omitted):
                 discovery = "\n".join(
@@ -97,9 +97,9 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             "CreateFindDetailAndLinkSecondCompany_PreserveIdentityVisibilityAndExactlyOnceEffects"
         )
         self.assertIn(journey, VERIFIER.BROAD_EXPECTED_TESTS)
-        self.assertEqual(128, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(128, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(135, VERIFIER.BROAD_EXECUTION_COUNT)
+        self.assertEqual(131, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(131, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(138, VERIFIER.BROAD_EXECUTION_COUNT)
         without_journey = [name for name in VERIFIER.BROAD_EXPECTED_TESTS if name != journey]
         with self.assertRaisesRegex(RuntimeError, "exact"):
             VERIFIER.verify_broad_discovery("\n".join(without_journey))
@@ -114,9 +114,9 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             prefix + "ScopedPagingAndRejectedCommands_PreserveLocationAndExposeNoForeignState",
         }
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
-        self.assertEqual(128, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(128, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(135, VERIFIER.BROAD_EXECUTION_COUNT)
+        self.assertEqual(131, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(131, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(138, VERIFIER.BROAD_EXECUTION_COUNT)
         for omitted in required:
             with self.subTest(omitted=omitted):
                 discovery = "\n".join(
@@ -136,9 +136,9 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             )
         }
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
-        self.assertEqual(128, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(128, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(135, VERIFIER.BROAD_EXECUTION_COUNT)
+        self.assertEqual(131, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(131, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(138, VERIFIER.BROAD_EXECUTION_COUNT)
         for omitted in required:
             with self.subTest(omitted=omitted):
                 with self.assertRaises(RuntimeError):
@@ -293,6 +293,26 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
                 "A_currency_outside_the_settings_candidates_or_an_unavailable_source_stores_nothing",
                 "Two_racing_approvals_store_one_and_the_database_refuses_a_self_approval",
                 "A_save_that_fails_in_the_database_leaves_nothing_behind",
+            )
+        }
+        self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
+        for omitted in required:
+            with self.subTest(omitted=omitted):
+                with self.assertRaisesRegex(RuntimeError, "exact"):
+                    VERIFIER.verify_broad_discovery("\n".join(
+                        name for name in VERIFIER.BROAD_EXPECTED_TESTS if name != omitted
+                    ))
+
+    def test_inventory_read_api_cases_are_mandatory_and_reject_omission(self) -> None:
+        prefix = (
+            "GoymenERP.Api.IntegrationTests."
+            "InventoryReadApiSqlServerRelationalAcceptanceTests."
+        )
+        required = {
+            prefix + name for name in (
+                "A_reader_with_both_grants_sees_the_label_and_its_stock_position_by_position",
+                "Each_read_needs_its_own_grant",
+                "Another_companys_label_is_not_found_and_the_company_context_is_required",
             )
         }
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
