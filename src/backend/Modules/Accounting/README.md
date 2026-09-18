@@ -1,7 +1,10 @@
-# Accounting module (ACC-1 + ACC-2 domain slice)
+# Accounting module (ACC-1 + ACC-2 domain, ACC-3 persistence)
 
-Plan #275 §7.6, R4, R6, §13; Ö2, Ö4, Ö5. This is an in-memory domain slice with no
-persistence, HTTP, permission or UI surface. It cannot post a real journal.
+Plan #275 §7.6, R4, R6, §13; Ö2, Ö4, Ö5; ADR-002, ADR-009.
+- The domain slice (ACC-1) is in memory.
+- ACC-3 adds the persistent store in the `accounting` schema.
+- There is still no HTTP, host wiring, permission or UI surface, so no user can post a real
+  journal yet.
 
 ## Identities
 
@@ -96,15 +99,82 @@ debit and credit exactly and applies no scale or rounding, because:
 When the Settings money profile is available, posting validates each amount against that
 profile's scale and refuses excess digits without rounding.
 
-**Persistence and concurrency.** The unique indexes behind the four keys, the real inbox table,
-the transaction boundary and the collation are central storage work:
-- the posting purpose, correction and inbox keys must use a case-sensitive, accent-sensitive
-  collation, or a binary comparison, to match the ordinal rule;
-- the inbox key is persisted with the company: (CompanyId, consumer, messageId). In memory the
-  ledger is already one company's (ACC-2, CARİ #283 INFO);
-- this slice has no migration.
+**Chart of accounts and mappings (T22).**
+- An account is still an opaque (company, id) identity with no foreign key, because no chart
+  exists yet.
+- A missing mapping stays an exception-queue entry; nothing is posted to a guessed account.
 
-Also not covered here: chart of accounts (T22), posting rules, FX, OPEN-009 permissions.
+**Not here.**
+- Host DI and wiring, HTTP, permissions, UI.
+- Posting rules, FX, OPEN-009 permissions.
+
+## Persistence (ACC-3)
+
+`GoymenERP.Modules.Accounting.Infrastructure`: `AccountingDbContext`, the `InitialAccounting`
+migration and `AccountingStore`.
+
+`GoymenERP.Modules.Accounting.Application`: the store contracts (`IAccountingPeriodStore`,
+`IAccountingPostingStore`) and the store codes.
+
+**Tables** (all tenant rows, filtered by the server-resolved company and write-guarded):
+
+| Table | Key | Notes |
+|---|---|---|
+| `PeriodCalendars` | CompanyId | Version bumped by every period opening, so overlapping openings cannot both commit |
+| `Periods` | Id, AK (CompanyId, Id) | Only the close trace and the version change; posting and close both bump the version |
+| `Journals` | Id, AK (CompanyId, Id) | Append-only; FK to the period and to the linked journal by (company, id) |
+| `JournalLines` | (CompanyId, JournalId, LineNumber) | Append-only; one positive side per line (check constraint) |
+| `Deliveries` | **(CompanyId, Consumer, MessageId)** | R4 inbox; keeps the first answer for replay |
+| `PostingExceptions` | (CompanyId, SourceId, PostingPurpose) | Open or resolved; never deleted |
+| `PendingValuations` | (CompanyId, SourceId, PostingPurpose) | Open or resolved; never deleted |
+
+**Persistent identities** (unique, company-scoped, held under a race):
+- `UX_Journals_Original`: (company, source, purpose) where Kind = original.
+- `UX_Journals_Reversal`: (company, linked journal) where Kind = reversal.
+- `UX_Journals_Correction`: (company, correction id).
+- `PK_Deliveries`: (company, consumer, message id).
+
+**How a write works:**
+- One call is one save. The journal and its lines, the queue entries, the delivery, the period
+  version and the audit events commit together or not at all.
+- The store rebuilds only the stored facts the request needs (`SourcePostingLedger.FromStored`,
+  `Journal.Restore`, `AccountingPeriod.Restore`) and lets the domain decide. The outcomes are
+  the domain's.
+
+**Races:**
+- A writer that loses a unique identity or a version race gets
+  `accounting_concurrent_change`, and nothing of it is stored.
+- Retrying the same request answers from what the winner stored, for example `AlreadyPosted`.
+
+**Period guard (Ö5):**
+- Posting only into an open period that covers the accounting date.
+- Every posting bumps its period's version, and so does the close. A close racing a posting
+  cannot both commit.
+- Trade-off: postings into the same period also serialise on this version. The loser gets
+  `accounting_concurrent_change` and retries.
+
+**Identity texts:**
+- posting purpose, consumer and message id use `Latin1_General_100_BIN2`.
+- SQL Server's `=` ignores trailing spaces even under a binary collation. The store therefore
+  refuses non-canonical text (surrounding whitespace) BEFORE any lookup, so "m-1 " can never be
+  answered as the replay of "m-1".
+
+**Amounts:**
+- Stored as `decimal(38,18)`. That is a storage limit, not a money policy.
+- A value that does not fit is refused with `accounting_value_does_not_fit`, never rounded.
+
+**Audit (ADR-009):**
+- One audit event per stored business effect: period opened or closed, journal posted,
+  exception queued, updated or resolved, pending valuation queued, updated or resolved.
+- A replayed message and a delivery that only answers `AlreadyPosted` or `AlreadyReversed`
+  store their delivery record and no audit event.
+
+**Central, not in this module (CARİ):**
+- the reviewed-inventory registration of this DbContext and its migrate / ensure-created branch;
+- the module dependency allowlist entry Accounting.Infrastructure → Audit.Infrastructure
+  (ADR-009);
+- the integration-test project reference;
+- the SQL verifier's broad counts.
 
 ## Rule codes and read-only views (ACC-2)
 
@@ -121,5 +191,9 @@ Also not covered here: chart of accounts (T22), posting rules, FX, OPEN-009 perm
 
 ## Validation
 
-`tests/GoymenERP.Accounting.UnitTests` holds synthetic unit tests only. They are not SQL, API or
-browser evidence.
+- `tests/GoymenERP.Accounting.UnitTests` holds synthetic unit and persistence-model tests: the
+  schema, filters and write guard without a database, and the snapshot matching the model.
+- `tests/GoymenERP.Api.IntegrationTests/AccountingSqlServerRelationalAcceptanceTests.cs` holds the
+  real SQL Server evidence: durability, replay, company isolation, the unique indexes without the
+  store, a one-original race, a close-versus-posting race and rollback.
+- None of this is API or browser evidence.
