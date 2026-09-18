@@ -60,6 +60,9 @@ public static class SalesRuleCodes
     /// <summary>The order unit profile is inactive or not effective on the draft's business date (the Settings port's validity obligation; CARİ #306 P2-2).</summary>
     public const string UnitProfileNotInEffect = "sales_unit_profile_not_in_effect";
 
+    /// <summary>The money profile is inactive or not effective on the draft's business date (CARİ #306 P3-R1).</summary>
+    public const string MoneyProfileNotInEffect = "sales_money_profile_not_in_effect";
+
     /// <summary>The order unit's dimension is neither kilogram nor a count dimension; Sales invents no unit for it (Ö2; only kilogram is approved in Settings today).</summary>
     public const string UnitUnsupported = "sales_unit_unsupported";
 

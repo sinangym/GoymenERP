@@ -52,10 +52,25 @@ public sealed record UnitProfileSnapshot(
 /// for the Sales operation <see cref="SalesOrderDraft.MoneyOperation"/>. Mandatory even for an
 /// unpriced draft (#257); <see cref="EffectiveOn"/> must be the business date and
 /// <see cref="Operation"/> must be the Sales draft operation — an answer for another operation is
-/// another answer. Today the approved provider answers Unavailable for money, so no real draft can
-/// carry one; a draft without it is never stored. No scale or rounding is chosen here (T28).
+/// another answer. The owner's validity travels with it (<see cref="IsActive"/>,
+/// <see cref="EffectiveFrom"/>, <see cref="EffectiveThrough"/>) and the draft refuses a profile not
+/// in effect on the business date, the same obligation the unit side holds (CARİ #306 P3-R1).
+/// <see cref="Scale"/> is the owner's money scale, kept as published; Sales applies it to nothing
+/// in this slice (prices are unvalidated text, T28) and chooses no rounding. Today the approved
+/// provider answers Unavailable for money, so no real draft can carry one; a draft without it is
+/// never stored.
 /// </summary>
-public sealed record MoneyProfileSnapshot(Guid CompanyId, Guid CurrencyId, string Operation, Guid ProfileId, string ProfileVersion, DateOnly EffectiveOn);
+public sealed record MoneyProfileSnapshot(
+    Guid CompanyId,
+    Guid CurrencyId,
+    string Operation,
+    Guid ProfileId,
+    string ProfileVersion,
+    DateOnly EffectiveOn,
+    bool IsActive,
+    DateOnly EffectiveFrom,
+    DateOnly? EffectiveThrough,
+    int Scale);
 
 /// <summary>
 /// A nullable owner reference the client supplied (delivery address, contact, responsible,

@@ -165,9 +165,15 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.InventoryReadApiSqlServerRelationalAcceptanceTests.A_reader_with_both_grants_sees_the_label_and_its_stock_position_by_position",
     "GoymenERP.Api.IntegrationTests.InventoryReadApiSqlServerRelationalAcceptanceTests.Each_read_needs_its_own_grant",
     "GoymenERP.Api.IntegrationTests.InventoryReadApiSqlServerRelationalAcceptanceTests.Another_companys_label_is_not_found_and_the_company_context_is_required",
+    "GoymenERP.Api.IntegrationTests.SalesDraftSqlServerRelationalAcceptanceTests.A_draft_with_lines_and_slices_is_stored_replayed_and_audited_in_one_save",
+    "GoymenERP.Api.IntegrationTests.SalesDraftSqlServerRelationalAcceptanceTests.The_same_key_with_other_content_is_refused_and_a_racing_same_key_loses_cleanly",
+    "GoymenERP.Api.IntegrationTests.SalesDraftSqlServerRelationalAcceptanceTests.Company_B_can_neither_see_nor_replay_company_A_draft_and_the_same_key_is_its_own_attempt",
+    "GoymenERP.Api.IntegrationTests.SalesDraftSqlServerRelationalAcceptanceTests.A_stored_draft_is_rebuilt_through_the_domain_and_listed_newest_first_with_a_company_bound_cursor",
+    "GoymenERP.Api.IntegrationTests.SalesDraftSqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
+    "GoymenERP.Api.IntegrationTests.SalesDraftSqlServerRelationalAcceptanceTests.A_key_that_differs_only_by_surrounding_whitespace_is_refused_and_never_replays_the_stored_attempt",
 )
-BROAD_DISCOVERY_COUNT = 125
-BROAD_EXECUTION_COUNT = 132
+BROAD_DISCOVERY_COUNT = 131
+BROAD_EXECUTION_COUNT = 138
 
 
 def verify_discovery(standard_output: str) -> None:
