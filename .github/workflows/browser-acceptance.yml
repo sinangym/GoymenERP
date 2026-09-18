@@ -190,10 +190,14 @@ jobs:
           selection="$(python3 -I -S -B tools/validate_browser_acceptance.py profile --suite "$BROWSER_SUITE")"
           profile="$(sed -n 's/^profile=//p' <<<"$selection")"
           compose_file="$(sed -n 's/^compose_file=//p' <<<"$selection")"
+          override_file="$(sed -n 's/^override_file=//p' <<<"$selection")"
           test -n "$profile" && test -f "$compose_file"
+          test -z "$override_file" || test -f "$override_file"
           {
             echo "BROWSER_E2E_PROFILE=$profile"
             echo "C01_E2E_COMPOSE_FILE=$compose_file"
+            # Stage 2 (a2): the suite's own closed-list API extensions, validated with the merged model.
+            echo "BROWSER_E2E_COMPOSE_OVERRIDE=$override_file"
           } >> "$GITHUB_ENV"
           echo "Suite '$BROWSER_SUITE' runs under capability profile '$profile' ($compose_file)."
 
@@ -226,7 +230,7 @@ jobs:
           if [ "$BROWSER_E2E_PROFILE" = "c01-list-only" ]; then
             docker compose \
               -p "$C01_E2E_COMPOSE_PROJECT" \
-              -f "$C01_E2E_COMPOSE_FILE" \
+              -f "$C01_E2E_COMPOSE_FILE" ${BROWSER_E2E_COMPOSE_OVERRIDE:+-f "$BROWSER_E2E_COMPOSE_OVERRIDE"} \
               config --format json \
               | python3 -I -S -B tools/validate_c01_e2e_contract.py compose \
                   --input - \
@@ -236,7 +240,7 @@ jobs:
             # The profile's exact difference from the canonical model, then every canonical rule.
             docker compose \
               -p "$C01_E2E_COMPOSE_PROJECT" \
-              -f "$C01_E2E_COMPOSE_FILE" \
+              -f "$C01_E2E_COMPOSE_FILE" ${BROWSER_E2E_COMPOSE_OVERRIDE:+-f "$BROWSER_E2E_COMPOSE_OVERRIDE"} \
               config --format json \
               | python3 -I -S -B tools/validate_browser_acceptance.py compose \
                   --suite "$BROWSER_SUITE" \
@@ -257,7 +261,7 @@ jobs:
           set -euo pipefail
           docker compose \
             -p "$C01_E2E_COMPOSE_PROJECT" \
-            -f "$C01_E2E_COMPOSE_FILE" \
+            -f "$C01_E2E_COMPOSE_FILE" ${BROWSER_E2E_COMPOSE_OVERRIDE:+-f "$BROWSER_E2E_COMPOSE_OVERRIDE"} \
             up -d --build sqlserver api
           for attempt in $(seq 1 120); do
             if curl --fail --silent --show-error \
@@ -269,10 +273,10 @@ jobs:
           # Diagnostics go to this job log only (secrets are masked), never into an artifact.
           docker compose \
             -p "$C01_E2E_COMPOSE_PROJECT" \
-            -f "$C01_E2E_COMPOSE_FILE" ps --all
+            -f "$C01_E2E_COMPOSE_FILE" ${BROWSER_E2E_COMPOSE_OVERRIDE:+-f "$BROWSER_E2E_COMPOSE_OVERRIDE"} ps --all
           docker compose \
             -p "$C01_E2E_COMPOSE_PROJECT" \
-            -f "$C01_E2E_COMPOSE_FILE" logs --no-color --tail 80 api || true
+            -f "$C01_E2E_COMPOSE_FILE" ${BROWSER_E2E_COMPOSE_OVERRIDE:+-f "$BROWSER_E2E_COMPOSE_OVERRIDE"} logs --no-color --tail 80 api || true
           exit 1
 
       - name: Materialize and verify canonical fixture
@@ -289,7 +293,7 @@ jobs:
           set -euo pipefail
           docker compose \
             -p "$C01_E2E_COMPOSE_PROJECT" \
-            -f "$C01_E2E_COMPOSE_FILE" \
+            -f "$C01_E2E_COMPOSE_FILE" ${BROWSER_E2E_COMPOSE_OVERRIDE:+-f "$BROWSER_E2E_COMPOSE_OVERRIDE"} \
             up -d --build web-authorized web-unauthorized
           for port in "$C01_E2E_AUTHORIZED_WEB_PORT" "$C01_E2E_UNAUTHORIZED_WEB_PORT"; do
             ready=false
@@ -304,10 +308,10 @@ jobs:
               # Job log only (secrets masked), never an artifact.
               docker compose \
                 -p "$C01_E2E_COMPOSE_PROJECT" \
-                -f "$C01_E2E_COMPOSE_FILE" ps --all
+                -f "$C01_E2E_COMPOSE_FILE" ${BROWSER_E2E_COMPOSE_OVERRIDE:+-f "$BROWSER_E2E_COMPOSE_OVERRIDE"} ps --all
               docker compose \
                 -p "$C01_E2E_COMPOSE_PROJECT" \
-                -f "$C01_E2E_COMPOSE_FILE" logs --no-color --tail 80 web-authorized web-unauthorized api || true
+                -f "$C01_E2E_COMPOSE_FILE" ${BROWSER_E2E_COMPOSE_OVERRIDE:+-f "$BROWSER_E2E_COMPOSE_OVERRIDE"} logs --no-color --tail 80 web-authorized web-unauthorized api || true
               exit 1
             fi
           done
@@ -370,7 +374,7 @@ jobs:
         run: |
           docker compose \
             -p "$C01_E2E_COMPOSE_PROJECT" \
-            -f "$C01_E2E_COMPOSE_FILE" \
+            -f "$C01_E2E_COMPOSE_FILE" ${BROWSER_E2E_COMPOSE_OVERRIDE:+-f "$BROWSER_E2E_COMPOSE_OVERRIDE"} \
             ps --all > artifacts/container-logs/compose-ps.txt 2>&1 || true
 
       - name: Enforce artifact privacy allowlist
@@ -391,7 +395,7 @@ jobs:
           set -euo pipefail
           docker compose \
             -p "$C01_E2E_COMPOSE_PROJECT" \
-            -f "$C01_E2E_COMPOSE_FILE" \
+            -f "$C01_E2E_COMPOSE_FILE" ${BROWSER_E2E_COMPOSE_OVERRIDE:+-f "$BROWSER_E2E_COMPOSE_OVERRIDE"} \
             down -v --remove-orphans
           test -z "$(docker ps -aq --filter "label=com.docker.compose.project=$C01_E2E_COMPOSE_PROJECT")"
           test -z "$(docker network ls -q --filter "label=com.docker.compose.project=$C01_E2E_COMPOSE_PROJECT")"
