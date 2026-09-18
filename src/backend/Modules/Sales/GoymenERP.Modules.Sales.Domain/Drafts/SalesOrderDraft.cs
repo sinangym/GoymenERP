@@ -39,7 +39,7 @@ public sealed record SalesDraftLineInput(
     CommercialDraftFields? Commercial = null,
     IReadOnlyList<DeliverySliceInput>? RequestedDeliverySlices = null);
 
-public sealed record DeliverySliceInput(Guid SliceId, Guid OrderUnitId, decimal Quantity, DateOnly RequestedDeliveryDate);
+public sealed record DeliverySliceInput(Guid SliceId, Guid OrderUnitId, string QuantityText, decimal Quantity, DateOnly RequestedDeliveryDate);
 
 /// <summary>
 /// A sales order draft (T03, SALES-P1): one company, one customer (Party + CompanyPartyAccount),
@@ -209,9 +209,32 @@ public sealed class SalesOrderDraft
         }
 
         if (orderUnit.UnitId == Guid.Empty || orderUnit.ProfileId == Guid.Empty || string.IsNullOrWhiteSpace(orderUnit.UnitCode)
-            || string.IsNullOrWhiteSpace(orderUnit.ProfileVersion) || orderUnit.ProfileScale < 0 || orderUnit.Scale < 0)
+            || string.IsNullOrWhiteSpace(orderUnit.DimensionCode) || string.IsNullOrWhiteSpace(orderUnit.ProfileVersion)
+            || orderUnit.ProfileScale < 0 || orderUnit.Scale < 0
+            || (orderUnit.EffectiveThrough is { } through && through < orderUnit.EffectiveFrom))
         {
-            throw new ArgumentException("Birim profili snapshot'ı eksik.", nameof(orderUnit));
+            throw new ArgumentException("Birim profili snapshot'ı eksik ya da kendiyle çelişiyor.", nameof(orderUnit));
+        }
+
+        // Only kilogram (weight) and a count dimension have a Ö2 rule; anything else is refused,
+        // never mapped to a guessed unit. A kilogram flag on a non-weight dimension is malformed.
+        if (orderUnit.IsKilogram != IsWeight(orderUnit.DimensionCode))
+        {
+            throw new ArgumentException("Birim profili snapshot'ının kg bayrağı boyutuyla çelişiyor.", nameof(orderUnit));
+        }
+
+        if (!orderUnit.IsKilogram && !IsCount(orderUnit.DimensionCode))
+        {
+            throw new SalesRuleException(SalesRuleCodes.UnitUnsupported,
+                "Sipariş birimi ne kilogram ne adet boyutunda; Sales bunun için birim uydurmaz.");
+        }
+
+        // The Settings port's validity obligation, enforced where the snapshot is consumed (PUR-3's verifier rule).
+        if (!orderUnit.IsActive || Header.BusinessDate < orderUnit.EffectiveFrom
+            || (orderUnit.EffectiveThrough is { } until && Header.BusinessDate > until))
+        {
+            throw new SalesRuleException(SalesRuleCodes.UnitProfileNotInEffect,
+                "Sipariş birimi profili iş tarihinde etkin değil.");
         }
 
         // The snapshot's stated applied scale must be what the domain derives; a snapshot that
@@ -304,13 +327,14 @@ public sealed class SalesOrderDraft
             }
 
             var sliceQuantity = RequireQuantity(input.Quantity, orderUnit);
+            RequireQuantityText(input.QuantityText, input.Quantity);
             planned = planned.Add(sliceQuantity);
             if (planned.IsGreaterThan(quantity))
             {
                 throw new SalesRuleException(SalesRuleCodes.SlicesExceedQuantity, "Termin dilimleri satır miktarını aşamaz.");
             }
 
-            slices.Add(new DeliverySlice(input.SliceId, sliceQuantity, input.RequestedDeliveryDate));
+            slices.Add(new DeliverySlice(input.SliceId, sliceQuantity, input.QuantityText, input.RequestedDeliveryDate));
         }
 
         return slices;
@@ -331,6 +355,10 @@ public sealed class SalesOrderDraft
             throw new ArgumentException("Miktar metni miktarın kendisiyle uyuşmuyor.", nameof(text));
         }
     }
+
+    private static bool IsWeight(string dimensionCode) => string.Equals(dimensionCode, "weight", StringComparison.Ordinal);
+
+    private static bool IsCount(string dimensionCode) => string.Equals(dimensionCode, "count", StringComparison.Ordinal);
 
     private static void RequireNote(string? note)
     {

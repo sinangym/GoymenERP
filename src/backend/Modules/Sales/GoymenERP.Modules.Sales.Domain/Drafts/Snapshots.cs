@@ -23,28 +23,37 @@ public sealed record ProductSnapshot(
     UnitBindingSnapshot OrderUnit);
 
 /// <summary>
-/// The Settings owner's unit profile for the line's order unit on the business date, as the port
-/// asks consumers to keep it: <see cref="ProfileScale"/> is the owner's raw scale, <see cref="Scale"/>
-/// the applied one (min(profile, Ö2's cap)), the shape PUR-3 / LOG-3 / MFG-3 use. The domain does
-/// not trust <see cref="Scale"/>: it derives the applied scale from <see cref="ProfileScale"/> itself
-/// (<see cref="SalesOrderDraft.AppliedScale"/>) and refuses a snapshot whose <see cref="Scale"/> says
-/// otherwise, so no snapshot can widen Ö2 (ÜRÜN #306 P3-1).
+/// The Settings owner's unit profile for the line's order unit, as the port publishes it and asks
+/// consumers to keep it: identity, dimension, the owner's raw <see cref="ProfileScale"/> and the
+/// applied <see cref="Scale"/> (min(profile, Ö2's cap) — the PUR-3 / LOG-3 / MFG-3 shape), and the
+/// owner's validity (<see cref="IsActive"/>, <see cref="EffectiveFrom"/>, <see cref="EffectiveThrough"/>).
+/// The domain trusts none of the derived parts: it derives the applied scale from
+/// <see cref="ProfileScale"/> itself (<see cref="SalesOrderDraft.AppliedScale"/>) and refuses a
+/// snapshot whose <see cref="Scale"/> says otherwise (ÜRÜN #306 P3-1 / CARİ P2-1), and it refuses
+/// a profile that is inactive or not effective on the business date (CARİ #306 P2-2, the PUR-3
+/// verifier's rule) — the Settings port's obligation, enforced where the snapshot is consumed.
 /// </summary>
 public sealed record UnitProfileSnapshot(
     Guid CompanyId,
     Guid UnitId,
     string UnitCode,
+    string DimensionCode,
     Guid ProfileId,
     string ProfileVersion,
     bool IsKilogram,
     int ProfileScale,
-    int Scale);
+    int Scale,
+    bool IsActive,
+    DateOnly EffectiveFrom,
+    DateOnly? EffectiveThrough);
 
 /// <summary>
 /// The Settings owner's money profile for the draft's currency on the business date. Mandatory
-/// even for an unpriced draft (#257). Today the approved provider answers Unavailable for money,
-/// so no real draft can carry one; a draft without it is never stored. No scale or rounding is
-/// chosen here (T28).
+/// even for an unpriced draft (#257); <see cref="EffectiveOn"/> must be the business date. Today
+/// the approved provider answers Unavailable for money, so no real draft can carry one; a draft
+/// without it is never stored. No scale or rounding is chosen here (T28). The Sales money
+/// operation identifier the port needs is not decided (#66 5731075396) and is not part of this
+/// snapshot (dependency_wait).
 /// </summary>
 public sealed record MoneyProfileSnapshot(Guid CompanyId, Guid CurrencyId, Guid ProfileId, string ProfileVersion, DateOnly EffectiveOn);
 

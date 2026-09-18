@@ -6,7 +6,7 @@ namespace GoymenERP.Modules.Sales.Domain.Drafts;
 /// One requested delivery slice of a line: a client-owned stable identity, the line's unit, a
 /// positive quantity and a date-only requested delivery date. A slice is a plan, never a delivery.
 /// </summary>
-public sealed record DeliverySlice(Guid SliceId, Quantity Quantity, DateOnly RequestedDeliveryDate);
+public sealed record DeliverySlice(Guid SliceId, Quantity Quantity, string QuantityText, DateOnly RequestedDeliveryDate);
 
 /// <summary>
 /// One line of a sales order draft: the product as the Product owner answered it, the order unit

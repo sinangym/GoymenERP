@@ -30,11 +30,15 @@ public sealed class SalesOrderDraftTests
     private static MoneyProfileSnapshot Money(Guid? company = null, DateOnly? effectiveOn = null) =>
         new(company ?? Company, Currency, Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"), "3", effectiveOn ?? Day);
 
-    private static UnitProfileSnapshot KgUnitProfile(int profileScale = 3, Guid? company = null) =>
-        new(company ?? Company, KgUnit, "kg", KgProfile, "4", true, profileScale, Math.Min(profileScale, 3));
+    private static readonly DateOnly From = new(2026, 9, 1);
+
+    private static UnitProfileSnapshot KgUnitProfile(int profileScale = 3, Guid? company = null, bool isActive = true,
+        DateOnly? effectiveFrom = null, DateOnly? effectiveThrough = null) =>
+        new(company ?? Company, KgUnit, "kg", "weight", KgProfile, "4", true, profileScale, Math.Min(profileScale, 3),
+            isActive, effectiveFrom ?? From, effectiveThrough);
 
     private static UnitProfileSnapshot PieceUnitProfile() =>
-        new(Company, PieceUnit, "pcs", Guid.Parse("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"), "1", false, 0, 0);
+        new(Company, PieceUnit, "pcs", "count", Guid.Parse("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"), "1", false, 0, 0, true, From, null);
 
     private static ProductSnapshot Snapshot(UnitProfileSnapshot orderUnit, DateOnly? effectiveOn = null, Guid? bindingCompany = null)
     {
@@ -159,6 +163,36 @@ public sealed class SalesOrderDraftTests
     }
 
     [Fact]
+    public void An_inactive_or_out_of_window_unit_profile_is_refused_and_the_last_window_day_is_in_effect()
+    {
+        // CARİ #306 P2-2: the Settings port's validity obligation, enforced where the snapshot is consumed (PUR-3's rule).
+        var draft = Draft();
+        Assert.Equal(SalesRuleCodes.UnitProfileNotInEffect,
+            CodeOf(() => draft.AddLine(1, Line(1m, unit: KgUnitProfile(isActive: false), product: Snapshot(KgUnitProfile())), T0)));
+        Assert.Equal(SalesRuleCodes.UnitProfileNotInEffect,
+            CodeOf(() => draft.AddLine(1, Line(1m, unit: KgUnitProfile(effectiveFrom: Day.AddDays(1)), product: Snapshot(KgUnitProfile())), T0)));
+        Assert.Equal(SalesRuleCodes.UnitProfileNotInEffect,
+            CodeOf(() => draft.AddLine(1, Line(1m, unit: KgUnitProfile(effectiveThrough: Day.AddDays(-1)), product: Snapshot(KgUnitProfile())), T0)));
+        Assert.Throws<ArgumentException>(() => draft.AddLine(1, Line(1m, unit: KgUnitProfile(effectiveFrom: Day, effectiveThrough: Day.AddDays(-1)), product: Snapshot(KgUnitProfile())), T0));
+        Assert.Empty(draft.Lines);
+
+        draft.AddLine(1, Line(1m, unit: KgUnitProfile(effectiveFrom: Day, effectiveThrough: Day), product: Snapshot(KgUnitProfile())), T0);
+        Assert.Single(draft.Lines);
+    }
+
+    [Fact]
+    public void Only_a_weight_or_count_dimension_has_a_rule_and_the_kilogram_flag_must_agree()
+    {
+        // Sales invents no unit: a profile of another dimension is refused by code, never mapped to pieces.
+        var draft = Draft();
+        var volume = KgUnitProfile() with { DimensionCode = "volume", IsKilogram = false, ProfileScale = 0, Scale = 0 };
+        Assert.Equal(SalesRuleCodes.UnitUnsupported, CodeOf(() => draft.AddLine(1, Line(1m, unit: volume, product: Snapshot(volume)), T0)));
+        var contradiction = KgUnitProfile() with { DimensionCode = "count" };
+        Assert.Throws<ArgumentException>(() => draft.AddLine(1, Line(1m, unit: contradiction, product: Snapshot(contradiction)), T0));
+        Assert.Empty(draft.Lines);
+    }
+
+    [Fact]
     public void Trailing_zeros_are_not_precision_and_pieces_are_whole()
     {
         var draft = Draft();
@@ -196,8 +230,8 @@ public sealed class SalesOrderDraftTests
     {
         // #257: 1000 = 400 + 600 leaves 0; 400 + 700 is refused; 400 + 400 leaves 200 unplanned, never delivered.
         var draft = Draft();
-        DeliverySliceInput Slice(decimal kg, Guid? unit = null, Guid? id = null) =>
-            new(id ?? Guid.NewGuid(), unit ?? KgUnit, kg, Day.AddDays(7));
+        DeliverySliceInput Slice(decimal kg, Guid? unit = null, Guid? id = null, string? text = null) =>
+            new(id ?? Guid.NewGuid(), unit ?? KgUnit, text ?? kg.ToString(System.Globalization.CultureInfo.InvariantCulture), kg, Day.AddDays(7));
 
         var exact = draft.AddLine(1, Line(1000m, slices: [Slice(400m), Slice(600m)]), T0);
         Assert.True(exact.UnplannedQuantity.IsZero);
@@ -205,6 +239,9 @@ public sealed class SalesOrderDraftTests
         Assert.Equal(Quantity.Of(200m, QuantityUnit.Kilogram), partial.UnplannedQuantity);
         Assert.Equal(2, partial.RequestedDeliverySlices.Count);
 
+        Assert.Equal("400", partial.RequestedDeliverySlices[0].QuantityText);
+        // CARİ #306 P2-3: a slice's text is stored and bound to its value like the line's.
+        Assert.Throws<ArgumentException>(() => draft.AddLine(3, Line(1000m, slices: [Slice(400m, text: "400.5")]), T0));
         Assert.Equal(SalesRuleCodes.SlicesExceedQuantity, CodeOf(() => draft.AddLine(3, Line(1000m, slices: [Slice(400m), Slice(700m)]), T0)));
         Assert.Equal(SalesRuleCodes.SliceUnitMismatch, CodeOf(() => draft.AddLine(3, Line(1000m, slices: [Slice(400m, unit: PieceUnit)]), T0)));
         var id = Guid.NewGuid();
@@ -252,7 +289,7 @@ public sealed class SalesOrderDraftTests
     public void The_views_cannot_be_used_to_bypass_the_rules()
     {
         var draft = Draft();
-        var line = draft.AddLine(1, Line(1m, slices: [new DeliverySliceInput(Guid.NewGuid(), KgUnit, 1m, Day)]), T0);
+        var line = draft.AddLine(1, Line(1m, slices: [new DeliverySliceInput(Guid.NewGuid(), KgUnit, "1", 1m, Day)]), T0);
         var before = draft.Version;
         Assert.False(draft.Lines is List<SalesOrderDraftLine>);
         Assert.False(line.RequestedDeliverySlices is List<DeliverySlice>);
@@ -267,7 +304,7 @@ public sealed class SalesOrderDraftTests
     public void The_line_level_guard_is_a_second_authority_and_reports_itself_as_such()
     {
         var unit = KgUnitProfile();
-        var slices = new[] { new DeliverySlice(Guid.NewGuid(), Quantity.Of(2m, QuantityUnit.Kilogram), Day) };
+        var slices = new[] { new DeliverySlice(Guid.NewGuid(), Quantity.Of(2m, QuantityUnit.Kilogram), "2", Day) };
         Assert.Equal(SalesRuleCodes.InternalInvariant, CodeOf(() => new SalesOrderDraftLine(Guid.NewGuid(), 1, Snapshot(unit), unit,
             Quantity.Of(1m, QuantityUnit.Kilogram), "1", null, null, CommercialDraftFields.None, slices)));
         Assert.Equal(SalesRuleCodes.InternalInvariant, CodeOf(() => new SalesOrderDraftLine(Guid.NewGuid(), 1, Snapshot(unit), unit,

@@ -54,6 +54,12 @@ public static class SalesRuleCodes
     /// <summary>The selected order unit is not the unit the Product owner's snapshot binds as the order unit.</summary>
     public const string ProductUnitMismatch = "sales_product_unit_mismatch";
 
+    /// <summary>The order unit profile is inactive or not effective on the draft's business date (the Settings port's validity obligation; CARİ #306 P2-2).</summary>
+    public const string UnitProfileNotInEffect = "sales_unit_profile_not_in_effect";
+
+    /// <summary>The order unit's dimension is neither kilogram nor a count dimension; Sales invents no unit for it (Ö2; only kilogram is approved in Settings today).</summary>
+    public const string UnitUnsupported = "sales_unit_unsupported";
+
     /// <summary>The quantity's dimension (kilogram / piece) is not the order unit profile's dimension, or two quantities of different units met.</summary>
     public const string UnitMismatch = "sales_unit_mismatch";
 
