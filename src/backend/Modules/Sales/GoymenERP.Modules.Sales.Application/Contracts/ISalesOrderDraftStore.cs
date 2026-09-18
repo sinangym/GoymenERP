@@ -31,13 +31,25 @@ public enum SalesDraftWriteOutcome
     Replayed = 2,
 }
 
+/// <summary>The versioned command names the Sales attempt record is keyed by (ADR-011 §2).</summary>
+public static class SalesDraftCommands
+{
+    /// <summary>The create of an order draft (#257 POST /api/v1/sales/drafts).</summary>
+    public const string CreateV1 = "sales.order-draft.create.v1";
+}
+
 /// <summary>The stable refusal codes of the Sales draft store, beside the domain's own rule codes.</summary>
 public static class SalesDraftStoreCodes
 {
     /// <summary>The draft's company is not the server-resolved company context (or there is none).</summary>
     public const string CompanyContextMismatch = "sales_company_context_mismatch";
 
-    /// <summary>The same idempotency key was offered again with another request content (#257: 409, same-key different-payload).</summary>
+    /// <summary>
+    /// The same idempotency key was offered again with another request content OR by another actor
+    /// (#257: 409 same-key different-payload; ADR-011 §3). One code for both, as the platform
+    /// Idempotency module's single Conflict kind: the answer must not disclose that the key exists
+    /// for someone else, nor anything of the stored result.
+    /// </summary>
     public const string SameKeyPayloadMismatch = "sales_same_key_payload_mismatch";
 
     /// <summary>Another write took the same key, draft id or document number first; nothing of this write was stored, the same request may be retried.</summary>
@@ -68,10 +80,13 @@ public sealed record SalesDraftPage(IReadOnlyList<SalesOrderDraft> Items, string
 /// only declares it). One call is one save: the header, the lines with their owner snapshots, the
 /// delivery slices, the attempt record and the audit event commit together or not at all.
 /// <list type="bullet">
-/// <item><b>Replay (R3):</b> (company, idempotency key) is the attempt identity. The same key with
-/// the same <see cref="SalesDraftRequestHash"/> answers the first stored draft with
-/// <see cref="SalesDraftWriteOutcome.Replayed"/> and the original correlation; the same key with
-/// another hash is refused (<see cref="SalesDraftStoreCodes.SameKeyPayloadMismatch"/>). A key of
+/// <item><b>Replay (ADR-011, R3):</b> (company, <see cref="SalesDraftCommands.CreateV1"/>, uppercase
+/// SHA-256 of the trimmed idempotency key) is the attempt identity; the raw key is never stored. The
+/// same key with the same <see cref="SalesDraftRequestHash"/> and the same actor answers the first
+/// stored draft with <see cref="SalesDraftWriteOutcome.Replayed"/> and the original correlation;
+/// another hash or another actor is <see cref="SalesDraftStoreCodes.SameKeyPayloadMismatch"/> — one
+/// definite 409 that discloses nothing of the stored result nor that the key exists for someone else.
+/// Authority is checked by the caller before the replay is read. A key of
 /// another company is invisible: a company change is not a rollback (R3).</item>
 /// <item><b>Document number:</b> assigned by the store on first commit through
 /// <paramref name="build"/>, company-scoped and technical; not an official document (Ö8); no

@@ -13,4 +13,13 @@ public static class SettingsPrerequisiteCodesV1
     /// a permanent answer about this identity, not a transient failure.
     /// </summary>
     public const string UnitProfileNotFound = "settings_unit_profile_not_found";
+
+    /// <summary>
+    /// The company's approved money source is reachable, and the operation is approved, but it holds
+    /// no profile for the currency asked about (for example USD or EUR for GDC today, or an empty
+    /// currency id). Kept apart from <c>settings_provider_unavailable</c> (no source, or the
+    /// operation is not an approved one) and <c>settings_profile_invalid</c> (malformed data): a
+    /// permanent answer about this currency, not a transient failure.
+    /// </summary>
+    public const string MoneyProfileNotFound = "settings_money_profile_not_found";
 }

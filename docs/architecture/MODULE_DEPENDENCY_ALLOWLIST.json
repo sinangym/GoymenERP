@@ -54,6 +54,12 @@
       "target": "src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj",
       "adr": "docs/adr/ADR-009-audit-and-correlation.md",
       "reason": "Audit insert and Manufacturing writes share one EF SaveChanges and SQL transaction (MFG-5 (#303); same pattern as Organization)."
+    },
+    {
+      "source": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/GoymenERP.Modules.Sales.Infrastructure.csproj",
+      "target": "src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj",
+      "adr": "docs/adr/ADR-009-audit-and-correlation.md",
+      "reason": "Audit insert and Sales writes share one EF SaveChanges and SQL transaction (SALES-P2 (#315); same pattern as Organization)."
     }
   ]
 }
