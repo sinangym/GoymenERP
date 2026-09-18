@@ -4,7 +4,7 @@
  * disposable stack fails and never tests something else.
  *
  * `BROWSER_E2E_FIN01_SEED` (JSON) is written by the stage-2 seed step from
- * tests/GoymenERP.BrowserSuiteFixtureTool/Suites/Fin01 (the real counterparty API only):
+ * tests/GoymenERP.BrowserSuiteFixtureTool/Suites/FIN01 (the real counterparty API only):
  *
  *   companyId        — GDC, whose approved TRY money profile the real Settings provider answers
  *   partyId          — the synthetic customer the seed opened through the real Cari API
