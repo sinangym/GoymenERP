@@ -36,10 +36,13 @@ FORBIDDEN_IN_SEEDS = (
 )
 
 
+SHARED_DIRECTORY = TOOL / "Shared"
+
+
 def seed_sources():
-    if not SUITES_DIRECTORY.is_dir():
-        return []
-    return sorted(SUITES_DIRECTORY.rglob("*.cs"))
+    """Owner seeds and the shared seeds they call (e.g. CARİ's Cari seed)."""
+    return sorted(path for directory in (SUITES_DIRECTORY, SHARED_DIRECTORY) if directory.is_dir()
+                  for path in directory.rglob("*.cs"))
 
 
 class FixtureListTests(unittest.TestCase):
@@ -77,6 +80,7 @@ class FixtureListTests(unittest.TestCase):
 
 class SeedSourceTests(unittest.TestCase):
     def test_owner_seeds_use_no_sql(self):
+        self.assertTrue(seed_sources(), "the shared seeds are scanned too")
         for path in seed_sources():
             source = path.read_text(encoding="utf-8")
             for token in FORBIDDEN_IN_SEEDS:

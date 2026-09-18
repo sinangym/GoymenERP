@@ -16,6 +16,15 @@ public sealed partial class BrowserSuiteFixtureContext
     public const string CorrelationHeader = "X-Correlation-Id";
     public const string IdempotencyHeader = "Idempotency-Key";
 
+    // HTTP header names are case-insensitive: a seed cannot replace these in any spelling.
+    private static readonly HashSet<string> ContextHeaders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ActorHeader,
+        CompanyHeader,
+        CorrelationHeader,
+        IdempotencyHeader,
+    };
+
     private readonly Func<DelegatingHandler[], HttpClient> _createClient;
     private readonly IReadOnlySet<string> _actors;
     private int _requests;
@@ -78,14 +87,18 @@ public sealed partial class BrowserSuiteFixtureContext
     /// <summary>A display text marked as synthetic data of this suite.</summary>
     public string Label(string text) => $"SENTETIK browser-suite:{Suite} {text}";
 
-    /// <summary>POSTs a JSON command with the step's idempotency key and returns the JSON answer.</summary>
+    /// <summary>
+    /// POSTs a JSON command with the step's idempotency key (and any route-specific request headers,
+    /// e.g. a negotiated client contract) and returns the JSON answer.
+    /// </summary>
     public async Task<JsonElement> PostJsonAsync(
         string actorUserId,
         Guid? companyId,
         string path,
         object body,
         string step,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string>? headers = null)
     {
         using var client = Api(actorUserId, companyId);
         using var request = new HttpRequestMessage(HttpMethod.Post, path)
@@ -93,6 +106,16 @@ public sealed partial class BrowserSuiteFixtureContext
             Content = JsonContent.Create(body),
         };
         request.Headers.Add(IdempotencyHeader, IdempotencyKey(step));
+        foreach (var (name, value) in headers ?? new Dictionary<string, string>())
+        {
+            if (ContextHeaders.Contains(name))
+            {
+                throw new InvalidOperationException($"Header {name} is set by the context.");
+            }
+
+            request.Headers.Add(name, value);
+        }
+
         using var response = await client.SendAsync(request, cancellationToken);
         return await ReadJsonAsync(response, cancellationToken);
     }
