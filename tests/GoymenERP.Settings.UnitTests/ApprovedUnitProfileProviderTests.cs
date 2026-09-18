@@ -225,6 +225,19 @@ public sealed class ApprovedUnitProfileProviderTests
     }
 
     [Fact]
+    public async Task The_not_found_code_is_published_in_the_contract_and_is_what_the_provider_raises()
+    {
+        // Consumers (Sales maps it to 422 unsupported_unit, #285) must depend on the contract
+        // constant; the provider's own constant is only an alias of it.
+        Assert.Equal("settings_unit_profile_not_found", SettingsPrerequisiteCodesV1.UnitProfileNotFound);
+        Assert.Equal(SettingsPrerequisiteCodesV1.UnitProfileNotFound, ApprovedSettingsPrerequisiteProvider.UnitProfileNotFoundCode);
+
+        var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => Provider(Gdc).GetUnitProfileAsync(Guid.Parse("0f3bd0a1-6e2c-4d77-a3a5-0b1c2d3e4f50"), Approval));
+        Assert.Equal(SettingsPrerequisiteCodesV1.UnitProfileNotFound, failure.Code);
+    }
+
+    [Fact]
     public void Only_the_reviewed_catalog_is_reachable_from_outside_Settings()
     {
         // FİNANS #279 P3-1: a module that references Settings must not be able to build an
