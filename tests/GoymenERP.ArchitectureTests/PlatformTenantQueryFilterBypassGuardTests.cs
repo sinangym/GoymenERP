@@ -41,8 +41,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "OpenApiDocumentGenerationMode.cs";
     private const string OpenApiStartupPath =
         "src/backend/GoymenERP.Api/Program.cs";
+    // Re-fingerprinted for one registration line: ISettingsPrerequisiteProvider now resolves to
+    // ApprovedSettingsPrerequisiteProvider (T02-a host wiring) instead of the unavailable adapter.
+    // No OpenAPI, network, hosted-service or database surface of the startup source changed.
     private const string ReviewedOpenApiStartupFingerprint =
-        "446655faa3413d5adf569ec7e1c4cef3e98979bf2ab742655e4b1c5cde01e56a";
+        "f529e4f4d7e513faf38746dc895698fe56158db00945bee3272efb0b4d463bd4";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
