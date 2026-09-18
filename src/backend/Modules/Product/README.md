@@ -351,6 +351,24 @@ Fail-closed limits at this base, not policy choices:
 Candidate/offered-unit enumeration for a company user is not implemented: without an accepted
 family policy its only honest answer would be 503.
 
+## Stock eligibility runtime (T07, operational selection for a stock operation)
+
+`ProductStockEligibilityService` implements `IProductStockEligibilityV1`, the owner's answer to "may this Product at this version be stocked on this date, and under which stock-unit profile?" It follows the sales port's pattern and channels. Only the stock rules are asked:
+
+| Rule | Source | Answer |
+|---|---|---|
+| Only an Active card | DEC-PRD-010 ("a draft card cannot be used in a definitive transaction") | `productId` `lifecycle_conflict` |
+| The expected version | port pattern | `expectedProductVersion` `version_conflict` / `invalid_version` |
+| A stock unit binding exists, and its Settings profile is usable on the date **and kilogram** | DEC-PRD-007 ("the main stock quantity is kg") | `references.units.stock` `invalid_reference` |
+| The card's family-required policy | as for sales: a card is a valid card of its family or not | the policy's own field errors; `503` while the family's data is missing |
+| **No role** | no source ties stocking to Purchasable / Sellable / ProductionInput / ProductionOutput | nothing is invented; a card that is not sellable can still be stocked |
+
+- **Not read.** The sales unit and the sales role are sales' questions; for stock they are neither checked nor read. A family whose accepted rules require a sales binding still refuses a card without one, through the family policy (the GDC band/coil rule does).
+- **Authority.** The same narrow `product.operational-selection.read` permission, measured afresh through `IErpAuthorityRevalidationService` before anything is read and after every awaited read: four measurements for a full evaluation. The refusal is the one `product_access_denied` 403. Inventory's own permission is still required on Inventory's side.
+- **Code.** The fence code is repeated from the sales runtime on purpose, so the reviewed sales runtime is not touched. Merging the two is a later refactor with its own review.
+- **Not wired yet.** The host registration is a central step, together with C3. The port is **not registered** and no Inventory command calls it yet.
+- **Tests.** `ProductStockEligibilityServiceTests` reuses the sales tests' synthetic world.
+
 ## GDC band/coil family policy (first accepted family)
 
 Source: Business #265 5722701085 (Sinan Ö1/Ö2 of 2026-09-18, #66 5722637822). The rule set is
