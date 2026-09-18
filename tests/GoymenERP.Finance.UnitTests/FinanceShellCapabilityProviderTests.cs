@@ -33,13 +33,13 @@ public sealed class FinanceShellCapabilityProviderTests
         [
             ("finance.receipts.list", "finance.receipts", "/finans/tahsilatlar", "F-02", ShellCapabilityRoutePrecedence.Static,
                 [FinancePermissionNames.DraftRead]),
-            ("finance.receipts.draft", "finance.receipts.new", "/finans/tahsilatlar/yeni", "F-02", ShellCapabilityRoutePrecedence.Static,
+            ("finance.receipts.draft", "finance.receipts.new", "/finans/tahsilatlar/yeni", "F-02-NEW", ShellCapabilityRoutePrecedence.Static,
                 [FinancePermissionNames.DraftSave, ErpPermissions.FinanceBankAccountRead]),
-            ("finance.receipts.detail", "finance.receipts.detail", "/finans/tahsilatlar/:sourceId", "F-02",
+            ("finance.receipts.detail", "finance.receipts.detail", "/finans/tahsilatlar/:sourceId", "F-02-DETAIL",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinancePermissionNames.DraftRead]),
             ("finance.bank-accounts.list", "finance.bank-accounts", "/finans/banka-hesaplari", "F-04",
                 ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceBankAccountRead]),
-            ("finance.bank-accounts.propose", "finance.bank-accounts.new", "/finans/banka-hesaplari/yeni", "F-04",
+            ("finance.bank-accounts.propose", "finance.bank-accounts.new", "/finans/banka-hesaplari/yeni", "F-04-NEW",
                 ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceBankAccountPropose]),
             ("finance.bank-accounts.approve", "finance.bank-accounts", "/finans/banka-hesaplari", "F-04",
                 ShellCapabilityRoutePrecedence.Static,
@@ -74,5 +74,17 @@ public sealed class FinanceShellCapabilityProviderTests
         Assert.Superset(list.RequiredPermissions.ToHashSet(StringComparer.Ordinal),
             approve.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
         Assert.Single(declarations, item => item.ParentCapabilityId is not null);
+    }
+
+    [Fact]
+    public void Every_route_has_its_own_screen_id_and_the_control_keeps_its_lists()
+    {
+        var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
+        var routes = declarations.Where(item => item.ParentCapabilityId is null).ToArray();
+
+        // The registry refuses a screen id shared by two routes (ValidateUnique on ScreenId).
+        Assert.Equal(routes.Length, routes.Select(item => item.ScreenId).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(["F-02", "F-02-DETAIL", "F-02-NEW", "F-04", "F-04-NEW"],
+            routes.Select(item => item.ScreenId).Order(StringComparer.Ordinal));
     }
 }

@@ -9,6 +9,12 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 /// F-04 Banka Hesapları (the bank-account master), UI catalog / Master §27.11. The ids and paths are
 /// the owner's technical mapping (#254 5654539215), on Cari's Turkish-path convention.
 /// <para>
+/// <b>Screen ids:</b> the registry needs one screen id per route. The catalog's business ids F-02
+/// and F-04 name the lists; the other routes carry technical suffixes of the same screen (the Product
+/// precedent U-01 / U-01-360 / U-02 / U-02-EDIT): F-02-NEW, F-02-DETAIL, F-04-NEW. The approval is a
+/// control and keeps its list's F-04.
+/// </para>
+/// <para>
 /// <b>Staged first:</b> every declaration is <c>ImplementationAvailable: false</c> until the FIN-01
 /// browser acceptance; a separate flip PR makes them available, as for Cari. The approval is a control
 /// of the F-04 list (<c>ParentCapabilityId</c>), not a route. A declaration grants nothing: each route's
@@ -23,8 +29,11 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
     public const string OwnerContractVersion = "1.0";
-    public const string ReceiptsScreenId = "F-02";
-    public const string BankAccountsScreenId = "F-04";
+    public const string ReceiptListScreenId = "F-02";
+    public const string ReceiptDraftScreenId = "F-02-NEW";
+    public const string ReceiptDetailScreenId = "F-02-DETAIL";
+    public const string BankAccountListScreenId = "F-04";
+    public const string BankAccountProposeScreenId = "F-04-NEW";
 
     public const string ReceiptListCapabilityId = "finance.receipts.list";
     public const string ReceiptListRouteId = "finance.receipts";
@@ -51,19 +60,19 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
     public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations()
     {
         var bankAccounts = Declaration(BankAccountListCapabilityId, BankAccountListRouteId, BankAccountListRoutePath,
-            BankAccountsScreenId, ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceBankAccountRead]);
+            BankAccountListScreenId, ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceBankAccountRead]);
         return
         [
-            Declaration(ReceiptListCapabilityId, ReceiptListRouteId, ReceiptListRoutePath, ReceiptsScreenId,
+            Declaration(ReceiptListCapabilityId, ReceiptListRouteId, ReceiptListRoutePath, ReceiptListScreenId,
                 ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.DraftRead]),
-            Declaration(ReceiptDraftCapabilityId, ReceiptDraftRouteId, ReceiptDraftRoutePath, ReceiptsScreenId,
+            Declaration(ReceiptDraftCapabilityId, ReceiptDraftRouteId, ReceiptDraftRoutePath, ReceiptDraftScreenId,
                 ShellCapabilityRoutePrecedence.Static,
                 [FinancePermissionNames.DraftSave, ErpPermissions.FinanceBankAccountRead]),
-            Declaration(ReceiptDetailCapabilityId, ReceiptDetailRouteId, ReceiptDetailRoutePath, ReceiptsScreenId,
+            Declaration(ReceiptDetailCapabilityId, ReceiptDetailRouteId, ReceiptDetailRoutePath, ReceiptDetailScreenId,
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinancePermissionNames.DraftRead]),
             bankAccounts,
             Declaration(BankAccountProposeCapabilityId, BankAccountProposeRouteId, BankAccountProposeRoutePath,
-                BankAccountsScreenId, ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceBankAccountPropose]),
+                BankAccountProposeScreenId, ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceBankAccountPropose]),
             // The approval is a control on the list: the list's route and access, plus the approve name.
             bankAccounts with
             {
