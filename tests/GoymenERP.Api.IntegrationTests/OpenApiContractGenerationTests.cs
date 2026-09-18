@@ -131,6 +131,7 @@ public sealed partial class OpenApiContractGenerationTests
                 "query:partyId:true:type:string;format:uuid",
                 "query:companyAccountId:true:type:string;format:uuid",
                 "query:occurredOn:true:type:string;format:date",
+            ]),
         new("get", "/api/v1/sales/references/accounts", "GetSalesAccountReferencesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json",
                 "503:application/problem+json"),
