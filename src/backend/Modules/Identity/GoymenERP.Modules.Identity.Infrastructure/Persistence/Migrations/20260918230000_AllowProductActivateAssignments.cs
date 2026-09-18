@@ -7,7 +7,8 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
     /// <summary>
     /// DEC-PRD-010 (#329): the Product card approval (Activate = 4) becomes an explicit global assignment
     /// operation. Only the operation check widens; no row is written or changed.
-    /// Down restores (1, 2, 3) and fails while an Activate assignment exists: forward-fix, never a silent
+    /// Down follows this module's existing rule (AddExplicitProductAssignments): assignment provenance is
+    /// retained, so the rollback is refused while any assignment exists; forward-fix, never a silent
     /// deletion of an explicit grant.
     /// </summary>
     public partial class AllowProductActivateAssignments : Migration
@@ -30,6 +31,10 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql("""
+                IF EXISTS (SELECT 1 FROM [identity].[ProductMasterAssignments])
+                    THROW 51042, 'Product assignment provenance must be retained; use a forward fix.', 1;
+                """);
             migrationBuilder.DropCheckConstraint(
                 name: "CK_ProductMasterAssignments_Operation",
                 schema: "identity",

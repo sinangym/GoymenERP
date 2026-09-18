@@ -207,7 +207,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "a25322e5924213ccdf3241e0d1ff4cc15f5d6be168345894eaba3f6b77204812",
             ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
              + "Persistence/GroupSharedCommandDbContext.cs"] =
-                "8049fa3a764b3695a477be42aa585c70268601871927429e33674ac860635d08"
+                "6fe01949b839e3005d33c3aa00c02982add6a1af63482005b43b277b95c5dfc3"
         };
 
     // Accepted module initializers own one exact Migrate/EnsureCreated provider branch each.
@@ -530,6 +530,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Persistence/Migrations/20260912175124_InitialGroupSharedTerminals.cs"] =
                     new("ed1ef07eb88ee1ea324479d5ab498d213ecf3cfdba4cf5ab4eae49292c4dc4c7",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // #329: each Down's only raw SQL is the module's existing rollback refusal (51042/51043).
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20260918230000_AllowProductActivateAssignments.cs"] =
+                    new("7b5ca37647eb351caa33e1dcc24b5c726e9d732ab2b4e4e434e5c285d4f2dd30",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Persistence/Migrations/20260918230100_AllowProductActivateTerminals.cs"] =
+                    new("4716d015c2cd1a883d84d95589654f2d57077c06c8c641f2f148234453138c15",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Persistence/Migrations/20260912173914_AddGlobalProductAuditSubject.cs"] =

@@ -44,7 +44,7 @@ public sealed record GroupSharedCommandKey
     {
         RequireHash(keyHash);
         if (subject != "Product" || commandName is not
-            ("product.draft.create.v1" or "product.draft.basic-edit.v1"))
+            ("product.draft.create.v1" or "product.draft.basic-edit.v1" or "product.card.activate.v1"))
             throw new ArgumentException("The stored shared command identity is not supported.");
         return new(commandName, keyHash);
     }
