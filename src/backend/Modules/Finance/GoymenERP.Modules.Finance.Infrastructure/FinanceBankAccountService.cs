@@ -27,6 +27,9 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// validity is still the profile's, at draft save. An unavailable Settings source refuses, fail-closed.</item>
 /// <item><b>Authority:</b> server company/actor must be the request's; the action is checked before
 /// anything is read and again after every owner await, replay included.</item>
+/// <item><b>Visibility (least privilege, coordinator's technical default on #325):</b> a pending
+/// proposal is shown only to a caller who may propose or approve; a read-only caller sees approved
+/// accounts only, in the lists and by id alike. Business may decide otherwise in a later slice.</item>
 /// <item><b>Idempotency and concurrency (ADR-011):</b> the shared command record keyed by (company,
 /// command, key hash) with the actor and the canonical payload hash; the same key, payload and actor
 /// replays, another payload or actor conflicts (§2–§4). An authorized terminal refusal — the account
@@ -222,10 +225,7 @@ public sealed class FinanceBankAccountService(
             return new ReadResult<BankAccountMasterPage>(outcome, null);
         }
 
-        var rows = await dbContext.BankAccounts.AsNoTracking()
-            .OrderBy(row => row.DisplayName)
-            .ThenBy(row => row.Id)
-            .ToListAsync(cancellationToken);
+        var rows = await VisibleAsync(context, cancellationToken);
         if (await ReadFenceAsync(context, null, cancellationToken) is { } again)
         {
             return new ReadResult<BankAccountMasterPage>(again, null);
@@ -288,10 +288,7 @@ public sealed class FinanceBankAccountService(
             return new ReadResult<BankAccountPage>(outcome, null);
         }
 
-        var rows = await dbContext.BankAccounts.AsNoTracking()
-            .OrderBy(row => row.DisplayName)
-            .ThenBy(row => row.Id)
-            .ToListAsync(cancellationToken);
+        var rows = await VisibleAsync(context, cancellationToken);
         if (await ReadFenceAsync(context, null, cancellationToken) is { } again)
         {
             return new ReadResult<BankAccountPage>(again, null);
@@ -313,6 +310,12 @@ public sealed class FinanceBankAccountService(
 
         var row = await dbContext.BankAccounts.AsNoTracking()
             .SingleOrDefaultAsync(candidate => candidate.Id == accountId, cancellationToken);
+        if (row is { Status: Proposed } && !await SeesProposalsAsync(context, cancellationToken))
+        {
+            // A pending proposal is not disclosed to a read-only caller: the same answer as no account.
+            row = null;
+        }
+
         if (await ReadFenceAsync(context, accountId, cancellationToken) is { } again)
         {
             return new ReadResult<BankAccountView>(again, null);
@@ -437,6 +440,26 @@ public sealed class FinanceBankAccountService(
 
         return SameContext(context) ? null : Refused(context, CommandOutcome.Denied);
     }
+
+    /// <summary>The company's accounts the caller may see, in the picker's order: proposals only for a proposer or approver.</summary>
+    private async Task<List<BankAccountRow>> VisibleAsync(FinanceContext context, CancellationToken cancellationToken)
+    {
+        var query = dbContext.BankAccounts.AsNoTracking();
+        if (!await SeesProposalsAsync(context, cancellationToken))
+        {
+            query = query.Where(row => row.Status == Approved);
+        }
+
+        return await query.OrderBy(row => row.DisplayName).ThenBy(row => row.Id).ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Whether pending proposals are the caller's business: a fresh grant to propose or to approve.
+    /// Anything else (denied, unmapped) is no — least privilege, never a leak.
+    /// </summary>
+    private async Task<bool> SeesProposalsAsync(FinanceContext context, CancellationToken cancellationToken) =>
+        await permissions.CheckAsync(context, FinanceAction.ProposeBankAccount, null, cancellationToken) == PermissionDecision.Allowed
+        || await permissions.CheckAsync(context, FinanceAction.ApproveBankAccount, null, cancellationToken) == PermissionDecision.Allowed;
 
     private async Task<ReadOutcome?> ReadFenceAsync(FinanceContext context, Guid? accountId, CancellationToken cancellationToken)
     {

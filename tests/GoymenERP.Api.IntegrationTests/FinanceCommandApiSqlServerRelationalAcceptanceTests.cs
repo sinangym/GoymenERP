@@ -107,6 +107,9 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
             Assert.Equal("currency_not_a_candidate", Issue(await Json(foreign)));
         }
 
+        // A pending proposal is the business of those who may propose or approve: both see it, in both lists.
+        Assert.Equal(accountId, Single(await Json(await approver.GetAsync(FinanceEndpoints.BankAccountsPath))).GetProperty("id").GetGuid());
+
         // F-04's list tells each caller whether the proposal is theirs.
         Assert.True(Single(await Json(await proposer.GetAsync(FinanceEndpoints.BankAccountMasterPath))).GetProperty("isOwnProposal").GetBoolean());
         Assert.False(Single(await Json(await approver.GetAsync(FinanceEndpoints.BankAccountMasterPath))).GetProperty("isOwnProposal").GetBoolean());
@@ -228,8 +231,21 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
             services.AddScoped<IFinancePartyAccountPort, SyntheticParties>();
         });
         var account = await run.ApprovedBankAccountAsync(CompanyA);
+        var pending = await run.PendingProposalAsync(CompanyA);
         await run.GrantAsync(Proposer, CompanyA, SaverGrants);
         using var client = run.Client(Proposer, CompanyA);
+
+        // Least privilege: a caller who may read but neither propose nor approve sees approved accounts
+        // only — in the picker, in F-04's list and by id (the draft save treats a hidden one as ineligible).
+        Assert.Equal(account, Single(await Json(await client.GetAsync(FinanceEndpoints.BankAccountsPath))).GetProperty("id").GetGuid());
+        Assert.Equal(account, Single(await Json(await client.GetAsync(FinanceEndpoints.BankAccountMasterPath)))
+            .GetProperty("account").GetProperty("id").GetGuid());
+        using (var hidden = await client.SendAsync(Post(FinanceEndpoints.DraftsPath, "SENTETIK-pending", Guid.NewGuid().ToString("N"),
+                   Save(pending, Party, draftId: null, expectedVersion: null))))
+        {
+            Assert.Equal((HttpStatusCode)422, hidden.StatusCode);
+            Assert.Equal("bank_account_ineligible", Issue(await Json(hidden)));
+        }
 
         // §8: both callers pass the key lookup, meet at the party port, then race the one insert.
         var raced = Save(account, GateParty, draftId: null, expectedVersion: null);
@@ -474,6 +490,24 @@ public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
                 "INSERT INTO finance.BankAccounts (Id, CompanyId, CurrencyId, DisplayName, Status, Version, ProposedBy, "
                 + "ProposedAtUtc, ApprovedBy, ApprovedAtUtc, UpdatedAtUtc) VALUES (@id, @c, @cur, N'SENTETIK banka', 2, 2, "
                 + "N'SENTETIK-proposer', SYSDATETIMEOFFSET(), N'SENTETIK-approver', SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET())",
+                connection);
+            command.Parameters.AddWithValue("@id", id);
+            command.Parameters.AddWithValue("@c", company);
+            command.Parameters.AddWithValue("@cur", Lira);
+            await command.ExecuteNonQueryAsync();
+            return id;
+        }
+
+        /// <summary>A SENTETIK pending proposal row of the company (proposed, not approved).</summary>
+        public async Task<Guid> PendingProposalAsync(Guid company)
+        {
+            var id = Guid.NewGuid();
+            await using var connection = new SqlConnection(Factory.DatabaseConnectionString);
+            await connection.OpenAsync();
+            await using var command = new SqlCommand(
+                "INSERT INTO finance.BankAccounts (Id, CompanyId, CurrencyId, DisplayName, Status, Version, ProposedBy, "
+                + "ProposedAtUtc, UpdatedAtUtc) VALUES (@id, @c, @cur, N'SENTETIK bekleyen', 1, 1, N'SENTETIK-proposer', "
+                + "SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET())",
                 connection);
             command.Parameters.AddWithValue("@id", id);
             command.Parameters.AddWithValue("@c", company);
