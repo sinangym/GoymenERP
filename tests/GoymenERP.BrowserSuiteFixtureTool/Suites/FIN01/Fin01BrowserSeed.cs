@@ -1,6 +1,6 @@
 using GoymenERP.BrowserSuiteFixtureTool.Shared;
 
-namespace GoymenERP.BrowserSuiteFixtureTool.Suites.Fin01;
+namespace GoymenERP.BrowserSuiteFixtureTool.Suites.FIN01;
 
 /// <summary>
 /// The `fin01` seed (FİNANS, card FIN-UI-1 §9): the one thing the Finance screens cannot create — the
