@@ -2,6 +2,8 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace GoymenERP.Manufacturing.UnitTests;
 
@@ -128,6 +130,53 @@ public sealed class ManufacturingPersistenceModelTests
         }
 
         Assert.Throws<InvalidOperationException>(() => context.SaveChanges());
+    }
+
+    [Fact]
+    public void The_kilogram_limit_is_the_mass_columns_decimal_18_3_bound()
+    {
+        // decimal(18,3) holds 15 integer digits: the largest storable mass is 10^15 - 0.001, which is
+        // what the store's limit (10^15, exclusive) and the theory below assume.
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        foreach (var table in new[] { "Facts", "PlanInputs", "OrderInputs", "Plans", "Orders" })
+        {
+            var entity = model.GetEntityTypes().Single(type => type.GetTableName() == table);
+            var mass = entity.GetProperties().Single(property => property.Name is "MassKg" or "PlannedKg" or "TargetKg");
+            Assert.Equal((int?)18, mass.GetPrecision());
+            Assert.Equal((int?)3, mass.GetScale());
+        }
+    }
+
+    [Theory]
+    [InlineData("1000000000000000", true)]
+    [InlineData("999999999999999999", true)]
+    [InlineData("999999999999999.999", false)]
+    public async Task A_mass_beyond_the_column_is_refused_with_its_own_code_before_the_database(string text, bool refused)
+    {
+        // The limit is checked before any read: a context on an unreachable server answers the refusal
+        // itself; a mass that fits goes on to the database and fails there instead (no server here).
+        using var context = Context();
+        var store = new ManufacturingStore(context, CompanyContextOf(CompanyA), new GoymenERP.Modules.Audit.Infrastructure.Services.AuditEventCollector(),
+            TimeProvider.System);
+        var mass = new GoymenERP.Modules.Manufacturing.Domain.Common.Kilograms(
+            decimal.Parse(text, System.Globalization.CultureInfo.InvariantCulture));
+        var metadata = new GoymenERP.Modules.Manufacturing.Application.ManufacturingCommandMetadata(
+            "synthetic-actor", "synthetic.manufacturing.test-write", ["SYNTHETIC"], "synthetic-correlation", null,
+            "synthetic-key", "Web");
+
+        var error = await Assert.ThrowsAnyAsync<Exception>(() =>
+            store.IssueInputAsync(Guid.NewGuid(), 1, Guid.NewGuid(), Guid.NewGuid(), mass, At, metadata));
+
+        var storeError = error as GoymenERP.Modules.Manufacturing.Application.ManufacturingStoreException;
+        Assert.Equal(refused, storeError?.Code == GoymenERP.Modules.Manufacturing.Application.ManufacturingStoreCodes.ValueDoesNotFit);
+    }
+
+    private static CompanyContext CompanyContextOf(Guid company)
+    {
+        var context = new CompanyContext();
+        context.Set(company);
+        return context;
     }
 
     private static T Attach<T>(ManufacturingDbContext context, T row) where T : class
