@@ -88,17 +88,34 @@ public sealed class FinanceDraftSqlServerRelationalAcceptanceTests
             created = (await a.Service.DraftSaveAsync(a.Context, Key("k-1"), Save(owners, "1000"), CancellationToken.None)).Resource!;
         }
 
-        await using (var a = run.Service(CompanyA, owners))
+        await using (var a = run.Service(CompanyA, owners, correlation: "SENTETIK-retry-correlation"))
         {
-            // Same key, same payload: the stored result, as a replay, with no second draft.
+            // Same key, same payload: the stored result, as a replay, with no second draft and the FIRST
+            // correlation (ADR-011 §4), not the retry's.
             var replay = await a.Service.DraftSaveAsync(a.Context, Key("k-1"), Save(owners, "1000"), CancellationToken.None);
             Assert.Equal(CommandOutcome.Succeeded, replay.Outcome);
             Assert.True(replay.IsReplay);
             Assert.Equal(created.Source.Id, replay.Resource!.Source.Id);
+            Assert.Equal(run.Correlation, replay.OriginalCorrelationId);
             // Same key, another payload: refused.
             Assert.Equal(CommandOutcome.IdempotencyConflict,
                 (await a.Service.DraftSaveAsync(a.Context, Key("k-1"), Save(owners, "999"), CancellationToken.None)).Outcome);
         }
+
+        await using (var other = run.Service(CompanyA, owners, actor: "SENTETIK-other-actor"))
+        {
+            // Same key, same payload, ANOTHER actor of the company: a conflict that discloses nothing (ADR-011 §3).
+            var conflict = await other.Service.DraftSaveAsync(other.Context, Key("k-1"), Save(owners, "1000"), CancellationToken.None);
+            Assert.Equal(CommandOutcome.IdempotencyConflict, conflict.Outcome);
+            Assert.Null(conflict.Resource);
+        }
+
+        // ADR-011 §2: the raw key is stored nowhere; the record holds its upper-case SHA-256.
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'finance.Commands') AND name = N'IdempotencyKey'"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Commands WHERE CommandName = @c AND IdempotencyKeyHash = @h",
+            ("@c", ReceiptDraftService.SaveDraftCommand), ("@h", FinanceCommandKeys.Hash("k-1"))));
 
         await using (var a = run.Service(CompanyA, owners))
         {
@@ -113,6 +130,61 @@ public sealed class FinanceDraftSqlServerRelationalAcceptanceTests
         Assert.Equal("1100", await run.ScalarAsync<string>("SELECT AmountText FROM finance.ReceiptDrafts"));
         Assert.Equal(2L, await run.ScalarAsync<long>("SELECT Version FROM finance.ReceiptDrafts"));
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.Commands"));
+    }
+
+    [SqlServerFact]
+    public async Task Drafts_are_listed_newest_first_across_pages_with_a_company_bound_cursor()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        var saved = new List<Guid>();
+        await using (var a = run.Service(CompanyA, owners))
+        {
+            for (var index = 0; index <= ReceiptDraftService.ListPageSize; index++)
+            {
+                saved.Add((await a.Service.DraftSaveAsync(a.Context, Key($"list-{index}"), Save(owners, "1000"),
+                    CancellationToken.None)).Resource!.Source.Id);
+            }
+
+            // An edit of the oldest draft does not move it between pages: the order is creation, not update.
+            var oldest = (await a.Service.DetailAuthorizedAsync(a.Context, new SourceDetailRequest(saved[0]), CancellationToken.None)).Resource!;
+            Assert.Equal(CommandOutcome.Succeeded, (await a.Service.DraftSaveAsync(a.Context, Key("list-edit"),
+                Save(owners, "2000", oldest.Source.Id, oldest.Source.Version), CancellationToken.None)).Outcome);
+
+            var first = await a.Service.ListAuthorizedAsync(a.Context, new SourceListRequest(null), CancellationToken.None);
+            Assert.Equal(ReadOutcome.Found, first.Outcome);
+            Assert.Equal(ReceiptDraftService.ListPageSize, first.Resource!.Items.Count);
+            Assert.NotNull(first.Resource.NextCursor);
+            var second = await a.Service.ListAuthorizedAsync(a.Context, new SourceListRequest(first.Resource.NextCursor),
+                CancellationToken.None);
+            Assert.Equal(saved[0], Assert.Single(second.Resource!.Items).Id);
+            Assert.Null(second.Resource.NextCursor);
+            Assert.Equal(saved.AsEnumerable().Reverse().ToArray(),
+                first.Resource.Items.Concat(second.Resource.Items).Select(item => item.Id).ToArray());
+            // With ReadAmount the amount is shown, as in the detail.
+            Assert.Equal("2000", second.Resource.Items[0].Amount.Money!.Amount);
+
+            Assert.Equal(ReadOutcome.NotFound, (await a.Service.ListAuthorizedAsync(a.Context,
+                new SourceListRequest("not-a-cursor"), CancellationToken.None)).Outcome);
+        }
+
+        await using (var hidden = run.Service(CompanyA, owners, new AmountHiddenPermissions()))
+        {
+            // Without ReadAmount the list redacts every amount; it never shows 0 or a guess.
+            var page = await hidden.Service.ListAuthorizedAsync(hidden.Context, new SourceListRequest(null), CancellationToken.None);
+            Assert.All(page.Resource!.Items, item => Assert.Equal((AmountDisclosure.Redacted, (MoneyText?)null),
+                (item.Amount.Disclosure, item.Amount.Money)));
+        }
+
+        await using (var b = run.Service(CompanyB, Owners.For(CompanyB)))
+        {
+            // Company B sees none of A's drafts, and A's cursor reads nothing for B.
+            var empty = await b.Service.ListAuthorizedAsync(b.Context, new SourceListRequest(null), CancellationToken.None);
+            Assert.Empty(empty.Resource!.Items);
+            var firstOfA = DraftListCursor.Encode(CompanyA, DateTimeOffset.UtcNow, Guid.NewGuid());
+            Assert.Equal(ReadOutcome.NotFound, (await b.Service.ListAuthorizedAsync(b.Context,
+                new SourceListRequest(firstOfA), CancellationToken.None)).Outcome);
+        }
     }
 
     [SqlServerFact]
@@ -258,11 +330,11 @@ public sealed class FinanceDraftSqlServerRelationalAcceptanceTests
         }
 
         public ServiceScope Service(Guid company, Owners owners, IFinancePermissionPort? permissions = null,
-            bool realBankReader = false, bool realSettings = false)
+            bool realBankReader = false, bool realSettings = false, string? actor = null, string? correlation = null)
         {
             var companyContext = new CompanyContext();
             companyContext.Set(company);
-            var currentUser = new FixedCurrentUser(Actor, company);
+            var currentUser = new FixedCurrentUser(actor ?? Actor, company);
             var collector = new AuditEventCollector();
             var options = new DbContextOptionsBuilder<FinanceDbContext>()
                 .UseSqlServer(Factory.DatabaseConnectionString,
@@ -281,7 +353,7 @@ public sealed class FinanceDraftSqlServerRelationalAcceptanceTests
                 new FinanceReceiptDraftBinding(Operation),
                 new FinanceAuditEnvelope(ReceiptDraftService.SaveDraftCommand, ["SENTETIK-FINANCE"], "Web"),
                 TimeProvider.System);
-            return new ServiceScope(dbContext, service, new FinanceContext(company, Actor, Correlation, null));
+            return new ServiceScope(dbContext, service, new FinanceContext(company, actor ?? Actor, correlation ?? Correlation, null));
         }
 
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)
@@ -335,6 +407,14 @@ public sealed class FinanceDraftSqlServerRelationalAcceptanceTests
     {
         public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction action, Guid? sourceId,
             CancellationToken cancellationToken) => Task.FromResult(PermissionDecision.Allowed);
+    }
+
+    /// <summary>SENTETIK: every Finance action except the amount.</summary>
+    private sealed class AmountHiddenPermissions : IFinancePermissionPort
+    {
+        public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction action, Guid? sourceId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(action == FinanceAction.ReadAmount ? PermissionDecision.Denied : PermissionDecision.Allowed);
     }
 
     /// <summary>SENTETIK: one usable bank account of the company in the test currency.</summary>

@@ -20,11 +20,12 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
 | Part | What |
 |---|---|
 | `FinanceDbContext` | Schema `finance`. `ReceiptDrafts` and `Commands` are tenant tables: filtered by the server-resolved company and write-guarded (no delete, no company change, allowed fields only). Audit's sidecar is written in the same save |
-| `ReceiptDraftService` | `IManualReceiptService.DraftSaveAsync` and `DetailAuthorizedAsync`. `List`, `Record` and `Reverse` answer `Unavailable` (not this slice; Record/Reverse are T05) |
+| `ReceiptDraftService` | `IManualReceiptService.DraftSaveAsync`, `ListAuthorizedAsync` (FIN-T04b) and `DetailAuthorizedAsync`. `Record` and `Reverse` answer `Unavailable` (T05; OPEN-009) |
 | Migration | `20260918200000_InitialFinanceDrafts` (hand-written; a unit test pins snapshot == model) |
 | `FinanceModuleExtensions` | DbContext registration and the migrate initializer. The host does not call it yet |
 | `FinanceBankAccountService` | FS0: the bank account master (`IFinanceBankAccountMaster`) and its authorized reader (`IFinanceBankAccountReader`); see below |
 | Migration | `20260918230000_AddBankAccounts` (FS0; the shared `Commands` record names exactly one target) |
+| Migration | `20260919090000_AlignCommandsWithAdr011` (FIN-T04b; the command record keyed as ADR-011, and the list index) |
 
 **Save rules** (the #258 contract, unchanged):
 - **Authority.**
@@ -34,10 +35,10 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
 - **Owners.**
   - Bank account, party account and the Settings money profile go through the reviewed ports and `PreparationValidator`, including the profile's scale via `ExactPositiveDecimalV1`.
   - An unavailable owner fails closed with its own code; nothing is stored.
-- **Idempotency.**
-  - Key = (company, actor, key), binary collation. The key must have no surrounding whitespace.
-  - The same key with the same canonical payload (SHA-256 of the contract JSON) answers the stored result as a replay.
-  - Another payload gets `IdempotencyConflict`.
+- **Idempotency (ADR-011, since FIN-T04b).**
+  - Key = (company, command name, key hash). The raw key is never stored: the record keeps the trimmed key's upper-case SHA-256 (§2). The key must have no surrounding whitespace.
+  - The same key, the same canonical payload (SHA-256 of the contract JSON) and the same actor answer the stored result as a replay, with the first correlation (§4).
+  - Another payload or **another actor** gets `IdempotencyConflict`, and nothing of the earlier result is disclosed (§3).
 - **Concurrency.** `expectedVersion` against `Version` (a bigint concurrency token, lossless text). A stale version gets `VersionConflict` and nothing changes.
 - **Transaction.** One save covers the draft, the command record and the audit event, all or nothing.
 - **Amount.** Stored as the exact text that passed the profile's scale (`varchar(max)`). No database decimal, no local digit limit, no rounding.
@@ -50,14 +51,11 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
 - idempotency key, actor and correlation id: 128 characters each.
 
 **Needed for a real user outcome** (none of these is OPEN-009; OPEN-009 concerns Record/Reverse authority):
-1. **FS0 bank account source (Finance).** Built (see below), not yet host-registered. Its currency needs Settings' currency candidates, which are Unavailable today, so every proposal is refused.
+1. **FS0 bank account source (Finance).** Built (see below). With FIN-T04b it is the host's reader once the central writer wires `AddFinanceServices`. Its currency needs Settings' currency candidates (T02-b, #317).
 2. **Settings' approved money profile data** for `finance.manual-bank-receipt.v1`. The operation key itself is on main; mapping money operations is the backend owners' technical work (Business #254 / 5654539215). What is missing is Settings' approved profile, which is Settings' work (T02-b, central writer). Until it lands, Finance's money answer stays Unavailable.
 3. **Finance permission registration** (central writer) and **the grant** (human).
-4. **Host wiring** (central writer):
-   - DI of the service and the ports;
-   - the audit envelope;
-   - the reviewed-inventory registration of this DbContext;
-   - HTTP.
+4. **Host wiring** (central writer): `AddFinancePersistence` (with Audit's interceptor), `AddFinanceServices` and `InitializeFinancePersistenceAsync` in `Program.cs`, the reviewed-inventory registration, and the OpenAPI document. The endpoint code itself is FIN-T04b's (below).
+5. **An approved bank account** needs the bank-account master's HTTP and screen: the next card.
 
 ## FS0: the Finance bank account master (card #66 5731563923)
 
@@ -83,15 +81,42 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
   replay included. The technical permission names proposed for central registration (CARİ) are
   `finance.bank-account.read`, `finance.bank-account.propose` and `finance.bank-account.approve`.
   The real grant, and which person holds which, is a human gate.
-- **Idempotency.** The shared `Commands` record, keyed by (company, actor, key). The payload hash
-  covers the command name and the request JSON. The same key and payload replays; another payload
-  **or another command** (including a draft save) gets `IdempotencyConflict`.
+- **Idempotency.** The shared `Commands` record, keyed as ADR-011 by (company, command name, key
+  hash) since FIN-T04b. The payload hash covers the command name and the request JSON. The same
+  key, payload and actor replays; another payload or another actor gets `IdempotencyConflict`. The
+  same key on another command is that command's own attempt.
 - **Concurrency.** Approve names the expected version. Two racing approvals store one; the other
   gets `VersionConflict`.
 - **Transaction.** One save covers the account, the command record and the audit event. The
   approval's audit event carries the approval context (proposer and approver).
 - **Storage limits** (refused with `finance_value_does_not_fit`, never cut; not a policy): display
   name 200 characters.
+
+## FIN-T04b: the draft over HTTP (card approved on #66)
+
+| Route | Service | Answer |
+|---|---|---|
+| `POST /api/v1/finance/manual-receipts/drafts` | `DraftSaveAsync` (#258 `DraftSaveRequest`: create with null id and version, update with both, full replacement) | the #258 `CommandResult` for 200 Succeeded, 422 ValidationFailed (its issues), 409 VersionConflict / IdempotencyConflict; Denied and Unavailable are the platform problems 403 `forbidden` and 503 `service_unavailable` |
+| `GET /api/v1/finance/manual-receipts?cursor=` | `ListAuthorizedAsync` | `SourcePage`; a malformed or foreign cursor is 400 |
+| `GET /api/v1/finance/manual-receipts/{sourceId}` | `DetailAuthorizedAsync` | `SourceDetail`; another company's draft is 404 |
+| `GET /api/v1/finance/bank-accounts` | FS0 `ListAuthorizedAsync` | `BankAccountPage` |
+
+- **Company, actor, correlation** come only from the server context (`X-Company-Id` plus access, the authenticated actor, `X-Correlation-Id`).
+- **Idempotency-Key** is required on the save: exactly one canonical value of at most 128 characters, otherwise 400. A replay carries `Idempotency-Replayed: true` and `Idempotency-Original-Correlation-Id`. Only a stored success replays until ADR-011 §7's terminal replay (FIN-UI-1).
+- **Enums** travel as their names (`CommandOutcome`, `SourceStage`, `AmountDisclosure`, `AllocationKnowledge` carry a string-enum converter, so the generated OpenAPI says so too).
+- **Permission** is not a route policy. The services ask `FinancePermissionPort` afresh at every fence, through `IErpAuthorityRevalidationService` (#276), and only a granted company-wide scope is `Allowed`. A name not yet registered centrally is `Unavailable` (503), not a refusal.
+
+  | Action | Name |
+  |---|---|
+  | `SaveDraft` | `finance.manual-receipt.draft.save` |
+  | `ReadSources` | `finance.manual-receipt.draft.read` |
+  | `ReadAmount` | `finance.manual-receipt.amount.read` |
+  | `ReadBankAccounts` | `finance.bank-account.read` (FS0) |
+
+  Record and Reverse have no name (OPEN-009).
+- **Settings' `settings_money_profile_not_found`** (the chosen currency has no approved profile) is a 422 validation result of the save (`money.currencyId`), not an outage. The draft-context read keeps it as 503 with its code: there the currency is the bank account's, not the request's.
+- **List:** newest created first (`CreatedAtUtc desc, Id desc`, new index), so an edit never moves a draft between pages. The page size is a fixed technical 50, not a policy, and each amount is disclosed only with a fresh `ReadAmount`.
+- **Honest runtime:** until T02-b is on main and a real bank account is approved, a save answers 503 or 422 with its owner's code. It is never painted green.
 
 ## Validation
 

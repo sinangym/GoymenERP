@@ -13,6 +13,7 @@
     "sab:ci": "playwright test --config playwright.sab.config.ts",
     "activation:ci": "playwright test --config playwright.activation.config.ts",
     "browser:smoke:ci": "playwright test --config playwright.browser-smoke.config.ts",
+    "browser:s03:ci": "playwright test --config playwright.sales-s03.config.ts",
     "browser:mfg:ci": "playwright test --config playwright.browser-mfg.config.ts"
   },
   "devDependencies": {

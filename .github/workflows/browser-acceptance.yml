@@ -23,6 +23,7 @@ on:
           - c03
           - org03
           - u02
+          - s03
       pr:
         description: Pull request number whose exact head is tested (same-repo branches only)
         required: true
@@ -73,7 +74,7 @@ jobs:
             pr="$EVENT_PR"
           fi
           case "$suite" in
-            smoke|c03) read_only=true ;;
+            smoke|c03|s03) read_only=true ;;
             org03|u02) read_only=false ;;
             *) echo "::error::BROWSER_SUITE_UNKNOWN: '$suite'"; exit 1 ;;
           esac
