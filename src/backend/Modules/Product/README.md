@@ -314,15 +314,14 @@ Codes that arrive in `Errors` at this base:
 - `version_conflict` and `lifecycle_conflict` arrive in `Errors`; neither is thrown, and
   Product.Domain's `ProductVersionConflictException` never crosses this read path.
 - Several errors can arrive together and their order carries no precedence. The consumer maps
-  them. Sales (#262, decision in issuecomment-5687324032): `version_conflict` anywhere in the
-  list is 409 `product_selection_changed`; any other error, `lifecycle_conflict` included, is 422
-  `unsupported_product`. An unusable unit profile therefore reaches a Sales client as 422
-  `unsupported_product`, not as Sales's own `unsupported_unit`; Product does not publish a
-  separate unit code.
+  them; Product does not publish a separate unit code.
 - `SettingsPrerequisiteException` reaches the consumer unchanged, after the same company/actor
-  fence as every other read. Sales maps `settings_access_denied` to 403 and every other Settings
-  code to 503 `settings_provider_unavailable`, which is why business-level profile answers are
-  errors and not this exception.
+  fence as every other read: Product neither reinterprets nor renames a Settings code (including
+  `settings_unit_profile_not_found`). A profile the owner does return but that cannot be used on
+  `EffectiveOn` is an answer about this selection, so it is an error, not this exception.
+- How a consumer turns these channels and codes into its own public answers is that consumer's
+  contract, not Product's. For Sales it is defined in `src/backend/Modules/Sales/REFERENCE_READ_V1.md`
+  (and `CONTRACT_V1.md`); this README does not restate it.
 - `InvalidOperationException` (corrupt stored record) and `OperationCanceledException` are not
   owner outcomes; the platform handles them.
 
