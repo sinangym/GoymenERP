@@ -15,6 +15,7 @@ namespace GoymenERP.Product.UnitTests;
 public sealed class GdcBandCoilFamilyRequirementPolicyTests
 {
     private static readonly Guid Family = Guid.Parse("3c9d1e27-6a1b-4f0e-9d5c-2b7a8e4f6c11");
+    private const string StoredVersion = ProductSalesEligibilityServiceTests.Version;
     private const string Thickness = "syn-thickness-mm";
     private const string Width = "syn-width-mm";
     private const string Quality = "syn-quality";
@@ -196,7 +197,7 @@ public sealed class GdcBandCoilFamilyRequirementPolicyTests
         var policy = Policy();
 
         var result = await world.Service(policy).EvaluateAsync(
-            new ProductSalesSelectionV1(ProductId, Version, StockUnitId, On), default);
+            new ProductSalesSelectionV1(ProductId, StoredVersion, StockUnitId, On), default);
 
         Assert.NotNull(result.Snapshot);
         Assert.Empty(result.Errors);
@@ -204,7 +205,7 @@ public sealed class GdcBandCoilFamilyRequirementPolicyTests
         // The same card as Draft never reaches the family rules: lifecycle refuses it first.
         var draft = new World { Record = Stored(lifecycle: 0) };
         var refused = await draft.Service(policy).EvaluateAsync(
-            new ProductSalesSelectionV1(ProductId, Version, StockUnitId, On), default);
+            new ProductSalesSelectionV1(ProductId, StoredVersion, StockUnitId, On), default);
         Assert.Null(refused.Snapshot);
         Assert.Contains(refused.Errors, error => error.Code == ProductApiV1.LifecycleConflict);
 
@@ -213,7 +214,7 @@ public sealed class GdcBandCoilFamilyRequirementPolicyTests
         attributes[Coating] = null;
         var broken = new World { Record = Stored(lifecycle: 1, attributes: attributes) };
         var answer = await broken.Service(policy).EvaluateAsync(
-            new ProductSalesSelectionV1(ProductId, Version, StockUnitId, On), default);
+            new ProductSalesSelectionV1(ProductId, StoredVersion, StockUnitId, On), default);
         Assert.Null(answer.Snapshot);
         Assert.Equal(($"references.attributes.{Coating}", ProductFamilyPolicyCodesV1.Required),
             (Assert.Single(answer.Errors).Field, Assert.Single(answer.Errors).Code));
@@ -248,7 +249,7 @@ public sealed class GdcBandCoilFamilyRequirementPolicyTests
         var product = new ProductDraftView(ProductId, "PSQL-1", "Sentetik bant", Guid.Parse("f4fc7672-0b46-41ba-a017-393401ba61dd"),
             Guid.Parse("3c9d1e27-6a1b-4f0e-9d5c-2b7a8e4f6c10"), useFamily ? family : Family,
             new(new(null, "not-evaluated"), new(true, "manual"), new(null, "not-evaluated"), new(null, "not-evaluated")),
-            "Active", Version, DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch,
+            "Active", StoredVersion, DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch,
             new(null, null, null, null), new("NotEvaluated", []));
         return new ProductCardView(product, new ProductReferences(Attributes: Json(attributes),
             Units: units ?? new(Stock: StockUnitId, Sales: StockUnitId)));
@@ -257,7 +258,7 @@ public sealed class GdcBandCoilFamilyRequirementPolicyTests
     private static ProductStoredRecord Stored(int lifecycle, Dictionary<string, object?>? attributes = null) =>
         new(ProductId, "PSQL-1", "Sentetik bant", Guid.Parse("f4fc7672-0b46-41ba-a017-393401ba61dd"),
             Guid.Parse("3c9d1e27-6a1b-4f0e-9d5c-2b7a8e4f6c10"), Family,
-            new(null, 0), new(true, 1), new(null, 0), new(null, 0), lifecycle, long.Parse(Version),
+            new(null, 0), new(true, 1), new(null, 0), new(null, 0), lifecycle, long.Parse(StoredVersion),
             DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch,
             JsonSerializer.Serialize(new ProductReferences(Attributes: Json(attributes ?? ValidAttributes()),
                 Units: new(Stock: StockUnitId, Sales: StockUnitId)), new JsonSerializerOptions(JsonSerializerDefaults.Web)));
