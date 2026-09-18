@@ -13,7 +13,8 @@
     "sab:ci": "playwright test --config playwright.sab.config.ts",
     "activation:ci": "playwright test --config playwright.activation.config.ts",
     "browser:smoke:ci": "playwright test --config playwright.browser-smoke.config.ts",
-    "browser:s03:ci": "playwright test --config playwright.sales-s03.config.ts"
+    "browser:s03:ci": "playwright test --config playwright.sales-s03.config.ts",
+    "browser:fin01:ci": "playwright test --config playwright.finance-fin01.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",

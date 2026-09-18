@@ -5,7 +5,14 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { API_BASE } from './http'
-import { BANK_ACCOUNTS_PATH, DRAFTS_PATH, MANUAL_RECEIPTS_PATH, createHttpFinancePort } from './httpPort'
+import {
+  BANK_ACCOUNTS_PATH,
+  BANK_ACCOUNT_CURRENCY_CANDIDATES_PATH,
+  BANK_ACCOUNT_MASTER_PATH,
+  DRAFTS_PATH,
+  MANUAL_RECEIPTS_PATH,
+  createHttpFinancePort,
+} from './httpPort'
 
 const SCOPE = { companyId: '11111111-1111-4111-8111-111111111111' }
 
@@ -142,5 +149,50 @@ describe('record and reverse', () => {
       })
     }
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('bank-account master (FIN-UI-1a)', () => {
+  it('reads the master list and the currency candidates as ReadResults', async () => {
+    const fetchMock = stubFetch(new Response(JSON.stringify({ companyId: SCOPE.companyId, items: [] }), { status: 200 }))
+    const port = createHttpFinancePort()
+
+    await port.listBankAccountMaster(SCOPE, new AbortController().signal)
+    await port.bankAccountCurrencyCandidates(SCOPE, new AbortController().signal)
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      `${API_BASE}${BANK_ACCOUNT_MASTER_PATH}`,
+      `${API_BASE}${BANK_ACCOUNT_CURRENCY_CANDIDATES_PATH}`,
+    ])
+  })
+
+  it('proposes with the key, the company header and exactly the proposal body', async () => {
+    const result = { outcome: 'ValidationFailed', resource: null, isReplay: false, originalCorrelationId: 'c', issues: [] }
+    const fetchMock = stubFetch(new Response(JSON.stringify(result), { status: 422 }))
+
+    const reply = await createHttpFinancePort().proposeBankAccount(SCOPE, 'key-p', { displayName: 'SENTETIK', currencyId: 'cur' })
+
+    expect(reply).toEqual({ kind: 'body', body: result })
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe(`${API_BASE}${BANK_ACCOUNTS_PATH}`)
+    expect(init?.method).toBe('POST')
+    expect(headersOf(init)['Idempotency-Key']).toBe('key-p')
+    expect(headersOf(init)['X-Company-Id']).toBe(SCOPE.companyId)
+    expect(init?.body).toBe(JSON.stringify({ displayName: 'SENTETIK', currencyId: 'cur' }))
+  })
+
+  it('approves on the account\'s route with only the expected version in the body', async () => {
+    const fetchMock = stubFetch(new Response(JSON.stringify({ code: 'forbidden' }), { status: 403 }))
+
+    const reply = await createHttpFinancePort().approveBankAccount(SCOPE, 'key-a', 'a/b', { expectedVersion: '1' })
+
+    // Ö4 and every other Denied is the platform's 403, restated as the Denied outcome.
+    expect(reply).toEqual({
+      kind: 'body',
+      body: { outcome: 'Denied', resource: null, isReplay: false, originalCorrelationId: '', issues: [] },
+    })
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe(`${API_BASE}${BANK_ACCOUNTS_PATH}/a%2Fb/approval`)
+    expect(init?.body).toBe(JSON.stringify({ expectedVersion: '1' }))
   })
 })

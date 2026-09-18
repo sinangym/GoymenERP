@@ -77,6 +77,30 @@ public sealed class FinanceShellCapabilityProviderTests
     }
 
     [Fact]
+    public void The_frontends_capability_file_names_every_declared_id_and_route()
+    {
+        // FIN-UI-1b: src/finance/capabilities.ts read from the repository, so a drift is red here.
+        var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(),
+            "src/frontend/goymen-erp-web/src/finance/capabilities.ts"));
+        foreach (var declaration in new FinanceShellCapabilityProvider().GetDeclarations())
+        {
+            Assert.Contains($"'{declaration.CapabilityId}'", source);
+            Assert.Contains($"'{declaration.RoutePath}'", source);
+        }
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "GoymenERP.slnx")))
+        {
+            directory = directory.Parent;
+        }
+
+        return directory?.FullName ?? throw new InvalidOperationException("Repository root not found.");
+    }
+
+    [Fact]
     public void Every_route_has_its_own_screen_id_and_the_control_keeps_its_lists()
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();

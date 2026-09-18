@@ -43,6 +43,26 @@ import {
   type OutstandingState,
   type UnknownReason,
 } from './receiptCommand'
+import {
+  BANK_IDLE,
+  abandonBankOutstanding,
+  bankAttemptIdentity,
+  bankAttemptReducer,
+  bankAttemptTarget,
+  bankKeyForSubmit,
+  bankStoreKey,
+  classifyBankReply,
+  isBankFrozen,
+  recallBankSlot,
+  setBankOutstanding,
+  settleBankStore,
+  type BankAccountOperation,
+  type BankAccountRequest,
+  type BankAccountSnapshot,
+  type BankAttemptState,
+  type BankOutstandingState,
+  type BankUnknownReason,
+} from './bankAccountCommand'
 
 const FinancePortContext = createContext<FinanceReceiptPort | null>(null)
 
@@ -347,6 +367,125 @@ export function useReceiptCommand(operation: CommandRequest['operation'], target
     if (storeKey === null || (state.phase !== 'unknown' && state.phase !== 'conflicted')) return
     const reason: UnknownReason = state.phase === 'unknown' ? state.reason : 'idempotency-conflict'
     abandonOutstanding(storeKey, { snapshot: state.snapshot, reason })
+    dispatch({ type: 'ABANDON' })
+  }
+
+  return { state, available: port !== null && bound !== null, submit, resend, abandon }
+}
+
+// ---------------------------------------------------------------------------------
+// Bank-account commands (F-04: propose / approve, FIN-UI-1a)
+// ---------------------------------------------------------------------------------
+
+function sendBank(port: FinanceReceiptPort, snapshot: BankAccountSnapshot): Promise<PortReply> {
+  const scope = { companyId: snapshot.binding.companyId }
+  const { request, key } = snapshot
+  return request.operation === 'bank-account-propose'
+    ? port.proposeBankAccount(scope, key, request.body)
+    : port.approveBankAccount(scope, key, request.accountId, request.body)
+}
+
+export interface BankAccountCommand {
+  readonly state: BankAttemptState
+  readonly available: boolean
+  submit(request: BankAccountRequest): SubmitResult
+  resend(): SubmitResult
+  abandon(): void
+}
+
+/**
+ * A bank-account command bound to ONE (operation, target) in the CURRENT context — the same
+ * discipline as `useReceiptCommand`: the key is reserved in the store before the request leaves,
+ * an unresolved attempt survives a remount and is offered only as a same-key resend, and an answer
+ * captured under another context never becomes UI state here.
+ */
+export function useBankAccountCommand(operation: BankAccountOperation, target: string): BankAccountCommand {
+  const port = useContext(FinancePortContext)
+  const bound = useFinanceBinding()
+  const storeKey = bound === null ? null : bankStoreKey(bound.binding, operation, target)
+  const [state, dispatch] = useReducer(bankAttemptReducer, BANK_IDLE)
+
+  const shownStoreKey = useRef<string | null>(storeKey)
+  const shownNamespace = useRef<string | null>(bound?.namespace ?? null)
+  useEffect(() => {
+    shownStoreKey.current = storeKey
+    shownNamespace.current = bound?.namespace ?? null
+  })
+
+  useEffect(() => {
+    const outstanding = storeKey === null ? null : recallBankSlot(storeKey).outstanding
+    if (storeKey === null || outstanding === null) {
+      dispatch({ type: 'LOAD', state: BANK_IDLE })
+      return
+    }
+    if (outstanding.phase !== 'submitting') {
+      dispatch({ type: 'LOAD', state: outstanding })
+      return
+    }
+    // Sent by an instance that no longer exists: its answer cannot reach this screen.
+    const unknown: BankOutstandingState = {
+      phase: 'unknown',
+      snapshot: outstanding.snapshot,
+      reason: outstanding.unresolvedSince ?? 'no-reply',
+    }
+    setBankOutstanding(storeKey, unknown)
+    dispatch({ type: 'LOAD', state: unknown })
+  }, [storeKey])
+
+  const run = useCallback(
+    (snapshot: BankAccountSnapshot, slot: string, namespace: string) => {
+      if (port === null) return
+      let pending: Promise<PortReply>
+      try {
+        pending = sendBank(port, snapshot)
+      } catch {
+        pending = Promise.resolve({ kind: 'no-reply' })
+      }
+      void pending
+        .catch((): PortReply => ({ kind: 'no-reply' }))
+        .then((reply) => {
+          const settlement = classifyBankReply(reply, snapshot.binding.companyId, snapshot.request)
+          settleBankStore(slot, snapshot, settlement)
+          if (shownStoreKey.current !== slot || shownNamespace.current !== namespace) return
+          dispatch({ type: 'SETTLE', key: snapshot.key, settlement })
+        })
+    },
+    [port],
+  )
+
+  const submit = (request: BankAccountRequest): SubmitResult => {
+    if (port === null || bound === null || storeKey === null) return 'blocked'
+    if (request.operation !== operation || bankAttemptTarget(request) !== target) return 'blocked'
+    if (isBankFrozen(state)) return 'blocked'
+    const slot = recallBankSlot(storeKey)
+    if (slot.outstanding !== null) return 'blocked'
+    const identity = bankAttemptIdentity(bound.binding, request)
+    const { key, unresolvedSince } = bankKeyForSubmit(slot, identity, generateAttemptKey)
+    const snapshot: BankAccountSnapshot = { key, binding: bound.binding, request, identity }
+    setBankOutstanding(
+      storeKey,
+      unresolvedSince === undefined ? { phase: 'submitting', snapshot } : { phase: 'submitting', snapshot, unresolvedSince },
+    )
+    dispatch({ type: 'SUBMIT', snapshot, unresolvedSince })
+    run(snapshot, storeKey, bound.namespace)
+    return 'started'
+  }
+
+  const resend = (): SubmitResult => {
+    if (port === null || bound === null || storeKey === null || state.phase !== 'unknown') return 'blocked'
+    const outstanding = recallBankSlot(storeKey).outstanding
+    if (outstanding === null || outstanding.phase !== 'unknown' || outstanding.snapshot.key !== state.snapshot.key) return 'blocked'
+    const snapshot = state.snapshot
+    setBankOutstanding(storeKey, { phase: 'submitting', snapshot, unresolvedSince: state.reason })
+    dispatch({ type: 'RESEND' })
+    run(snapshot, storeKey, bound.namespace)
+    return 'started'
+  }
+
+  const abandon = () => {
+    if (storeKey === null || (state.phase !== 'unknown' && state.phase !== 'conflicted')) return
+    const reason: BankUnknownReason = state.phase === 'unknown' ? state.reason : 'idempotency-conflict'
+    abandonBankOutstanding(storeKey, { snapshot: state.snapshot, reason })
     dispatch({ type: 'ABANDON' })
   }
 
