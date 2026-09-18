@@ -21,7 +21,7 @@ public sealed class SourcePostingTests
         var again = world.Ledger.Receive(world.Request("m-1"), world.OpenPeriod);
 
         Assert.Equal(PostingOutcomeKind.DuplicateMessage, again.Kind);
-        Assert.Null(again.Journal);
+        Assert.Same(first, again.Journal);
         Assert.Equal([first], world.Ledger.Journals);
     }
 
@@ -179,11 +179,12 @@ public sealed class SourcePostingTests
         var august = new AccountingPeriod(Guid.NewGuid(), world.Company, new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31));
         var original = world.Ledger.Receive(
             world.Request("m-1") with { Dates = AccountingWorld.Dates(new DateOnly(2026, 8, 20)) }, august).Journal!;
-        august.Close();
+        august.Close(AccountingWorld.Closer, AccountingWorld.ClosedAt);
 
         var outcome = world.Ledger.Correct(
             AccountingWorld.Consumer,
             "c-1",
+            Guid.NewGuid(),
             original.Id,
             Guid.NewGuid(),
             "synthetic-rule-2",
@@ -203,11 +204,12 @@ public sealed class SourcePostingTests
     {
         var world = new AccountingWorld();
         var original = world.PostOriginal("m-1");
-        world.OpenPeriod.Close();
+        world.OpenPeriod.Close(AccountingWorld.Closer, AccountingWorld.ClosedAt);
 
         var error = Assert.Throws<AccountingDomainException>(() => world.Ledger.Correct(
             AccountingWorld.Consumer,
             "c-1",
+            Guid.NewGuid(),
             original.Id,
             Guid.NewGuid(),
             "synthetic-rule-2",

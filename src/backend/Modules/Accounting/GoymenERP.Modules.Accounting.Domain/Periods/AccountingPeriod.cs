@@ -45,9 +45,37 @@ public sealed class AccountingPeriod
 
     public AccountingPeriodStatus Status { get; private set; }
 
+    /// <summary>Who closed the period; null while it is open.</summary>
+    public Guid? ClosedByUserId { get; private set; }
+
+    /// <summary>When the period was closed, in UTC; null while it is open.</summary>
+    public DateTimeOffset? ClosedAtUtc { get; private set; }
+
     public bool Covers(DateOnly date) => date >= StartsOn && date <= EndsOn;
 
-    public void Close() => Status = AccountingPeriodStatus.Closed;
+    /// <summary>
+    /// Closes the period and records who closed it and when. Closing is an authorised act (Ö5);
+    /// checking that authority is the caller's permission check, not this record's. A second close
+    /// is refused rather than silently overwriting the first one's trace.
+    /// </summary>
+    public void Close(Guid closedByUserId, DateTimeOffset closedAtUtc)
+    {
+        if (closedByUserId == Guid.Empty || closedAtUtc == default || closedAtUtc.Offset != TimeSpan.Zero)
+        {
+            throw new AccountingDomainException(
+                AccountingErrorCodes.InvalidReference, "Closing needs an actor and a UTC instant.");
+        }
+
+        if (Status == AccountingPeriodStatus.Closed)
+        {
+            throw new AccountingDomainException(
+                AccountingErrorCodes.PeriodAlreadyClosed, "The period is already closed.");
+        }
+
+        Status = AccountingPeriodStatus.Closed;
+        ClosedByUserId = closedByUserId;
+        ClosedAtUtc = closedAtUtc;
+    }
 
     /// <summary>
     /// Throws unless this is the same company's open period and it covers the accounting date.

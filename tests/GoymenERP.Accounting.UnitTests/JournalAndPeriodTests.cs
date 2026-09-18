@@ -138,7 +138,7 @@ public sealed class JournalAndPeriodTests
     public void A_closed_period_takes_no_posting_and_records_no_delivery()
     {
         var world = new AccountingWorld();
-        world.OpenPeriod.Close();
+        world.OpenPeriod.Close(AccountingWorld.Closer, AccountingWorld.ClosedAt);
 
         var error = Assert.Throws<AccountingDomainException>(
             () => world.Ledger.Receive(world.Request("m-1"), world.OpenPeriod));
@@ -170,10 +170,10 @@ public sealed class JournalAndPeriodTests
     {
         var world = new AccountingWorld();
         var dates = new PostingDates(
-            TransactionDate: new DateOnly(2026, 8, 28),
-            AccountingDate: new DateOnly(2026, 9, 2),
-            ValueDate: new DateOnly(2026, 9, 5),
-            RecordedAtUtc: new DateTimeOffset(2026, 9, 3, 8, 30, 0, TimeSpan.Zero));
+            transactionDate: new DateOnly(2026, 8, 28),
+            accountingDate: new DateOnly(2026, 9, 2),
+            valueDate: new DateOnly(2026, 9, 5),
+            recordedAtUtc: new DateTimeOffset(2026, 9, 3, 8, 30, 0, TimeSpan.Zero));
 
         var outcome = world.Ledger.Receive(world.Request("m-1") with { Dates = dates }, world.OpenPeriod);
 

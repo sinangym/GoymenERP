@@ -24,12 +24,13 @@ namespace GoymenERP.Modules.Accounting.Domain.Posting;
 /// </summary>
 public sealed class SourcePostingLedger
 {
-    private readonly Dictionary<(string Consumer, string MessageId), PostingOutcomeKind> _inbox = [];
+    private readonly Dictionary<(string Consumer, string MessageId), PostingOutcome> _inbox = [];
     private readonly Dictionary<(Guid SourceId, string Purpose), Journal> _originals = [];
     private readonly Dictionary<(Guid SourceId, string Purpose), PostingException> _exceptions = [];
     private readonly Dictionary<(Guid SourceId, string Purpose), PendingValuation> _pending = [];
     private readonly Dictionary<Guid, Journal> _journals = [];
     private readonly Dictionary<Guid, Journal> _reversalsByOriginal = [];
+    private readonly Dictionary<Guid, Journal> _corrections = [];
 
     public SourcePostingLedger(Guid companyId)
     {
@@ -62,17 +63,16 @@ public sealed class SourcePostingLedger
         ArgumentNullException.ThrowIfNull(period);
         RequireOwnCompany(request.Source.CompanyId);
         var delivery = Delivery(request.Consumer, request.MessageId);
-        if (_inbox.ContainsKey(delivery))
+        if (_inbox.TryGetValue(delivery, out var recorded))
         {
-            return new PostingOutcome(PostingOutcomeKind.DuplicateMessage);
+            return Replayed(recorded);
         }
 
         var key = (request.Source.SourceId, request.Source.PostingPurpose);
         if (_originals.TryGetValue(key, out var existing))
         {
             // Another message, or a newer rule version, for a fact already posted: no second original.
-            _inbox[delivery] = PostingOutcomeKind.AlreadyPosted;
-            return new PostingOutcome(PostingOutcomeKind.AlreadyPosted, Journal: existing);
+            return Record(delivery, new PostingOutcome(PostingOutcomeKind.AlreadyPosted, Journal: existing));
         }
 
         var missing = request.Lines
@@ -85,8 +85,13 @@ public sealed class SourcePostingLedger
                 ? open with { PostingRuleVersion = request.PostingRuleVersion, MissingMappingKeys = missing }
                 : new PostingException(request.Source, request.PostingRuleVersion, missing, request.MessageId);
             _exceptions[key] = queued;
-            _inbox[delivery] = PostingOutcomeKind.ExceptionQueued;
-            return new PostingOutcome(PostingOutcomeKind.ExceptionQueued, Exception: queued);
+            if (request.Lines.All(line => line.Amount is not null))
+            {
+                // This delivery's amounts are all known, so an earlier "waiting valuation" is stale.
+                _pending.Remove(key);
+            }
+
+            return Record(delivery, new PostingOutcome(PostingOutcomeKind.ExceptionQueued, Exception: queued));
         }
 
         var unvalued = request.Lines.Count(line => line.Amount is null);
@@ -96,8 +101,9 @@ public sealed class SourcePostingLedger
                 ? waiting with { PostingRuleVersion = request.PostingRuleVersion, LinesAwaitingAmount = unvalued }
                 : new PendingValuation(request.Source, request.PostingRuleVersion, unvalued, request.MessageId);
             _pending[key] = pending;
-            _inbox[delivery] = PostingOutcomeKind.WaitingValuation;
-            return new PostingOutcome(PostingOutcomeKind.WaitingValuation, Pending: pending);
+            // Every line of this delivery is mapped, so an earlier missing-mapping entry is stale.
+            _exceptions.Remove(key);
+            return Record(delivery, new PostingOutcome(PostingOutcomeKind.WaitingValuation, Pending: pending));
         }
 
         var lines = request.Lines.Select(line => line.Side == PostingSide.Debit
@@ -119,8 +125,7 @@ public sealed class SourcePostingLedger
         _journals[journal.Id] = journal;
         _exceptions.Remove(key);
         _pending.Remove(key);
-        _inbox[delivery] = PostingOutcomeKind.Posted;
-        return new PostingOutcome(PostingOutcomeKind.Posted, Journal: journal);
+        return Record(delivery, new PostingOutcome(PostingOutcomeKind.Posted, Journal: journal));
     }
 
     /// <summary>
@@ -139,9 +144,9 @@ public sealed class SourcePostingLedger
         ArgumentNullException.ThrowIfNull(dates);
         ArgumentNullException.ThrowIfNull(period);
         var delivery = Delivery(consumer, messageId);
-        if (_inbox.ContainsKey(delivery))
+        if (_inbox.TryGetValue(delivery, out var recorded))
         {
-            return new PostingOutcome(PostingOutcomeKind.DuplicateMessage);
+            return Replayed(recorded);
         }
 
         var target = RequireJournal(reversedJournalId);
@@ -154,8 +159,7 @@ public sealed class SourcePostingLedger
 
         if (_reversalsByOriginal.TryGetValue(target.Id, out var earlier))
         {
-            _inbox[delivery] = PostingOutcomeKind.AlreadyReversed;
-            return new PostingOutcome(PostingOutcomeKind.AlreadyReversed, Journal: earlier);
+            return Record(delivery, new PostingOutcome(PostingOutcomeKind.AlreadyReversed, Journal: earlier));
         }
 
         var reversal = Journal.Post(
@@ -172,8 +176,7 @@ public sealed class SourcePostingLedger
         RequireNewJournalId(reversal.Id);
         _journals[reversal.Id] = reversal;
         _reversalsByOriginal[target.Id] = reversal;
-        _inbox[delivery] = PostingOutcomeKind.Posted;
-        return new PostingOutcome(PostingOutcomeKind.Posted, Journal: reversal);
+        return Record(delivery, new PostingOutcome(PostingOutcomeKind.Posted, Journal: reversal));
     }
 
     /// <summary>
@@ -181,10 +184,18 @@ public sealed class SourcePostingLedger
     /// corrected journal stays as it is, even when its period is closed; the correction itself
     /// must land in an open period. It is not an original, so it does not compete for the
     /// source's single original.
+    /// <para>
+    /// <paramref name="correctionId"/> is the correction's business identity — the correction
+    /// decision itself, not its delivery. The same correction delivered again under another
+    /// message id answers <see cref="PostingOutcomeKind.AlreadyPosted"/> with the journal it
+    /// already produced; a different correction of the same journal gets its own id and posts.
+    /// Reusing a correction id for a different journal is refused.
+    /// </para>
     /// </summary>
     public PostingOutcome Correct(
         string consumer,
         string messageId,
+        Guid correctionId,
         Guid correctedJournalId,
         Guid correctionJournalId,
         string postingRuleVersion,
@@ -196,12 +207,30 @@ public sealed class SourcePostingLedger
         ArgumentNullException.ThrowIfNull(lines);
         ArgumentNullException.ThrowIfNull(period);
         var delivery = Delivery(consumer, messageId);
-        if (_inbox.ContainsKey(delivery))
+        if (_inbox.TryGetValue(delivery, out var recorded))
         {
-            return new PostingOutcome(PostingOutcomeKind.DuplicateMessage);
+            return Replayed(recorded);
+        }
+
+        if (correctionId == Guid.Empty)
+        {
+            throw new AccountingDomainException(
+                AccountingErrorCodes.InvalidReference, "A correction needs its own business identity.");
         }
 
         var target = RequireJournal(correctedJournalId);
+        if (_corrections.TryGetValue(correctionId, out var earlier))
+        {
+            if (earlier.LinkedJournalId != target.Id)
+            {
+                throw new AccountingDomainException(
+                    AccountingErrorCodes.CorrectionIdentityConflict,
+                    "This correction id already corrected another journal.");
+            }
+
+            return Record(delivery, new PostingOutcome(PostingOutcomeKind.AlreadyPosted, Journal: earlier));
+        }
+
         var correction = Journal.Post(
             correctionJournalId,
             JournalKind.Correction,
@@ -215,19 +244,33 @@ public sealed class SourcePostingLedger
 
         RequireNewJournalId(correction.Id);
         _journals[correction.Id] = correction;
-        _inbox[delivery] = PostingOutcomeKind.Posted;
-        return new PostingOutcome(PostingOutcomeKind.Posted, Journal: correction);
+        _corrections[correctionId] = correction;
+        return Record(delivery, new PostingOutcome(PostingOutcomeKind.Posted, Journal: correction));
     }
 
     private static (string, string) Delivery(string consumer, string messageId)
     {
-        if (string.IsNullOrWhiteSpace(consumer) || string.IsNullOrWhiteSpace(messageId))
+        if (!AccountingText.IsCanonical(consumer) || !AccountingText.IsCanonical(messageId))
         {
             throw new AccountingDomainException(
-                AccountingErrorCodes.InvalidReference, "A delivery needs a consumer and a message id.");
+                AccountingErrorCodes.InvalidReference,
+                "A delivery needs a consumer and a message id without surrounding whitespace.");
         }
 
         return (consumer, messageId);
+    }
+
+    /// <summary>
+    /// A redelivered message changes nothing and answers what the first delivery recorded: its
+    /// journal, queue entry or pending entry, under <see cref="PostingOutcomeKind.DuplicateMessage"/>.
+    /// </summary>
+    private static PostingOutcome Replayed(PostingOutcome recorded) =>
+        recorded with { Kind = PostingOutcomeKind.DuplicateMessage };
+
+    private PostingOutcome Record((string, string) delivery, PostingOutcome outcome)
+    {
+        _inbox[delivery] = outcome;
+        return outcome;
     }
 
     private void RequireOwnCompany(Guid companyId)

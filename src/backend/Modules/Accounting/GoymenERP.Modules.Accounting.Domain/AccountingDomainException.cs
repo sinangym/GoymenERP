@@ -23,4 +23,7 @@ public static class AccountingErrorCodes
     public const string JournalNotFound = "accounting_journal_not_found";
     public const string JournalAlreadyReversed = "accounting_journal_already_reversed";
     public const string ReversalOfReversal = "accounting_reversal_of_reversal";
+    public const string InvalidDates = "accounting_invalid_dates";
+    public const string PeriodAlreadyClosed = "accounting_period_already_closed";
+    public const string CorrectionIdentityConflict = "accounting_correction_identity_conflict";
 }

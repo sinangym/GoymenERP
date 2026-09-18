@@ -33,11 +33,11 @@ public sealed record SourceReference
 {
     public SourceReference(Guid companyId, Guid sourceId, string postingPurpose)
     {
-        if (companyId == Guid.Empty || sourceId == Guid.Empty || string.IsNullOrWhiteSpace(postingPurpose))
+        if (companyId == Guid.Empty || sourceId == Guid.Empty || !AccountingText.IsCanonical(postingPurpose))
         {
             throw new AccountingDomainException(
                 AccountingErrorCodes.InvalidReference,
-                "A source needs a company, an id and a posting purpose.");
+                "A source needs a company, an id and a posting purpose without surrounding whitespace.");
         }
 
         CompanyId = companyId;
@@ -55,13 +55,55 @@ public sealed record SourceReference
 /// <summary>
 /// The dates a posting carries (Ö5), kept apart: none is derived from another. The accounting
 /// date decides the period; the transaction/document date and the value date are recorded as
-/// given; the recording instant is when it was entered.
+/// given; the recording instant is when it was entered, and it must be given in UTC. An unset
+/// date (<see cref="DateOnly.MinValue"/>) is refused rather than taken as a real one.
 /// </summary>
-public sealed record PostingDates(
-    DateOnly TransactionDate,
-    DateOnly AccountingDate,
-    DateOnly? ValueDate,
-    DateTimeOffset RecordedAtUtc);
+public sealed record PostingDates
+{
+    public PostingDates(
+        DateOnly transactionDate,
+        DateOnly accountingDate,
+        DateOnly? valueDate,
+        DateTimeOffset recordedAtUtc)
+    {
+        if (transactionDate == DateOnly.MinValue || accountingDate == DateOnly.MinValue
+            || valueDate == DateOnly.MinValue || recordedAtUtc == default)
+        {
+            throw new AccountingDomainException(
+                AccountingErrorCodes.InvalidDates, "Posting dates must be set; none is assumed.");
+        }
+
+        if (recordedAtUtc.Offset != TimeSpan.Zero)
+        {
+            throw new AccountingDomainException(
+                AccountingErrorCodes.InvalidDates, "The recording instant must be given in UTC.");
+        }
+
+        TransactionDate = transactionDate;
+        AccountingDate = accountingDate;
+        ValueDate = valueDate;
+        RecordedAtUtc = recordedAtUtc;
+    }
+
+    public DateOnly TransactionDate { get; }
+
+    public DateOnly AccountingDate { get; }
+
+    public DateOnly? ValueDate { get; }
+
+    public DateTimeOffset RecordedAtUtc { get; }
+}
+
+/// <summary>
+/// The identifying texts (posting purpose, consumer, message id) are compared ordinally and
+/// exactly. Surrounding whitespace is refused rather than trimmed, so "x" and "x " can never
+/// become two identities, and nothing is silently rewritten.
+/// </summary>
+internal static class AccountingText
+{
+    public static bool IsCanonical(string? value) =>
+        !string.IsNullOrWhiteSpace(value) && string.Equals(value, value.Trim(), StringComparison.Ordinal);
+}
 
 public enum JournalKind
 {

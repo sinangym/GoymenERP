@@ -13,6 +13,9 @@ internal sealed class AccountingWorld
     public const string Consumer = "synthetic-accounting-consumer";
     public const string Purpose = "synthetic-purpose-a";
 
+    public static readonly Guid Closer = Guid.NewGuid();
+    public static readonly DateTimeOffset ClosedAt = new(2026, 9, 18, 12, 0, 0, TimeSpan.Zero);
+
     public Guid Company { get; } = Guid.NewGuid();
     public Guid OtherCompany { get; } = Guid.NewGuid();
     public Guid Currency { get; } = Guid.NewGuid();
@@ -56,6 +59,18 @@ internal sealed class AccountingWorld
                 new ProposedLine("synthetic-debit-key", DebitAccount, PostingSide.Debit, amount),
                 new ProposedLine("synthetic-credit-key", mapCredit ? CreditAccount : null, PostingSide.Credit, amount),
             ]);
+
+    public PostingOutcome Correct(string messageId, Guid correctionId, Guid correctedJournalId, decimal amount = 5m) =>
+        Ledger.Correct(
+            Consumer,
+            messageId,
+            correctionId,
+            correctedJournalId,
+            Guid.NewGuid(),
+            "synthetic-rule-2",
+            InPeriod,
+            [new JournalLine(DebitAccount, amount, 0m), new JournalLine(CreditAccount, 0m, amount)],
+            OpenPeriod);
 
     public Journal PostOriginal(string messageId = "m-original", decimal amount = 100m)
     {
