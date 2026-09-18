@@ -22,7 +22,7 @@ public sealed class ReadOnlyViewTests
     {
         var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
             [new PlannedInput(MasterRoll, Kg(10_000m))]);
-        plan.Approve(Planner, DateTimeOffset.UnixEpoch);
+        plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
         return plan;
     }
 

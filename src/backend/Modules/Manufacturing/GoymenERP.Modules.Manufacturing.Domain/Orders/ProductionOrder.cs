@@ -52,6 +52,14 @@ public sealed class ProductionOrder
 
     public OrderStatus Status { get; private set; }
 
+    /// <summary>
+    /// Optimistic concurrency (MFG-3, SİPARİŞ #292 P3-a): every mutation names the version it
+    /// read; a stale one is refused whole with <see cref="ManufacturingVersionConflictException"/>
+    /// before any rule runs, and every recorded change advances it by one. A refused rule leaves
+    /// it unchanged.
+    /// </summary>
+    public long Version { get; private set; } = 1;
+
     public Guid? ClosedByUserId { get; private set; }
 
     public DateTimeOffset? ClosedAtUtc { get; private set; }
@@ -82,8 +90,9 @@ public sealed class ProductionOrder
     }
 
     /// <summary>Input actually taken from a planned parent roll into production.</summary>
-    public InputIssue IssueInput(Guid issueId, Guid parentRollId, Kilograms mass, DateTimeOffset issuedAt)
+    public InputIssue IssueInput(long expectedVersion, Guid issueId, Guid parentRollId, Kilograms mass, DateTimeOffset issuedAt)
     {
+        RequireVersion(expectedVersion);
         RequireOpen();
         RequireId(issueId, nameof(issueId));
         RequirePlannedRoll(parentRollId);
@@ -95,12 +104,14 @@ public sealed class ProductionOrder
 
         var issue = new InputIssue(issueId, parentRollId, mass, issuedAt.ToUniversalTime());
         _issues.Add(issue);
+        Version++;
         return issue;
     }
 
     /// <summary>Unused input sent back; it can never exceed what is still issued.</summary>
-    public InputReturn ReturnUnusedInput(Guid returnId, Guid parentRollId, Kilograms mass, DateTimeOffset returnedAt)
+    public InputReturn ReturnUnusedInput(long expectedVersion, Guid returnId, Guid parentRollId, Kilograms mass, DateTimeOffset returnedAt)
     {
+        RequireVersion(expectedVersion);
         RequireOpen();
         RequireId(returnId, nameof(returnId));
         RequireIssuedRoll(parentRollId);
@@ -119,6 +130,7 @@ public sealed class ProductionOrder
 
         var entry = new InputReturn(returnId, parentRollId, mass, returnedAt.ToUniversalTime());
         _returns.Add(entry);
+        Version++;
         return entry;
     }
 
@@ -127,8 +139,9 @@ public sealed class ProductionOrder
     /// in this phase (plan v2 R6), so every declaration carries <see cref="CostResult.NotCalculated"/>.
     /// </summary>
     public OutputDeclaration DeclareOutput(
-        Guid outputId, Guid parentRollId, OutputClass outputClass, Kilograms mass, DateTimeOffset declaredAt)
+        long expectedVersion, Guid outputId, Guid parentRollId, OutputClass outputClass, Kilograms mass, DateTimeOffset declaredAt)
     {
+        RequireVersion(expectedVersion);
         RequireOpen();
         RequireId(outputId, nameof(outputId));
         if (!Enum.IsDefined(outputClass))
@@ -146,6 +159,7 @@ public sealed class ProductionOrder
         var declaration = new OutputDeclaration(
             outputId, parentRollId, outputClass, mass, declaredAt.ToUniversalTime(), CostResult.NotCalculated);
         _outputs.Add(declaration);
+        Version++;
         return declaration;
     }
 
@@ -155,8 +169,9 @@ public sealed class ProductionOrder
     /// already recorded is refused: an old reading can neither overwrite a newer one nor tie
     /// with it.
     /// </summary>
-    public WipMeasurement RecordWorkInProgress(Guid measurementId, Guid parentRollId, Kilograms mass, DateTimeOffset measuredAt)
+    public WipMeasurement RecordWorkInProgress(long expectedVersion, Guid measurementId, Guid parentRollId, Kilograms mass, DateTimeOffset measuredAt)
     {
+        RequireVersion(expectedVersion);
         RequireOpen();
         RequireId(measurementId, nameof(measurementId));
         RequireIssuedRoll(parentRollId);
@@ -176,6 +191,7 @@ public sealed class ProductionOrder
 
         var measurement = new WipMeasurement(measurementId, parentRollId, mass, at);
         _wipMeasurements.Add(measurement);
+        Version++;
         return measurement;
     }
 
@@ -203,8 +219,9 @@ public sealed class ProductionOrder
     /// order under its own name and is never written off as loss. The Ö7 exception path (reason +
     /// single approval) needs a named approver and is a recorded dependency, not built here.
     /// </summary>
-    public void Close(Guid closedByUserId, DateTimeOffset closedAt)
+    public void Close(long expectedVersion, Guid closedByUserId, DateTimeOffset closedAt)
     {
+        RequireVersion(expectedVersion);
         RequireOpen();
         RequireId(closedByUserId, nameof(closedByUserId));
 
@@ -236,6 +253,7 @@ public sealed class ProductionOrder
         ClosedByUserId = closedByUserId;
         ClosedAtUtc = closedAt.ToUniversalTime();
         Status = OrderStatus.Closed;
+        Version++;
     }
 
     /// <summary>
@@ -274,6 +292,14 @@ public sealed class ProductionOrder
         _wipMeasurements
             .Where(entry => entry.ParentRollId == parentRollId)
             .MaxBy(entry => entry.MeasuredAtUtc);
+
+    private void RequireVersion(long expectedVersion)
+    {
+        if (expectedVersion != Version)
+        {
+            throw new ManufacturingVersionConflictException(expectedVersion, Version);
+        }
+    }
 
     private void RequireOpen()
     {

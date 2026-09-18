@@ -1,3 +1,4 @@
+using System.Globalization;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
@@ -5,9 +6,14 @@ namespace GoymenERP.Modules.Manufacturing.Application;
 
 /// <summary>
 /// A mass verified against the company's kilogram profile, with the profile snapshot the
-/// Settings port asks consumers to keep with the fact they record.
+/// Settings port asks consumers to keep with the fact they record. <see cref="ProfileScale"/> is
+/// the owner's raw scale; <see cref="Scale"/> is the scale actually applied, min(profile, Ö2's 3),
+/// which is what a consumer may offer for input or display (MFG-3, ÜRÜN #292 P3-1; PUR-3's shape).
+/// <see cref="ProfileVersion"/> is the invariant-culture text of the owner's version, as in
+/// Purchasing and Logistics (MFG-3, SİPARİŞ #292 P3-b).
 /// </summary>
-public sealed record VerifiedMass(Kilograms Mass, Guid UnitId, Guid ProfileId, long ProfileVersion, int Scale);
+public sealed record VerifiedMass(Kilograms Mass, Guid UnitId, Guid ProfileId, string ProfileVersion,
+    int ProfileScale, int Scale);
 
 /// <summary>
 /// Either a verified mass or a stable refusal code. A refusal is never a zero mass or a default
@@ -104,13 +110,14 @@ public sealed class ManufacturingMassVerifier(ISettingsPrerequisiteProvider sett
             return MassVerification.Refused(ManufacturingMassCodes.ProfileNotInEffect);
         }
 
-        if (SignificantDecimals(mass) > Math.Min(profile.Scale, Kilograms.Scale))
+        var appliedScale = Math.Min(profile.Scale, Kilograms.Scale);
+        if (SignificantDecimals(mass) > appliedScale)
         {
             return MassVerification.Refused(ManufacturingMassCodes.ScaleExceeded);
         }
 
-        return MassVerification.Verified(new VerifiedMass(
-            new Kilograms(mass), kilogram, profile.Profile.ProfileId, profile.Profile.Version, profile.Scale));
+        return MassVerification.Verified(new VerifiedMass(new Kilograms(mass), kilogram, profile.Profile.ProfileId,
+            profile.Profile.Version.ToString(CultureInfo.InvariantCulture), profile.Scale, appliedScale));
     }
 
     /// <summary>The number of decimals that carry a non-zero digit: 12.5000 → 1, 12.5001 → 4, 1000 → 0.</summary>

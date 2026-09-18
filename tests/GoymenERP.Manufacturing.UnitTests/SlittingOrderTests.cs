@@ -26,7 +26,7 @@ public sealed class SlittingOrderTests
     private static ProductionOrder ApprovedOrder(params PlannedInput[] inputs)
     {
         var plan = DraftPlan(inputs);
-        plan.Approve(Planner, DateTimeOffset.UnixEpoch);
+        plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
         return ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
     }
 
@@ -34,7 +34,7 @@ public sealed class SlittingOrderTests
     public void Approving_a_plan_consumes_nothing()
     {
         var plan = DraftPlan();
-        plan.Approve(Planner, DateTimeOffset.UnixEpoch);
+        plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
         var order = ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
 
         Assert.Equal(PlanStatus.Approved, plan.Status);
@@ -57,9 +57,9 @@ public sealed class SlittingOrderTests
     public void A_plan_is_approved_once()
     {
         var plan = DraftPlan();
-        plan.Approve(Planner, DateTimeOffset.UnixEpoch);
+        plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
 
-        var error = Assert.Throws<ManufacturingRuleException>(() => plan.Approve(Planner, DateTimeOffset.UnixEpoch));
+        var error = Assert.Throws<ManufacturingRuleException>(() => plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch));
         Assert.Equal(ManufacturingRuleCodes.PlanNotDraft, error.Code);
     }
 
@@ -198,10 +198,10 @@ public sealed class SlittingOrderTests
         var order = ApprovedOrder();
         order.Issue(MasterRoll, Kg(10_000m));
         var outputId = Guid.NewGuid();
-        order.DeclareOutput(outputId, MasterRoll, OutputClass.GoodProduct, Kg(100m), OrderSteps.Next());
+        order.DeclareOutput(order.Version, outputId, MasterRoll, OutputClass.GoodProduct, Kg(100m), OrderSteps.Next());
 
         var error = Assert.Throws<ManufacturingRuleException>(
-            () => order.DeclareOutput(outputId, MasterRoll, OutputClass.Scrap, Kg(100m), OrderSteps.Next()));
+            () => order.DeclareOutput(order.Version, outputId, MasterRoll, OutputClass.Scrap, Kg(100m), OrderSteps.Next()));
         Assert.Equal(ManufacturingRuleCodes.OutputAlreadyDeclared, error.Code);
     }
 
@@ -236,7 +236,7 @@ public sealed class SlittingOrderTests
     public void The_order_keeps_its_own_snapshot_of_the_planned_inputs()
     {
         var plan = DraftPlan(new PlannedInput(MasterRoll, Kg(10_000m)));
-        plan.Approve(Planner, DateTimeOffset.UnixEpoch);
+        plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
         var order = ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
 
         Assert.NotSame(plan.Inputs, order.PlannedInputs);
