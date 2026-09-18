@@ -11,11 +11,13 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.OpenApi;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Audit.Infrastructure;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
+using GoymenERP.Modules.Finance.Infrastructure.Shell;
 using GoymenERP.Modules.Idempotency.Infrastructure;
 using GoymenERP.Modules.Inventory.Infrastructure;
 using GoymenERP.Modules.Manufacturing.Infrastructure;
@@ -24,6 +26,8 @@ using GoymenERP.Modules.Identity.Infrastructure;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Sales.Infrastructure;
+using GoymenERP.Modules.Sales.Infrastructure.Shell;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
@@ -94,7 +98,14 @@ builder.Services.AddSingleton<IFinanceDraftReadBinding, ManualReceiptDraftReadBi
 builder.Services.AddScoped<ISettingsPrerequisiteProvider, ApprovedSettingsPrerequisiteProvider>();
 builder.Services.AddScoped<ISettingsMoneyCandidateReader, ApprovedSettingsPrerequisiteProvider>();
 builder.Services.AddScoped<ISalesAccountSelectionSourceV1, CounterpartySalesAccountSelectionSourceV1>();
-builder.Services.AddSingleton(new SalesReferenceReadBindings(MoneyOperation: SalesMoneyOperations.OrderDraftV1));
+// SALES-API (#321): the Sales reference reads are bound to the draft form's permission (the Sales
+// owner's decision), and the Cari account port serves the draft use case.
+builder.Services.AddSingleton(new SalesReferenceReadBindings(
+    AccountsPermission: SalesPermissionManifestV1.DraftsCreate,
+    CurrencyPermission: SalesPermissionManifestV1.DraftsCreate,
+    ProductPermission: SalesPermissionManifestV1.DraftsCreate,
+    MoneyOperation: SalesMoneyOperations.OrderDraftV1));
+builder.Services.AddScoped<ISalesPartyAccountPortV1, CounterpartySalesPartyAccountPortV1>();
 builder.Services.AddScoped<ISalesReferenceReadService>(CreateSalesReferenceReadService);
 builder.Services.AddAuditModule(builder.Configuration);
 
@@ -130,6 +141,14 @@ builder.Services.AddManufacturingModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
+builder.Services.AddSalesModule(
+    builder.Configuration,
+    (services, options) => options.AddInterceptors(
+        services.GetRequiredService<AuditSaveChangesInterceptor>()));
+// Registered before the shell authority is chosen: the module table maps the provider set.
+builder.Services.AddSingleton<IShellCapabilityProvider, SalesShellCapabilityProvider>();
+// FIN-UI-1a (#325): Finance's (staged) receipt and bank-account screens, before the authority is chosen.
+builder.Services.AddSingleton<IShellCapabilityProvider, FinanceShellCapabilityProvider>();
 var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
     builder.Services,
     builder.Environment,
@@ -185,6 +204,8 @@ if (!isOpenApiDocumentGeneration
     await app.Services.InitializeProductRuntimeAsync();
     // After Organization: Finance's foreign keys reference its tables.
     await app.Services.InitializeFinancePersistenceAsync();
+    // After Organization: Sales's foreign keys reference its tables.
+    await app.Services.InitializeSalesModuleAsync();
     // After Organization: Manufacturing's foreign keys reference its tables.
     await app.Services.InitializeManufacturingModuleAsync();
 }

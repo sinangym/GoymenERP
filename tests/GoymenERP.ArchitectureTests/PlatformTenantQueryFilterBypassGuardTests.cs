@@ -41,12 +41,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "OpenApiDocumentGenerationMode.cs";
     private const string OpenApiStartupPath =
         "src/backend/GoymenERP.Api/Program.cs";
-    // Re-fingerprinted for FIN-T04b (#320) on top of T02-b, T07(a) and MFG-API: Finance persistence (with
-    // the audit interceptor) and its services replace the unavailable permission port and bank reader,
-    // and InitializeFinancePersistenceAsync runs after Organization. No OpenAPI-generation, network or
+    // Re-fingerprinted for FIN-UI-1a (#325) on top of SALES-API (#321): the staged Finance shell provider
+    // registered before the shell authority is chosen (C+O+P+S+F row). No OpenAPI-generation, network or
     // hosted-service surface of the startup source changed otherwise.
     private const string ReviewedOpenApiStartupFingerprint =
-        "3638f53586181ab453e4e99d6c26a5d57218be4d5261fb4493c3b00f2a65dcef";
+        "dd41aba3049a81f790eed0186f650d3cc271ac33ddc3a39de683e97b42fa845f";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -87,18 +86,67 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.cs";
     private const string SqlServerRcsiVerifierPath =
         "tools/verify_rcsi_relational_acceptance.py";
-    // Re-fingerprinted for FIN-T04b (#320): one FinanceBankAccount case renamed (payload_or_actor), one
-    // FinanceDraft and three FinanceDraftApi names on top of main's 138 / 145, discovery 138 -> 142,
-    // execution 145 -> 149. Logic unchanged.
+    // Re-fingerprinted for the per-module relational inventory: the broad test list moved out of the
+    // verifier into tools/relational_inventory/<module>.txt (pinned below, one entry per file); the
+    // verifier loads it fail-closed, checks every test's executions in the TRX and prints one line per
+    // module. Same 142 tests and 149 executions as before the move.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "6e3171a9e6706932c6d36b09fe4b4647ac33699c803fc5752df73baba14a25a3";
+        "d45b3b41a7c0866c1af09b47ea650b31bf4b7e7d302a970abe55a24e06e74696";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
-    // Re-fingerprinted for the same inventory change: updated counts plus one case pinning the
-    // new class as mandatory.
+    // Re-fingerprinted for the per-module inventory: count literals replaced by totals computed from
+    // the files, every listed test mandatory, loader and TRX rules tested, the synthetic run's verdict
+    // captured instead of printed.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "e8757b2cb7bd32e724ae88cf8d858495f1df86918820d786fb03eac2e71fa1a2";
+        "81c461dee227fb62a3492815e9f8ddff484d725095b0bbbf768b3a555a4ef13e";
+    // The broad relational inventory, one file per module (see RelationalInventoryDirectory). Each
+    // pin is its own paragraph so that two modules re-pinning their own files change lines that are
+    // not adjacent and combine cleanly; a file's owner is its module, the pin line is central.
+    private const string RelationalInventoryDirectory = "tools/relational_inventory";
+    private static readonly IReadOnlyDictionary<string, string> ReviewedRelationalInventoryFingerprints =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            // accounting
+            ["tools/relational_inventory/accounting.txt"] =
+                "40a5b2b8bf7fb86a46df139cdca781a247347e56776fa338313eed43632cd853",
+
+            // counterparty
+            ["tools/relational_inventory/counterparty.txt"] =
+                "d48699c522a9e01c908834bacc8f6cb3778bd910cae257dc5addffd6ae55b229",
+
+            // finance
+            ["tools/relational_inventory/finance.txt"] =
+                "8e167cef2e6ecfb28c1aeadd621414ebdb10b20198060cd09e81f5201dafb563",
+
+            // identity
+            ["tools/relational_inventory/identity.txt"] =
+                "b159330c2eeb6da40a314137d478fcd7251cd5937732d2557817bd1440a6c6b9",
+
+            // inventory
+            ["tools/relational_inventory/inventory.txt"] =
+                "5366c3a510d9faf2e38c84e587b5b154e89b1dfa31b6eba8e5dd33254b0cebab",
+
+            // manufacturing
+            ["tools/relational_inventory/manufacturing.txt"] =
+                "8b8b3bcd8cd5dc3598cfe1c84caa0fb78c724a4b1134e580a456ed92cb58f7ee",
+
+            // organization
+            ["tools/relational_inventory/organization.txt"] =
+                "5e7213ff8c4fc1550084614a5b80f26c4bc5ef73c8fafbed7495877ed26b0249",
+
+            // platform
+            ["tools/relational_inventory/platform.txt"] =
+                "8d107cb289f91aa97a6c84889d51dcc31c5826cc12f1fe136a13d35e4ce4ec26",
+
+            // product
+            ["tools/relational_inventory/product.txt"] =
+                "f6b814f1b5cb5c7dbbef5dc074ff3cb74ebf48242a1c5cbe22e06a39e8796c2c",
+
+            // sales
+            ["tools/relational_inventory/sales.txt"] =
+                "eef61202ef711d6a90f70fc7a6d2ff847b72a1e16911797c11db717c480997cc",
+        };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "91a665e6e8982e5a9b66f5d16a14d9fc4d7f98d63775de959a8cc6b2dea2b018";
@@ -129,7 +177,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "19554370c51a80841795df605a78403af30584cc702df2b88931af1bcb9d0a1e",
+                "886fd0d0a45de77804e1e6f2d2edef2c487299a4192717987779d5b0169edb03",
             // Re-measured for MFG-API (#313): the ADR-011 command log (CommandRecords) is mapped here, company-
             // scoped with the CompanyId filter like every other tenant row.
             // MFG-5 (#303): company-scoped like Organization; every tenant row and AuditEvent carries the
@@ -141,7 +189,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-                "abb94eedec52cf9d34c3566d875e03c0d8082509206b7e33eff52c1aa3ec7386",
+                "e94446bcd3e21a7695e4cbe1d437d38ed26165f4c4a2e945dae98d878f6d22ca",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/"
@@ -321,7 +369,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceModuleExtensions.cs"] =
                     new(
-                        "e6f4a629c8c4179da8250d1fe728f330029493d0d237354cc6c74bf31baec3fd",
+                        "248c5960bf7491900e66573bc00b781353c843f4a6b3367ed1784c900e2f604c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -334,7 +382,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs"] =
                     new(
-                        "5a2aa079ef6d5c5a3e3dfd199ae7a40b64884ddc1668f8aaf01c2e5e6ce403a3",
+                        "1e011359c62637e0bfe25263540306cb72073fd824fd5dba59d39d08357c4cd7",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -345,7 +393,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/FinanceBankAccountService.cs"] =
                     new(
-                        "0ec96dac6d46409196fa80b248a5458f350aba948e9c0afbf7387480afb44275",
+                        "d5f0e66546d0cfd0c31d9a47abe3a015462f8c1afb32f4ca9de9c11ef2a1a550",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -382,7 +430,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Sales.Infrastructure/"
                  + "SalesModuleExtensions.cs"] =
                     new(
-                        "7c7888343e1614601daf15602e35f08e46d0c5ded2164e66a9028d784fb13ad2",
+                        "c8731cff0edf9073c5e245d4f8e9576254e6398cc1a54bc56a88e660cac6df9f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -394,7 +442,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Sales/"
                  + "GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs"] =
                     new(
-                        "5f3c9200f7376ca9f29a6350d291d5b4920865ecd438ccb52b9f5336731a11c0",
+                        "eb7eefaefea26f02d6abf160acf69bfb030be1be1073b2a22185a4fe4608363c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1393,6 +1441,22 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         Assert.NotEqual(
             ReviewedSqlServerRcsiVerifierFingerprint,
             ComputeReviewedSourceFingerprint(verifierSource + "\n# discovery bypass"));
+        var relationalInventoryEntries = Directory.GetFileSystemEntries(Path.Combine(
+                repositoryRoot,
+                RelationalInventoryDirectory.Replace('/', Path.DirectorySeparatorChar)))
+            .Select(entry => RelationalInventoryDirectory + "/" + Path.GetFileName(entry))
+            .Order(StringComparer.Ordinal);
+        Assert.Equal(
+            ReviewedRelationalInventoryFingerprints.Keys.Order(StringComparer.Ordinal),
+            relationalInventoryEntries);
+        foreach (var (inventoryPath, inventoryFingerprint) in ReviewedRelationalInventoryFingerprints)
+        {
+            Assert.Equal(
+                (inventoryPath, inventoryFingerprint),
+                (inventoryPath, ComputeReviewedSourceFingerprint(File.ReadAllText(Path.Combine(
+                    repositoryRoot,
+                    inventoryPath.Replace('/', Path.DirectorySeparatorChar))))));
+        }
         Assert.Equal(
             ReviewedSqlServerRcsiToolTestsProjectFingerprint,
             ComputeReviewedSourceFingerprint(toolTestsProjectSource));

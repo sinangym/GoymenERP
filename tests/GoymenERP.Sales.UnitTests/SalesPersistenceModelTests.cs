@@ -64,6 +64,11 @@ public sealed class SalesPersistenceModelTests
         Assert.Equal((64, false), (attempts.FindProperty(nameof(DraftAttemptRow.RequestHash))!.GetMaxLength(),
             attempts.FindProperty(nameof(DraftAttemptRow.RequestHash))!.IsUnicode()));
         Assert.True(UniqueIndex(attempts, "UX_DraftAttempts_DraftId"));
+        // ADR-011 §7: an attempt is a stored draft or a recorded terminal refusal; the draft index covers stored drafts only.
+        Assert.Equal("[DraftId] IS NOT NULL", attempts.GetIndexes().Single(index => index.GetDatabaseName() == "UX_DraftAttempts_DraftId").GetFilter());
+        Assert.True(attempts.FindProperty(nameof(DraftAttemptRow.DraftId))!.IsNullable);
+        Assert.NotNull(attempts.FindProperty(nameof(DraftAttemptRow.Outcome)));
+        Assert.NotNull(attempts.FindProperty(nameof(DraftAttemptRow.RefusalJson)));
 
         var drafts = context.Model.FindEntityType(typeof(DraftRow))!;
         Assert.Equal(["Id"], drafts.FindPrimaryKey()!.Properties.Select(property => property.Name));
@@ -95,6 +100,7 @@ public sealed class SalesPersistenceModelTests
     {
         using var context = Context();
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_InitialSales", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddAttemptOutcome", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -265,7 +271,7 @@ public sealed class SalesPersistenceModelTests
     private static DraftAttemptRow Attempt() => new()
     {
         CompanyId = CompanyA, CommandName = SalesDraftCommands.CreateV1, IdempotencyKeyHash = new string('A', 64),
-        RequestHash = new string('0', 64), ActorId = "synthetic-actor", DraftId = Guid.NewGuid(),
+        RequestHash = new string('0', 64), ActorId = "synthetic-actor", Outcome = 1, DraftId = Guid.NewGuid(),
         CorrelationId = "synthetic-correlation", RecordedAtUtc = At,
     };
 

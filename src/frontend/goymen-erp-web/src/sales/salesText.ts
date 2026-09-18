@@ -106,6 +106,14 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
   [SALES_PROBLEM_CODE.settingsProviderUnavailable]:
     'Birim veya para birimi ayarlarına şu anda ulaşılamıyor.',
   [SALES_PROBLEM_CODE.settingsAccessDenied]: 'Birim veya para birimi ayarlarını okuma yetkiniz yok.',
+  [SALES_PROBLEM_CODE.unsupportedCurrency]: 'Bu para birimi için iş tarihinde onaylı bir para profili yok.',
+  [SALES_PROBLEM_CODE.accountState]: 'Seçilen cari hesabı bu carinin değil, bu şirkette değil ya da pasif.',
+  [SALES_PROBLEM_CODE.versionConflict]: 'Ürün bilgisi bu seçimden sonra değişti; ürünü yeniden seçin.',
+  [SALES_PROBLEM_CODE.concurrentChange]: 'Aynı anda başka bir kayıt öne geçti; aynı gönderimi tekrar deneyin.',
+  [SALES_PROBLEM_CODE.commercialNotAvailable]: 'Fiyat ve iskonto bu sürümde kaydedilmez; alanları boş bırakın.',
+  [SALES_PROBLEM_CODE.ownerReferenceUnavailable]: 'Adres, kişi ve benzeri referanslar bu sürümde kaydedilmez; alanları boş bırakın.',
+  [SALES_PROBLEM_CODE.commandMetadataInvalid]: 'İşlem anahtarı eksik ya da geçersiz; gönderim yapılmadı.',
+  [SALES_PROBLEM_CODE.invalidCursor]: 'Liste sayfası imleci geçersiz; listeyi baştan açın.',
 }
 
 export function problemCodeText(code: string | null): string | null {

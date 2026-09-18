@@ -176,10 +176,11 @@ public sealed class SettingsHostWiringTests
         var hostBindings = scope.ServiceProvider.GetRequiredService<SalesReferenceReadBindings>();
         // The Sales owner's key, bound by the host (Sales decision, T02-b).
         Assert.Equal(SalesMoneyOperations.OrderDraftV1, hostBindings.MoneyOperation);
-        // The host still binds no currency permission, so the route itself answers 403 first; only
-        // the permission is synthetic here — the money operation, the Settings provider and the
-        // account source are the host's own.
-        Assert.Null(hostBindings.CurrencyPermission);
+        // Since SALES-API (#321) the host binds the draft form's permission; no actor holds it (the grant
+        // is a human gate), so the route answers 403 for every real actor. Only the permission is
+        // synthetic here — the money operation, the Settings provider and the account source are the
+        // host's own.
+        Assert.Equal(SalesPermissionManifestV1.DraftsCreate, hostBindings.CurrencyPermission);
         var handler = new SalesReferenceReadHandler(
             scope.ServiceProvider.GetRequiredService<ICompanyContext>(),
             scope.ServiceProvider.GetRequiredService<ICurrentUser>(),
@@ -233,13 +234,14 @@ public sealed class SettingsHostWiringTests
         // C3 registers the Product owner's eligibility runtime. This host configures no Product
         // runtime, so the port answers 503 product_runtime_unconfigured, which Sales maps to the
         // same 503 product_provider_unavailable it gave for a missing port; and the Sales product
-        // route binds no product permission, so it answers 403 before asking. The swap and C3
-        // change no reachable Sales answer here.
+        // route's permission (sales.drafts.create since #321) is held by no actor, so it answers 403
+        // before asking. The swap and C3 change no reachable Sales answer here.
         var eligibility = scope.ServiceProvider.GetRequiredService<IProductSalesEligibilityV1>();
         var failure = await Assert.ThrowsAsync<ProductOperationException>(() => eligibility.EvaluateAsync(
             new ProductSalesSelectionV1(Guid.NewGuid(), "1", Guid.NewGuid(), Approval), default));
         Assert.Equal((503, "product_runtime_unconfigured"), (failure.StatusCode, failure.Code));
-        Assert.Null(scope.ServiceProvider.GetRequiredService<SalesReferenceReadBindings>().ProductPermission);
+        Assert.Equal(SalesPermissionManifestV1.DraftsCreate,
+            scope.ServiceProvider.GetRequiredService<SalesReferenceReadBindings>().ProductPermission);
     }
 
     private static WebApplicationFactoryWithFixedContext Host(Guid company, Guid? actorAllowedIn = null) =>

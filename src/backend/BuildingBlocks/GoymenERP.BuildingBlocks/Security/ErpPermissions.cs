@@ -94,6 +94,18 @@ public static class ErpPermissions
     /// <inheritdoc cref="FinanceManualReceiptDraftSave"/>
     public const string FinanceManualReceiptAmountRead = "finance.manual-receipt.amount.read";
 
+    /// <summary>
+    /// Sales order drafts (SALES-API, #321): the Sales owner's names (SalesPermissionManifestV1, same
+    /// strings). Registered, not granted: no seeded role and no user receives them; who holds them is a
+    /// human gate. Company-wide only: a draft belongs to the server-resolved company and the routes filter
+    /// by nothing narrower (as the Counterparty reads). Not Critical: a draft commits no stock, money or
+    /// price (T28/T33 are out of scope) and grants no authority.
+    /// </summary>
+    public const string SalesDraftsCreate = "sales.drafts.create";
+
+    /// <inheritdoc cref="SalesDraftsCreate"/>
+    public const string SalesDraftsRead = "sales.drafts.read";
+
     public const string IdentityProfileRead = "identity.profile.read";
     public const string IdentityAccessRequest = "identity.access.request";
     public const string IdentityAccessApprove = "identity.access.approve";
@@ -113,6 +125,8 @@ public static class ErpPermissions
             CounterpartyAccountsCreate,
             CounterpartyAccountsStatusUpdate,
             ProductOperationalSelectionRead,
+            SalesDraftsCreate,
+            SalesDraftsRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
@@ -152,6 +166,8 @@ public static class ErpPermissions
             CounterpartyAccountsCreate,
             CounterpartyAccountsStatusUpdate,
             ProductOperationalSelectionRead,
+            SalesDraftsCreate,
+            SalesDraftsRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,

@@ -72,6 +72,16 @@ public sealed class SalesDraftStoreException(string code, string message, Except
 /// <summary>The stored draft, whether this call recorded it or found the same attempt already recorded, and the correlation of the first attempt.</summary>
 public sealed record SalesDraftStoreResult(SalesOrderDraft Draft, SalesDraftWriteOutcome Outcome, string OriginalCorrelationId);
 
+/// <summary>
+/// A terminal refusal of a create (ADR-011 §7: the authorized <c>VersionConflict</c> / <c>NotFound</c>
+/// kind), recorded under the attempt key so that the same key always answers the same result. The
+/// status, the code and the field errors are exactly what the first attempt was answered.
+/// </summary>
+public sealed record SalesDraftTerminalRefusal(int Status, string Code, IReadOnlyList<SalesDraftFieldError> Errors);
+
+/// <summary>What the attempt key already holds: the stored draft, or the recorded terminal refusal — never both.</summary>
+public sealed record SalesDraftReplay(SalesOrderDraft? Draft, SalesDraftTerminalRefusal? Refusal, string OriginalCorrelationId);
+
 /// <summary>One page of the company's drafts, newest first (createdAtUtc desc, id desc); <see cref="NextCursor"/> null is the end (#257).</summary>
 public sealed record SalesDraftPage(IReadOnlyList<SalesOrderDraft> Items, string? NextCursor);
 
@@ -106,6 +116,23 @@ public interface ISalesOrderDraftStore
     /// </summary>
     Task<SalesDraftStoreResult> StoreDraftAsync(SalesDraftWriteEnvelope envelope, string requestHash,
         Func<string, SalesOrderDraft> build, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// ADR-011 §4/§7: what the attempt key already holds for this actor and content — the stored
+    /// draft or the recorded terminal refusal — or null when the key is new. The same key with another
+    /// content or another actor is <see cref="SalesDraftStoreCodes.SameKeyPayloadMismatch"/>. The
+    /// caller checks authority before calling (§5) and reads no owner when a replay is found.
+    /// </summary>
+    Task<SalesDraftReplay?> FindReplayAsync(SalesDraftWriteEnvelope envelope, string requestHash,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// ADR-011 §7: records a terminal refusal under the attempt key, so a retry with the same key,
+    /// content and actor answers the same refusal instead of asking the owners again. A key already
+    /// holding an attempt is <see cref="SalesDraftStoreCodes.ConcurrentChange"/> (the retry replays it).
+    /// </summary>
+    Task RecordRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash, SalesDraftTerminalRefusal refusal,
+        CancellationToken cancellationToken = default);
 
     /// <summary>The company's stored draft, or null (another company's draft is null too, never 403).</summary>
     Task<SalesOrderDraft?> FindDraftAsync(Guid draftId, CancellationToken cancellationToken = default);

@@ -188,11 +188,17 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
                 .HasMaxLength(128)
                 .HasColumnType("nvarchar(128)");
 
-            b.Property<Guid>("DraftId")
+            b.Property<Guid?>("DraftId")
                 .HasColumnType("uniqueidentifier");
+
+            b.Property<int>("Outcome")
+                .HasColumnType("int");
 
             b.Property<DateTimeOffset>("RecordedAtUtc")
                 .HasColumnType("datetimeoffset");
+
+            b.Property<string>("RefusalJson")
+                .HasColumnType("nvarchar(max)");
 
             b.Property<string>("RequestHash")
                 .IsRequired()
@@ -204,7 +210,8 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
 
             b.HasIndex("CompanyId", "DraftId")
                 .IsUnique()
-                .HasDatabaseName("UX_DraftAttempts_DraftId");
+                .HasDatabaseName("UX_DraftAttempts_DraftId")
+                .HasFilter("[DraftId] IS NOT NULL");
 
             b.ToTable("DraftAttempts", "sales", t =>
             {
@@ -214,7 +221,11 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
 
                 t.HasCheckConstraint(
                     "CK_DraftAttempts_Identity",
-                    "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+                    "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+
+                t.HasCheckConstraint(
+                    "CK_DraftAttempts_Outcome",
+                    "([Outcome] = 1 AND [DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [RefusalJson] IS NULL) OR ([Outcome] = 2 AND [DraftId] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
             });
         });
 
@@ -687,8 +698,7 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
                 .WithMany()
                 .HasForeignKey("CompanyId", "DraftId")
                 .HasPrincipalKey("CompanyId", "Id")
-                .OnDelete(DeleteBehavior.Restrict)
-                .IsRequired();
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftDeliverySliceRow", b =>

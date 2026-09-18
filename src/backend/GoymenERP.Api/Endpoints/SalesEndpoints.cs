@@ -1,9 +1,11 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
@@ -17,6 +19,11 @@ public static class SalesEndpoints
     public const string AccountsPath = "/api/v1/sales/references/accounts";
     public const string CurrencyPath = "/api/v1/sales/references/currency";
     public const string ProductPath = "/api/v1/sales/references/product";
+    public const string DraftsPath = SalesDraftApiV1.DraftPath;
+    private const string IdempotencyHeaderName = SalesDraftApiV1.IdempotencyHeader;
+    private const int MaximumIdempotencyKeyLength = 128;
+    private const int MaximumCursorLength = 8192;
+    private static readonly HashSet<string> DraftListQueryNames = new(["pageSize", "cursor"], StringComparer.Ordinal);
 
     private static readonly HashSet<string> AccountQueryNames =
         new(["q", "pageSize", "cursor"], StringComparer.Ordinal);
@@ -130,8 +137,223 @@ public static class SalesEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        MapDraftEndpoints(endpoints);
         return endpoints;
     }
+
+    /// <summary>
+    /// The Sales API slice (#257 create / list / detail; card #66 with decisions 1–6). The route
+    /// reads nothing but the server context and the wire body; <see cref="ISalesDraftService"/>
+    /// decides, with a fresh central measurement of the Sales permission at every fence (#276) — the
+    /// route's own policy is only "authenticated + company context", because the Sales names join
+    /// the central catalogue with the central writer's step and an unregistered name is answered
+    /// as a 503 setup problem, never as a grant.
+    /// <list type="bullet">
+    /// <item><b>POST</b>: exactly one canonical <c>Idempotency-Key</c> (≤128) → 400
+    /// <c>command_metadata_invalid</c>; JSON only → 415; the strict #257 body → 400
+    /// <c>validation_failed</c>; 201 + <c>Location</c> on the first commit and again on the same
+    /// attempt, then with <c>Idempotency-Replayed</c> / <c>Idempotency-Original-Correlation-Id</c>
+    /// (ADR-011 §4: the persisted result is replayed — a #257 delta, the contract said 200); a
+    /// recorded terminal refusal (409) replays with the same headers (§7).</item>
+    /// <item><b>GET list</b>: <c>pageSize</c> 1–100 (default 50), opaque company-bound <c>cursor</c>
+    /// → 400 <c>invalid_cursor</c>. <b>GET detail</b>: another company's draft is 404.</item>
+    /// <item>Problems carry status/title, <c>code</c>, <c>correlationId</c> and field <c>errors</c>
+    /// (#257); platform 401/403 stay code-less.</item>
+    /// </list>
+    /// </summary>
+    private static void MapDraftEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        var drafts = endpoints.MapGroup(DraftsPath)
+            .WithTags("Sales")
+            .RequireAuthorization()
+            .RequireCompanyContext();
+
+        drafts.MapPost("/", async (
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var idempotencyKey) || !correlation.IsResolved)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, SalesDraftProblemCodesV1.CommandMetadataInvalid, correlation);
+            }
+
+            if (!httpContext.Request.HasJsonContentType())
+            {
+                return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+            }
+
+            CreateSalesOrderDraftRequest request;
+            try
+            {
+                using var reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8);
+                request = SalesDraftJson.ReadCreate(await reader.ReadToEndAsync(cancellationToken));
+            }
+            catch (JsonException)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            try
+            {
+                var response = await service.CreateDraftAsync(request,
+                    new SalesCommandMetadata(idempotencyKey, correlation.CorrelationId, correlation.CausationId, DateTimeOffset.UtcNow),
+                    cancellationToken);
+                if (response.IsReplay)
+                {
+                    ApplyReplayHeaders(httpContext, response.OriginalCorrelationId);
+                }
+
+                httpContext.Response.Headers.Location = DraftLocation(httpContext.Request, response.Detail.Draft.Id);
+                return Results.Json(response, SalesDraftJson.Options, statusCode: SalesDraftApiV1.CreatedStatus);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                if (exception.IsReplay)
+                {
+                    ApplyReplayHeaders(httpContext, exception.OriginalCorrelationId ?? correlation.CorrelationId);
+                }
+
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("CreateSalesOrderDraftV1")
+            // The replayable results: the stored draft (201) and the recorded terminal refusal (409, §7).
+            .WithIdempotencyContract(SalesDraftApiV1.CreatedStatus, StatusCodes.Status409Conflict)
+            .Accepts<CreateSalesOrderDraftRequest>("application/json")
+            .Produces<SalesOrderDraftResponse>(SalesDraftApiV1.CreatedStatus)
+            .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(SalesDraftProblemCodesV1.AccountState, SalesDraftProblemCodesV1.VersionConflict,
+                SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed", "unsupported_product", "unsupported_unit",
+                SalesDraftProblemCodesV1.UnsupportedCurrency, SalesDraftProblemCodesV1.CommercialNotAvailable,
+                SalesDraftProblemCodesV1.OwnerReferenceUnavailable)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        drafts.MapGet("/", async (
+            [FromQuery] int? pageSize,
+            [FromQuery] string? cursor,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (!HasOnlySingleQuery(httpContext.Request.Query, DraftListQueryNames, Array.Empty<string>())
+                || pageSize is < 1 or > 100 || cursor?.Length > MaximumCursorLength)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            try
+            {
+                return Results.Json(await service.GetDraftListAsync(new SalesOrderDraftListQuery(pageSize ?? 50, cursor), cancellationToken),
+                    SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftsV1")
+            .Produces<SalesOrderDraftListResponse>()
+            .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.InvalidCursor)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        drafts.MapGet("/{id:guid}", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.GetDraftDetailAsync(id, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftV1")
+            .Produces<SalesOrderDraftDetailView>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>Exactly one Idempotency-Key: non-blank, canonical (no surrounding whitespace), at most 128 characters, no comma.</summary>
+    private static bool TryReadIdempotencyKey(IHeaderDictionary headers, out string idempotencyKey)
+    {
+        idempotencyKey = string.Empty;
+        if (!headers.TryGetValue(IdempotencyHeaderName, out var values) || values.Count != 1 || values[0] is not { } value
+            || string.IsNullOrWhiteSpace(value) || !string.Equals(value, value.Trim(), StringComparison.Ordinal)
+            || value.Length > MaximumIdempotencyKeyLength || value.Contains(',', StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        idempotencyKey = value;
+        return true;
+    }
+
+    private static void ApplyReplayHeaders(HttpContext httpContext, string originalCorrelationId)
+    {
+        httpContext.Response.Headers["Idempotency-Replayed"] = "true";
+        httpContext.Response.Headers["Idempotency-Original-Correlation-Id"] = originalCorrelationId;
+    }
+
+    /// <summary>The created draft's absolute location on this host (the detail route).</summary>
+    private static string DraftLocation(HttpRequest request, Guid draftId) =>
+        $"{request.Scheme}://{request.Host}{request.PathBase}{DraftsPath}/{draftId:D}";
+
+    /// <summary>
+    /// The service's refusal as the #257 problem. Platform 401/403/404 and every 503 stay code-less:
+    /// the platform writer answers them with its own public code (<c>forbidden</c>,
+    /// <c>service_unavailable</c>), so the service's setup and provider codes
+    /// (<c>permission_unregistered</c>, <c>counterparty_provider_unavailable</c>,
+    /// <c>settings_provider_unavailable</c>, <c>reference_provider_invalid</c>,
+    /// <c>product_eligibility_unavailable</c>) never reach the wire — the same boundary as the
+    /// reference routes' <see cref="ToHttpResult{T}"/>; they stay in the logs and the service tests.
+    /// Every other status carries its declared code and field errors.
+    /// </summary>
+    private static IResult DraftProblem(SalesDraftServiceException exception, ICorrelationContext correlation)
+    {
+        if (exception.Status is StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden
+            or StatusCodes.Status404NotFound or StatusCodes.Status503ServiceUnavailable)
+        {
+            return Results.Problem(statusCode: exception.Status);
+        }
+
+        var extensions = new Dictionary<string, object?>
+        {
+            ["code"] = exception.Code,
+            ["correlationId"] = correlation.IsResolved ? correlation.CorrelationId : null,
+        };
+        if (exception.Errors.Count > 0)
+        {
+            extensions["errors"] = exception.Errors;
+        }
+
+        return Results.Problem(statusCode: exception.Status, extensions: extensions);
+    }
+
+    private static IResult DraftProblem(int statusCode, string code, ICorrelationContext correlation) => Results.Problem(
+        statusCode: statusCode,
+        extensions: new Dictionary<string, object?>
+        {
+            ["code"] = code,
+            ["correlationId"] = correlation.IsResolved ? correlation.CorrelationId : null,
+        });
 
     /// <summary>
     /// The accounts search text, normalized exactly like the Cari list's own search
@@ -252,4 +474,60 @@ public sealed class CounterpartySalesAccountSelectionSourceV1(
         && companyContext.IsResolved && companyContext.CompanyId != Guid.Empty
         && companyContext.CompanyId == request.CompanyId
         && currentUser.CanAccessCompany(request.CompanyId);
+}
+
+/// <summary>
+/// The Cari owner's answer for the draft's customer (<see cref="ISalesPartyAccountPortV1"/>), over the
+/// authorized Counterparty party read, as the Finance party port does: the party, the account of that
+/// party in the server company, and both active flags with the owner's versions. Denied when the
+/// server context is not the request's; NotFound when the party or the account is not the owner's.
+/// </summary>
+public sealed class CounterpartySalesPartyAccountPortV1(ICompanyContext companyContext, ICurrentUser currentUser,
+    ICounterpartyReadService counterparties) : ISalesPartyAccountPortV1
+{
+    public async Task<SalesPartyAccountAnswerV1> GetAuthorizedAsync(Guid partyId, Guid companyAccountId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!IsCurrent() || partyId == Guid.Empty || companyAccountId == Guid.Empty)
+        {
+            return new(SalesPartyAccountOutcomeV1.Denied, null);
+        }
+
+        var companyId = companyContext.CompanyId;
+        CounterpartyDetailView? party;
+        try
+        {
+            party = await counterparties.GetAuthorizedPartyAsync(partyId, cancellationToken);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new(SalesPartyAccountOutcomeV1.Denied, null);
+        }
+
+        // The owner answered for the context captured before the await; a changed context releases nothing.
+        if (!IsCurrent() || companyContext.CompanyId != companyId)
+        {
+            return new(SalesPartyAccountOutcomeV1.Denied, null);
+        }
+
+        if (party is null || party.Id != partyId)
+        {
+            return new(SalesPartyAccountOutcomeV1.NotFound, null);
+        }
+
+        var accounts = party.CompanyAccounts.Where(account => account.Id == companyAccountId && account.CompanyId == companyId).ToArray();
+        if (accounts.Length != 1)
+        {
+            return new(SalesPartyAccountOutcomeV1.NotFound, null);
+        }
+
+        var account = accounts[0];
+        return new(SalesPartyAccountOutcomeV1.Found, new SalesPartyAccountV1(party.Id, account.Id, account.CompanyId,
+            party.IsActive, account.IsActive, party.Version, account.Version));
+    }
+
+    private bool IsCurrent() =>
+        currentUser.IsAuthenticated && !string.IsNullOrWhiteSpace(currentUser.UserId) && companyContext.IsResolved
+        && companyContext.CompanyId != Guid.Empty && currentUser.CanAccessCompany(companyContext.CompanyId);
 }
