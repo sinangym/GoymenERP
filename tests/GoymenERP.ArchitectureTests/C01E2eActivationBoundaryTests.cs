@@ -87,6 +87,35 @@ public sealed class C01E2eActivationBoundaryTests
             BackendFilesContaining("AddProductCodeGroupFixtureStore"));
     }
 
+    // u02 (#331): ProductDbContext refuses every public save; AddFixtureCodeGroupAsync is a second write path
+    // into it. It has exactly one caller, the code-group fixture store, and that store is registered only
+    // by the gated activation (its registration method's call sites are pinned above).
+    [Fact]
+    public void ProductFixtureCodeGroupSave_HasOneCallerBehindTheGatedActivation()
+    {
+        Assert.Equal(
+            [
+                "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Fixtures/"
+                + "ProductCodeGroupFixtureStore.cs",
+                "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/"
+                + "ProductDbContext.cs",
+            ],
+            BackendFilesContaining("AddFixtureCodeGroupAsync"));
+        var store = ReadRepositoryFile(
+            "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Fixtures/"
+            + "ProductCodeGroupFixtureStore.cs");
+        Assert.Equal(1, Count(store, "AddFixtureCodeGroupAsync("));
+        var context = ReadRepositoryFile(
+            "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/ProductDbContext.cs");
+        Assert.Equal(1, Count(context, "AddFixtureCodeGroupAsync("));
+        Assert.Contains("internal Task<int> AddFixtureCodeGroupAsync(", context, StringComparison.Ordinal);
+        Assert.Equal(
+            ["src/backend/GoymenERP.Api/Shell/C01E2eFixtureWriterActivation.cs"],
+            BackendFilesContaining("AddProductCodeGroupFixtureStore(")
+                .Where(path => !path.EndsWith("ProductCodeGroupFixtureStore.cs", StringComparison.Ordinal))
+                .ToArray());
+    }
+
     [Fact]
     public void ProductionRuntimeConfiguration_DoesNotCarryTheFixtureWriterGate()
     {
