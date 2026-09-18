@@ -140,9 +140,10 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.Two_racing_deliveries_of_one_fact_store_one_original_and_the_loser_retries_to_already_posted",
     "GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.A_closed_period_takes_no_posting_and_a_close_racing_a_posting_cannot_both_commit",
     "GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
+    "GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.Two_racing_overlapping_period_openings_store_one_and_the_loser_retries_to_an_overlap",
 )
-BROAD_DISCOVERY_COUNT = 100
-BROAD_EXECUTION_COUNT = 107
+BROAD_DISCOVERY_COUNT = 101
+BROAD_EXECUTION_COUNT = 108
 
 
 def verify_discovery(standard_output: str) -> None:

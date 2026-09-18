@@ -91,18 +91,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.cs";
     private const string SqlServerRcsiVerifierPath =
         "tools/verify_rcsi_relational_acceptance.py";
-    // Re-fingerprinted with the broad inventory entry for the Accounting SQL acceptance class
-    // (ACC-3, #298) on top of INV-2's: six names added, discovery 94 -> 100, execution
-    // 101 -> 107. The verifier's logic is unchanged.
+    // Re-fingerprinted for ACC-4 (#307): one more Accounting SQL acceptance name, discovery
+    // 100 -> 101, execution 107 -> 108. The verifier's logic is unchanged.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "4ce7fff0d708b25828fceb133a9e516b2ea7b4410ca823a5f7a517f760facf95";
+        "734dc52ab54efb6926a9f1982fc8e8ca139370f218abb3de64fbbddf8ecee7ed";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
     // Re-fingerprinted for the same inventory change: updated counts plus one case pinning the
     // new class as mandatory.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "b926a0afdf6ab93dc5f947a5c51d7f758912272cf56934d23cf05aef268fffbe";
+        "7fc07b5f6cc7cac70ed6a5dffca79140d9fed3a012303955c707c8bf0aaea1da";
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "91a665e6e8982e5a9b66f5d16a14d9fc4d7f98d63775de959a8cc6b2dea2b018";
@@ -133,7 +132,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/"
              + "Persistence/AccountingDbContext.cs"] =
-                "62f731ee44f973c3ccf9c41faf16aa7f74dbe645daed39b1751c0315c41c01cd",
+                "48e8d2db9387557e4254f2468ae033a25edb7bc89401cfbd40790b2e3199e405",
             // INV-2 (#293, ADR-INV-001 option A): company-scoped like Organization; every tenant
             // row and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
@@ -294,7 +293,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Accounting/"
                  + "GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingStore.cs"] =
                     new(
-                        "bab06800fa9953a6a1712032031e40a763f27963906375168f34babbd794ebac",
+                        "0ce41bb6c9c79a8c9cfd536d727ddf8f6a3af9eedac974c792e54c29baeac5e8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
