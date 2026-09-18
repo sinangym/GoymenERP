@@ -32,11 +32,13 @@
     <ProjectReference Include="..\..\src\backend\BuildingBlocks\GoymenERP.BuildingBlocks.SqlServer\GoymenERP.BuildingBlocks.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\backend\GoymenERP.Api\GoymenERP.Api.csproj" />
     <ProjectReference Include="..\..\src\backend\Modules\Accounting\GoymenERP.Modules.Accounting.Infrastructure\GoymenERP.Modules.Accounting.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\backend\Modules\Finance\GoymenERP.Modules.Finance.Infrastructure\GoymenERP.Modules.Finance.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\backend\Modules\Audit\GoymenERP.Modules.Audit.Infrastructure\GoymenERP.Modules.Audit.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\backend\Modules\Counterparty\GoymenERP.Modules.Counterparty.Infrastructure\GoymenERP.Modules.Counterparty.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\backend\Modules\Idempotency\GoymenERP.Modules.Idempotency.Infrastructure\GoymenERP.Modules.Idempotency.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\backend\Modules\Inventory\GoymenERP.Modules.Inventory.Infrastructure\GoymenERP.Modules.Inventory.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\backend\Modules\Organization\GoymenERP.Modules.Organization.Infrastructure\GoymenERP.Modules.Organization.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\backend\Modules\Manufacturing\GoymenERP.Modules.Manufacturing.Infrastructure\GoymenERP.Modules.Manufacturing.Infrastructure.csproj" />
     <ProjectReference Include="..\..\tools\GoymenERP.SqlServerRcsiReadiness\GoymenERP.SqlServerRcsiReadiness.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
