@@ -137,7 +137,11 @@ public sealed class SalesDraftService(
             throw Store(exception);
         }
 
-        await RequireStillAsync(scope, bindings.CreatePermission, cancellationToken);
+        // The committed result is answered as it is. The authority was measured before anything was
+        // read, after every awaited owner read and right before the single save (the last fence that
+        // can still prevent the write); a fence after the commit could only hide a stored draft behind
+        // a 403 — the caller would drop its key and create a second draft (S03, ORG #321 P3-1). The
+        // next request of this key meets the fence again before the replay is read (ADR-011 §5).
         return Response(stored.Draft, stored.Outcome == SalesDraftWriteOutcome.Replayed, stored.OriginalCorrelationId);
     }
 
