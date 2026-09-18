@@ -190,6 +190,15 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/manufacturing/orders/{orderId}", "GetManufacturingOrderV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
             ParameterValues: ["path:orderId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/sales/drafts", "GetSalesOrderDraftsV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string"]),
+        new("post", "/api/v1/sales/drafts", "CreateSalesOrderDraftV1",
+            AuthenticatedResponses("201:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/CreateSalesOrderDraftRequest"),
+        new("get", "/api/v1/sales/drafts/{id}", "GetSalesOrderDraftV1",
+            AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:id:true:type:string;format:uuid"]),
         .. ProductOperations,
     ];
 
@@ -230,6 +239,9 @@ public sealed partial class OpenApiContractGenerationTests
             ["RecordManufacturingWorkInProgressV1"] = "ref:OrderViewV1",
             ["DeclareManufacturingOutputV1"] = "ref:OrderViewV1",
             ["GetManufacturingOrderV1"] = "ref:OrderViewV1",
+            ["GetSalesOrderDraftsV1"] = "ref:SalesOrderDraftListResponse",
+            ["CreateSalesOrderDraftV1"] = "ref:SalesOrderDraftResponse",
+            ["GetSalesOrderDraftV1"] = "ref:SalesOrderDraftDetailView",
         };
 
     private static readonly HashSet<string> RequiredCompanyOperations =
@@ -261,6 +273,9 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordManufacturingWorkInProgressV1",
         "DeclareManufacturingOutputV1",
         "GetManufacturingOrderV1",
+        "GetSalesOrderDraftsV1",
+        "CreateSalesOrderDraftV1",
+        "GetSalesOrderDraftV1",
     ];
 
     private static readonly HashSet<string> OptionalCompanyOperations =
@@ -284,6 +299,7 @@ public sealed partial class OpenApiContractGenerationTests
         "ReturnManufacturingInputV1",
         "RecordManufacturingWorkInProgressV1",
         "DeclareManufacturingOutputV1",
+        "CreateSalesOrderDraftV1",
     ];
 
     private static readonly IReadOnlyDictionary<string, HashSet<int>>
@@ -318,6 +334,7 @@ public sealed partial class OpenApiContractGenerationTests
                 ["ReturnManufacturingInputV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["RecordManufacturingWorkInProgressV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["DeclareManufacturingOutputV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["CreateSalesOrderDraftV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
             };
 
     private static readonly HashSet<string> EmptyBodyPossible400Operations =
@@ -340,6 +357,8 @@ public sealed partial class OpenApiContractGenerationTests
         "ReturnManufacturingInputV1",
         "RecordManufacturingWorkInProgressV1",
         "DeclareManufacturingOutputV1",
+        "GetSalesOrderDraftsV1",
+        "CreateSalesOrderDraftV1",
     ];
 
     private static readonly HashSet<string> CodeLessProblemResponses =
@@ -358,6 +377,7 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordManufacturingWorkInProgressV1:404",
         "DeclareManufacturingOutputV1:404",
         "GetManufacturingOrderV1:404",
+        "GetSalesOrderDraftV1:404",
     ];
 
     private static readonly HashSet<string> MixedProblemResponses =
@@ -457,6 +477,10 @@ public sealed partial class OpenApiContractGenerationTests
             ["DeclareManufacturingOutputV1:400"] = ["manufacturing_request_invalid"],
             ["DeclareManufacturingOutputV1:409"] = ManufacturingConflictCodes,
             ["DeclareManufacturingOutputV1:422"] = ManufacturingUnprocessableCodes,
+            ["GetSalesOrderDraftsV1:400"] = ["invalid_cursor", "validation_failed"],
+            ["CreateSalesOrderDraftV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["CreateSalesOrderDraftV1:409"] = ["account_state", "concurrent_change", "same_key_payload_mismatch", "version_conflict"],
+            ["CreateSalesOrderDraftV1:422"] = ["commercial_not_available", "owner_reference_unavailable", "unsupported_currency", "unsupported_product", "unsupported_unit", "validation_failed"],
             ["GetShellCapabilitiesV1:400"] = ["company_context_invalid"],
         };
 
@@ -464,6 +488,68 @@ public sealed partial class OpenApiContractGenerationTests
         ExpectedSuccessComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["SalesDraftDeliverySliceV1"] = ObjectSchema(
+                    ["sliceId", "orderUnitId", "quantity", "requestedDeliveryDate"],
+                    ("sliceId", "type:string;format:uuid"),
+                    ("orderUnitId", "type:string;format:uuid"),
+                    ("quantity", "type:string"),
+                    ("requestedDeliveryDate", "type:string;format:date")),
+                ["SalesDraftOwnerReferenceV1"] = ObjectSchema(
+                    ["id", "expectedVersion"],
+                    ("id", "type:string;format:uuid"),
+                    ("expectedVersion", "type:string")),
+                ["SalesOrderDraftDetailView"] = ObjectSchema(
+                    ["draft", "requestedDeliveryDate", "note", "lines", "deliveryAddress", "contact", "responsible", "paymentTerms", "sourceStrategy", "package"],
+                    ("draft", "ref:SalesOrderDraftSummaryView"),
+                    ("requestedDeliveryDate", "type:null|string;format:date"),
+                    ("note", "type:null|string"),
+                    ("lines", "type:array;items:ref:SalesOrderDraftLineDetail"),
+                    ("deliveryAddress", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null"),
+                    ("contact", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null"),
+                    ("responsible", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null"),
+                    ("paymentTerms", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null"),
+                    ("sourceStrategy", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null"),
+                    ("package", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null")),
+                ["SalesOrderDraftLineDetail"] = ObjectSchema(
+                    ["lineId", "lineNo", "productId", "productVersion", "productCode", "productName", "orderUnitId", "quantity", "unitPrice", "priceUnitId", "requestedDeliveryDate", "note", "requestedDeliverySlices", "discountPercent"],
+                    ("lineId", "type:string;format:uuid"),
+                    ("lineNo", "type:integer|string;format:int32"),
+                    ("productId", "type:string;format:uuid"),
+                    ("productVersion", "type:string"),
+                    ("productCode", "type:string"),
+                    ("productName", "type:string"),
+                    ("orderUnitId", "type:string;format:uuid"),
+                    ("quantity", "type:string"),
+                    ("unitPrice", "type:null|string"),
+                    ("priceUnitId", "type:null|string;format:uuid"),
+                    ("requestedDeliveryDate", "type:null|string;format:date"),
+                    ("note", "type:null|string"),
+                    ("requestedDeliverySlices", "type:array|null;items:ref:SalesDraftDeliverySliceV1"),
+                    ("discountPercent", "type:null|string")),
+                ["SalesOrderDraftListResponse"] = ObjectSchema(
+                    ["items", "nextCursor"],
+                    ("items", "type:array;items:ref:SalesOrderDraftSummaryView"),
+                    ("nextCursor", "type:null|string")),
+                ["SalesOrderDraftResponse"] = ObjectSchema(
+                    ["detail", "isReplay", "originalCorrelationId"],
+                    ("detail", "ref:SalesOrderDraftDetailView"),
+                    ("isReplay", "type:boolean"),
+                    ("originalCorrelationId", "type:string")),
+                ["SalesOrderDraftSummaryView"] = ObjectSchema(
+                    ["id", "companyId", "documentNo", "kind", "state", "version", "revision", "partyId", "companyAccountId", "currencyId", "businessDate", "createdAtUtc", "lineCount"],
+                    ("id", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("documentNo", "type:string"),
+                    ("kind", "type:string"),
+                    ("state", "type:string"),
+                    ("version", "type:string"),
+                    ("revision", "type:string"),
+                    ("partyId", "type:string;format:uuid"),
+                    ("companyAccountId", "type:string;format:uuid"),
+                    ("currencyId", "type:string;format:uuid"),
+                    ("businessDate", "type:string;format:date"),
+                    ("createdAtUtc", "type:string;format:date-time"),
+                    ("lineCount", "type:integer|string;format:int32")),
                 ["OrderViewV1"] = ObjectSchema(
                     ["orderId", "companyId", "planId", "workCenterId", "process", "status", "version", "target", "remainingTarget", "rolls", "costStatus", "closedByUserId", "closedAtUtc"],
                     ("orderId", "type:string;format:uuid"),
@@ -825,6 +911,35 @@ public sealed partial class OpenApiContractGenerationTests
         ExpectedRequestComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["CreateSalesOrderDraftRequest"] = ObjectSchema(
+                    ["kind", "partyId", "companyAccountId", "businessDate", "currencyId", "lines"],
+                    ("kind", "type:string"),
+                    ("partyId", "type:string;format:uuid"),
+                    ("companyAccountId", "type:string;format:uuid"),
+                    ("businessDate", "type:string;format:date"),
+                    ("currencyId", "type:string;format:uuid"),
+                    ("lines", "type:array;items:ref:SalesOrderDraftLineRequest"),
+                    ("requestedDeliveryDate", "type:null|string;format:date"),
+                    ("note", "type:null|string"),
+                    ("deliveryAddress", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null"),
+                    ("contact", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null"),
+                    ("responsible", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null"),
+                    ("paymentTerms", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null"),
+                    ("sourceStrategy", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null"),
+                    ("package", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null")),
+                ["SalesOrderDraftLineRequest"] = ObjectSchema(
+                    ["lineId", "productId", "expectedProductVersion", "orderUnitId", "quantity"],
+                    ("lineId", "type:string;format:uuid"),
+                    ("productId", "type:string;format:uuid"),
+                    ("expectedProductVersion", "type:string"),
+                    ("orderUnitId", "type:string;format:uuid"),
+                    ("quantity", "type:string"),
+                    ("unitPrice", "type:null|string"),
+                    ("priceUnitId", "type:null|string;format:uuid"),
+                    ("requestedDeliveryDate", "type:null|string;format:date"),
+                    ("note", "type:null|string"),
+                    ("requestedDeliverySlices", "type:array|null;items:ref:SalesDraftDeliverySliceV1"),
+                    ("discountPercent", "type:null|string")),
                 ["ApprovePlanRequestV1"] = ObjectSchema(
                     ["expectedVersion"],
                     ("expectedVersion", "type:integer|string;format:int64")),
@@ -1455,9 +1570,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(39, operations.Count);
+        Assert.Equal(42, operations.Count);
         Assert.Equal(
-            39,
+            42,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
