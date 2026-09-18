@@ -83,6 +83,10 @@ internal sealed class DeliveryRow : IAccountingTenantRow
     public Guid CompanyId { get; set; }
     public string Consumer { get; set; } = string.Empty;
     public string MessageId { get; set; } = string.Empty;
+
+    /// <summary>The canonical content hash of the message (ACC-4): 64 lowercase hex, always present.</summary>
+    public string RequestHash { get; set; } = string.Empty;
+
     public int OutcomeKind { get; set; }
     public Guid? JournalId { get; set; }
     public string? QueueEntryJson { get; set; }
