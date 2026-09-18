@@ -89,16 +89,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string SqlServerRcsiVerifierPath =
         "tools/verify_rcsi_relational_acceptance.py";
     // Re-fingerprinted for MFG-API (#313): six ManufacturingApiSqlServerRelationalAcceptanceTests names
-    // on top of main's 131 / 138, discovery 131 -> 137, execution 138 -> 144. Logic unchanged.
+    // on top of main's 132 / 139, discovery 132 -> 138, execution 139 -> 145. Logic unchanged.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "3606a4fcff116d49969b4b0cead22cf1f11ee44a02b762448e282ba0484dbd08";
+        "bc4e9e0bc93b4552b9c9aaa93d806ac5cf9e7e5c3620e5374816b238a06c208b";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
     // Re-fingerprinted for the same inventory change: updated counts plus one case pinning the
     // new class as mandatory.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "023aae92fadd30e846be56b0fa9f231a9cbfbffb6c67da5ae2e8e9b3c5d0098c";
+        "cb5d6cfcd3f4aee020743a2347221aa7101b803954cb7055d1c9fa8f77339fe6";
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "91a665e6e8982e5a9b66f5d16a14d9fc4d7f98d63775de959a8cc6b2dea2b018";
@@ -170,8 +170,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             {
                 // Re-measured for C3: the Product owner's sales and stock eligibility runtimes are composed
                 // here (no new database capability; MigrateAsync stays 2).
+                // Re-measured for #316 on top of C3: ProductShellCapabilityProvider is registered here (a
+                // singleton shell provider; no new database capability, MigrateAsync stays 2).
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs"] =
-                    new("915b90891b281747aabeca4c25b3866ce2fa44d627d1d4704bfa06fc82988ef5",
+                    new("ef07c9ff234f99afe549309e4fd7bc244d84bf3ce458e5bd39ae57c67f86d8b1",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductSqlCommandRunner.cs"] =
@@ -370,7 +372,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "acbe04e6efb853008755497f078a040b207809f1170d5ac7942fe6601b1005c9",
+                        "344aacdc7274d79f93879d498cd37eae125ffb636380d22db58781bbe2c0f8c7",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
