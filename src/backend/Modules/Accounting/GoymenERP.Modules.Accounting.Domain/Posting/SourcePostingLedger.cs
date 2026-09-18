@@ -45,6 +45,87 @@ public sealed class SourcePostingLedger
 
     public Guid CompanyId { get; }
 
+    /// <summary>
+    /// Rebuilds the part of one company's ledger a single request needs, from stored facts (ACC-3):
+    /// its journals (originals, reversals and corrections are recognised by kind and link), the
+    /// correction identities that produced stored corrections, and the OPEN queue entries. The
+    /// inbox is not rebuilt: a stored delivery is answered by the store before the ledger is asked.
+    /// Every fact must be this company's, and no identity may appear twice.
+    /// </summary>
+    public static SourcePostingLedger FromStored(
+        Guid companyId,
+        IEnumerable<Journal> journals,
+        IEnumerable<StoredCorrection> corrections,
+        IEnumerable<PostingException> openExceptions,
+        IEnumerable<PendingValuation> pendingValuations)
+    {
+        ArgumentNullException.ThrowIfNull(journals);
+        ArgumentNullException.ThrowIfNull(corrections);
+        ArgumentNullException.ThrowIfNull(openExceptions);
+        ArgumentNullException.ThrowIfNull(pendingValuations);
+        var ledger = new SourcePostingLedger(companyId);
+        foreach (var journal in journals)
+        {
+            ArgumentNullException.ThrowIfNull(journal);
+            ledger.RequireOwnCompany(journal.CompanyId);
+            ledger.RequireNewJournalId(journal.Id);
+            ledger._journals[journal.Id] = journal;
+            if (journal.Kind == JournalKind.Original
+                && !ledger._originals.TryAdd((journal.Source.SourceId, journal.Source.PostingPurpose), journal))
+            {
+                throw StoredDuplicate("A stored fact has two originals.");
+            }
+
+            if (journal.Kind == JournalKind.Reversal && !ledger._reversalsByOriginal.TryAdd(journal.LinkedJournalId!.Value, journal))
+            {
+                throw StoredDuplicate("A stored journal has two reversals.");
+            }
+        }
+
+        foreach (var correction in corrections)
+        {
+            ArgumentNullException.ThrowIfNull(correction);
+            if (!ledger._journals.TryGetValue(correction.JournalId, out var journal) || journal.Kind != JournalKind.Correction
+                || correction.CorrectionId == Guid.Empty || !ledger._corrections.TryAdd(correction.CorrectionId, journal))
+            {
+                throw StoredDuplicate("A stored correction identity does not name one stored correction journal.");
+            }
+        }
+
+        foreach (var exception in openExceptions)
+        {
+            ArgumentNullException.ThrowIfNull(exception);
+            ledger.RequireOwnCompany(exception.Source.CompanyId);
+            if (!ledger._exceptions.TryAdd((exception.Source.SourceId, exception.Source.PostingPurpose), exception))
+            {
+                throw StoredDuplicate("A stored fact has two open exception entries.");
+            }
+        }
+
+        foreach (var pending in pendingValuations)
+        {
+            ArgumentNullException.ThrowIfNull(pending);
+            ledger.RequireOwnCompany(pending.Source.CompanyId);
+            if (!ledger._pending.TryAdd((pending.Source.SourceId, pending.Source.PostingPurpose), pending))
+            {
+                throw StoredDuplicate("A stored fact has two pending entries.");
+            }
+        }
+
+        return ledger;
+    }
+
+    /// <summary>The ledger's open exception entry of one fact, or null.</summary>
+    public PostingException? FindOpenException(Guid sourceId, string postingPurpose) =>
+        _exceptions.GetValueOrDefault((sourceId, postingPurpose));
+
+    /// <summary>The ledger's pending-valuation entry of one fact, or null.</summary>
+    public PendingValuation? FindPendingValuation(Guid sourceId, string postingPurpose) =>
+        _pending.GetValueOrDefault((sourceId, postingPurpose));
+
+    private static AccountingDomainException StoredDuplicate(string message) =>
+        new AccountingDomainException(AccountingErrorCodes.InvalidReference, message);
+
     public IReadOnlyCollection<Journal> Journals => _journals.Values;
 
     public IReadOnlyCollection<PostingException> OpenExceptions => _exceptions.Values;

@@ -134,9 +134,15 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.A_source_causes_one_movement_per_kind_and_a_stock_bearing_label_is_not_received_again",
     "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Two_writers_that_read_the_same_piece_cannot_both_commit",
     "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
+    "GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.Queue_posting_and_replay_are_durable_audited_and_answer_from_stored_facts",
+    "GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.Each_company_sees_only_its_own_ledger_and_a_message_id_is_unique_per_company_only",
+    "GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.Reversal_and_correction_identities_hold_in_the_store_and_in_the_database",
+    "GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.Two_racing_deliveries_of_one_fact_store_one_original_and_the_loser_retries_to_already_posted",
+    "GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.A_closed_period_takes_no_posting_and_a_close_racing_a_posting_cannot_both_commit",
+    "GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
 )
-BROAD_DISCOVERY_COUNT = 94
-BROAD_EXECUTION_COUNT = 101
+BROAD_DISCOVERY_COUNT = 100
+BROAD_EXECUTION_COUNT = 107
 
 
 def verify_discovery(standard_output: str) -> None:
