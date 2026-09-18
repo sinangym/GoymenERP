@@ -134,6 +134,10 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.A_source_causes_one_movement_per_kind_and_a_stock_bearing_label_is_not_received_again",
     "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Two_writers_that_read_the_same_piece_cannot_both_commit",
     "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
+    "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.A_source_is_answered_whole_or_line_by_line_never_both",
+    "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.A_whole_and_a_line_movement_racing_for_one_source_cannot_both_commit",
+    "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.A_label_code_has_one_answer_under_the_code_column_collation",
+    "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.A_known_cost_offered_again_at_another_scale_is_a_replay",
     "GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.Queue_posting_and_replay_are_durable_audited_and_answer_from_stored_facts",
     "GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.Each_company_sees_only_its_own_ledger_and_a_message_id_is_unique_per_company_only",
     "GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.Reversal_and_correction_identities_hold_in_the_store_and_in_the_database",
@@ -159,8 +163,8 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.FinanceBankAccountSqlServerRelationalAcceptanceTests.Two_racing_approvals_store_one_and_the_database_refuses_a_self_approval",
     "GoymenERP.Api.IntegrationTests.FinanceBankAccountSqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
 )
-BROAD_DISCOVERY_COUNT = 118
-BROAD_EXECUTION_COUNT = 125
+BROAD_DISCOVERY_COUNT = 122
+BROAD_EXECUTION_COUNT = 129
 
 
 def verify_discovery(standard_output: str) -> None:
