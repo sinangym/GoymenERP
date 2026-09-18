@@ -151,7 +151,8 @@ public sealed class SalesDraftServiceTests
             case "other-company": world.User.Company = Guid.NewGuid(); break;
             case "not-granted": world.Authority.Granted = false; break;
             case "site-scoped": world.Authority.CompanyWide = false; break;
-            case "unregistered-name": world.Bindings = new SalesDraftServiceBindings("sales.drafts.create", ReadPermission); break;
+            // A name outside the central catalogue (the Sales names themselves are registered since #321's central commit).
+            case "unregistered-name": world.Bindings = new SalesDraftServiceBindings("sales.synthetic.unregistered", ReadPermission); break;
             default: world.Bindings = new SalesDraftServiceBindings(null, ReadPermission); break;
         }
 

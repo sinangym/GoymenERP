@@ -213,10 +213,13 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
         Assert.All(responses, response => Assert.Equal(HttpStatusCode.Created, response.StatusCode));
         var winner = Assert.Single(responses, response => !response.Headers.Contains("Idempotency-Replayed"));
         var loser = Assert.Single(responses, response => response.Headers.Contains("Idempotency-Replayed"));
-        var draftId = (await Result(winner)).GetProperty("detail").GetProperty("draft").GetProperty("id").GetGuid();
-        Assert.Equal(draftId, (await Result(loser)).GetProperty("detail").GetProperty("draft").GetProperty("id").GetGuid());
-        Assert.False((await Result(winner)).GetProperty("isReplay").GetBoolean());
-        Assert.True((await Result(loser)).GetProperty("isReplay").GetBoolean());
+        // Each body is read once; the assertions work on the read values.
+        var winnerBody = await Result(winner);
+        var loserBody = await Result(loser);
+        var draftId = winnerBody.GetProperty("detail").GetProperty("draft").GetProperty("id").GetGuid();
+        Assert.Equal(draftId, loserBody.GetProperty("detail").GetProperty("draft").GetProperty("id").GetGuid());
+        Assert.False(winnerBody.GetProperty("isReplay").GetBoolean());
+        Assert.True(loserBody.GetProperty("isReplay").GetBoolean());
         var location = new Uri(client.BaseAddress!, $"{SalesEndpoints.DraftsPath.TrimStart('/')}/{draftId:D}");
         Assert.Equal(location, winner.Headers.Location);
         Assert.Equal(location, loser.Headers.Location);
