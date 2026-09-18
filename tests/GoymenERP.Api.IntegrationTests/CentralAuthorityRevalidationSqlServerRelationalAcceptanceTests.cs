@@ -18,6 +18,7 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed class CentralAuthorityRevalidationSqlServerRelationalAcceptanceTests
 {
     private const string Permission = ErpPermissions.OrganizationLocationsRead;
+    private const string UnregisteredPermission = "test.unregistered-permission.read";
 
     [SqlServerFact]
     public async Task A_revocation_is_measured_inside_the_request_and_refuses_the_next_one()
@@ -122,9 +123,11 @@ public sealed class CentralAuthorityRevalidationSqlServerRelationalAcceptanceTes
             Assert.Equal(2, reads.Count);
 
             // A name the platform does not know is denied without touching the database, on the
-            // fresh path exactly as on the cached one.
+            // fresh path exactly as on the cached one. The name must stay unregistered: an example
+            // that a later registration adopts becomes a real read (as #277 did to the first one).
+            Assert.DoesNotContain(UnregisteredPermission, ErpPermissions.All);
             Assert.Equal(PermissionScope.Denied,
-                await fresh.RevalidatePermissionScopeAsync("product.operational-selection.read", company));
+                await fresh.RevalidatePermissionScopeAsync(UnregisteredPermission, company));
             Assert.Equal(PermissionScope.Denied,
                 await fresh.RevalidatePermissionScopeAsync(Permission, Guid.Empty));
             Assert.Equal(2, reads.Count);
