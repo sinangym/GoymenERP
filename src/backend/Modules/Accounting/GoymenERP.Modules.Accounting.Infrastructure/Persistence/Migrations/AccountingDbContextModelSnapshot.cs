@@ -194,6 +194,12 @@ partial class AccountingDbContextModelSnapshot : ModelSnapshot
             b.Property<DateTimeOffset>("RecordedAtUtc")
                 .HasColumnType("datetimeoffset");
 
+            b.Property<string>("RequestHash")
+                .IsRequired()
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
             b.HasKey("CompanyId", "Consumer", "MessageId");
 
             b.HasIndex("CompanyId", "JournalId");
@@ -207,6 +213,10 @@ partial class AccountingDbContextModelSnapshot : ModelSnapshot
                 t.HasCheckConstraint(
                     "CK_Deliveries_Outcome",
                     "([OutcomeKind] IN (1, 3, 6) AND [JournalId] IS NOT NULL AND [QueueEntryJson] IS NULL) OR ([OutcomeKind] IN (4, 5) AND [JournalId] IS NULL AND [QueueEntryJson] IS NOT NULL AND ISJSON([QueueEntryJson]) = 1)");
+
+                t.HasCheckConstraint(
+                    "CK_Deliveries_RequestHash",
+                    "LEN([RequestHash]) = 64");
             });
         });
 

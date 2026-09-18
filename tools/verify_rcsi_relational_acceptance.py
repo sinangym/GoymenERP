@@ -140,14 +140,15 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.Two_racing_deliveries_of_one_fact_store_one_original_and_the_loser_retries_to_already_posted",
     "GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.A_closed_period_takes_no_posting_and_a_close_racing_a_posting_cannot_both_commit",
     "GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
+    "GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.Two_racing_overlapping_period_openings_store_one_and_the_loser_retries_to_an_overlap",
     "GoymenERP.Api.IntegrationTests.FinanceDraftSqlServerRelationalAcceptanceTests.A_draft_is_saved_reopened_and_saved_again_with_a_fresh_version_and_moves_no_money",
     "GoymenERP.Api.IntegrationTests.FinanceDraftSqlServerRelationalAcceptanceTests.A_stale_version_changes_nothing_and_the_same_key_replays_or_conflicts",
     "GoymenERP.Api.IntegrationTests.FinanceDraftSqlServerRelationalAcceptanceTests.Company_B_can_neither_see_nor_overwrite_company_A_draft",
     "GoymenERP.Api.IntegrationTests.FinanceDraftSqlServerRelationalAcceptanceTests.The_real_unavailable_owners_refuse_every_save_and_store_nothing",
     "GoymenERP.Api.IntegrationTests.FinanceDraftSqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
 )
-BROAD_DISCOVERY_COUNT = 105
-BROAD_EXECUTION_COUNT = 112
+BROAD_DISCOVERY_COUNT = 106
+BROAD_EXECUTION_COUNT = 113
 
 
 def verify_discovery(standard_output: str) -> None:
