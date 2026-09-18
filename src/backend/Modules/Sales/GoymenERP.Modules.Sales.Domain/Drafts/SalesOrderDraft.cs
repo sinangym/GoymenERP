@@ -66,6 +66,13 @@ public sealed record DeliverySliceInput(Guid SliceId, Guid OrderUnitId, string Q
 /// </summary>
 public sealed class SalesOrderDraft
 {
+    /// <summary>
+    /// The Sales operation identifier the Settings money port is asked with for a draft's currency.
+    /// A technical mapping of the Sales owner (Business #254 5654539215), in the Finance pattern
+    /// (<c>finance.manual-bank-receipt.v1</c>). It chooses no rate, scale or date.
+    /// </summary>
+    public const string MoneyOperation = "sales.order-draft.v1";
+
     public const int MaximumLines = 500;
     public const int MaximumSlicesPerLine = 500;
     public const int MaximumNoteLength = 4000;
@@ -143,6 +150,12 @@ public sealed class SalesOrderDraft
         if (money.EffectiveOn != header.BusinessDate)
         {
             throw new SalesRuleException(SalesRuleCodes.SnapshotDateMismatch, "Para profili taslağın iş tarihi için alınmamış.");
+        }
+
+        if (!string.Equals(money.Operation, MoneyOperation, StringComparison.Ordinal))
+        {
+            throw new SalesRuleException(SalesRuleCodes.SnapshotOperationMismatch,
+                "Para profili taslağın operasyonu için değil başka bir operasyon için alınmış.");
         }
 
         return new SalesOrderDraft(id, companyId, documentNo, header, money, now);

@@ -27,8 +27,9 @@ public sealed class SalesOrderDraftTests
 
     private static SalesDraftHeader Header() => new(Party, Account, Currency, Day);
 
-    private static MoneyProfileSnapshot Money(Guid? company = null, DateOnly? effectiveOn = null) =>
-        new(company ?? Company, Currency, Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"), "3", effectiveOn ?? Day);
+    private static MoneyProfileSnapshot Money(Guid? company = null, DateOnly? effectiveOn = null, string? operation = null) =>
+        new(company ?? Company, Currency, operation ?? SalesOrderDraft.MoneyOperation,
+            Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"), "3", effectiveOn ?? Day);
 
     private static readonly DateOnly From = new(2026, 9, 1);
 
@@ -65,7 +66,7 @@ public sealed class SalesOrderDraftTests
         Assert.Equal((SalesDraftKind.Order, SalesDraftState.Draft, 0, 1L), (draft.Kind, draft.State, draft.Revision, draft.Version));
         Assert.Equal((Company, Party, Account, Currency, Day), (draft.CompanyId, draft.Header.PartyId, draft.Header.CompanyAccountId, draft.Header.CurrencyId, draft.Header.BusinessDate));
         Assert.Equal("SO-2026-000001", draft.DocumentNo);
-        Assert.Equal(Currency, draft.Money.CurrencyId);
+        Assert.Equal((Currency, SalesOrderDraft.MoneyOperation), (draft.Money.CurrencyId, draft.Money.Operation));
         Assert.Empty(draft.Lines);
         Assert.Equal(T0.ToUniversalTime(), draft.CreatedAtUtc);
         Assert.Equal(SalesRuleCodes.DraftWithoutLines, CodeOf(draft.RequireStorable));
@@ -85,6 +86,10 @@ public sealed class SalesOrderDraftTests
         // The money profile is the business date's (ÜRÜN #306 P3-2): another date is another answer.
         Assert.Equal(SalesRuleCodes.SnapshotDateMismatch,
             CodeOf(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header(), Money(effectiveOn: Day.AddDays(1)), T0)));
+        // The money profile is the Sales draft operation's answer (Business #254 5654539215; Finance pattern).
+        Assert.Equal("sales.order-draft.v1", SalesOrderDraft.MoneyOperation);
+        Assert.Equal(SalesRuleCodes.SnapshotOperationMismatch,
+            CodeOf(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header(), Money(operation: "finance.manual-bank-receipt.v1"), T0)));
         Assert.Equal(SalesRuleCodes.NoteTooLong,
             CodeOf(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header() with { Note = new string('x', 4001) }, Money(), T0)));
     }

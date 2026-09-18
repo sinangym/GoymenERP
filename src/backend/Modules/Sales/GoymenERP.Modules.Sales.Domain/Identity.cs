@@ -48,8 +48,11 @@ public static class SalesRuleCodes
     /// <summary>A snapshot names another company than the draft's (server-resolved) company.</summary>
     public const string SnapshotCompanyMismatch = "sales_snapshot_company_mismatch";
 
-    /// <summary>The product snapshot was taken for another date than the draft's business date.</summary>
+    /// <summary>The product or money snapshot was taken for another date than the draft's business date.</summary>
     public const string SnapshotDateMismatch = "sales_snapshot_date_mismatch";
+
+    /// <summary>The money snapshot was answered for another operation than the sales draft's (<c>sales.order-draft.v1</c>).</summary>
+    public const string SnapshotOperationMismatch = "sales_snapshot_operation_mismatch";
 
     /// <summary>The selected order unit is not the unit the Product owner's snapshot binds as the order unit.</summary>
     public const string ProductUnitMismatch = "sales_product_unit_mismatch";

@@ -48,14 +48,14 @@ public sealed record UnitProfileSnapshot(
     DateOnly? EffectiveThrough);
 
 /// <summary>
-/// The Settings owner's money profile for the draft's currency on the business date. Mandatory
-/// even for an unpriced draft (#257); <see cref="EffectiveOn"/> must be the business date. Today
-/// the approved provider answers Unavailable for money, so no real draft can carry one; a draft
-/// without it is never stored. No scale or rounding is chosen here (T28). The Sales money
-/// operation identifier the port needs is not decided (#66 5731075396) and is not part of this
-/// snapshot (dependency_wait).
+/// The Settings owner's money profile for the draft's currency on the business date, as answered
+/// for the Sales operation <see cref="SalesOrderDraft.MoneyOperation"/>. Mandatory even for an
+/// unpriced draft (#257); <see cref="EffectiveOn"/> must be the business date and
+/// <see cref="Operation"/> must be the Sales draft operation — an answer for another operation is
+/// another answer. Today the approved provider answers Unavailable for money, so no real draft can
+/// carry one; a draft without it is never stored. No scale or rounding is chosen here (T28).
 /// </summary>
-public sealed record MoneyProfileSnapshot(Guid CompanyId, Guid CurrencyId, Guid ProfileId, string ProfileVersion, DateOnly EffectiveOn);
+public sealed record MoneyProfileSnapshot(Guid CompanyId, Guid CurrencyId, string Operation, Guid ProfileId, string ProfileVersion, DateOnly EffectiveOn);
 
 /// <summary>
 /// A nullable owner reference the client supplied (delivery address, contact, responsible,
