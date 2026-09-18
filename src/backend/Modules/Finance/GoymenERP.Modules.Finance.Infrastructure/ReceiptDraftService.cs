@@ -42,13 +42,14 @@ public sealed record FinanceAuditEnvelope(
 /// the reviewed ports and validated by <see cref="PreparationValidator"/>. Each owner that is
 /// unavailable fails closed with its own code; on main today every save is refused with
 /// <c>bank_account_unavailable</c> or <c>settings_provider_unavailable</c>.</item>
-/// <item><b>Idempotency:</b> (company, actor, key) with the canonical payload hash. The same key and
-/// payload answers the stored result as a replay; another payload is an idempotency conflict.</item>
+/// <item><b>Idempotency (ADR-011):</b> (company, command, key hash) with the actor and the canonical
+/// payload hash. The same key, payload and actor answers the stored result as a replay with its first
+/// correlation; another payload or actor is an idempotency conflict.</item>
 /// <item><b>Concurrency:</b> <c>expectedVersion</c> against the stored version; a stale one changes
 /// nothing. One save covers the draft, the command record and the audit event.</item>
 /// </list>
-/// Record, Reverse and List are not part of this slice and answer <see cref="CommandOutcome.Unavailable"/>
-/// or <see cref="ReadOutcome.Unavailable"/>.
+/// List (FIN-T04b) pages the company's drafts newest first under <c>ReadSources</c>. Record and
+/// Reverse are not part of this slice and answer <see cref="CommandOutcome.Unavailable"/>.
 /// </summary>
 public sealed class ReceiptDraftService(
     FinanceDbContext dbContext,
@@ -68,6 +69,7 @@ public sealed class ReceiptDraftService(
     private const int IdentityMaximumLength = 128;
     private const int BankReferenceMaximumLength = 128;
     private const int DescriptionMaximumLength = 1000;
+    internal const int ListPageSize = 50;
 
     private static readonly JsonSerializerOptions Json = FinanceJson.CreateOptions();
 
@@ -100,11 +102,15 @@ public sealed class ReceiptDraftService(
         }
 
         var payloadHash = PayloadHash(request);
+        var keyHash = FinanceCommandKeys.Hash(key);
         var prior = await dbContext.Commands.AsNoTracking()
-            .SingleOrDefaultAsync(row => row.ActorId == context.ActorId && row.IdempotencyKey == key, cancellationToken);
+            .SingleOrDefaultAsync(row => row.CommandName == SaveDraftCommand && row.IdempotencyKeyHash == keyHash,
+                cancellationToken);
         if (prior is not null)
         {
-            return prior.CommandName == SaveDraftCommand && prior.PayloadHash == payloadHash
+            // ADR-011 §3: another payload or another actor under the same key is a conflict, and the
+            // earlier result is not disclosed.
+            return prior.PayloadHash == payloadHash && string.Equals(prior.ActorId, context.ActorId, StringComparison.Ordinal)
                 ? await ReplayAsync(context, prior, cancellationToken)
                 : Refused(context, CommandOutcome.IdempotencyConflict);
         }
@@ -196,9 +202,14 @@ public sealed class ReceiptDraftService(
                 return fenced;
             }
 
-            return exception.Code == "settings_access_denied"
-                ? Refused(context, CommandOutcome.Denied)
-                : Refused(context, CommandOutcome.Unavailable, Issue("profile", exception.Code));
+            return exception.Code switch
+            {
+                "settings_access_denied" => Refused(context, CommandOutcome.Denied),
+                // The chosen currency has no approved profile: an answer about the request, not an outage.
+                SettingsPrerequisiteCodesV1.MoneyProfileNotFound =>
+                    Refused(context, CommandOutcome.ValidationFailed, Issue("money.currencyId", exception.Code)),
+                _ => Refused(context, CommandOutcome.Unavailable, Issue("profile", exception.Code)),
+            };
         }
 
         if (await FenceAsync(context, FinanceAction.SaveDraft, request.DraftId, cancellationToken) is { } afterSettings)
@@ -239,9 +250,9 @@ public sealed class ReceiptDraftService(
         dbContext.Commands.Add(new FinanceCommandRow
         {
             CompanyId = context.CompanyId,
-            ActorId = context.ActorId,
-            IdempotencyKey = key,
             CommandName = SaveDraftCommand,
+            IdempotencyKeyHash = keyHash,
+            ActorId = context.ActorId,
             PayloadHash = payloadHash,
             DraftId = row.Id,
             ResultJson = JsonSerializer.Serialize(result, Json),
@@ -298,13 +309,58 @@ public sealed class ReceiptDraftService(
             : new ReadResult<SourceDetail>(ReadOutcome.Found, Detail(row, Disclosure(amount)));
     }
 
-    public Task<ReadResult<SourcePage>> ListAuthorizedAsync(FinanceContext context, SourceListRequest request,
+    /// <summary>
+    /// The company's drafts, newest created first (<c>CreatedAtUtc desc, Id desc</c>): an edit never
+    /// moves a draft between pages. The cursor is opaque and bound to the company and the ordering; a
+    /// malformed or foreign cursor reads nothing. The page size is a fixed technical constant, not a
+    /// policy. The amount is disclosed only with a fresh <c>ReadAmount</c>, as in the detail.
+    /// </summary>
+    public async Task<ReadResult<SourcePage>> ListAuthorizedAsync(FinanceContext context, SourceListRequest request,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
-        // The draft list is not part of this slice.
-        return Task.FromResult(new ReadResult<SourcePage>(SameContext(context) ? ReadOutcome.Unavailable : ReadOutcome.Denied, null));
+        if (!SameContext(context))
+        {
+            return new ReadResult<SourcePage>(ReadOutcome.Denied, null);
+        }
+
+        var read = await permissions.CheckAsync(context, FinanceAction.ReadSources, null, cancellationToken);
+        if (read != PermissionDecision.Allowed || !SameContext(context))
+        {
+            return new ReadResult<SourcePage>(read == PermissionDecision.Unavailable ? ReadOutcome.Unavailable : ReadOutcome.Denied, null);
+        }
+
+        var query = dbContext.ReceiptDrafts.AsNoTracking();
+        if (request.Cursor is not null)
+        {
+            if (DraftListCursor.Decode(request.Cursor, context.CompanyId) is not { } after)
+            {
+                return new ReadResult<SourcePage>(ReadOutcome.NotFound, null);
+            }
+
+            query = query.Where(row => row.CreatedAtUtc < after.CreatedAtUtc
+                || (row.CreatedAtUtc == after.CreatedAtUtc && row.Id.CompareTo(after.Id) < 0));
+        }
+
+        var rows = await query
+            .OrderByDescending(row => row.CreatedAtUtc).ThenByDescending(row => row.Id)
+            .Take(ListPageSize + 1)
+            .ToListAsync(cancellationToken);
+        var amount = await permissions.CheckAsync(context, FinanceAction.ReadAmount, null, cancellationToken);
+        var again = await permissions.CheckAsync(context, FinanceAction.ReadSources, null, cancellationToken);
+        if (again != PermissionDecision.Allowed || !SameContext(context))
+        {
+            return new ReadResult<SourcePage>(again == PermissionDecision.Unavailable ? ReadOutcome.Unavailable : ReadOutcome.Denied, null);
+        }
+
+        var page = rows.Take(ListPageSize).ToList();
+        var next = rows.Count > ListPageSize
+            ? DraftListCursor.Encode(context.CompanyId, page[^1].CreatedAtUtc, page[^1].Id)
+            : null;
+        return new ReadResult<SourcePage>(ReadOutcome.Found,
+            new SourcePage(context.CompanyId, [.. page.Select(row => Detail(row, Disclosure(amount)).Source)], next));
     }
 
     public Task<CommandResult> RecordAsync(FinanceContext context, CommandMetadata metadata, RecordRequest request,

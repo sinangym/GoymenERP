@@ -1,0 +1,89 @@
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Finance.Contracts;
+
+namespace GoymenERP.Modules.Finance.Infrastructure;
+
+/// <summary>
+/// The real <see cref="IFinancePermissionPort"/> (FIN-T04b): every check is a FRESH measurement
+/// through <see cref="IErpAuthorityRevalidationService"/> (#276), so a grant revoked while a request
+/// is in flight is seen at the services' next fence, replay included.
+/// <list type="bullet">
+/// <item><b>Allowed</b> only for the server-resolved company and actor of the request, a granted and
+/// company-wide scope (the names are CompanyWideOnly: Finance records have no site dimension).</item>
+/// <item><b>Denied</b> when the grant is missing or narrower, or the context is not the request's.</item>
+/// <item><b>Unavailable</b> when the action has no name (Record, Reverse: OPEN-009) or the name is not
+/// yet registered centrally: an unmapped action is not reported as a refusal.</item>
+/// </list>
+/// The role codes of each action's latest allowed measurement are kept for the ADR-009 audit
+/// envelope (<see cref="RoleCodesOf"/>): a save is audited with the roles that granted the save.
+/// </summary>
+public sealed class FinancePermissionPort(
+    IErpAuthorityRevalidationService authority,
+    ICompanyContext companyContext,
+    ICurrentUser currentUser) : IFinancePermissionPort
+{
+    private readonly Dictionary<FinanceAction, IReadOnlyCollection<string>> _roleCodes =
+        new Dictionary<FinanceAction, IReadOnlyCollection<string>>();
+
+    /// <summary>
+    /// A live view of the role codes behind the latest allowed decision for <paramref name="action"/>
+    /// in this request; empty until one is allowed. Read when the audit event is written, after the
+    /// services' fences.
+    /// </summary>
+    public IReadOnlyCollection<string> RoleCodesOf(FinanceAction action) => new RoleCodesView(this, action);
+
+    public static string? NameOf(FinanceAction action) => action switch
+    {
+        FinanceAction.SaveDraft => FinancePermissionNames.DraftSave,
+        FinanceAction.ReadSources => FinancePermissionNames.DraftRead,
+        FinanceAction.ReadAmount => FinancePermissionNames.AmountRead,
+        FinanceAction.ReadBankAccounts => ErpPermissions.FinanceBankAccountRead,
+        FinanceAction.ProposeBankAccount => ErpPermissions.FinanceBankAccountPropose,
+        FinanceAction.ApproveBankAccount => ErpPermissions.FinanceBankAccountApprove,
+        _ => null,
+    };
+
+    public async Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction action, Guid? sourceId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!IsRequestContext(context))
+        {
+            return PermissionDecision.Denied;
+        }
+
+        if (NameOf(action) is not { } name || !ErpPermissions.IsKnown(name))
+        {
+            return PermissionDecision.Unavailable;
+        }
+
+        var scope = await authority.RevalidatePermissionScopeAsync(name, context.CompanyId, cancellationToken);
+        if (!scope.IsGranted || !scope.IsCompanyWide || !IsRequestContext(context))
+        {
+            return PermissionDecision.Denied;
+        }
+
+        _roleCodes[action] = [.. scope.RoleCodes.Order(StringComparer.Ordinal)];
+        return PermissionDecision.Allowed;
+    }
+
+    private IReadOnlyCollection<string> Current(FinanceAction action) =>
+        _roleCodes.TryGetValue(action, out var codes) ? codes : [];
+
+    private sealed class RoleCodesView(FinancePermissionPort port, FinanceAction action) : IReadOnlyCollection<string>
+    {
+        public int Count => port.Current(action).Count;
+
+        public IEnumerator<string> GetEnumerator() => port.Current(action).GetEnumerator();
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    private bool IsRequestContext(FinanceContext context) =>
+        currentUser.IsAuthenticated && !string.IsNullOrWhiteSpace(currentUser.UserId)
+        && string.Equals(currentUser.UserId, context.ActorId, StringComparison.Ordinal)
+        && companyContext.IsResolved && companyContext.CompanyId != Guid.Empty
+        && companyContext.CompanyId == context.CompanyId && currentUser.CanAccessCompany(context.CompanyId);
+}
