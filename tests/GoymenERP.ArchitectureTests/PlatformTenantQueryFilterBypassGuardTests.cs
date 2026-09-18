@@ -41,13 +41,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "OpenApiDocumentGenerationMode.cs";
     private const string OpenApiStartupPath =
         "src/backend/GoymenERP.Api/Program.cs";
-    // Re-fingerprinted for SALES-API (#321) on top of FIN-T04b (#320), T02-b, T07(a) and MFG-API:
-    // AddSalesModule with the audit interceptor, the Cari account port, the Sales reference bindings
-    // (sales.drafts.create), the staged Sales shell provider registered before the shell authority is
-    // chosen, and InitializeSalesModuleAsync after Organization (after Finance's initializer). No
-    // OpenAPI-generation, network or hosted-service surface of the startup source changed otherwise.
+    // Re-fingerprinted for MFG-UI (#323) on top of BROWSER-CI a2 part 2 (#330) and SALES-API (#321): the
+    // staged Manufacturing shell provider registered before the shell authority is chosen (C+O+P+S+M
+    // row), beside #330's one call to C01E2eFixtureWriterActivation.Configure. No OpenAPI-generation,
+    // network or hosted-service surface of the startup source changed otherwise.
     private const string ReviewedOpenApiStartupFingerprint =
-        "47a9d002c2b93b0dd0f6210e0948b0dbd710844c602ec9d4018735ce1f814dd6";
+        "120fc394a972dd830e6a6cd73090953a28b6944fad75f85c96be7c1d611339bf";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -88,18 +87,67 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.cs";
     private const string SqlServerRcsiVerifierPath =
         "tools/verify_rcsi_relational_acceptance.py";
-    // Re-fingerprinted for SALES-API (#321) on top of FIN-T04b (#320)'s 142 / 149: four
-    // SalesDraftApiSqlServerRelationalAcceptanceTests names, discovery 142 -> 146, execution 149 -> 153.
-    // Logic unchanged.
+    // Re-fingerprinted for the per-module relational inventory: the broad test list moved out of the
+    // verifier into tools/relational_inventory/<module>.txt (pinned below, one entry per file); the
+    // verifier loads it fail-closed, checks every test's executions in the TRX and prints one line per
+    // module. Same 142 tests and 149 executions as before the move.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "f40212efb5ccf9687d1ee9967bc5b9aba8c7c549ae9c755c31878cbfea7912d4";
+        "d45b3b41a7c0866c1af09b47ea650b31bf4b7e7d302a970abe55a24e06e74696";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
-    // Re-fingerprinted for the same inventory change: updated counts plus one case pinning the
-    // new class as mandatory.
+    // Re-fingerprinted for the per-module inventory: count literals replaced by totals computed from
+    // the files, every listed test mandatory, loader and TRX rules tested, the synthetic run's verdict
+    // captured instead of printed.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "46142b15f8959cc6ffb42c57919ead3938f5a493080f1735a7cb612742a25b11";
+        "81c461dee227fb62a3492815e9f8ddff484d725095b0bbbf768b3a555a4ef13e";
+    // The broad relational inventory, one file per module (see RelationalInventoryDirectory). Each
+    // pin is its own paragraph so that two modules re-pinning their own files change lines that are
+    // not adjacent and combine cleanly; a file's owner is its module, the pin line is central.
+    private const string RelationalInventoryDirectory = "tools/relational_inventory";
+    private static readonly IReadOnlyDictionary<string, string> ReviewedRelationalInventoryFingerprints =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            // accounting
+            ["tools/relational_inventory/accounting.txt"] =
+                "40a5b2b8bf7fb86a46df139cdca781a247347e56776fa338313eed43632cd853",
+
+            // counterparty
+            ["tools/relational_inventory/counterparty.txt"] =
+                "d48699c522a9e01c908834bacc8f6cb3778bd910cae257dc5addffd6ae55b229",
+
+            // finance
+            ["tools/relational_inventory/finance.txt"] =
+                "2525b22da7dcacbb60e1622e572c9626c660f1a3dadeab9c1031a70ab3aa283b",
+
+            // identity
+            ["tools/relational_inventory/identity.txt"] =
+                "b159330c2eeb6da40a314137d478fcd7251cd5937732d2557817bd1440a6c6b9",
+
+            // inventory
+            ["tools/relational_inventory/inventory.txt"] =
+                "5366c3a510d9faf2e38c84e587b5b154e89b1dfa31b6eba8e5dd33254b0cebab",
+
+            // manufacturing
+            ["tools/relational_inventory/manufacturing.txt"] =
+                "117270f5953021654cdbdc2986ad353582c9d4060a5cd3766a1a8bf699ea8cf3",
+
+            // organization
+            ["tools/relational_inventory/organization.txt"] =
+                "5e7213ff8c4fc1550084614a5b80f26c4bc5ef73c8fafbed7495877ed26b0249",
+
+            // platform
+            ["tools/relational_inventory/platform.txt"] =
+                "8d107cb289f91aa97a6c84889d51dcc31c5826cc12f1fe136a13d35e4ce4ec26",
+
+            // product
+            ["tools/relational_inventory/product.txt"] =
+                "f6b814f1b5cb5c7dbbef5dc074ff3cb74ebf48242a1c5cbe22e06a39e8796c2c",
+
+            // sales
+            ["tools/relational_inventory/sales.txt"] =
+                "eef61202ef711d6a90f70fc7a6d2ff847b72a1e16911797c11db717c480997cc",
+        };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "91a665e6e8982e5a9b66f5d16a14d9fc4d7f98d63775de959a8cc6b2dea2b018";
@@ -1394,6 +1442,22 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         Assert.NotEqual(
             ReviewedSqlServerRcsiVerifierFingerprint,
             ComputeReviewedSourceFingerprint(verifierSource + "\n# discovery bypass"));
+        var relationalInventoryEntries = Directory.GetFileSystemEntries(Path.Combine(
+                repositoryRoot,
+                RelationalInventoryDirectory.Replace('/', Path.DirectorySeparatorChar)))
+            .Select(entry => RelationalInventoryDirectory + "/" + Path.GetFileName(entry))
+            .Order(StringComparer.Ordinal);
+        Assert.Equal(
+            ReviewedRelationalInventoryFingerprints.Keys.Order(StringComparer.Ordinal),
+            relationalInventoryEntries);
+        foreach (var (inventoryPath, inventoryFingerprint) in ReviewedRelationalInventoryFingerprints)
+        {
+            Assert.Equal(
+                (inventoryPath, inventoryFingerprint),
+                (inventoryPath, ComputeReviewedSourceFingerprint(File.ReadAllText(Path.Combine(
+                    repositoryRoot,
+                    inventoryPath.Replace('/', Path.DirectorySeparatorChar))))));
+        }
         Assert.Equal(
             ReviewedSqlServerRcsiToolTestsProjectFingerprint,
             ComputeReviewedSourceFingerprint(toolTestsProjectSource));

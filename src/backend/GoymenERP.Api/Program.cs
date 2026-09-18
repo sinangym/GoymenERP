@@ -20,6 +20,7 @@ using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Idempotency.Infrastructure;
 using GoymenERP.Modules.Inventory.Infrastructure;
 using GoymenERP.Modules.Manufacturing.Infrastructure;
+using GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 using GoymenERP.Modules.Organization.Infrastructure;
 using GoymenERP.Modules.Identity.Infrastructure;
 using GoymenERP.Modules.Product.Application.Contracts;
@@ -146,7 +147,15 @@ builder.Services.AddSalesModule(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
 // Registered before the shell authority is chosen: the module table maps the provider set.
 builder.Services.AddSingleton<IShellCapabilityProvider, SalesShellCapabilityProvider>();
+// MFG-UI (#323): Manufacturing's (staged) order detail and facts control, before the authority is chosen.
+builder.Services.AddSingleton<IShellCapabilityProvider, ManufacturingShellCapabilityProvider>();
 var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
+    builder.Services,
+    builder.Environment,
+    builder.Configuration);
+// BROWSER-CI a2 part 2: the gated fixture writers exist only inside the browser-suite fixture runner's
+// in-process host (Testing + its exact run binding); nowhere else are they registered.
+C01E2eFixtureWriterActivation.Configure(
     builder.Services,
     builder.Environment,
     builder.Configuration);

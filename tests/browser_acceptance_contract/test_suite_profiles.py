@@ -31,15 +31,15 @@ def model(profile):
     result = browser._relabel(c01_tests.valid_compose(), browser.CANONICAL_SUITE_LABEL,
                               browser.PROFILE_SUITE_LABELS[profile])
     environment = result["services"]["api"]["environment"]
-    if profile == "cari-staged":
-        environment[browser.CARI_STAGED_PROFILE_KEY] = browser.CARI_STAGED_PROFILE_VALUE
+    if profile in browser.STAGED_PROFILE_VALUES:
+        environment[browser.CARI_STAGED_PROFILE_KEY] = browser.STAGED_PROFILE_VALUES[profile]
     elif profile == "normal":
         for key in ENVELOPE:
             del environment[key]
     return result
 
 
-SUITE_FOR = {"c01-list-only": "smoke", "cari-staged": "c03", "normal": "org03"}
+SUITE_FOR = {"c01-list-only": "smoke", "cari-staged": "c03", "normal": "org03", "mfg-staged": "mfg"}
 
 
 class ProfileRegistryTests(unittest.TestCase):
@@ -64,7 +64,7 @@ class ProfileRegistryTests(unittest.TestCase):
         with contextlib.redirect_stdout(out):
             self.assertEqual(0, browser.main(["profile", "--suite", "c03"]))
         self.assertEqual("profile=cari-staged\ncompose_file=infra/docker-compose.browser-cari-staged.yml\n"
-                         "override_file=\n", out.getvalue())
+                         "override_file=\nfixture=false\n", out.getvalue())
 
 
 class ComposeFileDerivationTests(unittest.TestCase):
@@ -94,6 +94,31 @@ class ComposeFileDerivationTests(unittest.TestCase):
             anchor, anchor + f"      {browser.CARI_STAGED_PROFILE_KEY}: {browser.CARI_STAGED_PROFILE_VALUE}\n"
         ).replace(browser.CANONICAL_SUITE_LABEL, browser.PROFILE_SUITE_LABELS["cari-staged"])
         self.assertEqual(expected, staged)
+
+    def test_mfg_staged_is_the_canonical_file_plus_its_profile_line(self):
+        # MFG-UI D4 (#323): the same two transforms, with the manufacturing-order-detail profile.
+        staged = self._body((ROOT / browser.PROFILE_COMPOSE_FILES["mfg-staged"]).read_text(encoding="utf-8"))
+        anchor = '      C01E2e__EnableListCapability: "true"\n'
+        expected = self.canonical.replace(
+            anchor, anchor + f"      {browser.CARI_STAGED_PROFILE_KEY}: {browser.STAGED_PROFILE_VALUES['mfg-staged']}\n"
+        ).replace(browser.CANONICAL_SUITE_LABEL, browser.PROFILE_SUITE_LABELS["mfg-staged"])
+        self.assertEqual(expected, staged)
+
+    def test_each_staged_profile_value_is_an_activation_profile(self):
+        activation = (ROOT / "src/backend/GoymenERP.Api/Shell/C01E2eShellCapabilityActivation.cs").read_text(
+            encoding="utf-8")
+        for profile, value in browser.STAGED_PROFILE_VALUES.items():
+            with self.subTest(profile=profile):
+                self.assertIn(f'Profile = "{value}";', activation)
+
+    def test_a_staged_profile_refuses_the_other_profile_value(self):
+        for profile, suite, wrong in (("mfg-staged", "mfg", "cari-list-detail"),
+                                      ("cari-staged", "c03", "manufacturing-order-detail")):
+            with self.subTest(profile=profile):
+                wrong_model = model(profile)
+                wrong_model["services"]["api"]["environment"][browser.CARI_STAGED_PROFILE_KEY] = wrong
+                with self.assertRaises(browser.ContractError):
+                    browser.validate_suite_compose(wrong_model, suite, COMMIT, PROJECT)
 
 
 class SuiteComposeContractTests(unittest.TestCase):
@@ -246,6 +271,23 @@ class SuiteExtensionTests(unittest.TestCase):
             with self.subTest(message=message):
                 with self.assertRaisesRegex(browser.ContractError, message):
                     browser.validate_suite_compose(extended("org03", extra), "org03", COMMIT, PROJECT)
+
+    def test_a_zero_padded_actor_index_is_refused(self):
+        # .NET binds Users__02 and Users__2 as different list items (#322 ORG P3).
+        for index in ("02", "002", "03"):
+            with self.subTest(index=index):
+                extra = dict(actors("org03", 1))
+                extra[f"BootstrapIdentity__Users__{index}__UserId"] = "org03-padded"
+                extra[f"BootstrapIdentity__Users__{index}__DisplayName"] = "SENTETIK padded"
+                with self.assertRaisesRegex(browser.ContractError, "key set is not exact"):
+                    browser.validate_suite_compose(extended("org03", extra), "org03", COMMIT, PROJECT)
+
+    def test_issuer_ids_must_carry_an_rfc_4122_version_and_variant(self):
+        for value in ("5d0f7c2a-4b9e-0a53-8a2e-6c1d2f3a4b01", "5d0f7c2a-4b9e-4a53-ca2e-6c1d2f3a4b01"):
+            with self.subTest(value=value):
+                extra = dict(ISSUER, ProductRuntime__IssuerLocalUserId=value)
+                with self.assertRaisesRegex(browser.ContractError, "GUID"):
+                    browser.validate_suite_compose(extended("u02", extra), "u02", COMMIT, PROJECT)
 
     def test_the_canonical_two_actors_cannot_be_replaced_through_an_override(self):
         broken = extended("org03", {"BootstrapIdentity__Users__0__UserId": "org03-admin"})

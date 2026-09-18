@@ -21,6 +21,8 @@ class AllowlistTests(unittest.TestCase):
                     (
                         f"browser-{suite}-junit.xml",
                         "browser-fixture-evidence.json",
+                        "browser-suite-fixture-evidence.json",
+                        "browser-suite-seed.json",
                         "browser-post-browser-sql-evidence.json",
                         "container-logs/compose-ps.txt",
                     ),
