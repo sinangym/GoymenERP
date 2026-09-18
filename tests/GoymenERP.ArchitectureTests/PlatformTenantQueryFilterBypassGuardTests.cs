@@ -131,7 +131,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "2d07e8ba558e13bfc98fb09a3421c1c608333f0c9a888010eb274c5d0d1588e3",
+                "17483ebb8027bf2b22d4ffa6d2649e928b427d70437db9f2c475dbf569c93dfe",
             // MFG-5 (#303): company-scoped like Organization; every tenant row and AuditEvent carries the
             // CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/"
