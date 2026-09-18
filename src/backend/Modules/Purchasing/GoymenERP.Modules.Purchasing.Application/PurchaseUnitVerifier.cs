@@ -4,8 +4,14 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Purchasing.Application;
 
-/// <summary>A line unit verified against the Settings profile, with the exact quantity in that unit.</summary>
-public sealed record VerifiedPurchaseUnit(Guid UnitId, string UnitCode, Guid ProfileId, string ProfileVersion, int Scale, Quantity Quantity);
+/// <summary>
+/// A line unit verified against the Settings profile, with the exact quantity in that unit.
+/// <see cref="ProfileScale"/> is the owner's raw scale; <see cref="Scale"/> is the scale actually
+/// applied to the quantity, min(profile, Ö2's 3), so a consumer offering an input limit uses the
+/// one the domain will accept (ÜRÜN #288 P3-2).
+/// </summary>
+public sealed record VerifiedPurchaseUnit(Guid UnitId, string UnitCode, Guid ProfileId, string ProfileVersion,
+    int ProfileScale, int Scale, Quantity Quantity);
 
 /// <summary>
 /// Either a verified unit or a stable refusal code. A refusal is never an empty selection or a
@@ -20,12 +26,13 @@ public sealed record PurchaseUnitVerification(VerifiedPurchaseUnit? Unit, string
     internal static PurchaseUnitVerification Refused(string code) => new(null, code);
 }
 
-/// <summary>The refusal codes this verifier adds on top of the Settings owner's own codes.</summary>
+/// <summary>
+/// The refusal codes this verifier adds on top of the Settings owner's own codes. The owner's
+/// "no profile" code is <see cref="SettingsPrerequisiteCodesV1.UnitProfileNotFound"/> (Contracts.V1,
+/// #287); it is passed through, never copied here.
+/// </summary>
 public static class PurchaseUnitCodes
 {
-    /// <summary>The Settings owner reports a unit its source has no profile for with this code (port error <c>Code</c>).</summary>
-    public const string SettingsUnitProfileNotFound = "settings_unit_profile_not_found";
-
     public const string ReferenceMissing = "purchasing_unit_reference_missing";
     public const string UnitCompanyMismatch = "purchasing_unit_company_mismatch";
     public const string UnitProfileInvalid = "purchasing_unit_profile_invalid";
@@ -41,8 +48,8 @@ public static class PurchaseUnitCodes
 /// <list type="bullet">
 /// <item>Fail-closed: every <see cref="SettingsPrerequisiteException"/> becomes a refusal with the
 /// owner's code kept verbatim (<c>settings_access_denied</c>, <c>settings_provider_unavailable</c>,
-/// <c>settings_unit_profile_not_found</c>, <c>settings_profile_invalid</c>), so a consumer can
-/// still tell "denied" from "unavailable" from "no profile".</item>
+/// <see cref="SettingsPrerequisiteCodesV1.UnitProfileNotFound"/>, <c>settings_profile_invalid</c>), so a
+/// consumer can still tell "denied" from "unavailable" from "no profile".</item>
 /// <item>The profile must belong to the SERVER-resolved company the caller passes, name the
 /// requested unit, be internally valid, and be active on the effective date.</item>
 /// <item>Only kilogram profiles are approved today (Settings README, Ö1). A profile of another
@@ -106,13 +113,14 @@ public sealed class PurchaseUnitVerifier(ISettingsPrerequisiteProvider settings)
             return PurchaseUnitVerification.Refused(PurchaseUnitCodes.UnitUnsupported);
         }
 
-        if (Quantity.SignificantDecimals(quantity) > Math.Min(profile.Scale, Quantity.KilogramScale))
+        var appliedScale = Math.Min(profile.Scale, Quantity.KilogramScale);
+        if (Quantity.SignificantDecimals(quantity) > appliedScale)
         {
             return PurchaseUnitVerification.Refused(PurchaseUnitCodes.QuantityScaleExceeded);
         }
 
         return PurchaseUnitVerification.Verified(new VerifiedPurchaseUnit(unitId, profile.UnitCode,
             profile.Profile.ProfileId, profile.Profile.Version.ToString(CultureInfo.InvariantCulture), profile.Scale,
-            Quantity.Positive(quantity, QuantityUnit.Kilogram)));
+            appliedScale, Quantity.Positive(quantity, QuantityUnit.Kilogram)));
     }
 }
