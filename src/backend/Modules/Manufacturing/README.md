@@ -1,4 +1,4 @@
-# Manufacturing (MFG-1 + MFG-2 — first independent slices of T15, Dilme/Sarım)
+# Manufacturing (MFG-1 … MFG-5 — independent slices of T15, Dilme/Sarım)
 
 Source of truth: #275 plan v2 §7.3, §13, R3, R6 and `SINAN_KARARLARI_2026-09-18_O1_O8_VE_SON_ASAMA.md` (Ö2, Ö7), read at exact head `a5b8143b`; coordinator decisions of 2026-09-18; the approved GDC kg unit profile (#279, #284) and `Settings.Application.Contracts.V1` for mass verification.
 
@@ -36,6 +36,29 @@ Source of truth: #275 plan v2 §7.3, §13, R3, R6 and `SINAN_KARARLARI_2026-09-1
   - a negative mass is refused (`manufacturing_mass_negative`); a zero mass is a valid reading (WIP), and whether a fact needs a positive mass stays the order's rule;
   - the result carries the profile snapshot the port asks consumers to keep with what they record: unit, profile id, profile version as invariant text (the Purchasing/Logistics shape, SİPARİŞ #292 P3-b), the owner's raw `ProfileScale` and the applied `Scale` = min(profile, 3) — the one a consumer may offer for input or display (ÜRÜN #292 P3-1, PUR-3's shape). It authorizes nothing and is not a production policy.
 
+## MFG-5 — persistence (`GoymenERP.Modules.Manufacturing.Infrastructure`)
+
+Pattern: INV-2 (#293) and ADR-002/009/011. Tables in the `manufacturing` schema: `Plans`, `PlanInputs`, `Orders`, `OrderInputs`, `Facts`.
+
+| Rule | Where | Held by |
+|---|---|---|
+| Every row is a tenant row: global filter on the server-resolved company; a row of another company, a company change or a write without a company is refused | `ManufacturingDbContext` | EF filter + write guard |
+| A work center is referenced by (company, work center) against Organization's alternate key; a company by id; a plan/order row by (company, id) | `FK_*_WorkCenters_CompanyId_WorkCenterId`, `FK_*_Companies_CompanyId`, `FK_*_Plans_CompanyId_PlanId`, `FK_*_Orders_CompanyId_OrderId` | SQL (547) |
+| Plans and orders keep their content; only approval / close, the version and the update time change. Inputs and facts are append-only; nothing is deleted | `ManufacturingDbContext` | write guard |
+| The stored order is rebuilt through the domain: `ProductionPlan.Restore` / `ProductionOrder.Restore` replay the stored facts through the same methods, so a stored state the rules would refuse is refused (`manufacturing_stored_record_invalid`); close is judged on stored facts | domain | domain |
+| The plan / fact id is the idempotency identity: same id + same canonical content = replay with no second effect; other content = `manufacturing_plan_id_conflict` / `manufacturing_fact_id_conflict`; an order id with another plan = `manufacturing_order_id_conflict` | `ManufacturingStore` (`PayloadHash`: SHA-256 of invariant text, kg normalized so `5.00` and `5` are one content) | store + PK |
+| A fact id is one fact per company and kind, even for racing writers | `PK_Facts (CompanyId, Kind, Id)` | SQL (2627 → `manufacturing_concurrent_change`) |
+| Two writes that read the same order cannot both commit | `Version` (domain `expectedVersion`) + `RowVersion` | optimistic concurrency (`manufacturing_concurrent_change`) |
+| A fact, the order's version and its audit event commit together or not at all | one `SaveChanges` | SQL transaction |
+| Every write carries the ADR-009 envelope (actor, permission, roles, correlation, causation, idempotency key, channel) from the caller | `ManufacturingCommandMetadata` → Audit collector | same save |
+
+Deliberate limits of this slice:
+
+- **No HTTP, permission, host DI or UI.** `AddManufacturingModule`/`InitializeManufacturingModuleAsync` exist but the host does not call them; the permission code in the audit envelope is the caller's, and this module invents none.
+- **No Inventory integration (T15).** Parent rolls and outputs stay label identities without a foreign key; no stock moves.
+- **Cost** is stored as a status only; every output is `NotCalculated` and a stored known cost is refused.
+- The migration and model snapshot were written by hand (no local `dotnet ef`, memory gate closed); CI's `HasPendingModelChanges` check is the verification.
+
 ## Behaviour kept on purpose — Business decision pending
 
 - **One approved plan can open more than one order** (`FromApprovedPlan` does not mark the plan as converted). §7.3 does not say whether a plan becomes one order or several partial ones; the question is open with Business (#66 5728934213, the same principle as Purchasing's request → several orders). Pinned by a test; changes only by that decision. The physical guard is Inventory's.
@@ -44,7 +67,7 @@ Source of truth: #275 plan v2 §7.3, §13, R3, R6 and `SINAN_KARARLARI_2026-09-1
 
 - No stock movement, lot or label: Inventory owns those.
 - No formula, trim/kerf, tolerance, template, rounding stage or roll-substitution policy.
-- No persistence, HTTP, DI, permission, host or pin.
+- No HTTP, host DI, permission, UI or pin (persistence since MFG-5, above).
 - No other engine (cold rolling, tube/profile, painting, cut-to-length).
 
 ## dependency_wait
@@ -56,6 +79,5 @@ Source of truth: #275 plan v2 §7.3, §13, R3, R6 and `SINAN_KARARLARI_2026-09-1
   - **subcontract / customer-owned goods:** the output's owner and custodian are inherited from the parent roll's Inventory position; Manufacturing does not choose them (which is why it carries no owner).
 - **Command surface:** the verifier's refusal is mapped and its snapshot retained by the command handler that records a fact; nothing binds it to the domain methods yet.
 - **Ö7 profile**: approved tolerance/formula numbers and the "reason + single approval" exception path with a named approver. Until then every non-zero difference keeps the order open.
-- **Persistence**: DbContext/migration via the central writer, after Inventory's persistence (#293) and the allocation rule (T11). The domain's `Version` becomes the stored concurrency token there.
 - **Known cost**: its money shape (a currency identity, not a code string) comes with T25/Finance.
 - **Estimated facts**: every fact here is an actual measurement; R6's actual/estimated distinction arrives with the first estimated source.

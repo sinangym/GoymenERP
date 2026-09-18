@@ -51,6 +51,7 @@
   <Folder Name="/src/backend/Modules/Manufacturing/">
     <Project Path="src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Application/GoymenERP.Modules.Manufacturing.Application.csproj" />
     <Project Path="src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Domain/GoymenERP.Modules.Manufacturing.Domain.csproj" />
+    <Project Path="src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/GoymenERP.Modules.Manufacturing.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/src/backend/Modules/Organization/">
     <Project Path="src/backend/Modules/Organization/GoymenERP.Modules.Organization.Application/GoymenERP.Modules.Organization.Application.csproj" />

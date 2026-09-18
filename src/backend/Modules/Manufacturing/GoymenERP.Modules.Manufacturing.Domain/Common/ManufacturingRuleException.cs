@@ -34,6 +34,13 @@ public static class ManufacturingRuleCodes
 
     public const string UnexplainedDifference = "manufacturing_unexplained_difference";
 
+    /// <summary>
+    /// A stored plan or order does not rebuild under the rules that wrote it (MFG-5): a close trace
+    /// with only one of its two parts, a version that is not the one its facts add up to, or a
+    /// stored cost the domain cannot have produced. The record is refused, never repaired.
+    /// </summary>
+    public const string StoredRecordInvalid = "manufacturing_stored_record_invalid";
+
     /// <summary>Raised as <see cref="ManufacturingVersionConflictException"/>, not as a rule refusal.</summary>
     public const string VersionConflict = "manufacturing_version_conflict";
 }

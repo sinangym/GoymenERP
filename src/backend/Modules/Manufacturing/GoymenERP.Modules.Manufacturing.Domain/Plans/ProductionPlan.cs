@@ -79,6 +79,42 @@ public sealed class ProductionPlan
 
     public IReadOnlyList<PlannedInput> Inputs => _inputs.AsReadOnly();
 
+    /// <summary>
+    /// Rebuilds a stored plan (MFG-5). Every rule of a new plan holds again, and the approval is
+    /// replayed through <see cref="Approve"/>, so a stored plan that breaks a rule is refused, not
+    /// repaired. The stored version must be the one the plan's own changes add up to.
+    /// </summary>
+    public static ProductionPlan Restore(
+        Guid id,
+        Guid companyId,
+        Guid workCenterId,
+        ManufacturingProcess process,
+        IEnumerable<PlannedInput> inputs,
+        ProductionTarget? target,
+        Guid? approvedByUserId,
+        DateTimeOffset? approvedAtUtc,
+        long version)
+    {
+        var plan = new ProductionPlan(id, companyId, workCenterId, process, inputs, target);
+        if (approvedByUserId is { } approvedBy && approvedAtUtc is { } approvedAt)
+        {
+            plan.Approve(plan.Version, approvedBy, approvedAt);
+        }
+        else if (approvedByUserId is not null || approvedAtUtc is not null)
+        {
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.StoredRecordInvalid, "Kayıtlı onay izi onaylayanı ve anı birlikte taşımalı.");
+        }
+
+        if (plan.Version != version)
+        {
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.StoredRecordInvalid, "Kayıtlı plan sürümü planın kendi değişiklikleriyle uyuşmuyor.");
+        }
+
+        return plan;
+    }
+
     public void Approve(long expectedVersion, Guid approvedByUserId, DateTimeOffset approvedAtUtc)
     {
         if (expectedVersion != Version)
