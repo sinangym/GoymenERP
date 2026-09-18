@@ -32,7 +32,7 @@ public sealed class MaterialLabelTests
 
         // Printing is not a movement: the ledger never heard of it.
         Assert.Single(ledger.AppliedMovements);
-        Assert.Equal(100m, ledger.PhysicalTotal(CompanyA, BandProduct).Value);
+        Assert.Equal(100m, ledger.PhysicalTotal(CompanyA, OwnedByA, BandProduct).Value);
     }
 
     [Theory]
@@ -81,11 +81,11 @@ public sealed class MaterialLabelTests
         var ledger = new StockLedger();
         ledger.Apply(Receipt(Position(label: label.Id), 5000m));
 
-        Assert.Equal(5000m, ledger.PhysicalTotal(CompanyA, BandProduct).Value);
+        Assert.Equal(5000m, ledger.PhysicalTotal(CompanyA, OwnedByA, BandProduct).Value);
         Assert.Equal(LabelDocumentStatus.PendingDocuments, label.DocumentStatus);
         Assert.False(label.IsReleasableForProductionOrShipment);
 
-        label.AttachDocument("MTC");
+        label.AttachDocument("MTC", At.AddDays(2), "synthetic-quality");
         Assert.Equal(LabelDocumentStatus.Complete, label.DocumentStatus);
         Assert.True(label.IsReleasableForProductionOrShipment);
         // The stock never moved on either side of that.
@@ -96,14 +96,30 @@ public sealed class MaterialLabelTests
     public void Only_the_required_documents_decide_the_status()
     {
         var label = new MaterialLabel(Label1, BandProduct, Lot1, requiredDocuments: ["MTC", "CUSTOMER-SPEC"]);
-        label.AttachDocument("MTC");
-        label.AttachDocument("PHOTO");
+        label.AttachDocument("MTC", At, "synthetic-quality");
+        label.AttachDocument("PHOTO", At, "synthetic-quality");
         Assert.Equal(LabelDocumentStatus.PendingDocuments, label.DocumentStatus);
 
-        label.AttachDocument("CUSTOMER-SPEC");
+        label.AttachDocument("CUSTOMER-SPEC", At, "synthetic-quality");
         Assert.Equal(LabelDocumentStatus.Complete, label.DocumentStatus);
         // No requirement at all: nothing is waiting.
         Assert.Equal(LabelDocumentStatus.Complete, new MaterialLabel(Label2, BandProduct, Lot1).DocumentStatus);
+    }
+
+    [Fact]
+    public void Attaching_a_document_is_recorded_with_who_and_when()
+    {
+        // Leaving "waiting for documents" is an event (Ö3): kind, time and actor are kept.
+        var label = new MaterialLabel(Label1, BandProduct, Lot1, requiredDocuments: ["MTC"]);
+        var attachment = label.AttachDocument(" MTC ", At.AddHours(3), " synthetic-quality ");
+
+        Assert.Equal(("MTC", At.AddHours(3), "synthetic-quality"),
+            (attachment.Kind, attachment.AttachedAtUtc, attachment.AttachedBy));
+        Assert.Equal([attachment], label.DocumentAttachments);
+        Assert.Equal(InventoryRuleCodes.InvalidLabelOperation, Assert.Throws<InventoryRuleException>(() =>
+            label.AttachDocument("MTC", new DateTimeOffset(2026, 9, 18, 11, 0, 0, TimeSpan.FromHours(3)), "x")).Code);
+        Assert.Equal(InventoryRuleCodes.InvalidLabelOperation,
+            Assert.Throws<InventoryRuleException>(() => label.AttachDocument("MTC", At, " ")).Code);
     }
 
     [Fact]

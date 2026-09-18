@@ -1,38 +1,57 @@
+using GoymenERP.Modules.Inventory.Domain.Labels;
+
 namespace GoymenERP.Modules.Inventory.Domain.Stock;
 
-/// <summary>Who owns the goods. Being in the same group is not a right to use another's stock (§5).</summary>
-public enum StockOwnerKind
+/// <summary>Which kind of party an owner or custodian is.</summary>
+public enum StockPartyKind
 {
-    /// <summary>One of the group's own legal companies.</summary>
+    /// <summary>One of the group's own legal companies (Organization identity).</summary>
     Company = 1,
 
-    /// <summary>A counterparty's goods held by us (customer material, consignment, fason input).</summary>
+    /// <summary>A counterparty (Counterparty identity): a customer, a fason supplier, a warehouse keeper.</summary>
     Counterparty = 2,
 }
 
-/// <summary>The owner of the goods, by the owning module's identity only.</summary>
+/// <summary>
+/// Who owns the goods. Being in the same group is not a right to use another's stock (§5).
+/// </summary>
 public readonly record struct StockOwner
 {
-    public StockOwner(StockOwnerKind kind, Guid id)
+    public StockOwner(StockPartyKind kind, Guid id)
     {
-        if (!Enum.IsDefined(kind))
-        {
-            throw new InventoryRuleException(InventoryRuleCodes.MissingReference, "Mal sahibi türü tanımsız.");
-        }
-
-        Kind = kind;
+        Kind = StockIds.RequireKind(kind, "Mal sahibi");
         Id = StockIds.Require(id, "Mal sahibi");
     }
 
-    public StockOwnerKind Kind { get; }
+    public StockPartyKind Kind { get; }
+
+    public Guid Id { get; }
+}
+
+/// <summary>
+/// Who physically keeps the goods (§5 "gözeten taraf"): our own company, or e.g. a fason
+/// supplier or an external warehouse holding them. Not the owner and not the location: a
+/// customer's coil (owner) can be kept by a fason supplier (custodian) in that supplier's
+/// yard (location), all under our company's transaction.
+/// </summary>
+public readonly record struct StockCustodian
+{
+    public StockCustodian(StockPartyKind kind, Guid id)
+    {
+        Kind = StockIds.RequireKind(kind, "Gözeten taraf");
+        Id = StockIds.Require(id, "Gözeten taraf");
+    }
+
+    public StockPartyKind Kind { get; }
 
     public Guid Id { get; }
 }
 
 /// <summary>
 /// Blocking is its own dimension (§7.1): blocked stock is still physically there and still
-/// counted; it is simply not free. Blocking or releasing moves quantity between the two,
-/// it never adds or removes physical stock.
+/// counted; it is simply not free, and it cannot leave while blocked — releasing it is a
+/// movement of its own. Blocking or releasing moves quantity between the two, it never adds
+/// or removes physical stock.
 /// </summary>
 public enum BlockState
 {
@@ -41,32 +60,41 @@ public enum BlockState
 }
 
 /// <summary>
-/// One physical balance bucket. The TRANSACTION company, the OWNER of the goods and the
-/// PHYSICAL location are three separate facts (§5): goods may belong to a customer, be
-/// held by one of our companies and sit in a location of another. None of them is folded
-/// into another, so stock of one owner can never satisfy a movement for another.
-/// Cross-module references are identities only — no other module is referenced.
+/// One physical balance bucket. §5 names FOUR separate facts — the TRANSACTION company, the
+/// OWNER of the goods, the CUSTODIAN who keeps them and the PHYSICAL location — and none of
+/// them is folded into another, so stock of one owner can never satisfy a movement for
+/// another. The product is not an input: it is the label's own product, so a position can
+/// never claim a label is a different product. Cross-module references are identities only.
 /// </summary>
 public sealed record StockPosition
 {
-    public StockPosition(Guid companyId, StockOwner owner, Guid locationId, Guid productId,
-        Guid labelId, BlockState block)
+    public StockPosition(Guid companyId, StockOwner owner, StockCustodian custodian, Guid locationId,
+        MaterialLabel label, BlockState block)
     {
+        ArgumentNullException.ThrowIfNull(label);
         CompanyId = StockIds.Require(companyId, "İşlem şirketi");
-        if (owner.Id == Guid.Empty)
-        {
-            throw new InventoryRuleException(InventoryRuleCodes.MissingReference, "Mal sahibi zorunludur.");
-        }
-
-        Owner = owner;
+        Owner = owner.Id == Guid.Empty
+            ? throw new InventoryRuleException(InventoryRuleCodes.MissingReference, "Mal sahibi zorunludur.")
+            : owner;
+        Custodian = custodian.Id == Guid.Empty
+            ? throw new InventoryRuleException(InventoryRuleCodes.MissingReference, "Gözeten taraf zorunludur.")
+            : custodian;
         LocationId = StockIds.Require(locationId, "Fiziksel konum");
-        ProductId = StockIds.Require(productId, "Ürün");
-        LabelId = StockIds.Require(labelId, "Malzeme etiketi");
-        if (!Enum.IsDefined(block))
-        {
-            throw new InventoryRuleException(InventoryRuleCodes.MissingReference, "Blokaj durumu tanımsız.");
-        }
+        ProductId = label.ProductId;
+        LabelId = label.Id;
+        Block = Enum.IsDefined(block)
+            ? block
+            : throw new InventoryRuleException(InventoryRuleCodes.MissingReference, "Blokaj durumu tanımsız.");
+    }
 
+    private StockPosition(StockPosition source, BlockState block)
+    {
+        CompanyId = source.CompanyId;
+        Owner = source.Owner;
+        Custodian = source.Custodian;
+        LocationId = source.LocationId;
+        ProductId = source.ProductId;
+        LabelId = source.LabelId;
         Block = block;
     }
 
@@ -75,19 +103,29 @@ public sealed record StockPosition
 
     public StockOwner Owner { get; }
 
+    public StockCustodian Custodian { get; }
+
     /// <summary>The physical location (Organization identity).</summary>
     public Guid LocationId { get; }
 
-    /// <summary>The Product identity; the label is the physical piece, not the product card.</summary>
+    /// <summary>The label's product; never given separately, so it cannot disagree with the label.</summary>
     public Guid ProductId { get; }
 
-    /// <summary>The physical identity of the material (<see cref="Labels.MaterialLabel"/>).</summary>
+    /// <summary>The physical identity of the material (<see cref="MaterialLabel"/>).</summary>
     public Guid LabelId { get; }
 
     public BlockState Block { get; }
 
     public StockPosition WithBlock(BlockState block) =>
-        new(CompanyId, Owner, LocationId, ProductId, LabelId, block);
+        Enum.IsDefined(block)
+            ? new(this, block)
+            : throw new InventoryRuleException(InventoryRuleCodes.MissingReference, "Blokaj durumu tanımsız.");
+
+    /// <summary>
+    /// The same physical place of the same piece, whatever its block state: company, owner,
+    /// custodian, location, product and label. A label may have at most one of these at a time.
+    /// </summary>
+    internal StockPosition PhysicalPlace => Block == BlockState.Free ? this : WithBlock(BlockState.Free);
 }
 
 internal static class StockIds
@@ -96,4 +134,9 @@ internal static class StockIds
         id == Guid.Empty
             ? throw new InventoryRuleException(InventoryRuleCodes.MissingReference, $"{what} kimliği zorunludur.")
             : id;
+
+    public static StockPartyKind RequireKind(StockPartyKind kind, string what) =>
+        Enum.IsDefined(kind)
+            ? kind
+            : throw new InventoryRuleException(InventoryRuleCodes.MissingReference, $"{what} türü tanımsız.");
 }

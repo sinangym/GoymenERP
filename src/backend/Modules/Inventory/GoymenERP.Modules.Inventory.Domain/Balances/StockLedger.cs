@@ -17,6 +17,9 @@ public sealed record StockBalance(StockPosition Position, Kilograms Quantity);
 /// <item>No physical balance ever goes below zero. A movement that would do so is refused
 /// WHOLE: its lines are checked together first, so nothing is partly applied.</item>
 /// <item>The same movement is applied at most once.</item>
+/// <item>A label is one physical piece: at any time all of its non-zero buckets share one
+/// company, owner, custodian, location and product; only the block state may differ (a
+/// partly blocked coil). Moving it is a transfer (T13), a second piece is a split (T13).</item>
 /// <item>Balances are only ever changed by applying a movement; there is no "set quantity".</item>
 /// <item><see cref="Reconcile"/> compares stored balances with the movements, bucket by
 /// bucket.</item>
@@ -39,17 +42,21 @@ public sealed class StockLedger
     public Kilograms QuantityAt(StockPosition position) =>
         balances.TryGetValue(position, out var quantity) ? Kilograms.Of(quantity) : Kilograms.Zero;
 
-    /// <summary>All physical stock of a product in a company, blocked or not.</summary>
-    public Kilograms PhysicalTotal(Guid companyId, Guid productId) =>
+    /// <summary>
+    /// All physical stock of a product in a company for ONE owner, blocked or not. The owner
+    /// is required: a customer's goods kept by us are never part of our own stock (§5, §7.1).
+    /// </summary>
+    public Kilograms PhysicalTotal(Guid companyId, StockOwner owner, Guid productId) =>
         Kilograms.Of(balances
-            .Where(entry => entry.Key.CompanyId == companyId && entry.Key.ProductId == productId)
+            .Where(entry => entry.Key.CompanyId == companyId && entry.Key.Owner == owner
+                && entry.Key.ProductId == productId)
             .Sum(entry => entry.Value));
 
-    /// <summary>The free part only: blocked stock is physically there but not free.</summary>
-    public Kilograms FreeTotal(Guid companyId, Guid productId) =>
+    /// <summary>The free part only, for one owner: blocked stock is physically there but not free.</summary>
+    public Kilograms FreeTotal(Guid companyId, StockOwner owner, Guid productId) =>
         Kilograms.Of(balances
-            .Where(entry => entry.Key.CompanyId == companyId && entry.Key.ProductId == productId
-                && entry.Key.Block == BlockState.Free)
+            .Where(entry => entry.Key.CompanyId == companyId && entry.Key.Owner == owner
+                && entry.Key.ProductId == productId && entry.Key.Block == BlockState.Free)
             .Sum(entry => entry.Value));
 
     public void Apply(StockMovement movement)
@@ -81,6 +88,8 @@ public sealed class StockLedger
             next[line.Position] = result;
         }
 
+        RequireOnePhysicalPlacePerLabel(next);
+
         foreach (var (position, quantity) in next)
         {
             balances[position] = quantity;
@@ -88,6 +97,30 @@ public sealed class StockLedger
 
         appliedIds.Add(movement.Id);
         applied.Add(movement);
+    }
+
+    /// <summary>
+    /// After the movement, every touched label may hold stock in one physical place only; its
+    /// buckets may differ by block state alone. Checked before anything changes.
+    /// </summary>
+    private void RequireOnePhysicalPlacePerLabel(IReadOnlyDictionary<StockPosition, decimal> next)
+    {
+        foreach (var labelId in next.Keys.Select(position => position.LabelId).Distinct())
+        {
+            var places = balances
+                .Where(entry => entry.Key.LabelId == labelId && !next.ContainsKey(entry.Key))
+                .Concat(next.Where(entry => entry.Key.LabelId == labelId))
+                .Where(entry => entry.Value != 0m)
+                .Select(entry => entry.Key.PhysicalPlace)
+                .Distinct()
+                .Count();
+            if (places > 1)
+            {
+                throw new InventoryRuleException(
+                    InventoryRuleCodes.LabelInTwoPositions,
+                    "Bir etiket aynı anda tek fiziksel yerde bulunur; yer değişimi transfer, ikinci parça bölme işidir.");
+            }
+        }
     }
 
     /// <summary>
@@ -109,7 +142,16 @@ public sealed class StockLedger
         }
 
         var rebuilt = new Dictionary<StockPosition, decimal>();
-        foreach (var line in movements.SelectMany(movement => movement.Lines))
+        var seen = new HashSet<Guid>();
+        var trace = movements.ToArray();
+        if (trace.Any(movement => movement is null || !seen.Add(movement.Id)))
+        {
+            // A movement read twice would double its effect and look like a missing balance.
+            throw new InventoryRuleException(
+                InventoryRuleCodes.DuplicateMovement, "Uzlaştırmaya aynı hareket iki kez verilemez.");
+        }
+
+        foreach (var line in trace.SelectMany(movement => movement.Lines))
         {
             var delta = line.Direction == StockDirection.In ? line.Quantity.Value : -line.Quantity.Value;
             rebuilt[line.Position] = rebuilt.GetValueOrDefault(line.Position) + delta;

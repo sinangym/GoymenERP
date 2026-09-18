@@ -21,8 +21,15 @@ public static class InventoryRuleCodes
     /// <summary>The movement would take a physical balance below zero.</summary>
     public const string NegativePhysicalStock = "inventory_negative_physical_stock";
 
-    /// <summary>The same movement was offered to the ledger a second time.</summary>
+    /// <summary>The same movement was offered to the ledger (or to a reconciliation) a second time.</summary>
     public const string DuplicateMovement = "inventory_duplicate_movement";
+
+    /// <summary>
+    /// One label would hold stock in two physical places (company, owner, custodian, location
+    /// or product) at once. A label is one physical piece: moving it is a transfer (T13), a
+    /// second piece is a split with a new identity (T13). Only its block state may differ.
+    /// </summary>
+    public const string LabelInTwoPositions = "inventory_label_in_two_positions";
 
     /// <summary>A required identity (company, owner, location, product, lot, label, …) is missing.</summary>
     public const string MissingReference = "inventory_missing_reference";

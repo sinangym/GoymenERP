@@ -10,7 +10,11 @@ public enum StockMovementKind
     /// <summary>Physical arrival: every line adds stock.</summary>
     Receipt = 1,
 
-    /// <summary>Physical departure: every line removes stock.</summary>
+    /// <summary>
+    /// Physical departure: every line removes FREE stock. Blocked stock cannot leave until it
+    /// is released (§7.1: its realisability is blocked); scrapping blocked material is a
+    /// movement kind of its own (T13).
+    /// </summary>
     Issue = 2,
 
     /// <summary>Free → Blocked on the same position. Physical total unchanged.</summary>
@@ -140,6 +144,11 @@ public sealed class StockMovement
                 break;
             case StockMovementKind.Issue:
                 RequireAll(StockDirection.Out, "Çıkış hareketinin bütün satırları çıkış olmalıdır.");
+                if (lines.Any(line => line.Position.Block == BlockState.Blocked))
+                {
+                    throw Invalid("Bloklu stok çıkış hareketiyle çıkamaz; önce blokaj kaldırılmalıdır.");
+                }
+
                 break;
             case StockMovementKind.Block:
                 RequireBlockPair(BlockState.Free, BlockState.Blocked);

@@ -14,6 +14,9 @@ public enum LabelDocumentStatus
     PendingDocuments = 2,
 }
 
+/// <summary>One attached document: which kind, when and by whom it was attached.</summary>
+public sealed record LabelDocumentAttachment(string Kind, DateTimeOffset AttachedAtUtc, string AttachedBy);
+
 /// <summary>One print of a label. A reprint is another print of the SAME physical identity.</summary>
 public sealed record LabelPrint(int Sequence, DateTimeOffset PrintedAtUtc, string PrintedBy, string? Reason);
 
@@ -33,7 +36,7 @@ public sealed record LabelPrint(int Sequence, DateTimeOffset PrintedAtUtc, strin
 public sealed class MaterialLabel
 {
     private readonly HashSet<string> requiredDocuments;
-    private readonly HashSet<string> attachedDocuments = new(StringComparer.Ordinal);
+    private readonly List<LabelDocumentAttachment> attachments = [];
     private readonly List<LabelPrint> prints = [];
 
     public MaterialLabel(Guid id, Guid productId, Guid lotId, IEnumerable<string>? requiredDocuments = null,
@@ -67,21 +70,43 @@ public sealed class MaterialLabel
 
     public IReadOnlySet<string> RequiredDocuments => requiredDocuments;
 
-    public IReadOnlySet<string> AttachedDocuments => attachedDocuments;
+    /// <summary>The document kinds attached so far.</summary>
+    public IReadOnlySet<string> AttachedDocuments =>
+        attachments.Select(attachment => attachment.Kind).ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>Every attachment, in order, with who and when (Ö3: leaving "waiting" is an event).</summary>
+    public IReadOnlyList<LabelDocumentAttachment> DocumentAttachments => attachments.AsReadOnly();
 
     public IReadOnlyList<LabelPrint> Prints => prints.AsReadOnly();
 
     public LabelDocumentStatus DocumentStatus =>
-        requiredDocuments.IsSubsetOf(attachedDocuments) ? LabelDocumentStatus.Complete : LabelDocumentStatus.PendingDocuments;
+        requiredDocuments.IsSubsetOf(AttachedDocuments) ? LabelDocumentStatus.Complete : LabelDocumentStatus.PendingDocuments;
 
     /// <summary>
     /// Free for production or shipment only with its documents in. Physical presence is a
-    /// different question and is not affected (the stock is counted either way).
+    /// different question and is not affected (the stock is counted either way). In this
+    /// slice this is a FLAG: no movement is refused by it yet — enforcing it belongs to
+    /// allocation (T11) and shipment, which are not built.
     /// </summary>
     public bool IsReleasableForProductionOrShipment => DocumentStatus == LabelDocumentStatus.Complete;
 
-    /// <summary>Record that a required (or extra) document is now attached.</summary>
-    public void AttachDocument(string documentKind) => attachedDocuments.Add(RequireToken(documentKind));
+    /// <summary>Record that a required (or extra) document is now attached, by whom and when.</summary>
+    public LabelDocumentAttachment AttachDocument(string documentKind, DateTimeOffset attachedAtUtc, string attachedBy)
+    {
+        if (attachedAtUtc.Offset != TimeSpan.Zero)
+        {
+            throw Invalid("Belge ekleme zamanı UTC olmalıdır.");
+        }
+
+        if (string.IsNullOrWhiteSpace(attachedBy))
+        {
+            throw Invalid("Belgeyi ekleyen aktör zorunludur.");
+        }
+
+        var attachment = new LabelDocumentAttachment(RequireToken(documentKind), attachedAtUtc, attachedBy.Trim());
+        attachments.Add(attachment);
+        return attachment;
+    }
 
     /// <summary>The first print of this label.</summary>
     public LabelPrint Print(DateTimeOffset printedAtUtc, string printedBy)
