@@ -33,7 +33,7 @@ public sealed class C01E2eFixtureWriterActivationTests
         var services = new ServiceCollection();
 
         Assert.False(C01E2eFixtureWriterActivation.Configure(
-            services, new TestHostEnvironment("Testing"), Configuration([])));
+            services, new TestHostEnvironment("Testing"), Configuration(new Dictionary<string, string?>())));
         Assert.DoesNotContain(services, descriptor =>
             descriptor.ServiceType == typeof(C01E2eProductMasterAssignmentFixtureWriter)
             || descriptor.ServiceType == typeof(IProductMasterAssignmentFixtureStore));
