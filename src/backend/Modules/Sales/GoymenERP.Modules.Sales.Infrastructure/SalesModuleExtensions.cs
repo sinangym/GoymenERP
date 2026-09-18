@@ -55,19 +55,23 @@ public static class SalesModuleExtensions
         // provider, the optional Product eligibility port and the central authority; the shell
         // capability provider is registered by the host once the Sales names are in the catalogue.
         services.TryAddSingleton(new SalesDraftServiceBindings());
-        services.AddScoped<ISalesDraftService>(serviceProvider => new SalesDraftService(
-            serviceProvider.GetRequiredService<ICompanyContext>(),
-            serviceProvider.GetRequiredService<ICurrentUser>(),
-            serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
-            serviceProvider.GetRequiredService<ICorrelationContext>(),
-            serviceProvider.GetRequiredService<ISalesPartyAccountPortV1>(),
-            serviceProvider.GetRequiredService<ISettingsPrerequisiteProvider>(),
-            serviceProvider.GetService<IProductSalesEligibilityV1>(),
-            serviceProvider.GetRequiredService<ISalesOrderDraftStore>(),
-            serviceProvider.GetRequiredService<SalesDraftServiceBindings>(),
-            serviceProvider.GetRequiredService<TimeProvider>()));
+        services.AddScoped<ISalesDraftService>(CreateDraftService);
         return services;
     }
+
+    // Built in a named factory so that no registration statement of this module names the company
+    // context: the host's scoped ICompanyContext is resolved here, never registered (architecture guard).
+    private static SalesDraftService CreateDraftService(IServiceProvider serviceProvider) => new(
+        serviceProvider.GetRequiredService<ICompanyContext>(),
+        serviceProvider.GetRequiredService<ICurrentUser>(),
+        serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
+        serviceProvider.GetRequiredService<ICorrelationContext>(),
+        serviceProvider.GetRequiredService<ISalesPartyAccountPortV1>(),
+        serviceProvider.GetRequiredService<ISettingsPrerequisiteProvider>(),
+        serviceProvider.GetService<IProductSalesEligibilityV1>(),
+        serviceProvider.GetRequiredService<ISalesOrderDraftStore>(),
+        serviceProvider.GetRequiredService<SalesDraftServiceBindings>(),
+        serviceProvider.GetRequiredService<TimeProvider>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(
