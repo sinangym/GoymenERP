@@ -1,5 +1,6 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Settings.Application;
@@ -13,8 +14,8 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// The host's Settings provider is the approved one (T02-a on main, #279), resolved through the
 /// real host composition — only the actor and the company are fixed for the test. GDC kg
-/// resolves to its approved profile; everything without an approved source stays fail-closed,
-/// exactly as before the swap.
+/// resolves to its approved profile, and since T02-b GDC/TRY to its approved money profile for the
+/// Finance and Sales keys; everything without an approved source stays fail-closed.
 /// </summary>
 public sealed class SettingsHostWiringTests
 {
@@ -79,7 +80,7 @@ public sealed class SettingsHostWiringTests
     }
 
     [Fact]
-    public async Task Money_and_period_are_unchanged_by_the_swap()
+    public async Task An_unapproved_money_operation_and_period_stay_unavailable_through_the_host()
     {
         using var factory = Host(Gdc);
         using var scope = factory.Services.CreateScope();
@@ -89,6 +90,50 @@ public sealed class SettingsHostWiringTests
             () => provider.GetMoneyProfileAsync(Guid.NewGuid(), "synthetic-operation", Approval))).Code);
         Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
             () => provider.GetPeriodEligibilityAsync("synthetic-operation", Approval, null))).Code);
+    }
+
+    [Theory]
+    [InlineData("finance")]
+    [InlineData("sales")]
+    public async Task GDC_TRY_resolves_to_the_approved_money_profile_for_each_owner_s_key_through_the_host(string owner)
+    {
+        var operation = owner == "finance" ? FinanceMoneyOperations.ManualBankReceiptV1 : SalesMoneyOperations.OrderDraftV1;
+        using var factory = Host(Gdc);
+        using var scope = factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ISettingsPrerequisiteProvider>();
+
+        var profile = await provider.GetMoneyProfileAsync(SettingsCurrencyIdentitiesV1.TurkishLira, operation, Approval);
+
+        Assert.Equal(Gdc, profile.CompanyId);
+        Assert.Equal("TRY", profile.CurrencyCode);
+        Assert.Equal(operation, profile.Operation);
+        Assert.Equal(2, profile.Scale);
+        Assert.Equal(ApprovedMoneyProfileCatalog.GdcTurkishLiraV1.ProfileId, profile.Profile.ProfileId);
+    }
+
+    [Fact]
+    public void The_money_catalog_answers_exactly_the_owners_published_operation_keys()
+    {
+        // Settings references neither module, so its literals are pinned here, where both owners'
+        // constants are visible: an owner renaming its key turns this red instead of silently
+        // turning its money read into settings_provider_unavailable.
+        Assert.Equal(
+            new[] { FinanceMoneyOperations.ManualBankReceiptV1, SalesMoneyOperations.OrderDraftV1 }.Order(StringComparer.Ordinal),
+            ApprovedMoneyProfileCatalog.GdcTurkishLiraV1.Operations.Order(StringComparer.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("gsp")]
+    [InlineData("gin")]
+    public async Task A_company_without_an_approved_money_source_stays_unavailable_through_the_host(string company)
+    {
+        using var factory = Host(company == "gsp" ? Gsp : Gin);
+        using var scope = factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ISettingsPrerequisiteProvider>();
+
+        Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => provider.GetMoneyProfileAsync(
+                SettingsCurrencyIdentitiesV1.TurkishLira, FinanceMoneyOperations.ManualBankReceiptV1, Approval))).Code);
     }
 
     [Fact]
