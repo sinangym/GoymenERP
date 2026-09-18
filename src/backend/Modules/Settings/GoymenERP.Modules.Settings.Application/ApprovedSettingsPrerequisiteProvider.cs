@@ -34,29 +34,52 @@ namespace GoymenERP.Modules.Settings.Application;
 /// authorization for any operation: the consuming use case still checks its own permission.
 /// </para>
 /// </summary>
-public sealed class ApprovedSettingsPrerequisiteProvider(
-    ICompanyContext companyContext,
-    ICurrentUser currentUser,
-    ApprovedUnitProfileCatalog? catalog = null)
-    : ISettingsPrerequisiteProvider
+public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisiteProvider
 {
     public const string UnitProfileNotFoundCode = "settings_unit_profile_not_found";
 
-    private readonly ApprovedUnitProfileCatalog _catalog = catalog ?? ApprovedUnitProfileCatalog.Approved;
-    private readonly UnavailableSettingsPrerequisiteProvider _notApprovedYet = new(companyContext, currentUser);
+    private readonly ICompanyContext _companyContext;
+    private readonly ICurrentUser _currentUser;
+    private readonly ApprovedUnitProfileCatalog _catalog;
+    private readonly UnavailableSettingsPrerequisiteProvider _notApprovedYet;
+
+    /// <summary>
+    /// The only constructor the host and other modules can reach: it always serves the reviewed
+    /// <see cref="ApprovedUnitProfileCatalog.Approved"/> catalog.
+    /// </summary>
+    public ApprovedSettingsPrerequisiteProvider(ICompanyContext companyContext, ICurrentUser currentUser)
+        : this(companyContext, currentUser, ApprovedUnitProfileCatalog.Approved)
+    {
+    }
+
+    /// <summary>
+    /// Test seam, internal on purpose (FİNANS #279 P3-1): no module that references Settings can
+    /// build an "approved" provider over profiles it made up; only Settings' own tests can.
+    /// </summary>
+    internal ApprovedSettingsPrerequisiteProvider(
+        ICompanyContext companyContext, ICurrentUser currentUser, ApprovedUnitProfileCatalog catalog)
+    {
+        ArgumentNullException.ThrowIfNull(companyContext);
+        ArgumentNullException.ThrowIfNull(currentUser);
+        ArgumentNullException.ThrowIfNull(catalog);
+        _companyContext = companyContext;
+        _currentUser = currentUser;
+        _catalog = catalog;
+        _notApprovedYet = new UnavailableSettingsPrerequisiteProvider(companyContext, currentUser);
+    }
 
     public Task<UnitProfileV1> GetUnitProfileAsync(Guid unitId, DateOnly effectiveOn,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!currentUser.IsAuthenticated || string.IsNullOrWhiteSpace(currentUser.UserId)
-            || !companyContext.IsResolved || companyContext.CompanyId == Guid.Empty
-            || !currentUser.CanAccessCompany(companyContext.CompanyId))
+        if (!_currentUser.IsAuthenticated || string.IsNullOrWhiteSpace(_currentUser.UserId)
+            || !_companyContext.IsResolved || _companyContext.CompanyId == Guid.Empty
+            || !_currentUser.CanAccessCompany(_companyContext.CompanyId))
         {
             return Task.FromException<UnitProfileV1>(new SettingsPrerequisiteException("settings_access_denied"));
         }
 
-        var companyId = companyContext.CompanyId;
+        var companyId = _companyContext.CompanyId;
         if (!_catalog.Serves(companyId))
         {
             return Task.FromException<UnitProfileV1>(

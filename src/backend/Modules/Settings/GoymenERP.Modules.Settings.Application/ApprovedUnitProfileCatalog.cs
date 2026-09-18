@@ -74,7 +74,11 @@ public sealed class ApprovedUnitProfileCatalog
     private readonly IReadOnlyDictionary<(Guid CompanyId, Guid UnitId), ApprovedUnitProfileEntry[]> _versions;
     private readonly IReadOnlySet<Guid> _companies;
 
-    public ApprovedUnitProfileCatalog(IEnumerable<ApprovedUnitProfileEntry> entries)
+    /// <summary>
+    /// Internal on purpose (FİNANS #279 P3-1): the approved data is <see cref="Approved"/>, built
+    /// from reviewed source; a catalog of other entries exists only in Settings' own tests.
+    /// </summary>
+    internal ApprovedUnitProfileCatalog(IEnumerable<ApprovedUnitProfileEntry> entries)
     {
         ArgumentNullException.ThrowIfNull(entries);
         var all = entries.ToArray();
