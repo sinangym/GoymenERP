@@ -31,15 +31,15 @@ def model(profile):
     result = browser._relabel(c01_tests.valid_compose(), browser.CANONICAL_SUITE_LABEL,
                               browser.PROFILE_SUITE_LABELS[profile])
     environment = result["services"]["api"]["environment"]
-    if profile == "cari-staged":
-        environment[browser.CARI_STAGED_PROFILE_KEY] = browser.CARI_STAGED_PROFILE_VALUE
+    if profile in browser.STAGED_PROFILE_VALUES:
+        environment[browser.CARI_STAGED_PROFILE_KEY] = browser.STAGED_PROFILE_VALUES[profile]
     elif profile == "normal":
         for key in ENVELOPE:
             del environment[key]
     return result
 
 
-SUITE_FOR = {"c01-list-only": "smoke", "cari-staged": "c03", "normal": "org03"}
+SUITE_FOR = {"c01-list-only": "smoke", "cari-staged": "c03", "normal": "org03", "fin-staged": "fin01"}
 
 
 class ProfileRegistryTests(unittest.TestCase):
@@ -94,6 +94,31 @@ class ComposeFileDerivationTests(unittest.TestCase):
             anchor, anchor + f"      {browser.CARI_STAGED_PROFILE_KEY}: {browser.CARI_STAGED_PROFILE_VALUE}\n"
         ).replace(browser.CANONICAL_SUITE_LABEL, browser.PROFILE_SUITE_LABELS["cari-staged"])
         self.assertEqual(expected, staged)
+
+    def test_fin_staged_is_the_canonical_file_plus_its_profile_line(self):
+        # FIN-UI-1b (#332): the same two transforms, with the finance-bank-accounts-and-drafts profile.
+        staged = self._body((ROOT / browser.PROFILE_COMPOSE_FILES["fin-staged"]).read_text(encoding="utf-8"))
+        anchor = '      C01E2e__EnableListCapability: "true"\n'
+        expected = self.canonical.replace(
+            anchor, anchor + f"      {browser.CARI_STAGED_PROFILE_KEY}: {browser.STAGED_PROFILE_VALUES['fin-staged']}\n"
+        ).replace(browser.CANONICAL_SUITE_LABEL, browser.PROFILE_SUITE_LABELS["fin-staged"])
+        self.assertEqual(expected, staged)
+
+    def test_each_staged_profile_value_is_an_activation_profile(self):
+        activation = (ROOT / "src/backend/GoymenERP.Api/Shell/C01E2eShellCapabilityActivation.cs").read_text(
+            encoding="utf-8")
+        for profile, value in browser.STAGED_PROFILE_VALUES.items():
+            with self.subTest(profile=profile):
+                self.assertIn(f'Profile = "{value}";', activation)
+
+    def test_a_staged_profile_refuses_the_other_profile_value(self):
+        for profile, suite, wrong in (("fin-staged", "fin01", "cari-list-detail"),
+                                      ("cari-staged", "c03", "finance-bank-accounts-and-drafts")):
+            with self.subTest(profile=profile):
+                wrong_model = model(profile)
+                wrong_model["services"]["api"]["environment"][browser.CARI_STAGED_PROFILE_KEY] = wrong
+                with self.assertRaises(browser.ContractError):
+                    browser.validate_suite_compose(wrong_model, suite, COMMIT, PROJECT)
 
 
 class SuiteComposeContractTests(unittest.TestCase):

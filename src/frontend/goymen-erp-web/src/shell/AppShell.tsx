@@ -47,6 +47,12 @@ const NAV_CAPABILITIES: readonly CapabilityId[] = [
    * row, never from the sidebar.
    */
   CAPABILITY.organizationSitesList,
+  /**
+   * Listed together with the routes that serve them (FIN-UI-1b). Each renders only where the server's
+   * snapshot carries the capability; the new draft, the detail and the propose screen have none.
+   */
+  CAPABILITY.financeReceiptsList,
+  CAPABILITY.financeBankAccountsList,
 ]
 
 export function AppShell() {

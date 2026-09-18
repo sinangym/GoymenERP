@@ -27,6 +27,10 @@ internal static class C01E2eShellCapabilityActivation
     // availability: list and detail, still only inside this disposable envelope.
     internal const string ProfileConfigurationKey = "C01E2e:Profile";
     internal const string CariListDetailProfile = "cari-list-detail";
+    // FIN-UI-1b (#332, fin-staged): Finance's bank-account and receipt-draft screens opened inside this
+    // envelope only, beside the list-only C-01 Counterparty set, before any normal-runtime availability
+    // (card FIN-UI-1 §6; the mfg D4 precedent).
+    internal const string FinanceBankAccountsAndDraftsProfile = "finance-bank-accounts-and-drafts";
 
     internal static string Configure(
         IServiceCollection services,
@@ -51,6 +55,10 @@ internal static class C01E2eShellCapabilityActivation
             case CariListDetailProfile:
                 ReplaceExactCounterpartyProvider<C01E2eCariListDetailShellCapabilityProvider>(services);
                 return ShellCapabilityRegistryAuthorities.C01DisposableCariListDetailV1;
+            case FinanceBankAccountsAndDraftsProfile:
+                ReplaceExactCounterpartyProvider<C01E2eShellCapabilityProvider>(services);
+                services.AddSingleton<IShellCapabilityProvider, C01E2eFinanceBankAccountsAndDraftsShellCapabilityProvider>();
+                return ShellCapabilityRegistryAuthorities.C01DisposableFinanceBankAccountsAndDraftsV1;
             default:
                 throw new InvalidOperationException(
                     "C-01 disposable capability profili tanınmıyor.");
@@ -247,6 +255,22 @@ internal sealed class C01E2eCariListDetailShellCapabilityProvider : IShellCapabi
 
     public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
         C01E2eStagedDeclarations.Open(_source, detail: true);
+}
+
+// fin-staged (#332): Finance's own six declarations, only their availability opened; ids, routes,
+// context, scope, permissions and the approval control's parent stay the owner's.
+internal sealed class C01E2eFinanceBankAccountsAndDraftsShellCapabilityProvider : IShellCapabilityProvider
+{
+    private readonly FinanceShellCapabilityProvider _source = new();
+
+    public string Owner => _source.Owner;
+
+    public string ContractVersion => _source.ContractVersion;
+
+    public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
+        Array.AsReadOnly(_source.GetDeclarations()
+            .Select(declaration => declaration with { ImplementationAvailable = true })
+            .ToArray());
 }
 
 internal static class C01E2eStagedDeclarations

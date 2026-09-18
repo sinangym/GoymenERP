@@ -9,6 +9,7 @@ which keeps the script directory off sys.path).
 Stage 2: each suite runs under one capability profile, each with its own compose file:
 - "c01-list-only": the canonical C-01 stack, validated by the canonical validator unchanged;
 - "cari-staged": the same disposable envelope plus C01E2e__Profile=cari-list-detail;
+- "fin-staged": the same disposable envelope plus C01E2e__Profile=finance-bank-accounts-and-drafts;
 - "normal": the same stack without the envelope, so the API serves its normal shell authority.
 A suite compose model is mapped back to the canonical shape by exactly its profile's documented
 difference and then checked by the canonical validator, so every canonical rule (Testing,
@@ -34,11 +35,11 @@ _spec.loader.exec_module(c01)
 ContractError = c01.ContractError
 require = c01.require
 
-SUITES = ("smoke", "c03", "org03", "u02", "s03")
+SUITES = ("smoke", "c03", "org03", "u02", "s03", "fin01")
 READ_ONLY_SUITES = ("smoke", "c03", "s03")
 _SUITE_PATTERN = re.compile(r"^[a-z0-9]+$")
 
-PROFILES = ("c01-list-only", "cari-staged", "normal")
+PROFILES = ("c01-list-only", "cari-staged", "normal", "fin-staged")
 SUITE_PROFILES = {
     "smoke": "c01-list-only",
     "c03": "cari-staged",
@@ -46,20 +47,29 @@ SUITE_PROFILES = {
     "u02": "normal",
     # S-03 v1 (#321): fail-closed evidence on the normal host (staged Sales screens, no grant).
     "s03": "normal",
+    # FIN-01 (#332, FIN-UI-1b): Finance's staged screens opened only inside the disposable envelope.
+    "fin01": "fin-staged",
 }
 PROFILE_COMPOSE_FILES = {
     "c01-list-only": "infra/docker-compose.c01-e2e.yml",
     "cari-staged": "infra/docker-compose.browser-cari-staged.yml",
     "normal": "infra/docker-compose.browser-normal.yml",
+    "fin-staged": "infra/docker-compose.browser-fin-staged.yml",
 }
 PROFILE_SUITE_LABELS = {
     "c01-list-only": "C01-REAL-BROWSER-E2E-V1",
     "cari-staged": "BROWSER-SUITE-CARI-STAGED-V1",
     "normal": "BROWSER-SUITE-NORMAL-V1",
+    "fin-staged": "BROWSER-SUITE-FIN-STAGED-V1",
 }
 CANONICAL_SUITE_LABEL = PROFILE_SUITE_LABELS["c01-list-only"]
 CARI_STAGED_PROFILE_KEY = "C01E2e__Profile"
 CARI_STAGED_PROFILE_VALUE = "cari-list-detail"
+# Each envelope profile's exact C01E2e__Profile value (C01E2eShellCapabilityActivation's profiles).
+STAGED_PROFILE_VALUES = {
+    "cari-staged": CARI_STAGED_PROFILE_VALUE,
+    "fin-staged": "finance-bank-accounts-and-drafts",
+}
 # The disposable C-01 capability envelope, as the canonical compose file sets it on the API.
 ENVELOPE_KEYS = (
     "C01E2e__EnableListCapability",
@@ -103,6 +113,8 @@ SUITE_API_EXTENSIONS = {
     # S-03 (SİPARİŞ): the deployment's Product issuer binding (shared with u02, ÜRÜN's values), the
     # suite's actors and their Identity users and grants (coordinator decisions 1 and 3, a2 part 2).
     "s03": {"issuer": True, "actors": True, "identity": True},
+    # FIN-01 (FİNANS, #332): a proposer and an approver actor with their Identity users and grants.
+    "fin01": {"issuer": False, "actors": True, "identity": True},
 }
 ISSUER_KEYS = ("ProductRuntime__IssuerLocalUserId", "ProductRuntime__IssuerExternalIdentityId")
 
@@ -127,6 +139,17 @@ _IDENTITY_FIELDS = {
 _SYNTHETIC_ID_PREFIX = {"Users": "b20", "External": "b21", "Roles": "b30", "Assignments": "b40"}
 SUITE_IDENTITY_PERMISSIONS = {
     "s03": ("sales.drafts.create", "sales.drafts.read", "product.operational-selection.read"),
+    # The six Finance names and the Cari owner's authorized party read (the draft reaches the party
+    # through it); the approver holds only finance.bank-account.read and .approve.
+    "fin01": (
+        "finance.bank-account.read",
+        "finance.bank-account.propose",
+        "finance.bank-account.approve",
+        "finance.manual-receipt.draft.save",
+        "finance.manual-receipt.draft.read",
+        "finance.manual-receipt.amount.read",
+        "counterparty.parties.read",
+    ),
 }
 
 
@@ -237,7 +260,11 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
 # only. A read-only suite cannot have a fixture: its post-browser SQL check compares against the
 # canonical baseline, which a seed would move.
 FIXTURE_TOOL_SUITES_DIRECTORY = "tests/GoymenERP.BrowserSuiteFixtureTool/Suites"
-SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {}
+SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
+    # FİNANS's Suites/Fin01 seed (#332): the company, the customer opened through the real Cari API and
+    # its company account, and the two suite actors. No SQL, no gated writer, no Finance row.
+    "fin01": frozenset({"companyId", "partyId", "companyAccountId", "proposerActor", "approverActor"}),
+}
 _OUTPUT_KEY = re.compile(r"^[a-z][A-Za-z0-9]{0,39}$")
 # Any non-nil lowercase GUID: seeded reference ids (companies, work centres) need not be RFC 4122.
 _ANY_GUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -364,9 +391,9 @@ def validate_suite_compose(model: dict, suite: str, expected_commit: str, expect
     canonical_environment = dict(environment)
     if profile == "c01-list-only":
         expected_keys = CANONICAL_API_ENVIRONMENT_KEYS
-    elif profile == "cari-staged":
-        require(environment.get(CARI_STAGED_PROFILE_KEY) == CARI_STAGED_PROFILE_VALUE,
-                "cari-staged API must carry the cari-list-detail profile")
+    elif profile in STAGED_PROFILE_VALUES:
+        require(environment.get(CARI_STAGED_PROFILE_KEY) == STAGED_PROFILE_VALUES[profile],
+                f"{profile} API must carry the {STAGED_PROFILE_VALUES[profile]} profile")
         expected_keys = CANONICAL_API_ENVIRONMENT_KEYS | {CARI_STAGED_PROFILE_KEY}
         del canonical_environment[CARI_STAGED_PROFILE_KEY]
     else:

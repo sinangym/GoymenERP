@@ -19,6 +19,7 @@ import { CariDetailPage } from '../cari/CariDetailPage'
 import { CariContactEditPage } from '../cari/CariContactEditPage'
 import { productRoutes } from '../product/productRoutes'
 import { organizationRoutes } from '../organization/organizationRoutes'
+import { financeRoutes } from '../finance/financeRoutes'
 import { StateBlock } from './StateBlock'
 
 export const shellRoutes: RouteObject[] = [
@@ -132,6 +133,13 @@ export const shellRoutes: RouteObject[] = [
        * `:locationId`, so no static segment is read as a record id.
        */
       ...organizationRoutes,
+      /**
+       * The Finance lane's own routes, declared in `src/finance/financeRoutes.tsx` (receipt list, `yeni`,
+       * `:sourceId`; bank-account list and `yeni`) and mounted here by the shared-integration owner
+       * (FIN-UI-1b handoff), before the catch-all. Each is wrapped in `CapabilityRoute`: while the
+       * declarations are staged, every Finance route closes onto the neutral not-found block.
+       */
+      ...financeRoutes,
       {
         /**
          * Catch-all. Without it react-router renders its own error boundary —
