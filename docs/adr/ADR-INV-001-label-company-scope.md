@@ -28,7 +28,7 @@ Her seçenek aynı dört başlıkla karşılaştırılıyor: CompanyId/filtre, �
 ### A — Etiket kaydı, stoğu tutan işlem şirketinin tenant satırıdır (ADR-002 içinde)
 
 - **CompanyId / filtre:** `MaterialLabel.CompanyId` zorunlu ve kayıt boyunca değişmez. Bu, etiketin bakiyelerinin durduğu işlem şirketidir. Hareket, bakiye, belge eki ve baskı audit'i de aynı `CompanyId` ile tenant satırıdır; hepsi global filtre altında. Pozisyonun şirketi etiketin şirketiyle aynı olmak zorunda (INV-1'in "tek fiziksel yer" kuralının kalıcı karşılığı). Sahip ve gözeten o şirketin kaydının içinde ayrı olgular olarak kalır. Örneğin GDC'de tutulan müşteri malı: `CompanyId = GDC`, sahip = müşteri (karşı taraf), gözeten = GDC.
-- **Transfer (T13):** A şirketinden B şirketine giden bobin, A'nın kaydında çıkışla kapanır (kimlik ve geçmiş korunur). B'nin kabulü **B'de yeni bir etiket kaydı** oluşturur. Bu kayıt kaynağa yalnız opak bir köken referansı olarak bağlanır: (kaynak şirket, kaynak etiket kimliği, kaynak etiket kodu). B bu referansla A'nın satırını okuyamaz. İki şirket arasında tek transaction yok (§10): A çıkışı + outbox, B tarafında inbox + yolda beklenti + kabul (ADR-006). Etiket kodu yalnız `(CompanyId, Code)` içinde tekil olduğu için B, fiziksel etikette basılı kodu aynen kullanabilir; yeniden baskı zorunlu değil. Grup genelinde bir tekillik indeksi olmadığından, "bu kod başka şirkette var mı?" sorusu bir hata üzerinden sızamaz.
+- **Transfer (T13):** A şirketinden B şirketine giden bobin, A'nın kaydında çıkışla kapanır (kimlik ve geçmiş korunur). B'nin kabulü **B'de yeni bir etiket kaydı** oluşturur ve bu kayıt yeni bir `Id` alır (Karar, madde 1). Bu kayıt kaynağa yalnız opak bir köken referansı olarak bağlanır: (kaynak şirket, kaynak etiket kimliği, kaynak etiket kodu). B bu referansla A'nın satırını okuyamaz. İki şirket arasında tek transaction yok (§10): A çıkışı + outbox, B tarafında inbox + yolda beklenti + kabul (ADR-006). Etiket kodu yalnız `(CompanyId, Code)` içinde tekil olduğu için B, fiziksel etikette basılı kodu aynen kullanabilir; yeniden baskı zorunlu değil. Grup genelinde bir tekillik indeksi olmadığından, "bu kod başka şirkette var mı?" sorusu bir hata üzerinden sızamaz.
 - **Görünürlük:** her şirket yalnız kendi etiketlerini, hareketlerini ve belgelerini görür. A'nın MTC'si, tedarikçisi ya da geçmişi B'ye kendiliğinden gitmez. Şirketler arası soy ağacı (B'deki bobinden A'nın kabul belgesine) ancak ADR-002'nin öngördüğü ayrı ve yetkili çapraz-şirket okuma modeliyle görülür. Bu model ayrı bir iştir, filtre atlatması değildir ve grup yetkisi kendiliğinden bu okumayı vermez (Ö6 ile aynı ilke).
 - **INV-2 DbContext:** Organization ve Counterparty ile aynı desen:
   - her tenant varlıkta `HasQueryFilter(x => x.CompanyId == companyContext.CompanyId)`;
@@ -37,7 +37,7 @@ Her seçenek aynı dört başlıkla karşılaştırılıyor: CompanyId/filtre, �
   - konum için `(CompanyId, LocationId)` bileşik FK: bir etiket başka şirketin konumuna bağlanamaz;
   - ürün için grup seviyesindeki `ProductId`.
 
-  Yeni istisna, allowlist ya da `IgnoreQueryFilters` yok.
+  Yeni istisna, allowlist ya da `IgnoreQueryFilters` yok. Merkezi guard envanterine standart modül kaydı gerekir (Karar, madde 2).
 
 ### B — Grup seviyesinde fiziksel etiket kimliği + şirket başına kayıt (Party emsali) — **ADR-002 İSTİSNASI GEREKİR**
 
@@ -58,8 +58,8 @@ Her seçenek aynı dört başlıkla karşılaştırılıyor: CompanyId/filtre, �
 **Seçenek A önerilir.** ADR-002 içinde kalıyor, INV-1'in tek-yer kuralının doğrudan kalıcı karşılığı ve Organization ile Counterparty'nin mevcut filtre desenini kullanıyor. Bu yüzden karar ÜRÜN (Inventory sahibi) ve CARİ'nin (merkezi/tenant görüşü) teknik kararıdır. B ve C yalnız insan kapısıyla seçilebilir.
 
 A'nın INV-2'ye bağladığı maddeler:
-1. `MaterialLabel.CompanyId` zorunlu ve değişmez; etiketin bütün pozisyonları aynı `CompanyId`'yi taşır (INV-1'deki "iki şirkette stok yok" kuralı veri modelinde de korunur).
-2. Etiket, hareket, bakiye, belge eki ve baskı audit'i tenant satırıdır; global filtre ve yazma koruması Organization/Counterparty deseniyle kurulur. `IgnoreQueryFilters` ve allowlist yoktur.
+1. `MaterialLabel.CompanyId` zorunlu ve değişmez; etiketin bütün pozisyonları aynı `CompanyId`'yi taşır (INV-1'deki "iki şirkette stok yok" kuralı veri modelinde de korunur). **Transferde hedef kayıt her zaman yeni bir `Id` alır; kaynak kaydın `Id`'si hiçbir zaman yeniden kullanılmaz.** Kaynak kimlik yalnız opak köken referansında durur. Birincil anahtar tablo genelinde tekildir; kaynak `Id`'nin yeniden kullanılması, grup genelinde kod tekilliği koymayarak kapatılan var-olma sızıntısını PK çakışması yoluyla geri getirirdi (CARİ #286 P3-2).
+2. Etiket, hareket, bakiye, belge eki ve baskı audit'i tenant satırıdır; global filtre ve yazma koruması Organization/Counterparty deseniyle kurulur. `IgnoreQueryFilters` ve allowlist yoktur. **Yeni `InventoryDbContext` ve modül başlatıcısı, merkezi yazarın standart kaydıyla girer:** tenant guard'ın incelenmiş envanterine DbContext fingerprint'i ve başlatıcının tek `Migrate`/`EnsureCreated` dalı; ayrıca solution ve host kaydı. Organization, Counterparty, Identity ve Product'ta olduğu gibi bu bir istisna değildir, ama merkezi bir dokunuştur ve CARİ'nin işidir (CARİ #286 P3-1). Bileşik FK, Inventory migration'ının Organization'dan sonra çalışmasını gerektirir.
 3. Kod tekilliği `(CompanyId, Code)`; grup genelinde tekillik yoktur.
 4. Konum `(CompanyId, LocationId)` bileşik FK ile bağlanır; ürün grup seviyesindeki `ProductId`'dir.
 5. Başka şirkete ait kimlikle yapılan sorgu ya da komut genel 404 alır (ADR-002 test ailesi, gerçek SQL ile).
