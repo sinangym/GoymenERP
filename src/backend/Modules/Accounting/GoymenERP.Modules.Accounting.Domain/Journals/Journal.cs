@@ -76,7 +76,13 @@ public sealed class Journal
 
         ArgumentNullException.ThrowIfNull(dates);
         ArgumentNullException.ThrowIfNull(period);
+        ArgumentNullException.ThrowIfNull(lines);
         var array = lines.ToArray();
+        if (array.Any(line => line is null))
+        {
+            throw new ArgumentException("A journal line cannot be null.", nameof(lines));
+        }
+
         if (array.Length < 2)
         {
             throw new AccountingDomainException(

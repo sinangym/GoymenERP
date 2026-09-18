@@ -47,7 +47,8 @@ public sealed record AmountView(AmountDisclosure Disclosure, MoneyText? Money);
 public sealed record UnallocatedView(AllocationKnowledge Knowledge, AmountView Amount);
 public sealed record BankAccountView(Guid Id, Guid CompanyId, Guid CurrencyId, string DisplayName,
     bool IsActive, bool IsUsableForReceipt, string Version);
-public sealed record PartyAccountEligibility(Guid PartyId, Guid CompanyAccountId, Guid CompanyId, bool IsActive);
+public sealed record PartyAccountEligibility(Guid PartyId, Guid CompanyAccountId, Guid CompanyId, bool IsActive,
+    DraftPartyLabel? Label = null, bool IsPartyActive = false);
 public sealed record SourceSummary(Guid Id, Guid CompanyId, string SourceNumber, string Version,
     SourceStage Stage, Guid PartyId, Guid CompanyAccountId, Guid TreasuryAccountId, Guid CurrencyId,
     DateOnly OccurredOn, DateOnly? ValueOn, AmountView Amount);
