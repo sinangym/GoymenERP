@@ -932,14 +932,20 @@ public sealed partial class OpenApiContractGenerationTests
                     ("allowedCompanyIds", "type:array;items:type:string;format:uuid")),
                 ["InventoryLabelViewV1"] = ObjectSchema(
                     ["labelId", "companyId", "code", "productId", "lotId", "heatNumber", "coilNumber",
-                        "documentStatus", "requiredDocuments", "documents", "prints"],
+                        "documentStatus", "requiredDocuments", "documents", "prints", "lot"],
                     ("labelId", "type:string;format:uuid"), ("companyId", "type:string;format:uuid"),
                     ("code", "type:string"), ("productId", "type:string;format:uuid"),
                     ("lotId", "type:string;format:uuid"), ("heatNumber", "type:null|string"),
                     ("coilNumber", "type:null|string"), ("documentStatus", "type:string"),
                     ("requiredDocuments", "type:array;items:type:string"),
                     ("documents", "type:array;items:ref:InventoryLabelDocumentV1"),
-                    ("prints", "type:array;items:ref:InventoryLabelPrintV1")),
+                    ("prints", "type:array;items:ref:InventoryLabelPrintV1"),
+                    ("lot", "ref:InventoryLotV1")),
+                // T07 lot record (#324): the label's lot, one per (company, lot).
+                ["InventoryLotV1"] = ObjectSchema(
+                    ["id", "heatNumber", "coilNumber"],
+                    ("id", "type:string;format:uuid"), ("heatNumber", "type:null|string"),
+                    ("coilNumber", "type:null|string")),
                 ["InventoryLabelDocumentV1"] = ObjectSchema(
                     ["kind", "attachedAtUtc"],
                     ("kind", "type:string"), ("attachedAtUtc", "type:string;format:date-time")),

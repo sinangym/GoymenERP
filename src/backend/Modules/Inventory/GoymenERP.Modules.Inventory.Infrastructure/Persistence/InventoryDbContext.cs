@@ -12,11 +12,14 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// <item>Every row is a tenant row of the company holding the stock: a global query filter on the
 /// server-resolved company, and a write guard that refuses any row of another company, any
 /// company change and any write without a resolved company.</item>
+/// <item>A label belongs to a lot of its own company (DEC-PRD-003): (company, lot) references the
+/// lot's (company, id) alternate key, so a label can never name another company's lot and never
+/// exist without its lot.</item>
 /// <item>A label is unique by (company, code) only; there is no group-wide code index, so no
 /// code can reveal another company's stock.</item>
 /// <item>A location is referenced by (company, location) against Organization's alternate key, so
 /// a row can never point at another company's location; a company by its id.</item>
-/// <item>Movements, their lines, prints and document attachments are append-only; a balance
+/// <item>Lots, movements, their lines, prints and document attachments are append-only; a balance
 /// changes its quantity only; a label its version only. Nothing is ever deleted.</item>
 /// <item>One source (or source line) causes at most one movement of each kind: two filtered
 /// unique indexes (ORG #281 P3-1). A source is answered whole or line by line per kind, never
@@ -30,6 +33,8 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
     : DbContext(options)
 {
     public const string Schema = "inventory";
+
+    internal DbSet<LotRow> Lots => Set<LotRow>();
 
     internal DbSet<LabelRow> Labels => Set<LabelRow>();
 
@@ -50,6 +55,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         ArgumentNullException.ThrowIfNull(modelBuilder);
 
         ConfigureOrganizationReferences(modelBuilder);
+        ConfigureLots(modelBuilder);
         ConfigureLabels(modelBuilder);
         ConfigureLabelPrints(modelBuilder);
         ConfigureLabelDocuments(modelBuilder);
@@ -86,6 +92,33 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         location.HasKey(x => new { x.CompanyId, x.Id });
     }
 
+    private void ConfigureLots(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<LotRow>();
+        entity.ToTable("Lots", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_Lots_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_Lots_Trace",
+                "([HeatNumber] IS NULL OR LEN([HeatNumber]) > 0) AND ([CoilNumber] IS NULL OR LEN([CoilNumber]) > 0)");
+            table.HasCheckConstraint("CK_Lots_CreatedBy", "LEN([CreatedBy]) > 0");
+            table.HasCheckConstraint("CK_Lots_Version", "[Version] >= 1");
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.HeatNumber).HasMaxLength(64);
+        entity.Property(x => x.CoilNumber).HasMaxLength(64);
+        entity.Property(x => x.CreatedBy).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.RowVersion).IsRowVersion();
+        entity.HasIndex(x => new { x.CompanyId, x.ProductId });
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ConfigureLabels(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<LabelRow>();
@@ -110,6 +143,12 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         entity.HasIndex(x => new { x.CompanyId, x.Code }).IsUnique();
         entity.HasIndex(x => new { x.CompanyId, x.ProductId });
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        // DEC-PRD-003: the label's lot, of the same company (the lot's alternate key).
+        entity.HasOne<LotRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.LotId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .HasConstraintName("FK_Labels_Lots_CompanyId_LotId")
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
