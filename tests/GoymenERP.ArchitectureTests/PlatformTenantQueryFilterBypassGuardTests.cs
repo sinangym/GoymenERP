@@ -84,18 +84,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.cs";
     private const string SqlServerRcsiVerifierPath =
         "tools/verify_rcsi_relational_acceptance.py";
-    // Re-fingerprinted with the broad inventory entry for the central fresh-authority SQL
-    // acceptance class: two names added, discovery 84 -> 86, execution 91 -> 93. The verifier's
+    // Re-fingerprinted with the broad inventory entry for the Inventory SQL acceptance class
+    // (INV-2, #293): five names added, discovery 86 -> 91, execution 93 -> 98. The verifier's
     // logic is unchanged.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "c2d26a4a81dbb9cc0af98d0549f26b4f9f058e88bca2a13405c656e0e693332f";
+        "6ed6629c2703c1d3486cd958887dfe0d3d74bda0d27ca8082b05fba39a376a0b";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
     // Re-fingerprinted for the same inventory change: updated counts plus one case pinning the
     // new class as mandatory.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "5b0ea24faee6c49d43cf8a47c1fdfdb78c609d76def76a6992438eefd4f06c4d";
+        "3c7f87dfe6b4dee9e8c0e1e629d80ce6149cb155862c0bc9526fa775dafba173";
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "91a665e6e8982e5a9b66f5d16a14d9fc4d7f98d63775de959a8cc6b2dea2b018";
@@ -122,6 +122,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
              + "GoymenERP.Modules.Organization.Infrastructure/Persistence/"
              + "OrganizationDbContext.cs"] =
                 "198fddce9a2fd4552850c2d1545b96b0030411d5d256a70ee932cf5173be2ff2",
+            // INV-2 (#293, ADR-INV-001 option A): company-scoped like Organization; every tenant
+            // row and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
+            ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
+             + "Persistence/InventoryDbContext.cs"] =
+                "61d6e950d779645f2f4f028e350b01d82930e11b12c82126e5f28b3387af242e",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "a25322e5924213ccdf3241e0d1ff4cc15f5d6be168345894eaba3f6b77204812",
@@ -237,6 +242,28 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["EnsureCreatedAsync"] = 1,
                             ["MigrateAsync"] = 1
+                        }),
+                // INV-2 (#293): InitializeInventoryModuleAsync's one provider branch, as Organization.
+                ["src/backend/Modules/Inventory/"
+                 + "GoymenERP.Modules.Inventory.Infrastructure/"
+                 + "InventoryModuleExtensions.cs"] =
+                    new(
+                        "25b5c9f1029a244f1a1b27d4347705d930e0444d24489c1bdfb1f338afa62871",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["EnsureCreatedAsync"] = 1,
+                            ["MigrateAsync"] = 1
+                        }),
+                // INV-2 (#293): the SqlClient namespace only to recognise a unique-key violation
+                // (SqlException 2601/2627) after SaveChanges, as the Idempotency terminal store does.
+                // No connection, command or raw SQL.
+                ["src/backend/Modules/Inventory/"
+                 + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
+                    new(
+                        "2e0a20c7f00700cca3368d12ba3ac02237e03bdb3a718d939846b18d39406ace",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
                         })
             };
 
@@ -270,7 +297,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "OrganizationDesignTimeDbContextFactory.cs"] =
                     new(
                         "OrganizationDbContext",
-                        "d02da60cb32fdd67dceeae4cc0b1936c562d06ef10021f5b9cd1b9c686cc6626")
+                        "d02da60cb32fdd67dceeae4cc0b1936c562d06ef10021f5b9cd1b9c686cc6626"),
+                ["src/backend/Modules/Inventory/"
+                 + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/"
+                 + "InventoryDesignTimeDbContextFactory.cs"] =
+                    new(
+                        "InventoryDbContext",
+                        "14f56a93a57e7eb18db82a535b0867da7692e858aaaaca397e32f57f062dc204")
             };
 
     // Migration data/raw SQL operations are deployment-time DDL/DML, not runtime global-query-
@@ -6146,10 +6179,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         @"(?<![\p{L}\p{Nd}_])new\s+"
         + @"(?:global\s*::\s*)?(?:@?[\p{L}_][\p{L}\p{Nd}_]*\s*\.\s*)*@?"
         + @"(?<type>AuditDbContext|CommandExecutionDbContext|IdentityDbContext|"
-        + @"OrganizationDbContext)(?![\p{L}\p{Nd}_])\s*\(",
+        + @"OrganizationDbContext|InventoryDbContext)(?![\p{L}\p{Nd}_])\s*\(",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedContextConstructionRegex();
 
+    // InventoryDbContext is deliberately absent here (INV-2, #293): this identifier list drives the
+    // target-typed `new(` heuristic, and InventoryStore uses `new(...)` for its own records, which
+    // would read as six DbContext constructions. Explicit `new InventoryDbContext(` and aliases are
+    // still caught by the construction and alias regexes; adding it here needs those `new(` calls
+    // written with their types first (an Inventory-owned change).
     [GeneratedRegex(
         @"(?<![\p{L}\p{Nd}_])@?(?<type>AuditDbContext|CommandExecutionDbContext|"
         + @"IdentityDbContext|OrganizationDbContext)(?![\p{L}\p{Nd}_])",
@@ -6166,7 +6204,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + @"(?<alias>@?[\p{L}_][\p{L}\p{Nd}_]*)\s*=\s*"
         + @"(?:global\s*::\s*)?(?:@?[\p{L}_][\p{L}\p{Nd}_]*\s*\.\s*)*@?"
         + @"(?<type>AuditDbContext|CommandExecutionDbContext|IdentityDbContext|"
-        + @"OrganizationDbContext)(?![\p{L}\p{Nd}_])\s*;",
+        + @"OrganizationDbContext|InventoryDbContext)(?![\p{L}\p{Nd}_])\s*;",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedContextTypeAliasRegex();
 
@@ -6175,7 +6213,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + @"AuditDesignTimeDbContextFactory|"
         + @"CommandExecutionDesignTimeDbContextFactory|"
         + @"IdentityDesignTimeDbContextFactory|"
-        + @"OrganizationDesignTimeDbContextFactory)(?![\p{L}\p{Nd}_])",
+        + @"OrganizationDesignTimeDbContextFactory|"
+        + @"InventoryDesignTimeDbContextFactory)(?![\p{L}\p{Nd}_])",
         RegexOptions.CultureInvariant)]
     private static partial Regex ReviewedDesignTimeFactoryIdentifierRegex();
 

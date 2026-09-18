@@ -126,9 +126,14 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.SqlServerRelationalAcceptanceTests.MigrationSeedWriteGuardCompositeForeignKeyAndHttpIsolation_AreEnforced",
     "GoymenERP.Api.IntegrationTests.CentralAuthorityRevalidationSqlServerRelationalAcceptanceTests.A_revocation_is_measured_inside_the_request_and_refuses_the_next_one",
     "GoymenERP.Api.IntegrationTests.CentralAuthorityRevalidationSqlServerRelationalAcceptanceTests.A_standing_grant_is_answered_the_same_by_both_ports_and_an_unknown_name_reads_nothing",
+    "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Receipt_issue_block_and_release_are_durable_replayable_audited_and_reconcile",
+    "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Each_company_sees_only_its_own_labels_and_a_code_is_unique_per_company_only",
+    "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.A_source_causes_one_movement_per_kind_and_a_stock_bearing_label_is_not_received_again",
+    "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Two_writers_that_read_the_same_piece_cannot_both_commit",
+    "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
 )
-BROAD_DISCOVERY_COUNT = 86
-BROAD_EXECUTION_COUNT = 93
+BROAD_DISCOVERY_COUNT = 91
+BROAD_EXECUTION_COUNT = 98
 
 
 def verify_discovery(standard_output: str) -> None:
