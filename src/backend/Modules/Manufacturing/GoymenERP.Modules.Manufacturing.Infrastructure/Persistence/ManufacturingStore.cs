@@ -545,5 +545,5 @@ public sealed class ManufacturingStore(
     }
 
     private static ManufacturingStoreException Refused(string code, string message, Exception? inner = null) =>
-        new(code, message, inner);
+        new ManufacturingStoreException(code, message, inner);
 }
