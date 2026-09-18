@@ -1,0 +1,280 @@
+/**
+ * The Manufacturing order screen — component/DOM tests through the real shell, gate and
+ * fence, over synthetic fixtures. NOT real-API, real-SQL or browser acceptance, and
+ * never reported as such (the `mfg` browser suite is a later slice).
+ */
+
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import {
+  COMPANY_A,
+  ORDER,
+  READER_CAPABILITIES,
+  ROLL_1,
+  installFetch,
+  json,
+  order,
+  problem,
+  renderAt,
+  requestsFor,
+  roll,
+  type RecordedRequest,
+} from './testHarness'
+
+const PATH = `/uretim/emir/${ORDER}`
+
+interface Scenario {
+  readonly recorded: RecordedRequest[]
+}
+
+function stub(
+  options: {
+    reads?: Array<() => Response>
+    commands?: Array<() => Response>
+    capabilities?: readonly string[]
+  } = {},
+): Scenario {
+  const reads = options.reads ?? [() => json(order())]
+  const commands = options.commands ?? [() => json(order({ version: 2 }))]
+  let readIndex = 0
+  let commandIndex = 0
+  const recorded = installFetch({
+    capabilities: options.capabilities,
+    respond: (url, init) => {
+      if (!url.includes(`/manufacturing/orders/${ORDER}`)) return undefined
+      if ((init?.method ?? 'GET') === 'POST') {
+        const respond = commands[Math.min(commandIndex, commands.length - 1)]
+        commandIndex += 1
+        return respond()
+      }
+      const respond = reads[Math.min(readIndex, reads.length - 1)]
+      readIndex += 1
+      return respond()
+    },
+  })
+  return { recorded }
+}
+
+async function fillFact(
+  user: ReturnType<typeof userEvent.setup>,
+  values: { kind?: string; kg?: string; outputClass?: string } = {},
+) {
+  if (values.kind !== undefined) await user.click(screen.getByLabelText(values.kind))
+  await user.selectOptions(screen.getByLabelText('Ana rulo'), ROLL_1)
+  if (values.outputClass !== undefined) {
+    await user.selectOptions(screen.getByLabelText('Çıktı sınıfı'), values.outputClass)
+  }
+  const kg = screen.getByLabelText(/Kütle \(kg\)/)
+  await user.clear(kg)
+  await user.type(kg, values.kg ?? '250.5')
+  const time = screen.getByLabelText('Zaman')
+  await user.clear(time)
+  await user.type(time, '2026-09-18T09:30')
+}
+
+const posts = (recorded: RecordedRequest[]) => requestsFor(recorded, '/manufacturing/orders/', 'POST')
+const reads = (recorded: RecordedRequest[]) => requestsFor(recorded, `/manufacturing/orders/${ORDER}`, 'GET')
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+describe('order balances', () => {
+  it('shows each roll as the server read it: signed difference, cost as a status, no remaining target invented', async () => {
+    stub({
+      reads: [
+        () =>
+          json(
+            order({
+              rolls: [
+                roll(ROLL_1, {
+                  issuedKg: '1000.125',
+                  outputsKg: { GoodProduct: '900', SecondQuality: '0', UsableRemnant: '0', Scrap: '0', ProcessLoss: '0' },
+                  workInProgressKg: '102.625',
+                  unexplainedKg: '-2.5',
+                  isFullyAccounted: false,
+                }),
+              ],
+            }),
+          ),
+      ],
+      capabilities: READER_CAPABILITIES,
+    })
+    renderAt(PATH)
+
+    const row = await screen.findByRole('row', { name: new RegExp(ROLL_1) })
+    expect(within(row).getByText('1000.125')).toBeTruthy()
+    expect(within(row).getByText('-2.5')).toBeTruthy()
+    expect(within(row).getByText('Fark var')).toBeTruthy()
+    expect(screen.getByTestId('cost-status').textContent).toContain('Hesaplanmadı')
+    expect(screen.getByTestId('remaining-target').textContent).toContain('Planda beyan edilmiş bir hedef yok')
+    expect(screen.getByRole('columnheader', { name: 'Açıklanamayan fark' })).toBeTruthy()
+  })
+
+  it('draws no form for a reader and never sends a command (card D3)', async () => {
+    const { recorded } = stub({ capabilities: READER_CAPABILITIES })
+    renderAt(PATH)
+    await screen.findByRole('row', { name: new RegExp(ROLL_1) })
+    expect(screen.queryByRole('heading', { name: 'Gerçekleşme kaydı' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Kaydet' })).toBeNull()
+    expect(posts(recorded)).toHaveLength(0)
+  })
+
+  it('mounts nothing and reads nothing while the capability is not published (staged)', async () => {
+    const { recorded } = stub({ capabilities: [] })
+    renderAt(PATH)
+    expect(await screen.findByText(/^Bulunamadı/)).toBeTruthy()
+    expect(reads(recorded)).toHaveLength(0)
+  })
+
+  it('shows a read that met concurrent commits as a retryable unavailable, not a balance', async () => {
+    stub({ reads: [() => problem(503, { code: 'service_unavailable' })] })
+    renderAt(PATH)
+    expect(await screen.findByText(/^Servis geçici olarak kullanılamıyor/)).toBeTruthy()
+    expect(screen.queryByRole('table')).toBeNull()
+  })
+})
+
+describe('fact forms', () => {
+  it('sends one frozen fact with its own key and id, then shows the RE-READ order', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      reads: [
+        () => json(order()),
+        () => json(order({ version: 2, rolls: [roll(ROLL_1, { issuedKg: '250.5', netIssuedKg: '250.5', unexplainedKg: '250.5', isFullyAccounted: false })] })),
+      ],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await fillFact(user)
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+
+    expect(await screen.findByText('Kaydedildi')).toBeTruthy()
+    const [post] = posts(recorded)
+    expect(post.url).toBe(`/api/v1/manufacturing/orders/${ORDER}/input-issues`)
+    expect(post.headers['X-Company-Id']).toBe(COMPANY_A)
+    expect(post.headers['Idempotency-Key']).toMatch(/^[0-9a-f-]{36}$/)
+    expect(post.body).toMatchObject({ expectedVersion: 1, parentRollId: ROLL_1, kg: '250.5' })
+    expect((post.body as { occurredAtUtc: string }).occurredAtUtc).toMatch(/Z$/)
+    expect(post.body).not.toHaveProperty('companyId')
+    await waitFor(() => expect(reads(recorded)).toHaveLength(2))
+    const row = await screen.findByRole('row', { name: new RegExp(ROLL_1) })
+    await waitFor(() => expect(within(row).getAllByText('250.5').length).toBeGreaterThan(0))
+  })
+
+  it('says a replayed answer was already recorded', async () => {
+    const user = userEvent.setup()
+    stub({ commands: [() => json(order(), 200, { 'Idempotency-Replayed': 'true', 'Idempotency-Original-Correlation-Id': 'c1' })] })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await fillFact(user)
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+    expect(await screen.findByText('Daha önce kaydedilmiş')).toBeTruthy()
+  })
+
+  it('sends an output with its class, and refuses to send one without it', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub()
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await user.click(screen.getByLabelText('Çıktı bildirimi'))
+    await user.selectOptions(screen.getByLabelText('Ana rulo'), ROLL_1)
+    await user.type(screen.getByLabelText(/Kütle \(kg\)/), '100')
+    await user.type(screen.getByLabelText('Zaman'), '2026-09-18T09:30')
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+    expect(await screen.findByText('Bir çıktı sınıfı seçin.')).toBeTruthy()
+    expect(posts(recorded)).toHaveLength(0)
+
+    await user.selectOptions(screen.getByLabelText('Çıktı sınıfı'), 'Scrap')
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+    await screen.findByText('Kaydedildi')
+    const [post] = posts(recorded)
+    expect(post.url).toMatch(/\/outputs$/)
+    expect(post.body).toMatchObject({ outputClass: 'Scrap', kg: '100' })
+  })
+
+  it('refuses a kilogram outside the plain-decimal grammar without sending anything', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub()
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await fillFact(user, { kg: '1,5' })
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+    expect(await screen.findByText(/Kilogram biçimi geçersiz/)).toBeTruthy()
+    expect(posts(recorded)).toHaveLength(0)
+  })
+
+  it('re-reads after a version conflict and sends the next attempt as a NEW command at the new version', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      reads: [() => json(order()), () => json(order({ version: 3 }))],
+      commands: [
+        () => problem(409, { code: 'manufacturing_version_conflict', expectedVersion: '1', currentVersion: '3' }),
+        () => json(order({ version: 4 })),
+      ],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await fillFact(user)
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+    expect(await screen.findByText(/Emir siz formu doldururken değişti/)).toBeTruthy()
+    await waitFor(() => expect(reads(recorded)).toHaveLength(2))
+    // The typed values stay for the next submit.
+    expect((screen.getByLabelText(/Kütle \(kg\)/) as HTMLInputElement).value).toBe('250.5')
+
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+    await screen.findByText('Kaydedildi')
+    const [first, second] = posts(recorded)
+    expect(second.body).toMatchObject({ expectedVersion: 3 })
+    expect(second.headers['Idempotency-Key']).not.toBe(first.headers['Idempotency-Key'])
+    expect((second.body as { factId: string }).factId).not.toBe((first.body as { factId: string }).factId)
+  })
+
+  it('freezes an unknown outcome and re-sends the SAME fact id and key until the server settles it', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      commands: [() => problem(503, { code: 'service_unavailable' }), () => json(order({ version: 2 }))],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await fillFact(user)
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+
+    expect(await screen.findByText('Sonuç bilinmiyor')).toBeTruthy()
+    expect((screen.getByLabelText(/Kütle \(kg\)/) as HTMLInputElement).disabled).toBe(true)
+    expect(screen.queryByRole('button', { name: 'Kaydet' })).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Aynı olguyu yeniden gönder' }))
+    await screen.findByText('Kaydedildi')
+    const [first, second] = posts(recorded)
+    expect(second.headers['Idempotency-Key']).toBe(first.headers['Idempotency-Key'])
+    expect(second.body).toEqual(first.body)
+  })
+
+  it('names a rule refusal by its code and an unlisted code as a generic refusal with the code', async () => {
+    const user = userEvent.setup()
+    stub({
+      commands: [
+        () => problem(422, { code: 'manufacturing_return_exceeds_issued' }),
+        () => problem(422, { code: 'manufacturing_new_rule' }),
+      ],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    await fillFact(user, { kind: 'Kullanılmayan girdi iadesi' })
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+    expect(await screen.findByText('İade, bu rulodan çıkan kütleyi aşamaz.')).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: 'Kaydet' }))
+    expect(await screen.findByText('İşlem reddedildi (manufacturing_new_rule).')).toBeTruthy()
+  })
+
+  it('closes the forms on a closed order', async () => {
+    stub({ reads: [() => json(order({ status: 'Closed' }))] })
+    renderAt(PATH)
+    expect(await screen.findAllByText('Emir kapalı; yeni gerçekleşme kaydedilmez.')).not.toHaveLength(0)
+    expect((screen.getByRole('button', { name: 'Kaydet' }) as HTMLInputElement).disabled).toBe(true)
+    expect((screen.getByLabelText(/Kütle \(kg\)/) as HTMLInputElement).disabled).toBe(true)
+  })
+})
