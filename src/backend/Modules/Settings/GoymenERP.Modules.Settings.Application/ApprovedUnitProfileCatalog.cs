@@ -126,7 +126,10 @@ public sealed class ApprovedUnitProfileCatalog
     /// window so the consumer's own date check rejects it. Null only when the company has no
     /// profile for the unit.
     /// </summary>
-    public ApprovedUnitProfileEntry? Find(Guid companyId, Guid unitId, DateOnly effectiveOn)
+    // Deliberately not named after EF's primary-key lookup: the platform guard forbids that
+    // member name in runtime source because the EF call bypasses query filters, and this
+    // in-memory lookup must not read like one.
+    public ApprovedUnitProfileEntry? VersionFor(Guid companyId, Guid unitId, DateOnly effectiveOn)
     {
         if (!_versions.TryGetValue((companyId, unitId), out var ordered))
         {

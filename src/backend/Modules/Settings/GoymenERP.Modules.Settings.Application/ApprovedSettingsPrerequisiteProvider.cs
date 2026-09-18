@@ -63,7 +63,7 @@ public sealed class ApprovedSettingsPrerequisiteProvider(
                 new SettingsPrerequisiteException("settings_provider_unavailable"));
         }
 
-        var entry = _catalog.Find(companyId, unitId, effectiveOn);
+        var entry = _catalog.VersionFor(companyId, unitId, effectiveOn);
         if (entry is null)
         {
             return Task.FromException<UnitProfileV1>(new SettingsPrerequisiteException(UnitProfileNotFoundCode));
