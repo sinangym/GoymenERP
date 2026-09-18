@@ -56,8 +56,8 @@ public static class FinanceModuleExtensions
     /// permission port and bank reader. Every piece is per request (scoped):
     /// <list type="bullet">
     /// <item><see cref="FinancePermissionPort"/>: fresh #276 measurements of the Finance names;</item>
-    /// <item><see cref="FinanceBankAccountService"/>: the persisted bank-account reader (FS0); its
-    /// master writes are not exposed in this slice;</item>
+    /// <item><see cref="FinanceBankAccountService"/>: the persisted bank-account reader and master (FS0;
+    /// FIN-UI-1), each write audited with the roles of its own permission;</item>
     /// <item><see cref="ReceiptDraftService"/>: the draft service, bound to the Finance money operation
     /// key, audited with the roles that granted the save.</item>
     /// </list>
@@ -73,6 +73,7 @@ public static class FinanceModuleExtensions
         // the company context: the host's scoped ICompanyContext is resolved, never registered, here.
         services.AddScoped(CreateBankAccountService);
         services.AddScoped<IFinanceBankAccountReader>(provider => provider.GetRequiredService<FinanceBankAccountService>());
+        services.AddScoped<IFinanceBankAccountMaster>(provider => provider.GetRequiredService<FinanceBankAccountService>());
         services.AddScoped<IManualReceiptService>(CreateReceiptDraftService);
         services.TryAddSingleton(TimeProvider.System);
         return services;
@@ -91,9 +92,9 @@ public static class FinanceModuleExtensions
             provider.GetService<ISettingsMoneyCandidateReader>()
                 ?? new UnavailableSettingsPrerequisiteProvider(companyContext, currentUser),
             provider.GetRequiredService<IAuditEventCollector>(),
-            // Registered as the reader only: the bank-account master's writes (propose, approve) get their
-            // own per-command envelopes with their HTTP slice, not this one.
-            Envelope(provider, ErpPermissions.FinanceBankAccountRead, permissions, FinanceAction.ReadBankAccounts),
+            new FinanceBankAccountEnvelopes(
+                Envelope(provider, ErpPermissions.FinanceBankAccountPropose, permissions, FinanceAction.ProposeBankAccount),
+                Envelope(provider, ErpPermissions.FinanceBankAccountApprove, permissions, FinanceAction.ApproveBankAccount)),
             provider.GetRequiredService<TimeProvider>());
     }
 

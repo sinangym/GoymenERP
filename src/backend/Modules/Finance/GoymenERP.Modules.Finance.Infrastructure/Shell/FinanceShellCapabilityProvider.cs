@@ -1,0 +1,83 @@
+using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.Modules.Finance.Contracts;
+
+namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
+
+/// <summary>
+/// FIN-UI-1: Finance's screens in the shell — F-02 Tahsilat / Ödeme (the manual-receipt drafts) and
+/// F-04 Banka Hesapları (the bank-account master), UI catalog / Master §27.11. The ids and paths are
+/// the owner's technical mapping (#254 5654539215), on Cari's Turkish-path convention.
+/// <para>
+/// <b>Staged first:</b> every declaration is <c>ImplementationAvailable: false</c> until the FIN-01
+/// browser acceptance; a separate flip PR makes them available, as for Cari. The approval is a control
+/// of the F-04 list (<c>ParentCapabilityId</c>), not a route. A declaration grants nothing: each route's
+/// service measures its permission afresh.
+/// </para>
+/// <para>
+/// The host registers this provider together with its shell authority (the central writer's); this
+/// module does not.
+/// </para>
+/// </summary>
+public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
+{
+    public const string OwnerId = "CHATGPT-BUSINESS/FINANCE";
+    public const string OwnerContractVersion = "1.0";
+    public const string ReceiptsScreenId = "F-02";
+    public const string BankAccountsScreenId = "F-04";
+
+    public const string ReceiptListCapabilityId = "finance.receipts.list";
+    public const string ReceiptListRouteId = "finance.receipts";
+    public const string ReceiptListRoutePath = "/finans/tahsilatlar";
+    public const string ReceiptDraftCapabilityId = "finance.receipts.draft";
+    public const string ReceiptDraftRouteId = "finance.receipts.new";
+    public const string ReceiptDraftRoutePath = "/finans/tahsilatlar/yeni";
+    public const string ReceiptDetailCapabilityId = "finance.receipts.detail";
+    public const string ReceiptDetailRouteId = "finance.receipts.detail";
+    public const string ReceiptDetailRoutePath = "/finans/tahsilatlar/:sourceId";
+
+    public const string BankAccountListCapabilityId = "finance.bank-accounts.list";
+    public const string BankAccountListRouteId = "finance.bank-accounts";
+    public const string BankAccountListRoutePath = "/finans/banka-hesaplari";
+    public const string BankAccountProposeCapabilityId = "finance.bank-accounts.propose";
+    public const string BankAccountProposeRouteId = "finance.bank-accounts.new";
+    public const string BankAccountProposeRoutePath = "/finans/banka-hesaplari/yeni";
+    public const string BankAccountApproveCapabilityId = "finance.bank-accounts.approve";
+
+    public string Owner => OwnerId;
+
+    public string ContractVersion => OwnerContractVersion;
+
+    public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations()
+    {
+        var bankAccounts = Declaration(BankAccountListCapabilityId, BankAccountListRouteId, BankAccountListRoutePath,
+            BankAccountsScreenId, ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceBankAccountRead]);
+        return
+        [
+            Declaration(ReceiptListCapabilityId, ReceiptListRouteId, ReceiptListRoutePath, ReceiptsScreenId,
+                ShellCapabilityRoutePrecedence.Static, [FinancePermissionNames.DraftRead]),
+            Declaration(ReceiptDraftCapabilityId, ReceiptDraftRouteId, ReceiptDraftRoutePath, ReceiptsScreenId,
+                ShellCapabilityRoutePrecedence.Static,
+                [FinancePermissionNames.DraftSave, ErpPermissions.FinanceBankAccountRead]),
+            Declaration(ReceiptDetailCapabilityId, ReceiptDetailRouteId, ReceiptDetailRoutePath, ReceiptsScreenId,
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinancePermissionNames.DraftRead]),
+            bankAccounts,
+            Declaration(BankAccountProposeCapabilityId, BankAccountProposeRouteId, BankAccountProposeRoutePath,
+                BankAccountsScreenId, ShellCapabilityRoutePrecedence.Static, [ErpPermissions.FinanceBankAccountPropose]),
+            // The approval is a control on the list: the list's route and access, plus the approve name.
+            bankAccounts with
+            {
+                CapabilityId = BankAccountApproveCapabilityId,
+                ParentCapabilityId = BankAccountListCapabilityId,
+                RequiredPermissions = [ErpPermissions.FinanceBankAccountRead, ErpPermissions.FinanceBankAccountApprove],
+            },
+        ];
+    }
+
+    // Finance records are one company's and have no site dimension: a single company, company-wide.
+    private static ShellCapabilityDeclaration Declaration(string capabilityId, string routeId, string routePath,
+        string screenId, ShellCapabilityRoutePrecedence precedence, IReadOnlyCollection<string> permissions) =>
+        new ShellCapabilityDeclaration(capabilityId, routeId, routePath, screenId, precedence,
+            ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide, permissions,
+            ImplementationAvailable: false);
+}

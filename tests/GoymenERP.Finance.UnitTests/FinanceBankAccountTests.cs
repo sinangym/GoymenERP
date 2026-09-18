@@ -42,9 +42,12 @@ public sealed class FinanceBankAccountTests
         Assert.Equal(FinanceDbContext.IdentityCollation, designAccounts.FindProperty(nameof(BankAccountRow.ProposedBy))!.GetCollation());
         Assert.Equal(FinanceDbContext.IdentityCollation, designAccounts.FindProperty(nameof(BankAccountRow.ApprovedBy))!.GetCollation());
 
-        // The shared command record names exactly one target.
+        // The shared command record names at most one target; none only for a recorded refusal (ADR-011 §7).
         var commands = design.FindEntityType(typeof(FinanceCommandRow))!;
-        Assert.Contains(commands.GetCheckConstraints(), check => check.Name == "CK_Commands_Target");
+        var target = Assert.Single(commands.GetCheckConstraints(), check => check.Name == "CK_Commands_Target");
+        Assert.Equal(FinanceDbContext.TargetCheck, target.Sql);
+        Assert.EndsWith("OR ([DraftId] IS NULL AND [BankAccountId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')",
+            target.Sql, StringComparison.Ordinal);
         Assert.All(commands.GetForeignKeys().Where(key => key.PrincipalEntityType.ClrType != typeof(OrganizationCompanyReference)),
             key => Assert.False(key.IsRequired));
     }
@@ -54,6 +57,7 @@ public sealed class FinanceBankAccountTests
     {
         using var context = Context();
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddBankAccounts", StringComparison.Ordinal));
+        Assert.Equal("20260919110000_RecordTerminalCommandResults", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -156,15 +160,72 @@ public sealed class FinanceBankAccountTests
 
         Assert.Equal(outcome, (await service.ListAuthorizedAsync(finance, CancellationToken.None)).Outcome);
         Assert.Equal(outcome, (await service.GetAuthorizedAsync(finance, Guid.NewGuid(), CancellationToken.None)).Outcome);
+        Assert.Equal(outcome, (await service.ListMasterAsync(finance, CancellationToken.None)).Outcome);
+        Assert.Equal(outcome, (await service.CurrencyCandidatesAsync(finance, CancellationToken.None)).Outcome);
     }
 
-    private static FinanceBankAccountService Service(FinanceDbContext context, PermissionDecision permission)
+    [Fact]
+    public async Task The_currency_candidates_are_Settings_answer_as_given_and_never_a_default()
+    {
+        await using var context = Context();
+        var finance = new FinanceContext(CompanyA, Actor, "SENTETIK-correlation", null);
+        MoneyCurrencyCandidateV1[] given =
+        [
+            new MoneyCurrencyCandidateV1(Guid.Parse("33333333-3333-3333-3333-333333333333"), "USD", "SENTETIK Dolar"),
+            new MoneyCurrencyCandidateV1(Currency, "TRY", "SENTETIK Lira"),
+        ];
+        var permissions = new RecordingPermission(PermissionDecision.Allowed);
+
+        var found = await Service(context, permissions, new Candidates(given)).CurrencyCandidatesAsync(finance, CancellationToken.None);
+
+        Assert.Equal(ReadOutcome.Found, found.Outcome);
+        Assert.Equal(CompanyA, found.Resource!.CompanyId);
+        // Order kept, nothing added, nothing picked.
+        Assert.Equal(given.Select(item => (item.CurrencyId, item.Code, item.DisplayLabel)),
+            found.Resource.Items.Select(item => (item.CurrencyId, item.Code, item.DisplayLabel)));
+        // The propose authority is measured before Settings and again after it.
+        Assert.Equal([FinanceAction.ProposeBankAccount, FinanceAction.ProposeBankAccount], permissions.Actions);
+
+        // No candidates is an honest empty list, not a made-up one.
+        var empty = await Service(context, PermissionDecision.Allowed, new Candidates([])).CurrencyCandidatesAsync(finance,
+            CancellationToken.None);
+        Assert.Equal(ReadOutcome.Found, empty.Outcome);
+        Assert.Empty(empty.Resource!.Items);
+    }
+
+    [Theory]
+    [InlineData("settings_provider_unavailable", ReadOutcome.Unavailable)]
+    [InlineData("settings_access_denied", ReadOutcome.Denied)]
+    [InlineData("malformed", ReadOutcome.Unavailable)]
+    public async Task An_unusable_candidate_source_is_refused_never_emptied(string fault, ReadOutcome outcome)
+    {
+        await using var context = Context();
+        ISettingsMoneyCandidateReader reader = fault == "malformed"
+            ? new Candidates([new MoneyCurrencyCandidateV1(Currency, "TRY", "A"), new MoneyCurrencyCandidateV1(Currency, "TRY", "B")])
+            : new FailingCandidates(fault);
+
+        var result = await Service(context, PermissionDecision.Allowed, reader).CurrencyCandidatesAsync(
+            new FinanceContext(CompanyA, Actor, "SENTETIK-correlation", null), CancellationToken.None);
+
+        Assert.Equal(outcome, result.Outcome);
+        Assert.Null(result.Resource);
+    }
+
+    private static FinanceBankAccountService Service(FinanceDbContext context, PermissionDecision permission,
+        ISettingsMoneyCandidateReader? currencies = null) =>
+        Service(context, new RecordingPermission(permission), currencies);
+
+    private static FinanceBankAccountService Service(FinanceDbContext context, IFinancePermissionPort permissions,
+        ISettingsMoneyCandidateReader? currencies = null)
     {
         var company = new CompanyContext();
         company.Set(CompanyA);
-        return new FinanceBankAccountService(context, company, new FixedUser(Actor, CompanyA), new FixedPermission(permission),
-            new NoCandidates(), new AuditEventCollector(),
-            new FinanceAuditEnvelope(FinanceBankAccountService.ProposeCommand, ["SENTETIK-FINANCE"], "Web"), TimeProvider.System);
+        return new FinanceBankAccountService(context, company, new FixedUser(Actor, CompanyA), permissions,
+            currencies ?? new NoCandidates(), new AuditEventCollector(),
+            new FinanceBankAccountEnvelopes(
+                new FinanceAuditEnvelope("finance.bank-account.propose", ["SENTETIK-FINANCE"], "Web"),
+                new FinanceAuditEnvelope("finance.bank-account.approve", ["SENTETIK-FINANCE"], "Web")),
+            TimeProvider.System);
     }
 
     private static BankAccountRow Account() => new BankAccountRow
@@ -189,10 +250,28 @@ public sealed class FinanceBankAccountTests
         return new FinanceDbContext(options, company);
     }
 
-    private sealed class FixedPermission(PermissionDecision decision) : IFinancePermissionPort
+    private sealed class RecordingPermission(PermissionDecision decision) : IFinancePermissionPort
     {
+        public List<FinanceAction> Actions { get; } = [];
+
         public Task<PermissionDecision> CheckAsync(FinanceContext context, FinanceAction action, Guid? sourceId,
-            CancellationToken cancellationToken) => Task.FromResult(decision);
+            CancellationToken cancellationToken)
+        {
+            Actions.Add(action);
+            return Task.FromResult(decision);
+        }
+    }
+
+    private sealed class Candidates(IReadOnlyList<MoneyCurrencyCandidateV1> candidates) : ISettingsMoneyCandidateReader
+    {
+        public Task<IReadOnlyList<MoneyCurrencyCandidateV1>> GetMoneyCurrencyCandidatesAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(candidates);
+    }
+
+    private sealed class FailingCandidates(string code) : ISettingsMoneyCandidateReader
+    {
+        public Task<IReadOnlyList<MoneyCurrencyCandidateV1>> GetMoneyCurrencyCandidatesAsync(CancellationToken cancellationToken = default) =>
+            throw new SettingsPrerequisiteException(code);
     }
 
     /// <summary>Never reached by these tests: every refusal comes before Settings is asked.</summary>
