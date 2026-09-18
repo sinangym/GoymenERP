@@ -103,19 +103,23 @@ public sealed class SettingsHostWiringTests
     }
 
     [Fact]
-    public void The_Sales_reference_read_still_composes_and_its_product_path_has_no_runtime_yet()
+    public async Task The_Sales_reference_read_composes_over_the_product_runtime_which_is_unconfigured_in_this_host()
     {
         using var factory = Host(Gdc);
         using var scope = factory.Services.CreateScope();
 
         // The Sales handler is built over the swapped provider without error.
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<ISalesReferenceReadService>());
-        // Sales asks Settings for unit profiles only after a Product snapshot. No Product sales
-        // eligibility runtime is composed on main, so the product path answers
-        // product_provider_unavailable before it ever reaches Settings: the swap changes no
-        // reachable Sales answer today. This assertion goes red the day that runtime is wired,
-        // which is when the Sales-visible effect of this swap must be re-checked.
-        Assert.Null(scope.ServiceProvider.GetService<IProductSalesEligibilityV1>());
+        // C3 registers the Product owner's eligibility runtime. This host configures no Product
+        // runtime, so the port answers 503 product_runtime_unconfigured, which Sales maps to the
+        // same 503 product_provider_unavailable it gave for a missing port; and the Sales product
+        // route binds no product permission, so it answers 403 before asking. The swap and C3
+        // change no reachable Sales answer here.
+        var eligibility = scope.ServiceProvider.GetRequiredService<IProductSalesEligibilityV1>();
+        var failure = await Assert.ThrowsAsync<ProductOperationException>(() => eligibility.EvaluateAsync(
+            new ProductSalesSelectionV1(Guid.NewGuid(), "1", Guid.NewGuid(), Approval), default));
+        Assert.Equal((503, "product_runtime_unconfigured"), (failure.StatusCode, failure.Code));
+        Assert.Null(scope.ServiceProvider.GetRequiredService<SalesReferenceReadBindings>().ProductPermission);
     }
 
     private static WebApplicationFactoryWithFixedContext Host(Guid company, Guid? actorAllowedIn = null) =>
