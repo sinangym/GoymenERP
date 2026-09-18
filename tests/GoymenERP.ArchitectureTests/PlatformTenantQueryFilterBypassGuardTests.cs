@@ -41,12 +41,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "OpenApiDocumentGenerationMode.cs";
     private const string OpenApiStartupPath =
         "src/backend/GoymenERP.Api/Program.cs";
-    // Re-fingerprinted for FIN-T04b (#320) on top of T02-b, T07(a) and MFG-API: Finance persistence (with
-    // the audit interceptor) and its services replace the unavailable permission port and bank reader,
-    // and InitializeFinancePersistenceAsync runs after Organization. No OpenAPI-generation, network or
-    // hosted-service surface of the startup source changed otherwise.
+    // Re-fingerprinted for SALES-API (#321) on top of FIN-T04b (#320), T02-b, T07(a) and MFG-API:
+    // AddSalesModule with the audit interceptor, the Cari account port, the Sales reference bindings
+    // (sales.drafts.create), the staged Sales shell provider registered before the shell authority is
+    // chosen, and InitializeSalesModuleAsync after Organization (after Finance's initializer). No
+    // OpenAPI-generation, network or hosted-service surface of the startup source changed otherwise.
     private const string ReviewedOpenApiStartupFingerprint =
-        "3638f53586181ab453e4e99d6c26a5d57218be4d5261fb4493c3b00f2a65dcef";
+        "47a9d002c2b93b0dd0f6210e0948b0dbd710844c602ec9d4018735ce1f814dd6";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -87,18 +88,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.cs";
     private const string SqlServerRcsiVerifierPath =
         "tools/verify_rcsi_relational_acceptance.py";
-    // Re-fingerprinted for FIN-T04b (#320): one FinanceBankAccount case renamed (payload_or_actor), one
-    // FinanceDraft and three FinanceDraftApi names on top of main's 138 / 145, discovery 138 -> 142,
-    // execution 145 -> 149. Logic unchanged.
+    // Re-fingerprinted for SALES-API (#321) on top of FIN-T04b (#320)'s 142 / 149: four
+    // SalesDraftApiSqlServerRelationalAcceptanceTests names, discovery 142 -> 146, execution 149 -> 153.
+    // Logic unchanged.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "6e3171a9e6706932c6d36b09fe4b4647ac33699c803fc5752df73baba14a25a3";
+        "f40212efb5ccf9687d1ee9967bc5b9aba8c7c549ae9c755c31878cbfea7912d4";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
     // Re-fingerprinted for the same inventory change: updated counts plus one case pinning the
     // new class as mandatory.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "e8757b2cb7bd32e724ae88cf8d858495f1df86918820d786fb03eac2e71fa1a2";
+        "46142b15f8959cc6ffb42c57919ead3938f5a493080f1735a7cb612742a25b11";
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "91a665e6e8982e5a9b66f5d16a14d9fc4d7f98d63775de959a8cc6b2dea2b018";
@@ -129,7 +130,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "19554370c51a80841795df605a78403af30584cc702df2b88931af1bcb9d0a1e",
+                "886fd0d0a45de77804e1e6f2d2edef2c487299a4192717987779d5b0169edb03",
             // Re-measured for MFG-API (#313): the ADR-011 command log (CommandRecords) is mapped here, company-
             // scoped with the CompanyId filter like every other tenant row.
             // MFG-5 (#303): company-scoped like Organization; every tenant row and AuditEvent carries the
@@ -382,7 +383,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Sales.Infrastructure/"
                  + "SalesModuleExtensions.cs"] =
                     new(
-                        "7c7888343e1614601daf15602e35f08e46d0c5ded2164e66a9028d784fb13ad2",
+                        "c8731cff0edf9073c5e245d4f8e9576254e6398cc1a54bc56a88e660cac6df9f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -394,7 +395,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Sales/"
                  + "GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs"] =
                     new(
-                        "5f3c9200f7376ca9f29a6350d291d5b4920865ecd438ccb52b9f5336731a11c0",
+                        "eb7eefaefea26f02d6abf160acf69bfb030be1be1073b2a22185a4fe4608363c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

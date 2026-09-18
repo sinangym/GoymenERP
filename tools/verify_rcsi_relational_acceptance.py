@@ -182,9 +182,13 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.FinanceDraftApiSqlServerRelationalAcceptanceTests.The_draft_routes_answer_only_with_fresh_finance_grants_and_only_for_the_context_company",
     "GoymenERP.Api.IntegrationTests.FinanceDraftApiSqlServerRelationalAcceptanceTests.A_save_reaches_its_real_owners_and_answers_their_refusal_without_storing_anything",
     "GoymenERP.Api.IntegrationTests.FinanceDraftApiSqlServerRelationalAcceptanceTests.Another_companys_draft_is_not_found_and_its_cursor_reads_nothing",
+    "GoymenERP.Api.IntegrationTests.SalesDraftApiSqlServerRelationalAcceptanceTests.The_draft_routes_answer_only_with_fresh_sales_grants_and_only_for_the_context_company",
+    "GoymenERP.Api.IntegrationTests.SalesDraftApiSqlServerRelationalAcceptanceTests.A_create_reaches_its_real_owners_in_order_and_answers_the_first_refusal_without_storing_anything",
+    "GoymenERP.Api.IntegrationTests.SalesDraftApiSqlServerRelationalAcceptanceTests.A_stored_draft_is_read_by_its_company_only_and_its_cursor_binds_the_company",
+    "GoymenERP.Api.IntegrationTests.SalesDraftApiSqlServerRelationalAcceptanceTests.A_same_key_race_stores_one_draft_and_every_replay_holds_in_the_real_host",
 )
-BROAD_DISCOVERY_COUNT = 142
-BROAD_EXECUTION_COUNT = 149
+BROAD_DISCOVERY_COUNT = 146
+BROAD_EXECUTION_COUNT = 153
 
 
 def verify_discovery(standard_output: str) -> None:
