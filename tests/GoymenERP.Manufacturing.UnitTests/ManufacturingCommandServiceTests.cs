@@ -264,7 +264,8 @@ public sealed class ManufacturingCommandServiceTests
         var fact = Fact(order.Version, "10");
 
         var first = await fixture.Service.IssueInputAsync(order.Id, fact, "key-1", Permission, CancellationToken.None);
-        fixture.Correlation.Set("corr-2", null, "Web", null, null);
+        // A request's correlation cannot change inside it; the stored record's first correlation is
+        // what the replay names (the real SQL tests replay it as a separate HTTP request).
         var again = await fixture.Service.IssueInputAsync(order.Id, fact with { Kg = "10.000" }, "key-1", Permission,
             CancellationToken.None);
 

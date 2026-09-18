@@ -280,8 +280,25 @@ public sealed class ManufacturingStore(
     public async Task<ProductionOrder?> FindOrderAsync(Guid orderId, CancellationToken cancellationToken = default)
     {
         RequireResolvedCompany();
-        var row = await dbContext.Orders.AsNoTracking().SingleOrDefaultAsync(candidate => candidate.Id == orderId, cancellationToken);
-        return row is null ? null : await RestoreOrderAsync(row, cancellationToken);
+        // A read that meets a write committing between the order row and its facts reads again.
+        for (var attempt = 1; ; attempt++)
+        {
+            var row = await dbContext.Orders.AsNoTracking()
+                .SingleOrDefaultAsync(candidate => candidate.Id == orderId, cancellationToken);
+            if (row is null)
+            {
+                return null;
+            }
+
+            try
+            {
+                return await RestoreOrderAsync(row, cancellationToken);
+            }
+            catch (ManufacturingStoreException exception)
+                when (exception.Code == ManufacturingStoreCodes.ConcurrentChange && attempt < 3)
+            {
+            }
+        }
     }
 
     private async Task<ManufacturingWriteOutcome> RecordFactAsync(Guid orderId, FactKind kind, Guid factId,
@@ -419,7 +436,33 @@ public sealed class ManufacturingStore(
             .ToListAsync(cancellationToken);
         IEnumerable<FactRow> Of(FactKind kind) => facts.Where(fact => fact.Kind == (int)kind);
 
-        return ProductionOrder.Restore(
+        try
+        {
+            return RestoreOrder(row, inputs, Of);
+        }
+        catch (ManufacturingRuleException exception) when (exception.Code == ManufacturingRuleCodes.StoredRecordInvalid)
+        {
+            // Under read-committed snapshot each statement reads its own committed state: a writer
+            // that commits between the order row and its facts leaves facts newer than the row's
+            // version. That is a concurrent change, not a broken record; only an unchanged order
+            // that still fails to rebuild is invalid.
+            var current = await dbContext.Orders.AsNoTracking()
+                .Where(candidate => candidate.Id == row.Id)
+                .Select(candidate => (long?)candidate.Version)
+                .SingleOrDefaultAsync(cancellationToken);
+            if (current != row.Version)
+            {
+                throw Refused(ManufacturingStoreCodes.ConcurrentChange,
+                    "Emir okunurken başka bir yazma kaydedildi; hiçbir şey kaydedilmedi.", exception);
+            }
+
+            throw;
+        }
+    }
+
+    private static ProductionOrder RestoreOrder(OrderRow row, IReadOnlyList<OrderInputRow> inputs,
+        Func<FactKind, IEnumerable<FactRow>> Of) =>
+        ProductionOrder.Restore(
             row.Id, row.PlanId, row.CompanyId, row.WorkCenterId, (ManufacturingProcess)row.Process,
             Target(row.TargetBasis, row.TargetKg),
             inputs.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg))),
@@ -432,7 +475,6 @@ public sealed class ManufacturingStore(
             Of(FactKind.WipMeasurement).Select(fact => new WipMeasurement(fact.Id, fact.ParentRollId, new Kilograms(fact.MassKg),
                 fact.OccurredAtUtc)),
             row.ClosedByUserId, row.ClosedAtUtc, row.Version);
-    }
 
     private static ProductionTarget? Target(int? basis, decimal? kilograms) =>
         basis is null && kilograms is null
