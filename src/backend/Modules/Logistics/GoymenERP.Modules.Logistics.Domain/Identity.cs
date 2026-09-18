@@ -40,7 +40,6 @@ public static class LogisticsRuleCodes
     public const string ShipmentNotFound = "logistics_shipment_not_found";
     public const string ShipmentOfAnotherLine = "logistics_shipment_of_another_line";
     public const string DeliveryExceedsShipment = "logistics_delivery_exceeds_shipment";
-    public const string DeliveryExceedsLine = "logistics_delivery_exceeds_line";
     public const string UnitMismatch = "logistics_unit_mismatch";
     public const string QuantityBelowZero = "logistics_quantity_below_zero";
 

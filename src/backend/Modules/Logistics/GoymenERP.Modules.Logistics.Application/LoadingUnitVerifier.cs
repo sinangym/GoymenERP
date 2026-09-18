@@ -5,7 +5,14 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 namespace GoymenERP.Modules.Logistics.Application;
 
 /// <summary>A line unit verified against the Settings profile, with the exact quantity in that unit.</summary>
-public sealed record VerifiedLoadingUnit(Guid UnitId, string UnitCode, Guid ProfileId, string ProfileVersion, int Scale, Quantity Quantity);
+/// <summary>
+/// A line unit verified against the Settings profile, with the exact quantity in that unit.
+/// <see cref="ProfileScale"/> is the owner's raw scale; <see cref="Scale"/> is the scale actually
+/// applied to the quantity, min(profile, Ö2's 3), the one a consumer may offer for input
+/// (LOG-3; the same shape as Purchasing's PUR-3 and Manufacturing's MFG-3 snapshots).
+/// </summary>
+public sealed record VerifiedLoadingUnit(Guid UnitId, string UnitCode, Guid ProfileId, string ProfileVersion,
+    int ProfileScale, int Scale, Quantity Quantity);
 
 /// <summary>Either a verified unit or a stable refusal code. A refusal is never a default unit; the caller does not add the line.</summary>
 public sealed record LoadingUnitVerification(VerifiedLoadingUnit? Unit, string? Code)
@@ -98,13 +105,14 @@ public sealed class LoadingUnitVerifier(ISettingsPrerequisiteProvider settings)
             return LoadingUnitVerification.Refused(LoadingUnitCodes.UnitUnsupported);
         }
 
-        if (Quantity.SignificantDecimals(quantity) > Math.Min(profile.Scale, Quantity.KilogramScale))
+        var appliedScale = Math.Min(profile.Scale, Quantity.KilogramScale);
+        if (Quantity.SignificantDecimals(quantity) > appliedScale)
         {
             return LoadingUnitVerification.Refused(LoadingUnitCodes.QuantityScaleExceeded);
         }
 
         return LoadingUnitVerification.Verified(new VerifiedLoadingUnit(unitId, profile.UnitCode,
             profile.Profile.ProfileId, profile.Profile.Version.ToString(CultureInfo.InvariantCulture), profile.Scale,
-            Quantity.Positive(quantity, QuantityUnit.Kilogram)));
+            appliedScale, Quantity.Positive(quantity, QuantityUnit.Kilogram)));
     }
 }

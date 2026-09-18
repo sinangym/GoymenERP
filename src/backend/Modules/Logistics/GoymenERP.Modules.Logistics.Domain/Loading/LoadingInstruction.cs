@@ -183,11 +183,15 @@ public sealed class LoadingInstruction
 
     /// <summary>
     /// Marks part of a definite shipment as delivered. The delivery names its source shipment and
-    /// is bounded by that shipment's undelivered remainder first (§7.4), then by the line as a
-    /// whole. A block on the line does NOT stop this record: the goods have already left, and
-    /// §7.4 ties shortage, damage, rejection and return to the source shipment as facts about it.
-    /// Whether a later block should also flag the delivery is an open question for Business
-    /// (README); until then the record is not refused.
+    /// is bounded by that shipment's undelivered remainder (§7.4). A block on the line does NOT
+    /// stop this record (Business #66 5730092974, LOG-3): a block acts forward — it refuses new
+    /// loads, shipments and use — but a shipment recorded BEFORE the block is a physical fact, and
+    /// its delivery may still be completed, only up to that shipment's undelivered remainder. This
+    /// record creates no new load, shipment or stock exit and lifts no block; a delivery without a
+    /// real shipment, on another line's shipment, or above the remainder is refused whole with no
+    /// version effect; the same delivery id again is one delivery. The line-level cap is a second
+    /// guard that reports <see cref="LogisticsRuleCodes.InternalInvariant"/> (ORG #291 P3-1):
+    /// it cannot be reached, because every shipment's remainder sums to the line's.
     /// </summary>
     public LoadingShare MarkDelivered(long expectedVersion, Guid deliveryId, Guid lineId, Guid shipmentId,
         Quantity delivered, DateTimeOffset now)
@@ -205,8 +209,10 @@ public sealed class LoadingInstruction
             "Teslim edilen pay kaynak sevkin teslim edilmemiş kalanını aşamaz.");
         if (delivered.IsGreaterThan(line.ShippedNotDelivered))
         {
-            throw new LogisticsRuleException(LogisticsRuleCodes.DeliveryExceedsLine,
-                "Teslim edilen pay sevk edilmiş ama teslim edilmemiş payı aşamaz.");
+            // Unreachable by construction: the per-shipment cap above already bounds this. Kept
+            // as a second guard, so it reports itself as one (LOG-3, ORG #291 P3-1).
+            throw new LogisticsRuleException(LogisticsRuleCodes.InternalInvariant,
+                "Teslim edilen pay sevk edilmiş ama teslim edilmemiş payı aşamaz (iç değişmez).");
         }
 
         line.AddDelivered(delivered);
