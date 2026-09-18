@@ -36,14 +36,21 @@ public sealed class ProductionPlan
         Process = process;
         ArgumentNullException.ThrowIfNull(inputs);
         _inputs = inputs.ToList();
+        if (_inputs.Any(input => input is null))
+        {
+            throw new ArgumentException("Planlanan girdi boş olamaz.", nameof(inputs));
+        }
+
         if (_inputs.Count == 0)
         {
-            throw new ArgumentException("Plan en az bir ana rulo içermelidir.", nameof(inputs));
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.PlanWithoutInputs, "Plan en az bir ana rulo içermelidir.");
         }
 
         if (_inputs.Select(input => input.ParentRollId).Distinct().Count() != _inputs.Count)
         {
-            throw new ArgumentException("Aynı ana rulo planda iki kez yer alamaz.", nameof(inputs));
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.DuplicateRollInPlan, "Aynı ana rulo planda iki kez yer alamaz.");
         }
 
         Target = target;
@@ -67,13 +74,13 @@ public sealed class ProductionPlan
 
     public DateTimeOffset? ApprovedAtUtc { get; private set; }
 
-    public IReadOnlyList<PlannedInput> Inputs => _inputs;
+    public IReadOnlyList<PlannedInput> Inputs => _inputs.AsReadOnly();
 
     public void Approve(Guid approvedByUserId, DateTimeOffset approvedAtUtc)
     {
         if (Status != PlanStatus.Draft)
         {
-            throw new ManufacturingRuleException("plan_not_draft", "Yalnız taslak plan onaylanabilir.");
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanNotDraft, "Yalnız taslak plan onaylanabilir.");
         }
 
         ApprovedByUserId = RequireId(approvedByUserId, nameof(approvedByUserId));
