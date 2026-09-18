@@ -4,7 +4,6 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
-using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Sales.UnitTests;
@@ -322,6 +321,21 @@ public sealed class SalesReferenceReadHandlerTests
     }
 
     [Fact]
+    public async Task An_empty_unit_id_in_the_snapshot_is_refused_before_the_owner_is_asked()
+    {
+        // A snapshot without a unit identity is the Product owner's malformed answer; Settings
+        // is never asked about an empty id, and the answer stays the provider-invalid 503.
+        var f = new Fixture();
+        var snapshot = f.Products.Result.Snapshot!;
+        f.Products.Result = new(snapshot with { SalesUnit = snapshot.SalesUnit with { UnitId = Guid.Empty } }, []);
+        var result = await f.Handler().GetProductAsync(f.ProductQuery);
+        Assert.Equal(503, result.StatusCode);
+        Assert.Equal("reference_provider_invalid", result.Code);
+        Assert.Null(result.Value);
+        Assert.Equal(new[] { (f.StockUnit, f.Day) }, f.Settings.UnitCalls);
+    }
+
+    [Fact]
     public async Task Foreign_company_unit_binding_is_denied_before_its_profile_read()
     {
         var f = new Fixture();
@@ -426,7 +440,7 @@ public sealed class SalesReferenceReadHandlerTests
 
     [Theory]
     [InlineData("settings_access_denied", 403, "settings_access_denied")]
-    [InlineData(ApprovedSettingsPrerequisiteProvider.UnitProfileNotFoundCode, 422, "unsupported_unit")]
+    [InlineData(SettingsPrerequisiteCodesV1.UnitProfileNotFound, 422, "unsupported_unit")]
     [InlineData("settings_provider_unavailable", 503, "settings_provider_unavailable")]
     [InlineData("settings_profile_invalid", 503, "settings_provider_unavailable")]
     public async Task Settings_codes_on_the_product_path_keep_their_meaning(string code, int status, string publicCode)
@@ -444,7 +458,7 @@ public sealed class SalesReferenceReadHandlerTests
     {
         // Only the product path reads unit profiles; the money read has no unit to refuse.
         var f = new Fixture();
-        f.Settings.Error = new SettingsPrerequisiteException(ApprovedSettingsPrerequisiteProvider.UnitProfileNotFoundCode);
+        f.Settings.Error = new SettingsPrerequisiteException(SettingsPrerequisiteCodesV1.UnitProfileNotFound);
         var result = await f.Handler().GetCurrencyAsync(f.CurrencyQuery);
         Assert.Equal(503, result.StatusCode);
         Assert.Equal("settings_provider_unavailable", result.Code);
@@ -454,7 +468,7 @@ public sealed class SalesReferenceReadHandlerTests
     public async Task A_missing_unit_profile_is_not_released_after_the_permission_is_lost()
     {
         var f = new Fixture();
-        f.Settings.Error = new SettingsPrerequisiteException(ApprovedSettingsPrerequisiteProvider.UnitProfileNotFoundCode);
+        f.Settings.Error = new SettingsPrerequisiteException(SettingsPrerequisiteCodesV1.UnitProfileNotFound);
         f.Settings.OnRead = () => f.Auth.Allowed = false;
         var result = await f.Handler().GetProductAsync(f.ProductQuery);
         Assert.Equal(403, result.StatusCode);
