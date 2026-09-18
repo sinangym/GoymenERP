@@ -151,9 +151,10 @@ public static class SalesEndpoints
     /// <list type="bullet">
     /// <item><b>POST</b>: exactly one canonical <c>Idempotency-Key</c> (≤128) → 400
     /// <c>command_metadata_invalid</c>; JSON only → 415; the strict #257 body → 400
-    /// <c>validation_failed</c>; 201 + <c>Location</c> on the first commit, 200 + <c>Idempotency-Replayed</c>
-    /// / <c>Idempotency-Original-Correlation-Id</c> on the same attempt (ADR-011 §4); a recorded
-    /// terminal refusal replays with the same headers (§7).</item>
+    /// <c>validation_failed</c>; 201 + <c>Location</c> on the first commit and again on the same
+    /// attempt, then with <c>Idempotency-Replayed</c> / <c>Idempotency-Original-Correlation-Id</c>
+    /// (ADR-011 §4: the persisted result is replayed — a #257 delta, the contract said 200); a
+    /// recorded terminal refusal (409) replays with the same headers (§7).</item>
     /// <item><b>GET list</b>: <c>pageSize</c> 1–100 (default 50), opaque company-bound <c>cursor</c>
     /// → 400 <c>invalid_cursor</c>. <b>GET detail</b>: another company's draft is 404.</item>
     /// <item>Problems carry status/title, <c>code</c>, <c>correlationId</c> and field <c>errors</c>
@@ -203,7 +204,6 @@ public static class SalesEndpoints
                 if (response.IsReplay)
                 {
                     ApplyReplayHeaders(httpContext, response.OriginalCorrelationId);
-                    return Results.Json(response, SalesDraftJson.Options, statusCode: SalesDraftApiV1.ReplayStatus);
                 }
 
                 httpContext.Response.Headers.Location = DraftLocation(httpContext.Request, response.Detail.Draft.Id);
@@ -220,10 +220,10 @@ public static class SalesEndpoints
             }
         })
             .WithName("CreateSalesOrderDraftV1")
-            .WithIdempotencyContract(SalesDraftApiV1.CreatedStatus)
+            // The replayable results: the stored draft (201) and the recorded terminal refusal (409, §7).
+            .WithIdempotencyContract(SalesDraftApiV1.CreatedStatus, StatusCodes.Status409Conflict)
             .Accepts<CreateSalesOrderDraftRequest>("application/json")
             .Produces<SalesOrderDraftResponse>(SalesDraftApiV1.CreatedStatus)
-            .Produces<SalesOrderDraftResponse>(SalesDraftApiV1.ReplayStatus)
             .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.CommandMetadataInvalid)
             .AllowsEmptyErpBadRequestBody()
             .ProducesErpUnsupportedMediaType()

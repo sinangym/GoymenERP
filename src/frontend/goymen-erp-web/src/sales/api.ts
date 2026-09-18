@@ -23,8 +23,8 @@
 
 import {
   CREATED_STATUS,
+  REPLAY_HEADER,
   OWNER_REFERENCE_FIELDS,
-  REPLAY_STATUS,
   REV_0,
   SALES_DRAFT_PATH,
   decodeDraftDetail,
@@ -54,7 +54,12 @@ function headers(companyId: string): Record<string, string> {
 }
 
 type Raw =
-  | { readonly status: number; readonly body: unknown; readonly location: string | null }
+  | {
+      readonly status: number
+      readonly body: unknown
+      readonly location: string | null
+      readonly replayed: boolean
+    }
   | { readonly failure: 'aborted' | 'offline' | 'unreachable' }
 
 async function request(path: string, init: RequestInit, signal: AbortSignal | undefined): Promise<Raw> {
@@ -73,7 +78,12 @@ async function request(path: string, init: RequestInit, signal: AbortSignal | un
     if (signal?.aborted) return { failure: 'aborted' }
     body = null
   }
-  return { status: response.status, body, location: response.headers.get('Location') }
+  return {
+    status: response.status,
+    body,
+    location: response.headers.get('Location'),
+    replayed: response.headers.get(REPLAY_HEADER) === 'true',
+  }
 }
 
 /* ── Reads ────────────────────────────────────────────────────────────────── */
@@ -213,18 +223,17 @@ export async function createDraft(
     if (raw.failure === 'offline') return { type: 'offline' }
     return { type: 'network-error' }
   }
-  if (raw.status !== CREATED_STATUS && raw.status !== REPLAY_STATUS) {
+  if (raw.status !== CREATED_STATUS) {
     return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
   }
   const mutation = decodeDraftMutation(raw.body)
   if (
     mutation === null ||
-    // 201 is the first commit, 200 the replay of the same accepted attempt. A
-    // disagreement means this client cannot say which one happened.
-    mutation.isReplay !== (raw.status === REPLAY_STATUS) ||
+    // 201 both times; the replay of the same accepted attempt carries Idempotency-Replayed and
+    // says so in the body. A disagreement means this client cannot say which one happened.
+    mutation.isReplay !== raw.replayed ||
     !describesAttempt(mutation, payload, context.companyId) ||
-    (raw.status === CREATED_STATUS &&
-      raw.location !== null &&
+    (raw.location !== null &&
       !raw.location.endsWith(`/api/v1${salesDraftDetailPath(mutation.detail.draft.id)}`))
   ) {
     return { type: 'malformed' }

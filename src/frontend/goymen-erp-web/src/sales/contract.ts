@@ -27,9 +27,13 @@ export const SALES_CONTRACT_STATUS = 'PINNED_SOURCE' as const
 export const SALES_DRAFT_PATH = '/sales/drafts'
 export const salesDraftDetailPath = (id: string) => `${SALES_DRAFT_PATH}/${encodeURIComponent(id)}`
 
-/** `SalesDraftApiV1`: a first commit answers 201, the same accepted attempt 200 + isReplay. */
+/**
+ * `SalesDraftApiV1`: a first commit answers 201; the same accepted attempt answers 201 again with
+ * `Idempotency-Replayed: true` (and `isReplay` in the body) — ADR-011 §4 replays the persisted
+ * result, a delta on #257 which said 200 (decided on #321).
+ */
 export const CREATED_STATUS = 201
-export const REPLAY_STATUS = 200
+export const REPLAY_HEADER = 'Idempotency-Replayed'
 export const REV_0 = 'Rev.0'
 export const ORDER_KIND = 'Order' as const
 export const DRAFT_STATE = 'Draft' as const

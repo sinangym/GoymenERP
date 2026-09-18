@@ -78,10 +78,11 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         using (var request = Post("SENTETIK-replay"))
         using (var response = await client.SendAsync(request))
         {
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            // ADR-011 §4: the persisted 201 is replayed, told apart by the headers only.
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
             Assert.Equal("true", Assert.Single(response.Headers.GetValues("Idempotency-Replayed")));
             Assert.Equal("SENTETIK-first", Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id")));
-            Assert.Null(response.Headers.Location);
+            Assert.Equal(new Uri(client.BaseAddress!, $"{SalesEndpoints.DraftsPath.TrimStart('/')}/{draftId:D}"), response.Headers.Location);
         }
 
         service.Create = _ => throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.VersionConflict,

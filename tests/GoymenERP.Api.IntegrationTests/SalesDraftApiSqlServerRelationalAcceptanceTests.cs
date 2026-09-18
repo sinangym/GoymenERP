@@ -179,8 +179,8 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
     /// The real host, the real store and the real SQL Server with SENTETIK owner ports (Cari, Settings,
     /// Product answer fixed identities for the context company; nothing else is replaced): ADR-011
     /// §8 — two callers of the same key and content meet at the Product port and race the store: one
-    /// draft, one attempt, one audit row, both answer that draft (201 + Location for the winner, 200 +
-    /// replay headers for the loser); §4 — the key replays it again with the first correlation; §7 — a
+    /// draft, one attempt, one audit row, both answer that draft as 201 + Location, the loser with the
+    /// replay headers; §4 — the key replays it again with the first correlation; §7 — a
     /// stale product version is recorded and replayed as the same 409 with the replay headers; a
     /// provider's 503 reaches the wire as the platform's public code only; the raced draft reads back.
     /// </summary>
@@ -210,12 +210,16 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
         var responses = await Task.WhenAll(
             client.SendAsync(Post("SENTETIK-race", raced, correlationA)),
             client.SendAsync(Post("SENTETIK-race", raced, correlationB)));
-        var winner = Assert.Single(responses, response => response.StatusCode == HttpStatusCode.Created);
-        var loser = Assert.Single(responses, response => response.StatusCode == HttpStatusCode.OK);
+        Assert.All(responses, response => Assert.Equal(HttpStatusCode.Created, response.StatusCode));
+        var winner = Assert.Single(responses, response => !response.Headers.Contains("Idempotency-Replayed"));
+        var loser = Assert.Single(responses, response => response.Headers.Contains("Idempotency-Replayed"));
         var draftId = (await Result(winner)).GetProperty("detail").GetProperty("draft").GetProperty("id").GetGuid();
         Assert.Equal(draftId, (await Result(loser)).GetProperty("detail").GetProperty("draft").GetProperty("id").GetGuid());
-        Assert.Equal(new Uri(client.BaseAddress!, $"{SalesEndpoints.DraftsPath.TrimStart('/')}/{draftId:D}"), winner.Headers.Location);
-        Assert.False(winner.Headers.Contains("Idempotency-Replayed"));
+        Assert.False((await Result(winner)).GetProperty("isReplay").GetBoolean());
+        Assert.True((await Result(loser)).GetProperty("isReplay").GetBoolean());
+        var location = new Uri(client.BaseAddress!, $"{SalesEndpoints.DraftsPath.TrimStart('/')}/{draftId:D}");
+        Assert.Equal(location, winner.Headers.Location);
+        Assert.Equal(location, loser.Headers.Location);
         var winnerCorrelation = Assert.Single(winner.Headers.GetValues("X-Correlation-Id"));
         Assert.Contains(winnerCorrelation, new[] { correlationA, correlationB });
         Assert.Equal("true", Assert.Single(loser.Headers.GetValues("Idempotency-Replayed")));
@@ -230,7 +234,8 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
         // §4: the same key later answers the same draft with the first correlation, without the owners.
         using (var again = await client.SendAsync(Post("SENTETIK-race", raced, Guid.NewGuid().ToString("N"))))
         {
-            Assert.Equal(HttpStatusCode.OK, again.StatusCode);
+            Assert.Equal(HttpStatusCode.Created, again.StatusCode);
+            Assert.Equal("true", Assert.Single(again.Headers.GetValues("Idempotency-Replayed")));
             Assert.Equal(draftId, (await Result(again)).GetProperty("detail").GetProperty("draft").GetProperty("id").GetGuid());
             Assert.Equal(winnerCorrelation, Assert.Single(again.Headers.GetValues("Idempotency-Original-Correlation-Id")));
         }
