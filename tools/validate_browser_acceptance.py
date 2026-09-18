@@ -97,11 +97,138 @@ MAX_SUITE_ACTORS = 8
 SUITE_API_EXTENSIONS = {
     # U-02: the Product runtime's issuer binding, matching the suite seed's local user and
     # external identity (ÜRÜN, #319 P3).
-    "u02": {"issuer": True, "actors": False},
+    "u02": {"issuer": True, "actors": False, "identity": False},
     # ORG-03: extra synthetic development actors after the canonical two (ORG, #319 P3-1).
-    "org03": {"issuer": False, "actors": True},
+    "org03": {"issuer": False, "actors": True, "identity": False},
+    # S-03 (SİPARİŞ): the deployment's Product issuer binding (shared with u02, ÜRÜN's values), the
+    # suite's actors and their Identity users and grants (coordinator decisions 1 and 3, a2 part 2).
+    "s03": {"issuer": True, "actors": True, "identity": True},
 }
 ISSUER_KEYS = ("ProductRuntime__IssuerLocalUserId", "ProductRuntime__IssuerExternalIdentityId")
+
+# Stage 2 (a2 part 2, coordinator decision 1): a suite's actors get their Identity user, external
+# identity, roles and company-wide assignments through the real IdentityDataSeeder, appended to the
+# built-in seed (src/backend/GoymenERP.Api/Seed/identity-seed.json) as IdentitySeed__* keys of the suite
+# override. Closed: synthetic id prefixes, one user per suite actor (subject = its BootstrapIdentity id),
+# SENTETIK names, BROWSER_<SUITE>_* role codes, permissions from the suite's closed list only, company
+# scope on a seeded company only. The seeder still checks every permission against ErpPermissions.
+IDENTITY_SEED_FILE = "src/backend/GoymenERP.Api/Seed/identity-seed.json"
+ORGANIZATION_SEED_FILE = "src/backend/GoymenERP.Api/Seed/organization-seed.json"
+BOOTSTRAP_ISSUER = "urn:goymen:development-bootstrap"
+IDENTITY_VALID_FROM = "2026-01-01T00:00:00+00:00"
+# The built-in seed's approver of every assignment (group-bootstrap-admin's Identity user).
+IDENTITY_APPROVER = "20000000-0000-0000-0000-000000000003"
+_IDENTITY_KEY = re.compile(r"^IdentitySeed__(Users|Roles|Assignments)__(0|[1-9][0-9]*)__(.+)$")
+_IDENTITY_FIELDS = {
+    "Users": re.compile(r"^(Id|DisplayName|ExternalIdentities__0__(Id|Issuer|Subject))$"),
+    "Roles": re.compile(r"^(Id|Code|Name|IsSystem|Permissions__(0|[1-9][0-9]*))$"),
+    "Assignments": re.compile(r"^(Id|UserId|RoleId|CompanyId|ValidFromUtc|ApprovedByUserId|Scopes__0__(Type|Id))$"),
+}
+_SYNTHETIC_ID_PREFIX = {"Users": "b20", "External": "b21", "Roles": "b30", "Assignments": "b40"}
+SUITE_IDENTITY_PERMISSIONS = {
+    "s03": ("sales.drafts.create", "sales.drafts.read", "product.operational-selection.read"),
+}
+
+
+def _seed_file(relative: str, section: str) -> dict:
+    document = json.loads((c01.REPOSITORY_ROOT / relative).read_text(encoding="utf-8"))
+    require(isinstance(document, dict) and isinstance(document.get(section), dict), f"{relative} has no {section}")
+    return document[section]
+
+
+def _synthetic_id(value: object, kind: str, label: str) -> str:
+    require(isinstance(value, str) and _ANY_GUID.fullmatch(value) is not None
+            and value.startswith(_SYNTHETIC_ID_PREFIX[kind]),
+            f"{label} must be a lowercase synthetic id starting {_SYNTHETIC_ID_PREFIX[kind]}")
+    return value
+
+
+def _indexed(entries: dict[int, dict[str, str]], start: int, label: str) -> list[dict[str, str]]:
+    indices = sorted(entries)
+    require(indices == list(range(start, start + len(indices))),
+            f"suite {label} must continue the built-in seed contiguously from index {start}")
+    return [entries[index] for index in indices]
+
+
+def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> None:
+    """The suite's IdentitySeed__* keys: exactly one synthetic Identity user per suite actor, with grants."""
+    grouped: dict[str, dict[int, dict[str, str]]] = {"Users": {}, "Roles": {}, "Assignments": {}}
+    for key, value in extra.items():
+        match = _IDENTITY_KEY.fullmatch(key)
+        if match is None:
+            continue
+        section, index, field = match.group(1), int(match.group(2)), match.group(3)
+        require(_IDENTITY_FIELDS[section].fullmatch(field) is not None, f"IdentitySeed field is not allowed: {key}")
+        grouped[section].setdefault(index, {})[field] = value
+    if not any(grouped.values()):
+        # A suite with an Identity list must give its actors their users; one without (org03 until its
+        # owner declares the grants) keeps #322's actors-only shape, whose actors cannot sign in yet.
+        require(not actor_ids or not SUITE_API_EXTENSIONS[suite]["identity"],
+                f"suite {suite} actors need their Identity users (IdentitySeed) to sign in")
+        return
+    builtin = _seed_file(IDENTITY_SEED_FILE, "IdentitySeed")
+    companies = {company["Id"] for company in _seed_file(ORGANIZATION_SEED_FILE, "OrganizationSeed")["Companies"]}
+    permitted = set(SUITE_IDENTITY_PERMISSIONS.get(suite, ()))
+    role_prefix = f"BROWSER_{suite.upper()}_"
+    ids: set[str] = set()
+
+    def unique(value: str) -> str:
+        require(value not in ids, f"synthetic identity id repeated: {value}")
+        ids.add(value)
+        return value
+
+    users = {}
+    for position, user in enumerate(_indexed(grouped["Users"], len(builtin["Users"]), "Identity users")):
+        label = f"suite Identity user {position}"
+        require(set(user) == {"Id", "DisplayName", "ExternalIdentities__0__Id",
+                              "ExternalIdentities__0__Issuer", "ExternalIdentities__0__Subject"},
+                f"{label} needs Id, DisplayName and exactly one external identity")
+        user_id = unique(_synthetic_id(user["Id"], "Users", f"{label} Id"))
+        unique(_synthetic_id(user["ExternalIdentities__0__Id"], "External", f"{label} external identity Id"))
+        require(user["DisplayName"].startswith("SENTETIK "), f"{label} must be labelled SENTETIK")
+        require(user["ExternalIdentities__0__Issuer"] == BOOTSTRAP_ISSUER,
+                f"{label} external identity must be the development bootstrap issuer")
+        users[user_id] = user["ExternalIdentities__0__Subject"]
+    require(sorted(users.values()) == sorted(actor_ids),
+            "every suite actor needs exactly one Identity user whose subject is its id, and nothing else")
+
+    roles = {}
+    for position, role in enumerate(_indexed(grouped["Roles"], len(builtin["Roles"]), "roles")):
+        label = f"suite role {position}"
+        permissions = [role[key] for key in sorted((key for key in role if key.startswith("Permissions__")),
+                                                     key=lambda key: int(key.rsplit("__", 1)[1]))]
+        require({"Id", "Code", "Name", "IsSystem"} <= set(role) and permissions,
+                f"{label} needs Id, Code, Name, IsSystem and at least one permission")
+        indices = sorted(int(key.rsplit("__", 1)[1]) for key in role if key.startswith("Permissions__"))
+        require(indices == list(range(len(indices))), f"{label} permissions must be indexed contiguously from 0")
+        role_id = unique(_synthetic_id(role["Id"], "Roles", f"{label} Id"))
+        require(re.fullmatch(rf"{role_prefix}[A-Z0-9_]{{1,40}}", role["Code"]) is not None,
+                f"{label} code must start {role_prefix}")
+        require(role["Name"].startswith("SENTETIK "), f"{label} must be labelled SENTETIK")
+        require(role["IsSystem"] == "false", f"{label} must not be a system role")
+        require(len(set(permissions)) == len(permissions), f"{label} repeats a permission")
+        outside = sorted(set(permissions) - permitted)
+        require(not outside, f"{label} grants permissions outside suite {suite}'s closed list: {outside}")
+        roles[role_id] = role
+
+    assigned = set()
+    for position, assignment in enumerate(_indexed(grouped["Assignments"], len(builtin["Assignments"]),
+                                                   "assignments")):
+        label = f"suite assignment {position}"
+        require(set(assignment) - {"ApprovedByUserId"} == {"Id", "UserId", "RoleId", "CompanyId", "ValidFromUtc",
+                                                          "Scopes__0__Type", "Scopes__0__Id"},
+                f"{label} needs Id, UserId, RoleId, CompanyId, ValidFromUtc and one company scope")
+        unique(_synthetic_id(assignment["Id"], "Assignments", f"{label} Id"))
+        require(assignment["UserId"] in users, f"{label} must assign a suite Identity user")
+        require(assignment["RoleId"] in roles, f"{label} must assign a suite role")
+        require(assignment["CompanyId"] in companies, f"{label} company must be a seeded company")
+        require(assignment["ValidFromUtc"] == IDENTITY_VALID_FROM, f"{label} must be valid from {IDENTITY_VALID_FROM}")
+        require(assignment.get("ApprovedByUserId", IDENTITY_APPROVER) == IDENTITY_APPROVER,
+                f"{label} approver must be the built-in seed's approver")
+        require(assignment["Scopes__0__Type"] == "Company" and assignment["Scopes__0__Id"] == assignment["CompanyId"],
+                f"{label} must be company-wide on its own company")
+        assigned.add(assignment["UserId"])
+    require(set(users) <= assigned, "every suite Identity user needs at least one assignment")
 
 
 # Stage 2 (a2 part 2): suites whose owner seeds data through the fixture runner
@@ -134,7 +261,6 @@ def seed_export(suite: str, seed: object) -> str:
             f"seed output keys are not the closed list: missing {sorted(expected - set(seed))}, "
             f"extra {sorted(set(seed) - expected)}")
     for key, value in seed.items():
-        require(_OUTPUT_KEY.fullmatch(key) is not None, f"seed output key is not safe: {key}")
         require(isinstance(value, str), f"seed output {key} must be a string")
         is_guid = _ANY_GUID.fullmatch(value) is not None and value != "00000000-0000-0000-0000-000000000000"
         is_actor = value in CANONICAL_ACTORS or re.fullmatch(rf"{suite}-[a-z0-9-]{{1,48}}", value) is not None
@@ -174,6 +300,9 @@ def validate_suite_extensions(suite: str, extra: dict) -> None:
             require(allowed["issuer"], f"suite {suite} may not set {key}")
             require(_GUID.fullmatch(value) is not None, f"{key} must be a lowercase non-nil GUID")
             continue
+        if _IDENTITY_KEY.fullmatch(key) is not None:
+            require(allowed["identity"], f"suite {suite} may not seed Identity users")
+            continue
         match = _ACTOR_KEY.fullmatch(key)
         require(match is not None, f"suite {suite} extension key is not allowed: {key}")
         require(allowed["actors"], f"suite {suite} may not add development actors")
@@ -183,6 +312,7 @@ def validate_suite_extensions(suite: str, extra: dict) -> None:
         require(len(present) in (0, len(ISSUER_KEYS)), "the Product issuer binding needs both keys or neither")
         if present:
             require(extra[ISSUER_KEYS[0]] != extra[ISSUER_KEYS[1]], "the issuer's local and external ids must differ")
+    actor_ids: list[str] = []
     if actors:
         indices = sorted(actors)
         require(indices == list(range(2, 2 + len(indices))),
@@ -197,6 +327,8 @@ def validate_suite_extensions(suite: str, extra: dict) -> None:
             require(actor["DisplayName"].startswith("SENTETIK "), f"suite actor {index} must be labelled SENTETIK")
             require(actor["UserId"] not in ids, f"suite actor id repeated: {actor['UserId']}")
             ids.add(actor["UserId"])
+        actor_ids = sorted(ids)
+    validate_suite_identity(suite, extra, actor_ids)
 
 
 def profile_of(suite: str) -> str:
@@ -253,7 +385,8 @@ def validate_suite_compose(model: dict, suite: str, expected_commit: str, expect
     extra = {key: environment[key] for key in set(environment) - set(expected_keys)}
     missing = sorted(set(expected_keys) - set(environment))
     unlisted = sorted(key for key in extra
-                      if key not in ISSUER_KEYS and _ACTOR_KEY.fullmatch(key) is None)
+                      if key not in ISSUER_KEYS and _ACTOR_KEY.fullmatch(key) is None
+                      and _IDENTITY_KEY.fullmatch(key) is None)
     require(not missing and not unlisted,
             f"{profile} API environment key set is not exact: missing {missing}, extra {unlisted}")
     validate_suite_extensions(suite, extra)

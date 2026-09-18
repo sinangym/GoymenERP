@@ -145,7 +145,7 @@ class SeedExportTests(unittest.TestCase):
             ({**good, "recorderActor": "u02-recorder"}, "GUID or an actor"),
             ({**good, "recorderActor": "free text"}, "GUID or an actor"),
             ({**good, "companyId": 7}, "must be a string"),
-            (["not", "an", "object"], "object"),
+            ([], "object"),
         )
         with mock.patch.dict(browser.SUITE_FIXTURE_OUTPUTS, self.OUTPUTS):
             for seed, pattern in cases:
@@ -187,6 +187,150 @@ class ApiEnvironmentTests(unittest.TestCase):
                 "--expected-project", profile_tests.PROJECT, "--out", str(target)]))
             self.assertEqual(profile_tests.model("normal")["services"]["api"]["environment"],
                              json.loads(target.read_text(encoding="utf-8")))
+
+
+class SuiteIdentityTests(unittest.TestCase):
+    """Decision 1: a suite's actors get Identity users and grants through the real seeder, closed list."""
+
+    ISSUER = {
+        "ProductRuntime__IssuerLocalUserId": "0f8d8c52-2b6e-4f3a-9c1d-6a1b2c3d4e5f",
+        "ProductRuntime__IssuerExternalIdentityId": "1e2d3c4b-5a69-4788-8b9a-0c1d2e3f4a5b",
+    }
+
+    @staticmethod
+    def identity(**changes):
+        environment = {
+            "BootstrapIdentity__Users__2__UserId": "s03-writer",
+            "BootstrapIdentity__Users__2__DisplayName": "SENTETIK S03 Satış Yazarı",
+            "BootstrapIdentity__Users__3__UserId": "s03-reader",
+            "BootstrapIdentity__Users__3__DisplayName": "SENTETIK S03 Satış Okuyucu",
+            "IdentitySeed__Users__5__Id": "b2000000-0000-0000-0000-000000000001",
+            "IdentitySeed__Users__5__DisplayName": "SENTETIK S03 Satış Yazarı",
+            "IdentitySeed__Users__5__ExternalIdentities__0__Id": "b2100000-0000-0000-0000-000000000001",
+            "IdentitySeed__Users__5__ExternalIdentities__0__Issuer": "urn:goymen:development-bootstrap",
+            "IdentitySeed__Users__5__ExternalIdentities__0__Subject": "s03-writer",
+            "IdentitySeed__Users__6__Id": "b2000000-0000-0000-0000-000000000002",
+            "IdentitySeed__Users__6__DisplayName": "SENTETIK S03 Satış Okuyucu",
+            "IdentitySeed__Users__6__ExternalIdentities__0__Id": "b2100000-0000-0000-0000-000000000002",
+            "IdentitySeed__Users__6__ExternalIdentities__0__Issuer": "urn:goymen:development-bootstrap",
+            "IdentitySeed__Users__6__ExternalIdentities__0__Subject": "s03-reader",
+            "IdentitySeed__Roles__5__Id": "b3000000-0000-0000-0000-000000000001",
+            "IdentitySeed__Roles__5__Code": "BROWSER_S03_DRAFT_WRITER",
+            "IdentitySeed__Roles__5__Name": "SENTETIK S03 taslak yazarı",
+            "IdentitySeed__Roles__5__IsSystem": "false",
+            "IdentitySeed__Roles__5__Permissions__0": "sales.drafts.create",
+            "IdentitySeed__Roles__5__Permissions__1": "sales.drafts.read",
+            "IdentitySeed__Roles__5__Permissions__2": "product.operational-selection.read",
+            "IdentitySeed__Roles__6__Id": "b3000000-0000-0000-0000-000000000002",
+            "IdentitySeed__Roles__6__Code": "BROWSER_S03_DRAFT_READER",
+            "IdentitySeed__Roles__6__Name": "SENTETIK S03 taslak okuyucu",
+            "IdentitySeed__Roles__6__IsSystem": "false",
+            "IdentitySeed__Roles__6__Permissions__0": "sales.drafts.read",
+        }
+        for index, (user, role) in enumerate((("b2000000-0000-0000-0000-000000000001", "b3000000-0000-0000-0000-000000000001"),
+                                              ("b2000000-0000-0000-0000-000000000002", "b3000000-0000-0000-0000-000000000002")), start=7):
+            prefix = f"IdentitySeed__Assignments__{index}__"
+            environment.update({
+                prefix + "Id": f"b4000000-0000-0000-0000-00000000000{index - 6}",
+                prefix + "UserId": user,
+                prefix + "RoleId": role,
+                prefix + "CompanyId": "10000000-0000-0000-0000-000000000001",
+                prefix + "ValidFromUtc": "2026-01-01T00:00:00+00:00",
+                prefix + "ApprovedByUserId": "20000000-0000-0000-0000-000000000003",
+                prefix + "Scopes__0__Type": "Company",
+                prefix + "Scopes__0__Id": "10000000-0000-0000-0000-000000000001",
+            })
+        for key, value in changes.items():
+            if value is None:
+                environment.pop(key, None)
+            else:
+                environment[key] = value
+        return environment
+
+    def _validate(self, extension, suite="s03"):
+        model = profile_tests.model("normal")
+        model["services"]["api"]["environment"].update(self.ISSUER if suite == "s03" else {})
+        model["services"]["api"]["environment"].update(extension)
+        browser.validate_suite_compose(model, suite, profile_tests.COMMIT, profile_tests.PROJECT)
+
+    def test_s03_actors_with_their_users_roles_and_company_wide_grants_are_accepted(self):
+        self._validate(self.identity())
+
+    def test_the_built_in_seed_counts_set_the_first_indices(self):
+        builtin = json.loads((ROOT / browser.IDENTITY_SEED_FILE).read_text(encoding="utf-8"))["IdentitySeed"]
+        self.assertEqual((5, 5, 7), (len(builtin["Users"]), len(builtin["Roles"]), len(builtin["Assignments"])))
+
+    def test_every_rule_refuses_its_violation(self):
+        user = "IdentitySeed__Users__5__"
+        role = "IdentitySeed__Roles__5__"
+        assignment = "IdentitySeed__Assignments__7__"
+        cases = {
+            "actor without its user": {user + key: None for key in (
+                "Id", "DisplayName", "ExternalIdentities__0__Id", "ExternalIdentities__0__Issuer",
+                "ExternalIdentities__0__Subject")},
+            "user for no actor": {user + "ExternalIdentities__0__Subject": "s03-ghost"},
+            "user id outside the synthetic range": {user + "Id": "20000000-0000-0000-0000-000000000009"},
+            "external id outside its range": {user + "ExternalIdentities__0__Id": "b2000000-0000-0000-0000-000000000009"},
+            "user not SENTETIK": {user + "DisplayName": "Gerçek Kullanıcı"},
+            "another issuer": {user + "ExternalIdentities__0__Issuer": "urn:other"},
+            "email is not allowed": {user + "Email": "a@b.c"},
+            "second external identity": {user + "ExternalIdentities__1__Id": "b2100000-0000-0000-0000-000000000009"},
+            "users not contiguous": {key.replace("Users__6__", "Users__7__"): value
+                                     for key, value in self.identity().items() if "Users__6__" in key}
+                                    | {key: None for key in self.identity() if "Users__6__" in key},
+            "role code outside the suite prefix": {role + "Code": "SYSTEM_ADMINISTRATOR"},
+            "system role": {role + "IsSystem": "true"},
+            "role not SENTETIK": {role + "Name": "Satış"},
+            "permission outside the closed list": {role + "Permissions__3": "counterparty.parties.create"},
+            "repeated permission": {role + "Permissions__3": "sales.drafts.read"},
+            "permissions not from 0": {role + "Permissions__0": None},
+            "role without permissions": {role + f"Permissions__{index}": None for index in range(3)},
+            "assignment of a foreign user": {assignment + "UserId": "20000000-0000-0000-0000-000000000003"},
+            "assignment of a built-in role": {assignment + "RoleId": "30000000-0000-0000-0000-000000000003"},
+            "unseeded company": {assignment + "CompanyId": "10000000-0000-0000-0000-000000000009",
+                                 assignment + "Scopes__0__Id": "10000000-0000-0000-0000-000000000009"},
+            "scope narrower than the company": {assignment + "Scopes__0__Type": "Site"},
+            "scope on another company": {assignment + "Scopes__0__Id": "10000000-0000-0000-0000-000000000002"},
+            "another approver": {assignment + "ApprovedByUserId": "b2000000-0000-0000-0000-000000000001"},
+            "an expiry": {assignment + "ValidUntilUtc": "2027-01-01T00:00:00+00:00"},
+            "another start": {assignment + "ValidFromUtc": "2025-01-01T00:00:00+00:00"},
+            "repeated synthetic id": {"IdentitySeed__Assignments__8__Id": "b4000000-0000-0000-0000-000000000001"},
+            "user without an assignment": {key: None for key in self.identity() if "Assignments__8__" in key},
+            "role with an unlisted field": {role + "Description": "x"},
+            "user without a display name": {user + "DisplayName": None},
+            "assignment without its start": {assignment + "ValidFromUtc": None},
+            "extra assignment of a foreign user": {
+                "IdentitySeed__Assignments__9__Id": "b4000000-0000-0000-0000-000000000009",
+                "IdentitySeed__Assignments__9__UserId": "20000000-0000-0000-0000-000000000003",
+                "IdentitySeed__Assignments__9__RoleId": "b3000000-0000-0000-0000-000000000001",
+                "IdentitySeed__Assignments__9__CompanyId": "10000000-0000-0000-0000-000000000001",
+                "IdentitySeed__Assignments__9__ValidFromUtc": "2026-01-01T00:00:00+00:00",
+                "IdentitySeed__Assignments__9__Scopes__0__Type": "Company",
+                "IdentitySeed__Assignments__9__Scopes__0__Id": "10000000-0000-0000-0000-000000000001",
+            },
+        }
+        for label, changes in cases.items():
+            with self.subTest(label), self.assertRaises(browser.ContractError):
+                self._validate(self.identity(**changes))
+
+    def test_s03_actors_without_any_identity_user_are_refused(self):
+        actors_only = {key: value for key, value in self.identity().items() if key.startswith("BootstrapIdentity__")}
+        with self.assertRaisesRegex(browser.ContractError, "need their Identity users"):
+            self._validate(actors_only)
+
+    def test_a_suite_without_an_identity_list_cannot_seed_users(self):
+        extension = {key: value for key, value in self.identity().items()
+                     if key.startswith("IdentitySeed__") or key.startswith("BootstrapIdentity__")}
+        extension = {key.replace("s03-", "org03-"): value.replace("s03-", "org03-")
+                     for key, value in extension.items()}
+        with self.assertRaisesRegex(browser.ContractError, "may not seed Identity users"):
+            self._validate(extension, suite="org03")
+
+    def test_org03_keeps_the_actors_only_shape_until_its_grants_are_declared(self):
+        self._validate({
+            "BootstrapIdentity__Users__2__UserId": "org03-approver",
+            "BootstrapIdentity__Users__2__DisplayName": "SENTETIK ORG-03 Onaycı",
+        }, suite="org03")
 
 
 class WorkflowTests(unittest.TestCase):
