@@ -55,4 +55,13 @@ public static class InventoryRuleCodes
     /// A label whose stock has all left may be received again (a return is T13's own kind).
     /// </summary>
     public const string LabelAlreadyInStock = "inventory_label_already_in_stock";
+
+    /// <summary>This source (or source line) already caused a movement of this kind (ORG #281 P3-1).</summary>
+    public const string DuplicateSource = "inventory_duplicate_source";
+
+    /// <summary>
+    /// The source was already answered at the other grain for this kind: whole after lines, or a
+    /// line after the whole. Both would count the same quantity twice (#293 ORG P3-1).
+    /// </summary>
+    public const string SourceGrainMismatch = "inventory_source_grain_mismatch";
 }

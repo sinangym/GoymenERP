@@ -28,7 +28,12 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// <item><b>Replay (R3):</b> the movement id is the idempotency identity. The same id with the same
 /// canonical content is a replay with no second effect; with another content it is refused.</item>
 /// <item><b>Source:</b> one source (or source line) causes at most one movement of each kind —
-/// checked first for a clear answer, and held by two filtered unique indexes under a race.</item>
+/// checked first for a clear answer, and held by two filtered unique indexes under a race. A source
+/// is answered whole or line by line per kind, never both: the source's grain row, written with its
+/// first movement and referenced by every movement (<see cref="InventoryStoreCodes.SourceGrainMismatch"/>).</item>
+/// <item><b>Label code:</b> one comparison, the code column's collation: another spelling of a stored
+/// code is <see cref="InventoryStoreCodes.LabelCodeTaken"/> whether it comes with a new id (the
+/// unique index) or with the same id (the same comparison, asked of SQL).</item>
 /// <item><b>Race:</b> every write bumps the version of each label it touches. Two writes that read
 /// the same stock of one piece cannot both commit; the second is refused whole
 /// (<see cref="InventoryStoreCodes.ConcurrentChange"/>) and may be retried.</item>
@@ -87,6 +92,14 @@ public sealed class InventoryStore(
                 versionBefore: null, versionAfter: 1, before: "{}", after: LabelAudit(label), "Etiket kaydı");
             await SaveAsync(cancellationToken);
             return InventoryWriteOutcome.Recorded;
+        }
+
+        if (!string.Equals(stored.Code, label.Code, StringComparison.Ordinal)
+            && await dbContext.Labels.AnyAsync(row => row.Id == label.Id && row.Code == label.Code, cancellationToken))
+        {
+            // The column's collation calls it the stored code, written another way: the same answer
+            // a new label with this spelling gets from the unique index.
+            throw Refused(InventoryStoreCodes.LabelCodeTaken, "Bu kod kayıtlı bir etiket kodunun başka yazımı.");
         }
 
         if (!SameIdentity(stored, label))
@@ -153,6 +166,14 @@ public sealed class InventoryStore(
             throw Refused(InventoryStoreCodes.DuplicateSource, "Bu kaynak bu türde zaten bir hareket doğurdu.");
         }
 
+        var grain = (int)movement.Source.Grain;
+        var storedGrain = await SourceGrainAsync(movement, cancellationToken);
+        if (storedGrain is { } fixedGrain && fixedGrain != grain)
+        {
+            throw Refused(InventoryStoreCodes.SourceGrainMismatch,
+                "Bu kaynak bu türde başka ayrıntı düzeyinde (bütün/satır) karşılandı; aynı miktar iki kez sayılmaz.");
+        }
+
         var scale = await kilogramScale.CheckAsync(movement.CompanyId, DateOnly.FromDateTime(movement.OccurredAtUtc.UtcDateTime),
             movement.Lines.Select(line => line.Quantity), cancellationToken);
         if (!scale.IsAccepted)
@@ -215,6 +236,18 @@ public sealed class InventoryStore(
             label.UpdatedAtUtc = now;
         }
 
+        if (storedGrain is null)
+        {
+            dbContext.SourceGrains.Add(new SourceGrainRow
+            {
+                CompanyId = movement.CompanyId,
+                Kind = (int)movement.Kind,
+                SourceKind = movement.Source.Kind,
+                SourceId = movement.Source.Id,
+                Grain = grain,
+            });
+        }
+
         dbContext.Movements.Add(new MovementRow
         {
             Id = movement.Id,
@@ -224,6 +257,7 @@ public sealed class InventoryStore(
             SourceKind = movement.Source.Kind,
             SourceId = movement.Source.Id,
             SourceLineId = movement.Source.LineId,
+            SourceGrain = grain,
             CostStatus = (int)movement.Cost.Status,
             CostAmount = movement.Cost.Amount,
             CostCurrencyId = movement.Cost.CurrencyId,
@@ -324,6 +358,8 @@ public sealed class InventoryStore(
                 var message when message.Contains("UX_Movements_Source", StringComparison.Ordinal) => InventoryStoreCodes.DuplicateSource,
                 var message when message.Contains("IX_Labels_CompanyId_Code", StringComparison.Ordinal) => InventoryStoreCodes.LabelCodeTaken,
                 var message when message.Contains("PK_Movements", StringComparison.Ordinal) => InventoryStoreCodes.ConcurrentChange,
+                // Two first movements of one source raced for its grain: retried, the loser reads it.
+                var message when message.Contains("PK_SourceGrains", StringComparison.Ordinal) => InventoryStoreCodes.ConcurrentChange,
                 _ => InventoryStoreCodes.ConcurrentChange,
             };
             throw Refused(code, "Kayıt tekillik kuralına takıldı; hiçbir şey kaydedilmedi.", exception);
@@ -339,6 +375,16 @@ public sealed class InventoryStore(
                 && row.SourceId == source.Id && row.SourceLineId == lineId, cancellationToken)
             : await dbContext.Movements.AsNoTracking().AnyAsync(row => row.Kind == kind && row.SourceKind == source.Kind
                 && row.SourceId == source.Id && row.SourceLineId == null, cancellationToken);
+    }
+
+    private async Task<int?> SourceGrainAsync(StockMovement movement, CancellationToken cancellationToken)
+    {
+        var source = movement.Source;
+        var kind = (int)movement.Kind;
+        return await dbContext.SourceGrains.AsNoTracking()
+            .Where(row => row.Kind == kind && row.SourceKind == source.Kind && row.SourceId == source.Id)
+            .Select(row => (int?)row.Grain)
+            .SingleOrDefaultAsync(cancellationToken);
     }
 
     private async Task<Dictionary<Guid, MaterialLabel>> RestoreLabelsAsync(IReadOnlyList<LabelRow> rows,
@@ -480,6 +526,7 @@ public sealed class InventoryStore(
 
     private static int Scale(decimal value) => (decimal.GetBits(value)[3] >> 16) & 0xFF;
 
+    /// <summary>A replay repeats the stored facts exactly; the code's spelling included.</summary>
     private static bool SameIdentity(LabelRow row, MaterialLabel label) =>
         row.CompanyId == label.CompanyId && string.Equals(row.Code, label.Code, StringComparison.Ordinal)
         && row.ProductId == label.ProductId && row.LotId == label.LotId
@@ -515,7 +562,10 @@ public sealed class InventoryStore(
         _ => throw new InvalidOperationException("Kayıtlı hareketin maliyet durumu tanımsız."),
     };
 
-    /// <summary>The canonical content of a movement: kind, time, source, cost and every line in order.</summary>
+    /// <summary>
+    /// The canonical content of a movement: kind, time, source, cost and every line in order. Numbers
+    /// are written without trailing zeros, so 5.00 and 5 are the same content (#293 SİPARİŞ P3-2).
+    /// </summary>
     internal static string PayloadHash(StockMovement movement)
     {
         var canonical = JsonSerializer.Serialize(new
@@ -526,7 +576,9 @@ public sealed class InventoryStore(
             cost = new
             {
                 status = (int)movement.Cost.Status,
-                amount = movement.Cost.Amount?.ToString(CultureInfo.InvariantCulture),
+                amount = movement.Cost.Amount is { } known
+                    ? (known / 1.000000000000000000000000000000000m).ToString(CultureInfo.InvariantCulture)
+                    : null,
                 currencyId = movement.Cost.CurrencyId,
             },
             lines = movement.Lines.Select(line => new
