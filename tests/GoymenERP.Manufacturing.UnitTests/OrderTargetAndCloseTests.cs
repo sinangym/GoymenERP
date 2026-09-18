@@ -96,7 +96,7 @@ public sealed class OrderTargetAndCloseTests
 
         var error = Assert.Throws<ManufacturingRuleException>(() => order.Close(Closer, DateTimeOffset.UnixEpoch));
 
-        Assert.Equal("unexplained_difference", error.Code);
+        Assert.Equal(ManufacturingRuleCodes.UnexplainedDifference, error.Code);
         Assert.Equal(OrderStatus.Open, order.Status);
         Assert.Null(order.ClosedByUserId);
         // Still unexplained, still not written off as loss.
@@ -114,7 +114,7 @@ public sealed class OrderTargetAndCloseTests
         order.Declare(OtherRoll, OutputClass.GoodProduct, Kg(4_999m));
 
         var error = Assert.Throws<ManufacturingRuleException>(() => order.Close(Closer, DateTimeOffset.UnixEpoch));
-        Assert.Equal("unexplained_difference", error.Code);
+        Assert.Equal(ManufacturingRuleCodes.UnexplainedDifference, error.Code);
         Assert.Contains(OtherRoll.ToString(), error.Message);
     }
 
@@ -131,15 +131,15 @@ public sealed class OrderTargetAndCloseTests
 
         Assert.Equal(OrderStatus.Closed, order.Status);
         Assert.Equal(Closer, order.ClosedByUserId);
-        Assert.Equal("order_closed", Assert.Throws<ManufacturingRuleException>(
+        Assert.Equal(ManufacturingRuleCodes.OrderClosed, Assert.Throws<ManufacturingRuleException>(
             () => order.Issue(MasterRoll, Kg(1m))).Code);
-        Assert.Equal("order_closed", Assert.Throws<ManufacturingRuleException>(
+        Assert.Equal(ManufacturingRuleCodes.OrderClosed, Assert.Throws<ManufacturingRuleException>(
             () => order.Declare(MasterRoll, OutputClass.Scrap, Kg(1m))).Code);
-        Assert.Equal("order_closed", Assert.Throws<ManufacturingRuleException>(
+        Assert.Equal(ManufacturingRuleCodes.OrderClosed, Assert.Throws<ManufacturingRuleException>(
             () => order.Return(MasterRoll, Kg(1m))).Code);
-        Assert.Equal("order_closed", Assert.Throws<ManufacturingRuleException>(
+        Assert.Equal(ManufacturingRuleCodes.OrderClosed, Assert.Throws<ManufacturingRuleException>(
             () => order.MeasureWip(MasterRoll, Kg(1m))).Code);
-        Assert.Equal("order_closed", Assert.Throws<ManufacturingRuleException>(
+        Assert.Equal(ManufacturingRuleCodes.OrderClosed, Assert.Throws<ManufacturingRuleException>(
             () => order.Close(Closer, DateTimeOffset.UnixEpoch)).Code);
     }
 
@@ -154,14 +154,14 @@ public sealed class OrderTargetAndCloseTests
         Assert.True(order.BalanceOf(MasterRoll).IsFullyAccounted);
 
         var wipOpen = Assert.Throws<ManufacturingRuleException>(() => order.Close(Closer, DateTimeOffset.UnixEpoch));
-        Assert.Equal("wip_open", wipOpen.Code);
+        Assert.Equal(ManufacturingRuleCodes.WipOpen, wipOpen.Code);
         Assert.Equal(OrderStatus.Open, order.Status);
         Assert.Equal(7_000m, order.BalanceOf(MasterRoll).WorkInProgress.Value);
 
         // Writing the WIP down to zero without declaring or returning it does not close the
         // order: the 7.000 kg reappears as an unexplained difference.
         order.MeasureWip(MasterRoll, Kilograms.Zero);
-        Assert.Equal("unexplained_difference", Assert.Throws<ManufacturingRuleException>(
+        Assert.Equal(ManufacturingRuleCodes.UnexplainedDifference, Assert.Throws<ManufacturingRuleException>(
             () => order.Close(Closer, DateTimeOffset.UnixEpoch)).Code);
 
         // Declared and returned, the mass is accounted for and the order closes.
