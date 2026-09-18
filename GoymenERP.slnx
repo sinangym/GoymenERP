@@ -64,6 +64,7 @@
   </Folder>
   <Folder Name="/src/backend/Modules/Sales/">
     <Project Path="src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/GoymenERP.Modules.Sales.Application.csproj" />
+    <Project Path="src/backend/Modules/Sales/GoymenERP.Modules.Sales.Domain/GoymenERP.Modules.Sales.Domain.csproj" />
   </Folder>
   <Folder Name="/src/backend/Modules/Settings/">
     <Project Path="src/backend/Modules/Settings/GoymenERP.Modules.Settings.Application/GoymenERP.Modules.Settings.Application.csproj" />
