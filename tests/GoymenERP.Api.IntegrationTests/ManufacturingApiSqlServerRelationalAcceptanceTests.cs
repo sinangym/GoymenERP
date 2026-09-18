@@ -9,9 +9,13 @@ using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
+using GoymenERP.Modules.Manufacturing.Domain.Orders;
+using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -188,6 +192,45 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task A_read_that_keeps_meeting_concurrent_commits_is_a_retryable_503_platform_problem()
+    {
+        // FİNANS #313 INFO-4 through the real host: authentication, the company context, the read grant
+        // and the endpoint's problem mapping are real. Only the store's read is made to exhaust its
+        // re-reads, because three torn reads in a row cannot be produced on purpose against SQL Server:
+        // this is the HTTP answer's evidence, not a reproduction of the torn read.
+        await using var run = await Run.StartAsync();
+        var user = await run.GrantAsync(TestUsers.CompanyA, CompanyA, ErpPermissions.ManufacturingPlansWrite,
+            ErpPermissions.ManufacturingPlansApprove, ErpPermissions.ManufacturingOrdersCreate,
+            ErpPermissions.ManufacturingOrdersRead);
+        var (orderId, _) = await run.OpenOrderAsync(user);
+        await using var host = run.Factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<IManufacturingOrderStore>();
+            services.AddScoped<IManufacturingOrderStore>(provider =>
+                new ReadsKeepMeetingCommits(provider.GetRequiredService<ManufacturingStore>()));
+        }));
+        using var client = host.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Development-User", user);
+        client.DefaultRequestHeaders.Add("X-Company-Id", CompanyA.ToString());
+        client.DefaultRequestHeaders.Add("X-Correlation-Id", Guid.NewGuid().ToString("N"));
+
+        var response = await client.GetAsync($"{Base}/orders/{orderId}");
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(("service_unavailable", 503), (problem.RootElement.GetProperty("code").GetString(),
+            problem.RootElement.GetProperty("status").GetInt32()));
+        Assert.False(problem.RootElement.TryGetProperty("orderId", out _));
+
+        // The same order through the unchanged host reads, and the refused read changed nothing.
+        using var reader = run.ClientFor(user, CompanyA);
+        var read = await reader.GetAsync($"{Base}/orders/{orderId}");
+        Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+        Assert.Equal(1L, (await read.Content.ReadFromJsonAsync<OrderViewV1>())!.Version);
+    }
+
+    [SqlServerFact]
     public async Task Stale_versions_reused_ids_masses_outside_the_profile_and_foreign_work_centers_are_refused()
     {
         await using var run = await Run.StartAsync();
@@ -332,6 +375,45 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         string? Text(string name) => document.RootElement.TryGetProperty(name, out var value) ? value.GetString() : null;
         return (Text("code"), Text("expectedVersion"), Text("currentVersion"));
+    }
+
+    /// <summary>The real store, except that its read has already used up its re-reads (INFO-4).</summary>
+    private sealed class ReadsKeepMeetingCommits(ManufacturingStore store) : IManufacturingOrderStore
+    {
+        public Task<ManufacturingWriteOutcome> CreateOrderAsync(Guid orderId, Guid planId,
+            ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            store.CreateOrderAsync(orderId, planId, metadata, cancellationToken);
+
+        public Task<ManufacturingWriteOutcome> IssueInputAsync(Guid orderId, long expectedVersion, Guid issueId,
+            Guid parentRollId, Kilograms mass, DateTimeOffset issuedAt, ManufacturingCommandMetadata metadata,
+            CancellationToken cancellationToken = default) =>
+            store.IssueInputAsync(orderId, expectedVersion, issueId, parentRollId, mass, issuedAt, metadata,
+                cancellationToken);
+
+        public Task<ManufacturingWriteOutcome> ReturnUnusedInputAsync(Guid orderId, long expectedVersion,
+            Guid returnId, Guid parentRollId, Kilograms mass, DateTimeOffset returnedAt,
+            ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            store.ReturnUnusedInputAsync(orderId, expectedVersion, returnId, parentRollId, mass, returnedAt, metadata,
+                cancellationToken);
+
+        public Task<ManufacturingWriteOutcome> DeclareOutputAsync(Guid orderId, long expectedVersion, Guid outputId,
+            Guid parentRollId, OutputClass outputClass, Kilograms mass, DateTimeOffset declaredAt,
+            ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            store.DeclareOutputAsync(orderId, expectedVersion, outputId, parentRollId, outputClass, mass, declaredAt,
+                metadata, cancellationToken);
+
+        public Task<ManufacturingWriteOutcome> RecordWorkInProgressAsync(Guid orderId, long expectedVersion,
+            Guid measurementId, Guid parentRollId, Kilograms mass, DateTimeOffset measuredAt,
+            ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            store.RecordWorkInProgressAsync(orderId, expectedVersion, measurementId, parentRollId, mass, measuredAt,
+                metadata, cancellationToken);
+
+        public Task CloseOrderAsync(Guid orderId, long expectedVersion, Guid closedByUserId, DateTimeOffset closedAt,
+            ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            store.CloseOrderAsync(orderId, expectedVersion, closedByUserId, closedAt, metadata, cancellationToken);
+
+        public Task<ProductionOrder?> FindOrderAsync(Guid orderId, CancellationToken cancellationToken = default) =>
+            throw new ManufacturingStoreException(ManufacturingStoreCodes.ConcurrentChange, "sentetik: yeniden okumalar tükendi");
     }
 
     private sealed class Run : IAsyncDisposable

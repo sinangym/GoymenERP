@@ -89,6 +89,11 @@ Rules held here:
 - **R3 underneath:** the store still recognises the caller's plan / order / fact id with the same canonical content as the same record, whatever the key (the ledger's own identity, MFG-5). Other content under that id is 409 (`*_id_conflict`). Under a new key such a success is recorded as that key's answer.
 - **Concurrency:** `expectedVersion` → 409 `manufacturing_version_conflict` with `expectedVersion` / `currentVersion`; a lost race → 409 `manufacturing_concurrent_change`.
 - **Refusals:** a domain rule → 422 with its code; a work center that is not this company's → 422 `manufacturing_work_center_not_found`; a malformed request → 400 `manufacturing_request_invalid` with `field`.
+- **Read under concurrent writes (FİNANS #313 INFO-4):** the store re-reads an order whose row and facts were committed apart (RCSI reads each statement on its own), up to three times. If it still meets a commit, `GET /orders/{orderId}` answers 503 `service_unavailable`: a retryable consistency failure, never a 500. It is not a 409, because 409 belongs to commands. Any other store refusal keeps its own path.
+- **409 / 422 codes are one declared superset:** every write endpoint declares the same 409 (6) and 422 (23) `manufacturing_*` codes (`WithWriteProblems`). For example, the plan save also declares `manufacturing_output_already_declared`.
+  - It is a true superset: no endpoint returns a code it does not declare.
+  - A client branches on the code, not on the endpoint. A code a screen does not handle is shown as a generic refusal.
+  - Narrowing per endpoint is a separate change: the endpoint, the regenerated OpenAPI and the contract expectations change together.
 
 Not here: closing an order, a list or search, cost, Inventory movements (T15), or any role assignment.
 
