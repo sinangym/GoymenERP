@@ -39,10 +39,15 @@ public sealed class MaterialLabel
     private readonly List<LabelDocumentAttachment> attachments = [];
     private readonly List<LabelPrint> prints = [];
 
-    public MaterialLabel(Guid id, Guid productId, Guid lotId, IEnumerable<string>? requiredDocuments = null,
-        string? heatNumber = null, string? coilNumber = null)
+    /// <summary>The longest label code this module stores.</summary>
+    public const int MaximumCodeLength = 64;
+
+    public MaterialLabel(Guid id, Guid companyId, string code, Guid productId, Guid lotId,
+        IEnumerable<string>? requiredDocuments = null, string? heatNumber = null, string? coilNumber = null)
     {
         Id = RequireId(id, "Etiket");
+        CompanyId = RequireId(companyId, "Etiketin şirketi");
+        Code = RequireCode(code);
         ProductId = RequireId(productId, "Ürün");
         LotId = RequireId(lotId, "Lot");
         this.requiredDocuments = new HashSet<string>(StringComparer.Ordinal);
@@ -57,6 +62,20 @@ public sealed class MaterialLabel
 
     /// <summary>The physical identity. It never changes, whatever is printed.</summary>
     public Guid Id { get; }
+
+    /// <summary>
+    /// The company that holds this piece's stock (ADR-INV-001 A). It never changes: a transfer
+    /// to another company closes this label and the receiving company records a NEW label with a
+    /// new <see cref="Id"/> (T13).
+    /// </summary>
+    public Guid CompanyId { get; }
+
+    /// <summary>
+    /// The code printed on the piece, unique within <see cref="CompanyId"/> only (no group-wide
+    /// uniqueness, so no code can reveal another company's stock). Its format is not chosen here:
+    /// it is whatever the printing or receiving process gives, trimmed.
+    /// </summary>
+    public string Code { get; }
 
     public Guid ProductId { get; }
 
@@ -159,6 +178,51 @@ public sealed class MaterialLabel
         id == Guid.Empty
             ? throw new InventoryRuleException(InventoryRuleCodes.MissingReference, $"{what} kimliği zorunludur.")
             : id;
+
+    /// <summary>
+    /// Rebuilds a stored label with its prints and attachments in their stored order. Every
+    /// rule of a new label holds again: a stored row that breaks one is refused, not repaired.
+    /// </summary>
+    public static MaterialLabel Restore(Guid id, Guid companyId, string code, Guid productId, Guid lotId,
+        IEnumerable<string> requiredDocuments, string? heatNumber, string? coilNumber,
+        IEnumerable<LabelPrint> prints, IEnumerable<LabelDocumentAttachment> attachments)
+    {
+        ArgumentNullException.ThrowIfNull(prints);
+        ArgumentNullException.ThrowIfNull(attachments);
+        var label = new MaterialLabel(id, companyId, code, productId, lotId, requiredDocuments, heatNumber, coilNumber);
+        foreach (var print in prints)
+        {
+            ArgumentNullException.ThrowIfNull(print);
+            var restored = label.prints.Count == 0
+                ? label.Print(print.PrintedAtUtc, print.PrintedBy)
+                : label.Reprint(print.PrintedAtUtc, print.PrintedBy, print.Reason ?? string.Empty);
+            if (restored != print)
+            {
+                throw Invalid("Kayıtlı baskı sırası etiketin baskı kurallarıyla uyuşmuyor.");
+            }
+        }
+
+        foreach (var attachment in attachments)
+        {
+            ArgumentNullException.ThrowIfNull(attachment);
+            label.AttachDocument(attachment.Kind, attachment.AttachedAtUtc, attachment.AttachedBy);
+        }
+
+        return label;
+    }
+
+    private static string RequireCode(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InventoryRuleException(InventoryRuleCodes.MissingReference, "Etiket kodu zorunludur.");
+        }
+
+        var code = value.Trim();
+        return code.Length <= MaximumCodeLength
+            ? code
+            : throw Invalid($"Etiket kodu en fazla {MaximumCodeLength} karakterdir.");
+    }
 
     private static string RequireToken(string? value) =>
         string.IsNullOrWhiteSpace(value) ? throw Invalid("Belge türü boş olamaz.") : value.Trim();

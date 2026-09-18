@@ -39,30 +39,44 @@ Deliberate limits of this slice:
   accepted in pieces elsewhere (Purchasing) has no Inventory counterpart.
 - **Ö3 "documents pending" is a flag here.** `IsReleasableForProductionOrShipment` refuses no
   movement yet; enforcing it belongs to allocation (T11) and shipment, which are not built.
-- **Actors are text.** Print and document-attachment actors are free text; the ADR-009 audit
-  envelope (actor id, company, correlation) comes with persistence (INV-2).
+- **Actors are text** in the domain. Print and document-attachment actors stay free text on the
+  label; since INV-2 every stored write also carries the ADR-009 audit envelope (below).
+
+## INV-2 — persistence (first real layer of T07)
+
+Decision this builds on: ADR-INV-001 option A (`docs/adr/ADR-INV-001-label-company-scope.md`).
+
+| Rule | Where | Held by |
+|---|---|---|
+| A label belongs to the company holding its stock; that company never changes | `MaterialLabel.CompanyId`, `StockPosition` (`inventory_label_company_mismatch`) | domain + write guard |
+| A label code is unique within its company only; no group-wide code index | `IX_Labels_CompanyId_Code` | SQL |
+| Every row is a tenant row: global filter on the server-resolved company; a row of another company, a company change or a write without a company is refused | `InventoryDbContext` | EF filter + write guard |
+| A location is referenced by (company, location) against Organization's alternate key; a company by id | `FK_*_Locations_CompanyId_LocationId`, `FK_*_Companies_CompanyId` | SQL (547) |
+| Movements, lines, prints and document attachments are append-only; a balance changes its quantity only; a label its version only; nothing is deleted | `InventoryDbContext` | write guard |
+| The movement id is the idempotency identity: same id + same canonical content = replay with no second effect; other content = `inventory_movement_id_conflict` | `InventoryStore.RecordMovementAsync` (`PayloadHash`) | store + PK |
+| One source (or source line) causes at most one movement of each kind (ORG #281 P3-1) | `UX_Movements_Source`, `UX_Movements_SourceLine` | store check + filtered unique indexes |
+| A label that holds stock is not received again; once empty it may be (ORG #281 P3-1) | `StockLedger` (`inventory_label_already_in_stock`) | domain, against stored balances |
+| Two writes that read the same piece cannot both commit (the SQL race guard) | label `Version` + `RowVersion` bumped by every write touching the label | optimistic concurrency (`inventory_concurrent_change`) |
+| A movement, its balances, the label versions and its audit event commit together or not at all | one `SaveChanges` | SQL transaction |
+| kg scale is the company's approved Settings profile (`SettingsUnitIdentitiesV1.Kilogram`), never wider than Ö2's 3; every Settings failure is a refusal with the owner's code | `InventoryKilogramScale` | fail-closed |
+| Every write carries the ADR-009 envelope (actor, permission, roles, correlation, causation, idempotency key, channel) from the caller | `InventoryCommandMetadata` → Audit collector | same save |
+
+Deliberate limits of this slice:
+
+- **No HTTP, permission, host DI or UI** (INV-3). `AddInventoryModule`/`InitializeInventoryModuleAsync` exist but the host does not call them; the permission code in the audit envelope is the caller's, and this module invents none.
+- **No transfer (T13).** A label's company never changes; a transfer will close it and record a new label with a new id in the receiving company (ADR-INV-001).
+- **Which product's stock unit is kilogram** is Product's binding (its reference catalogue), not checked here; only the kilogram profile's scale is.
+- **Cost** is stored as the domain gives it; a known amount that needs more than 18 decimals or 20 integer digits is refused (`inventory_value_does_not_fit`), never rounded. No money policy is chosen.
+- **Existence by id.** Primary keys are table-wide (ADR-002 pattern, ADR-INV-001 P3-2). Ids are the caller's new GUIDs; a transfer never reuses a source id.
 
 ## dependency_wait
 
-- **Which company scopes a label (decide BEFORE INV-2's DbContext).** `MaterialLabel` has no
-  company. ADR-002 requires a `CompanyId` and a global query filter on every tenant row, and a
-  physical coil can move between companies by transfer (T13). Whether the label carries a
-  company (and what a transfer does to it) or is a reviewed group-level identity is a model
-  decision; it is to be brought as one narrow joint proposal by ÜRÜN and CARİ (central) before
-  INV-2 starts, not coded in this slice.
-- **Persistence (INV-2):** DbContext, migrations, the SQL race guard (rowversion/lock) and the
-  central guard registration are CARİ's central work and INV-2. `StockLedger` is the in-memory
-  domain rule; it does not claim a persistent race guard.
-- **Settings kg unit validation (T02-a):** whether a Product's stock unit really is kilogram
-  is the Settings owner's answer. T02-a is now on main (#279: the approved GDC kg profile, scale
-  3, and `SettingsUnitIdentitiesV1.Kilogram`), but this branch does not consume it: this module
-  still guarantees only the kilogram arithmetic (`Kilograms`). Binding a product's stock unit to
-  that identity and the kg rule to the profile's scale (instead of the constant 3) is INV-2's.
-- **The first real product (Ö1's authorised source):** Ö1 fixes the first path as GDC
-  band/coil kg→kg, but the real product, quality and size dictionaries come from its
-  authorised card/label/document. The test identities in `tests/GoymenERP.Inventory.UnitTests`
-  are synthetic fixtures, not master data, and are never seeded anywhere.
+- **Central registration (CARİ, same branch, sequential):** the tenant guard's reviewed inventory (this DbContext's fingerprint, the design-time factory and the initializer's `Migrate`/`EnsureCreated` branch); the module-dependency allowlist edge `Inventory.Infrastructure → Audit.Infrastructure` (ADR-009); the `Api.IntegrationTests` project reference to Inventory; and the relational verifier's BROAD list and counts for `InventorySqlServerRelationalAcceptanceTests`.
+- **INV-3:** command/query surface, permissions (registered centrally, granted by a human), host wiring with the audit interceptor, and UI.
+- **The first real product (Ö1's authorised source):** Ö1 fixes the first path as GDC band/coil kg→kg, but the real product, quality and size dictionaries come from its authorised card/label/document. Every identity in the tests is a synthetic fixture, never seeded anywhere.
 
 ```bash
 dotnet test tests/GoymenERP.Inventory.UnitTests/GoymenERP.Inventory.UnitTests.csproj
+# real SQL (needs GOYMEN_ERP_TEST_SQLSERVER_CONNECTION; the CI relational job runs it)
+dotnet test tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj --filter FullyQualifiedName~InventorySqlServerRelationalAcceptanceTests
 ```

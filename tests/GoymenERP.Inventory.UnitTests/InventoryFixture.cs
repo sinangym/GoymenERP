@@ -34,15 +34,22 @@ internal static class InventoryFixture
 
     public static StockCustodian KeptByFason => new(StockPartyKind.Counterparty, FasonF);
 
-    /// <summary>A synthetic label of <paramref name="product"/> (the band product by default).</summary>
-    public static MaterialLabel Label(Guid? id = null, Guid? product = null) =>
-        new(id ?? Label1, product ?? BandProduct, Lot1);
+    /// <summary>
+    /// A synthetic label of <paramref name="product"/> (the band product by default) held by
+    /// <paramref name="company"/> (company A by default). Its code is derived from its id, so the
+    /// same label always has the same code.
+    /// </summary>
+    public static MaterialLabel Label(Guid? id = null, Guid? product = null, Guid? company = null) =>
+        new(id ?? Label1, company ?? CompanyA, CodeOf(id ?? Label1), product ?? BandProduct, Lot1);
+
+    /// <summary>A synthetic printed code for a synthetic label id.</summary>
+    public static string CodeOf(Guid labelId) => $"SYN-{labelId:N}";
 
     /// <summary>A position whose product is the label's own; override any one fact.</summary>
     public static StockPosition Position(Guid? company = null, StockOwner? owner = null, StockCustodian? custodian = null,
         Guid? location = null, Guid? label = null, BlockState block = BlockState.Free, Guid? product = null) =>
         new(company ?? CompanyA, owner ?? OwnedByA, custodian ?? KeptByA, location ?? Warehouse1,
-            Label(label, product), block);
+            Label(label, product, company ?? CompanyA), block);
 
     public static StockMovementLine In(StockPosition position, decimal kilograms) =>
         new(position, StockDirection.In, Kilograms.Positive(kilograms));
