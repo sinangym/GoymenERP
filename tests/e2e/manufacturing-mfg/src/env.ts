@@ -12,6 +12,9 @@
  *   readerActor   — Development user holding only manufacturing.orders.read there
  *   companyId     — the company whose approved kilogram profile the real Settings provider answers
  *   workCenterId  — one of that company's work centers
+ *   orderId       — an open order the fixture (tests/GoymenERP.BrowserSuiteFixtureTool/Suites/MFG)
+ *                   arranged through the real API; the reader case reads it
+ *   rollId        — that order's parent roll
  *
  * The screen's capabilities (`manufacturing.orders.detail` / `.facts`) must be published by the
  * stack's capability profile (MFG-UI card D4, `mfg-staged`), since the provider is staged in the
@@ -23,6 +26,8 @@ export interface MfgSeed {
   readonly readerActor: string
   readonly companyId: string
   readonly workCenterId: string
+  readonly orderId: string
+  readonly rollId: string
 }
 
 export interface MfgEnvironment {
@@ -64,6 +69,8 @@ export function readEnvironment(): MfgEnvironment {
     readerActor: text(raw, 'readerActor'),
     companyId: text(raw, 'companyId', true),
     workCenterId: text(raw, 'workCenterId', true),
+    orderId: text(raw, 'orderId', true),
+    rollId: text(raw, 'rollId', true),
   }
   if (seed.recorderActor === seed.readerActor) {
     throw new Error('BROWSER_E2E_MFG_SEED binds the same actor as recorder and reader')

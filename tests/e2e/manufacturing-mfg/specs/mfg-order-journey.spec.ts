@@ -156,7 +156,8 @@ test.describe('MFG order screen (real API, real SQL)', () => {
   })
 
   test('a reader sees the balances and no form, and sends no command', async ({ page, context }) => {
-    const arranged = await arrangeOpenOrder(env)
+    // The order the suite fixture seeded through the real API (Suites/MFG): the seed path, end to end.
+    const arranged = { orderId: env.seed.orderId, rollId: env.seed.rollId }
     const rewritten = await asActor(context, env.seed.readerActor)
     const answered = watchAnswers(page)
     const posts: Request[] = []
