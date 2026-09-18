@@ -160,6 +160,17 @@ public sealed partial class OpenApiContractGenerationTests
                 "query:orderUnitId:true:type:string;format:uuid",
                 "query:effectiveOn:true:type:string;format:date",
             ]),
+        new("post", "/api/v1/finance/manual-receipts/drafts", "SaveFinanceManualReceiptDraftV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/DraftSaveRequest"),
+        new("get", "/api/v1/finance/manual-receipts", "GetFinanceManualReceiptsV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:cursor:false:type:string"]),
+        new("get", "/api/v1/finance/manual-receipts/{sourceId}", "GetFinanceManualReceiptV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:sourceId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/finance/bank-accounts", "GetFinanceBankAccountsV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
         .. ProductOperations,
     ];
 
@@ -190,6 +201,10 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetSalesAccountReferencesV1"] = "ref:SalesAccountOptionsV1",
             ["GetSalesCurrencyReferenceV1"] = "ref:SalesCurrencyReferenceV1",
             ["GetSalesProductReferenceV1"] = "ref:SalesProductReferenceV1",
+            ["SaveFinanceManualReceiptDraftV1"] = "ref:CommandResult",
+            ["GetFinanceManualReceiptsV1"] = "ref:SourcePage",
+            ["GetFinanceManualReceiptV1"] = "ref:SourceDetail",
+            ["GetFinanceBankAccountsV1"] = "ref:BankAccountPage",
         };
 
     private static readonly HashSet<string> RequiredCompanyOperations =
@@ -211,6 +226,10 @@ public sealed partial class OpenApiContractGenerationTests
         "GetSalesAccountReferencesV1",
         "GetSalesCurrencyReferenceV1",
         "GetSalesProductReferenceV1",
+        "SaveFinanceManualReceiptDraftV1",
+        "GetFinanceManualReceiptsV1",
+        "GetFinanceManualReceiptV1",
+        "GetFinanceBankAccountsV1",
     ];
 
     private static readonly HashSet<string> OptionalCompanyOperations =
@@ -227,6 +246,7 @@ public sealed partial class OpenApiContractGenerationTests
         "CreateCounterpartyV1",
         "CreateCounterpartyCompanyAccountV1",
         "SetCounterpartyCompanyAccountActiveStateV1",
+        "SaveFinanceManualReceiptDraftV1",
     ];
 
     private static readonly IReadOnlyDictionary<string, HashSet<int>>
@@ -254,6 +274,7 @@ public sealed partial class OpenApiContractGenerationTests
                     StatusCodes.Status404NotFound,
                     StatusCodes.Status409Conflict,
                 ],
+                ["SaveFinanceManualReceiptDraftV1"] = [StatusCodes.Status200OK],
             };
 
     private static readonly HashSet<string> EmptyBodyPossible400Operations =
@@ -269,6 +290,10 @@ public sealed partial class OpenApiContractGenerationTests
         "GetSalesAccountReferencesV1",
         "GetSalesCurrencyReferenceV1",
         "GetSalesProductReferenceV1",
+        "SaveFinanceManualReceiptDraftV1",
+        "GetFinanceManualReceiptsV1",
+        "GetFinanceManualReceiptV1",
+        "GetFinanceBankAccountsV1",
     ];
 
     private static readonly HashSet<string> CodeLessProblemResponses =
@@ -278,6 +303,7 @@ public sealed partial class OpenApiContractGenerationTests
         "SetOrganizationLocationActiveStateV1:409",
         "GetFinanceManualReceiptDraftContextV1:404",
         "GetSalesProductReferenceV1:404",
+        "GetFinanceManualReceiptV1:404",
     ];
 
     private static readonly HashSet<string> MixedProblemResponses =
@@ -285,6 +311,10 @@ public sealed partial class OpenApiContractGenerationTests
         "GetAuditEventsV1:400",
         "SetOrganizationLocationActiveStateV1:400",
         "GetFinanceManualReceiptDraftContextV1:400",
+        "SaveFinanceManualReceiptDraftV1:400",
+        "GetFinanceManualReceiptsV1:400",
+        "GetFinanceManualReceiptV1:400",
+        "GetFinanceBankAccountsV1:400",
     ];
 
     private static readonly IReadOnlyDictionary<string, string[]> AdditionalProblemCodes =
@@ -332,6 +362,66 @@ public sealed partial class OpenApiContractGenerationTests
         ExpectedSuccessComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["AllocationKnowledge"] = ScalarSchema("enum:Unavailable|Known"),
+                ["AmountDisclosure"] = ScalarSchema("enum:Unavailable|Redacted|Visible"),
+                ["AmountView"] = ObjectSchema(
+                    ["disclosure", "money"],
+                    ("disclosure", "ref:AmountDisclosure"),
+                    ("money", "oneOf:ref:MoneyText|type:null")),
+                ["BankAccountPage"] = ObjectSchema(
+                    ["companyId", "items"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("items", "type:array;items:ref:BankAccountView")),
+                ["CommandOutcome"] = ScalarSchema("enum:Unavailable|Denied|ValidationFailed|VersionConflict|IdempotencyConflict|Succeeded"),
+                ["CommandResult"] = ObjectSchema(
+                    ["outcome", "resource", "isReplay", "originalCorrelationId", "issues"],
+                    ("outcome", "ref:CommandOutcome"),
+                    ("resource", "oneOf:ref:SourceDetail|type:null"),
+                    ("isReplay", "type:boolean"),
+                    ("originalCorrelationId", "type:string"),
+                    ("issues", "type:array;items:ref:ValidationIssue")),
+                ["MoneyText"] = ObjectSchema(
+                    ["amount", "currencyId"],
+                    ("amount", "type:string"),
+                    ("currencyId", "type:string;format:uuid")),
+                ["SourceDetail"] = ObjectSchema(
+                    ["source", "profile", "bankReference", "description", "recordedAtUtc", "reversalSourceId", "reversesSourceId", "unallocated"],
+                    ("source", "ref:SourceSummary"),
+                    ("profile", "ref:ProfileReference"),
+                    ("bankReference", "type:null|string"),
+                    ("description", "type:null|string"),
+                    ("recordedAtUtc", "type:null|string;format:date-time"),
+                    ("reversalSourceId", "type:null|string;format:uuid"),
+                    ("reversesSourceId", "type:null|string;format:uuid"),
+                    ("unallocated", "ref:UnallocatedView")),
+                ["SourcePage"] = ObjectSchema(
+                    ["companyId", "items", "nextCursor"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("items", "type:array;items:ref:SourceSummary"),
+                    ("nextCursor", "type:null|string")),
+                ["SourceStage"] = ScalarSchema("enum:Draft|Recorded|Reversed"),
+                ["SourceSummary"] = ObjectSchema(
+                    ["id", "companyId", "sourceNumber", "version", "stage", "partyId", "companyAccountId", "treasuryAccountId", "currencyId", "occurredOn", "valueOn", "amount"],
+                    ("id", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("sourceNumber", "type:string"),
+                    ("version", "type:string"),
+                    ("stage", "ref:SourceStage"),
+                    ("partyId", "type:string;format:uuid"),
+                    ("companyAccountId", "type:string;format:uuid"),
+                    ("treasuryAccountId", "type:string;format:uuid"),
+                    ("currencyId", "type:string;format:uuid"),
+                    ("occurredOn", "type:string;format:date"),
+                    ("valueOn", "type:null|string;format:date"),
+                    ("amount", "ref:AmountView")),
+                ["UnallocatedView"] = ObjectSchema(
+                    ["knowledge", "amount"],
+                    ("knowledge", "ref:AllocationKnowledge"),
+                    ("amount", "ref:AmountView")),
+                ["ValidationIssue"] = ObjectSchema(
+                    ["field", "code"],
+                    ("field", "type:string"),
+                    ("code", "type:string")),
                 ["BankAccountView"] = ObjectSchema(
                     ["id", "companyId", "currencyId", "displayName", "isActive", "isUsableForReceipt", "version"],
                     ("id", "type:string;format:uuid"), ("companyId", "type:string;format:uuid"),
@@ -613,6 +703,22 @@ public sealed partial class OpenApiContractGenerationTests
         ExpectedRequestComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["DraftSaveRequest"] = ObjectSchema(
+                    ["draftId", "expectedVersion", "preparation"],
+                    ("draftId", "type:null|string;format:uuid"),
+                    ("expectedVersion", "type:null|string"),
+                    ("preparation", "ref:ReceiptPreparation")),
+                ["ReceiptPreparation"] = ObjectSchema(
+                    ["partyId", "companyAccountId", "treasuryAccountId", "money", "profile", "occurredOn", "valueOn", "bankReference", "description"],
+                    ("partyId", "type:string;format:uuid"),
+                    ("companyAccountId", "type:string;format:uuid"),
+                    ("treasuryAccountId", "type:string;format:uuid"),
+                    ("money", "ref:MoneyText"),
+                    ("profile", "ref:ProfileReference"),
+                    ("occurredOn", "type:string;format:date"),
+                    ("valueOn", "type:null|string;format:date"),
+                    ("bankReference", "type:null|string"),
+                    ("description", "type:null|string")),
                 ["UpdateCounterpartyContactInformation"] = ObjectSchema(
                     ["expectedVersion", "changes"],
                     ("expectedVersion", "type:string"),
@@ -1207,9 +1313,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(29, operations.Count);
+        Assert.Equal(33, operations.Count);
         Assert.Equal(
-            29,
+            33,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
@@ -1828,6 +1934,13 @@ public sealed partial class OpenApiContractGenerationTests
         if (schema.TryGetProperty("$ref", out var reference))
         {
             return $"ref:{reference.GetString()?.Split('/').Last()}";
+        }
+
+        // A string enum emitted without "type" (first used by Finance, #320): its values in declared
+        // order, so a new, removed or reordered value is a visible contract change.
+        if (!schema.TryGetProperty("type", out _) && schema.TryGetProperty("enum", out var enumValues))
+        {
+            return "enum:" + string.Join('|', enumValues.EnumerateArray().Select(value => value.GetString()));
         }
 
         if (schema.TryGetProperty("oneOf", out var oneOf))
