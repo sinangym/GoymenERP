@@ -52,7 +52,7 @@ internal sealed class ProductCodeGroupFixtureStore(ProductDbContext dbContext) :
             return;
         }
 
-        dbContext.CodeGroups.Add(group);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        // Product's public writes stay closed; the context's own fixture path adds only this group.
+        await dbContext.AddFixtureCodeGroupAsync(group, cancellationToken);
     }
 }
