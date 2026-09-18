@@ -142,11 +142,13 @@ public sealed class SourcePostingLedger
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(period);
-        RequireOwnCompany(request.Source.CompanyId);
-        if (request.Lines is null || request.Lines.Any(line => line is null))
+        // Null parts are caller errors, not rules: refused before any company or content check.
+        if (request.Source is null || request.Dates is null || request.Lines is null || request.Lines.Any(line => line is null))
         {
-            throw new ArgumentException("A posting request needs its proposed lines.", nameof(request));
+            throw new ArgumentException("A posting request needs its source, dates and proposed lines.", nameof(request));
         }
+
+        RequireOwnCompany(request.Source.CompanyId);
 
         var delivery = Delivery(request.Consumer, request.MessageId);
         if (_inbox.TryGetValue(delivery, out var recorded))
