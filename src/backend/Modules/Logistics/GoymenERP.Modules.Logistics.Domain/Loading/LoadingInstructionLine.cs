@@ -7,13 +7,20 @@ namespace GoymenERP.Modules.Logistics.Domain.Loading;
 /// loaded, shipped, delivered. Each later share is a sub-share of the one before it, so the
 /// differences (remaining to load, loaded-not-shipped, shipped-not-delivered) are always
 /// non-negative and nothing is counted twice.
+/// <para>
+/// Every share bound is decided by <see cref="LoadingInstruction"/>; the checks in this class are a
+/// second, defensive guard and report <see cref="LogisticsRuleCodes.InternalInvariant"/> so they
+/// are never mistaken for the aggregate's rule.
+/// </para>
 /// </summary>
 public sealed class LoadingInstructionLine
 {
-    internal LoadingInstructionLine(Guid id, Guid productId, Guid? allocationId, Quantity instructed)
+    internal LoadingInstructionLine(Guid id, Guid sourceOrderLineId, Guid productId, Guid unitId, Guid? allocationId, Quantity instructed)
     {
         Id = id;
+        SourceOrderLineId = sourceOrderLineId;
         ProductId = productId;
+        UnitId = unitId;
         AllocationId = allocationId;
         InstructedQuantity = instructed;
         LoadedQuantity = Quantity.Zero(instructed.Unit);
@@ -22,7 +29,14 @@ public sealed class LoadingInstructionLine
     }
 
     public Guid Id { get; }
+
+    /// <summary>The sales order line this loading serves (Sales identity only; §5 source identity).</summary>
+    public Guid SourceOrderLineId { get; }
+
     public Guid ProductId { get; }
+
+    /// <summary>The Settings unit this line is in (identity only).</summary>
+    public Guid UnitId { get; }
 
     /// <summary>The Inventory allocation this loading draws from, identity only; null when loading from free stock.</summary>
     public Guid? AllocationId { get; }
@@ -47,7 +61,7 @@ public sealed class LoadingInstructionLine
         var next = LoadedQuantity.Add(loaded);
         if (next.IsGreaterThan(InstructedQuantity))
         {
-            throw new InvalidOperationException("Yüklenen pay talimatı aşamaz.");
+            throw new LogisticsRuleException(LogisticsRuleCodes.InternalInvariant, "İç tutarsızlık: yüklenen pay talimatı aşıyor.");
         }
 
         LoadedQuantity = next;
@@ -58,7 +72,7 @@ public sealed class LoadingInstructionLine
         var next = ShippedQuantity.Add(shipped);
         if (next.IsGreaterThan(LoadedQuantity))
         {
-            throw new InvalidOperationException("Sevk edilen pay yüklenen payı aşamaz.");
+            throw new LogisticsRuleException(LogisticsRuleCodes.InternalInvariant, "İç tutarsızlık: sevk edilen pay yüklenen payı aşıyor.");
         }
 
         ShippedQuantity = next;
@@ -69,7 +83,7 @@ public sealed class LoadingInstructionLine
         var next = DeliveredQuantity.Add(delivered);
         if (next.IsGreaterThan(ShippedQuantity))
         {
-            throw new InvalidOperationException("Teslim edilen pay sevk edilen payı aşamaz.");
+            throw new LogisticsRuleException(LogisticsRuleCodes.InternalInvariant, "İç tutarsızlık: teslim edilen pay sevk edilen payı aşıyor.");
         }
 
         DeliveredQuantity = next;
