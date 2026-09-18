@@ -143,7 +143,9 @@ jobs:
             exit 1;
           }
 
-          compose_project="goymen-browser-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          # The API's disposable activation (C01E2eShellCapabilityActivation) accepts only the C-01
+          # project shape goymen-c01-<run>-<attempt>; the run id already keeps it unique.
+          compose_project="goymen-c01-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           # The C-01 compose validator and fixture tool derive the database name from the run id and
           # attempt as GoymenErpC01_<run>_<attempt>; it is disposable either way.
           database_name="GoymenErpC01_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"

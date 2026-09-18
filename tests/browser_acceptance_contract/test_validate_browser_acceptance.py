@@ -148,7 +148,9 @@ class WorkflowTests(unittest.TestCase):
         # The C-01 compose validator and fixture tool derive the database from run id + attempt
         # (second real run 35358425231 failed "API disposable DB drift" with another name).
         self.assertIn('database_name="GoymenErpC01_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"', self.workflow)
-        self.assertIn('compose_project="goymen-browser-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"', self.workflow)
+        # The API's disposable activation accepts only goymen-c01-<run>-<attempt> (third real run
+        # 35358660852: the API refused to start with goymen-browser-...).
+        self.assertIn('compose_project="goymen-c01-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"', self.workflow)
 
     def test_cleanup_runs_only_once_the_run_is_bound(self):
         # Before the bind step there is no stack, artifact root or project name; failing the
