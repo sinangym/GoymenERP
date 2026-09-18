@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using GoymenERP.Api.Security;
 using GoymenERP.Api.Shell;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Domain.Roles;
 using GoymenERP.Modules.Identity.Domain.Users;
@@ -17,12 +18,15 @@ namespace GoymenERP.Api.IntegrationTests;
 /// the three draft screens follow the Sales permissions of the actor in the context company. The
 /// grants are synthetic, isolated role assignments in this test's own database; they are not a Sinan
 /// or production grant and are never seeded. Read alone opens the list and the detail; read + create
-/// opens all three; no grant opens nothing; another company's grant opens nothing here.
+/// opens all three; no grant opens nothing; the grant of company A opens nothing in company B for the
+/// same actor (who holds a non-Sales assignment there, so the context resolves and the answer is
+/// measured, not a 403); a site-scoped read grant opens nothing (the declarations are company-wide).
 /// </summary>
 public sealed class SalesShellCapabilitySqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
+    private static readonly Guid SyntheticSiteOfB = Guid.Parse("5e11e000-0000-4000-8000-0000000000b1");
 
     [SqlServerFact]
     public async Task Sales_screens_follow_the_actors_Sales_permissions_in_the_context_company_through_the_real_provider()
@@ -42,28 +46,39 @@ public sealed class SalesShellCapabilitySqlServerRelationalAcceptanceTests
             }
 
             // Read alone: the list and the detail, not the create screen.
-            await GrantAsync(factory, TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead);
+            await GrantAsync(factory, TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead, AccessScopeType.Company, CompanyA);
             using (var reader = factory.CreateClientFor(TestUsers.CompanyA, CompanyA))
             {
                 Assert.Equal(new[] { "sales.drafts.detail", "sales.drafts.list" }, SalesOnly(await ReadAsync(reader)));
             }
 
             // Read + create: all three.
-            await GrantAsync(factory, TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsCreate);
+            await GrantAsync(factory, TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsCreate, AccessScopeType.Company, CompanyA);
             using (var maker = factory.CreateClientFor(TestUsers.CompanyA, CompanyA))
             {
                 Assert.Equal(new[] { "sales.drafts.create", "sales.drafts.detail", "sales.drafts.list" }, SalesOnly(await ReadAsync(maker)));
             }
 
-            // The grant is the company's: the same actor in company B, and company B's own actor, see nothing.
+            // The grant is company A's. The same actor gets a non-Sales assignment in company B, so the
+            // company-B context resolves and the answer is measured (ORG #328 P2-1): no Sales screen there.
+            await GrantAsync(factory, TestUsers.CompanyA, CompanyB, ErpPermissions.OrganizationLocationsRead, AccessScopeType.Company, CompanyB);
             using (var elsewhere = factory.CreateClientFor(TestUsers.CompanyA, CompanyB))
             {
-                Assert.Empty(SalesOnly(await ReadAsync(elsewhere)));
+                var snapshot = await ReadAsync(elsewhere);
+                Assert.Contains("organization.sites.list", snapshot.Capabilities);
+                Assert.Empty(SalesOnly(snapshot));
             }
 
-            using (var other = factory.CreateClientFor(TestUsers.CompanyB, CompanyB))
+            // Company-wide is the rule (ORG #328 P3-1): a site-scoped read grant opens no Sales screen. The
+            // actor also holds a company-scoped non-Sales assignment, so the context resolves and the
+            // answer is measured.
+            await GrantAsync(factory, TestUsers.CompanyB, CompanyB, ErpPermissions.OrganizationLocationsRead, AccessScopeType.Company, CompanyB);
+            await GrantAsync(factory, TestUsers.CompanyB, CompanyB, SalesPermissionManifestV1.DraftsRead, AccessScopeType.Site, SyntheticSiteOfB);
+            using (var siteScoped = factory.CreateClientFor(TestUsers.CompanyB, CompanyB))
             {
-                Assert.Empty(SalesOnly(await ReadAsync(other)));
+                var snapshot = await ReadAsync(siteScoped);
+                Assert.Contains("organization.sites.list", snapshot.Capabilities);
+                Assert.Empty(SalesOnly(snapshot));
             }
         }
         finally
@@ -90,8 +105,9 @@ public sealed class SalesShellCapabilitySqlServerRelationalAcceptanceTests
     private static string[] SalesOnly(ShellCapabilitySnapshot snapshot) =>
         [.. snapshot.Capabilities.Where(capability => capability.StartsWith("sales.", StringComparison.Ordinal)).Order(StringComparer.Ordinal)];
 
-    /// <summary>A synthetic role with exactly this permission in one company, assigned to a configured development user.</summary>
-    private static async Task GrantAsync(SqlServerRelationalApiFactory factory, string developmentUser, Guid company, string permission)
+    /// <summary>A synthetic role with exactly this permission in one company, assigned to a configured development user under one scope.</summary>
+    private static async Task GrantAsync(SqlServerRelationalApiFactory factory, string developmentUser, Guid company, string permission,
+        AccessScopeType scopeType, Guid scopeId)
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
@@ -114,7 +130,7 @@ public sealed class SalesShellCapabilitySqlServerRelationalAcceptanceTests
         role.AddPermission(permission);
         var assignment = new RoleAssignment(Guid.NewGuid(), actor, roleId, company, DateTimeOffset.UtcNow.AddMinutes(-1), null,
             approvedByUserId: null);
-        assignment.AddScope(AccessScopeType.Company, company);
+        assignment.AddScope(scopeType, scopeId);
         dbContext.Roles.Add(role);
         dbContext.RoleAssignments.Add(assignment);
         await dbContext.SaveChangesAsync();
