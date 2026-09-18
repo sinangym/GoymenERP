@@ -1,0 +1,7 @@
+# SQL Server relational acceptance inventory: Identity.
+# Owner: the Identity module owner (single writer). The guard pin of this file is central (CARİ).
+# One fully qualified test name per line, sorted. A test that executes n > 1 times (theory rows)
+# is written `<name>  x<n>  # <reason>`. Read by tools/verify_rcsi_relational_acceptance.py.
+
+GoymenERP.Api.IntegrationTests.IdentityPermissionReconciliationSqlServerRelationalAcceptanceTests.ExistingInstall_ReconcilesOptionAFailClosedAndDuplicateSafe
+GoymenERP.Api.IntegrationTests.IdentityPermissionReconciliationSqlServerRelationalAcceptanceTests.FreshDatabase_SeedsOnlyCanonicalAdministratorGrant
