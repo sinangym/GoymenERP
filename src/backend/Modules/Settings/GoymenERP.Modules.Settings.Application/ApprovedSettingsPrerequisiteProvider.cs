@@ -36,7 +36,11 @@ namespace GoymenERP.Modules.Settings.Application;
 /// </summary>
 public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisiteProvider
 {
-    public const string UnitProfileNotFoundCode = "settings_unit_profile_not_found";
+    /// <summary>
+    /// Kept as an alias so existing callers still compile. Consumers map the published contract
+    /// value <see cref="SettingsPrerequisiteCodesV1.UnitProfileNotFound"/> instead.
+    /// </summary>
+    public const string UnitProfileNotFoundCode = SettingsPrerequisiteCodesV1.UnitProfileNotFound;
 
     private readonly ICompanyContext _companyContext;
     private readonly ICurrentUser _currentUser;
