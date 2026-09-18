@@ -36,4 +36,22 @@ public static class ManufacturingRuleCodes
     public const string WipOpen = "manufacturing_wip_open";
 
     public const string UnexplainedDifference = "manufacturing_unexplained_difference";
+
+    /// <summary>Raised as <see cref="ManufacturingVersionConflictException"/>, not as a rule refusal.</summary>
+    public const string VersionConflict = "manufacturing_version_conflict";
+}
+
+/// <summary>
+/// The caller's expected version is not the record's current one: it changed underneath the
+/// caller (MFG-3, SİPARİŞ #292 P3-a; the Purchasing and Logistics pattern). Nothing is applied.
+/// <see cref="Code"/> is <see cref="ManufacturingRuleCodes.VersionConflict"/>.
+/// </summary>
+public sealed class ManufacturingVersionConflictException(long expected, long current)
+    : Exception("Üretim kaydının sürümü değişti.")
+{
+    public string Code => ManufacturingRuleCodes.VersionConflict;
+
+    public long ExpectedVersion { get; } = expected;
+
+    public long CurrentVersion { get; } = current;
 }

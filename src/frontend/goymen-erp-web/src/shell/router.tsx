@@ -17,6 +17,7 @@ import { CariCreatePage } from '../cari/CariCreatePage'
 import { CariLinkWorkspacePage } from '../cari/CariLinkWorkspacePage'
 import { CariDetailPage } from '../cari/CariDetailPage'
 import { CariContactEditPage } from '../cari/CariContactEditPage'
+import { productRoutes } from '../product/productRoutes'
 import { organizationRoutes } from '../organization/organizationRoutes'
 import { StateBlock } from './StateBlock'
 
@@ -99,6 +100,20 @@ export const shellRoutes: RouteObject[] = [
           </CapabilityRoute>
         ),
       },
+      /**
+       * The Product lane's own routes, declared in `src/product/productRoutes.tsx` and
+       * mounted here by the shared-integration owner.
+       *
+       * BEFORE the catch-all, and that is not a style preference: `path: '*'` matches
+       * everything, so a route registered after it can never be reached. Each entry is
+       * gated on its own capability exactly like the Cari ones, and that file declares
+       * `/urun/yeni` and `/urun/:productId/duzenle` ahead of `/urun/:productId`, so no
+       * static segment is ever read as a product id. The create and edit entries also
+       * carry a pending-attempt observer OUTSIDE their gate; it renders nothing, fetches
+       * nothing and discloses nothing, so an ungranted route still shows only the
+       * neutral not-found block.
+       */
+      ...productRoutes,
       /**
        * The Organization lane's own routes, declared in
        * `src/organization/organizationRoutes.tsx` and mounted here by the

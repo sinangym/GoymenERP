@@ -37,7 +37,7 @@ public sealed class PurchaseUnitVerifierTests
     [Theory]
     [InlineData("settings_access_denied")]
     [InlineData("settings_provider_unavailable")]
-    [InlineData(PurchaseUnitCodes.SettingsUnitProfileNotFound)]
+    [InlineData(SettingsPrerequisiteCodesV1.UnitProfileNotFound)]
     [InlineData("settings_profile_invalid")]
     public async Task Every_settings_failure_is_a_refusal_with_the_owners_code_kept_apart(string code)
     {
@@ -115,9 +115,22 @@ public sealed class PurchaseUnitVerifierTests
         var narrow = await new PurchaseUnitVerifier(new StubSettings { Profile = KgProfile(1) }).VerifyAsync(Company, Unit, 12.5000m, Day);
         Assert.True(narrow.IsVerified);
         Assert.Equal(12.5m, narrow.Unit!.Quantity.Value);
+        Assert.Equal((1, 1), (narrow.Unit.ProfileScale, narrow.Unit.Scale));
 
         var tooFine = await new PurchaseUnitVerifier(new StubSettings { Profile = KgProfile(1) }).VerifyAsync(Company, Unit, 12.55m, Day);
         Assert.Equal(PurchaseUnitCodes.QuantityScaleExceeded, tooFine.Code);
+    }
+
+    [Fact]
+    public async Task The_result_reports_the_applied_scale_beside_the_profile_scale()
+    {
+        // ÜRÜN #288 P3-2: a profile wider than Ö2's cap verifies 1.25 but must not advertise 5
+        // decimals, because the domain's Quantity accepts at most 3.
+        var wide = await new PurchaseUnitVerifier(new StubSettings { Profile = KgProfile(5) }).VerifyAsync(Company, Unit, 1.25m, Day);
+
+        Assert.True(wide.IsVerified);
+        Assert.Equal((5, Quantity.KilogramScale), (wide.Unit!.ProfileScale, wide.Unit.Scale));
+        Assert.Equal(1.25m, wide.Unit.Quantity.Value);
     }
 
     [Theory]

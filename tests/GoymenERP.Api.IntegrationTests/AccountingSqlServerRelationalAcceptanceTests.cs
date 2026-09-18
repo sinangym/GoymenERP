@@ -166,6 +166,24 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
             Assert.Equal(correction.Id, again.Journal!.Id);
         }
 
+        await using (var a = run.Store(CompanyA))
+        {
+            // ACC-2's content rule answered from what the database stored (decimal(38,18) read back):
+            // another amount under the same correction id is refused and nothing is recorded...
+            Assert.Equal(AccountingErrorCodes.CorrectionContentConflict, (await Assert.ThrowsAsync<AccountingDomainException>(
+                () => a.Postings.CorrectAsync(Consumer, "c-3", correctionId, original.Id, Guid.NewGuid(), "synthetic-rule-2",
+                    InSeptember, Lines(accounts, 6m), period, Metadata(run)))).Code);
+            // ...while the same content in another line order, rule version and journal id is the same correction.
+            var sameLines = Lines(accounts, 5.00m);
+            var reordered = new[] { sameLines[1], sameLines[0] };
+            var same = await a.Postings.CorrectAsync(Consumer, "c-4", correctionId, original.Id, Guid.NewGuid(), "synthetic-rule-3",
+                InSeptember, reordered, period, Metadata(run));
+            Assert.Equal(PostingOutcomeKind.AlreadyPosted, same.Kind);
+            Assert.Equal(correction.Id, same.Journal!.Id);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Deliveries WHERE MessageId = N'c-3'"));
+
         // The unique indexes hold even without the store's own checks (a racing writer).
         await using (var raw = run.Context(CompanyA))
         {

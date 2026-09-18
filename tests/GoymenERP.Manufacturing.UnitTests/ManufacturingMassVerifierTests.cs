@@ -30,8 +30,8 @@ public sealed class ManufacturingMassVerifierTests
         Assert.True(result.IsVerified);
         Assert.Null(result.Code);
         Assert.Equal(9_700.125m, result.Mass!.Mass.Value);
-        Assert.Equal((Kilogram, ProfileId, 1L, 3),
-            (result.Mass.UnitId, result.Mass.ProfileId, result.Mass.ProfileVersion, result.Mass.Scale));
+        Assert.Equal((Kilogram, ProfileId, "1", 3, 3),
+            (result.Mass.UnitId, result.Mass.ProfileId, result.Mass.ProfileVersion, result.Mass.ProfileScale, result.Mass.Scale));
     }
 
     [Fact]
@@ -129,6 +129,30 @@ public sealed class ManufacturingMassVerifierTests
 
         Assert.Equal(ManufacturingMassCodes.ScaleExceeded, result.Code);
         Assert.Null(result.Mass);
+    }
+
+    [Theory]
+    [InlineData(5, 3)]
+    [InlineData(3, 3)]
+    [InlineData(2, 2)]
+    [InlineData(0, 0)]
+    public async Task The_snapshot_reports_the_applied_scale_next_to_the_profiles_own(int profileScale, int applied)
+    {
+        // ÜRÜN #292 P3-1: a consumer offering input or display precision must read the APPLIED
+        // scale; a profile of 5 still allows only Ö2's 3 kilogram decimals.
+        var result = await Verifier(KgProfile() with { Scale = profileScale }).VerifyAsync(Company, 7m, Day);
+
+        Assert.Equal((profileScale, applied), (result.Mass!.ProfileScale, result.Mass.Scale));
+    }
+
+    [Fact]
+    public async Task The_profile_version_is_kept_as_invariant_text()
+    {
+        // SİPARİŞ #292 P3-b: the same shape as Purchasing's and Logistics' snapshots.
+        var result = await Verifier(KgProfile() with { Profile = new ProfileVersionV1(ProfileId, 12345) })
+            .VerifyAsync(Company, 1m, Day);
+
+        Assert.Equal("12345", result.Mass!.ProfileVersion);
     }
 
     [Fact]

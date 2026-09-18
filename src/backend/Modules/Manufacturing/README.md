@@ -19,6 +19,7 @@ Source of truth: #275 plan v2 §7.3, §13, R3, R6 and `SINAN_KARARLARI_2026-09-1
 - `RemainingTarget`: only in the basis the plan declared; `Unavailable` otherwise.
 - `Kilograms`: non-negative, at most three decimals (Ö2); a fourth decimal is refused (`manufacturing_kilogram_precision_exceeded`), never rounded or cut.
 - `CostResult`: R6 status only; every output is `NotCalculated`, an unknown cost has no amount (never 0), and no known cost can be built in this slice.
+- **Optimistic concurrency (MFG-3, SİPARİŞ #292 P3-a):** `ProductionPlan` and `ProductionOrder` carry a `Version`. Every mutation (`Approve`; `IssueInput`, `ReturnUnusedInput`, `DeclareOutput`, `RecordWorkInProgress`, `Close`) takes the `expectedVersion` its caller read. A stale one is refused whole with `ManufacturingVersionConflictException` (`manufacturing_version_conflict`, expected and current versions) before any rule runs; a recorded change advances the version by one; a refused rule leaves it unchanged. Same pattern as Purchasing and Logistics.
 - Other modules are `Guid` identities only (company, work center, parent roll/label, output label, user).
 - **Stable rule codes (MFG-2):** every rule refusal is a `ManufacturingRuleException` whose `Code` is a `ManufacturingRuleCodes` constant, all prefixed `manufacturing_` like the other modules' codes (MFG-1's unprefixed codes were renamed; nothing consumed them). Tests assert the code, not only the type. Caller errors (empty id, undefined enum value, zero or negative mass where a positive one is required) stay `ArgumentException`s.
 - **Read-only views (MFG-2, ÜRÜN #280 P3-1):** `PlannedInputs`, `Issues`, `Returns`, `WipMeasurements`, `Outputs`, `ProductionPlan.Inputs` and `MassBalance.OutputsByClass` are read-only wrappers; a cast cannot reach the collections behind them, so the duplicate, roll and closed-order rules cannot be bypassed.
@@ -29,7 +30,7 @@ Source of truth: #275 plan v2 §7.3, §13, R3, R6 and `SINAN_KARARLARI_2026-09-1
   - the unit asked about is always `SettingsUnitIdentitiesV1.Kilogram`; the profile must belong to the server-resolved company the caller passes (`…_profile_company_mismatch`), be a well-formed kilogram profile for that unit (`…_profile_invalid`) and be active on the effective date (`…_profile_not_in_effect`);
   - precision = min(profile scale, Ö2's 3); more decimals are refused (`manufacturing_mass_scale_exceeded`), never rounded; trailing zeros are not precision;
   - a negative mass is refused (`manufacturing_mass_negative`); a zero mass is a valid reading (WIP), and whether a fact needs a positive mass stays the order's rule;
-  - the result carries the profile snapshot (unit, profile id, version, scale) the port asks consumers to keep with what they record. It authorizes nothing and is not a production policy.
+  - the result carries the profile snapshot the port asks consumers to keep with what they record: unit, profile id, profile version as invariant text (the Purchasing/Logistics shape, SİPARİŞ #292 P3-b), the owner's raw `ProfileScale` and the applied `Scale` = min(profile, 3) — the one a consumer may offer for input or display (ÜRÜN #292 P3-1, PUR-3's shape). It authorizes nothing and is not a production policy.
 
 ## Behaviour kept on purpose — Business decision pending
 
@@ -52,6 +53,6 @@ Source of truth: #275 plan v2 §7.3, §13, R3, R6 and `SINAN_KARARLARI_2026-09-1
   - **subcontract / customer-owned goods:** the output's owner and custodian are inherited from the parent roll's Inventory position; Manufacturing does not choose them (which is why it carries no owner).
 - **Command surface:** the verifier's refusal is mapped and its snapshot retained by the command handler that records a fact; nothing binds it to the domain methods yet.
 - **Ö7 profile**: approved tolerance/formula numbers and the "reason + single approval" exception path with a named approver. Until then every non-zero difference keeps the order open.
-- **Persistence and concurrency**: DbContext/migration via the central writer. Optimistic concurrency (`expectedVersion`) is added with the first command surface, not in this domain-only slice (#280 review SİPARİŞ P3-2).
+- **Persistence**: DbContext/migration via the central writer, after Inventory's persistence (#293) and the allocation rule (T11). The domain's `Version` becomes the stored concurrency token there.
 - **Known cost**: its money shape (a currency identity, not a code string) comes with T25/Finance.
 - **Estimated facts**: every fact here is an actual measurement; R6's actual/estimated distinction arrives with the first estimated source.

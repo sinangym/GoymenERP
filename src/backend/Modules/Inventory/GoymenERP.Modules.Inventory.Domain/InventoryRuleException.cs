@@ -42,4 +42,17 @@ public static class InventoryRuleCodes
 
     /// <summary>A label document requirement or reprint request is not valid.</summary>
     public const string InvalidLabelOperation = "inventory_invalid_label_operation";
+
+    /// <summary>
+    /// A position names a label of another company. A label is a tenant record of the company
+    /// that holds its stock (ADR-INV-001 A); it never appears under another company.
+    /// </summary>
+    public const string LabelCompanyMismatch = "inventory_label_company_mismatch";
+
+    /// <summary>
+    /// A receipt names a label that already holds stock. A label is one physical piece that
+    /// arrives once; a second arrival of a stock-bearing label is a double count (ORG #281 P3-1).
+    /// A label whose stock has all left may be received again (a return is T13's own kind).
+    /// </summary>
+    public const string LabelAlreadyInStock = "inventory_label_already_in_stock";
 }

@@ -131,7 +131,11 @@ public sealed class PurchaseOrder
         Guid technicalProductId, Quantity slice, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
-        RequireStatus(PurchaseOrderStatus.Draft, PurchaseOrderStatus.Approved);
+        // Breakdown is open in both statuses that exist (Draft and Approved; pinned by tests), so
+        // there is no status guard here: one would be unreachable today and, the day a third
+        // status arrives, would need its own code — it must not report "not approved" for an
+        // order that was approved and then closed (ORG #288 P3-1). The slice adding that status
+        // adds the guard, its code and its test.
         var general = FindLine(generalLineId);
         if (general.Kind != PurchaseOrderLineKind.General)
         {
@@ -218,14 +222,6 @@ public sealed class PurchaseOrder
         if (Status != required)
         {
             throw new PurchasingRuleException(code, message);
-        }
-    }
-
-    private void RequireStatus(params PurchaseOrderStatus[] allowed)
-    {
-        if (!allowed.Contains(Status))
-        {
-            throw new PurchasingRuleException(PurchasingRuleCodes.OrderNotApproved, "Sipariş bu durumda kırılamaz.");
         }
     }
 

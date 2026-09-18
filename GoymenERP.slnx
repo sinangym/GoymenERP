@@ -39,7 +39,9 @@
     <Project Path="src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/GoymenERP.Modules.Idempotency.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/src/backend/Modules/Inventory/">
+    <Project Path="src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Application/GoymenERP.Modules.Inventory.Application.csproj" />
     <Project Path="src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Domain/GoymenERP.Modules.Inventory.Domain.csproj" />
+    <Project Path="src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/GoymenERP.Modules.Inventory.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/src/backend/Modules/Logistics/">
     <Project Path="src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Application/GoymenERP.Modules.Logistics.Application.csproj" />
