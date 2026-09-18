@@ -238,9 +238,13 @@ jobs:
             fi
             sleep 2
           done
+          # Diagnostics go to this job log only (secrets are masked), never into an artifact.
           docker compose \
             -p "$C01_E2E_COMPOSE_PROJECT" \
-            -f "$C01_E2E_COMPOSE_FILE" ps
+            -f "$C01_E2E_COMPOSE_FILE" ps --all
+          docker compose \
+            -p "$C01_E2E_COMPOSE_PROJECT" \
+            -f "$C01_E2E_COMPOSE_FILE" logs --no-color --tail 80 api || true
           exit 1
 
       - name: Materialize and verify canonical fixture
@@ -268,7 +272,16 @@ jobs:
               fi
               sleep 2
             done
-            test "$ready" = true
+            if [ "$ready" != true ]; then
+              # Job log only (secrets masked), never an artifact.
+              docker compose \
+                -p "$C01_E2E_COMPOSE_PROJECT" \
+                -f "$C01_E2E_COMPOSE_FILE" ps --all
+              docker compose \
+                -p "$C01_E2E_COMPOSE_PROJECT" \
+                -f "$C01_E2E_COMPOSE_FILE" logs --no-color --tail 80 web-authorized web-unauthorized api || true
+              exit 1
+            fi
           done
 
       - name: Install pinned browser runner

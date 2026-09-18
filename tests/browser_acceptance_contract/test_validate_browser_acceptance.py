@@ -1,4 +1,5 @@
 import pathlib
+import re
 import sys
 import tempfile
 import unittest
@@ -151,6 +152,49 @@ class WorkflowTests(unittest.TestCase):
         # The API's disposable activation accepts only goymen-c01-<run>-<attempt> (third real run
         # 35358660852: the API refused to start with goymen-browser-...).
         self.assertIn('compose_project="goymen-c01-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"', self.workflow)
+
+    def test_bound_names_satisfy_every_consumer_of_the_c01_naming_contract(self):
+        # Four places carry the disposable naming contract; runs 2 and 3 each failed on one of them.
+        # This reads each consumer's rule from source and checks the workflow's bound values against
+        # it, so a drift in any of the four fails here, locally, before a run spends minutes.
+        run_id, attempt = "35359455991", "1"
+        bind = self.workflow.split("      - name: Bind exact source and disposable run secrets", 1)[1]
+        project_template = re.search(r'compose_project="([^"]+)"', bind).group(1)
+        database_template = re.search(r'database_name="([^"]+)"', bind).group(1)
+        project = project_template.replace("${GITHUB_RUN_ID}", run_id).replace("${GITHUB_RUN_ATTEMPT}", attempt)
+        database = database_template.replace("${GITHUB_RUN_ID}", run_id).replace("${GITHUB_RUN_ATTEMPT}", attempt)
+
+        activation = (ROOT / "src/backend/GoymenERP.Api/Shell/C01E2eShellCapabilityActivation.cs").read_text(encoding="utf-8")
+        fixture_tool = (ROOT / "tests/GoymenERP.C01E2eFixtureTool/Program.cs").read_text(encoding="utf-8")
+        compose_validator = (ROOT / "tools/validate_c01_e2e_contract.py").read_text(encoding="utf-8")
+
+        # 1) API activation: project = goymen-c01-<runId>-<digits>.
+        self.assertIn('$"goymen-c01-{runId}-"', activation)
+        # 2) Fixture tool: same project prefix, database GoymenErpC01_<runId>_<attempt>.
+        self.assertIn('$"goymen-c01-{runId}-"', fixture_tool)
+        self.assertIn('$"GoymenErpC01_{runId}_{attempt}"', fixture_tool)
+        # 3) Compose validator: database from the project's last two parts; run id = second to last.
+        self.assertIn('expected_database = "GoymenErpC01_" + "_".join(expected_project.split("-")[-2:])', compose_validator)
+        self.assertIn('expected_project.split("-")[-2]', compose_validator)
+
+        prefix = f"goymen-c01-{run_id}-"
+        self.assertTrue(project.startswith(prefix), project)
+        self.assertTrue(project[len(prefix):].isdigit(), project)
+        self.assertEqual(database, f"GoymenErpC01_{run_id}_{attempt}")
+        self.assertEqual(database, "GoymenErpC01_" + "_".join(project.split("-")[-2:]))
+        self.assertEqual(project.split("-")[-2], run_id)
+        # 4) Fixture tool's safe-name pattern for the project.
+        self.assertIsNotNone(re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,62}", project))
+
+    def test_start_failures_print_diagnostics_to_the_job_log_only(self):
+        # The 479-byte artifact of run 3 could not explain an API that never listened. Diagnostics go
+        # to the job log (masked), never into an uploaded artifact.
+        for step in ("Build and start disposable SQL/API", "Build and start authorized and unauthorized web profiles"):
+            with self.subTest(step=step):
+                body = self.workflow.split(f"      - name: {step}\n", 1)[1].split("      - name:", 1)[0]
+                self.assertIn("ps --all", body)
+                self.assertIn("logs --no-color --tail", body)
+                self.assertNotIn("artifacts/", body)
 
     def test_cleanup_runs_only_once_the_run_is_bound(self):
         # Before the bind step there is no stack, artifact root or project name; failing the
