@@ -41,11 +41,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "OpenApiDocumentGenerationMode.cs";
     private const string OpenApiStartupPath =
         "src/backend/GoymenERP.Api/Program.cs";
-    // Re-fingerprinted for FIN-UI-1a (#325) on top of SALES-API (#321): the staged Finance shell provider
-    // registered before the shell authority is chosen (C+O+P+S+F row). No OpenAPI-generation, network or
+    // Re-fingerprinted for FIN-UI-1a (#325) on top of BROWSER-CI a2 part 2 (#330) and SALES-API (#321): the
+    // staged Finance shell provider registered before the shell authority is chosen (C+O+P+S+F row), beside
+    // #330's one call to C01E2eFixtureWriterActivation.Configure. No OpenAPI-generation, network or
     // hosted-service surface of the startup source changed otherwise.
     private const string ReviewedOpenApiStartupFingerprint =
-        "dd41aba3049a81f790eed0186f650d3cc271ac33ddc3a39de683e97b42fa845f";
+        "777a46487c2eb01d909d1b1cdee0af8ac1f8ea7400246af577b3bba600b8a01a";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
