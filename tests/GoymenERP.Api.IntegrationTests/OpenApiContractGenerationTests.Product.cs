@@ -157,7 +157,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["name", "groupId", "classId", "familyId", "roles", "references"]);
         AssertRequestSchema(schemas.GetProperty("EditProductDraftRequest"), ["expectedVersion", "changes", "reason"], [], ["expectedVersion", "changes", "reason"]);
         AssertRequestSchema(schemas.GetProperty("ActivateProductRequest"), ["expectedVersion"], [], ["expectedVersion"]);
-        foreach (var name in new[] { "CreateProductDraftRequest", "EditProductDraftRequest", "ProductDraftChanges", "ProductReferenceChanges", "ProductUnitChanges", "ProductRoleInputs", "ProductRoleInput" })
+        foreach (var name in new[] { "CreateProductDraftRequest", "EditProductDraftRequest", "ActivateProductRequest", "ProductDraftChanges", "ProductReferenceChanges", "ProductUnitChanges", "ProductRoleInputs", "ProductRoleInput" })
             Assert.False(schemas.GetProperty(name).GetProperty("additionalProperties").GetBoolean());
         var changes = schemas.GetProperty("ProductDraftChanges");
         Assert.Equal(1, changes.GetProperty("minProperties").GetInt32());
