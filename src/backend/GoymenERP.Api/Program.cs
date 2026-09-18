@@ -18,6 +18,9 @@ using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Idempotency.Infrastructure;
 using GoymenERP.Modules.Organization.Infrastructure;
 using GoymenERP.Modules.Identity.Infrastructure;
+using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Sales.Application;
+using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
@@ -77,11 +80,24 @@ builder.Services.AddScoped<ShellCapabilityService>();
 builder.Services.AddScoped<IFinancePermissionPort, UnavailableFinancePermissionPort>();
 builder.Services.AddScoped<IFinanceBankAccountReader, UnavailableFinanceBankAccountReader>();
 builder.Services.AddScoped<IFinancePartyAccountPort, CounterpartyFinancePartyAccountPort>();
-builder.Services.AddScoped<ISettingsPrerequisiteProvider, UnavailableSettingsPrerequisiteProvider>();
 builder.Services.AddScoped<DraftReadContextReader>();
 builder.Services.AddScoped<IFinanceDraftContextEndpointService, FinanceDraftContextEndpointService>();
 builder.Services.AddSingleton<IFinanceDraftReadBinding, UnavailableFinanceDraftReadBinding>();
+builder.Services.AddScoped<ISettingsPrerequisiteProvider, ApprovedSettingsPrerequisiteProvider>();
+builder.Services.AddScoped<ISalesAccountSelectionSourceV1, CounterpartySalesAccountSelectionSourceV1>();
+builder.Services.AddSingleton(new SalesReferenceReadBindings());
+builder.Services.AddScoped<ISalesReferenceReadService>(CreateSalesReferenceReadService);
 builder.Services.AddAuditModule(builder.Configuration);
+
+static ISalesReferenceReadService CreateSalesReferenceReadService(IServiceProvider services) =>
+    new SalesReferenceReadHandler(
+    services.GetRequiredService<ICompanyContext>(),
+    services.GetRequiredService<ICurrentUser>(),
+    services.GetRequiredService<IErpAuthorizationService>(),
+    services.GetRequiredService<ISalesAccountSelectionSourceV1>(),
+    services.GetRequiredService<ISettingsPrerequisiteProvider>(),
+    services.GetService<IProductSalesEligibilityV1>(),
+    services.GetRequiredService<SalesReferenceReadBindings>());
 builder.Services.AddIdempotencyModule(builder.Configuration);
 builder.Services.AddOrganizationModule(
     builder.Configuration,
@@ -134,6 +150,7 @@ app.MapAuditEndpoints();
 app.MapCounterpartyEndpoints();
 app.MapProductEndpoints();
 app.MapFinanceEndpoints();
+app.MapSalesEndpoints();
 app.MapShellEndpoints();
 
 if (!isOpenApiDocumentGeneration

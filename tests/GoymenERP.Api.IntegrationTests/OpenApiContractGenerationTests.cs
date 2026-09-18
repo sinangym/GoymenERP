@@ -131,6 +131,33 @@ public sealed partial class OpenApiContractGenerationTests
                 "query:partyId:true:type:string;format:uuid",
                 "query:companyAccountId:true:type:string;format:uuid",
                 "query:occurredOn:true:type:string;format:date",
+        new("get", "/api/v1/sales/references/accounts", "GetSalesAccountReferencesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json",
+                "503:application/problem+json"),
+            ParameterValues:
+            [
+                "query:q:false:type:string",
+                "query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$;normalized-minimum:1;normalized-maximum:100",
+                "query:cursor:false:type:string",
+            ]),
+        new("get", "/api/v1/sales/references/currency", "GetSalesCurrencyReferenceV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json",
+                "422:application/problem+json", "503:application/problem+json"),
+            ParameterValues:
+            [
+                "query:currencyId:true:type:string;format:uuid",
+                "query:effectiveOn:true:type:string;format:date",
+            ]),
+        new("get", "/api/v1/sales/references/product", "GetSalesProductReferenceV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json",
+                "404:application/problem+json", "409:application/problem+json",
+                "422:application/problem+json", "503:application/problem+json"),
+            ParameterValues:
+            [
+                "query:productId:true:type:string;format:uuid",
+                "query:expectedProductVersion:true:type:string",
+                "query:orderUnitId:true:type:string;format:uuid",
+                "query:effectiveOn:true:type:string;format:date",
             ]),
         .. ProductOperations,
     ];
@@ -159,6 +186,9 @@ public sealed partial class OpenApiContractGenerationTests
             ["UpdateCounterpartyContactInformationV1"] = "none",
             ["GetShellCapabilitiesV1"] = "ref:ShellCapabilitySnapshot",
             ["GetFinanceManualReceiptDraftContextV1"] = "ref:DraftReadContextView",
+            ["GetSalesAccountReferencesV1"] = "ref:SalesAccountOptionsV1",
+            ["GetSalesCurrencyReferenceV1"] = "ref:SalesCurrencyReferenceV1",
+            ["GetSalesProductReferenceV1"] = "ref:SalesProductReferenceV1",
         };
 
     private static readonly HashSet<string> RequiredCompanyOperations =
@@ -177,6 +207,9 @@ public sealed partial class OpenApiContractGenerationTests
         "CreateCounterpartyCompanyAccountV1",
         "SetCounterpartyCompanyAccountActiveStateV1",
         "GetFinanceManualReceiptDraftContextV1",
+        "GetSalesAccountReferencesV1",
+        "GetSalesCurrencyReferenceV1",
+        "GetSalesProductReferenceV1",
     ];
 
     private static readonly HashSet<string> OptionalCompanyOperations =
@@ -232,6 +265,9 @@ public sealed partial class OpenApiContractGenerationTests
         "CreateCounterpartyCompanyAccountV1",
         "SetCounterpartyCompanyAccountActiveStateV1",
         "GetFinanceManualReceiptDraftContextV1",
+        "GetSalesAccountReferencesV1",
+        "GetSalesCurrencyReferenceV1",
+        "GetSalesProductReferenceV1",
     ];
 
     private static readonly HashSet<string> CodeLessProblemResponses =
@@ -240,6 +276,7 @@ public sealed partial class OpenApiContractGenerationTests
         "SetOrganizationLocationActiveStateV1:404",
         "SetOrganizationLocationActiveStateV1:409",
         "GetFinanceManualReceiptDraftContextV1:404",
+        "GetSalesProductReferenceV1:404",
     ];
 
     private static readonly HashSet<string> MixedProblemResponses =
@@ -255,6 +292,12 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetCounterpartiesV1:400"] = ["invalid_cursor", "validation_failed"],
             ["GetCounterpartiesV1:409"] = ["client_contract_required", "client_contract_unsupported"],
             ["GetCounterpartyV1:409"] = ["client_contract_required", "client_contract_unsupported"],
+            ["GetSalesAccountReferencesV1:400"] = ["invalid_cursor", "validation_failed"],
+            ["GetSalesCurrencyReferenceV1:400"] = ["validation_failed"],
+            ["GetSalesCurrencyReferenceV1:422"] = ["unsupported_currency"],
+            ["GetSalesProductReferenceV1:400"] = ["validation_failed"],
+            ["GetSalesProductReferenceV1:409"] = ["product_selection_changed"],
+            ["GetSalesProductReferenceV1:422"] = ["unsupported_product", "unsupported_unit"],
             ["GetCounterpartyCompanyAccountLinkCandidatesV1:409"] =
                 ["client_contract_required", "client_contract_unsupported"],
             ["GetCounterpartyCompanyAccountLinkCandidatesV1:400"] =
@@ -316,6 +359,35 @@ public sealed partial class OpenApiContractGenerationTests
                     ("party", "ref:DraftPartyLabel")),
                 ["ProfileReference"] = ObjectSchema(
                     ["profileId", "version"], ("profileId", "type:string"), ("version", "type:string")),
+                ["SalesAccountOptionV1"] = ObjectSchema(
+                    ["partyId", "companyAccountId", "label", "partyVersion", "accountVersion"],
+                    ("partyId", "type:string;format:uuid"),
+                    ("companyAccountId", "type:string;format:uuid"),
+                    ("label", "type:string"), ("partyVersion", "type:string"),
+                    ("accountVersion", "type:string")),
+                ["SalesAccountOptionsV1"] = ObjectSchema(
+                    ["companyId", "accounts", "nextCursor"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("accounts", "type:array;items:ref:SalesAccountOptionV1"),
+                    ("nextCursor", "type:null|string")),
+                ["SalesCurrencyReferenceV1"] = ObjectSchema(
+                    ["companyId", "effectiveOn", "currencyId", "code", "label", "profileId", "profileVersion"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("effectiveOn", "type:string;format:date"),
+                    ("currencyId", "type:string;format:uuid"),
+                    ("code", "type:string"), ("label", "type:string"),
+                    ("profileId", "type:string;format:uuid"), ("profileVersion", "type:string")),
+                ["SalesProductReferenceV1"] = ObjectSchema(
+                    ["companyId", "effectiveOn", "productId", "productVersion", "label", "orderUnits"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("effectiveOn", "type:string;format:date"),
+                    ("productId", "type:string;format:uuid"),
+                    ("productVersion", "type:string"), ("label", "type:string"),
+                    ("orderUnits", "type:array;items:ref:SalesUnitReferenceV1")),
+                ["SalesUnitReferenceV1"] = ObjectSchema(
+                    ["unitId", "label", "profileId", "profileVersion"],
+                    ("unitId", "type:string;format:uuid"), ("label", "type:string"),
+                    ("profileId", "type:string;format:uuid"), ("profileVersion", "type:string")),
                 ["CounterpartyContactInformationView"] = ObjectSchema(
                     ["partyId", "accountId", "companyId", "version", "isActive", "information"],
                     ("partyId", "type:string;format:uuid"),
@@ -1134,9 +1206,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(26, operations.Count);
+        Assert.Equal(29, operations.Count);
         Assert.Equal(
-            26,
+            29,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
@@ -1223,6 +1295,16 @@ public sealed partial class OpenApiContractGenerationTests
             if (expected.OperationId == "GetCounterpartyCompanyAccountLinkCandidatesV1")
             {
                 AssertCounterpartyLinkCandidateQueryContract(actual.Value);
+            }
+
+            if (expected.OperationId == "GetSalesAccountReferencesV1")
+            {
+                AssertSalesAccountQueryContract(actual.Value);
+            }
+
+            if (expected.OperationId == "GetSalesProductReferenceV1")
+            {
+                AssertSalesProductQueryContract(actual.Value);
             }
         }
 
@@ -1667,6 +1749,33 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal(1, parameters["cursor"].GetProperty("minLength").GetInt32());
         Assert.DoesNotContain("companyId", parameters.Keys);
     }
+
+    private static void AssertSalesAccountQueryContract(JsonElement operation)
+    {
+        var parameters = ReadQuerySchemas(operation);
+        Assert.Equal(3, parameters.Count);
+        Assert.Equal(200, parameters["q"].GetProperty("maxLength").GetInt32());
+        Assert.Equal(1, parameters["cursor"].GetProperty("minLength").GetInt32());
+        Assert.Equal(8192, parameters["cursor"].GetProperty("maxLength").GetInt32());
+        Assert.Equal(1, parameters["pageSize"]
+            .GetProperty(ErpOpenApiContract.NormalizedMinimumExtensionName).GetInt32());
+        Assert.Equal(100, parameters["pageSize"]
+            .GetProperty(ErpOpenApiContract.NormalizedMaximumExtensionName).GetInt32());
+        Assert.DoesNotContain("companyId", parameters.Keys);
+    }
+
+    private static void AssertSalesProductQueryContract(JsonElement operation)
+    {
+        var version = ReadQuerySchemas(operation)["expectedProductVersion"];
+        Assert.Equal(1, version.GetProperty("minLength").GetInt32());
+        Assert.Equal(128, version.GetProperty("maxLength").GetInt32());
+    }
+
+    private static Dictionary<string, JsonElement> ReadQuerySchemas(JsonElement operation) =>
+        operation.GetProperty("parameters").EnumerateArray()
+            .Where(parameter => parameter.GetProperty("in").GetString() == "query")
+            .ToDictionary(parameter => parameter.GetProperty("name").GetString()!,
+                parameter => parameter.GetProperty("schema"), StringComparer.Ordinal);
 
     private static void AssertStringSchema(
         JsonElement schema,

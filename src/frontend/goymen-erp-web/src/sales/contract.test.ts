@@ -1,0 +1,173 @@
+/**
+ * Decoders against the Sales Backend's own examples (#257 @ 2c1239e), copied verbatim
+ * into ./examples. The first test pins each copy to its git blob id at that commit,
+ * so a silently edited copy cannot keep the rest of this file green.
+ */
+
+import { describe, expect, it } from 'vitest'
+import createRequest from './examples/create-request.json?raw'
+import createResponse from './examples/create-response.json?raw'
+import detailResponse from './examples/detail-response.json?raw'
+import errorAccount from './examples/error-account.json?raw'
+import errorCompany from './examples/error-company.json?raw'
+import errorForbidden from './examples/error-forbidden.json?raw'
+import errorProduct from './examples/error-product.json?raw'
+import errorProvider from './examples/error-provider.json?raw'
+import errorReplay from './examples/error-replay.json?raw'
+import errorSettingsAccess from './examples/error-settings-access.json?raw'
+import listResponse from './examples/list-response.json?raw'
+import productOwnerSelection from './examples/product-owner-selection.json?raw'
+import replayResponse from './examples/replay-response.json?raw'
+import {
+  SALES_PROBLEM_CODE,
+  decodeDraftDetail,
+  decodeDraftMutation,
+  decodeDraftPage,
+  decodeProblem,
+} from './contract'
+import { PROBLEM_CODE_TEXT } from './salesText'
+
+const EXAMPLES: Record<string, { raw: string; blob: string }> = {
+  'create-request.json': { raw: createRequest, blob: 'a78328681578e18627a25a0cd200177d309a534b' },
+  'create-response.json': { raw: createResponse, blob: 'b1ef8592b7c14049a9b06d138bbdb2ec9b6c9aae' },
+  'detail-response.json': { raw: detailResponse, blob: '39346077d0ce787296f975318726a616371a192f' },
+  'error-account.json': { raw: errorAccount, blob: '6b3e1ea7f2a986d8f1f401e4217a7ff42436a24e' },
+  'error-company.json': { raw: errorCompany, blob: 'aa227cc06a73326e4db1d579c27f32795a8a41a1' },
+  'error-forbidden.json': { raw: errorForbidden, blob: 'bd328f735086931db968d2efb2345e2637efadfd' },
+  'error-product.json': { raw: errorProduct, blob: '2b9da9f8de5edb7c07b27a3e23a7d4409842c61d' },
+  'error-provider.json': { raw: errorProvider, blob: '1a8d74000d85b0cb99f772b9359ae29e666d6c23' },
+  'error-replay.json': { raw: errorReplay, blob: 'a7728cfecd86c90528151327bebe7abe59d79d74' },
+  'error-settings-access.json': { raw: errorSettingsAccess, blob: 'e2aec636bd687380cfdb520339c28c45f496ad5a' },
+  'list-response.json': { raw: listResponse, blob: '4dcb84b646a150f873aca02e6d20545136242164' },
+  'product-owner-selection.json': { raw: productOwnerSelection, blob: 'a1e8a3aee04f385cccc9d3815e9cac6f78fbd620' },
+  'replay-response.json': { raw: replayResponse, blob: '4b94eb27fcc9d99dcfcb80e1a6211d0dc8dbb14f' },
+}
+
+async function gitBlobId(text: string): Promise<string> {
+  const bytes = new TextEncoder().encode(text)
+  const header = new TextEncoder().encode(`blob ${bytes.length}\0`)
+  const all = new Uint8Array(header.length + bytes.length)
+  all.set(header)
+  all.set(bytes, header.length)
+  const digest = await globalThis.crypto.subtle.digest('SHA-1', all)
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+const parse = (raw: string) => JSON.parse(raw) as Record<string, unknown>
+const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T
+
+describe('example provenance', () => {
+  it('every copied example is byte-identical to #257 @ 2c1239e', async () => {
+    for (const [name, { raw, blob }] of Object.entries(EXAMPLES)) {
+      expect(await gitBlobId(raw), name).toBe(blob)
+    }
+  })
+})
+
+describe('decodeDraftMutation', () => {
+  it('reads the 201 create example and the 200 replay example, telling them apart', () => {
+    const created = decodeDraftMutation(parse(createResponse))
+    const replayed = decodeDraftMutation(parse(replayResponse))
+    expect(created?.isReplay).toBe(false)
+    expect(replayed?.isReplay).toBe(true)
+    // Same stored detail either way.
+    expect(replayed?.detail).toEqual(created?.detail)
+    expect(created?.detail.draft).toMatchObject({ revision: 'Rev.0', version: '9007199254740993', state: 'Draft' })
+  })
+
+  it('keeps a version above 2^53 as exact text', () => {
+    expect(decodeDraftMutation(parse(createResponse))?.detail.draft.version).toBe('9007199254740993')
+  })
+
+  it.each([
+    ['a missing nullable member', (b: any) => delete b.detail.note],
+    ['an unknown member', (b: any) => (b.detail.draft.total = '0')],
+    ['wrong case', (b: any) => ((b.detail.Draft = b.detail.draft), delete b.detail.draft)],
+    ['a numeric version', (b: any) => (b.detail.draft.version = 7)],
+    ['a numeric quantity', (b: any) => (b.detail.lines[0].quantity = 1000)],
+    ['a zero version', (b: any) => (b.detail.draft.version = '0')],
+    ['an empty server id', (b: any) => (b.detail.draft.id = '00000000-0000-0000-0000-000000000000')],
+    ['another state', (b: any) => (b.detail.draft.state = 'Approved')],
+    ['another kind', (b: any) => (b.detail.draft.kind = 'Request')],
+    ['a timestamp as business date', (b: any) => (b.detail.draft.businessDate = '2026-09-13T00:00:00Z')],
+    ['a lineCount that disagrees with the lines', (b: any) => (b.detail.draft.lineCount = 2)],
+    ['a duplicate line id', (b: any) => {
+      const copy = clone(b.detail.lines[0])
+      copy.lineNo = 2
+      b.detail.lines.push(copy)
+      b.detail.draft.lineCount = 2
+    }],
+    ['slices that exceed the line', (b: any) => (b.detail.lines[0].requestedDeliverySlices[1].quantity = '700')],
+    ['a slice in another unit', (b: any) => (b.detail.lines[0].requestedDeliverySlices[0].orderUnitId = '44444444-4444-4444-4444-444444444445')],
+    ['a price without its unit', (b: any) => (b.detail.lines[0].unitPrice = '10')],
+    ['a non-boolean isReplay', (b: any) => (b.isReplay = 'false')],
+  ])('refuses %s', (_, mutate) => {
+    const body = clone(parse(createResponse))
+    mutate(body)
+    expect(decodeDraftMutation(body)).toBeNull()
+  })
+
+  it('accepts a zero price with its unit: zero is not unknown', () => {
+    const body = clone(parse(createResponse)) as any
+    body.detail.lines[0].unitPrice = '0'
+    body.detail.lines[0].priceUnitId = '44444444-4444-4444-4444-444444444444'
+    expect(decodeDraftMutation(body)?.detail.lines[0].unitPrice).toBe('0')
+  })
+})
+
+describe('decodeDraftDetail / decodeDraftPage', () => {
+  it('reads the detail example, bound to the id that was asked for', () => {
+    const id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+    expect(decodeDraftDetail(parse(detailResponse), id)?.lines[0].requestedDeliverySlices).toHaveLength(2)
+    expect(decodeDraftDetail(parse(detailResponse), 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaab')).toBeNull()
+  })
+
+  it('reads the list example; null nextCursor is the end', () => {
+    const page = decodeDraftPage(parse(listResponse))
+    expect(page?.items).toHaveLength(1)
+    expect(page?.nextCursor).toBeNull()
+  })
+
+  it('refuses a list row missing a member, or repeated', () => {
+    const missing = clone(parse(listResponse)) as any
+    delete missing.items[0].lineCount
+    expect(decodeDraftPage(missing)).toBeNull()
+    const repeated = clone(parse(listResponse)) as any
+    repeated.items.push(clone(repeated.items[0]))
+    expect(decodeDraftPage(repeated)).toBeNull()
+  })
+})
+
+describe('decodeProblem', () => {
+  it.each([
+    [errorAccount, 409, SALES_PROBLEM_CODE.passiveCompanyAccount, 'companyAccountId'],
+    [errorCompany, 409, SALES_PROBLEM_CODE.companyMismatch, 'companyAccountId'],
+    [errorProduct, 422, SALES_PROBLEM_CODE.unsupportedProduct, 'lines[0].productId'],
+    [errorProvider, 503, SALES_PROBLEM_CODE.settingsProviderUnavailable, 'currencyId'],
+    [errorReplay, 409, SALES_PROBLEM_CODE.sameKeyPayloadMismatch, 'idempotencyKey'],
+    [errorSettingsAccess, 403, SALES_PROBLEM_CODE.settingsAccessDenied, 'currencyId'],
+  ])('reads code and field errors of each Sales problem example', (raw, status, code, field) => {
+    const problem = decodeProblem(parse(raw), status)
+    expect(problem?.code).toBe(code)
+    expect(problem?.errors[0]?.field).toBe(field)
+    expect(PROBLEM_CODE_TEXT[code]).toBeTruthy()
+  })
+
+  it('reads the platform 403 without a code or errors', () => {
+    expect(decodeProblem(parse(errorForbidden), 403)).toEqual({
+      status: 403,
+      title: 'Forbidden',
+      code: null,
+      correlationId: null,
+      errors: [],
+    })
+  })
+
+  it('keeps unavailable and denied apart — neither is an empty selection', () => {
+    expect(decodeProblem(parse(errorProvider), 503)?.code).not.toBe(decodeProblem(parse(errorSettingsAccess), 403)?.code)
+  })
+
+  it('does not trust a body whose status disagrees with the response', () => {
+    expect(decodeProblem(parse(errorAccount), 400)).toBeNull()
+  })
+})
