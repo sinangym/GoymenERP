@@ -52,9 +52,17 @@ public static class IdentityModuleExtensions
                 connectionString,
                 sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", "identity")));
         services.AddScoped<IExternalIdentityResolver, ExternalIdentityResolver>();
-        services.AddScoped<IErpAuthorizationService, ErpAuthorizationService>();
+        // One instance per scope behind both ports: a revalidation has to refresh the very cache
+        // the cached path reads, not a second copy of it.
+        services.AddScoped<ErpAuthorizationService>();
+        services.AddScoped<IErpAuthorizationService>(
+            provider => provider.GetRequiredService<ErpAuthorizationService>());
+        services.AddScoped<IErpAuthorityRevalidationService>(
+            provider => provider.GetRequiredService<ErpAuthorizationService>());
         services.TryAddSingleton<IAuthorizationSnapshotReadObserver,
             NullAuthorizationSnapshotReadObserver>();
+        services.TryAddSingleton<IPermissionScopeReadObserver,
+            NullPermissionScopeReadObserver>();
         services.AddScoped<IIdentityProfileService, IdentityProfileService>();
         services.AddScoped<ISystemRolePermissionReconciler, SystemRolePermissionReconciler>();
         services.AddScoped<IdentityDataSeeder>();
