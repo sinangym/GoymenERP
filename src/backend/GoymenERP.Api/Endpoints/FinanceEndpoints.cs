@@ -73,7 +73,7 @@ public interface IFinanceDraftReadBinding
     string? MoneyOperation { get; }
 }
 
-public sealed class UnavailableFinanceDraftReadBinding : IFinanceDraftReadBinding
+public sealed class ManualReceiptDraftReadBinding : IFinanceDraftReadBinding
 {
     public string? MoneyOperation => FinanceMoneyOperations.ManualBankReceiptV1;
 }

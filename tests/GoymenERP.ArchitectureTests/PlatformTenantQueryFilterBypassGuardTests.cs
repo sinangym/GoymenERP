@@ -46,8 +46,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // ISettingsPrerequisiteProvider line is dropped, so the provider keeps exactly one
     // registration: ApprovedSettingsPrerequisiteProvider (T02-a host wiring), which answers
     // money and period (the only Finance calls) exactly like the unavailable adapter.
+    // Re-measured once more for ORG P3-C: the binding registration is renamed to
+    // ManualReceiptDraftReadBinding (same type, same lifetime, no behaviour change).
     private const string ReviewedOpenApiStartupFingerprint =
-        "d13683fd4238b4f2924936e687e12710fd3b7a88cd7b363789597cd4bf5d03da";
+        "9a3d1a7446619d706c7bd7817303b4e594fe50c37a4d12573f14ffc545b674f4";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =

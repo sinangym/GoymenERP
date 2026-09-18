@@ -29,7 +29,7 @@ public sealed class FinanceDraftContextHttpAcceptanceTests(
     [Fact]
     public void Central_binding_uses_the_owner_pinned_manual_receipt_operation()
     {
-        var binding = new UnavailableFinanceDraftReadBinding();
+        var binding = new ManualReceiptDraftReadBinding();
         Assert.Equal(FinanceMoneyOperations.ManualBankReceiptV1, binding.MoneyOperation);
         Assert.Equal("finance.manual-bank-receipt.v1", binding.MoneyOperation);
     }

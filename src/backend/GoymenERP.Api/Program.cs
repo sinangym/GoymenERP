@@ -82,7 +82,7 @@ builder.Services.AddScoped<IFinanceBankAccountReader, UnavailableFinanceBankAcco
 builder.Services.AddScoped<IFinancePartyAccountPort, CounterpartyFinancePartyAccountPort>();
 builder.Services.AddScoped<DraftReadContextReader>();
 builder.Services.AddScoped<IFinanceDraftContextEndpointService, FinanceDraftContextEndpointService>();
-builder.Services.AddSingleton<IFinanceDraftReadBinding, UnavailableFinanceDraftReadBinding>();
+builder.Services.AddSingleton<IFinanceDraftReadBinding, ManualReceiptDraftReadBinding>();
 builder.Services.AddScoped<ISettingsPrerequisiteProvider, ApprovedSettingsPrerequisiteProvider>();
 builder.Services.AddScoped<ISalesAccountSelectionSourceV1, CounterpartySalesAccountSelectionSourceV1>();
 builder.Services.AddSingleton(new SalesReferenceReadBindings());
