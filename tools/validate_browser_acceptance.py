@@ -34,8 +34,8 @@ _spec.loader.exec_module(c01)
 ContractError = c01.ContractError
 require = c01.require
 
-SUITES = ("smoke", "c03", "org03", "u02")
-READ_ONLY_SUITES = ("smoke", "c03")
+SUITES = ("smoke", "c03", "org03", "u02", "s03")
+READ_ONLY_SUITES = ("smoke", "c03", "s03")
 _SUITE_PATTERN = re.compile(r"^[a-z0-9]+$")
 
 PROFILES = ("c01-list-only", "cari-staged", "normal")
@@ -44,6 +44,8 @@ SUITE_PROFILES = {
     "c03": "cari-staged",
     "org03": "normal",
     "u02": "normal",
+    # S-03 v1 (#321): fail-closed evidence on the normal host (staged Sales screens, no grant).
+    "s03": "normal",
 }
 PROFILE_COMPOSE_FILES = {
     "c01-list-only": "infra/docker-compose.c01-e2e.yml",
@@ -78,6 +80,72 @@ CANONICAL_API_ENVIRONMENT_KEYS = frozenset({
     "BootstrapIdentity__Users__1__UserId",
     "BootstrapIdentity__Users__1__DisplayName",
 })
+
+
+# Stage 2 (a2): the only API environment keys a suite may add on top of its profile, through its own
+# compose override file (infra/browser-suites/<suite>.override.yml). Closed lists: an unlisted key, or a
+# listed key with a value outside its shape, fails; a suite without a list may not have an override.
+# The VALUES are the suite owner's (their seed's deterministic identities, their synthetic actors).
+SUITE_OVERRIDE_DIRECTORY = "infra/browser-suites"
+_GUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+_ACTOR_KEY = re.compile(r"^BootstrapIdentity__Users__([0-9]+)__(UserId|DisplayName)$")
+MAX_SUITE_ACTORS = 8
+SUITE_API_EXTENSIONS = {
+    # U-02: the Product runtime's issuer binding, matching the suite seed's local user and
+    # external identity (ÜRÜN, #319 P3).
+    "u02": {"issuer": True, "actors": False},
+    # ORG-03: extra synthetic development actors after the canonical two (ORG, #319 P3-1).
+    "org03": {"issuer": False, "actors": True},
+}
+ISSUER_KEYS = ("ProductRuntime__IssuerLocalUserId", "ProductRuntime__IssuerExternalIdentityId")
+
+
+def suite_override_file(suite: str) -> str | None:
+    """The suite's compose override file, if it has one; only suites with a closed extension list may."""
+    profile_of(suite)
+    relative = f"{SUITE_OVERRIDE_DIRECTORY}/{suite}.override.yml"
+    exists = (c01.REPOSITORY_ROOT / relative).is_file()
+    require(not exists or suite in SUITE_API_EXTENSIONS,
+            f"suite {suite} has an override file but no closed extension list")
+    return relative if exists else None
+
+
+def validate_suite_extensions(suite: str, extra: dict) -> None:
+    """The keys a suite adds are exactly allowed by its closed list, with values of the right shape."""
+    if not extra:
+        return
+    allowed = SUITE_API_EXTENSIONS.get(suite)
+    require(allowed is not None, f"suite {suite} may not extend the API environment: {sorted(extra)}")
+    actors: dict[int, dict[str, str]] = {}
+    for key, value in extra.items():
+        require(isinstance(value, str), f"suite extension {key} must be a string")
+        if key in ISSUER_KEYS:
+            require(allowed["issuer"], f"suite {suite} may not set {key}")
+            require(_GUID.fullmatch(value) is not None, f"{key} must be a lowercase non-nil GUID")
+            continue
+        match = _ACTOR_KEY.fullmatch(key)
+        require(match is not None, f"suite {suite} extension key is not allowed: {key}")
+        require(allowed["actors"], f"suite {suite} may not add development actors")
+        actors.setdefault(int(match.group(1)), {})[match.group(2)] = value
+    if allowed["issuer"]:
+        present = [key for key in ISSUER_KEYS if key in extra]
+        require(len(present) in (0, len(ISSUER_KEYS)), "the Product issuer binding needs both keys or neither")
+        if present:
+            require(extra[ISSUER_KEYS[0]] != extra[ISSUER_KEYS[1]], "the issuer's local and external ids must differ")
+    if actors:
+        indices = sorted(actors)
+        require(indices == list(range(2, 2 + len(indices))),
+                "suite actors must continue the canonical two contiguously from index 2")
+        require(len(indices) <= MAX_SUITE_ACTORS, f"at most {MAX_SUITE_ACTORS} suite actors")
+        ids = set()
+        for index in indices:
+            actor = actors[index]
+            require(set(actor) == {"UserId", "DisplayName"}, f"suite actor {index} needs UserId and DisplayName")
+            require(re.fullmatch(rf"{suite}-[a-z0-9-]{{1,48}}", actor["UserId"]) is not None,
+                    f"suite actor {index} id must be '{suite}-' followed by lowercase letters, digits or '-'")
+            require(actor["DisplayName"].startswith("SENTETIK "), f"suite actor {index} must be labelled SENTETIK")
+            require(actor["UserId"] not in ids, f"suite actor id repeated: {actor['UserId']}")
+            ids.add(actor["UserId"])
 
 
 def profile_of(suite: str) -> str:
@@ -131,9 +199,15 @@ def validate_suite_compose(model: dict, suite: str, expected_commit: str, expect
             "GOYMEN_ERP_C01_E2E_RUN_ID": expected_project.split("-")[-2] if "-" in expected_project else "",
             "GOYMEN_ERP_C01_E2E_COMPOSE_PROJECT": expected_project,
         })
-    require(set(environment) == set(expected_keys),
-            f"{profile} API environment key set is not exact: "
-            f"missing {sorted(set(expected_keys) - set(environment))}, extra {sorted(set(environment) - set(expected_keys))}")
+    extra = {key: environment[key] for key in set(environment) - set(expected_keys)}
+    missing = sorted(set(expected_keys) - set(environment))
+    unlisted = sorted(key for key in extra
+                      if key not in ISSUER_KEYS and _ACTOR_KEY.fullmatch(key) is None)
+    require(not missing and not unlisted,
+            f"{profile} API environment key set is not exact: missing {missing}, extra {unlisted}")
+    validate_suite_extensions(suite, extra)
+    for key in extra:
+        canonical_environment.pop(key, None)
     canonical = _relabel(model, label, CANONICAL_SUITE_LABEL)
     canonical["services"]["api"]["environment"] = canonical_environment
     c01.validate_compose(canonical, expected_commit, expected_project)
@@ -211,6 +285,7 @@ def main(argv: list[str] | None = None) -> int:
             # GITHUB_OUTPUT lines for the workflow.
             print(f"profile={selected}")
             print(f"compose_file={PROFILE_COMPOSE_FILES[selected]}")
+            print(f"override_file={suite_override_file(arguments.suite) or ''}")
             return 0
         elif arguments.command == "compose":
             try:

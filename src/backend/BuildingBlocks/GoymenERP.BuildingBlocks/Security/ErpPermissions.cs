@@ -56,6 +56,40 @@ public static class ErpPermissions
     public const string FinanceBankAccountPropose = "finance.bank-account.propose";
     public const string FinanceBankAccountApprove = "finance.bank-account.approve";
 
+    /// <summary>
+    /// Manufacturing API (MFG-API, #313): the owner's technical mapping of its routes (Business
+    /// #254 5654539215), accepted by the coordinator (K-1). Registering the names makes them KNOWN,
+    /// not granted: no role and no user receives them here; the grant is a human gate (K-3).
+    /// Company-wide scope is required (K-1): the routes do not filter by work center, so a
+    /// work-center-scoped assignment would otherwise reach every work center of the company. Not
+    /// Critical: no source makes plan creation and approval a segregated duty (K-2).
+    /// </summary>
+    public const string ManufacturingPlansWrite = "manufacturing.plans.write";
+
+    /// <inheritdoc cref="ManufacturingPlansWrite"/>
+    public const string ManufacturingPlansApprove = "manufacturing.plans.approve";
+
+    /// <inheritdoc cref="ManufacturingPlansWrite"/>
+    public const string ManufacturingOrdersCreate = "manufacturing.orders.create";
+
+    /// <inheritdoc cref="ManufacturingPlansWrite"/>
+    public const string ManufacturingFactsRecord = "manufacturing.facts.record";
+
+    /// <inheritdoc cref="ManufacturingPlansWrite"/>
+    public const string ManufacturingOrdersRead = "manufacturing.orders.read";
+
+    /// <summary>
+    /// Sales order drafts (SALES-API, #321): the Sales owner's names (SalesPermissionManifestV1, same
+    /// strings). Registered, not granted: no seeded role and no user receives them; who holds them is a
+    /// human gate. Company-wide only: a draft belongs to the server-resolved company and the routes filter
+    /// by nothing narrower (as the Counterparty reads). Not Critical: a draft commits no stock, money or
+    /// price (T28/T33 are out of scope) and grants no authority.
+    /// </summary>
+    public const string SalesDraftsCreate = "sales.drafts.create";
+
+    /// <inheritdoc cref="SalesDraftsCreate"/>
+    public const string SalesDraftsRead = "sales.drafts.read";
+
     public const string IdentityProfileRead = "identity.profile.read";
     public const string IdentityAccessRequest = "identity.access.request";
     public const string IdentityAccessApprove = "identity.access.approve";
@@ -75,6 +109,13 @@ public static class ErpPermissions
             CounterpartyAccountsCreate,
             CounterpartyAccountsStatusUpdate,
             ProductOperationalSelectionRead,
+            SalesDraftsCreate,
+            SalesDraftsRead,
+            ManufacturingPlansWrite,
+            ManufacturingPlansApprove,
+            ManufacturingOrdersCreate,
+            ManufacturingFactsRecord,
+            ManufacturingOrdersRead,
             InventoryLabelsRead,
             InventoryBalancesRead,
             FinanceBankAccountRead,
@@ -106,6 +147,13 @@ public static class ErpPermissions
             CounterpartyAccountsCreate,
             CounterpartyAccountsStatusUpdate,
             ProductOperationalSelectionRead,
+            SalesDraftsCreate,
+            SalesDraftsRead,
+            ManufacturingPlansWrite,
+            ManufacturingPlansApprove,
+            ManufacturingOrdersCreate,
+            ManufacturingFactsRecord,
+            ManufacturingOrdersRead,
             InventoryLabelsRead,
             InventoryBalancesRead,
             FinanceBankAccountRead,

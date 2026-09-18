@@ -38,6 +38,11 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
 
     internal DbSet<FactRow> Facts => Set<FactRow>();
 
+    internal DbSet<CommandRow> Commands => Set<CommandRow>();
+
+    /// <summary>Binary collation: an actor id compares exactly, as the command service compares it.</summary>
+    public const string IdentityCollation = "Latin1_General_100_BIN2";
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -48,6 +53,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         ConfigureOrders(modelBuilder);
         ConfigureOrderInputs(modelBuilder);
         ConfigureFacts(modelBuilder);
+        ConfigureCommands(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -199,6 +205,33 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
         entity.HasIndex(x => new { x.CompanyId, x.OrderId });
         OrderOf(entity);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// ADR-011 command log: one record per (company, command name, key hash); the key only as its
+    /// uppercase SHA-256, the request hash and the actor beside it, the answer as JSON.
+    /// </summary>
+    private void ConfigureCommands(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<CommandRow>();
+        entity.ToTable("Commands", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_Commands_Hashes",
+                "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+            table.HasCheckConstraint("CK_Commands_Text",
+                "LEN([CommandName]) > 0 AND LEN([ActorId]) > 0 AND LEN([OriginalCorrelationId]) > 0");
+            table.HasCheckConstraint("CK_Commands_ResultJson", "ISJSON([ResultJson]) = 1");
+        });
+        entity.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        entity.Property(x => x.CommandName).HasMaxLength(64).IsUnicode(false).IsRequired();
+        entity.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        entity.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        entity.Property(x => x.ActorId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.ResultJson).HasColumnType("nvarchar(max)").IsRequired();
+        entity.Property(x => x.OriginalCorrelationId).HasMaxLength(128).IsRequired();
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
