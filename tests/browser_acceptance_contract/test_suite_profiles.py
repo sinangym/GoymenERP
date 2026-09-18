@@ -63,8 +63,8 @@ class ProfileRegistryTests(unittest.TestCase):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             self.assertEqual(0, browser.main(["profile", "--suite", "c03"]))
-        self.assertEqual("profile=cari-staged\ncompose_file=infra/docker-compose.browser-cari-staged.yml\n",
-                         out.getvalue())
+        self.assertEqual("profile=cari-staged\ncompose_file=infra/docker-compose.browser-cari-staged.yml\n"
+                         "override_file=\n", out.getvalue())
 
 
 class ComposeFileDerivationTests(unittest.TestCase):
@@ -174,6 +174,101 @@ if __name__ == "__main__":
     unittest.main()
 
 
+ISSUER = {
+    "ProductRuntime__IssuerLocalUserId": "5d0f7c2a-4b9e-4a53-8a2e-6c1d2f3a4b01",
+    "ProductRuntime__IssuerExternalIdentityId": "5d0f7c2a-4b9e-4a53-8a2e-6c1d2f3a4b02",
+}
+
+
+def actors(suite, count, start=2):
+    result = {}
+    for offset in range(count):
+        index = start + offset
+        result[f"BootstrapIdentity__Users__{index}__UserId"] = f"{suite}-actor-{offset}"
+        result[f"BootstrapIdentity__Users__{index}__DisplayName"] = f"SENTETIK {suite} actor {offset}"
+    return result
+
+
+def extended(suite, extra):
+    result = model("normal")
+    result["services"]["api"]["environment"].update(extra)
+    return result
+
+
+class SuiteExtensionTests(unittest.TestCase):
+    """Stage 2 (a2): closed, per-suite API environment extensions through an override file."""
+
+    def test_u02_may_bind_the_product_issuer_and_org03_may_add_actors(self):
+        browser.validate_suite_compose(extended("u02", ISSUER), "u02", COMMIT, PROJECT)
+        browser.validate_suite_compose(extended("org03", actors("org03", 6)), "org03", COMMIT, PROJECT)
+
+    def test_an_extension_is_refused_for_a_suite_whose_list_does_not_allow_it(self):
+        cases = (
+            ("org03", ISSUER, "may not set"),
+            ("u02", actors("u02", 1), "may not add development actors"),
+        )
+        for suite, extra, message in cases:
+            with self.subTest(suite=suite):
+                with self.assertRaisesRegex(browser.ContractError, message):
+                    browser.validate_suite_compose(extended(suite, extra), suite, COMMIT, PROJECT)
+
+    def test_unlisted_keys_stay_refused_even_for_suites_with_a_list(self):
+        for suite in ("u02", "org03"):
+            with self.subTest(suite=suite):
+                broken = extended(suite, {"ProductRuntime__CursorSigningKeyBase64": "x" * 44})
+                with self.assertRaisesRegex(browser.ContractError, "key set is not exact"):
+                    browser.validate_suite_compose(broken, suite, COMMIT, PROJECT)
+
+    def test_issuer_values_have_a_strict_shape(self):
+        cases = (
+            ({ISSUER_KEY: value for ISSUER_KEY, value in ISSUER.items() if ISSUER_KEY.endswith("LocalUserId")},
+             "both keys or neither"),
+            (dict(ISSUER, ProductRuntime__IssuerLocalUserId="00000000-0000-0000-0000-000000000000"), "GUID"),
+            (dict(ISSUER, ProductRuntime__IssuerLocalUserId="5D0F7C2A-4B9E-4A53-8A2E-6C1D2F3A4B01"), "GUID"),
+            (dict(ISSUER, ProductRuntime__IssuerExternalIdentityId=ISSUER["ProductRuntime__IssuerLocalUserId"]),
+             "must differ"),
+        )
+        for extra, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(browser.ContractError, message):
+                    browser.validate_suite_compose(extended("u02", extra), "u02", COMMIT, PROJECT)
+
+    def test_actor_shape_is_strict(self):
+        cases = (
+            (actors("org03", 2, start=3), "contiguously"),
+            (actors("org03", browser.MAX_SUITE_ACTORS + 1), "at most"),
+            ({"BootstrapIdentity__Users__2__UserId": "org03-a"}, "UserId and DisplayName"),
+            (dict(actors("org03", 1), BootstrapIdentity__Users__2__UserId="group-bootstrap-admin"), "'org03-'"),
+            (dict(actors("org03", 1), BootstrapIdentity__Users__2__DisplayName="Real Person"), "SENTETIK"),
+            (dict(actors("org03", 2), BootstrapIdentity__Users__3__UserId="org03-actor-0"), "repeated"),
+        )
+        for extra, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(browser.ContractError, message):
+                    browser.validate_suite_compose(extended("org03", extra), "org03", COMMIT, PROJECT)
+
+    def test_the_canonical_two_actors_cannot_be_replaced_through_an_override(self):
+        broken = extended("org03", {"BootstrapIdentity__Users__0__UserId": "org03-admin"})
+        with self.assertRaisesRegex(browser.ContractError, "identity"):
+            browser.validate_suite_compose(broken, "org03", COMMIT, PROJECT)
+
+    def test_an_override_file_needs_a_closed_list(self):
+        original = browser.SUITE_API_EXTENSIONS
+        directory = ROOT / browser.SUITE_OVERRIDE_DIRECTORY
+        created = not directory.exists()
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / "c03.override.yml"
+        try:
+            path.write_text("services: {}\n", encoding="utf-8")
+            with self.assertRaisesRegex(browser.ContractError, "no closed extension list"):
+                browser.suite_override_file("c03")
+        finally:
+            path.unlink()
+            if created:
+                directory.rmdir()
+            browser.SUITE_API_EXTENSIONS = original
+
+
 class WorkflowProfileWiringTests(unittest.TestCase):
     def setUp(self):
         self.workflow = (ROOT / ".github/workflows/browser-acceptance.yml").read_text(encoding="utf-8")
@@ -197,3 +292,14 @@ class WorkflowProfileWiringTests(unittest.TestCase):
     def test_the_suite_receives_its_profile(self):
         run = self.workflow.split("      - name: Run the selected suite", 1)[1].split("      - name:", 1)[0]
         self.assertIn("BROWSER_E2E_PROFILE: ${{ env.BROWSER_E2E_PROFILE }}", run)
+
+
+class WorkflowOverrideWiringTests(unittest.TestCase):
+    def test_every_compose_invocation_carries_the_optional_suite_override(self):
+        workflow = (ROOT / ".github/workflows/browser-acceptance.yml").read_text(encoding="utf-8")
+        plain = workflow.count('-f "$C01_E2E_COMPOSE_FILE"')
+        with_override = workflow.count(
+            '-f "$C01_E2E_COMPOSE_FILE" ${BROWSER_E2E_COMPOSE_OVERRIDE:+-f "$BROWSER_E2E_COMPOSE_OVERRIDE"}')
+        self.assertGreater(plain, 0)
+        self.assertEqual(plain, with_override)
+        self.assertIn('echo "BROWSER_E2E_COMPOSE_OVERRIDE=$override_file"', workflow)
