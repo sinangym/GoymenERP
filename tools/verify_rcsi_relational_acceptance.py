@@ -156,9 +156,13 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.A_fact_id_is_one_fact_in_the_store_and_in_the_database",
     "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.Two_writers_that_read_the_same_order_cannot_both_commit",
     "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
+    "GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.An_authorized_user_plans_approves_orders_records_facts_and_reads_the_roll_balance",
+    "GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.Each_endpoint_needs_its_own_grant_and_a_refused_write_stores_nothing",
+    "GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.Another_companys_order_is_not_found_and_the_company_comes_only_from_the_context",
+    "GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.Stale_versions_reused_ids_masses_outside_the_profile_and_foreign_work_centers_are_refused",
 )
-BROAD_DISCOVERY_COUNT = 116
-BROAD_EXECUTION_COUNT = 123
+BROAD_DISCOVERY_COUNT = 120
+BROAD_EXECUTION_COUNT = 127
 
 
 def verify_discovery(standard_output: str) -> None:

@@ -41,15 +41,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "OpenApiDocumentGenerationMode.cs";
     private const string OpenApiStartupPath =
         "src/backend/GoymenERP.Api/Program.cs";
-    // Re-fingerprinted for the #261 merge: the Finance draft-context registrations and
-    // MapFinanceEndpoints() join main's Sales/Settings wiring. #261's own
-    // ISettingsPrerequisiteProvider line is dropped, so the provider keeps exactly one
-    // registration: ApprovedSettingsPrerequisiteProvider (T02-a host wiring), which answers
-    // money and period (the only Finance calls) exactly like the unavailable adapter.
-    // Re-measured once more for ORG P3-C: the binding registration is renamed to
-    // ManualReceiptDraftReadBinding (same type, same lifetime, no behaviour change).
+    // Re-fingerprinted for MFG-API (#313): Manufacturing joins the host — AddManufacturingModule with
+    // the audit interceptor, MapManufacturingEndpoints, and InitializeManufacturingModuleAsync after
+    // Organization (its foreign keys reference Organization's tables). No OpenAPI-generation, network
+    // or hosted-service surface of the startup source changed otherwise.
     private const string ReviewedOpenApiStartupFingerprint =
-        "9a3d1a7446619d706c7bd7817303b4e594fe50c37a4d12573f14ffc545b674f4";
+        "e82aaf2d7bd2d5899ed32d2dc6103b54a70ac0c49c7d3c1c9d9d5a2cd105813f";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -90,17 +87,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.cs";
     private const string SqlServerRcsiVerifierPath =
         "tools/verify_rcsi_relational_acceptance.py";
-    // Re-fingerprinted for INV-3 (#308): four more Inventory SQL acceptance names, discovery
-    // 112 -> 116, execution 119 -> 123. The verifier's logic is unchanged.
+    // Re-fingerprinted for MFG-API (#313): four ManufacturingApiSqlServerRelationalAcceptanceTests names
+    // on top of main's 116 / 123, discovery 116 -> 120, execution 123 -> 127. Logic unchanged.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "9992126e88c21b67d830a903888d60d95275fa390b2b77b7c3f5084d129ecf8c";
+        "e08ae1ad5cb0bd578ccb3f8f65cdac7bd870f9dff365939be5d700b59b829297";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
     // Re-fingerprinted for the same inventory change: updated counts plus one case pinning the
     // new class as mandatory.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "96c9774c8946bb0f8a8c13342e72218507d45121add95068de5068d53264b2d7";
+        "7e7f2a3667c0f7c81897b2f83db20d110398b852574e6580594f684bd30f4a25";
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "91a665e6e8982e5a9b66f5d16a14d9fc4d7f98d63775de959a8cc6b2dea2b018";
@@ -331,11 +328,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
                 // MFG-5 (#303): the Manufacturing initializer's one provider branch, as Organization.
+                // Re-measured for MFG-API (#313): the command surface registrations (mass verifier and
+                // command service); the one provider branch is unchanged (EnsureCreated 1, Migrate 1).
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/"
                  + "ManufacturingModuleExtensions.cs"] =
                     new(
-                        "7dafc32426cd01ab880b3a4553982a3116e5737cffa0ff19bd0fb3bcf4c90ec5",
+                        "7a780c8f39d69cf424ffb7c5872315e87fc23228c788db835613445e13d9e195",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -344,10 +343,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // MFG-5 (#303): the SqlClient namespace only to recognise a unique-key violation
                 // (SqlException 2601/2627) after SaveChanges, as the other module stores do. No
                 // connection, command or raw SQL.
+                // Re-measured for MFG-API (#313): the same single SqlClient use now also recognises 547 on the
+                // named composite work-center FK (manufacturing_work_center_not_found); still recognition only,
+                // no connection, command or raw SQL.
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "618bc108fba3b488d428a6befa6734a4fd987a972653c9c60d74f2a3fb27c1a7",
+                        "6a71a17c40fd81b50bfd0f75296f0f39c310fe72a1cc5a301f70a0031499475f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

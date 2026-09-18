@@ -28,6 +28,28 @@ public static class ErpPermissions
     /// </summary>
     public const string ProductOperationalSelectionRead = "product.operational-selection.read";
 
+    /// <summary>
+    /// Manufacturing API (MFG-API, #313): the owner's technical mapping of its routes (Business
+    /// #254 5654539215), accepted by the coordinator (K-1). Registering the names makes them KNOWN,
+    /// not granted: no role and no user receives them here; the grant is a human gate (K-3).
+    /// Company-wide scope is required (K-1): the routes do not filter by work center, so a
+    /// work-center-scoped assignment would otherwise reach every work center of the company. Not
+    /// Critical: no source makes plan creation and approval a segregated duty (K-2).
+    /// </summary>
+    public const string ManufacturingPlansWrite = "manufacturing.plans.write";
+
+    /// <inheritdoc cref="ManufacturingPlansWrite"/>
+    public const string ManufacturingPlansApprove = "manufacturing.plans.approve";
+
+    /// <inheritdoc cref="ManufacturingPlansWrite"/>
+    public const string ManufacturingOrdersCreate = "manufacturing.orders.create";
+
+    /// <inheritdoc cref="ManufacturingPlansWrite"/>
+    public const string ManufacturingFactsRecord = "manufacturing.facts.record";
+
+    /// <inheritdoc cref="ManufacturingPlansWrite"/>
+    public const string ManufacturingOrdersRead = "manufacturing.orders.read";
+
     public const string IdentityProfileRead = "identity.profile.read";
     public const string IdentityAccessRequest = "identity.access.request";
     public const string IdentityAccessApprove = "identity.access.approve";
@@ -47,6 +69,11 @@ public static class ErpPermissions
             CounterpartyAccountsCreate,
             CounterpartyAccountsStatusUpdate,
             ProductOperationalSelectionRead,
+            ManufacturingPlansWrite,
+            ManufacturingPlansApprove,
+            ManufacturingOrdersCreate,
+            ManufacturingFactsRecord,
+            ManufacturingOrdersRead,
             IdentityProfileRead,
             IdentityAccessRequest,
             IdentityAccessApprove,
@@ -71,6 +98,11 @@ public static class ErpPermissions
             CounterpartyAccountsCreate,
             CounterpartyAccountsStatusUpdate,
             ProductOperationalSelectionRead,
+            ManufacturingPlansWrite,
+            ManufacturingPlansApprove,
+            ManufacturingOrdersCreate,
+            ManufacturingFactsRecord,
+            ManufacturingOrdersRead,
             IdentityAuditRead,
         ],
         StringComparer.Ordinal);

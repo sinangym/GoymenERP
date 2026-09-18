@@ -4,6 +4,7 @@ using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Domain.Assignments;
+using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
@@ -88,6 +89,14 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
             services.RemoveAll<IDbContextOptionsConfiguration<CommandExecutionDbContext>>();
             services.AddDbContext<CommandExecutionDbContext>(options =>
                 options.UseInMemoryDatabase(_databaseName));
+
+            // Manufacturing is host-wired since MFG-API (#313); without this the in-memory host
+            // would try to migrate it against the placeholder SQL connection string at startup.
+            services.RemoveAll<DbContextOptions<ManufacturingDbContext>>();
+            services.RemoveAll<IDbContextOptionsConfiguration<ManufacturingDbContext>>();
+            services.AddDbContext<ManufacturingDbContext>((serviceProvider, options) =>
+                options.UseInMemoryDatabase($"{_databaseName}-manufacturing")
+                    .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
         });
     }
 
