@@ -206,7 +206,7 @@ public static class SalesEndpoints
                     return Results.Json(response, SalesDraftJson.Options, statusCode: SalesDraftApiV1.ReplayStatus);
                 }
 
-                httpContext.Response.Headers.Location = DraftLocation(httpContext.Request, response.Detail.Id);
+                httpContext.Response.Headers.Location = DraftLocation(httpContext.Request, response.Detail.Draft.Id);
                 return Results.Json(response, SalesDraftJson.Options, statusCode: SalesDraftApiV1.CreatedStatus);
             }
             catch (SalesDraftServiceException exception)
