@@ -398,6 +398,10 @@ public sealed partial class OpenApiContractGenerationTests
         "ReturnManufacturingInputV1:400",
         "RecordManufacturingWorkInProgressV1:400",
         "DeclareManufacturingOutputV1:400",
+        "SaveFinanceManualReceiptDraftV1:400",
+        "GetFinanceManualReceiptsV1:400",
+        "GetFinanceManualReceiptV1:400",
+        "GetFinanceBankAccountsV1:400",
     ];
 
     // MFG-API (#313): every Manufacturing write advertises the endpoint's one conflict and one
@@ -422,10 +426,6 @@ public sealed partial class OpenApiContractGenerationTests
         "manufacturing_stored_record_invalid", "manufacturing_value_does_not_fit",
         "manufacturing_wip_already_measured", "manufacturing_wip_measurement_not_latest",
         "manufacturing_work_center_not_found", "settings_unit_profile_not_found",
-        "SaveFinanceManualReceiptDraftV1:400",
-        "GetFinanceManualReceiptsV1:400",
-        "GetFinanceManualReceiptV1:400",
-        "GetFinanceBankAccountsV1:400",
     ];
 
     private static readonly IReadOnlyDictionary<string, string[]> AdditionalProblemCodes =
