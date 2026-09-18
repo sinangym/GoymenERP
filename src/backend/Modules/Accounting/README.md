@@ -1,4 +1,4 @@
-# Accounting module (ACC-1 domain slice)
+# Accounting module (ACC-1 + ACC-2 domain slice)
 
 Plan #275 §7.6, R4, R6, §13; Ö2, Ö4, Ö5. This is an in-memory domain slice with no
 persistence, HTTP, permission or UI surface. It cannot post a real journal.
@@ -21,7 +21,25 @@ About the correction key:
 - A different, legitimate correction of the same journal carries its own `correctionId` and posts.
 - Reusing a `correctionId` for a different journal is refused with
   `accounting_correction_identity_conflict`.
+- Reusing a `correctionId` with different content is refused with
+  `accounting_correction_content_conflict` (ACC-2, SİPARİŞ #283 P3). Content means:
+  - the lines, compared as a set of (account, debit, credit), so line order does not matter;
+  - the transaction, accounting and value dates.
+- These are delivery details, not content, so a redelivery may change them:
+  - the recording instant;
+  - the posting rule version;
+  - the journal id a redelivery proposes.
+  They do not turn one correction decision into two.
 - The key is scoped to the company ledger.
+
+About the original key and content:
+- An original is keyed by the business fact, not by its content. A later delivery of the same
+  fact answers `AlreadyPosted` with the first journal even when its lines differ, for example
+  under a newer posting rule version (R4: no second original).
+- A different accounting effect for an already-posted fact is a correction or a reversal, each
+  with its own identity.
+- This is a deliberate asymmetry with corrections: a correction's content IS the decision, so a
+  content mismatch under one `correctionId` is refused.
 
 About identity texts:
 - consumer, messageId and postingPurpose are compared ordinally and exactly.
@@ -29,13 +47,20 @@ About identity texts:
 
 About failed postings:
 - A failed posting records neither the effect nor the inbox marker. This covers an unbalanced
-  journal, a closed period, a company mismatch and a correction identity conflict.
+  journal, a closed period, a company mismatch, and a correction identity or content conflict.
+  Neither queue changes either.
 
 ## Exception queue and pending valuation
 
 - A missing account mapping goes to the exception queue, never to a guessed account.
 - An unknown amount stays pending, never a zero.
-- Each queue keeps one entry per (source, purpose), updated by later deliveries of the same fact.
+- Each queue keeps one entry per (source, purpose). Each entry reflects the LATEST delivery of the
+  fact:
+  - an exception entry while some line has no mapping;
+  - a pending entry while some amount is unknown.
+- A delivery with both gaps appears in both queues. Its pending count and rule version are
+  refreshed too (ACC-2, CARİ #283 INFO).
+- The first message that raised an entry stays recorded.
 - A later delivery clears an entry it proves stale:
   - A fully mapped delivery clears the mapping exception.
   - A fully valued delivery clears the pending valuation.
@@ -73,11 +98,26 @@ profile's scale and refuses excess digits without rounding.
 
 **Persistence and concurrency.** The unique indexes behind the four keys, the real inbox table,
 the transaction boundary and the collation are central storage work:
-- the posting purpose and correction keys must use a case-sensitive, accent-sensitive collation,
-  or a binary comparison, to match the ordinal rule;
+- the posting purpose, correction and inbox keys must use a case-sensitive, accent-sensitive
+  collation, or a binary comparison, to match the ordinal rule;
+- the inbox key is persisted with the company: (CompanyId, consumer, messageId). In memory the
+  ledger is already one company's (ACC-2, CARİ #283 INFO);
 - this slice has no migration.
 
 Also not covered here: chart of accounts (T22), posting rules, FX, OPEN-009 permissions.
+
+## Rule codes and read-only views (ACC-2)
+
+- Every rule refusal is an `AccountingDomainException` with an `AccountingErrorCodes` code, and
+  the tests assert the code.
+- A null argument or a null line is an `ArgumentException`: a caller error, not a rule.
+- `accounting_journal_already_reversed` was never raised and is removed. A repeated reversal
+  answers the `AlreadyReversed` outcome.
+- These views are read-only wrappers, and a cast cannot reach the stored data:
+  - `Journal.Lines`;
+  - `PostingException.MissingMappingKeys`;
+  - the ledger's `Journals`, `OpenExceptions` and `PendingValuations`.
+  Tests pin this.
 
 ## Validation
 

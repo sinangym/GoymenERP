@@ -20,8 +20,10 @@ Source of truth: #275 v2 plan §7.2, §13, R3 and Ö2 (`SINAN_KARARLARI_2026-09-
   - fail-closed: every Settings failure is a refusal with the owner's code kept verbatim (`settings_access_denied`, `settings_provider_unavailable`, `settings_unit_profile_not_found`, `settings_profile_invalid`) — "denied", "unavailable" and "no profile" stay distinct;
   - the profile must belong to the server-resolved company the caller passes, name the requested unit, be internally valid and active on the effective date;
   - only kilogram profiles are approved today (Settings README, Ö1): a profile of another dimension is refused as `purchasing_unit_unsupported`, never mapped to a guessed count unit;
-  - precision comes from the profile's scale, capped by Ö2's kilogram rule of 3; more decimals are refused (`purchasing_quantity_scale_exceeded`), never rounded.
-  - The `settings_unit_profile_not_found` code is compared from the port error's `Code`; it is not bound to the Settings provider class (the constant moves to Contracts.V1 in a Settings follow-up).
+  - precision comes from the profile's scale, capped by Ö2's kilogram rule of 3; more decimals are refused (`purchasing_quantity_scale_exceeded`), never rounded. The result carries both the owner's `ProfileScale` and the applied `Scale` = min(profile, 3), so an input limit built from the result matches what the domain accepts (PUR-3, ÜRÜN #288 P3-2).
+  - The "no profile" code is the owner's `SettingsPrerequisiteCodesV1.UnitProfileNotFound` (Contracts.V1, #287), passed through from the port error's `Code`; Purchasing keeps no copy of it (PUR-3).
+- **What the domain does not enforce (PUR-3, ÜRÜN #288 P3-1 / ORG INFO-1):** `AddLine` takes a `UnitId` and a `Quantity` as given; it does not check that the id is a verified Settings unit or that `Quantity.Unit` matches the id's dimension (`UnitMismatch` compares quantity units only). The verifier is the single entry for both, and it can only be made mandatory by the first command handler, which does not exist yet (see `dependency_wait`). Until then "verifier before line" is a contract, not an invariant.
+- **`BreakDown` has no status guard (PUR-3, ORG #288 P3-1):** it is open in both existing statuses (Draft, Approved; pinned by tests). The former guard was unreachable and would have reported `purchasing_order_not_approved` for a closed order. The slice that adds a third status adds the guard with its own code and test.
 
 ## Behaviour kept on purpose — Business decision pending
 - **One submitted request can source several full-quantity orders** (`FromRequest` twice). §7.2 does not settle whether that is a supplier split with partial quantities or a mistake; the question is open with Business (#66). The behaviour is pinned by a test and will change only by that decision.
@@ -35,5 +37,7 @@ Source of truth: #275 v2 plan §7.2, §13, R3 and Ö2 (`SINAN_KARARLARI_2026-09-
 - Acceptance → stock/label: Inventory T09 on main.
 - Price/commercial snapshot: T28.
 - Persistence: central writer (CARİ); the verifier's result is retained with the line at that point.
+- First command handler (Application): the only place that can make the verifier mandatory before `AddLine` (takes the line from `VerifiedPurchaseUnit` only, company from `ICompanyContext`, never from the client) and pin it with a test. Until then nothing enforces "verifier before line" (ORG #288 INFO-1).
+- Product purchase eligibility (Purchasable role + Active lifecycle + the unit being that product's purchase unit): a Product-owned port, not yet published (ÜRÜN #288 P3-3). The verifier checks the unit against Settings only; nobody checks that the product may be bought.
 - Count/piece units: a Settings-approved count dimension. Until then the domain's `Piece` arithmetic exists but no verified path produces it.
 - Request → several orders: Business decision (#66).

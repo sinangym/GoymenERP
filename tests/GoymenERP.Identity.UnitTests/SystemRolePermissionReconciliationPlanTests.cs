@@ -65,10 +65,13 @@ public sealed class SystemRolePermissionReconciliationPlanTests
     [Fact]
     public void Target_RejectsUnknownDuplicateAndNonExactPermissionCodes()
     {
+        // Must stay unregistered, or the "unknown" case below would stop testing rejection.
+        const string unregisteredPermission = "unknown.permission";
+        Assert.DoesNotContain(unregisteredPermission, ErpPermissions.All);
         Assert.Throws<ArgumentException>(() => new SystemRolePermissionTarget(
             SystemAdministratorRoleId,
             "SYSTEM_ADMINISTRATOR",
-            ["unknown.permission"]));
+            [unregisteredPermission]));
         Assert.Throws<ArgumentException>(() => new SystemRolePermissionTarget(
             SystemAdministratorRoleId,
             "SYSTEM_ADMINISTRATOR",

@@ -17,6 +17,7 @@ namespace GoymenERP.Identity.UnitTests;
 public sealed class ErpAuthorityRevalidationServiceTests
 {
     private const string Permission = ErpPermissions.OrganizationLocationsRead;
+    private const string UnregisteredPermission = "product.not.registered.here";
 
     [Fact]
     public async Task A_revocation_during_the_request_is_measured_and_the_request_view_moves_with_it()
@@ -125,17 +126,20 @@ public sealed class ErpAuthorityRevalidationServiceTests
     public async Task The_fresh_path_fails_closed_for_the_same_inputs_as_the_cached_one_and_reads_nothing(
         string fault)
     {
+        // The unknown name must stay unregistered, or that case becomes a real read (as #277 did
+        // to #276's first example).
+        Assert.DoesNotContain(UnregisteredPermission, ErpPermissions.All);
         var actor = Guid.NewGuid();
         var company = Guid.NewGuid();
         await using var dbContext = CreateDbContext();
         // A row that would grant it, to prove the refusal is not "no rows found".
-        Grant(dbContext, actor, company, fault == "unknown name" ? "product.not.registered.here" : Permission);
+        Grant(dbContext, actor, company, fault == "unknown name" ? UnregisteredPermission : Permission);
         await dbContext.SaveChangesAsync();
         var reads = new CountingObserver();
         var service = Service(dbContext, fault == "no actor identifier" ? null : actor, company, reads);
         var (permission, askedCompany) = fault switch
         {
-            "unknown name" => ("product.not.registered.here", company),
+            "unknown name" => (UnregisteredPermission, company),
             "empty company" => (Permission, Guid.Empty),
             _ => (Permission, company),
         };
