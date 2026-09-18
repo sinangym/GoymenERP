@@ -139,7 +139,7 @@ public sealed class LoadingInstruction
 
         RequirePositiveShare(loadId, loaded, line.RemainingToLoad, "Yüklenen pay talimatın yüklenmemiş kalanını aşamaz.");
         line.AddLoaded(loaded);
-        return Add(new LoadingShare(loadId, line.Id, LoadingShareKind.Loaded, loaded, measurement, now.ToUniversalTime()), now);
+        return Add(new LoadingShare(loadId, line.Id, LoadingShareKind.Loaded, loaded, measurement, null, now.ToUniversalTime()), now);
     }
 
     /// <summary>
@@ -162,7 +162,7 @@ public sealed class LoadingInstruction
 
         RequirePositiveShare(shipmentId, shipped, line.LoadedNotShipped, "Sevk edilen pay yüklenmiş ama sevk edilmemiş payı aşamaz.");
         line.AddShipped(shipped);
-        return Add(new LoadingShare(shipmentId, line.Id, LoadingShareKind.Shipped, shipped, null, now.ToUniversalTime()), now);
+        return Add(new LoadingShare(shipmentId, line.Id, LoadingShareKind.Shipped, shipped, null, null, now.ToUniversalTime()), now);
     }
 
     /// <summary>
@@ -172,15 +172,40 @@ public sealed class LoadingInstruction
     /// delivery record is that kind of fact. Whether a later block should also flag the delivery
     /// is an open question for Business (README); until then the record is not refused.
     /// </summary>
-    public LoadingShare MarkDelivered(long expectedVersion, Guid deliveryId, Guid lineId, Quantity delivered, DateTimeOffset now)
+    public LoadingShare MarkDelivered(long expectedVersion, Guid deliveryId, Guid lineId, Guid shipmentId,
+        Quantity delivered, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
         RequireStatus(LoadingInstructionStatus.Issued, "Teslim yalnız yayımlanmış talimatta kaydedilir.");
         var line = FindLine(lineId);
-        RequirePositiveShare(deliveryId, delivered, line.ShippedNotDelivered, "Teslim edilen pay sevk edilmiş ama teslim edilmemiş payı aşamaz.");
+        var shipment = FindShipment(shipmentId);
+        if (shipment.LineId != line.Id)
+        {
+            throw new InvalidOperationException("Teslim, başka satırın sevkine bağlanamaz.");
+        }
+
+        // Bound by the source shipment first (§7.4), then by the line as a whole.
+        RequirePositiveShare(deliveryId, delivered, UndeliveredOf(shipment), "Teslim edilen pay kaynak sevkin teslim edilmemiş kalanını aşamaz.");
+        if (delivered.IsGreaterThan(line.ShippedNotDelivered))
+        {
+            throw new InvalidOperationException("Teslim edilen pay sevk edilmiş ama teslim edilmemiş payı aşamaz.");
+        }
+
         line.AddDelivered(delivered);
-        return Add(new LoadingShare(deliveryId, line.Id, LoadingShareKind.Delivered, delivered, null, now.ToUniversalTime()), now);
+        return Add(new LoadingShare(deliveryId, line.Id, LoadingShareKind.Delivered, delivered, null, shipment.ShareId,
+            now.ToUniversalTime()), now);
     }
+
+    /// <summary>What a definite shipment still has undelivered: its quantity minus the deliveries that name it.</summary>
+    public Quantity UndeliveredOf(Guid shipmentId) => UndeliveredOf(FindShipment(shipmentId));
+
+    private Quantity UndeliveredOf(LoadingShare shipment) =>
+        shares.Where(share => share.Kind == LoadingShareKind.Delivered && share.SourceShipmentId == shipment.ShareId)
+            .Aggregate(shipment.Quantity, (left, delivery) => left.Subtract(delivery.Quantity));
+
+    private LoadingShare FindShipment(Guid shipmentId) =>
+        shares.FirstOrDefault(share => share.ShareId == shipmentId && share.Kind == LoadingShareKind.Shipped)
+        ?? throw new InvalidOperationException("Kaynak sevk kaydı bulunamadı.");
 
     private void RequirePositiveShare(Guid shareId, Quantity quantity, Quantity available, string tooMuch)
     {
@@ -242,6 +267,10 @@ public enum LoadingShareKind
     Delivered = 3,
 }
 
-/// <summary>One recorded share. Measurement is set for loads only. Not a document, not a stock movement.</summary>
+/// <summary>
+/// One recorded share. Measurement is set for loads only; SourceShipmentId for deliveries only
+/// (§7.4: shortage, damage, rejection and return are tied to the source shipment). Not a
+/// document, not a stock movement.
+/// </summary>
 public sealed record LoadingShare(Guid ShareId, Guid LineId, LoadingShareKind Kind, Quantity Quantity,
-    MeasurementKind? Measurement, DateTimeOffset RecordedAtUtc);
+    MeasurementKind? Measurement, Guid? SourceShipmentId, DateTimeOffset RecordedAtUtc);

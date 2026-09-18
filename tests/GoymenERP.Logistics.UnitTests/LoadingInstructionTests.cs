@@ -69,7 +69,7 @@ public sealed class LoadingInstructionTests
         Assert.Throws<InvalidOperationException>(() =>
             instruction.RecordLoad(2, Guid.NewGuid(), line.Id, Kg(1m), MeasurementKind.Measured, T0));
         Assert.Throws<InvalidOperationException>(() => instruction.MarkShipped(2, Guid.NewGuid(), line.Id, Kg(1m), T0));
-        Assert.Throws<InvalidOperationException>(() => instruction.MarkDelivered(2, Guid.NewGuid(), line.Id, Kg(1m), T0));
+        Assert.Throws<InvalidOperationException>(() => instruction.MarkDelivered(2, Guid.NewGuid(), line.Id, Guid.NewGuid(), Kg(1m), T0));
     }
 
     [Fact]
@@ -109,10 +109,64 @@ public sealed class LoadingInstructionTests
     {
         var (instruction, line) = Issued(6_000m);
         instruction.RecordLoad(3, Guid.NewGuid(), line.Id, Kg(4_000m), MeasurementKind.AllocatedFromVehicleWeight, T0);
-        instruction.MarkShipped(4, Guid.NewGuid(), line.Id, Kg(3_800m), T0);
-        Assert.Throws<InvalidOperationException>(() => instruction.MarkDelivered(5, Guid.NewGuid(), line.Id, Kg(3_800.001m), T0));
-        instruction.MarkDelivered(5, Guid.NewGuid(), line.Id, Kg(3_000m), T0);
+        var shipment = instruction.MarkShipped(4, Guid.NewGuid(), line.Id, Kg(3_800m), T0);
+        Assert.Throws<InvalidOperationException>(() =>
+            instruction.MarkDelivered(5, Guid.NewGuid(), line.Id, shipment.ShareId, Kg(3_800.001m), T0));
+        var delivery = instruction.MarkDelivered(5, Guid.NewGuid(), line.Id, shipment.ShareId, Kg(3_000m), T0);
         Assert.Equal((Kg(3_000m), Kg(800m)), (line.DeliveredQuantity, line.ShippedNotDelivered));
+        Assert.Equal((Guid?)shipment.ShareId, delivery.SourceShipmentId);
+        Assert.Equal(Kg(800m), instruction.UndeliveredOf(shipment.ShareId));
+    }
+
+    [Fact]
+    public void Deliveries_are_bound_to_their_source_shipment_and_capped_per_shipment()
+    {
+        // §7.4 "eksik/hasarlı/ret/iade kaynak sevke bağlı": S1 3.000 + S2 800 shipped; a delivery
+        // names its shipment and never exceeds that shipment's undelivered remainder, even when
+        // the line as a whole still has undelivered mass.
+        var (instruction, line) = Issued(6_000m);
+        instruction.RecordLoad(3, Guid.NewGuid(), line.Id, Kg(4_000m), MeasurementKind.Measured, T0);
+        var s1 = instruction.MarkShipped(4, Guid.NewGuid(), line.Id, Kg(3_000m), T0);
+        var s2 = instruction.MarkShipped(5, Guid.NewGuid(), line.Id, Kg(800m), T0);
+
+        instruction.MarkDelivered(6, Guid.NewGuid(), line.Id, s1.ShareId, Kg(2_900m), T0);
+        Assert.Equal(Kg(100m), instruction.UndeliveredOf(s1.ShareId));
+        Assert.Equal(Kg(900m), line.ShippedNotDelivered);
+        var overS1 = Assert.Throws<InvalidOperationException>(() =>
+            instruction.MarkDelivered(7, Guid.NewGuid(), line.Id, s1.ShareId, Kg(200m), T0));
+        Assert.Contains("kaynak sevk", overS1.Message);
+        Assert.Equal(7, instruction.Version);
+
+        instruction.MarkDelivered(7, Guid.NewGuid(), line.Id, s1.ShareId, Kg(100m), T0);
+        instruction.MarkDelivered(8, Guid.NewGuid(), line.Id, s2.ShareId, Kg(800m), T0);
+        Assert.True(instruction.UndeliveredOf(s1.ShareId).IsZero);
+        Assert.True(instruction.UndeliveredOf(s2.ShareId).IsZero);
+        Assert.True(line.ShippedNotDelivered.IsZero);
+        Assert.Equal(new Guid?[] { s1.ShareId, s1.ShareId, s2.ShareId },
+            instruction.Shares.Where(share => share.Kind == LoadingShareKind.Delivered).Select(share => share.SourceShipmentId));
+    }
+
+    [Fact]
+    public void A_delivery_names_a_real_shipment_of_its_own_line()
+    {
+        var instruction = LoadingInstruction.Create(Guid.NewGuid(), Company, Customer, T0);
+        var a = instruction.AddLine(1, Guid.NewGuid(), Guid.NewGuid(), Allocation, Kg(6_000m), T0);
+        var b = instruction.AddLine(2, Guid.NewGuid(), Guid.NewGuid(), null, Kg(500m), T0);
+        instruction.Issue(3, T0);
+        var load = instruction.RecordLoad(4, Guid.NewGuid(), a.Id, Kg(1_000m), MeasurementKind.Measured, T0);
+        var shipmentA = instruction.MarkShipped(5, Guid.NewGuid(), a.Id, Kg(1_000m), T0);
+
+        // Unknown shipment, another line's shipment, and a load share are all refused.
+        Assert.Throws<InvalidOperationException>(() =>
+            instruction.MarkDelivered(6, Guid.NewGuid(), a.Id, Guid.NewGuid(), Kg(100m), T0));
+        Assert.Throws<InvalidOperationException>(() =>
+            instruction.MarkDelivered(6, Guid.NewGuid(), b.Id, shipmentA.ShareId, Kg(100m), T0));
+        Assert.Throws<InvalidOperationException>(() =>
+            instruction.MarkDelivered(6, Guid.NewGuid(), a.Id, load.ShareId, Kg(100m), T0));
+        Assert.Equal(6, instruction.Version);
+        Assert.True(a.DeliveredQuantity.IsZero);
+        Assert.Equal(2, instruction.Shares.Count);
+        Assert.Throws<InvalidOperationException>(() => instruction.UndeliveredOf(load.ShareId));
     }
 
     [Fact]
@@ -170,10 +224,10 @@ public sealed class LoadingInstructionTests
         // record is a fact about the source shipment (§7.4), so a later block does not refuse it.
         var (instruction, line) = Issued(6_000m);
         instruction.RecordLoad(3, Guid.NewGuid(), line.Id, Kg(4_000m), MeasurementKind.Measured, T0);
-        instruction.MarkShipped(4, Guid.NewGuid(), line.Id, Kg(3_800m), T0);
+        var shipment = instruction.MarkShipped(4, Guid.NewGuid(), line.Id, Kg(3_800m), T0);
         instruction.BlockLine(5, line.Id, T0);
 
-        instruction.MarkDelivered(6, Guid.NewGuid(), line.Id, Kg(3_000m), T0);
+        instruction.MarkDelivered(6, Guid.NewGuid(), line.Id, shipment.ShareId, Kg(3_000m), T0);
 
         Assert.Equal((Kg(3_000m), Kg(800m)), (line.DeliveredQuantity, line.ShippedNotDelivered));
         Assert.Throws<InvalidOperationException>(() =>
