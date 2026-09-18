@@ -255,8 +255,16 @@ function settle(key: ItemKey, status: 'MEASURED' | 'NOT_MEASURED', detail: strin
 let active: LiveRecorder | null = null
 
 test.describe('O-04 work centers (ORG-03)', () => {
-  test('sidebar → list → a row’s card by keyboard → back to the list, reading only', async ({ page }) => {
+  test('sidebar → list → a row’s card by keyboard → back to the list, reading only', async ({
+    page,
+    context,
+  }) => {
     claim(['1-2-7-8'], manifest.operatorActor)
+    // The operator is bound through the same identity rewrite as every other actor, never the
+    // ambient `VITE_DEV_USER`: the BROWSER-CI web image bakes its own Development user at build
+    // time (the authorized profile's is `group-bootstrap-admin`), so an unrewritten request would
+    // run the claimed operator case as somebody else.
+    const rewrites = await asActor(context, page, manifest.operatorActor)
     const net = LiveRecorder.attach(page)
     active = net
 
@@ -312,6 +320,7 @@ test.describe('O-04 work centers (ORG-03)', () => {
       expect(net.issued(detailPathOf(row.locationId), 'GET')).toHaveLength(0)
     }
     expectReadOnly(net)
+    expectEveryAnswerRewritten(rewrites)
     await net.write(GROUP, 'operator-journey.json')
     settle('1-2-7-8', 'MEASURED', 'operator journey completed', {
       companyId: read.requestHeaders['x-company-id'],

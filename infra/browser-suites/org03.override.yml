@@ -1,0 +1,27 @@
+# ORG-03 (`browser:org03`) — the suite's closed-list API extension (BROWSER-CI stage 2 a2, #322).
+#
+# Owner: ORGANİZASYON (suite owner). Validated with the merged model by
+# `tools/validate_browser_acceptance.py` (SUITE_API_EXTENSIONS["org03"] = actors only):
+# indices continue the canonical two from 2 with no gap, at most 8, `org03-` ids, `SENTETIK`
+# names, unique. The canonical two (`group-bootstrap-admin`, `company-a-user`) are unchanged.
+#
+# IDENTITIES ONLY. A bootstrap user here is a name the Development header may carry; it grants
+# nothing. Each actor's roles and scopes are synthetic test-database grants bound by the stage-2
+# seed step together with `BROWSER_E2E_ORG03_ACTORS`, and the suite refuses to run without them.
+# None of these is a production user, role or permission.
+#
+# Why these four: the suite manifest requires `viewerActor` and `foreignActor`, and items 3 and 4
+# need a work-centers-only and a row-scoped subject that the normal seed does not have (README,
+# "Actors, honestly"). The operator (`company-a-user`) and the multi-company candidate
+# (`group-bootstrap-admin`) are the canonical two and need no entry here.
+services:
+  api:
+    environment:
+      BootstrapIdentity__Users__2__UserId: org03-viewer
+      BootstrapIdentity__Users__2__DisplayName: SENTETIK ORG03 Viewer
+      BootstrapIdentity__Users__3__UserId: org03-foreign
+      BootstrapIdentity__Users__3__DisplayName: SENTETIK ORG03 Foreign Company User
+      BootstrapIdentity__Users__4__UserId: org03-work-centers-only
+      BootstrapIdentity__Users__4__DisplayName: SENTETIK ORG03 Work Centers Only
+      BootstrapIdentity__Users__5__UserId: org03-row-scoped
+      BootstrapIdentity__Users__5__DisplayName: SENTETIK ORG03 Row Scoped

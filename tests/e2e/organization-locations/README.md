@@ -36,9 +36,11 @@ offers **no link and no card GET**.
 | 5 (+6 empty) | A's work-center read HELD in the browser across a switch to B: B's answer drawn, then A's rows 0 in B; B reads for itself; an empty company shows the empty state | `multiCompanyActor` | SKIP, recorded |
 | 6 forbidden / unavailable | — | — | **NOT_MEASURED here**, recorded as such |
 
-Items 3, 4 and 5 also assert that **every API answer the page received belongs to a
-request the identity rewrite sent** as the bound actor; an answer about the ambient
-`VITE_DEV_USER` fails the case.
+Every case (items 1–5, the operator's included) binds its actor through the identity rewrite
+and asserts that **every API answer the page received belongs to a request the rewrite sent**
+as that actor; an answer about the ambient `VITE_DEV_USER` fails the case. The operator case
+needs it too: the BROWSER-CI web image bakes its own Development user at build time (the
+authorized profile's is `group-bootstrap-admin`), so the ambient identity is not the operator.
 
 `coverage.json` gives each item a `status` from a closed set — `MEASURED`, `SKIPPED`,
 `FAILED`, `NOT_MEASURED` — with free text only in `detail`, plus the actor, the grant the
@@ -81,6 +83,11 @@ Workflow `.github/workflows/browser-acceptance.yml`, label `browser:org03`, cont
 
 - **What runs:** only `specs/o-04-work-center-journey.spec.ts`, with config `tests/e2e/playwright.browser-org03.config.ts`, against the workflow's disposable stack. That stack is the API, SQL with the seeded GDC / GSP / GIN organization data (GDC has the five work centers; GSP has none, which is the empty half of item 6) and the authorized web profile, all built from the exact head. There is no Vite dev server and no pinned 27xxx port in this profile.
 - **Tuple:** built by `src/browserCi.ts` from the workflow's variables (`BROWSER_E2E_TESTED_COMMIT`, `BROWSER_E2E_API_BASE_URL`, `BROWSER_E2E_DATABASE`, `GITHUB_RUN_ID`, `COMPOSE_PROJECT_NAME`). Every binding commit is that one head.
+- **Suite identities:** `infra/browser-suites/org03.override.yml` (stage 2 a2 closed list,
+  validated with the merged model) adds four synthetic bootstrap users after the canonical two:
+  `org03-viewer`, `org03-foreign`, `org03-work-centers-only`, `org03-row-scoped`, each named
+  `SENTETIK …`. Identities only: their roles and scopes are the stage-2 seed's synthetic
+  test-database grants, not this file's.
 - **Actors:** `BROWSER_E2E_ORG03_ACTORS` (JSON: `operatorActor`, `viewerActor`, `foreignActor`, `multiCompanyActor`, `workCentersOnlyActor`, `rowScopedActor`, `actorGrants`, `companyACode`, `companyBCode`). BROWSER-CI stage 2 binds them together with their synthetic test-database grants and the Organization capabilities for this suite. Until then the run refuses, visibly. This package adds no actor, role or grant.
 - **Read-only:** the journey issues no write (it asserts this itself). The post-state check is the workflow's SQL read-only verification, if the suite is declared read-only there.
 - **Artifacts:** retries 0; traces, screenshots and video are off. Only the JUnit file is uploaded (after the privacy check). The journey's own evidence stays under the artifact root and is not uploaded.
