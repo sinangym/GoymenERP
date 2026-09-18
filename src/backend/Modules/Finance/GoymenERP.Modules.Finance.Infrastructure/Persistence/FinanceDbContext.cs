@@ -13,6 +13,8 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Persistence;
 /// resolved company.</item>
 /// <item>A receipt draft changes only its preparation fields, version and update trace; nothing is
 /// deleted. A command record is append-only.</item>
+/// <item>A bank account (FS0) changes only by its one approval; the database itself refuses an
+/// approval by the proposer (<c>CK_BankAccounts_Approval</c>, Ö4).</item>
 /// <item>Idempotency: (company, actor, key) is the command record's key, so one key is one attempt
 /// per actor and company under a race.</item>
 /// </list>
@@ -30,6 +32,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
 
     internal DbSet<FinanceCommandRow> Commands => Set<FinanceCommandRow>();
 
+    internal DbSet<BankAccountRow> BankAccounts => Set<BankAccountRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -39,6 +43,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         company.HasKey(x => x.Id);
 
         ConfigureReceiptDrafts(modelBuilder);
+        ConfigureBankAccounts(modelBuilder);
         ConfigureCommands(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
@@ -94,14 +99,47 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    private void ConfigureBankAccounts(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<BankAccountRow>();
+        entity.ToTable("BankAccounts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_BankAccounts_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_BankAccounts_Text", "LEN([DisplayName]) > 0 AND LEN([ProposedBy]) > 0");
+            table.HasCheckConstraint("CK_BankAccounts_Version", "[Version] >= 1");
+            // Ö4: proposed carries no approval; approved carries one, by someone other than the proposer.
+            table.HasCheckConstraint("CK_BankAccounts_Approval",
+                "([Status] = 1 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL) OR "
+                + "([Status] = 2 AND [ApprovedBy] IS NOT NULL AND [ApprovedAtUtc] IS NOT NULL AND LEN([ApprovedBy]) > 0 "
+                + "AND [ApprovedBy] <> [ProposedBy])");
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.DisplayName).HasMaxLength(200).IsRequired();
+        entity.Property(x => x.ProposedBy).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.ApprovedBy).HasMaxLength(128).UseCollation(IdentityCollation);
+        entity.HasIndex(x => new { x.CompanyId, x.Status });
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ConfigureCommands(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<FinanceCommandRow>();
         entity.ToTable("Commands", Schema, table =>
         {
             table.HasCheckConstraint("CK_Commands_Identity",
-                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' "
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND LEN([ActorId]) > 0 AND LEN([IdempotencyKey]) > 0 AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0");
+            // Exactly one target: a receipt draft or a bank account (FS0).
+            table.HasCheckConstraint("CK_Commands_Target",
+                "([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [BankAccountId] IS NULL) OR "
+                + "([BankAccountId] IS NOT NULL AND [BankAccountId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL)");
             table.HasCheckConstraint("CK_Commands_PayloadHash", "LEN([PayloadHash]) = 64");
             table.HasCheckConstraint("CK_Commands_ResultJson", "ISJSON([ResultJson]) = 1");
         });
@@ -113,10 +151,15 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.Property(x => x.ResultJson).HasColumnType("nvarchar(max)").IsRequired();
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
         entity.HasIndex(x => new { x.CompanyId, x.DraftId });
+        entity.HasIndex(x => new { x.CompanyId, x.BankAccountId });
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<ReceiptDraftRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.DraftId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<BankAccountRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.BankAccountId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -161,6 +204,12 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                         nameof(ReceiptDraftRow.ValueOn), nameof(ReceiptDraftRow.BankReference),
                         nameof(ReceiptDraftRow.Description), nameof(ReceiptDraftRow.UpdatedAtUtc),
                         nameof(ReceiptDraftRow.UpdatedBy),
+                    ],
+                    // The one approval; name and currency never change.
+                    BankAccountRow =>
+                    [
+                        nameof(BankAccountRow.Status), nameof(BankAccountRow.ApprovedBy),
+                        nameof(BankAccountRow.ApprovedAtUtc), nameof(BankAccountRow.UpdatedAtUtc),
                     ],
                     _ => [],
                 };
