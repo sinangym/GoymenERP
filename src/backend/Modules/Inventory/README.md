@@ -90,6 +90,19 @@ Notes carried from the #293 review (INFO; no change in this slice):
 - **Racing replay.** A replay that races its own first write gets `inventory_concurrent_change` (via `PK_Movements`); retried, it gets `Replayed`.
 - **Unknown unique violations.** A 2601/2627 on an index the store does not name maps to `inventory_concurrent_change`: generic, and safe to retry.
 
+## T07(a): read API (first user-path slice)
+
+| Route | Permission (company-scoped) | Answer |
+|---|---|---|
+| `GET /api/v1/inventory/labels/{labelId}` | `inventory.labels.read` | `InventoryLabelViewV1`: identity, product, lot, heat/coil, required documents and status (Ö3), and print/document history as sequence, time and kind. Actor ids stay in audit. |
+| `GET /api/v1/inventory/labels/{labelId}/balances` | `inventory.balances.read` | `InventoryLabelBalancesV1`: positions (owner, custodian, location, product, block) with exact kg text, and physical/free/blocked totals. |
+
+- **Company.** Both routes need `X-Company-Id` and the actor's access to it. A label of another company is the same `404` as an unknown id; the tenant filter never shows it.
+- **Separate permissions.** Seeing a label does not show its stock, and seeing stock does not show the label's facts.
+- **Scope.** Reads are not filtered by site, so these permissions belong in `CompanyWideOnly` (central).
+- **Evidence and outcome.** The evidence is real SQL through the real host with synthetic grants and synthetic stock written through the store. It is **not a user outcome**: no real product card and no accepted opening stock source exist yet (plan §14 T07, Ö1).
+- **No write here.** The receipt (T07 write) waits for the opening-acceptance question on #66. Lots become a minimal `MaterialLot` record (DEC-PRD-003), with attributes nullable and "documents pending" (Ö3).
+
 ## dependency_wait
 
 - **Central registration (CARİ, same branch, sequential):** the tenant guard's reviewed inventory (this DbContext's fingerprint, the design-time factory and the initializer's `Migrate`/`EnsureCreated` branch); the module-dependency allowlist edge `Inventory.Infrastructure → Audit.Infrastructure` (ADR-009); the `Api.IntegrationTests` project reference to Inventory; and the relational verifier's BROAD list and counts for `InventorySqlServerRelationalAcceptanceTests`.
