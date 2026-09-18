@@ -129,6 +129,18 @@ public sealed class ApprovedMoneyProfileCatalog
     public bool Approves(string? operation) => operation is not null && _operations.Contains(operation);
 
     /// <summary>
+    /// The company's currencies that have an approved profile, one candidate each (any version),
+    /// in catalog order. The display label is the approved currency code itself: no approved
+    /// source names a longer label, so none is invented. Empty for a company with no profile.
+    /// </summary>
+    public IReadOnlyList<MoneyCurrencyCandidateV1> CurrenciesOf(Guid companyId) =>
+        _versions
+            .Where(currency => currency.Key.CompanyId == companyId)
+            .Select(currency => currency.Value[^1])
+            .Select(entry => new MoneyCurrencyCandidateV1(entry.CurrencyId, entry.CurrencyCode, entry.CurrencyCode))
+            .ToArray();
+
+    /// <summary>
     /// The version in force on <paramref name="effectiveOn"/>, or — outside every window — the
     /// nearest version before it (or the first one), returned with its REAL window so the
     /// consumer's own check rejects it. Null only when the company has no profile for the currency.

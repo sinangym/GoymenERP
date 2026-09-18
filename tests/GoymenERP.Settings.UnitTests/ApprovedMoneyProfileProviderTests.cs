@@ -196,6 +196,68 @@ public sealed class ApprovedMoneyProfileProviderTests
     }
 
     [Fact]
+    public async Task GDC_s_candidates_are_exactly_its_approved_currency_labelled_by_its_code()
+    {
+        ISettingsMoneyCandidateReader reader = Provider(Gdc);
+
+        var candidates = await reader.GetMoneyCurrencyCandidatesAsync();
+
+        // No longer label is approved anywhere, so the code is the label; nothing is defaulted.
+        Assert.Equal(new MoneyCurrencyCandidateV1(Try, "TRY", "TRY"), Assert.Single(candidates));
+    }
+
+    [Fact]
+    public async Task A_company_without_an_approved_money_source_gets_unavailable_not_an_empty_list()
+    {
+        ISettingsMoneyCandidateReader reader = Provider(Gsp);
+
+        var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => reader.GetMoneyCurrencyCandidatesAsync());
+
+        Assert.Equal("settings_provider_unavailable", failure.Code);
+    }
+
+    [Theory]
+    [InlineData("unauthenticated")]
+    [InlineData("unresolved company")]
+    [InlineData("not a member")]
+    public async Task Candidates_check_access_first(string fault)
+    {
+        ISettingsMoneyCandidateReader reader = fault switch
+        {
+            "unauthenticated" => new ApprovedSettingsPrerequisiteProvider(new Context(Gdc, true), new Actor(false, "x", Gdc)),
+            "unresolved company" => new ApprovedSettingsPrerequisiteProvider(new Context(Gdc, false), new Actor(true, "x", Gdc)),
+            _ => new ApprovedSettingsPrerequisiteProvider(new Context(Gdc, true), new Actor(true, "x", Gsp)),
+        };
+
+        var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => reader.GetMoneyCurrencyCandidatesAsync());
+
+        Assert.Equal("settings_access_denied", failure.Code);
+    }
+
+    [Fact]
+    public async Task A_cancelled_caller_gets_no_candidates()
+    {
+        ISettingsMoneyCandidateReader reader = Provider(Gdc);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => reader.GetMoneyCurrencyCandidatesAsync(new CancellationToken(true)));
+    }
+
+    [Fact]
+    public async Task A_currency_with_several_approved_versions_is_one_candidate()
+    {
+        var v1 = ApprovedMoneyProfileCatalog.GdcTurkishLiraV1 with { EffectiveThrough = new DateOnly(2027, 1, 31) };
+        var v2 = v1 with { Version = 2, EffectiveFrom = new DateOnly(2027, 2, 1), EffectiveThrough = null };
+        ISettingsMoneyCandidateReader reader = new ApprovedSettingsPrerequisiteProvider(
+            new Context(Gdc, true), new Actor(true, "x", Gdc),
+            ApprovedUnitProfileCatalog.Approved, new ApprovedMoneyProfileCatalog([v1, v2]));
+
+        Assert.Single(await reader.GetMoneyCurrencyCandidatesAsync());
+    }
+
+    [Fact]
     public void Only_the_reviewed_catalog_is_reachable_from_outside_Settings()
     {
         Assert.Empty(typeof(ApprovedMoneyProfileCatalog).GetConstructors());

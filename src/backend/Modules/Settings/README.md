@@ -94,9 +94,9 @@ OpenAPI, DI registration, persistent provider, database, seed, currency data or 
 is introduced.
 
 Outstanding approved-source data: the company/operation/date period eligibility
-source, and a candidate list (this port still answers unavailable; T02-b did not
-change it). Unit and money profiles now have one approved source each (GDC kg and
-GDC/TRY, below); Master 28.1's rounding (`AwayFromZero`) is still a proposal, not
+source. Unit and money profiles now have one approved source each (GDC kg and
+GDC/TRY, below), and since T02-b the approved provider also serves this candidate
+port from the money catalog (see "Approved money profiles"); Master 28.1's rounding (`AwayFromZero`) is still a proposal, not
 approved data. No default-open period, FX or Finance OPEN-009 permission is inferred.
 
 ## Approved unit profiles (T02-a)
@@ -165,7 +165,7 @@ permission.
 `ApprovedSettingsPrerequisiteProvider` (previously the unavailable adapter). Its only
 consumer there is the Sales reference read. Sales asks for unit profiles only after a
 Product sales-eligibility snapshot, and no such runtime is composed in the host yet, so the
-swap changes no reachable Sales answer until it is; money and period answers are unchanged.
+swap changes no reachable Sales answer until it is; money and period answers were unchanged by that swap (money: see T02-b below).
 On its product path Sales maps `settings_unit_profile_not_found` to `422 unsupported_unit`
 (#285), the same permanent refusal an inactive or out-of-range profile gets; every other
 Settings code keeps Sales' earlier mapping (`settings_access_denied` → 403, the rest → `503
@@ -224,10 +224,24 @@ Outcomes of `GetMoneyProfileAsync`, in order:
 As for units, a date before the approval returns the real window and the consumer
 rejects it; a later version takes over from its own start date.
 
-**Reachable effect today: none.** The host's Finance draft read context checks its
-permission port first, and that port is the unavailable one; the Sales reference read
-binds no money operation (Sales' own mapping). The profile becomes reachable when those
-owners wire them. `settings_money_profile_not_found` is new: consumers that map Settings
+**Candidates.** The same provider implements `ISettingsMoneyCandidateReader` from the
+same catalog: each currency with an approved profile for the server company, one
+candidate per currency — GDC: `(TRY id, "TRY", "TRY")`. The label is the approved code
+itself, since no approved source names a longer one. Access first
+(`settings_access_denied`); a company without an approved money source (GSP, GIN) →
+`settings_provider_unavailable`, never an empty list or GDC's TRY; the list passes
+`MoneyCurrencyCandidatesV1.EnsureWellFormed`. Being listed is not validity: consumers
+still resolve the chosen currency with `GetMoneyProfileAsync`. FS0 (#312) checks a bank
+account's currency against this list.
+
+**Host wiring.** `ISettingsMoneyCandidateReader` is registered as the approved provider,
+and `SalesReferenceReadBindings` binds the Sales owner's money operation
+(`SalesMoneyOperations.OrderDraftV1`, a Sales decision). Reachable effect today: none. The
+host's Finance draft read context checks its permission port first, and that port is the
+unavailable one; the Sales currency route binds no currency permission, so it answers 403
+before asking Settings. `SettingsHostWiringTests` shows the Sales read, with only a
+synthetic permission and the host's own operation, provider and account source, reaching
+the approved TRY profile, while any other currency stays fail-closed. `settings_money_profile_not_found` is new: consumers that map Settings
 codes must decide its public answer. Today Finance's draft read reports any other code as
 Unavailable carrying the code, and Sales' reference read as `503 settings_provider_unavailable`.
 

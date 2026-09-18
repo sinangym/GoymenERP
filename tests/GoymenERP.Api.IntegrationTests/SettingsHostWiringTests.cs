@@ -2,6 +2,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
@@ -137,6 +138,80 @@ public sealed class SettingsHostWiringTests
     }
 
     [Fact]
+    public async Task The_host_serves_GDC_s_approved_money_currencies_as_candidates()
+    {
+        using var factory = Host(Gdc);
+        using var scope = factory.Services.CreateScope();
+
+        var reader = scope.ServiceProvider.GetRequiredService<ISettingsMoneyCandidateReader>();
+        Assert.IsType<ApprovedSettingsPrerequisiteProvider>(reader);
+        Assert.Single(scope.ServiceProvider.GetServices<ISettingsMoneyCandidateReader>());
+
+        var candidate = Assert.Single(await reader.GetMoneyCurrencyCandidatesAsync());
+        Assert.Equal(new MoneyCurrencyCandidateV1(SettingsCurrencyIdentitiesV1.TurkishLira, "TRY", "TRY"), candidate);
+    }
+
+    [Theory]
+    [InlineData("gsp")]
+    [InlineData("gin")]
+    public async Task A_company_without_an_approved_money_source_gets_no_candidate_list_through_the_host(string company)
+    {
+        using var factory = Host(company == "gsp" ? Gsp : Gin);
+        using var scope = factory.Services.CreateScope();
+        var reader = scope.ServiceProvider.GetRequiredService<ISettingsMoneyCandidateReader>();
+
+        // Unavailable, never an empty list or GDC's TRY.
+        Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => reader.GetMoneyCurrencyCandidatesAsync())).Code);
+    }
+
+    [Theory]
+    [InlineData("TRY", 200, null)]
+    [InlineData("other currency", 503, "settings_provider_unavailable")]
+    public async Task The_Sales_currency_read_with_the_host_s_own_money_binding_reaches_the_approved_profile(
+        string currency, int status, string? code)
+    {
+        using var factory = Host(Gdc);
+        using var scope = factory.Services.CreateScope();
+        var hostBindings = scope.ServiceProvider.GetRequiredService<SalesReferenceReadBindings>();
+        // The Sales owner's key, bound by the host (Sales decision, T02-b).
+        Assert.Equal(SalesMoneyOperations.OrderDraftV1, hostBindings.MoneyOperation);
+        // The host still binds no currency permission, so the route itself answers 403 first; only
+        // the permission is synthetic here — the money operation, the Settings provider and the
+        // account source are the host's own.
+        Assert.Null(hostBindings.CurrencyPermission);
+        var handler = new SalesReferenceReadHandler(
+            scope.ServiceProvider.GetRequiredService<ICompanyContext>(),
+            scope.ServiceProvider.GetRequiredService<ICurrentUser>(),
+            new GrantsOnly(SyntheticCurrencyPermission, Gdc),
+            scope.ServiceProvider.GetRequiredService<ISalesAccountSelectionSourceV1>(),
+            scope.ServiceProvider.GetRequiredService<ISettingsPrerequisiteProvider>(),
+            null,
+            hostBindings with { CurrencyPermission = SyntheticCurrencyPermission });
+        var currencyId = currency == "TRY"
+            ? SettingsCurrencyIdentitiesV1.TurkishLira
+            : Guid.Parse("0f3bd0a1-6e2c-4d77-a3a5-0b1c2d3e4f52");
+
+        var result = await handler.GetCurrencyAsync(new SalesCurrencyQueryV1(currencyId, Approval));
+
+        Assert.Equal(status, result.StatusCode);
+        Assert.Equal(code, result.Code);
+        if (status == 200)
+        {
+            Assert.Equal(Gdc, result.Value!.CompanyId);
+            Assert.Equal("TRY", result.Value.Code);
+            Assert.Equal(ApprovedMoneyProfileCatalog.GdcTurkishLiraV1.ProfileId, result.Value.ProfileId);
+            Assert.Equal("1", result.Value.ProfileVersion);
+        }
+        else
+        {
+            // Today's Sales mapping of settings_money_profile_not_found (Sales' own follow-up maps it
+            // to 422): fail-closed, no profile.
+            Assert.Null(result.Value);
+        }
+    }
+
+    [Fact]
     public async Task An_actor_outside_the_company_is_still_denied_through_the_host()
     {
         using var factory = Host(Gdc, actorAllowedIn: Gsp);
@@ -189,6 +264,30 @@ public sealed class SettingsHostWiringTests
             _host.Dispose();
             _factory.Dispose();
         }
+    }
+
+    private const string SyntheticCurrencyPermission = "synthetic.sales-currency.read";
+
+    /// <summary>Grants one synthetic permission in one company; denies everything else.</summary>
+    private sealed class GrantsOnly(string permission, Guid company) : IErpAuthorizationService
+    {
+        private PermissionScope Scope(string asked, Guid companyId) =>
+            asked == permission && companyId == company
+                ? new(true, true, new HashSet<string>(StringComparer.Ordinal), new HashSet<Guid>(),
+                    new HashSet<Guid>(), new HashSet<Guid>())
+                : PermissionScope.Denied;
+
+        public Task<bool> HasPermissionAsync(string asked, Guid companyId,
+            CancellationToken cancellationToken = default) => Task.FromResult(Scope(asked, companyId).IsGranted);
+
+        public Task<PermissionScope> GetPermissionScopeAsync(string asked, Guid companyId,
+            CancellationToken cancellationToken = default) => Task.FromResult(Scope(asked, companyId));
+
+        public Task<AuthorizationSnapshot> GetAuthorizationSnapshotAsync(Guid companyId,
+            IReadOnlyCollection<string> permissions, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new AuthorizationSnapshot("synthetic-settings-host",
+                companyId == company ? new HashSet<Guid> { companyId } : new HashSet<Guid>(),
+                permissions.ToDictionary(asked => asked, asked => Scope(asked, companyId))));
     }
 
     private sealed class FixedCompany(Guid companyId) : ICompanyContext
