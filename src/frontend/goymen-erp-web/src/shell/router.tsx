@@ -104,8 +104,12 @@ export const shellRoutes: RouteObject[] = [
        * The Product lane's own routes, declared in `src/product/productRoutes.tsx` and
        * mounted here by the shared-integration owner.
        *
-       * BEFORE the catch-all, and that is not a style preference: `path: '*'` matches
-       * everything, so a route registered after it can never be reached. Each entry is
+       * Declared BEFORE the catch-all by convention, not because react-router needs it: the
+       * pinned version (8.3.1) ranks routes by score, not declaration order. A static
+       * segment outscores `path: '*'`, which also carries a splat penalty, so `/urun` wins
+       * wherever it sits; order only breaks ties between equal scores. No render can tell
+       * the two orders apart, so `featureRouteAccess.test.tsx` pins this order
+       * structurally and proves reachability separately by rendering the routes. Each entry is
        * gated on its own capability exactly like the Cari ones, and that file declares
        * `/urun/yeni` and `/urun/:productId/duzenle` ahead of `/urun/:productId`, so no
        * static segment is ever read as a product id. The create and edit entries also
@@ -119,8 +123,10 @@ export const shellRoutes: RouteObject[] = [
        * `src/organization/organizationRoutes.tsx` and mounted here by the
        * shared-integration owner.
        *
-       * BEFORE the catch-all, and that is not a style preference: `path: '*'` matches
-       * everything, so a route registered after it can never be reached. Each entry is
+       * Declared BEFORE the catch-all by the same convention as the Product routes above:
+       * react-router 8.3.1 ranks by score, so the catch-all cannot shadow these wherever they
+       * sit. `featureRouteAccess.test.tsx` renders them for reachability and pins the order
+       * structurally. Each entry is
        * gated on its own capability exactly like the Cari ones, and that file fixes the
        * segment order itself — the card's static `lokasyon` segment sits ahead of
        * `:locationId`, so no static segment is read as a record id.
