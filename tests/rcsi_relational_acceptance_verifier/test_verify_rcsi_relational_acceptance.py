@@ -79,9 +79,9 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             "RolelessAuditAndIdempotencyFailures_RollBackAndPermitSameKeyRetry",
         ))
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
-        self.assertEqual(100, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(100, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(107, VERIFIER.BROAD_EXECUTION_COUNT)
+        self.assertEqual(104, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(104, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(111, VERIFIER.BROAD_EXECUTION_COUNT)
         for omitted in required:
             with self.subTest(omitted=omitted):
                 discovery = "\n".join(
@@ -97,9 +97,9 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             "CreateFindDetailAndLinkSecondCompany_PreserveIdentityVisibilityAndExactlyOnceEffects"
         )
         self.assertIn(journey, VERIFIER.BROAD_EXPECTED_TESTS)
-        self.assertEqual(100, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(100, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(107, VERIFIER.BROAD_EXECUTION_COUNT)
+        self.assertEqual(104, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(104, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(111, VERIFIER.BROAD_EXECUTION_COUNT)
         without_journey = [name for name in VERIFIER.BROAD_EXPECTED_TESTS if name != journey]
         with self.assertRaisesRegex(RuntimeError, "exact"):
             VERIFIER.verify_broad_discovery("\n".join(without_journey))
@@ -114,9 +114,9 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             prefix + "ScopedPagingAndRejectedCommands_PreserveLocationAndExposeNoForeignState",
         }
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
-        self.assertEqual(100, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(100, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(107, VERIFIER.BROAD_EXECUTION_COUNT)
+        self.assertEqual(104, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(104, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(111, VERIFIER.BROAD_EXECUTION_COUNT)
         for omitted in required:
             with self.subTest(omitted=omitted):
                 discovery = "\n".join(
@@ -136,9 +136,9 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             )
         }
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
-        self.assertEqual(100, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(100, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(107, VERIFIER.BROAD_EXECUTION_COUNT)
+        self.assertEqual(104, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(104, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(111, VERIFIER.BROAD_EXECUTION_COUNT)
         for omitted in required:
             with self.subTest(omitted=omitted):
                 with self.assertRaises(RuntimeError):
@@ -197,6 +197,10 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
                 "A_source_causes_one_movement_per_kind_and_a_stock_bearing_label_is_not_received_again",
                 "Two_writers_that_read_the_same_piece_cannot_both_commit",
                 "A_save_that_fails_in_the_database_leaves_nothing_behind",
+                "A_source_is_answered_whole_or_line_by_line_never_both",
+                "A_whole_and_a_line_movement_racing_for_one_source_cannot_both_commit",
+                "A_label_code_has_one_answer_under_the_code_column_collation",
+                "A_known_cost_offered_again_at_another_scale_is_a_replay",
             )
         }
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))

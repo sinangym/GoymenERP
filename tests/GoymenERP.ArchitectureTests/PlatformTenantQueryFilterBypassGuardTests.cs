@@ -91,18 +91,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.cs";
     private const string SqlServerRcsiVerifierPath =
         "tools/verify_rcsi_relational_acceptance.py";
-    // Re-fingerprinted with the broad inventory entry for the Accounting SQL acceptance class
-    // (ACC-3, #298) on top of INV-2's: six names added, discovery 94 -> 100, execution
-    // 101 -> 107. The verifier's logic is unchanged.
+    // Re-fingerprinted for INV-3 (#308): four more Inventory SQL acceptance names, discovery
+    // 100 -> 104, execution 107 -> 111. The verifier's logic is unchanged.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "4ce7fff0d708b25828fceb133a9e516b2ea7b4410ca823a5f7a517f760facf95";
+        "46cfa2d584773280aa3e0f2b1bb218a5ab066c383861c3baff19b34b81ca43f0";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
     // Re-fingerprinted for the same inventory change: updated counts plus one case pinning the
     // new class as mandatory.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "b926a0afdf6ab93dc5f947a5c51d7f758912272cf56934d23cf05aef268fffbe";
+        "30c0cef55b1d12958d9de8281d49ac9dc39faa419b3faca39e31e0a19ae70066";
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "91a665e6e8982e5a9b66f5d16a14d9fc4d7f98d63775de959a8cc6b2dea2b018";
@@ -138,7 +137,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // row and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
              + "Persistence/InventoryDbContext.cs"] =
-                "61d6e950d779645f2f4f028e350b01d82930e11b12c82126e5f28b3387af242e",
+                "7e591b7739ab94487e5a8f651ba54ea344581af551e34d28031f630d21c14f0f",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "a25322e5924213ccdf3241e0d1ff4cc15f5d6be168345894eaba3f6b77204812",
@@ -272,7 +271,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
                     new(
-                        "2e0df8bb2c47de5479878476df5040b59cfa2f836aba6c409a2ae3caf93fc0e9",
+                        "dfb9ac4298ec9937f13a99b8d460f2eb082a165bccf7a7fc9a057f3a9b80b58d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
