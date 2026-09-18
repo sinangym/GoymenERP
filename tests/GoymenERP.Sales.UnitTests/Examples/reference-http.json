@@ -81,5 +81,11 @@
     "path": "/api/v1/sales/references/product?productId=22222222-2222-2222-2222-222222222222&expectedProductVersion=7&orderUnitId=44444444-4444-4444-4444-444444444444&effectiveOn=2026-09-13",
     "status": 422,
     "body": { "status": 422, "code": "unsupported_product" }
+  },
+  "unsupportedUnit": {
+    "method": "GET",
+    "path": "/api/v1/sales/references/product?productId=22222222-2222-2222-2222-222222222222&expectedProductVersion=7&orderUnitId=44444444-4444-4444-4444-444444444444&effectiveOn=2026-09-13",
+    "status": 422,
+    "body": { "status": 422, "code": "unsupported_unit" }
   }
 }

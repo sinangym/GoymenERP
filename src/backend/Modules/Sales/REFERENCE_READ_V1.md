@@ -68,8 +68,11 @@ ProductOperationException 401/403/404 keep their status without a code, and
 UnauthorizedAccessException is 403. A missing runtime, a result with neither
 snapshot nor errors, and every other owner status are 503. A snapshot that differs
 from the requested product, version, order unit or date is 409. An inactive or
-out-of-range unit profile is 422 unsupported_unit; a unit binding or profile of
-another company is 403. Product.Domain's ProductVersionConflictException is not
+out-of-range unit profile is 422 unsupported_unit, and so is a unit the approved
+Settings provider has no profile for (its settings_unit_profile_not_found, #279): a
+missing profile is a permanent refusal of that selection, not a transient outage to
+retry. Only the product path reads unit profiles; the currency path keeps every
+non-denied Settings code at 503. A unit binding or profile of another company is 403. Product.Domain's ProductVersionConflictException is not
 caught: Sales code uses no Product.Domain type, the eligibility port reports
 conflicts as field errors, and a Domain exception crossing that Application port
 stays a platform-redacted 500.
@@ -106,7 +109,9 @@ authentication_required, forbidden, internal_error or service_unavailable. So
 settings_access_denied, settings_provider_unavailable, settings_operation_unavailable,
 product_provider_unavailable, counterparty_provider_unavailable and
 reference_provider_invalid are internal handler codes: the client sees forbidden
-(403) or service_unavailable (503), and 403 still differs from 503. A code outside a
+(403) or service_unavailable (503), and 403 still differs from 503. The one Settings
+code that changes status is settings_unit_profile_not_found on the product path: it
+reaches the client as 422 unsupported_unit, already in that route's allowlist. A code outside a
 route allowlist is dropped; a status outside it fails as a redacted 500.
 Anonymous 401; unresolved/foreign company or denied/missing binding 403; invalid
 IDs/query 400 validation_failed; invalid cursor 400 invalid_cursor. Cancellation
