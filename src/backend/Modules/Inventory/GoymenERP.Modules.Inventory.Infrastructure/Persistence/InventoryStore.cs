@@ -53,7 +53,7 @@ public sealed class InventoryStore(
     private const int DocumentKindMaximumLength = 64;
     private const int CostScaleMaximum = 18;
 
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task<InventoryWriteOutcome> SaveLabelAsync(MaterialLabel label, InventoryCommandMetadata metadata,
         CancellationToken cancellationToken = default)
@@ -490,11 +490,11 @@ public sealed class InventoryStore(
 
     /// <summary>The label facts a position needs (company, product, id); prints and documents do not matter there.</summary>
     private static MaterialLabel IdentityOnly(LabelRow row) =>
-        new(row.Id, row.CompanyId, row.Code, row.ProductId, row.LotId);
+        new MaterialLabel(row.Id, row.CompanyId, row.Code, row.ProductId, row.LotId);
 
     private static StockPosition Position(Guid companyId, int ownerKind, Guid ownerId, int custodianKind, Guid custodianId,
         Guid locationId, MaterialLabel label, int block) =>
-        new(companyId, new StockOwner((StockPartyKind)ownerKind, ownerId),
+        new StockPosition(companyId, new StockOwner((StockPartyKind)ownerKind, ownerId),
             new StockCustodian((StockPartyKind)custodianKind, custodianId), locationId, label, (BlockState)block);
 
     private static bool Matches(BalanceRow row, StockPosition position) =>
@@ -503,9 +503,9 @@ public sealed class InventoryStore(
         && row.LocationId == position.LocationId && row.LabelId == position.LabelId
         && row.ProductId == position.ProductId && row.Block == (int)position.Block;
 
-    private static LabelPrint ToPrint(LabelPrintRow row) => new(row.Sequence, row.PrintedAtUtc, row.PrintedBy, row.Reason);
+    private static LabelPrint ToPrint(LabelPrintRow row) => new LabelPrint(row.Sequence, row.PrintedAtUtc, row.PrintedBy, row.Reason);
 
-    private static LabelDocumentAttachment ToAttachment(LabelDocumentRow row) => new(row.Kind, row.AttachedAtUtc, row.AttachedBy);
+    private static LabelDocumentAttachment ToAttachment(LabelDocumentRow row) => new LabelDocumentAttachment(row.Kind, row.AttachedAtUtc, row.AttachedBy);
 
     private static CostResult Cost(MovementRow row) => (CostStatus)row.CostStatus switch
     {
@@ -569,5 +569,5 @@ public sealed class InventoryStore(
         payloadHash,
     }, Json);
 
-    private static InventoryStoreException Refused(string code, string message, Exception? inner = null) => new(code, message, inner);
+    private static InventoryStoreException Refused(string code, string message, Exception? inner = null) => new InventoryStoreException(code, message, inner);
 }
