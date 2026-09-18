@@ -109,7 +109,7 @@ jobs:
           echo "Browser suite '$suite' on #$pr exact head $head_sha (base $base_sha; read-only: $read_only)."
 
   browser:
-    name: Browser suite ${{ needs.resolve.outputs.suite }} on #${{ needs.resolve.outputs.pr }}
+    name: "Browser suite ${{ needs.resolve.outputs.suite }} on PR ${{ needs.resolve.outputs.pr }}"
     needs: resolve
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -131,6 +131,7 @@ jobs:
           persist-credentials: false
 
       - name: Bind exact source and disposable run secrets
+        id: bind
         shell: bash
         run: |
           set -euo pipefail
@@ -164,6 +165,10 @@ jobs:
             echo "BROWSER_E2E_JUNIT_FILE=$GITHUB_WORKSPACE/artifacts/browser-${BROWSER_SUITE}-junit.xml"
           } >> "$GITHUB_ENV"
           mkdir -p artifacts/container-logs
+          # The cleanup steps below run only once this point is reached: before it there is no
+          # stack, no artifact root and no project name, and failing them again would only bury
+          # the real refusal above.
+          echo "bound=true" >> "$GITHUB_OUTPUT"
 
       - name: Validate browser workflow contract tooling
         run: |
@@ -314,7 +319,7 @@ jobs:
             -- verify-readonly
 
       - name: Capture disposable runtime state
-        if: always()
+        if: always() && steps.bind.outputs.bound == 'true'
         shell: bash
         run: |
           docker compose \
@@ -324,7 +329,7 @@ jobs:
 
       - name: Enforce artifact privacy allowlist
         id: artifact_privacy
-        if: always()
+        if: always() && steps.bind.outputs.bound == 'true'
         run: |
           python3 -I -S -B tools/validate_browser_acceptance.py privacy \
             --root artifacts \
@@ -334,7 +339,7 @@ jobs:
             --forbidden-value "$GOYMEN_ERP_C01_E2E_SQLSERVER_CONNECTION"
 
       - name: Remove disposable containers, network and volume
-        if: always()
+        if: always() && steps.bind.outputs.bound == 'true'
         shell: bash
         run: |
           set -euo pipefail

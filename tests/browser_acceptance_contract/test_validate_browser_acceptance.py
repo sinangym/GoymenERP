@@ -144,6 +144,24 @@ class WorkflowTests(unittest.TestCase):
         expected = {entry.replace("smoke", template) for entry in validator.upload_allowlist("smoke")}
         self.assertEqual(uploaded, expected)
 
+    def test_cleanup_runs_only_once_the_run_is_bound(self):
+        # Before the bind step there is no stack, artifact root or project name; failing the
+        # cleanup steps there only buries the real refusal (first run 35358106322).
+        self.assertIn('echo "bound=true" >> "$GITHUB_OUTPUT"', self.workflow)
+        for step in (
+            "Capture disposable runtime state",
+            "Enforce artifact privacy allowlist",
+            "Remove disposable containers, network and volume",
+        ):
+            with self.subTest(step=step):
+                body = self.workflow.split(f"      - name: {step}\n", 1)[1].split("      - name:", 1)[0]
+                self.assertIn("if: always() && steps.bind.outputs.bound == 'true'", body)
+
+    def test_job_names_are_quoted_where_they_contain_a_hash_prone_label(self):
+        # An unquoted ' #' starts a YAML comment and silently cut the PR number off the job name.
+        browser = self.workflow.split("\n  browser:\n", 1)[1].split("\n    needs:", 1)[0]
+        self.assertIn('name: "Browser suite ${{ needs.resolve.outputs.suite }} on PR ${{ needs.resolve.outputs.pr }}"', browser)
+
     def test_read_only_verification_runs_only_for_declared_read_only_suites(self):
         case = self.workflow.split('case "$suite" in', 1)[1].split("esac", 1)[0]
         read_only_line = next(line for line in case.splitlines() if "read_only=true" in line)
