@@ -4,6 +4,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Sales.Application;
@@ -135,7 +136,7 @@ public sealed class SalesReferenceReadHandler(
         catch (SettingsPrerequisiteException exception)
         {
             return await ReleaseFailureAsync(scope, bindings.ProductPermission,
-                SettingsFailure<SalesProductReferenceV1>(exception), cancellationToken);
+                ProductSettingsFailure(exception), cancellationToken);
         }
         catch (ProductValidationException)
         {
@@ -234,4 +235,14 @@ public sealed class SalesReferenceReadHandler(
     private static SalesReferenceReadResult<T> SettingsFailure<T>(SettingsPrerequisiteException exception) where T : class =>
         exception.Code == "settings_access_denied" ? Failure<T>(403, "settings_access_denied")
             : Failure<T>(503, "settings_provider_unavailable");
+
+    // The approved provider (#279) answers a unit the company's source has no profile for
+    // with its own code, kept apart from "unavailable". For this read that is a permanent
+    // refusal of the selection, the same 422 unsupported_unit an inactive or out-of-range
+    // profile gets, not a transient 503 the client would retry. Only the product path
+    // reads unit profiles; every other Settings code keeps the mapping above.
+    private static SalesReferenceReadResult<SalesProductReferenceV1> ProductSettingsFailure(SettingsPrerequisiteException exception) =>
+        exception.Code == ApprovedSettingsPrerequisiteProvider.UnitProfileNotFoundCode
+            ? Failure<SalesProductReferenceV1>(422, "unsupported_unit")
+            : SettingsFailure<SalesProductReferenceV1>(exception);
 }

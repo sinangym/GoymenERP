@@ -11,6 +11,9 @@
     <Project Path="src/backend/DocumentGeneration/GoymenERP.DocumentGeneration.Pdf/GoymenERP.DocumentGeneration.Pdf.csproj" />
   </Folder>
   <Folder Name="/src/backend/Modules/" />
+  <Folder Name="/src/backend/Modules/Accounting/">
+    <Project Path="src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Domain/GoymenERP.Modules.Accounting.Domain.csproj" />
+  </Folder>
   <Folder Name="/src/backend/Modules/Audit/">
     <Project Path="src/backend/Modules/Audit/GoymenERP.Modules.Audit.Application/GoymenERP.Modules.Audit.Application.csproj" />
     <Project Path="src/backend/Modules/Audit/GoymenERP.Modules.Audit.Domain/GoymenERP.Modules.Audit.Domain.csproj" />
@@ -32,6 +35,12 @@
   <Folder Name="/src/backend/Modules/Idempotency/">
     <Project Path="src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Domain/GoymenERP.Modules.Idempotency.Domain.csproj" />
     <Project Path="src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/GoymenERP.Modules.Idempotency.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/backend/Modules/Inventory/">
+    <Project Path="src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Domain/GoymenERP.Modules.Inventory.Domain.csproj" />
+  </Folder>
+  <Folder Name="/src/backend/Modules/Logistics/">
+    <Project Path="src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Domain/GoymenERP.Modules.Logistics.Domain.csproj" />
   </Folder>
   <Folder Name="/src/backend/Modules/Manufacturing/">
     <Project Path="src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Domain/GoymenERP.Modules.Manufacturing.Domain.csproj" />
@@ -55,6 +64,7 @@
     <Project Path="src/backend/Modules/Settings/GoymenERP.Modules.Settings.Application/GoymenERP.Modules.Settings.Application.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/GoymenERP.Accounting.UnitTests/GoymenERP.Accounting.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.Settings.UnitTests/GoymenERP.Settings.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.ArchitectureTests/GoymenERP.ArchitectureTests.csproj" />
     <Project Path="tests/GoymenERP.Audit.UnitTests/GoymenERP.Audit.UnitTests.csproj" />
@@ -70,6 +80,8 @@
     <Project Path="tests/GoymenERP.SqlServerRcsiReadiness.Tests/GoymenERP.SqlServerRcsiReadiness.Tests.csproj" />
     <Project Path="tests/GoymenERP.Identity.UnitTests/GoymenERP.Identity.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.Idempotency.UnitTests/GoymenERP.Idempotency.UnitTests.csproj" />
+    <Project Path="tests/GoymenERP.Inventory.UnitTests/GoymenERP.Inventory.UnitTests.csproj" />
+    <Project Path="tests/GoymenERP.Logistics.UnitTests/GoymenERP.Logistics.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.DocumentGeneration.Pdf.Tests/GoymenERP.DocumentGeneration.Pdf.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">

@@ -93,7 +93,9 @@ invisible detail; 409 company/account state or same-key different-payload confli
 Sales problems carry status/title, optional code/correlationId/errors. Field errors
 carry field/code. Platform 401/403/404 need not include code or field errors.
 Settings errors preserve `settings_provider_unavailable` versus
-`settings_access_denied`; neither becomes an empty selection or success.
+`settings_access_denied`; neither becomes an empty selection or success. A unit the
+approved provider has no profile for (`settings_unit_profile_not_found`) is 422
+`unsupported_unit` on the product reference read, never a 503 to retry.
 Examples validate wire decoding, not real HTTP status or business enforcement.
 The implemented platform writer replaces 401/403/500/503 body codes with its own
 (`forbidden`, `service_unavailable`, ...), as the reference reads in

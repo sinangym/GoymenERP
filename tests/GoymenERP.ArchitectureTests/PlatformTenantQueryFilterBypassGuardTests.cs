@@ -41,8 +41,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "OpenApiDocumentGenerationMode.cs";
     private const string OpenApiStartupPath =
         "src/backend/GoymenERP.Api/Program.cs";
+    // Re-fingerprinted for one registration line: ISettingsPrerequisiteProvider now resolves to
+    // ApprovedSettingsPrerequisiteProvider (T02-a host wiring) instead of the unavailable adapter.
+    // No OpenAPI, network, hosted-service or database surface of the startup source changed.
     private const string ReviewedOpenApiStartupFingerprint =
-        "446655faa3413d5adf569ec7e1c4cef3e98979bf2ab742655e4b1c5cde01e56a";
+        "f529e4f4d7e513faf38746dc895698fe56158db00945bee3272efb0b4d463bd4";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -81,13 +84,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.cs";
     private const string SqlServerRcsiVerifierPath =
         "tools/verify_rcsi_relational_acceptance.py";
+    // Re-fingerprinted with the broad inventory entry for the central fresh-authority SQL
+    // acceptance class: two names added, discovery 84 -> 86, execution 91 -> 93. The verifier's
+    // logic is unchanged.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "e619dd4bc1dbc5db0d06701ca3479814682e4ec3e3384a4a411151719380f44e";
+        "c2d26a4a81dbb9cc0af98d0549f26b4f9f058e88bca2a13405c656e0e693332f";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
+    // Re-fingerprinted for the same inventory change: updated counts plus one case pinning the
+    // new class as mandatory.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "2306be3f642beb148e86ad59103c851376775b2354477238f9a86adec6fee120";
+        "5b0ea24faee6c49d43cf8a47c1fdfdb78c609d76def76a6992438eefd4f06c4d";
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "91a665e6e8982e5a9b66f5d16a14d9fc4d7f98d63775de959a8cc6b2dea2b018";
@@ -182,8 +190,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 ["src/backend/Modules/Identity/"
                  + "GoymenERP.Modules.Identity.Infrastructure/IdentityModuleExtensions.cs"] =
+                    // Re-fingerprinted for the fresh-authority registration (Business #66
+                    // 5720113915): the scoped authorization service is now resolved by its
+                    // concrete type and bound to both the cached and the revalidation port, and
+                    // a null permission-scope read observer is registered. The database surface
+                    // below is unchanged, which is what the API counts hold.
                     new(
-                        "6a938e96c3a23333bf94e4b15a4c5630305176c7acde8e001cf701cde00355e4",
+                        "a657cd98242229d68661ed6c56fee726c98c719ea1c25c3437b2f823b8c3be46",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

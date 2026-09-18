@@ -76,7 +76,7 @@ builder.Services.AddSingleton<ShellCapabilityGenerationProtector>();
 builder.Services.AddSingleton<ShellCapabilityRegistry>();
 builder.Services.AddScoped<IActorSessionBindingResolver, ActorSessionBindingResolver>();
 builder.Services.AddScoped<ShellCapabilityService>();
-builder.Services.AddScoped<ISettingsPrerequisiteProvider, UnavailableSettingsPrerequisiteProvider>();
+builder.Services.AddScoped<ISettingsPrerequisiteProvider, ApprovedSettingsPrerequisiteProvider>();
 builder.Services.AddScoped<ISalesAccountSelectionSourceV1, CounterpartySalesAccountSelectionSourceV1>();
 builder.Services.AddSingleton(new SalesReferenceReadBindings());
 builder.Services.AddScoped<ISalesReferenceReadService>(CreateSalesReferenceReadService);
