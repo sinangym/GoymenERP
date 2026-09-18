@@ -12,7 +12,7 @@ The ledger keeps these keys apart. None of them stands in for another.
 
 | Identity | Key | Repeat answer |
 |---|---|---|
-| Delivery (inbox) | (consumer, messageId), per company ledger | `DuplicateMessage` plus what the first delivery recorded: its journal, queue entry or pending entry |
+| Delivery (inbox) | (consumer, messageId), per company ledger | same content: `DuplicateMessage` plus what the first delivery recorded (its journal, queue entry or pending entry); other content: `accounting_delivery_content_conflict` (ACC-4) |
 | Original posting | (company, sourceId, postingPurpose) | `AlreadyPosted` plus the existing original, whatever the message id or rule version |
 | Reversal | reversed journal id (at most one reversal per journal) | `AlreadyReversed` plus the existing reversal |
 | Correction | **correctionId** (a Guid the producer gives the correction decision) | same correctionId and same corrected journal: `AlreadyPosted` plus the existing correction journal |
@@ -26,7 +26,8 @@ About the correction key:
   `accounting_correction_identity_conflict`.
 - Reusing a `correctionId` with different content is refused with
   `accounting_correction_content_conflict` (ACC-2, SİPARİŞ #283 P3). Content means:
-  - the lines, compared as a set of (account, debit, credit), so line order does not matter;
+  - the lines, compared as a multiset of (account, debit, credit): line order does not matter,
+    but a repeated line does;
   - the transaction, accounting and value dates.
 - These are delivery details, not content, so a redelivery may change them:
   - the recording instant;
@@ -73,6 +74,19 @@ About re-drive:
 - The inbox dedups on the delivery. After the mapping or value is fixed, the fact is posted by a
   new delivery with a new message id. Replaying the same message only returns the recorded
   queue entry.
+- A message is immutable (ACC-4, ORG #298 P3-1). The store keeps a SHA-256 hash of each
+  delivery's canonical content (`Deliveries.RequestHash`). The same (consumer, message id) with
+  other content is refused with `accounting_delivery_content_conflict` and stores nothing; it is
+  never silently given the first answer. Content means:
+  - receive: source id, purpose, rule version, currency, the business dates, and the proposed
+    lines (mapping key, account, side, amount) as a multiset;
+  - reverse: the reversed journal and the business dates;
+  - correct: the correction id, the corrected journal, rule version, business dates and lines
+    as a multiset.
+  - Not content: the journal id a delivery proposes and the recording instant, which a
+    redelivery may change. Amounts compare by value, so 100 and 100.00 are the same.
+  - The hash is required (`NOT NULL`, exactly 64 characters): there is no delivery without one,
+    so no replay escapes the content check.
 - The re-drive producer (who re-sends and when) is not decided in this slice. It belongs to the
   integration or outbox work.
 
@@ -124,7 +138,7 @@ migration and `AccountingStore`.
 | `Periods` | Id, AK (CompanyId, Id) | Only the close trace and the version change; posting and close both bump the version |
 | `Journals` | Id, AK (CompanyId, Id) | Append-only; FK to the period and to the linked journal by (company, id) |
 | `JournalLines` | (CompanyId, JournalId, LineNumber) | Append-only; one positive side per line (check constraint) |
-| `Deliveries` | **(CompanyId, Consumer, MessageId)** | R4 inbox; keeps the first answer for replay |
+| `Deliveries` | **(CompanyId, Consumer, MessageId)** | R4 inbox; keeps the first answer and the content hash for replay |
 | `PostingExceptions` | (CompanyId, SourceId, PostingPurpose) | Open or resolved; never deleted |
 | `PendingValuations` | (CompanyId, SourceId, PostingPurpose) | Open or resolved; never deleted |
 
@@ -145,6 +159,9 @@ migration and `AccountingStore`.
 - A writer that loses a unique identity or a version race gets
   `accounting_concurrent_change`, and nothing of it is stored.
 - Retrying the same request answers from what the winner stored, for example `AlreadyPosted`.
+- Two overlapping period openings racing each other, with or without a calendar row yet: one
+  commits, the other gets `accounting_concurrent_change`, and its retry gets
+  `accounting_period_overlap` (ACC-4 SQL evidence).
 
 **Period guard (Ö5):**
 - Posting only into an open period that covers the accounting date.
@@ -180,7 +197,9 @@ migration and `AccountingStore`.
 
 - Every rule refusal is an `AccountingDomainException` with an `AccountingErrorCodes` code, and
   the tests assert the code.
-- A null argument or a null line is an `ArgumentException`: a caller error, not a rule.
+- A null argument or a null line is an `ArgumentException`: a caller error, not a rule. A posting
+  request with a null source, dates or lines is refused this way before the company check, in
+  the domain and in the store (ACC-4).
 - `accounting_journal_already_reversed` was never raised and is removed. A repeated reversal
   answers the `AlreadyReversed` outcome.
 - These views are read-only wrappers, and a cast cannot reach the stored data:
@@ -195,5 +214,6 @@ migration and `AccountingStore`.
   schema, filters and write guard without a database, and the snapshot matching the model.
 - `tests/GoymenERP.Api.IntegrationTests/AccountingSqlServerRelationalAcceptanceTests.cs` holds the
   real SQL Server evidence: durability, replay, company isolation, the unique indexes without the
-  store, a one-original race, a close-versus-posting race and rollback.
+  store, a one-original race, a close-versus-posting race, racing period openings, a same-id
+  different-content refusal for every operation (ACC-4) and rollback.
 - None of this is API or browser evidence.

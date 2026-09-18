@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Accounting.Application;
@@ -135,13 +138,20 @@ public sealed class AccountingStore(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        // Null parts are caller errors, not rules: refused before anything else (SİPARİŞ #294/#298 P3-1).
+        if (request.Source is null || request.Dates is null || request.Lines is null || request.Lines.Any(line => line is null))
+        {
+            throw new ArgumentException("A posting request needs its source, dates and proposed lines.", nameof(request));
+        }
+
         RequireMetadata(metadata);
         RequireCompany(request.Source.CompanyId);
         RequireDelivery(request.Consumer, request.MessageId);
         RequireFits(request.Source.PostingPurpose, request.PostingRuleVersion,
-            request.Lines.Where(line => line is not null && line.Amount is not null).Select(line => line.Amount!.Value));
+            request.Lines.Where(line => line.Amount is not null).Select(line => line.Amount!.Value));
 
-        var replay = await ReplayAsync(request.Consumer, request.MessageId, cancellationToken);
+        var requestHash = ReceiveHash(request);
+        var replay = await ReplayAsync(request.Consumer, request.MessageId, requestHash, cancellationToken);
         if (replay is not null)
         {
             return replay;
@@ -175,7 +185,7 @@ public sealed class AccountingStore(
 
         SyncException(exceptionRow, ledger.FindOpenException(sourceId, purpose), request.Source, metadata);
         SyncPending(pendingRow, ledger.FindPendingValuation(sourceId, purpose), request.Source, metadata);
-        AddDelivery(request.Consumer, request.MessageId, outcome, metadata);
+        AddDelivery(request.Consumer, request.MessageId, requestHash, outcome, metadata);
         await SaveAsync(cancellationToken);
         return outcome;
     }
@@ -189,7 +199,8 @@ public sealed class AccountingStore(
         var companyId = RequireResolvedCompany();
         RequireDelivery(consumer, messageId);
 
-        var replay = await ReplayAsync(consumer, messageId, cancellationToken);
+        var requestHash = ReverseHash(reversedJournalId, dates);
+        var replay = await ReplayAsync(consumer, messageId, requestHash, cancellationToken);
         if (replay is not null)
         {
             return replay;
@@ -209,7 +220,7 @@ public sealed class AccountingStore(
             await AddJournalAsync(outcome.Journal!, periodRow, correctionId: null, metadata, cancellationToken);
         }
 
-        AddDelivery(consumer, messageId, outcome, metadata);
+        AddDelivery(consumer, messageId, requestHash, outcome, metadata);
         await SaveAsync(cancellationToken);
         return outcome;
     }
@@ -225,10 +236,16 @@ public sealed class AccountingStore(
         var companyId = RequireResolvedCompany();
         RequireDelivery(consumer, messageId);
         var correctionLines = lines.ToArray();
-        RequireFits(purpose: null, postingRuleVersion,
-            correctionLines.Where(line => line is not null).SelectMany(line => new[] { line.Debit, line.Credit }));
+        if (correctionLines.Any(line => line is null))
+        {
+            throw new ArgumentException("A journal line cannot be null.", nameof(lines));
+        }
 
-        var replay = await ReplayAsync(consumer, messageId, cancellationToken);
+        RequireFits(purpose: null, postingRuleVersion,
+            correctionLines.SelectMany(line => new[] { line.Debit, line.Credit }));
+
+        var requestHash = CorrectHash(correctionId, correctedJournalId, postingRuleVersion, dates, correctionLines);
+        var replay = await ReplayAsync(consumer, messageId, requestHash, cancellationToken);
         if (replay is not null)
         {
             return replay;
@@ -253,7 +270,7 @@ public sealed class AccountingStore(
             await AddJournalAsync(outcome.Journal!, periodRow, correctionId, metadata, cancellationToken);
         }
 
-        AddDelivery(consumer, messageId, outcome, metadata);
+        AddDelivery(consumer, messageId, requestHash, outcome, metadata);
         await SaveAsync(cancellationToken);
         return outcome;
     }
@@ -283,13 +300,27 @@ public sealed class AccountingStore(
         return [.. rows.Select(ToPending)];
     }
 
-    private async Task<PostingOutcome?> ReplayAsync(string consumer, string messageId, CancellationToken cancellationToken)
+    /// <summary>
+    /// A stored delivery of the same (consumer, message id) answers what it recorded — but only for
+    /// the same message. The same id with other content is refused with
+    /// <see cref="AccountingStoreCodes.DeliveryContentConflict"/> instead of silently getting the
+    /// first answer (ORG #298 P3-1; the Inventory movement-id and Idempotency request-hash pattern).
+    /// Every delivery carries its hash (NOT NULL), so no replay escapes this check.
+    /// </summary>
+    private async Task<PostingOutcome?> ReplayAsync(string consumer, string messageId, string requestHash,
+        CancellationToken cancellationToken)
     {
         var delivery = await dbContext.Deliveries.AsNoTracking()
             .SingleOrDefaultAsync(row => row.Consumer == consumer && row.MessageId == messageId, cancellationToken);
         if (delivery is null)
         {
             return null;
+        }
+
+        if (!string.Equals(delivery.RequestHash, requestHash, StringComparison.Ordinal))
+        {
+            throw Refused(AccountingStoreCodes.DeliveryContentConflict,
+                "Aynı mesaj kimliği başka bir içerikle geldi; ilk cevap bu içeriğe verilmez.");
         }
 
         Journal? journal = null;
@@ -509,7 +540,8 @@ public sealed class AccountingStore(
             "Değerleme bekleyen kayıt güncellendi");
     }
 
-    private void AddDelivery(string consumer, string messageId, PostingOutcome outcome, AccountingCommandMetadata metadata)
+    private void AddDelivery(string consumer, string messageId, string requestHash, PostingOutcome outcome,
+        AccountingCommandMetadata metadata)
     {
         QueueEntrySnapshot? entry = outcome.Kind switch
         {
@@ -522,6 +554,7 @@ public sealed class AccountingStore(
             CompanyId = RequireResolvedCompany(),
             Consumer = consumer,
             MessageId = messageId,
+            RequestHash = requestHash,
             OutcomeKind = (int)outcome.Kind,
             JournalId = outcome.Journal?.Id,
             QueueEntryJson = entry is null ? null : JsonSerializer.Serialize(entry, Json),
@@ -576,6 +609,75 @@ public sealed class AccountingStore(
             metadata.CausationId,
             metadata.IdempotencyKey));
     }
+
+    /// <summary>
+    /// The canonical content of one message: operation and business facts. Delivery details a
+    /// redelivery may change are left out: the journal id it proposes and the recording instant (the
+    /// same rule as the correction content, ACC-2). Lines are compared as an ordered-by-value list,
+    /// so their order does not matter but a repeated line does.
+    /// </summary>
+    internal static string ReceiveHash(PostingRequest request) => Hash(new
+    {
+        operation = "receive",
+        sourceId = request.Source.SourceId,
+        purpose = request.Source.PostingPurpose,
+        ruleVersion = request.PostingRuleVersion,
+        currencyId = request.CurrencyId,
+        dates = BusinessDates(request.Dates),
+        lines = request.Lines
+            .Select(line => new
+            {
+                key = line.MappingKey,
+                account = line.Account?.AccountId,
+                side = (int)line.Side,
+                amount = line.Amount is { } value ? Canonical(value) : null,
+            })
+            .OrderBy(line => line.key, StringComparer.Ordinal)
+            .ThenBy(line => line.account)
+            .ThenBy(line => line.side)
+            .ThenBy(line => line.amount, StringComparer.Ordinal),
+    });
+
+    internal static string ReverseHash(Guid reversedJournalId, PostingDates dates) => Hash(new
+    {
+        operation = "reverse",
+        reversedJournalId,
+        dates = BusinessDates(dates),
+    });
+
+    internal static string CorrectHash(Guid correctionId, Guid correctedJournalId, string postingRuleVersion,
+        PostingDates dates, IEnumerable<JournalLine> lines) => Hash(new
+    {
+        operation = "correct",
+        correctionId,
+        correctedJournalId,
+        ruleVersion = postingRuleVersion,
+        dates = BusinessDates(dates),
+        lines = lines
+            .Select(line => new
+            {
+                account = line.Account.AccountId,
+                debit = Canonical(line.Debit),
+                credit = Canonical(line.Credit),
+            })
+            .OrderBy(line => line.account)
+            .ThenBy(line => line.debit, StringComparer.Ordinal)
+            .ThenBy(line => line.credit, StringComparer.Ordinal),
+    });
+
+    private static object BusinessDates(PostingDates dates) => new
+    {
+        transaction = dates.TransactionDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+        accounting = dates.AccountingDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+        value = dates.ValueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+    };
+
+    /// <summary>A decimal without its trailing zeros: 5, 5.0 and 5.00 are the same amount (as in ACC-2's content rule).</summary>
+    private static string Canonical(decimal value) =>
+        (value / 1.0000000000000000000000000000m).ToString(CultureInfo.InvariantCulture);
+
+    private static string Hash(object canonical) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(canonical, Json)))).ToLowerInvariant();
 
     private Guid RequireResolvedCompany()
     {

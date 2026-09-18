@@ -28,6 +28,7 @@
   </Folder>
   <Folder Name="/src/backend/Modules/Finance/">
     <Project Path="src/backend/Modules/Finance/GoymenERP.Modules.Finance.Contracts/GoymenERP.Modules.Finance.Contracts.csproj" />
+    <Project Path="src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/GoymenERP.Modules.Finance.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/src/backend/Modules/Identity/">
     <Project Path="src/backend/Modules/Identity/GoymenERP.Modules.Identity.Application/GoymenERP.Modules.Identity.Application.csproj" />
@@ -67,6 +68,7 @@
   </Folder>
   <Folder Name="/src/backend/Modules/Sales/">
     <Project Path="src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/GoymenERP.Modules.Sales.Application.csproj" />
+    <Project Path="src/backend/Modules/Sales/GoymenERP.Modules.Sales.Domain/GoymenERP.Modules.Sales.Domain.csproj" />
   </Folder>
   <Folder Name="/src/backend/Modules/Settings/">
     <Project Path="src/backend/Modules/Settings/GoymenERP.Modules.Settings.Application/GoymenERP.Modules.Settings.Application.csproj" />

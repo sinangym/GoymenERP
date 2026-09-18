@@ -55,6 +55,12 @@ public static class AccountingStoreCodes
 
     /// <summary>A text or amount does not fit its stored column; it is refused, never cut or rounded.</summary>
     public const string ValueDoesNotFit = "accounting_value_does_not_fit";
+
+    /// <summary>
+    /// A stored delivery has the same (consumer, message id) but other content. A message is
+    /// immutable: its first answer is not given to other content, and nothing is stored.
+    /// </summary>
+    public const string DeliveryContentConflict = "accounting_delivery_content_conflict";
 }
 
 /// <summary>A stored accounting fact could not be written; <see cref="Code"/> says why. Nothing was stored.</summary>
