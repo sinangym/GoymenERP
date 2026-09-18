@@ -41,6 +41,9 @@ public sealed class DraftReadContextReader(ICompanyContext companyContext, ICurr
         var context = new FinanceContext(companyContext.CompanyId, currentUser.UserId!, correlationId, null);
         var permission = await permissions.CheckAsync(context, FinanceAction.ReadBankAccounts, null, cancellationToken);
         if (permission != PermissionDecision.Allowed) return PermissionFailure(permission);
+        // The permission check is itself an await: the first owner is only invoked for the
+        // company/actor that decision was made for.
+        if (!SameContext(context)) return Fail(DraftReadOutcome.Denied);
         if (request.TreasuryAccountId == Guid.Empty || request.PartyId == Guid.Empty ||
             request.CompanyAccountId == Guid.Empty)
             return Fail(DraftReadOutcome.InvalidRequest, "finance_draft_context_invalid");

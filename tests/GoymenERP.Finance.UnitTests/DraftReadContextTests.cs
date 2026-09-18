@@ -132,9 +132,41 @@ public sealed class DraftReadContextTests
     }
 
     [Theory]
+    [InlineData("display-name-blank")]
+    [InlineData("version-blank")]
+    public async Task BankOwnerDataWithoutLabelOrVersionIsUnavailable(string defect)
+    {
+        var f = new Fixture();
+        f.Bank = defect == "display-name-blank" ? f.Bank with { DisplayName = " " } : f.Bank with { Version = "" };
+        var result = await f.Read();
+        Assert.Equal(DraftReadOutcome.Unavailable, result.Outcome);
+        Assert.Equal("finance_bank_source_invalid", result.Code);
+        Assert.Null(result.Resource);
+        Assert.Equal(0, f.PartyReads);
+    }
+
+    [Theory]
+    [InlineData("company")]
+    [InlineData("actor")]
+    public async Task ContextChangeDuringTheFirstPermissionCheckReachesNoOwner(string change)
+    {
+        var f = new Fixture();
+        f.DuringFirstPermission = change == "company" ? () => f.Set(Guid.NewGuid()) : () => f.Actor = "SENTETIK-other";
+        var result = await f.Read();
+        Assert.Equal(DraftReadOutcome.Denied, result.Outcome);
+        Assert.Null(result.Resource);
+        Assert.Equal(1, f.PermissionChecks);
+        Assert.Equal(0, f.BankReads);
+    }
+
+    [Theory]
     [InlineData("label-party")]
     [InlineData("label-account")]
     [InlineData("label-missing")]
+    [InlineData("label-code-blank")]
+    [InlineData("label-legal-name-blank")]
+    [InlineData("label-party-version-blank")]
+    [InlineData("label-account-version-blank")]
     public async Task PartyLabelNotBoundToTheAccountIsUnavailable(string defect)
     {
         var f = new Fixture();
@@ -142,6 +174,10 @@ public sealed class DraftReadContextTests
         {
             "label-party" => f.Party with { Label = f.Party.Label! with { PartyId = Guid.NewGuid() } },
             "label-account" => f.Party with { Label = f.Party.Label! with { CompanyAccountId = Guid.NewGuid() } },
+            "label-code-blank" => f.Party with { Label = f.Party.Label! with { Code = " " } },
+            "label-legal-name-blank" => f.Party with { Label = f.Party.Label! with { LegalName = "" } },
+            "label-party-version-blank" => f.Party with { Label = f.Party.Label! with { PartyVersion = " " } },
+            "label-account-version-blank" => f.Party with { Label = f.Party.Label! with { CompanyAccountVersion = "" } },
             _ => f.Party with { Label = null },
         };
         var result = await f.Read();
@@ -291,6 +327,7 @@ public sealed class DraftReadContextTests
         public PermissionDecision Permission = PermissionDecision.Allowed;
         public string? SettingsError;
         public Action? AfterSettings;
+        public Action? DuringFirstPermission;
         public Action? DuringBank;
         public Action? DuringParty;
         public string BankCompletion = "found";
@@ -350,6 +387,7 @@ public sealed class DraftReadContextTests
         {
             Assert.Equal(FinanceAction.ReadBankAccounts, action);
             PermissionChecks++;
+            if (PermissionChecks == 1) DuringFirstPermission?.Invoke();
             return Task.FromResult(Permission);
         }
         public Task<ReadResult<BankAccountView>> GetAuthorizedAsync(FinanceContext context, Guid accountId, CancellationToken cancellationToken)

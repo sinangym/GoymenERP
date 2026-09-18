@@ -27,6 +27,16 @@ public static class FinanceEndpoints
         {
             httpContext.Response.Headers.CacheControl = "private, no-store";
             httpContext.Response.Headers.Pragma = "no-cache";
+            // The binder above already refused a missing, repeated or impossible date. It also
+            // accepts lenient forms (month-first, unpadded, a dropped time part); only the exact
+            // ISO text may reach the reader, as the contract's format: date says.
+            var rawOccurredOn = httpContext.Request.Query["occurredOn"];
+            if (rawOccurredOn.Count != 1 || !FinanceIsoDate.TryParse(rawOccurredOn[0], out var isoOccurredOn)
+                || isoOccurredOn != occurredOn)
+            {
+                return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+            }
+
             var result = await service.GetAsync(
                 new(treasuryAccountId, partyId, companyAccountId, occurredOn),
                 correlationContext.CorrelationId,

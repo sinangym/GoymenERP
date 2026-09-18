@@ -94,6 +94,72 @@ public sealed class FinanceDraftContextHttpAcceptanceTests(
             StringComparison.Ordinal);
     }
 
+    // Lenient forms the DateOnly binder alone accepted (ORG #261 P2-A), plus the forms it already
+    // refused. None may reach the reader; the refusal is the existing code-less 400.
+    [Theory]
+    [InlineData("01%2F02%2F2026")]
+    [InlineData("09%2F13%2F2026")]
+    [InlineData("2026-9-3")]
+    [InlineData("13%20Sep%202026")]
+    [InlineData("2026-09-13%20")]
+    [InlineData("%202026-09-13")]
+    [InlineData("2026-09-13T10%3A00%3A00")]
+    [InlineData("2026-09-13T00%3A00%3A00Z")]
+    [InlineData("2026-09-13T01%3A00%3A00%2B03%3A00")]
+    [InlineData("20260913")]
+    [InlineData("2026-02-30")]
+    [InlineData("")]
+    public async Task Occurred_on_binds_only_the_exact_iso_date(string occurredOn)
+    {
+        var service = new CapturingService(Found());
+        using var host = CreateHost(service);
+        using var client = CreateClient(host, true);
+
+        using var response = await client.GetAsync(EndpointWith(occurredOn));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(service.Requests);
+        var body = await response.Content.ReadAsStringAsync();
+        if (body.Length > 0)
+        {
+            using var document = JsonDocument.Parse(body);
+            Assert.False(document.RootElement.TryGetProperty("code", out _));
+        }
+    }
+
+    [Fact]
+    public async Task A_missing_or_repeated_occurred_on_never_reaches_the_reader()
+    {
+        var service = new CapturingService(Found());
+        using var host = CreateHost(service);
+        using var client = CreateClient(host, true);
+        var withoutDate = FinanceEndpoints.DraftContextPath
+            + $"?treasuryAccountId={TreasuryAccountId:D}&partyId={PartyId:D}&companyAccountId={CompanyAccountId:D}";
+
+        using var missing = await client.GetAsync(withoutDate);
+        using var repeated = await client.GetAsync(withoutDate + "&occurredOn=2026-09-13&occurredOn=2026-09-14");
+
+        Assert.Equal(HttpStatusCode.BadRequest, missing.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, repeated.StatusCode);
+        Assert.Empty(service.Requests);
+    }
+
+    [Theory]
+    [InlineData("2026-09-13", 2026, 9, 13)]
+    [InlineData("2026-01-02", 2026, 1, 2)]
+    [InlineData("2024-02-29", 2024, 2, 29)]
+    public async Task The_exact_iso_date_reaches_the_reader_unchanged(string occurredOn, int year, int month, int day)
+    {
+        var service = new CapturingService(new(DraftReadOutcome.Unavailable, null, null));
+        using var host = CreateHost(service);
+        using var client = CreateClient(host, true);
+
+        using var response = await client.GetAsync(EndpointWith(occurredOn));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal(new DateOnly(year, month, day), Assert.Single(service.Requests).OccurredOn);
+    }
+
     [Fact]
     public async Task Counterparty_adapter_preserves_an_active_roles0_account_and_owner_versions()
     {
@@ -166,6 +232,10 @@ public sealed class FinanceDraftContextHttpAcceptanceTests(
         Assert.Null(result.Resource);
         Assert.Equal(1, owner.DetailReadCount);
     }
+
+    private static string EndpointWith(string occurredOn) => FinanceEndpoints.DraftContextPath
+        + $"?treasuryAccountId={TreasuryAccountId:D}&partyId={PartyId:D}"
+        + $"&companyAccountId={CompanyAccountId:D}&occurredOn={occurredOn}";
 
     private WebApplicationFactory<Program> CreateHost(IFinanceDraftContextEndpointService service) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
