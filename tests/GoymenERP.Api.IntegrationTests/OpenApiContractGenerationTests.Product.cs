@@ -29,6 +29,10 @@ public sealed partial class OpenApiContractGenerationTests
         new("patch", "/api/v1/products/{id}/draft", "EditProductDraftV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/EditProductDraftRequest", ["path:id:true:type:string;format:uuid"]),
+        // DEC-PRD-010 (#329): the Draft -> Active card approval.
+        new("post", "/api/v1/products/{id}/activation", "ActivateProductV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/ActivateProductRequest", ["path:id:true:type:string;format:uuid"]),
     ];
 
     private static readonly IReadOnlyDictionary<string, string> ProductSuccessSchemas = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -39,6 +43,7 @@ public sealed partial class OpenApiContractGenerationTests
         ["GetProductV1"] = "ref:ProductCardView",
         ["CreateProductDraftV1"] = "ref:ProductMutationResponse",
         ["EditProductDraftV1"] = "ref:ProductMutationResponse",
+        ["ActivateProductV1"] = "ref:ProductMutationResponse",
     };
 
     private static bool IsProductOperation(string id) => ProductSuccessSchemas.ContainsKey(id);
@@ -150,6 +155,7 @@ public sealed partial class OpenApiContractGenerationTests
         AssertRequestSchema(schemas.GetProperty("CreateProductDraftRequest"), ["name", "groupId"], ["classId", "familyId", "roles", "references"],
             ["name", "groupId", "classId", "familyId", "roles", "references"]);
         AssertRequestSchema(schemas.GetProperty("EditProductDraftRequest"), ["expectedVersion", "changes", "reason"], [], ["expectedVersion", "changes", "reason"]);
+        AssertRequestSchema(schemas.GetProperty("ActivateProductRequest"), ["expectedVersion"], [], ["expectedVersion"]);
         foreach (var name in new[] { "CreateProductDraftRequest", "EditProductDraftRequest", "ProductDraftChanges", "ProductReferenceChanges", "ProductUnitChanges", "ProductRoleInputs", "ProductRoleInput" })
             Assert.False(schemas.GetProperty(name).GetProperty("additionalProperties").GetBoolean());
         var changes = schemas.GetProperty("ProductDraftChanges");

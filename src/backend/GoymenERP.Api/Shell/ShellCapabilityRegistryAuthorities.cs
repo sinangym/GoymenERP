@@ -15,6 +15,12 @@ internal static class ShellCapabilityRegistryAuthorities
     internal const string CounterpartyV15OrganizationV10ProductV10AndSalesV10 =
         "sha256:b6YPCP_FsrRvvQ-V6nM8bH6q96qEvqHghZEu40Ihsps";
 
+    // ... + Finance 1.0 (#325, FIN-UI-1a): the normal host once Finance registers its (staged) receipt and
+    // bank-account screens beside the staged Sales ones. Computed by the ComputeRevision reproduction and,
+    // independently, by ORG (#325 5735351391, row C+O(1.0)+P+S(staged)+F); pinned by test.
+    internal const string CounterpartyV15OrganizationV10ProductV10SalesV10AndFinanceV10 =
+        "sha256:lF5_r5EE4pCtayLb0jU4EpudtyzrbgqoRmuQP0KPsbM";
+
     internal const string CounterpartyListCreateLinkAndDetailV15 =
         "sha256:3GiwcHV6aVuN1Y-wBzElxLJLCok2bblGc6pRruhqTx4";
 
