@@ -144,7 +144,9 @@ jobs:
           }
 
           compose_project="goymen-browser-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          database_name="GoymenErpBrowser_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          # The C-01 compose validator and fixture tool derive the database name from the run id and
+          # attempt as GoymenErpC01_<run>_<attempt>; it is disposable either way.
+          database_name="GoymenErpC01_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
           sql_password="BR_$(openssl rand -hex 20)_Aa1!"
           cursor_key="$(openssl rand -base64 48 | tr -d '\n')"
           echo "::add-mask::$sql_password"

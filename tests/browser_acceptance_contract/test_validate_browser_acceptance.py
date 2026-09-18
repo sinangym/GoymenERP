@@ -144,6 +144,12 @@ class WorkflowTests(unittest.TestCase):
         expected = {entry.replace("smoke", template) for entry in validator.upload_allowlist("smoke")}
         self.assertEqual(uploaded, expected)
 
+    def test_disposable_names_follow_the_c01_tooling(self):
+        # The C-01 compose validator and fixture tool derive the database from run id + attempt
+        # (second real run 35358425231 failed "API disposable DB drift" with another name).
+        self.assertIn('database_name="GoymenErpC01_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"', self.workflow)
+        self.assertIn('compose_project="goymen-browser-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"', self.workflow)
+
     def test_cleanup_runs_only_once_the_run_is_bound(self):
         # Before the bind step there is no stack, artifact root or project name; failing the
         # cleanup steps there only buries the real refusal (first run 35358106322).
