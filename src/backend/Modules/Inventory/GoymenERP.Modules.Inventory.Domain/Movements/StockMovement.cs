@@ -30,26 +30,42 @@ public enum StockDirection
     Out = 2,
 }
 
-/// <summary>What caused the movement, by the causing module's identity (§5: one owner, one source).</summary>
+/// <summary>
+/// What caused the movement, by the causing module's identity (§5: one owner, one source), and
+/// optionally which line of that source. One source (or source line) causes at most one movement
+/// of each kind (ORG #281 P3-1); persistence enforces it with a unique index.
+/// </summary>
 public sealed record StockSourceReference
 {
-    public StockSourceReference(string kind, Guid id)
+    /// <summary>The longest source kind token this module stores.</summary>
+    public const int MaximumKindLength = 64;
+
+    public StockSourceReference(string kind, Guid id, Guid? lineId = null)
     {
         if (string.IsNullOrWhiteSpace(kind))
         {
             throw new InventoryRuleException(InventoryRuleCodes.MissingReference, "Kaynak türü zorunludur.");
         }
 
-        Kind = kind.Trim();
+        Kind = kind.Trim().Length <= MaximumKindLength
+            ? kind.Trim()
+            : throw new InventoryRuleException(InventoryRuleCodes.InvalidMovement,
+                $"Kaynak türü en fazla {MaximumKindLength} karakterdir.");
         Id = id == Guid.Empty
             ? throw new InventoryRuleException(InventoryRuleCodes.MissingReference, "Kaynak kimliği zorunludur.")
             : id;
+        LineId = lineId == Guid.Empty
+            ? throw new InventoryRuleException(InventoryRuleCodes.MissingReference, "Kaynak satırı verildiyse boş olamaz.")
+            : lineId;
     }
 
     /// <summary>A stable machine token of the source kind, e.g. <c>purchase.receipt</c>.</summary>
     public string Kind { get; }
 
     public Guid Id { get; }
+
+    /// <summary>The source's own line, when the movement answers one line of a multi-line source.</summary>
+    public Guid? LineId { get; }
 }
 
 /// <summary>One line: a positive kilogram amount into or out of one physical position.</summary>
