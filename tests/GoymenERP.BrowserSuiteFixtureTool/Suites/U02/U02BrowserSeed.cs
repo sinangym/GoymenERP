@@ -1,9 +1,7 @@
 using GoymenERP.Api.Shell;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Infrastructure.Fixtures;
-using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.BrowserSuiteFixtureTool.Suites.U02;
@@ -34,6 +32,14 @@ public sealed class U02BrowserSeed : IBrowserSuiteFixture
     public static readonly Guid IssuerUserId = Guid.Parse("b2000000-0000-4000-8000-000000000201");
     public static readonly Guid IssuerExternalIdentityId = Guid.Parse("b2100000-0000-4000-8000-000000000201");
 
+    /// <summary>
+    /// group-bootstrap-admin's Identity user and the canonical SYSTEM_ADMINISTRATOR system role: constants
+    /// of the built-in src/backend/GoymenERP.Api/Seed/identity-seed.json (a seed reads nothing with SQL).
+    /// A wrong value cannot pass silently: the real-API read-back below needs the grant to resolve.
+    /// </summary>
+    public static readonly Guid AuthorizedActorUserId = Guid.Parse("20000000-0000-0000-0000-000000000003");
+    public static readonly Guid SystemAdministratorRoleId = Guid.Parse("30000000-0000-0000-0000-000000000003");
+
     public static readonly Guid CodeGroupId = Guid.Parse("b6000000-0000-4000-8000-000000000201");
     public const string CodeGroupPrefix = "SU02";
 
@@ -55,31 +61,13 @@ public sealed class U02BrowserSeed : IBrowserSuiteFixture
     {
         await using (var scope = context.Services.CreateAsyncScope())
         {
-            var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
-            // Read-only: the actor, the canonical system role and the issuer the override declared.
-            var actorUserId = await identity.ExternalIdentities.AsNoTracking()
-                .Where(link => link.Subject == AuthorizedActor)
-                .Select(link => link.UserId)
-                .SingleAsync(cancellationToken);
-            var systemRoleId = await identity.Roles.AsNoTracking()
-                .Where(role => role.Code == ProductMasterAssignment.RequiredRoleCode && role.IsSystem)
-                .Select(role => role.Id)
-                .SingleAsync(cancellationToken);
-            var issuerLink = await identity.ExternalIdentities.AsNoTracking()
-                .SingleOrDefaultAsync(link => link.Id == IssuerExternalIdentityId, cancellationToken);
-            if (issuerLink is null || issuerLink.UserId != IssuerUserId)
-            {
-                throw new InvalidOperationException(
-                    "The u02 issuer is not the override's IdentitySeed user; the Product runtime could not bind it.");
-            }
-
             var assignments = scope.ServiceProvider.GetRequiredService<C01E2eProductMasterAssignmentFixtureWriter>();
             foreach (var (operation, assignmentId, decisionId) in Grants)
             {
                 await assignments.EnsureAsync(new ProductMasterAssignmentFixtureRow(
                     assignmentId,
-                    actorUserId,
-                    systemRoleId,
+                    AuthorizedActorUserId,
+                    SystemAdministratorRoleId,
                     operation,
                     IssuerUserId,
                     IssuerExternalIdentityId,
@@ -94,7 +82,8 @@ public sealed class U02BrowserSeed : IBrowserSuiteFixture
         }
 
         // Read back through the real host, as each actor: the fixture is only done when the product
-        // runtime actually answers with it.
+        // runtime actually answers with it — this is also the proof that the issuer binding (the override's
+        // IdentitySeed user) and the constants above hold: a grant that does not resolve opens no screen.
         var authorized = await context.GetJsonAsync(AuthorizedActor, CompanyId, "/api/v1/shell/capabilities", cancellationToken);
         var authorizedProduct = ProductCapabilities(authorized);
         if (!authorizedProduct.SequenceEqual(["product.items.create", "product.items.detail", "product.items.edit", "product.items.list"]))
