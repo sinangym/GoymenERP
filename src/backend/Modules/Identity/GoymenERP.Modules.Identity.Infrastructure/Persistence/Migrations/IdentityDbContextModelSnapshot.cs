@@ -159,7 +159,7 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_ProductMasterAssignments_Identities", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [UserId] <> '00000000-0000-0000-0000-000000000000' AND [RoleId] <> '00000000-0000-0000-0000-000000000000' AND [DecisionId] <> '00000000-0000-0000-0000-000000000000'");
 
-                            t.HasCheckConstraint("CK_ProductMasterAssignments_Operation", "[Operation] IN (1, 2, 3)");
+                            t.HasCheckConstraint("CK_ProductMasterAssignments_Operation", "[Operation] IN (1, 2, 3, 4)");
 
                             t.HasCheckConstraint("CK_ProductMasterAssignments_Revocation", "([IsActive] = 1 AND [RevocationDecisionId] IS NULL AND [RevocationDecisionReference] IS NULL AND [RevokedAtUtc] IS NULL) OR ([IsActive] = 0 AND [RevocationDecisionId] IS NOT NULL AND [RevocationDecisionId] <> [DecisionId] AND [RevocationDecisionId] <> '00000000-0000-0000-0000-000000000000' AND [RevocationDecisionReference] IS NOT NULL AND [RevokedAtUtc] IS NOT NULL AND DATEPART(TZOFFSET, [RevokedAtUtc]) = 0)");
 

@@ -80,6 +80,7 @@
     <Project Path="tests/GoymenERP.ArchitectureTests/GoymenERP.ArchitectureTests.csproj" />
     <Project Path="tests/GoymenERP.Audit.UnitTests/GoymenERP.Audit.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.C01E2eFixtureTool/GoymenERP.C01E2eFixtureTool.csproj" />
+    <Project Path="tests/GoymenERP.BrowserSuiteFixtureTool/GoymenERP.BrowserSuiteFixtureTool.csproj" />
     <Project Path="tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj" />
     <Project Path="tests/GoymenERP.Counterparty.UnitTests/GoymenERP.Counterparty.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.Finance.UnitTests/GoymenERP.Finance.UnitTests.csproj" />

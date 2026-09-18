@@ -1,0 +1,12 @@
+# SQL Server relational acceptance inventory: Accounting.
+# Owner: the Accounting module owner (single writer). The guard pin of this file is central (CARİ).
+# One fully qualified test name per line, sorted. A test that executes n > 1 times (theory rows)
+# is written `<name>  x<n>  # <reason>`. Read by tools/verify_rcsi_relational_acceptance.py.
+
+GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.A_closed_period_takes_no_posting_and_a_close_racing_a_posting_cannot_both_commit
+GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind
+GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.Each_company_sees_only_its_own_ledger_and_a_message_id_is_unique_per_company_only
+GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.Queue_posting_and_replay_are_durable_audited_and_answer_from_stored_facts
+GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.Reversal_and_correction_identities_hold_in_the_store_and_in_the_database
+GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.Two_racing_deliveries_of_one_fact_store_one_original_and_the_loser_retries_to_already_posted
+GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.Two_racing_overlapping_period_openings_store_one_and_the_loser_retries_to_an_overlap
