@@ -7,7 +7,4 @@
   <ItemGroup>
     <ProjectReference Include="../../../BuildingBlocks/GoymenERP.BuildingBlocks/GoymenERP.BuildingBlocks.csproj" />
   </ItemGroup>
-  <ItemGroup>
-    <InternalsVisibleTo Include="GoymenERP.Settings.UnitTests" />
-  </ItemGroup>
 </Project>
