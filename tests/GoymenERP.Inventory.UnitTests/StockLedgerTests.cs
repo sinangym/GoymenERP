@@ -312,4 +312,52 @@ public sealed class StockLedgerTests
         Assert.Equal(fault == "duplicate-bucket" ? InventoryRuleCodes.InvalidMovement : InventoryRuleCodes.LabelInTwoPositions,
             error.Code);
     }
+
+    [Fact]
+    public void A_source_answered_whole_takes_no_line_movement_of_that_kind_and_the_other_way_round()
+    {
+        // #293 ORG P3-1: whole and line by line for one source and kind would count the same
+        // quantity twice. The first movement fixes the grain; another kind is its own answer.
+        var sourceId = Guid.NewGuid();
+        var whole = new StockSourceReference("purchase.receipt", sourceId);
+        var line = new StockSourceReference("PURCHASE.receipt", sourceId, Guid.NewGuid());
+
+        var wholeFirst = new StockLedger();
+        wholeFirst.Apply(Sourced(StockMovementKind.Receipt, whole, In(Position(), 10m)));
+        Assert.Equal(InventoryRuleCodes.SourceGrainMismatch, Assert.Throws<InventoryRuleException>(
+            () => wholeFirst.Apply(Sourced(StockMovementKind.Receipt, line, In(Position(label: Label2), 10m)))).Code);
+        wholeFirst.Apply(Sourced(StockMovementKind.Issue, line, Out(Position(), 4m)));
+
+        var linesFirst = new StockLedger();
+        linesFirst.Apply(Sourced(StockMovementKind.Receipt, line, In(Position(), 10m)));
+        linesFirst.Apply(Sourced(StockMovementKind.Receipt,
+            new StockSourceReference("purchase.receipt", sourceId, Guid.NewGuid()), In(Position(label: Label2), 5m)));
+        Assert.Equal(InventoryRuleCodes.SourceGrainMismatch, Assert.Throws<InventoryRuleException>(
+            () => linesFirst.Apply(Sourced(StockMovementKind.Receipt, whole, In(Position(label: Label2), 1m)))).Code);
+
+        Assert.Equal(6m, wholeFirst.QuantityAt(Position()).Value);
+        Assert.Equal(15m, linesFirst.PhysicalTotal(CompanyA, OwnedByA, BandProduct).Value);
+    }
+
+    [Fact]
+    public void A_source_or_source_line_causes_one_movement_per_kind()
+    {
+        var sourceId = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var ledger = new StockLedger();
+        ledger.Apply(Sourced(StockMovementKind.Receipt, new StockSourceReference("purchase.receipt", sourceId), In(Position(), 10m)));
+        ledger.Apply(Sourced(StockMovementKind.Issue, new StockSourceReference("sales.shipment", sourceId, lineId), Out(Position(), 1m)));
+
+        // The kind token compares ignoring case, as the database's default collation does.
+        Assert.Equal(InventoryRuleCodes.DuplicateSource, Assert.Throws<InventoryRuleException>(
+            () => ledger.Apply(Sourced(StockMovementKind.Receipt, new StockSourceReference("Purchase.Receipt", sourceId),
+                In(Position(label: Label2), 1m)))).Code);
+        Assert.Equal(InventoryRuleCodes.DuplicateSource, Assert.Throws<InventoryRuleException>(
+            () => ledger.Apply(Sourced(StockMovementKind.Issue, new StockSourceReference("sales.shipment", sourceId, lineId),
+                Out(Position(), 1m)))).Code);
+        Assert.Equal(9m, ledger.QuantityAt(Position()).Value);
+    }
+
+    private static StockMovement Sourced(StockMovementKind kind, StockSourceReference source, params StockMovementLine[] lines) =>
+        new(Guid.NewGuid(), CompanyA, kind, At, source, lines);
 }

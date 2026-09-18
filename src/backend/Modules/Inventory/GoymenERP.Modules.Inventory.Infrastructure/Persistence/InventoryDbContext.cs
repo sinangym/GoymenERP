@@ -19,7 +19,10 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// <item>Movements, their lines, prints and document attachments are append-only; a balance
 /// changes its quantity only; a label its version only. Nothing is ever deleted.</item>
 /// <item>One source (or source line) causes at most one movement of each kind: two filtered
-/// unique indexes (ORG #281 P3-1).</item>
+/// unique indexes (ORG #281 P3-1). A source is answered whole or line by line per kind, never
+/// both: every movement references its source's one grain row (#293 ORG P3-1).</item>
+/// <item>Label codes and source kinds compare under the columns' database collation (SQL Server's
+/// default, case-insensitive today); no collation is chosen here (README, INV-3).</item>
 /// </list>
 /// The audit sidecar is Audit's table, written in the same save and filtered the same way.
 /// </summary>
@@ -36,6 +39,8 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
 
     internal DbSet<MovementRow> Movements => Set<MovementRow>();
 
+    internal DbSet<SourceGrainRow> SourceGrains => Set<SourceGrainRow>();
+
     internal DbSet<MovementLineRow> MovementLines => Set<MovementLineRow>();
 
     internal DbSet<BalanceRow> Balances => Set<BalanceRow>();
@@ -48,6 +53,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         ConfigureLabels(modelBuilder);
         ConfigureLabelPrints(modelBuilder);
         ConfigureLabelDocuments(modelBuilder);
+        ConfigureSourceGrains(modelBuilder);
         ConfigureMovements(modelBuilder);
         ConfigureMovementLines(modelBuilder);
         ConfigureBalances(modelBuilder);
@@ -156,6 +162,8 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                 + "([CostStatus] = 3 AND [CostAmount] IS NOT NULL AND [CostAmount] >= 0 AND [CostCurrencyId] IS NOT NULL "
                 + "AND [CostCurrencyId] <> '00000000-0000-0000-0000-000000000000')");
             table.HasCheckConstraint("CK_Movements_PayloadHash", "LEN([PayloadHash]) = 64");
+            table.HasCheckConstraint("CK_Movements_SourceGrain",
+                "([SourceLineId] IS NULL AND [SourceGrain] = 1) OR ([SourceLineId] IS NOT NULL AND [SourceGrain] = 2)");
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
@@ -174,6 +182,32 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
             .HasFilter("[SourceLineId] IS NOT NULL")
             .HasDatabaseName("UX_Movements_SourceLine");
         entity.HasIndex(x => new { x.CompanyId, x.RecordedAtUtc, x.Id });
+        entity.HasOne<SourceGrainRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.Kind, x.SourceKind, x.SourceId, x.SourceGrain })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Kind, x.SourceKind, x.SourceId, x.Grain })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// One row per (company, kind, source): the grain its first movement fixed. The key holds one
+    /// grain per source; the alternate key with the grain is what movements reference.
+    /// </summary>
+    private void ConfigureSourceGrains(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<SourceGrainRow>();
+        entity.ToTable("SourceGrains", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SourceGrains_Grain", "[Grain] IN (1, 2)");
+            table.HasCheckConstraint("CK_SourceGrains_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SourceId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND LEN([SourceKind]) > 0");
+        });
+        entity.HasKey(x => new { x.CompanyId, x.Kind, x.SourceKind, x.SourceId });
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Kind, x.SourceKind, x.SourceId, x.Grain });
+        entity.Property(x => x.SourceKind).HasMaxLength(64).IsRequired();
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
