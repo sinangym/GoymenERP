@@ -44,11 +44,13 @@ public static class SalesDraftStoreCodes
     /// <summary>The draft's company is not the server-resolved company context (or there is none).</summary>
     public const string CompanyContextMismatch = "sales_company_context_mismatch";
 
-    /// <summary>The same idempotency key was offered again with another request content (#257: 409, same-key different-payload; ADR-011 §3).</summary>
+    /// <summary>
+    /// The same idempotency key was offered again with another request content OR by another actor
+    /// (#257: 409 same-key different-payload; ADR-011 §3). One code for both, as the platform
+    /// Idempotency module's single Conflict kind: the answer must not disclose that the key exists
+    /// for someone else, nor anything of the stored result.
+    /// </summary>
     public const string SameKeyPayloadMismatch = "sales_same_key_payload_mismatch";
-
-    /// <summary>The same idempotency key was offered again by another actor (ADR-011 §3: a definite 409 that discloses nothing of the stored result).</summary>
-    public const string SameKeyActorMismatch = "sales_same_key_actor_mismatch";
 
     /// <summary>Another write took the same key, draft id or document number first; nothing of this write was stored, the same request may be retried.</summary>
     public const string ConcurrentChange = "sales_concurrent_change";
@@ -82,9 +84,9 @@ public sealed record SalesDraftPage(IReadOnlyList<SalesOrderDraft> Items, string
 /// SHA-256 of the trimmed idempotency key) is the attempt identity; the raw key is never stored. The
 /// same key with the same <see cref="SalesDraftRequestHash"/> and the same actor answers the first
 /// stored draft with <see cref="SalesDraftWriteOutcome.Replayed"/> and the original correlation;
-/// another hash is <see cref="SalesDraftStoreCodes.SameKeyPayloadMismatch"/>, another actor
-/// <see cref="SalesDraftStoreCodes.SameKeyActorMismatch"/> — both definite 409s that disclose nothing
-/// of the stored result. Authority is checked by the caller before the replay is read. A key of
+/// another hash or another actor is <see cref="SalesDraftStoreCodes.SameKeyPayloadMismatch"/> — one
+/// definite 409 that discloses nothing of the stored result nor that the key exists for someone else.
+/// Authority is checked by the caller before the replay is read. A key of
 /// another company is invisible: a company change is not a rollback (R3).</item>
 /// <item><b>Document number:</b> assigned by the store on first commit through
 /// <paramref name="build"/>, company-scoped and technical; not an official document (Ö8); no

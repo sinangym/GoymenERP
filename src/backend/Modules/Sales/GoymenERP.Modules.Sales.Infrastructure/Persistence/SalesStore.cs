@@ -23,9 +23,9 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 /// <item><b>Replay (ADR-011 §2–§4, R3):</b> (company, <see cref="SalesDraftCommands.CreateV1"/>,
 /// uppercase SHA-256 of the trimmed idempotency key) is the attempt identity; the raw key is never
 /// stored. The same key with the same canonical request hash and the same actor answers the first
-/// stored draft; another hash is <see cref="SalesDraftStoreCodes.SameKeyPayloadMismatch"/>, another
-/// actor <see cref="SalesDraftStoreCodes.SameKeyActorMismatch"/> — definite refusals that disclose
-/// nothing of the stored result; a key of another company is invisible. Authority is the caller's
+/// stored draft; another hash or another actor is <see cref="SalesDraftStoreCodes.SameKeyPayloadMismatch"/>
+/// — one definite refusal that discloses nothing of the stored result nor whose key it is; a key of
+/// another company is invisible. Authority is the caller's
 /// check before the replay is read (§5). The key must still be canonical text (no surrounding
 /// whitespace) so that the hash the caller reasons about is the hash stored.</item>
 /// <item><b>Number:</b> the company's counter row gives the technical document number under a
@@ -69,17 +69,13 @@ public sealed class SalesStore(
                 cancellationToken);
         if (attempt is not null)
         {
-            // ADR-011 §3: the stored result is disclosed to the same content of the same actor only.
-            if (!string.Equals(attempt.ActorId, actorId, StringComparison.Ordinal))
-            {
-                throw Refused(SalesDraftStoreCodes.SameKeyActorMismatch,
-                    "Aynı Idempotency-Key başka bir aktör tarafından kullanıldı; ilk cevap açıklanmaz.");
-            }
-
-            if (!string.Equals(attempt.RequestHash, requestHash, StringComparison.Ordinal))
+            // ADR-011 §3: the stored result is disclosed to the same content of the same actor only;
+            // another actor gets exactly the answer another content gets, so nothing is disclosed.
+            if (!string.Equals(attempt.ActorId, actorId, StringComparison.Ordinal)
+                || !string.Equals(attempt.RequestHash, requestHash, StringComparison.Ordinal))
             {
                 throw Refused(SalesDraftStoreCodes.SameKeyPayloadMismatch,
-                    "Aynı Idempotency-Key başka bir istek içeriğiyle geldi; ilk cevap bu içeriğe verilmez.");
+                    "Aynı Idempotency-Key başka bir istekle geldi; ilk cevap bu isteğe verilmez.");
             }
 
             var stored = await FindDraftAsync(attempt.DraftId, cancellationToken)

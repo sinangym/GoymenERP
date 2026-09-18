@@ -103,11 +103,12 @@ public sealed class SalesDraftSqlServerRelationalAcceptanceTests
 
         await using (var a = run.Store(CompanyA))
         {
-            // Same key, same content, ANOTHER actor: a definite refusal that discloses nothing of the
-            // stored draft (ADR-011 §3); nothing is written for the second actor.
+            // Same key, same content, ANOTHER actor: the same definite refusal another content gets,
+            // so the answer discloses neither the stored draft nor that the key is someone else's
+            // (ADR-011 §3); nothing is written for the second actor.
             var otherActor = await Assert.ThrowsAsync<SalesDraftStoreException>(() => a.Store.StoreDraftAsync(
                 run.Envelope("k-1", actor: "SENTETIK-other-actor"), Hash("payload-1"), _ => throw new InvalidOperationException("never built")));
-            Assert.Equal(SalesDraftStoreCodes.SameKeyActorMismatch, otherActor.Code);
+            Assert.Equal(SalesDraftStoreCodes.SameKeyPayloadMismatch, otherActor.Code);
         }
 
         // Two writers with the same new key both pass the attempt lookup and the counter read, then
