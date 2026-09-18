@@ -5,6 +5,7 @@ using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
+using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
@@ -91,6 +92,14 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
             services.RemoveAll<IDbContextOptionsConfiguration<CommandExecutionDbContext>>();
             services.AddDbContext<CommandExecutionDbContext>(options =>
                 options.UseInMemoryDatabase(_databaseName));
+
+            // Finance is host-wired since FIN-T04b (#320); without this the in-memory host would try
+            // to migrate it against the placeholder SQL connection string at startup.
+            services.RemoveAll<DbContextOptions<FinanceDbContext>>();
+            services.RemoveAll<IDbContextOptionsConfiguration<FinanceDbContext>>();
+            services.AddDbContext<FinanceDbContext>((serviceProvider, options) =>
+                options.UseInMemoryDatabase($"{_databaseName}-finance")
+                    .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
 
             // Sales is host-wired since SALES-API (#321); without this the in-memory host would try to
             // migrate it against the placeholder SQL connection string at startup.

@@ -16,6 +16,7 @@ using GoymenERP.Modules.Audit.Infrastructure;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure;
 using GoymenERP.Modules.Finance.Contracts;
+using GoymenERP.Modules.Finance.Infrastructure;
 using GoymenERP.Modules.Idempotency.Infrastructure;
 using GoymenERP.Modules.Inventory.Infrastructure;
 using GoymenERP.Modules.Manufacturing.Infrastructure;
@@ -82,8 +83,13 @@ builder.Services.AddSingleton<ShellCapabilityGenerationProtector>();
 builder.Services.AddSingleton<ShellCapabilityRegistry>();
 builder.Services.AddScoped<IActorSessionBindingResolver, ActorSessionBindingResolver>();
 builder.Services.AddScoped<ShellCapabilityService>();
-builder.Services.AddScoped<IFinancePermissionPort, UnavailableFinancePermissionPort>();
-builder.Services.AddScoped<IFinanceBankAccountReader, UnavailableFinanceBankAccountReader>();
+// FIN-T04b (#320): Finance persistence (with the audit interceptor) and its services: the real
+// permission port, the persisted bank-account reader and the draft service.
+builder.Services.AddFinancePersistence(
+    builder.Configuration,
+    (services, options) => options.AddInterceptors(
+        services.GetRequiredService<AuditSaveChangesInterceptor>()));
+builder.Services.AddFinanceServices();
 builder.Services.AddScoped<IFinancePartyAccountPort, CounterpartyFinancePartyAccountPort>();
 builder.Services.AddScoped<DraftReadContextReader>();
 builder.Services.AddScoped<IFinanceDraftContextEndpointService, FinanceDraftContextEndpointService>();
@@ -193,6 +199,8 @@ if (!isOpenApiDocumentGeneration
     // After Organization: Inventory's composite foreign keys reference its tables.
     await app.Services.InitializeInventoryModuleAsync();
     await app.Services.InitializeProductRuntimeAsync();
+    // After Organization: Finance's foreign keys reference its tables.
+    await app.Services.InitializeFinancePersistenceAsync();
     // After Organization: Sales's foreign keys reference its tables.
     await app.Services.InitializeSalesModuleAsync();
     // After Organization: Manufacturing's foreign keys reference its tables.
