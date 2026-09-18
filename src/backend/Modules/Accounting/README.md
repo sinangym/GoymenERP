@@ -85,7 +85,8 @@ About re-drive:
     as a multiset.
   - Not content: the journal id a delivery proposes and the recording instant, which a
     redelivery may change. Amounts compare by value, so 100 and 100.00 are the same.
-  - A delivery stored before ACC-4 has no hash and is answered as before.
+  - The hash is required (`NOT NULL`, exactly 64 characters): there is no delivery without one,
+    so no replay escapes the content check.
 - The re-drive producer (who re-sends and when) is not decided in this slice. It belongs to the
   integration or outbox work.
 

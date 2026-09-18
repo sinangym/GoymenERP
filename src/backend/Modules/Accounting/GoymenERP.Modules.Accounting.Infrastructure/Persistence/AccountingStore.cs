@@ -305,7 +305,7 @@ public sealed class AccountingStore(
     /// the same message. The same id with other content is refused with
     /// <see cref="AccountingStoreCodes.DeliveryContentConflict"/> instead of silently getting the
     /// first answer (ORG #298 P3-1; the Inventory movement-id and Idempotency request-hash pattern).
-    /// A delivery stored before ACC-4 has no hash and is answered as before.
+    /// Every delivery carries its hash (NOT NULL), so no replay escapes this check.
     /// </summary>
     private async Task<PostingOutcome?> ReplayAsync(string consumer, string messageId, string requestHash,
         CancellationToken cancellationToken)
@@ -317,7 +317,7 @@ public sealed class AccountingStore(
             return null;
         }
 
-        if (delivery.RequestHash is { } stored && !string.Equals(stored, requestHash, StringComparison.Ordinal))
+        if (!string.Equals(delivery.RequestHash, requestHash, StringComparison.Ordinal))
         {
             throw Refused(AccountingStoreCodes.DeliveryContentConflict,
                 "Aynı mesaj kimliği başka bir içerikle geldi; ilk cevap bu içeriğe verilmez.");

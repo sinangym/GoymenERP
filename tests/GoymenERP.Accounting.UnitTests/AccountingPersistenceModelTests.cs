@@ -115,13 +115,14 @@ public sealed class AccountingPersistenceModelTests
     }
 
     [Fact]
-    public void A_delivery_keeps_a_64_hex_content_hash_that_older_rows_may_lack()
+    public void Every_delivery_keeps_a_required_64_hex_content_hash()
     {
         using var context = Context();
         // Check constraints and unicode are design-time configuration, like collation.
         var deliveries = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(DeliveryRow))!;
         var hash = deliveries.FindProperty(nameof(DeliveryRow.RequestHash))!;
-        Assert.True(hash.IsNullable);
+        // Required: no delivery row may replay without a content check (#307 review).
+        Assert.False(hash.IsNullable);
         Assert.Equal(64, hash.GetMaxLength());
         Assert.False(hash.IsUnicode());
         Assert.Contains(deliveries.GetCheckConstraints(), check => check.Name == "CK_Deliveries_RequestHash");

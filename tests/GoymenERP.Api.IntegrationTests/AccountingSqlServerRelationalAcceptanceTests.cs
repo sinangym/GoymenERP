@@ -90,6 +90,27 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
         Assert.Equal(4, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Deliveries"));
         // Every delivery keeps its 64-hex content hash, the database's own check included.
         Assert.Equal(4, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Deliveries WHERE LEN(RequestHash) = 64"));
+        // The database itself holds it: a delivery without a hash (515) or with a short one (547 on
+        // CK_Deliveries_RequestHash) is refused, so no row can replay without a content check.
+        foreach (var (hash, number) in new[] { ((string?)null, 515), (new string('a', 63), 547) })
+        {
+            await using var raw = run.Context(CompanyA);
+            raw.Deliveries.Add(new DeliveryRow
+            {
+                CompanyId = CompanyA,
+                Consumer = Consumer,
+                MessageId = "raw-without-hash",
+                RequestHash = hash!,
+                OutcomeKind = (int)PostingOutcomeKind.Posted,
+                JournalId = posted.Id,
+                RecordedAtUtc = RecordedAt,
+                CorrelationId = "synthetic-raw-writer",
+            });
+            var error = await Assert.ThrowsAsync<DbUpdateException>(() => raw.SaveChangesAsync());
+            Assert.Equal(number, Assert.IsType<SqlException>(error.InnerException).Number);
+        }
+
+        Assert.Equal(4, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Deliveries"));
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT Status FROM accounting.PostingExceptions WHERE SourceId = @s", ("@s", source)));
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT Status FROM accounting.PendingValuations WHERE SourceId = @s", ("@s", source)));
         // Audit: period opened; exception queued; exception resolved + pending queued; pending resolved + journal posted.

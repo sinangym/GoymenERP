@@ -195,6 +195,7 @@ partial class AccountingDbContextModelSnapshot : ModelSnapshot
                 .HasColumnType("datetimeoffset");
 
             b.Property<string>("RequestHash")
+                .IsRequired()
                 .HasMaxLength(64)
                 .IsUnicode(false)
                 .HasColumnType("varchar(64)");
@@ -215,7 +216,7 @@ partial class AccountingDbContextModelSnapshot : ModelSnapshot
 
                 t.HasCheckConstraint(
                     "CK_Deliveries_RequestHash",
-                    "[RequestHash] IS NULL OR LEN([RequestHash]) = 64");
+                    "LEN([RequestHash]) = 64");
             });
         });
 

@@ -203,13 +203,13 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
             table.HasCheckConstraint("CK_Deliveries_Outcome",
                 "([OutcomeKind] IN (1, 3, 6) AND [JournalId] IS NOT NULL AND [QueueEntryJson] IS NULL) OR "
                 + "([OutcomeKind] IN (4, 5) AND [JournalId] IS NULL AND [QueueEntryJson] IS NOT NULL AND ISJSON([QueueEntryJson]) = 1)");
-            table.HasCheckConstraint("CK_Deliveries_RequestHash", "[RequestHash] IS NULL OR LEN([RequestHash]) = 64");
+            table.HasCheckConstraint("CK_Deliveries_RequestHash", "LEN([RequestHash]) = 64");
         });
         entity.HasKey(x => new { x.CompanyId, x.Consumer, x.MessageId });
         entity.Property(x => x.Consumer).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
         entity.Property(x => x.MessageId).HasMaxLength(200).UseCollation(IdentityCollation).IsRequired();
         entity.Property(x => x.QueueEntryJson).HasColumnType("nvarchar(max)");
-        entity.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false);
+        entity.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
         entity.HasIndex(x => new { x.CompanyId, x.JournalId });
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)

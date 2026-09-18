@@ -6,8 +6,9 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence.Migrations;
 
 /// <summary>
-/// ACC-4: the canonical content hash of each delivery (ORG #298 P3-1). Nullable, so a delivery
-/// stored before it keeps its row; every new delivery carries a 64-hex hash.
+/// ACC-4: the canonical content hash of each delivery (ORG #298 P3-1). NOT NULL, with no default:
+/// no delivery row predates ACC-4 in any environment, and a table that had one would fail this
+/// migration visibly instead of keeping a row that replays without a content check (#307 review).
 /// </summary>
 [DbContext(typeof(AccountingDbContext))]
 [Migration("20260918220000_AddDeliveryRequestHash")]
@@ -22,13 +23,13 @@ public sealed class AddDeliveryRequestHash : Migration
             type: "varchar(64)",
             unicode: false,
             maxLength: 64,
-            nullable: true);
+            nullable: false);
 
         migrationBuilder.AddCheckConstraint(
             name: "CK_Deliveries_RequestHash",
             schema: "accounting",
             table: "Deliveries",
-            sql: "[RequestHash] IS NULL OR LEN([RequestHash]) = 64");
+            sql: "LEN([RequestHash]) = 64");
     }
 
     protected override void Down(MigrationBuilder migrationBuilder)
