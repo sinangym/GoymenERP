@@ -1,6 +1,8 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
@@ -13,8 +15,8 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// The host's Settings provider is the approved one (T02-a on main, #279), resolved through the
 /// real host composition — only the actor and the company are fixed for the test. GDC kg
-/// resolves to its approved profile; everything without an approved source stays fail-closed,
-/// exactly as before the swap.
+/// resolves to its approved profile, and since T02-b GDC/TRY to its approved money profile for the
+/// Finance and Sales keys; everything without an approved source stays fail-closed.
 /// </summary>
 public sealed class SettingsHostWiringTests
 {
@@ -79,7 +81,7 @@ public sealed class SettingsHostWiringTests
     }
 
     [Fact]
-    public async Task Money_and_period_are_unchanged_by_the_swap()
+    public async Task An_unapproved_money_operation_and_period_stay_unavailable_through_the_host()
     {
         using var factory = Host(Gdc);
         using var scope = factory.Services.CreateScope();
@@ -89,6 +91,124 @@ public sealed class SettingsHostWiringTests
             () => provider.GetMoneyProfileAsync(Guid.NewGuid(), "synthetic-operation", Approval))).Code);
         Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
             () => provider.GetPeriodEligibilityAsync("synthetic-operation", Approval, null))).Code);
+    }
+
+    [Theory]
+    [InlineData("finance")]
+    [InlineData("sales")]
+    public async Task GDC_TRY_resolves_to_the_approved_money_profile_for_each_owner_s_key_through_the_host(string owner)
+    {
+        var operation = owner == "finance" ? FinanceMoneyOperations.ManualBankReceiptV1 : SalesMoneyOperations.OrderDraftV1;
+        using var factory = Host(Gdc);
+        using var scope = factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ISettingsPrerequisiteProvider>();
+
+        var profile = await provider.GetMoneyProfileAsync(SettingsCurrencyIdentitiesV1.TurkishLira, operation, Approval);
+
+        Assert.Equal(Gdc, profile.CompanyId);
+        Assert.Equal("TRY", profile.CurrencyCode);
+        Assert.Equal(operation, profile.Operation);
+        Assert.Equal(2, profile.Scale);
+        Assert.Equal(ApprovedMoneyProfileCatalog.GdcTurkishLiraV1.ProfileId, profile.Profile.ProfileId);
+    }
+
+    [Fact]
+    public void The_money_catalog_answers_exactly_the_owners_published_operation_keys()
+    {
+        // Settings references neither module, so its literals are pinned here, where both owners'
+        // constants are visible: an owner renaming its key turns this red instead of silently
+        // turning its money read into settings_provider_unavailable.
+        Assert.Equal(
+            new[] { FinanceMoneyOperations.ManualBankReceiptV1, SalesMoneyOperations.OrderDraftV1 }.Order(StringComparer.Ordinal),
+            ApprovedMoneyProfileCatalog.GdcTurkishLiraV1.Operations.Order(StringComparer.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("gsp")]
+    [InlineData("gin")]
+    public async Task A_company_without_an_approved_money_source_stays_unavailable_through_the_host(string company)
+    {
+        using var factory = Host(company == "gsp" ? Gsp : Gin);
+        using var scope = factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ISettingsPrerequisiteProvider>();
+
+        Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => provider.GetMoneyProfileAsync(
+                SettingsCurrencyIdentitiesV1.TurkishLira, FinanceMoneyOperations.ManualBankReceiptV1, Approval))).Code);
+    }
+
+    [Fact]
+    public async Task The_host_serves_GDC_s_approved_money_currencies_as_candidates()
+    {
+        using var factory = Host(Gdc);
+        using var scope = factory.Services.CreateScope();
+
+        var reader = scope.ServiceProvider.GetRequiredService<ISettingsMoneyCandidateReader>();
+        Assert.IsType<ApprovedSettingsPrerequisiteProvider>(reader);
+        Assert.Single(scope.ServiceProvider.GetServices<ISettingsMoneyCandidateReader>());
+
+        var candidate = Assert.Single(await reader.GetMoneyCurrencyCandidatesAsync());
+        Assert.Equal(new MoneyCurrencyCandidateV1(SettingsCurrencyIdentitiesV1.TurkishLira, "TRY", "TRY"), candidate);
+    }
+
+    [Theory]
+    [InlineData("gsp")]
+    [InlineData("gin")]
+    public async Task A_company_without_an_approved_money_source_gets_no_candidate_list_through_the_host(string company)
+    {
+        using var factory = Host(company == "gsp" ? Gsp : Gin);
+        using var scope = factory.Services.CreateScope();
+        var reader = scope.ServiceProvider.GetRequiredService<ISettingsMoneyCandidateReader>();
+
+        // Unavailable, never an empty list or GDC's TRY.
+        Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => reader.GetMoneyCurrencyCandidatesAsync())).Code);
+    }
+
+    [Theory]
+    [InlineData("TRY", 200, null)]
+    [InlineData("other currency", 503, "settings_provider_unavailable")]
+    public async Task The_Sales_currency_read_with_the_host_s_own_money_binding_reaches_the_approved_profile(
+        string currency, int status, string? code)
+    {
+        using var factory = Host(Gdc);
+        using var scope = factory.Services.CreateScope();
+        var hostBindings = scope.ServiceProvider.GetRequiredService<SalesReferenceReadBindings>();
+        // The Sales owner's key, bound by the host (Sales decision, T02-b).
+        Assert.Equal(SalesMoneyOperations.OrderDraftV1, hostBindings.MoneyOperation);
+        // The host still binds no currency permission, so the route itself answers 403 first; only
+        // the permission is synthetic here — the money operation, the Settings provider and the
+        // account source are the host's own.
+        Assert.Null(hostBindings.CurrencyPermission);
+        var handler = new SalesReferenceReadHandler(
+            scope.ServiceProvider.GetRequiredService<ICompanyContext>(),
+            scope.ServiceProvider.GetRequiredService<ICurrentUser>(),
+            new GrantsOnly(SyntheticCurrencyPermission, Gdc),
+            scope.ServiceProvider.GetRequiredService<ISalesAccountSelectionSourceV1>(),
+            scope.ServiceProvider.GetRequiredService<ISettingsPrerequisiteProvider>(),
+            null,
+            hostBindings with { CurrencyPermission = SyntheticCurrencyPermission });
+        var currencyId = currency == "TRY"
+            ? SettingsCurrencyIdentitiesV1.TurkishLira
+            : Guid.Parse("0f3bd0a1-6e2c-4d77-a3a5-0b1c2d3e4f52");
+
+        var result = await handler.GetCurrencyAsync(new SalesCurrencyQueryV1(currencyId, Approval));
+
+        Assert.Equal(status, result.StatusCode);
+        Assert.Equal(code, result.Code);
+        if (status == 200)
+        {
+            Assert.Equal(Gdc, result.Value!.CompanyId);
+            Assert.Equal("TRY", result.Value.Code);
+            Assert.Equal(ApprovedMoneyProfileCatalog.GdcTurkishLiraV1.ProfileId, result.Value.ProfileId);
+            Assert.Equal("1", result.Value.ProfileVersion);
+        }
+        else
+        {
+            // Today's Sales mapping of settings_money_profile_not_found (Sales' own follow-up maps it
+            // to 422): fail-closed, no profile.
+            Assert.Null(result.Value);
+        }
     }
 
     [Fact]
@@ -103,19 +223,23 @@ public sealed class SettingsHostWiringTests
     }
 
     [Fact]
-    public void The_Sales_reference_read_still_composes_and_its_product_path_has_no_runtime_yet()
+    public async Task The_Sales_reference_read_composes_over_the_product_runtime_which_is_unconfigured_in_this_host()
     {
         using var factory = Host(Gdc);
         using var scope = factory.Services.CreateScope();
 
         // The Sales handler is built over the swapped provider without error.
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<ISalesReferenceReadService>());
-        // Sales asks Settings for unit profiles only after a Product snapshot. No Product sales
-        // eligibility runtime is composed on main, so the product path answers
-        // product_provider_unavailable before it ever reaches Settings: the swap changes no
-        // reachable Sales answer today. This assertion goes red the day that runtime is wired,
-        // which is when the Sales-visible effect of this swap must be re-checked.
-        Assert.Null(scope.ServiceProvider.GetService<IProductSalesEligibilityV1>());
+        // C3 registers the Product owner's eligibility runtime. This host configures no Product
+        // runtime, so the port answers 503 product_runtime_unconfigured, which Sales maps to the
+        // same 503 product_provider_unavailable it gave for a missing port; and the Sales product
+        // route binds no product permission, so it answers 403 before asking. The swap and C3
+        // change no reachable Sales answer here.
+        var eligibility = scope.ServiceProvider.GetRequiredService<IProductSalesEligibilityV1>();
+        var failure = await Assert.ThrowsAsync<ProductOperationException>(() => eligibility.EvaluateAsync(
+            new ProductSalesSelectionV1(Guid.NewGuid(), "1", Guid.NewGuid(), Approval), default));
+        Assert.Equal((503, "product_runtime_unconfigured"), (failure.StatusCode, failure.Code));
+        Assert.Null(scope.ServiceProvider.GetRequiredService<SalesReferenceReadBindings>().ProductPermission);
     }
 
     private static WebApplicationFactoryWithFixedContext Host(Guid company, Guid? actorAllowedIn = null) =>
@@ -144,6 +268,30 @@ public sealed class SettingsHostWiringTests
             _host.Dispose();
             _factory.Dispose();
         }
+    }
+
+    private const string SyntheticCurrencyPermission = "synthetic.sales-currency.read";
+
+    /// <summary>Grants one synthetic permission in one company; denies everything else.</summary>
+    private sealed class GrantsOnly(string permission, Guid company) : IErpAuthorizationService
+    {
+        private PermissionScope Scope(string asked, Guid companyId) =>
+            asked == permission && companyId == company
+                ? new(true, true, new HashSet<string>(StringComparer.Ordinal), new HashSet<Guid>(),
+                    new HashSet<Guid>(), new HashSet<Guid>())
+                : PermissionScope.Denied;
+
+        public Task<bool> HasPermissionAsync(string asked, Guid companyId,
+            CancellationToken cancellationToken = default) => Task.FromResult(Scope(asked, companyId).IsGranted);
+
+        public Task<PermissionScope> GetPermissionScopeAsync(string asked, Guid companyId,
+            CancellationToken cancellationToken = default) => Task.FromResult(Scope(asked, companyId));
+
+        public Task<AuthorizationSnapshot> GetAuthorizationSnapshotAsync(Guid companyId,
+            IReadOnlyCollection<string> permissions, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new AuthorizationSnapshot("synthetic-settings-host",
+                companyId == company ? new HashSet<Guid> { companyId } : new HashSet<Guid>(),
+                permissions.ToDictionary(asked => asked, asked => Scope(asked, companyId))));
     }
 
     private sealed class FixedCompany(Guid companyId) : ICompanyContext
