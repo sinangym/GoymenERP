@@ -134,6 +134,10 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.A_source_causes_one_movement_per_kind_and_a_stock_bearing_label_is_not_received_again",
     "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.Two_writers_that_read_the_same_piece_cannot_both_commit",
     "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
+    "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.A_source_is_answered_whole_or_line_by_line_never_both",
+    "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.A_whole_and_a_line_movement_racing_for_one_source_cannot_both_commit",
+    "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.A_label_code_has_one_answer_under_the_code_column_collation",
+    "GoymenERP.Api.IntegrationTests.InventorySqlServerRelationalAcceptanceTests.A_known_cost_offered_again_at_another_scale_is_a_replay",
     "GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.Queue_posting_and_replay_are_durable_audited_and_answer_from_stored_facts",
     "GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.Each_company_sees_only_its_own_ledger_and_a_message_id_is_unique_per_company_only",
     "GoymenERP.Api.IntegrationTests.AccountingSqlServerRelationalAcceptanceTests.Reversal_and_correction_identities_hold_in_the_store_and_in_the_database",
@@ -146,12 +150,18 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.FinanceDraftSqlServerRelationalAcceptanceTests.Company_B_can_neither_see_nor_overwrite_company_A_draft",
     "GoymenERP.Api.IntegrationTests.FinanceDraftSqlServerRelationalAcceptanceTests.The_real_unavailable_owners_refuse_every_save_and_store_nothing",
     "GoymenERP.Api.IntegrationTests.FinanceDraftSqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
+    "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.Plan_order_and_facts_are_durable_replayable_audited_and_close_from_stored_facts",
+    "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.A_close_from_stored_facts_reconciles_each_roll_on_its_own",
+    "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.Each_company_sees_only_its_own_orders_and_a_fact_id_is_unique_per_company_only",
+    "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.A_fact_id_is_one_fact_in_the_store_and_in_the_database",
+    "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.Two_writers_that_read_the_same_order_cannot_both_commit",
+    "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
     "GoymenERP.Api.IntegrationTests.InventoryReadApiSqlServerRelationalAcceptanceTests.A_reader_with_both_grants_sees_the_label_and_its_stock_position_by_position",
     "GoymenERP.Api.IntegrationTests.InventoryReadApiSqlServerRelationalAcceptanceTests.Each_read_needs_its_own_grant",
     "GoymenERP.Api.IntegrationTests.InventoryReadApiSqlServerRelationalAcceptanceTests.Another_companys_label_is_not_found_and_the_company_context_is_required",
 )
-BROAD_DISCOVERY_COUNT = 109
-BROAD_EXECUTION_COUNT = 116
+BROAD_DISCOVERY_COUNT = 119
+BROAD_EXECUTION_COUNT = 126
 
 
 def verify_discovery(standard_output: str) -> None:

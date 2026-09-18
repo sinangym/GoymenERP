@@ -49,12 +49,12 @@ Decision this builds on: ADR-INV-001 option A (`docs/adr/ADR-INV-001-label-compa
 | Rule | Where | Held by |
 |---|---|---|
 | A label belongs to the company holding its stock; that company never changes | `MaterialLabel.CompanyId`, `StockPosition` (`inventory_label_company_mismatch`) | domain + write guard |
-| A label code is unique within its company only; no group-wide code index | `IX_Labels_CompanyId_Code` | SQL |
+| A label code is unique within its company only; no group-wide code index | `IX_Labels_CompanyId_Code` | SQL (collation: INV-3 below) |
 | Every row is a tenant row: global filter on the server-resolved company; a row of another company, a company change or a write without a company is refused | `InventoryDbContext` | EF filter + write guard |
 | A location is referenced by (company, location) against Organization's alternate key; a company by id | `FK_*_Locations_CompanyId_LocationId`, `FK_*_Companies_CompanyId` | SQL (547) |
 | Movements, lines, prints and document attachments are append-only; a balance changes its quantity only; a label its version only; nothing is deleted | `InventoryDbContext` | write guard |
 | The movement id is the idempotency identity: same id + same canonical content = replay with no second effect; other content = `inventory_movement_id_conflict` | `InventoryStore.RecordMovementAsync` (`PayloadHash`) | store + PK |
-| One source (or source line) causes at most one movement of each kind (ORG #281 P3-1) | `UX_Movements_Source`, `UX_Movements_SourceLine` | store check + filtered unique indexes |
+| One source (or source line) causes at most one movement of each kind (ORG #281 P3-1) | `UX_Movements_Source`, `UX_Movements_SourceLine` | store check + filtered unique indexes; whole vs line: INV-3 below |
 | A label that holds stock is not received again; once empty it may be (ORG #281 P3-1) | `StockLedger` (`inventory_label_already_in_stock`) | domain, against stored balances |
 | Two writes that read the same piece cannot both commit (the SQL race guard) | label `Version` + `RowVersion` bumped by every write touching the label | optimistic concurrency (`inventory_concurrent_change`) |
 | A movement, its balances, the label versions and its audit event commit together or not at all | one `SaveChanges` | SQL transaction |
@@ -68,6 +68,27 @@ Deliberate limits of this slice:
 - **Which product's stock unit is kilogram** is Product's binding (its reference catalogue), not checked here; only the kilogram profile's scale is.
 - **Cost** is stored as the domain gives it; a known amount that needs more than 18 decimals or 20 integer digits is refused (`inventory_value_does_not_fit`), never rounded. No money policy is chosen.
 - **Existence by id.** Primary keys are table-wide (ADR-002 pattern, ADR-INV-001 P3-2). Ids are the caller's new GUIDs; a transfer never reuses a source id.
+
+## INV-3 (first part) — #293 review follow-ups
+
+| Rule | Where | Held by |
+|---|---|---|
+| **Label code, one comparison (SİPARİŞ P3-1).** The code column's collation decides whether two spellings are one code. Another spelling of a stored code is `inventory_label_code_taken` both with a new id (the unique index) and with the same id (the store asks SQL the same question). A replay repeats the stored spelling exactly; another code under the same id is still `inventory_label_conflict` | `InventoryStore.SaveLabelAsync`, `IX_Labels_CompanyId_Code` | SQL collation, in both paths |
+| **Canonical cost amount (SİPARİŞ P3-2).** The payload hash writes a known amount without trailing zeros, as it already did for kilograms: `5.00` and `5` are one content, so the same movement offered again is a replay | `InventoryStore.PayloadHash` | store |
+| **Whole or line, never both (ORG P3-1).** For one source and one movement kind the first movement fixes the grain (whole = no source line, line = with a source line); a movement at the other grain is `inventory_source_grain_mismatch` | `StockLedger` (domain), store check, `inventory.SourceGrains` (key: company, kind, source kind, source) referenced by every movement (`FK_Movements_SourceGrains_*`, `CK_Movements_SourceGrain`) | domain + store + SQL (FK/PK; a race loses with `inventory_concurrent_change` and gets `inventory_source_grain_mismatch` when retried) |
+
+**Collation.** `Labels.Code` and both `SourceKind` columns use the database's default collation. That is case-insensitive on SQL Server's default, and the relational test checks this before relying on it. No collation is chosen here: a binary or Turkish collation is part of the central collation decision (ERP-000M), and whichever collation that decision picks becomes the one comparison. The domain compares source kinds ignoring case, to match; for non-ASCII text the database is the authority.
+
+**Not decided here.** Which source kinds are answered whole and which line by line belongs to the modules that own those sources (Purchasing, Logistics, Production). The store only holds each source to the grain its first movement chose.
+
+**Hash change.** An amount written with trailing zeros hashes differently than it did under INV-2. No stored movement exists, because the host does not wire Inventory yet.
+
+Notes carried from the #293 review (INFO; no change in this slice):
+
+- **Audit actor type.** Every stored write records `AuditActorTypes.User` with the caller's actor. Integration writes (the Purchasing/Logistics outbox, T09/T14) will need the System actor type. That comes with the command surface, where the caller's metadata can carry it; it is not chosen here.
+- **Replay identity.** A movement is identified by its id plus the canonical hash. The `IdempotencyKey` travels only in the audit envelope. A command surface has to bind its HTTP idempotency key to the movement id: the same key must give the same id.
+- **Racing replay.** A replay that races its own first write gets `inventory_concurrent_change` (via `PK_Movements`); retried, it gets `Replayed`.
+- **Unknown unique violations.** A 2601/2627 on an index the store does not name maps to `inventory_concurrent_change`: generic, and safe to retry.
 
 ## T07(a): read API (first user-path slice)
 
@@ -85,6 +106,7 @@ Deliberate limits of this slice:
 ## dependency_wait
 
 - **Central registration (CARİ, same branch, sequential):** the tenant guard's reviewed inventory (this DbContext's fingerprint, the design-time factory and the initializer's `Migrate`/`EnsureCreated` branch); the module-dependency allowlist edge `Inventory.Infrastructure → Audit.Infrastructure` (ADR-009); the `Api.IntegrationTests` project reference to Inventory; and the relational verifier's BROAD list and counts for `InventorySqlServerRelationalAcceptanceTests`.
+- **INV-3 central follow-up (CARİ):** re-pin the tenant guard fingerprints of `InventoryDbContext.cs` and `InventoryStore.cs`, which changed here (no new raw SQL; the SqlClient use is unchanged); add the four new names of `InventorySqlServerRelationalAcceptanceTests` to the relational verifier's BROAD list and counts.
 - **INV-3:** command/query surface, permissions (registered centrally, granted by a human), host wiring with the audit interceptor, and UI.
 - **The first real product (Ö1's authorised source):** Ö1 fixes the first path as GDC band/coil kg→kg, but the real product, quality and size dictionaries come from its authorised card/label/document. Every identity in the tests is a synthetic fixture, never seeded anywhere.
 
