@@ -4,6 +4,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Sales.UnitTests;
@@ -417,6 +418,44 @@ public sealed class SalesReferenceReadHandlerTests
         var f = new Fixture();
         f.Products.OnRead = () => f.Auth.Allowed = false;
         f.Products.Error = new ProductValidationException([new("productId", "invalid_reference")]);
+        var result = await f.Handler().GetProductAsync(f.ProductQuery);
+        Assert.Equal(403, result.StatusCode);
+        Assert.Null(result.Code);
+        Assert.Null(result.Value);
+    }
+
+    [Theory]
+    [InlineData("settings_access_denied", 403, "settings_access_denied")]
+    [InlineData(ApprovedSettingsPrerequisiteProvider.UnitProfileNotFoundCode, 422, "unsupported_unit")]
+    [InlineData("settings_provider_unavailable", 503, "settings_provider_unavailable")]
+    [InlineData("settings_profile_invalid", 503, "settings_provider_unavailable")]
+    public async Task Settings_codes_on_the_product_path_keep_their_meaning(string code, int status, string publicCode)
+    {
+        var f = new Fixture();
+        f.Settings.Error = new SettingsPrerequisiteException(code);
+        var result = await f.Handler().GetProductAsync(f.ProductQuery);
+        Assert.Equal(status, result.StatusCode);
+        Assert.Equal(publicCode, result.Code);
+        Assert.Null(result.Value);
+    }
+
+    [Fact]
+    public async Task A_unit_profile_code_on_the_currency_path_is_still_a_provider_failure()
+    {
+        // Only the product path reads unit profiles; the money read has no unit to refuse.
+        var f = new Fixture();
+        f.Settings.Error = new SettingsPrerequisiteException(ApprovedSettingsPrerequisiteProvider.UnitProfileNotFoundCode);
+        var result = await f.Handler().GetCurrencyAsync(f.CurrencyQuery);
+        Assert.Equal(503, result.StatusCode);
+        Assert.Equal("settings_provider_unavailable", result.Code);
+    }
+
+    [Fact]
+    public async Task A_missing_unit_profile_is_not_released_after_the_permission_is_lost()
+    {
+        var f = new Fixture();
+        f.Settings.Error = new SettingsPrerequisiteException(ApprovedSettingsPrerequisiteProvider.UnitProfileNotFoundCode);
+        f.Settings.OnRead = () => f.Auth.Allowed = false;
         var result = await f.Handler().GetProductAsync(f.ProductQuery);
         Assert.Equal(403, result.StatusCode);
         Assert.Null(result.Code);
