@@ -64,3 +64,9 @@ public sealed record PostingOutcome(
     Journal? Journal = null,
     PostingException? Exception = null,
     PendingValuation? Pending = null);
+
+/// <summary>
+/// A stored correction: the correction identity (the producer's decision id) and the journal it
+/// produced. Used only to rebuild a ledger from stored facts.
+/// </summary>
+public sealed record StoredCorrection(Guid CorrectionId, Guid JournalId);

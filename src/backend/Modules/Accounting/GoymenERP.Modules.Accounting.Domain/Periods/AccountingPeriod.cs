@@ -54,6 +54,29 @@ public sealed class AccountingPeriod
     public bool Covers(DateOnly date) => date >= StartsOn && date <= EndsOn;
 
     /// <summary>
+    /// Rebuilds a stored period (ACC-3): open, or closed with the actor and UTC instant that closed
+    /// it. A close trace with only one of the two is refused, as <see cref="Close"/> would refuse it.
+    /// </summary>
+    public static AccountingPeriod Restore(Guid id, Guid companyId, DateOnly startsOn, DateOnly endsOn,
+        Guid? closedByUserId, DateTimeOffset? closedAtUtc)
+    {
+        var period = new AccountingPeriod(id, companyId, startsOn, endsOn);
+        if (closedByUserId is null && closedAtUtc is null)
+        {
+            return period;
+        }
+
+        if (closedByUserId is not { } closedBy || closedAtUtc is not { } closedAt)
+        {
+            throw new AccountingDomainException(
+                AccountingErrorCodes.InvalidReference, "A stored close needs both its actor and its instant.");
+        }
+
+        period.Close(closedBy, closedAt);
+        return period;
+    }
+
+    /// <summary>
     /// Closes the period and records who closed it and when. Closing is an authorised act (Ö5);
     /// checking that authority is the caller's permission check, not this record's. A second close
     /// is refused rather than silently overwriting the first one's trace.
