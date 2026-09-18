@@ -247,6 +247,23 @@ class SuiteExtensionTests(unittest.TestCase):
                 with self.assertRaisesRegex(browser.ContractError, message):
                     browser.validate_suite_compose(extended("org03", extra), "org03", COMMIT, PROJECT)
 
+    def test_a_zero_padded_actor_index_is_refused(self):
+        # .NET binds Users__02 and Users__2 as different list items (#322 ORG P3).
+        for index in ("02", "002", "03"):
+            with self.subTest(index=index):
+                extra = dict(actors("org03", 1))
+                extra[f"BootstrapIdentity__Users__{index}__UserId"] = "org03-padded"
+                extra[f"BootstrapIdentity__Users__{index}__DisplayName"] = "SENTETIK padded"
+                with self.assertRaisesRegex(browser.ContractError, "key set is not exact"):
+                    browser.validate_suite_compose(extended("org03", extra), "org03", COMMIT, PROJECT)
+
+    def test_issuer_ids_must_carry_an_rfc_4122_version_and_variant(self):
+        for value in ("5d0f7c2a-4b9e-0a53-8a2e-6c1d2f3a4b01", "5d0f7c2a-4b9e-4a53-ca2e-6c1d2f3a4b01"):
+            with self.subTest(value=value):
+                extra = dict(ISSUER, ProductRuntime__IssuerLocalUserId=value)
+                with self.assertRaisesRegex(browser.ContractError, "GUID"):
+                    browser.validate_suite_compose(extended("u02", extra), "u02", COMMIT, PROJECT)
+
     def test_the_canonical_two_actors_cannot_be_replaced_through_an_override(self):
         broken = extended("org03", {"BootstrapIdentity__Users__0__UserId": "org03-admin"})
         with self.assertRaisesRegex(browser.ContractError, "identity"):

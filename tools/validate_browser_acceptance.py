@@ -85,8 +85,12 @@ CANONICAL_API_ENVIRONMENT_KEYS = frozenset({
 # listed key with a value outside its shape, fails; a suite without a list may not have an override.
 # The VALUES are the suite owner's (their seed's deterministic identities, their synthetic actors).
 SUITE_OVERRIDE_DIRECTORY = "infra/browser-suites"
+# RFC 4122 on purpose: a version digit 1-8 and the RFC variant (8, 9, a or b). The issuer ids come from the
+# suite seed's generated UUIDs (v4/v5 pass); a hand-typed value that is not a UUID is refused (#322 INFO-1).
 _GUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-_ACTOR_KEY = re.compile(r"^BootstrapIdentity__Users__([0-9]+)__(UserId|DisplayName)$")
+# No leading zeros: .NET configuration binds "Users__02" and "Users__2" as two different list items, so a
+# zero-padded index would silently add an actor outside the contiguity check (#322 ORG P3).
+_ACTOR_KEY = re.compile(r"^BootstrapIdentity__Users__(0|[1-9][0-9]*)__(UserId|DisplayName)$")
 MAX_SUITE_ACTORS = 8
 SUITE_API_EXTENSIONS = {
     # U-02: the Product runtime's issuer binding, matching the suite seed's local user and
