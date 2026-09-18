@@ -101,4 +101,60 @@ public sealed class Journal
     }
 
     internal IEnumerable<JournalLine> MirroredLines() => _lines.Select(line => line.Mirrored());
+
+    /// <summary>
+    /// Rebuilds a journal that was posted and stored earlier (ACC-3). Its shape is checked again:
+    /// identities, at least two one-sided lines of the journal's company, exact balance, and the
+    /// link its kind requires. The period is NOT checked: a stored journal may sit in a period
+    /// that has closed since, and it stays exactly as it was posted.
+    /// </summary>
+    public static Journal Restore(
+        Guid id,
+        JournalKind kind,
+        SourceReference source,
+        string postingRuleVersion,
+        Guid currencyId,
+        PostingDates dates,
+        IEnumerable<JournalLine> lines,
+        Guid? linkedJournalId)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(dates);
+        ArgumentNullException.ThrowIfNull(lines);
+        if (id == Guid.Empty || currencyId == Guid.Empty || string.IsNullOrWhiteSpace(postingRuleVersion)
+            || !Enum.IsDefined(kind) || (kind == JournalKind.Original) != (linkedJournalId is null)
+            || linkedJournalId == Guid.Empty)
+        {
+            throw new AccountingDomainException(
+                AccountingErrorCodes.InvalidReference,
+                "A stored journal needs an id, a currency, a rule version and the link its kind requires.");
+        }
+
+        var array = lines.ToArray();
+        if (array.Any(line => line is null))
+        {
+            throw new ArgumentException("A journal line cannot be null.", nameof(lines));
+        }
+
+        if (array.Length < 2)
+        {
+            throw new AccountingDomainException(
+                AccountingErrorCodes.JournalTooFewLines, "A journal needs at least two lines.");
+        }
+
+        if (array.Any(line => line.Account.CompanyId != source.CompanyId))
+        {
+            throw new AccountingDomainException(
+                AccountingErrorCodes.CompanyMismatch,
+                "Every line's account must belong to the journal's company.");
+        }
+
+        if (array.Sum(line => line.Debit) != array.Sum(line => line.Credit))
+        {
+            throw new AccountingDomainException(
+                AccountingErrorCodes.JournalUnbalanced, "Total debit must equal total credit exactly.");
+        }
+
+        return new Journal(id, kind, source, postingRuleVersion, currencyId, dates, array, linkedJournalId);
+    }
 }
