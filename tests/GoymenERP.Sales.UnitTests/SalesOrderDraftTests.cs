@@ -27,8 +27,8 @@ public sealed class SalesOrderDraftTests
 
     private static SalesDraftHeader Header() => new(Party, Account, Currency, Day);
 
-    private static MoneyProfileSnapshot Money(Guid? company = null) =>
-        new(company ?? Company, Currency, Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"), "3");
+    private static MoneyProfileSnapshot Money(Guid? company = null, DateOnly? effectiveOn = null) =>
+        new(company ?? Company, Currency, Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"), "3", effectiveOn ?? Day);
 
     private static UnitProfileSnapshot KgUnitProfile(int profileScale = 3, Guid? company = null) =>
         new(company ?? Company, KgUnit, "kg", KgProfile, "4", true, profileScale, Math.Min(profileScale, 3));
@@ -78,6 +78,9 @@ public sealed class SalesOrderDraftTests
         Assert.Throws<ArgumentNullException>(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header(), null!, T0));
         Assert.Equal(SalesRuleCodes.SnapshotCompanyMismatch,
             CodeOf(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header(), Money(OtherCompany), T0)));
+        // The money profile is the business date's (ÜRÜN #306 P3-2): another date is another answer.
+        Assert.Equal(SalesRuleCodes.SnapshotDateMismatch,
+            CodeOf(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header(), Money(effectiveOn: Day.AddDays(1)), T0)));
         Assert.Equal(SalesRuleCodes.NoteTooLong,
             CodeOf(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header() with { Note = new string('x', 4001) }, Money(), T0)));
     }
@@ -124,6 +127,35 @@ public sealed class SalesOrderDraftTests
             CodeOf(() => draft.AddLine(1, Line(value, text, KgUnitProfile(profileScale)), T0)));
         Assert.Empty(draft.Lines);
         Assert.Equal(1, draft.Version);
+    }
+
+    [Fact]
+    public void The_applied_scale_is_derived_from_the_profile_and_a_snapshot_cannot_widen_it()
+    {
+        // ÜRÜN #306 P3-1: a snapshot saying Scale 3 over a profile of 1, or 5 over Ö2's 3, is malformed, not a permission.
+        var draft = Draft();
+        Assert.Equal(1, SalesOrderDraft.AppliedScale(KgUnitProfile(1)));
+        Assert.Equal(3, SalesOrderDraft.AppliedScale(KgUnitProfile(5)));
+        Assert.Equal(0, SalesOrderDraft.AppliedScale(PieceUnitProfile() with { ProfileScale = 2, Scale = 0 }));
+        var widened = KgUnitProfile(1) with { Scale = 3 };
+        Assert.Throws<ArgumentException>(() => draft.AddLine(1, Line(1.25m, "1.25", widened, product: Snapshot(widened)), T0));
+        var beyondCap = KgUnitProfile(5) with { Scale = 5 };
+        Assert.Throws<ArgumentException>(() => draft.AddLine(1, Line(1m, "1", beyondCap, product: Snapshot(beyondCap)), T0));
+        Assert.Empty(draft.Lines);
+        Assert.Equal(1, draft.Version);
+    }
+
+    [Theory]
+    [InlineData("12.51")]
+    [InlineData("12,5")]
+    [InlineData(" 12.5")]
+    [InlineData("")]
+    public void The_quantity_text_must_be_the_quantity(string text)
+    {
+        // ÜRÜN #306 P3-3: the text is kept verbatim, but it is bound to the value it names.
+        var draft = Draft();
+        Assert.Throws<ArgumentException>(() => draft.AddLine(1, Line(12.5m, text), T0));
+        Assert.Empty(draft.Lines);
     }
 
     [Fact]

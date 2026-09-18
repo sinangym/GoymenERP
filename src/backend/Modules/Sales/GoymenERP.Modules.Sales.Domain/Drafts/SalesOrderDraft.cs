@@ -140,6 +140,11 @@ public sealed class SalesOrderDraft
             throw new ArgumentException("Para profili taslağın para birimini adlandırmalı ve tam olmalıdır.", nameof(money));
         }
 
+        if (money.EffectiveOn != header.BusinessDate)
+        {
+            throw new SalesRuleException(SalesRuleCodes.SnapshotDateMismatch, "Para profili taslağın iş tarihi için alınmamış.");
+        }
+
         return new SalesOrderDraft(id, companyId, documentNo, header, money, now);
     }
 
@@ -169,6 +174,7 @@ public sealed class SalesOrderDraft
         RequireNote(input.Note);
         RequireSnapshots(input.Product, input.OrderUnit);
         var quantity = RequireQuantity(input.Quantity, input.OrderUnit);
+        RequireQuantityText(input.QuantityText, input.Quantity);
         var commercial = input.Commercial ?? CommercialDraftFields.None;
         if ((commercial.UnitPrice is null) != (commercial.PriceUnitId is null))
         {
@@ -208,6 +214,13 @@ public sealed class SalesOrderDraft
             throw new ArgumentException("Birim profili snapshot'ı eksik.", nameof(orderUnit));
         }
 
+        // The snapshot's stated applied scale must be what the domain derives; a snapshot that
+        // says "3" over a profile of 1 (or "5" over Ö2's 3) is malformed, not a wider permission.
+        if (orderUnit.Scale != AppliedScale(orderUnit))
+        {
+            throw new ArgumentException("Birim profili snapshot'ının uygulanan ölçeği min(profil, Ö2) ile uyuşmuyor.", nameof(orderUnit));
+        }
+
         foreach (var binding in new[] { product.StockUnit, product.SalesUnit, product.OrderUnit })
         {
             if (binding.CompanyId != CompanyId)
@@ -234,6 +247,14 @@ public sealed class SalesOrderDraft
         }
     }
 
+    /// <summary>The scale the domain applies: min(owner's profile scale, Ö2's own cap for the dimension). Derived here, never taken from the snapshot's word (ÜRÜN #306 P3-1).</summary>
+    public static int AppliedScale(UnitProfileSnapshot orderUnit)
+    {
+        ArgumentNullException.ThrowIfNull(orderUnit);
+        var unit = orderUnit.IsKilogram ? QuantityUnit.Kilogram : QuantityUnit.Piece;
+        return Math.Min(orderUnit.ProfileScale, Quantity.AllowedScale(unit));
+    }
+
     private static Quantity RequireQuantity(decimal value, UnitProfileSnapshot orderUnit)
     {
         var unit = orderUnit.IsKilogram ? QuantityUnit.Kilogram : QuantityUnit.Piece;
@@ -242,7 +263,7 @@ public sealed class SalesOrderDraft
             throw new ArgumentOutOfRangeException(nameof(value), "Satır miktarı sıfırdan büyük olmalıdır.");
         }
 
-        var applied = Math.Min(orderUnit.Scale, Quantity.AllowedScale(unit));
+        var applied = AppliedScale(orderUnit);
         if (Quantity.SignificantDecimals(value) > applied)
         {
             throw new SalesRuleException(SalesRuleCodes.QuantityScaleExceeded,
@@ -293,6 +314,22 @@ public sealed class SalesOrderDraft
         }
 
         return slices;
+    }
+
+    /// <summary>
+    /// The client's quantity text is kept verbatim, but it must BE the quantity: the same decimal
+    /// value in plain invariant notation (#257's wire shape; ÜRÜN #306 P3-3). "12.500" and 12.5m
+    /// agree; "12.5" and 12.51m, or "1,2", do not.
+    /// </summary>
+    private static void RequireQuantityText(string? text, decimal value)
+    {
+        if (string.IsNullOrWhiteSpace(text)
+            || !decimal.TryParse(text, System.Globalization.NumberStyles.AllowDecimalPoint,
+                System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+            || parsed != value)
+        {
+            throw new ArgumentException("Miktar metni miktarın kendisiyle uyuşmuyor.", nameof(text));
+        }
     }
 
     private static void RequireNote(string? note)

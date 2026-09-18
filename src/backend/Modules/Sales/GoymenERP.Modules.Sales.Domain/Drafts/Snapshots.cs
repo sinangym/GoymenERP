@@ -25,7 +25,10 @@ public sealed record ProductSnapshot(
 /// <summary>
 /// The Settings owner's unit profile for the line's order unit on the business date, as the port
 /// asks consumers to keep it: <see cref="ProfileScale"/> is the owner's raw scale, <see cref="Scale"/>
-/// the applied one (min(profile, Ö2's 3)), the shape PUR-3 / LOG-3 / MFG-3 use.
+/// the applied one (min(profile, Ö2's cap)), the shape PUR-3 / LOG-3 / MFG-3 use. The domain does
+/// not trust <see cref="Scale"/>: it derives the applied scale from <see cref="ProfileScale"/> itself
+/// (<see cref="SalesOrderDraft.AppliedScale"/>) and refuses a snapshot whose <see cref="Scale"/> says
+/// otherwise, so no snapshot can widen Ö2 (ÜRÜN #306 P3-1).
 /// </summary>
 public sealed record UnitProfileSnapshot(
     Guid CompanyId,
@@ -43,7 +46,7 @@ public sealed record UnitProfileSnapshot(
 /// so no real draft can carry one; a draft without it is never stored. No scale or rounding is
 /// chosen here (T28).
 /// </summary>
-public sealed record MoneyProfileSnapshot(Guid CompanyId, Guid CurrencyId, Guid ProfileId, string ProfileVersion);
+public sealed record MoneyProfileSnapshot(Guid CompanyId, Guid CurrencyId, Guid ProfileId, string ProfileVersion, DateOnly EffectiveOn);
 
 /// <summary>
 /// A nullable owner reference the client supplied (delivery address, contact, responsible,
