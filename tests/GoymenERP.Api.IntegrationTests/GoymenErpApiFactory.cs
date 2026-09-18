@@ -3,8 +3,9 @@ using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Idempotency.Infrastructure.Persistence;
-using GoymenERP.Modules.Identity.Domain.Assignments;
+using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
+using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
@@ -96,6 +97,14 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
             services.RemoveAll<IDbContextOptionsConfiguration<ManufacturingDbContext>>();
             services.AddDbContext<ManufacturingDbContext>((serviceProvider, options) =>
                 options.UseInMemoryDatabase($"{_databaseName}-manufacturing")
+                    .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
+
+            // Inventory is host-wired since T07(a) (#310); without this the in-memory host would
+            // try to migrate it against the placeholder SQL connection string at startup.
+            services.RemoveAll<DbContextOptions<InventoryDbContext>>();
+            services.RemoveAll<IDbContextOptionsConfiguration<InventoryDbContext>>();
+            services.AddDbContext<InventoryDbContext>((serviceProvider, options) =>
+                options.UseInMemoryDatabase($"{_databaseName}-inventory")
                     .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
         });
     }

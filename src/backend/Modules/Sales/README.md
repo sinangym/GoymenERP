@@ -10,9 +10,10 @@ Source of truth: plan #275 `a5b8143b` T03 (§14), R3, §13; Business #254 §2–
 |---|---|---|
 | `GoymenERP.Modules.Sales.Application` | #257, #262, #285, #289 | wire contracts of the draft (create/list/detail/replay DTOs, strict JSON, exact delivery planning), the reference-read handler (Cari account, Settings currency/unit, Product eligibility) and, since SALES-P1, the **draft store contracts** |
 | `GoymenERP.Modules.Sales.Domain` | **SALES-P1** | the `SalesOrderDraft` aggregate: header + lines + delivery slices, stable rule codes, `Version` ≠ `Rev.0`, Ö2 quantity |
+| `GoymenERP.Modules.Sales.Infrastructure` | **SALES-P2** | the `sales` schema (drafts, lines, slices, attempts, number counter), `SalesStore : ISalesOrderDraftStore`, hand-written migration + snapshot, audit sidecar in the same save |
 
-There is still no persistence, HTTP, host wiring, permission or UI change in the backend; the
-frontend of #260 mounts nothing (`SHARED_MOUNT_HANDOFF.md`).
+There is still no HTTP, host wiring, permission or UI change in the backend: the host does not call
+`AddSalesModule` yet, and the frontend of #260 mounts nothing (`SHARED_MOUNT_HANDOFF.md`).
 
 ## Domain (`GoymenERP.Modules.Sales.Domain`, SALES-P1)
 
@@ -20,8 +21,8 @@ frontend of #260 mounts nothing (`SHARED_MOUNT_HANDOFF.md`).
 - `SalesOrderDraft` — one company (server-resolved, immutable), one customer (`PartyId` + `CompanyAccountId`, both required), one currency, one business date; born `Kind=Order`, `State=Draft`, `Revision=0` (`Rev.0` on the wire).
   - **`Version` ≠ revision:** `Version` is the optimistic-concurrency token every mutation names (`AddLine(expectedVersion, …)`), starting at 1 and advancing by one per recorded change — the Purchasing / Logistics / Manufacturing / Product pattern (`SalesVersionConflictException`). `Revision` is the commercial revision and does not move in this slice (T33).
   - **Owner snapshots on every line** (#257 "persist owner snapshot … all StockUnit/SalesUnit/OrderUnit bindings"): `ProductSnapshot` (product id/version/code/name/effectiveOn + three `UnitBindingSnapshot`s) as the Product owner answered, `UnitProfileSnapshot` (unit, profile id/version, `IsKilogram`, owner's `ProfileScale`, applied `Scale` = min(profile, 3) — the PUR-3/LOG-3/MFG-3 shape) as the Settings owner answered. The draft refuses a snapshot of another company (`sales_snapshot_company_mismatch`), of another date than the business date (`sales_snapshot_date_mismatch`), and an order unit the Product snapshot does not bind as the order unit (`sales_product_unit_mismatch`). Nothing is rebuilt from Draft/Sellable/Complete; the snapshots come from the ports at command time and are stored with the draft.
-  - **Money snapshot on the header** (`MoneyProfileSnapshot`, the Settings money profile of the currency on the business date, answered for the Sales operation `sales.order-draft.v1`): mandatory even for an unpriced draft (#257). There is no draft without one; its `EffectiveOn` must be the business date (`sales_snapshot_date_mismatch`; ÜRÜN #306 P3-2) and its `Operation` must be the Sales draft operation (`sales_snapshot_operation_mismatch`; CARİ #306 P3).
-  - **Ö2 on every quantity:** the dimension must be the unit profile's (`sales_unit_mismatch`); decimals beyond the applied scale are refused, never rounded (`sales_quantity_scale_exceeded`). **The applied scale is derived in the domain** — `SalesOrderDraft.AppliedScale` = min(owner's `ProfileScale`, Ö2's cap) — and a snapshot whose stated `Scale` disagrees is malformed (`ArgumentException`), so no snapshot can widen Ö2 (ÜRÜN #306 P3-1). The client's quantity text is kept verbatim (`QuantityText`) and must name the same decimal value in plain invariant notation (ÜRÜN #306 P3-3).
+  - **Money snapshot on the header** (`MoneyProfileSnapshot`, the Settings money profile of the currency on the business date, answered for the Sales operation `sales.order-draft.v1`): mandatory even for an unpriced draft (#257). There is no draft without one; its `EffectiveOn` must be the business date (`sales_snapshot_date_mismatch`; ÜRÜN #306 P3-2), its `Operation` must be the Sales draft operation (`sales_snapshot_operation_mismatch`; CARİ #306 P3), and it carries the owner's `IsActive` / `EffectiveFrom` / `EffectiveThrough` / `Scale`: a profile not in effect on the business date is `sales_money_profile_not_in_effect` (CARİ #306 P3-R1). The scale is kept as published and applied to nothing here (T28).
+  - **Ö2 on every quantity:** the quantity's dimension follows the unit profile's (`sales_unit_unsupported` for a dimension that is neither weight nor count; a kilogram flag contradicting the dimension is a malformed snapshot); decimals beyond the applied scale are refused, never rounded (`sales_quantity_scale_exceeded`). **The applied scale is derived in the domain** — `SalesOrderDraft.AppliedScale` = min(owner's `ProfileScale`, Ö2's cap) — and a snapshot whose stated `Scale` disagrees is malformed (`ArgumentException`), so no snapshot can widen Ö2 (ÜRÜN #306 P3-1). The client's quantity text is kept verbatim (`QuantityText`) and must name the same decimal value in plain invariant notation (ÜRÜN #306 P3-3).
   - **Unit profile validity and dimension:** the snapshot carries the Settings owner's `IsActive` / `EffectiveFrom` / `EffectiveThrough`, and the draft refuses a profile that is inactive or not effective on the business date (`sales_unit_profile_not_in_effect`; CARİ #306 P2-2, the PUR-3 verifier's rule enforced where the snapshot is consumed). Only a weight (kilogram) or a count dimension has a Ö2 rule; any other dimension is `sales_unit_unsupported` — Sales maps nothing to pieces by guess, and only kilogram is approved in Settings today. A kilogram flag that contradicts the dimension is a malformed snapshot.
   - **Delivery slices:** client-owned stable `SliceId`, the line's unit only (no conversion), positive, unique, at most 500, never adding up to more than the line (`sales_slices_exceed_quantity`); the shortfall is `UnplannedQuantity`, never "delivered" (#257: 1000 = 400 + 600 → 0; 400 + 700 refused; 400 + 400 → 200 unplanned). Each slice keeps its quantity text verbatim, bound to its value like the line's (CARİ #306 P2-3).
   - **Commercial fields** (`unitPrice`, `priceUnitId`, `discountPercent`) are retained as text and **not validated** (T28); the only rule is #257's pairing (`sales_price_unit_pairing`). Six owner references (delivery address, contact, responsible, payment terms, source strategy, package) are stored as given and **not validated by their owners** in this slice.
@@ -32,8 +33,55 @@ frontend of #260 mounts nothing (`SHARED_MOUNT_HANDOFF.md`).
 ### Application store contracts (`ISalesOrderDraftStore`, SALES-P1; implemented by SALES-P2)
 
 - `SalesDraftWriteEnvelope` — the ADR-009 audit envelope (actor, permission, roles, correlation, causation, idempotency key, channel), the Inventory/Accounting shape; every value from the server-side context of the HTTP slice.
-- `StoreDraftAsync(envelope, requestHash, build)` — one save: header, lines, snapshots, slices, the attempt record and the audit event together. **Replay (R3):** (company, idempotency key) is the attempt identity; the same key with the same `SalesDraftRequestHash` answers the first stored draft (`Replayed`, original correlation); another hash is `sales_same_key_payload_mismatch`; a key of another company is invisible — a company change is not a rollback. `FindDraftAsync` and `ListDraftsAsync` (newest first, opaque company-bound cursor, #257) are company-scoped; another company's draft is null, never 403.
+- `StoreDraftAsync(envelope, requestHash, build)` — one save: header, lines, snapshots, slices, the attempt record and the audit event together. **Replay (ADR-011, R3):** (company, `SalesDraftCommands.CreateV1`, uppercase SHA-256 of the trimmed idempotency key) is the attempt identity — the raw key is never stored; the same key with the same `SalesDraftRequestHash` **and the same actor** answers the first stored draft (`Replayed`, original correlation); another hash **or another actor** is `sales_same_key_payload_mismatch` — one definite 409 that discloses nothing of the stored result nor that the key is someone else's (the platform Idempotency module's single conflict kind); a key of another company is invisible — a company change is not a rollback. Authority is checked by the caller before the replay is read. `FindDraftAsync` and `ListDraftsAsync` (newest first, opaque company-bound cursor, #257) are company-scoped; another company's draft is null, never 403.
 - `SalesDraftRequestHash` — the canonical content of a create (the strict wire shape serialised and hashed); line order matters because the client keeps it across retries, and the quantity **text** is content: "5.00" and "5" are different attempts, so the second under the same key is a payload mismatch (409), never a replay (tested).
+
+## Persistence (`GoymenERP.Modules.Sales.Infrastructure`, SALES-P2)
+
+Tables in the `sales` schema, all tenant rows (ADR-002): a global query filter on the server-resolved
+company and a write guard in `SaveChanges` that refuses a row of another company, a company change,
+a write without a resolved company and every delete. Companies are Organization's, referenced by
+foreign key only (`organization.Companies`, excluded from Sales's migrations); the audit sidecar is
+Audit's table, written through `IAuditEventCollector` in the same save (ADR-009).
+
+| Table | Key | Content |
+|---|---|---|
+| `DraftNumbers` | `CompanyId` | the technical number counter (`Next`, concurrency token `Version`) |
+| `Drafts` | `Id`; alternate `(CompanyId, Id)`; `UX_Drafts_DocumentNo` | header, owner references (id + expected version, paired by check), money profile snapshot, `Version` token + `rowversion`, creator and correlation |
+| `DraftLines` | `(CompanyId, DraftId, LineNo)`; `UX_DraftLines_LineId` | Product snapshot, the three unit bindings, the order unit's Settings profile (scale = min(profile, 3)), `Quantity decimal(18,3)` + the client's `QuantityText`, commercial text |
+| `DraftDeliverySlices` | `(CompanyId, DraftId, LineNo, SliceNo)`; `UX_DraftDeliverySlices_SliceId` | the requested delivery plan |
+| `DraftAttempts` | `(CompanyId, CommandName, IdempotencyKeyHash)` under `Latin1_General_100_BIN2`; `UX_DraftAttempts_DraftId` | the ADR-011 attempt record: no raw key — uppercase SHA-256 of the trimmed key (`varchar(64)`), canonical request hash (`varchar(64)`), actor (compared on replay), draft, correlation |
+
+- **Replay (ADR-011 §2–§5, R3):** the attempt is read first, by (company, command name, key hash).
+  The same key with the same hash **and the same actor** answers the stored draft (`Replayed`,
+  original correlation); another actor or another hash is `sales_same_key_payload_mismatch` — one
+  definite refusal that discloses nothing of the stored result nor that the key is someone else's
+  (the platform Idempotency module's single conflict kind); a key of another company is invisible. The raw key is never stored: the store hashes the
+  trimmed key (uppercase SHA-256) and still refuses a key with surrounding whitespace
+  (ArgumentException), so the hash the caller reasons about is the hash stored. `"K-1"` hashes
+  differently from `"k-1"` and is another attempt. Authority and the company context are the
+  caller's checks before the replay is read (§5); the replay headers (`Idempotency-Replayed`,
+  `Idempotency-Original-Correlation-Id`) are the HTTP slice's.
+- **Number:** the company's counter row gives `SO-<UTC year>-<n:D6>` under its concurrency token.
+  Technical display text, not an official document (Ö8); no gap-free guarantee — a lost race leaves
+  its number unused.
+- **Race:** a unique-key violation (2601/2627) or the counter's token after `SaveChanges` is
+  `sales_concurrent_change`; nothing of the loser is stored and its retry answers from the winner.
+  This is the only use of the SqlClient namespace in the module.
+- **Restore:** a stored draft is rebuilt through `SalesOrderDraft.Create` + `AddLine`, so every rule
+  of a new draft holds again; a stored version or line order the rebuild does not reach is an
+  `InvalidOperationException` (a corrupt row is refused, not repaired).
+- **List:** newest first (`CreatedAtUtc desc, Id desc`), page size 1–100, an opaque base64url cursor
+  bound to the company and the ordering; a foreign or malformed cursor is `sales_invalid_cursor`.
+- **Append-only:** only the counter's `Next`/`UpdatedAtUtc` and a draft's `UpdatedAtUtc` may change;
+  approval and revision are T33.
+- **Migration:** `20260918210000_InitialSales` (hand-written, Inventory/Finance format) and
+  `SalesDbContextModelSnapshot`, pinned by `HasPendingModelChanges` in `SalesPersistenceModelTests`.
+- **Evidence:** `SalesPersistenceModelTests` (model, guards, cursor, number — no database) and
+  `SalesDraftSqlServerRelationalAcceptanceTests` (six `[SqlServerFact]` cases against a real SQL
+  Server: store + replay + audit + schema inventory, same-key mismatch + race, company boundary,
+  domain round-trip + paging, foreign-key rollback, canonical key). The SQL cases build drafts from
+  **synthetic owner snapshots**: they prove the store, not any owner's rule, and claim no user outcome.
 
 ## Deliberate limits of this slice (not policy choices)
 
@@ -45,7 +93,9 @@ frontend of #260 mounts nothing (`SHARED_MOUNT_HANDOFF.md`).
 
 ## dependency_wait
 
-- **SALES-P2:** `Sales.Infrastructure` — `sales` schema (drafts, lines, slices, attempts), (CompanyId, IdempotencyKey) attempt key + canonical hash, rowversion, audit envelope, six real-SQL cases; CARİ's central registrations (tenant guard inventory, allowlist `Sales.Infrastructure → Audit.Infrastructure`, integration csproj, verifier counts).
+- **SALES-P2 central registrations (CARİ, single writer of central files):** solution entry, `Api.IntegrationTests` project reference, module dependency allowlist (Sales.Infrastructure → Audit.Infrastructure), tenant-bypass guard pins (`SalesDbContext`, `SalesStore` SqlClient 1, `SalesModuleExtensions` provider branch, design-time factory), RCSI verifier names (+6). Until they land, the guard inventory and the integration-test build are red by design.
+- **Host registration of `AddSalesModule` / `InitializeSalesModuleAsync`:** the API slice (next), with the permission names and the endpoints.
+- **SALES-P2 (this slice):** `Sales.Infrastructure` — `sales` schema (drafts, lines, slices, attempts, counter), (CompanyId, CommandName, IdempotencyKeyHash) attempt key (ADR-011) + canonical hash + actor comparison, rowversion, audit envelope, six real-SQL cases; CARİ's central registrations (tenant guard inventory, allowlist `Sales.Infrastructure → Audit.Infrastructure`, integration csproj, verifier counts).
 - **Settings money profile** (T02-b, CARİ: the approved GDC/TRY money profile): the real positive create. The Sales money operation identifier is **not** waited for: it is the Sales owner's technical mapping (Business #254 5654539215) — `SalesMoneyOperations.OrderDraftV1` = `sales.order-draft.v1`, the Finance pattern — carried on `MoneyProfileSnapshot.Operation` and required by the domain (`sales_snapshot_operation_mismatch`). The key chooses no rate, scale or date. The only thing a real draft waits for on the money side is the Settings provider's approved profile.
 - **C3:** Product eligibility host registration and the GDC family definition data; a human grant.
 - **Cari:** the account belongs to the Party and is active in this company (#262 read, at command time).

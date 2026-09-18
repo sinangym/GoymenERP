@@ -27,9 +27,29 @@ public sealed class SalesOrderDraftTests
 
     private static SalesDraftHeader Header() => new(Party, Account, Currency, Day);
 
-    private static MoneyProfileSnapshot Money(Guid? company = null, DateOnly? effectiveOn = null, string? operation = null) =>
+    private static MoneyProfileSnapshot Money(Guid? company = null, DateOnly? effectiveOn = null, string? operation = null,
+        bool isActive = true, DateOnly? effectiveFrom = null, DateOnly? effectiveThrough = null, int scale = 2) =>
         new(company ?? Company, Currency, operation ?? SalesOrderDraft.MoneyOperation,
-            Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"), "3", effectiveOn ?? Day);
+            Guid.Parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"), "3", effectiveOn ?? Day, isActive,
+            effectiveFrom ?? new DateOnly(2026, 9, 1), effectiveThrough, scale);
+
+    [Fact]
+    public void An_inactive_or_out_of_window_money_profile_is_refused_and_the_last_window_day_is_in_effect()
+    {
+        // CARİ #306 P3-R1: the Settings port's validity obligation on the money side, as on the unit side.
+        Assert.Equal(SalesRuleCodes.MoneyProfileNotInEffect,
+            CodeOf(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header(), Money(isActive: false), T0)));
+        Assert.Equal(SalesRuleCodes.MoneyProfileNotInEffect,
+            CodeOf(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header(), Money(effectiveFrom: Day.AddDays(1)), T0)));
+        Assert.Equal(SalesRuleCodes.MoneyProfileNotInEffect,
+            CodeOf(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header(), Money(effectiveThrough: Day.AddDays(-1)), T0)));
+        Assert.Throws<ArgumentException>(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header(), Money(scale: -1), T0));
+        Assert.Throws<ArgumentException>(() => SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header(),
+            Money(effectiveFrom: Day, effectiveThrough: Day.AddDays(-1)), T0));
+
+        var draft = SalesOrderDraft.Create(Guid.NewGuid(), Company, "SO-1", Header(), Money(effectiveFrom: Day, effectiveThrough: Day), T0);
+        Assert.Equal((true, 2), (draft.Money.IsActive, draft.Money.Scale));
+    }
 
     private static readonly DateOnly From = new(2026, 9, 1);
 

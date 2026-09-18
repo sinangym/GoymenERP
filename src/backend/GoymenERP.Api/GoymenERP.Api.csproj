@@ -9,6 +9,7 @@
     <ProjectReference Include="..\Modules\Finance\GoymenERP.Modules.Finance.Contracts\GoymenERP.Modules.Finance.Contracts.csproj" />
     <ProjectReference Include="..\Modules\Organization\GoymenERP.Modules.Organization.Application\GoymenERP.Modules.Organization.Application.csproj" />
     <ProjectReference Include="..\Modules\Organization\GoymenERP.Modules.Organization.Infrastructure\GoymenERP.Modules.Organization.Infrastructure.csproj" />
+    <ProjectReference Include="..\Modules\Inventory\GoymenERP.Modules.Inventory.Infrastructure\GoymenERP.Modules.Inventory.Infrastructure.csproj" />
     <ProjectReference Include="..\Modules\Manufacturing\GoymenERP.Modules.Manufacturing.Infrastructure\GoymenERP.Modules.Manufacturing.Infrastructure.csproj" />
     <ProjectReference Include="..\Modules\Identity\GoymenERP.Modules.Identity.Application\GoymenERP.Modules.Identity.Application.csproj" />
     <ProjectReference Include="..\Modules\Identity\GoymenERP.Modules.Identity.Infrastructure\GoymenERP.Modules.Identity.Infrastructure.csproj" />
