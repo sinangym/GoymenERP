@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Browser-suite fixture runner (BROWSER-CI stage 2, a2 part 2). It builds the real API host in
+    process (WebApplicationFactory over Program, so the DI composition is exactly Program.cs) against
+    the run's disposable SQL database, and hands each suite owner's seed the real endpoints and
+    services. Owner seeds live under Suites/<suite>/ and write nothing with SQL.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.8" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\backend\GoymenERP.Api\GoymenERP.Api.csproj" />
+  </ItemGroup>
+
+</Project>
