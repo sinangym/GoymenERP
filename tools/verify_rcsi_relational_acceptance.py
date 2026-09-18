@@ -146,9 +146,15 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.FinanceDraftSqlServerRelationalAcceptanceTests.Company_B_can_neither_see_nor_overwrite_company_A_draft",
     "GoymenERP.Api.IntegrationTests.FinanceDraftSqlServerRelationalAcceptanceTests.The_real_unavailable_owners_refuse_every_save_and_store_nothing",
     "GoymenERP.Api.IntegrationTests.FinanceDraftSqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
+    "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.Plan_order_and_facts_are_durable_replayable_audited_and_close_from_stored_facts",
+    "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.A_close_from_stored_facts_reconciles_each_roll_on_its_own",
+    "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.Each_company_sees_only_its_own_orders_and_a_fact_id_is_unique_per_company_only",
+    "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.A_fact_id_is_one_fact_in_the_store_and_in_the_database",
+    "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.Two_writers_that_read_the_same_order_cannot_both_commit",
+    "GoymenERP.Api.IntegrationTests.ManufacturingSqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
 )
-BROAD_DISCOVERY_COUNT = 106
-BROAD_EXECUTION_COUNT = 113
+BROAD_DISCOVERY_COUNT = 112
+BROAD_EXECUTION_COUNT = 119
 
 
 def verify_discovery(standard_output: str) -> None:
