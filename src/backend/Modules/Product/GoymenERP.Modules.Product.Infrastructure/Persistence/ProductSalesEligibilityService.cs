@@ -72,8 +72,9 @@ public interface IProductSalesRecordReader
 ///
 /// Fail-closed limits at this base: only the Product's own sales unit may be ordered,
 /// because no accepted offered-unit/conversion policy exists (U-08); and the first family's
-/// accepted rules (GDC band/coil, Business 5722701085) are not implemented yet — that is the
-/// next slice — so the shipped policy still makes every otherwise-valid selection 503.
+/// accepted rules (GDC band/coil, Business 5722701085) are implemented
+/// (<c>GdcBandCoilFamilyRequirementPolicyV1</c>) but their authorised data is not there yet, so
+/// the shipped definition source still makes every otherwise-valid selection 503.
 /// No snapshot is ever produced from completeness labels, examples or defaults.
 /// </summary>
 public sealed class ProductSalesEligibilityService(ICompanyContext companyContext, ICurrentUser currentUser,

@@ -21,8 +21,13 @@ namespace GoymenERP.Modules.Product.Application.Contracts;
 /// <c>invalid_reference</c> — the binding is missing, or the owner's Settings profile is
 /// inactive, not effective on <c>EffectiveOn</c>, or (stock only) not kilogram.</item>
 /// <item><c>orderUnitId</c>: <c>invalid_reference</c> (empty), <c>unsupported_order_unit</c>.</item>
-/// <item>Field errors returned by the accepted family-required policy (none is accepted at
-/// this base).</item>
+/// <item>Field errors returned by the accepted family-required policy. The first one, GDC
+/// band/coil (<c>GdcBandCoilFamilyRequirementPolicyV1</c>), answers on
+/// <c>references.attributes.{fieldId}</c> with <c>required</c>, <c>family_invalid_value</c>,
+/// <c>family_precision_exceeded</c> or <c>family_not_controlled</c>, and on
+/// <c>references.units.stock</c> / <c>references.units.sales</c> with <c>required</c> (a missing
+/// binding) or, on sales, <c>family_unit_path_mismatch</c>
+/// (<c>ProductFamilyPolicyCodesV1</c>).</item>
 /// </list>
 /// <para>Several errors may arrive together; their order carries no precedence. Conflicts
 /// are field errors: <c>version_conflict</c> and <c>lifecycle_conflict</c> are never thrown.</para>
@@ -37,7 +42,8 @@ namespace GoymenERP.Modules.Product.Application.Contracts;
 /// implementation measures it afresh there (the central revalidation port) rather than
 /// relying on the request's cached view.</item>
 /// <item><c>ProductOperationException</c> 503 <c>product_family_policy_unavailable</c> /
-/// <c>product_family_policy_invalid</c>: no accepted family policy, or it answered nothing.</item>
+/// <c>product_family_policy_invalid</c>: no accepted family policy covers the card's family,
+/// its authorised data is missing, or the policy or its data is malformed.</item>
 /// <item><c>SettingsPrerequisiteException</c>: the Settings provider's own codes pass through
 /// (<c>settings_access_denied</c>, <c>settings_provider_unavailable</c>, …);
 /// <c>settings_profile_invalid</c> only for malformed, foreign or self-contradictory profile

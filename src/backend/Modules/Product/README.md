@@ -294,7 +294,7 @@ Order and outcomes:
 | Product missing / empty id | error `productId invalid_reference` |
 | Draft or Inactive, unknown/false sellable, stale version, missing stock/sales unit | `ProductSalesPreconditions` errors |
 | Order unit is not the Product's own sales unit | error `orderUnitId unsupported_order_unit` |
-| Family-required rules | `IProductFamilyRequirementPolicyV1`; the shipped policy throws 503 `product_family_policy_unavailable`; a null answer is 503 `product_family_policy_invalid` |
+| Family-required rules | `IProductFamilyRequirementPolicyV1`. GDC band/coil (`GdcBandCoilFamilyRequirementPolicyV1`) returns its field errors; a card of any other family, or missing authorised data, is 503 `product_family_policy_unavailable`; a null answer or a malformed definition is 503 `product_family_policy_invalid` |
 | Stock/sales unit profile inactive, not effective on the date, or stock not kilogram | error `references.units.stock` / `references.units.sales` `invalid_reference` |
 | Settings provider failure | `SettingsPrerequisiteException` with the provider's code (`settings_access_denied`, `settings_provider_unavailable`, …); `settings_profile_invalid` only for malformed, foreign or self-contradictory profile data |
 | All pass | `ProductSalesSnapshotV1` with the owner's exact profile ids/versions; order unit = sales unit |
@@ -313,7 +313,8 @@ Codes that arrive in `Errors` at this base:
 | `expectedProductVersion` | `version_conflict`, `invalid_version` |
 | `references.units.stock`, `references.units.sales` | `invalid_reference` (binding missing, or the owner's profile cannot be used on `EffectiveOn`) |
 | `orderUnitId` | `invalid_reference`, `unsupported_order_unit` |
-| family policy fields | whatever an accepted family policy returns (none is implemented yet) |
+| `references.attributes.{fieldId}` (GDC band/coil) | `required`, `family_invalid_value`, `family_precision_exceeded`, `family_not_controlled` |
+| `references.units.stock`, `references.units.sales` (GDC band/coil) | `required`; `family_unit_path_mismatch` (sales only) |
 
 - `version_conflict` and `lifecycle_conflict` arrive in `Errors`; neither is thrown, and
   Product.Domain's `ProductVersionConflictException` never crosses this read path.
@@ -331,11 +332,11 @@ Codes that arrive in `Errors` at this base:
 
 Fail-closed limits at this base, not policy choices:
 
-- The first family's rules are accepted (Business #265 5722701085: GDC band/coil, kg→kg —
-  thickness and width > 0 mm, a controlled quality and an explicit coating status) but not
-  implemented yet; that policy is the next slice, after this one. Until then the shipped
-  policy answers 503, so an otherwise valid Active selection is never usable. No other family
-  is accepted, and nothing here infers one.
+- The first family's rules are accepted and implemented; its **data** is not there yet. See
+  "GDC band/coil family policy" below: until the authorised family, template-field and
+  dictionary source exists, the shipped definition source answers 503 ("veri eksik"), so an
+  otherwise valid Active selection is still never usable. No other family is accepted, and
+  nothing here infers one.
 - No offered-unit or conversion policy is accepted (U-08), so only the sales unit is offered.
 - There is no activation command, so real rows are Draft and are rejected with
   `lifecycle_conflict`.
@@ -349,6 +350,37 @@ Fail-closed limits at this base, not policy choices:
 
 Candidate/offered-unit enumeration for a company user is not implemented: without an accepted
 family policy its only honest answer would be 503.
+
+## GDC band/coil family policy (first accepted family)
+
+Source: Business #265 5722701085 (Sinan Ö1/Ö2 of 2026-09-18, #66 5722637822). The rule set is
+accepted; `GdcBandCoilFamilyRequirementPolicyV1` encodes it exactly:
+
+| Rule | Field | Answer when broken |
+|---|---|---|
+| Nominal thickness > 0 mm, at most 3 decimals | `references.attributes.{thickness field}` | missing/null → `required`; not a number or ≤ 0 → `family_invalid_value`; 4th decimal → `family_precision_exceeded` (refused, never rounded) |
+| Nominal width > 0 mm, at most 3 decimals | `references.attributes.{width field}` | same |
+| Controlled quality | `references.attributes.{quality field}` | missing/null → `required`; not an owner-listed reference → `family_not_controlled` |
+| Controlled coating status; "kaplamasız" is a valid stated status, unknown/null is not | `references.attributes.{coating field}` | missing/null → `required`; not listed → `family_not_controlled` |
+| kg→kg, no conversion: the sales unit is the stock unit | `references.units.stock`, `references.units.sales` | a missing binding → `required` (never a silent pass); different units → `family_unit_path_mismatch` on `references.units.sales` |
+
+- Colour is meaningful only for a painted family; nothing is required of this one.
+- Every broken rule is reported together; order carries no precedence.
+- Draft/Inactive, the sellable role, the Settings profiles (stock must be kilogram) and the
+  authority fences stay the eligibility read's: a positive answer needs all of them together.
+- **Data, not policy, is missing.** Which family the rules cover, which template fields hold the
+  measures, and the controlled quality and coating lists come from the authorised owner through
+  `IGdcBandCoilFamilyDefinitionSourceV1` (`GdcBandCoilFamilyDefinitionV1`). None exists yet, so
+  the shipped `UnavailableGdcBandCoilFamilyDefinitionSourceV1` answers 503
+  `product_family_policy_unavailable`. The policy is not reopened; the data is brought.
+- A card of another family, or with no family, is 503 `product_family_policy_unavailable`, never
+  "no errors". A malformed definition (empty family, blank or duplicate field, empty list,
+  uncoated status not listed) is 503 `product_family_policy_invalid`.
+- The codes are the family policy's own (`ProductFamilyPolicyCodesV1`), not the draft edit set
+  (`ProductFieldCodesV1`). Sales maps them like any Product field error.
+- Not in this slice: the authorised definition source, host registration (C3) of the eligibility
+  runtime or of this policy, and any grant. Tests use an isolated synthetic definition only;
+  nothing is seeded.
 
 ```powershell
 dotnet test tests/GoymenERP.Product.UnitTests/GoymenERP.Product.UnitTests.csproj --filter FullyQualifiedName~ProductSalesEligibilityServiceTests
