@@ -93,6 +93,42 @@ public sealed class SalesDraftServiceTests
         Assert.Equal(0, world.Products.Calls);
     }
 
+    [Fact]
+    public async Task The_loser_of_a_same_key_race_answers_the_winners_draft_as_a_replay()
+    {
+        var world = new World { Store = { Race = "draft-at-store" } };
+
+        var response = await world.Service().CreateDraftAsync(Request(), Metadata("k-1", correlation: "loser"));
+
+        Assert.True(response.IsReplay);
+        Assert.Equal("winner-correlation", response.OriginalCorrelationId);
+        Assert.Equal(world.Store.Winner!.Id, response.Detail.Draft.Id);
+        Assert.Equal(2, world.Store.Replays);
+    }
+
+    [Fact]
+    public async Task A_race_that_leaves_nothing_under_the_key_is_the_callers_concurrent_change()
+    {
+        var world = new World { Store = { Race = "empty-at-store" } };
+
+        var refusal = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(Request(), Metadata("k-1")));
+
+        Assert.Equal((409, SalesDraftProblemCodesV1.ConcurrentChange, false), (refusal.Status, refusal.Code, refusal.IsReplay));
+        Assert.Equal(2, world.Store.Replays);
+    }
+
+    [Fact]
+    public async Task A_terminal_record_that_loses_its_race_answers_the_winners_recorded_refusal_as_a_replay()
+    {
+        var world = new World { Products = { VersionConflict = true }, Store = { Race = "refusal-at-record" } };
+
+        var refusal = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(Request(), Metadata("k-1", correlation: "loser")));
+
+        Assert.Equal((409, SalesDraftProblemCodesV1.VersionConflict, true, "winner-correlation"),
+            (refusal.Status, refusal.Code, refusal.IsReplay, refusal.OriginalCorrelationId));
+        Assert.Empty(world.Store.Refusals);
+    }
+
     [Theory]
     [InlineData("unauthenticated", 401)]
     [InlineData("other-company", 403)]
@@ -421,11 +457,29 @@ public sealed class SalesDraftServiceTests
         public List<(SalesDraftWriteEnvelope Envelope, SalesDraftTerminalRefusal Refusal)> Refusals { get; } = [];
         public int Replays { get; private set; }
         public string? Fault { get; set; }
+        /// <summary>A same-key race lost once: "draft-at-store" (the winner stored a draft), "empty-at-store" (nothing under the key), "refusal-at-record" (the winner recorded the refusal).</summary>
+        public string? Race { get; set; }
+        public SalesOrderDraft? Winner { get; private set; }
 
         public Task<SalesDraftStoreResult> StoreDraftAsync(SalesDraftWriteEnvelope envelope, string requestHash, Func<string, SalesOrderDraft> build,
             CancellationToken cancellationToken = default)
         {
             if (Fault is not null) throw new SalesDraftStoreException(Fault, "synthetic");
+            if (Race is "draft-at-store" or "empty-at-store")
+            {
+                var race = Race;
+                Race = null;
+                if (race == "draft-at-store")
+                {
+                    Winner = build("SO-2026-000099");
+                    Winner.RequireStorable();
+                    _drafts.Add(Winner);
+                    _attempts[envelope.IdempotencyKey] = (envelope.ActorId, requestHash, Winner, null, "winner-correlation");
+                }
+
+                throw new SalesDraftStoreException(SalesDraftStoreCodes.ConcurrentChange, "synthetic race");
+            }
+
             var draft = build($"SO-2026-{_drafts.Count + 1:D6}");
             draft.RequireStorable();
             _drafts.Add(draft);
@@ -447,6 +501,13 @@ public sealed class SalesDraftServiceTests
         public Task RecordRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash, SalesDraftTerminalRefusal refusal,
             CancellationToken cancellationToken = default)
         {
+            if (Race == "refusal-at-record")
+            {
+                Race = null;
+                _attempts[envelope.IdempotencyKey] = (envelope.ActorId, requestHash, null, refusal, "winner-correlation");
+                throw new SalesDraftStoreException(SalesDraftStoreCodes.ConcurrentChange, "synthetic race");
+            }
+
             _attempts[envelope.IdempotencyKey] = (envelope.ActorId, requestHash, null, refusal, envelope.CorrelationId);
             Refusals.Add((envelope, refusal));
             return Task.CompletedTask;

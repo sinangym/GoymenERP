@@ -206,6 +206,7 @@ public static class SalesEndpoints
                     return Results.Json(response, SalesDraftJson.Options, statusCode: SalesDraftApiV1.ReplayStatus);
                 }
 
+                httpContext.Response.Headers.Location = DraftLocation(httpContext.Request, response.Detail.Id);
                 return Results.Json(response, SalesDraftJson.Options, statusCode: SalesDraftApiV1.CreatedStatus);
             }
             catch (SalesDraftServiceException exception)
@@ -311,10 +312,24 @@ public static class SalesEndpoints
         httpContext.Response.Headers["Idempotency-Original-Correlation-Id"] = originalCorrelationId;
     }
 
-    /// <summary>The service's refusal as the #257 problem: platform 401/403/404 stay code-less, every other status carries its code and field errors.</summary>
+    /// <summary>The created draft's absolute location on this host (the detail route).</summary>
+    private static string DraftLocation(HttpRequest request, Guid draftId) =>
+        $"{request.Scheme}://{request.Host}{request.PathBase}{DraftsPath}/{draftId:D}";
+
+    /// <summary>
+    /// The service's refusal as the #257 problem. Platform 401/403/404 and every 503 stay code-less:
+    /// the platform writer answers them with its own public code (<c>forbidden</c>,
+    /// <c>service_unavailable</c>), so the service's setup and provider codes
+    /// (<c>permission_unregistered</c>, <c>counterparty_provider_unavailable</c>,
+    /// <c>settings_provider_unavailable</c>, <c>reference_provider_invalid</c>,
+    /// <c>product_eligibility_unavailable</c>) never reach the wire — the same boundary as the
+    /// reference routes' <see cref="ToHttpResult{T}"/>; they stay in the logs and the service tests.
+    /// Every other status carries its declared code and field errors.
+    /// </summary>
     private static IResult DraftProblem(SalesDraftServiceException exception, ICorrelationContext correlation)
     {
-        if (exception.Status is StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden or StatusCodes.Status404NotFound)
+        if (exception.Status is StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden
+            or StatusCodes.Status404NotFound or StatusCodes.Status503ServiceUnavailable)
         {
             return Results.Problem(statusCode: exception.Status);
         }

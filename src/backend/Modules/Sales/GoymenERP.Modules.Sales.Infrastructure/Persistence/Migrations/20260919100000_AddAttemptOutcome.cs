@@ -9,9 +9,13 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations;
 /// Sales API slice, ADR-011 §7: an attempt is either a stored draft or a recorded terminal refusal
 /// (the Product owner's stale-version 409), so that the same key always answers the same result.
 /// <c>DraftId</c> becomes nullable, <c>Outcome</c> (1 draft / 2 refusal) and <c>RefusalJson</c> are
-/// added, the draft index is filtered to stored drafts. No environment holds a Sales row (the host
-/// did not wire the module before this slice), so <c>Outcome</c> is NOT NULL with no default: a table
-/// with rows would fail this migration visibly, never silently.
+/// added, the draft index is filtered to stored drafts. Every attempt row written before this
+/// migration holds a stored draft (a refusal could not be recorded yet), so <c>Outcome</c> is added
+/// with the transient default 1 for those rows and the default is dropped in the same migration:
+/// the model has no default (the store always writes the outcome), and a row without an outcome
+/// fails visibly. No released environment holds a Sales row (the host wires the module with this
+/// slice); the backfill is there so that a stack migrated at #315 does not fail on a non-empty
+/// table.
 /// </summary>
 [DbContext(typeof(SalesDbContext))]
 [Migration("20260919100000_AddAttemptOutcome")]
@@ -34,12 +38,24 @@ public sealed class AddAttemptOutcome : Migration
             oldClrType: typeof(Guid),
             oldType: "uniqueidentifier");
 
+        // Backfill: every pre-§7 attempt is a stored draft (1); then the default goes, the model has none.
         migrationBuilder.AddColumn<int>(
             name: "Outcome",
             schema: "sales",
             table: "DraftAttempts",
             type: "int",
-            nullable: false);
+            nullable: false,
+            defaultValue: 1);
+
+        migrationBuilder.AlterColumn<int>(
+            name: "Outcome",
+            schema: "sales",
+            table: "DraftAttempts",
+            type: "int",
+            nullable: false,
+            oldClrType: typeof(int),
+            oldType: "int",
+            oldDefaultValue: 1);
 
         migrationBuilder.AddColumn<string>(
             name: "RefusalJson",

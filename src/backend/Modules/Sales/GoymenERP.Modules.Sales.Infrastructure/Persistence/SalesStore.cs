@@ -422,14 +422,17 @@ public sealed class SalesStore(
         }
         catch (DbUpdateConcurrencyException exception)
         {
+            // Nothing of the failed write stays tracked: the caller re-reads the key afresh in this scope (ADR-011 §8).
+            dbContext.ChangeTracker.Clear();
             throw Refused(SalesDraftStoreCodes.ConcurrentChange,
                 "Şirketin numara sayacı ya da taslağı başka bir yazmayla değişti; hiçbir şey kaydedilmedi.", exception);
         }
         catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 })
         {
             // Only unique-key violations are recognised here (the Idempotency / Inventory / Accounting pattern):
-            // the attempt key, the document number, the draft id or a line/slice id lost a race. Retried,
-            // the same request answers from the winner.
+            // the attempt key, the document number, the draft id or a line/slice id lost a race. The loser's
+            // rows leave the tracker so that the same scope reads the winner's result (FindReplayAsync) afresh.
+            dbContext.ChangeTracker.Clear();
             throw Refused(SalesDraftStoreCodes.ConcurrentChange,
                 "Kalıcı tekillik kuralı başka bir yazmanın lehine sonuçlandı; hiçbir şey kaydedilmedi.", exception);
         }

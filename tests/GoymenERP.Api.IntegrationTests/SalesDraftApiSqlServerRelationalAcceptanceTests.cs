@@ -9,11 +9,14 @@ using GoymenERP.Modules.Identity.Domain.Assignments;
 using GoymenERP.Modules.Identity.Domain.Roles;
 using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
+using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -82,6 +85,7 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
         await using var run = await Run.StartAsync();
         var saver = await run.GrantAsync(TestUsers.CompanyA, CompanyA, DraftGrants);
         using var client = run.Factory.CreateClientFor(saver, CompanyA);
+        client.DefaultRequestHeaders.Remove("Idempotency-Key");
 
         // Without an Idempotency-Key the save is not attempted; a non-canonical or repeated key neither.
         using (var noKey = new HttpRequestMessage(HttpMethod.Post, SalesEndpoints.DraftsPath) { Content = Body() })
@@ -171,6 +175,201 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
         }
     }
 
+    /// <summary>
+    /// The real host, the real store and the real SQL Server with SENTETIK owner ports (Cari, Settings,
+    /// Product answer fixed identities for the context company; nothing else is replaced): ADR-011
+    /// §8 — two callers of the same key and content meet at the Product port and race the store: one
+    /// draft, one attempt, one audit row, both answer that draft (201 + Location for the winner, 200 +
+    /// replay headers for the loser); §4 — the key replays it again with the first correlation; §7 — a
+    /// stale product version is recorded and replayed as the same 409 with the replay headers; a
+    /// provider's 503 reaches the wire as the platform's public code only; the raced draft reads back.
+    /// </summary>
+    [SqlServerFact]
+    public async Task A_same_key_race_stores_one_draft_and_every_replay_holds_in_the_real_host()
+    {
+        await using var run = await Run.StartAsync(services =>
+        {
+            services.RemoveAll<ISalesPartyAccountPortV1>();
+            services.AddScoped<ISalesPartyAccountPortV1, SyntheticAccounts>();
+            services.RemoveAll<ISettingsPrerequisiteProvider>();
+            services.AddScoped<ISettingsPrerequisiteProvider, SyntheticSettings>();
+            services.RemoveAll<IProductSalesEligibilityV1>();
+            services.AddSingleton<SyntheticGate>();
+            services.AddScoped<IProductSalesEligibilityV1, SyntheticProducts>();
+        });
+        var saver = await run.GrantAsync(TestUsers.CompanyA, CompanyA, DraftGrants);
+        using var client = run.Factory.CreateClientFor(saver, CompanyA);
+        client.DefaultRequestHeaders.Remove("Idempotency-Key");
+        client.DefaultRequestHeaders.Remove("X-Correlation-Id");
+
+        // §8: the same key and content twice at once; the gate holds both at the Product port until both
+        // passed the replay lookup, so both reach the store and exactly one insert wins.
+        var raced = Json(GateProduct);
+        var correlationA = Guid.NewGuid().ToString("N");
+        var correlationB = Guid.NewGuid().ToString("N");
+        var responses = await Task.WhenAll(
+            client.SendAsync(Post("SENTETIK-race", raced, correlationA)),
+            client.SendAsync(Post("SENTETIK-race", raced, correlationB)));
+        var winner = Assert.Single(responses, response => response.StatusCode == HttpStatusCode.Created);
+        var loser = Assert.Single(responses, response => response.StatusCode == HttpStatusCode.OK);
+        var draftId = (await Result(winner)).GetProperty("detail").GetProperty("draft").GetProperty("id").GetGuid();
+        Assert.Equal(draftId, (await Result(loser)).GetProperty("detail").GetProperty("draft").GetProperty("id").GetGuid());
+        Assert.Equal(new Uri(client.BaseAddress!, $"{SalesEndpoints.DraftsPath.TrimStart('/')}/{draftId:D}"), winner.Headers.Location);
+        Assert.False(winner.Headers.Contains("Idempotency-Replayed"));
+        var winnerCorrelation = Assert.Single(winner.Headers.GetValues("X-Correlation-Id"));
+        Assert.Contains(winnerCorrelation, new[] { correlationA, correlationB });
+        Assert.Equal("true", Assert.Single(loser.Headers.GetValues("Idempotency-Replayed")));
+        Assert.Equal(winnerCorrelation, Assert.Single(loser.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Drafts"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.DraftAttempts WHERE Outcome = 1 AND DraftId = @id AND RefusalJson IS NULL AND CorrelationId = @c",
+            ("@id", draftId), ("@c", winnerCorrelation)));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Sales.OrderDraft'"));
+
+        // §4: the same key later answers the same draft with the first correlation, without the owners.
+        using (var again = await client.SendAsync(Post("SENTETIK-race", raced, Guid.NewGuid().ToString("N"))))
+        {
+            Assert.Equal(HttpStatusCode.OK, again.StatusCode);
+            Assert.Equal(draftId, (await Result(again)).GetProperty("detail").GetProperty("draft").GetProperty("id").GetGuid());
+            Assert.Equal(winnerCorrelation, Assert.Single(again.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+
+        // §7: the Product owner's stale version is the key's terminal result — recorded, then replayed.
+        var stale = Json(StaleProduct);
+        var staleCorrelation = Guid.NewGuid().ToString("N");
+        using (var first = await client.SendAsync(Post("SENTETIK-stale", stale, staleCorrelation)))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, first.StatusCode);
+            Assert.Equal(SalesDraftProblemCodesV1.VersionConflict, (await Result(first)).GetProperty("code").GetString());
+            Assert.False(first.Headers.Contains("Idempotency-Replayed"));
+        }
+
+        using (var replayed = await client.SendAsync(Post("SENTETIK-stale", stale, Guid.NewGuid().ToString("N"))))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, replayed.StatusCode);
+            var problem = await Result(replayed);
+            Assert.Equal(SalesDraftProblemCodesV1.VersionConflict, problem.GetProperty("code").GetString());
+            Assert.Equal("lines[0].productId", problem.GetProperty("errors")[0].GetProperty("field").GetString());
+            Assert.Equal("true", Assert.Single(replayed.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal(staleCorrelation, Assert.Single(replayed.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Drafts"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.DraftAttempts WHERE Outcome = 2 AND DraftId IS NULL AND ISJSON(RefusalJson) = 1 AND CorrelationId = @c",
+            ("@c", staleCorrelation)));
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts"));
+
+        // A provider outage is the platform's 503: its own code never reaches the wire, nothing is recorded.
+        using (var outage = await client.SendAsync(Post("SENTETIK-outage", Json(GateProduct, UnavailableParty), Guid.NewGuid().ToString("N"))))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, outage.StatusCode);
+            var body = await outage.Content.ReadAsStringAsync();
+            Assert.Equal("service_unavailable", JsonDocument.Parse(body).RootElement.GetProperty("code").GetString());
+            Assert.DoesNotContain("counterparty_provider_unavailable", body, StringComparison.Ordinal);
+        }
+
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts"));
+
+        // The raced draft is a real stored draft of the company.
+        using var detail = await client.GetAsync($"{SalesEndpoints.DraftsPath}/{draftId:D}");
+        Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
+        var stored = await Result(detail);
+        Assert.Equal(draftId, stored.GetProperty("draft").GetProperty("id").GetGuid());
+        Assert.Equal(1, stored.GetProperty("draft").GetProperty("lineCount").GetInt32());
+    }
+
+    private static readonly Guid GateProduct = Guid.Parse("5e11e000-0000-4000-8000-000000000001");
+    private static readonly Guid StaleProduct = Guid.Parse("5e11e000-0000-4000-8000-000000000002");
+    private static readonly Guid UnavailableParty = Guid.Parse("5e11e000-0000-4000-8000-000000000003");
+    private static readonly Guid KgProfile = Guid.Parse("5e11e000-0000-4000-8000-000000000004");
+    private static readonly Guid MoneyProfile = Guid.Parse("5e11e000-0000-4000-8000-000000000005");
+    private static readonly Guid FixedParty = Guid.Parse("5e11e000-0000-4000-8000-000000000006");
+    private static readonly Guid FixedAccount = Guid.Parse("5e11e000-0000-4000-8000-000000000007");
+    private static readonly Guid FixedCurrency = Guid.Parse("5e11e000-0000-4000-8000-000000000008");
+    private static readonly Guid FixedUnit = Guid.Parse("5e11e000-0000-4000-8000-000000000009");
+    private static readonly Guid FixedLine = Guid.Parse("5e11e000-0000-4000-8000-00000000000a");
+
+    /// <summary>A fixed #257 body (the same bytes each time it is asked for the same product and party).</summary>
+    private static string Json(Guid productId, Guid? partyId = null)
+    {
+        var line = new SalesOrderDraftLineRequest(FixedLine, productId, "7", FixedUnit, "1.25");
+        var request = new CreateSalesOrderDraftRequest("Order", partyId ?? FixedParty, FixedAccount, new DateOnly(2026, 9, 18), FixedCurrency, [line]);
+        return JsonSerializer.Serialize(request, SalesDraftJson.Options);
+    }
+
+    private static HttpRequestMessage Post(string idempotencyKey, string json, string correlationId)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, SalesEndpoints.DraftsPath)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Add("Idempotency-Key", idempotencyKey);
+        request.Headers.Add("X-Correlation-Id", correlationId);
+        return request;
+    }
+
+    /// <summary>Holds the first two callers of the gate product until both arrived; later callers pass; a lone caller fails visibly.</summary>
+    private sealed class SyntheticGate
+    {
+        private readonly TaskCompletionSource<bool> both = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int arrivals;
+
+        public Task ArriveAsync()
+        {
+            if (Interlocked.Increment(ref arrivals) >= 2)
+            {
+                both.TrySetResult(true);
+            }
+
+            return both.Task.WaitAsync(TimeSpan.FromSeconds(20));
+        }
+    }
+
+    private sealed class SyntheticAccounts(ICompanyContext companyContext) : ISalesPartyAccountPortV1
+    {
+        public Task<SalesPartyAccountAnswerV1> GetAuthorizedAsync(Guid partyId, Guid companyAccountId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(partyId == UnavailableParty
+                ? new SalesPartyAccountAnswerV1(SalesPartyAccountOutcomeV1.Unavailable, null)
+                : new SalesPartyAccountAnswerV1(SalesPartyAccountOutcomeV1.Found,
+                    new SalesPartyAccountV1(partyId, companyAccountId, companyContext.CompanyId, true, true, "3", "2")));
+    }
+
+    private sealed class SyntheticSettings(ICompanyContext companyContext) : ISettingsPrerequisiteProvider
+    {
+        public Task<MoneyProfileV1> GetMoneyProfileAsync(Guid currencyId, string operation, DateOnly effectiveOn, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new MoneyProfileV1(companyContext.CompanyId, currencyId, "TRY", operation, new ProfileVersionV1(MoneyProfile, 3), 2, true,
+                new DateOnly(2026, 9, 1), null));
+
+        public Task<UnitProfileV1> GetUnitProfileAsync(Guid unitId, DateOnly effectiveOn, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new UnitProfileV1(companyContext.CompanyId, unitId, "kg", "weight", true, new ProfileVersionV1(KgProfile, 4), 3, true,
+                new DateOnly(2026, 9, 1), null));
+
+        public Task<PeriodEligibilityV1> GetPeriodEligibilityAsync(string operation, DateOnly occurredOn, DateOnly? valueOn,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class SyntheticProducts(ICompanyContext companyContext, SyntheticGate gate) : IProductSalesEligibilityV1
+    {
+        public async Task<ProductSalesEligibilityV1> EvaluateAsync(ProductSalesSelectionV1 selection, CancellationToken cancellationToken)
+        {
+            if (selection.ProductId == StaleProduct)
+            {
+                return new ProductSalesEligibilityV1(null, [new("productId", ProductApiV1.VersionConflict)]);
+            }
+
+            if (selection.ProductId == GateProduct)
+            {
+                await gate.ArriveAsync();
+            }
+
+            var unit = new ProductSalesUnitProfileV1(companyContext.CompanyId, selection.OrderUnitId, KgProfile, "4");
+            return new ProductSalesEligibilityV1(
+                new ProductSalesSnapshotV1(selection.ProductId, "7", "GDC-001", "Sentetik bant", unit, unit, unit, selection.EffectiveOn), []);
+        }
+    }
+
     private static StringContent Body(string? unitPrice = null)
     {
         var line = new SalesOrderDraftLineRequest(Guid.NewGuid(), Guid.NewGuid(), "1", Guid.NewGuid(), "1.25", unitPrice,
@@ -194,11 +393,11 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
 
         public SqlServerRelationalApiFactory Factory { get; }
 
-        public static async Task<Run> StartAsync()
+        public static async Task<Run> StartAsync(Action<IServiceCollection>? configureServices = null)
         {
             var baseConnectionString = Environment.GetEnvironmentVariable(
                 SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
-            var factory = new SqlServerRelationalApiFactory(baseConnectionString);
+            var factory = new SqlServerRelationalApiFactory(baseConnectionString, configureServices);
             var run = new Run(baseConnectionString, factory);
             using var client = factory.CreateClient();
             using var health = await client.GetAsync("/health/live");

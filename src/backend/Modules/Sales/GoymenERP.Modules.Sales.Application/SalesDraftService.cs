@@ -72,22 +72,26 @@ public sealed class SalesDraftService(
             () => store.FindReplayAsync(envelope, requestHash, cancellationToken), cancellationToken);
         if (replay is not null)
         {
-            if (replay.Refusal is { } refusal)
-            {
-                throw new SalesDraftServiceException(refusal.Status, refusal.Code, refusal.Errors, isReplay: true,
-                    originalCorrelationId: replay.OriginalCorrelationId);
-            }
-
-            return Response(replay.Draft!, isReplay: true, replay.OriginalCorrelationId);
+            return Replayed(replay);
         }
 
-        // 4. The owners, each answered for this company and business date.
-        await RequireAccountAsync(scope, request, cancellationToken);
-        var money = await ReadMoneyProfileAsync(scope, request, cancellationToken);
+        // 4. The owners, each answered for this company and business date. A stale product version
+        // is recorded as the key's terminal result; if another caller of the same key wins that
+        // record meanwhile, the winner's result is answered instead (ADR-011 §8; RaceWon).
+        MoneyProfileSnapshot money;
         var lineInputs = new List<SalesDraftLineInput>(request.Lines.Count);
-        for (var index = 0; index < request.Lines.Count; index++)
+        try
         {
-            lineInputs.Add(await ReadLineAsync(scope, request, index, envelope, requestHash, cancellationToken));
+            await RequireAccountAsync(scope, request, cancellationToken);
+            money = await ReadMoneyProfileAsync(scope, request, cancellationToken);
+            for (var index = 0; index < request.Lines.Count; index++)
+            {
+                lineInputs.Add(await ReadLineAsync(scope, request, index, envelope, requestHash, cancellationToken));
+            }
+        }
+        catch (RaceWon won)
+        {
+            return won.Response;
         }
 
         // 5. The domain builds the draft on the store's document number; the store keeps one save.
@@ -116,6 +120,20 @@ public sealed class SalesDraftService(
         {
             throw new SalesDraftServiceException(400, "validation_failed");
         }
+        catch (SalesDraftStoreException exception) when (exception.Code == SalesDraftStoreCodes.ConcurrentChange)
+        {
+            // ADR-011 §8: the loser of a same-key race answers the winner's result, read afresh; only a
+            // race that left nothing under this key (the number counter, a draft id) is the caller's
+            // concurrent_change to retry.
+            var won = await GuardedAsync(scope, bindings.CreatePermission,
+                () => store.FindReplayAsync(envelope, requestHash, cancellationToken), cancellationToken);
+            if (won is null)
+            {
+                throw Store(exception);
+            }
+
+            return Replayed(won);
+        }
         catch (SalesDraftStoreException exception)
         {
             throw Store(exception);
@@ -123,6 +141,24 @@ public sealed class SalesDraftService(
 
         await RequireStillAsync(scope, bindings.CreatePermission, cancellationToken);
         return Response(stored.Draft, stored.Outcome == SalesDraftWriteOutcome.Replayed, stored.OriginalCorrelationId);
+    }
+
+    /// <summary>ADR-011 §4 / §7: what the key answered before — a stored draft as a 200 replay, a recorded refusal as the same refusal.</summary>
+    private static SalesOrderDraftResponse Replayed(SalesDraftReplay replay)
+    {
+        if (replay.Refusal is { } refusal)
+        {
+            throw new SalesDraftServiceException(refusal.Status, refusal.Code, refusal.Errors, isReplay: true,
+                originalCorrelationId: replay.OriginalCorrelationId);
+        }
+
+        return Response(replay.Draft!, isReplay: true, replay.OriginalCorrelationId);
+    }
+
+    /// <summary>Raised inside the owner reads when another caller of the same key stored a draft first; carries that draft's replay.</summary>
+    private sealed class RaceWon(SalesOrderDraftResponse response) : Exception
+    {
+        public SalesOrderDraftResponse Response { get; } = response;
     }
 
     public async Task<SalesOrderDraftDetailView> GetDraftDetailAsync(Guid draftId, CancellationToken cancellationToken = default)
@@ -464,7 +500,12 @@ public sealed class SalesDraftService(
             ? value
             : throw new SalesDraftServiceException(400, "validation_failed", [new("quantity", "invalid_decimal_text")]);
 
-    /// <summary>ADR-011 §7: a terminal refusal is recorded under the key before it is answered; a racing record loses silently.</summary>
+    /// <summary>
+    /// ADR-011 §7: a terminal refusal is recorded under the key before it is answered. If another
+    /// caller of the same key took the record meanwhile (§8), the winner's result is answered: its
+    /// refusal as a replay, its draft through <see cref="RaceWon"/>; a key left empty by the race
+    /// answers this refusal unrecorded (the retry records or replays).
+    /// </summary>
     private async Task<SalesDraftServiceException> TerminalAsync(SalesDraftWriteEnvelope envelope, string requestHash,
         SalesDraftTerminalRefusal refusal, CancellationToken cancellationToken)
     {
@@ -474,7 +515,17 @@ public sealed class SalesDraftService(
         }
         catch (SalesDraftStoreException exception) when (exception.Code == SalesDraftStoreCodes.ConcurrentChange)
         {
-            // The key was taken meanwhile; the retry replays whatever won.
+            var won = await store.FindReplayAsync(envelope, requestHash, cancellationToken);
+            if (won is not null)
+            {
+                if (won.Refusal is { } recorded)
+                {
+                    return new SalesDraftServiceException(recorded.Status, recorded.Code, recorded.Errors, isReplay: true,
+                        originalCorrelationId: won.OriginalCorrelationId);
+                }
+
+                throw new RaceWon(Response(won.Draft!, isReplay: true, won.OriginalCorrelationId));
+            }
         }
 
         return new SalesDraftServiceException(refusal.Status, refusal.Code, refusal.Errors);
