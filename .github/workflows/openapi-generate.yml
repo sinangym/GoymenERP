@@ -1,0 +1,158 @@
+name: OpenAPI generate (selectable)
+
+# Generates the OpenAPI document of one same-repo pull request's EXACT head and uploads it as a
+# short-lived artifact, so an API PR can commit the generated contract without a local build.
+# It is a helper, not a gate: it never writes contracts/, and the CI "OpenAPI contract drift" job
+# stays the fail-closed check that the committed bytes are what the build generates. That job
+# deliberately has no artifact upload (tests/openapi_contract_drift pins this), which is why this
+# is a separate workflow.
+#
+# Commit rule: the downloaded openapi.json is committed byte-for-byte, with its sha256 in the
+# commit message. Never edited by hand.
+#
+# Triggers only: workflow_dispatch(pr) once on main, or the `openapi:generate` label on a PR whose
+# branch carries this workflow. Never on push or on a PR update.
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number whose exact head is generated (same-repo branches only)
+        required: true
+        type: string
+  pull_request:
+    types:
+      - labeled
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: openapi-generate-${{ inputs.pr || github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  resolve:
+    name: Resolve exact head
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'openapi:generate'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      pr: ${{ steps.target.outputs.pr }}
+      head_sha: ${{ steps.target.outputs.head_sha }}
+      base_sha: ${{ steps.target.outputs.base_sha }}
+    steps:
+      - name: Resolve and validate the target
+        id: target
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_PR: ${{ inputs.pr }}
+          EVENT_PR: ${{ github.event.pull_request.number }}
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then pr="$INPUT_PR"; else pr="$EVENT_PR"; fi
+          [[ "$pr" =~ ^[1-9][0-9]*$ ]] || { echo "::error::OPENAPI_PR_INVALID: '$pr'"; exit 1; }
+          pull="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}")"
+          state="$(jq -r '.state' <<<"$pull")"
+          head_repo="$(jq -r '.head.repo.full_name' <<<"$pull")"
+          head_sha="$(jq -r '.head.sha' <<<"$pull")"
+          base_sha="$(jq -r '.base.sha' <<<"$pull")"
+          base_ref="$(jq -r '.base.ref' <<<"$pull")"
+          test "$state" = "open" || { echo "::error::OPENAPI_PR_NOT_OPEN: #$pr is $state"; exit 1; }
+          test "$head_repo" = "$GITHUB_REPOSITORY" || {
+            echo "::error::OPENAPI_FORK_REFUSED: #$pr comes from $head_repo; only same-repo branches run here";
+            exit 1;
+          }
+          test "$base_ref" = "main" || { echo "::error::OPENAPI_BASE_NOT_MAIN: #$pr targets $base_ref"; exit 1; }
+          [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::OPENAPI_HEAD_INVALID"; exit 1; }
+          if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
+            test "$head_sha" = "$EVENT_HEAD_SHA" || {
+              echo "::error::OPENAPI_HEAD_MOVED: #$pr moved after the label was added; label again";
+              exit 1;
+            }
+          fi
+          {
+            echo "pr=$pr"
+            echo "head_sha=$head_sha"
+            echo "base_sha=$base_sha"
+          } >> "$GITHUB_OUTPUT"
+          echo "OpenAPI generation for #$pr exact head $head_sha (base $base_sha)."
+
+  generate:
+    name: "Generate OpenAPI for PR ${{ needs.resolve.outputs.pr }}"
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+      EXPECTED_BASE_SHA: ${{ needs.resolve.outputs.base_sha }}
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve.outputs.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          git merge-base --is-ancestor "$EXPECTED_BASE_SHA" HEAD || {
+            echo "::error::OPENAPI_BASE_NOT_MERGED: merge main into the PR and run again";
+            exit 1;
+          }
+
+      - name: .NET bootstrap preflight and workflow contract
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B -m unittest discover -s tests/openapi_generate_contract -p "test_*.py" -v
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore API
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet restore src/backend/GoymenERP.Api/GoymenERP.Api.csproj \
+          -noAutoResponse \
+          --configfile NuGet.Config
+
+      - name: Build API and emit the OpenAPI document
+        # The API project writes artifacts/openapi.json at build time (OpenApiDocumentsDirectory);
+        # it is the same file the drift job compares with the baseline.
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet build src/backend/GoymenERP.Api/GoymenERP.Api.csproj \
+          -noAutoResponse \
+          --configuration Release \
+          --no-restore
+
+      - name: Report the generated document
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f artifacts/openapi.json || { echo "::error::OPENAPI_NOT_EMITTED: artifacts/openapi.json"; exit 1; }
+          generated="$(sha256sum artifacts/openapi.json | cut -d' ' -f1)"
+          baseline="$(sha256sum contracts/openapi/goymen-erp-v1.json | cut -d' ' -f1)"
+          echo "generated sha256: $generated ($(wc -c < artifacts/openapi.json) bytes)"
+          echo "baseline  sha256: $baseline"
+          if [ "$generated" = "$baseline" ]; then
+            echo "The generated document equals the committed baseline."
+          else
+            echo "The generated document differs from the committed baseline; commit the artifact byte-for-byte."
+          fi
+
+      - name: Upload the generated document
+        uses: actions/upload-artifact@v7
+        with:
+          name: openapi-${{ needs.resolve.outputs.head_sha }}
+          path: artifacts/openapi.json
+          if-no-files-found: error
+          retention-days: 3

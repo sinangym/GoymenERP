@@ -486,6 +486,9 @@ partial class InventoryDbContextModelSnapshot : ModelSnapshot
                 .HasMaxLength(128)
                 .HasColumnType("nvarchar(128)");
 
+            b.Property<int>("SourceGrain")
+                .HasColumnType("int");
+
             b.Property<Guid>("SourceId")
                 .HasColumnType("uniqueidentifier");
 
@@ -502,6 +505,8 @@ partial class InventoryDbContextModelSnapshot : ModelSnapshot
             b.HasAlternateKey("CompanyId", "Id");
 
             b.HasIndex("CompanyId", "RecordedAtUtc", "Id");
+
+            b.HasIndex("CompanyId", "Kind", "SourceKind", "SourceId", "SourceGrain");
 
             b.HasIndex("CompanyId", "Kind", "SourceKind", "SourceId")
                 .IsUnique()
@@ -530,6 +535,10 @@ partial class InventoryDbContextModelSnapshot : ModelSnapshot
                 t.HasCheckConstraint(
                     "CK_Movements_PayloadHash",
                     "LEN([PayloadHash]) = 64");
+
+                t.HasCheckConstraint(
+                    "CK_Movements_SourceGrain",
+                    "([SourceLineId] IS NULL AND [SourceGrain] = 1) OR ([SourceLineId] IS NOT NULL AND [SourceGrain] = 2)");
 
                 t.HasCheckConstraint(
                     "CK_Movements_SourceKind",
@@ -564,6 +573,40 @@ partial class InventoryDbContextModelSnapshot : ModelSnapshot
             b.ToTable("Locations", "organization", t =>
             {
                 t.ExcludeFromMigrations();
+            });
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.SourceGrainRow", b =>
+        {
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<int>("Kind")
+                .HasColumnType("int");
+
+            b.Property<string>("SourceKind")
+                .HasMaxLength(64)
+                .HasColumnType("nvarchar(64)");
+
+            b.Property<Guid>("SourceId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<int>("Grain")
+                .HasColumnType("int");
+
+            b.HasKey("CompanyId", "Kind", "SourceKind", "SourceId");
+
+            b.HasAlternateKey("CompanyId", "Kind", "SourceKind", "SourceId", "Grain");
+
+            b.ToTable("SourceGrains", "inventory", t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_SourceGrains_Grain",
+                    "[Grain] IN (1, 2)");
+
+                t.HasCheckConstraint(
+                    "CK_SourceGrains_Identity",
+                    "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [SourceId] <> '00000000-0000-0000-0000-000000000000' AND LEN([SourceKind]) > 0");
             });
         });
 
@@ -636,6 +679,22 @@ partial class InventoryDbContextModelSnapshot : ModelSnapshot
         });
 
         modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.MovementRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                .WithMany()
+                .HasForeignKey("CompanyId")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+
+            b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.SourceGrainRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "Kind", "SourceKind", "SourceId", "SourceGrain")
+                .HasPrincipalKey("CompanyId", "Kind", "SourceKind", "SourceId", "Grain")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.SourceGrainRow", b =>
         {
             b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OrganizationCompanyReference", null)
                 .WithMany()

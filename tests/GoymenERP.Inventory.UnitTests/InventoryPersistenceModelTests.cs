@@ -4,6 +4,8 @@ using GoymenERP.Modules.Inventory.Domain.Costing;
 using GoymenERP.Modules.Inventory.Domain.Movements;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using static GoymenERP.Inventory.UnitTests.InventoryFixture;
 
 namespace GoymenERP.Inventory.UnitTests;
@@ -16,7 +18,10 @@ namespace GoymenERP.Inventory.UnitTests;
 public sealed class InventoryPersistenceModelTests
 {
     private static readonly Type[] TenantRows =
-        [typeof(LabelRow), typeof(LabelPrintRow), typeof(LabelDocumentRow), typeof(MovementRow), typeof(MovementLineRow), typeof(BalanceRow)];
+        [
+            typeof(LabelRow), typeof(LabelPrintRow), typeof(LabelDocumentRow), typeof(MovementRow), typeof(MovementLineRow),
+            typeof(BalanceRow), typeof(SourceGrainRow),
+        ];
 
     [Fact]
     public void Every_inventory_table_is_in_its_schema_and_filtered_by_the_active_company()
@@ -57,6 +62,28 @@ public sealed class InventoryPersistenceModelTests
     }
 
     [Fact]
+    public void Every_movement_references_the_one_grain_of_its_source()
+    {
+        // #293 ORG P3-1: one grain row per (company, kind, source); a movement names it with its own
+        // grain, so a whole and a line movement of one source cannot both exist in SQL.
+        using var context = Context();
+        var grains = context.Model.FindEntityType(typeof(SourceGrainRow))!;
+        Assert.Equal(["CompanyId", "Kind", "SourceKind", "SourceId"],
+            grains.FindPrimaryKey()!.Properties.Select(property => property.Name));
+
+        var movements = context.Model.FindEntityType(typeof(MovementRow))!;
+        var reference = Assert.Single(movements.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(SourceGrainRow));
+        Assert.Equal(["CompanyId", "Kind", "SourceKind", "SourceId", "SourceGrain"],
+            reference.Properties.Select(property => property.Name));
+        Assert.Equal(["CompanyId", "Kind", "SourceKind", "SourceId", "Grain"],
+            reference.PrincipalKey.Properties.Select(property => property.Name));
+        Assert.Equal(DeleteBehavior.Restrict, reference.DeleteBehavior);
+        // Check constraints live in the design-time model only; SQL proves the constraint itself (547).
+        var design = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(MovementRow))!;
+        Assert.Contains(design.GetCheckConstraints(), check => check.Name == "CK_Movements_SourceGrain");
+    }
+
+    [Fact]
     public void Locations_and_labels_are_referenced_by_company_and_id()
     {
         using var context = Context();
@@ -83,6 +110,8 @@ public sealed class InventoryPersistenceModelTests
     {
         using var context = Context();
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_InitialInventory", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddInventorySourceGrain", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -111,6 +140,7 @@ public sealed class InventoryPersistenceModelTests
     [InlineData("edit-movement")]
     [InlineData("edit-label-code")]
     [InlineData("edit-balance-company")]
+    [InlineData("edit-source-grain")]
     public void Stored_stock_is_never_deleted_and_only_its_allowed_field_changes(string fault)
     {
         using var context = Context();
@@ -124,6 +154,12 @@ public sealed class InventoryPersistenceModelTests
                 break;
             case "edit-label-code":
                 Attach(context, Label()).Code = "SYN-CHANGED";
+                break;
+            case "edit-source-grain":
+                Attach(context, new SourceGrainRow
+                {
+                    CompanyId = CompanyA, Kind = 1, SourceKind = "test.source", SourceId = Guid.NewGuid(), Grain = 1,
+                }).Grain = 2;
                 break;
             default:
                 Attach(context, Balance()).CompanyId = CompanyB;
@@ -148,6 +184,23 @@ public sealed class InventoryPersistenceModelTests
         Assert.Equal(InventoryStore.PayloadHash(movement), InventoryStore.PayloadHash(same));
         Assert.NotEqual(InventoryStore.PayloadHash(movement), InventoryStore.PayloadHash(otherQuantity));
         Assert.NotEqual(InventoryStore.PayloadHash(movement), InventoryStore.PayloadHash(otherSourceLine));
+    }
+
+    [Fact]
+    public void The_canonical_payload_writes_a_cost_amount_without_trailing_zeros()
+    {
+        // #293 SİPARİŞ P3-2: 5.00 and 5 are the same amount, so the same movement offered again with
+        // its amount serialised at another scale is a replay, not an id conflict.
+        var movement = Receipt(Position(), 100m);
+        StockMovement WithCost(decimal amount) => new(movement.Id, movement.CompanyId, movement.Kind, movement.OccurredAtUtc,
+            movement.Source, movement.Lines, KnownCost(amount));
+
+        Assert.Equal(InventoryStore.PayloadHash(WithCost(5m)), InventoryStore.PayloadHash(WithCost(5.00m)));
+        Assert.Equal(InventoryStore.PayloadHash(WithCost(0m)), InventoryStore.PayloadHash(WithCost(0.000000m)));
+        Assert.Equal(InventoryStore.PayloadHash(WithCost(12.5m)), InventoryStore.PayloadHash(WithCost(12.500000000000000000m)));
+        Assert.NotEqual(InventoryStore.PayloadHash(WithCost(5m)), InventoryStore.PayloadHash(WithCost(5.01m)));
+        Assert.NotEqual(InventoryStore.PayloadHash(WithCost(5m)), InventoryStore.PayloadHash(WithCost(50m)));
+        Assert.NotEqual(InventoryStore.PayloadHash(WithCost(5m)), InventoryStore.PayloadHash(movement));
     }
 
     private static T Attach<T>(InventoryDbContext context, T row) where T : class
