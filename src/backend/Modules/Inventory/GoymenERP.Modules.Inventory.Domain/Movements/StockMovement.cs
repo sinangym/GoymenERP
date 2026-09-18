@@ -31,9 +31,21 @@ public enum StockDirection
 }
 
 /// <summary>
+/// Whether a movement answers a whole source or one of its lines. For one source and one movement
+/// kind the first movement fixes it: a source answered whole never also gets line movements, and
+/// the other way round, so the same quantity cannot be counted twice (#293 ORG P3-1).
+/// </summary>
+public enum StockSourceGrain
+{
+    Whole = 1,
+    Line = 2,
+}
+
+/// <summary>
 /// What caused the movement, by the causing module's identity (§5: one owner, one source), and
 /// optionally which line of that source. One source (or source line) causes at most one movement
-/// of each kind (ORG #281 P3-1); persistence enforces it with a unique index.
+/// of each kind (ORG #281 P3-1), and one source is answered at one <see cref="StockSourceGrain"/>
+/// per kind (#293 ORG P3-1); the ledger holds both, persistence holds them in SQL.
 /// </summary>
 public sealed record StockSourceReference
 {
@@ -66,6 +78,18 @@ public sealed record StockSourceReference
 
     /// <summary>The source's own line, when the movement answers one line of a multi-line source.</summary>
     public Guid? LineId { get; }
+
+    public StockSourceGrain Grain => LineId is null ? StockSourceGrain.Whole : StockSourceGrain.Line;
+
+    /// <summary>
+    /// The same source, whatever the line. The kind token compares ignoring case, as the database's
+    /// default collation does in the source indexes (README, INV-3).
+    /// </summary>
+    public bool IsSameSource(StockSourceReference other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        return Id == other.Id && string.Equals(Kind, other.Kind, StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 /// <summary>One line: a positive kilogram amount into or out of one physical position.</summary>

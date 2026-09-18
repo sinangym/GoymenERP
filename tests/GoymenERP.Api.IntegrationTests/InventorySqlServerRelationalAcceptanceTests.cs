@@ -5,6 +5,7 @@ using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain;
 using GoymenERP.Modules.Inventory.Domain.Balances;
+using GoymenERP.Modules.Inventory.Domain.Costing;
 using GoymenERP.Modules.Inventory.Domain.Labels;
 using GoymenERP.Modules.Inventory.Domain.Movements;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
@@ -169,6 +170,7 @@ public sealed class InventorySqlServerRelationalAcceptanceTests
                 OccurredAtUtc = At,
                 SourceKind = source.Kind,
                 SourceId = source.Id,
+                SourceGrain = (int)StockSourceGrain.Whole,
                 CostStatus = 1,
                 PayloadHash = new string('0', 64),
                 RecordedAtUtc = At,
@@ -182,6 +184,203 @@ public sealed class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements"));
         Assert.Equal(10m, await run.ScalarAsync<decimal>(
             "SELECT SUM(QuantityKg) FROM inventory.Balances WHERE LabelId = @id", ("@id", first.Id)));
+    }
+
+    [SqlServerFact]
+    public async Task A_source_is_answered_whole_or_line_by_line_never_both()
+    {
+        // #293 ORG P3-1: a whole and a line movement of one source and kind would count the same
+        // quantity twice. The store refuses it with its own code; SQL refuses it without the store.
+        await using var run = await Run.StartAsync();
+        var location = await run.LocationOfAsync(CompanyA);
+        var labels = Enumerable.Range(1, 5).Select(number => NewLabel(CompanyA, $"SYN-GRAIN-{number}")).ToArray();
+        var whole = new StockSourceReference("purchase.receipt", Guid.NewGuid());
+        var lined = Guid.NewGuid();
+        var firstLine = new StockSourceReference("purchase.receipt", lined, Guid.NewGuid());
+        StockMovement Receive(StockSourceReference source, int label) =>
+            Movement(CompanyA, StockMovementKind.Receipt, source, In(Position(CompanyA, location, labels[label], BlockState.Free), 10m));
+
+        await using (var a = run.Store(CompanyA))
+        {
+            foreach (var label in labels)
+            {
+                await a.Labels.SaveLabelAsync(label, Metadata(run));
+            }
+
+            Assert.Equal(InventoryWriteOutcome.Recorded, await a.Movements.RecordMovementAsync(Receive(whole, 0), Metadata(run)));
+            Assert.Equal(InventoryStoreCodes.SourceGrainMismatch, (await Assert.ThrowsAsync<InventoryStoreException>(
+                () => a.Movements.RecordMovementAsync(Receive(new StockSourceReference("purchase.receipt", whole.Id, Guid.NewGuid()), 1),
+                    Metadata(run)))).Code);
+
+            Assert.Equal(InventoryWriteOutcome.Recorded, await a.Movements.RecordMovementAsync(Receive(firstLine, 1), Metadata(run)));
+            Assert.Equal(InventoryWriteOutcome.Recorded, await a.Movements.RecordMovementAsync(
+                Receive(new StockSourceReference("purchase.receipt", lined, Guid.NewGuid()), 2), Metadata(run)));
+            // The same line again (the line index's path), and the whole source after its lines.
+            Assert.Equal(InventoryStoreCodes.DuplicateSource, (await Assert.ThrowsAsync<InventoryStoreException>(
+                () => a.Movements.RecordMovementAsync(Receive(firstLine, 3), Metadata(run)))).Code);
+            Assert.Equal(InventoryStoreCodes.SourceGrainMismatch, (await Assert.ThrowsAsync<InventoryStoreException>(
+                () => a.Movements.RecordMovementAsync(Receive(new StockSourceReference("PURCHASE.RECEIPT", lined), 3),
+                    Metadata(run)))).Code);
+        }
+
+        // Without the store's checks (a racing writer): each path is refused by SQL itself.
+        var rawCases = new (StockSourceReference Source, int Grain, string Constraint, int Number)[]
+        {
+            // A line movement of the source answered whole: its grain row says whole.
+            (new StockSourceReference("purchase.receipt", whole.Id, Guid.NewGuid()), 2,
+                "FK_Movements_SourceGrains_CompanyId_Kind_SourceKind_SourceId_SourceGrain", 547),
+            // A whole movement of the source answered by lines.
+            (new StockSourceReference("purchase.receipt", lined), 1,
+                "FK_Movements_SourceGrains_CompanyId_Kind_SourceKind_SourceId_SourceGrain", 547),
+            // The same source line twice.
+            (firstLine, 2, "UX_Movements_SourceLine", 2601),
+            // A grain that contradicts the movement's own line (the grain row exists, only the check fails).
+            (new StockSourceReference("purchase.receipt", whole.Id, Guid.NewGuid()), 1, "CK_Movements_SourceGrain", 547),
+        };
+        foreach (var (source, grain, constraint, number) in rawCases)
+        {
+            await using var raw = run.Context(CompanyA);
+            raw.Movements.Add(RawMovement(run, source, grain));
+            var error = await Assert.ThrowsAsync<DbUpdateException>(() => raw.SaveChangesAsync());
+            var sql = Assert.IsType<SqlException>(error.InnerException);
+            Assert.Equal(number, sql.Number);
+            Assert.Contains(constraint, sql.Message, StringComparison.Ordinal);
+        }
+
+        // A second grain row for a source that has one: the key holds one grain per source and kind.
+        await using (var raw = run.Context(CompanyA))
+        {
+            raw.SourceGrains.Add(new SourceGrainRow
+            {
+                CompanyId = CompanyA,
+                Kind = (int)StockMovementKind.Receipt,
+                SourceKind = "Purchase.Receipt",
+                SourceId = whole.Id,
+                Grain = (int)StockSourceGrain.Line,
+            });
+            var error = await Assert.ThrowsAsync<DbUpdateException>(() => raw.SaveChangesAsync());
+            Assert.Contains("PK_SourceGrains", error.InnerException!.Message, StringComparison.Ordinal);
+        }
+
+        Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements"));
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.SourceGrains"));
+        Assert.Equal(30m, await run.ScalarAsync<decimal>("SELECT SUM(QuantityKg) FROM inventory.Balances"));
+    }
+
+    [SqlServerFact]
+    public async Task A_whole_and_a_line_movement_racing_for_one_source_cannot_both_commit()
+    {
+        await using var run = await Run.StartAsync();
+        var location = await run.LocationOfAsync(CompanyA);
+        var first = NewLabel(CompanyA, "SYN-GRAIN-RACE-1");
+        var second = NewLabel(CompanyA, "SYN-GRAIN-RACE-2");
+        await using (var a = run.Store(CompanyA))
+        {
+            await a.Labels.SaveLabelAsync(first, Metadata(run));
+            await a.Labels.SaveLabelAsync(second, Metadata(run));
+        }
+
+        // Two different labels, so no label version is shared: only the source's grain row is.
+        var sourceId = Guid.NewGuid();
+        var whole = Movement(CompanyA, StockMovementKind.Receipt, new StockSourceReference("purchase.receipt", sourceId),
+            In(Position(CompanyA, location, first, BlockState.Free), 10m));
+        var line = Movement(CompanyA, StockMovementKind.Receipt, new StockSourceReference("purchase.receipt", sourceId, Guid.NewGuid()),
+            In(Position(CompanyA, location, second, BlockState.Free), 10m));
+        var barrier = new Barrier(2);
+        async Task<object> WriteAsync(StockMovement movement)
+        {
+            await using var writer = run.Store(CompanyA, new BarrierInterceptor(barrier));
+            try
+            {
+                return await writer.Movements.RecordMovementAsync(movement, Metadata(run));
+            }
+            catch (InventoryStoreException exception)
+            {
+                return exception.Code;
+            }
+        }
+
+        var results = await Task.WhenAll(Task.Run(() => WriteAsync(whole)), Task.Run(() => WriteAsync(line)));
+
+        Assert.Single(results, result => result is InventoryWriteOutcome.Recorded);
+        Assert.Single(results, result => result is string code && code == InventoryStoreCodes.ConcurrentChange);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.SourceGrains"));
+        Assert.Equal(10m, await run.ScalarAsync<decimal>("SELECT SUM(QuantityKg) FROM inventory.Balances"));
+
+        // The loser, retried, reads the winner's grain and is refused for what it is.
+        var loser = results[0] is InventoryWriteOutcome.Recorded ? line : whole;
+        await using (var a = run.Store(CompanyA))
+        {
+            Assert.Equal(InventoryStoreCodes.SourceGrainMismatch, (await Assert.ThrowsAsync<InventoryStoreException>(
+                () => a.Movements.RecordMovementAsync(loser, Metadata(run)))).Code);
+        }
+    }
+
+    [SqlServerFact]
+    public async Task A_label_code_has_one_answer_under_the_code_column_collation()
+    {
+        // #293 SİPARİŞ P3-1: the code column's collation is the one comparison. Today it is SQL
+        // Server's default, case-insensitive; this test states that assumption before relying on it.
+        await using var run = await Run.StartAsync();
+        var collation = await run.ScalarAsync<string>(
+            "SELECT collation_name FROM sys.columns WHERE object_id = OBJECT_ID(N'inventory.Labels') AND name = N'Code'");
+        Assert.Contains("_CI_", collation, StringComparison.Ordinal);
+
+        var label = NewLabel(CompanyA, "SYN-CASE-1");
+        var sameIdOtherSpelling = new MaterialLabel(label.Id, CompanyA, "syn-case-1", Product, Lot);
+        var sameIdOtherCode = new MaterialLabel(label.Id, CompanyA, "SYN-CASE-2", Product, Lot);
+        await using (var a = run.Store(CompanyA))
+        {
+            Assert.Equal(InventoryWriteOutcome.Recorded, await a.Labels.SaveLabelAsync(label, Metadata(run)));
+        }
+
+        // Another spelling of the stored code: the same answer with a new id and with the same id.
+        await using (var a = run.Store(CompanyA))
+        {
+            Assert.Equal(InventoryStoreCodes.LabelCodeTaken, (await Assert.ThrowsAsync<InventoryStoreException>(
+                () => a.Labels.SaveLabelAsync(NewLabel(CompanyA, "syn-case-1"), Metadata(run)))).Code);
+        }
+
+        await using (var a = run.Store(CompanyA))
+        {
+            Assert.Equal(InventoryStoreCodes.LabelCodeTaken, (await Assert.ThrowsAsync<InventoryStoreException>(
+                () => a.Labels.SaveLabelAsync(sameIdOtherSpelling, Metadata(run)))).Code);
+            // Another code under the same id is still a conflicting identity; the exact label is a replay.
+            Assert.Equal(InventoryStoreCodes.LabelConflict, (await Assert.ThrowsAsync<InventoryStoreException>(
+                () => a.Labels.SaveLabelAsync(sameIdOtherCode, Metadata(run)))).Code);
+            Assert.Equal(InventoryWriteOutcome.Replayed, await a.Labels.SaveLabelAsync(label, Metadata(run)));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Labels"));
+        Assert.Equal("SYN-CASE-1", await run.ScalarAsync<string>("SELECT Code FROM inventory.Labels"));
+    }
+
+    [SqlServerFact]
+    public async Task A_known_cost_offered_again_at_another_scale_is_a_replay()
+    {
+        // #293 SİPARİŞ P3-2: 5.00 and 5 are one amount; the stored movement is the same content.
+        await using var run = await Run.StartAsync();
+        var location = await run.LocationOfAsync(CompanyA);
+        var label = NewLabel(CompanyA, "SYN-COST-SCALE");
+        var currency = Guid.Parse("7e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a63");
+        var lines = new[] { In(Position(CompanyA, location, label, BlockState.Free), 10m) };
+        var id = Guid.NewGuid();
+        var source = new StockSourceReference("purchase.receipt", Guid.NewGuid());
+        StockMovement Costed(decimal amount) =>
+            new(id, CompanyA, StockMovementKind.Receipt, At, source, lines, CostResult.Known(amount, currency));
+
+        await using (var a = run.Store(CompanyA))
+        {
+            await a.Labels.SaveLabelAsync(label, Metadata(run));
+            Assert.Equal(InventoryWriteOutcome.Recorded, await a.Movements.RecordMovementAsync(Costed(5.00m), Metadata(run)));
+            Assert.Equal(InventoryWriteOutcome.Replayed, await a.Movements.RecordMovementAsync(Costed(5m), Metadata(run)));
+            Assert.Equal(InventoryStoreCodes.MovementIdConflict, (await Assert.ThrowsAsync<InventoryStoreException>(
+                () => a.Movements.RecordMovementAsync(Costed(5.01m), Metadata(run)))).Code);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements"));
+        Assert.Equal(10m, await run.ScalarAsync<decimal>("SELECT SUM(QuantityKg) FROM inventory.Balances"));
     }
 
     [SqlServerFact]
@@ -285,6 +484,23 @@ public sealed class InventorySqlServerRelationalAcceptanceTests
     private static StockMovement Movement(Guid company, StockMovementKind kind, StockSourceReference source,
         params StockMovementLine[] lines) =>
         new(Guid.NewGuid(), company, kind, At, source, lines);
+
+    private static MovementRow RawMovement(Run run, StockSourceReference source, int grain) => new()
+    {
+        Id = Guid.NewGuid(),
+        CompanyId = CompanyA,
+        Kind = (int)StockMovementKind.Receipt,
+        OccurredAtUtc = At,
+        SourceKind = source.Kind,
+        SourceId = source.Id,
+        SourceLineId = source.LineId,
+        SourceGrain = grain,
+        CostStatus = 1,
+        PayloadHash = new string('0', 64),
+        RecordedAtUtc = At,
+        RecordedBy = "synthetic-actor",
+        CorrelationId = run.Correlation,
+    };
 
     private static InventoryCommandMetadata Metadata(Run run) => new(
         run.Actor.ToString("D"), "synthetic.inventory.test-write", ["SYNTHETIC-INVENTORY-TEST"], run.Correlation,
