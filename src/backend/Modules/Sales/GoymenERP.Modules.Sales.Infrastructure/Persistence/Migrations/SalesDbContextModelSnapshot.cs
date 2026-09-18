@@ -430,7 +430,7 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
 
                 t.HasCheckConstraint(
                     "CK_DraftLines_Price",
-                    "([UnitPrice] IS NULL) = ([PriceUnitId] IS NULL)");
+                    "([UnitPrice] IS NULL AND [PriceUnitId] IS NULL) OR ([UnitPrice] IS NOT NULL AND [PriceUnitId] IS NOT NULL)");
 
                 t.HasCheckConstraint(
                     "CK_DraftLines_Quantity",
@@ -639,7 +639,7 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
 
                 t.HasCheckConstraint(
                     "CK_Drafts_References",
-                    "(([DeliveryAddressId] IS NULL) = ([DeliveryAddressVersion] IS NULL)) AND (([ContactId] IS NULL) = ([ContactVersion] IS NULL)) AND (([ResponsibleId] IS NULL) = ([ResponsibleVersion] IS NULL)) AND (([PaymentTermsId] IS NULL) = ([PaymentTermsVersion] IS NULL)) AND (([SourceStrategyId] IS NULL) = ([SourceStrategyVersion] IS NULL)) AND (([PackageId] IS NULL) = ([PackageVersion] IS NULL))");
+                    "(([DeliveryAddressId] IS NULL AND [DeliveryAddressVersion] IS NULL) OR ([DeliveryAddressId] IS NOT NULL AND [DeliveryAddressVersion] IS NOT NULL)) AND (([ContactId] IS NULL AND [ContactVersion] IS NULL) OR ([ContactId] IS NOT NULL AND [ContactVersion] IS NOT NULL)) AND (([ResponsibleId] IS NULL AND [ResponsibleVersion] IS NULL) OR ([ResponsibleId] IS NOT NULL AND [ResponsibleVersion] IS NOT NULL)) AND (([PaymentTermsId] IS NULL AND [PaymentTermsVersion] IS NULL) OR ([PaymentTermsId] IS NOT NULL AND [PaymentTermsVersion] IS NOT NULL)) AND (([SourceStrategyId] IS NULL AND [SourceStrategyVersion] IS NULL) OR ([SourceStrategyId] IS NOT NULL AND [SourceStrategyVersion] IS NOT NULL)) AND (([PackageId] IS NULL AND [PackageVersion] IS NULL) OR ([PackageId] IS NOT NULL AND [PackageVersion] IS NOT NULL))");
 
                 t.HasCheckConstraint(
                     "CK_Drafts_State",
