@@ -104,6 +104,53 @@ SUITE_API_EXTENSIONS = {
 ISSUER_KEYS = ("ProductRuntime__IssuerLocalUserId", "ProductRuntime__IssuerExternalIdentityId")
 
 
+# Stage 2 (a2 part 2): suites whose owner seeds data through the fixture runner
+# (tests/GoymenERP.BrowserSuiteFixtureTool, class in Suites/<Suite>/), each with the closed list of the
+# output keys exported to the browser suite as BROWSER_E2E_<SUITE>_SEED. Values are GUIDs or actor ids
+# only. A read-only suite cannot have a fixture: its post-browser SQL check compares against the
+# canonical baseline, which a seed would move.
+FIXTURE_TOOL_SUITES_DIRECTORY = "tests/GoymenERP.BrowserSuiteFixtureTool/Suites"
+SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {}
+_OUTPUT_KEY = re.compile(r"^[a-z][A-Za-z0-9]{0,39}$")
+# Any non-nil lowercase GUID: seeded reference ids (companies, work centres) need not be RFC 4122.
+_ANY_GUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+CANONICAL_ACTORS = ("group-bootstrap-admin", "company-a-user")
+
+
+def has_fixture(suite: str) -> bool:
+    profile_of(suite)
+    present = suite in SUITE_FIXTURE_OUTPUTS
+    require(not present or suite not in READ_ONLY_SUITES,
+            f"read-only suite {suite} cannot seed data through a fixture")
+    return present
+
+
+def seed_export(suite: str, seed: object) -> str:
+    """The GITHUB_ENV line that hands the seed outputs to the browser suite, after the closed-list check."""
+    require(has_fixture(suite), f"suite {suite} has no fixture")
+    require(isinstance(seed, dict), "seed outputs must be an object")
+    expected = SUITE_FIXTURE_OUTPUTS[suite]
+    require(set(seed) == set(expected),
+            f"seed output keys are not the closed list: missing {sorted(expected - set(seed))}, "
+            f"extra {sorted(set(seed) - expected)}")
+    for key, value in seed.items():
+        require(_OUTPUT_KEY.fullmatch(key) is not None, f"seed output key is not safe: {key}")
+        require(isinstance(value, str), f"seed output {key} must be a string")
+        is_guid = _ANY_GUID.fullmatch(value) is not None and value != "00000000-0000-0000-0000-000000000000"
+        is_actor = value in CANONICAL_ACTORS or re.fullmatch(rf"{suite}-[a-z0-9-]{{1,48}}", value) is not None
+        require(is_guid or is_actor, f"seed output {key} must be a GUID or an actor id")
+    compact = json.dumps(seed, sort_keys=True, separators=(",", ":"))
+    return f"BROWSER_E2E_{suite.upper()}_SEED={compact}"
+
+
+def api_environment(model: dict, suite: str, expected_commit: str, expected_project: str) -> dict[str, str]:
+    """The API container's environment for the fixture runner's in-process host, after the full compose check."""
+    validate_suite_compose(model, suite, expected_commit, expected_project)
+    environment = model["services"]["api"]["environment"]
+    require(all(isinstance(value, str) for value in environment.values()), "API environment values must be strings")
+    return dict(sorted(environment.items()))
+
+
 def suite_override_file(suite: str) -> str | None:
     """The suite's compose override file, if it has one; only suites with a closed extension list may."""
     profile_of(suite)
@@ -224,6 +271,8 @@ def upload_allowlist(suite: str) -> tuple[str, ...]:
     return (
         f"browser-{suite}-junit.xml",
         "browser-fixture-evidence.json",
+        "browser-suite-fixture-evidence.json",
+        "browser-suite-seed.json",
         "browser-post-browser-sql-evidence.json",
         "container-logs/compose-ps.txt",
     )
@@ -276,6 +325,14 @@ def parser() -> argparse.ArgumentParser:
     compose.add_argument("--suite", required=True)
     compose.add_argument("--expected-commit", required=True)
     compose.add_argument("--expected-project", required=True)
+    environment = commands.add_parser("api-environment")
+    environment.add_argument("--suite", required=True)
+    environment.add_argument("--expected-commit", required=True)
+    environment.add_argument("--expected-project", required=True)
+    environment.add_argument("--out", required=True)
+    export = commands.add_parser("seed-export")
+    export.add_argument("--suite", required=True)
+    export.add_argument("--seed", required=True)
     return result
 
 
@@ -290,6 +347,27 @@ def main(argv: list[str] | None = None) -> int:
             print(f"profile={selected}")
             print(f"compose_file={PROFILE_COMPOSE_FILES[selected]}")
             print(f"override_file={suite_override_file(arguments.suite) or ''}")
+            print(f"fixture={'true' if has_fixture(arguments.suite) else 'false'}")
+            return 0
+        elif arguments.command == "api-environment":
+            try:
+                model = json.load(sys.stdin)
+            except json.JSONDecodeError as error:
+                raise ContractError("compose model is not JSON") from error
+            environment = api_environment(model, arguments.suite, arguments.expected_commit, arguments.expected_project)
+            output = pathlib.Path(arguments.out)
+            require(output.suffix == ".json", "the API environment file must be .json")
+            require(not output.resolve().is_relative_to((c01.REPOSITORY_ROOT / "artifacts").resolve()),
+                    "the API environment holds the run's secrets and must stay outside artifacts/")
+            output.write_text(json.dumps(environment, indent=2) + "\n", encoding="utf-8")
+            return 0
+        elif arguments.command == "seed-export":
+            try:
+                seed = json.loads(pathlib.Path(arguments.seed).read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as error:
+                raise ContractError("seed outputs are unreadable") from error
+            # GITHUB_ENV line only; the values are GUIDs and actor ids.
+            print(seed_export(arguments.suite, seed))
             return 0
         elif arguments.command == "compose":
             try:

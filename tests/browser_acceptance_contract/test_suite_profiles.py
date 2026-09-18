@@ -64,7 +64,7 @@ class ProfileRegistryTests(unittest.TestCase):
         with contextlib.redirect_stdout(out):
             self.assertEqual(0, browser.main(["profile", "--suite", "c03"]))
         self.assertEqual("profile=cari-staged\ncompose_file=infra/docker-compose.browser-cari-staged.yml\n"
-                         "override_file=\n", out.getvalue())
+                         "override_file=\nfixture=false\n", out.getvalue())
 
 
 class ComposeFileDerivationTests(unittest.TestCase):
