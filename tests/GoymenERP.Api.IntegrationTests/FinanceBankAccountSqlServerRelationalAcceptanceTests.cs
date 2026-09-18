@@ -123,21 +123,33 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
-    public async Task The_same_key_replays_and_another_payload_or_command_conflicts()
+    public async Task The_same_key_replays_and_another_payload_or_actor_conflicts()
     {
         await using var run = await Run.StartAsync();
+        BankAccountView first;
         await using (var a = run.Open(CompanyA, Proposer))
         {
             var request = new BankAccountProposeRequest("SENTETIK hesap", Currency);
-            var first = await a.Accounts.ProposeAsync(a.Context, Key("k-1"), request, CancellationToken.None);
+            first = (await a.Accounts.ProposeAsync(a.Context, Key("k-1"), request, CancellationToken.None)).Resource!;
             var replay = await a.Accounts.ProposeAsync(a.Context, Key("k-1"), request, CancellationToken.None);
             Assert.True(replay.IsReplay);
-            Assert.Equal(first.Resource!.Id, replay.Resource!.Id);
+            Assert.Equal(first.Id, replay.Resource!.Id);
             Assert.Equal(CommandOutcome.IdempotencyConflict, (await a.Accounts.ProposeAsync(a.Context, Key("k-1"),
                 request with { DisplayName = "SENTETIK başka" }, CancellationToken.None)).Outcome);
-            // One key is one attempt whatever the command: the draft service refuses it too.
-            Assert.Equal(CommandOutcome.IdempotencyConflict,
-                (await a.Drafts.DraftSaveAsync(a.Context, Key("k-1"), Draft(first.Resource.Id), CancellationToken.None)).Outcome);
+            // ADR-011 §2: the key belongs to its command. The same key on another command is that
+            // command's own attempt: here the draft is refused on its merits (a proposed account is not
+            // usable), not as a replay or a conflict of the proposal.
+            var draft = await a.Drafts.DraftSaveAsync(a.Context, Key("k-1"), Draft(first.Id), CancellationToken.None);
+            Assert.Equal("bank_account_ineligible", Assert.Single(draft.Issues).Code);
+        }
+
+        await using (var other = run.Open(CompanyA, Approver))
+        {
+            // ADR-011 §3: the same key and payload by ANOTHER actor is a conflict that discloses nothing.
+            var conflict = await other.Accounts.ProposeAsync(other.Context, Key("k-1"),
+                new BankAccountProposeRequest("SENTETIK hesap", Currency), CancellationToken.None);
+            Assert.Equal(CommandOutcome.IdempotencyConflict, conflict.Outcome);
+            Assert.Null(conflict.Resource);
         }
 
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.BankAccounts"));

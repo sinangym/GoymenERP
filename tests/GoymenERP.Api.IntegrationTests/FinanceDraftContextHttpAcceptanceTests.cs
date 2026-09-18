@@ -35,11 +35,13 @@ public sealed class FinanceDraftContextHttpAcceptanceTests(
     }
 
     [Fact]
-    public async Task Default_runtime_is_unavailable_without_required_permission_bank_and_profile_sources()
+    public async Task Default_runtime_refuses_an_actor_without_a_finance_grant_before_any_owner()
     {
+        // Since FIN-T04b the host's permission port is the real one: no seeded role carries a Finance
+        // name, so the read is refused (403) at its first fence, before the bank, party or Settings.
         using var client = factory.CreateClientFor(TestUsers.GroupAdmin, TestCompanyIds.CompanyA);
         using var response = await client.GetAsync(Endpoint);
-        await AssertProblemAsync(response, HttpStatusCode.ServiceUnavailable, "service_unavailable");
+        await AssertProblemAsync(response, HttpStatusCode.Forbidden, "forbidden");
         AssertPrivateNoStore(response);
     }
 
