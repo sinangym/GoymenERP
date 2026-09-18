@@ -1,5 +1,6 @@
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
+using GoymenERP.Modules.Finance.Infrastructure.Shell;
 using GoymenERP.Modules.Organization.Infrastructure.Shell;
 using GoymenERP.Modules.Product.Infrastructure.Shell;
 using GoymenERP.Modules.Sales.Infrastructure.Shell;
@@ -64,6 +65,7 @@ internal static class C01E2eShellCapabilityActivation
         typeof(OrganizationShellCapabilityProvider),
         typeof(ProductShellCapabilityProvider),
         typeof(SalesShellCapabilityProvider),
+        typeof(FinanceShellCapabilityProvider),
     ];
 
     // The accepted normal-host authority for each set of optional module providers present (in the
@@ -82,6 +84,12 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(SalesShellCapabilityProvider),
             },
             ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10AndPublishedSalesV10),
+        (new[]
+            {
+                typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
+                typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
+            },
+            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10AndFinanceV10),
     ];
 
     private static string NormalAuthority(IServiceCollection services)

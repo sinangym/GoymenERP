@@ -130,6 +130,12 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>The command record's target rule; the migration that introduced it uses the same text.</summary>
+    internal const string TargetCheck =
+        "([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [BankAccountId] IS NULL) OR "
+        + "([BankAccountId] IS NOT NULL AND [BankAccountId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL) OR "
+        + "([DraftId] IS NULL AND [BankAccountId] IS NULL AND JSON_VALUE([ResultJson], '$.outcome') = 'ValidationFailed')";
+
     private void ConfigureCommands(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<FinanceCommandRow>();
@@ -139,10 +145,9 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options,
                 "[CompanyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND LEN([ActorId]) > 0 AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0");
             table.HasCheckConstraint("CK_Commands_KeyHash", "LEN([IdempotencyKeyHash]) = 64");
-            // Exactly one target: a receipt draft or a bank account (FS0).
-            table.HasCheckConstraint("CK_Commands_Target",
-                "([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [BankAccountId] IS NULL) OR "
-                + "([BankAccountId] IS NOT NULL AND [BankAccountId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL)");
+            // At most one target: a receipt draft or a bank account (FS0). No target only for a recorded
+            // terminal refusal whose target does not exist (ADR-011 §7, FIN-UI-1), never for a success.
+            table.HasCheckConstraint("CK_Commands_Target", TargetCheck);
             table.HasCheckConstraint("CK_Commands_PayloadHash", "LEN([PayloadHash]) = 64");
             table.HasCheckConstraint("CK_Commands_ResultJson", "ISJSON([ResultJson]) = 1");
         });

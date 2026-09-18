@@ -44,7 +44,9 @@ public sealed record FinanceAuditEnvelope(
 /// <c>bank_account_unavailable</c> or <c>settings_provider_unavailable</c>.</item>
 /// <item><b>Idempotency (ADR-011):</b> (company, command, key hash) with the actor and the canonical
 /// payload hash. The same key, payload and actor answers the stored result as a replay with its first
-/// correlation; another payload or actor is an idempotency conflict.</item>
+/// correlation; another payload or actor is an idempotency conflict (§2–§4). An authorized terminal
+/// refusal — the draft is not the company's, or the expected version is stale — is recorded and
+/// replayed too (§7), and the loser of a same-key race answers the winner's record (§8).</item>
 /// <item><b>Concurrency:</b> <c>expectedVersion</c> against the stored version; a stale one changes
 /// nothing. One save covers the draft, the command record and the audit event.</item>
 /// </list>
@@ -103,16 +105,9 @@ public sealed class ReceiptDraftService(
 
         var payloadHash = PayloadHash(request);
         var keyHash = FinanceCommandKeys.Hash(key);
-        var prior = await dbContext.Commands.AsNoTracking()
-            .SingleOrDefaultAsync(row => row.CommandName == SaveDraftCommand && row.IdempotencyKeyHash == keyHash,
-                cancellationToken);
-        if (prior is not null)
+        if (await PriorAsync(context, keyHash, payloadHash, cancellationToken) is { } prior)
         {
-            // ADR-011 §3: another payload or another actor under the same key is a conflict, and the
-            // earlier result is not disclosed.
-            return prior.PayloadHash == payloadHash && string.Equals(prior.ActorId, context.ActorId, StringComparison.Ordinal)
-                ? await ReplayAsync(context, prior, cancellationToken)
-                : Refused(context, CommandOutcome.IdempotencyConflict);
+            return prior;
         }
 
         if (!PreparationValidator.IsValidDraftIdentity(request))
@@ -143,12 +138,17 @@ public sealed class ReceiptDraftService(
             row = await dbContext.ReceiptDrafts.SingleOrDefaultAsync(candidate => candidate.Id == draftId, cancellationToken);
             if (row is null)
             {
-                return Refused(context, CommandOutcome.ValidationFailed, Issue("draftId", "draft_not_found"));
+                // Terminal (ADR-011 §7): the key keeps this answer; there is no draft to point at.
+                return await TerminalAsync(context, keyHash, payloadHash, draftId: null,
+                    Refused(context, CommandOutcome.ValidationFailed, Issue("draftId", "draft_not_found")), cancellationToken);
             }
 
             if (!string.Equals(VersionText(row.Version), request.ExpectedVersion, StringComparison.Ordinal))
             {
-                return Refused(context, CommandOutcome.VersionConflict, Issue("expectedVersion", "version_conflict"));
+                // Terminal (§7): a retry of this key answers the same conflict even after the draft moves on.
+                return await TerminalAsync(context, keyHash, payloadHash, row.Id,
+                    Refused(context, CommandOutcome.VersionConflict, Issue("expectedVersion", "version_conflict")),
+                    cancellationToken);
             }
         }
 
@@ -262,17 +262,9 @@ public sealed class ReceiptDraftService(
         Audit(context, metadata, row.Id, versionBefore is null ? "finance.receipt-draft.created.v1" : "finance.receipt-draft.updated.v1",
             versionBefore is null ? "Create" : "Update", versionBefore, row.Version, before, DraftAudit(row));
 
-        try
+        if (await SaveAsync(context, keyHash, payloadHash, cancellationToken) is { } lost)
         {
-            await dbContext.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            return Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
-        }
-        catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 })
-        {
-            return Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
+            return lost;
         }
 
         return Disclose(result, amountDecision);
@@ -388,6 +380,71 @@ public sealed class ReceiptDraftService(
 
     /// <summary>The lossless version text the contract carries.</summary>
     internal static string VersionText(long version) => version.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// ADR-011: the key's stored result — a success or a recorded terminal refusal — answered as a replay
+    /// under a fresh fence; another payload or actor under the same key is a conflict that discloses
+    /// nothing of the earlier result (§3). Null when the key holds nothing.
+    /// </summary>
+    private async Task<CommandResult?> PriorAsync(FinanceContext context, string keyHash, string payloadHash,
+        CancellationToken cancellationToken)
+    {
+        var prior = await dbContext.Commands.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.CommandName == SaveDraftCommand && row.IdempotencyKeyHash == keyHash,
+                cancellationToken);
+        if (prior is null)
+        {
+            return null;
+        }
+
+        return prior.PayloadHash == payloadHash && string.Equals(prior.ActorId, context.ActorId, StringComparison.Ordinal)
+            ? await ReplayAsync(context, prior, cancellationToken)
+            : Refused(context, CommandOutcome.IdempotencyConflict);
+    }
+
+    /// <summary>
+    /// One save; null when it committed. If it loses a race (a unique key or the row version), nothing
+    /// of it stays tracked and the key is read afresh: another caller of the same key that won is this
+    /// answer too (ADR-011 §8); a race that left this key empty is a <c>concurrent_change</c>.
+    /// </summary>
+    private async Task<CommandResult?> SaveAsync(FinanceContext context, string keyHash, string payloadHash,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return null;
+        }
+        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
+            || exception.InnerException is SqlException { Number: 2601 or 2627 })
+        {
+            dbContext.ChangeTracker.Clear();
+            return await PriorAsync(context, keyHash, payloadHash, cancellationToken)
+                ?? Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
+        }
+    }
+
+    /// <summary>
+    /// ADR-011 §7: an authorized terminal refusal is the key's result for good. It is recorded alone
+    /// (no business change, no audit event) and answered; a retry of the key replays it.
+    /// </summary>
+    private async Task<CommandResult> TerminalAsync(FinanceContext context, string keyHash, string payloadHash,
+        Guid? draftId, CommandResult refusal, CancellationToken cancellationToken)
+    {
+        dbContext.Commands.Add(new FinanceCommandRow
+        {
+            CompanyId = context.CompanyId,
+            CommandName = SaveDraftCommand,
+            IdempotencyKeyHash = keyHash,
+            ActorId = context.ActorId,
+            PayloadHash = payloadHash,
+            DraftId = draftId,
+            ResultJson = JsonSerializer.Serialize(refusal, Json),
+            CorrelationId = context.CorrelationId,
+            RecordedAtUtc = timeProvider.GetUtcNow(),
+        });
+        return await SaveAsync(context, keyHash, payloadHash, cancellationToken) ?? refusal;
+    }
 
     private async Task<CommandResult> ReplayAsync(FinanceContext context, FinanceCommandRow prior, CancellationToken cancellationToken)
     {
