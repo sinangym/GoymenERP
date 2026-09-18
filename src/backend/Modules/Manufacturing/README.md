@@ -97,6 +97,20 @@ Rules held here:
 
 Not here: closing an order, a list or search, cost, Inventory movements (T15), or any role assignment.
 
+## MFG-UI — the order screen (approved card, D1–D5)
+
+- **Shell provider** `Infrastructure/Shell/ManufacturingShellCapabilityProvider`: `manufacturing.orders.detail` → `/uretim/emir/:orderId` (`manufacturing.orders.read`) and its control `manufacturing.orders.facts` (+ `manufacturing.facts.record`). Company-wide, single company.
+  - **Staged:** `ImplementationAvailable: false` until the `mfg` browser suite accepts the screen.
+  - `MFG-01` is a technical sub-view id. The canonical production screens (PR-09/13/14/15) are `DECISION_ONLY_REFERENCE_MISSING`, and this is not their locked reference.
+  - The host registers the provider in the central writer's round (`src/frontend/goymen-erp-web/src/manufacturing/SHARED_MOUNT_HANDOFF.md`).
+- **Frontend** `src/frontend/goymen-erp-web/src/manufacturing/`:
+  - The order's roll balances, as read from the server. The unexplained difference is signed; cost shows as a status.
+  - Four fact forms, drawn only with the facts capability.
+  - One Idempotency-Key and one fact id per frozen submit.
+  - After an accepted fact the order is re-read; nothing is predicted.
+  - An unknown outcome freezes the forms until the same snapshot is re-sent.
+  - A 401/403 on a re-send does not settle it, because authority is measured before the stored answer.
+
 ## Behaviour kept on purpose — Business decision pending
 
 - **One approved plan can open more than one order** (`FromApprovedPlan` does not mark the plan as converted). §7.3 does not say whether a plan becomes one order or several partial ones; the question is open with Business (#66 5728934213, the same principle as Purchasing's request → several orders). Pinned by a test; changes only by that decision. The physical guard is Inventory's.
