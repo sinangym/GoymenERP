@@ -40,7 +40,10 @@ public static class InventoryStoreCodes
     /// <summary>The same label id was offered with different identity facts, or a history that does not extend the stored one.</summary>
     public const string LabelConflict = "inventory_label_conflict";
 
-    /// <summary>Another label of this company already carries that printed code.</summary>
+    /// <summary>
+    /// That printed code is already stored in this company, as the code column's collation compares
+    /// it: by another label, or by the same label under another spelling (INV-3, #293 SİPARİŞ P3-1).
+    /// </summary>
     public const string LabelCodeTaken = "inventory_label_code_taken";
 
     /// <summary>The same movement id was offered again with a different content.</summary>
@@ -48,6 +51,12 @@ public static class InventoryStoreCodes
 
     /// <summary>This source (or source line) already caused a movement of this kind (ORG #281 P3-1).</summary>
     public const string DuplicateSource = "inventory_duplicate_source";
+
+    /// <summary>
+    /// This source was already answered at the other grain for this kind (whole vs line); both would
+    /// count the same quantity twice (#293 ORG P3-1).
+    /// </summary>
+    public const string SourceGrainMismatch = "inventory_source_grain_mismatch";
 
     /// <summary>
     /// Another write changed the same label's stock first. Nothing of this write was stored; the
