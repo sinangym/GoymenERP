@@ -87,17 +87,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.cs";
     private const string SqlServerRcsiVerifierPath =
         "tools/verify_rcsi_relational_acceptance.py";
-    // Re-fingerprinted for SALES-P2 (#315): six SalesDraftSqlServerRelationalAcceptanceTests names on
-    // top of main's 125 / 132, discovery 125 -> 131, execution 132 -> 138. Logic unchanged.
+    // Re-fingerprinted for #316: one ProductShellCapabilitySqlServerRelationalAcceptanceTests name on top
+    // of main's 131 / 138, discovery 131 -> 132, execution 138 -> 139. Logic unchanged.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "46d79808ef8b689f9755f71dd941cf44aee9653918bc7fc5da534394f0b0e187";
+        "9e7efc17f8db1d7f618be19801d7269efda3e43eecfc9ccf63d268949d43cf55";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
     // Re-fingerprinted for the same inventory change: updated counts plus one case pinning the
     // new class as mandatory.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "e7f7d8bde03f0e2bdb4d98aa90cc4bbf744b3eb9068f638d9920a6fb4eae0b7b";
+        "5d390c40ec4a5b2afe7e08d8e7c1add80d8c6c27d6ba708492173414af255fcf";
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "91a665e6e8982e5a9b66f5d16a14d9fc4d7f98d63775de959a8cc6b2dea2b018";
@@ -167,8 +167,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             {
                 // Re-measured for C3: the Product owner's sales and stock eligibility runtimes are composed
                 // here (no new database capability; MigrateAsync stays 2).
+                // Re-measured for #316 on top of C3: ProductShellCapabilityProvider is registered here (a
+                // singleton shell provider; no new database capability, MigrateAsync stays 2).
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs"] =
-                    new("915b90891b281747aabeca4c25b3866ce2fa44d627d1d4704bfa06fc82988ef5",
+                    new("ef07c9ff234f99afe549309e4fd7bc244d84bf3ce458e5bd39ae57c67f86d8b1",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductSqlCommandRunner.cs"] =
