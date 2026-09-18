@@ -26,7 +26,7 @@ public sealed class LoadingUnitVerifierTests
 
         Assert.True(result.IsVerified);
         Assert.Null(result.Code);
-        Assert.Equal((Unit, "kg", ProfileId, "4", 3), (result.Unit!.UnitId, result.Unit.UnitCode, result.Unit.ProfileId, result.Unit.ProfileVersion, result.Unit.Scale));
+        Assert.Equal((Unit, "kg", ProfileId, "4", 3, 3), (result.Unit!.UnitId, result.Unit.UnitCode, result.Unit.ProfileId, result.Unit.ProfileVersion, result.Unit.ProfileScale, result.Unit.Scale));
         Assert.Equal(Quantity.Of(3_800m, QuantityUnit.Kilogram), result.Unit.Quantity);
         Assert.Equal([(Unit, Day)], settings.UnitCalls);
     }
@@ -99,6 +99,21 @@ public sealed class LoadingUnitVerifierTests
         var value = decimal.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
         var result = await new LoadingUnitVerifier(new StubSettings { Profile = KgProfile(scale) }).VerifyAsync(Company, Unit, value, Day);
         Assert.Equal(LoadingUnitCodes.QuantityScaleExceeded, result.Code);
+    }
+
+    [Theory]
+    [InlineData(5, 3)]
+    [InlineData(3, 3)]
+    [InlineData(1, 1)]
+    [InlineData(0, 0)]
+    public async Task The_result_reports_the_applied_scale_beside_the_profile_scale(int profileScale, int applied)
+    {
+        // LOG-3: a consumer offering input precision must read the APPLIED scale; a profile of 5
+        // still allows only Ö2's 3 kilogram decimals (the PUR-3/MFG-3 shape).
+        var result = await new LoadingUnitVerifier(new StubSettings { Profile = KgProfile(profileScale) }).VerifyAsync(Company, Unit, 7m, Day);
+
+        Assert.True(result.IsVerified);
+        Assert.Equal((profileScale, applied), (result.Unit!.ProfileScale, result.Unit.Scale));
     }
 
     [Theory]

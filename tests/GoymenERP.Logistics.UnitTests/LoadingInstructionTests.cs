@@ -242,7 +242,8 @@ public sealed class LoadingInstructionTests
     [Fact]
     public void Delivery_of_goods_already_shipped_is_still_recorded_when_the_line_is_blocked_afterwards()
     {
-        // Pinned behaviour, open question for Business (README): the goods have left; a delivery
+        // Business #66 5730092974 (LOG-3): a block acts forward; a shipment recorded before it is a
+        // physical fact whose delivery may still be completed. The goods have left; a delivery
         // record is a fact about the source shipment (§7.4), so a later block does not refuse it.
         var (instruction, line) = Issued(6_000m);
         instruction.RecordLoad(3, Guid.NewGuid(), line.Id, Kg(4_000m), MeasurementKind.Measured, T0);
@@ -253,6 +254,82 @@ public sealed class LoadingInstructionTests
 
         Assert.Equal((Kg(3_000m), Kg(800m)), (line.DeliveredQuantity, line.ShippedNotDelivered));
         Assert.Equal(LogisticsRuleCodes.LineBlocked, CodeOf(() => instruction.MarkShipped(7, Guid.NewGuid(), line.Id, Kg(100m), T0)));
+    }
+
+    [Fact]
+    public void Under_a_block_only_a_pre_block_shipment_completes_and_only_up_to_its_own_remainder()
+    {
+        // Business #66 5730092974: S was shipped before the block; after the block its remaining
+        // shipped-not-delivered share may be delivered, no more, and nothing else moves.
+        var (instruction, line) = Issued(6_000m);
+        instruction.RecordLoad(3, Guid.NewGuid(), line.Id, Kg(4_000m), MeasurementKind.Measured, T0);
+        var shipment = instruction.MarkShipped(4, Guid.NewGuid(), line.Id, Kg(1_000m), T0);
+        instruction.MarkDelivered(5, Guid.NewGuid(), line.Id, shipment.ShareId, Kg(200m), T0);
+        instruction.BlockLine(6, line.Id, T0);
+        var blockedAt = instruction.Version;
+        var sharesBefore = instruction.Shares.Count;
+
+        // Above the remainder (800 left on S): refused whole, no record, no version effect.
+        Assert.Equal(LogisticsRuleCodes.DeliveryExceedsShipment,
+            CodeOf(() => instruction.MarkDelivered(blockedAt, Guid.NewGuid(), line.Id, shipment.ShareId, Kg(801m), T0)));
+        // Without a real shipment: the delivery path cannot bypass the block.
+        Assert.Equal(LogisticsRuleCodes.ShipmentNotFound,
+            CodeOf(() => instruction.MarkDelivered(blockedAt, Guid.NewGuid(), line.Id, Guid.NewGuid(), Kg(1m), T0)));
+        // New load and new shipment stay refused while blocked (3_000 loaded-not-shipped is not shippable).
+        Assert.Equal(LogisticsRuleCodes.LineBlocked,
+            CodeOf(() => instruction.RecordLoad(blockedAt, Guid.NewGuid(), line.Id, Kg(1m), MeasurementKind.Measured, T0)));
+        Assert.Equal(LogisticsRuleCodes.LineBlocked,
+            CodeOf(() => instruction.MarkShipped(blockedAt, Guid.NewGuid(), line.Id, Kg(1m), T0)));
+        Assert.Equal((blockedAt, sharesBefore, Kg(200m)), (instruction.Version, instruction.Shares.Count, line.DeliveredQuantity));
+
+        // Exactly the remainder completes S; it lifts no block and creates no new shipment right.
+        instruction.MarkDelivered(blockedAt, Guid.NewGuid(), line.Id, shipment.ShareId, Kg(800m), T0);
+        Assert.True(instruction.UndeliveredOf(shipment.ShareId).IsZero);
+        Assert.Equal((Kg(1_000m), Kg(0m), Kg(3_000m)), (line.DeliveredQuantity, line.ShippedNotDelivered, line.LoadedNotShipped));
+        Assert.True(line.IsBlocked);
+        Assert.Equal(LogisticsRuleCodes.LineBlocked,
+            CodeOf(() => instruction.MarkShipped(instruction.Version, Guid.NewGuid(), line.Id, Kg(1m), T0)));
+
+        // More needs an unblock; then shipping resumes from LOADED, and the delivery bound is the new shipment.
+        instruction.UnblockLine(instruction.Version, line.Id, T0);
+        var later = instruction.MarkShipped(instruction.Version, Guid.NewGuid(), line.Id, Kg(500m), T0);
+        Assert.Equal(Kg(500m), instruction.UndeliveredOf(later.ShareId));
+    }
+
+    [Fact]
+    public void The_same_delivery_command_again_creates_no_second_share_blocked_or_not()
+    {
+        // Business #66 5730092974: a replayed delivery command yields no second delivered share.
+        var (instruction, line) = Issued(6_000m);
+        instruction.RecordLoad(3, Guid.NewGuid(), line.Id, Kg(4_000m), MeasurementKind.Measured, T0);
+        var shipment = instruction.MarkShipped(4, Guid.NewGuid(), line.Id, Kg(1_000m), T0);
+        var deliveryId = Guid.NewGuid();
+        instruction.MarkDelivered(5, deliveryId, line.Id, shipment.ShareId, Kg(400m), T0);
+        var after = instruction.Version;
+
+        Assert.Equal(LogisticsRuleCodes.DuplicateShareId,
+            CodeOf(() => instruction.MarkDelivered(after, deliveryId, line.Id, shipment.ShareId, Kg(400m), T0)));
+        instruction.BlockLine(after, line.Id, T0);
+        Assert.Equal(LogisticsRuleCodes.DuplicateShareId,
+            CodeOf(() => instruction.MarkDelivered(after + 1, deliveryId, line.Id, shipment.ShareId, Kg(400m), T0)));
+
+        Assert.Equal((Kg(400m), Kg(600m), after + 1), (line.DeliveredQuantity, instruction.UndeliveredOf(shipment.ShareId), instruction.Version));
+        Assert.Single(instruction.Shares, share => share.Kind == LoadingShareKind.Delivered);
+    }
+
+    [Fact]
+    public void A_block_present_before_any_shipment_leaves_the_delivery_path_closed()
+    {
+        // Business #66 5730092974: if the block exists before a shipment, delivery cannot skip the shipment.
+        var (instruction, line) = Issued(6_000m);
+        instruction.RecordLoad(3, Guid.NewGuid(), line.Id, Kg(4_000m), MeasurementKind.Measured, T0);
+        instruction.BlockLine(4, line.Id, T0);
+
+        Assert.Equal(LogisticsRuleCodes.LineBlocked, CodeOf(() => instruction.MarkShipped(5, Guid.NewGuid(), line.Id, Kg(1m), T0)));
+        Assert.Equal(LogisticsRuleCodes.ShipmentNotFound,
+            CodeOf(() => instruction.MarkDelivered(5, Guid.NewGuid(), line.Id, Guid.NewGuid(), Kg(1m), T0)));
+        Assert.True(line.DeliveredQuantity.IsZero);
+        Assert.Equal(5, instruction.Version);
     }
 
     [Fact]
