@@ -357,6 +357,8 @@ partial class InventoryDbContextModelSnapshot : ModelSnapshot
             b.HasIndex("CompanyId", "Code")
                 .IsUnique();
 
+            b.HasIndex("CompanyId", "LotId");
+
             b.HasIndex("CompanyId", "ProductId");
 
             b.ToTable("Labels", "inventory", t =>
@@ -375,6 +377,69 @@ partial class InventoryDbContextModelSnapshot : ModelSnapshot
 
                 t.HasCheckConstraint(
                     "CK_Labels_Version",
+                    "[Version] >= 1");
+            });
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.LotRow", b =>
+        {
+            b.Property<Guid>("Id")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("CoilNumber")
+                .HasMaxLength(64)
+                .HasColumnType("nvarchar(64)");
+
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<DateTimeOffset>("CreatedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("CreatedBy")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<string>("HeatNumber")
+                .HasMaxLength(64)
+                .HasColumnType("nvarchar(64)");
+
+            b.Property<Guid>("ProductId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<byte[]>("RowVersion")
+                .IsConcurrencyToken()
+                .IsRequired()
+                .ValueGeneratedOnAddOrUpdate()
+                .HasColumnType("rowversion");
+
+            b.Property<long>("Version")
+                .IsConcurrencyToken()
+                .HasColumnType("bigint");
+
+            b.HasKey("Id");
+
+            b.HasAlternateKey("CompanyId", "Id");
+
+            b.HasIndex("CompanyId", "ProductId");
+
+            b.ToTable("Lots", "inventory", t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_Lots_CreatedBy",
+                    "LEN([CreatedBy]) > 0");
+
+                t.HasCheckConstraint(
+                    "CK_Lots_Identity",
+                    "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
+
+                t.HasCheckConstraint(
+                    "CK_Lots_Trace",
+                    "([HeatNumber] IS NULL OR LEN([HeatNumber]) > 0) AND ([CoilNumber] IS NULL OR LEN([CoilNumber]) > 0)");
+
+                t.HasCheckConstraint(
+                    "CK_Lots_Version",
                     "[Version] >= 1");
             });
         });
@@ -647,6 +712,23 @@ partial class InventoryDbContextModelSnapshot : ModelSnapshot
         });
 
         modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.LabelRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                .WithMany()
+                .HasForeignKey("CompanyId")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+
+            b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.LotRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "LotId")
+                .HasPrincipalKey("CompanyId", "Id")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired()
+                .HasConstraintName("FK_Labels_Lots_CompanyId_LotId");
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.LotRow", b =>
         {
             b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OrganizationCompanyReference", null)
                 .WithMany()

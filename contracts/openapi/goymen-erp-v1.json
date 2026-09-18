@@ -13924,7 +13924,8 @@
           "documentStatus",
           "requiredDocuments",
           "documents",
-          "prints"
+          "prints",
+          "lot"
         ],
         "type": "object",
         "properties": {
@@ -13979,6 +13980,35 @@
             "items": {
               "$ref": "#/components/schemas/InventoryLabelPrintV1"
             }
+          },
+          "lot": {
+            "$ref": "#/components/schemas/InventoryLotV1"
+          }
+        }
+      },
+      "InventoryLotV1": {
+        "required": [
+          "id",
+          "heatNumber",
+          "coilNumber"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "heatNumber": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "coilNumber": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

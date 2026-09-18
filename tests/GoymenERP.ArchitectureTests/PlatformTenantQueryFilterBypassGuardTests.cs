@@ -91,7 +91,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for the per-module relational inventory: the broad test list moved out of the
     // verifier into tools/relational_inventory/<module>.txt (pinned below, one entry per file); the
     // verifier loads it fail-closed, checks every test's executions in the TRX and prints one line per
-    // module. Same 142 tests and 149 executions as before the move.
+    // module. The move kept main's exact set and totals (146 / 153 at #326); the counts now come from the
+    // files, so adding a test changes only its module file and that file's pin.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
         "d45b3b41a7c0866c1af09b47ea650b31bf4b7e7d302a970abe55a24e06e74696";
     private const string SqlServerRcsiVerifierTestsPath =
@@ -127,7 +128,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // inventory
             ["tools/relational_inventory/inventory.txt"] =
-                "5366c3a510d9faf2e38c84e587b5b154e89b1dfa31b6eba8e5dd33254b0cebab",
+                "b2aa8f8c522d817043f50fc93003b6faeb80472b2b31ec1a3b08bf71da4e0eed",
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
@@ -201,7 +202,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // row and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
              + "Persistence/InventoryDbContext.cs"] =
-                "7e591b7739ab94487e5a8f651ba54ea344581af551e34d28031f630d21c14f0f",
+                "49a56885af157d474d86a1726c0e1591bcf612262036d81cf8f1e73be9571cdb",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "a25322e5924213ccdf3241e0d1ff4cc15f5d6be168345894eaba3f6b77204812",
@@ -327,7 +328,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Inventory.Infrastructure/"
                  + "InventoryModuleExtensions.cs"] =
                     new(
-                        "25b5c9f1029a244f1a1b27d4347705d930e0444d24489c1bdfb1f338afa62871",
+                        "ef1a2f3eccdeeb6f71b0c1ccd1569f5ff80edc8227142d358268cb53aeb59606",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -339,7 +340,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
                     new(
-                        "dfb9ac4298ec9937f13a99b8d460f2eb082a165bccf7a7fc9a057f3a9b80b58d",
+                        "aee840ce25a289eeaeb29291b71fc0eba956987066fd2a0de08783038b099c20",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

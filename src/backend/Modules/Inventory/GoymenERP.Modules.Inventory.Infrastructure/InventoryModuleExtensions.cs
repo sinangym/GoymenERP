@@ -44,6 +44,7 @@ public static class InventoryModuleExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<InventoryKilogramScale>();
         services.AddScoped<InventoryStore>();
+        services.AddScoped<IInventoryLotStore>(serviceProvider => serviceProvider.GetRequiredService<InventoryStore>());
         services.AddScoped<IInventoryLabelStore>(serviceProvider => serviceProvider.GetRequiredService<InventoryStore>());
         services.AddScoped<IInventoryMovementStore>(serviceProvider => serviceProvider.GetRequiredService<InventoryStore>());
         return services;
