@@ -16,6 +16,8 @@ using GoymenERP.Modules.Settings.Application;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -556,6 +558,39 @@ public sealed class InventorySqlServerRelationalAcceptanceTests
                 new MaterialLot(LotA, CompanyA, Product), [], Metadata(run)))).Code);
         }
 
+        // #324 P3-1: an id another company holds collides on the key, invisible to B. A retry would collide
+        // forever, so the answer is a conflict with no retry advice — the same on every attempt (a fresh
+        // store each time, as each request is) — and not concurrent_change.
+        var labelOfA = NewLabel(CompanyA, "SYN-A-HOLDS-ITS-ID");
+        await using (var a = run.Store(CompanyA))
+        {
+            Assert.Equal(InventoryWriteOutcome.Recorded, await a.Labels.SaveLabelAsync(labelOfA, Metadata(run)));
+        }
+
+        for (var attempt = 1; attempt <= 2; attempt++)
+        {
+            await using (var b = run.Store(CompanyB))
+            {
+                Assert.Equal(InventoryStoreCodes.LotConflict, (await Assert.ThrowsAsync<InventoryStoreException>(() => b.Lots.SaveLotAsync(
+                    new MaterialLot(LotA, CompanyB, Product), [], Metadata(run)))).Code);
+            }
+
+            await using (var b = run.Store(CompanyB))
+            {
+                Assert.Equal(InventoryStoreCodes.LabelConflict, (await Assert.ThrowsAsync<InventoryStoreException>(() => b.Labels.SaveLabelAsync(
+                    new MaterialLabel(labelOfA.Id, CompanyB, "SYN-B-REUSES-A-ID", Product, LotB), Metadata(run)))).Code);
+            }
+        }
+
+        await using (var a = run.Store(CompanyA))
+        {
+            Assert.Equal(CompanyA, (await a.Lots.FindLotAsync(LotA))!.CompanyId);
+            Assert.Equal(labelOfA.Code, (await a.Labels.FindLabelAsync(labelOfA.Id))!.Code);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE Code = N'SYN-B-REUSES-A-ID'"));
+
         // Without the store: the (company, lot) key makes a cross-company link impossible in the schema.
         await using (var raw = run.Context(CompanyB))
         {
@@ -568,6 +603,46 @@ public sealed class InventorySqlServerRelationalAcceptanceTests
 
         Assert.Equal(0, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM inventory.Labels WHERE CompanyId = @b AND LotId = @l", ("@b", CompanyB), ("@l", LotA)));
+    }
+
+    /// <summary>
+    /// #324 P3-2 (Business #66 5734060341: the migration fails visibly, no lot is invented): a label
+    /// stored before the lot table existed, naming a lot that does not exist, makes AddMaterialLots fail
+    /// when the foreign key is added. The migration's transaction takes the lot table back with it, the
+    /// label stays as it was, and the history does not record the migration.
+    /// </summary>
+    [SqlServerFact]
+    public async Task A_label_without_its_lot_makes_the_lot_migration_fail_visibly_and_changes_nothing()
+    {
+        await using var run = await Run.StartAsync(migrateInventory: false);
+        const string BeforeLots = "20260918160000_AddInventorySourceGrain";
+        await using (var context = run.Context(CompanyA))
+        {
+            await context.GetService<IMigrator>().MigrateAsync(BeforeLots);
+        }
+
+        var orphan = RawLabel(CompanyA, Guid.NewGuid());
+        await using (var raw = run.Context(CompanyA))
+        {
+            raw.Labels.Add(orphan);
+            await raw.SaveChangesAsync();
+        }
+
+        await using (var context = run.Context(CompanyA))
+        {
+            var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync());
+            Assert.Equal(547, error.Number);
+            Assert.Contains("FK_Labels_Lots_CompanyId_LotId", error.Message, StringComparison.Ordinal);
+            Assert.Equal(BeforeLots, (await context.Database.GetAppliedMigrationsAsync()).Last());
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sys.tables WHERE [name] = N'Lots' AND [schema_id] = SCHEMA_ID(N'inventory')"));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sys.foreign_keys WHERE [name] = N'FK_Labels_Lots_CompanyId_LotId'"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE Id = @id AND LotId = @lot AND Version = 1",
+            ("@id", orphan.Id), ("@lot", orphan.LotId)));
     }
 
     [SqlServerFact]
@@ -715,7 +790,8 @@ public sealed class InventorySqlServerRelationalAcceptanceTests
         public Guid Actor { get; } = Guid.NewGuid();
         public string Correlation { get; } = $"inv2-{Guid.NewGuid():N}";
 
-        public static async Task<Run> StartAsync()
+        /// <param name="migrateInventory">False: the host's modules only; the test runs Inventory's migrations itself.</param>
+        public static async Task<Run> StartAsync(bool migrateInventory = true)
         {
             var baseConnectionString = Environment.GetEnvironmentVariable(
                 SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
@@ -726,6 +802,11 @@ public sealed class InventorySqlServerRelationalAcceptanceTests
             using var client = factory.CreateClient();
             using var health = await client.GetAsync("/health/live");
             health.EnsureSuccessStatusCode();
+            if (!migrateInventory)
+            {
+                return run;
+            }
+
             await using (var context = run.Context(CompanyA))
             {
                 await context.Database.MigrateAsync();
