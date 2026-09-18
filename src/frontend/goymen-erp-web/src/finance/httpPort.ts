@@ -13,8 +13,11 @@
  * adapter restates the status as the #258 `ReadResult` the screens decode — 403 Denied, 404
  * NotFound, 503 Unavailable. Anything else is not a ReadResult and is passed on undecodable.
  *
- * Save: every service outcome arrives as the #258 `CommandResult` body (200/409/422/403/503), so
- * the body is passed on as it is. Anything else (400, 401, 415, 500) carries no command result.
+ * Save: the outcomes a client acts on arrive as the #258 `CommandResult` body (200 Succeeded, 409
+ * VersionConflict / IdempotencyConflict, 422 ValidationFailed with its issues) and are passed on as
+ * they are. Denied and Unavailable are the platform problems 403 and 503; the adapter restates them
+ * as that outcome with no resource, as it does for reads. Anything else (400, 401, 415, 500)
+ * carries no command result.
  * No answer at all is `no-reply`, an UNKNOWN outcome the command hook retries with the same key.
  *
  * Record and Reverse have no route (T05; authority is OPEN-009). They answer an explicit local
@@ -36,7 +39,20 @@ const READ_OUTCOME_BY_STATUS: Readonly<Record<number, 'Denied' | 'NotFound' | 'U
   503: 'Unavailable',
 }
 
-const COMMAND_RESULT_STATUSES: ReadonlySet<number> = new Set([200, 403, 409, 422, 503])
+const COMMAND_RESULT_STATUSES: ReadonlySet<number> = new Set([200, 409, 422])
+
+const COMMAND_OUTCOME_BY_STATUS: Readonly<Record<number, 'Denied' | 'Unavailable'>> = {
+  403: 'Denied',
+  503: 'Unavailable',
+}
+
+/** A command outcome the server states by status alone: no resource, no issues, not a replay. */
+function outcomeOnly(outcome: 'Denied' | 'Unavailable'): PortReply {
+  return {
+    kind: 'body',
+    body: { outcome, resource: null, isReplay: false, originalCorrelationId: '', issues: [] },
+  }
+}
 
 async function read(url: string, scope: FinanceScope, signal: AbortSignal): Promise<PortReply> {
   let response: Response
@@ -63,10 +79,7 @@ async function read(url: string, scope: FinanceScope, signal: AbortSignal): Prom
 
 /** A local answer for a command the Backend does not publish: honest `Unavailable`, nothing sent. */
 function unpublishedCommand(): Promise<PortReply> {
-  return Promise.resolve({
-    kind: 'body',
-    body: { outcome: 'Unavailable', resource: null, isReplay: false, originalCorrelationId: '', issues: [] },
-  })
+  return Promise.resolve(outcomeOnly('Unavailable'))
 }
 
 export function createHttpFinancePort(): FinanceReceiptPort {
@@ -103,6 +116,8 @@ export function createHttpFinancePort(): FinanceReceiptPort {
         return { kind: 'no-reply' }
       }
 
+      const statedOutcome = COMMAND_OUTCOME_BY_STATUS[response.status]
+      if (statedOutcome !== undefined) return outcomeOnly(statedOutcome)
       if (!COMMAND_RESULT_STATUSES.has(response.status)) return { kind: 'body', body: undefined }
       try {
         return { kind: 'body', body: await response.json() }

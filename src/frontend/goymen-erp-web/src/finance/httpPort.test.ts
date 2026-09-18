@@ -84,7 +84,7 @@ describe('reads', () => {
 describe('draftSave', () => {
   const REQUEST = { draftId: null, expectedVersion: null } as never
 
-  it.each([200, 403, 409, 422, 503])('passes the CommandResult body of %i on as it is', async (status) => {
+  it.each([200, 409, 422])('passes the CommandResult body of %i on as it is', async (status) => {
     const result = { outcome: 'ValidationFailed', resource: null, isReplay: false, originalCorrelationId: 'c', issues: [] }
     const fetchMock = stubFetch(new Response(JSON.stringify(result), { status }))
 
@@ -98,6 +98,18 @@ describe('draftSave', () => {
     expect(headersOf(init)['X-Company-Id']).toBe(SCOPE.companyId)
     // The company is never in the body.
     expect(init?.body).toBe(JSON.stringify(REQUEST))
+  })
+
+  it.each([
+    [403, 'Denied'],
+    [503, 'Unavailable'],
+  ])('restates the platform problem %i as the %s outcome with no resource', async (status, outcome) => {
+    stubFetch(new Response(JSON.stringify({ code: 'x' }), { status }))
+
+    expect(await createHttpFinancePort().draftSave(SCOPE, 'key-1', REQUEST)).toEqual({
+      kind: 'body',
+      body: { outcome, resource: null, isReplay: false, originalCorrelationId: '', issues: [] },
+    })
   })
 
   it.each([400, 401, 415, 500])('carries no command result for %i', async (status) => {

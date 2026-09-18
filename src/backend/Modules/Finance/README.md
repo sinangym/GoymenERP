@@ -96,13 +96,14 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
 
 | Route | Service | Answer |
 |---|---|---|
-| `POST /api/v1/finance/manual-receipts/drafts` | `DraftSaveAsync` (#258 `DraftSaveRequest`: create with null id and version, update with both, full replacement) | the #258 `CommandResult`: 200 Succeeded, 422 ValidationFailed, 409 VersionConflict / IdempotencyConflict, 403 Denied, 503 Unavailable |
+| `POST /api/v1/finance/manual-receipts/drafts` | `DraftSaveAsync` (#258 `DraftSaveRequest`: create with null id and version, update with both, full replacement) | the #258 `CommandResult` for 200 Succeeded, 422 ValidationFailed (its issues), 409 VersionConflict / IdempotencyConflict; Denied and Unavailable are the platform problems 403 `forbidden` and 503 `service_unavailable` |
 | `GET /api/v1/finance/manual-receipts?cursor=` | `ListAuthorizedAsync` | `SourcePage`; a malformed or foreign cursor is 400 |
 | `GET /api/v1/finance/manual-receipts/{sourceId}` | `DetailAuthorizedAsync` | `SourceDetail`; another company's draft is 404 |
 | `GET /api/v1/finance/bank-accounts` | FS0 `ListAuthorizedAsync` | `BankAccountPage` |
 
 - **Company, actor, correlation** come only from the server context (`X-Company-Id` plus access, the authenticated actor, `X-Correlation-Id`).
-- **Idempotency-Key** is required on the save: exactly one canonical value of at most 128 characters, otherwise 400. A replay carries `Idempotency-Replayed: true` and `Idempotency-Original-Correlation-Id`.
+- **Idempotency-Key** is required on the save: exactly one canonical value of at most 128 characters, otherwise 400. A replay carries `Idempotency-Replayed: true` and `Idempotency-Original-Correlation-Id`. Only a stored success replays until ADR-011 §7's terminal replay (FIN-UI-1).
+- **Enums** travel as their names (`CommandOutcome`, `SourceStage`, `AmountDisclosure`, `AllocationKnowledge` carry a string-enum converter, so the generated OpenAPI says so too).
 - **Permission** is not a route policy. The services ask `FinancePermissionPort` afresh at every fence, through `IErpAuthorityRevalidationService` (#276), and only a granted company-wide scope is `Allowed`. A name not yet registered centrally is `Unavailable` (503), not a refusal.
 
   | Action | Name |

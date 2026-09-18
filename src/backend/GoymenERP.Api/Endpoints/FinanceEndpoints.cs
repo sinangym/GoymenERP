@@ -80,9 +80,11 @@ public static class FinanceEndpoints
     /// FIN-T04b: the manual-receipt draft over HTTP, faithful to the #258 bodies. The company is only
     /// the server context (<c>X-Company-Id</c> + access); the actor and correlation are the host's.
     /// <list type="bullet">
-    /// <item><b>Save</b> returns the #258 <c>CommandResult</c> for every service outcome: Succeeded 200,
-    /// ValidationFailed 422, VersionConflict / IdempotencyConflict 409, Denied 403, Unavailable 503. A
-    /// replay (ADR-011) carries <c>Idempotency-Replayed</c> and <c>Idempotency-Original-Correlation-Id</c>.</item>
+    /// <item><b>Save</b> returns the #258 <c>CommandResult</c> for the outcomes a client acts on: Succeeded
+    /// 200, ValidationFailed 422 (its issues), VersionConflict / IdempotencyConflict 409. Denied and
+    /// Unavailable are the platform problems 403 <c>forbidden</c> and 503 <c>service_unavailable</c>. A replay
+    /// (ADR-011) carries <c>Idempotency-Replayed</c> and <c>Idempotency-Original-Correlation-Id</c>; only a stored
+    /// success replays until the terminal replay of §7 (FIN-UI-1).</item>
     /// <item><b>Reads</b> return the resource on 200; NotFound 404, Denied 403 and Unavailable 503 are
     /// platform problems. A malformed or foreign list cursor is 400.</item>
     /// </list>
@@ -134,15 +136,19 @@ public static class FinanceEndpoints
                     httpContext.Response.Headers["Idempotency-Original-Correlation-Id"] = result.OriginalCorrelationId;
                 }
 
-                return Results.Json(result, ContractJson, statusCode: result.Outcome switch
+                // Denied and Unavailable are the platform's problems (403 forbidden, 503 service_unavailable),
+                // as for every other route; the #258 CommandResult carries the outcomes a client acts on.
+                return result.Outcome switch
                 {
-                    CommandOutcome.Succeeded => StatusCodes.Status200OK,
-                    CommandOutcome.ValidationFailed => StatusCodes.Status422UnprocessableEntity,
-                    CommandOutcome.VersionConflict or CommandOutcome.IdempotencyConflict => StatusCodes.Status409Conflict,
-                    CommandOutcome.Denied => StatusCodes.Status403Forbidden,
-                    CommandOutcome.Unavailable => StatusCodes.Status503ServiceUnavailable,
+                    CommandOutcome.Succeeded => Results.Json(result, ContractJson, statusCode: StatusCodes.Status200OK),
+                    CommandOutcome.ValidationFailed =>
+                        Results.Json(result, ContractJson, statusCode: StatusCodes.Status422UnprocessableEntity),
+                    CommandOutcome.VersionConflict or CommandOutcome.IdempotencyConflict =>
+                        Results.Json(result, ContractJson, statusCode: StatusCodes.Status409Conflict),
+                    CommandOutcome.Denied => Results.Problem(statusCode: StatusCodes.Status403Forbidden),
+                    CommandOutcome.Unavailable => Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable),
                     _ => throw new InvalidOperationException("Finance draft save returned an undefined outcome."),
-                });
+                };
             })
             .WithName("SaveFinanceManualReceiptDraftV1")
             .WithTags("Finance")
@@ -153,13 +159,12 @@ public static class FinanceEndpoints
             .Produces<CommandResult>(StatusCodes.Status200OK)
             .Produces<CommandResult>(StatusCodes.Status422UnprocessableEntity)
             .Produces<CommandResult>(StatusCodes.Status409Conflict)
-            .Produces<CommandResult>(StatusCodes.Status403Forbidden)
-            .Produces<CommandResult>(StatusCodes.Status503ServiceUnavailable)
             .ProducesErpAuthenticatedProblems()
             .ProducesErpBadRequest()
             .AllowsEmptyErpBadRequestBody()
             .AllowsCodeLessErpBadRequestBody()
-            .ProducesErpUnsupportedMediaType();
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
 
         endpoints.MapGet(ManualReceiptsPath, async (
                 [FromQuery] string? cursor,

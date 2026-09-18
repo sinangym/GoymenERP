@@ -50,8 +50,9 @@ public sealed class FinanceDraftApiSqlServerRelationalAcceptanceTests
             Assert.Equal(HttpStatusCode.Forbidden, (await viewer.GetAsync(FinanceEndpoints.BankAccountsPath)).StatusCode);
             Assert.Equal(HttpStatusCode.Forbidden, (await viewer.GetAsync(FinanceEndpoints.ManualReceiptsPath)).StatusCode);
             var save = await viewer.PostAsync(FinanceEndpoints.DraftsPath, Body(account));
+            // Denied is the platform problem, as on every route: 403 `forbidden`, not a CommandResult.
             Assert.Equal(HttpStatusCode.Forbidden, save.StatusCode);
-            Assert.Equal("Denied", (await Result(save)).GetProperty("outcome").GetString());
+            Assert.Equal("forbidden", (await Result(save)).GetProperty("code").GetString());
         }
 
         var reader = await run.GrantAsync(TestUsers.CompanyA, CompanyA, DraftGrants);
