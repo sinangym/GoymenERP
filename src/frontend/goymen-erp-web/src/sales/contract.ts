@@ -27,9 +27,13 @@ export const SALES_CONTRACT_STATUS = 'PINNED_SOURCE' as const
 export const SALES_DRAFT_PATH = '/sales/drafts'
 export const salesDraftDetailPath = (id: string) => `${SALES_DRAFT_PATH}/${encodeURIComponent(id)}`
 
-/** `SalesDraftApiV1`: a first commit answers 201, the same accepted attempt 200 + isReplay. */
+/**
+ * `SalesDraftApiV1`: a first commit answers 201; the same accepted attempt answers 201 again with
+ * `Idempotency-Replayed: true` (and `isReplay` in the body) — ADR-011 §4 replays the persisted
+ * result, a delta on #257 which said 200 (decided on #321).
+ */
 export const CREATED_STATUS = 201
-export const REPLAY_STATUS = 200
+export const REPLAY_HEADER = 'Idempotency-Replayed'
 export const REV_0 = 'Rev.0'
 export const ORDER_KIND = 'Order' as const
 export const DRAFT_STATE = 'Draft' as const
@@ -194,6 +198,18 @@ export const SALES_PROBLEM_CODE = {
   sameKeyPayloadMismatch: 'same_key_payload_mismatch',
   settingsProviderUnavailable: 'settings_provider_unavailable',
   settingsAccessDenied: 'settings_access_denied',
+  // The Sales API slice's own answers (#66 card, decisions 2–4; ADR-011 §3/§7/§8): each one is a
+  // contract delta on #257, marked in the backend README. The API's 503s carry only the platform's
+  // `service_unavailable`; provider codes never reach the wire. Unknown codes still decode; they
+  // only lose their text.
+  unsupportedCurrency: 'unsupported_currency',
+  accountState: 'account_state',
+  versionConflict: 'version_conflict',
+  concurrentChange: 'concurrent_change',
+  commercialNotAvailable: 'commercial_not_available',
+  ownerReferenceUnavailable: 'owner_reference_unavailable',
+  commandMetadataInvalid: 'command_metadata_invalid',
+  invalidCursor: 'invalid_cursor',
 } as const
 
 export type SalesProblemCode = (typeof SALES_PROBLEM_CODE)[keyof typeof SALES_PROBLEM_CODE]

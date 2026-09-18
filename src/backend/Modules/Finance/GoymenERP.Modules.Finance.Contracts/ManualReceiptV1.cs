@@ -39,9 +39,14 @@ public enum FinanceAction { ReadBankAccounts, ReadSources, ReadAmount, SaveDraft
 public enum PermissionDecision { Unavailable, Denied, Allowed }
 
 public enum ReadOutcome { Unavailable, Denied, NotFound, Found }
+// String names on the wire, in the generated OpenAPI schema as in FinanceJson (FIN-T04b; the FE decodes names).
+[JsonConverter(typeof(JsonStringEnumConverter<CommandOutcome>))]
 public enum CommandOutcome { Unavailable, Denied, ValidationFailed, VersionConflict, IdempotencyConflict, Succeeded }
+[JsonConverter(typeof(JsonStringEnumConverter<SourceStage>))]
 public enum SourceStage { Draft, Recorded, Reversed }
+[JsonConverter(typeof(JsonStringEnumConverter<AmountDisclosure>))]
 public enum AmountDisclosure { Unavailable, Redacted, Visible }
+[JsonConverter(typeof(JsonStringEnumConverter<AllocationKnowledge>))]
 public enum AllocationKnowledge { Unavailable, Known }
 public sealed record AmountView(AmountDisclosure Disclosure, MoneyText? Money);
 public sealed record UnallocatedView(AllocationKnowledge Knowledge, AmountView Amount);

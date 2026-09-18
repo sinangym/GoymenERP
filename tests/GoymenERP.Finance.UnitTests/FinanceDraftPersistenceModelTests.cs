@@ -38,15 +38,23 @@ public sealed class FinanceDraftPersistenceModelTests
     }
 
     [Fact]
-    public void The_idempotency_key_is_company_actor_and_key_compared_exactly()
+    public void The_command_record_follows_adr_011_company_command_and_key_hash_with_the_actor_kept()
     {
         using var context = Context();
         var commands = context.Model.FindEntityType(typeof(FinanceCommandRow))!;
-        Assert.Equal(["CompanyId", "ActorId", "IdempotencyKey"],
+        Assert.Equal(["CompanyId", "CommandName", "IdempotencyKeyHash"],
             commands.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        // §2: the raw key is not a column at all.
+        Assert.DoesNotContain(commands.GetProperties(), property => property.Name == "IdempotencyKey");
         var design = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(FinanceCommandRow))!;
         Assert.Equal(FinanceDbContext.IdentityCollation, design.FindProperty(nameof(FinanceCommandRow.ActorId))!.GetCollation());
-        Assert.Equal(FinanceDbContext.IdentityCollation, design.FindProperty(nameof(FinanceCommandRow.IdempotencyKey))!.GetCollation());
+        Assert.False(design.FindProperty(nameof(FinanceCommandRow.ActorId))!.IsNullable);
+        Assert.Contains(design.GetCheckConstraints(), check => check.Name == "CK_Commands_KeyHash");
+        // The key hash is the trimmed key's upper-case SHA-256 (ADR-011 §2).
+        Assert.Equal(64, FinanceCommandKeys.Hash("k-1").Length);
+        Assert.Equal(FinanceCommandKeys.Hash("k-1"), FinanceCommandKeys.Hash("k-1").ToUpperInvariant());
+        Assert.Equal(FinanceCommandKeys.Hash("k-1"), FinanceCommandKeys.Hash(" k-1 "));
+        Assert.NotEqual(FinanceCommandKeys.Hash("k-1"), FinanceCommandKeys.Hash("K-1"));
         var drafts = context.Model.FindEntityType(typeof(ReceiptDraftRow))!;
         Assert.True(drafts.FindProperty(nameof(ReceiptDraftRow.Version))!.IsConcurrencyToken);
         // No money is stored as a database decimal: the amount is the exact text that passed the profile.
@@ -59,6 +67,7 @@ public sealed class FinanceDraftPersistenceModelTests
     {
         using var context = Context();
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_InitialFinanceDrafts", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AlignCommandsWithAdr011", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -135,7 +144,7 @@ public sealed class FinanceDraftPersistenceModelTests
 
     private static FinanceCommandRow Command() => new FinanceCommandRow
     {
-        CompanyId = CompanyA, ActorId = "synthetic-actor", IdempotencyKey = "k-1", CommandName = ReceiptDraftService.SaveDraftCommand,
+        CompanyId = CompanyA, CommandName = ReceiptDraftService.SaveDraftCommand, IdempotencyKeyHash = FinanceCommandKeys.Hash("k-1"), ActorId = "synthetic-actor",
         PayloadHash = new string('0', 64), DraftId = Guid.NewGuid(), ResultJson = "{}", CorrelationId = "synthetic-correlation",
         RecordedAtUtc = At,
     };

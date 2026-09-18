@@ -66,8 +66,13 @@ public static class SalesDraftApiV1
     public const string DraftDetailPath = "/api/v1/sales/drafts/{id}";
     public const string IdempotencyHeader = "Idempotency-Key";
     public const string Rev0 = "Rev.0";
+    /// <summary>
+    /// The first commit and its replay both answer 201 (ADR-011 §4: the persisted result is replayed;
+    /// the platform's Counterparty and Manufacturing commands do the same). A replay is told by the
+    /// <c>Idempotency-Replayed</c> header and <c>isReplay</c> in the body — a #257 delta (the contract
+    /// said 200 for the replay), decided with the coordinator on #321.
+    /// </summary>
     public const int CreatedStatus = 201;
-    public const int ReplayStatus = 200;
 }
 
 // Shape validation only. Owner profile scale, current permissions and references

@@ -211,8 +211,12 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         {
             table.HasCheckConstraint("CK_DraftAttempts_Identity",
                 "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 "
-                + "AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+                + "AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
             table.HasCheckConstraint("CK_DraftAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+            // ADR-011 §7: an attempt is either a stored draft or a recorded terminal refusal, never both.
+            table.HasCheckConstraint("CK_DraftAttempts_Outcome",
+                "([Outcome] = 1 AND [DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [RefusalJson] IS NULL) "
+                + "OR ([Outcome] = 2 AND [DraftId] IS NULL AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
         });
         entity.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
         entity.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
@@ -220,12 +224,15 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         entity.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
         entity.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
-        entity.HasIndex(x => new { x.CompanyId, x.DraftId }).IsUnique().HasDatabaseName("UX_DraftAttempts_DraftId");
+        entity.Property(x => x.RefusalJson).HasColumnType("nvarchar(max)");
+        entity.HasIndex(x => new { x.CompanyId, x.DraftId }).IsUnique().HasDatabaseName("UX_DraftAttempts_DraftId")
+            .HasFilter("[DraftId] IS NOT NULL");
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<DraftRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.DraftId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .IsRequired(false)
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }

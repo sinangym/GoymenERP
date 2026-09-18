@@ -1,9 +1,8 @@
 /**
  * Finance HTTP transport — only for what the Backend has PUBLISHED.
  *
- * Today that is one read: `GET /api/v1/finance/manual-receipts/draft-context` (#261). The
- * DraftSave / Record / Reverse / list / detail / bank-list routes are still unpublished, so
- * they stay behind `FinanceReceiptPort` without an HTTP implementation here.
+ * The draft-context read (#261) lives here. FIN-T04b publishes the draft save, list, detail and
+ * bank-account list; their adapter is `./httpPort.ts`. Record and Reverse have no route (T05).
  *
  * Hand-written like `../organization/api.ts`; its tiny dev-identity helper is repeated here on
  * purpose rather than imported across a single-writer lane.
@@ -15,7 +14,7 @@ export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
 const DEV_IDENTITY_ENABLED = import.meta.env.DEV || import.meta.env.VITE_BOOTSTRAP_IDENTITY_ENABLED === 'true'
 
-function devHeaders(): Record<string, string> {
+export function devHeaders(): Record<string, string> {
   return DEV_IDENTITY_ENABLED ? { 'X-Development-User': DEV_USER } : {}
 }
 
