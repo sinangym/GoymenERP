@@ -22,7 +22,8 @@ public sealed class ProductionPlan
         Guid companyId,
         Guid workCenterId,
         ManufacturingProcess process,
-        IEnumerable<PlannedInput> inputs)
+        IEnumerable<PlannedInput> inputs,
+        ProductionTarget? target = null)
     {
         Id = RequireId(id, nameof(id));
         CompanyId = RequireId(companyId, nameof(companyId));
@@ -45,6 +46,7 @@ public sealed class ProductionPlan
             throw new ArgumentException("Aynı ana rulo planda iki kez yer alamaz.", nameof(inputs));
         }
 
+        Target = target;
         Status = PlanStatus.Draft;
     }
 
@@ -55,6 +57,9 @@ public sealed class ProductionPlan
     public Guid WorkCenterId { get; }
 
     public ManufacturingProcess Process { get; }
+
+    /// <summary>The plan's declared target, or null when the plan declares none.</summary>
+    public ProductionTarget? Target { get; }
 
     public PlanStatus Status { get; private set; }
 

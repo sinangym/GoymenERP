@@ -29,7 +29,9 @@ public sealed class ProductionOrder
         CompanyId = plan.CompanyId;
         WorkCenterId = plan.WorkCenterId;
         Process = plan.Process;
+        Target = plan.Target;
         _plannedInputs = plan.Inputs.ToList();
+        Status = OrderStatus.Open;
     }
 
     public Guid Id { get; }
@@ -41,6 +43,15 @@ public sealed class ProductionOrder
     public Guid WorkCenterId { get; }
 
     public ManufacturingProcess Process { get; }
+
+    /// <summary>The plan's declared target as it stood when the order was created.</summary>
+    public ProductionTarget? Target { get; }
+
+    public OrderStatus Status { get; private set; }
+
+    public Guid? ClosedByUserId { get; private set; }
+
+    public DateTimeOffset? ClosedAtUtc { get; private set; }
 
     public IReadOnlyList<PlannedInput> PlannedInputs => _plannedInputs;
 
@@ -62,6 +73,7 @@ public sealed class ProductionOrder
     /// <summary>Input actually taken from a planned parent roll into production.</summary>
     public void IssueInput(Guid parentRollId, Kilograms mass)
     {
+        RequireOpen();
         RequirePlannedRoll(parentRollId);
         RequirePositive(mass, nameof(mass));
         _issued[parentRollId] = IssuedOf(parentRollId) + mass.Value;
@@ -70,6 +82,7 @@ public sealed class ProductionOrder
     /// <summary>Unused input sent back; it can never exceed what is still issued.</summary>
     public void ReturnUnusedInput(Guid parentRollId, Kilograms mass)
     {
+        RequireOpen();
         RequireIssuedRoll(parentRollId);
         RequirePositive(mass, nameof(mass));
         if (ReturnedOf(parentRollId) + mass.Value > IssuedOf(parentRollId))
@@ -88,6 +101,7 @@ public sealed class ProductionOrder
     /// </summary>
     public OutputDeclaration DeclareOutput(Guid outputId, Guid parentRollId, OutputClass outputClass, Kilograms mass)
     {
+        RequireOpen();
         if (outputId == Guid.Empty)
         {
             throw new ArgumentException("Çıktı kimliği boş olamaz.", nameof(outputId));
@@ -113,6 +127,7 @@ public sealed class ProductionOrder
     /// <summary>The mass of this parent roll that is still in process, as measured now.</summary>
     public void RecordWorkInProgress(Guid parentRollId, Kilograms mass)
     {
+        RequireOpen();
         RequireIssuedRoll(parentRollId);
         _workInProgress[parentRollId] = mass.Value;
     }
@@ -133,6 +148,70 @@ public sealed class ProductionOrder
             new Kilograms(ReturnedOf(parentRollId)),
             byClass,
             new Kilograms(_workInProgress.GetValueOrDefault(parentRollId)));
+    }
+
+    /// <summary>
+    /// Plan v2 §7.3 and Ö7: with no approved tolerance profile, every non-zero unexplained
+    /// difference is an exception. An order with one does not close; the difference stays on the
+    /// order under its own name and is never written off as loss. The Ö7 exception path (reason +
+    /// single approval) needs a named approver and is a recorded dependency, not built here.
+    /// </summary>
+    public void Close(Guid closedByUserId, DateTimeOffset closedAtUtc)
+    {
+        RequireOpen();
+        if (closedByUserId == Guid.Empty)
+        {
+            throw new ArgumentException("Kimlik boş olamaz.", nameof(closedByUserId));
+        }
+
+        var unaccounted = _plannedInputs
+            .Select(input => BalanceOf(input.ParentRollId))
+            .Where(balance => !balance.IsFullyAccounted)
+            .ToList();
+        if (unaccounted.Count > 0)
+        {
+            throw new ManufacturingRuleException(
+                "unexplained_difference",
+                "Açıklanamayan kütle farkı olan emir kapatılamaz: "
+                + string.Join(", ", unaccounted.Select(balance => $"{balance.ParentRollId} ({balance.Unexplained} kg)")));
+        }
+
+        ClosedByUserId = closedByUserId;
+        ClosedAtUtc = closedAtUtc;
+        Status = OrderStatus.Closed;
+    }
+
+    /// <summary>
+    /// The open part of the plan's declared target: parent-roll mass issued net of returns for
+    /// <see cref="TargetBasis.InputMass"/>, good-product output for
+    /// <see cref="TargetBasis.GoodOutputMass"/>. Without a declared target the answer is
+    /// <see cref="RemainingTarget.Unavailable"/>.
+    /// </summary>
+    public RemainingTarget RemainingTargetOf()
+    {
+        if (Target is null)
+        {
+            return RemainingTarget.Unavailable;
+        }
+
+        var achieved = Target.Basis switch
+        {
+            TargetBasis.InputMass => _plannedInputs.Aggregate(
+                Kilograms.Zero, (sum, input) => sum + BalanceOf(input.ParentRollId).NetIssued),
+            TargetBasis.GoodOutputMass => _outputs
+                .Where(output => output.Class == OutputClass.GoodProduct)
+                .Aggregate(Kilograms.Zero, (sum, output) => sum + output.Mass),
+            _ => throw new InvalidOperationException("Tanımsız hedef ölçüsü."),
+        };
+        return RemainingTarget.Of(Target, achieved);
+    }
+
+    private void RequireOpen()
+    {
+        if (Status != OrderStatus.Open)
+        {
+            throw new ManufacturingRuleException("order_closed", "Kapanmış emre yeni gerçekleşme yazılamaz.");
+        }
     }
 
     private decimal IssuedOf(Guid parentRollId) => _issued.GetValueOrDefault(parentRollId);
