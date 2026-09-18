@@ -8479,7 +8479,9 @@
               }
             },
             "x-erp-problem-codes": [
-              "idempotency_conflict"
+              "idempotency_conflict",
+              "lifecycle_conflict",
+              "version_conflict"
             ]
           },
           "503": {
@@ -13445,9 +13447,14 @@
         "type": "object",
         "properties": {
           "expectedVersion": {
-            "type": "string"
+            "maxLength": 19,
+            "minLength": 1,
+            "pattern": "^[1-9][0-9]*$",
+            "type": "string",
+            "description": "Required lossless positive Int64 decimal string, at most 9223372036854775807. JSON numbers are rejected."
           }
-        }
+        },
+        "additionalProperties": false
       },
       "AllocationKnowledge": {
         "enum": [
