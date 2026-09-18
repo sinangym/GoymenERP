@@ -146,9 +146,12 @@ BROAD_EXPECTED_TESTS = (
     "GoymenERP.Api.IntegrationTests.FinanceDraftSqlServerRelationalAcceptanceTests.Company_B_can_neither_see_nor_overwrite_company_A_draft",
     "GoymenERP.Api.IntegrationTests.FinanceDraftSqlServerRelationalAcceptanceTests.The_real_unavailable_owners_refuse_every_save_and_store_nothing",
     "GoymenERP.Api.IntegrationTests.FinanceDraftSqlServerRelationalAcceptanceTests.A_save_that_fails_in_the_database_leaves_nothing_behind",
+    "GoymenERP.Api.IntegrationTests.InventoryReadApiSqlServerRelationalAcceptanceTests.A_reader_with_both_grants_sees_the_label_and_its_stock_position_by_position",
+    "GoymenERP.Api.IntegrationTests.InventoryReadApiSqlServerRelationalAcceptanceTests.Each_read_needs_its_own_grant",
+    "GoymenERP.Api.IntegrationTests.InventoryReadApiSqlServerRelationalAcceptanceTests.Another_companys_label_is_not_found_and_the_company_context_is_required",
 )
-BROAD_DISCOVERY_COUNT = 106
-BROAD_EXECUTION_COUNT = 113
+BROAD_DISCOVERY_COUNT = 109
+BROAD_EXECUTION_COUNT = 116
 
 
 def verify_discovery(standard_output: str) -> None:

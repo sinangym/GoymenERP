@@ -28,6 +28,18 @@ public static class ErpPermissions
     /// </summary>
     public const string ProductOperationalSelectionRead = "product.operational-selection.read";
 
+    /// <summary>
+    /// T07(a) Inventory reads (#310): a label's view and its stock position by position. Registering
+    /// the names makes them KNOWN, not granted: no role and no user receives them here; the grant is
+    /// a human gate. Company-wide scope is required because the reads are not filtered by site or
+    /// location — a site-scoped assignment would otherwise see every location's stock of the company.
+    /// Not critical: read-only, no stock, money or identity effect.
+    /// </summary>
+    public const string InventoryLabelsRead = "inventory.labels.read";
+
+    /// <inheritdoc cref="InventoryLabelsRead"/>
+    public const string InventoryBalancesRead = "inventory.balances.read";
+
     public const string IdentityProfileRead = "identity.profile.read";
     public const string IdentityAccessRequest = "identity.access.request";
     public const string IdentityAccessApprove = "identity.access.approve";
@@ -47,6 +59,8 @@ public static class ErpPermissions
             CounterpartyAccountsCreate,
             CounterpartyAccountsStatusUpdate,
             ProductOperationalSelectionRead,
+            InventoryLabelsRead,
+            InventoryBalancesRead,
             IdentityProfileRead,
             IdentityAccessRequest,
             IdentityAccessApprove,
@@ -71,6 +85,8 @@ public static class ErpPermissions
             CounterpartyAccountsCreate,
             CounterpartyAccountsStatusUpdate,
             ProductOperationalSelectionRead,
+            InventoryLabelsRead,
+            InventoryBalancesRead,
             IdentityAuditRead,
         ],
         StringComparer.Ordinal);
