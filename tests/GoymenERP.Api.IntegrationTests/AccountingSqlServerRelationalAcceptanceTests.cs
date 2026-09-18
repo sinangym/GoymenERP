@@ -66,9 +66,16 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
             Assert.Equal(PostingOutcomeKind.DuplicateMessage, replay.Kind);
             Assert.Equal(posted.Id, replay.Journal!.Id);
             // A queued message replayed returns its recorded queue entry, even though the fact is posted now.
-            var queuedReplay = await a.Postings.ReceiveAsync(Request(CompanyA, "m-1", source, accounts), period, Metadata(run));
+            var queuedReplay = await a.Postings.ReceiveAsync(Request(CompanyA, "m-1", source, accounts, mapCredit: false), period,
+                Metadata(run));
             Assert.Equal(PostingOutcomeKind.DuplicateMessage, queuedReplay.Kind);
             Assert.Equal(["synthetic-credit-key"], queuedReplay.Exception!.MissingMappingKeys);
+            // ACC-4: the same message id with other content (the mapping filled in, another amount) is not
+            // silently given the first answer: it is refused and records nothing.
+            Assert.Equal(AccountingStoreCodes.DeliveryContentConflict, (await Assert.ThrowsAsync<AccountingStoreException>(
+                () => a.Postings.ReceiveAsync(Request(CompanyA, "m-1", source, accounts), period, Metadata(run)))).Code);
+            Assert.Equal(AccountingStoreCodes.DeliveryContentConflict, (await Assert.ThrowsAsync<AccountingStoreException>(
+                () => a.Postings.ReceiveAsync(Request(CompanyA, "m-3", source, accounts, amount: 101m), period, Metadata(run)))).Code);
             // A new message for the posted fact: already posted, the stored original.
             var again = await a.Postings.ReceiveAsync(Request(CompanyA, "m-4", source, accounts, ruleVersion: "synthetic-rule-2"),
                 period, Metadata(run));
@@ -81,6 +88,8 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Journals"));
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.JournalLines"));
         Assert.Equal(4, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Deliveries"));
+        // Every delivery keeps its 64-hex content hash, the database's own check included.
+        Assert.Equal(4, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Deliveries WHERE LEN(RequestHash) = 64"));
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT Status FROM accounting.PostingExceptions WHERE SourceId = @s", ("@s", source)));
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT Status FROM accounting.PendingValuations WHERE SourceId = @s", ("@s", source)));
         // Audit: period opened; exception queued; exception resolved + pending queued; pending resolved + journal posted.
@@ -147,6 +156,13 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
 
         await using (var a = run.Store(CompanyA))
         {
+            // ACC-4: "r-1" again with the same content (another proposed journal id) is its replay;
+            // with other business dates it is refused.
+            Assert.Equal(PostingOutcomeKind.DuplicateMessage,
+                (await a.Postings.ReverseAsync(Consumer, "r-1", original.Id, Guid.NewGuid(), InSeptember, period, Metadata(run))).Kind);
+            var otherDates = new PostingDates(new DateOnly(2026, 9, 15), new DateOnly(2026, 9, 16), null, RecordedAt);
+            Assert.Equal(AccountingStoreCodes.DeliveryContentConflict, (await Assert.ThrowsAsync<AccountingStoreException>(
+                () => a.Postings.ReverseAsync(Consumer, "r-1", original.Id, Guid.NewGuid(), otherDates, period, Metadata(run)))).Code);
             var again = await a.Postings.ReverseAsync(Consumer, "r-2", original.Id, Guid.NewGuid(), InSeptember, period, Metadata(run));
             Assert.Equal(PostingOutcomeKind.AlreadyReversed, again.Kind);
             Assert.Equal(reversal.Id, again.Journal!.Id);
@@ -182,7 +198,17 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
             Assert.Equal(correction.Id, same.Journal!.Id);
         }
 
+        await using (var a = run.Store(CompanyA))
+        {
+            // ACC-4: "c-1" again with another amount is refused before the correction rule is asked.
+            Assert.Equal(AccountingStoreCodes.DeliveryContentConflict, (await Assert.ThrowsAsync<AccountingStoreException>(
+                () => a.Postings.CorrectAsync(Consumer, "c-1", correctionId, original.Id, Guid.NewGuid(), "synthetic-rule-2",
+                    InSeptember, Lines(accounts, 6m), period, Metadata(run)))).Code);
+        }
+
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Deliveries WHERE MessageId = N'c-3'"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Deliveries WHERE MessageId = N'c-1'"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Deliveries WHERE MessageId = N'r-1'"));
 
         // The unique indexes hold even without the store's own checks (a racing writer).
         await using (var raw = run.Context(CompanyA))
@@ -305,6 +331,65 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
 
         Assert.Equal(journals, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Journals"));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Deliveries WHERE MessageId = N'after-close'"));
+    }
+
+    [SqlServerFact]
+    public async Task Two_racing_overlapping_period_openings_store_one_and_the_loser_retries_to_an_overlap()
+    {
+        await using var run = await Run.StartAsync();
+
+        // Both writers read the same calendar (none yet, then an existing one) and no overlap, then
+        // wait for each other at the save: the calendar row lets only one commit (SİPARİŞ INFO, ACC-4).
+        async Task<object> OpenAsync(Barrier barrier, Guid id, DateOnly startsOn, DateOnly endsOn)
+        {
+            await using var writer = run.Store(CompanyA, new BarrierInterceptor(barrier));
+            try
+            {
+                return await writer.Periods.OpenPeriodAsync(id, startsOn, endsOn, Metadata(run));
+            }
+            catch (AccountingStoreException exception)
+            {
+                return exception.Code;
+            }
+        }
+
+        var rounds = new[]
+        {
+            (First: (Start: new DateOnly(2026, 9, 1), End: new DateOnly(2026, 9, 30)),
+                Second: (Start: new DateOnly(2026, 9, 15), End: new DateOnly(2026, 10, 14))),
+            (First: (Start: new DateOnly(2026, 11, 1), End: new DateOnly(2026, 11, 30)),
+                Second: (Start: new DateOnly(2026, 11, 10), End: new DateOnly(2026, 12, 9))),
+        };
+        var stored = 0;
+        foreach (var round in rounds)
+        {
+            var barrier = new Barrier(2);
+            var ids = new[] { Guid.NewGuid(), Guid.NewGuid() };
+            var results = await Task.WhenAll(
+                Task.Run(() => OpenAsync(barrier, ids[0], round.First.Start, round.First.End)),
+                Task.Run(() => OpenAsync(barrier, ids[1], round.Second.Start, round.Second.End)));
+
+            Assert.Single(results, result => result is AccountingWriteOutcome.Recorded);
+            Assert.Single(results, result => result is string code && code == AccountingStoreCodes.ConcurrentChange);
+            stored++;
+            Assert.Equal(stored, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Periods"));
+
+            // The loser's retry now sees the winner's period: an overlap, and still nothing of its own.
+            var loser = results[0] is string ? 0 : 1;
+            var dates = loser == 0 ? round.First : round.Second;
+            await using (var a = run.Store(CompanyA))
+            {
+                Assert.Equal(AccountingStoreCodes.PeriodOverlap, (await Assert.ThrowsAsync<AccountingStoreException>(
+                    () => a.Periods.OpenPeriodAsync(ids[loser], dates.Start, dates.End, Metadata(run)))).Code);
+                Assert.Null(await a.Periods.FindPeriodAsync(ids[loser]));
+            }
+        }
+
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Periods"));
+        Assert.Equal(2L, await run.ScalarAsync<long>("SELECT Version FROM accounting.PeriodCalendars WHERE CompanyId = @c", ("@c", CompanyA)));
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @c AND EventType = N'accounting.period.opened.v1'",
+            ("@c", run.Correlation)));
     }
 
     [SqlServerFact]
