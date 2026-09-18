@@ -169,7 +169,7 @@ public static class SalesEndpoints
 
         drafts.MapPost("/", async (
             HttpContext httpContext,
-            ISalesDraftService service,
+            [FromServices] ISalesDraftService service,
             ICorrelationContext correlation,
             CancellationToken cancellationToken) =>
         {
@@ -238,7 +238,7 @@ public static class SalesEndpoints
             [FromQuery] int? pageSize,
             [FromQuery] string? cursor,
             HttpContext httpContext,
-            ISalesDraftService service,
+            [FromServices] ISalesDraftService service,
             ICorrelationContext correlation,
             CancellationToken cancellationToken) =>
         {
@@ -269,7 +269,7 @@ public static class SalesEndpoints
         drafts.MapGet("/{id:guid}", async (
             Guid id,
             HttpContext httpContext,
-            ISalesDraftService service,
+            [FromServices] ISalesDraftService service,
             ICorrelationContext correlation,
             CancellationToken cancellationToken) =>
         {

@@ -332,6 +332,10 @@ public sealed class SalesDraftServiceTests
         public string SourceChannel => "Web";
         public string? ClientIpAddress => "127.0.0.1";
         public string? UserAgent => "SENTETIK-agent";
+
+        public void Set(string correlationId, string? causationId, string sourceChannel, string? clientIpAddress, string? userAgent)
+        {
+        }
     }
 
     private sealed class FakeAccounts : ISalesPartyAccountPortV1
