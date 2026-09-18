@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
@@ -23,8 +24,10 @@ namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
 /// T07(a) Inventory read API against a REAL SQL Server, through the real host: authentication,
-/// company context, the permission policies and the Inventory store. Grants are synthetic test
-/// roles on the registered names, created in this test's own database and never seeded; the stock
+/// company context, the permission policies and the Inventory store. The callers are the factory's
+/// configured development users (the only ones the bootstrap handler accepts), linked to an ERP
+/// account in this test's own database when they have none; grants are synthetic test roles on the
+/// registered names, created there and never seeded (no seeded role holds them); the stock
 /// read is written through the store with synthetic identities (there is no write endpoint yet).
 /// A positive answer here is API evidence only, not a user outcome: no real product card exists.
 /// </summary>
@@ -41,7 +44,8 @@ public sealed class InventoryReadApiSqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         var label = await run.StockedLabelAsync("SYN-T07A-READ");
-        var reader = await run.GrantAsync(CompanyA, ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead);
+        var reader = await run.GrantAsync(TestUsers.CompanyA, CompanyA, ErpPermissions.InventoryLabelsRead,
+            ErpPermissions.InventoryBalancesRead);
         using var client = run.Factory.CreateClientFor(reader, CompanyA);
 
         var labelResponse = await client.GetAsync($"/api/v1/inventory/labels/{label.Id}");
@@ -65,9 +69,10 @@ public sealed class InventoryReadApiSqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         var label = await run.StockedLabelAsync("SYN-T07A-GRANT");
-        var labelsOnly = await run.GrantAsync(CompanyA, ErpPermissions.InventoryLabelsRead);
-        var balancesOnly = await run.GrantAsync(CompanyA, ErpPermissions.InventoryBalancesRead);
-        var neither = await run.GrantAsync(CompanyA, ErpPermissions.OrganizationContextRead);
+        var labelsOnly = await run.GrantAsync(TestUsers.NoAssignment, CompanyA, ErpPermissions.InventoryLabelsRead);
+        var balancesOnly = await run.GrantAsync(TestUsers.Unprovisioned, CompanyA, ErpPermissions.InventoryBalancesRead);
+        // Company A's read-only user: access to the company, no Inventory permission (none is seeded).
+        var neither = TestUsers.CompanyAViewer;
 
         using (var client = run.Factory.CreateClientFor(labelsOnly, CompanyA))
         {
@@ -93,8 +98,10 @@ public sealed class InventoryReadApiSqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         var labelOfA = await run.StockedLabelAsync("SYN-T07A-TENANT");
-        var readerOfB = await run.GrantAsync(CompanyB, ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead);
-        var readerOfA = await run.GrantAsync(CompanyA, ErpPermissions.InventoryLabelsRead, ErpPermissions.InventoryBalancesRead);
+        var readerOfB = await run.GrantAsync(TestUsers.CompanyB, CompanyB, ErpPermissions.InventoryLabelsRead,
+            ErpPermissions.InventoryBalancesRead);
+        var readerOfA = await run.GrantAsync(TestUsers.CompanyA, CompanyA, ErpPermissions.InventoryLabelsRead,
+            ErpPermissions.InventoryBalancesRead);
 
         using (var client = run.Factory.CreateClientFor(readerOfB, CompanyB))
         {
@@ -169,12 +176,29 @@ public sealed class InventoryReadApiSqlServerRelationalAcceptanceTests
             return label;
         }
 
-        /// <summary>A new synthetic user holding a synthetic role with exactly these permissions in one company.</summary>
-        public async Task<string> GrantAsync(Guid company, params string[] permissions)
+        /// <summary>
+        /// A synthetic role with exactly these permissions in one company, assigned to a configured
+        /// development user (linked to a new ERP account first if it has none). Returns the header value.
+        /// </summary>
+        public async Task<string> GrantAsync(string developmentUser, Guid company, params string[] permissions)
         {
-            var actor = Guid.NewGuid();
             await using var scope = Factory.Services.CreateAsyncScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+            var link = await dbContext.ExternalIdentities.SingleOrDefaultAsync(
+                x => x.Issuer == BootstrapIdentityOptions.Issuer && x.Subject == developmentUser);
+            Guid actor;
+            if (link is null)
+            {
+                actor = Guid.NewGuid();
+                dbContext.Users.Add(new UserAccount(actor, "Synthetic Inventory reader", null));
+                dbContext.ExternalIdentities.Add(new ExternalIdentityLink(Guid.NewGuid(), actor,
+                    BootstrapIdentityOptions.Issuer, developmentUser));
+            }
+            else
+            {
+                actor = link.UserId;
+            }
+
             var roleId = Guid.NewGuid();
             var role = new RoleDefinition(roleId, $"T07A-{roleId:N}", "Synthetic Inventory read test role", true);
             foreach (var permission in permissions)
@@ -185,11 +209,10 @@ public sealed class InventoryReadApiSqlServerRelationalAcceptanceTests
             var assignment = new RoleAssignment(Guid.NewGuid(), actor, roleId, company,
                 DateTimeOffset.UtcNow.AddMinutes(-1), null, approvedByUserId: null);
             assignment.AddScope(AccessScopeType.Company, company);
-            dbContext.Users.Add(new UserAccount(actor, "Synthetic Inventory reader", null));
             dbContext.Roles.Add(role);
             dbContext.RoleAssignments.Add(assignment);
             await dbContext.SaveChangesAsync();
-            return actor.ToString("D");
+            return developmentUser;
         }
 
         public async ValueTask DisposeAsync()
