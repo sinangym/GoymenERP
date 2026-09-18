@@ -181,6 +181,22 @@ jobs:
             -p "test_*.py" \
             -v
 
+      - name: Select the suite's capability profile
+        # Stage 2: c01-list-only (canonical), cari-staged or normal, each with its own compose file.
+        # An unknown suite or profile fails here; nothing falls back to another profile.
+        shell: bash
+        run: |
+          set -euo pipefail
+          selection="$(python3 -I -S -B tools/validate_browser_acceptance.py profile --suite "$BROWSER_SUITE")"
+          profile="$(sed -n 's/^profile=//p' <<<"$selection")"
+          compose_file="$(sed -n 's/^compose_file=//p' <<<"$selection")"
+          test -n "$profile" && test -f "$compose_file"
+          {
+            echo "BROWSER_E2E_PROFILE=$profile"
+            echo "C01_E2E_COMPOSE_FILE=$compose_file"
+          } >> "$GITHUB_ENV"
+          echo "Suite '$BROWSER_SUITE' runs under capability profile '$profile' ($compose_file)."
+
       - name: Require the suite's browser script
         shell: bash
         run: |
@@ -207,14 +223,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker compose \
-            -p "$C01_E2E_COMPOSE_PROJECT" \
-            -f "$C01_E2E_COMPOSE_FILE" \
-            config --format json \
-            | python3 -I -S -B tools/validate_c01_e2e_contract.py compose \
-                --input - \
-                --expected-commit "$C01_E2E_TESTED_COMMIT" \
-                --expected-project "$C01_E2E_COMPOSE_PROJECT"
+          if [ "$BROWSER_E2E_PROFILE" = "c01-list-only" ]; then
+            docker compose \
+              -p "$C01_E2E_COMPOSE_PROJECT" \
+              -f "$C01_E2E_COMPOSE_FILE" \
+              config --format json \
+              | python3 -I -S -B tools/validate_c01_e2e_contract.py compose \
+                  --input - \
+                  --expected-commit "$C01_E2E_TESTED_COMMIT" \
+                  --expected-project "$C01_E2E_COMPOSE_PROJECT"
+          else
+            # The profile's exact difference from the canonical model, then every canonical rule.
+            docker compose \
+              -p "$C01_E2E_COMPOSE_PROJECT" \
+              -f "$C01_E2E_COMPOSE_FILE" \
+              config --format json \
+              | python3 -I -S -B tools/validate_browser_acceptance.py compose \
+                  --suite "$BROWSER_SUITE" \
+                  --expected-commit "$C01_E2E_TESTED_COMMIT" \
+                  --expected-project "$C01_E2E_COMPOSE_PROJECT"
+          fi
 
       - name: Restore fixture materializer
         run: |
@@ -301,6 +329,7 @@ jobs:
           BROWSER_E2E_SQL_CONNECTION: ${{ env.GOYMEN_ERP_C01_E2E_SQLSERVER_CONNECTION }}
           BROWSER_E2E_DATABASE: ${{ env.C01_E2E_DATABASE_NAME }}
           BROWSER_E2E_TESTED_COMMIT: ${{ env.C01_E2E_TESTED_COMMIT }}
+          BROWSER_E2E_PROFILE: ${{ env.BROWSER_E2E_PROFILE }}
         run: npm run "browser:${BROWSER_SUITE}:ci"
 
       - name: Require exact clean suite evidence

@@ -1,0 +1,199 @@
+"""BROWSER-CI stage 2: suite capability profiles and their compose contracts.
+
+Each profile's compose file is the canonical C-01 file plus exactly its documented difference, and its
+validated model must still satisfy every canonical rule (the canonical validator runs unchanged on the
+mapped-back model). Negative cases: non-disposable database, public bind, non-Testing environment,
+envelope present in "normal", envelope or profile key missing in "cari-staged", extra keys, unknown
+suite or profile.
+"""
+import copy
+import importlib.util
+import pathlib
+import sys
+import unittest
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "tools"))
+
+import validate_browser_acceptance as browser  # noqa: E402
+
+_spec = importlib.util.spec_from_file_location(
+    "c01_contract_tests", ROOT / "tests/c01_e2e_contract/test_validate_c01_e2e_contract.py")
+c01_tests = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(c01_tests)
+
+COMMIT = c01_tests.COMMIT
+PROJECT = c01_tests.PROJECT
+ENVELOPE = browser.ENVELOPE_KEYS
+
+
+def model(profile):
+    result = browser._relabel(c01_tests.valid_compose(), browser.CANONICAL_SUITE_LABEL,
+                              browser.PROFILE_SUITE_LABELS[profile])
+    environment = result["services"]["api"]["environment"]
+    if profile == "cari-staged":
+        environment[browser.CARI_STAGED_PROFILE_KEY] = browser.CARI_STAGED_PROFILE_VALUE
+    elif profile == "normal":
+        for key in ENVELOPE:
+            del environment[key]
+    return result
+
+
+SUITE_FOR = {"c01-list-only": "smoke", "cari-staged": "c03", "normal": "org03"}
+
+
+class ProfileRegistryTests(unittest.TestCase):
+    def test_every_suite_has_exactly_one_known_profile(self):
+        self.assertEqual(set(browser.SUITES), set(browser.SUITE_PROFILES))
+        for suite in browser.SUITES:
+            self.assertIn(browser.profile_of(suite), browser.PROFILES)
+        self.assertEqual("c01-list-only", browser.profile_of("smoke"))
+        self.assertEqual("cari-staged", browser.profile_of("c03"))
+        self.assertEqual("normal", browser.profile_of("org03"))
+        self.assertEqual("normal", browser.profile_of("u02"))
+
+    def test_unknown_or_unsafe_suite_fails_closed(self):
+        for suite in ("unknown", "C03", "c03;rm", "", "../x"):
+            with self.subTest(suite=suite), self.assertRaises(browser.ContractError):
+                browser.profile_of(suite)
+
+    def test_profile_cli_prints_the_compose_file(self):
+        import contextlib
+        import io
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(0, browser.main(["profile", "--suite", "c03"]))
+        self.assertEqual("profile=cari-staged\ncompose_file=infra/docker-compose.browser-cari-staged.yml\n",
+                         out.getvalue())
+
+
+class ComposeFileDerivationTests(unittest.TestCase):
+    """The two stage 2 files differ from the canonical file only by their documented transforms."""
+
+    @staticmethod
+    def _body(text):
+        return "".join(line for line in text.splitlines(keepends=True) if not line.startswith("#"))
+
+    def setUp(self):
+        self.canonical = (ROOT / browser.PROFILE_COMPOSE_FILES["c01-list-only"]).read_text(encoding="utf-8")
+
+    def test_normal_is_the_canonical_file_without_the_envelope(self):
+        normal = self._body((ROOT / browser.PROFILE_COMPOSE_FILES["normal"]).read_text(encoding="utf-8"))
+        expected = "".join(
+            line for line in self.canonical.splitlines(keepends=True)
+            if not any(line.strip().startswith(key + ":") for key in ENVELOPE)
+        ).replace(browser.CANONICAL_SUITE_LABEL, browser.PROFILE_SUITE_LABELS["normal"])
+        self.assertEqual(expected, normal)
+        self.assertEqual(len(ENVELOPE), sum(
+            1 for line in self.canonical.splitlines() if any(line.strip().startswith(k + ":") for k in ENVELOPE)))
+
+    def test_cari_staged_is_the_canonical_file_plus_the_profile_line(self):
+        staged = self._body((ROOT / browser.PROFILE_COMPOSE_FILES["cari-staged"]).read_text(encoding="utf-8"))
+        anchor = '      C01E2e__EnableListCapability: "true"\n'
+        expected = self.canonical.replace(
+            anchor, anchor + f"      {browser.CARI_STAGED_PROFILE_KEY}: {browser.CARI_STAGED_PROFILE_VALUE}\n"
+        ).replace(browser.CANONICAL_SUITE_LABEL, browser.PROFILE_SUITE_LABELS["cari-staged"])
+        self.assertEqual(expected, staged)
+
+
+class SuiteComposeContractTests(unittest.TestCase):
+    def test_each_profile_valid_model_passes(self):
+        for profile, suite in SUITE_FOR.items():
+            with self.subTest(profile=profile):
+                browser.validate_suite_compose(model(profile), suite, COMMIT, PROJECT)
+
+    def test_canonical_rules_apply_to_every_profile(self):
+        mutations = (
+            ("non-disposable database", lambda m: m["services"]["api"]["environment"].__setitem__(
+                "DB_CONNECTION_STRING", "Database=GoymenErp"), "disposable DB"),
+            ("public bind", lambda m: m["services"]["api"]["ports"][0].__setitem__("host_ip", "0.0.0.0"),
+             "loopback"),
+            ("non-Testing", lambda m: m["services"]["api"]["environment"].__setitem__(
+                "ASPNETCORE_ENVIRONMENT", "Production"), "environment"),
+            ("mutable SQL image", lambda m: m["services"]["sqlserver"].__setitem__(
+                "image", "mcr.microsoft.com/mssql/server:2022-latest"), "SQL image digest"),
+            ("identity drift", lambda m: m["services"]["web-authorized"]["build"]["args"].__setitem__(
+                "VITE_DEV_USER", "company-a-user"), "identity"),
+        )
+        for profile, suite in SUITE_FOR.items():
+            for name, mutate, message in mutations:
+                with self.subTest(profile=profile, mutation=name):
+                    broken = model(profile)
+                    mutate(broken)
+                    with self.assertRaisesRegex(browser.ContractError, message):
+                        browser.validate_suite_compose(broken, suite, COMMIT, PROJECT)
+
+    def test_normal_refuses_any_part_of_the_envelope(self):
+        for key in (*ENVELOPE, "C01E2e__Profile", "C01E2e__Anything"):
+            with self.subTest(key=key):
+                broken = model("normal")
+                broken["services"]["api"]["environment"][key] = "true"
+                with self.assertRaisesRegex(browser.ContractError, "envelope"):
+                    browser.validate_suite_compose(broken, "org03", COMMIT, PROJECT)
+
+    def test_cari_staged_needs_the_envelope_and_the_exact_profile(self):
+        missing = model("cari-staged")
+        del missing["services"]["api"]["environment"]["GOYMEN_ERP_C01_E2E_DISPOSABLE"]
+        with self.assertRaises(browser.ContractError):
+            browser.validate_suite_compose(missing, "c03", COMMIT, PROJECT)
+        for value in (None, "cari-list", "CARI-LIST-DETAIL"):
+            with self.subTest(value=value):
+                broken = model("cari-staged")
+                if value is None:
+                    del broken["services"]["api"]["environment"][browser.CARI_STAGED_PROFILE_KEY]
+                else:
+                    broken["services"]["api"]["environment"][browser.CARI_STAGED_PROFILE_KEY] = value
+                with self.assertRaisesRegex(browser.ContractError, "cari-list-detail"):
+                    browser.validate_suite_compose(broken, "c03", COMMIT, PROJECT)
+
+    def test_extra_api_keys_are_refused_in_every_profile(self):
+        for profile, suite in SUITE_FOR.items():
+            with self.subTest(profile=profile):
+                broken = model(profile)
+                broken["services"]["api"]["environment"]["Authentication__Mode"] = "DevelopmentBootstrap"
+                with self.assertRaisesRegex(browser.ContractError, "key set is not exact"):
+                    browser.validate_suite_compose(broken, suite, COMMIT, PROJECT)
+
+    def test_a_model_is_only_valid_for_its_own_profile(self):
+        # The label pins the profile: the staged model is not a normal model and vice versa.
+        with self.assertRaisesRegex(browser.ContractError, "label"):
+            browser.validate_suite_compose(model("cari-staged"), "org03", COMMIT, PROJECT)
+        with self.assertRaisesRegex(browser.ContractError, "label"):
+            browser.validate_suite_compose(model("normal"), "c03", COMMIT, PROJECT)
+        with self.assertRaisesRegex(browser.ContractError, "label"):
+            browser.validate_suite_compose(model("c01-list-only"), "c03", COMMIT, PROJECT)
+
+    def test_the_input_model_is_not_mutated(self):
+        original = model("normal")
+        snapshot = copy.deepcopy(original)
+        browser.validate_suite_compose(original, "org03", COMMIT, PROJECT)
+        self.assertEqual(snapshot, original)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class WorkflowProfileWiringTests(unittest.TestCase):
+    def setUp(self):
+        self.workflow = (ROOT / ".github/workflows/browser-acceptance.yml").read_text(encoding="utf-8")
+
+    def test_the_profile_is_selected_by_the_validator_before_any_compose_use(self):
+        select = self.workflow.index("      - name: Select the suite's capability profile")
+        self.assertLess(self.workflow.index("      - name: Validate browser workflow contract tooling"), select)
+        self.assertLess(select, self.workflow.index("      - name: Validate loopback-only compose model"))
+        self.assertLess(select, self.workflow.index("      - name: Build and start disposable SQL/API"))
+        self.assertIn('tools/validate_browser_acceptance.py profile --suite "$BROWSER_SUITE"', self.workflow)
+        self.assertIn('echo "C01_E2E_COMPOSE_FILE=$compose_file"', self.workflow)
+
+    def test_canonical_profile_keeps_the_canonical_validator_and_others_use_the_suite_validator(self):
+        step = self.workflow.split("      - name: Validate loopback-only compose model", 1)[1].split("      - name:", 1)[0]
+        canonical, other = step.split("          else", 1)
+        self.assertIn('if [ "$BROWSER_E2E_PROFILE" = "c01-list-only" ]; then', canonical)
+        self.assertIn("tools/validate_c01_e2e_contract.py compose", canonical)
+        self.assertIn('tools/validate_browser_acceptance.py compose', other)
+        self.assertIn('--suite "$BROWSER_SUITE"', other)
+
+    def test_the_suite_receives_its_profile(self):
+        run = self.workflow.split("      - name: Run the selected suite", 1)[1].split("      - name:", 1)[0]
+        self.assertIn("BROWSER_E2E_PROFILE: ${{ env.BROWSER_E2E_PROFILE }}", run)
