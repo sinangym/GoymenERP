@@ -2,6 +2,8 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Domain.Events;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace GoymenERP.Accounting.UnitTests;
 
@@ -67,6 +69,8 @@ public sealed class AccountingPersistenceModelTests
     public void Identity_texts_compare_exactly_and_the_period_is_a_concurrency_token()
     {
         using var context = Context();
+        // Collation is design-time configuration; the read-optimized runtime model does not keep it.
+        var designModel = context.GetService<IDesignTimeModel>().Model;
         foreach (var (type, property) in new[]
                  {
                      (typeof(JournalRow), nameof(JournalRow.PostingPurpose)),
@@ -77,7 +81,7 @@ public sealed class AccountingPersistenceModelTests
                  })
         {
             Assert.Equal(AccountingDbContext.IdentityCollation,
-                context.Model.FindEntityType(type)!.FindProperty(property)!.GetCollation());
+                designModel.FindEntityType(type)!.FindProperty(property)!.GetCollation());
         }
 
         var periods = context.Model.FindEntityType(typeof(PeriodRow))!;
