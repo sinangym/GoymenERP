@@ -7,11 +7,23 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Identity.Infrastructure.Services;
 
+/// <summary>
+/// One authorization view per request: permission answers are cached per (actor, company,
+/// permission) so a request reads a stable image, and <see cref="_snapshotRows"/> holds one
+/// per-actor row set for capability snapshots.
+/// <para>
+/// A caller that must not release a result it already read under an authority since taken away
+/// asks <see cref="IErpAuthorityRevalidationService"/> instead: that measures the authority now
+/// and replaces the cached answer, so the request's view moves forward rather than being
+/// bypassed. Both ports are the same scoped instance; see the DI registration.
+/// </para>
+/// </summary>
 internal sealed class ErpAuthorizationService(
     IdentityDbContext dbContext,
     ICurrentUser currentUser,
-    IAuthorizationSnapshotReadObserver? snapshotReadObserver = null)
-    : IErpAuthorizationService
+    IAuthorizationSnapshotReadObserver? snapshotReadObserver = null,
+    IPermissionScopeReadObserver? permissionScopeReadObserver = null)
+    : IErpAuthorizationService, IErpAuthorityRevalidationService
 {
     private readonly Dictionary<(Guid UserId, Guid CompanyId, string Permission), PermissionScope>
         _requestCache = [];
@@ -235,6 +247,35 @@ internal sealed class ErpAuthorizationService(
             return cached;
         }
 
+        return await ReadAndCachePermissionScopeAsync(cacheKey, cancellationToken);
+    }
+
+    /// <summary>
+    /// Measures the authority as it stands now and moves the request's view to that answer, so a
+    /// grant found revoked here cannot be resurrected by a later cached read in the same request.
+    /// The same rejections as the cached path apply, and they still cost no read.
+    /// </summary>
+    public async Task<PermissionScope> RevalidatePermissionScopeAsync(
+        string permission,
+        Guid companyId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!ErpPermissions.IsKnown(permission)
+            || companyId == Guid.Empty
+            || !Guid.TryParse(currentUser.UserId, out var userId))
+        {
+            return PermissionScope.Denied;
+        }
+
+        return await ReadAndCachePermissionScopeAsync((userId, companyId, permission), cancellationToken);
+    }
+
+    private async Task<PermissionScope> ReadAndCachePermissionScopeAsync(
+        (Guid UserId, Guid CompanyId, string Permission) cacheKey,
+        CancellationToken cancellationToken)
+    {
+        var (userId, companyId, permission) = cacheKey;
+        permissionScopeReadObserver?.ObserveDatabaseRead(permission, companyId);
         var now = DateTimeOffset.UtcNow;
         var authorizationRows = await dbContext.RoleAssignments
             .AsNoTracking()
