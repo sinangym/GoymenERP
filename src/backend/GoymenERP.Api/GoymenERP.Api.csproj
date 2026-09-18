@@ -6,6 +6,7 @@
     <ProjectReference Include="..\Modules\Audit\GoymenERP.Modules.Audit.Infrastructure\GoymenERP.Modules.Audit.Infrastructure.csproj" />
     <ProjectReference Include="..\Modules\Counterparty\GoymenERP.Modules.Counterparty.Application\GoymenERP.Modules.Counterparty.Application.csproj" />
     <ProjectReference Include="..\Modules\Counterparty\GoymenERP.Modules.Counterparty.Infrastructure\GoymenERP.Modules.Counterparty.Infrastructure.csproj" />
+    <ProjectReference Include="..\Modules\Finance\GoymenERP.Modules.Finance.Contracts\GoymenERP.Modules.Finance.Contracts.csproj" />
     <ProjectReference Include="..\Modules\Organization\GoymenERP.Modules.Organization.Application\GoymenERP.Modules.Organization.Application.csproj" />
     <ProjectReference Include="..\Modules\Organization\GoymenERP.Modules.Organization.Infrastructure\GoymenERP.Modules.Organization.Infrastructure.csproj" />
     <ProjectReference Include="..\Modules\Identity\GoymenERP.Modules.Identity.Application\GoymenERP.Modules.Identity.Application.csproj" />
@@ -13,6 +14,8 @@
     <ProjectReference Include="..\Modules\Idempotency\GoymenERP.Modules.Idempotency.Infrastructure\GoymenERP.Modules.Idempotency.Infrastructure.csproj" />
     <ProjectReference Include="..\Modules\Product\GoymenERP.Modules.Product.Application\GoymenERP.Modules.Product.Application.csproj" />
     <ProjectReference Include="..\Modules\Product\GoymenERP.Modules.Product.Infrastructure\GoymenERP.Modules.Product.Infrastructure.csproj" />
+    <ProjectReference Include="..\Modules\Sales\GoymenERP.Modules.Sales.Application\GoymenERP.Modules.Sales.Application.csproj" />
+    <ProjectReference Include="..\Modules\Settings\GoymenERP.Modules.Settings.Application\GoymenERP.Modules.Settings.Application.csproj" />
   </ItemGroup>
 
   <ItemGroup>

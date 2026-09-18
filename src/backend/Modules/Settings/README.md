@@ -30,6 +30,8 @@ Consumers must check active/valid profile and exact identity/company/operation,
 then revalidate with their command transaction and preserve the applied snapshot.
 This slice does not implement a persistent provider or transaction locking.
 It therefore cannot enable a real Sales draft, Product activation or money write.
+(Unit profiles later got an approved, non-persistent source — see "Approved unit
+profiles" below.)
 
 ExactPositiveDecimalV1 preserves a positive digit string byte-for-byte, including
 trailing zeros. It rejects signs, exponent/group separators, whitespace, zero,
@@ -43,10 +45,136 @@ Parse("1.001", 2) throws settings_decimal_scale_exceeded. These examples do not
 approve kg scale 0 or currency scale 2. Profile versions are positive server-owned
 versions; any future HTTP adapter must encode them as lossless strings.
 
-Outstanding approved-source data: real unit/currency identities and effective
-profiles (quantity/money scale), and company/operation/date period eligibility
-source. Master 28.1's kg scale/rounding is a proposal, not approved data. No TRY2,
-kg3, default-open period, FX or Finance OPEN-009 permission is inferred.
+## Money currency candidates (read-only)
+
+Source: Business issue #66 comment 5702138790 (SALES-FS1 minimal owner input) and
+coordinator comment 5704482629 (owner: central Backend).
+
+`ISettingsMoneyCandidateReader` is a separate V1 port, so `ISettingsPrerequisiteProvider`
+and the test doubles other modules keep for it do not change. It lists money currency
+candidates for the server-resolved company. The company is never a request input.
+
+Each row is only `CurrencyId` (the owner's stable identity and the sole reference for
+selection and revalidation), `Code` (the owner's real code, a label, never an identity)
+and `DisplayLabel`. A row carries no scale, profile, version, operation or effective
+range: being listed is not validity. Before any write, a consumer revalidates the
+chosen `CurrencyId` through its known-id resolution (`GetMoneyProfileAsync` for its
+operation and business date, e.g. the #262 Sales currency reference read); only that
+result decides scale/profile/effective validity.
+
+No currency list is hard-coded anywhere. Outcomes (Business #66 comment 5713672616,
+error 1):
+
+- A reachable source with no candidates for the company answers an empty list, which
+  means "no candidates".
+- A missing, unreachable, forbidden or malformed source is an exception
+  (`settings_provider_unavailable`, or `settings_access_denied` after the same actor and
+  company-membership check), never an empty list or a default currency: unavailable is
+  not empty.
+- A list is malformed when a row is missing, a `CurrencyId` is empty, a `Code` or
+  `DisplayLabel` is empty or whitespace, or a `CurrencyId` appears twice. The whole list
+  is rejected, not filtered. `MoneyCurrencyCandidatesV1.EnsureWellFormed` is that one
+  check, for a provider before it answers and a consumer before it shows candidates; it
+  reports `settings_provider_unavailable` because Business treats a malformed source as
+  unavailable.
+- Candidate order is undefined. The first row is not a default, and no candidate, not
+  even a single one, is selected automatically.
+
+The consumer owns the context fence: candidates read for one actor/company are discarded
+when that context changes and are never shown under another.
+
+Open question, not decided here: whether candidates are narrowed by operation (money
+profiles bind currency and operation) or by business date. No approved source defines
+it, so the port takes neither; if a source decides it, an additional V1 method can take
+those inputs without changing this one.
+
+The unavailable adapter implements this port too, with the same behaviour as the
+prerequisite port: it always throws, and never answers an empty list. No HTTP route,
+OpenAPI, DI registration, persistent provider, database, seed, currency data or grant
+is introduced.
+
+Outstanding approved-source data: real currency identities and effective money
+profiles, and company/operation/date period eligibility source. Unit profiles now
+have one approved source (GDC kg, below); Master 28.1's rounding (`AwayFromZero`)
+is still a proposal, not approved data. No TRY2, default-open period, FX or Finance
+OPEN-009 permission is inferred.
+
+## Approved unit profiles (T02-a)
+
+Source: Sinan's decisions of 2026-09-18, Ö1 and Ö2 (#66 comment 5722637822;
+`docs/decisions/SINAN_KARARLARI_2026-09-18_O1_O8_VE_SON_ASAMA.md` on #275), and
+Master §28.1 for the dimension. Task: coordinator T02-a.
+
+`ApprovedSettingsPrerequisiteProvider` is the real provider for what is approved:
+unit profiles. Money profiles and period eligibility stay exactly as the unavailable
+adapter answers them — the Sales money operation identity is still an owner input
+(#66 5715011050).
+
+The one approved profile, `ApprovedUnitProfileCatalog.GdcKilogramV1`:
+
+| Field | Value | Source |
+|---|---|---|
+| Company | GDC `10000000-0000-0000-0000-000000000001` | Organization seed and its migration guard (permanent GDC identity) |
+| Unit | kg `c5ef643e-a6e8-51f3-89f2-8e68b00cb983` (`SettingsUnitIdentitiesV1.Kilogram`) | Ö1 (GDC band/coil, kg→kg); id is technical (Ö2) |
+| Code / dimension | `kg` / `weight`, kilogram identity true | Master §28.1 "Ağırlık → kg" |
+| Scale | 3 | Ö2 "kg … en fazla 3 ondalık" |
+| Profile | `4a790fdc-2a6b-5126-835f-d3a13d28b71c`, version 1 | technical (Ö2) |
+| Window | from 2026-09-18, no end (explicitly open-ended) | Ö2 "onaydan itibaren sürümlü, bitişsizse açıkça süresiz" |
+
+Technical ids are UUIDv5 in namespace `18b5cbb9-98ca-5999-b418-aa53c41f0ffb`
+(= UUIDv5(URL, "https://github.com/sinangym/GoymenERP/settings/unit-profiles")),
+names `unit:kg` and `unit-profile:<company id>:kg:v1`; assigned once, never reused.
+A unit identity is company-independent; the profile is per company. GSP and other
+companies have no approved profile yet.
+
+**Data source: versioned source code, not a table.** One profile is approved and
+nothing may edit it at runtime; a new approval is a new version, reviewed like code.
+So there is no migration, seed write or DbContext, and every value is visible in the
+diff that introduces it; the only host change is the registration described under
+"Host wiring" below. When profiles become
+user-maintained, a persistent provider replaces the catalog behind the same port.
+
+Outcomes of `GetUnitProfileAsync`, in order:
+
+| Case | Result |
+|---|---|
+| cancelled | `OperationCanceledException` |
+| no authenticated actor / actor id, unresolved or empty company, not a member | `settings_access_denied`, before anything about the source is revealed |
+| no approved source for the server-resolved company | `settings_provider_unavailable` (unreachable) |
+| source exists but no profile for this unit (including an empty id) | `settings_unit_profile_not_found` (reachable but empty) |
+| malformed catalog | `settings_profile_invalid`, raised when the catalog is built; nothing repaired or skipped |
+| otherwise | the exact profile version in force on the date |
+
+A date outside every window (for example before the approval) returns the real
+version with its real window; the provider never widens a window to fit the
+question. Consumers check activity, window and kilogram identity themselves, as the
+port requires, so such a date is rejected by them — the Product adapter on main
+reports it as `settings_profile_invalid`. A later approved version takes over from
+its own start date and never rewrites an earlier answer.
+
+`settings_unit_profile_not_found` is new. It exists because a reachable source that
+has no profile for an identity is neither unavailable nor malformed; consumers that
+pass Settings codes through (Product) carry it unchanged.
+
+Not in this slice: Product's own unit catalogue (it must use
+`SettingsUnitIdentitiesV1.Kilogram` when it lists kg — ÜRÜN's follow-up), money and
+period sources, any rounding method, any grant or production data. A returned profile is
+reference metadata, not an authorization: the consuming use case still checks its own
+permission.
+
+**Host wiring.** The API host registers `ISettingsPrerequisiteProvider` as
+`ApprovedSettingsPrerequisiteProvider` (previously the unavailable adapter). Its only
+consumer there is the Sales reference read. Sales asks for unit profiles only after a
+Product sales-eligibility snapshot, and no such runtime is composed in the host yet, so the
+swap changes no reachable Sales answer until it is; money and period answers are unchanged.
+On its product path Sales maps `settings_unit_profile_not_found` to `422 unsupported_unit`
+(#285), the same permanent refusal an inactive or out-of-range profile gets; every other
+Settings code keeps Sales' earlier mapping (`settings_access_denied` → 403, the rest → `503
+settings_provider_unavailable`). The code is published as
+`SettingsPrerequisiteCodesV1.UnitProfileNotFound`; consumers map that constant, not the
+provider class. Only the reviewed catalog is reachable from outside
+Settings: the catalog-taking constructors are internal and visible to
+`GoymenERP.Settings.UnitTests` only.
 
 Validation: Settings unit/contract tests are synthetic, not SQL or browser UAT.
 No persistence changed, so new slice-specific SQL scenarios are not applicable;

@@ -29,6 +29,17 @@ const NAV_CAPABILITIES: readonly CapabilityId[] = [
   CAPABILITY.cariPartiesCreate,
   CAPABILITY.cariAccountsLink,
   /**
+   * Listed together with the routes that serve them, on purpose: a nav entry whose
+   * route is not mounted is a link to the not-found block. Each still renders only
+   * where the server's snapshot carries the capability — the backend registry grants
+   * `product.items.*` from the global Product authority (read / draft create), never
+   * from a company permission — so an actor without that authority sees neither. The
+   * 360 and the editor are deliberately absent — reached from a row and from the card,
+   * never from the sidebar.
+   */
+  CAPABILITY.productItemsList,
+  CAPABILITY.productItemsCreate,
+  /**
    * Listed together with the route that serves it, on purpose: a nav entry whose route
    * is not mounted is a link to the not-found block. It still renders only where the
    * server granted the capability, so until Backend #246 publishes `organization.*` it

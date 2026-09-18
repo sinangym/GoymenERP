@@ -41,8 +41,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "OpenApiDocumentGenerationMode.cs";
     private const string OpenApiStartupPath =
         "src/backend/GoymenERP.Api/Program.cs";
+    // Re-fingerprinted for the #261 merge: the Finance draft-context registrations and
+    // MapFinanceEndpoints() join main's Sales/Settings wiring. #261's own
+    // ISettingsPrerequisiteProvider line is dropped, so the provider keeps exactly one
+    // registration: ApprovedSettingsPrerequisiteProvider (T02-a host wiring), which answers
+    // money and period (the only Finance calls) exactly like the unavailable adapter.
+    // Re-measured once more for ORG P3-C: the binding registration is renamed to
+    // ManualReceiptDraftReadBinding (same type, same lifetime, no behaviour change).
     private const string ReviewedOpenApiStartupFingerprint =
-        "d937f1d3607d6a7e49da592da77dfd91ce655f199fbc88b66e18ab0ed18134fa";
+        "9a3d1a7446619d706c7bd7817303b4e594fe50c37a4d12573f14ffc545b674f4";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -81,13 +88,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.cs";
     private const string SqlServerRcsiVerifierPath =
         "tools/verify_rcsi_relational_acceptance.py";
+    // Re-fingerprinted with the broad inventory entry for the Product sales-eligibility
+    // authority SQL acceptance class (#265): three names added, discovery 86 -> 89, execution
+    // 93 -> 96. The verifier's logic is unchanged.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "e619dd4bc1dbc5db0d06701ca3479814682e4ec3e3384a4a411151719380f44e";
+        "623d12561445f5719f79d54bee511a359fde74499f912fac60a440e5af7d5289";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
+    // Re-fingerprinted for the same inventory change: updated counts plus one case pinning the
+    // new class as mandatory.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "2306be3f642beb148e86ad59103c851376775b2354477238f9a86adec6fee120";
+        "bc2e94d9bf9e63bc4b9eccb6c3d9fdcd0281f4ca414062a680ffb3781af0cffb";
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "91a665e6e8982e5a9b66f5d16a14d9fc4d7f98d63775de959a8cc6b2dea2b018";
@@ -182,8 +194,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 ["src/backend/Modules/Identity/"
                  + "GoymenERP.Modules.Identity.Infrastructure/IdentityModuleExtensions.cs"] =
+                    // Re-fingerprinted for the fresh-authority registration (Business #66
+                    // 5720113915): the scoped authorization service is now resolved by its
+                    // concrete type and bound to both the cached and the revalidation port, and
+                    // a null permission-scope read observer is registered. The database surface
+                    // below is unchanged, which is what the API counts hold.
                     new(
-                        "6a938e96c3a23333bf94e4b15a4c5630305176c7acde8e001cf701cde00355e4",
+                        "a657cd98242229d68661ed6c56fee726c98c719ea1c25c3437b2f823b8c3be46",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
