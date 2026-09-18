@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../../BuildingBlocks/GoymenERP.BuildingBlocks/GoymenERP.BuildingBlocks.csproj" />
     <ProjectReference Include="../GoymenERP.Modules.Manufacturing.Domain/GoymenERP.Modules.Manufacturing.Domain.csproj" />
     <ProjectReference Include="../../Settings/GoymenERP.Modules.Settings.Application/GoymenERP.Modules.Settings.Application.csproj" />
   </ItemGroup>

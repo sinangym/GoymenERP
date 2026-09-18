@@ -236,14 +236,16 @@ public sealed class ManufacturingSqlServerRelationalAcceptanceTests
         var workCenterB = await run.WorkCenterOfAsync(CompanyB);
 
         // A work center of company B under company A: the composite (company, work center) foreign
-        // key refuses it (547), and the plan, its inputs and the audit event roll back together. A
-        // work center that does not exist at all is refused the same way.
+        // key refuses it (547), the store names it, and the plan, its inputs and the audit event roll
+        // back together. A work center that does not exist at all is refused the same way.
         foreach (var workCenter in new[] { workCenterB, Guid.NewGuid() })
         {
             await using var a = run.Store(CompanyA);
-            var error = await Assert.ThrowsAsync<DbUpdateException>(
+            var error = await Assert.ThrowsAsync<ManufacturingStoreException>(
                 () => a.Plans.SavePlanAsync(NewPlan(CompanyA, workCenter), Metadata(run)));
-            Assert.Equal(547, Assert.IsType<SqlException>(error.InnerException).Number);
+            Assert.Equal(ManufacturingStoreCodes.WorkCenterNotFound, error.Code);
+            var database = Assert.IsType<DbUpdateException>(error.InnerException);
+            Assert.Equal(547, Assert.IsType<SqlException>(database.InnerException).Number);
         }
 
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Plans"));
