@@ -133,12 +133,14 @@ public sealed class PurchaseOrderAcceptanceTests
         // ÜRÜN #278 P3-1: a cast to the backing list would skip version, bound and duplicate checks.
         var (order, line) = Approved(Kg(100m));
         order.RecordAcceptance(3, Guid.NewGuid(), line.Id, Kg(40m), T0);
+        var before = order.Version;
         Assert.False(order.Lines is List<PurchaseOrderLine>);
         Assert.False(order.Acceptances is List<PurchaseAcceptanceShare>);
         Assert.Throws<NotSupportedException>(() => ((IList<PurchaseOrderLine>)order.Lines).Add(line));
         Assert.Throws<NotSupportedException>(() => ((IList<PurchaseAcceptanceShare>)order.Acceptances).Clear());
         Assert.Single(order.Lines);
         Assert.Single(order.Acceptances);
-        Assert.Equal(3, order.Version);
+        // A failed cast is not a mutation: the version the record had before is the version it has after.
+        Assert.Equal(before, order.Version);
     }
 }
