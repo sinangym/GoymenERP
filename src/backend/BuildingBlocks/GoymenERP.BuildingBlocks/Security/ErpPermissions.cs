@@ -37,7 +37,8 @@ public static class ErpPermissions
     /// bank account among critical permissions (docs/security/AI_YETKI_SOZLESMESI.md) and Sinan's
     /// Ö4 (#66 5722637822) makes the approval maker-checker, so their GRANT follows ADR-004 §6
     /// (the requester or target cannot approve their own request). Read is not Critical: it shows
-    /// only the approved account's label and currency needed to pick it in a draft.
+    /// only the label and currency of approved and proposed accounts (a proposal is listed, not
+    /// usable, so its approver can see it).
     /// </summary>
     public const string FinanceBankAccountRead = "finance.bank-account.read";
     public const string FinanceBankAccountPropose = "finance.bank-account.propose";
