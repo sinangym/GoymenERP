@@ -158,6 +158,19 @@ public sealed class SalesOrderDraft
                 "Para profili taslağın operasyonu için değil başka bir operasyon için alınmış.");
         }
 
+        if (money.Scale < 0 || (money.EffectiveThrough is { } moneyThrough && moneyThrough < money.EffectiveFrom))
+        {
+            throw new ArgumentException("Para profili snapshot'ı kendiyle çelişiyor.", nameof(money));
+        }
+
+        // The Settings port's validity obligation, on the money side as on the unit side (CARİ #306 P3-R1).
+        if (!money.IsActive || header.BusinessDate < money.EffectiveFrom
+            || (money.EffectiveThrough is { } until && header.BusinessDate > until))
+        {
+            throw new SalesRuleException(SalesRuleCodes.MoneyProfileNotInEffect,
+                "Para profili iş tarihinde etkin değil.");
+        }
+
         return new SalesOrderDraft(id, companyId, documentNo, header, money, now);
     }
 
