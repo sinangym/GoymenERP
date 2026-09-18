@@ -1,17 +1,24 @@
 namespace GoymenERP.Modules.Manufacturing.Domain.Common;
 
 /// <summary>
-/// A measured mass in kilograms, exactly as recorded. The domain never rounds it: the unit
-/// profile, precision and rounding stage are owned elsewhere (plan v2 §7.3, Ö2) and are not
-/// chosen here.
+/// A measured mass in kilograms. Ö2: kilograms carry at most three decimals and digits are never
+/// cut silently, so a fourth significant decimal is REFUSED, not rounded; trailing zeros are not
+/// digits ("12.5000" is 12.5 kg). The domain rounds nothing.
 /// </summary>
 public readonly record struct Kilograms
 {
+    public const int Scale = 3;
+
     public Kilograms(decimal value)
     {
         if (value < 0m)
         {
             throw new ArgumentOutOfRangeException(nameof(value), value, "Kütle negatif olamaz.");
+        }
+
+        if (decimal.Round(value, Scale) != value)
+        {
+            throw new ArgumentException($"Kilogram en fazla {Scale} ondalık taşıyabilir.", nameof(value));
         }
 
         Value = value;

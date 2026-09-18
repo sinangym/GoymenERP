@@ -4,40 +4,31 @@ public enum CostStatus
 {
     NotCalculated = 1,
     WaitingPolicy = 2,
+
+    /// <summary>
+    /// Reserved (plan v2 R6). This slice cannot produce it: how a known cost carries its money —
+    /// a currency identity rather than a code string — is decided with T25/Finance, not here.
+    /// </summary>
     Known = 3,
 }
 
 /// <summary>
 /// Plan v2 R6: detailed costing is deferred, so a production fact carries a cost STATUS, not a
-/// number. An amount exists only when the status is <see cref="CostStatus.Known"/>; an unknown
-/// cost is null, never zero.
+/// number. An unknown cost has no amount — never zero — and this slice constructs no known cost.
 /// </summary>
 public sealed record CostResult
 {
-    private CostResult(CostStatus status, decimal? amount, string? currency)
+    private CostResult(CostStatus status)
     {
         Status = status;
-        Amount = amount;
-        Currency = currency;
     }
 
-    public static CostResult NotCalculated { get; } = new(CostStatus.NotCalculated, null, null);
+    public static CostResult NotCalculated { get; } = new(CostStatus.NotCalculated);
 
-    public static CostResult WaitingPolicy { get; } = new(CostStatus.WaitingPolicy, null, null);
+    public static CostResult WaitingPolicy { get; } = new(CostStatus.WaitingPolicy);
 
     public CostStatus Status { get; }
 
-    public decimal? Amount { get; }
-
-    public string? Currency { get; }
-
-    public static CostResult Known(decimal amount, string currency)
-    {
-        if (string.IsNullOrWhiteSpace(currency))
-        {
-            throw new ArgumentException("Bilinen maliyetin para birimi olmalıdır.", nameof(currency));
-        }
-
-        return new CostResult(CostStatus.Known, amount, currency.Trim());
-    }
+    /// <summary>Always null in this slice: only a <see cref="CostStatus.Known"/> result would carry one.</summary>
+    public decimal? Amount => null;
 }

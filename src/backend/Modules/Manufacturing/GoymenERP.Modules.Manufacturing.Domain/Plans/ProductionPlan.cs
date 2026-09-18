@@ -77,7 +77,7 @@ public sealed class ProductionPlan
         }
 
         ApprovedByUserId = RequireId(approvedByUserId, nameof(approvedByUserId));
-        ApprovedAtUtc = approvedAtUtc;
+        ApprovedAtUtc = approvedAtUtc.ToUniversalTime();
         Status = PlanStatus.Approved;
     }
 
