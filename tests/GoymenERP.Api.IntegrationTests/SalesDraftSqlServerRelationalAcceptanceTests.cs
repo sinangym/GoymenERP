@@ -69,8 +69,8 @@ public sealed class SalesDraftSqlServerRelationalAcceptanceTests
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts"));
         Assert.Equal((3L, 2L), (await run.ScalarAsync<long>("SELECT [Next] FROM sales.DraftNumbers"), await run.ScalarAsync<long>("SELECT [Version] FROM sales.DraftNumbers")));
         Assert.Equal("1.250", await run.ScalarAsync<string>(
-            "SELECT CONVERT(varchar(32), Quantity) FROM sales.DraftLines WHERE DraftId = @id AND LineNo = 1", ("@id", first.Draft.Id)));
-        Assert.Equal("1.25", await run.ScalarAsync<string>("SELECT QuantityText FROM sales.DraftLines WHERE DraftId = @id AND LineNo = 1", ("@id", first.Draft.Id)));
+            "SELECT CONVERT(varchar(32), Quantity) FROM sales.DraftLines WHERE DraftId = @id AND [LineNo] = 1", ("@id", first.Draft.Id)));
+        Assert.Equal("1.25", await run.ScalarAsync<string>("SELECT QuantityText FROM sales.DraftLines WHERE DraftId = @id AND [LineNo] = 1", ("@id", first.Draft.Id)));
         // One audit event per stored draft, in the same save, under the request's correlation; none for the replay.
         Assert.Equal(2, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Sales.OrderDraft' AND CorrelationId = @c", ("@c", run.Correlation)));
