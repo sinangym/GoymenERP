@@ -50,7 +50,8 @@ public sealed class InventoryReadApiSqlServerRelationalAcceptanceTests
 
         var labelResponse = await client.GetAsync($"/api/v1/inventory/labels/{label.Id}");
         Assert.Equal(HttpStatusCode.OK, labelResponse.StatusCode);
-        Assert.Equal("private, no-store", labelResponse.Headers.CacheControl?.ToString());
+        // The typed header re-orders its text; the directives are what matter.
+        Assert.True(labelResponse.Headers.CacheControl is { Private: true, NoStore: true });
         var view = (await labelResponse.Content.ReadFromJsonAsync<InventoryLabelViewV1>())!;
         Assert.Equal((label.Id, CompanyA, "SYN-T07A-READ", Product, Lot), (view.LabelId, view.CompanyId, view.Code, view.ProductId, view.LotId));
         Assert.Equal(nameof(LabelDocumentStatus.Complete), view.DocumentStatus);
