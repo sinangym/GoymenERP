@@ -16,6 +16,18 @@ public static class ErpPermissions
     public const string CounterpartyAccountsStatusUpdate =
         "counterparty.accounts.status.update";
 
+    /// <summary>
+    /// The narrow operational product-selection read (K-1(a), Sinan's decision relayed in Business
+    /// #66 5719251344; registration asked for in 5720016574 §3). Registering the name makes it
+    /// KNOWN, not granted: no role and no user receives it here, and an actor without an explicit
+    /// assignment still gets <see cref="PermissionScope.Denied"/>. It is not the Product master
+    /// read and carries no master management, cost/price history, audit or unbounded listing.
+    /// Company-wide scope is required: the read answers for the server-resolved company and has no
+    /// site, location or work-center dimension, so a narrower assignment would have nothing to mean
+    /// (same reason the Counterparty reads are company-wide only).
+    /// </summary>
+    public const string ProductOperationalSelectionRead = "product.operational-selection.read";
+
     public const string IdentityProfileRead = "identity.profile.read";
     public const string IdentityAccessRequest = "identity.access.request";
     public const string IdentityAccessApprove = "identity.access.approve";
@@ -34,6 +46,7 @@ public static class ErpPermissions
             CounterpartyPartiesUpdateBasic,
             CounterpartyAccountsCreate,
             CounterpartyAccountsStatusUpdate,
+            ProductOperationalSelectionRead,
             IdentityProfileRead,
             IdentityAccessRequest,
             IdentityAccessApprove,
@@ -57,6 +70,7 @@ public static class ErpPermissions
             CounterpartyPartiesUpdateBasic,
             CounterpartyAccountsCreate,
             CounterpartyAccountsStatusUpdate,
+            ProductOperationalSelectionRead,
             IdentityAuditRead,
         ],
         StringComparer.Ordinal);
