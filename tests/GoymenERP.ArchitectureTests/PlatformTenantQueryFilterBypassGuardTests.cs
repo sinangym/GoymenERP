@@ -41,12 +41,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "OpenApiDocumentGenerationMode.cs";
     private const string OpenApiStartupPath =
         "src/backend/GoymenERP.Api/Program.cs";
-    // Re-fingerprinted for MFG-API (#313): Manufacturing joins the host — AddManufacturingModule with
-    // the audit interceptor, MapManufacturingEndpoints, and InitializeManufacturingModuleAsync after
-    // Organization (its foreign keys reference Organization's tables). No OpenAPI-generation, network
-    // or hosted-service surface of the startup source changed otherwise.
+    // Re-fingerprinted for MFG-API (#313) on top of T02-b: Manufacturing joins the host —
+    // AddManufacturingModule with the audit interceptor, MapManufacturingEndpoints, and
+    // InitializeManufacturingModuleAsync after Organization (its foreign keys reference Organization's
+    // tables). No OpenAPI-generation, network or hosted-service surface of the startup source changed
+    // otherwise.
     private const string ReviewedOpenApiStartupFingerprint =
-        "e82aaf2d7bd2d5899ed32d2dc6103b54a70ac0c49c7d3c1c9d9d5a2cd105813f";
+        "c6bd6103bbdc99ef0be571d3f38433855ff3d46bed38624f8e57c74098569a7e";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -87,17 +88,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.cs";
     private const string SqlServerRcsiVerifierPath =
         "tools/verify_rcsi_relational_acceptance.py";
-    // Re-fingerprinted for MFG-API (#313): four ManufacturingApiSqlServerRelationalAcceptanceTests names
-    // on top of main's 116 / 123, discovery 116 -> 120, execution 123 -> 127. Logic unchanged.
+    // Re-fingerprinted for MFG-API (#313): six ManufacturingApiSqlServerRelationalAcceptanceTests names
+    // on top of main's 122 / 129, discovery 122 -> 128, execution 129 -> 135. Logic unchanged.
     private const string ReviewedSqlServerRcsiVerifierFingerprint =
-        "e08ae1ad5cb0bd578ccb3f8f65cdac7bd870f9dff365939be5d700b59b829297";
+        "abe1ed152217382cf6bfaa88daa5766188657b05da0fa77a7a1c42487e7c1100";
     private const string SqlServerRcsiVerifierTestsPath =
         "tests/rcsi_relational_acceptance_verifier/"
         + "test_verify_rcsi_relational_acceptance.py";
     // Re-fingerprinted for the same inventory change: updated counts plus one case pinning the
     // new class as mandatory.
     private const string ReviewedSqlServerRcsiVerifierTestsFingerprint =
-        "7e7f2a3667c0f7c81897b2f83db20d110398b852574e6580594f684bd30f4a25";
+        "400d11f811c9c6c92e11d9baf24c6f84a201dc981ce32e3a86950e87e6a22343";
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
         "91a665e6e8982e5a9b66f5d16a14d9fc4d7f98d63775de959a8cc6b2dea2b018";
@@ -124,16 +125,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
              + "GoymenERP.Modules.Organization.Infrastructure/Persistence/"
              + "OrganizationDbContext.cs"] =
                 "198fddce9a2fd4552850c2d1545b96b0030411d5d256a70ee932cf5173be2ff2",
+            // Re-measured for MFG-API (#313): the ADR-011 command log (CommandRecords) is mapped here, company-
+            // scoped with the CompanyId filter like every other tenant row.
             // MFG-5 (#303): company-scoped like Organization; every tenant row and AuditEvent carries the
             // CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/"
              + "Persistence/ManufacturingDbContext.cs"] =
-                "39018f712856f7119f0e303b24307e2bf6ff0c2374dc169d6741b1f72024a9a6",
+                "981990c42914015dbf03a33e046c5474ea17f59a0acb006d6a5a904ac4ecbca4",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-                "771d8d1c1a55262efe1e8bf3505223430882d7dd83dfdb89be0cdd9dc3293a98",
+                "a8892d62f1b83647a6b0fc5224735f19ddffcf0b38202699be0ea87e703ba02a",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/"
@@ -160,8 +163,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedRuntimeDatabaseBypassSources =
             new Dictionary<string, ReviewedRuntimeDatabaseBypassSource>(StringComparer.Ordinal)
             {
+                // Re-measured for C3: the Product owner's sales and stock eligibility runtimes are composed
+                // here (no new database capability; MigrateAsync stays 2).
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs"] =
-                    new("e89e8869bed6d7706781ee3c86f09bc59963d0ef26da32c7e06d63449ae8ef27",
+                    new("915b90891b281747aabeca4c25b3866ce2fa44d627d1d4704bfa06fc82988ef5",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductSqlCommandRunner.cs"] =
@@ -327,6 +332,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
+                // FS0 (#312): the bank-account master is the module's second writer; the SqlClient
+                // namespace only to recognise a unique-key violation (SqlException 2601/2627) after
+                // SaveChanges, as ReceiptDraftService does. No connection, command or raw SQL.
+                ["src/backend/Modules/Finance/"
+                 + "GoymenERP.Modules.Finance.Infrastructure/FinanceBankAccountService.cs"] =
+                    new(
+                        "ce1b89e9875a21ada6ea78a9e41e474f9615cef50b2bf57adf9e298d675be406",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
                 // MFG-5 (#303): the Manufacturing initializer's one provider branch, as Organization.
                 // Re-measured for MFG-API (#313): the command surface registrations (mass verifier and
                 // command service); the one provider branch is unchanged (EnsureCreated 1, Migrate 1).
@@ -334,7 +350,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/"
                  + "ManufacturingModuleExtensions.cs"] =
                     new(
-                        "7a780c8f39d69cf424ffb7c5872315e87fc23228c788db835613445e13d9e195",
+                        "d60752e602b2d92805f18bd0e5c214bf469eec3f4004331b628ae4bfd78213c6",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -349,7 +365,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "6a71a17c40fd81b50bfd0f75296f0f39c310fe72a1cc5a301f70a0031499475f",
+                        "acbe04e6efb853008755497f078a040b207809f1170d5ac7942fe6601b1005c9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

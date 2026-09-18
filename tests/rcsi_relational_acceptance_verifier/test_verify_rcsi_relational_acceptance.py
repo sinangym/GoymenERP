@@ -79,9 +79,9 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             "RolelessAuditAndIdempotencyFailures_RollBackAndPermitSameKeyRetry",
         ))
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
-        self.assertEqual(120, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(120, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(127, VERIFIER.BROAD_EXECUTION_COUNT)
+        self.assertEqual(128, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(128, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(135, VERIFIER.BROAD_EXECUTION_COUNT)
         for omitted in required:
             with self.subTest(omitted=omitted):
                 discovery = "\n".join(
@@ -97,9 +97,9 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             "CreateFindDetailAndLinkSecondCompany_PreserveIdentityVisibilityAndExactlyOnceEffects"
         )
         self.assertIn(journey, VERIFIER.BROAD_EXPECTED_TESTS)
-        self.assertEqual(120, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(120, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(127, VERIFIER.BROAD_EXECUTION_COUNT)
+        self.assertEqual(128, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(128, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(135, VERIFIER.BROAD_EXECUTION_COUNT)
         without_journey = [name for name in VERIFIER.BROAD_EXPECTED_TESTS if name != journey]
         with self.assertRaisesRegex(RuntimeError, "exact"):
             VERIFIER.verify_broad_discovery("\n".join(without_journey))
@@ -114,9 +114,9 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             prefix + "ScopedPagingAndRejectedCommands_PreserveLocationAndExposeNoForeignState",
         }
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
-        self.assertEqual(120, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(120, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(127, VERIFIER.BROAD_EXECUTION_COUNT)
+        self.assertEqual(128, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(128, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(135, VERIFIER.BROAD_EXECUTION_COUNT)
         for omitted in required:
             with self.subTest(omitted=omitted):
                 discovery = "\n".join(
@@ -136,9 +136,9 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
             )
         }
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
-        self.assertEqual(120, VERIFIER.BROAD_DISCOVERY_COUNT)
-        self.assertEqual(120, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
-        self.assertEqual(127, VERIFIER.BROAD_EXECUTION_COUNT)
+        self.assertEqual(128, VERIFIER.BROAD_DISCOVERY_COUNT)
+        self.assertEqual(128, len(set(VERIFIER.BROAD_EXPECTED_TESTS)))
+        self.assertEqual(135, VERIFIER.BROAD_EXECUTION_COUNT)
         for omitted in required:
             with self.subTest(omitted=omitted):
                 with self.assertRaises(RuntimeError):
@@ -280,6 +280,29 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
                         name for name in VERIFIER.BROAD_EXPECTED_TESTS if name != omitted
                     ))
 
+    def test_finance_bank_account_cases_are_mandatory_and_reject_omission(self) -> None:
+        prefix = (
+            "GoymenERP.Api.IntegrationTests."
+            "FinanceBankAccountSqlServerRelationalAcceptanceTests."
+        )
+        required = {
+            prefix + name for name in (
+                "A_proposal_is_not_usable_until_another_user_approves_it_once_and_moves_no_money",
+                "Company_B_can_neither_see_nor_approve_company_A_account",
+                "The_same_key_replays_and_another_payload_or_command_conflicts",
+                "A_currency_outside_the_settings_candidates_or_an_unavailable_source_stores_nothing",
+                "Two_racing_approvals_store_one_and_the_database_refuses_a_self_approval",
+                "A_save_that_fails_in_the_database_leaves_nothing_behind",
+            )
+        }
+        self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))
+        for omitted in required:
+            with self.subTest(omitted=omitted):
+                with self.assertRaisesRegex(RuntimeError, "exact"):
+                    VERIFIER.verify_broad_discovery("\n".join(
+                        name for name in VERIFIER.BROAD_EXPECTED_TESTS if name != omitted
+                    ))
+
     def test_manufacturing_api_cases_are_mandatory_and_reject_omission(self) -> None:
         prefix = (
             "GoymenERP.Api.IntegrationTests."
@@ -291,6 +314,8 @@ class VerifyRcsiRelationalAcceptanceTests(unittest.TestCase):
                 "Each_endpoint_needs_its_own_grant_and_a_refused_write_stores_nothing",
                 "Another_companys_order_is_not_found_and_the_company_comes_only_from_the_context",
                 "Stale_versions_reused_ids_masses_outside_the_profile_and_foreign_work_centers_are_refused",
+                "The_idempotency_key_replays_one_attempt_and_refuses_another_request_or_actor",
+                "Two_attempts_racing_on_one_key_store_one_command_and_both_answer_it",
             )
         }
         self.assertTrue(required.issubset(VERIFIER.BROAD_EXPECTED_TESTS))

@@ -140,8 +140,10 @@ public sealed class ApprovedUnitProfileProviderTests
     }
 
     [Fact]
-    public async Task Money_and_period_stay_unavailable_behind_the_same_access_check()
+    public async Task An_unapproved_money_operation_and_period_stay_unavailable_behind_the_same_access_check()
     {
+        // Since T02-b money has an approved source, but only for the owners' operation keys; an
+        // operation no profile answers for is still "nothing approved to ask".
         var provider = Provider(Gdc);
 
         Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
