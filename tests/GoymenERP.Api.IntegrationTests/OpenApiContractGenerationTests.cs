@@ -302,12 +302,12 @@ public sealed partial class OpenApiContractGenerationTests
                     StatusCodes.Status409Conflict,
                 ],
                 ["SaveManufacturingPlanV1"] = [StatusCodes.Status201Created],
-                ["ApproveManufacturingPlanV1"] = [StatusCodes.Status200OK],
-                ["CreateManufacturingOrderV1"] = [StatusCodes.Status201Created],
-                ["IssueManufacturingInputV1"] = [StatusCodes.Status200OK],
-                ["ReturnManufacturingInputV1"] = [StatusCodes.Status200OK],
-                ["RecordManufacturingWorkInProgressV1"] = [StatusCodes.Status200OK],
-                ["DeclareManufacturingOutputV1"] = [StatusCodes.Status200OK],
+                ["ApproveManufacturingPlanV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["CreateManufacturingOrderV1"] = [StatusCodes.Status201Created, StatusCodes.Status404NotFound],
+                ["IssueManufacturingInputV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["ReturnManufacturingInputV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["RecordManufacturingWorkInProgressV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["DeclareManufacturingOutputV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
             };
 
     private static readonly HashSet<string> EmptyBodyPossible400Operations =
@@ -366,7 +366,7 @@ public sealed partial class OpenApiContractGenerationTests
     // unprocessable code set (ManufacturingEndpoints.ConflictCodes / ManufacturingProblemCodes).
     private static readonly string[] ManufacturingConflictCodes =
     [
-        "manufacturing_concurrent_change", "manufacturing_fact_id_conflict",
+        "idempotency_conflict", "manufacturing_concurrent_change", "manufacturing_fact_id_conflict",
         "manufacturing_order_id_conflict", "manufacturing_plan_id_conflict",
         "manufacturing_version_conflict",
     ];
