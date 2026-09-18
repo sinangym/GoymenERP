@@ -44,12 +44,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for the #261 merge: the Finance draft-context registrations and
     // MapFinanceEndpoints() join main's Sales/Settings wiring. #261's own
     // ISettingsPrerequisiteProvider line is dropped, so the provider keeps exactly one
-    // registration: ApprovedSettingsPrerequisiteProvider (T02-a host wiring), which answers
-    // money and period (the only Finance calls) exactly like the unavailable adapter.
+    // registration: ApprovedSettingsPrerequisiteProvider (T02-a host wiring).
     // Re-measured once more for ORG P3-C: the binding registration is renamed to
     // ManualReceiptDraftReadBinding (same type, same lifetime, no behaviour change).
+    // Re-measured for T02-b: ISettingsMoneyCandidateReader is registered as the approved provider
+    // (GDC's approved money currencies), and SalesReferenceReadBindings binds the Sales owner's
+    // money operation (SalesMoneyOperations.OrderDraftV1, Sales decision). No route or OpenAPI change.
     private const string ReviewedOpenApiStartupFingerprint =
-        "9a3d1a7446619d706c7bd7817303b4e594fe50c37a4d12573f14ffc545b674f4";
+        "b33f72a65dd583e0a1e84040e6c2df1beee2a73bedd4c98543c2a2709d721d30";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
