@@ -58,13 +58,12 @@ export const CAPABILITY = {
    * than assumed, and a drift test pins the two together once the Product source is in
    * the same tree.
    *
-   * WHAT LISTING IT DOES NOT DO, and it matters more here than for the Cari ids: the
-   * server publishes no `product.*` capability at all yet. `ProductPermissionManifestV1`
-   * publishes permission NAMES, which is not a capability registry — `IShellCapabilityProvider`
-   * is still implemented only for Counterparty. So these four grant nothing, mount nothing
-   * and render no nav entry; `CapabilityRoute` closes an ungranted route onto the same
-   * neutral not-found block any unknown path gets. That is the intended state until
-   * Backend publishes the Product registry, not a gap.
+   * WHAT LISTING IT DOES NOT DO, and it matters more here than for the Cari ids: listing an
+   * id grants nothing. Since #316 the server's `ProductShellCapabilityProvider` publishes these
+   * four, and the shell grants each one only from the actor's global Product authority (explicit
+   * Product master assignments, never a company role). An actor without that authority gets
+   * none of them: no mount and no nav entry, and `CapabilityRoute` closes an ungranted route onto
+   * the same neutral not-found block any unknown path gets.
    */
   productItemsList: 'product.items.list',
   /**

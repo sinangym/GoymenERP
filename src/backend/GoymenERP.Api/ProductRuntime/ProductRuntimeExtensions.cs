@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.OpenApi;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Idempotency.Infrastructure.Executions;
@@ -10,6 +11,7 @@ using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Services;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
+using GoymenERP.Modules.Product.Infrastructure.Shell;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -65,6 +67,8 @@ public static class ProductRuntimeExtensions
         services.TryAddSingleton<IProductCommandAttemptObserver, NullProductCommandAttemptObserver>();
         services.AddScoped<IProductService>(provider => provider.GetRequiredService<ProductRuntimeOptions>().IsEnabled
             ? provider.GetRequiredService<ProductService>() : new UnconfiguredProductService());
+        // Product's four screens in the shell, granted only from the global Product authority.
+        services.AddSingleton<IShellCapabilityProvider, ProductShellCapabilityProvider>();
         return services;
     }
 
