@@ -11,6 +11,7 @@ using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Labels;
+using GoymenERP.Modules.Inventory.Domain.Lots;
 using GoymenERP.Modules.Inventory.Domain.Movements;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Inventory.Domain.Stock;
@@ -54,6 +55,10 @@ public sealed class InventoryReadApiSqlServerRelationalAcceptanceTests
         Assert.True(labelResponse.Headers.CacheControl is { Private: true, NoStore: true });
         var view = (await labelResponse.Content.ReadFromJsonAsync<InventoryLabelViewV1>())!;
         Assert.Equal((label.Id, CompanyA, "SYN-T07A-READ", Product, Lot), (view.LabelId, view.CompanyId, view.Code, view.ProductId, view.LotId));
+        // The label's lot with the lot's own values (Business #66 5734060341, Q1): its heat, and an unknown
+        // coil as null. The label's own heat stays its own (null here); nothing is derived from the other.
+        Assert.Equal(new InventoryLotV1(Lot, "SYN-LOT-HEAT", null), view.Lot);
+        Assert.Null(view.HeatNumber);
         Assert.Equal(nameof(LabelDocumentStatus.Complete), view.DocumentStatus);
 
         var balancesResponse = await client.GetAsync($"/api/v1/inventory/labels/{label.Id}/balances");
@@ -168,7 +173,9 @@ public sealed class InventoryReadApiSqlServerRelationalAcceptanceTests
             var blocked = free.WithBlock(BlockState.Blocked);
             var writer = Guid.NewGuid();
             await using var scope = Store(writer);
-            await scope.Store.SaveLabelAsync(label, Metadata(writer));
+            // A first arrival: the lot and its label in one save (the lot is replayed on a second label).
+            await scope.Store.SaveLotAsync(new MaterialLot(Lot, CompanyA, Product, heatNumber: "SYN-LOT-HEAT"), [label],
+                Metadata(writer));
             await scope.Store.RecordMovementAsync(Movement(StockMovementKind.Receipt,
                 new StockMovementLine(free, StockDirection.In, Kilograms.Positive(1000.125m))), Metadata(writer));
             await scope.Store.RecordMovementAsync(Movement(StockMovementKind.Block,
