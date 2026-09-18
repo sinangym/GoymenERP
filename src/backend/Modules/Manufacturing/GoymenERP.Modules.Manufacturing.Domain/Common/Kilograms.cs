@@ -18,7 +18,8 @@ public readonly record struct Kilograms
 
         if (decimal.Round(value, Scale) != value)
         {
-            throw new ArgumentException($"Kilogram en fazla {Scale} ondalık taşıyabilir.", nameof(value));
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.KilogramPrecisionExceeded, $"Kilogram en fazla {Scale} ondalık taşıyabilir.");
         }
 
         Value = value;
