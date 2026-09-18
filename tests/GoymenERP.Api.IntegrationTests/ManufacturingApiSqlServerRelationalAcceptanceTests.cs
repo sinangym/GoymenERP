@@ -55,7 +55,8 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
             [new PlannedInputRequestV1(roll, "1000.125")], new TargetRequestV1("GoodOutputMass", "900"));
         var created = await client.PostAsJsonAsync($"{Base}/plans", planRequest);
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
-        Assert.Equal("private, no-store", created.Headers.CacheControl?.ToString());
+        // The typed header re-orders its text; the directives are what matter.
+        Assert.True(created.Headers.CacheControl is { Private: true, NoStore: true });
         var plan = (await created.Content.ReadFromJsonAsync<PlanViewV1>())!;
         Assert.Equal((CompanyA, workCenter, "Draft", 1L, "1000.125"),
             (plan.CompanyId, plan.WorkCenterId, plan.Status, plan.Version, Assert.Single(plan.Inputs).PlannedKg));
