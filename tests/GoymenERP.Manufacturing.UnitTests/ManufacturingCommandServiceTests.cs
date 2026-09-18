@@ -63,7 +63,10 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Equal(expected, result.Status);
         Assert.Equal(code, result.Code);
         Assert.Empty(fixture.Store.Writes);
-        Assert.Equal(0, fixture.Authority.Asked);
+        // Asked once, before the stored-answer lookup; never again for a write that did not happen.
+        Assert.Equal(1, fixture.Authority.Asked);
+        // A Settings refusal is not this key's answer: nothing is recorded, so a retry is re-evaluated.
+        Assert.Empty(fixture.Store.Commands);
     }
 
     [Fact]
@@ -119,7 +122,7 @@ public sealed class ManufacturingCommandServiceTests
             Permission, CancellationToken.None);
 
         Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
-        Assert.Equal(new[] { "settings", "authority" }, fixture.Calls);
+        Assert.Equal(new[] { "authority", "settings", "authority" }, fixture.Calls);
         var metadata = Assert.Single(fixture.Store.Writes);
         Assert.Equal((Actor.ToString("D"), Permission, "corr-1", "key-1", "Web"),
             (metadata.ActorId, metadata.PermissionCode, metadata.CorrelationId, metadata.IdempotencyKey, metadata.SourceChannel));
@@ -171,28 +174,28 @@ public sealed class ManufacturingCommandServiceTests
         var order = await fixture.ApprovedOrderAsync();
 
         // A stale version: 409 with both versions.
-        var stale = await fixture.Service.IssueInputAsync(order.Id, Fact(order.Version + 5, "10"), "k", Permission,
+        var stale = await fixture.Service.IssueInputAsync(order.Id, Fact(order.Version + 5, "10"), "k1", Permission,
             CancellationToken.None);
         Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingRuleCodes.VersionConflict, order.Version + 5, order.Version),
             (stale.Status, stale.Code, stale.ExpectedVersion, stale.CurrentVersion));
 
         // A domain rule: 422 with its code (a roll the order does not have).
         var foreignRoll = new RecordFactRequestV1(Guid.NewGuid(), order.Version, Guid.NewGuid(), "10", At);
-        var rule = await fixture.Service.IssueInputAsync(order.Id, foreignRoll, "k", Permission, CancellationToken.None);
+        var rule = await fixture.Service.IssueInputAsync(order.Id, foreignRoll, "k2", Permission, CancellationToken.None);
         Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingRuleCodes.RollNotInOrder), (rule.Status, rule.Code));
 
         // A store refusal: another company's or an unknown order is 404, never a hint.
-        var unknown = await fixture.Service.IssueInputAsync(Guid.NewGuid(), Fact(1, "10"), "k", Permission,
+        var unknown = await fixture.Service.IssueInputAsync(Guid.NewGuid(), Fact(1, "10"), "k3", Permission,
             CancellationToken.None);
         Assert.Equal(ManufacturingApiStatus.NotFound, unknown.Status);
 
         fixture.Store.Fail = ManufacturingStoreCodes.FactIdConflict;
-        var conflict = await fixture.Service.IssueInputAsync(order.Id, Fact(order.Version, "10"), "k", Permission,
+        var conflict = await fixture.Service.IssueInputAsync(order.Id, Fact(order.Version, "10"), "k4", Permission,
             CancellationToken.None);
         Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingStoreCodes.FactIdConflict), (conflict.Status, conflict.Code));
 
         fixture.Store.Fail = ManufacturingStoreCodes.ValueDoesNotFit;
-        var tooLarge = await fixture.Service.IssueInputAsync(order.Id, Fact(order.Version, "10"), "k", Permission,
+        var tooLarge = await fixture.Service.IssueInputAsync(order.Id, Fact(order.Version, "10"), "k5", Permission,
             CancellationToken.None);
         Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingStoreCodes.ValueDoesNotFit),
             (tooLarge.Status, tooLarge.Code));
@@ -253,6 +256,106 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Equal(ManufacturingApiStatus.Denied, (await fixture.Service.GetOrderAsync(order.Id, CancellationToken.None)).Status);
     }
 
+    [Fact]
+    public async Task The_same_key_and_request_replays_the_stored_answer_with_the_first_correlation()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        var fact = Fact(order.Version, "10");
+
+        var first = await fixture.Service.IssueInputAsync(order.Id, fact, "key-1", Permission, CancellationToken.None);
+        fixture.Correlation.Set("corr-2", null, "Web", null, null);
+        var again = await fixture.Service.IssueInputAsync(order.Id, fact with { Kg = "10.000" }, "key-1", Permission,
+            CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Ok, false, (string?)null), (first.Status, first.IsReplay, first.OriginalCorrelationId));
+        // 10.000 and 10 are one request: the kilograms are normalized before hashing.
+        Assert.Equal((ManufacturingApiStatus.Ok, true, "corr-1"), (again.Status, again.IsReplay, again.OriginalCorrelationId));
+        Assert.Equal(first.Resource!.Version, again.Resource!.Version);
+        // One business write; the key's record was made in it (the store's Completion), not after it.
+        Assert.Single(fixture.Store.Writes);
+        var record = Assert.Single(fixture.Store.Commands.Values);
+        Assert.Equal((ManufacturingCommandNames.IssueInput, "corr-1"), (record.CommandName, record.OriginalCorrelationId));
+        Assert.Equal(ManufacturingCommandService.Sha256("key-1"), record.IdempotencyKeyHash);
+        Assert.Matches("^[0-9A-F]{64}$", record.IdempotencyKeyHash);
+        Assert.DoesNotContain("key-1", record.ResultJson, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("other-request")]
+    [InlineData("other-actor")]
+    public async Task The_same_key_with_another_request_or_actor_is_a_conflict_that_discloses_nothing(string fault)
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        var fact = Fact(order.Version, "10");
+        await fixture.Service.IssueInputAsync(order.Id, fact, "key-1", Permission, CancellationToken.None);
+        var stored = Assert.Single(fixture.Store.Commands.Values);
+        if (fault == "other-actor")
+        {
+            // The same key and request, first used by another actor of the company.
+            fixture.Store.Commands[(stored.CommandName, stored.IdempotencyKeyHash)] =
+                stored with { ActorId = Guid.NewGuid().ToString("D") };
+        }
+
+        var request = fault == "other-actor" ? fact : fact with { Kg = "11" };
+        var result = await fixture.Service.IssueInputAsync(order.Id, request, "key-1", Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingApiCodes.IdempotencyConflict, false),
+            (result.Status, result.Code, result.IsReplay));
+        Assert.Null(result.Resource);
+        Assert.Null(result.OriginalCorrelationId);
+        Assert.Single(fixture.Store.Writes);
+    }
+
+    [Fact]
+    public async Task A_terminal_version_conflict_is_the_keys_answer()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        var stale = Fact(order.Version + 5, "10");
+
+        var first = await fixture.Service.IssueInputAsync(order.Id, stale, "key-1", Permission, CancellationToken.None);
+        var again = await fixture.Service.IssueInputAsync(order.Id, stale, "key-1", Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingRuleCodes.VersionConflict, false),
+            (first.Status, first.Code, first.IsReplay));
+        Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingRuleCodes.VersionConflict, true, order.Version + 5, order.Version),
+            (again.Status, again.Code, again.IsReplay, again.ExpectedVersion, again.CurrentVersion));
+        Assert.Single(fixture.Store.Commands);
+        Assert.Empty(fixture.Store.Writes);
+    }
+
+    [Fact]
+    public async Task A_terminal_not_found_is_the_keys_answer_and_names_no_code()
+    {
+        var fixture = new Fixture();
+        var fact = Fact(1, "10");
+        var unknown = Guid.NewGuid();
+
+        var first = await fixture.Service.IssueInputAsync(unknown, fact, "key-1", Permission, CancellationToken.None);
+        var again = await fixture.Service.IssueInputAsync(unknown, fact, "key-1", Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.NotFound, (string?)null, false), (first.Status, first.Code, first.IsReplay));
+        Assert.Equal((ManufacturingApiStatus.NotFound, (string?)null, true), (again.Status, again.Code, again.IsReplay));
+        Assert.Single(fixture.Store.Commands);
+    }
+
+    [Fact]
+    public async Task The_loser_of_a_race_on_one_key_answers_from_the_winners_record()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        var fact = Fact(order.Version, "10");
+        // The winner is the same request under the same key, committed first by another attempt.
+        fixture.Store.RaceWinner = (metadata, result) => metadata.Completion!(result) with { OriginalCorrelationId = "corr-winner" };
+
+        var loser = await fixture.Service.IssueInputAsync(order.Id, fact, "key-1", Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Ok, true, "corr-winner"), (loser.Status, loser.IsReplay, loser.OriginalCorrelationId));
+        Assert.Empty(fixture.Store.Writes);
+    }
+
     private static RecordFactRequestV1 Fact(long version, string kg) => new(Guid.NewGuid(), version, Roll, kg, At);
 
     private static PermissionScope Scope(bool companyWide, params string[] roles) => new(true, companyWide,
@@ -268,11 +371,14 @@ public sealed class ManufacturingCommandServiceTests
             correlation.Set("corr-1", null, "Web", null, null);
             Settings = new SettingsPort(Calls);
             Authority = new AuthorityPort(Calls) { Scope = Scope(companyWide: true, "PRODUCTION_OPERATOR") };
-            Service = new ManufacturingCommandService(Store, Store, new ManufacturingMassVerifier(Settings), Authority, company,
-                User, correlation, new FixedTime());
+            Correlation = correlation;
+            Service = new ManufacturingCommandService(Store, Store, Store, new ManufacturingMassVerifier(Settings), Authority,
+                company, User, correlation, new FixedTime());
         }
 
         public List<string> Calls { get; } = [];
+
+        public CorrelationContext Correlation { get; }
 
         public FakeStore Store { get; } = new();
 
@@ -368,8 +474,44 @@ public sealed class ManufacturingCommandServiceTests
     }
 
     /// <summary>An in-memory store with the store's contract: the company's records, the domain's rules.</summary>
-    private sealed class FakeStore : IManufacturingPlanStore, IManufacturingOrderStore
+    private sealed class FakeStore : IManufacturingPlanStore, IManufacturingOrderStore, IManufacturingCommandLog
     {
+        public Dictionary<(string Command, string KeyHash), ManufacturingCommandRecord> Commands { get; } = [];
+
+        /// <summary>Another attempt of the same key that commits first (ADR-011 §8).</summary>
+        public Func<ManufacturingCommandMetadata, object, ManufacturingCommandRecord>? RaceWinner { get; set; }
+
+        public Task<ManufacturingCommandRecord?> FindCommandAsync(string commandName, string idempotencyKeyHash,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(Commands.GetValueOrDefault((commandName, idempotencyKeyHash)));
+
+        public Task RecordCommandAsync(ManufacturingCommandRecord record, CancellationToken cancellationToken = default)
+        {
+            if (!Commands.TryAdd((record.CommandName, record.IdempotencyKeyHash), record))
+            {
+                throw new ManufacturingStoreException(ManufacturingStoreCodes.ConcurrentChange, "yarış");
+            }
+
+            return Task.CompletedTask;
+        }
+
+        /// <summary>The store's contract: the completion's record joins the business write, or a race loses it.</summary>
+        private void Complete(ManufacturingCommandMetadata metadata, object result)
+        {
+            if (RaceWinner is { } winner)
+            {
+                var record = winner(metadata, result);
+                Commands[(record.CommandName, record.IdempotencyKeyHash)] = record;
+                throw new ManufacturingStoreException(ManufacturingStoreCodes.ConcurrentChange, "yarış");
+            }
+
+            if (metadata.Completion is { } completion)
+            {
+                var record = completion(result);
+                Commands.Add((record.CommandName, record.IdempotencyKeyHash), record);
+            }
+        }
+
         public Dictionary<Guid, ProductionPlan> Plans { get; } = [];
 
         public Dictionary<Guid, ProductionOrder> Orders { get; } = [];
@@ -382,6 +524,7 @@ public sealed class ManufacturingCommandServiceTests
             CancellationToken cancellationToken = default)
         {
             Guard();
+            Complete(metadata, plan);
             Writes.Add(metadata);
             Plans[plan.Id] = plan;
             return Task.FromResult(ManufacturingWriteOutcome.Recorded);
@@ -405,6 +548,7 @@ public sealed class ManufacturingCommandServiceTests
             var order = Orders.GetValueOrDefault(orderId)
                 ?? throw new ManufacturingStoreException(ManufacturingStoreCodes.OrderNotFound, "yok");
             order.IssueInput(expectedVersion, issueId, parentRollId, mass, issuedAt);
+            Complete(metadata, order);
             Writes.Add(metadata);
             return Task.FromResult(ManufacturingWriteOutcome.Recorded);
         }

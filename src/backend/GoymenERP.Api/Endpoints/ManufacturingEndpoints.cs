@@ -13,8 +13,10 @@ namespace GoymenERP.Api.Endpoints;
 /// MFG-API (#313, approved card): the authorized Manufacturing surface for the server-resolved
 /// company — a slitting plan, its approval, an order from it, the realization facts, and the
 /// order's roll-by-roll balance. Every endpoint needs the company context (<c>X-Company-Id</c>) and
-/// its own company-wide permission; a write also needs an <c>Idempotency-Key</c> and is measured
-/// again against fresh authority before it is stored. Another company's plan or order is the same
+/// its own company-wide permission; a write also needs an <c>Idempotency-Key</c> (ADR-011: one
+/// attempt per command and key, replayed with <c>Idempotency-Replayed</c> and
+/// <c>Idempotency-Original-Correlation-Id</c>; another request or actor under the key is 409) and is
+/// measured again against fresh authority before it is stored. Another company's plan or order is the same
 /// code-less 404 as an unknown id. No close, list or cost here.
 /// </summary>
 public static class ManufacturingEndpoints
@@ -26,6 +28,7 @@ public static class ManufacturingEndpoints
 
     private static readonly string[] ConflictCodes =
     [
+        ManufacturingApiCodes.IdempotencyConflict,
         ManufacturingRuleCodes.VersionConflict,
         ManufacturingStoreCodes.PlanIdConflict,
         ManufacturingStoreCodes.OrderIdConflict,
@@ -65,7 +68,7 @@ public static class ManufacturingEndpoints
                 ErpPermissions.ManufacturingPlansApprove, cancellationToken)))
             .RequireCompanyContext()
             .RequireAuthorization(ErpPermissions.ManufacturingPlansApprove)
-            .WithIdempotencyContract(StatusCodes.Status200OK)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
             .WithName("ApproveManufacturingPlanV1")
             .Accepts<ApprovePlanRequestV1>("application/json")
             .Produces<PlanViewV1>(StatusCodes.Status200OK)
@@ -81,7 +84,7 @@ public static class ManufacturingEndpoints
                 order => $"/api/v1/manufacturing/orders/{order.OrderId:D}"))
             .RequireCompanyContext()
             .RequireAuthorization(ErpPermissions.ManufacturingOrdersCreate)
-            .WithIdempotencyContract(StatusCodes.Status201Created)
+            .WithIdempotencyContract(StatusCodes.Status201Created, StatusCodes.Status404NotFound)
             .WithName("CreateManufacturingOrderV1")
             .Accepts<CreateOrderRequestV1>("application/json")
             .Produces<OrderViewV1>(StatusCodes.Status201Created)
@@ -109,7 +112,7 @@ public static class ManufacturingEndpoints
                 ErpPermissions.ManufacturingFactsRecord, cancellationToken)))
             .RequireCompanyContext()
             .RequireAuthorization(ErpPermissions.ManufacturingFactsRecord)
-            .WithIdempotencyContract(StatusCodes.Status200OK)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
             .WithName("DeclareManufacturingOutputV1")
             .Accepts<DeclareOutputRequestV1>("application/json")
             .Produces<OrderViewV1>(StatusCodes.Status200OK)
@@ -148,7 +151,7 @@ public static class ManufacturingEndpoints
             await WriteAsync(httpContext, key => record(service, orderId, request, key, cancellationToken)))
             .RequireCompanyContext()
             .RequireAuthorization(ErpPermissions.ManufacturingFactsRecord)
-            .WithIdempotencyContract(StatusCodes.Status200OK)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
             .WithName(name)
             .Accepts<RecordFactRequestV1>("application/json")
             .Produces<OrderViewV1>(StatusCodes.Status200OK)
@@ -190,6 +193,12 @@ public static class ManufacturingEndpoints
         if (result.IsReplay)
         {
             httpContext.Response.Headers["Idempotency-Replayed"] = "true";
+        }
+
+        if (result.OriginalCorrelationId is { } original)
+        {
+            // ADR-011 §4: an idempotency replay names the first attempt's correlation.
+            httpContext.Response.Headers["Idempotency-Original-Correlation-Id"] = original;
         }
 
         return result.Status switch

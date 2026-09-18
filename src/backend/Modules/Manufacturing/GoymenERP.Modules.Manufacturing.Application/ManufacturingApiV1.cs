@@ -1,4 +1,7 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
@@ -72,9 +75,13 @@ public enum ManufacturingApiStatus
     Unavailable = 8,
 }
 
+/// <summary>
+/// One command's answer. <see cref="IsReplay"/> is true when this is a stored answer; an idempotency
+/// replay (ADR-011 §4) also carries the first attempt's <see cref="OriginalCorrelationId"/>.
+/// </summary>
 public sealed record ManufacturingApiResult<T>(
     ManufacturingApiStatus Status, T? Resource, bool IsReplay, string? Code, string? Field = null,
-    long? ExpectedVersion = null, long? CurrentVersion = null)
+    long? ExpectedVersion = null, long? CurrentVersion = null, string? OriginalCorrelationId = null)
     where T : class;
 
 /// <summary>Codes the command surface adds; everything else is the domain's, the store's or Settings'.</summary>
@@ -85,6 +92,24 @@ public static class ManufacturingApiCodes
 
     /// <summary>The server's actor or authority for this company is not (or no longer) there.</summary>
     public const string AuthorityDenied = "manufacturing_authority_denied";
+
+    /// <summary>
+    /// ADR-011 §3: the same <c>Idempotency-Key</c> for this command was used with another request or by
+    /// another actor. The first attempt's answer is not disclosed.
+    /// </summary>
+    public const string IdempotencyConflict = "idempotency_conflict";
+}
+
+/// <summary>The versioned command names of the ADR-011 log: one key is one attempt per command.</summary>
+public static class ManufacturingCommandNames
+{
+    public const string SavePlan = "manufacturing.plan.save.v1";
+    public const string ApprovePlan = "manufacturing.plan.approve.v1";
+    public const string CreateOrder = "manufacturing.order.create.v1";
+    public const string IssueInput = "manufacturing.input.issue.v1";
+    public const string ReturnInput = "manufacturing.input.return.v1";
+    public const string DeclareOutput = "manufacturing.output.declare.v1";
+    public const string RecordWorkInProgress = "manufacturing.wip.record.v1";
 }
 
 /// <summary>
@@ -92,20 +117,32 @@ public static class ManufacturingApiCodes
 /// <list type="bullet">
 /// <item><b>Company:</b> only the company context; no request carries a company, and a record of
 /// another company is the store's "not found".</item>
+/// <item><b>Idempotency (ADR-011):</b> every write is one command attempt in the module's own log,
+/// unique per (company, command name, uppercase SHA-256 of the trimmed key); the raw key is never
+/// stored. The request hash is the canonical payload's (path id included, kilograms normalized).
+/// After the fresh authority check: the same key, request and actor answers the stored result with
+/// <c>Idempotency-Replayed</c> and the first correlation; another request or actor is 409
+/// <see cref="ManufacturingApiCodes.IdempotencyConflict"/> without disclosing anything. A success is
+/// recorded in the same save as the business change and its audit event; a terminal not-found or
+/// version conflict is recorded on its own (§7). Two attempts racing on one key leave one record;
+/// the loser answers from it (§8).</item>
+/// <item><b>R3 underneath:</b> the store still recognises the same plan / order / fact id with the
+/// same content as the same record, whatever the key. That is the ledger's own identity; the key
+/// log is the HTTP attempt's.</item>
 /// <item><b>Mass (Ö2):</b> every kilogram is checked against the company's kilogram profile
 /// (<see cref="ManufacturingMassVerifier"/>) before anything is written: facts at their own date,
 /// plan masses at the server's date. A Settings refusal keeps its own code.</item>
-/// <item><b>Authority (#276):</b> the endpoint's policy answers first; after the Settings read, the
-/// permission is measured again with <see cref="IErpAuthorityRevalidationService"/>, and only a fresh,
-/// company-wide grant writes. Its role codes go into the audit envelope.</item>
-/// <item><b>Replay and concurrency</b> are the store's (MFG-5): the caller's id plus the canonical
-/// content, and the version the caller read.</item>
+/// <item><b>Authority (#276):</b> the endpoint's policy answers first; the permission is measured
+/// fresh with <see cref="IErpAuthorityRevalidationService"/> before any stored answer is read and
+/// again after the Settings read, and only a company-wide grant writes. Its role codes go into the
+/// audit envelope.</item>
 /// </list>
 /// It decides no production, tolerance or permission policy.
 /// </summary>
 public sealed partial class ManufacturingCommandService(
     IManufacturingPlanStore plans,
     IManufacturingOrderStore orders,
+    IManufacturingCommandLog commands,
     ManufacturingMassVerifier masses,
     IErpAuthorityRevalidationService authority,
     ICompanyContext companyContext,
@@ -113,63 +150,100 @@ public sealed partial class ManufacturingCommandService(
     ICorrelationContext correlation,
     TimeProvider timeProvider)
 {
-    public async Task<ManufacturingApiResult<PlanViewV1>> SavePlanAsync(SavePlanRequestV1? request, string idempotencyKey,
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    public Task<ManufacturingApiResult<PlanViewV1>> SavePlanAsync(SavePlanRequestV1? request, string idempotencyKey,
         string permission, CancellationToken cancellationToken)
     {
         if (request is null || request.PlanId == Guid.Empty || request.WorkCenterId == Guid.Empty
             || request.Inputs is null || request.Inputs.Count == 0
             || request.Inputs.Any(input => input is null || input.ParentRollId == Guid.Empty))
         {
-            return Invalid<PlanViewV1>("plan");
+            return Task.FromResult(Invalid<PlanViewV1>("plan"));
         }
 
         if (request.Target is { } target && ParseBasis(target.Basis) is null)
         {
-            return Invalid<PlanViewV1>("target.basis");
+            return Task.FromResult(Invalid<PlanViewV1>("target.basis"));
         }
 
-        var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
-        var inputs = new List<(Guid ParentRollId, Kilograms Mass)>();
+        var inputs = new List<(Guid ParentRollId, decimal Kg)>();
         foreach (var input in request.Inputs)
         {
-            var mass = await VerifyAsync(input.PlannedKg, today, "inputs.plannedKg", cancellationToken);
-            if (mass.Refusal is not null)
+            if (ParseKg(input.PlannedKg) is not { } kg)
             {
-                return Refusal<PlanViewV1>(mass.Refusal);
+                return Task.FromResult(Invalid<PlanViewV1>("inputs.plannedKg"));
             }
 
-            inputs.Add((input.ParentRollId, mass.Value));
+            inputs.Add((input.ParentRollId, kg));
         }
 
-        Kilograms? targetMass = null;
+        decimal? targetKg = null;
         if (request.Target is { } declared)
         {
-            var mass = await VerifyAsync(declared.Kg, today, "target.kg", cancellationToken);
-            if (mass.Refusal is not null)
+            if (ParseKg(declared.Kg) is not { } kg)
             {
-                return Refusal<PlanViewV1>(mass.Refusal);
+                return Task.FromResult(Invalid<PlanViewV1>("target.kg"));
             }
 
-            targetMass = mass.Value;
+            targetKg = kg;
         }
 
-        return await RunAsync(permission, idempotencyKey, async metadata =>
+        var canonical = new
         {
-            // Built behind the fence, so the domain's own refusals (a zero planned mass, a repeated
-            // roll) map like every other refusal.
-            var plan = new ProductionPlan(request.PlanId, companyContext.CompanyId, request.WorkCenterId,
-                ManufacturingProcess.Slitting,
-                inputs.Select(input => new PlannedInput(input.ParentRollId, input.Mass)),
-                request.Target is { } target && targetMass is { } kg
-                    ? new ProductionTarget(ParseBasis(target.Basis)!.Value, kg)
-                    : null);
-            var outcome = await plans.SavePlanAsync(plan, metadata, cancellationToken);
-            var stored = await plans.FindPlanAsync(plan.Id, cancellationToken);
-            return stored is null
-                ? NotFoundResult<PlanViewV1>()
-                : new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Created, PlanView(stored),
-                    outcome == ManufacturingWriteOutcome.Replayed, null);
-        }, cancellationToken);
+            planId = request.PlanId,
+            workCenterId = request.WorkCenterId,
+            inputs = inputs.Select(input => new { rollId = input.ParentRollId, kg = Text(input.Kg) }),
+            target = request.Target is null ? null : new { basis = request.Target.Basis, kg = Text(targetKg!.Value) },
+        };
+
+        return RunAsync<PlanViewV1>(permission, idempotencyKey, ManufacturingCommandNames.SavePlan, canonical,
+            ManufacturingApiStatus.Created, async (metadata, _) =>
+            {
+                var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
+                var planned = new List<(Guid ParentRollId, Kilograms Mass)>();
+                foreach (var input in inputs)
+                {
+                    var mass = await VerifyAsync(input.Kg, today, "inputs.plannedKg", cancellationToken);
+                    if (mass.Refusal is not null)
+                    {
+                        return Refusal<PlanViewV1>(mass.Refusal);
+                    }
+
+                    planned.Add((input.ParentRollId, mass.Value));
+                }
+
+                Kilograms? targetMass = null;
+                if (targetKg is { } kg)
+                {
+                    var mass = await VerifyAsync(kg, today, "target.kg", cancellationToken);
+                    if (mass.Refusal is not null)
+                    {
+                        return Refusal<PlanViewV1>(mass.Refusal);
+                    }
+
+                    targetMass = mass.Value;
+                }
+
+                if (await FenceAsync<PlanViewV1>(permission, cancellationToken) is { } fenced)
+                {
+                    return fenced;
+                }
+
+                // Built behind the fence, so the domain's own refusals (a zero planned mass, a repeated
+                // roll) map like every other refusal.
+                var plan = new ProductionPlan(request.PlanId, companyContext.CompanyId, request.WorkCenterId,
+                    ManufacturingProcess.Slitting, planned.Select(input => new PlannedInput(input.ParentRollId, input.Mass)),
+                    request.Target is { } targetRequest && targetMass is { } targetValue
+                        ? new ProductionTarget(ParseBasis(targetRequest.Basis)!.Value, targetValue)
+                        : null);
+                var outcome = await plans.SavePlanAsync(plan, metadata, cancellationToken);
+                var stored = await plans.FindPlanAsync(plan.Id, cancellationToken);
+                return stored is null
+                    ? NotFoundResult<PlanViewV1>()
+                    : new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Created, PlanView(stored),
+                        outcome == ManufacturingWriteOutcome.Replayed, null);
+            }, stored => PlanView((ProductionPlan)stored), cancellationToken);
     }
 
     public Task<ManufacturingApiResult<PlanViewV1>> ApprovePlanAsync(Guid planId, ApprovePlanRequestV1? request,
@@ -180,12 +254,13 @@ public sealed partial class ManufacturingCommandService(
             return Task.FromResult(Invalid<PlanViewV1>("expectedVersion"));
         }
 
-        return RunAsync(permission, idempotencyKey, async metadata =>
-        {
-            var approved = await plans.ApprovePlanAsync(planId, request.ExpectedVersion, ActorGuid()!.Value,
-                timeProvider.GetUtcNow(), metadata, cancellationToken);
-            return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok, PlanView(approved), false, null);
-        }, cancellationToken);
+        return RunAsync<PlanViewV1>(permission, idempotencyKey, ManufacturingCommandNames.ApprovePlan,
+            new { planId, expectedVersion = request.ExpectedVersion }, ManufacturingApiStatus.Ok, async (metadata, actor) =>
+            {
+                var approved = await plans.ApprovePlanAsync(planId, request.ExpectedVersion, actor,
+                    timeProvider.GetUtcNow(), metadata, cancellationToken);
+                return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok, PlanView(approved), false, null);
+            }, stored => PlanView((ProductionPlan)stored), cancellationToken);
     }
 
     public Task<ManufacturingApiResult<OrderViewV1>> CreateOrderAsync(CreateOrderRequestV1? request, string idempotencyKey,
@@ -196,29 +271,31 @@ public sealed partial class ManufacturingCommandService(
             return Task.FromResult(Invalid<OrderViewV1>("order"));
         }
 
-        return RunAsync(permission, idempotencyKey, async metadata =>
-        {
-            var outcome = await orders.CreateOrderAsync(request.OrderId, request.PlanId, metadata, cancellationToken);
-            return await OrderResultAsync(request.OrderId, ManufacturingApiStatus.Created,
-                outcome == ManufacturingWriteOutcome.Replayed, cancellationToken);
-        }, cancellationToken);
+        return RunAsync<OrderViewV1>(permission, idempotencyKey, ManufacturingCommandNames.CreateOrder,
+            new { orderId = request.OrderId, planId = request.PlanId }, ManufacturingApiStatus.Created, async (metadata, _) =>
+            {
+                var outcome = await orders.CreateOrderAsync(request.OrderId, request.PlanId, metadata, cancellationToken);
+                return await OrderResultAsync(request.OrderId, ManufacturingApiStatus.Created,
+                    outcome == ManufacturingWriteOutcome.Replayed, cancellationToken);
+            }, stored => OrderView((ProductionOrder)stored), cancellationToken);
     }
 
     public Task<ManufacturingApiResult<OrderViewV1>> IssueInputAsync(Guid orderId, RecordFactRequestV1? request,
         string idempotencyKey, string permission, CancellationToken cancellationToken) =>
-        RecordAsync(orderId, request, idempotencyKey, permission,
+        RecordAsync(orderId, request, outputClass: null, idempotencyKey, permission, ManufacturingCommandNames.IssueInput,
             (fact, mass, at, metadata) => orders.IssueInputAsync(orderId, fact.ExpectedVersion, fact.FactId,
                 fact.ParentRollId, mass, at, metadata, cancellationToken), cancellationToken);
 
     public Task<ManufacturingApiResult<OrderViewV1>> ReturnUnusedInputAsync(Guid orderId, RecordFactRequestV1? request,
         string idempotencyKey, string permission, CancellationToken cancellationToken) =>
-        RecordAsync(orderId, request, idempotencyKey, permission,
+        RecordAsync(orderId, request, outputClass: null, idempotencyKey, permission, ManufacturingCommandNames.ReturnInput,
             (fact, mass, at, metadata) => orders.ReturnUnusedInputAsync(orderId, fact.ExpectedVersion, fact.FactId,
                 fact.ParentRollId, mass, at, metadata, cancellationToken), cancellationToken);
 
     public Task<ManufacturingApiResult<OrderViewV1>> RecordWorkInProgressAsync(Guid orderId, RecordFactRequestV1? request,
         string idempotencyKey, string permission, CancellationToken cancellationToken) =>
-        RecordAsync(orderId, request, idempotencyKey, permission,
+        RecordAsync(orderId, request, outputClass: null, idempotencyKey, permission,
+            ManufacturingCommandNames.RecordWorkInProgress,
             (fact, mass, at, metadata) => orders.RecordWorkInProgressAsync(orderId, fact.ExpectedVersion, fact.FactId,
                 fact.ParentRollId, mass, at, metadata, cancellationToken), cancellationToken);
 
@@ -233,7 +310,7 @@ public sealed partial class ManufacturingCommandService(
 
         var fact = new RecordFactRequestV1(request.FactId, request.ExpectedVersion, request.ParentRollId, request.Kg,
             request.OccurredAtUtc);
-        return RecordAsync(orderId, fact, idempotencyKey, permission,
+        return RecordAsync(orderId, fact, outputClass, idempotencyKey, permission, ManufacturingCommandNames.DeclareOutput,
             (valid, mass, at, metadata) => orders.DeclareOutputAsync(orderId, valid.ExpectedVersion, valid.FactId,
                 valid.ParentRollId, outputClass, mass, at, metadata, cancellationToken), cancellationToken);
     }
@@ -251,45 +328,71 @@ public sealed partial class ManufacturingCommandService(
             : await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, isReplay: false, cancellationToken);
     }
 
-    private async Task<ManufacturingApiResult<OrderViewV1>> RecordAsync(Guid orderId, RecordFactRequestV1? request,
-        string idempotencyKey, string permission,
+    private Task<ManufacturingApiResult<OrderViewV1>> RecordAsync(Guid orderId, RecordFactRequestV1? request,
+        OutputClass? outputClass, string idempotencyKey, string permission, string commandName,
         Func<RecordFactRequestV1, Kilograms, DateTimeOffset, ManufacturingCommandMetadata, Task<ManufacturingWriteOutcome>> record,
         CancellationToken cancellationToken)
     {
         if (orderId == Guid.Empty || request is null || request.FactId == Guid.Empty || request.ParentRollId == Guid.Empty
             || request.ExpectedVersion <= 0)
         {
-            return Invalid<OrderViewV1>("fact");
+            return Task.FromResult(Invalid<OrderViewV1>("fact"));
+        }
+
+        if (ParseKg(request.Kg) is not { } kg)
+        {
+            return Task.FromResult(Invalid<OrderViewV1>("kg"));
         }
 
         if (request.OccurredAtUtc is not { } occurredAt || occurredAt.Offset != TimeSpan.Zero)
         {
-            return Invalid<OrderViewV1>("occurredAtUtc");
+            return Task.FromResult(Invalid<OrderViewV1>("occurredAtUtc"));
         }
 
-        var mass = await VerifyAsync(request.Kg, DateOnly.FromDateTime(occurredAt.UtcDateTime), "kg", cancellationToken);
-        if (mass.Refusal is not null)
+        var canonical = new
         {
-            return Refusal<OrderViewV1>(mass.Refusal);
-        }
+            orderId,
+            factId = request.FactId,
+            expectedVersion = request.ExpectedVersion,
+            rollId = request.ParentRollId,
+            kg = Text(kg),
+            occurredAtUtc = occurredAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture),
+            outputClass = outputClass?.ToString(),
+        };
 
-        return await RunAsync(permission, idempotencyKey, async metadata =>
-        {
-            var outcome = await record(request, mass.Value, occurredAt, metadata);
-            return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok,
-                outcome == ManufacturingWriteOutcome.Replayed, cancellationToken);
-        }, cancellationToken);
+        return RunAsync<OrderViewV1>(permission, idempotencyKey, commandName, canonical, ManufacturingApiStatus.Ok,
+            async (metadata, _) =>
+            {
+                var mass = await VerifyAsync(kg, DateOnly.FromDateTime(occurredAt.UtcDateTime), "kg", cancellationToken);
+                if (mass.Refusal is not null)
+                {
+                    return Refusal<OrderViewV1>(mass.Refusal);
+                }
+
+                if (await FenceAsync<OrderViewV1>(permission, cancellationToken) is { } fenced)
+                {
+                    return fenced;
+                }
+
+                var outcome = await record(request, mass.Value, occurredAt, metadata);
+                return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok,
+                    outcome == ManufacturingWriteOutcome.Replayed, cancellationToken);
+            }, stored => OrderView((ProductionOrder)stored), cancellationToken);
     }
 
     /// <summary>
-    /// The fresh authority fence, the envelope, and the mapping of every refusal to one status. Nothing
-    /// is written before the fence and nothing after a refusal.
+    /// One ADR-011 command attempt. In order: the context and a fresh company-wide grant; the stored
+    /// answer for this (command, key), if any; the write, whose success is recorded in its own save;
+    /// the recording of a terminal refusal; and the race on one key. Nothing is written before the
+    /// fence and nothing after a non-terminal refusal.
     /// </summary>
-    private async Task<ManufacturingApiResult<T>> RunAsync<T>(string permission, string idempotencyKey,
-        Func<ManufacturingCommandMetadata, Task<ManufacturingApiResult<T>>> write, CancellationToken cancellationToken)
+    private async Task<ManufacturingApiResult<T>> RunAsync<T>(string permission, string idempotencyKey, string commandName,
+        object canonicalRequest, ManufacturingApiStatus successStatus,
+        Func<ManufacturingCommandMetadata, Guid, Task<ManufacturingApiResult<T>>> write, Func<object, T> view,
+        CancellationToken cancellationToken)
         where T : class
     {
-        if (!HasContext() || ActorGuid() is null)
+        if (!HasContext() || ActorGuid() is not { } actor)
         {
             return Denied<T>();
         }
@@ -300,51 +403,133 @@ public sealed partial class ManufacturingCommandService(
             return Denied<T>();
         }
 
-        var metadata = new ManufacturingCommandMetadata(currentUser.UserId!, permission,
+        var actorId = currentUser.UserId!;
+        var keyHash = Sha256(idempotencyKey.Trim());
+        var requestHash = Sha256(commandName + "|" + JsonSerializer.Serialize(canonicalRequest, Json));
+
+        // §4/§3: a stored answer for this command and key, after the fence and before any other read.
+        if (await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } prior)
+        {
+            return Answer<T>(prior, actorId, requestHash);
+        }
+
+        ManufacturingApiResult<T>? completed = null;
+        ManufacturingCommandRecord Complete(object stored)
+        {
+            completed = new ManufacturingApiResult<T>(successStatus, view(stored), false, null);
+            return Record(commandName, keyHash, actorId, requestHash, completed);
+        }
+
+        var metadata = new ManufacturingCommandMetadata(actorId, permission,
             [.. scope.RoleCodes.Order(StringComparer.Ordinal)], correlation.CorrelationId, correlation.CausationId,
-            idempotencyKey, correlation.SourceChannel, correlation.ClientIpAddress, correlation.UserAgent);
+            idempotencyKey, correlation.SourceChannel, correlation.ClientIpAddress, correlation.UserAgent, Complete);
+        ManufacturingApiResult<T> result;
         try
         {
-            return await write(metadata);
+            result = await write(metadata, actor);
         }
         catch (ManufacturingVersionConflictException exception)
         {
-            return new ManufacturingApiResult<T>(ManufacturingApiStatus.Conflict, null, false,
+            result = new ManufacturingApiResult<T>(ManufacturingApiStatus.Conflict, null, false,
                 ManufacturingRuleCodes.VersionConflict, null, exception.ExpectedVersion, exception.CurrentVersion);
         }
         catch (ManufacturingRuleException exception)
         {
             return new ManufacturingApiResult<T>(ManufacturingApiStatus.Unprocessable, null, false, exception.Code);
         }
+        catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
+        {
+            // §8: the same key's other attempt may have won; then its record is the answer.
+            return await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner
+                ? Answer<T>(winner, actorId, requestHash)
+                : new ManufacturingApiResult<T>(ManufacturingApiStatus.Conflict, null, false, exception.Code);
+        }
         catch (ManufacturingStoreException exception)
         {
-            return new ManufacturingApiResult<T>(exception.Code switch
+            result = new ManufacturingApiResult<T>(exception.Code switch
             {
                 ManufacturingStoreCodes.PlanNotFound or ManufacturingStoreCodes.OrderNotFound => ManufacturingApiStatus.NotFound,
                 ManufacturingStoreCodes.CompanyContextMismatch => ManufacturingApiStatus.Denied,
                 ManufacturingStoreCodes.PlanIdConflict or ManufacturingStoreCodes.OrderIdConflict
-                    or ManufacturingStoreCodes.FactIdConflict or ManufacturingStoreCodes.ConcurrentChange
-                    => ManufacturingApiStatus.Conflict,
+                    or ManufacturingStoreCodes.FactIdConflict => ManufacturingApiStatus.Conflict,
                 _ => ManufacturingApiStatus.Unprocessable,
             }, null, false, exception.Code);
+            if (result.Status == ManufacturingApiStatus.NotFound)
+            {
+                // A not-found answer names no code: the same answer as for any unknown id.
+                result = NotFoundResult<T>();
+            }
         }
         catch (ArgumentException exception)
         {
             // A caller error the domain names (for example a zero mass where a positive one is needed).
             return Invalid<T>(exception.ParamName ?? "request");
         }
-    }
 
-    private async Task<(Kilograms Value, ManufacturingApiResult<object>? Refusal)> VerifyAsync(string? text, DateOnly effectiveOn,
-        string field, CancellationToken cancellationToken)
-    {
-        if (text is null || !KilogramText().IsMatch(text)
-            || !decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value))
+        if (completed is not null)
         {
-            return (default, new ManufacturingApiResult<object>(ManufacturingApiStatus.Invalid, null, false,
-                ManufacturingApiCodes.RequestInvalid, field));
+            // The success was recorded in the business save (§6).
+            return result;
         }
 
+        // §7: a terminal not-found or version conflict, and a success the ledger already held (R3: the
+        // same id and content under a new key), are this key's answer from now on. Anything else
+        // (validation, Settings, rules, a lost race without a winner) is not recorded.
+        var terminal = result.Status == ManufacturingApiStatus.NotFound
+            || (result.Status == ManufacturingApiStatus.Conflict && result.Code == ManufacturingRuleCodes.VersionConflict)
+            || result.Status == successStatus;
+        if (!terminal)
+        {
+            return result;
+        }
+
+        try
+        {
+            await commands.RecordCommandAsync(Record(commandName, keyHash, actorId, requestHash, result), cancellationToken);
+            return result;
+        }
+        catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
+        {
+            return await commands.FindCommandAsync(commandName, keyHash, cancellationToken) is { } winner
+                ? Answer<T>(winner, actorId, requestHash)
+                : result;
+        }
+    }
+
+    /// <summary>§3/§4: the stored answer for the same request and actor; otherwise a conflict that discloses nothing.</summary>
+    private static ManufacturingApiResult<T> Answer<T>(ManufacturingCommandRecord prior, string actorId, string requestHash)
+        where T : class
+    {
+        if (!string.Equals(prior.ActorId, actorId, StringComparison.Ordinal)
+            || !string.Equals(prior.RequestHash, requestHash, StringComparison.Ordinal))
+        {
+            return new ManufacturingApiResult<T>(ManufacturingApiStatus.Conflict, null, false,
+                ManufacturingApiCodes.IdempotencyConflict);
+        }
+
+        var stored = JsonSerializer.Deserialize<ManufacturingApiResult<T>>(prior.ResultJson, Json)
+            ?? throw new InvalidOperationException("Kayıtlı üretim komutu sonucu okunamadı.");
+        return stored with { IsReplay = true, OriginalCorrelationId = prior.OriginalCorrelationId };
+    }
+
+    private ManufacturingCommandRecord Record<T>(string commandName, string keyHash, string actorId, string requestHash,
+        ManufacturingApiResult<T> result)
+        where T : class =>
+        new(commandName, keyHash, actorId, requestHash,
+            JsonSerializer.Serialize(result with { IsReplay = false, OriginalCorrelationId = null }, Json),
+            correlation.CorrelationId);
+
+    /// <summary>The fresh authority fence after an owner's await (#276): still granted, company-wide, same context.</summary>
+    private async Task<ManufacturingApiResult<T>?> FenceAsync<T>(string permission, CancellationToken cancellationToken)
+        where T : class
+    {
+        var scope = await authority.RevalidatePermissionScopeAsync(permission, companyContext.CompanyId, cancellationToken);
+        return scope.IsGranted && scope.IsCompanyWide && HasContext() ? null : Denied<T>();
+    }
+
+    private async Task<(Kilograms Value, ManufacturingApiResult<object>? Refusal)> VerifyAsync(decimal value, DateOnly effectiveOn,
+        string field, CancellationToken cancellationToken)
+    {
         if (!HasContext())
         {
             return (default, new ManufacturingApiResult<object>(ManufacturingApiStatus.Denied, null, false,
@@ -382,6 +567,13 @@ public sealed partial class ManufacturingCommandService(
 
     private Guid? ActorGuid() => Guid.TryParse(currentUser.UserId, out var actor) && actor != Guid.Empty ? actor : null;
 
+    /// <summary>Plain non-negative decimal text only; its scale is Settings' question, not the grammar's.</summary>
+    private static decimal? ParseKg(string? text) =>
+        text is not null && KilogramText().IsMatch(text)
+        && decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value)
+            ? value
+            : null;
+
     private static TargetBasis? ParseBasis(string? text) =>
         Enum.TryParse<TargetBasis>(text, ignoreCase: false, out var basis) && Enum.IsDefined(basis) && IsName(text)
             ? basis
@@ -389,6 +581,9 @@ public sealed partial class ManufacturingCommandService(
 
     /// <summary>Only the enum's own name: no number, no other spelling.</summary>
     private static bool IsName(string? text) => text is not null && EnumName().IsMatch(text);
+
+    /// <summary>ADR-011 §2: the uppercase hex SHA-256 of the UTF-8 text.</summary>
+    internal static string Sha256(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
 
     internal static PlanViewV1 PlanView(ProductionPlan plan) => new(
         plan.Id, plan.CompanyId, plan.WorkCenterId, plan.Process.ToString(), plan.Status.ToString(), plan.Version,

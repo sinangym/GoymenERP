@@ -38,7 +38,7 @@ public sealed class ManufacturingStore(
     ManufacturingDbContext dbContext,
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
-    TimeProvider timeProvider) : IManufacturingPlanStore, IManufacturingOrderStore
+    TimeProvider timeProvider) : IManufacturingPlanStore, IManufacturingOrderStore, IManufacturingCommandLog
 {
     private const string PlanEntityType = "Manufacturing.ProductionPlan";
     private const string OrderEntityType = "Manufacturing.ProductionOrder";
@@ -100,6 +100,7 @@ public sealed class ManufacturingStore(
 
         Audit(metadata, plan.CompanyId, PlanEntityType, plan.Id, "manufacturing.plan.created.v1", "Create",
             versionBefore: null, versionAfter: plan.Version, before: "{}", after: PlanAudit(plan), "Üretim planı kaydı");
+        Complete(metadata, companyId: plan.CompanyId, plan);
         await SaveAsync(cancellationToken);
         return ManufacturingWriteOutcome.Recorded;
     }
@@ -125,6 +126,7 @@ public sealed class ManufacturingStore(
         row.UpdatedAtUtc = timeProvider.GetUtcNow();
         Audit(metadata, companyId, PlanEntityType, plan.Id, "manufacturing.plan.approved.v1", "Approve",
             versionBefore, plan.Version, before, PlanAudit(plan), "Üretim planı onayı");
+        Complete(metadata, companyId, plan);
         await SaveAsync(cancellationToken);
         return plan;
     }
@@ -188,6 +190,7 @@ public sealed class ManufacturingStore(
             versionBefore: null, versionAfter: order.Version, before: "{}",
             after: JsonSerializer.Serialize(new { order.Id, order.PlanId, order.WorkCenterId, rolls = order.PlannedInputs.Count }, Json),
             "Üretim emri kaydı");
+        Complete(metadata, companyId, order);
         await SaveAsync(cancellationToken);
         return ManufacturingWriteOutcome.Recorded;
     }
@@ -344,9 +347,55 @@ public sealed class ManufacturingStore(
                 payloadHash,
             }, Json),
             "Üretim gerçekleşme olgusu");
+        Complete(metadata, companyId, order);
         await SaveAsync(cancellationToken);
         return ManufacturingWriteOutcome.Recorded;
     }
+
+    public async Task<ManufacturingCommandRecord?> FindCommandAsync(string commandName, string idempotencyKeyHash,
+        CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        var row = await dbContext.Commands.AsNoTracking().SingleOrDefaultAsync(
+            candidate => candidate.CommandName == commandName && candidate.IdempotencyKeyHash == idempotencyKeyHash,
+            cancellationToken);
+        return row is null
+            ? null
+            : new ManufacturingCommandRecord(row.CommandName, row.IdempotencyKeyHash, row.ActorId, row.RequestHash,
+                row.ResultJson, row.OriginalCorrelationId);
+    }
+
+    public async Task RecordCommandAsync(ManufacturingCommandRecord record, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        AddCommand(RequireResolvedCompany(), record);
+        await SaveAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// ADR-011 §6: the completed command's record joins the business change and its audit event in
+    /// the same save. Without a completion (a caller outside the HTTP surface) nothing is added.
+    /// </summary>
+    private void Complete(ManufacturingCommandMetadata metadata, Guid companyId, object result)
+    {
+        if (metadata.Completion is { } completion)
+        {
+            AddCommand(companyId, completion(result));
+        }
+    }
+
+    private void AddCommand(Guid companyId, ManufacturingCommandRecord record) =>
+        dbContext.Commands.Add(new CommandRow
+        {
+            CompanyId = companyId,
+            CommandName = record.CommandName,
+            IdempotencyKeyHash = record.IdempotencyKeyHash,
+            ActorId = record.ActorId,
+            RequestHash = record.RequestHash,
+            ResultJson = record.ResultJson,
+            OriginalCorrelationId = record.OriginalCorrelationId,
+            RecordedAtUtc = timeProvider.GetUtcNow(),
+        });
 
     private async Task<ProductionPlan> RestorePlanAsync(PlanRow row, CancellationToken cancellationToken)
     {

@@ -19,7 +19,39 @@ public sealed record ManufacturingCommandMetadata(
     string IdempotencyKey,
     string SourceChannel,
     string? ClientIpAddress = null,
-    string? UserAgent = null);
+    string? UserAgent = null,
+    Func<object, ManufacturingCommandRecord>? Completion = null);
+
+/// <summary>
+/// One completed command attempt (ADR-011): unique per (company, command name, key hash). The key
+/// is kept only as the uppercase SHA-256 of the trimmed <c>Idempotency-Key</c>; the request hash is
+/// the canonical payload's, the actor is stored beside it, and the result is the answer to replay.
+/// </summary>
+public sealed record ManufacturingCommandRecord(
+    string CommandName,
+    string IdempotencyKeyHash,
+    string ActorId,
+    string RequestHash,
+    string ResultJson,
+    string OriginalCorrelationId);
+
+/// <summary>
+/// The Manufacturing command log of the server-resolved company (ADR-011 §2–§8). A successful write
+/// adds its record in the same save as the business change and its audit event, through
+/// <see cref="ManufacturingCommandMetadata.Completion"/>; a terminal refusal (not found, version
+/// conflict) is recorded on its own. Records are append-only.
+/// </summary>
+public interface IManufacturingCommandLog
+{
+    Task<ManufacturingCommandRecord?> FindCommandAsync(string commandName, string idempotencyKeyHash,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Stores a record without a business change. Another writer that stored the same
+    /// (command, key) first makes this <see cref="ManufacturingStoreCodes.ConcurrentChange"/>.
+    /// </summary>
+    Task RecordCommandAsync(ManufacturingCommandRecord record, CancellationToken cancellationToken = default);
+}
 
 /// <summary>What a write did: a new record, or the same request again with no second effect (R3).</summary>
 public enum ManufacturingWriteOutcome

@@ -44,6 +44,8 @@ public static class ManufacturingModuleExtensions
         services.AddScoped<ManufacturingStore>();
         services.AddScoped<IManufacturingPlanStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         services.AddScoped<IManufacturingOrderStore>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
+        // ADR-011: the command log shares the store's DbContext, so a success joins the business save.
+        services.AddScoped<IManufacturingCommandLog>(serviceProvider => serviceProvider.GetRequiredService<ManufacturingStore>());
         // MFG-API (#313): the command surface. Settings' kilogram profile and the fresh authority
         // port are the host's registrations.
         services.AddScoped<ManufacturingMassVerifier>();

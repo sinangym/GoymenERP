@@ -75,8 +75,18 @@ Rules held here:
 
 - **Company:** only from the context; no request carries one. Another company's plan or order is the same code-less 404 as an unknown id.
 - **Kilograms (Ö2):** plain invariant decimal text (no sign, exponent or grouping), checked against the company's kilogram profile (`ManufacturingMassVerifier`) before anything is written. Facts use their own UTC date; plan masses use the server's date. More decimals than the profile allows is `manufacturing_mass_scale_exceeded` (422), never rounded. Settings `settings_access_denied` → 403; `settings_provider_unavailable` / `settings_profile_invalid` → 503 (for example a company with no approved kilogram source); any other Settings or mass refusal → 422 with its code.
-- **Authority (#276):** the endpoint policy answers first. After the Settings read, the permission is measured again with `IErpAuthorityRevalidationService`, and only a fresh, company-wide grant writes. Its role codes and the endpoint's permission go into the ADR-009 audit envelope with the request's correlation, causation, channel and `Idempotency-Key`.
-- **Replay (R3):** the caller's plan / order / fact id plus the canonical content, as in MFG-5. The same id with the same content answers the stored record with `Idempotency-Replayed: true`; other content is 409 (`*_id_conflict`). The `Idempotency-Key` header is required. It is audited as its SHA-256 hash only (ADR-011 §2); it is not a second replay identity.
+- **Authority (#276):** the endpoint policy answers first. The permission is then measured fresh with `IErpAuthorityRevalidationService` twice: before any stored answer is read (ADR-011 §5), and again after the Settings read. Only a company-wide grant writes. Its role codes and the endpoint's permission go into the ADR-009 audit envelope, together with the request's correlation, causation and channel and the `Idempotency-Key` as its hash.
+- **Idempotency (ADR-011 §2–§8):** every write is one command attempt in the module's own log (`manufacturing.Commands`).
+  - **Key:** unique `(CompanyId, CommandName, IdempotencyKeyHash)`. The raw `Idempotency-Key` is never stored, only the uppercase SHA-256 of the trimmed key.
+  - **Request hash:** the versioned command name plus the canonical payload, with the path id included and kilograms normalized (`10.000` = `10`). The actor is stored beside it.
+  - **Order of checks:** the fresh authority check runs first. Then:
+    - the same key, request and actor answers the stored result with `Idempotency-Replayed: true` and `Idempotency-Original-Correlation-Id`;
+    - another request or actor under the key is 409 `idempotency_conflict`, disclosing nothing.
+  - **Atomicity:** a success is recorded in the same save as the business change and its audit event (`ManufacturingCommandMetadata.Completion`).
+  - **Terminal answers:** a terminal not-found or version conflict is recorded on its own (§7). Validation, Settings and rule refusals are not recorded, so a retry is evaluated again.
+  - **Races:** two attempts racing on one key leave one record, and the loser answers from it (§8).
+  - **The approval replays too.** A lost answer retried is its 200, not a version conflict.
+- **R3 underneath:** the store still recognises the caller's plan / order / fact id with the same canonical content as the same record, whatever the key (the ledger's own identity, MFG-5). Other content under that id is 409 (`*_id_conflict`). Under a new key such a success is recorded as that key's answer.
 - **Concurrency:** `expectedVersion` → 409 `manufacturing_version_conflict` with `expectedVersion` / `currentVersion`; a lost race → 409 `manufacturing_concurrent_change`.
 - **Refusals:** a domain rule → 422 with its code; a work center that is not this company's → 422 `manufacturing_work_center_not_found`; a malformed request → 400 `manufacturing_request_invalid` with `field`.
 

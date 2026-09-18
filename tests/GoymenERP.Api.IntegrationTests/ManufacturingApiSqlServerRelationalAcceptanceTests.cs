@@ -15,6 +15,17 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
+internal static class ManufacturingHttpClientExtensions
+{
+    /// <summary>A JSON POST with its own <c>Idempotency-Key</c> (a new one unless the test names one).</summary>
+    public static Task<HttpResponseMessage> PostWithKeyAsync<T>(this HttpClient client, string path, T body, string? key = null)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body) };
+        request.Headers.Add("Idempotency-Key", key ?? Guid.NewGuid().ToString("N"));
+        return client.SendAsync(request);
+    }
+}
+
 /// <summary>
 /// MFG-API (#313) against a REAL SQL Server, through the real host: authentication, company
 /// context, the permission policies, the fresh authority fence, Settings' approved kilogram profile
@@ -46,32 +57,33 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         await using var run = await Run.StartAsync();
         var workCenter = await run.WorkCenterOfAsync(CompanyA);
         var user = await run.GrantAsync(TestUsers.CompanyA, CompanyA, AllWrites);
-        using var client = run.Factory.CreateClientFor(user, CompanyA);
+        using var client = run.ClientFor(user, CompanyA);
         var correlation = client.DefaultRequestHeaders.GetValues("X-Correlation-Id").Single();
         var roll = Guid.NewGuid();
 
         // Plan: created, and the same key + body again is its replay with no second plan.
         var planRequest = new SavePlanRequestV1(Guid.NewGuid(), workCenter,
             [new PlannedInputRequestV1(roll, "1000.125")], new TargetRequestV1("GoodOutputMass", "900"));
-        var created = await client.PostAsJsonAsync($"{Base}/plans", planRequest);
+        var created = await client.PostWithKeyAsync($"{Base}/plans", planRequest, "plan-key-1");
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
         // The typed header re-orders its text; the directives are what matter.
         Assert.True(created.Headers.CacheControl is { Private: true, NoStore: true });
         var plan = (await created.Content.ReadFromJsonAsync<PlanViewV1>())!;
         Assert.Equal((CompanyA, workCenter, "Draft", 1L, "1000.125"),
             (plan.CompanyId, plan.WorkCenterId, plan.Status, plan.Version, Assert.Single(plan.Inputs).PlannedKg));
-        var replay = await client.PostAsJsonAsync($"{Base}/plans", planRequest);
+        var replay = await client.PostWithKeyAsync($"{Base}/plans", planRequest, "plan-key-1");
         Assert.Equal(HttpStatusCode.Created, replay.StatusCode);
         Assert.Equal("true", replay.Headers.GetValues("Idempotency-Replayed").Single());
+        Assert.Equal(correlation, replay.Headers.GetValues("Idempotency-Original-Correlation-Id").Single());
 
-        var approved = await client.PostAsJsonAsync($"{Base}/plans/{plan.PlanId}/approval", new ApprovePlanRequestV1(1));
+        var approved = await client.PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval", new ApprovePlanRequestV1(1));
         Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
         var approvedPlan = (await approved.Content.ReadFromJsonAsync<PlanViewV1>())!;
         Assert.Equal(("Approved", 2L), (approvedPlan.Status, approvedPlan.Version));
         Assert.NotNull(approvedPlan.ApprovedByUserId);
 
         var orderId = Guid.NewGuid();
-        var orderResponse = await client.PostAsJsonAsync($"{Base}/orders", new CreateOrderRequestV1(orderId, plan.PlanId));
+        var orderResponse = await client.PostWithKeyAsync($"{Base}/orders", new CreateOrderRequestV1(orderId, plan.PlanId));
         Assert.Equal(HttpStatusCode.Created, orderResponse.StatusCode);
         Assert.Equal($"{Base}/orders/{orderId:D}", orderResponse.Headers.Location?.ToString());
         var order = (await orderResponse.Content.ReadFromJsonAsync<OrderViewV1>())!;
@@ -114,25 +126,25 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         var plannerOnly = await run.GrantAsync(TestUsers.Unprovisioned, CompanyA, ErpPermissions.ManufacturingPlansWrite);
         var request = new SavePlanRequestV1(Guid.NewGuid(), workCenter, [new PlannedInputRequestV1(Guid.NewGuid(), "10")], null);
 
-        using (var client = run.Factory.CreateClientFor(readerOnly, CompanyA))
+        using (var client = run.ClientFor(readerOnly, CompanyA))
         {
-            Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync($"{Base}/plans", request)).StatusCode);
+            Assert.Equal(HttpStatusCode.Forbidden, (await client.PostWithKeyAsync($"{Base}/plans", request)).StatusCode);
         }
 
         // Company A's read-only user: access to the company, no Manufacturing permission (none is seeded).
-        using (var client = run.Factory.CreateClientFor(TestUsers.CompanyAViewer, CompanyA))
+        using (var client = run.ClientFor(TestUsers.CompanyAViewer, CompanyA))
         {
-            Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync($"{Base}/plans", request)).StatusCode);
+            Assert.Equal(HttpStatusCode.Forbidden, (await client.PostWithKeyAsync($"{Base}/plans", request)).StatusCode);
             Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync($"{Base}/orders/{Guid.NewGuid()}")).StatusCode);
         }
 
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Plans"));
 
-        using (var client = run.Factory.CreateClientFor(plannerOnly, CompanyA))
+        using (var client = run.ClientFor(plannerOnly, CompanyA))
         {
-            Assert.Equal(HttpStatusCode.Created, (await client.PostAsJsonAsync($"{Base}/plans", request)).StatusCode);
+            Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/plans", request)).StatusCode);
             // Saving a plan is not approving it.
-            Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync(
+            Assert.Equal(HttpStatusCode.Forbidden, (await client.PostWithKeyAsync(
                 $"{Base}/plans/{request.PlanId}/approval", new ApprovePlanRequestV1(1))).StatusCode);
         }
 
@@ -148,17 +160,17 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         var userB = await run.GrantAsync(TestUsers.CompanyB, CompanyB, AllWrites);
         var (orderId, roll) = await run.OpenOrderAsync(userA);
 
-        using (var client = run.Factory.CreateClientFor(userB, CompanyB))
+        using (var client = run.ClientFor(userB, CompanyB))
         {
             Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"{Base}/orders/{orderId}")).StatusCode);
             // Company B has no approved kilogram source: the write stops at Settings (503), before the order is looked up.
-            var fact = await client.PostAsJsonAsync($"{Base}/orders/{orderId}/input-issues",
+            var fact = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/input-issues",
                 new RecordFactRequestV1(Guid.NewGuid(), 1, roll, "10", At));
             Assert.Equal(HttpStatusCode.ServiceUnavailable, fact.StatusCode);
         }
 
         // B's user naming company A is refused before anything is read.
-        using (var client = run.Factory.CreateClientFor(userB, CompanyA))
+        using (var client = run.ClientFor(userB, CompanyA))
         {
             Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync($"{Base}/orders/{orderId}")).StatusCode);
         }
@@ -181,38 +193,39 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         await using var run = await Run.StartAsync();
         var userA = await run.GrantAsync(TestUsers.CompanyA, CompanyA, AllWrites);
         var (orderId, roll) = await run.OpenOrderAsync(userA);
-        using var client = run.Factory.CreateClientFor(userA, CompanyA);
+        using var client = run.ClientFor(userA, CompanyA);
         var factId = Guid.NewGuid();
 
         var first = await run.OkAsync(client, $"{Base}/orders/{orderId}/input-issues",
-            new RecordFactRequestV1(factId, 1, roll, "500", At));
+            new RecordFactRequestV1(factId, 1, roll, "500", At), "issue-key-1");
 
         // The version the caller read is gone: 409 with both versions.
-        var stale = await client.PostAsJsonAsync($"{Base}/orders/{orderId}/input-returns",
+        var stale = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/input-returns",
             new RecordFactRequestV1(Guid.NewGuid(), 1, roll, "1", At.AddHours(1)));
         Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
         var staleProblem = await Problem(stale);
         Assert.Equal((ManufacturingRuleCodes.VersionConflict, "1", "2"),
             (staleProblem.Code, staleProblem.ExpectedVersion, staleProblem.CurrentVersion));
 
-        // The same fact id with other content: 409; with the same content: a replay.
-        var reused = await client.PostAsJsonAsync($"{Base}/orders/{orderId}/input-issues",
+        // The same fact id with other content under a new key: 409 (R3, the ledger's own identity).
+        var reused = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/input-issues",
             new RecordFactRequestV1(factId, first.Version, roll, "501", At));
         Assert.Equal((HttpStatusCode.Conflict, ManufacturingStoreCodes.FactIdConflict),
             (reused.StatusCode, (await Problem(reused)).Code));
-        var again = await client.PostAsJsonAsync($"{Base}/orders/{orderId}/input-issues",
-            new RecordFactRequestV1(factId, 1, roll, "500.000", At));
+        // The first key and request again (500.000 is 500): its stored answer (ADR-011).
+        var again = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/input-issues",
+            new RecordFactRequestV1(factId, 1, roll, "500.000", At), "issue-key-1");
         Assert.Equal(HttpStatusCode.OK, again.StatusCode);
         Assert.Equal("true", again.Headers.GetValues("Idempotency-Replayed").Single());
 
         // More decimals than the kilogram profile allows: refused, never rounded.
-        var scale = await client.PostAsJsonAsync($"{Base}/orders/{orderId}/input-returns",
+        var scale = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/input-returns",
             new RecordFactRequestV1(Guid.NewGuid(), first.Version, roll, "1.0001", At.AddHours(1)));
         Assert.Equal((HttpStatusCode.UnprocessableEntity, ManufacturingMassCodes.ScaleExceeded),
             (scale.StatusCode, (await Problem(scale)).Code));
 
         // A plan at company B's work center under company A: the composite key refuses it, named.
-        var foreign = await client.PostAsJsonAsync($"{Base}/plans", new SavePlanRequestV1(Guid.NewGuid(),
+        var foreign = await client.PostWithKeyAsync($"{Base}/plans", new SavePlanRequestV1(Guid.NewGuid(),
             await run.WorkCenterOfAsync(CompanyB), [new PlannedInputRequestV1(Guid.NewGuid(), "10")], null));
         Assert.Equal((HttpStatusCode.UnprocessableEntity, ManufacturingStoreCodes.WorkCenterNotFound),
             (foreign.StatusCode, (await Problem(foreign)).Code));
@@ -221,6 +234,93 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
         Assert.Equal("500.000", (await run.ScalarAsync<decimal>("SELECT MassKg FROM manufacturing.Facts"))
             .ToString("0.000", System.Globalization.CultureInfo.InvariantCulture));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Plans"));
+    }
+
+    [SqlServerFact]
+    public async Task The_idempotency_key_replays_one_attempt_and_refuses_another_request_or_actor()
+    {
+        // ADR-011 §2–§4, §7 over the module's own command log.
+        await using var run = await Run.StartAsync();
+        var userA = await run.GrantAsync(TestUsers.CompanyA, CompanyA, AllWrites);
+        var otherA = await run.GrantAsync(TestUsers.NoAssignment, CompanyA, AllWrites);
+        using var client = run.ClientFor(userA, CompanyA);
+        var correlation = client.DefaultRequestHeaders.GetValues("X-Correlation-Id").Single();
+        var plan = new SavePlanRequestV1(Guid.NewGuid(), await run.WorkCenterOfAsync(CompanyA),
+            [new PlannedInputRequestV1(Guid.NewGuid(), "1000")], null);
+        Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/plans", plan, "save-1")).StatusCode);
+
+        // The same key with another body: 409, and nothing of the first answer.
+        var otherBody = await client.PostWithKeyAsync($"{Base}/plans", plan with { PlanId = Guid.NewGuid() }, "save-1");
+        Assert.Equal((HttpStatusCode.Conflict, ManufacturingApiCodes.IdempotencyConflict),
+            (otherBody.StatusCode, (await Problem(otherBody)).Code));
+        Assert.False(otherBody.Headers.Contains("Idempotency-Replayed"));
+        Assert.DoesNotContain(plan.PlanId.ToString(), await otherBody.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
+
+        // The same key and body from another actor of the company: 409 as well.
+        using (var other = run.ClientFor(otherA, CompanyA))
+        {
+            var otherActor = await other.PostWithKeyAsync($"{Base}/plans", plan, "save-1");
+            Assert.Equal((HttpStatusCode.Conflict, ManufacturingApiCodes.IdempotencyConflict),
+                (otherActor.StatusCode, (await Problem(otherActor)).Code));
+        }
+
+        // The approval replays from the log: a lost answer retried is 200, not a version conflict.
+        var approved = await client.PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval", new ApprovePlanRequestV1(1), "approve-1");
+        Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
+        var retried = await client.PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval", new ApprovePlanRequestV1(1), "approve-1");
+        Assert.Equal(HttpStatusCode.OK, retried.StatusCode);
+        Assert.Equal(("true", correlation), (retried.Headers.GetValues("Idempotency-Replayed").Single(),
+            retried.Headers.GetValues("Idempotency-Original-Correlation-Id").Single()));
+        Assert.Equal(("Approved", 2L), ((await retried.Content.ReadFromJsonAsync<PlanViewV1>())!.Status,
+            (await approved.Content.ReadFromJsonAsync<PlanViewV1>())!.Version));
+
+        // A terminal version conflict (§7) is its key's answer too, and a terminal not-found.
+        var stale = await client.PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval", new ApprovePlanRequestV1(1), "approve-2");
+        var staleAgain = await client.PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval", new ApprovePlanRequestV1(1), "approve-2");
+        Assert.Equal((HttpStatusCode.Conflict, HttpStatusCode.Conflict), (stale.StatusCode, staleAgain.StatusCode));
+        Assert.Equal((ManufacturingRuleCodes.VersionConflict, "1", "2"), await Problem(staleAgain));
+        Assert.Equal("true", staleAgain.Headers.GetValues("Idempotency-Replayed").Single());
+        var unknown = Guid.NewGuid();
+        var missing = await client.PostWithKeyAsync($"{Base}/plans/{unknown}/approval", new ApprovePlanRequestV1(1), "approve-3");
+        var missingAgain = await client.PostWithKeyAsync($"{Base}/plans/{unknown}/approval", new ApprovePlanRequestV1(1), "approve-3");
+        Assert.Equal((HttpStatusCode.NotFound, HttpStatusCode.NotFound), (missing.StatusCode, missingAgain.StatusCode));
+        Assert.Equal("true", missingAgain.Headers.GetValues("Idempotency-Replayed").Single());
+
+        // One plan, one approval; the log holds one row per (command, key) and no raw key.
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Plans"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.plan.approved.v1'"));
+        Assert.Equal(4, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Commands"));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.Commands WHERE ResultJson LIKE N'%approve-1%' OR ResultJson LIKE N'%save-1%'"));
+        Assert.Equal(4, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.Commands WHERE LEN(IdempotencyKeyHash) = 64 AND IdempotencyKeyHash = UPPER(IdempotencyKeyHash)"));
+    }
+
+    [SqlServerFact]
+    public async Task Two_attempts_racing_on_one_key_store_one_command_and_both_answer_it()
+    {
+        // ADR-011 §8: the unique key leaves one winner; the loser answers from the winner's record.
+        await using var run = await Run.StartAsync();
+        var userA = await run.GrantAsync(TestUsers.CompanyA, CompanyA, AllWrites);
+        var (orderId, roll) = await run.OpenOrderAsync(userA);
+        var fact = new RecordFactRequestV1(Guid.NewGuid(), 1, roll, "250", At);
+
+        async Task<HttpResponseMessage> AttemptAsync()
+        {
+            using var client = run.ClientFor(userA, CompanyA);
+            return await client.PostWithKeyAsync($"{Base}/orders/{orderId}/input-issues", fact, "race-1");
+        }
+
+        var answers = await Task.WhenAll(Task.Run(AttemptAsync), Task.Run(AttemptAsync));
+
+        Assert.All(answers, answer => Assert.Equal(HttpStatusCode.OK, answer.StatusCode));
+        Assert.Single(answers, answer => answer.Headers.Contains("Idempotency-Replayed"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Facts"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.Commands WHERE CommandName = N'manufacturing.input.issue.v1'"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'manufacturing.input.issued.v1'"));
     }
 
     private static async Task<(string? Code, string? ExpectedVersion, string? CurrentVersion)> Problem(HttpResponseMessage response)
@@ -255,28 +355,36 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
             return run;
         }
 
+        /// <summary>A client of the configured development user; every write names its own Idempotency-Key.</summary>
+        public HttpClient ClientFor(string user, Guid company)
+        {
+            var client = Factory.CreateClientFor(user, company);
+            client.DefaultRequestHeaders.Remove("Idempotency-Key");
+            return client;
+        }
+
         public Task<Guid> WorkCenterOfAsync(Guid company) =>
             ScalarAsync<Guid>("SELECT TOP (1) Id FROM organization.WorkCenters WHERE CompanyId = @c ORDER BY Id", ("@c", company));
 
         /// <summary>An approved plan of one roll and its open order in company A, through the API.</summary>
         public async Task<(Guid OrderId, Guid Roll)> OpenOrderAsync(string user)
         {
-            using var client = Factory.CreateClientFor(user, CompanyA);
+            using var client = ClientFor(user, CompanyA);
             var roll = Guid.NewGuid();
             var plan = new SavePlanRequestV1(Guid.NewGuid(), await WorkCenterOfAsync(CompanyA),
                 [new PlannedInputRequestV1(roll, "1000")], null);
-            Assert.Equal(HttpStatusCode.Created, (await client.PostAsJsonAsync($"{Base}/plans", plan)).StatusCode);
-            Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync($"{Base}/plans/{plan.PlanId}/approval",
+            Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/plans", plan)).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await client.PostWithKeyAsync($"{Base}/plans/{plan.PlanId}/approval",
                 new ApprovePlanRequestV1(1))).StatusCode);
             var orderId = Guid.NewGuid();
-            Assert.Equal(HttpStatusCode.Created, (await client.PostAsJsonAsync($"{Base}/orders",
+            Assert.Equal(HttpStatusCode.Created, (await client.PostWithKeyAsync($"{Base}/orders",
                 new CreateOrderRequestV1(orderId, plan.PlanId))).StatusCode);
             return (orderId, roll);
         }
 
-        public async Task<OrderViewV1> OkAsync<T>(HttpClient client, string path, T body)
+        public async Task<OrderViewV1> OkAsync<T>(HttpClient client, string path, T body, string? key = null)
         {
-            var response = await client.PostAsJsonAsync(path, body);
+            var response = await client.PostWithKeyAsync(path, body, key);
             Assert.True(response.StatusCode == HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
             return (await response.Content.ReadFromJsonAsync<OrderViewV1>())!;
         }
