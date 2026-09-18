@@ -41,13 +41,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "OpenApiDocumentGenerationMode.cs";
     private const string OpenApiStartupPath =
         "src/backend/GoymenERP.Api/Program.cs";
-    // Re-fingerprinted for BROWSER-CI a2 part 2 (decision W1) on top of SALES-API (#321): one call to
-    // C01E2eFixtureWriterActivation.Configure after the shell authority is chosen, which registers the
-    // gated fixture writers only in the fixture runner's in-process host (Testing + its exact run
-    // binding; a boundary test pins the names). No OpenAPI-generation, network or hosted-service surface
-    // of the startup source changed otherwise.
+    // Re-fingerprinted for FIN-UI-1a (#325) on top of BROWSER-CI a2 part 2 (#330) and SALES-API (#321): the
+    // staged Finance shell provider registered before the shell authority is chosen (C+O+P+S+F row), beside
+    // #330's one call to C01E2eFixtureWriterActivation.Configure. No OpenAPI-generation, network or
+    // hosted-service surface of the startup source changed otherwise.
     private const string ReviewedOpenApiStartupFingerprint =
-        "c149a2caabfb374f2d536f7cb1184994ff4add05f37e333ee158d90e5a013bc4";
+        "777a46487c2eb01d909d1b1cdee0af8ac1f8ea7400246af577b3bba600b8a01a";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -120,7 +119,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // finance
             ["tools/relational_inventory/finance.txt"] =
-                "2525b22da7dcacbb60e1622e572c9626c660f1a3dadeab9c1031a70ab3aa283b",
+                "8e167cef2e6ecfb28c1aeadd621414ebdb10b20198060cd09e81f5201dafb563",
 
             // identity
             ["tools/relational_inventory/identity.txt"] =
@@ -192,7 +191,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
              + "Persistence/FinanceDbContext.cs"] =
-                "abb94eedec52cf9d34c3566d875e03c0d8082509206b7e33eff52c1aa3ec7386",
+                "e94446bcd3e21a7695e4cbe1d437d38ed26165f4c4a2e945dae98d878f6d22ca",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/"
@@ -372,7 +371,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceModuleExtensions.cs"] =
                     new(
-                        "e6f4a629c8c4179da8250d1fe728f330029493d0d237354cc6c74bf31baec3fd",
+                        "248c5960bf7491900e66573bc00b781353c843f4a6b3367ed1784c900e2f604c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -385,7 +384,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs"] =
                     new(
-                        "5a2aa079ef6d5c5a3e3dfd199ae7a40b64884ddc1668f8aaf01c2e5e6ce403a3",
+                        "1e011359c62637e0bfe25263540306cb72073fd824fd5dba59d39d08357c4cd7",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -396,7 +395,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/FinanceBankAccountService.cs"] =
                     new(
-                        "0ec96dac6d46409196fa80b248a5458f350aba948e9c0afbf7387480afb44275",
+                        "d5f0e66546d0cfd0c31d9a47abe3a015462f8c1afb32f4ca9de9c11ef2a1a550",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
