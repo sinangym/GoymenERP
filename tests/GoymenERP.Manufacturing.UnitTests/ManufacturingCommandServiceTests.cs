@@ -276,7 +276,9 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Single(fixture.Store.Writes);
         var record = Assert.Single(fixture.Store.Commands.Values);
         Assert.Equal((ManufacturingCommandNames.IssueInput, "corr-1"), (record.CommandName, record.OriginalCorrelationId));
-        Assert.Equal(ManufacturingCommandService.Sha256("key-1"), record.IdempotencyKeyHash);
+        // ADR-011 §2 itself, not the production helper: the uppercase SHA-256 of the trimmed key.
+        Assert.Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("key-1"))),
+            record.IdempotencyKeyHash);
         Assert.Matches("^[0-9A-F]{64}$", record.IdempotencyKeyHash);
         Assert.DoesNotContain("key-1", record.ResultJson, StringComparison.Ordinal);
     }
