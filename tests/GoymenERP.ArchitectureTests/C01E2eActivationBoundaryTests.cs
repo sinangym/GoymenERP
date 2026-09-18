@@ -77,6 +77,14 @@ public sealed class C01E2eActivationBoundaryTests
                 + "ProductMasterAssignmentFixtureStore.cs",
             ],
             BackendFilesContaining("AddProductMasterAssignmentFixtureStore"));
+        // u02 (#331): Product's code-group port, the same shape.
+        Assert.Equal(
+            [
+                "src/backend/GoymenERP.Api/Shell/C01E2eFixtureWriterActivation.cs",
+                "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Fixtures/"
+                + "ProductCodeGroupFixtureStore.cs",
+            ],
+            BackendFilesContaining("AddProductCodeGroupFixtureStore"));
     }
 
     [Fact]

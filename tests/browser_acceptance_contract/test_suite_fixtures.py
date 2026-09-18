@@ -331,6 +331,8 @@ class SuiteIdentityTests(unittest.TestCase):
             "another start": {assignment + "ValidFromUtc": "2025-01-01T00:00:00+00:00"},
             "repeated synthetic id": {"IdentitySeed__Assignments__8__Id": "b4000000-0000-0000-0000-000000000001"},
             "user without an assignment": {key: None for key in self.identity() if "Assignments__8__" in key},
+            "actor without any user or assignment": {key: None for key in self.identity()
+                                                     if "Users__6__" in key or "Assignments__8__" in key},
             "role with an unlisted field": {role + "Description": "x"},
             "user without a display name": {user + "DisplayName": None},
             "assignment without its start": {assignment + "ValidFromUtc": None},
@@ -366,6 +368,111 @@ class SuiteIdentityTests(unittest.TestCase):
             "BootstrapIdentity__Users__2__UserId": "org03-approver",
             "BootstrapIdentity__Users__2__DisplayName": "SENTETIK ORG-03 Onaycı",
         }, suite="org03")
+
+
+class IssuerUserRuleTests(unittest.TestCase):
+    """The issuer-user rule (coordinator decision, a narrow D1 extension): a suite that binds the Product
+    issuer may seed one non-actor Identity user, the issuer's own, holding nothing."""
+
+    LOCAL = "b2000000-0000-4000-8000-000000000201"
+    EXTERNAL = "b2100000-0000-4000-8000-000000000201"
+
+    def issuer(self, suite="u02", **changes):
+        user = "IdentitySeed__Users__5__"
+        environment = {
+            "ProductRuntime__IssuerLocalUserId": self.LOCAL,
+            "ProductRuntime__IssuerExternalIdentityId": self.EXTERNAL,
+            user + "Id": self.LOCAL,
+            user + "DisplayName": f"SENTETIK browser-suite:{suite} Product issuer",
+            user + "ExternalIdentities__0__Id": self.EXTERNAL,
+            user + "ExternalIdentities__0__Issuer": "urn:goymen:development-bootstrap",
+            user + "ExternalIdentities__0__Subject": f"{suite}-issuer",
+        }
+        for key, value in changes.items():
+            if value is None:
+                environment.pop(key, None)
+            else:
+                environment[key] = value
+        return environment
+
+    @staticmethod
+    def _validate(extension, suite="u02"):
+        model = profile_tests.model(browser.profile_of(suite))
+        model["services"]["api"]["environment"].update(extension)
+        browser.validate_suite_compose(model, suite, profile_tests.COMMIT, profile_tests.PROJECT)
+
+    def test_the_u02_issuer_user_is_accepted(self):
+        self._validate(self.issuer())
+
+    def test_the_checked_in_override_files_pass_their_profiles(self):
+        # Every owner override in infra/browser-suites is valid against its suite's profile model.
+        directory = ROOT / browser.SUITE_OVERRIDE_DIRECTORY
+        for path in sorted(directory.glob("*.override.yml")) if directory.is_dir() else []:
+            suite = path.name.split(".", 1)[0]
+            environment = {}
+            for line in path.read_text(encoding="utf-8").splitlines():
+                match = re.fullmatch(r"      ([A-Za-z0-9_]+): (.+)", line)
+                if match:
+                    environment[match.group(1)] = match.group(2).strip('"')
+            with self.subTest(suite=suite):
+                self.assertTrue(environment)
+                self._validate(environment, suite)
+
+    def test_every_rule_refuses_its_violation(self):
+        user = "IdentitySeed__Users__5__"
+        cases = {
+            "user id is not the issuer's local id": {user + "Id": "b2000000-0000-4000-8000-000000000202"},
+            "external id is not the issuer's external id": {
+                user + "ExternalIdentities__0__Id": "b2100000-0000-4000-8000-000000000202"},
+            "subject is not <suite>-issuer": {user + "ExternalIdentities__0__Subject": "u02-product-issuer"},
+            "subject is a canonical actor": {user + "ExternalIdentities__0__Subject": "group-bootstrap-admin"},
+            "not SENTETIK": {user + "DisplayName": "Product issuer"},
+            "another issuer": {user + "ExternalIdentities__0__Issuer": "urn:other"},
+            "issuer keys absent": {"ProductRuntime__IssuerLocalUserId": None,
+                                   "ProductRuntime__IssuerExternalIdentityId": None},
+            "a second non-actor user": {
+                "IdentitySeed__Users__6__Id": "b2000000-0000-4000-8000-000000000203",
+                "IdentitySeed__Users__6__DisplayName": "SENTETIK another",
+                "IdentitySeed__Users__6__ExternalIdentities__0__Id": "b2100000-0000-4000-8000-000000000203",
+                "IdentitySeed__Users__6__ExternalIdentities__0__Issuer": "urn:goymen:development-bootstrap",
+                "IdentitySeed__Users__6__ExternalIdentities__0__Subject": "u02-other"},
+            "a role (u02 holds no permission)": {
+                "IdentitySeed__Roles__5__Id": "b3000000-0000-4000-8000-000000000201",
+                "IdentitySeed__Roles__5__Code": "BROWSER_U02_ISSUER",
+                "IdentitySeed__Roles__5__Name": "SENTETIK issuer",
+                "IdentitySeed__Roles__5__IsSystem": "false",
+                "IdentitySeed__Roles__5__Permissions__0": "product.operational-selection.read"},
+            "an assignment for the issuer": {
+                "IdentitySeed__Assignments__7__Id": "b4000000-0000-4000-8000-000000000201",
+                "IdentitySeed__Assignments__7__UserId": self.LOCAL,
+                "IdentitySeed__Assignments__7__RoleId": "30000000-0000-0000-0000-000000000003",
+                "IdentitySeed__Assignments__7__CompanyId": "10000000-0000-0000-0000-000000000001",
+                "IdentitySeed__Assignments__7__ValidFromUtc": "2026-01-01T00:00:00+00:00",
+                "IdentitySeed__Assignments__7__Scopes__0__Type": "Company",
+                "IdentitySeed__Assignments__7__Scopes__0__Id": "10000000-0000-0000-0000-000000000001"},
+        }
+        for label, changes in cases.items():
+            with self.subTest(label), self.assertRaises(browser.ContractError):
+                self._validate(self.issuer(**changes))
+
+    def test_a_suite_actor_cannot_be_named_as_the_issuer(self):
+        # s03 binds the issuer and has actors: an actor called s03-issuer would sign in as the issuer.
+        extension = self.issuer(suite="s03")
+        extension.update({
+            "BootstrapIdentity__Users__2__UserId": "s03-issuer",
+            "BootstrapIdentity__Users__2__DisplayName": "SENTETIK S03 issuer actor",
+        })
+        with self.assertRaisesRegex(browser.ContractError, "s03-issuer"):
+            self._validate(extension, suite="s03")
+
+    def test_a_suite_without_the_issuer_list_cannot_seed_a_non_actor_user(self):
+        # An identity-enabled suite that does not bind the issuer (org03 given an Identity list here).
+        extension = {key: value for key, value in self.issuer(suite="org03").items()
+                     if not key.startswith("ProductRuntime__")}
+        lists = {"org03": {"issuer": False, "actors": True, "identity": True}}
+        with mock.patch.dict(browser.SUITE_API_EXTENSIONS, lists), \
+                self.assertRaisesRegex(browser.ContractError, "only the bound Product issuer"):
+            self._validate(extension, suite="org03")
 
 
 class WorkflowTests(unittest.TestCase):
