@@ -314,7 +314,7 @@ Codes that arrive in `Errors` at this base:
 | `references.units.stock`, `references.units.sales` | `invalid_reference` (binding missing, or the owner's profile cannot be used on `EffectiveOn`) |
 | `orderUnitId` | `invalid_reference`, `unsupported_order_unit` |
 | `references.attributes.{fieldId}` (GDC band/coil) | `required`, `family_invalid_value`, `family_precision_exceeded`, `family_not_controlled` |
-| `references.units.sales` (GDC band/coil) | `family_unit_path_mismatch` |
+| `references.units.stock`, `references.units.sales` (GDC band/coil) | `required`; `family_unit_path_mismatch` (sales only) |
 
 - `version_conflict` and `lifecycle_conflict` arrive in `Errors`; neither is thrown, and
   Product.Domain's `ProductVersionConflictException` never crosses this read path.
@@ -362,7 +362,7 @@ accepted; `GdcBandCoilFamilyRequirementPolicyV1` encodes it exactly:
 | Nominal width > 0 mm, at most 3 decimals | `references.attributes.{width field}` | same |
 | Controlled quality | `references.attributes.{quality field}` | missing/null → `required`; not an owner-listed reference → `family_not_controlled` |
 | Controlled coating status; "kaplamasız" is a valid stated status, unknown/null is not | `references.attributes.{coating field}` | missing/null → `required`; not listed → `family_not_controlled` |
-| kg→kg, no conversion: the sales unit is the stock unit | `references.units.sales` | `family_unit_path_mismatch` |
+| kg→kg, no conversion: the sales unit is the stock unit | `references.units.stock`, `references.units.sales` | a missing binding → `required` (never a silent pass); different units → `family_unit_path_mismatch` on `references.units.sales` |
 
 - Colour is meaningful only for a painted family; nothing is required of this one.
 - Every broken rule is reported together; order carries no precedence.

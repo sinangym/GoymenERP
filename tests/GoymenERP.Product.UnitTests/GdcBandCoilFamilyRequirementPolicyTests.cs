@@ -137,6 +137,39 @@ public sealed class GdcBandCoilFamilyRequirementPolicyTests
         Assert.Equal(("references.units.sales", ProductFamilyPolicyCodesV1.UnitPathMismatch), (error.Field, error.Code));
     }
 
+    [Theory]
+    [InlineData("no-units")]
+    [InlineData("no-stock")]
+    [InlineData("no-sales")]
+    [InlineData("empty-ids")]
+    public async Task The_kilogram_path_needs_both_unit_bindings_and_a_missing_one_is_not_a_pass(string fault)
+    {
+        // SİPARİŞ #300 P3-1: without a binding the kg→kg rule has nothing to compare; that is
+        // "required", never a silent pass.
+        ProductUnitReferences? units = fault switch
+        {
+            "no-units" => null,
+            "no-stock" => new(Sales: StockUnitId),
+            "no-sales" => new(Stock: StockUnitId),
+            _ => new(Stock: Guid.Empty, Sales: Guid.Empty),
+        };
+        var card = Card(ValidAttributes(), units: units, noUnits: units is null);
+
+        var errors = (await Policy().ValidateAsync(card, default)).Select(error => (error.Field, error.Code)).ToArray();
+
+        (string, string)[] expected = fault switch
+        {
+            "no-stock" => [("references.units.stock", ProductFamilyPolicyCodesV1.Required)],
+            "no-sales" => [("references.units.sales", ProductFamilyPolicyCodesV1.Required)],
+            _ =>
+            [
+                ("references.units.stock", ProductFamilyPolicyCodesV1.Required),
+                ("references.units.sales", ProductFamilyPolicyCodesV1.Required),
+            ],
+        };
+        Assert.Equal(expected, errors);
+    }
+
     [Fact]
     public async Task A_card_of_another_family_or_no_family_is_never_passed()
     {
@@ -244,7 +277,7 @@ public sealed class GdcBandCoilFamilyRequirementPolicyTests
         attributes.ToDictionary(pair => pair.Key, pair => JsonSerializer.SerializeToElement(pair.Value), StringComparer.Ordinal);
 
     private static ProductCardView Card(Dictionary<string, object?> attributes, ProductUnitReferences? units = null,
-        Guid? family = null, bool useFamily = false)
+        Guid? family = null, bool useFamily = false, bool noUnits = false)
     {
         var product = new ProductDraftView(ProductId, "PSQL-1", "Sentetik bant", Guid.Parse("f4fc7672-0b46-41ba-a017-393401ba61dd"),
             Guid.Parse("3c9d1e27-6a1b-4f0e-9d5c-2b7a8e4f6c10"), useFamily ? family : Family,
@@ -252,7 +285,7 @@ public sealed class GdcBandCoilFamilyRequirementPolicyTests
             "Active", StoredVersion, DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch,
             new(null, null, null, null), new("NotEvaluated", []));
         return new ProductCardView(product, new ProductReferences(Attributes: Json(attributes),
-            Units: units ?? new(Stock: StockUnitId, Sales: StockUnitId)));
+            Units: noUnits ? null : units ?? new(Stock: StockUnitId, Sales: StockUnitId)));
     }
 
     private static ProductStoredRecord Stored(int lifecycle, Dictionary<string, object?>? attributes = null) =>

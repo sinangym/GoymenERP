@@ -52,9 +52,20 @@ public sealed class GdcBandCoilFamilyRequirementPolicyV1(IGdcBandCoilFamilyDefin
         Controlled(attributes, definition.QualityFieldId, definition.QualityReferences, errors);
         Controlled(attributes, definition.CoatingFieldId, definition.CoatingStatusReferences, errors);
 
+        // kg→kg needs both bindings: a missing one is not a pass (SİPARİŞ #300 P3-1).
         var units = card.References.Units;
-        if (units?.Stock is Guid stock && units.Sales is Guid sales && stock != Guid.Empty && sales != Guid.Empty
-            && stock != sales)
+        var stock = units?.Stock is Guid stockId && stockId != Guid.Empty ? stockId : (Guid?)null;
+        var sales = units?.Sales is Guid salesId && salesId != Guid.Empty ? salesId : (Guid?)null;
+        if (stock is null)
+        {
+            errors.Add(new("references.units.stock", ProductFamilyPolicyCodesV1.Required));
+        }
+
+        if (sales is null)
+        {
+            errors.Add(new("references.units.sales", ProductFamilyPolicyCodesV1.Required));
+        }
+        else if (stock is not null && stock != sales)
         {
             errors.Add(new("references.units.sales", ProductFamilyPolicyCodesV1.UnitPathMismatch));
         }

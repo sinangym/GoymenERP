@@ -25,7 +25,8 @@ namespace GoymenERP.Modules.Product.Application.Contracts;
 /// band/coil (<c>GdcBandCoilFamilyRequirementPolicyV1</c>), answers on
 /// <c>references.attributes.{fieldId}</c> with <c>required</c>, <c>family_invalid_value</c>,
 /// <c>family_precision_exceeded</c> or <c>family_not_controlled</c>, and on
-/// <c>references.units.sales</c> with <c>family_unit_path_mismatch</c>
+/// <c>references.units.stock</c> / <c>references.units.sales</c> with <c>required</c> (a missing
+/// binding) or, on sales, <c>family_unit_path_mismatch</c>
 /// (<c>ProductFamilyPolicyCodesV1</c>).</item>
 /// </list>
 /// <para>Several errors may arrive together; their order carries no precedence. Conflicts
