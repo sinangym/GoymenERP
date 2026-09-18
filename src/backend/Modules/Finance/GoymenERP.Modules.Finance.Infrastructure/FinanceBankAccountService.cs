@@ -146,16 +146,22 @@ public sealed class FinanceBankAccountService(
             return Refused(context, CommandOutcome.ValidationFailed, Issue("expectedVersion", "identity_required"));
         }
 
+        // Malformed identities are refused before anything is read (never stored, so never a replay).
+        if (request.AccountId == Guid.Empty)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("accountId", "identity_required"));
+        }
+
+        if (!IsCanonical(request.ExpectedVersion))
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("expectedVersion", "identity_required"));
+        }
+
         var payloadHash = PayloadHash(ApproveCommand, request);
         if (await PriorAsync(context, metadata, FinanceAction.ApproveBankAccount, ApproveCommand, payloadHash, cancellationToken)
             is { } prior)
         {
             return prior;
-        }
-
-        if (request.AccountId == Guid.Empty || !IsCanonical(request.ExpectedVersion))
-        {
-            return Refused(context, CommandOutcome.ValidationFailed, Issue("accountId", "identity_required"));
         }
 
         var row = await dbContext.BankAccounts.SingleOrDefaultAsync(candidate => candidate.Id == request.AccountId, cancellationToken);

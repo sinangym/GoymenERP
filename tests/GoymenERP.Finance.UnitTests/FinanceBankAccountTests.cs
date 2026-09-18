@@ -143,6 +143,30 @@ public sealed class FinanceBankAccountTests
     }
 
     [Theory]
+    [InlineData("empty-account", "accountId")]
+    [InlineData("null-version", "expectedVersion")]
+    [InlineData("padded-version", "expectedVersion")]
+    [InlineData("blank-version", "expectedVersion")]
+    public async Task A_malformed_approval_names_its_own_field_before_anything_is_read(string fault, string field)
+    {
+        await using var context = Context();
+        var request = new BankAccountApproveRequest(fault == "empty-account" ? Guid.Empty : Guid.NewGuid(), fault switch
+        {
+            "null-version" => null!,
+            "padded-version" => " 1",
+            "blank-version" => " ",
+            _ => "1",
+        });
+
+        // The context's database is unreachable: a result proves nothing was read.
+        var result = await Service(context, PermissionDecision.Allowed).ApproveAsync(
+            new FinanceContext(CompanyA, Actor, "SENTETIK-correlation", null), new CommandMetadata("k-1"), request, CancellationToken.None);
+
+        Assert.Equal(CommandOutcome.ValidationFailed, result.Outcome);
+        Assert.Equal(field, Assert.Single(result.Issues).Field);
+    }
+
+    [Theory]
     [InlineData("permission-denied", ReadOutcome.Denied)]
     [InlineData("permission-unavailable", ReadOutcome.Unavailable)]
     [InlineData("other-company", ReadOutcome.Denied)]
