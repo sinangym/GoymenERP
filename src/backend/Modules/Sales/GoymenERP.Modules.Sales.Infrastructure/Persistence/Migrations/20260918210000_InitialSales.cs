@@ -7,7 +7,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations;
 
 /// <summary>
 /// Sales's first schema (SALES-P2, T03): the order-draft header, its lines and delivery slices with
-/// the owners' snapshots, the R3 attempt record and the technical number counter. All are tenant
+/// the owners' snapshots, the ADR-011 attempt record and the technical number counter. All are tenant
 /// tables; companies are Organization's, referenced by key only, so this runs after Organization's
 /// migrations. No approval, revision, shipment, invoice or receipt table exists here (T33 and the
 /// other owners' records are not this slice).
@@ -223,21 +223,23 @@ public sealed class InitialSales : Migration
             columns: table => new
             {
                 CompanyId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                IdempotencyKey = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false,
+                CommandName = table.Column<string>(type: "nvarchar(160)", maxLength: 160, nullable: false,
+                    collation: "Latin1_General_100_BIN2"),
+                IdempotencyKeyHash = table.Column<string>(type: "varchar(64)", unicode: false, maxLength: 64, nullable: false,
                     collation: "Latin1_General_100_BIN2"),
                 RequestHash = table.Column<string>(type: "varchar(64)", unicode: false, maxLength: 64, nullable: false),
+                ActorId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
                 DraftId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                 CorrelationId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
-                RecordedBy = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
                 RecordedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
             },
             constraints: table =>
             {
-                table.PrimaryKey("PK_DraftAttempts", x => new { x.CompanyId, x.IdempotencyKey });
+                table.PrimaryKey("PK_DraftAttempts", x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
                 table.CheckConstraint("CK_DraftAttempts_Identity",
-                    "[CompanyId] <> " + NotEmptyGuid + " AND LEN([IdempotencyKey]) > 0 "
-                    + "AND [DraftId] <> " + NotEmptyGuid + " AND LEN([CorrelationId]) > 0 AND LEN([RecordedBy]) > 0");
-                table.CheckConstraint("CK_DraftAttempts_RequestHash", "LEN([RequestHash]) = 64");
+                    "[CompanyId] <> " + NotEmptyGuid + " AND LEN([CommandName]) > 0 "
+                    + "AND [DraftId] <> " + NotEmptyGuid + " AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+                table.CheckConstraint("CK_DraftAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
                 table.ForeignKey(
                     name: "FK_DraftAttempts_Companies_CompanyId",
                     column: x => x.CompanyId,

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
@@ -19,11 +20,14 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 /// <item><b>Company:</b> a draft of any other company than the resolved context is refused before
 /// anything is read (<see cref="SalesDraftStoreCodes.CompanyContextMismatch"/>); every read runs
 /// under the tenant filter, so another company's draft is null, never 403.</item>
-/// <item><b>Replay (R3):</b> (company, idempotency key) is the attempt identity. The same key with
-/// the same canonical request hash answers the first stored draft; another hash is refused
-/// (<see cref="SalesDraftStoreCodes.SameKeyPayloadMismatch"/>); a key of another company is
-/// invisible. The key must be canonical text (no surrounding whitespace), because SQL Server's
-/// equality ignores trailing spaces even under a binary collation (the ACC-3 lesson).</item>
+/// <item><b>Replay (ADR-011 §2–§4, R3):</b> (company, <see cref="SalesDraftCommands.CreateV1"/>,
+/// uppercase SHA-256 of the trimmed idempotency key) is the attempt identity; the raw key is never
+/// stored. The same key with the same canonical request hash and the same actor answers the first
+/// stored draft; another hash is <see cref="SalesDraftStoreCodes.SameKeyPayloadMismatch"/>, another
+/// actor <see cref="SalesDraftStoreCodes.SameKeyActorMismatch"/> — definite refusals that disclose
+/// nothing of the stored result; a key of another company is invisible. Authority is the caller's
+/// check before the replay is read (§5). The key must still be canonical text (no surrounding
+/// whitespace) so that the hash the caller reasons about is the hash stored.</item>
 /// <item><b>Number:</b> the company's counter row gives the technical document number under a
 /// concurrency token; the number is display text, not an official document (Ö8), and no gap-free
 /// guarantee is made — a lost race leaves its number unused.</item>
@@ -58,10 +62,20 @@ public sealed class SalesStore(
         RequireHash(requestHash);
         var companyId = RequireResolvedCompany();
 
+        var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
+        var actorId = envelope.ActorId.Trim();
         var attempt = await dbContext.DraftAttempts.AsNoTracking()
-            .SingleOrDefaultAsync(row => row.IdempotencyKey == envelope.IdempotencyKey, cancellationToken);
+            .SingleOrDefaultAsync(row => row.CommandName == SalesDraftCommands.CreateV1 && row.IdempotencyKeyHash == keyHash,
+                cancellationToken);
         if (attempt is not null)
         {
+            // ADR-011 §3: the stored result is disclosed to the same content of the same actor only.
+            if (!string.Equals(attempt.ActorId, actorId, StringComparison.Ordinal))
+            {
+                throw Refused(SalesDraftStoreCodes.SameKeyActorMismatch,
+                    "Aynı Idempotency-Key başka bir aktör tarafından kullanıldı; ilk cevap açıklanmaz.");
+            }
+
             if (!string.Equals(attempt.RequestHash, requestHash, StringComparison.Ordinal))
             {
                 throw Refused(SalesDraftStoreCodes.SameKeyPayloadMismatch,
@@ -101,11 +115,12 @@ public sealed class SalesStore(
         dbContext.DraftAttempts.Add(new DraftAttemptRow
         {
             CompanyId = companyId,
-            IdempotencyKey = envelope.IdempotencyKey,
+            CommandName = SalesDraftCommands.CreateV1,
+            IdempotencyKeyHash = keyHash,
             RequestHash = requestHash,
+            ActorId = actorId,
             DraftId = draft.Id,
             CorrelationId = envelope.CorrelationId.Trim(),
-            RecordedBy = envelope.ActorId.Trim(),
             RecordedAtUtc = now,
         });
         Audit(envelope, companyId, draft, now);
@@ -397,8 +412,8 @@ public sealed class SalesStore(
             throw new ArgumentException("Taslak yazması aktör, izin, correlation, idempotency ve kanal bilgisi ister.", nameof(envelope));
         }
 
-        // The key is the attempt identity: canonical text only, because SQL Server's equality ignores
-        // trailing spaces even under a binary collation and "k-1 " must never replay "k-1".
+        // The key is hashed (ADR-011), but only canonical text is accepted: the hash the caller reasons
+        // about must be the hash stored, and "k-1 " must never silently become "k-1".
         if (string.IsNullOrWhiteSpace(envelope.IdempotencyKey)
             || !string.Equals(envelope.IdempotencyKey, envelope.IdempotencyKey.Trim(), StringComparison.Ordinal))
         {
@@ -420,6 +435,10 @@ public sealed class SalesStore(
             throw new ArgumentException("İstek hash'i 64 karakterlik küçük harfli sha256 olmalıdır.", nameof(requestHash));
         }
     }
+
+    /// <summary>ADR-011 §2: the uppercase SHA-256 hex of the trimmed key; the raw key is never stored.</summary>
+    internal static string IdempotencyKeyHash(string key) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key.Trim())));
 
     /// <summary>Technical, company-scoped display text; the counter, not the text, is the identity. Not an official document number (Ö8).</summary>
     internal static string DocumentNo(DateTimeOffset now, long number) =>

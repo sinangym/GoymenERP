@@ -80,6 +80,11 @@ public sealed class SalesDraftSqlServerRelationalAcceptanceTests
         // migration history): no approval, revision, shipment, invoice or receipt table.
         Assert.Equal("DraftAttempts,DraftDeliverySlices,DraftLines,DraftNumbers,Drafts,__EFMigrationsHistory", await run.ScalarAsync<string>(
             "SELECT STRING_AGG(name, ',') WITHIN GROUP (ORDER BY name COLLATE Latin1_General_BIN2) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'sales')"));
+        // ADR-011 §2: the raw key is not a column; the attempt row holds the command name, the key hash and the actor.
+        Assert.Equal("ActorId,CommandName,CorrelationId,DraftId,IdempotencyKeyHash,RecordedAtUtc,RequestHash", await run.ScalarAsync<string>(
+            "SELECT STRING_AGG(name, ',') WITHIN GROUP (ORDER BY name COLLATE Latin1_General_BIN2) FROM sys.columns WHERE object_id = OBJECT_ID(N'sales.DraftAttempts') AND name <> N'CompanyId'"));
+        Assert.Equal(SalesStore.IdempotencyKeyHash("k-1"), await run.ScalarAsync<string>(
+            "SELECT IdempotencyKeyHash FROM sales.DraftAttempts WHERE DraftId = @id", ("@id", first.Draft.Id)));
     }
 
     [SqlServerFact]
@@ -94,6 +99,15 @@ public sealed class SalesDraftSqlServerRelationalAcceptanceTests
             var mismatch = await Assert.ThrowsAsync<SalesDraftStoreException>(() => a.Store.StoreDraftAsync(run.Envelope("k-1"), Hash("payload-9"),
                 _ => throw new InvalidOperationException("a mismatch never builds")));
             Assert.Equal(SalesDraftStoreCodes.SameKeyPayloadMismatch, mismatch.Code);
+        }
+
+        await using (var a = run.Store(CompanyA))
+        {
+            // Same key, same content, ANOTHER actor: a definite refusal that discloses nothing of the
+            // stored draft (ADR-011 §3); nothing is written for the second actor.
+            var otherActor = await Assert.ThrowsAsync<SalesDraftStoreException>(() => a.Store.StoreDraftAsync(
+                run.Envelope("k-1", actor: "SENTETIK-other-actor"), Hash("payload-1"), _ => throw new InvalidOperationException("never built")));
+            Assert.Equal(SalesDraftStoreCodes.SameKeyActorMismatch, otherActor.Code);
         }
 
         // Two writers with the same new key both pass the attempt lookup and the counter read, then
@@ -127,6 +141,7 @@ public sealed class SalesDraftSqlServerRelationalAcceptanceTests
 
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Drafts"));
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE ActorId = N'SENTETIK-other-actor'"));
         Assert.Equal(3L, await run.ScalarAsync<long>("SELECT [Next] FROM sales.DraftNumbers"));
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Sales.OrderDraft'"));
     }
@@ -159,8 +174,10 @@ public sealed class SalesDraftSqlServerRelationalAcceptanceTests
 
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Drafts WHERE CompanyId = @c", ("@c", CompanyA)));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Drafts WHERE CompanyId = @c", ("@c", CompanyB)));
-        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE IdempotencyKey = N'shared-key'"));
-        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE IdempotencyKey = N'k-x'"));
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE IdempotencyKeyHash = @h",
+            ("@h", SalesStore.IdempotencyKeyHash("shared-key"))));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE IdempotencyKeyHash = @h",
+            ("@h", SalesStore.IdempotencyKeyHash("k-x"))));
     }
 
     [SqlServerFact]
@@ -333,8 +350,8 @@ public sealed class SalesDraftSqlServerRelationalAcceptanceTests
             return run;
         }
 
-        public SalesDraftWriteEnvelope Envelope(string key, string? correlation = null) =>
-            new(Actor, "SENTETIK-sales-permission", ["SENTETIK-SALES"], correlation ?? Correlation, null, key, "Web", "127.0.0.1", "SENTETIK-agent");
+        public SalesDraftWriteEnvelope Envelope(string key, string? correlation = null, string? actor = null) =>
+            new(actor ?? Actor, "SENTETIK-sales-permission", ["SENTETIK-SALES"], correlation ?? Correlation, null, key, "Web", "127.0.0.1", "SENTETIK-agent");
 
         public StoreScope Store(Guid company, IInterceptor? extra = null)
         {

@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
@@ -50,10 +52,15 @@ public sealed class SalesPersistenceModelTests
     {
         using var context = Context();
         var attempts = context.Model.FindEntityType(typeof(DraftAttemptRow))!;
-        Assert.Equal(["CompanyId", "IdempotencyKey"], attempts.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        // ADR-011 §2: (company, command name, key hash); no raw key column exists.
+        Assert.Equal(["CompanyId", "CommandName", "IdempotencyKeyHash"], attempts.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Null(attempts.FindProperty("IdempotencyKey"));
         var design = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(DraftAttemptRow))!;
-        Assert.Equal(SalesDbContext.IdentityCollation, design.FindProperty(nameof(DraftAttemptRow.IdempotencyKey))!.GetCollation());
-        Assert.Equal(200, attempts.FindProperty(nameof(DraftAttemptRow.IdempotencyKey))!.GetMaxLength());
+        Assert.Equal(SalesDbContext.IdentityCollation, design.FindProperty(nameof(DraftAttemptRow.CommandName))!.GetCollation());
+        Assert.Equal(SalesDbContext.IdentityCollation, design.FindProperty(nameof(DraftAttemptRow.IdempotencyKeyHash))!.GetCollation());
+        Assert.Equal((160, 64, 128), (attempts.FindProperty(nameof(DraftAttemptRow.CommandName))!.GetMaxLength(),
+            attempts.FindProperty(nameof(DraftAttemptRow.IdempotencyKeyHash))!.GetMaxLength(),
+            attempts.FindProperty(nameof(DraftAttemptRow.ActorId))!.GetMaxLength()));
         Assert.Equal((64, false), (attempts.FindProperty(nameof(DraftAttemptRow.RequestHash))!.GetMaxLength(),
             attempts.FindProperty(nameof(DraftAttemptRow.RequestHash))!.IsUnicode()));
         Assert.True(UniqueIndex(attempts, "UX_DraftAttempts_DraftId"));
@@ -173,6 +180,19 @@ public sealed class SalesPersistenceModelTests
     }
 
     [Fact]
+    public void The_idempotency_key_is_stored_as_the_uppercase_sha256_of_its_trimmed_text()
+    {
+        // ADR-011 §2: no raw key; trimmed, then SHA-256, uppercase hex. Case in the key itself still counts.
+        var expected = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("k-1")));
+        Assert.Equal(expected, SalesStore.IdempotencyKeyHash("k-1"));
+        Assert.Equal(64, expected.Length);
+        Assert.Equal(expected, expected.ToUpperInvariant());
+        Assert.Equal(expected, SalesStore.IdempotencyKeyHash(" k-1 "));
+        Assert.NotEqual(expected, SalesStore.IdempotencyKeyHash("K-1"));
+        Assert.Equal("sales.order-draft.create.v1", SalesDraftCommands.CreateV1);
+    }
+
+    [Fact]
     public void The_document_number_is_technical_company_text_from_the_counter_and_the_utc_year()
     {
         Assert.Equal("SO-2026-000007", SalesStore.DocumentNo(new DateTimeOffset(2026, 12, 31, 23, 30, 0, TimeSpan.FromHours(3)), 7));
@@ -244,8 +264,9 @@ public sealed class SalesPersistenceModelTests
 
     private static DraftAttemptRow Attempt() => new()
     {
-        CompanyId = CompanyA, IdempotencyKey = "k-1", RequestHash = new string('0', 64), DraftId = Guid.NewGuid(),
-        CorrelationId = "synthetic-correlation", RecordedBy = "synthetic-actor", RecordedAtUtc = At,
+        CompanyId = CompanyA, CommandName = SalesDraftCommands.CreateV1, IdempotencyKeyHash = new string('A', 64),
+        RequestHash = new string('0', 64), ActorId = "synthetic-actor", DraftId = Guid.NewGuid(),
+        CorrelationId = "synthetic-correlation", RecordedAtUtc = At,
     };
 
     /// <summary>A context of company A, or of no resolved company at all.</summary>

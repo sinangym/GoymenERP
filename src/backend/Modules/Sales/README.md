@@ -33,7 +33,7 @@ There is still no HTTP, host wiring, permission or UI change in the backend: the
 ### Application store contracts (`ISalesOrderDraftStore`, SALES-P1; implemented by SALES-P2)
 
 - `SalesDraftWriteEnvelope` — the ADR-009 audit envelope (actor, permission, roles, correlation, causation, idempotency key, channel), the Inventory/Accounting shape; every value from the server-side context of the HTTP slice.
-- `StoreDraftAsync(envelope, requestHash, build)` — one save: header, lines, snapshots, slices, the attempt record and the audit event together. **Replay (R3):** (company, idempotency key) is the attempt identity; the same key with the same `SalesDraftRequestHash` answers the first stored draft (`Replayed`, original correlation); another hash is `sales_same_key_payload_mismatch`; a key of another company is invisible — a company change is not a rollback. `FindDraftAsync` and `ListDraftsAsync` (newest first, opaque company-bound cursor, #257) are company-scoped; another company's draft is null, never 403.
+- `StoreDraftAsync(envelope, requestHash, build)` — one save: header, lines, snapshots, slices, the attempt record and the audit event together. **Replay (ADR-011, R3):** (company, `SalesDraftCommands.CreateV1`, uppercase SHA-256 of the trimmed idempotency key) is the attempt identity — the raw key is never stored; the same key with the same `SalesDraftRequestHash` **and the same actor** answers the first stored draft (`Replayed`, original correlation); another hash is `sales_same_key_payload_mismatch`, another actor `sales_same_key_actor_mismatch` (definite 409s that disclose nothing of the stored result); a key of another company is invisible — a company change is not a rollback. Authority is checked by the caller before the replay is read. `FindDraftAsync` and `ListDraftsAsync` (newest first, opaque company-bound cursor, #257) are company-scoped; another company's draft is null, never 403.
 - `SalesDraftRequestHash` — the canonical content of a create (the strict wire shape serialised and hashed); line order matters because the client keeps it across retries, and the quantity **text** is content: "5.00" and "5" are different attempts, so the second under the same key is a payload mismatch (409), never a replay (tested).
 
 ## Persistence (`GoymenERP.Modules.Sales.Infrastructure`, SALES-P2)
@@ -50,13 +50,18 @@ Audit's table, written through `IAuditEventCollector` in the same save (ADR-009)
 | `Drafts` | `Id`; alternate `(CompanyId, Id)`; `UX_Drafts_DocumentNo` | header, owner references (id + expected version, paired by check), money profile snapshot, `Version` token + `rowversion`, creator and correlation |
 | `DraftLines` | `(CompanyId, DraftId, LineNo)`; `UX_DraftLines_LineId` | Product snapshot, the three unit bindings, the order unit's Settings profile (scale = min(profile, 3)), `Quantity decimal(18,3)` + the client's `QuantityText`, commercial text |
 | `DraftDeliverySlices` | `(CompanyId, DraftId, LineNo, SliceNo)`; `UX_DraftDeliverySlices_SliceId` | the requested delivery plan |
-| `DraftAttempts` | `(CompanyId, IdempotencyKey)` under `Latin1_General_100_BIN2`; `UX_DraftAttempts_DraftId` | the R3 attempt record: canonical request hash (`varchar(64)`), draft, correlation, actor |
+| `DraftAttempts` | `(CompanyId, CommandName, IdempotencyKeyHash)` under `Latin1_General_100_BIN2`; `UX_DraftAttempts_DraftId` | the ADR-011 attempt record: no raw key — uppercase SHA-256 of the trimmed key (`varchar(64)`), canonical request hash (`varchar(64)`), actor (compared on replay), draft, correlation |
 
-- **Replay (R3):** the attempt is read first; the same key with the same hash answers the stored
-  draft (`Replayed`, original correlation), another hash is `sales_same_key_payload_mismatch`, a key
-  of another company is invisible. The key must be canonical text: SQL Server's equality ignores
-  trailing spaces even under the binary collation, so `"k-1 "` is refused (ArgumentException) rather
-  than replaying `"k-1"` (the ACC-3 lesson). `"K-1"` is another attempt.
+- **Replay (ADR-011 §2–§5, R3):** the attempt is read first, by (company, command name, key hash).
+  The same key with the same hash **and the same actor** answers the stored draft (`Replayed`,
+  original correlation); another actor is `sales_same_key_actor_mismatch`, another hash
+  `sales_same_key_payload_mismatch` — both definite refusals that disclose nothing of the stored
+  result; a key of another company is invisible. The raw key is never stored: the store hashes the
+  trimmed key (uppercase SHA-256) and still refuses a key with surrounding whitespace
+  (ArgumentException), so the hash the caller reasons about is the hash stored. `"K-1"` hashes
+  differently from `"k-1"` and is another attempt. Authority and the company context are the
+  caller's checks before the replay is read (§5); the replay headers (`Idempotency-Replayed`,
+  `Idempotency-Original-Correlation-Id`) are the HTTP slice's.
 - **Number:** the company's counter row gives `SO-<UTC year>-<n:D6>` under its concurrency token.
   Technical display text, not an official document (Ö8); no gap-free guarantee — a lost race leaves
   its number unused.
@@ -90,7 +95,7 @@ Audit's table, written through `IAuditEventCollector` in the same save (ADR-009)
 
 - **SALES-P2 central registrations (CARİ, single writer of central files):** solution entry, `Api.IntegrationTests` project reference, module dependency allowlist (Sales.Infrastructure → Audit.Infrastructure), tenant-bypass guard pins (`SalesDbContext`, `SalesStore` SqlClient 1, `SalesModuleExtensions` provider branch, design-time factory), RCSI verifier names (+6). Until they land, the guard inventory and the integration-test build are red by design.
 - **Host registration of `AddSalesModule` / `InitializeSalesModuleAsync`:** the API slice (next), with the permission names and the endpoints.
-- **SALES-P2 (this slice):** `Sales.Infrastructure` — `sales` schema (drafts, lines, slices, attempts, counter), (CompanyId, IdempotencyKey) attempt key + canonical hash, rowversion, audit envelope, six real-SQL cases; CARİ's central registrations (tenant guard inventory, allowlist `Sales.Infrastructure → Audit.Infrastructure`, integration csproj, verifier counts).
+- **SALES-P2 (this slice):** `Sales.Infrastructure` — `sales` schema (drafts, lines, slices, attempts, counter), (CompanyId, CommandName, IdempotencyKeyHash) attempt key (ADR-011) + canonical hash + actor comparison, rowversion, audit envelope, six real-SQL cases; CARİ's central registrations (tenant guard inventory, allowlist `Sales.Infrastructure → Audit.Infrastructure`, integration csproj, verifier counts).
 - **Settings money profile** (T02-b, CARİ: the approved GDC/TRY money profile): the real positive create. The Sales money operation identifier is **not** waited for: it is the Sales owner's technical mapping (Business #254 5654539215) — `SalesMoneyOperations.OrderDraftV1` = `sales.order-draft.v1`, the Finance pattern — carried on `MoneyProfileSnapshot.Operation` and required by the domain (`sales_snapshot_operation_mismatch`). The key chooses no rate, scale or date. The only thing a real draft waits for on the money side is the Settings provider's approved profile.
 - **C3:** Product eligibility host registration and the GDC family definition data; a human grant.
 - **Cari:** the account belongs to the Party and is active in this company (#262 read, at command time).

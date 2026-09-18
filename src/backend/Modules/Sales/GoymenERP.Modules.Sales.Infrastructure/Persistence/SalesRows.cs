@@ -135,16 +135,19 @@ internal sealed class DraftDeliverySliceRow : ISalesTenantRow
 }
 
 /// <summary>
-/// The R3 attempt record: (company, idempotency key) is the attempt identity, the canonical request
-/// hash its content. Written with the draft in the same save; a replay reads it first. Append-only.
+/// The ADR-011 attempt record: (company, command name, uppercase SHA-256 of the trimmed idempotency
+/// key) is the attempt identity — the raw key is never stored; the canonical request hash is its
+/// content, and the actor is stored to be compared, never only kept. Written with the draft in the
+/// same save; a replay reads it first. Append-only.
 /// </summary>
 internal sealed class DraftAttemptRow : ISalesTenantRow
 {
     public Guid CompanyId { get; set; }
-    public string IdempotencyKey { get; set; } = string.Empty;
+    public string CommandName { get; set; } = string.Empty;
+    public string IdempotencyKeyHash { get; set; } = string.Empty;
     public string RequestHash { get; set; } = string.Empty;
+    public string ActorId { get; set; } = string.Empty;
     public Guid DraftId { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
-    public string RecordedBy { get; set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; set; }
 }

@@ -13,9 +13,10 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 /// <item>Every row is a tenant row of the company that owns the draft: a global query filter on the
 /// server-resolved company, and a write guard that refuses any row of another company, any company
 /// change and any write without a resolved company.</item>
-/// <item>R3 identities: the attempt key (company, idempotency key) is a primary key under a binary
-/// collation, so the same key of another company is another attempt and a spelling is one spelling;
-/// the document number is unique per company; a client line / slice id is unique per draft.</item>
+/// <item>ADR-011 / R3 identities: the attempt key (company, command name, uppercase SHA-256 of the
+/// trimmed idempotency key) is a primary key under a binary collation — the raw key is never stored,
+/// the same key of another company or another command is another attempt; the document number is
+/// unique per company; a client line / slice id is unique per draft.</item>
 /// <item>A draft, its lines, its slices and its attempt record are append-only in this slice; only
 /// the draft's version may move (approval / revision are T33). The number counter changes its
 /// counter only. Nothing is deleted.</item>
@@ -209,15 +210,16 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         entity.ToTable("DraftAttempts", Schema, table =>
         {
             table.HasCheckConstraint("CK_DraftAttempts_Identity",
-                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([IdempotencyKey]) > 0 "
-                + "AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CorrelationId]) > 0 AND LEN([RecordedBy]) > 0");
-            table.HasCheckConstraint("CK_DraftAttempts_RequestHash", "LEN([RequestHash]) = 64");
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 "
+                + "AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+            table.HasCheckConstraint("CK_DraftAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
         });
-        entity.HasKey(x => new { x.CompanyId, x.IdempotencyKey });
-        entity.Property(x => x.IdempotencyKey).HasMaxLength(200).UseCollation(IdentityCollation).IsRequired();
+        entity.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        entity.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
         entity.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        entity.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
-        entity.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
         entity.HasIndex(x => new { x.CompanyId, x.DraftId }).IsUnique().HasDatabaseName("UX_DraftAttempts_DraftId");
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
