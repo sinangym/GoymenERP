@@ -17,7 +17,10 @@ import { useQuery } from '@tanstack/react-query'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString } from '../shell/shellState'
 import type { RemoteViewState } from '../shell/uiState'
+import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { decodeReadResult, type Decoded } from './contract'
+import { decodeDraftContext, type DraftContext, type DraftContextRequest } from './draftContext'
+import type { HttpReadReply } from './http'
 import type { FinanceReceiptPort, FinanceScope, PortReply } from './port'
 import {
   IDLE,
@@ -125,6 +128,95 @@ export function useFinanceRead<T>(
               ? { kind: 'malformed-response' }
               : { kind: 'network-error' }
   return { state, refetch, isFetching: query.isFetching }
+}
+
+// ---------------------------------------------------------------------------------
+// Draft read context (published HTTP read)
+// ---------------------------------------------------------------------------------
+
+export type DraftContextState =
+  /** Bank account and a valid date are not both chosen yet: nothing is requested. */
+  | { readonly kind: 'needs-selection' }
+  | { readonly kind: 'loading' }
+  | { readonly kind: 'ready'; readonly context: DraftContext }
+  | { readonly kind: 'invalid-request' }
+  | { readonly kind: 'forbidden' }
+  | { readonly kind: 'not-found' }
+  | { readonly kind: 'unavailable' }
+  | { readonly kind: 'unauthenticated' }
+  | { readonly kind: 'malformed' }
+  | { readonly kind: 'network-error' }
+
+export interface DraftContextRead {
+  readonly state: DraftContextState
+  readonly refetch: () => void
+}
+
+type ContextTag =
+  | { readonly type: 'ready'; readonly context: DraftContext }
+  | { readonly type: 'status'; readonly status: number }
+  | { readonly type: 'malformed' }
+  | { readonly type: 'no-reply' }
+
+/**
+ * The effective profile/currency/Cari label for exactly (company, bank, party, account, date).
+ *
+ * All five are in the query key, so a context read for another date or account can never be
+ * the one a save uses — changing the date is a new key with no data until its own answer
+ * arrives. A 401/403 is reported to the shared auth boundary from the query itself, like every
+ * other business read.
+ */
+export function useDraftContext(request: DraftContextRequest | null): DraftContextRead {
+  const port = useContext(FinancePortContext)
+  const bound = useFinanceBinding()
+  const boundary = useAuthBoundary()
+  const companyId = bound?.binding.companyId ?? null
+  const query = useQuery({
+    queryKey: [
+      bound?.namespace ?? 'unbound',
+      'finance',
+      'draft-context',
+      request?.treasuryAccountId ?? '',
+      request?.partyId ?? '',
+      request?.companyAccountId ?? '',
+      request?.occurredOn ?? '',
+    ],
+    enabled: port !== null && bound !== null && request !== null,
+    queryFn: async ({ signal }): Promise<ContextTag> => {
+      if (port === null || companyId === null || request === null) return { type: 'no-reply' }
+      const snapshot = boundary.capture()
+      let reply: HttpReadReply
+      try {
+        reply = await port.draftContext({ companyId }, request, signal)
+      } catch {
+        return { type: 'no-reply' }
+      }
+      if (reply.kind === 'no-reply') return { type: 'no-reply' }
+      if (reply.kind === 'status') {
+        boundary.report(reply.status, snapshot)
+        return { type: 'status', status: reply.status }
+      }
+      const decoded = decodeDraftContext(reply.body, companyId, request)
+      return decoded.ok ? { type: 'ready', context: decoded.value } : { type: 'malformed' }
+    },
+  })
+
+  const refetch = useCallback(() => void query.refetch(), [query])
+  if (request === null) return { state: { kind: 'needs-selection' }, refetch }
+  if (port === null) return { state: { kind: 'unavailable' }, refetch }
+  const tag = query.data
+  if (bound === null || tag === undefined || query.isFetching) return { state: { kind: 'loading' }, refetch }
+  if (tag.type === 'ready') return { state: { kind: 'ready', context: tag.context }, refetch }
+  if (tag.type === 'malformed') return { state: { kind: 'malformed' }, refetch }
+  if (tag.type === 'no-reply') return { state: { kind: 'network-error' }, refetch }
+  const byStatus: Readonly<Record<number, DraftContextState>> = {
+    400: { kind: 'invalid-request' },
+    401: { kind: 'unauthenticated' },
+    403: { kind: 'forbidden' },
+    404: { kind: 'not-found' },
+    503: { kind: 'unavailable' },
+  }
+  return { state: byStatus[tag.status] ?? { kind: 'unavailable' }, refetch }
 }
 
 // ---------------------------------------------------------------------------------

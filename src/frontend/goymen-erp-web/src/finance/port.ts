@@ -17,6 +17,8 @@
  */
 
 import type { DraftSaveRequest, RecordRequest, ReverseRequest } from './contract'
+import type { DraftContextRequest } from './draftContext'
+import type { HttpReadReply } from './http'
 
 export type PortReply = { readonly kind: 'body'; readonly body: unknown } | { readonly kind: 'no-reply' }
 
@@ -29,6 +31,11 @@ export interface FinanceReceiptPort {
   listBankAccounts(scope: FinanceScope, signal: AbortSignal): Promise<PortReply>
   /** `ListAuthorizedAsync(SourceListRequest)` → `ReadResult<SourcePage>`. */
   listSources(scope: FinanceScope, request: { readonly cursor: string | null }, signal: AbortSignal): Promise<PortReply>
+  /**
+   * PUBLISHED (#261): `GET /finance/manual-receipts/draft-context`. Outcome is the HTTP status,
+   * not a body envelope — `http.ts#fetchDraftContext` is the production implementation.
+   */
+  draftContext(scope: FinanceScope, request: DraftContextRequest, signal: AbortSignal): Promise<HttpReadReply>
   /** `DetailAuthorizedAsync(SourceDetailRequest)` → `ReadResult<SourceDetail>`. */
   sourceDetail(scope: FinanceScope, request: { readonly sourceId: string }, signal: AbortSignal): Promise<PortReply>
   /** → `CommandResult`. A `Succeeded` Draft is draft persistence only, never money. */
