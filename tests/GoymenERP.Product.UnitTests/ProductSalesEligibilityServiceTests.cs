@@ -73,15 +73,11 @@ public sealed class ProductSalesEligibilityServiceTests
     public async Task An_answer_that_stops_granting_refuses_the_result_in_hand()
     {
         /*
-         * What this pins: the SERVICE asks again after the read and refuses the result it
-         * already holds when the answer it gets back is "no".
-         *
-         * What it does NOT pin: that a revocation is seen inside one request. The platform's
-         * ErpAuthorizationService is request-scoped and caches per (actor, company,
-         * permission), so a grant revoked mid-request keeps answering "yes" until the next
-         * request. This double answers each question freshly on purpose, which is what makes
-         * the service's own re-ask observable at all. Company and actor ARE live (the scope
-         * comparison reads them again); the permission is the request's view.
+         * What this pins: the SERVICE measures the permission again after the read and
+         * refuses the result it already holds when the answer is "no". The double answers
+         * each revalidation from its current state, as the central port does (#276): it
+         * re-reads the stored authority. That the real port does so against a real database
+         * is pinned by the Api SQL acceptance test for this service, not here.
          */
         var world = new World();
         world.Records.During = () => world.Authorization.Granted = false;
@@ -94,6 +90,57 @@ public sealed class ProductSalesEligibilityServiceTests
         Assert.Equal(1, world.Records.Reads);
         Assert.Equal(0, world.Family.Calls);
         Assert.Equal(0, world.Settings.Calls);
+    }
+
+    [Fact]
+    public async Task A_revocation_during_the_request_is_seen_at_the_next_fence_not_on_the_next_request()
+    {
+        // The measured #265 limit (5719822744): with the cached port a grant revoked while the
+        // request is in flight kept answering "yes". The service now measures at every fence
+        // through the revalidation port, so the record it already read is not released.
+        var world = new World();
+        var authority = new RequestScopedAuthority();
+        // Another request revokes the grant while this one is reading the record. The cached
+        // view, had it been asked, would still say yes (see the double).
+        world.Records.During = () =>
+        {
+            authority.Stored = false;
+            Assert.True(authority.CachedAnswer);
+        };
+
+        var error = await Assert.ThrowsAsync<ProductOperationException>(
+            () => world.Service(authority: authority).EvaluateAsync(Selection, default));
+
+        Assert.Equal((403, ProductSalesEligibilityService.AccessDeniedCode), (error.StatusCode, error.Code));
+        Assert.Equal(1, world.Records.Reads);
+        Assert.Equal(0, world.Family.Calls);
+        Assert.Equal(0, world.Settings.Calls);
+        // Once before the read, once at the fence after it.
+        Assert.Equal(2, authority.Revalidations);
+        // The request's view moved with the measurement: the revoked grant cannot come back.
+        Assert.False(await authority.HasPermissionAsync(ProductPermissionManifestV1.OperationalSelectionRead, CompanyId));
+    }
+
+    [Fact]
+    public async Task A_grant_scope_is_used_as_the_platform_uses_it()
+    {
+        // IsGranted decides, as HasPermissionAsync does on the cached path; this service adds no
+        // scope semantics (company-wide or not is the central registration's business, #277).
+        var world = new World();
+        var result = await world.Service(authority: new FixedScope(GrantedScope(companyWide: false))).EvaluateAsync(Selection, default);
+        Assert.NotNull(result.Snapshot);
+
+        var denied = new World();
+        var error = await Assert.ThrowsAsync<ProductOperationException>(
+            () => denied.Service(authority: new FixedScope(PermissionScope.Denied)).EvaluateAsync(Selection, default));
+        Assert.Equal((403, ProductSalesEligibilityService.AccessDeniedCode), (error.StatusCode, error.Code));
+        Assert.Equal(0, denied.Records.Reads);
+    }
+
+    private sealed class FixedScope(PermissionScope scope) : IErpAuthorityRevalidationService
+    {
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
+            CancellationToken cancellationToken = default) => Task.FromResult(scope);
     }
 
     [Fact]
@@ -486,8 +533,9 @@ public sealed class ProductSalesEligibilityServiceTests
             Settings = new Settings(Company);
         }
 
-        public ProductSalesEligibilityService Service(IProductFamilyRequirementPolicyV1? policy = null) =>
-            new(Company, User, Authorization, Records, policy ?? Family,
+        public ProductSalesEligibilityService Service(IProductFamilyRequirementPolicyV1? policy = null,
+            IErpAuthorityRevalidationService? authority = null) =>
+            new(Company, User, authority ?? Authorization, Records, policy ?? Family,
                 new ProductUnitProfileAdapter(Settings, Company));
 
         public void Change(string change)
@@ -522,11 +570,10 @@ public sealed class ProductSalesEligibilityServiceTests
     }
 
     /// <summary>
-    /// The platform authorization service. It records every question, because the real
-    /// implementation caches per request and a single early "yes" would look the same as a
-    /// check that is asked again on every read.
+    /// The central fresh-authority port (#276). It records every question, because a single
+    /// early "yes" would look the same as a measurement taken again at every fence.
     /// </summary>
-    internal sealed class Authorization : IErpAuthorizationService
+    internal sealed class Authorization : IErpAuthorityRevalidationService
     {
         public bool Granted { get; set; } = true;
         /// <summary>Companies the narrow permission was asked for, in order.</summary>
@@ -536,13 +583,47 @@ public sealed class ProductSalesEligibilityServiceTests
         public List<CancellationToken> AskedWith { get; } = [];
         public int Calls => AskedFor.Count;
 
-        public Task<bool> HasPermissionAsync(string permission, Guid companyId,
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
             CancellationToken cancellationToken = default)
         {
             AskedPermissions.Add(permission);
             AskedFor.Add(companyId);
             AskedWith.Add(cancellationToken);
-            return Task.FromResult(Granted && companyId == ProductSalesEligibilityServiceTests.CompanyId);
+            return Task.FromResult(Granted && companyId == ProductSalesEligibilityServiceTests.CompanyId
+                ? GrantedScope(companyWide: true)
+                : PermissionScope.Denied);
+        }
+    }
+
+    internal static PermissionScope GrantedScope(bool companyWide) => new(true, companyWide,
+        new HashSet<string>(StringComparer.Ordinal) { "synthetic-selection-role" }, new HashSet<Guid>(),
+        new HashSet<Guid>(), new HashSet<Guid>());
+
+    /// <summary>
+    /// A stand-in with the platform's two-port shape (#276): the cached question answers from
+    /// the first read of the request, the revalidation re-reads the current state and replaces
+    /// the cached answer. Used to show which of the two the service relies on.
+    /// </summary>
+    internal sealed class RequestScopedAuthority : IErpAuthorizationService, IErpAuthorityRevalidationService
+    {
+        private bool? cached;
+        public bool Stored { get; set; } = true;
+        /// <summary>What the cached question would answer right now (null before the first read).</summary>
+        public bool? CachedAnswer => cached;
+        public int Revalidations { get; private set; }
+
+        public Task<bool> HasPermissionAsync(string permission, Guid companyId, CancellationToken cancellationToken = default)
+        {
+            cached ??= Stored;
+            return Task.FromResult(cached.Value);
+        }
+
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
+            CancellationToken cancellationToken = default)
+        {
+            Revalidations++;
+            cached = Stored;
+            return Task.FromResult(Stored ? GrantedScope(companyWide: true) : PermissionScope.Denied);
         }
 
         public Task<AuthorizationSnapshot> GetAuthorizationSnapshotAsync(Guid companyId,

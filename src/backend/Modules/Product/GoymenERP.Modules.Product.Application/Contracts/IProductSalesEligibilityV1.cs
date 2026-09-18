@@ -33,9 +33,9 @@ namespace GoymenERP.Modules.Product.Application.Contracts;
 /// the caller lacks the narrow operational product-selection permission for the
 /// server-resolved company, or the company or actor changed during any read; it replaces
 /// whatever that read produced. One code for all of them: which it was is not disclosed. A
-/// permission revoked while the request is in flight is not seen by that request — an
-/// implementation asks the platform's per-request authorization view — and refuses the
-/// next one.</item>
+/// permission revoked while the request is in flight is seen at the next fence: an
+/// implementation measures it afresh there (the central revalidation port) rather than
+/// relying on the request's cached view.</item>
 /// <item><c>ProductOperationException</c> 503 <c>product_family_policy_unavailable</c> /
 /// <c>product_family_policy_invalid</c>: no accepted family policy, or it answered nothing.</item>
 /// <item><c>SettingsPrerequisiteException</c>: the Settings provider's own codes pass through

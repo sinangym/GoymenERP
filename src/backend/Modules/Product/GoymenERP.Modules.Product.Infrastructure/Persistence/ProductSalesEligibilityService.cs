@@ -31,39 +31,38 @@ public interface IProductSalesRecordReader
 /// consuming module's own selector permission is still required on its side; that gate is
 /// not this port's business.
 ///
-/// The company and the actor are re-read LIVE on every fenced revalidation, so a company
-/// or actor change mid-flight turns the result in hand into 403. The permission is asked
-/// again at each of those points too, always for the freshly read company and never from
-/// request data or a captured scope — but it is asked against THE REQUEST'S AUTHORIZATION
-/// VIEW: the platform's <c>ErpAuthorizationService</c> is request-scoped and caches its
-/// answer per (actor, company, permission), so a grant revoked while one request is in
-/// flight is not observed by that request; it takes effect on the next one. Asking without
-/// that cache would be a change to the central authorization port, which this slice does
-/// not make. So the three are not equivalent: company and actor are live, the permission
-/// is per request.
+/// The company, the actor AND the permission are measured afresh at every fenced point. Company
+/// and actor are re-read from the live request context; the permission is asked through the
+/// central fresh-authority port <see cref="IErpAuthorityRevalidationService"/> (#276), which
+/// re-reads the stored authority and moves the request's authorization view forward with it.
+/// So a grant revoked while this request is in flight is seen at the NEXT fence and turns the
+/// result in hand into 403 — the per-request limit measured in #265 5719822744 is closed here,
+/// at the price of one authority read per fence (five for a full evaluation). The answer is
+/// used exactly as the cached path uses it (<see cref="PermissionScope.IsGranted"/>); this
+/// service decides no scope semantics of its own. A grant added mid-request is seen the same
+/// way, which opens nothing the stored authority does not already say.
 ///
 /// The refusal is the same <c>product_access_denied</c> 403 as a missing scope and happens
 /// before any record, policy or profile read, so no id, code, version or field error can
 /// leak — including for a null selection, which is rejected only after the gate.
 ///
-/// The check goes straight to <see cref="IErpAuthorizationService"/>, as Organization,
-/// Counterparty and Audit do, rather than through a Product-owned authorizer port: a new
-/// port would need a central DI registration this slice must not make, and the platform
-/// service already fails closed for a name it does not know
-/// (<c>GetPermissionScopeAsync</c> answers <c>PermissionScope.Denied</c> for any name
-/// outside <c>ErpPermissions</c>). Until the central owner registers the name and a human
-/// grants it, every caller is denied — which is the decision's default-closed rule.
+/// The check goes straight to the central port, as Organization, Counterparty and Audit use
+/// the cached one, rather than through a Product-owned authorizer: the central service fails
+/// closed for a name it does not know and for an empty company or unidentified actor. The
+/// narrow name is registered centrally (#277) but granted to nobody; until a human grants it,
+/// every caller is denied — which is the decision's default-closed rule.
 ///
 /// Order: scope → stored Product → local preconditions (lifecycle, sellable role,
 /// version, stock/sales unit bindings) → order unit → family-required policy → Settings
 /// unit profiles (stock must be kilogram) → snapshot. Every AWAITED result, success or
-/// failure, is released only after the same company/actor is re-verified at that point.
+/// failure, is released only after the same company and actor are re-verified and the
+/// permission is re-measured at that point.
 /// What is then derived locally from an already re-verified read — the preconditions, the
 /// order-unit comparison, <see cref="Restore"/>'s integrity fault and the final snapshot —
 /// is returned without a further check: the guarantee is per read, not per returned value,
 /// and the window after the last fence cannot be closed from inside this service.
 ///
-/// Cancellation: the caller's token reaches the authorization question too. Because the
+/// Cancellation: the caller's token reaches the authority read too. Because the
 /// revalidation in the catch path is awaited, a token cancelled while a read is failing can
 /// surface <see cref="OperationCanceledException"/> in place of that read's own failure.
 /// Cancellation discloses nothing, and the success path still checks the token first.
@@ -72,12 +71,13 @@ public interface IProductSalesRecordReader
 /// <see cref="IProductSalesEligibilityV1"/>.
 ///
 /// Fail-closed limits at this base: only the Product's own sales unit may be ordered,
-/// because no accepted offered-unit/conversion policy exists (U-08); and no family rule
-/// set is accepted, so the shipped policy makes every otherwise-valid selection 503.
+/// because no accepted offered-unit/conversion policy exists (U-08); and the first family's
+/// accepted rules (GDC band/coil, Business 5722701085) are not implemented yet — that is the
+/// next slice — so the shipped policy still makes every otherwise-valid selection 503.
 /// No snapshot is ever produced from completeness labels, examples or defaults.
 /// </summary>
 public sealed class ProductSalesEligibilityService(ICompanyContext companyContext, ICurrentUser currentUser,
-    IErpAuthorizationService authorization, IProductSalesRecordReader records,
+    IErpAuthorityRevalidationService authority, IProductSalesRecordReader records,
     IProductFamilyRequirementPolicyV1 familyPolicy, ProductUnitProfileAdapter unitProfiles)
     : IProductSalesEligibilityV1
 {
@@ -183,8 +183,11 @@ public sealed class ProductSalesEligibilityService(ICompanyContext companyContex
         // The company is the server's, read again here: a scope captured earlier could be
         // one the actor has since lost, and request data never decides authority.
         var companyId = companyContext.CompanyId;
-        if (!await authorization.HasPermissionAsync(
-                ProductPermissionManifestV1.OperationalSelectionRead, companyId, cancellationToken))
+        // Measured now, not taken from the request's cached view (#276): a revocation made by
+        // another request since the last fence is seen here.
+        var permission = await authority.RevalidatePermissionScopeAsync(
+            ProductPermissionManifestV1.OperationalSelectionRead, companyId, cancellationToken);
+        if (permission is not { IsGranted: true })
             throw new ProductOperationException(AccessDeniedCode, 403);
 
         return new(companyId, currentUser.UserId);

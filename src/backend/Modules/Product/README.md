@@ -253,29 +253,33 @@ remain closed until the #104 source/schema gate and shared implementation are ac
 operational Sales selection. It is not the global master read and borrows no global Product
 grant. K-1(a) (Sinan's decision, Business #66 5719251344): it requires an authenticated actor
 with access to the server-resolved company AND the narrow `product.operational-selection.read`
-permission for that same company, asked through `IErpAuthorizationService` for the freshly read
-company and never from request data. The consuming module's own selector permission is still
+permission for that same company, measured through the central fresh-authority port
+`IErpAuthorityRevalidationService` (#276) for the freshly read company and never from request
+data. The consuming module's own selector permission is still
 required on its side (Sales keeps a default-deny binding).
 
 What each of those three means in one request, measured rather than assumed:
 
 - **Company and actor are live.** They are re-read on every fenced revalidation, so a change
   mid-flight turns the result in hand into 403.
-- **The permission is the request's authorization view.** The platform service is
-  request-scoped and caches its answer per (actor, company, permission), so the service asks
-  again at every fence but a grant revoked during that request is not observed by it; the
-  revocation takes effect on the next request. Asking without that cache would change the
-  central authorization port and is not this slice's work.
+- **The permission is measured again at every fence.** The service asks the central
+  revalidation port (#276), which re-reads the stored authority and replaces the request's
+  cached answer. A grant revoked by another request while this one is in flight is therefore
+  seen at the next fence and turns the result in hand into 403; it cannot come back later in the
+  same request. This closes the per-request limit measured in #265 5719822744. The price is one
+  authority read per fence (five for a full evaluation). The answer is used as the cached path
+  uses it (`PermissionScope.IsGranted`); this service decides no scope semantics. A grant added
+  mid-request is seen the same way; it opens nothing the stored authority does not say.
 - **The guarantee is per awaited read.** A read's result, success or failure, is released only
   after the check at that point. Values derived locally afterwards — preconditions, the
   order-unit comparison, the restore integrity fault, the final snapshot — are returned
   without a further check; the window after the last fence cannot be closed here.
 
-The narrow name is declared in `ProductPermissionManifestV1` only. This slice does not touch
-`ErpPermissions`, the Identity seed, the shell capability manifest, DI/host wiring or OpenAPI:
-registering the name and granting it are the central/Identity owner's and a human's steps. Until
-then the platform answers `PermissionScope.Denied` for an unknown name, so every caller is
-denied — the decision's default-closed rule, not an implicit grant.
+The narrow name is declared in `ProductPermissionManifestV1` and registered centrally in
+`ErpPermissions` (#277) — registered, not granted: no seeded role or assignment carries it. This
+slice does not touch `ErpPermissions`, the Identity seed, the shell capability manifest, DI/host
+wiring or OpenAPI. Granting it is a human's step; until then every caller is denied — the
+decision's default-closed rule, not an implicit grant.
 
 Order and outcomes:
 
@@ -284,7 +288,7 @@ Order and outcomes:
 | Scope missing/foreign | `ProductOperationException` 403 `product_access_denied`, before any read |
 | Narrow selection permission missing for the server company | `ProductOperationException` 403 `product_access_denied`, before any read; same code, no separate signal |
 | Company or actor changed during any read | `ProductOperationException` 403 `product_access_denied`, replacing that read's result or failure |
-| Permission revoked while the request is in flight | Not observed by this request (the platform's per-request authorization view); it refuses the next one |
+| Permission revoked while the request is in flight | `ProductOperationException` 403 `product_access_denied` at the next fence, replacing the result or failure in hand (re-measured through #276's port) |
 | Null selection from a caller without the permission | `ProductOperationException` 403 `product_access_denied`: the gate runs before the argument is looked at |
 | Stored record cannot be restored | `InvalidOperationException` |
 | Product missing / empty id | error `productId invalid_reference` |
@@ -309,7 +313,7 @@ Codes that arrive in `Errors` at this base:
 | `expectedProductVersion` | `version_conflict`, `invalid_version` |
 | `references.units.stock`, `references.units.sales` | `invalid_reference` (binding missing, or the owner's profile cannot be used on `EffectiveOn`) |
 | `orderUnitId` | `invalid_reference`, `unsupported_order_unit` |
-| family policy fields | whatever an accepted family policy returns (none is accepted) |
+| family policy fields | whatever an accepted family policy returns (none is implemented yet) |
 
 - `version_conflict` and `lifecycle_conflict` arrive in `Errors`; neither is thrown, and
   Product.Domain's `ProductVersionConflictException` never crosses this read path.
@@ -327,14 +331,17 @@ Codes that arrive in `Errors` at this base:
 
 Fail-closed limits at this base, not policy choices:
 
-- No first family rule set is accepted (#254 comment 5654539215, NEEDS-SINAN), so an
-  otherwise valid Active selection is 503, never usable.
+- The first family's rules are accepted (Business #265 5722701085: GDC band/coil, kg→kg —
+  thickness and width > 0 mm, a controlled quality and an explicit coating status) but not
+  implemented yet; that policy is the next slice, after this one. Until then the shipped
+  policy answers 503, so an otherwise valid Active selection is never usable. No other family
+  is accepted, and nothing here infers one.
 - No offered-unit or conversion policy is accepted (U-08), so only the sales unit is offered.
 - There is no activation command, so real rows are Draft and are rejected with
   `lifecycle_conflict`.
 - The runtime is not yet composed in the API host. Host wiring (DI, the reviewed-source
-  fingerprint and its composition test) is requested from the central writer, and now also the
-  central registration of `product.operational-selection.read`. Until then the Sales product
+  fingerprint and its composition test) is the central writer's; the name is registered (#277)
+  and a real grant is a human gate. Until then the Sales product
   read never reaches this runtime: with its default binding (no product selector permission) it
   answers 403 before looking for a runtime, and only once that permission is bound would a
   missing runtime answer 503 `product_provider_unavailable`. K-1(a) is not complete until the
