@@ -1,27 +1,39 @@
-# Purchasing (PUR-1 — first independent slice of T08)
+# Purchasing (PUR-1 + PUR-2 — first independent slices of T08)
 
-Source of truth: #275 v2 plan §7.2, §13, R3 and Ö2 (`SINAN_KARARLARI_2026-09-18_O1_O8_VE_SON_ASAMA.md`), read at exact head `a5b8143b`.
+Source of truth: #275 v2 plan §7.2, §13, R3 and Ö2 (`SINAN_KARARLARI_2026-09-18_O1_O8_VE_SON_ASAMA.md`), read at exact head `a5b8143b`; the approved GDC kg unit profile (#279, #284) for unit verification.
 
-## What this slice is
+## What is here
 
-Domain records and their invariants only:
-
-- `Quantity` — exact, non-negative, one unit; kilograms carry at most three decimals, pieces are whole (Ö2). Extra digits are refused, never rounded or cut.
+### Domain (`GoymenERP.Modules.Purchasing.Domain`)
+- `Quantity` — exact, non-negative, one unit; kilograms carry at most three decimals, pieces are whole (Ö2). Extra digits are refused, never rounded or cut; trailing zeros are dropped so equal quantities print equally.
 - `PurchaseRequest` (+ lines) — the demand: Draft → Submitted. Not a commitment.
 - `PurchaseOrder` (+ lines) — the commitment towards one supplier Party of one company: Draft → Approved.
-  - **General/technical breakdown:** a general line can be carved into technical lines; general remainder + technical slices never exceed the first commitment, an accepted general share cannot be sliced again, a technical line cannot be broken down (§13: 1.000 → 925 general + 75 technical).
-  - **Acceptance shares:** an accepted share never exceeds the line's remaining commitment; remaining = committed − accepted is future supply (§13: 100 ton, 40 accepted → 40 accepted + 60 remaining, never 140). A duplicate acceptance id is refused.
+  - **General/technical breakdown:** a general line can be carved into technical lines while Draft and after approval (§7.2: the technical breakdown becomes known later); general remainder + technical slices never exceed the first commitment, an accepted general share cannot be sliced again, a technical line cannot be broken down, and a technical line keeps the general line's unit — only its product may differ (§13: 1.000 → 925 general + 75 technical). Whether a post-approval breakdown needs re-approval is §8 policy and is not chosen here.
+  - **Acceptance shares:** an accepted share never exceeds the line's remaining commitment; remaining = committed − accepted is future supply (§13: 100 ton, 40 accepted → 40 + 60, never 140). A duplicate acceptance id is refused.
   - `expectedVersion` on every mutation (`PurchasingVersionConflictException`).
-- Supplier Party and Product are `Guid` identities only.
+- **Stable rule codes (PUR-2, ORG #278 P3-1):** every refusal is a `PurchasingRuleException` with a `PurchasingRuleCodes` code; tests assert the code, not only the type. The aggregate is the single authority for every share bound; the line-level checks are a second guard that reports `purchasing_internal_invariant`, so a test can tell which guard held.
+- **Read-only views (PUR-2, ÜRÜN #278 P3-1):** `Lines` and `Acceptances` are read-only wrappers; a cast cannot reach the backing lists.
+- Supplier Party, Product and the line's **Settings unit** (`UnitId`) are `Guid` identities only.
 
-## What this slice is not
+### Application (`GoymenERP.Modules.Purchasing.Application`, PUR-2)
+- `PurchaseUnitVerifier` — verifies a line's unit and quantity against the Settings unit profile through `ISettingsPrerequisiteProvider` (Contracts.V1) before a line is added (ÜRÜN #278 P3-2; Ö2):
+  - fail-closed: every Settings failure is a refusal with the owner's code kept verbatim (`settings_access_denied`, `settings_provider_unavailable`, `settings_unit_profile_not_found`, `settings_profile_invalid`) — "denied", "unavailable" and "no profile" stay distinct;
+  - the profile must belong to the server-resolved company the caller passes, name the requested unit, be internally valid and active on the effective date;
+  - only kilogram profiles are approved today (Settings README, Ö1): a profile of another dimension is refused as `purchasing_unit_unsupported`, never mapped to a guessed count unit;
+  - precision comes from the profile's scale, capped by Ö2's kilogram rule of 3; more decimals are refused (`purchasing_quantity_scale_exceeded`), never rounded.
+  - The `settings_unit_profile_not_found` code is compared from the port error's `Code`; it is not bound to the Settings provider class (the constant moves to Contracts.V1 in a Settings follow-up).
 
-- No physical effect: no lot, label, location or stock movement. Inventory owns those (T09); Purchasing is not a second allocation engine (§7.2).
-- No price, tax or currency (T28); no approval policy — `Approve` is a transition, which approvals a purchase needs is §8.
-- No offers (SupplierOffer), delivery schedules, invoice matching, HTTP, DI, persistence or permissions.
+## Behaviour kept on purpose — Business decision pending
+- **One submitted request can source several full-quantity orders** (`FromRequest` twice). §7.2 does not settle whether that is a supplier split with partial quantities or a mistake; the question is open with Business (#66). The behaviour is pinned by a test and will change only by that decision.
+
+## What this module is not
+- No physical effect: no lot, label, location or stock movement; not a second allocation engine (Inventory T09).
+- No price, tax or currency (T28); no approval policy (`Approve` is a transition; §8).
+- No offers, delivery schedules, invoice matching, HTTP, DI, persistence or permissions.
 
 ## dependency_wait
-
 - Acceptance → stock/label: Inventory T09 on main.
 - Price/commercial snapshot: T28.
-- Persistence: central writer (CARİ); no DbContext or migration here.
+- Persistence: central writer (CARİ); the verifier's result is retained with the line at that point.
+- Count/piece units: a Settings-approved count dimension. Until then the domain's `Piece` arithmetic exists but no verified path produces it.
+- Request → several orders: Business decision (#66).
