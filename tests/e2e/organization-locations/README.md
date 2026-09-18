@@ -75,6 +75,18 @@ unchanged; nothing is fulfilled locally. `coverage.json` records whether the hel
 reached the server or was cancelled by the switch — taken from the identity rewrite's own
 record of that request — because both are legitimate and they are different observations.
 
+## ORG-03 in the selectable BROWSER-CI workflow (`browser:org03:ci`)
+
+Workflow `.github/workflows/browser-acceptance.yml`, label `browser:org03`, contract `tests/e2e/browser-ci/README.md`.
+
+- **What runs:** only `specs/o-04-work-center-journey.spec.ts`, with config `tests/e2e/playwright.browser-org03.config.ts`, against the workflow's disposable stack. That stack is the API, SQL with the seeded GDC / GSP / GIN organization data (GDC has the five work centers; GSP has none, which is the empty half of item 6) and the authorized web profile, all built from the exact head. There is no Vite dev server and no pinned 27xxx port in this profile.
+- **Tuple:** built by `src/browserCi.ts` from the workflow's variables (`BROWSER_E2E_TESTED_COMMIT`, `BROWSER_E2E_API_BASE_URL`, `BROWSER_E2E_DATABASE`, `GITHUB_RUN_ID`, `COMPOSE_PROJECT_NAME`). Every binding commit is that one head.
+- **Actors:** `BROWSER_E2E_ORG03_ACTORS` (JSON: `operatorActor`, `viewerActor`, `foreignActor`, `multiCompanyActor`, `workCentersOnlyActor`, `rowScopedActor`, `actorGrants`, `companyACode`, `companyBCode`). BROWSER-CI stage 2 binds them together with their synthetic test-database grants and the Organization capabilities for this suite. Until then the run refuses, visibly. This package adds no actor, role or grant.
+- **Read-only:** the journey issues no write (it asserts this itself). The post-state check is the workflow's SQL read-only verification, if the suite is declared read-only there.
+- **Artifacts:** retries 0; traces, screenshots and video are off. Only the JUnit file is uploaded (after the privacy check). The journey's own evidence stays under the artifact root and is not uploaded.
+
+The local profile (`playwright.config.ts`, manifest file, pinned ports) is unchanged.
+
 ## What this measures, and why a browser is needed for it
 
 The screens already have 177 component/DOM cases in `src/organization/**`. Those prove

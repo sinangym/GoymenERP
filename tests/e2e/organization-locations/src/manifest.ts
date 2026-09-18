@@ -18,6 +18,7 @@
  * package never writes it and never fills a blank in.
  */
 import { readFileSync } from 'node:fs'
+import { isBrowserCi, readBrowserCiManifest } from './browserCi.js'
 
 /** Ports reserved for the Organization lane. Cari (25xxx) and Ürün (26xxx) are not ours. */
 export const ORG_UI_PORT = 27173
@@ -136,6 +137,11 @@ function requireCommit(value: unknown, field: string): string {
 }
 
 export function readOrganizationManifest(): OrganizationEnvironmentManifest {
+  // Inside the BROWSER-CI workflow the tuple is the workflow's own binding (see browserCi.ts).
+  if (isBrowserCi()) {
+    return readBrowserCiManifest()
+  }
+
   const file = process.env[MANIFEST_ENV_VAR]
   if (!file) {
     throw new Error(
