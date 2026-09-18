@@ -51,7 +51,8 @@ public sealed class SalesDraftSqlServerRelationalAcceptanceTests
             first = await a.Store.StoreDraftAsync(run.Envelope("k-1"), Hash("payload-1"),
                 documentNo => Draft(owners, documentNo, T0, lines: 2, slicesOnFirstLine: 2));
             Assert.Equal(SalesDraftWriteOutcome.Recorded, first.Outcome);
-            Assert.Equal(("SO-2026-000001", 1L, 2), (first.Draft.DocumentNo, first.Draft.Version, first.Draft.Lines.Count));
+            // Version 1 at birth, +1 per added line (SALES-P1): two lines → 3. Rev.0 is unchanged.
+            Assert.Equal(("SO-2026-000001", 3L, 2, 0), (first.Draft.DocumentNo, first.Draft.Version, first.Draft.Lines.Count, first.Draft.Revision));
 
             // The same key with the same content: the first stored draft again, nothing new.
             var replay = await a.Store.StoreDraftAsync(run.Envelope("k-1", correlation: "SENTETIK-second-correlation"), Hash("payload-1"),
@@ -229,13 +230,24 @@ public sealed class SalesDraftSqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         var owners = Owners.For(CompanyA);
+        // One scope per attempt, as one request is one scope: EF's change tracker would otherwise
+        // refuse "K-1" beside "k-1" in the same context, although the table's binary collation keeps
+        // them apart. The database, not the tracker, is the identity here.
         await using (var a = run.Store(CompanyA))
         {
             await a.Store.StoreDraftAsync(run.Envelope("k-1"), Hash("payload-1"), documentNo => Draft(owners, documentNo, T0));
+        }
+
+        await using (var a = run.Store(CompanyA))
+        {
             // SQL Server's equality ignores trailing spaces even under the binary collation, so the
             // store refuses a non-canonical key before it reaches the attempt table (the ACC-3 lesson).
             await Assert.ThrowsAsync<ArgumentException>(() => a.Store.StoreDraftAsync(run.Envelope("k-1 "), Hash("payload-9"),
                 _ => throw new InvalidOperationException("not reached")));
+        }
+
+        await using (var a = run.Store(CompanyA))
+        {
             // A different spelling is a different attempt under the binary collation.
             var other = await a.Store.StoreDraftAsync(run.Envelope("K-1"), Hash("payload-9"), documentNo => Draft(owners, documentNo, T0.AddMinutes(1)));
             Assert.Equal(SalesDraftWriteOutcome.Recorded, other.Outcome);
