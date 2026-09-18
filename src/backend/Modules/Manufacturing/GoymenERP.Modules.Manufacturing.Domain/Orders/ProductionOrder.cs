@@ -89,6 +89,87 @@ public sealed class ProductionOrder
         return new ProductionOrder(id, plan);
     }
 
+    /// <summary>
+    /// Rebuilds a stored order from its snapshot and its stored facts (MFG-5). The facts are
+    /// replayed through the same methods that recorded them — issues first, then returns, outputs
+    /// and WIP readings, each in time order — so every rule (fact identity, parent roll, return
+    /// bound, latest WIP reading) holds again, and a stored close is replayed through
+    /// <see cref="Close"/>, so a closed order must still reconcile roll by roll. A stored record
+    /// that breaks a rule is refused, not repaired; the stored version must be exactly the one its
+    /// facts add up to.
+    /// </summary>
+    public static ProductionOrder Restore(
+        Guid id,
+        Guid planId,
+        Guid companyId,
+        Guid workCenterId,
+        ManufacturingProcess process,
+        ProductionTarget? target,
+        IEnumerable<PlannedInput> plannedInputs,
+        IEnumerable<InputIssue> issues,
+        IEnumerable<InputReturn> returns,
+        IEnumerable<OutputDeclaration> outputs,
+        IEnumerable<WipMeasurement> wipMeasurements,
+        Guid? closedByUserId,
+        DateTimeOffset? closedAtUtc,
+        long version)
+    {
+        ArgumentNullException.ThrowIfNull(issues);
+        ArgumentNullException.ThrowIfNull(returns);
+        ArgumentNullException.ThrowIfNull(outputs);
+        ArgumentNullException.ThrowIfNull(wipMeasurements);
+
+        // The plan's own rules decide the snapshot: at least one input, each parent roll once.
+        var snapshot = new ProductionPlan(planId, companyId, workCenterId, process, plannedInputs, target);
+        var order = new ProductionOrder(id, snapshot);
+
+        foreach (var issue in issues.OrderBy(fact => fact.IssuedAtUtc))
+        {
+            order.IssueInput(order.Version, issue.IssueId, issue.ParentRollId, issue.Mass, issue.IssuedAtUtc);
+        }
+
+        foreach (var entry in returns.OrderBy(fact => fact.ReturnedAtUtc))
+        {
+            order.ReturnUnusedInput(order.Version, entry.ReturnId, entry.ParentRollId, entry.Mass, entry.ReturnedAtUtc);
+        }
+
+        foreach (var output in outputs.OrderBy(fact => fact.DeclaredAtUtc))
+        {
+            if (output.Cost != CostResult.NotCalculated)
+            {
+                throw new ManufacturingRuleException(
+                    ManufacturingRuleCodes.StoredRecordInvalid, "Kayıtlı çıktının maliyet durumu bu dilimde üretilemez.");
+            }
+
+            order.DeclareOutput(order.Version, output.OutputId, output.ParentRollId, output.Class, output.Mass,
+                output.DeclaredAtUtc);
+        }
+
+        foreach (var measurement in wipMeasurements.OrderBy(fact => fact.MeasuredAtUtc))
+        {
+            order.RecordWorkInProgress(order.Version, measurement.MeasurementId, measurement.ParentRollId,
+                measurement.Mass, measurement.MeasuredAtUtc);
+        }
+
+        if (closedByUserId is { } closedBy && closedAtUtc is { } closedAt)
+        {
+            order.Close(order.Version, closedBy, closedAt);
+        }
+        else if (closedByUserId is not null || closedAtUtc is not null)
+        {
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.StoredRecordInvalid, "Kayıtlı kapanış izi kapatanı ve anı birlikte taşımalı.");
+        }
+
+        if (order.Version != version)
+        {
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.StoredRecordInvalid, "Kayıtlı emir sürümü olgularının toplamıyla uyuşmuyor.");
+        }
+
+        return order;
+    }
+
     /// <summary>Input actually taken from a planned parent roll into production.</summary>
     public InputIssue IssueInput(long expectedVersion, Guid issueId, Guid parentRollId, Kilograms mass, DateTimeOffset issuedAt)
     {

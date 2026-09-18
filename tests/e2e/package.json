@@ -11,7 +11,8 @@
     "c01:ci": "playwright test",
     "c01:local": "playwright test --reporter=list",
     "sab:ci": "playwright test --config playwright.sab.config.ts",
-    "activation:ci": "playwright test --config playwright.activation.config.ts"
+    "activation:ci": "playwright test --config playwright.activation.config.ts",
+    "browser:smoke:ci": "playwright test --config playwright.browser-smoke.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
