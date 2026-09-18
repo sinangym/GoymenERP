@@ -44,6 +44,22 @@ public static class ErpPermissions
     public const string FinanceBankAccountPropose = "finance.bank-account.propose";
     public const string FinanceBankAccountApprove = "finance.bank-account.approve";
 
+    /// <summary>
+    /// Finance manual-receipt draft (FIN-T04b, #320): the Finance owner's technical names
+    /// (FinancePermissionNames, Business #254 5654539215), same strings. Registered, not granted:
+    /// no role and no user receives them here; who holds which is a human gate. All three are
+    /// company-wide only: drafts, sources and amounts belong to the server-resolved company and the
+    /// routes filter by nothing narrower. None is Critical: a draft moves no money and grants no
+    /// authority. Record and Reverse, which would, have no name yet (OPEN-009, a human decision).
+    /// </summary>
+    public const string FinanceManualReceiptDraftSave = "finance.manual-receipt.draft.save";
+
+    /// <inheritdoc cref="FinanceManualReceiptDraftSave"/>
+    public const string FinanceManualReceiptDraftRead = "finance.manual-receipt.draft.read";
+
+    /// <inheritdoc cref="FinanceManualReceiptDraftSave"/>
+    public const string FinanceManualReceiptAmountRead = "finance.manual-receipt.amount.read";
+
     public const string IdentityProfileRead = "identity.profile.read";
     public const string IdentityAccessRequest = "identity.access.request";
     public const string IdentityAccessApprove = "identity.access.approve";
@@ -66,6 +82,9 @@ public static class ErpPermissions
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
+            FinanceManualReceiptDraftSave,
+            FinanceManualReceiptDraftRead,
+            FinanceManualReceiptAmountRead,
             IdentityProfileRead,
             IdentityAccessRequest,
             IdentityAccessApprove,
@@ -95,6 +114,9 @@ public static class ErpPermissions
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
+            FinanceManualReceiptDraftSave,
+            FinanceManualReceiptDraftRead,
+            FinanceManualReceiptAmountRead,
             IdentityAuditRead,
         ],
         StringComparer.Ordinal);
