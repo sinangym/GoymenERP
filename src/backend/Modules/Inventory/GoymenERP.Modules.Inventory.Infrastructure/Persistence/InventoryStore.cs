@@ -116,7 +116,8 @@ public sealed class InventoryStore(
 
         foreach (var label in labels)
         {
-            recorded |= await StageLabelAsync(label, metadata, cancellationToken);
+            // The lot of this call: just staged or already stored with the same facts (checked above).
+            recorded |= await StageLabelAsync(label, metadata, lot, cancellationToken);
         }
 
         if (!recorded)
@@ -142,7 +143,7 @@ public sealed class InventoryStore(
         RequireMetadata(metadata);
         RequireCompany(label.CompanyId);
         RequireLabelFits(label);
-        if (!await StageLabelAsync(label, metadata, cancellationToken))
+        if (!await StageLabelAsync(label, metadata, lotOfThisCall: null, cancellationToken))
         {
             return InventoryWriteOutcome.Replayed;
         }
@@ -153,20 +154,24 @@ public sealed class InventoryStore(
 
     /// <summary>
     /// Adds what saving <paramref name="label"/> changes to the context, without saving: a new label
-    /// (its lot stored or added in this context, of the same product), or the prints and attachments
-    /// that extend a stored one. False when nothing is new (a replay).
+    /// (its lot of the same product), or the prints and attachments that extend a stored one. False
+    /// when nothing is new (a replay). The lot is <paramref name="lotOfThisCall"/> when the caller is
+    /// saving it in the same call; otherwise it is read through the tenant-filtered query — never from
+    /// the change tracker, which the tenant filter does not cover.
     /// </summary>
     private async Task<bool> StageLabelAsync(MaterialLabel label, InventoryCommandMetadata metadata,
-        CancellationToken cancellationToken)
+        MaterialLot? lotOfThisCall, CancellationToken cancellationToken)
     {
         var stored = await dbContext.Labels.SingleOrDefaultAsync(row => row.Id == label.Id, cancellationToken);
         var now = timeProvider.GetUtcNow();
         if (stored is null)
         {
-            var lot = dbContext.Lots.Local.SingleOrDefault(row => row.Id == label.LotId)
-                ?? await dbContext.Lots.AsNoTracking().SingleOrDefaultAsync(row => row.Id == label.LotId, cancellationToken)
-                ?? throw Refused(InventoryStoreCodes.LotNotFound, "Etiketin lotu bu şirkette kayıtlı değil.");
-            if (lot.ProductId != label.ProductId)
+            var lotProductId = lotOfThisCall is not null && lotOfThisCall.Id == label.LotId
+                ? lotOfThisCall.ProductId
+                : await dbContext.Lots.AsNoTracking().Where(row => row.Id == label.LotId)
+                    .Select(row => (Guid?)row.ProductId).SingleOrDefaultAsync(cancellationToken)
+                    ?? throw Refused(InventoryStoreCodes.LotNotFound, "Etiketin lotu bu şirkette kayıtlı değil.");
+            if (lotProductId != label.ProductId)
             {
                 throw Refused(InventoryStoreCodes.LotProductMismatch, "Etiket ile lotu farklı ürünleri adlandırıyor.");
             }
