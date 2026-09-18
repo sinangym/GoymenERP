@@ -5,10 +5,12 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 
 /// <summary>
 /// Publishes the three Sales draft screens of #260 (S-02 list, S-03 create, S-04 detail) to the
-/// shell — STAGED: every declaration is <c>ImplementationAvailable: false</c> until the backend
-/// routes, the shell mount and the browser suite <c>s03</c> have been accepted, when a separate
-/// exact-head change flips them (the Cari pattern; the Sales documents carry no other activation
-/// rule). Company permissions, the Counterparty way: the list and the detail share
+/// shell — PUBLISHED (S03-c): every declaration is <c>ImplementationAvailable: true</c> since the
+/// draft API (#321) landed; the registry never publishes a staged declaration, so the browser suite
+/// <c>s03</c> is the acceptance of this flip, not its precondition (the Product #316 precedent; the
+/// Sales documents carry no activation envelope rule). A declaration grants nothing: the screens open
+/// only for an actor holding the permission, and the grant is a human gate. Company permissions,
+/// the Counterparty way: the list and the detail share
 /// <see cref="SalesPermissionManifestV1.DraftsRead"/>, the create screen needs
 /// <see cref="SalesPermissionManifestV1.DraftsCreate"/>; selecting a product on it still needs the
 /// Product owner's narrow selection read, measured by that owner. The ids and routes are the
@@ -50,7 +52,7 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
             ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
             ShellCapabilityScopeRequirement.CompanyWide,
             [SalesPermissionManifestV1.DraftsRead],
-            ImplementationAvailable: false),
+            ImplementationAvailable: true),
         new ShellCapabilityDeclaration(
             CreateCapabilityId,
             CreateRouteId,
@@ -60,7 +62,7 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
             ShellCapabilityContextRequirement.SingleCompany,
             ShellCapabilityScopeRequirement.CompanyWide,
             [SalesPermissionManifestV1.DraftsCreate],
-            ImplementationAvailable: false),
+            ImplementationAvailable: true),
         new ShellCapabilityDeclaration(
             DetailCapabilityId,
             DetailRouteId,
@@ -70,6 +72,6 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
             ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
             ShellCapabilityScopeRequirement.CompanyWide,
             [SalesPermissionManifestV1.DraftsRead],
-            ImplementationAvailable: false),
+            ImplementationAvailable: true),
     ];
 }

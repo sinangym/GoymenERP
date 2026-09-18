@@ -5,10 +5,10 @@ using GoymenERP.Modules.Sales.Infrastructure.Shell;
 namespace GoymenERP.Sales.UnitTests;
 
 /// <summary>
-/// The staged Sales shell provider: three declarations, the frontend lane's ids and routes
+/// The published Sales shell provider: three declarations, the frontend lane's ids and routes
 /// (<c>src/sales/capabilities.ts</c> read from the repository, so a drift is red here), the Sales
-/// permission names, and <c>ImplementationAvailable: false</c> until the browser suite accepts the
-/// screens (the Cari pattern; a separate exact-head change flips them).
+/// permission names, and <c>ImplementationAvailable: true</c> (S03-c; the registry never publishes a
+/// staged declaration, so the browser suite s03 accepts the flip rather than preceding it).
 /// </summary>
 public sealed class SalesShellCapabilityProviderContractTests
 {
@@ -30,7 +30,8 @@ public sealed class SalesShellCapabilityProviderContractTests
             Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, declaration.ScopeRequirement);
             Assert.Null(declaration.GlobalProductOperation);
             Assert.Null(declaration.ParentCapabilityId);
-            Assert.False(declaration.ImplementationAvailable);
+            // S03-c: published to the shell (the grant stays a human gate; an ungranted actor still sees nothing).
+            Assert.True(declaration.ImplementationAvailable);
         }
 
         var list = Assert.Single(declarations, item => item.CapabilityId == SalesShellCapabilityProvider.ListCapabilityId);
