@@ -107,6 +107,27 @@ public sealed class ProductHttpContractTests
         Assert.Equal(0, service.Reads);
     }
 
+    [Theory]
+    [InlineData("""{"expectedVersion":"1","lifecycle":"Active"}""")]
+    [InlineData("""{"expectedVersion":"1","companyId":"9197acdd-034f-4082-bc66-cebc5c81be53"}""")]
+    [InlineData("""{"expectedVersion":1}""")]
+    [InlineData("""{}""")]
+    public async Task An_activation_body_with_an_unknown_missing_or_numeric_member_does_not_reach_command(string json)
+    {
+        var service = new Service();
+        await using var app = await StartAsync(service);
+        using var client = Client(app);
+        var path = $"/api/v1/products/{service.Card.Product.Id}/activation";
+        using var body = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsync(path, body)).StatusCode);
+        Assert.Equal(0, service.Activations);
+
+        // Control: the exact body reaches the command on the same route.
+        using var exact = new StringContent("""{"expectedVersion":"1"}""", System.Text.Encoding.UTF8, "application/json");
+        Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsync(path, exact)).StatusCode);
+        Assert.Equal(1, service.Activations);
+    }
+
     [Fact]
     public async Task Stale_edit_is_problem_details_with_lossless_versions()
     {
@@ -174,6 +195,7 @@ public sealed class ProductHttpContractTests
         public ProductCodeGroup Group { get; } = new(Guid.NewGuid(), "Sentetik test grubu", "SAC");
         public ProductCardView Card { get; }
         public int Writes { get; private set; }
+        public int Activations { get; private set; }
         public int Reads { get; private set; }
         public bool ProjectionFailure { get; init; }
         public Service()
@@ -203,7 +225,7 @@ public sealed class ProductHttpContractTests
             string idempotencyKey, CancellationToken cancellationToken) =>
             throw new ProductVersionConflictException(1, 9007199254740993L);
         public Task<ProductMutationResponse> ActivateAsync(Guid id, ActivateProductRequest request,
-            string idempotencyKey, CancellationToken cancellationToken) =>
-            throw new ProductOperationException(ProductApiV1.LifecycleConflict, 409);
+            string idempotencyKey, CancellationToken cancellationToken)
+        { Activations++; throw new ProductOperationException(ProductApiV1.LifecycleConflict, 409); }
     }
 }
