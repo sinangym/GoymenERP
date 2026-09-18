@@ -65,10 +65,11 @@ public sealed class SalesDraftServiceTests
     public async Task The_same_key_content_and_actor_replays_the_stored_draft_before_any_owner_is_asked()
     {
         var world = new World();
-        var first = await world.Service().CreateDraftAsync(Request(), Metadata("k-1"));
+        var request = Request(); // the same bytes again: the client resends the request it sent
+        var first = await world.Service().CreateDraftAsync(request, Metadata("k-1"));
         world.ResetOwnerCalls();
 
-        var replay = await world.Service().CreateDraftAsync(Request(), Metadata("k-1", correlation: "second"));
+        var replay = await world.Service().CreateDraftAsync(request, Metadata("k-1", correlation: "second"));
 
         Assert.True(replay.IsReplay);
         Assert.Equal((first.Detail.Draft.Id, "synthetic-correlation"), (replay.Detail.Draft.Id, replay.OriginalCorrelationId));
@@ -79,14 +80,19 @@ public sealed class SalesDraftServiceTests
     public async Task A_recorded_terminal_refusal_replays_as_the_same_409_with_its_first_correlation()
     {
         var world = new World { Products = { VersionConflict = true } };
+        var request = Request();
 
-        var refusal = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(Request(), Metadata("k-1")));
+        var refusal = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(request, Metadata("k-1")));
         Assert.Equal((409, SalesDraftProblemCodesV1.VersionConflict, false), (refusal.Status, refusal.Code, refusal.IsReplay));
         Assert.Equal(("lines[0].productId", ProductApiV1.VersionConflict), (refusal.Errors[0].Field, refusal.Errors[0].Code));
         Assert.Single(world.Store.Refusals);
         world.ResetOwnerCalls();
 
-        var again = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(Request(), Metadata("k-1", correlation: "retry")));
+        var again = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(request, Metadata("k-1", correlation: "retry")));
+
+        // Another content under the same key (new line ids) is the store's §3 refusal, mapped, never a raw store fault.
+        var other = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(Request(), Metadata("k-1")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.SameKeyPayloadMismatch, false), (other.Status, other.Code, other.IsReplay));
 
         Assert.Equal((409, SalesDraftProblemCodesV1.VersionConflict, true, "synthetic-correlation"),
             (again.Status, again.Code, again.IsReplay, again.OriginalCorrelationId));

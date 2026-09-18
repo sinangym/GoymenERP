@@ -68,8 +68,7 @@ public sealed class SalesDraftService(
         var envelope = Envelope(scope, metadata);
 
         // 3. Replay (ADR-011 §4 / §7): the same key, content and actor answers what it answered before.
-        var replay = await GuardedAsync(scope, bindings.CreatePermission,
-            () => store.FindReplayAsync(envelope, requestHash, cancellationToken), cancellationToken);
+        var replay = await FindReplayAsync(scope, envelope, requestHash, cancellationToken);
         if (replay is not null)
         {
             return Replayed(replay);
@@ -125,8 +124,7 @@ public sealed class SalesDraftService(
             // ADR-011 §8: the loser of a same-key race answers the winner's result, read afresh; only a
             // race that left nothing under this key (the number counter, a draft id) is the caller's
             // concurrent_change to retry.
-            var won = await GuardedAsync(scope, bindings.CreatePermission,
-                () => store.FindReplayAsync(envelope, requestHash, cancellationToken), cancellationToken);
+            var won = await FindReplayAsync(scope, envelope, requestHash, cancellationToken);
             if (won is null)
             {
                 throw Store(exception);
@@ -143,7 +141,25 @@ public sealed class SalesDraftService(
         return Response(stored.Draft, stored.Outcome == SalesDraftWriteOutcome.Replayed, stored.OriginalCorrelationId);
     }
 
-    /// <summary>ADR-011 §4 / §7: what the key answered before — a stored draft as a 200 replay, a recorded refusal as the same refusal.</summary>
+    /// <summary>
+    /// The key's recorded result under the fence; the store's refusals keep their public meaning
+    /// (another content or actor under the same key is 409 <c>same_key_payload_mismatch</c>, §3).
+    /// </summary>
+    private async Task<SalesDraftReplay?> FindReplayAsync(Scope scope, SalesDraftWriteEnvelope envelope, string requestHash,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await GuardedAsync(scope, bindings.CreatePermission,
+                () => store.FindReplayAsync(envelope, requestHash, cancellationToken), cancellationToken);
+        }
+        catch (SalesDraftStoreException exception)
+        {
+            throw Store(exception);
+        }
+    }
+
+    /// <summary>ADR-011 §4 / §7: what the key answered before — a stored draft as the 201 replay, a recorded refusal as the same refusal.</summary>
     private static SalesOrderDraftResponse Replayed(SalesDraftReplay replay)
     {
         if (replay.Refusal is { } refusal)
@@ -515,7 +531,16 @@ public sealed class SalesDraftService(
         }
         catch (SalesDraftStoreException exception) when (exception.Code == SalesDraftStoreCodes.ConcurrentChange)
         {
-            var won = await store.FindReplayAsync(envelope, requestHash, cancellationToken);
+            SalesDraftReplay? won;
+            try
+            {
+                won = await store.FindReplayAsync(envelope, requestHash, cancellationToken);
+            }
+            catch (SalesDraftStoreException raced)
+            {
+                return Store(raced);
+            }
+
             if (won is not null)
             {
                 if (won.Refusal is { } recorded)

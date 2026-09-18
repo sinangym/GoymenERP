@@ -61,7 +61,7 @@ public static class SalesModuleExtensions
 
     // Built in a named factory so that no registration statement of this module names the company
     // context: the host's scoped ICompanyContext is resolved here, never registered (architecture guard).
-    private static SalesDraftService CreateDraftService(IServiceProvider serviceProvider) => new(
+    private static SalesDraftService CreateDraftService(IServiceProvider serviceProvider) => new SalesDraftService(
         serviceProvider.GetRequiredService<ICompanyContext>(),
         serviceProvider.GetRequiredService<ICurrentUser>(),
         serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
