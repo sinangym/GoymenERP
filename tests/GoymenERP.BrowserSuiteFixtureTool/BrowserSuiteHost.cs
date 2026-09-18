@@ -35,7 +35,24 @@ internal sealed class BrowserSuiteHost(
                 .Where(pair => pair.Key is not (ConnectionKey or EnvironmentKey))
                 .Select(pair => new KeyValuePair<string, string?>(
                     pair.Key.Replace("__", ":", StringComparison.Ordinal),
-                    pair.Value))));
+                    pair.Value))
+                .Concat(MaskedProcessEnvelope())));
         builder.ConfigureLogging(logging => logging.ClearProviders());
     }
+
+    /// <summary>
+    /// The runner's own process carries the run's C-01 envelope variables (the workflow exports them for
+    /// every step), but the API container of a normal-profile suite does not. Any envelope key the
+    /// container's environment lacks is masked here (a later null value wins), so the in-process host
+    /// never activates a capability the container did not.
+    /// </summary>
+    private IEnumerable<KeyValuePair<string, string?>> MaskedProcessEnvelope() =>
+        Environment.GetEnvironmentVariables().Keys
+            .OfType<string>()
+            .Where(name => (name.StartsWith("GOYMEN_ERP_C01_E2E_", StringComparison.Ordinal)
+                            || name.StartsWith("C01E2e__", StringComparison.Ordinal))
+                           && !apiEnvironment.ContainsKey(name))
+            .Select(name => new KeyValuePair<string, string?>(
+                name.Replace("__", ":", StringComparison.Ordinal),
+                null));
 }
