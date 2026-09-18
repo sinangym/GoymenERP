@@ -86,9 +86,10 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
 
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT Status FROM finance.BankAccounts WHERE Id = @id", ("@id", proposed.Id)));
         Assert.Equal(Approver, await run.ScalarAsync<string>("SELECT ApprovedBy FROM finance.BankAccounts WHERE Id = @id", ("@id", proposed.Id)));
-        // Proposal, approval and the second draft: three command records; refusals store none.
-        Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.Commands"));
-        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.Commands WHERE BankAccountId IS NOT NULL"));
+        // Proposal, approval, the stale approval (a terminal refusal, ADR-011 §7) and the second draft: four
+        // command records; the other refusals (Ö4, not proposed, the ineligible draft) store none.
+        Assert.Equal(4, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.Commands"));
+        Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.Commands WHERE BankAccountId IS NOT NULL"));
         Assert.Equal(2, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Finance.BankAccount' AND CorrelationId = @c", ("@c", run.Correlation)));
         Assert.Equal(1, await run.ScalarAsync<int>(
@@ -119,7 +120,10 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         }
 
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT Status FROM finance.BankAccounts WHERE Id = @id", ("@id", accountA.Id)));
-        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.Commands"));
+        // A's proposal, and B's not-found as B's key's terminal answer (§7): company B's, with no target.
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.Commands"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.Commands WHERE CompanyId = @b AND BankAccountId IS NULL AND DraftId IS NULL", ("@b", CompanyB)));
     }
 
     [SqlServerFact]
@@ -307,7 +311,10 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
                 ? new UnavailableSettingsPrerequisiteProvider(companyContext, currentUser)
                 : new SyntheticCandidates();
             var accounts = new FinanceBankAccountService(dbContext, companyContext, currentUser, permissions, currencies, collector,
-                new FinanceAuditEnvelope(FinanceBankAccountService.ProposeCommand, ["SENTETIK-FINANCE"], "Web"), TimeProvider.System);
+                new FinanceBankAccountEnvelopes(
+                    new FinanceAuditEnvelope(FinanceBankAccountService.ProposeCommand, ["SENTETIK-FINANCE"], "Web"),
+                    new FinanceAuditEnvelope(FinanceBankAccountService.ApproveCommand, ["SENTETIK-FINANCE"], "Web")),
+                TimeProvider.System);
             // The draft service reads bank accounts through the REAL persisted reader above.
             var drafts = new ReceiptDraftService(dbContext, companyContext, currentUser, permissions, accounts,
                 new SyntheticParty(company), new SyntheticSettings(company), collector, new FinanceReceiptDraftBinding(Operation),

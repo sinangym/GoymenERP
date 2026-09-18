@@ -16,6 +16,8 @@ public static class FinanceEndpoints
     public const string ManualReceiptsPath = "/api/v1/finance/manual-receipts";
     public const string DraftsPath = "/api/v1/finance/manual-receipts/drafts";
     public const string BankAccountsPath = "/api/v1/finance/bank-accounts";
+    public const string BankAccountMasterPath = "/api/v1/finance/bank-accounts/master";
+    public const string BankAccountCurrencyCandidatesPath = "/api/v1/finance/bank-accounts/currency-candidates";
     private const string IdempotencyHeaderName = "Idempotency-Key";
     private const int MaximumIdempotencyKeyLength = 128;
     private static readonly JsonSerializerOptions ContractJson = FinanceJson.CreateOptions();
@@ -73,6 +75,7 @@ public static class FinanceEndpoints
             .ProducesErpServiceUnavailable();
 
         MapManualReceiptEndpoints(endpoints);
+        MapBankAccountEndpoints(endpoints);
         return endpoints;
     }
 
@@ -83,8 +86,8 @@ public static class FinanceEndpoints
     /// <item><b>Save</b> returns the #258 <c>CommandResult</c> for the outcomes a client acts on: Succeeded
     /// 200, ValidationFailed 422 (its issues), VersionConflict / IdempotencyConflict 409. Denied and
     /// Unavailable are the platform problems 403 <c>forbidden</c> and 503 <c>service_unavailable</c>. A replay
-    /// (ADR-011) carries <c>Idempotency-Replayed</c> and <c>Idempotency-Original-Correlation-Id</c>; only a stored
-    /// success replays until the terminal replay of §7 (FIN-UI-1).</item>
+    /// (ADR-011) carries <c>Idempotency-Replayed</c> and <c>Idempotency-Original-Correlation-Id</c>: a stored
+    /// success, or a recorded terminal refusal (§7, FIN-UI-1: draft not found 422, stale version 409).</item>
     /// <item><b>Reads</b> return the resource on 200; NotFound 404, Denied 403 and Unavailable 503 are
     /// platform problems. A malformed or foreign list cursor is 400.</item>
     /// </list>
@@ -130,31 +133,15 @@ public static class FinanceEndpoints
 
                 var result = await service.DraftSaveAsync(Context(companyContext, currentUser, correlation),
                     new CommandMetadata(key), request, cancellationToken);
-                if (result.IsReplay)
-                {
-                    httpContext.Response.Headers["Idempotency-Replayed"] = "true";
-                    httpContext.Response.Headers["Idempotency-Original-Correlation-Id"] = result.OriginalCorrelationId;
-                }
-
-                // Denied and Unavailable are the platform's problems (403 forbidden, 503 service_unavailable),
-                // as for every other route; the #258 CommandResult carries the outcomes a client acts on.
-                return result.Outcome switch
-                {
-                    CommandOutcome.Succeeded => Results.Json(result, ContractJson, statusCode: StatusCodes.Status200OK),
-                    CommandOutcome.ValidationFailed =>
-                        Results.Json(result, ContractJson, statusCode: StatusCodes.Status422UnprocessableEntity),
-                    CommandOutcome.VersionConflict or CommandOutcome.IdempotencyConflict =>
-                        Results.Json(result, ContractJson, statusCode: StatusCodes.Status409Conflict),
-                    CommandOutcome.Denied => Results.Problem(statusCode: StatusCodes.Status403Forbidden),
-                    CommandOutcome.Unavailable => Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable),
-                    _ => throw new InvalidOperationException("Finance draft save returned an undefined outcome."),
-                };
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
             })
             .WithName("SaveFinanceManualReceiptDraftV1")
             .WithTags("Finance")
             .RequireAuthorization()
             .RequireCompanyContext()
-            .WithIdempotencyContract(StatusCodes.Status200OK)
+            // The replayable results: the stored success (200) and the recorded terminal refusals (§7).
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
             .Accepts<DraftSaveRequest>("application/json")
             .Produces<CommandResult>(StatusCodes.Status200OK)
             .Produces<CommandResult>(StatusCodes.Status422UnprocessableEntity)
@@ -241,6 +228,199 @@ public static class FinanceEndpoints
             .AllowsEmptyErpBadRequestBody()
             .AllowsCodeLessErpBadRequestBody()
             .ProducesErpServiceUnavailable();
+    }
+
+    /// <summary>
+    /// FIN-UI-1: the bank-account master (FS0) over HTTP, for F-04. The company is only the server
+    /// context; the proposer and approver are the authenticated actors.
+    /// <list type="bullet">
+    /// <item><b>Propose / approve</b> answer the <c>BankAccountCommandResult</c> with the save's mapping:
+    /// Succeeded 200, ValidationFailed 422, VersionConflict / IdempotencyConflict 409, Denied 403 and
+    /// Unavailable 503 as the platform problems, the ADR-011 replay headers on a replay. Ö4 holds in the
+    /// service and the database: the proposer's own approval is Denied (403).</item>
+    /// <item><b>Master list</b> (read authority): the company's accounts, proposals included, each with
+    /// whether the caller proposed it.</item>
+    /// <item><b>Currency candidates</b> (propose authority): Settings' candidates as given; empty is
+    /// "no candidates", never a default.</item>
+    /// </list>
+    /// </summary>
+    private static void MapBankAccountEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapPost(BankAccountsPath, async (
+                HttpContext httpContext,
+                IFinanceBankAccountMaster master,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (await ReadBodyAsync<BankAccountProposeRequest>(httpContext, cancellationToken) is not { } request)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                var result = await master.ProposeAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ProposeFinanceBankAccountV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .WithIdempotencyContract(StatusCodes.Status200OK)
+            .Accepts<BankAccountProposeRequest>("application/json")
+            .Produces<BankAccountCommandResult>(StatusCodes.Status200OK)
+            .Produces<BankAccountCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<BankAccountCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapPost(BankAccountsPath + "/{accountId:guid}/approval", async (
+                Guid accountId,
+                HttpContext httpContext,
+                IFinanceBankAccountMaster master,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (await ReadBodyAsync<BankAccountApprovalBody>(httpContext, cancellationToken) is not { } body)
+                {
+                    return httpContext.Request.HasJsonContentType()
+                        ? Results.Problem(statusCode: StatusCodes.Status400BadRequest)
+                        : Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                var result = await master.ApproveAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), new BankAccountApproveRequest(accountId, body.ExpectedVersion), cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("ApproveFinanceBankAccountV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            // The replayable results: the stored approval (200) and the recorded terminal refusals (§7).
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<BankAccountApprovalBody>("application/json")
+            .Produces<BankAccountCommandResult>(StatusCodes.Status200OK)
+            .Produces<BankAccountCommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<BankAccountCommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(BankAccountMasterPath, async (
+                HttpContext httpContext,
+                IFinanceBankAccountMaster master,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await master.ListMasterAsync(Context(companyContext, currentUser, correlation), cancellationToken));
+            })
+            .WithName("GetFinanceBankAccountMasterV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<BankAccountMasterPage>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpServiceUnavailable();
+
+        endpoints.MapGet(BankAccountCurrencyCandidatesPath, async (
+                HttpContext httpContext,
+                IFinanceBankAccountMaster master,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                return Read(await master.CurrencyCandidatesAsync(Context(companyContext, currentUser, correlation),
+                    cancellationToken));
+            })
+            .WithName("GetFinanceBankAccountCurrencyCandidatesV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            .Produces<BankAccountCurrencyCandidates>()
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpServiceUnavailable();
+    }
+
+    /// <summary>
+    /// A command's answer: the outcomes a client acts on carry the result (Succeeded 200,
+    /// ValidationFailed 422, VersionConflict / IdempotencyConflict 409); Denied and Unavailable are the
+    /// platform's problems (403 <c>forbidden</c>, 503 <c>service_unavailable</c>), as on every route. A
+    /// replay (ADR-011 §4) carries <c>Idempotency-Replayed</c> and <c>Idempotency-Original-Correlation-Id</c>.
+    /// </summary>
+    private static IResult Command<T>(HttpContext httpContext, T result, CommandOutcome outcome, bool isReplay,
+        string originalCorrelationId)
+    {
+        if (isReplay)
+        {
+            httpContext.Response.Headers["Idempotency-Replayed"] = "true";
+            httpContext.Response.Headers["Idempotency-Original-Correlation-Id"] = originalCorrelationId;
+        }
+
+        return outcome switch
+        {
+            CommandOutcome.Succeeded => Results.Json(result, ContractJson, statusCode: StatusCodes.Status200OK),
+            CommandOutcome.ValidationFailed =>
+                Results.Json(result, ContractJson, statusCode: StatusCodes.Status422UnprocessableEntity),
+            CommandOutcome.VersionConflict or CommandOutcome.IdempotencyConflict =>
+                Results.Json(result, ContractJson, statusCode: StatusCodes.Status409Conflict),
+            CommandOutcome.Denied => Results.Problem(statusCode: StatusCodes.Status403Forbidden),
+            CommandOutcome.Unavailable => Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable),
+            _ => throw new InvalidOperationException("Finance command returned an undefined outcome."),
+        };
+    }
+
+    /// <summary>The strict contract body (FinanceJson: unknown members and missing required ones refused); null when absent, not JSON, or malformed.</summary>
+    private static async Task<T?> ReadBodyAsync<T>(HttpContext httpContext, CancellationToken cancellationToken) where T : class
+    {
+        if (!httpContext.Request.HasJsonContentType())
+        {
+            return null;
+        }
+
+        try
+        {
+            return await JsonSerializer.DeserializeAsync<T>(httpContext.Request.Body, ContractJson, cancellationToken);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     /// <summary>The request's server context: company, actor and correlation are never request data.</summary>

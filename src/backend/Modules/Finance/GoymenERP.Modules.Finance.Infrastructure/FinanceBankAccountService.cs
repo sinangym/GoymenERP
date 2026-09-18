@@ -27,10 +27,17 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// validity is still the profile's, at draft save. An unavailable Settings source refuses, fail-closed.</item>
 /// <item><b>Authority:</b> server company/actor must be the request's; the action is checked before
 /// anything is read and again after every owner await, replay included.</item>
+/// <item><b>Visibility (least privilege, coordinator's technical default on #325):</b> a pending
+/// proposal is shown only to a caller who may propose or approve; a read-only caller sees approved
+/// accounts only, in the lists and by id alike. Business may decide otherwise in a later slice.</item>
 /// <item><b>Idempotency and concurrency (ADR-011):</b> the shared command record keyed by (company,
 /// command, key hash) with the actor and the canonical payload hash; the same key, payload and actor
-/// replays, another payload or actor conflicts.
+/// replays, another payload or actor conflicts (§2–§4). An authorized terminal refusal — the account
+/// is not the company's, or the expected version is stale — is recorded and replayed too (§7). The
+/// loser of a same-key race answers the winner's record (§8).
 /// Approve needs the expected version. One save covers the account, the command and the audit event.</item>
+/// <item><b>Audit (ADR-009):</b> each write is audited with the roles that granted its own permission
+/// (<see cref="FinanceBankAccountEnvelopes"/>).</item>
 /// </list>
 /// </summary>
 public sealed class FinanceBankAccountService(
@@ -40,7 +47,7 @@ public sealed class FinanceBankAccountService(
     IFinancePermissionPort permissions,
     ISettingsMoneyCandidateReader currencies,
     IAuditEventCollector auditEvents,
-    FinanceAuditEnvelope envelope,
+    FinanceBankAccountEnvelopes envelopes,
     TimeProvider timeProvider) : IFinanceBankAccountMaster, IFinanceBankAccountReader
 {
     public const string ProposeCommand = "finance.bank-account.propose";
@@ -115,9 +122,10 @@ public sealed class FinanceBankAccountService(
         dbContext.BankAccounts.Add(row);
         var result = Succeeded(context, row);
         AddCommand(context, metadata, ProposeCommand, payloadHash, row.Id, result, now);
-        Audit(context, metadata, row.Id, "finance.bank-account.proposed.v1", "Propose", versionBefore: null, row.Version,
-            "{}", AccountAudit(row), approvalContextJson: null, "Finans banka hesabı önerisi (para etkisi yok)");
-        return await SaveAsync(context, result, cancellationToken);
+        Audit(context, metadata, envelopes.Propose, row.Id, "finance.bank-account.proposed.v1", "Propose", versionBefore: null,
+            row.Version, "{}", AccountAudit(row), approvalContextJson: null, "Finans banka hesabı önerisi (para etkisi yok)");
+        return await SaveAsync(context, metadata, FinanceAction.ProposeBankAccount, ProposeCommand, payloadHash, result,
+            cancellationToken);
     }
 
     public async Task<BankAccountCommandResult> ApproveAsync(FinanceContext context, CommandMetadata metadata,
@@ -138,6 +146,17 @@ public sealed class FinanceBankAccountService(
             return Refused(context, CommandOutcome.ValidationFailed, Issue("expectedVersion", "identity_required"));
         }
 
+        // Malformed identities are refused before anything is read (never stored, so never a replay).
+        if (request.AccountId == Guid.Empty)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("accountId", "identity_required"));
+        }
+
+        if (!IsCanonical(request.ExpectedVersion))
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("expectedVersion", "identity_required"));
+        }
+
         var payloadHash = PayloadHash(ApproveCommand, request);
         if (await PriorAsync(context, metadata, FinanceAction.ApproveBankAccount, ApproveCommand, payloadHash, cancellationToken)
             is { } prior)
@@ -145,21 +164,22 @@ public sealed class FinanceBankAccountService(
             return prior;
         }
 
-        if (request.AccountId == Guid.Empty || !IsCanonical(request.ExpectedVersion))
-        {
-            return Refused(context, CommandOutcome.ValidationFailed, Issue("accountId", "identity_required"));
-        }
-
         var row = await dbContext.BankAccounts.SingleOrDefaultAsync(candidate => candidate.Id == request.AccountId, cancellationToken);
         if (row is null)
         {
-            // Another company's account is not visible either: the same answer, nothing leaks.
-            return Refused(context, CommandOutcome.ValidationFailed, Issue("accountId", "bank_account_not_found"));
+            // Another company's account is not visible either: the same answer, nothing leaks. Terminal
+            // (ADR-011 §7): the key keeps this answer, with no target to point at.
+            return await TerminalAsync(context, metadata, FinanceAction.ApproveBankAccount, ApproveCommand, payloadHash,
+                accountId: null, Refused(context, CommandOutcome.ValidationFailed, Issue("accountId", "bank_account_not_found")),
+                cancellationToken);
         }
 
         if (!string.Equals(VersionText(row.Version), request.ExpectedVersion, StringComparison.Ordinal))
         {
-            return Refused(context, CommandOutcome.VersionConflict, Issue("expectedVersion", "version_conflict"));
+            // Terminal (§7): a retry of this key answers the same conflict even after the account moves on.
+            return await TerminalAsync(context, metadata, FinanceAction.ApproveBankAccount, ApproveCommand, payloadHash,
+                row.Id, Refused(context, CommandOutcome.VersionConflict, Issue("expectedVersion", "version_conflict")),
+                cancellationToken);
         }
 
         if (row.Status != Proposed)
@@ -191,9 +211,78 @@ public sealed class FinanceBankAccountService(
         AddCommand(context, metadata, ApproveCommand, payloadHash, row.Id, result, now);
         var approval = JsonSerializer.Serialize(new { rule = "O4", proposedBy = row.ProposedBy, approvedBy = context.ActorId },
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
-        Audit(context, metadata, row.Id, "finance.bank-account.approved.v1", "Approve", versionBefore, row.Version, before,
-            AccountAudit(row), approval, "Finans banka hesabı onayı (hazırlayandan farklı tek onay; para etkisi yok)");
-        return await SaveAsync(context, result, cancellationToken);
+        Audit(context, metadata, envelopes.Approve, row.Id, "finance.bank-account.approved.v1", "Approve", versionBefore,
+            row.Version, before, AccountAudit(row), approval,
+            "Finans banka hesabı onayı (hazırlayandan farklı tek onay; para etkisi yok)");
+        return await SaveAsync(context, metadata, FinanceAction.ApproveBankAccount, ApproveCommand, payloadHash, result,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// F-04's list: every account of the company, proposals included, each with whether the caller
+    /// proposed it. Read authority as for the picker; the order is the picker's.
+    /// </summary>
+    public async Task<ReadResult<BankAccountMasterPage>> ListMasterAsync(FinanceContext context, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (await ReadFenceAsync(context, null, cancellationToken) is { } outcome)
+        {
+            return new ReadResult<BankAccountMasterPage>(outcome, null);
+        }
+
+        var rows = await VisibleAsync(context, cancellationToken);
+        if (await ReadFenceAsync(context, null, cancellationToken) is { } again)
+        {
+            return new ReadResult<BankAccountMasterPage>(again, null);
+        }
+
+        return new ReadResult<BankAccountMasterPage>(ReadOutcome.Found, new BankAccountMasterPage(context.CompanyId,
+            [.. rows.Select(row => new BankAccountMasterItem(View(row),
+                string.Equals(row.ProposedBy, context.ActorId, StringComparison.Ordinal)))]));
+    }
+
+    /// <summary>
+    /// The currencies a proposal may name: Settings' candidates under the PROPOSE authority, passed
+    /// through as given (shape-checked, never filtered, reordered or defaulted). A source with no
+    /// candidates is an empty list; an unreachable or malformed one is unavailable, a forbidden one denied.
+    /// </summary>
+    public async Task<ReadResult<BankAccountCurrencyCandidates>> CurrencyCandidatesAsync(FinanceContext context,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (await FenceAsync(context, FinanceAction.ProposeBankAccount, null, cancellationToken) is { } refused)
+        {
+            return new ReadResult<BankAccountCurrencyCandidates>(ReadOutcomeOf(refused.Outcome), null);
+        }
+
+        IReadOnlyList<MoneyCurrencyCandidateV1> candidates;
+        try
+        {
+            candidates = MoneyCurrencyCandidatesV1.EnsureWellFormed(
+                await currencies.GetMoneyCurrencyCandidatesAsync(cancellationToken));
+        }
+        catch (SettingsPrerequisiteException exception)
+        {
+            if (await FenceAsync(context, FinanceAction.ProposeBankAccount, null, cancellationToken) is { } fenced)
+            {
+                return new ReadResult<BankAccountCurrencyCandidates>(ReadOutcomeOf(fenced.Outcome), null);
+            }
+
+            return new ReadResult<BankAccountCurrencyCandidates>(
+                exception.Code == "settings_access_denied" ? ReadOutcome.Denied : ReadOutcome.Unavailable, null);
+        }
+
+        if (await FenceAsync(context, FinanceAction.ProposeBankAccount, null, cancellationToken) is { } afterSettings)
+        {
+            return new ReadResult<BankAccountCurrencyCandidates>(ReadOutcomeOf(afterSettings.Outcome), null);
+        }
+
+        return new ReadResult<BankAccountCurrencyCandidates>(ReadOutcome.Found, new BankAccountCurrencyCandidates(
+            context.CompanyId,
+            [.. candidates.Select(candidate => new BankAccountCurrencyCandidate(candidate.CurrencyId, candidate.Code,
+                candidate.DisplayLabel))]));
     }
 
     public async Task<ReadResult<BankAccountPage>> ListAuthorizedAsync(FinanceContext context, CancellationToken cancellationToken)
@@ -205,10 +294,7 @@ public sealed class FinanceBankAccountService(
             return new ReadResult<BankAccountPage>(outcome, null);
         }
 
-        var rows = await dbContext.BankAccounts.AsNoTracking()
-            .OrderBy(row => row.DisplayName)
-            .ThenBy(row => row.Id)
-            .ToListAsync(cancellationToken);
+        var rows = await VisibleAsync(context, cancellationToken);
         if (await ReadFenceAsync(context, null, cancellationToken) is { } again)
         {
             return new ReadResult<BankAccountPage>(again, null);
@@ -230,6 +316,12 @@ public sealed class FinanceBankAccountService(
 
         var row = await dbContext.BankAccounts.AsNoTracking()
             .SingleOrDefaultAsync(candidate => candidate.Id == accountId, cancellationToken);
+        if (row is { Status: Proposed } && !await SeesProposalsAsync(context, cancellationToken))
+        {
+            // A pending proposal is not disclosed to a read-only caller: the same answer as no account.
+            row = null;
+        }
+
         if (await ReadFenceAsync(context, accountId, cancellationToken) is { } again)
         {
             return new ReadResult<BankAccountView>(again, null);
@@ -273,8 +365,9 @@ public sealed class FinanceBankAccountService(
     }
 
     /// <summary>
-    /// ADR-011: the same (command, key hash) again answers its stored result as a replay with its first
-    /// correlation; another payload or actor is a conflict that discloses nothing of the earlier result.
+    /// ADR-011: the same (command, key hash) again answers its stored result — a success or a recorded
+    /// terminal refusal — as a replay with its first correlation; another payload or actor is a conflict
+    /// that discloses nothing of the earlier result. The action is measured afresh before the replay.
     /// </summary>
     private async Task<BankAccountCommandResult?> PriorAsync(FinanceContext context, CommandMetadata metadata,
         FinanceAction action, string command, string payloadHash, CancellationToken cancellationToken)
@@ -354,6 +447,26 @@ public sealed class FinanceBankAccountService(
         return SameContext(context) ? null : Refused(context, CommandOutcome.Denied);
     }
 
+    /// <summary>The company's accounts the caller may see, in the picker's order: proposals only for a proposer or approver.</summary>
+    private async Task<List<BankAccountRow>> VisibleAsync(FinanceContext context, CancellationToken cancellationToken)
+    {
+        var query = dbContext.BankAccounts.AsNoTracking();
+        if (!await SeesProposalsAsync(context, cancellationToken))
+        {
+            query = query.Where(row => row.Status == Approved);
+        }
+
+        return await query.OrderBy(row => row.DisplayName).ThenBy(row => row.Id).ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Whether pending proposals are the caller's business: a fresh grant to propose or to approve.
+    /// Anything else (denied, unmapped) is no — least privilege, never a leak.
+    /// </summary>
+    private async Task<bool> SeesProposalsAsync(FinanceContext context, CancellationToken cancellationToken) =>
+        await permissions.CheckAsync(context, FinanceAction.ProposeBankAccount, null, cancellationToken) == PermissionDecision.Allowed
+        || await permissions.CheckAsync(context, FinanceAction.ApproveBankAccount, null, cancellationToken) == PermissionDecision.Allowed;
+
     private async Task<ReadOutcome?> ReadFenceAsync(FinanceContext context, Guid? accountId, CancellationToken cancellationToken)
     {
         if (!SameContext(context))
@@ -377,7 +490,7 @@ public sealed class FinanceBankAccountService(
         && companyContext.CompanyId == context.CompanyId && currentUser.CanAccessCompany(context.CompanyId);
 
     private void AddCommand(FinanceContext context, CommandMetadata metadata, string command, string payloadHash,
-        Guid accountId, BankAccountCommandResult result, DateTimeOffset now) =>
+        Guid? accountId, BankAccountCommandResult result, DateTimeOffset now) =>
         dbContext.Commands.Add(new FinanceCommandRow
         {
             CompanyId = context.CompanyId,
@@ -391,27 +504,49 @@ public sealed class FinanceBankAccountService(
             RecordedAtUtc = now,
         });
 
-    private async Task<BankAccountCommandResult> SaveAsync(FinanceContext context, BankAccountCommandResult result,
+    /// <summary>
+    /// One save. If it loses a race (a unique key or the row version), nothing of it stays tracked and
+    /// the key is read afresh: another caller of the same key that won is this answer too (ADR-011 §8,
+    /// through <see cref="PriorAsync"/> and its fence); a race that left this key empty is a
+    /// <c>concurrent_change</c> the caller may retry.
+    /// </summary>
+    private async Task<BankAccountCommandResult> SaveAsync(FinanceContext context, CommandMetadata metadata,
+        FinanceAction action, string command, string payloadHash, BankAccountCommandResult result,
         CancellationToken cancellationToken)
     {
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
+            || exception.InnerException is SqlException { Number: 2601 or 2627 })
         {
-            return Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
-        }
-        catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 })
-        {
-            return Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
+            dbContext.ChangeTracker.Clear();
+            return await PriorAsync(context, metadata, action, command, payloadHash, cancellationToken)
+                ?? Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
         }
 
         return result;
     }
 
-    private void Audit(FinanceContext context, CommandMetadata metadata, Guid accountId, string eventType, string operation,
-        long? versionBefore, long? versionAfter, string before, string after, string? approvalContextJson, string reason)
+    /// <summary>
+    /// ADR-011 §7: an authorized terminal refusal is the key's result for good. It is recorded alone
+    /// (no business change, no audit event) and answered; a retry of the key replays it.
+    /// </summary>
+    private Task<BankAccountCommandResult> TerminalAsync(FinanceContext context, CommandMetadata metadata,
+        FinanceAction action, string command, string payloadHash, Guid? accountId, BankAccountCommandResult refusal,
+        CancellationToken cancellationToken)
+    {
+        AddCommand(context, metadata, command, payloadHash, accountId, refusal, timeProvider.GetUtcNow());
+        return SaveAsync(context, metadata, action, command, payloadHash, refusal, cancellationToken);
+    }
+
+    private static ReadOutcome ReadOutcomeOf(CommandOutcome outcome) =>
+        outcome == CommandOutcome.Denied ? ReadOutcome.Denied : ReadOutcome.Unavailable;
+
+    private void Audit(FinanceContext context, CommandMetadata metadata, FinanceAuditEnvelope envelope, Guid accountId,
+        string eventType, string operation, long? versionBefore, long? versionAfter, string before, string after,
+        string? approvalContextJson, string reason)
     {
         auditEvents.Enqueue(new AuditEventDraft(
             context.CompanyId,
@@ -461,3 +596,10 @@ public sealed class FinanceBankAccountService(
     private static BankAccountCommandResult Refused(FinanceContext context, CommandOutcome outcome, params ValidationIssue[] issues) =>
         new BankAccountCommandResult(outcome, null, IsReplay: false, context.CorrelationId, issues);
 }
+
+/// <summary>
+/// The ADR-009 envelopes of the bank-account master's writes, one per command: a proposal is audited
+/// with the roles that granted <c>finance.bank-account.propose</c>, an approval with those of
+/// <c>finance.bank-account.approve</c>.
+/// </summary>
+public sealed record FinanceBankAccountEnvelopes(FinanceAuditEnvelope Propose, FinanceAuditEnvelope Approve);
