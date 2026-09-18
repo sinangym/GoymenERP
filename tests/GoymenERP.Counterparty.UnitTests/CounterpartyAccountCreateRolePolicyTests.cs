@@ -135,6 +135,9 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
         };
         AssertError(root, extraRole, "exactly one authorized role");
 
+        // Must stay unregistered, or this case would stop exercising the "unknown permission" error.
+        const string unregisteredPermission = "counterparty.accounts.unknown";
+        Assert.DoesNotContain(unregisteredPermission, ErpPermissions.All);
         var unknownPermission = accepted with
         {
             Roles =
@@ -142,7 +145,7 @@ public sealed class CounterpartyAccountCreateRolePolicyTests
                 admin with
                 {
                     PermissionsToEnsure =
-                    [AccountCreatePermission, "counterparty.accounts.unknown"],
+                    [AccountCreatePermission, unregisteredPermission],
                 },
             ],
         };
