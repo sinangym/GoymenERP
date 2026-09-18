@@ -24,7 +24,7 @@ public sealed class RealizationFactTests
     {
         var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
             [new PlannedInput(MasterRoll, Kg(10_000m))]);
-        plan.Approve(Planner, DateTimeOffset.UnixEpoch);
+        plan.Approve(plan.Version, Planner, DateTimeOffset.UnixEpoch);
         return ProductionOrder.FromApprovedPlan(Guid.NewGuid(), plan);
     }
 
@@ -33,10 +33,10 @@ public sealed class RealizationFactTests
     {
         var order = Order();
         var slip = Guid.NewGuid();
-        order.IssueInput(slip, MasterRoll, Kg(10_000m), Morning);
+        order.IssueInput(order.Version, slip, MasterRoll, Kg(10_000m), Morning);
 
         var error = Assert.Throws<ManufacturingRuleException>(
-            () => order.IssueInput(slip, MasterRoll, Kg(10_000m), Morning.AddMinutes(1)));
+            () => order.IssueInput(order.Version, slip, MasterRoll, Kg(10_000m), Morning.AddMinutes(1)));
 
         Assert.Equal(ManufacturingRuleCodes.InputAlreadyIssued, error.Code);
         Assert.Equal(10_000m, order.BalanceOf(MasterRoll).Issued.Value);
@@ -49,10 +49,10 @@ public sealed class RealizationFactTests
         var order = Order();
         order.Issue(MasterRoll, Kg(10_000m));
         var returnId = Guid.NewGuid();
-        order.ReturnUnusedInput(returnId, MasterRoll, Kg(2_000m), Morning);
+        order.ReturnUnusedInput(order.Version, returnId, MasterRoll, Kg(2_000m), Morning);
 
         var error = Assert.Throws<ManufacturingRuleException>(
-            () => order.ReturnUnusedInput(returnId, MasterRoll, Kg(2_000m), Morning.AddMinutes(1)));
+            () => order.ReturnUnusedInput(order.Version, returnId, MasterRoll, Kg(2_000m), Morning.AddMinutes(1)));
 
         Assert.Equal(ManufacturingRuleCodes.ReturnAlreadyRecorded, error.Code);
         Assert.Equal(2_000m, order.BalanceOf(MasterRoll).Returned.Value);
@@ -65,9 +65,9 @@ public sealed class RealizationFactTests
         var slip = Guid.NewGuid();
         var returnId = Guid.NewGuid();
 
-        order.IssueInput(slip, MasterRoll, Kg(6_000m), Morning);
+        order.IssueInput(order.Version, slip, MasterRoll, Kg(6_000m), Morning);
         order.Issue(MasterRoll, Kg(4_000m));
-        order.ReturnUnusedInput(returnId, MasterRoll, Kg(500m), Morning.AddHours(2));
+        order.ReturnUnusedInput(order.Version, returnId, MasterRoll, Kg(500m), Morning.AddHours(2));
 
         var first = order.Issues[0];
         Assert.Equal((slip, MasterRoll, 6_000m), (first.IssueId, first.ParentRollId, first.Mass.Value));
@@ -84,15 +84,15 @@ public sealed class RealizationFactTests
     {
         var order = Order();
         order.Issue(MasterRoll, Kg(10_000m));
-        order.RecordWorkInProgress(Guid.NewGuid(), MasterRoll, Kg(7_000m), Morning);
-        order.RecordWorkInProgress(Guid.NewGuid(), MasterRoll, Kg(4_000m), Morning.AddHours(1));
+        order.RecordWorkInProgress(order.Version, Guid.NewGuid(), MasterRoll, Kg(7_000m), Morning);
+        order.RecordWorkInProgress(order.Version, Guid.NewGuid(), MasterRoll, Kg(4_000m), Morning.AddHours(1));
 
         var stale = Assert.Throws<ManufacturingRuleException>(
-            () => order.RecordWorkInProgress(Guid.NewGuid(), MasterRoll, Kg(9_000m), Morning.AddMinutes(30)));
+            () => order.RecordWorkInProgress(order.Version, Guid.NewGuid(), MasterRoll, Kg(9_000m), Morning.AddMinutes(30)));
         Assert.Equal(ManufacturingRuleCodes.WipMeasurementNotLatest, stale.Code);
 
         var tie = Assert.Throws<ManufacturingRuleException>(
-            () => order.RecordWorkInProgress(Guid.NewGuid(), MasterRoll, Kg(9_000m), Morning.AddHours(1)));
+            () => order.RecordWorkInProgress(order.Version, Guid.NewGuid(), MasterRoll, Kg(9_000m), Morning.AddHours(1)));
         Assert.Equal(ManufacturingRuleCodes.WipMeasurementNotLatest, tie.Code);
 
         Assert.Equal(4_000m, order.BalanceOf(MasterRoll).WorkInProgress.Value);
@@ -106,10 +106,10 @@ public sealed class RealizationFactTests
         var order = Order();
         order.Issue(MasterRoll, Kg(10_000m));
         var measurementId = Guid.NewGuid();
-        order.RecordWorkInProgress(measurementId, MasterRoll, Kg(7_000m), Morning);
+        order.RecordWorkInProgress(order.Version, measurementId, MasterRoll, Kg(7_000m), Morning);
 
         var error = Assert.Throws<ManufacturingRuleException>(
-            () => order.RecordWorkInProgress(measurementId, MasterRoll, Kg(6_000m), Morning.AddHours(1)));
+            () => order.RecordWorkInProgress(order.Version, measurementId, MasterRoll, Kg(6_000m), Morning.AddHours(1)));
 
         Assert.Equal(ManufacturingRuleCodes.WipAlreadyMeasured, error.Code);
         Assert.Equal(7_000m, order.BalanceOf(MasterRoll).WorkInProgress.Value);
@@ -119,12 +119,12 @@ public sealed class RealizationFactTests
     public void Facts_need_their_own_identity()
     {
         var order = Order();
-        Assert.Throws<ArgumentException>(() => order.IssueInput(Guid.Empty, MasterRoll, Kg(1m), Morning));
+        Assert.Throws<ArgumentException>(() => order.IssueInput(order.Version, Guid.Empty, MasterRoll, Kg(1m), Morning));
         order.Issue(MasterRoll, Kg(10_000m));
-        Assert.Throws<ArgumentException>(() => order.ReturnUnusedInput(Guid.Empty, MasterRoll, Kg(1m), Morning));
-        Assert.Throws<ArgumentException>(() => order.RecordWorkInProgress(Guid.Empty, MasterRoll, Kg(1m), Morning));
+        Assert.Throws<ArgumentException>(() => order.ReturnUnusedInput(order.Version, Guid.Empty, MasterRoll, Kg(1m), Morning));
+        Assert.Throws<ArgumentException>(() => order.RecordWorkInProgress(order.Version, Guid.Empty, MasterRoll, Kg(1m), Morning));
         Assert.Throws<ArgumentException>(
-            () => order.DeclareOutput(Guid.Empty, MasterRoll, OutputClass.GoodProduct, Kg(1m), Morning));
+            () => order.DeclareOutput(order.Version, Guid.Empty, MasterRoll, OutputClass.GoodProduct, Kg(1m), Morning));
     }
 
     // SİPARİŞ P3-3: guards that had no test.

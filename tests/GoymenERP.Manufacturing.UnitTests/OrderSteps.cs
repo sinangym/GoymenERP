@@ -16,15 +16,15 @@ internal static class OrderSteps
         DateTimeOffset.UnixEpoch.AddSeconds(Interlocked.Increment(ref _tick));
 
     public static InputIssue Issue(this ProductionOrder order, Guid parentRollId, Kilograms mass) =>
-        order.IssueInput(Guid.NewGuid(), parentRollId, mass, Next());
+        order.IssueInput(order.Version, Guid.NewGuid(), parentRollId, mass, Next());
 
     public static InputReturn Return(this ProductionOrder order, Guid parentRollId, Kilograms mass) =>
-        order.ReturnUnusedInput(Guid.NewGuid(), parentRollId, mass, Next());
+        order.ReturnUnusedInput(order.Version, Guid.NewGuid(), parentRollId, mass, Next());
 
     public static OutputDeclaration Declare(
         this ProductionOrder order, Guid parentRollId, OutputClass outputClass, Kilograms mass) =>
-        order.DeclareOutput(Guid.NewGuid(), parentRollId, outputClass, mass, Next());
+        order.DeclareOutput(order.Version, Guid.NewGuid(), parentRollId, outputClass, mass, Next());
 
     public static WipMeasurement MeasureWip(this ProductionOrder order, Guid parentRollId, Kilograms mass) =>
-        order.RecordWorkInProgress(Guid.NewGuid(), parentRollId, mass, Next());
+        order.RecordWorkInProgress(order.Version, Guid.NewGuid(), parentRollId, mass, Next());
 }
