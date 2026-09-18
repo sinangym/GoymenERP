@@ -64,6 +64,7 @@ internal sealed class MovementRow : IInventoryTenantRow
     public string SourceKind { get; set; } = string.Empty;
     public Guid SourceId { get; set; }
     public Guid? SourceLineId { get; set; }
+    public int SourceGrain { get; set; }
     public int CostStatus { get; set; }
     public decimal? CostAmount { get; set; }
     public Guid? CostCurrencyId { get; set; }
@@ -71,6 +72,21 @@ internal sealed class MovementRow : IInventoryTenantRow
     public DateTimeOffset RecordedAtUtc { get; set; }
     public string RecordedBy { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// The grain one source is answered at for one movement kind: whole or line by line (#293 ORG
+/// P3-1). Written with the source's first movement, never changed; every movement references it by
+/// (company, kind, source kind, source, grain), so SQL itself refuses a whole movement of a source
+/// answered by lines and the other way round. Append-only.
+/// </summary>
+internal sealed class SourceGrainRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public int Kind { get; set; }
+    public string SourceKind { get; set; } = string.Empty;
+    public Guid SourceId { get; set; }
+    public int Grain { get; set; }
 }
 
 /// <summary>One line of a stored movement: a position and a kilogram amount. Append-only.</summary>
