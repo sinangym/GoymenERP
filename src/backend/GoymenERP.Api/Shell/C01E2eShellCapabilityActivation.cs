@@ -83,13 +83,13 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
                 typeof(SalesShellCapabilityProvider),
             },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10AndSalesV10),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10AndPublishedSalesV10),
         (new[]
             {
                 typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
                 typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
             },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10SalesV10AndFinanceV10),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10AndFinanceV10),
     ];
 
     private static string NormalAuthority(IServiceCollection services)
