@@ -10,8 +10,10 @@
 #  - Each actor's Identity user, one role and one company-wide assignment in GDC through the real
 #    IdentityDataSeeder (decision 1), continuing the built-in seed's indices (Users 5, Roles 5,
 #    Assignments 7). The roles grant exactly the suite's closed list, split by persona (LOG-4 D6): the
-#    preparer opens and issues instructions (and reads approved Sales drafts to pick a line — the
-#    Sales read name, read-only, ASSUMPTION-LOG4B-1), the loader records loads, the reader only reads.
+#    preparer opens and issues instructions and picks the approved line through the PRICE-FREE Logistics
+#    read (GET …/loading-instructions/approved-order-lines, under the create name; Sinan §4 #66 5738113623:
+#    the Sevkiyatçı sees orders but never prices — the preparer holds NO Sales grant), the loader records
+#    loads, the reader only reads. The two Sales actors (seed only) hold the Sales names.
 #    The shell publishes the Logistics list/detail to all three and the new-instruction screen to the
 #    preparer only. Nothing else is granted, no system role is touched.
 # Every value is synthetic (SENTETIK browser-suite:l04 …) and exists only in the run's disposable
@@ -60,7 +62,6 @@ services:
       IdentitySeed__Roles__5__IsSystem: "false"
       IdentitySeed__Roles__5__Permissions__0: logistics.loading-instructions.create
       IdentitySeed__Roles__5__Permissions__1: logistics.loading-instructions.read
-      IdentitySeed__Roles__5__Permissions__2: sales.drafts.read
       IdentitySeed__Roles__6__Id: b3000000-0000-4000-8000-000000000502
       IdentitySeed__Roles__6__Code: BROWSER_L04_LOADER
       IdentitySeed__Roles__6__Name: SENTETIK browser-suite:l04 yükleme kaydeden rolü

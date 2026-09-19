@@ -9,7 +9,9 @@
  * answers false and `CapabilityRoute` closes every Logistics route onto the neutral not-found block.
  * The ids are mount keys, not permissions: every route's service measures its own Logistics
  * permission afresh (#276), and recording a load is a server-measured command on the detail
- * (`logistics.loads.record`), not a screen.
+ * (`logistics.loads.record`), not a screen. The new-instruction picker reads the price-free Logistics
+ * approved-order-lines read under the create grant (Sinan §4: the Sevkiyatçı sees orders, never prices);
+ * no Sales grant is needed.
  */
 
 export const LOGISTICS_CAPABILITY = {

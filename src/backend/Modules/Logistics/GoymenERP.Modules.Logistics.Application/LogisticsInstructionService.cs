@@ -206,6 +206,58 @@ public sealed class LogisticsInstructionService(
         return new LoadingInstructionListResponse([.. page.Items.Select(Summary)], page.NextCursor);
     }
 
+    /// <summary>
+    /// LOG-4b: the approved order lines for the picker — measured under the CREATE name (the person who may open
+    /// an instruction may see what there is to load), read from the Sales owner's price-free port, fenced like every
+    /// owner read; every item must be this company's (else the owner answered malformed).
+    /// </summary>
+    public async Task<LogisticsApprovedOrderLinePage> GetApprovedOrderLinesAsync(LogisticsApprovedOrderLinesQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        cancellationToken.ThrowIfCancellationRequested();
+        var scope = await RequireAsync(bindings.CreatePermission, cancellationToken);
+        var pageSize = query.PageSize == 0 ? DefaultPageSize : query.PageSize;
+        if (pageSize is < 1 or > MaximumPageSize || query.Cursor?.Length > MaximumCursorLength
+            || (query.Cursor is not null && string.IsNullOrWhiteSpace(query.Cursor)))
+        {
+            throw new LogisticsInstructionServiceException(400, "validation_failed");
+        }
+
+        SalesApprovedLinePageV1 page;
+        try
+        {
+            page = await GuardedAsync(scope, bindings.CreatePermission,
+                () => orderLines.ListApprovedLinesAsync(pageSize, query.Cursor, cancellationToken), cancellationToken);
+        }
+        catch (LogisticsInstructionServiceException)
+        {
+            throw;
+        }
+        catch (ArgumentException)
+        {
+            // The Sales owner refused the cursor (another company's, or malformed): the caller's input, not an outage.
+            throw new LogisticsInstructionServiceException(400, LogisticsProblemCodesV1.InvalidCursor);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.SalesProviderUnavailable);
+        }
+
+        if (page is null || page.Items is null || page.Items.Any(item => item is null || item.CompanyId != scope.CompanyId
+                || item.OrderId == Guid.Empty || item.LineId == Guid.Empty || item.ProductId == Guid.Empty || item.OrderUnitId == Guid.Empty
+                || string.IsNullOrWhiteSpace(item.QuantityText) || string.IsNullOrWhiteSpace(item.DocumentNo)))
+        {
+            throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.ReferenceProviderInvalid);
+        }
+
+        return new LogisticsApprovedOrderLinePage(
+            [.. page.Items.Select(item => new LogisticsApprovedOrderLineView(item.OrderId, item.DocumentNo, item.LineId, item.LineNo, item.PartyId,
+                item.CompanyAccountId, item.ProductId, item.ProductVersion, item.ProductCode, item.ProductName, item.OrderUnitId, item.UnitCode,
+                item.QuantityText, item.RequestedDeliveryDate, item.Revision))],
+            page.NextCursor);
+    }
+
     // ---- mutations ------------------------------------------------------------------------------
 
     private async Task<LoadingInstructionResponse> MutateAsync(Guid instructionId, object content, string expectedVersionText,

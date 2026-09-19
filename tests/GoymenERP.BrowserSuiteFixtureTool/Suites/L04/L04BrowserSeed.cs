@@ -58,6 +58,7 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
     private const int CustomerRole = 1;
     private const string DraftsPath = "/api/v1/sales/drafts";
     private const string InstructionsPath = "/api/v1/logistics/loading-instructions";
+    private const string ApprovedLinesPath = InstructionsPath + "/approved-order-lines";
     private const string CapabilitiesPath = "/api/v1/shell/capabilities";
     private const string ListCapability = "logistics.instructions.list";
     private const string CreateCapability = "logistics.instructions.create";
@@ -118,7 +119,7 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
                 new { expectedVersion = draftVersion.ToString(System.Globalization.CultureInfo.InvariantCulture) }, "approve", cancellationToken);
         }
 
-        JsonElement approved = await context.GetJsonAsync(PreparerActor, CompanyGdc, $"{DraftsPath}/{DraftId:D}", cancellationToken);
+        JsonElement approved = await context.GetJsonAsync(SalesApproverActor, CompanyGdc, $"{DraftsPath}/{DraftId:D}", cancellationToken);
         JsonElement approvedDraft = approved.GetProperty("draft");
         if (approvedDraft.GetProperty("approvalState").GetString() != "Approved"
             || approvedDraft.GetProperty("partyId").GetGuid() != customer.PartyId
@@ -126,7 +127,39 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
             || approved.GetProperty("lines").GetArrayLength() != 1
             || approved.GetProperty("lines")[0].GetProperty("lineId").GetGuid() != LineId)
         {
-            throw new InvalidOperationException("The seeded draft is not an APPROVED one-line draft of the seeded customer on the real detail route, read as the Logistics preparer.");
+            throw new InvalidOperationException("The seeded draft is not an APPROVED one-line draft of the seeded customer on the real detail route.");
+        }
+
+        // Deny-first (Sinan §4 #66 5738113623): the Logistics preparer holds no Sales grant — the Sales detail refuses it (403) —
+        // and picks the line through the PRICE-FREE Logistics read, which answers the seeded approved line without a price key.
+        bool salesRefused = false;
+        try
+        {
+            await context.GetJsonAsync(PreparerActor, CompanyGdc, $"{DraftsPath}/{DraftId:D}", cancellationToken);
+        }
+        catch (InvalidOperationException refusal) when (refusal.Message.Contains("answered 403", StringComparison.Ordinal))
+        {
+            salesRefused = true;
+        }
+
+        if (!salesRefused)
+        {
+            throw new InvalidOperationException("The Sales detail route must refuse the Logistics preparer (no Sales grant).");
+        }
+
+        JsonElement approvedLines = await context.GetJsonAsync(PreparerActor, CompanyGdc, ApprovedLinesPath, cancellationToken);
+        string approvedLinesJson = approvedLines.GetRawText();
+        if (!approvedLinesJson.Contains(DocumentNo, StringComparison.Ordinal) || !approvedLinesJson.Contains(LineId.ToString("D"), StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("The price-free approved-order-lines read does not answer the seeded approved line to the preparer.");
+        }
+
+        foreach (string priceKey in new[] { "unitPrice", "discountPercent", "paymentTerms", "priceUnitId", "currencyId" })
+        {
+            if (approvedLinesJson.Contains($"\"{priceKey}\"", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"The price-free approved-order-lines read carries a price key: {priceKey}.");
+            }
         }
 
         // 3) The negatives' instruction: created and issued through the real Logistics API, then one line blocked by the fixture.

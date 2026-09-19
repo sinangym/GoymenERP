@@ -1,6 +1,6 @@
 /**
- * L-03 in the real shell: the customer and the lines come only from the APPROVED Sales drafts, the
- * picker shows no money word, the quantity goes out as canonical TEXT, one key per snapshot with the
+ * L-03 in the real shell: the customer and the lines come only from the price-free approved-order-lines
+ * read, the picker shows no money word, the quantity goes out as canonical TEXT, one key per snapshot with the
  * same key on a retry after a lost reply, a replay shown as a replay, the 409 notices, and a closed
  * route without the grant. Component evidence, NOT_ENV.
  */
@@ -16,8 +16,9 @@ import {
   DRAFT_LINE,
   FORBIDDEN_MONEY_WORDS,
   KG,
-  approvedDraftDetail,
-  approvedDraftRow,
+  PARTY,
+  ACCOUNT,
+  approvedOrderLine,
   deferred,
   installFetch,
   instructionDetail,
@@ -35,8 +36,7 @@ afterEach(() => {
 })
 
 const salesReads = {
-  onSalesList: () => json({ items: [approvedDraftRow()], nextCursor: null }),
-  onSalesDetail: () => json(approvedDraftDetail()),
+  onApprovedLines: () => json({ items: [approvedOrderLine()], nextCursor: null }),
 }
 
 /** The create answer that describes the request the harness recorded (line id and quantity text as sent). */
@@ -50,7 +50,7 @@ function answering(call: RecordedCall, isReplay = false): Response {
 }
 
 async function pickTheLine() {
-  await userEvent.selectOptions(await screen.findByLabelText(T.field.customer), `${approvedDraftRow().partyId}|${approvedDraftRow().companyAccountId}`)
+  await userEvent.selectOptions(await screen.findByLabelText(T.field.customer), `${PARTY}|${ACCOUNT}`)
   const picker = await screen.findByTestId('logistics-line-picker')
   const row = within(picker).getByTestId('logistics-pick-SO-2026-0001-1')
   await userEvent.click(within(row).getByRole('checkbox'))
@@ -58,7 +58,7 @@ async function pickTheLine() {
 }
 
 describe('L-03 Yeni Yükleme Talimatı', () => {
-  it('offers the customer and the line from the approved drafts, shows no money word, and sends the canonical quantity text', async () => {
+  it('offers the customer and the line from the approved order lines, shows no money word, and sends the canonical quantity text', async () => {
     const harness = installFetch({ ...salesReads, onCreate: (_, call) => answering(call) })
     renderLogisticsApp('/lojistik/yukleme-talimatlari/yeni')
     const quantity = await pickTheLine()
@@ -70,7 +70,7 @@ describe('L-03 Yeni Yükleme Talimatı', () => {
     const create = harness.logisticsCalls().find((call) => call.method === 'POST')
     expect(create).toBeDefined()
     const body = JSON.parse(create!.body ?? '{}')
-    expect(body.customerPartyId).toBe(approvedDraftRow().partyId)
+    expect(body.customerPartyId).toBe(PARTY)
     expect(body.lines[0]).toMatchObject({ sourceOrderId: DRAFT, sourceOrderLineId: DRAFT_LINE, unitId: KG, quantity: '4.5' })
     expect(body.lines[0].productId).toBeUndefined()
     expect(create!.idempotencyKey).toMatch(/^[0-9a-f]{32}$/)
@@ -129,7 +129,7 @@ describe('L-03 Yeni Yükleme Talimatı', () => {
   })
 
   it('no approved draft means no customer to pick and no send; an ambiguous quantity is refused before any send', async () => {
-    const harness = installFetch({ onSalesList: () => json({ items: [], nextCursor: null }) })
+    const harness = installFetch({ onApprovedLines: () => json({ items: [], nextCursor: null }) })
     renderLogisticsApp('/lojistik/yukleme-talimatlari/yeni')
     await screen.findByTestId('logistics-no-approved')
     expect((screen.getByTestId('logistics-create-button') as HTMLButtonElement).disabled).toBe(true)
@@ -144,11 +144,21 @@ describe('L-03 Yeni Yükleme Talimatı', () => {
     expect(harness.logisticsCalls().filter((call) => call.method === 'POST')).toHaveLength(0)
   })
 
-  it('the route is closed without the create grant, and the Sales reads are not even attempted', async () => {
+  it('the route is closed without the create grant, and the approved-lines read is not even attempted', async () => {
     const harness = installFetch({ capabilities: ALL_LOGISTICS.filter((id) => id !== LOGISTICS_CAPABILITY.instructionsCreate) })
     renderLogisticsApp('/lojistik/yukleme-talimatlari/yeni')
     await waitFor(() => expect(harness.calls.some((call) => call.url.includes('/shell/capabilities'))).toBe(true))
     await waitFor(() => expect(screen.queryByRole('heading', { name: T.heading })).toBeNull())
+    expect(harness.calls.filter((call) => call.url.includes('/approved-order-lines'))).toHaveLength(0)
     expect(harness.calls.filter((call) => call.url.includes('/sales/'))).toHaveLength(0)
+  })
+
+  it('a body carrying a price member is refused as malformed: no customer is offered and nothing can be sent', async () => {
+    const harness = installFetch({ onApprovedLines: () => json({ items: [approvedOrderLine({ unitPrice: '12.50' })], nextCursor: null }) })
+    renderLogisticsApp('/lojistik/yukleme-talimatlari/yeni')
+    await screen.findByTestId('logistics-sources-failed')
+    expect((screen.getByTestId('logistics-create-button') as HTMLButtonElement).disabled).toBe(true)
+    expect(document.body.textContent).not.toContain('12.50')
+    expect(harness.logisticsCalls().filter((call) => call.method === 'POST')).toHaveLength(0)
   })
 })

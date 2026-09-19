@@ -14,21 +14,19 @@
  * the quantity TEXT included); a read is data only when every record belongs to the company it
  * was read under. Anything else is `malformed` — the record may exist, so the caller keeps the key.
  *
- * The line picker's reads of APPROVED Sales drafts (ASSUMPTION-LOG4B-1) are here too, read-only,
- * decoding only what the picker needs — never a price.
+ * The line picker's read is the price-free Logistics approved-order-lines read under the create grant
+ * (Sinan §4: the Sevkiyatçı sees orders, never prices); no Sales grant is needed.
  *
  * `X-Company-Id` is the committed shell company — request context, never a body member.
  */
 
 import {
+  APPROVED_ORDER_LINES_PATH,
   CREATED_STATUS,
   LOGISTICS_PATH,
   MUTATION_STATUS,
   REPLAY_HEADER,
-  SALES_APPROVED_STATE,
-  SALES_DRAFT_PATH,
-  decodeApprovedDraftLines,
-  decodeApprovedDraftPage,
+  decodeApprovedOrderLinePage,
   decodeInstructionDetail,
   decodeInstructionMutation,
   decodeInstructionPage,
@@ -36,10 +34,7 @@ import {
   instructionDetailPath,
   issuePath,
   loadsPath,
-  salesDraftDetailPath,
-  type ApprovedDraftLine,
-  type ApprovedDraftPage,
-  type ApprovedDraftSummary,
+  type ApprovedOrderLinePage,
   type CreateInstructionRequest,
   type InstructionDetail,
   type InstructionMutation,
@@ -133,47 +128,26 @@ export async function fetchInstructionDetail(
   return { type: 'ok-single', data: detail }
 }
 
-/* ── The line picker's reads: APPROVED Sales drafts (read-only) ──────────── */
+/* ── The line picker's read: price-free approved order lines ─────────────── */
 
-export type SourceOutcome<T> =
-  | { readonly type: 'ready'; readonly data: T }
-  | { readonly type: 'http'; readonly status: number; readonly code: string | null }
-  | { readonly type: 'network' }
-  | { readonly type: 'malformed' }
-
-/** The first page of the company's APPROVED drafts (the Sales owner's list, `approvalState=Approved`). Never a default. */
-export async function fetchApprovedDrafts(companyId: string, signal?: AbortSignal): Promise<SourceOutcome<ApprovedDraftPage>> {
-  const params = new URLSearchParams({ pageSize: String(PAGE_SIZE), approvalState: SALES_APPROVED_STATE })
-  const raw = await request(`${SALES_DRAFT_PATH}?${params.toString()}`, { headers: headers(companyId) }, signal)
-  if ('failure' in raw) return { type: 'network' }
-  if (raw.status !== 200) {
-    const problem = decodeProblem(raw.body, raw.status)
-    return { type: 'http', status: raw.status, code: problem?.code ?? null }
-  }
-  const page = decodeApprovedDraftPage(raw.body)
-  if (page === null || page.items.some((item) => item.companyId !== companyId)) return { type: 'malformed' }
-  return { type: 'ready', data: page }
-}
-
-export interface ApprovedDraftLines {
-  readonly draft: ApprovedDraftSummary
-  readonly lines: readonly ApprovedDraftLine[]
-}
-
-/** The lines of one APPROVED draft, only the picker's members; the money members are never read. */
-export async function fetchApprovedDraftLines(
-  draftId: string,
+/**
+ * The APPROVED sales lines a loading instruction may be opened on (LOG-4b, under the create grant).
+ * Every item must belong to the company it was read under. Never a default: an empty page means no
+ * line to pick.
+ */
+export async function fetchApprovedOrderLines(
+  cursor: string | null,
   companyId: string,
   signal?: AbortSignal,
-): Promise<SourceOutcome<ApprovedDraftLines>> {
-  const raw = await request(salesDraftDetailPath(draftId), { headers: headers(companyId) }, signal)
-  if ('failure' in raw) return { type: 'network' }
-  if (raw.status !== 200) {
-    const problem = decodeProblem(raw.body, raw.status)
-    return { type: 'http', status: raw.status, code: problem?.code ?? null }
-  }
-  const decoded = decodeApprovedDraftLines(raw.body, draftId, companyId)
-  return decoded === null ? { type: 'malformed' } : { type: 'ready', data: decoded }
+): Promise<ViewOutcome<ApprovedOrderLinePage>> {
+  const params = new URLSearchParams({ pageSize: String(PAGE_SIZE) })
+  if (cursor !== null) params.set('cursor', cursor)
+  const raw = await request(`${APPROVED_ORDER_LINES_PATH}?${params.toString()}`, { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const page = decodeApprovedOrderLinePage(raw.body)
+  if (page === null) return { type: 'malformed' }
+  return { type: 'ok-single', data: page }
 }
 
 /* ── Create ───────────────────────────────────────────────────────────────── */

@@ -6,15 +6,17 @@ import listResponseRaw from './examples/list-response.json?raw'
 import errorCapRaw from './examples/error-cap.json?raw'
 import errorForbiddenRaw from './examples/error-forbidden.json?raw'
 import {
-  decodeApprovedDraftLines,
-  decodeApprovedDraftPage,
+  APPROVED_ORDER_LINE_KEYS,
+  decodeApprovedOrderLine,
+  decodeApprovedOrderLinePage,
   decodeInstructionDetail,
   decodeInstructionMutation,
   decodeInstructionPage,
   decodeProblem,
   parseQuantityInput,
 } from './contract'
-import { approvedDraftDetail, approvedDraftRow, COMPANY_A, DRAFT, INSTRUCTION } from './testHarness'
+import approvedLinesRaw from './examples/approved-order-lines-response.json?raw'
+import { approvedOrderLine, INSTRUCTION } from './testHarness'
 
 type Body = Record<string, any>
 const parse = (raw: string): Body => JSON.parse(raw) as Body
@@ -71,25 +73,39 @@ describe('instruction decoders', () => {
   })
 })
 
-describe('the approved-draft reads the picker uses', () => {
-  it('takes only the picker members and drops every money member (Business 5743412166)', () => {
-    const lines = decodeApprovedDraftLines(approvedDraftDetail(), DRAFT, COMPANY_A)
-    expect(lines).not.toBeNull()
-    expect(Object.keys(lines!.lines[0]).sort()).toEqual(['lineId', 'lineNo', 'orderUnitId', 'productId', 'productName', 'quantity'])
-    expect(Object.keys(lines!.draft).sort()).toEqual(['companyAccountId', 'companyId', 'documentNo', 'id', 'partyId', 'version'])
-    expect(JSON.stringify(lines)).not.toMatch(/unitPrice|priceUnitId|discountPercent|currency/)
+describe('the price-free approved-order-lines read the picker uses (deny-first)', () => {
+  it('accepts exactly the fifteen wire members and reads the pinned example', () => {
+    expect([...APPROVED_ORDER_LINE_KEYS].sort()).toEqual(Object.keys(approvedOrderLine()).sort())
+    const line = decodeApprovedOrderLine(approvedOrderLine())
+    expect(line).not.toBeNull()
+    expect(Object.keys(line!).sort()).toEqual([...APPROVED_ORDER_LINE_KEYS].sort())
+    expect(decodeApprovedOrderLinePage(parse(approvedLinesRaw))?.items[0].quantity).toBe('6')
+    expect(decodeApprovedOrderLine(approvedOrderLine({ requestedDeliveryDate: null }))).not.toBeNull()
   })
 
-  it('refuses a draft that is not approved, another company, or another draft than asked', () => {
-    expect(decodeApprovedDraftPage({ items: [approvedDraftRow({ approvalState: 'PendingApproval' })], nextCursor: null })).toBeNull()
-    expect(decodeApprovedDraftLines(approvedDraftDetail(approvedDraftRow({ approvalState: 'Rejected' })), DRAFT, COMPANY_A)).toBeNull()
-    expect(decodeApprovedDraftLines(approvedDraftDetail(), DRAFT, '99999999-9999-9999-9999-999999999998')).toBeNull()
-    expect(decodeApprovedDraftLines(approvedDraftDetail(), 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaab', COMPANY_A)).toBeNull()
+  it.each(['unitPrice', 'priceUnitId', 'discountPercent', 'paymentTerms', 'currencyId', 'price', 'discount', 'payment'])(
+    'a body carrying an extra member named %s is REFUSED — the data must not arrive (Sinan §4)',
+    (extra) => {
+      expect(decodeApprovedOrderLine(approvedOrderLine({ [extra]: '1' }))).toBeNull()
+      expect(decodeApprovedOrderLinePage({ items: [approvedOrderLine({ [extra]: null })], nextCursor: null })).toBeNull()
+    },
+  )
+
+  it.each([
+    ['a missing member', (b: Body) => delete b.unitCode],
+    ['a numeric quantity', (b: Body) => (b.quantity = 6)],
+    ['a zero quantity', (b: Body) => (b.quantity = '0')],
+    ['a negative revision', (b: Body) => (b.revision = -1)],
+    ['an invalid delivery date', (b: Body) => (b.requestedDeliveryDate = '2026-02-30')],
+    ['an all-zero customer id', (b: Body) => (b.customerPartyId = '00000000-0000-0000-0000-000000000000')],
+  ])('a line with %s is refused', (_, change) => {
+    const body = approvedOrderLine()
+    change(body)
+    expect(decodeApprovedOrderLine(body)).toBeNull()
   })
 
-  it('reads the approved page with its extra members ignored', () => {
-    const page = decodeApprovedDraftPage({ items: [approvedDraftRow()], nextCursor: null })
-    expect(page?.items[0]).toEqual({ id: DRAFT, companyId: COMPANY_A, documentNo: 'SO-2026-0001', partyId: approvedDraftRow().partyId, companyAccountId: approvedDraftRow().companyAccountId, version: '5' })
+  it('a page repeating a line id is refused', () => {
+    expect(decodeApprovedOrderLinePage({ items: [approvedOrderLine(), approvedOrderLine()], nextCursor: null })).toBeNull()
   })
 })
 

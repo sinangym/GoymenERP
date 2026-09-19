@@ -16,7 +16,7 @@
  *  - every quantity (§7.4 shares and remainders) is exact TEXT, kept verbatim, never a JS number (Ö2);
  *  - the client sends no product: the Sales owner answers the line's product from the APPROVED line;
  *  - nothing here carries a price, a currency or any finance field (Business 5743412166, the
- *    Sevkiyatçı rule), and the Sales reads used by the line picker decode only what the picker needs.
+ *    Sevkiyatçı rule); the line picker reads the price-free Logistics approved-order-lines read.
  *
  * A decoder returns null for anything it cannot vouch for; the caller fails closed.
  */
@@ -188,34 +188,39 @@ export const LOGISTICS_PROBLEM_CODE = {
 
 export type LogisticsProblemCode = (typeof LOGISTICS_PROBLEM_CODE)[keyof typeof LOGISTICS_PROBLEM_CODE]
 
-/* ── The Sales reads the line picker uses (read-only, ASSUMPTION-LOG4B-1) ──── */
+/* ── The price-free approved-order-lines read the line picker uses ───────── */
 
-export const SALES_DRAFT_PATH = '/sales/drafts'
-export const salesDraftDetailPath = (id: string) => `${SALES_DRAFT_PATH}/${encodeURIComponent(id)}`
-export const SALES_APPROVED_STATE = 'Approved' as const
+/**
+ * `GET /api/v1/logistics/loading-instructions/approved-order-lines?pageSize&cursor` (LOG-4b), under the
+ * EXISTING `logistics.loading-instructions.create` grant: the APPROVED sales lines a loading instruction
+ * may be opened on, as the Logistics owner answers them — identity, product name, unit code, the exact
+ * quantity text and the requested delivery date. No price, discount or payment member EXISTS in the
+ * wire type (Sinan §4, #66 5738113623: the Sevkiyatçı sees orders, never prices). Deny-first here too:
+ * the decoder takes exactly these members and refuses a body carrying any other.
+ */
+export const APPROVED_ORDER_LINES_PATH = `${LOGISTICS_PATH}/approved-order-lines`
 
-/** Only what the customer select needs from an APPROVED draft. Nothing commercial is read. */
-export interface ApprovedDraftSummary {
-  readonly id: string
-  readonly companyId: string
+export interface ApprovedOrderLine {
+  readonly orderId: string
   readonly documentNo: string
-  readonly partyId: string
-  readonly companyAccountId: string
-  readonly version: string
-}
-
-/** Only what the line picker needs. `unitPrice`, `priceUnitId`, `discountPercent` and the currency are never read. */
-export interface ApprovedDraftLine {
   readonly lineId: string
   readonly lineNo: number
+  readonly customerPartyId: string
+  readonly companyAccountId: string
   readonly productId: string
+  readonly productVersion: string
+  readonly productCode: string
   readonly productName: string
-  readonly orderUnitId: string
+  readonly unitId: string
+  readonly unitCode: string
   readonly quantity: string
+  readonly requestedDeliveryDate: string | null
+  readonly revision: number
 }
 
-export interface ApprovedDraftPage {
-  readonly items: readonly ApprovedDraftSummary[]
+export interface ApprovedOrderLinePage {
+  readonly items: readonly ApprovedOrderLine[]
+  /** null is the end of the collection. Opaque; the client never builds one. */
   readonly nextCursor: string | null
 }
 
@@ -305,14 +310,6 @@ function exact(value: unknown, keys: readonly string[]): Obj | null {
   const obj = value as Obj
   const own = Object.keys(obj)
   if (own.length !== keys.length) return null
-  for (const key of keys) if (!Object.hasOwn(obj, key)) return null
-  return obj
-}
-
-/** At least these members present; others ignored. For the read-only Sales bodies the picker consumes. */
-function atLeast(value: unknown, keys: readonly string[]): Obj | null {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
-  const obj = value as Obj
   for (const key of keys) if (!Object.hasOwn(obj, key)) return null
   return obj
 }
@@ -514,94 +511,69 @@ export function decodeProblem(value: unknown, status: number): LogisticsProblem 
   }
 }
 
-/* ── The Sales reads (approved drafts) ───────────────────────────────────── */
+/* ── The approved-order-lines read ───────────────────────────────────────── */
 
-/**
- * An APPROVED draft row as the customer select needs it. The Sales list is read with
- * `approvalState=Approved`; a row of any other state is refused here as well, so no picker ever
- * offers a line of a draft that is not approved. Extra members (the commercial ones) are ignored.
- */
-export function decodeApprovedDraftSummary(value: unknown): ApprovedDraftSummary | null {
-  const o = atLeast(value, ['id', 'companyId', 'documentNo', 'partyId', 'companyAccountId', 'version', 'approvalState'])
+export const APPROVED_ORDER_LINE_KEYS = [
+  'orderId', 'documentNo', 'lineId', 'lineNo', 'customerPartyId', 'companyAccountId', 'productId', 'productVersion',
+  'productCode', 'productName', 'unitId', 'unitCode', 'quantity', 'requestedDeliveryDate', 'revision',
+] as const
+
+const isOwnerVersion = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0 && v.length <= 128
+
+/** Exactly the fifteen members; a body with any other member (a price, a discount, a payment term) is refused. */
+export function decodeApprovedOrderLine(value: unknown): ApprovedOrderLine | null {
+  const o = exact(value, APPROVED_ORDER_LINE_KEYS)
   if (
     o === null ||
-    !isReferenceId(o.id) ||
-    !isReferenceId(o.companyId) ||
+    !isReferenceId(o.orderId) ||
     !isText(o.documentNo, 200) ||
-    !isReferenceId(o.partyId) ||
+    !isReferenceId(o.lineId) ||
+    !isPositiveInt(o.lineNo, LIMITS.lines) ||
+    !isReferenceId(o.customerPartyId) ||
     !isReferenceId(o.companyAccountId) ||
-    typeof o.version !== 'string' ||
-    !/^[1-9][0-9]*$/.test(o.version) ||
-    o.approvalState !== SALES_APPROVED_STATE
+    !isReferenceId(o.productId) ||
+    !isOwnerVersion(o.productVersion) ||
+    !isText(o.productCode, 200) ||
+    !isText(o.productName, 500) ||
+    !isReferenceId(o.unitId) ||
+    !isText(o.unitCode, 64) ||
+    !isPositiveQuantityText(o.quantity) ||
+    !isNullable(o.requestedDeliveryDate, isDateOnly) ||
+    !isNonNegativeInt(o.revision, Number.MAX_SAFE_INTEGER)
   ) {
     return null
   }
   return {
-    id: o.id,
-    companyId: o.companyId,
+    orderId: o.orderId,
     documentNo: o.documentNo,
-    partyId: o.partyId,
+    lineId: o.lineId,
+    lineNo: o.lineNo,
+    customerPartyId: o.customerPartyId,
     companyAccountId: o.companyAccountId,
-    version: o.version,
+    productId: o.productId,
+    productVersion: o.productVersion,
+    productCode: o.productCode,
+    productName: o.productName,
+    unitId: o.unitId,
+    unitCode: o.unitCode,
+    quantity: o.quantity,
+    requestedDeliveryDate: o.requestedDeliveryDate,
+    revision: o.revision,
   }
 }
 
-export function decodeApprovedDraftPage(value: unknown): ApprovedDraftPage | null {
+export function decodeApprovedOrderLinePage(value: unknown): ApprovedOrderLinePage | null {
   const o = exact(value, ['items', 'nextCursor'])
   if (o === null || !Array.isArray(o.items) || !isNullable(o.nextCursor, (v): v is string => isText(v, LIMITS.cursor))) {
     return null
   }
-  const items: ApprovedDraftSummary[] = []
+  const items: ApprovedOrderLine[] = []
   const ids = new Set<string>()
   for (const entry of o.items) {
-    const item = decodeApprovedDraftSummary(entry)
-    if (item === null || ids.has(item.id)) return null
-    ids.add(item.id)
+    const item = decodeApprovedOrderLine(entry)
+    if (item === null || ids.has(item.lineId)) return null
+    ids.add(item.lineId)
     items.push(item)
   }
   return { items, nextCursor: o.nextCursor }
-}
-
-/**
- * The lines of one APPROVED draft, only the picker's members. The detail body's `draft` must be
- * the draft asked for, approved, and of the company it was read under. The money members of a
- * line (`unitPrice`, `priceUnitId`, `discountPercent`) and the header's currency are never read:
- * the result carries no such key.
- */
-export function decodeApprovedDraftLines(
-  value: unknown,
-  expectedId: string,
-  companyId: string,
-): { readonly draft: ApprovedDraftSummary; readonly lines: readonly ApprovedDraftLine[] } | null {
-  const o = atLeast(value, ['draft', 'lines'])
-  if (o === null || !Array.isArray(o.lines)) return null
-  const draft = decodeApprovedDraftSummary(o.draft)
-  if (draft === null || draft.id !== expectedId || draft.companyId !== companyId) return null
-  const lines: ApprovedDraftLine[] = []
-  const ids = new Set<string>()
-  for (const entry of o.lines) {
-    const l = atLeast(entry, ['lineId', 'lineNo', 'productId', 'productName', 'orderUnitId', 'quantity'])
-    if (
-      l === null ||
-      !isReferenceId(l.lineId) ||
-      ids.has(l.lineId) ||
-      !isPositiveInt(l.lineNo, LIMITS.lines) ||
-      !isReferenceId(l.productId) ||
-      !isText(l.productName, 500) ||
-      !isReferenceId(l.orderUnitId) ||
-      !isPositiveQuantityText(l.quantity)
-    ) {
-      return null
-    }
-    ids.add(l.lineId)
-    lines.push({
-      lineId: l.lineId,
-      lineNo: l.lineNo,
-      productId: l.productId,
-      productName: l.productName,
-      orderUnitId: l.orderUnitId,
-      quantity: l.quantity,
-    })
-  }
-  return { draft, lines }
 }

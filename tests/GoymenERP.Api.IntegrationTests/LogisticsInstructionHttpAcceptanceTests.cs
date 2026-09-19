@@ -77,6 +77,40 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
     }
 
     [Fact]
+    public async Task The_approved_order_lines_read_answers_the_price_free_page_and_refuses_a_loose_query_before_the_service()
+    {
+        // LOG-4b, Sinan §4 (#66 5738113623): the picker's read carries no price member on the wire — the JSON keys are pinned here.
+        var service = new StubService
+        {
+            ApprovedLines = query => Task.FromResult(new LogisticsApprovedOrderLinePage(
+                [new LogisticsApprovedOrderLineView(Guid.NewGuid(), "SENTETIK SO-0001", Guid.NewGuid(), 1, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "7",
+                    "GDC-001", "Sentetik rulo", Guid.NewGuid(), "kg", "12.500", new DateOnly(2026, 9, 25), 0)],
+                query.Cursor is null ? "SENTETIK-next" : null)),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using (var response = await client.GetAsync($"{LogisticsEndpoints.InstructionsPath}/approved-order-lines?pageSize=10"))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            var item = Assert.Single(body.GetProperty("items").EnumerateArray());
+            Assert.Equal(
+                ["orderId", "documentNo", "lineId", "lineNo", "customerPartyId", "companyAccountId", "productId", "productVersion", "productCode", "productName",
+                    "unitId", "unitCode", "quantity", "requestedDeliveryDate", "revision"],
+                item.EnumerateObject().Select(property => property.Name).ToArray());
+            Assert.Equal(("12.500", "SENTETIK-next"), (item.GetProperty("quantity").GetString(), body.GetProperty("nextCursor").GetString()));
+        }
+
+        using (var response = await client.GetAsync($"{LogisticsEndpoints.InstructionsPath}/approved-order-lines?pageSize=10&status=Draft"))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        Assert.Equal(1, service.Calls);
+    }
+
+    [Fact]
     public async Task A_missing_key_a_wrong_media_type_and_a_loose_body_are_refused_before_the_service()
     {
         var service = new StubService();
@@ -165,5 +199,14 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
 
         public Task<LoadingInstructionListResponse> GetInstructionListAsync(LoadingInstructionListQuery query, CancellationToken cancellationToken = default) =>
             Task.FromResult(new LoadingInstructionListResponse([], null));
+
+        public Func<LogisticsApprovedOrderLinesQuery, Task<LogisticsApprovedOrderLinePage>> ApprovedLines { get; set; } =
+            _ => Task.FromResult(new LogisticsApprovedOrderLinePage([], null));
+
+        public Task<LogisticsApprovedOrderLinePage> GetApprovedOrderLinesAsync(LogisticsApprovedOrderLinesQuery query, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return ApprovedLines(query);
+        }
     }
 }

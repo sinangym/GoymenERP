@@ -7,9 +7,9 @@ import issuedResponseRaw from './examples/issued-response.json?raw'
 import loadResponseRaw from './examples/load-response.json?raw'
 import listResponseRaw from './examples/list-response.json?raw'
 import errorCapRaw from './examples/error-cap.json?raw'
-import { createInstruction, fetchApprovedDraftLines, fetchApprovedDrafts, fetchInstructionDetail, fetchInstructionPage, issueInstruction, recordLoad } from './api'
+import { createInstruction, fetchApprovedOrderLines, fetchInstructionDetail, fetchInstructionPage, issueInstruction, recordLoad } from './api'
 import type { CreateInstructionRequest } from './contract'
-import { approvedDraftDetail, approvedDraftRow, COMPANY_A, DRAFT, INSTRUCTION, LINE } from './testHarness'
+import { approvedOrderLine, COMPANY_A, INSTRUCTION, LINE } from './testHarness'
 
 const REQUEST = JSON.parse(createRequestRaw) as CreateInstructionRequest
 const CONTEXT = { idempotencyKey: 'k-1', companyId: COMPANY_A }
@@ -136,16 +136,20 @@ describe('reads are bound to their company and record', () => {
     expect(await fetchInstructionDetail(INSTRUCTION, COMPANY_A)).toMatchObject({ type: 'http', status: 404 })
   })
 
-  it('the picker reads APPROVED drafts only and never a money member', async () => {
-    const calls = respond(200, JSON.stringify({ items: [approvedDraftRow()], nextCursor: null }))
-    const drafts = await fetchApprovedDrafts(COMPANY_A)
-    expect(calls[0].url).toBe('/api/v1/sales/drafts?pageSize=50&approvalState=Approved')
-    expect(drafts.type).toBe('ready')
-    respond(200, JSON.stringify(approvedDraftDetail()))
-    const lines = await fetchApprovedDraftLines(DRAFT, COMPANY_A)
-    expect(lines.type).toBe('ready')
-    expect(JSON.stringify(lines)).not.toMatch(/unitPrice|priceUnitId|discountPercent|currency/)
+  it('the picker reads the price-free approved-order-lines route under the company, with the cursor verbatim', async () => {
+    const calls = respond(200, JSON.stringify({ items: [approvedOrderLine()], nextCursor: 'c2' }))
+    const first = await fetchApprovedOrderLines(null, COMPANY_A)
+    expect(calls[0].url).toBe('/api/v1/logistics/loading-instructions/approved-order-lines?pageSize=50')
+    expect((calls[0].init.headers as Record<string, string>)['X-Company-Id']).toBe(COMPANY_A)
+    expect(first.type === 'ok-single' && first.data.nextCursor).toBe('c2')
+    const more = respond(200, JSON.stringify({ items: [], nextCursor: null }))
+    await fetchApprovedOrderLines('opaque/+=', COMPANY_A)
+    expect(more[0].url).toBe('/api/v1/logistics/loading-instructions/approved-order-lines?pageSize=50&cursor=opaque%2F%2B%3D')
+    respond(200, JSON.stringify({ items: [approvedOrderLine({ unitPrice: '1' })], nextCursor: null }))
+    expect((await fetchApprovedOrderLines(null, COMPANY_A)).type).toBe('malformed')
     respond(403, '{"status":403,"title":"Forbidden"}')
-    expect(await fetchApprovedDrafts(COMPANY_A)).toEqual({ type: 'http', status: 403, code: null })
+    expect(await fetchApprovedOrderLines(null, COMPANY_A)).toMatchObject({ type: 'http', status: 403 })
+  })
+})
   })
 })

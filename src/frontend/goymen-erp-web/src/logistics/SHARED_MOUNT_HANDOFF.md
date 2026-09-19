@@ -91,9 +91,10 @@ Bu test yalnız shell ↔ Lojistik şeridi eşleşmesidir; **backend registry pa
 
 ## Varsayımlar (README/PR'da görünür; geri alınabilir)
 
-- **ASSUMPTION-LOG4B-1:** satır seçici onaylı Sipariş taslaklarını `sales.drafts.read` ile Sipariş'in liste/detay
-  rotalarından okur (`approvalState=Approved`); müşteri seçimi bu taslakların ayrık (party, account) kümesidir.
-  Fiyat/iskonto/para birimi üyeleri hiç okunmaz ve gösterilmez (Business 5743412166).
+- **Satır seçici (karar, varsayım değil):** seçici fiyatsız Lojistik okumasını kullanır —
+  `GET /api/v1/logistics/loading-instructions/approved-order-lines` (`logistics.loading-instructions.create` grant'i
+  altında; Sinan §4, #66 5738113623: Sevkiyatçı siparişi görür, fiyatı asla). Wire tipinde fiyat/iskonto/vade üyesi
+  yoktur; istemci decoder'ı tam on beş üyeyi alır, fazlası olan gövdeyi reddeder (deny-first). Sales grant'i gerekmez.
 - **ASSUMPTION-LOG4B-2:** yükleme payı formu detayı tutan herkese gösterilir; sunucu `logistics.loads.record`'u her
   gönderimde ölçer (kodsuz 403 → "yetki yok" uyarısı). 4b'de yeni shell control ilanı yok; `logistics.loads.record`
   kontrolü sonraki dilim adayı.

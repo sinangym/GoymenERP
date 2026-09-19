@@ -8,23 +8,24 @@
  *    open a second attempt while the first is unresolved;
  *  - ./api.ts — 201 first commit vs 201 + replay, and "this answer describes THIS attempt".
  *
- * The customer select and the line picker read the Sales owner's APPROVED drafts (the list with
- * `approvalState=Approved`, then each draft's lines) — ASSUMPTION-LOG4B-1. Nothing is guessed: no
- * approved draft means no customer to pick; the picker shows the document, the line no, the product
- * name, the ordered quantity text and the unit id — and never a price (Business 5743412166).
+ * The customer select and the line picker read the price-free Logistics approved-order-lines read
+ * under the create grant (Sinan §4, #66 5738113623: the Sevkiyatçı sees orders, never prices); no
+ * Sales grant is needed and no price can arrive in this browser. Nothing is guessed: no approved line
+ * means no customer to pick; the picker shows the document, the line no, the product name, the unit
+ * code, the ordered quantity text and the requested delivery date.
  * The client sends no product: the Sales owner answers it from the approved line on the server.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router'
-import { createInstruction, fetchApprovedDraftLines, fetchApprovedDrafts, type ApprovedDraftLines, type SourceOutcome } from './api'
+import { createInstruction, fetchApprovedOrderLines } from './api'
 import {
   LIMITS,
   LOGISTICS_PATH,
   isDateOnly,
   parseQuantityInput,
-  type ApprovedDraftSummary,
+  type ApprovedOrderLine,
   type CreateInstructionRequest,
   type InstructionLineRequest,
   type InstructionMutation,
@@ -46,7 +47,8 @@ import {
 import { createNotice } from './instructionAttemptNotice'
 import { LOGISTICS_CAPABILITY, LOGISTICS_ROUTE, instructionDetailRoute } from './capabilities'
 import { INSTRUCTION_CREATE_TEXT as T, problemCodeText } from './logisticsText'
-import { todayDateOnly } from './format'
+import { formatBusinessDate, todayDateOnly } from './format'
+import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellDispatch, useShellState } from '../shell/shellContext'
 import { hasCapability } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
@@ -89,17 +91,15 @@ interface CustomerOption {
   readonly partyId: string
   readonly companyAccountId: string
   readonly label: string
-  readonly draftIds: readonly string[]
 }
 
-/** The distinct (party, account) pairs of the approved drafts, labelled by their document numbers. */
-export function customerOptions(drafts: readonly ApprovedDraftSummary[]): readonly CustomerOption[] {
-  const byKey = new Map<string, { partyId: string; companyAccountId: string; documents: string[]; draftIds: string[] }>()
-  for (const draft of drafts) {
-    const key = `${draft.partyId}|${draft.companyAccountId}`
-    const entry = byKey.get(key) ?? { partyId: draft.partyId, companyAccountId: draft.companyAccountId, documents: [], draftIds: [] }
-    entry.documents.push(draft.documentNo)
-    entry.draftIds.push(draft.id)
+/** The distinct (customer party, account) pairs of the approved lines, labelled by their distinct document numbers. */
+export function customerOptions(lines: readonly ApprovedOrderLine[]): readonly CustomerOption[] {
+  const byKey = new Map<string, { partyId: string; companyAccountId: string; documents: string[] }>()
+  for (const line of lines) {
+    const key = `${line.customerPartyId}|${line.companyAccountId}`
+    const entry = byKey.get(key) ?? { partyId: line.customerPartyId, companyAccountId: line.companyAccountId, documents: [] }
+    if (!entry.documents.includes(line.documentNo)) entry.documents.push(line.documentNo)
     byKey.set(key, entry)
   }
   return [...byKey.entries()].map(([key, entry]) => ({
@@ -107,7 +107,6 @@ export function customerOptions(drafts: readonly ApprovedDraftSummary[]): readon
     partyId: entry.partyId,
     companyAccountId: entry.companyAccountId,
     label: entry.documents.join(', '),
-    draftIds: entry.draftIds,
   }))
 }
 
@@ -170,39 +169,50 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
     if (summaryRequest > 0) summaryRef.current?.focus()
   }, [summaryRequest])
 
-  // The approved drafts (the customer select's source), read from the real Sales list; never a default.
-  const drafts = useQuery({
-    queryKey: [binding, 'logistics-approved-drafts'],
+  // The approved order lines (the customer select's and the picker's one source), the price-free
+  // Logistics read; never a default. Continuation follows the contract: `nextCursor = null` is the end.
+  const first = useQuery({
+    queryKey: [binding, 'logistics-approved-order-lines', 'first'],
     queryFn: async ({ signal }) => {
       const security = boundary.capture()
-      const outcome = await fetchApprovedDrafts(companyId, signal)
+      const outcome = await fetchApprovedOrderLines(null, companyId, signal)
       if (outcome.type === 'http') boundary.report(outcome.status, security)
       return outcome
     },
   })
-  const options = useMemo(() => (drafts.data?.type === 'ready' ? customerOptions(drafts.data.data.items) : []), [drafts.data])
+  const [moreLines, setMoreLines] = useState<readonly ApprovedOrderLine[]>([])
+  const [cursor, setCursor] = useState<string | null | undefined>(undefined)
+  const [continuation, setContinuation] = useState<'idle' | 'loading' | RemoteViewState<unknown>>('idle')
+  const loadingMoreRef = useRef(false)
+  const firstPage = first.data?.type === 'ok-single' ? first.data.data : null
+  const nextCursor = cursor === undefined ? (firstPage?.nextCursor ?? null) : cursor
+  const allLines = useMemo(() => [...(firstPage?.items ?? []), ...moreLines], [firstPage, moreLines])
+  const options = useMemo(() => customerOptions(allLines), [allLines])
   const customer = options.find((option) => option.key === customerKey) ?? null
+  const customerLines = useMemo(
+    () => (customer === null ? [] : allLines.filter((line) => line.customerPartyId === customer.partyId && line.companyAccountId === customer.companyAccountId)),
+    [allLines, customer],
+  )
 
-  // The chosen customer's approved lines, one detail read per draft; read only after a customer is picked.
-  const lines = useQuery({
-    queryKey: [binding, 'logistics-approved-lines', customerKey],
-    enabled: customer !== null,
-    queryFn: async ({ signal }) => {
-      const security = boundary.capture()
-      const result: ApprovedDraftLines[] = []
-      for (const draftId of customer?.draftIds ?? []) {
-        const outcome = await fetchApprovedDraftLines(draftId, companyId, signal)
-        if (outcome.type === 'http') boundary.report(outcome.status, security)
-        if (outcome.type !== 'ready') {
-          const failed: SourceOutcome<readonly ApprovedDraftLines[]> = outcome
-          return failed
-        }
-        result.push(outcome.data)
-      }
-      const ready: SourceOutcome<readonly ApprovedDraftLines[]> = { type: 'ready', data: result }
-      return ready
-    },
-  })
+  const loadMoreLines = useCallback(async () => {
+    if (loadingMoreRef.current || nextCursor === null) return
+    loadingMoreRef.current = true
+    setContinuation('loading')
+    const security = boundary.capture()
+    const outcome = await fetchApprovedOrderLines(nextCursor, companyId, undefined)
+    loadingMoreRef.current = false
+    if (outcome.type === 'http') boundary.report(outcome.status, security)
+    if (outcome.type === 'ok-single') {
+      setMoreLines((rows) => {
+        const seen = new Set([...(firstPage?.items ?? []), ...rows].map((row) => row.lineId))
+        return [...rows, ...outcome.data.items.filter((row) => !seen.has(row.lineId))]
+      })
+      setCursor(outcome.data.nextCursor)
+      setContinuation('idle')
+      return
+    }
+    setContinuation(classifyOutcome(outcome) as RemoteViewState<unknown>)
+  }, [boundary, companyId, firstPage, nextCursor])
 
   const send = useCallback(
     async (snapshot: AttemptSnapshot<CreateInstructionRequest>) => {
@@ -301,13 +311,13 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
     setAttempt(next)
   }
 
-  function togglePick(source: { readonly draftId: string; readonly lineId: string; readonly unitId: string }, on: boolean) {
+  function togglePick(source: ApprovedOrderLine, on: boolean) {
     setPicked((current) => {
       const existing = current.find((line) => line.sourceOrderLineId === source.lineId)
       if (on) {
         return existing !== undefined
           ? current
-          : [...current, { lineId: generateClientId(), sourceOrderId: source.draftId, sourceOrderLineId: source.lineId, unitId: source.unitId, quantityText: '' }]
+          : [...current, { lineId: generateClientId(), sourceOrderId: source.orderId, sourceOrderLineId: source.lineId, unitId: source.unitId, quantityText: '' }]
       }
       return current.filter((line) => line.sourceOrderLineId !== source.lineId)
     })
@@ -349,13 +359,13 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
       </p>
     )
 
-  const sourceState = drafts.data
+  const sourceState = first.data
   const sourceBlock =
     sourceState === undefined ? (
       <p role="status" className={styles.muted}>
         {T.sourcesLoading}
       </p>
-    ) : sourceState.type === 'ready' ? (
+    ) : sourceState.type === 'ok-single' ? (
       options.length === 0 ? (
         <p role="status" className={styles.notice} data-tone="unknown" data-testid="logistics-no-approved">
           {T.noApprovedDrafts}
@@ -461,15 +471,7 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
           <legend>{T.field.lines}</legend>
           <p className={styles.muted}>{T.picker.note}</p>
           {fieldError('logistics-lines')}
-          {customer === null ? null : lines.data === undefined ? (
-            <p role="status" className={styles.muted}>
-              {T.sourcesLoading}
-            </p>
-          ) : lines.data.type !== 'ready' ? (
-            <p role="alert" className={styles.fieldError} data-testid="logistics-lines-failed">
-              {lines.data.type === 'http' && lines.data.status === 403 ? T.sourcesForbidden : T.sourcesFailed}
-            </p>
-          ) : lines.data.data.every((draft) => draft.lines.length === 0) ? (
+          {customer === null ? null : customerLines.length === 0 ? (
             <p role="status" className={styles.muted} data-testid="logistics-no-lines">
               {T.noLinesForCustomer}
             </p>
@@ -482,61 +484,73 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
                     <th scope="col">{T.picker.document}</th>
                     <th scope="col">{T.picker.lineNo}</th>
                     <th scope="col">{T.picker.product}</th>
-                    <th scope="col" className={styles.numeric}>{T.picker.ordered}</th>
                     <th scope="col">{T.picker.unit}</th>
+                    <th scope="col" className={styles.numeric}>{T.picker.ordered}</th>
+                    <th scope="col">{T.picker.requestedDeliveryDate}</th>
                     <th scope="col">{T.picker.instructed}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {lines.data.data.flatMap((draft) =>
-                    draft.lines.map((line) => {
-                      const pick = picked.find((p) => p.sourceOrderLineId === line.lineId)
-                      const quantityId = pick === undefined ? undefined : `logistics-line-${pick.lineId}-quantity`
-                      const label = `${draft.draft.documentNo} / ${line.lineNo} / ${line.productName}`
-                      return (
-                        <tr key={line.lineId} data-testid={`logistics-pick-${draft.draft.documentNo}-${line.lineNo}`}>
-                          <td>
-                            <input
-                              type="checkbox"
-                              aria-label={label}
-                              checked={pick !== undefined}
-                              onChange={(event) => togglePick({ draftId: draft.draft.id, lineId: line.lineId, unitId: line.orderUnitId }, event.target.checked)}
-                            />
-                          </td>
-                          <td>{draft.draft.documentNo}</td>
-                          <td>{line.lineNo}</td>
-                          <td>{line.productName}</td>
-                          <td className={styles.numeric}>{line.quantity}</td>
-                          <td className={styles.identifier}>{line.orderUnitId}</td>
-                          <td>
-                            {pick === undefined || quantityId === undefined ? null : (
-                              <>
-                                <input
-                                  type="text"
-                                  inputMode="decimal"
-                                  autoComplete="off"
-                                  id={quantityId}
-                                  aria-label={`${T.field.instructed}: ${label}`}
-                                  aria-invalid={errors[quantityId] !== undefined ? true : undefined}
-                                  aria-describedby={errors[quantityId] !== undefined ? `${quantityId}-error` : undefined}
-                                  value={pick.quantityText}
-                                  onChange={(event) =>
-                                    setPicked((current) =>
-                                      current.map((p) => (p.lineId === pick.lineId ? { ...p, quantityText: event.target.value } : p)),
-                                    )
-                                  }
-                                />
-                                {fieldError(quantityId)}
-                              </>
-                            )}
-                          </td>
-                        </tr>
-                      )
-                    }),
-                  )}
+                  {customerLines.map((line) => {
+                    const pick = picked.find((p) => p.sourceOrderLineId === line.lineId)
+                    const quantityId = pick === undefined ? undefined : `logistics-line-${pick.lineId}-quantity`
+                    const label = `${line.documentNo} / ${line.lineNo} / ${line.productName}`
+                    return (
+                      <tr key={line.lineId} data-testid={`logistics-pick-${line.documentNo}-${line.lineNo}`}>
+                        <td>
+                          <input type="checkbox" aria-label={label} checked={pick !== undefined} onChange={(event) => togglePick(line, event.target.checked)} />
+                        </td>
+                        <td>{line.documentNo}</td>
+                        <td>{line.lineNo}</td>
+                        <td>{line.productName}</td>
+                        <td>{line.unitCode}</td>
+                        <td className={styles.numeric}>{line.quantity}</td>
+                        <td>{line.requestedDeliveryDate === null ? '—' : formatBusinessDate(line.requestedDeliveryDate)}</td>
+                        <td>
+                          {pick === undefined || quantityId === undefined ? null : (
+                            <>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                autoComplete="off"
+                                id={quantityId}
+                                aria-label={`${T.field.instructed}: ${label}`}
+                                aria-invalid={errors[quantityId] !== undefined ? true : undefined}
+                                aria-describedby={errors[quantityId] !== undefined ? `${quantityId}-error` : undefined}
+                                value={pick.quantityText}
+                                onChange={(event) =>
+                                  setPicked((current) => current.map((p) => (p.lineId === pick.lineId ? { ...p, quantityText: event.target.value } : p)))
+                                }
+                              />
+                              {fieldError(quantityId)}
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
+          )}
+          {firstPage === null ? null : typeof continuation === 'object' ? (
+            <div className={styles.inlineError}>
+              <p>{T.moreLinesFailed}</p>
+              <button type="button" className={styles.secondaryButton} onClick={() => void loadMoreLines()}>
+                {T.moreLines}
+              </button>
+            </div>
+          ) : nextCursor === null ? null : (
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={() => void loadMoreLines()}
+              disabled={continuation === 'loading'}
+              aria-busy={continuation === 'loading'}
+              data-testid="logistics-more-lines"
+            >
+              {continuation === 'loading' ? T.sourcesLoading : T.moreLines}
+            </button>
           )}
         </fieldset>
 

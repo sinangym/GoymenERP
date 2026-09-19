@@ -65,6 +65,20 @@ public sealed record LoadingInstructionListQuery(int PageSize = 50, string? Curs
 
 public sealed record LogisticsFieldError(string Field, string Code);
 
+/// <summary>
+/// LOG-4b: one APPROVED sales order line offered for loading (the price-free picker, Sinan §4 #66 5738113623:
+/// the Sevkiyatçı sees orders, never prices — deny-first, so no price, discount, currency or payment member
+/// exists here; a contract test pins the member names). Read under the create name; the Sales owner answers.
+/// </summary>
+public sealed record LogisticsApprovedOrderLineView(
+    Guid OrderId, string DocumentNo, Guid LineId, int LineNo, Guid CustomerPartyId, Guid CompanyAccountId,
+    Guid ProductId, string ProductVersion, string ProductCode, string ProductName, Guid UnitId, string UnitCode,
+    string Quantity, DateOnly? RequestedDeliveryDate, int Revision);
+
+public sealed record LogisticsApprovedOrderLinePage(IReadOnlyList<LogisticsApprovedOrderLineView> Items, string? NextCursor);
+
+public sealed record LogisticsApprovedOrderLinesQuery(int PageSize = 50, string? Cursor = null);
+
 // ---- problems -----------------------------------------------------------------------------------
 
 /// <summary>The problem codes the loading-instruction routes answer beside the domain's rule codes (LOG-4a contract).</summary>
@@ -141,6 +155,9 @@ public static class LogisticsApiV1
     public const string InstructionDetailPath = "/api/v1/logistics/loading-instructions/{id}";
     public const string IssuePath = "/api/v1/logistics/loading-instructions/{id}/issue";
     public const string LoadsPath = "/api/v1/logistics/loading-instructions/{id}/lines/{lineId}/loads";
+
+    /// <summary>LOG-4b: the price-free approved-order-lines read for the picker (the create name).</summary>
+    public const string ApprovedOrderLinesPath = "/api/v1/logistics/loading-instructions/approved-order-lines";
     public const string IdempotencyHeader = "Idempotency-Key";
 
     /// <summary>The first commit and its replay both answer 201 (ADR-011 §4; the Sales #321 decision), told apart by the replay headers.</summary>

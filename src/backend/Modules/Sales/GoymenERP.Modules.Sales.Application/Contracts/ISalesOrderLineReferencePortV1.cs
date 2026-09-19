@@ -14,7 +14,42 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 public interface ISalesOrderLineReferencePortV1
 {
     Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineAsync(Guid orderId, Guid lineId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// LOG-4b: the company's APPROVED order lines for loading, newest draft first, by the Sales owner's
+    /// opaque company-bound cursor — PRICE-FREE by construction (Sinan §4, #66 5738113623: the Sevkiyatçı
+    /// sees sales orders but never prices; deny-first, so no price, discount or payment member exists on
+    /// <see cref="SalesApprovedLineReferenceV1"/>). Identities, names, unit and the exact quantity text only.
+    /// The consumer (Logistics) measures its own authority before asking; reading here creates nothing.
+    /// </summary>
+    Task<SalesApprovedLinePageV1> ListApprovedLinesAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default);
 }
+
+public sealed record SalesApprovedLinePageV1(IReadOnlyList<SalesApprovedLineReferenceV1> Items, string? NextCursor);
+
+/// <summary>
+/// One APPROVED line as the Sales owner stored it, for a loading picker: the order (id + document no), the
+/// line (id, no), the customer (party + company account), the product (id, version, code, name), the order
+/// unit (id + code), the exact quantity text (Ö2), the requested delivery date, the commercial revision.
+/// No price, discount, currency or payment member — a contract test pins that.
+/// </summary>
+public sealed record SalesApprovedLineReferenceV1(
+    Guid CompanyId,
+    Guid OrderId,
+    string DocumentNo,
+    Guid LineId,
+    int LineNo,
+    Guid PartyId,
+    Guid CompanyAccountId,
+    Guid ProductId,
+    string ProductVersion,
+    string ProductCode,
+    string ProductName,
+    Guid OrderUnitId,
+    string UnitCode,
+    string QuantityText,
+    DateOnly? RequestedDeliveryDate,
+    int Revision);
 
 public enum SalesOrderLineReferenceOutcomeV1
 {

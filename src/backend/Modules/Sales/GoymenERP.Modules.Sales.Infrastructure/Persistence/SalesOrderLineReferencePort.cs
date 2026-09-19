@@ -40,5 +40,33 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store) : I
             line.Product.ProductId, line.Product.ProductVersion, line.OrderUnit.UnitId, line.QuantityText, draft.Revision, draft.Version), null);
     }
 
+    /// <summary>
+    /// LOG-4b: the APPROVED drafts' lines (the store's approval filter, newest first, the store's company-bound
+    /// cursor), projected without any price, discount, currency or payment member (Sinan §4).
+    /// </summary>
+    public async Task<SalesApprovedLinePageV1> ListApprovedLinesAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var page = await store.ListDraftsAsync(pageSize, cursor, cancellationToken, InternalApprovalState.Approved);
+        var items = new List<SalesApprovedLineReferenceV1>();
+        foreach (var draft in page.Items)
+        {
+            if (draft.ApprovalState != InternalApprovalState.Approved)
+            {
+                continue;
+            }
+
+            foreach (var line in draft.Lines)
+            {
+                items.Add(new SalesApprovedLineReferenceV1(draft.CompanyId, draft.Id, draft.DocumentNo, line.Id, line.LineNo,
+                    draft.Header.PartyId, draft.Header.CompanyAccountId, line.Product.ProductId, line.Product.ProductVersion,
+                    line.Product.Code, line.Product.Name, line.OrderUnit.UnitId, line.OrderUnit.UnitCode, line.QuantityText,
+                    line.RequestedDeliveryDate, draft.Revision));
+            }
+        }
+
+        return new SalesApprovedLinePageV1(items, page.NextCursor);
+    }
+
     private static readonly SalesOrderLineReferenceAnswerV1 NotFound = new(SalesOrderLineReferenceOutcomeV1.NotFound, null, null);
 }

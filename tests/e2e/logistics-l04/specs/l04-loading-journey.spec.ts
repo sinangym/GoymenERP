@@ -14,7 +14,10 @@
  *     API by the preparer, whose second line was then BLOCKED by the gated Logistics fixture writer — the only
  *     state no API produces in 4a (D2's block source arrives in LOG-5).
  * Everything below is real UI + real API; the positive path creates ANOTHER instruction from a real selection
- * of the approved line in the normal screens (by its visible label, never by a fixture id).
+ * of the approved line in the normal screens (by its visible label, never by a fixture id). The picker reads
+ * the PRICE-FREE Logistics route GET /api/v1/logistics/loading-instructions/approved-order-lines under the
+ * create grant: the preparer holds NO Sales grant (Sinan §4 #66 5738113623, deny-first) and every Sales
+ * draft route answers it 403.
  *
  * The cases are one serial journey, in file order:
  *   L04-01 preparer: list → new → picks the customer and the approved line in the UI, quantity text "4.5"
@@ -25,6 +28,8 @@
  *          re-read); the same load id under a new key (409 duplicate)
  *   L04-04 loader on the seeded instruction: the blocked line refuses (409), the open line takes a load
  *   L04-05 reader: list and detail open, no create route, a load is refused 403 and nothing is recorded;
+ *          the preparer: Sales draft routes 403 while the price-free read answers the approved line with
+ *          no price key anywhere;
  *          the preparer under the other company: the API answers nothing of GDC's instruction and publishes no
  *          Logistics screen there
  */
@@ -33,8 +38,12 @@ import { expect, test, type Page, type Response } from '@playwright/test'
 import { readEnvironment } from '../src/env.js'
 
 const env = readEnvironment()
-const { preparerActor, loaderActor, readerActor, companyId, otherCompanyId, instructionId, blockedLineId, openLineId } = env.seed
+const { preparerActor, loaderActor, readerActor, companyId, otherCompanyId, draftId, approvedLineId, instructionId, blockedLineId, openLineId } =
+  env.seed
 const INSTRUCTIONS_PATH = '/api/v1/logistics/loading-instructions'
+const APPROVED_LINES_PATH = `${INSTRUCTIONS_PATH}/approved-order-lines`
+const SALES_DRAFTS_PATH = '/api/v1/sales/drafts'
+const PRICE_KEYS = ['unitPrice', 'discountPercent', 'paymentTerms', 'priceUnitId', 'currencyId']
 const LIST_ROUTE = '/lojistik/yukleme-talimatlari'
 const CREATE_ROUTE = `${LIST_ROUTE}/yeni`
 const DEVELOPMENT_USER_HEADER = 'X-Development-User'
@@ -99,6 +108,18 @@ const loadNotice = (page: Page) => page.getByTestId('logistics-load-notice')
 const createNotice = (page: Page) => page.getByTestId('logistics-create-notice')
 const loadForm = (page: Page) => page.getByTestId('logistics-load')
 const issueButton = (page: Page) => page.getByTestId('logistics-issue-button')
+
+/** Every key of a JSON value, at any depth. */
+function keysOf(value: unknown, into: Set<string> = new Set()): Set<string> {
+  if (Array.isArray(value)) for (const item of value) keysOf(item, into)
+  else if (typeof value === 'object' && value !== null) {
+    for (const [key, inner] of Object.entries(value)) {
+      into.add(key)
+      keysOf(inner, into)
+    }
+  }
+  return into
+}
 
 async function expectNoPriceText(page: Page): Promise<void> {
   const text = await page.locator('main').innerText()
@@ -325,9 +346,26 @@ test('L04-05 the reader reads and cannot create or record; the preparer has noth
   const after = await readInstruction(page, readerActor, createdId)
   expect([after.instruction.version, after.shares.length]).toEqual([before.instruction.version, before.shares.length])
 
+  // The preparer holds NO Sales grant (deny-first): the Sales draft routes refuse it, while the price-free Logistics read
+  // still answers the seeded approved line — with no price key anywhere in the JSON — and the picker still offers it.
+  const salesHeaders = { [DEVELOPMENT_USER_HEADER]: preparerActor, 'X-Company-Id': companyId }
+  expect((await page.request.get(`${env.apiBaseUrl}${SALES_DRAFTS_PATH}/${draftId}`, { headers: salesHeaders })).status()).toBe(403)
+  expect((await page.request.get(`${env.apiBaseUrl}${SALES_DRAFTS_PATH}?approvalState=Approved`, { headers: salesHeaders })).status()).toBe(403)
+  const priceFree = await page.request.get(`${env.apiBaseUrl}${APPROVED_LINES_PATH}`, { headers: salesHeaders })
+  expect(priceFree.status()).toBe(200)
+  const approvedLines = (await priceFree.json()) as unknown
+  const serialized = JSON.stringify(approvedLines)
+  expect(serialized).toContain(DOCUMENT_NO)
+  expect(serialized.toLowerCase()).toContain(approvedLineId.toLowerCase())
+  const keys = [...keysOf(approvedLines)]
+  for (const key of PRICE_KEYS) expect(keys, `no price key in the price-free read: ${key}`).not.toContain(key)
+  await signInAs(page, preparerActor)
+  await page.goto(CREATE_ROUTE)
+  await expect(page.getByRole('heading', { level: 1, name: 'Yeni yükleme talimatı' })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByLabel('Müşteri (onaylı siparişlerden)').locator('option', { hasText: DOCUMENT_NO })).toHaveCount(1, { timeout: 30_000 })
+
   // The preparer under the other company holds no Logistics grant there: the real API answers nothing of GDC's
   // instruction (the tenant fence, code-less 403/404), and the shell publishes no Logistics screen for that company.
-  await signInAs(page, preparerActor)
   const elsewhere = await page.request.get(`${env.apiBaseUrl}${INSTRUCTIONS_PATH}/${createdId}`, {
     headers: { [DEVELOPMENT_USER_HEADER]: preparerActor, 'X-Company-Id': otherCompanyId },
   })

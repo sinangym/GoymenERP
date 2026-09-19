@@ -102,64 +102,25 @@ export function mutation(detail: Record<string, unknown>, isReplay = false, orig
   return { detail, isReplay, originalCorrelationId }
 }
 
-/** An APPROVED Sales draft row as the Sales list answers it — WITH the commercial members the picker must ignore. */
-export function approvedDraftRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+/** One APPROVED order line as the price-free Logistics read answers it (LOG-4b): exactly the fifteen wire members. */
+export function approvedOrderLine(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    id: DRAFT,
-    companyId: COMPANY_A,
+    orderId: DRAFT,
     documentNo: 'SO-2026-0001',
-    kind: 'Order',
-    state: 'Draft',
-    version: '5',
-    revision: 'Rev.0',
-    partyId: PARTY,
+    lineId: DRAFT_LINE,
+    lineNo: 1,
+    customerPartyId: PARTY,
     companyAccountId: ACCOUNT,
-    currencyId: '33333333-3333-3333-3333-333333333333',
-    businessDate: '2026-09-18',
-    createdAtUtc: '2026-09-18T09:00:00Z',
-    lineCount: 1,
-    approvalState: 'Approved',
+    productId: PRODUCT,
+    productVersion: '7',
+    productCode: 'GDC-001',
+    productName: 'Sentetik bant',
+    unitId: KG,
+    unitCode: 'kg',
+    quantity: '6',
+    requestedDeliveryDate: '2026-09-25',
+    revision: 0,
     ...overrides,
-  }
-}
-
-/** The Sales detail body — with a unit price and a discount on the line, which the picker never reads. */
-export function approvedDraftDetail(row: Record<string, unknown> = approvedDraftRow()): Record<string, unknown> {
-  return {
-    draft: row,
-    requestedDeliveryDate: null,
-    note: null,
-    lines: [
-      {
-        lineId: DRAFT_LINE,
-        lineNo: 1,
-        productId: PRODUCT,
-        productVersion: '7',
-        productCode: 'GDC-001',
-        productName: 'Sentetik bant',
-        orderUnitId: KG,
-        quantity: '6',
-        unitPrice: '12.50',
-        priceUnitId: KG,
-        requestedDeliveryDate: null,
-        note: null,
-        requestedDeliverySlices: null,
-        discountPercent: '5',
-      },
-    ],
-    deliveryAddress: null,
-    contact: null,
-    responsible: null,
-    paymentTerms: null,
-    sourceStrategy: null,
-    package: null,
-    approval: {
-      submittedBy: 'satis-1',
-      submittedAtUtc: '2026-09-18T10:00:00Z',
-      decidedBy: 'onay-1',
-      decidedAtUtc: '2026-09-18T11:00:00Z',
-      rejectionReason: null,
-    },
   }
 }
 
@@ -178,9 +139,8 @@ export interface HarnessConfig {
   readonly onCreate?: (attempt: number, call: RecordedCall) => Response | Promise<Response>
   readonly onIssue?: (call: RecordedCall) => Response | Promise<Response>
   readonly onLoad?: (lineId: string, call: RecordedCall) => Response | Promise<Response>
-  /** The Sales reads the picker uses: the approved list and one draft's detail. */
-  readonly onSalesList?: (url: string, companyId: string | null) => Response | Promise<Response>
-  readonly onSalesDetail?: (draftId: string, companyId: string | null) => Response | Promise<Response>
+  /** The price-free approved-order-lines read the picker uses. */
+  readonly onApprovedLines?: (url: string, companyId: string | null) => Response | Promise<Response>
 }
 
 export function installFetch(config: HarnessConfig = {}) {
@@ -208,14 +168,9 @@ export function installFetch(config: HarnessConfig = {}) {
           capabilities: config.capabilities ?? ALL_LOGISTICS,
         })
       }
-      if (url.includes('/sales/drafts')) {
-        const detail = /\/sales\/drafts\/([^/?]+)$/.exec(url)?.[1]
-        if (detail !== undefined) {
-          if (config.onSalesDetail === undefined) throw new Error('unexpected sales detail read')
-          return config.onSalesDetail(decodeURIComponent(detail), call.companyId)
-        }
-        if (config.onSalesList === undefined) throw new Error('unexpected sales list read')
-        return config.onSalesList(url, call.companyId)
+      if (url.includes('/logistics/loading-instructions/approved-order-lines')) {
+        if (config.onApprovedLines === undefined) throw new Error('unexpected approved-order-lines read')
+        return config.onApprovedLines(url, call.companyId)
       }
       if (url.includes('/logistics/loading-instructions')) {
         const load = /\/logistics\/loading-instructions\/[^/?]+\/lines\/([^/?]+)\/loads$/.exec(url)?.[1]

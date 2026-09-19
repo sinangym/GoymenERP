@@ -10,6 +10,7 @@
   1. BİR Cari müşteri (parti + şirket hesabı) — gerçek Counterparty API'si, `group-bootstrap-admin` (fin01 yolu).
   2. BİR Sales taslağı — kapılı Sales fixture yazıcısı (W1/C: sentetik ürün/para snapshot'ları, deneme/audit yok) GERÇEK müşteri kimlikleri ve GERÇEK Settings kg birimiyle; sonra iki Sales aktörüyle gerçek Sales API'sinden **gönderilir ve onaylanır** (Ö4).
   3. BİR yükleme talimatı (onaylı satıra iki satır) — gerçek Logistics API'sinden hazırlayan aktörle **oluşturulur ve yayımlanır**; ikinci satırı kapılı Logistics fixture yazıcısıyla **bloklanır** — 4a'da hiçbir API'nin üretmediği tek durum (D2 blok kaynağı LOG-5'te).
+- **Fiyatsız yol (deny-first, Sinan §4 #66 5738113623):** hazırlayan **hiç Sales grant'i taşımaz**; seçici, `logistics.loading-instructions.create` altındaki FİYATSIZ Logistics okumasını (`GET /api/v1/logistics/loading-instructions/approved-order-lines`) kullanır; Sales taslak rotaları hazırlayana 403 verir ve fiyatsız okumanın JSON'unda hiçbir fiyat anahtarı yoktur (spec ağacı gezerek doğrular).
 - **Pozitif yol:** hazırlayan, normal ekranda müşteriyi ve onaylı satırı **görünür etiketiyle** seçer (fixture kimliğiyle değil), "4.5" miktar metnini yazar (Ö2, birebir); ilk cevabın teslimi kesilir, aynı anahtarla yeniden gönderim replay olur (`Idempotency-Replayed`); detay gerçek okumadır; talimat yayımlanır; yükleyici pay kaydeder.
 - **Negatifler:** kapak aşımı (409 `logistics_load_exceeds_instructed`), bayat sekme (409 `version_conflict`, yeniden okuma), aynı yükleme kimliği yeni anahtarla (409 `logistics_duplicate_share_id`), bloklu satır (formda seçilemez + gerçek rotada 409 `logistics_line_blocked`), grant'siz oluşturma rotası kapalı, okuyucunun pay gönderimi 403 (hiçbir şey kaydedilmez), diğer şirkette hazırlayan hiçbir şey görmez.
 - **Fiyat yok:** her ekranın metninde fiyat/finans sözcüğü aranır ve bulunmaz.
@@ -18,7 +19,7 @@
 ## Girdiler (varsayılan yok)
 - BROWSER-CI sözleşmesi: `BROWSER_E2E_AUTHORIZED_BASE_URL`, `BROWSER_E2E_API_BASE_URL`, `BROWSER_E2E_ARTIFACTS_DIR`, `BROWSER_E2E_JUNIT_FILE`, `BROWSER_E2E_TESTED_COMMIT`.
 - `BROWSER_E2E_L04_SEED` (JSON): `preparerActor`, `loaderActor`, `readerActor`, `companyId`, `otherCompanyId`, `customerPartyId`, `companyAccountId`, `draftId`, `approvedLineId`, `instructionId`, `blockedLineId`, `openLineId` (`src/env.ts`).
-  - Aktörler ve grant'ler `infra/browser-suites/l04.override.yml`'de: hazırlayan `logistics.loading-instructions.create` + `.read` + `sales.drafts.read` (onaylı satırı seçmek için, salt okuma — ASSUMPTION-LOG4B-1); yükleyici `logistics.loads.record` + `.read`; okuyucu yalnız `.read`; iki Sales aktörü yalnız seed için.
+  - Aktörler ve grant'ler `infra/browser-suites/l04.override.yml`'de: hazırlayan `logistics.loading-instructions.create` + `.read` (Sales grant'i yok); yükleyici `logistics.loads.record` + `.read`; okuyucu yalnız `.read`; iki Sales aktörü yalnız seed için.
 - **Kabiliyet profili:** önce `log-staged` (Logistics ekranları normal runtime'da staged; disposable zarf yalnız bu üç kabiliyeti açar — FIN-UI-1c deseni), l04 yeşil olunca ayrı bir exact-head değişikliğiyle `normal`.
 
 ## Engeller (bu dosyanın sahibi dışında)
