@@ -129,7 +129,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // inventory
             ["tools/relational_inventory/inventory.txt"] =
-                "9bbead2ad725a9afbf3a90970654fe6f1e0f86f440f59f999ad97f68b6701354",
+                "a8123a12524f95842a2dd73b59683471452f16f9b7383acdd20d771d1d9cbf94",
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
@@ -203,7 +203,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // row and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
              + "Persistence/InventoryDbContext.cs"] =
-                "73c2a33c6a4fbc77079c4eb3f17e2eba237b4a16ba6b961554a2d50dccbf2809",
+                "7c0c51016d4a47b6d9b5faf34a013d0eb76b4337899d1cf64601037aed44ce20",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "0ad206ef3d741157f24c2433f887871e3fd576ef950ef57ad13b09adc9c3e0e5",
@@ -336,7 +336,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Inventory.Infrastructure/"
                  + "InventoryModuleExtensions.cs"] =
                     new(
-                        "ef1a2f3eccdeeb6f71b0c1ccd1569f5ff80edc8227142d358268cb53aeb59606",
+                        "504b6cefb77e200e444765d719dac6fd79e7078552b92e401c4aa6250b754e57",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -349,10 +349,20 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // the id (retry) or not (conflict); still no connection, command or raw SQL. Re-fingerprinted
                 // for INV-OPEN-1 (T07 = A): the opening count is written through the same tenant-filtered
                 // context in one save; SqlClient count unchanged (1).
+                // INV-OPEN-1 part 2: the opening-count command reads through the tenant-filtered context and uses
+                // the SqlClient namespace only to recognise a unique-key violation (SqlException 2601/2627) in a
+                // catch filter, as the other module stores do. No connection, command or raw SQL.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/InventoryOpeningCommandService.cs"] =
+                    new(
+                        "0fa5b01cefdf49c8318a7153e6b85961f1775430c6a647b502b7630e10b4f320",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
                     new(
-                        "478b3035fc958260d0f914a197d808a542f7d4fe0cad6b10833d1e67bcc73f4d",
+                        "82e9d46f3a51a7d2b0ee50e7963df3c9fbd5bd11db7913e4d8817bfcd70572f7",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -533,6 +543,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedMigrationMutationSources =
             new Dictionary<string, ReviewedMigrationMutationSource>(StringComparer.Ordinal)
             {
+                // INV-OPEN-1 part 2: each Down's only raw SQL is the Inventory refusal (51046) while an opening
+                // count, its posted stock or a command record exists; forward fix, no row is dropped.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260919120000_AddOpeningCounts.cs"] =
+                    new("85e41efd96d2e38d19db1ac6bc22fd761203937119e9af44c0c9bb68a2c7d2a9",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260919140000_AddInventoryCommands.cs"] =
+                    new("450f545cc1ce2e303794dbf0a80566f18bef41cba222366603e3e35288dbe69d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/20260912175128_InitialProductDrafts.cs"] =
                     new("09b167e9837c486f8487bc8a30518d37a98ee90d6cea5842a40df6fd7c7e00f8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
