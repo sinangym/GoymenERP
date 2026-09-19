@@ -54,7 +54,10 @@ public sealed class PurchaseSupplyReferencePort(IPurchasingStore store) : IPurch
         }
 
         var line = order.Lines[index];
-        var productVersion = stored.ProductVersionsByLineId.TryGetValue(line.Id, out var version) ? version : string.Empty;
+        // Fail closed (FİNANS #352 INFO-1): a stored line without its answered product version is a record that cannot be restored, never an empty version on the wire.
+        var productVersion = stored.ProductVersionsByLineId.TryGetValue(line.Id, out var version) && !string.IsNullOrWhiteSpace(version)
+            ? version
+            : throw new InvalidOperationException("Kayıtlı sipariş satırının ürün sürümü okunamadı.");
         return new PurchaseSupplyReferenceAnswerV1(PurchaseSupplyReferenceOutcomeV1.Approved, new PurchaseSupplyLineReferenceV1(
             order.CompanyId, order.Id, line.Id, index + 1, order.SupplierPartyId, stored.CompanyAccountId, order.SourceRequestId, line.SourceRequestLineId,
             line.ProductId, productVersion, line.UnitId, line.Kind.ToString(), Text(line.CommittedQuantity), Text(line.AcceptedQuantity),

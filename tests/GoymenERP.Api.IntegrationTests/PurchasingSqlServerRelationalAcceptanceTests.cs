@@ -180,6 +180,78 @@ public sealed class PurchasingSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task Two_orders_on_one_request_line_approved_concurrently_yield_one_approval_and_the_losers_retry_is_refused_as_over_sourced()
+    {
+        // FİNANS #352 P3-1: the concurrency proof of PUR-2 = A (Sinan 5738113623 §1). Need 10, two orders of 6 approved at the same
+        // moment under two keys: both read "0 approved so far", both pass the sum in memory, both move the request's SourcingVersion —
+        // only one save wins its row version; the other is a ConcurrentChange with nothing stored, and its retry measures again.
+        await using Run run = await Run.StartAsync();
+        Owners owners = Owners.For(CompanyA);
+        Guid requestId;
+        Guid orderA;
+        Guid orderB;
+        await using (StoreScope a = run.Store(CompanyA))
+        {
+            PurchaseRequest built = Request(owners, 10m);
+            PurchaseRequest request = (await a.Store.StoreRequestAsync(run.Envelope("k-req"), Hash("req-1"), Day, () => built, VersionsOf(built))).Request.Request;
+            requestId = request.Id;
+            Guid requestLineId = request.Lines[0].Id;
+            await a.Store.MutateRequestAsync(run.Envelope("k-submit"), Hash("submit-2"), PurchasingCommands.RequestSubmitV1, requestId, (r, now) => r.Submit(2, now), Submitted);
+            PurchaseOrder builtA = Order(owners, requestId, requestLineId, 6m);
+            orderA = (await a.Store.StoreOrderAsync(run.Envelope("k-order-a"), Hash("order-a"), owners.Account, Day, () => builtA, VersionsOf(builtA))).Order.Order.Id;
+            PurchaseOrder builtB = Order(owners, requestId, requestLineId, 6m);
+            orderB = (await a.Store.StoreOrderAsync(run.Envelope("k-order-b"), Hash("order-b"), owners.Account, Day, () => builtB, VersionsOf(builtB))).Order.Order.Id;
+        }
+
+        Barrier barrier = new Barrier(2);
+        async Task<object> ApproveAsync(Guid orderId, string key)
+        {
+            await using StoreScope writer = run.Store(CompanyA, new BarrierInterceptor(barrier));
+            try
+            {
+                var result = await writer.Store.MutateOrderAsync(run.Envelope(key), Hash(key), PurchasingCommands.OrderApproveV1, orderId, (o, now) => o.Approve(2, now), Approved);
+                return result!.Outcome;
+            }
+            catch (PurchasingStoreException exception)
+            {
+                return exception.Code;
+            }
+        }
+
+        var results = await Task.WhenAll(Task.Run(() => ApproveAsync(orderA, "k-approve-a")), Task.Run(() => ApproveAsync(orderB, "k-approve-b")));
+        Assert.Single(results, result => result is PurchasingWriteOutcome.Recorded);
+        Assert.Single(results, result => result is string code && code == PurchasingStoreCodes.ConcurrentChange);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseOrders WHERE Status = 2"));
+        Assert.Equal(1L, await run.ScalarAsync<long>("SELECT SourcingVersion FROM purchasing.PurchaseRequests WHERE Id = @id", ("@id", requestId)));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'purchasing.purchase-order.approved.v1'"));
+        // The loser's key holds nothing: the race left no record, no refusal.
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseAttempts WHERE Outcome = 2"));
+        Assert.Equal(5, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseAttempts"));
+
+        Guid loser = results[0] is PurchasingWriteOutcome.Recorded ? orderB : orderA;
+        string loserKey = loser == orderA ? "k-approve-a" : "k-approve-b";
+        await using (StoreScope a = run.Store(CompanyA))
+        {
+            // The retry under the same key now sees the winner's 6: 6 + 6 > 10 is refused inside the save, named on the line, nothing written;
+            // the service records it as terminal (§7) and the key answers it again.
+            PurchasingWriteEnvelope envelope = run.Envelope(loserKey, correlation: "SENTETIK-retry");
+            var over = await Assert.ThrowsAsync<PurchasingStoreException>(() => a.Store.MutateOrderAsync(envelope, Hash(loserKey), PurchasingCommands.OrderApproveV1, loser,
+                (o, now) => o.Approve(2, now), Approved));
+            Assert.Equal((PurchasingStoreCodes.RequestLineOverSourced, "lines[0].sourceRequestLineId"), (over.Code, over.Errors[0].Field));
+            await a.Store.RecordRefusalAsync(envelope, Hash(loserKey), PurchasingCommands.OrderApproveV1,
+                new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.RequestLineOverSourced, over.Errors));
+            var replay = await a.Store.FindReplayAsync(run.Envelope(loserKey, correlation: "SENTETIK-again"), Hash(loserKey), PurchasingCommands.OrderApproveV1);
+            Assert.Equal((409, PurchasingProblemCodesV1.RequestLineOverSourced, "SENTETIK-retry"), (replay!.Refusal!.Status, replay.Refusal.Code, replay.OriginalCorrelationId));
+            Assert.Null(replay.Order);
+        }
+
+        Assert.Equal((1, 1, 6, 1, 2L), await run.OrderCountsAsync(loser));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseOrders WHERE Status = 2"));
+        Assert.Equal(1L, await run.ScalarAsync<long>("SELECT SourcingVersion FROM purchasing.PurchaseRequests WHERE Id = @id", ("@id", requestId)));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseAttempts WHERE Outcome = 2 AND ISJSON(RefusalJson) = 1"));
+    }
+
+    [SqlServerFact]
     public async Task A_stale_version_is_terminal_and_a_same_key_race_leaves_one_record()
     {
         await using Run run = await Run.StartAsync();
