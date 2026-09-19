@@ -9,6 +9,7 @@ which keeps the script directory off sys.path).
 Stage 2: each suite runs under one capability profile, each with its own compose file:
 - "c01-list-only": the canonical C-01 stack, validated by the canonical validator unchanged;
 - "cari-staged": the same disposable envelope plus C01E2e__Profile=cari-list-detail;
+- "acc-staged": the same disposable envelope plus C01E2e__Profile=accounting-periods-and-journals;
 - "normal": the same stack without the envelope, so the API serves its normal shell authority.
 A suite compose model is mapped back to the canonical shape by exactly its profile's documented
 difference and then checked by the canonical validator, so every canonical rule (Testing,
@@ -34,12 +35,12 @@ _spec.loader.exec_module(c01)
 ContractError = c01.ContractError
 require = c01.require
 
-SUITES = ("smoke", "c03", "org03", "u02", "s03", "mfg", "fin01", "s04")
+SUITES = ("smoke", "c03", "org03", "u02", "s03", "mfg", "fin01", "s04", "acc01")
 # s03 writes since S03 (#327): V2A-02 attempts a POST (nothing is stored, but it is no read-only run).
 READ_ONLY_SUITES = ("smoke", "c03")
 _SUITE_PATTERN = re.compile(r"^[a-z0-9]+$")
 
-PROFILES = ("c01-list-only", "cari-staged", "normal")
+PROFILES = ("c01-list-only", "cari-staged", "normal", "acc-staged")
 SUITE_PROFILES = {
     "smoke": "c01-list-only",
     "c03": "cari-staged",
@@ -54,16 +55,21 @@ SUITE_PROFILES = {
     "fin01": "normal",
     # S-04 (SİPARİŞ, SALES-A1): the approval journey on the normal host over a gated synthetic draft.
     "s04": "normal",
+    # ACC-01 (FİNANS, ACC-V0b): the period, journal and posting-queue screens opened only inside the
+    # disposable envelope, until the flip after this suite is green.
+    "acc01": "acc-staged",
 }
 PROFILE_COMPOSE_FILES = {
     "c01-list-only": "infra/docker-compose.c01-e2e.yml",
     "cari-staged": "infra/docker-compose.browser-cari-staged.yml",
     "normal": "infra/docker-compose.browser-normal.yml",
+    "acc-staged": "infra/docker-compose.browser-acc-staged.yml",
 }
 PROFILE_SUITE_LABELS = {
     "c01-list-only": "C01-REAL-BROWSER-E2E-V1",
     "cari-staged": "BROWSER-SUITE-CARI-STAGED-V1",
     "normal": "BROWSER-SUITE-NORMAL-V1",
+    "acc-staged": "BROWSER-SUITE-ACC-STAGED-V1",
 }
 CANONICAL_SUITE_LABEL = PROFILE_SUITE_LABELS["c01-list-only"]
 CARI_STAGED_PROFILE_KEY = "C01E2e__Profile"
@@ -71,6 +77,7 @@ CARI_STAGED_PROFILE_VALUE = "cari-list-detail"
 # Each envelope profile's exact C01E2e__Profile value (C01E2eShellCapabilityActivation's profiles).
 STAGED_PROFILE_VALUES = {
     "cari-staged": CARI_STAGED_PROFILE_VALUE,
+    "acc-staged": "accounting-periods-and-journals",
 }
 # The disposable C-01 capability envelope, as the canonical compose file sets it on the API.
 ENVELOPE_KEYS = (
@@ -121,6 +128,8 @@ SUITE_API_EXTENSIONS = {
     "fin01": {"issuer": False, "actors": True, "identity": True},
     # S-04 (SİPARİŞ): a preparer, an approver and a reader actor with their Identity users and grants.
     "s04": {"issuer": False, "actors": True, "identity": True},
+    # ACC-01 (FİNANS, ACC-V0b): a preparer and an approver actor with their Identity users and grants.
+    "acc01": {"issuer": False, "actors": True, "identity": True},
 }
 ISSUER_KEYS = ("ProductRuntime__IssuerLocalUserId", "ProductRuntime__IssuerExternalIdentityId")
 
@@ -170,6 +179,11 @@ SUITE_IDENTITY_PERMISSIONS = {
     ),
     # SALES-A1's approval axis: the preparer creates and reads, the approver approves and reads, the reader reads.
     "s04": ("sales.drafts.create", "sales.drafts.read", "sales.orders.approve"),
+    # The six Accounting names. The preparer holds .approve on purpose — Ö4 must refuse its OWN proposal
+    # although the grant is there — and holds periods.read alone in the second company; the approver holds
+    # no journal or queue name, so those routes stay closed to it.
+    "acc01": ("accounting.periods.read", "accounting.periods.propose", "accounting.periods.approve",
+              "accounting.periods.close", "accounting.journals.read", "accounting.posting-queues.read"),
 }
 
 
@@ -321,6 +335,10 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     # SİPARİŞ's Suites/S04 seed: the three actors, the company and the one Preparing draft written through
     # the gated Sales draft writer (C01E2eSalesDraftFixtureWriter).
     "s04": frozenset({"preparerActor", "approverActor", "readerActor", "companyId", "draftId"}),
+    # FİNANS's Suites/ACC01 seed: the two actors and both companies. No Accounting row is seeded — the suite
+    # proposes, approves and closes through the real API, and the second company exists only to show that
+    # GDC's periods never appear there.
+    "acc01": frozenset({"companyId", "companyBId", "preparerActor", "approverActor"}),
 }
 _OUTPUT_KEY = re.compile(r"^[a-z][A-Za-z0-9]{0,39}$")
 # Any non-nil lowercase GUID: seeded reference ids (companies, work centres) need not be RFC 4122.

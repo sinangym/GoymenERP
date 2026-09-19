@@ -133,6 +133,7 @@ public sealed class C01E2eActivationBoundaryTests
                      "infra/docker-compose.yml",
                      "infra/docker-compose.c01-e2e.yml",
                      "infra/docker-compose.browser-normal.yml",
+                     "infra/docker-compose.browser-acc-staged.yml",
                      "infra/docker-compose.browser-cari-staged.yml",
                      "src/backend/GoymenERP.Api/Dockerfile",
                      "src/backend/GoymenERP.Api/appsettings.json",

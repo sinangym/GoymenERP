@@ -151,6 +151,22 @@ export const CAPABILITY = {
    * it itself, and the server refuses a self-approval anyway.
    */
   financeBankAccountsPropose: 'finance.bank-accounts.propose',
+  /** M-07 Muhasebe Dönemleri. Route `/muhasebe/donemler`, owner the Accounting lane (FİNANS). */
+  accountingPeriodsList: 'accounting.periods.list',
+  /** M-07 propose a period opening. Route `/muhasebe/donemler/yeni`. A SEPARATE grant from reading. */
+  accountingPeriodsPropose: 'accounting.periods.propose',
+  /**
+   * M-04 Muhasebe Fişleri, read-only. Route `/muhasebe/fisler`.
+   *
+   * `accounting.periods.approve` (Ö4) and `accounting.periods.close` (Ö5) are CONTROLS of the M-07
+   * list (the provider's `ParentCapabilityId`), not routes, so neither is in these tables; the list
+   * reads them with `hasCapability` and the server refuses a self-approval regardless.
+   */
+  accountingJournalsList: 'accounting.journals.list',
+  /** M-04-DETAIL one journal, read-only. Route `/muhasebe/fisler/:journalId`. A SEPARATE grant from the list. */
+  accountingJournalsDetail: 'accounting.journals.detail',
+  /** M-01 Muhasebe Kontrol Merkezi — the posting queues, read-only. Route `/muhasebe/kontrol`. */
+  accountingPostingQueues: 'accounting.posting-queues',
 } as const
 
 export type CapabilityId = (typeof CAPABILITY)[keyof typeof CAPABILITY]
@@ -189,6 +205,12 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.financeReceiptsDetail]: '/finans/tahsilatlar/:sourceId',
   [CAPABILITY.financeBankAccountsList]: '/finans/banka-hesaplari',
   [CAPABILITY.financeBankAccountsPropose]: '/finans/banka-hesaplari/yeni',
+  [CAPABILITY.accountingPeriodsList]: '/muhasebe/donemler',
+  // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a period id.
+  [CAPABILITY.accountingPeriodsPropose]: '/muhasebe/donemler/yeni',
+  [CAPABILITY.accountingJournalsList]: '/muhasebe/fisler',
+  [CAPABILITY.accountingJournalsDetail]: '/muhasebe/fisler/:journalId',
+  [CAPABILITY.accountingPostingQueues]: '/muhasebe/kontrol',
 }
 
 /** Nav label per capability. Only rendered when the server granted the capability. */
@@ -224,4 +246,10 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   [CAPABILITY.financeReceiptsDraft]: '',
   [CAPABILITY.financeReceiptsDetail]: '',
   [CAPABILITY.financeBankAccountsPropose]: '',
+  [CAPABILITY.accountingPeriodsList]: 'Muhasebe Dönemleri',
+  [CAPABILITY.accountingJournalsList]: 'Muhasebe Fişleri',
+  [CAPABILITY.accountingPostingQueues]: 'Muhasebe Kontrol',
+  // Not these two: a period is proposed from the M-07 list and a journal opened from a row.
+  [CAPABILITY.accountingPeriodsPropose]: '',
+  [CAPABILITY.accountingJournalsDetail]: '',
 }
