@@ -142,6 +142,37 @@ Not here: closing an order, a list or search, cost, Inventory movements (T15), o
   - WND-008's "**or** kg tolerance" branch. Version 1 encodes only the metre form, `YürüyenMetre + ToleransMetre ≥ GerekliMetre`. Whether a kg tolerance replaces the metre one, adds to it, and against which mass it is measured is not stated.
 - **Golden tests** (`tests/GoymenERP.Manufacturing.UnitTests/Engines`): the master's examples at the precision it prints (±0.0005), plus an independent 40-digit reference (±1e-18). The density 7850 kg/m³ there is the test input the examples imply, not a production parameter.
 
+## MFG-6 slice 2 — the plan's slitting spec and the fail-closed approval gate (approved)
+
+- **Spec as plan content** (`Domain/Plans/SlittingSpec`):
+  - the slit lines (band width, a nominal Ö2 millimetre; count);
+  - an optional winding target (kg).
+  - It is set when the plan is created and never changed, like the plan's inputs and target.
+  - Stored in the same save as the plan: `manufacturing.PlanSlitLines` (bound by company + plan) and `Plans.WindingTargetKg`.
+  - The content hash is extended **only** for a plan that has a spec, so every plan stored before keeps its hash and replay identity (pinned by a test on the MFG-5 canonical string).
+  - The same id with another spec is `manufacturing_plan_id_conflict`.
+- **Scope of the gate:** only a plan that carries a spec. A plan without one (the MFG-5 plan: inputs and target) claims no engine computation and is approved as before. The live MFG-API and the `mfg` browser suite create such plans; there is no HTTP surface for a spec yet (the API slice).
+- **Approval gate** (`SlittingApprovalGate`, inside `ProductionPlan.Approve`):
+  - Order: the version fence first, then "only a draft", then the gate.
+  - Per planned roll: the label must be known usable; SLT-001…007 and SLT-010 must compute with the roll's planned mass as the parent mass.
+  - With a winding target, per roll and band width: WND-001…004 and the WND-008/009 fit.
+  - Nothing is approved with gaps:
+    - a missing input → `manufacturing_plan_parameters_unavailable`, naming every one (sorted, distinct);
+    - an engine refusal → `manufacturing_plan_engine_refused` (the engine's code + parameter);
+    - a label known not usable → `manufacturing_plan_label_not_usable`;
+    - a fit that computes and fails → `manufacturing_plan_winding_does_not_fit` (`metresSufficient` / `diameterFits`). Fail-closed; an authorized exception path would be a Business decision.
+  - A refusal wins over missing inputs.
+  - Nothing changes on a refusal: no version, no approval, no audit.
+  - A stored approval is restored without re-running the gate.
+- **The outside inputs today** (`SlittingPlanParameters`): all unknown, so every approval of a plan with a spec is refused with the full list. None of these is defaulted or entered on the plan:
+  - `labelState`: Inventory's module read of the label (queued, ÜRÜN);
+  - `thicknessMm`, `parentWidthMm`: Product's role read (ÜRÜN; data waits on Q6 #66 5740511161);
+  - `netUsableWidthMm`, `densityKgPerCubicMetre`, `lineSpeedMetresPerMinute`, `innerDiameterMm`, `maximumOuterDiameterMm`, `toleranceMetres`: the Settings / Policy Registry (DEC-SET-001, OPEN-007, OPEN-004/005).
+- **No parameter snapshot yet.** Its source-version shape is the registry's and lands with the registry's first reader. The gate means no approval can happen without it.
+- **Engine fix carried here:** WND-009's outer diameter is WND-003's computed value. `WindingEngineV1.Fit` now takes it as a positive computed value, not an Ö2 nominal millimetre, which a computed diameter never is. The line's maximum stays nominal. The formula is unchanged, so this is not a new version.
+- **Migration** `20260919130000_AddPlanSlittingSpecs`: its Down refuses with `THROW 51047` (Manufacturing's one module number) while any spec is stored. Forward fix. Real SQL: it rolls back and forward cleanly with no spec, and refuses (51047) with one.
+- **Open item** (#66 NEEDS-BUSINESS 5741547443): whether a slitting plan's parent mass is the whole coil (the label's balance) or may be a part of it. Until it is answered, the engine takes the planned mass (the kg that passes the line) and **no rule** ties it to the label's balance either way. The balance itself also needs Inventory's module read.
+
 ## Behaviour kept on purpose — Business decision pending
 
 - **One approved plan can open more than one order** (`FromApprovedPlan` does not mark the plan as converted). §7.3 does not say whether a plan becomes one order or several partial ones; the question is open with Business (#66 5728934213, the same principle as Purchasing's request → several orders). Pinned by a test; changes only by that decision. The physical guard is Inventory's.

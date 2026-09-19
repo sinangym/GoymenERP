@@ -124,7 +124,9 @@ public static class WindingEngineV1
         // Zero is a stated "no tolerance"; missing is unavailable, never assumed zero.
         var tolerance = inputs.NonNegative(input.ToleranceMetres, "toleranceMetres");
         var required = inputs.Positive(input.RequiredMetres, "requiredMetres");
-        var outerDiameter = inputs.Measure(input.OuterDiameterMm, "outerDiameterMm");
+        // A COMPUTED diameter (WND-003's result, e.g. 1371.1401108…): positive, not a nominal Ö2 millimetre, so
+        // its precision is the engine's, not refused beyond three decimals. The line's maximum stays nominal.
+        var outerDiameter = inputs.Positive(input.OuterDiameterMm, "outerDiameterMm");
         var maximumDiameter = inputs.Measure(input.MaximumOuterDiameterMm, "maximumOuterDiameterMm");
         if (!inputs.IsComplete)
         {
