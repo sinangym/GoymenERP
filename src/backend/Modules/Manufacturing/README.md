@@ -111,6 +111,37 @@ Not here: closing an order, a list or search, cost, Inventory movements (T15), o
   - An unknown outcome freezes the forms until the same snapshot is re-sent.
   - A 401/403 on a re-send does not settle it, because authority is measured before the stored answer.
 
+## MFG-6 slice 1 — the Slitting and Winding engines (approved card, Business 5737790175)
+
+`Domain/Engines`: pure, deterministic, versioned calculators of master v3 §28.4 (`SlittingEngineV1`, SLT-001…010) and §28.5 (`WindingEngineV1`, WND-001…009), exactly as written there. There is no I/O, no HTTP and no persistence yet; the preview API, the plan snapshot and the plan screen are the next slices of the card.
+
+- **Never a guess:**
+  - a missing parameter is `EngineOutcome.Unavailable` and is named;
+  - a broken rule is `EngineOutcome.Refused` with an `EngineCodes` code;
+  - a refusal wins over missing parameters, because a supplied value is wrong.
+- **No built-in parameter:** density, line speed and the metre tolerance are inputs (OPEN-007, OPEN-004/005, Ö7).
+  - Their values come from the Settings / Policy Registry (DEC-SET-001), and an approved plan snapshots them (DEC-PRDCT-008).
+  - A tolerance may be a stated zero; a missing one is unavailable, never zero.
+- **Ö2:** kilogram and nominal millimetre inputs take at most three decimals and are refused beyond.
+- **No rounding.** Results are unrounded decimals, because the rounding policy (§28.1) is not decided. π and the square root are decimal too, so a result is the same on every platform.
+- **Invariants:**
+  - the used width cannot exceed the net usable width (`engine_used_width_exceeds_net_width`);
+  - SLT-010's line time is the parent coil's walking metres over the line speed, never the output bands' metres.
+- **Evaluation order (SLT-001…007), algebraically identical to §28.4:**
+  - Line kg (SLT-003, `(HamKg / NetEn) × KullanılanEn`) is evaluated as `HamKg × KullanılanEn / NetEn`: multiply first, divide once.
+  - Plan kg (SLT-006, `ΣSatırKg`) is evaluated once as `HamKg × ToplamKullanılanEn / NetEn`, not as a sum of separately rounded line values.
+  - Remaining kg (SLT-007) is one subtraction.
+  - SLT-001's kg per mm is **reported only**, never a multiplicand. It is often non-terminating (`28750 / 1500`), and multiplying its 28-digit rounding back would leave a residue: a full-width plan showed −1e-24 kg remaining (#340 CI).
+  - No epsilon and no rounding are applied. §28.1 is not decided, so either would be a policy.
+- **What holds exactly vs within decimal precision** (Ö2 inputs; tested over a seeded set of plans):
+  - **Exact:** widths (SLT-002/004/005); remaining kg ≥ 0 whenever used ≤ net; plan kg + remaining kg == parent kg; a full-width plan leaves exactly 0.
+  - **Within decimal precision only:** Σ line kg == plan kg. Each line is its own single division, so they agree to about 1e-23 kg, not bit for bit.
+- **Versions:** every result carries `FormulaVersion`. A changed formula is a new version, never an edit (DEC-PRDCT-004).
+- **Not in version 1** (each needs a sourced rule before a new version can carry it):
+  - WND-010 (break-down into target-mass coils plus a remainder "above tolerance"). Its tolerance rule is not stated precisely enough to encode without choosing it.
+  - WND-008's "**or** kg tolerance" branch. Version 1 encodes only the metre form, `YürüyenMetre + ToleransMetre ≥ GerekliMetre`. Whether a kg tolerance replaces the metre one, adds to it, and against which mass it is measured is not stated.
+- **Golden tests** (`tests/GoymenERP.Manufacturing.UnitTests/Engines`): the master's examples at the precision it prints (±0.0005), plus an independent 40-digit reference (±1e-18). The density 7850 kg/m³ there is the test input the examples imply, not a production parameter.
+
 ## Behaviour kept on purpose — Business decision pending
 
 - **One approved plan can open more than one order** (`FromApprovedPlan` does not mark the plan as converted). §7.3 does not say whether a plan becomes one order or several partial ones; the question is open with Business (#66 5728934213, the same principle as Purchasing's request → several orders). Pinned by a test; changes only by that decision. The physical guard is Inventory's.
@@ -118,9 +149,9 @@ Not here: closing an order, a list or search, cost, Inventory movements (T15), o
 ## What this module is not
 
 - No stock movement, lot or label: Inventory owns those.
-- No formula, trim/kerf, tolerance, template, rounding stage or roll-substitution policy.
+- No trim/kerf value, tolerance number, template, rounding stage or roll-substitution policy. The only formulas are the two MFG-6 engines above, and every parameter is supplied to them.
 - No UI yet (the normal screen is the next card); HTTP since MFG-API, persistence since MFG-5 (above).
-- No other engine (cold rolling, tube/profile, painting, cut-to-length).
+- No other engine (cold rolling, tube/profile, painting, cut-to-length; DEC-PRDCT-001 order).
 
 ## dependency_wait
 
