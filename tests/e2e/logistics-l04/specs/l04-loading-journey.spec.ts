@@ -39,13 +39,15 @@ import { expect, test, type Page, type Response } from '@playwright/test'
 import { readEnvironment } from '../src/env.js'
 
 const env = readEnvironment()
+// The seed exports GUIDs and actor ids only (validate_browser_acceptance.seed_export); the customer's Cari name is the
+// seed's deterministic label (L04BrowserSeed.CustomerName), which the seed verified the price-free read answers.
+const customerName = 'SENTETIK browser-suite:l04 Yükleme müşterisi'
 const {
   preparerActor,
   loaderActor,
   readerActor,
   companyId,
   otherCompanyId,
-  customerName,
   draftId,
   approvedLineId,
   instructionId,

@@ -229,7 +229,6 @@ public sealed class L04BrowserSeed : IBrowserSuiteFixture
             ["companyAccountId"] = customer.AccountId.ToString("D"),
             ["draftId"] = DraftId.ToString("D"),
             ["approvedLineId"] = LineId.ToString("D"),
-            ["customerName"] = CustomerName,
             ["instructionId"] = instructionId.ToString("D"),
             ["blockedLineId"] = BlockedLineId.ToString("D"),
             ["openLineId"] = OpenLineId.ToString("D"),
