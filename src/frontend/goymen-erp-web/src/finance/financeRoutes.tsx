@@ -3,9 +3,9 @@
  * spread in — never written into `src/shell/**` from here (SHARED_MOUNT_HANDOFF.md).
  *
  * Each route is behind the shared `CapabilityRoute` gate with the backend provider's id, and inside
- * `FinancePortProvider` with the HTTP adapter. The declarations are STAGED
- * (`ImplementationAvailable: false`) until the FIN-01 browser acceptance, so in the normal runtime
- * every route closes onto the neutral not-found block and calls nothing.
+ * `FinancePortProvider` with the HTTP adapter. The declarations are PUBLISHED since FIN-UI-1c (after
+ * the FIN-01 browser acceptance); a route still opens only for an actor holding its own Finance
+ * permission, and otherwise closes onto the neutral not-found block and calls nothing.
  */
 
 import type { ReactNode } from 'react'
