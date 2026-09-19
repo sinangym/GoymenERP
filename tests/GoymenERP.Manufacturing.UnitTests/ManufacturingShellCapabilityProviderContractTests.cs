@@ -5,17 +5,19 @@ using GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 namespace GoymenERP.Manufacturing.UnitTests;
 
 /// <summary>
-/// The staged Manufacturing shell provider (MFG-UI card D1–D3): one route and one control on it,
-/// the frontend's ids and route (<c>src/manufacturing/capabilities.ts</c> read from the repository,
-/// so a drift is red here), company-wide scope, and <c>ImplementationAvailable: false</c> until the
-/// browser suite accepts the screen.
+/// The published Manufacturing shell provider (MFG-UI card D1–D3; MFG-UI-F): one route and one control on
+/// it, the frontend's ids and route (<c>src/manufacturing/capabilities.ts</c> read from the repository,
+/// so a drift is red here), company-wide scope, and <c>ImplementationAvailable: true</c> on both. The
+/// control is its parent with only its id, parent and permissions changed, so the registry's control rule
+/// (same route, context and scope; the parent's permissions kept; never available under a staged parent)
+/// holds by construction.
 /// </summary>
 public sealed class ManufacturingShellCapabilityProviderContractTests
 {
     private const string FrontendCapabilities = "src/frontend/goymen-erp-web/src/manufacturing/capabilities.ts";
 
     [Fact]
-    public void The_order_route_and_its_fact_control_are_staged_with_the_frontends_ids()
+    public void The_order_route_and_its_fact_control_are_published_with_the_frontends_ids()
     {
         var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(), FrontendCapabilities));
         var provider = new ManufacturingShellCapabilityProvider();
@@ -35,7 +37,7 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
                     ShellCapabilityScopeRequirement.CompanyWide),
                 (declaration.RoutePrecedence, declaration.ContextRequirement, declaration.ScopeRequirement));
             Assert.Null(declaration.GlobalProductOperation);
-            Assert.False(declaration.ImplementationAvailable);
+            Assert.True(declaration.ImplementationAvailable);
         }
 
         var detail = Assert.Single(declarations, item => item.ParentCapabilityId is null);
@@ -46,6 +48,10 @@ public sealed class ManufacturingShellCapabilityProviderContractTests
         var facts = Assert.Single(declarations, item => item.ParentCapabilityId is not null);
         Assert.Equal(("manufacturing.orders.facts", "manufacturing.orders.detail"), (facts.CapabilityId, facts.ParentCapabilityId));
         Assert.Equal([ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingFactsRecord], facts.RequiredPermissions);
+        Assert.Equal(
+            detail with { CapabilityId = facts.CapabilityId, ParentCapabilityId = facts.ParentCapabilityId, RequiredPermissions = facts.RequiredPermissions },
+            facts);
+        Assert.Superset(detail.RequiredPermissions.ToHashSet(StringComparer.Ordinal), facts.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
     }
 
     private static string FindRepositoryRoot()

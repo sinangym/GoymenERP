@@ -83,6 +83,47 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Empty(fixture.Store.Writes);
     }
 
+    // FİNANS #350 P2-1 sweep: decimal.TryParse rounds past a decimal's digits, so these texts would become whole
+    // numbers (10¹⁴) and pass Ö2. The text is measured first: more significant digits than a decimal holds
+    // exactly is invalid text, never rounded, and Settings is not asked.
+    [Theory]
+    [InlineData("100000000000000.000000000000001")]
+    [InlineData("99999999999999.999999999999999999")]
+    public async Task A_kilogram_text_a_decimal_cannot_hold_exactly_is_invalid_never_rounded(string text)
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+
+        var result = await fixture.Service.IssueInputAsync(order.Id, Fact(order.Version, text), "key-1", Permission,
+            CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Invalid, ManufacturingApiCodes.RequestInvalid, "kg"),
+            (result.Status, result.Code, result.Field));
+        Assert.Equal(0, fixture.Settings.Asked);
+        Assert.Empty(fixture.Store.Writes);
+    }
+
+    // Within the bound the text converts exactly and keeps its scale: twenty decimals, or trailing zeros past the
+    // bound, still reach the Settings check unchanged.
+    [Fact]
+    public async Task A_kilogram_text_within_a_decimals_exact_digits_keeps_its_scale_for_settings()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+
+        // Twenty decimals: exact, so Settings sees all of them and refuses the scale (never rounded to 0.123).
+        var twenty = await fixture.Service.IssueInputAsync(order.Id, Fact(order.Version, "0.12345678901234567891"), "key-1",
+            Permission, CancellationToken.None);
+        Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingMassCodes.ScaleExceeded), (twenty.Status, twenty.Code));
+
+        // Thirty-five characters, but twenty of them trailing zeros: fifteen significant digits, so it is valid text.
+        var zeros = await fixture.Service.IssueInputAsync(order.Id, Fact(order.Version, "123456789012345.00000000000000000000"),
+            "key-2", Permission, CancellationToken.None);
+        Assert.NotEqual(ManufacturingApiStatus.Invalid, zeros.Status);
+
+        Assert.Equal(2, fixture.Settings.Asked);
+    }
+
     [Theory]
     [InlineData("revoked")]
     [InlineData("site-scoped")]

@@ -13,8 +13,8 @@ import { defineConfig, devices } from '@playwright/test'
  *
  * THE CONTRACT (tests/e2e/browser-ci/README.md), no defaults. The suite's own binding is
  * `BROWSER_E2E_MFG_SEED` (manufacturing-mfg/src/env.ts): actors and ids written by the stage-2
- * seed step with their synthetic grants, and the `mfg-staged` capability profile (card D4) that
- * publishes the staged screen. Without them the run refuses.
+ * seed step with their synthetic grants, on the `normal` capability profile (MFG-UI-F: the screen is
+ * published; first accepted on `mfg-staged`, card D4). Without them the run refuses.
  *
  * Retries 0 and forbidOnly; traces, screenshots and video off (the C-01 artifact-privacy decision).
  */

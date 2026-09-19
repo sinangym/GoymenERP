@@ -1,0 +1,10 @@
+# SQL Server relational acceptance inventory: Purchasing.
+# Owner: the Purchasing module owner (single writer). The guard pin of this file is central (CARİ).
+# One fully qualified test name per line, sorted. A test that executes n > 1 times (theory rows)
+# is written `<name>  x<n>  # <reason>`. Read by tools/verify_rcsi_relational_acceptance.py.
+
+GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.A_request_and_an_order_are_stored_in_one_save_each_and_the_same_key_replays_with_the_first_correlation
+GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.A_stale_version_is_terminal_and_a_same_key_race_leaves_one_record
+GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Approval_enforces_the_sum_of_shares_across_orders_and_records_the_refusal_as_terminal
+GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Company_B_sees_nothing_of_company_A_and_a_second_create_attempt_on_the_same_order_is_refused_by_the_filtered_index
+GoymenERP.Api.IntegrationTests.PurchasingSqlServerRelationalAcceptanceTests.Two_orders_on_one_request_line_approved_concurrently_yield_one_approval_and_the_losers_retry_is_refused_as_over_sourced

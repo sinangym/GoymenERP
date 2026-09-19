@@ -56,8 +56,27 @@ internal static class ShellCapabilityRegistryAuthorities
 
     // FIN-UI-1c: ... + Manufacturing 1.0 staged: the normal host (C+O+P+S(published)+F(published)+M(staged)).
     // Computed by the ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
+    // Superseded when Manufacturing was published (MFG-UI-F, below); no host serves it now.
     internal const string CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10AndManufacturingV10 =
         "sha256:90oJBLWkzXFLflvbeE_AAOrVoe9ZowFEqClCaq_tel4";
+
+    // MFG-UI-F: ... + Manufacturing 1.0 PUBLISHED (the order detail and its facts control flip only their
+    // availability): the normal host (C+O+P+S(published)+F(published)+M(published)). Computed by the
+    // ComputeRevision reproduction and, independently, by ORG and SİPARİŞ (DATA ONLY); pinned by test.
+    internal const string CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10AndPublishedManufacturingV10 =
+        "sha256:a5pdyL0p3KsMrsfEuwKWoXa8RtqJmZRAicrLmDAWxsU";
+
+    // LOG-4a: ... + Logistics 1.0 STAGED (the loading-instruction list L-02, new L-03 and detail L-02-DETAIL,
+    // master v3 §27.8): the normal host (C+O+P+S(published)+F(published)+M(published)+L(staged)). Computed by
+    // the ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
+    internal const string CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10AndLogisticsV10 =
+        "sha256:qmTCFPlD-biVAyLgFvimrWzMq9aC-5F-0o2AALnEZH8";
+
+    // PUR-4a: ... + Purchasing 1.0 STAGED (the purchase-order list P-03, new P-04 and detail P-03-DETAIL,
+    // master v3 §27.3): the normal host (C+O+P+S(pub)+F(pub)+M(pub)+L(staged)+Pu(staged)). Computed by the
+    // ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
+    internal const string CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10AndPurchasingV10 =
+        "sha256:gv0JwWffycJQ08eCF4U7vpHSVIyVahDWM-1XSZPNQ3I";
 
     internal const string CounterpartyListCreateLinkAndDetailV15 =
         "sha256:3GiwcHV6aVuN1Y-wBzElxLJLCok2bblGc6pRruhqTx4";
@@ -71,12 +90,8 @@ internal static class ShellCapabilityRegistryAuthorities
     internal const string C01DisposableCariListDetailV1 =
         "sha256:LM81M4d4tKOqR9OaKvZM_uT5HQIcoffoTMEzMFH4atg";
 
-    // The disposable "manufacturing-order-detail" profile (BROWSER-CI mfg-staged, MFG-UI D4): the C-01
-    // list-only Counterparty provider plus Manufacturing's own declarations with only their availability
-    // opened (order detail and facts control). Computed by the ComputeRevision reproduction; pinned by a
-    // test against ComputeCandidateRevision.
-    internal const string C01DisposableManufacturingOrderDetailV1 =
-        "sha256:eZi6K5tQlsm6-dSQ2XZNou1GFj1I9JOuygIJ_mQ9Lw0";
+    // The disposable "manufacturing-order-detail" profile (mfg-staged, MFG-UI D4 #323, sha256:eZi6K5tQ…) is
+    // retired: Manufacturing is published on the normal host (MFG-UI-F) and the mfg suite runs there.
 
     // The disposable "finance-bank-accounts-and-drafts" profile (fin-staged, FIN-UI-1b #332,
     // sha256:EsjgjVRX…) is retired: Finance is published on the normal host (FIN-UI-1c) and fin01 runs there.

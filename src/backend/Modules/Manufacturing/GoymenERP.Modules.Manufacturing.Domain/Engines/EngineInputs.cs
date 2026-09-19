@@ -58,6 +58,23 @@ internal sealed class EngineInputs
         return present;
     }
 
+    /// <summary>A signed kilogram (a correction can go either way), at most three decimals (Ö2).</summary>
+    public decimal SignedMeasure(decimal? value, string parameter)
+    {
+        if (value is not { } supplied)
+        {
+            _missing.Add(parameter);
+            return 0m;
+        }
+
+        if (decimal.Round(supplied, MeasureScale) != supplied)
+        {
+            Refuse(EngineCodes.PrecisionExceeded, parameter);
+        }
+
+        return supplied;
+    }
+
     /// <summary>A value that may be zero (a stated "none", e.g. no tolerance) but never negative.</summary>
     public decimal NonNegative(decimal? value, string parameter)
     {

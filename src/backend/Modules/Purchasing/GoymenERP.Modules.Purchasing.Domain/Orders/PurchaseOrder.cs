@@ -61,6 +61,15 @@ public sealed class PurchaseOrder
         new(id, companyId, supplierPartyId, null, now);
 
     /// <summary>
+    /// PUR-4a: an order opened towards a supplier for ONE submitted request, whose lines bind to that request's
+    /// lines at the quantity this supplier takes (multi-sourcing, Sinan #66 5738113623 §1: a request line may
+    /// split across several orders; the sum of the shares never exceeds the line's need — the store enforces the
+    /// sum across orders at approval, this record enforces the binding shape).
+    /// </summary>
+    public static PurchaseOrder CreateForRequest(Guid id, Guid companyId, Guid supplierPartyId, Guid sourceRequestId, DateTimeOffset now) =>
+        new(id, companyId, supplierPartyId, Identity.Require(sourceRequestId, nameof(sourceRequestId)), now);
+
+    /// <summary>
     /// Sources an order from a SUBMITTED request of the SAME company, copying its lines as
     /// general lines with their units. The request stays what it is; the order is the commitment.
     /// Sourcing the same request again is not refused today (open Business question, README).
@@ -86,7 +95,16 @@ public sealed class PurchaseOrder
         return order;
     }
 
-    public PurchaseOrderLine AddLine(long expectedVersion, Guid lineId, Guid productId, Guid unitId, Quantity ordered, DateTimeOffset now)
+    public PurchaseOrderLine AddLine(long expectedVersion, Guid lineId, Guid productId, Guid unitId, Quantity ordered, DateTimeOffset now) =>
+        AddLine(expectedVersion, lineId, productId, unitId, ordered, sourceRequestLineId: null, now);
+
+    /// <summary>
+    /// PUR-4a: a general line, optionally bound to one line of the order's source request (the share this
+    /// supplier takes of that need). A binding needs the order to have a source request; the same request line
+    /// is bound at most once per order (<see cref="PurchasingRuleCodes.DuplicateSourceLine"/>).
+    /// </summary>
+    public PurchaseOrderLine AddLine(long expectedVersion, Guid lineId, Guid productId, Guid unitId, Quantity ordered, Guid? sourceRequestLineId,
+        DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
         RequireStatus(PurchaseOrderStatus.Draft, PurchasingRuleCodes.OrderNotDraft, "Yalnız taslak siparişe satır eklenebilir.");
@@ -98,8 +116,24 @@ public sealed class PurchaseOrder
             throw new ArgumentOutOfRangeException(nameof(ordered), "Sipariş miktarı sıfırdan büyük olmalıdır.");
         }
 
+        if (sourceRequestLineId is { } sourceLine)
+        {
+            Identity.Require(sourceLine, nameof(sourceRequestLineId));
+            if (SourceRequestId is null)
+            {
+                throw new PurchasingRuleException(PurchasingRuleCodes.SourceLineWithoutRequest,
+                    "Talep satırına bağlı satır yalnız bir talebe açılmış siparişe eklenir.");
+            }
+
+            if (lines.Any(line => line.SourceRequestLineId == sourceLine))
+            {
+                throw new PurchasingRuleException(PurchasingRuleCodes.DuplicateSourceLine,
+                    "Aynı talep satırı bir siparişe ikinci kez bağlanamaz; pay tek satırda verilir.");
+            }
+        }
+
         RequireNewLineId(lineId);
-        var line = new PurchaseOrderLine(lineId, productId, unitId, ordered, PurchaseOrderLineKind.General, null, null);
+        var line = new PurchaseOrderLine(lineId, productId, unitId, ordered, PurchaseOrderLineKind.General, null, sourceRequestLineId);
         lines.Add(line);
         Touch(now);
         return line;

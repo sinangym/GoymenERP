@@ -466,6 +466,47 @@ public sealed class SalesDraftServiceTests
 
     // ---- request ----------------------------------------------------------------------------
 
+    [Theory]
+    [InlineData("2.9999999999999999999999999999999", "line")]
+    [InlineData("1.00000000000000000000000000000001", "line")]
+    [InlineData("2.9999999999999999999999999999999", "slice")]
+    [InlineData("1.00000000000000000000000000000001", "slice")]
+    public async Task A_quantity_text_longer_than_a_decimal_holds_is_refused_on_the_text_and_never_rounded(string text, string where)
+    {
+        // FİNANS #350 P2-1: decimal.Parse would round these past 28 digits (to 3 and 1) and the verbatim text would be stored beside
+        // the rounded value; the text is refused before any conversion, on the line and on a delivery slice alike.
+        var world = new World();
+        var request = RequestWithQuantity(where == "line" ? text : "1", where == "slice" ? text : null);
+
+        var refusal = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(request, Metadata("k-long")));
+
+        Assert.Equal((422, "validation_failed", "quantity", "sales_quantity_scale_exceeded"),
+            (refusal.Status, refusal.Code, refusal.Errors[0].Field, refusal.Errors[0].Code));
+        Assert.Empty(world.Store.Envelopes);
+        Assert.Empty(world.Store.Refusals);
+    }
+
+    [Fact]
+    public async Task A_quantity_with_more_than_fifteen_integer_digits_does_not_fit_the_column_and_leading_zeros_do_not_count()
+    {
+        var world = new World();
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().CreateDraftAsync(RequestWithQuantity("1234567890123456", null), Metadata("k-wide")));
+        Assert.Equal((422, "validation_failed", "quantity", "sales_value_does_not_fit"),
+            (refused.Status, refused.Code, refused.Errors[0].Field, refused.Errors[0].Code));
+        Assert.Empty(world.Store.Envelopes);
+
+        var created = await world.Service().CreateDraftAsync(RequestWithQuantity("000000000000000001.250", null), Metadata("k-zeros"));
+        Assert.Equal("000000000000000001.250", created.Detail.Lines[0].Quantity);
+    }
+
+    private static CreateSalesOrderDraftRequest RequestWithQuantity(string lineQuantity, string? sliceQuantity)
+    {
+        var line = new SalesOrderDraftLineRequest(Guid.NewGuid(), Product, "7", KgUnit, lineQuantity,
+            RequestedDeliverySlices: sliceQuantity is null ? null : [new(Guid.NewGuid(), KgUnit, sliceQuantity, Day.AddDays(1))]);
+        return new CreateSalesOrderDraftRequest("Order", Party, Account, Day, Currency, [line]);
+    }
+
     private static CreateSalesOrderDraftRequest Request(int lines = 1)
     {
         var list = Enumerable.Range(0, lines).Select(index => new SalesOrderDraftLineRequest(Guid.NewGuid(), Product, "7", KgUnit,

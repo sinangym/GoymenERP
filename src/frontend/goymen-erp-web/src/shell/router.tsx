@@ -144,8 +144,9 @@ export const shellRoutes: RouteObject[] = [
       /**
        * The Manufacturing lane's own routes, declared in
        * `src/manufacturing/manufacturingRoutes.tsx` and mounted here by the shared-integration
-       * owner (MFG-UI handoff). Each is wrapped in `CapabilityRoute`, so while the server keeps the
-       * capability staged the route renders the neutral not-found block and reads nothing.
+       * owner (MFG-UI handoff). Each is wrapped in `CapabilityRoute`: the capability is published
+       * (MFG-UI-F), so a route opens only for an actor the registry grants it; for anyone else it
+       * renders the neutral not-found block and reads nothing.
        */
       ...manufacturingRoutes,
       /**

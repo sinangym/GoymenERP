@@ -150,6 +150,9 @@ public sealed partial class ManufacturingCommandService(
     ICorrelationContext correlation,
     TimeProvider timeProvider)
 {
+    /// <summary>Any integer mantissa of this many digits fits a decimal's 96 bits, so such a text converts exactly.</summary>
+    private const int ExactDecimalDigits = 28;
+
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     public Task<ManufacturingApiResult<PlanViewV1>> SavePlanAsync(SavePlanRequestV1? request, string idempotencyKey,
@@ -590,12 +593,30 @@ public sealed partial class ManufacturingCommandService(
 
     private Guid? ActorGuid() => Guid.TryParse(currentUser.UserId, out var actor) && actor != Guid.Empty ? actor : null;
 
-    /// <summary>Plain non-negative decimal text only; its scale is Settings' question, not the grammar's.</summary>
+    /// <summary>
+    /// Plain non-negative decimal text only; its scale is Settings' question, not the grammar's. The text is
+    /// measured BEFORE it is converted: <see cref="decimal.TryParse(string, NumberStyles, IFormatProvider, out decimal)"/>
+    /// rounds digits beyond what a decimal holds (28–29 significant), so a text such as
+    /// <c>100000000000000.000000000000001</c> would silently become a whole number and pass Ö2. A text with more
+    /// significant digits than <see cref="ExactDecimalDigits"/> (trailing fractional zeros are not digits) cannot
+    /// be held exactly and is invalid, never rounded (FİNANS #350 P2-1 sweep). Every such text carries far more
+    /// than Ö2's three decimals, so no valid mass is lost; every text within the bound converts exactly and keeps
+    /// its scale for the Settings check.
+    /// </summary>
     private static decimal? ParseKg(string? text) =>
-        text is not null && KilogramText().IsMatch(text)
+        text is not null && KilogramText().IsMatch(text) && SignificantDigits(text) <= ExactDecimalDigits
         && decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value)
             ? value
             : null;
+
+    /// <summary>The integer part's digits (none for "0") plus the fraction's without its trailing zeros; the grammar is already checked.</summary>
+    private static int SignificantDigits(string text)
+    {
+        var point = text.IndexOf('.', StringComparison.Ordinal);
+        var integer = point < 0 ? text : text[..point];
+        var fraction = point < 0 ? string.Empty : text[(point + 1)..].TrimEnd('0');
+        return (integer == "0" ? 0 : integer.Length) + fraction.Length;
+    }
 
     private static TargetBasis? ParseBasis(string? text) =>
         Enum.TryParse<TargetBasis>(text, ignoreCase: false, out var basis) && Enum.IsDefined(basis) && IsName(text)

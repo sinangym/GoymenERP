@@ -2,9 +2,9 @@
  * One production order: each parent roll's mass balance, and — for a holder of the
  * facts capability — the four fact forms (MFG-UI card, coordinator-approved).
  *
- * A technical, functional sub-view (card D1): staged on the server until the browser
- * suite accepts it, and not a locked visual reference for the canonical production
- * screens (PR-09/13/14/15 are `DECISION_ONLY_REFERENCE_MISSING`).
+ * A technical, functional sub-view (card D1): published on the server since MFG-UI-F (#349,
+ * after the `mfg` browser acceptance), and not a locked visual reference for the canonical
+ * production screens (PR-09/13/14/15 are `DECISION_ONLY_REFERENCE_MISSING`).
  *
  * THE RULES THAT SHAPE THIS FILE
  *

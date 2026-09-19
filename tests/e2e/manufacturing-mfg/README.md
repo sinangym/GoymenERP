@@ -24,8 +24,10 @@
 - `BROWSER_E2E_MFG_SEED` (JSON): `recorderActor`, `readerActor`, `companyId`, `workCenterId`.
   - a2 2. parçanın seed adımı bu değerleri sentetik test-DB grant'leriyle birlikte yazar.
   - recorder: beş Manufacturing izni, company-wide. reader: yalnız `manufacturing.orders.read`.
-- **Kabiliyet profili:** `mfg-staged` (D4). Ekran normal runtime'da staged, bu profil onu yayımlar.
+- **Kabiliyet profili:** `normal` (MFG-UI-F).
+  - Ekran normal runtime'da yayımlı: ilk kabul `mfg-staged` (D4) üzerindeydi (#323, run 35438064043).
+  - Ekranı suite'in sentetik grant'leri açar, disposable zarf açmaz.
 
 ## Engeller (bu dosyanın sahibi dışında)
-- a2 2. parça seed arayüzü; `mfg` suite kaydı (workflow case, `SUITES` / `SUITE_PROFILES`); `mfg-staged` profili; host'un sağlayıcı kaydı ve shell mount'u (#323 `SHARED_MOUNT_HANDOFF.md`). Hepsi CARİ'nin merkezi sırasında.
+- a2 2. parça seed arayüzü; `mfg` suite kaydı (workflow case, `SUITES` / `SUITE_PROFILES` → `normal`); host'un sağlayıcı kaydı ve shell mount'u (#323 `SHARED_MOUNT_HANDOFF.md`). Hepsi CARİ'nin merkezi sırasında.
 - Bunlar gelene kadar suite koşmaz; koşarsa girdileri reddeder. Yerel koşu yok (Docker WSL'de yok); ilk kanıt etiketli BROWSER-CI koşusudur.

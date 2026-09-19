@@ -241,6 +241,45 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
         new("get", "/api/v1/finance/bank-accounts/currency-candidates", "GetFinanceBankAccountCurrencyCandidatesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
+        new("get", "/api/v1/logistics/loading-instructions", "GetLoadingInstructionsV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string", "query:status:false:type:string"]),
+        new("post", "/api/v1/logistics/loading-instructions", "CreateLoadingInstructionV1",
+            AuthenticatedResponses("201:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/CreateLoadingInstructionRequest"),
+        new("get", "/api/v1/logistics/loading-instructions/{id}", "GetLoadingInstructionV1",
+            AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:id:true:type:string;format:uuid"]),
+        new("post", "/api/v1/logistics/loading-instructions/{id}/issue", "IssueLoadingInstructionV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/IssueLoadingInstructionRequest", ["path:id:true:type:string;format:uuid"]),
+        new("post", "/api/v1/logistics/loading-instructions/{id}/lines/{lineId}/loads", "RecordLoadingInstructionLoadV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/RecordLoadRequest", ["path:id:true:type:string;format:uuid", "path:lineId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/purchasing/requests", "GetPurchaseRequestsV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string", "query:status:false:type:string"]),
+        new("post", "/api/v1/purchasing/requests", "CreatePurchaseRequestV1",
+            AuthenticatedResponses("201:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/CreatePurchaseRequestRequest"),
+        new("get", "/api/v1/purchasing/requests/{id}", "GetPurchaseRequestV1",
+            AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:id:true:type:string;format:uuid"]),
+        new("post", "/api/v1/purchasing/requests/{id}/submission", "SubmitPurchaseRequestV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/SubmitPurchaseRequestRequest", ["path:id:true:type:string;format:uuid"]),
+        new("get", "/api/v1/purchasing/orders", "GetPurchaseOrdersV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string", "query:status:false:type:string"]),
+        new("post", "/api/v1/purchasing/orders", "CreatePurchaseOrderV1",
+            AuthenticatedResponses("201:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/CreatePurchaseOrderRequest"),
+        new("get", "/api/v1/purchasing/orders/{id}", "GetPurchaseOrderV1",
+            AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:id:true:type:string;format:uuid"]),
+        new("post", "/api/v1/purchasing/orders/{id}/approval", "ApprovePurchaseOrderV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/ApprovePurchaseOrderRequest", ["path:id:true:type:string;format:uuid"]),
         .. ProductOperations,
     ];
 
@@ -297,6 +336,19 @@ public sealed partial class OpenApiContractGenerationTests
             ["ApproveFinanceBankAccountV1"] = "ref:BankAccountCommandResult",
             ["GetFinanceBankAccountMasterV1"] = "ref:BankAccountMasterPage",
             ["GetFinanceBankAccountCurrencyCandidatesV1"] = "ref:BankAccountCurrencyCandidates",
+            ["GetLoadingInstructionsV1"] = "ref:LoadingInstructionListResponse",
+            ["CreateLoadingInstructionV1"] = "ref:LoadingInstructionResponse",
+            ["GetLoadingInstructionV1"] = "ref:LoadingInstructionDetailView",
+            ["IssueLoadingInstructionV1"] = "ref:LoadingInstructionResponse",
+            ["RecordLoadingInstructionLoadV1"] = "ref:LoadingInstructionResponse",
+            ["GetPurchaseRequestsV1"] = "ref:PurchaseRequestListResponse",
+            ["CreatePurchaseRequestV1"] = "ref:PurchaseRequestResponse",
+            ["GetPurchaseRequestV1"] = "ref:PurchaseRequestDetailView",
+            ["SubmitPurchaseRequestV1"] = "ref:PurchaseRequestResponse",
+            ["GetPurchaseOrdersV1"] = "ref:PurchaseOrderListResponse",
+            ["CreatePurchaseOrderV1"] = "ref:PurchaseOrderResponse",
+            ["GetPurchaseOrderV1"] = "ref:PurchaseOrderDetailView",
+            ["ApprovePurchaseOrderV1"] = "ref:PurchaseOrderResponse",
         };
 
     private static readonly HashSet<string> RequiredCompanyOperations =
@@ -344,6 +396,19 @@ public sealed partial class OpenApiContractGenerationTests
         "ApproveFinanceBankAccountV1",
         "GetFinanceBankAccountMasterV1",
         "GetFinanceBankAccountCurrencyCandidatesV1",
+        "GetLoadingInstructionsV1",
+        "CreateLoadingInstructionV1",
+        "GetLoadingInstructionV1",
+        "IssueLoadingInstructionV1",
+        "RecordLoadingInstructionLoadV1",
+        "GetPurchaseRequestsV1",
+        "CreatePurchaseRequestV1",
+        "GetPurchaseRequestV1",
+        "SubmitPurchaseRequestV1",
+        "GetPurchaseOrdersV1",
+        "CreatePurchaseOrderV1",
+        "GetPurchaseOrderV1",
+        "ApprovePurchaseOrderV1",
     ];
 
     private static readonly HashSet<string> OptionalCompanyOperations =
@@ -375,6 +440,13 @@ public sealed partial class OpenApiContractGenerationTests
         "RejectSalesOrderDraftV1",
         "ProposeFinanceBankAccountV1",
         "ApproveFinanceBankAccountV1",
+        "CreateLoadingInstructionV1",
+        "IssueLoadingInstructionV1",
+        "RecordLoadingInstructionLoadV1",
+        "CreatePurchaseRequestV1",
+        "SubmitPurchaseRequestV1",
+        "CreatePurchaseOrderV1",
+        "ApprovePurchaseOrderV1",
     ];
 
     private static readonly IReadOnlyDictionary<string, HashSet<int>>
@@ -422,6 +494,13 @@ public sealed partial class OpenApiContractGenerationTests
                 ["ApproveFinanceBankAccountV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
                 // INV-OPEN-1 part 2: the count (200 on a replay) and the recorded terminal refusals (§7).
                 ["RecordInventoryOpeningCountV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                ["CreateLoadingInstructionV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
+                ["IssueLoadingInstructionV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["RecordLoadingInstructionLoadV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["CreatePurchaseRequestV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
+                ["SubmitPurchaseRequestV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["CreatePurchaseOrderV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
+                ["ApprovePurchaseOrderV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
             };
 
     private static readonly HashSet<string> EmptyBodyPossible400Operations =
@@ -458,6 +537,16 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceBankAccountMasterV1",
         "GetFinanceBankAccountCurrencyCandidatesV1",
         "RecordInventoryOpeningCountV1",
+        "GetLoadingInstructionsV1",
+        "CreateLoadingInstructionV1",
+        "IssueLoadingInstructionV1",
+        "RecordLoadingInstructionLoadV1",
+        "GetPurchaseRequestsV1",
+        "CreatePurchaseRequestV1",
+        "SubmitPurchaseRequestV1",
+        "GetPurchaseOrdersV1",
+        "CreatePurchaseOrderV1",
+        "ApprovePurchaseOrderV1",
     ];
 
     private static readonly HashSet<string> CodeLessProblemResponses =
@@ -482,6 +571,13 @@ public sealed partial class OpenApiContractGenerationTests
         "SubmitSalesOrderDraftV1:404",
         "ApproveSalesOrderDraftV1:404",
         "RejectSalesOrderDraftV1:404",
+        "GetLoadingInstructionV1:404",
+        "IssueLoadingInstructionV1:404",
+        "RecordLoadingInstructionLoadV1:404",
+        "GetPurchaseRequestV1:404",
+        "SubmitPurchaseRequestV1:404",
+        "GetPurchaseOrderV1:404",
+        "ApprovePurchaseOrderV1:404",
     ];
 
     private static readonly HashSet<string> MixedProblemResponses =
@@ -606,12 +702,160 @@ public sealed partial class OpenApiContractGenerationTests
             ["SubmitSalesOrderDraftV1:422"] = ["validation_failed"],
             ["RejectSalesOrderDraftV1:422"] = ["sales_approval_reason_too_long"],
             ["GetShellCapabilitiesV1:400"] = ["company_context_invalid"],
+            ["GetLoadingInstructionsV1:400"] = ["invalid_cursor", "validation_failed"],
+            ["CreateLoadingInstructionV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["CreateLoadingInstructionV1:409"] = ["account_state", "concurrent_change", "order_line_state", "same_key_payload_mismatch"],
+            ["CreateLoadingInstructionV1:422"] = ["unsupported_unit", "validation_failed"],
+            ["IssueLoadingInstructionV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["IssueLoadingInstructionV1:409"] = ["concurrent_change", "logistics_instruction_state", "same_key_payload_mismatch", "version_conflict"],
+            ["IssueLoadingInstructionV1:422"] = ["validation_failed"],
+            ["RecordLoadingInstructionLoadV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["RecordLoadingInstructionLoadV1:409"] = ["concurrent_change", "logistics_duplicate_share_id", "logistics_instruction_state", "logistics_line_blocked", "logistics_load_exceeds_instructed", "same_key_payload_mismatch", "version_conflict"],
+            ["RecordLoadingInstructionLoadV1:422"] = ["unsupported_unit", "validation_failed"],
+            ["GetPurchaseRequestsV1:400"] = ["invalid_cursor", "validation_failed"],
+            ["CreatePurchaseRequestV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["CreatePurchaseRequestV1:409"] = ["concurrent_change", "same_key_payload_mismatch", "version_conflict"],
+            ["CreatePurchaseRequestV1:422"] = ["unsupported_product", "unsupported_unit", "validation_failed"],
+            ["SubmitPurchaseRequestV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["SubmitPurchaseRequestV1:409"] = ["concurrent_change", "purchasing_request_not_draft", "same_key_payload_mismatch", "version_conflict"],
+            ["SubmitPurchaseRequestV1:422"] = ["validation_failed"],
+            ["GetPurchaseOrdersV1:400"] = ["invalid_cursor", "validation_failed"],
+            ["CreatePurchaseOrderV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["CreatePurchaseOrderV1:409"] = ["account_state", "concurrent_change", "purchasing_request_state", "same_key_payload_mismatch", "version_conflict"],
+            ["CreatePurchaseOrderV1:422"] = ["unsupported_product", "unsupported_unit", "validation_failed"],
+            ["ApprovePurchaseOrderV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["ApprovePurchaseOrderV1:409"] = ["concurrent_change", "purchasing_order_state", "purchasing_request_line_over_sourced", "same_key_payload_mismatch", "version_conflict"],
+            ["ApprovePurchaseOrderV1:422"] = ["validation_failed"],
         };
 
     private static readonly IReadOnlyDictionary<string, ComponentSchemaExpectation>
         ExpectedSuccessComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["PurchaseOrderDetailView"] = ObjectSchema(
+                    ["order", "lines"],
+                    ("order", "ref:PurchaseOrderSummaryView"),
+                    ("lines", "type:array;items:ref:PurchaseOrderLineView")),
+                ["PurchaseOrderLineView"] = ObjectSchema(
+                    ["lineId", "lineNo", "kind", "parentLineId", "sourceRequestLineId", "productId", "productVersion", "unitId", "ordered", "technical", "committed", "accepted", "remaining"],
+                    ("lineId", "type:string;format:uuid"),
+                    ("lineNo", "type:integer|string;format:int32"),
+                    ("kind", "type:string"),
+                    ("parentLineId", "type:null|string;format:uuid"),
+                    ("sourceRequestLineId", "type:null|string;format:uuid"),
+                    ("productId", "type:string;format:uuid"),
+                    ("productVersion", "type:string"),
+                    ("unitId", "type:string;format:uuid"),
+                    ("ordered", "type:string"),
+                    ("technical", "type:string"),
+                    ("committed", "type:string"),
+                    ("accepted", "type:string"),
+                    ("remaining", "type:string")),
+                ["PurchaseOrderListResponse"] = ObjectSchema(
+                    ["items", "nextCursor"],
+                    ("items", "type:array;items:ref:PurchaseOrderSummaryView"),
+                    ("nextCursor", "type:null|string")),
+                ["PurchaseOrderResponse"] = ObjectSchema(
+                    ["detail", "isReplay", "originalCorrelationId"],
+                    ("detail", "ref:PurchaseOrderDetailView"),
+                    ("isReplay", "type:boolean"),
+                    ("originalCorrelationId", "type:string")),
+                ["PurchaseOrderSummaryView"] = ObjectSchema(
+                    ["id", "companyId", "status", "version", "supplierPartyId", "companyAccountId", "sourceRequestId", "effectiveOn", "createdAtUtc", "updatedAtUtc", "lineCount"],
+                    ("id", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("status", "type:string"),
+                    ("version", "type:string"),
+                    ("supplierPartyId", "type:string;format:uuid"),
+                    ("companyAccountId", "type:string;format:uuid"),
+                    ("sourceRequestId", "type:null|string;format:uuid"),
+                    ("effectiveOn", "type:string;format:date"),
+                    ("createdAtUtc", "type:string;format:date-time"),
+                    ("updatedAtUtc", "type:string;format:date-time"),
+                    ("lineCount", "type:integer|string;format:int32")),
+                ["PurchaseRequestDetailView"] = ObjectSchema(
+                    ["request", "lines"],
+                    ("request", "ref:PurchaseRequestSummaryView"),
+                    ("lines", "type:array;items:ref:PurchaseRequestLineView")),
+                ["PurchaseRequestLineView"] = ObjectSchema(
+                    ["lineId", "lineNo", "productId", "productVersion", "unitId", "quantity"],
+                    ("lineId", "type:string;format:uuid"),
+                    ("lineNo", "type:integer|string;format:int32"),
+                    ("productId", "type:string;format:uuid"),
+                    ("productVersion", "type:string"),
+                    ("unitId", "type:string;format:uuid"),
+                    ("quantity", "type:string")),
+                ["PurchaseRequestListResponse"] = ObjectSchema(
+                    ["items", "nextCursor"],
+                    ("items", "type:array;items:ref:PurchaseRequestSummaryView"),
+                    ("nextCursor", "type:null|string")),
+                ["PurchaseRequestResponse"] = ObjectSchema(
+                    ["detail", "isReplay", "originalCorrelationId"],
+                    ("detail", "ref:PurchaseRequestDetailView"),
+                    ("isReplay", "type:boolean"),
+                    ("originalCorrelationId", "type:string")),
+                ["PurchaseRequestSummaryView"] = ObjectSchema(
+                    ["id", "companyId", "status", "version", "effectiveOn", "createdAtUtc", "updatedAtUtc", "lineCount"],
+                    ("id", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("status", "type:string"),
+                    ("version", "type:string"),
+                    ("effectiveOn", "type:string;format:date"),
+                    ("createdAtUtc", "type:string;format:date-time"),
+                    ("updatedAtUtc", "type:string;format:date-time"),
+                    ("lineCount", "type:integer|string;format:int32")),
+                ["LoadingInstructionDetailView"] = ObjectSchema(
+                    ["instruction", "lines", "shares"],
+                    ("instruction", "ref:LoadingInstructionSummaryView"),
+                    ("lines", "type:array;items:ref:LoadingInstructionLineView"),
+                    ("shares", "type:array;items:ref:LoadingShareView")),
+                ["LoadingInstructionLineView"] = ObjectSchema(
+                    ["lineId", "lineNo", "sourceOrderId", "sourceOrderLineId", "sourceOrderRevision", "productId", "unitId", "instructed", "loaded", "shipped", "delivered", "remainingToLoad", "loadedNotShipped", "shippedNotDelivered", "isBlocked"],
+                    ("lineId", "type:string;format:uuid"),
+                    ("lineNo", "type:integer|string;format:int32"),
+                    ("sourceOrderId", "type:string;format:uuid"),
+                    ("sourceOrderLineId", "type:string;format:uuid"),
+                    ("sourceOrderRevision", "type:integer|string;format:int32"),
+                    ("productId", "type:string;format:uuid"),
+                    ("unitId", "type:string;format:uuid"),
+                    ("instructed", "type:string"),
+                    ("loaded", "type:string"),
+                    ("shipped", "type:string"),
+                    ("delivered", "type:string"),
+                    ("remainingToLoad", "type:string"),
+                    ("loadedNotShipped", "type:string"),
+                    ("shippedNotDelivered", "type:string"),
+                    ("isBlocked", "type:boolean")),
+                ["LoadingInstructionListResponse"] = ObjectSchema(
+                    ["items", "nextCursor"],
+                    ("items", "type:array;items:ref:LoadingInstructionSummaryView"),
+                    ("nextCursor", "type:null|string")),
+                ["LoadingInstructionResponse"] = ObjectSchema(
+                    ["detail", "isReplay", "originalCorrelationId"],
+                    ("detail", "ref:LoadingInstructionDetailView"),
+                    ("isReplay", "type:boolean"),
+                    ("originalCorrelationId", "type:string")),
+                ["LoadingInstructionSummaryView"] = ObjectSchema(
+                    ["id", "companyId", "status", "version", "customerPartyId", "companyAccountId", "effectiveOn", "createdAtUtc", "updatedAtUtc", "lineCount"],
+                    ("id", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("status", "type:string"),
+                    ("version", "type:string"),
+                    ("customerPartyId", "type:string;format:uuid"),
+                    ("companyAccountId", "type:string;format:uuid"),
+                    ("effectiveOn", "type:string;format:date"),
+                    ("createdAtUtc", "type:string;format:date-time"),
+                    ("updatedAtUtc", "type:string;format:date-time"),
+                    ("lineCount", "type:integer|string;format:int32")),
+                ["LoadingShareView"] = ObjectSchema(
+                    ["shareId", "lineId", "kind", "quantity", "measurement", "sourceShipmentId", "recordedAtUtc"],
+                    ("shareId", "type:string;format:uuid"),
+                    ("lineId", "type:string;format:uuid"),
+                    ("kind", "type:string"),
+                    ("quantity", "type:string"),
+                    ("measurement", "type:null|string"),
+                    ("sourceShipmentId", "type:null|string;format:uuid"),
+                    ("recordedAtUtc", "type:string;format:date-time")),
                 ["BankAccountCommandResult"] = ObjectSchema(
                     ["outcome", "resource", "isReplay", "originalCorrelationId", "issues"],
                     ("outcome", "ref:CommandOutcome"),
@@ -1145,6 +1389,60 @@ public sealed partial class OpenApiContractGenerationTests
         ExpectedRequestComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["ApprovePurchaseOrderRequest"] = ObjectSchema(
+                    ["expectedVersion"],
+                    ("expectedVersion", "type:string")),
+                ["CreatePurchaseOrderRequest"] = ObjectSchema(
+                    ["supplierPartyId", "companyAccountId", "sourceRequestId", "effectiveOn", "lines"],
+                    ("supplierPartyId", "type:string;format:uuid"),
+                    ("companyAccountId", "type:string;format:uuid"),
+                    ("sourceRequestId", "type:null|string;format:uuid"),
+                    ("effectiveOn", "type:string;format:date"),
+                    ("lines", "type:array;items:ref:PurchaseOrderLineRequest")),
+                ["CreatePurchaseRequestRequest"] = ObjectSchema(
+                    ["effectiveOn", "lines"],
+                    ("effectiveOn", "type:string;format:date"),
+                    ("lines", "type:array;items:ref:PurchaseRequestLineRequest")),
+                ["PurchaseOrderLineRequest"] = ObjectSchema(
+                    ["lineId", "productId", "expectedProductVersion", "unitId", "quantity", "sourceRequestLineId"],
+                    ("lineId", "type:string;format:uuid"),
+                    ("productId", "type:string;format:uuid"),
+                    ("expectedProductVersion", "type:string"),
+                    ("unitId", "type:string;format:uuid"),
+                    ("quantity", "type:string"),
+                    ("sourceRequestLineId", "type:null|string;format:uuid")),
+                ["PurchaseRequestLineRequest"] = ObjectSchema(
+                    ["lineId", "productId", "expectedProductVersion", "unitId", "quantity"],
+                    ("lineId", "type:string;format:uuid"),
+                    ("productId", "type:string;format:uuid"),
+                    ("expectedProductVersion", "type:string"),
+                    ("unitId", "type:string;format:uuid"),
+                    ("quantity", "type:string")),
+                ["SubmitPurchaseRequestRequest"] = ObjectSchema(
+                    ["expectedVersion"],
+                    ("expectedVersion", "type:string")),
+                ["CreateLoadingInstructionRequest"] = ObjectSchema(
+                    ["customerPartyId", "companyAccountId", "effectiveOn", "lines"],
+                    ("customerPartyId", "type:string;format:uuid"),
+                    ("companyAccountId", "type:string;format:uuid"),
+                    ("effectiveOn", "type:string;format:date"),
+                    ("lines", "type:array;items:ref:LoadingInstructionLineRequest")),
+                ["IssueLoadingInstructionRequest"] = ObjectSchema(
+                    ["expectedVersion"],
+                    ("expectedVersion", "type:string")),
+                ["LoadingInstructionLineRequest"] = ObjectSchema(
+                    ["lineId", "sourceOrderId", "sourceOrderLineId", "unitId", "quantity"],
+                    ("lineId", "type:string;format:uuid"),
+                    ("sourceOrderId", "type:string;format:uuid"),
+                    ("sourceOrderLineId", "type:string;format:uuid"),
+                    ("unitId", "type:string;format:uuid"),
+                    ("quantity", "type:string")),
+                ["RecordLoadRequest"] = ObjectSchema(
+                    ["expectedVersion", "loadId", "quantity", "measurement"],
+                    ("expectedVersion", "type:string"),
+                    ("loadId", "type:string;format:uuid"),
+                    ("quantity", "type:string"),
+                    ("measurement", "type:string")),
                 ["OpeningCountRequestV1"] = ObjectSchema(
                     ["countId", "locationId", "countedOn", "sheetReference", "lines"],
                     ("countId", "type:string;format:uuid"), ("locationId", "type:string;format:uuid"),
@@ -1843,9 +2141,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(56, operations.Count);
+        Assert.Equal(69, operations.Count);
         Assert.Equal(
-            56,
+            69,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

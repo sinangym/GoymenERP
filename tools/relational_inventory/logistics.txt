@@ -1,0 +1,9 @@
+# SQL Server relational acceptance inventory: Logistics.
+# Owner: the Logistics module owner (single writer). The guard pin of this file is central (CARİ).
+# One fully qualified test name per line, sorted. A test that executes n > 1 times (theory rows)
+# is written `<name>  x<n>  # <reason>`. Read by tools/verify_rcsi_relational_acceptance.py.
+
+GoymenERP.Api.IntegrationTests.LogisticsInstructionSqlServerRelationalAcceptanceTests.A_blocked_line_refuses_a_load_as_a_recorded_terminal_refusal_and_a_stale_version_replays
+GoymenERP.Api.IntegrationTests.LogisticsInstructionSqlServerRelationalAcceptanceTests.A_same_key_race_stores_one_instruction_one_attempt_and_one_audit_and_company_B_sees_nothing
+GoymenERP.Api.IntegrationTests.LogisticsInstructionSqlServerRelationalAcceptanceTests.An_instruction_with_lines_is_stored_issued_loaded_within_the_cap_replayed_and_rebuilt_in_one_save_each
+GoymenERP.Api.IntegrationTests.LogisticsInstructionSqlServerRelationalAcceptanceTests.The_routes_answer_only_with_fresh_grants_and_only_for_the_context_company
