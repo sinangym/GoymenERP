@@ -48,7 +48,7 @@ internal static partial class BrowserSuiteFixtureTool
             var before = await CountAsync(connection.ConnectionString);
             IReadOnlyDictionary<string, string> outputs;
             int requests;
-            await using (var host = new BrowserSuiteHost(
+            await using (var host = BrowserSuiteHost.Create(
                              settings.RepositoryRoot,
                              settings.ApiEnvironment,
                              connection.ConnectionString,

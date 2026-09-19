@@ -78,10 +78,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "0a5d40cdf5b24b687eb6acbf6f96d4b70d050a24e9268498aa6a12007bb9e525";
     private const string SqlServerRcsiIntegrationProjectPath =
         "tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj";
-    // Re-fingerprinted for the ProjectReferences of the module SQL acceptance classes (Inventory,
-    // Accounting, Finance, Manufacturing, Sales). Publish target and discovery contract unchanged.
+    // Re-fingerprinted for #331: one linked Compile item (the browser-suite runner's BrowserSuiteHost.cs,
+    // for BrowserSuiteHostEnvelopeTests), after the module SQL acceptance ProjectReferences. Publish
+    // target and discovery contract unchanged.
     private const string ReviewedSqlServerRcsiIntegrationProjectFingerprint =
-        "3d823b3b7f8830e0bd4b85cd30b74e34876bb6d788bef3a168c3056be74b6fe2";
+        "eed96a445bbedb5cea3f92bccc2dd0695b0dc5326defbbf7a05ce817bed852ad";
     private const string SqlServerRcsiRelationalAcceptancePath =
         "tests/GoymenERP.Api.IntegrationTests/"
         + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.cs";
@@ -147,7 +148,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // sales
             ["tools/relational_inventory/sales.txt"] =
-                "eef61202ef711d6a90f70fc7a6d2ff847b72a1e16911797c11db717c480997cc",
+                "e9d370fe16a4dc85de31dd3b870d72bb22779e92e05cb27028d7951bb4b103d5",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
@@ -204,7 +205,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "49a56885af157d474d86a1726c0e1591bcf612262036d81cf8f1e73be9571cdb",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
-                "a25322e5924213ccdf3241e0d1ff4cc15f5d6be168345894eaba3f6b77204812",
+                "93f53fbed6e11dcac4d5412cfdabc4fc70daa59838ad8bd0783221353a776439",
             ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
              + "Persistence/GroupSharedCommandDbContext.cs"] =
                 "6fe01949b839e3005d33c3aa00c02982add6a1af63482005b43b277b95c5dfc3"

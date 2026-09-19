@@ -67,64 +67,71 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
             });
         });
 
-        builder.ConfigureServices(services =>
-        {
-            services.RemoveAll<DbContextOptions<OrganizationDbContext>>();
-            services.RemoveAll<IDbContextOptionsConfiguration<OrganizationDbContext>>();
-            services.AddDbContext<OrganizationDbContext>((serviceProvider, options) =>
-                options.UseInMemoryDatabase(_databaseName)
-                    .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
+        builder.ConfigureServices(services => UseInMemoryDatabases(services, _databaseName));
+    }
 
-            services.RemoveAll<DbContextOptions<CounterpartyDbContext>>();
-            services.RemoveAll<IDbContextOptionsConfiguration<CounterpartyDbContext>>();
-            services.AddDbContext<CounterpartyDbContext>(options =>
-                options.UseInMemoryDatabase($"{_databaseName}-counterparty"));
+    /// <summary>
+    /// Replaces every host-wired module database with an in-memory one, so the in-process host starts
+    /// without SQL Server. Shared with tests that start another factory over Program (e.g. the browser
+    /// suite runner's host).
+    /// </summary>
+    internal static void UseInMemoryDatabases(IServiceCollection services, string databaseName)
+    {
+        services.RemoveAll<DbContextOptions<OrganizationDbContext>>();
+        services.RemoveAll<IDbContextOptionsConfiguration<OrganizationDbContext>>();
+        services.AddDbContext<OrganizationDbContext>((serviceProvider, options) =>
+            options.UseInMemoryDatabase(databaseName)
+                .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
 
-            services.RemoveAll<DbContextOptions<IdentityDbContext>>();
-            services.RemoveAll<IDbContextOptionsConfiguration<IdentityDbContext>>();
-            services.AddDbContext<IdentityDbContext>(options =>
-                options.UseInMemoryDatabase($"{_databaseName}-identity"));
-            services.RemoveAll<DbContextOptions<AuditDbContext>>();
-            services.RemoveAll<IDbContextOptionsConfiguration<AuditDbContext>>();
-            services.AddDbContext<AuditDbContext>(options =>
-                options.UseInMemoryDatabase(_databaseName));
-            services.RemoveAll<DbContextOptions<CommandExecutionDbContext>>();
-            services.RemoveAll<IDbContextOptionsConfiguration<CommandExecutionDbContext>>();
-            services.AddDbContext<CommandExecutionDbContext>(options =>
-                options.UseInMemoryDatabase(_databaseName));
+        services.RemoveAll<DbContextOptions<CounterpartyDbContext>>();
+        services.RemoveAll<IDbContextOptionsConfiguration<CounterpartyDbContext>>();
+        services.AddDbContext<CounterpartyDbContext>(options =>
+            options.UseInMemoryDatabase($"{databaseName}-counterparty"));
 
-            // Finance is host-wired since FIN-T04b (#320); without this the in-memory host would try
-            // to migrate it against the placeholder SQL connection string at startup.
-            services.RemoveAll<DbContextOptions<FinanceDbContext>>();
-            services.RemoveAll<IDbContextOptionsConfiguration<FinanceDbContext>>();
-            services.AddDbContext<FinanceDbContext>((serviceProvider, options) =>
-                options.UseInMemoryDatabase($"{_databaseName}-finance")
-                    .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
+        services.RemoveAll<DbContextOptions<IdentityDbContext>>();
+        services.RemoveAll<IDbContextOptionsConfiguration<IdentityDbContext>>();
+        services.AddDbContext<IdentityDbContext>(options =>
+            options.UseInMemoryDatabase($"{databaseName}-identity"));
+        services.RemoveAll<DbContextOptions<AuditDbContext>>();
+        services.RemoveAll<IDbContextOptionsConfiguration<AuditDbContext>>();
+        services.AddDbContext<AuditDbContext>(options =>
+            options.UseInMemoryDatabase(databaseName));
+        services.RemoveAll<DbContextOptions<CommandExecutionDbContext>>();
+        services.RemoveAll<IDbContextOptionsConfiguration<CommandExecutionDbContext>>();
+        services.AddDbContext<CommandExecutionDbContext>(options =>
+            options.UseInMemoryDatabase(databaseName));
 
-            // Sales is host-wired since SALES-API (#321); without this the in-memory host would try to
-            // migrate it against the placeholder SQL connection string at startup.
-            services.RemoveAll<DbContextOptions<SalesDbContext>>();
-            services.RemoveAll<IDbContextOptionsConfiguration<SalesDbContext>>();
-            services.AddDbContext<SalesDbContext>((serviceProvider, options) =>
-                options.UseInMemoryDatabase($"{_databaseName}-sales")
-                    .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
+        // Finance is host-wired since FIN-T04b (#320); without this the in-memory host would try
+        // to migrate it against the placeholder SQL connection string at startup.
+        services.RemoveAll<DbContextOptions<FinanceDbContext>>();
+        services.RemoveAll<IDbContextOptionsConfiguration<FinanceDbContext>>();
+        services.AddDbContext<FinanceDbContext>((serviceProvider, options) =>
+            options.UseInMemoryDatabase($"{databaseName}-finance")
+                .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
 
-            // Manufacturing is host-wired since MFG-API (#313); without this the in-memory host
-            // would try to migrate it against the placeholder SQL connection string at startup.
-            services.RemoveAll<DbContextOptions<ManufacturingDbContext>>();
-            services.RemoveAll<IDbContextOptionsConfiguration<ManufacturingDbContext>>();
-            services.AddDbContext<ManufacturingDbContext>((serviceProvider, options) =>
-                options.UseInMemoryDatabase($"{_databaseName}-manufacturing")
-                    .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
+        // Sales is host-wired since SALES-API (#321); without this the in-memory host would try to
+        // migrate it against the placeholder SQL connection string at startup.
+        services.RemoveAll<DbContextOptions<SalesDbContext>>();
+        services.RemoveAll<IDbContextOptionsConfiguration<SalesDbContext>>();
+        services.AddDbContext<SalesDbContext>((serviceProvider, options) =>
+            options.UseInMemoryDatabase($"{databaseName}-sales")
+                .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
 
-            // Inventory is host-wired since T07(a) (#310); without this the in-memory host would
-            // try to migrate it against the placeholder SQL connection string at startup.
-            services.RemoveAll<DbContextOptions<InventoryDbContext>>();
-            services.RemoveAll<IDbContextOptionsConfiguration<InventoryDbContext>>();
-            services.AddDbContext<InventoryDbContext>((serviceProvider, options) =>
-                options.UseInMemoryDatabase($"{_databaseName}-inventory")
-                    .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
-        });
+        // Manufacturing is host-wired since MFG-API (#313); without this the in-memory host
+        // would try to migrate it against the placeholder SQL connection string at startup.
+        services.RemoveAll<DbContextOptions<ManufacturingDbContext>>();
+        services.RemoveAll<IDbContextOptionsConfiguration<ManufacturingDbContext>>();
+        services.AddDbContext<ManufacturingDbContext>((serviceProvider, options) =>
+            options.UseInMemoryDatabase($"{databaseName}-manufacturing")
+                .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
+
+        // Inventory is host-wired since T07(a) (#310); without this the in-memory host would
+        // try to migrate it against the placeholder SQL connection string at startup.
+        services.RemoveAll<DbContextOptions<InventoryDbContext>>();
+        services.RemoveAll<IDbContextOptionsConfiguration<InventoryDbContext>>();
+        services.AddDbContext<InventoryDbContext>((serviceProvider, options) =>
+            options.UseInMemoryDatabase($"{databaseName}-inventory")
+                .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
     }
 
     public HttpClient CreateClientFor(string userId, Guid? selectedCompanyId = null)
