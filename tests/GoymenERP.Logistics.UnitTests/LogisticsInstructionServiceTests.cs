@@ -315,6 +315,10 @@ public sealed class LogisticsInstructionServiceTests
         world.OrderLines.Fault = "other-company";
         var foreign = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery()));
         Assert.Equal((503, LogisticsProblemCodesV1.ReferenceProviderInvalid), (foreign.Status, foreign.Code));
+        // FİNANS #358 P2: the page is a LINE page; an owner answering more lines than the cap contradicts the contract.
+        world.OrderLines.Fault = "over-cap";
+        var overCap = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery(1)));
+        Assert.Equal((503, LogisticsProblemCodesV1.ReferenceProviderInvalid), (overCap.Status, overCap.Code));
         world.OrderLines.Fault = "throws";
         var outage = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery()));
         Assert.Equal((503, LogisticsProblemCodesV1.SalesProviderUnavailable), (outage.Status, outage.Code));
@@ -427,6 +431,14 @@ public sealed class LogisticsInstructionServiceTests
             {
                 "throws" => Task.FromException<SalesApprovedLinePageV1>(new InvalidOperationException("synthetic outage")),
                 "bad-cursor" => Task.FromException<SalesApprovedLinePageV1>(new ArgumentException("synthetic cursor")),
+                "over-cap" => Task.FromResult(new SalesApprovedLinePageV1(
+                    [
+                        new SalesApprovedLineReferenceV1(Company, Order, "SENTETIK SO-0001", OrderLine, 1, Party, Account, Product, "7", "GDC-001",
+                            "Sentetik rulo", KgUnit, "kg", "12.500", new DateOnly(2026, 9, 25), 0),
+                        new SalesApprovedLineReferenceV1(Company, Order, "SENTETIK SO-0001", Guid.NewGuid(), 2, Party, Account, Product, "7", "GDC-001",
+                            "Sentetik rulo", KgUnit, "kg", "1.000", new DateOnly(2026, 9, 25), 0),
+                    ],
+                    null)),
                 _ => Task.FromResult(new SalesApprovedLinePageV1(
                     [
                         new SalesApprovedLineReferenceV1(Fault == "other-company" ? Guid.NewGuid() : Company, Order, "SENTETIK SO-0001", OrderLine, 1,

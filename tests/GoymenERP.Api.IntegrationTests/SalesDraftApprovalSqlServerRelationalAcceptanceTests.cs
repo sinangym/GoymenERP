@@ -56,6 +56,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         var owners = Owners.For(CompanyA);
         SalesOrderDraft draft;
         Guid lineId;
+        string wideCursor;
         await using (var a = run.Store(CompanyA))
         {
             draft = (await a.Store.StoreDraftAsync(run.Envelope("k-create"), Hash("payload-1"), documentNo => Draft(owners, documentNo, T0))).Draft;
@@ -110,6 +111,44 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
             Assert.Equal(SalesRuleCodes.StateConflict, closed.Code);
             Assert.Equal([draft.Id], (await a.Store.ListDraftsAsync(10, null, default, InternalApprovalState.Approved)).Items.Select(item => item.Id));
             Assert.Empty((await a.Store.ListDraftsAsync(10, null, default, InternalApprovalState.PendingApproval)).Items);
+        }
+
+        // LOG-4b (FİNANS #358 P2): the approved-lines read is a LINE page with a composite, company-bound cursor. A newer
+        // three-line approved draft in front of the one-line draft: pageSize 2 answers the newer draft's lines 1–2 and a cursor
+        // INSIDE that draft; the cursor answers line 3, then the older draft's line, then null — nothing skipped, nothing repeated.
+        SalesOrderDraft wide;
+        await using (var a = run.Store(CompanyA))
+        {
+            wide = (await a.Store.StoreDraftAsync(run.Envelope("k-create-wide"), Hash("payload-wide"), documentNo => Draft(owners, documentNo, T0.AddMinutes(5), lines: 3))).Draft;
+            await a.Store.UpdateDraftStateAsync(run.Envelope("k-submit-wide"), Hash("submit-wide"), SalesDraftCommands.SubmitV1, wide.Id, (d, now) => d.Submit(4, run.Actor, now), Submitted);
+            await a.Store.UpdateDraftStateAsync(run.Envelope("k-approve-wide", actor: "SENTETIK-approver"), Hash("approve-wide"), SalesDraftCommands.ApproveV1, wide.Id,
+                (d, now) => d.Approve(5, "SENTETIK-approver", now), Approved);
+            var pageOne = await a.Port.ListApprovedLinesAsync(2, null);
+            Assert.Equal([(wide.Id, 1), (wide.Id, 2)], pageOne.Items.Select(item => (item.OrderId, item.LineNo)));
+            Assert.NotNull(pageOne.NextCursor);
+            var pageTwo = await a.Port.ListApprovedLinesAsync(2, pageOne.NextCursor);
+            Assert.Equal([(wide.Id, 3), (draft.Id, 1)], pageTwo.Items.Select(item => (item.OrderId, item.LineNo)));
+            Assert.Null(pageTwo.NextCursor);
+            // pageSize 3 stops exactly at the wide draft's boundary: the cursor still resumes at the older draft, once.
+            var exact = await a.Port.ListApprovedLinesAsync(3, null);
+            Assert.Equal(3, exact.Items.Count);
+            Assert.NotNull(exact.NextCursor);
+            var rest = await a.Port.ListApprovedLinesAsync(3, exact.NextCursor);
+            Assert.Equal([(draft.Id, 1)], rest.Items.Select(item => (item.OrderId, item.LineNo)));
+            Assert.Null(rest.NextCursor);
+            Assert.Equal(4, (await a.Port.ListApprovedLinesAsync(100, null)).Items.Count);
+            Assert.Null((await a.Port.ListApprovedLinesAsync(100, null)).NextCursor);
+            Assert.DoesNotContain(pageOne.Items.Concat(pageTwo.Items), item => item.CompanyId != CompanyA);
+            await Assert.ThrowsAsync<ArgumentException>(() => a.Port.ListApprovedLinesAsync(2, "SENTETIK-not-a-cursor"));
+            await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => a.Port.ListApprovedLinesAsync(101, null));
+            wideCursor = pageOne.NextCursor!;
+        }
+
+        // Company B holding A's composite cursor gets nothing of A: the store refuses the inner cursor as another company's.
+        await using (var b = run.Store(CompanyB))
+        {
+            await Assert.ThrowsAsync<ArgumentException>(() => b.Port.ListApprovedLinesAsync(2, wideCursor));
+            Assert.Empty((await b.Port.ListApprovedLinesAsync(2, null)).Items);
         }
 
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE IdempotencyKeyHash = @h", ("@h", SalesStore.IdempotencyKeyHash("k-approve-again"))));
@@ -385,8 +424,8 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
     private static string Hash(string seed) =>
         Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(seed)));
 
-    /// <summary>A one-line draft of the company from SYNTHETIC owner snapshots (version 2).</summary>
-    private static SalesOrderDraft Draft(Owners owners, string documentNo, DateTimeOffset at)
+    /// <summary>A draft of the company from SYNTHETIC owner snapshots with <paramref name="lines"/> lines (one by default; version 1 + lines).</summary>
+    private static SalesOrderDraft Draft(Owners owners, string documentNo, DateTimeOffset at, int lines = 1)
     {
         var header = new SalesDraftHeader(owners.Party, owners.Account, Currency, Day);
         var money = new MoneyProfileSnapshot(owners.Company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "3", Day, true, From, null, 2);
@@ -394,7 +433,11 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         var unit = new UnitProfileSnapshot(owners.Company, KgUnit, "kg", "weight", KgProfile, "4", true, 3, 3, true, From, null);
         var binding = new UnitBindingSnapshot(owners.Company, KgUnit, KgProfile, "4");
         var product = new ProductSnapshot(Product, "7", "GDC-001", "Sentetik bant", Day, binding, binding, binding);
-        draft.AddLine(draft.Version, new SalesDraftLineInput(Guid.NewGuid(), product, unit, "1.25", 1.25m), at);
+        for (var index = 0; index < lines; index++)
+        {
+            draft.AddLine(draft.Version, new SalesDraftLineInput(Guid.NewGuid(), product, unit, "1.25", 1.25m), at);
+        }
+
         return draft;
     }
 

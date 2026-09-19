@@ -16,11 +16,15 @@ public interface ISalesOrderLineReferencePortV1
     Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineAsync(Guid orderId, Guid lineId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// LOG-4b: the company's APPROVED order lines for loading, newest draft first, by the Sales owner's
-    /// opaque company-bound cursor — PRICE-FREE by construction (Sinan §4, #66 5738113623: the Sevkiyatçı
-    /// sees sales orders but never prices; deny-first, so no price, discount or payment member exists on
-    /// <see cref="SalesApprovedLineReferenceV1"/>). Identities, names, unit and the exact quantity text only.
-    /// The consumer (Logistics) measures its own authority before asking; reading here creates nothing.
+    /// LOG-4b: the company's APPROVED order lines for loading as a LINE page — <paramref name="pageSize"/>
+    /// (1–100) caps the lines actually returned, whatever the drafts' line counts (FİNANS #358 P2) — newest
+    /// draft first, by the Sales owner's opaque, company-bound COMPOSITE cursor (draft + line position, so a
+    /// draft's lines are neither skipped nor repeated at a page boundary; the last page answers null; a
+    /// malformed or foreign cursor is <see cref="ArgumentException"/>). PRICE-FREE by construction (Sinan §4,
+    /// #66 5738113623: the Sevkiyatçı sees sales orders but never prices; deny-first, so no price, discount or
+    /// payment member exists on <see cref="SalesApprovedLineReferenceV1"/>). Identities, names, unit and the
+    /// exact quantity text only. The consumer (Logistics) measures its own authority before asking; reading
+    /// here creates nothing.
     /// </summary>
     Task<SalesApprovedLinePageV1> ListApprovedLinesAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default);
 }

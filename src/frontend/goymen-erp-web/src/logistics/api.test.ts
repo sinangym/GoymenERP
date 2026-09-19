@@ -151,5 +151,3 @@ describe('reads are bound to their company and record', () => {
     expect(await fetchApprovedOrderLines(null, COMPANY_A)).toMatchObject({ type: 'http', status: 403 })
   })
 })
-  })
-})

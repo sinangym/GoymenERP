@@ -244,7 +244,9 @@ public sealed class LogisticsInstructionService(
             throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.SalesProviderUnavailable);
         }
 
-        if (page is null || page.Items is null || page.Items.Any(item => item is null || item.CompanyId != scope.CompanyId
+        // FİNANS #358 P2: the page is a LINE page — the Sales owner caps the lines it answers at pageSize; an answer over the
+        // cap is the provider contradicting the contract (503), so the customer reads below stay bounded by the cap too.
+        if (page is null || page.Items is null || page.Items.Count > pageSize || page.Items.Any(item => item is null || item.CompanyId != scope.CompanyId
                 || item.OrderId == Guid.Empty || item.LineId == Guid.Empty || item.ProductId == Guid.Empty || item.OrderUnitId == Guid.Empty
                 || string.IsNullOrWhiteSpace(item.QuantityText) || string.IsNullOrWhiteSpace(item.DocumentNo)))
         {
@@ -252,8 +254,10 @@ public sealed class LogisticsInstructionService(
         }
 
         // Business 5745076917: the customer is shown by NAME (the Cari owner's, through the party-account port), never by an id.
-        // One fenced owner read per distinct customer of the page; a customer the owner no longer answers for is not loadable
-        // (the create would refuse it), so its lines are left out; a denial or an outage is the owner's answer for the whole read.
+        // One fenced owner read per DISTINCT customer of the page, memoized for this request only (`names` / `missing` live in
+        // this call; never across requests, never an authority shortcut: the #276 fence is measured around every owner read);
+        // the line cap bounds the number of reads. A customer the owner no longer answers for is not loadable (the create would
+        // refuse it), so its lines are left out; a denial or an outage is the owner's answer for the whole read.
         var names = new Dictionary<(Guid Party, Guid Account), string>();
         var missing = new HashSet<(Guid Party, Guid Account)>();
         foreach (var customer in page.Items.Select(item => (Party: item.PartyId, Account: item.CompanyAccountId)).Distinct())
