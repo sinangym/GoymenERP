@@ -21,6 +21,8 @@ using GoymenERP.Modules.Finance.Infrastructure.Shell;
 using GoymenERP.Modules.Idempotency.Infrastructure;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure;
+using GoymenERP.Modules.Purchasing.Application.Contracts;
+using GoymenERP.Modules.Purchasing.Infrastructure;
 using GoymenERP.Modules.Manufacturing.Infrastructure;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 using GoymenERP.Modules.Organization.Infrastructure;
@@ -153,6 +155,14 @@ builder.Services.AddSalesModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
+// PUR-4a: the order's supplier is the Cari owner's answer (the Sales party port's shape, plus the account's stored
+// Supplier role flag). No purchase-eligibility port is registered: Product has not published one (ÜRÜN #288 P3-3),
+// so the service answers 503 product_eligibility_unavailable fail-closed until the owner registers it.
+builder.Services.AddScoped<IPurchasingPartyAccountPortV1, CounterpartyPurchasingPartyAccountPortV1>();
+builder.Services.AddPurchasingModule(
+    builder.Configuration,
+    (services, options) => options.AddInterceptors(
+        services.GetRequiredService<AuditSaveChangesInterceptor>()));
 // Registered before the shell authority is chosen: the module table maps the provider set.
 builder.Services.AddSingleton<IShellCapabilityProvider, SalesShellCapabilityProvider>();
 // FIN-UI-1a (#325): Finance's (staged) receipt and bank-account screens, before the authority is chosen.
@@ -205,6 +215,7 @@ app.MapFinanceEndpoints();
 app.MapSalesEndpoints();
 app.MapInventoryEndpoints();
 app.MapManufacturingEndpoints();
+app.MapPurchasingEndpoints();
 app.MapShellEndpoints();
 
 if (!isOpenApiDocumentGeneration
@@ -224,6 +235,8 @@ if (!isOpenApiDocumentGeneration
     await app.Services.InitializeSalesModuleAsync();
     // After Organization: Manufacturing's foreign keys reference its tables.
     await app.Services.InitializeManufacturingModuleAsync();
+    // After Organization: Purchasing's foreign keys reference its tables.
+    await app.Services.InitializePurchasingModuleAsync();
 }
 
 await app.RunAsync();
