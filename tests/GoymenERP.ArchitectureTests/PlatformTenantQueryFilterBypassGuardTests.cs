@@ -78,10 +78,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "0a5d40cdf5b24b687eb6acbf6f96d4b70d050a24e9268498aa6a12007bb9e525";
     private const string SqlServerRcsiIntegrationProjectPath =
         "tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj";
-    // Re-fingerprinted for the ProjectReferences of the module SQL acceptance classes (Inventory,
-    // Accounting, Finance, Manufacturing, Sales). Publish target and discovery contract unchanged.
+    // Re-fingerprinted for #331: one linked Compile item (the browser-suite runner's BrowserSuiteHost.cs,
+    // for BrowserSuiteHostEnvelopeTests), after the module SQL acceptance ProjectReferences. Publish
+    // target and discovery contract unchanged.
     private const string ReviewedSqlServerRcsiIntegrationProjectFingerprint =
-        "3d823b3b7f8830e0bd4b85cd30b74e34876bb6d788bef3a168c3056be74b6fe2";
+        "eed96a445bbedb5cea3f92bccc2dd0695b0dc5326defbbf7a05ce817bed852ad";
     private const string SqlServerRcsiRelationalAcceptancePath =
         "tests/GoymenERP.Api.IntegrationTests/"
         + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.cs";
