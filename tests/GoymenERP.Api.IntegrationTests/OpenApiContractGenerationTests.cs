@@ -204,13 +204,25 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
         new("get", "/api/v1/sales/drafts", "GetSalesOrderDraftsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
-            ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string"]),
+            ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string", "query:approvalState:false:type:string"]),
         new("post", "/api/v1/sales/drafts", "CreateSalesOrderDraftV1",
             AuthenticatedResponses("201:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/CreateSalesOrderDraftRequest"),
         new("get", "/api/v1/sales/drafts/{id}", "GetSalesOrderDraftV1",
             AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:id:true:type:string;format:uuid"]),
+        // SALES-A1: the internal-approval state command (strict {expectedVersion} body, replayable 200/409).
+        new("post", "/api/v1/sales/drafts/{id}/submission", "SubmitSalesOrderDraftV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/SalesDraftStateCommandRequest", ["path:id:true:type:string;format:uuid"]),
+        // SALES-A1: the internal-approval state command (strict {expectedVersion} body, replayable 200/409).
+        new("post", "/api/v1/sales/drafts/{id}/approval", "ApproveSalesOrderDraftV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/SalesDraftStateCommandRequest", ["path:id:true:type:string;format:uuid"]),
+        // SALES-A1: the internal-approval state command (strict {expectedVersion} body, replayable 200/409).
+        new("post", "/api/v1/sales/drafts/{id}/rejection", "RejectSalesOrderDraftV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/SalesDraftStateCommandRequest", ["path:id:true:type:string;format:uuid"]),
         new("post", "/api/v1/finance/bank-accounts", "ProposeFinanceBankAccountV1",
             AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/BankAccountProposeRequest"),
@@ -268,6 +280,9 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetSalesOrderDraftsV1"] = "ref:SalesOrderDraftListResponse",
             ["CreateSalesOrderDraftV1"] = "ref:SalesOrderDraftResponse",
             ["GetSalesOrderDraftV1"] = "ref:SalesOrderDraftDetailView",
+            ["SubmitSalesOrderDraftV1"] = "ref:SalesOrderDraftResponse",
+            ["ApproveSalesOrderDraftV1"] = "ref:SalesOrderDraftResponse",
+            ["RejectSalesOrderDraftV1"] = "ref:SalesOrderDraftResponse",
             ["ProposeFinanceBankAccountV1"] = "ref:BankAccountCommandResult",
             ["ApproveFinanceBankAccountV1"] = "ref:BankAccountCommandResult",
             ["GetFinanceBankAccountMasterV1"] = "ref:BankAccountMasterPage",
@@ -310,6 +325,9 @@ public sealed partial class OpenApiContractGenerationTests
         "GetSalesOrderDraftsV1",
         "CreateSalesOrderDraftV1",
         "GetSalesOrderDraftV1",
+        "SubmitSalesOrderDraftV1",
+        "ApproveSalesOrderDraftV1",
+        "RejectSalesOrderDraftV1",
         "ProposeFinanceBankAccountV1",
         "ApproveFinanceBankAccountV1",
         "GetFinanceBankAccountMasterV1",
@@ -339,6 +357,9 @@ public sealed partial class OpenApiContractGenerationTests
         "DeclareManufacturingOutputV1",
         "SaveFinanceManualReceiptDraftV1",
         "CreateSalesOrderDraftV1",
+        "SubmitSalesOrderDraftV1",
+        "ApproveSalesOrderDraftV1",
+        "RejectSalesOrderDraftV1",
         "ProposeFinanceBankAccountV1",
         "ApproveFinanceBankAccountV1",
     ];
@@ -381,6 +402,9 @@ public sealed partial class OpenApiContractGenerationTests
                     StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
                 ],
                 ["CreateSalesOrderDraftV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
+                ["SubmitSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["ApproveSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["RejectSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["ProposeFinanceBankAccountV1"] = [StatusCodes.Status200OK],
                 ["ApproveFinanceBankAccountV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
             };
@@ -411,6 +435,9 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceBankAccountsV1",
         "GetSalesOrderDraftsV1",
         "CreateSalesOrderDraftV1",
+        "SubmitSalesOrderDraftV1",
+        "ApproveSalesOrderDraftV1",
+        "RejectSalesOrderDraftV1",
         "ProposeFinanceBankAccountV1",
         "ApproveFinanceBankAccountV1",
         "GetFinanceBankAccountMasterV1",
@@ -435,6 +462,9 @@ public sealed partial class OpenApiContractGenerationTests
         "GetManufacturingOrderV1:404",
         "GetFinanceManualReceiptV1:404",
         "GetSalesOrderDraftV1:404",
+        "SubmitSalesOrderDraftV1:404",
+        "ApproveSalesOrderDraftV1:404",
+        "RejectSalesOrderDraftV1:404",
     ];
 
     private static readonly HashSet<string> MixedProblemResponses =
@@ -546,6 +576,14 @@ public sealed partial class OpenApiContractGenerationTests
             ["CreateSalesOrderDraftV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["CreateSalesOrderDraftV1:409"] = ["account_state", "concurrent_change", "same_key_payload_mismatch", "version_conflict"],
             ["CreateSalesOrderDraftV1:422"] = ["commercial_not_available", "owner_reference_unavailable", "unsupported_currency", "unsupported_product", "unsupported_unit", "validation_failed"],
+            ["SubmitSalesOrderDraftV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["SubmitSalesOrderDraftV1:409"] = ["concurrent_change", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
+            ["ApproveSalesOrderDraftV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["ApproveSalesOrderDraftV1:409"] = ["concurrent_change", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
+            ["RejectSalesOrderDraftV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["RejectSalesOrderDraftV1:409"] = ["concurrent_change", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
+            ["SubmitSalesOrderDraftV1:422"] = ["validation_failed"],
+            ["RejectSalesOrderDraftV1:422"] = ["sales_approval_reason_too_long"],
             ["GetShellCapabilitiesV1:400"] = ["company_context_invalid"],
         };
 
@@ -587,8 +625,15 @@ public sealed partial class OpenApiContractGenerationTests
                     ["id", "expectedVersion"],
                     ("id", "type:string;format:uuid"),
                     ("expectedVersion", "type:string")),
+                ["SalesDraftApprovalV1"] = ObjectSchema(
+                    ["submittedBy", "submittedAtUtc", "decidedBy", "decidedAtUtc", "rejectionReason"],
+                    ("submittedBy", "type:null|string"),
+                    ("submittedAtUtc", "type:null|string;format:date-time"),
+                    ("decidedBy", "type:null|string"),
+                    ("decidedAtUtc", "type:null|string;format:date-time"),
+                    ("rejectionReason", "type:null|string")),
                 ["SalesOrderDraftDetailView"] = ObjectSchema(
-                    ["draft", "requestedDeliveryDate", "note", "lines", "deliveryAddress", "contact", "responsible", "paymentTerms", "sourceStrategy", "package"],
+                    ["draft", "requestedDeliveryDate", "note", "lines", "deliveryAddress", "contact", "responsible", "paymentTerms", "sourceStrategy", "package", "approval"],
                     ("draft", "ref:SalesOrderDraftSummaryView"),
                     ("requestedDeliveryDate", "type:null|string;format:date"),
                     ("note", "type:null|string"),
@@ -598,7 +643,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("responsible", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null"),
                     ("paymentTerms", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null"),
                     ("sourceStrategy", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null"),
-                    ("package", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null")),
+                    ("package", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null"),
+                    ("approval", "ref:SalesDraftApprovalV1")),
                 ["SalesOrderDraftLineDetail"] = ObjectSchema(
                     ["lineId", "lineNo", "productId", "productVersion", "productCode", "productName", "orderUnitId", "quantity", "unitPrice", "priceUnitId", "requestedDeliveryDate", "note", "requestedDeliverySlices", "discountPercent"],
                     ("lineId", "type:string;format:uuid"),
@@ -625,7 +671,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("isReplay", "type:boolean"),
                     ("originalCorrelationId", "type:string")),
                 ["SalesOrderDraftSummaryView"] = ObjectSchema(
-                    ["id", "companyId", "documentNo", "kind", "state", "version", "revision", "partyId", "companyAccountId", "currencyId", "businessDate", "createdAtUtc", "lineCount"],
+                    ["id", "companyId", "documentNo", "kind", "state", "version", "revision", "partyId", "companyAccountId", "currencyId", "businessDate", "createdAtUtc", "lineCount", "approvalState"],
                     ("id", "type:string;format:uuid"),
                     ("companyId", "type:string;format:uuid"),
                     ("documentNo", "type:string"),
@@ -638,7 +684,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("currencyId", "type:string;format:uuid"),
                     ("businessDate", "type:string;format:date"),
                     ("createdAtUtc", "type:string;format:date-time"),
-                    ("lineCount", "type:integer|string;format:int32")),
+                    ("lineCount", "type:integer|string;format:int32"),
+                    ("approvalState", "type:string")),
                 ["AllocationKnowledge"] = ScalarSchema("enum:Unavailable|Known"),
                 ["AmountDisclosure"] = ScalarSchema("enum:Unavailable|Redacted|Visible"),
                 ["AmountView"] = ObjectSchema(
@@ -1089,6 +1136,10 @@ public sealed partial class OpenApiContractGenerationTests
                     ("paymentTerms", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null"),
                     ("sourceStrategy", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null"),
                     ("package", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null")),
+                ["SalesDraftStateCommandRequest"] = ObjectSchema(
+                    ["expectedVersion"],
+                    ("expectedVersion", "type:string"),
+                    ("reason", "type:null|string")),
                 ["SalesOrderDraftLineRequest"] = ObjectSchema(
                     ["lineId", "productId", "expectedProductVersion", "orderUnitId", "quantity"],
                     ("lineId", "type:string;format:uuid"),
@@ -1748,9 +1799,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(51, operations.Count);
+        Assert.Equal(54, operations.Count);
         Assert.Equal(
-            51,
+            54,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
