@@ -6,6 +6,7 @@ using GoymenERP.Modules.Accounting.Domain.Posting;
 using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Services;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -16,6 +17,9 @@ namespace GoymenERP.Api.IntegrationTests;
 /// ACC-3 against a REAL SQL Server: Accounting's own migration on top of the host's migrated and
 /// seeded database, and Audit's real save interceptor. Every identity below is synthetic test data
 /// in this test's own database; no chart of accounts, currency, rule or period is seeded anywhere.
+/// ACC-V0: a period is proposed and then approved by ANOTHER actor (Ö4) before it takes postings; the
+/// ledger's amounts are checked against a SYNTHETIC scale-2 money profile here (these cases are about the
+/// ledger, not the Settings source — the Settings answer itself is proven in the ACC-V0 cases).
 /// </summary>
 public sealed class AccountingSqlServerRelationalAcceptanceTests
 {
@@ -113,9 +117,9 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
         Assert.Equal(4, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Deliveries"));
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT Status FROM accounting.PostingExceptions WHERE SourceId = @s", ("@s", source)));
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT Status FROM accounting.PendingValuations WHERE SourceId = @s", ("@s", source)));
-        // Audit: period opened; exception queued; exception resolved + pending queued; pending resolved + journal posted.
-        // Replays and the already-posted delivery write no audit event.
-        Assert.Equal(6, await run.ScalarAsync<int>(
+        // Audit: period proposed + approved (Ö4); exception queued; exception resolved + pending queued; pending
+        // resolved + journal posted. Replays and the already-posted delivery write no audit event.
+        Assert.Equal(7, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @c", ("@c", run.Correlation)));
     }
 
@@ -302,6 +306,12 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
         var period = await run.OpenSeptemberAsync(CompanyA);
         var accounts = Accounts(CompanyA);
 
+        long versionBeforeRace;
+        await using (var a = run.Store(CompanyA))
+        {
+            versionBeforeRace = (await a.Periods.FindPeriodAsync(period))!.Version;
+        }
+
         var barrier = new Barrier(2);
         async Task<object> PostAsync()
         {
@@ -321,7 +331,7 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
             await using var writer = run.Store(CompanyA, new BarrierInterceptor(barrier));
             try
             {
-                await writer.Periods.ClosePeriodAsync(period, run.Actor, Metadata(run));
+                await writer.Periods.ClosePeriodAsync(period, versionBeforeRace, run.Actor, Metadata(run));
                 return "closed";
             }
             catch (AccountingStoreException exception)
@@ -337,9 +347,10 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
         // Whatever won, a close then makes the period refuse the next posting, and nothing is recorded for it.
         await using (var a = run.Store(CompanyA))
         {
-            if ((await a.Periods.FindPeriodAsync(period))!.ClosedAtUtc is null)
+            var current = (await a.Periods.FindPeriodAsync(period))!;
+            if (current.Period.ClosedAtUtc is null)
             {
-                await a.Periods.ClosePeriodAsync(period, run.Actor, Metadata(run));
+                await a.Periods.ClosePeriodAsync(period, current.Version, run.Actor, Metadata(run));
             }
         }
 
@@ -366,7 +377,7 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
             await using var writer = run.Store(CompanyA, new BarrierInterceptor(barrier));
             try
             {
-                return await writer.Periods.OpenPeriodAsync(id, startsOn, endsOn, Metadata(run));
+                return (await writer.Periods.ProposePeriodAsync(id, startsOn, endsOn, run.Preparer, Metadata(run))).Outcome;
             }
             catch (AccountingStoreException exception)
             {
@@ -401,7 +412,7 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
             await using (var a = run.Store(CompanyA))
             {
                 Assert.Equal(AccountingStoreCodes.PeriodOverlap, (await Assert.ThrowsAsync<AccountingStoreException>(
-                    () => a.Periods.OpenPeriodAsync(ids[loser], dates.Start, dates.End, Metadata(run)))).Code);
+                    () => a.Periods.ProposePeriodAsync(ids[loser], dates.Start, dates.End, run.Preparer, Metadata(run)))).Code);
                 Assert.Null(await a.Periods.FindPeriodAsync(ids[loser]));
             }
         }
@@ -409,7 +420,7 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM accounting.Periods"));
         Assert.Equal(2L, await run.ScalarAsync<long>("SELECT Version FROM accounting.PeriodCalendars WHERE CompanyId = @c", ("@c", CompanyA)));
         Assert.Equal(2, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @c AND EventType = N'accounting.period.opened.v1'",
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @c AND EventType = N'accounting.period.proposed.v1'",
             ("@c", run.Correlation)));
     }
 
@@ -422,8 +433,8 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
         var unknownCompany = Guid.NewGuid();
         await using (var store = run.Store(unknownCompany))
         {
-            var error = await Assert.ThrowsAsync<DbUpdateException>(() => store.Periods.OpenPeriodAsync(Guid.NewGuid(),
-                new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30), Metadata(run)));
+            var error = await Assert.ThrowsAsync<DbUpdateException>(() => store.Periods.ProposePeriodAsync(Guid.NewGuid(),
+                new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30), run.Preparer, Metadata(run)));
             Assert.Equal(547, Assert.IsType<SqlException>(error.InnerException).Number);
         }
 
@@ -495,6 +506,9 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
 
         public SqlServerRelationalApiFactory Factory { get; }
         public Guid Actor { get; } = Guid.NewGuid();
+
+        /// <summary>Ö4: who proposes the test periods; <see cref="Actor"/> (someone else) approves them.</summary>
+        public Guid Preparer { get; } = Guid.NewGuid();
         public string Correlation { get; } = $"acc3-{Guid.NewGuid():N}";
 
         public static async Task<Run> StartAsync()
@@ -513,12 +527,15 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
             return run;
         }
 
+        /// <summary>An open September: proposed by <see cref="Preparer"/>, approved by <see cref="Actor"/> (Ö4).</summary>
         public async Task<Guid> OpenSeptemberAsync(Guid company)
         {
             var id = Guid.NewGuid();
             await using var store = Store(company);
-            Assert.Equal(AccountingWriteOutcome.Recorded, await store.Periods.OpenPeriodAsync(id, new DateOnly(2026, 9, 1),
-                new DateOnly(2026, 9, 30), Metadata(this)));
+            var (proposed, outcome) = await store.Periods.ProposePeriodAsync(id, new DateOnly(2026, 9, 1),
+                new DateOnly(2026, 9, 30), Preparer, Metadata(this));
+            Assert.Equal(AccountingWriteOutcome.Recorded, outcome);
+            await store.Periods.ApprovePeriodAsync(id, proposed.Version, Actor, Metadata(this));
             return id;
         }
 
@@ -547,7 +564,8 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
                 .AddInterceptors(interceptors)
                 .Options;
             var dbContext = new AccountingDbContext(options, companyContext);
-            return new StoreScope(dbContext, new AccountingStore(dbContext, companyContext, collector, TimeProvider.System));
+            return new StoreScope(dbContext, new AccountingStore(dbContext, companyContext, collector, TimeProvider.System,
+                new AccountingAmountScaleVerifier(new SyntheticMoneyProfiles(company))));
         }
 
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)
@@ -587,6 +605,26 @@ public sealed class AccountingSqlServerRelationalAcceptanceTests
         public IAccountingPostingStore Postings => store;
 
         public ValueTask DisposeAsync() => dbContext.DisposeAsync();
+    }
+
+    /// <summary>
+    /// A SYNTHETIC money profile source for the ledger cases: any currency at scale 2 for the store's own
+    /// company and Accounting's operation key. Not Settings' approved data; the real Settings answer (and
+    /// its fail-closed refusal without the key) is proven by the ACC-V0 cases.
+    /// </summary>
+    internal sealed class SyntheticMoneyProfiles(Guid company, int scale = 2) : ISettingsPrerequisiteProvider
+    {
+        public Task<MoneyProfileV1> GetMoneyProfileAsync(Guid currencyId, string operation, DateOnly effectiveOn,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new MoneyProfileV1(company, currencyId, "SYN", operation,
+                new ProfileVersionV1(Guid.Parse("5e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a99"), 1), scale, IsActive: true,
+                EffectiveFrom: new DateOnly(2026, 1, 1), EffectiveThrough: null));
+
+        public Task<UnitProfileV1> GetUnitProfileAsync(Guid unitId, DateOnly effectiveOn,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<PeriodEligibilityV1> GetPeriodEligibilityAsync(string operation, DateOnly occurredOn, DateOnly? valueOn,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     /// <summary>Holds each save until both writers have reached it, so both read the same state first.</summary>

@@ -21,7 +21,7 @@ public sealed class AccountingPersistenceModelTests
     private static readonly Type[] TenantRows =
     [
         typeof(PeriodCalendarRow), typeof(PeriodRow), typeof(JournalRow), typeof(JournalLineRow), typeof(DeliveryRow),
-        typeof(PostingExceptionRow), typeof(PendingValuationRow),
+        typeof(PostingExceptionRow), typeof(PendingValuationRow), typeof(AccountingCommandRow),
     ];
 
     [Fact]
@@ -111,6 +111,7 @@ public sealed class AccountingPersistenceModelTests
         using var context = Context();
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_InitialAccounting", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDeliveryRequestHash", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddPeriodApproval", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -156,6 +157,9 @@ public sealed class AccountingPersistenceModelTests
     [InlineData("edit-line")]
     [InlineData("edit-delivery")]
     [InlineData("edit-period-dates")]
+    [InlineData("edit-period-preparer")]
+    [InlineData("edit-command")]
+    [InlineData("delete-command")]
     [InlineData("move-exception-to-another-company")]
     public void Stored_accounting_is_never_deleted_and_only_its_allowed_fields_change(string fault)
     {
@@ -177,6 +181,16 @@ public sealed class AccountingPersistenceModelTests
             case "edit-period-dates":
                 Attach(context, Period()).EndsOn = new DateOnly(2026, 10, 31);
                 break;
+            case "edit-period-preparer":
+                // Ö4: who prepared a period is its record; only the approval and the close are added later.
+                Attach(context, Period()).PreparedByUserId = Guid.NewGuid();
+                break;
+            case "edit-command":
+                Attach(context, Command()).ResultJson = "{\"outcome\":\"Refused\"}";
+                break;
+            case "delete-command":
+                context.Commands.Remove(Attach(context, Command()));
+                break;
             default:
                 Attach(context, QueueEntry()).CompanyId = CompanyB;
                 break;
@@ -194,7 +208,15 @@ public sealed class AccountingPersistenceModelTests
     private static PeriodRow Period() => new PeriodRow
     {
         Id = Guid.NewGuid(), CompanyId = CompanyA, StartsOn = new DateOnly(2026, 9, 1), EndsOn = new DateOnly(2026, 9, 30),
-        Status = 1, Version = 1, CreatedAtUtc = At, UpdatedAtUtc = At,
+        Status = 1, PreparedByUserId = Guid.NewGuid(), PreparedAtUtc = At, ApprovedByUserId = Guid.NewGuid(), ApprovedAtUtc = At,
+        Version = 1, CreatedAtUtc = At, UpdatedAtUtc = At,
+    };
+
+    private static AccountingCommandRow Command() => new AccountingCommandRow
+    {
+        CompanyId = CompanyA, CommandName = "accounting.period.propose.v1", IdempotencyKeyHash = new string('a', 64),
+        ActorId = "synthetic-actor", PayloadHash = new string('b', 64),
+        ResultJson = "{\"outcome\":\"Recorded\"}", CorrelationId = "synthetic-correlation", RecordedAtUtc = At,
     };
 
     private static JournalRow Journal() => new JournalRow

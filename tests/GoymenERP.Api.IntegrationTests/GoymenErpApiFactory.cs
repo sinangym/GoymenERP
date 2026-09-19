@@ -1,3 +1,4 @@
+using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
@@ -133,6 +134,14 @@ public sealed class GoymenErpApiFactory : WebApplicationFactory<Program>
         services.RemoveAll<IDbContextOptionsConfiguration<PurchasingDbContext>>();
         services.AddDbContext<PurchasingDbContext>((serviceProvider, options) =>
             options.UseInMemoryDatabase($"{databaseName}-purchasing")
+                .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
+
+        // Accounting is host-wired since ACC-V0a; without this the in-memory host would try to migrate
+        // it against the placeholder SQL connection string at startup.
+        services.RemoveAll<DbContextOptions<AccountingDbContext>>();
+        services.RemoveAll<IDbContextOptionsConfiguration<AccountingDbContext>>();
+        services.AddDbContext<AccountingDbContext>((serviceProvider, options) =>
+            options.UseInMemoryDatabase($"{databaseName}-accounting")
                 .AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>()));
 
         // Manufacturing is host-wired since MFG-API (#313); without this the in-memory host

@@ -188,7 +188,7 @@ The one approved profile, `ApprovedMoneyProfileCatalog.GdcTurkishLiraV1`:
 |---|---|---|
 | Company | GDC `10000000-0000-0000-0000-000000000001` | Ö2 "ilk kabul profili GDC/TRY" |
 | Currency | TRY `9e60dcf0-f4bd-5bca-b464-f9a2db98e31a` (`SettingsCurrencyIdentitiesV1.TurkishLira`) | Ö2; id is technical |
-| Operations | `finance.manual-bank-receipt.v1`, `sales.order-draft.v1` | the Finance and Sales owners' keys (Business #254 5654539215) |
+| Operations | `accounting.journal-amount.v1`, `finance.manual-bank-receipt.v1`, `sales.order-draft.v1` | the Accounting, Finance and Sales owners' keys (Business #254 5654539215); a journal amount is a final TRY amount (ACC-V0a, Ö2 "nihai tutar 2") |
 | Scale | 2 (final amount) | Ö2 "nihai tutar 2" |
 | Profile | `7f836492-a54f-512f-a8f4-5f556b3f0f9d`, version 1 | technical (Ö2) |
 | Window | from 2026-09-18, no end (explicitly open-ended) | Ö2 |

@@ -52,8 +52,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // and initializer after Organization) and its staged shell provider before the authority is chosen.
     // Re-fingerprinted for PUR-4a: the Purchasing module (the Cari supplier port, AddPurchasingModule, its endpoints
     // and initializer after Organization) and its staged shell provider before the authority is chosen.
+    // Re-fingerprinted for ACC-V0a: the Accounting module (AddAccountingModule, its endpoints and initializer after
+    // Organization); no shell provider (ACC-V0b).
     private const string ReviewedOpenApiStartupFingerprint =
-        "cf506c912bade4647191b42125a4372f15c6088fe7d51f3d01a3337e0d91347f";
+        "454d42b0735a6f509d7e0a3d5fec56b6d48c8c8fbeb7134f0a97497e7487f069";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -125,7 +127,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         {
             // accounting
             ["tools/relational_inventory/accounting.txt"] =
-                "40a5b2b8bf7fb86a46df139cdca781a247347e56776fa338313eed43632cd853",
+                "f422e44ed15eecbc29079fa7640dde820b1214a2d29653daf08ec76f5cc026ec",
 
             // counterparty
             ["tools/relational_inventory/counterparty.txt"] =
@@ -226,9 +228,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "e94446bcd3e21a7695e4cbe1d437d38ed26165f4c4a2e945dae98d878f6d22ca",
             // ACC-3 (#298): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
+            // Re-measured for ACC-V0a: the ADR-011 command log (Commands) is mapped here, company-scoped with the
+            // CompanyId filter like every other tenant row; the period's preparer/approver columns.
             ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/"
              + "Persistence/AccountingDbContext.cs"] =
-                "5026dcb80cbaba5014db94e6bc31ffa459e84b2e98b2ecddf048b93d7183d075",
+                "5f81d5e57ea6d5503a767bc01345c5edbd2198c7d557027b40db086a5ed59f66",
             // INV-2 (#293, ADR-INV-001 option A): company-scoped like Organization; every tenant
             // row and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
@@ -404,11 +408,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
                 // ACC-3 (#298): the Accounting initializer's one provider branch, as Organization.
+                // Re-fingerprinted for ACC-V0a: the period commands' services; Ensure/Migrate counts unchanged.
                 ["src/backend/Modules/Accounting/"
                  + "GoymenERP.Modules.Accounting.Infrastructure/"
                  + "AccountingModuleExtensions.cs"] =
                     new(
-                        "172c5a71882bd4ec1866ce846dc61422ea4752af1e7eff2e8d37cb1dd2d2f51f",
+                        "2b46378065076b8b4aa7af7de4da6ea155f5dc198af66a95608ea23eb501206b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -416,11 +421,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // ACC-3 (#298): the SqlClient namespace only to recognise a unique-key violation
                 // (SqlException 2601/2627) after SaveChanges, as InventoryStore and the Idempotency
-                // terminal store do. No connection, command or raw SQL.
+                // terminal store do. No connection, command or raw SQL. Re-fingerprinted for ACC-V0a: the period
+                // propose/approve/close commands and their ADR-011 records; SqlClient count unchanged (1).
                 ["src/backend/Modules/Accounting/"
                  + "GoymenERP.Modules.Accounting.Infrastructure/Persistence/AccountingStore.cs"] =
                     new(
-                        "b038912f1479e252367d22348bd082ac7c64f408d7051e7f1e089c18a0910003",
+                        "accee651496acb4a66b63ce77ae26f9871cac42d4f98cf26af3c24c86e49c148",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -642,6 +648,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // forward fix, no approval fact or attempt is dropped.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260919120000_AddDraftApproval.cs"] =
                     new("d5aa478dc70559fa55e54df47a2fc6703a4677b1db4caab425fbe9b3ea10e89c",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // ACC-V0a: the Down's only raw SQL is Accounting's module refusal (51048, coordinator-assigned) while any
+                // period or command row exists (the preparer/approver columns are NOT NULL facts of Ö4); forward fix.
+                ["src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/Persistence/Migrations/20260919140000_AddPeriodApproval.cs"] =
+                    new("e1e6fe554c5b58ea381316b99d17dd2fd64dd73780e0a475e849715b28ac42f9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // MFG-6 slice 2: the Down's only raw SQL is Manufacturing's module refusal (51047) while any plan
