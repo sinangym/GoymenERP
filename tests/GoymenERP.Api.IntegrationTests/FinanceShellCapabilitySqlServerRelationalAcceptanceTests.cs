@@ -1,4 +1,6 @@
+using System.Net;
 using System.Net.Http.Json;
+using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.Security;
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Security;
@@ -21,6 +23,12 @@ namespace GoymenERP.Api.IntegrationTests;
 /// production grant and are never seeded. No grant opens nothing; the grant of company A opens nothing in
 /// company B for the same actor (who holds a non-Finance assignment there, so the answer is measured, not a
 /// 403); a site-scoped grant opens nothing (the declarations are company-wide).
+/// <para>
+/// The first actor's grants ACCUMULATE, which is how a person really gains them; a cumulative matrix alone
+/// would however pass even if the registry ignored one side of an AND (ORG #348 P3-1). So the isolated
+/// section below measures each side on its OWN actor, in its own company context, and asks the real API for
+/// what the shell did not offer: a screen that is not published is a screen whose reads are refused too.
+/// </para>
 /// </summary>
 public sealed class FinanceShellCapabilitySqlServerRelationalAcceptanceTests
 {
@@ -65,6 +73,65 @@ public sealed class FinanceShellCapabilitySqlServerRelationalAcceptanceTests
             await AssertFinanceAsync(factory, CompanyA,
                 "finance.bank-accounts.approve", "finance.bank-accounts.list", "finance.bank-accounts.propose",
                 "finance.receipts.detail", "finance.receipts.draft", "finance.receipts.list");
+
+            // ---- ORG #348 P3-1: every side of an AND, alone ------------------------------------------
+            // Each case is ONE actor with exactly the grants it names. The context company differs between a
+            // user's two cases, so an earlier grant of that user can never carry into the next case.
+
+            // The approval alone: it is a CONTROL of the F-04 list (its AND names the read too), so nothing opens
+            // — and the reads the shell did not offer are refused by the server, each under its own name.
+            await GrantAsync(factory, TestUsers.CompanyAViewer, CompanyA, ErpPermissions.FinanceBankAccountApprove,
+                AccessScopeType.Company, CompanyA);
+            using (var approveAlone = factory.CreateClientFor(TestUsers.CompanyAViewer, CompanyA))
+            {
+                Assert.Empty(FinanceOnly(await ReadAsync(approveAlone)));
+                Assert.Equal(HttpStatusCode.Forbidden, (await approveAlone.GetAsync(FinanceEndpoints.BankAccountsPath)).StatusCode);
+                Assert.Equal(HttpStatusCode.Forbidden, (await approveAlone.GetAsync(FinanceEndpoints.ManualReceiptsPath)).StatusCode);
+            }
+
+            // The draft save alone: the new-draft screen's AND names the bank-account read too, so nothing opens.
+            // Saving is not reading (the persona rule): the F-02 list stays refused.
+            await GrantAsync(factory, TestUsers.CompanyAViewer, CompanyB, FinancePermissionNames.DraftSave,
+                AccessScopeType.Company, CompanyB);
+            using (var saveAlone = factory.CreateClientFor(TestUsers.CompanyAViewer, CompanyB))
+            {
+                Assert.Empty(FinanceOnly(await ReadAsync(saveAlone)));
+                Assert.Equal(HttpStatusCode.Forbidden, (await saveAlone.GetAsync(FinanceEndpoints.ManualReceiptsPath)).StatusCode);
+            }
+
+            // The propose alone: the F-04 propose screen is its own single name, so it DOES open — and it opens
+            // nothing else: proposing does not imply reading the bank accounts.
+            await GrantAsync(factory, TestUsers.SiteAuditReader, CompanyA, ErpPermissions.FinanceBankAccountPropose,
+                AccessScopeType.Company, CompanyA);
+            using (var proposeAlone = factory.CreateClientFor(TestUsers.SiteAuditReader, CompanyA))
+            {
+                Assert.Equal(new[] { "finance.bank-accounts.propose" }, FinanceOnly(await ReadAsync(proposeAlone)));
+                Assert.Equal(HttpStatusCode.Forbidden, (await proposeAlone.GetAsync(FinanceEndpoints.BankAccountsPath)).StatusCode);
+            }
+
+            // The bank-account read alone: the F-04 list, and NOT the approval control — the other side of the
+            // same AND. The list's own read answers, the F-02 list does not.
+            await GrantAsync(factory, TestUsers.SiteAuditReader, CompanyB, ErpPermissions.FinanceBankAccountRead,
+                AccessScopeType.Company, CompanyB);
+            using (var readAlone = factory.CreateClientFor(TestUsers.SiteAuditReader, CompanyB))
+            {
+                Assert.Equal(new[] { "finance.bank-accounts.list" }, FinanceOnly(await ReadAsync(readAlone)));
+                Assert.Equal(HttpStatusCode.OK, (await readAlone.GetAsync(FinanceEndpoints.BankAccountsPath)).StatusCode);
+                Assert.Equal(HttpStatusCode.Forbidden, (await readAlone.GetAsync(FinanceEndpoints.ManualReceiptsPath)).StatusCode);
+            }
+
+            // Both sides of the new-draft AND, without the draft read: the new-draft screen and the F-04 list
+            // open; the F-02 list does not, because reading drafts is a third name.
+            await GrantAsync(factory, TestUsers.NoAssignment, CompanyA, FinancePermissionNames.DraftSave,
+                AccessScopeType.Company, CompanyA);
+            await GrantAsync(factory, TestUsers.NoAssignment, CompanyA, ErpPermissions.FinanceBankAccountRead,
+                AccessScopeType.Company, CompanyA);
+            using (var saveAndRead = factory.CreateClientFor(TestUsers.NoAssignment, CompanyA))
+            {
+                Assert.Equal(new[] { "finance.bank-accounts.list", "finance.receipts.draft" },
+                    FinanceOnly(await ReadAsync(saveAndRead)));
+                Assert.Equal(HttpStatusCode.Forbidden, (await saveAndRead.GetAsync(FinanceEndpoints.ManualReceiptsPath)).StatusCode);
+            }
 
             // The grants are company A's. The same actor gets a non-Finance assignment in company B, so the
             // company-B context resolves and the answer is measured: no Finance screen there.
