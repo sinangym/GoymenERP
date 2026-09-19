@@ -25,14 +25,16 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams } from 'react-router'
-import { fetchOrder } from './api'
+import { fetchMassBalance, fetchOrder } from './api'
 import { recordFact } from './commandApi'
 import {
   FACT_KINDS,
   OUTPUT_CLASSES,
   isKilogramText,
+  type EngineAnswer,
   type FactKind,
   type FactSnapshot,
+  type MassBalanceView,
   type OutputClass,
   type ProductionOrderView,
   type RollBalance,
@@ -52,24 +54,31 @@ import {
   reservePendingFact,
 } from './pendingFactStore'
 import {
+  ACTUAL_UNIT_KG_NOTE,
   APPLIED_DETAIL,
   APPLIED_TITLE,
   CLASS_REQUIRED,
   CLOSED_ORDER_TEXT,
   COST_STATUS_TEXT,
+  ENGINE_REFUSED,
+  ENGINE_UNAVAILABLE,
   FACT_KIND_HELP,
   FACT_KIND_LABEL,
   KG_FORMAT_ERROR,
   KG_FORMAT_HELP,
+  MASS_BALANCE_HEADING,
+  MASS_BALANCE_HELP,
   ORDER_STATUS_LABEL,
   OUTPUT_CLASS_LABEL,
   REMAINING_UNAVAILABLE,
   REPLAYED_DETAIL,
   REPLAYED_TITLE,
   ROLL_REQUIRED,
+  SCRAP_PERCENT_NOTE,
   TARGET_BASIS_LABEL,
   TIME_REQUIRED,
   UNKNOWN_ACTION_HELP,
+  engineParameterLabel,
   failureText,
   unknownText,
 } from './manufacturingText'
@@ -173,6 +182,13 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
     <Frame>
       <OrderSummary order={order} />
       <RollTable rolls={order.rolls} />
+      <MassBalancePanel
+        namespace={namespace ?? 'no-context'}
+        routeEntryGeneration={shell.routeEntryGeneration}
+        companyId={activeCompanyId ?? ''}
+        orderId={order.orderId}
+        orderVersion={order.version}
+      />
       {canRecord ? (
         <FactSection
           order={order}
@@ -183,6 +199,118 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
         />
       ) : null}
     </Frame>
+  )
+}
+
+/**
+ * GDC-BAL/1 (BAL slice 2): the order through the one mass-balance calculator the close uses, read from its own GET.
+ * Keyed by the order's VERSION, so every re-read of the order after an accepted fact reads the balance again — the
+ * figures are the server's, never summed here. BAL-004 / BAL-006 show the engine's own answer: while the order cannot
+ * supply their inputs they say "Hesaplanamıyor" and name the inputs, never a 0 or an estimate.
+ */
+function MassBalancePanel({
+  namespace,
+  routeEntryGeneration,
+  companyId,
+  orderId,
+  orderVersion,
+}: {
+  readonly namespace: string
+  readonly routeEntryGeneration: number
+  readonly companyId: string
+  readonly orderId: string
+  readonly orderVersion: number
+}) {
+  const boundary = useAuthBoundary()
+  const query = useQuery({
+    queryKey: [namespace, routeEntryGeneration, 'manufacturing-mass-balance', orderId, orderVersion],
+    queryFn: async ({ signal }) => {
+      const snapshot = boundary.capture()
+      const outcome = await fetchMassBalance(companyId, orderId, signal)
+      if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) {
+        boundary.report(outcome.status, snapshot)
+      }
+      return outcome
+    },
+  })
+  const state = (
+    query.isPending ? { kind: 'initial-loading' } : classifyOutcome(query.data ?? { type: 'malformed' })
+  ) as RemoteViewState<MassBalanceView>
+
+  return (
+    <section aria-labelledby="mfg-balance-heading" className={styles.section} data-testid="mass-balance">
+      <h2 id="mfg-balance-heading">{MASS_BALANCE_HEADING}</h2>
+      <p className={styles.help}>{MASS_BALANCE_HELP}</p>
+      {state.kind !== 'ready' ? (
+        <StateBlock state={state} subject="kütle dengesi" onRetry={() => void query.refetch()} />
+      ) : (
+        <>
+          <p className={styles.help} data-testid="mass-balance-formula">
+            {state.data.formulaVersion}
+          </p>
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th scope="col">Ana rulo</th>
+                  <th scope="col">Fiilî girdi (kg)</th>
+                  <th scope="col">Hesaplanan (kg)</th>
+                  <th scope="col">Kütle farkı (kg)</th>
+                  <th scope="col">Mutabakat</th>
+                  <th scope="col">Fire %</th>
+                  <th scope="col">Fiilî birim kg</th>
+                </tr>
+              </thead>
+              <tbody>
+                {state.data.rolls.map((roll) => (
+                  <tr key={roll.parentRollId} data-balance-roll={roll.parentRollId}>
+                    <th scope="row" className={styles.mono}>
+                      {roll.parentRollId}
+                    </th>
+                    <td>{roll.difference.actualInputKg}</td>
+                    <td>{roll.difference.accountedKg}</td>
+                    <td data-testid="mass-difference">{roll.difference.differenceKg}</td>
+                    <td>
+                      <span
+                        className={roll.difference.isFullyAccounted ? styles.badgeBalanced : styles.badgeDifference}
+                        data-accounted={roll.difference.isFullyAccounted ? 'yes' : 'no'}
+                      >
+                        {roll.difference.isFullyAccounted ? 'Mutabık' : 'Fark var'}
+                      </span>
+                    </td>
+                    <td data-testid="scrap-percent">
+                      <EngineAnswerCell answer={roll.scrapPercent} />
+                    </td>
+                    <td data-testid="actual-unit-kg">
+                      <EngineAnswerCell answer={roll.actualUnitKg} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className={styles.help}>{SCRAP_PERCENT_NOTE}</p>
+          <p className={styles.help}>{ACTUAL_UNIT_KG_NOTE}</p>
+        </>
+      )}
+    </section>
+  )
+}
+
+function EngineAnswerCell({ answer }: { readonly answer: EngineAnswer }) {
+  if (answer.outcome === 'Computed') return <span data-outcome="computed">{answer.value}</span>
+  if (answer.outcome === 'Unavailable') {
+    return (
+      <span data-outcome="unavailable">
+        {ENGINE_UNAVAILABLE} {answer.missingParameters.map((name) => engineParameterLabel(name)).join(', ')}
+      </span>
+    )
+  }
+  return (
+    <span data-outcome="refused">
+      {ENGINE_REFUSED} {answer.refusalCode}
+      {answer.refusedParameter !== null ? ` (${engineParameterLabel(answer.refusedParameter)})` : ''}
+    </span>
   )
 }
 

@@ -42,7 +42,10 @@ import {
   REVERSE_REASON,
   REVERSE_REASON_REQUIRED,
   SOURCE_SUBJECT,
+  financeRef,
+  sourceNumberShown,
 } from './financeText'
+import { WithCurrencyCodes, currencyShown } from './currencyCodes'
 import { isDateOnly } from './dateOnly'
 import { isFrozen, type AttemptState } from './receiptCommand'
 import { statusViewOf } from './sourceView'
@@ -133,15 +136,16 @@ export function FinanceSourceDetail({
     <div className={styles.detail}>
       <SourceStatus view={statusViewOf(data)} />
       <dl className={styles.facts}>
-        <Fact term={DETAIL.sourceNumber} value={data.source.sourceNumber} />
+        <Fact term={DETAIL.sourceNumber} value={sourceNumberShown(data.source.sourceNumber, data.source.id)} />
         <Fact term={DETAIL.occurredOn} value={data.source.occurredOn} />
         <Fact term={DETAIL.valueOn} value={data.source.valueOn} />
         <Fact term={DETAIL.bankAccount} value={bankName} />
+        <WithCurrencyCodes>{(codes) => <Fact term={DETAIL.currency} value={currencyShown(data.source.currencyId, codes)} />}</WithCurrencyCodes>
         <Fact term={DETAIL.bankReference} value={data.bankReference} />
         <Fact term={DETAIL.description} value={data.description} />
         <Fact term={DETAIL.recordedAt} value={data.recordedAtUtc} />
-        <Fact term={DETAIL.reversedBy} value={data.reversalSourceId} />
-        <Fact term={DETAIL.reverses} value={data.reversesSourceId} />
+        <Fact term={DETAIL.reversedBy} value={data.reversalSourceId === null ? null : financeRef(data.reversalSourceId)} />
+        <Fact term={DETAIL.reverses} value={data.reversesSourceId === null ? null : financeRef(data.reversesSourceId)} />
       </dl>
 
       {recordDone ? (
