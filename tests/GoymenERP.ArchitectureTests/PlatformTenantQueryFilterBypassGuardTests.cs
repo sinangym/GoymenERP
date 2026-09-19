@@ -351,10 +351,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // the id (retry) or not (conflict); still no connection, command or raw SQL. Re-fingerprinted
                 // for INV-OPEN-1 (T07 = A): the opening count is written through the same tenant-filtered
                 // context in one save; SqlClient count unchanged (1).
+                // Re-fingerprinted for ÜRÜN's P3 follow-up: the colliding lot/label id is read from the
+                // key error itself (SqlException.Errors 2601/2627); SqlClient count unchanged (1).
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
                     new(
-                        "478b3035fc958260d0f914a197d808a542f7d4fe0cad6b10833d1e67bcc73f4d",
+                        "ead38f9bfea11e62a0531dbdb6139175a5483a3e092cbba321e5b654b131f4f5",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
