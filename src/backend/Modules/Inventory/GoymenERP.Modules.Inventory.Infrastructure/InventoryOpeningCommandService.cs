@@ -51,18 +51,19 @@ public sealed class InventoryOpeningCommandService(
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    /// <summary>The refusals a key keeps for good (ADR-011 §7): a conflict with what is stored, or a missing reference.</summary>
+    /// <summary>
+    /// The store's refusals a key keeps for good (ADR-011 §7): a conflict with what is stored, answered 409. (A
+    /// location not found is terminal too, answered 422 on its own path.)
+    /// </summary>
     private static readonly HashSet<string> TerminalCodes = new(StringComparer.Ordinal)
     {
         InventoryStoreCodes.OpeningConflict,
         InventoryStoreCodes.LabelConflict,
         InventoryStoreCodes.LabelCodeTaken,
         InventoryStoreCodes.LotConflict,
-        InventoryStoreCodes.LotProductMismatch,
         InventoryStoreCodes.MovementIdConflict,
         InventoryStoreCodes.DuplicateSource,
         InventoryRuleCodes.LabelAlreadyInStock,
-        InventoryOpeningCodesV1.LocationNotFound,
     };
 
     public async Task<OpeningCountResultV1> RecordAsync(OpeningCountRequestV1 request, InventoryCommandMetadata metadata,
@@ -81,7 +82,7 @@ public sealed class InventoryOpeningCommandService(
         if (string.IsNullOrWhiteSpace(key) || !string.Equals(key, key.Trim(), StringComparison.Ordinal)
             || key.Length > IdentityMaximumLength || key.Any(char.IsControl))
         {
-            throw Validation(Issue("idempotencyKey", "idempotency_key_invalid"));
+            throw Validation(Issue("idempotencyKey", InventoryOpeningCodesV1.IdempotencyKeyInvalid));
         }
 
         if (string.IsNullOrWhiteSpace(metadata.CorrelationId) || metadata.CorrelationId.Trim().Length > IdentityMaximumLength)
@@ -183,15 +184,22 @@ public sealed class InventoryOpeningCommandService(
         catch (Exception exception) when (exception is InventoryStoreException or InventoryRuleException)
         {
             dbContext.ChangeTracker.Clear();
+            // §8 first, whatever the code: the loser of a same-key race can collide on another index of the same
+            // batch (the combined SQL message may name UX_Movements_Source or the label code before the key), so a
+            // winner recorded under this key is the answer before any refusal is believed.
+            if (await PriorAsync(scope, keyHash, payloadHash, cancellationToken) is { } won)
+            {
+                return won;
+            }
+
             var code = exception is InventoryStoreException stored ? stored.Code : ((InventoryRuleException)exception).Code;
             if (code == InventoryStoreCodes.ConcurrentChange)
             {
-                // §8: a same-key racer that won is this answer too; otherwise the race left the key empty.
-                return await PriorAsync(scope, keyHash, payloadHash, cancellationToken)
-                    ?? throw new InventoryOpeningServiceException(409, InventoryStoreCodes.ConcurrentChange);
+                throw new InventoryOpeningServiceException(409, InventoryStoreCodes.ConcurrentChange);
             }
 
-            var refusal = Refusal(code);
+            var refusal = RefusalFor(code)
+                ?? throw new InvalidOperationException($"Açılış sayımında eşlenmemiş stok reddi: {code}.", exception);
             if (TerminalCodes.Contains(code))
             {
                 return await TerminalAsync(scope, keyHash, payloadHash, count.Id, command.CorrelationId, refusal, cancellationToken);
@@ -347,7 +355,7 @@ public sealed class InventoryOpeningCommandService(
 
             if (string.IsNullOrWhiteSpace(line.ProductVersion) || line.ProductVersion.Length > IdentityMaximumLength)
             {
-                issues.Add(Issue($"{prefix}.productVersion", "product_version_invalid"));
+                issues.Add(Issue($"{prefix}.productVersion", InventoryOpeningCodesV1.ProductVersionInvalid));
             }
 
             if (!TryKilograms(line.QuantityKg, out var quantity, out var quantityCode))
@@ -365,7 +373,7 @@ public sealed class InventoryOpeningCommandService(
             }
             catch (InventoryRuleException exception)
             {
-                issues.Add(Issue(prefix, exception.Code));
+                issues.Add(Issue(prefix, IssueCode(exception.Code)));
             }
         }
 
@@ -381,7 +389,7 @@ public sealed class InventoryOpeningCommandService(
         }
         catch (InventoryRuleException exception)
         {
-            throw Validation(Issue("count", exception.Code));
+            throw Validation(Issue("count", IssueCode(exception.Code)));
         }
     }
 
@@ -393,7 +401,7 @@ public sealed class InventoryOpeningCommandService(
         if (string.IsNullOrEmpty(text) || text.Length > 40 || !text.All(character => char.IsAsciiDigit(character) || character == '.')
             || !decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value))
         {
-            code = "quantity_invalid";
+            code = InventoryOpeningCodesV1.QuantityInvalid;
             return false;
         }
 
@@ -404,21 +412,27 @@ public sealed class InventoryOpeningCommandService(
         }
         catch (InventoryRuleException exception)
         {
-            code = exception.Code;
+            code = IssueCode(exception.Code);
             return false;
         }
     }
 
-    /// <summary>The HTTP answer of a store or domain refusal.</summary>
-    private static InventoryOpeningServiceException Refusal(string code) => code switch
+    /// <summary>
+    /// The HTTP answer of a store or domain refusal, inside the closed sets of <see cref="InventoryOpeningCodesV1"/>;
+    /// null for a code the command does not know (the caller treats it as an internal fault, never a guessed 4xx).
+    /// </summary>
+    internal static InventoryOpeningServiceException? RefusalFor(string code) => code switch
     {
         _ when TerminalCodes.Contains(code) => new InventoryOpeningServiceException(409, code),
         InventoryStoreCodes.CompanyContextMismatch => Forbidden(),
         InventoryStoreCodes.ValueDoesNotFit or InventoryScaleCodes.ScaleExceeded => Validation(Issue("lines", code)),
-        InventoryScaleCodes.ProfileUnusable => new InventoryOpeningServiceException(503, code),
-        _ when code.StartsWith("settings_", StringComparison.Ordinal) => new InventoryOpeningServiceException(503, code),
-        _ => new InventoryOpeningServiceException(422, code),
+        _ when InventoryOpeningCodesV1.Status503Codes.Contains(code) => new InventoryOpeningServiceException(503, code),
+        _ => null,
     };
+
+    /// <summary>A domain rule code as a 400 issue code: inside <see cref="InventoryOpeningCodesV1.IssueCodes"/>, else the count's own.</summary>
+    private static string IssueCode(string code) =>
+        InventoryOpeningCodesV1.IssueCodes.Contains(code) ? code : InventoryRuleCodes.InvalidOpeningCount;
 
     private async Task<Scope> RequireAsync(CancellationToken cancellationToken)
     {
