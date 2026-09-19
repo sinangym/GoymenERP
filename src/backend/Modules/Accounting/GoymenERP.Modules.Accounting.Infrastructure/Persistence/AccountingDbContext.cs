@@ -14,8 +14,8 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 /// <item>R4 persistent identities: the inbox key (company, consumer, message id); one ORIGINAL
 /// journal per (company, source, purpose); one reversal per journal; one journal per correction
 /// id. Each is a unique key or filtered unique index, so it holds under a race.</item>
-/// <item>A journal, its lines and a delivery are append-only; a period changes only its close
-/// trace and version; a queue entry only its current facts and version. Nothing is deleted.</item>
+/// <item>A journal, its lines, a delivery and a command record are append-only; a period changes
+/// only its approval and close traces and version; a queue entry only its current facts and version. Nothing is deleted.</item>
 /// <item>Identity texts (posting purpose, consumer, message id) use a binary collation, the same
 /// exact comparison the domain uses.</item>
 /// </list>
@@ -43,6 +43,24 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
 
     internal DbSet<PendingValuationRow> PendingValuations => Set<PendingValuationRow>();
 
+    internal DbSet<AccountingCommandRow> Commands => Set<AccountingCommandRow>();
+
+    /// <summary>
+    /// ACC-V0 (Ö4): the facts follow the status exactly. Proposed (3): the preparer only; Open (1): the
+    /// preparer and an approval by SOMEONE ELSE; Closed (2): both plus the close.
+    /// </summary>
+    internal const string PeriodStatusCheck =
+        "([Status] = 3 AND [ApprovedByUserId] IS NULL AND [ApprovedAtUtc] IS NULL AND [ClosedByUserId] IS NULL AND [ClosedAtUtc] IS NULL) OR "
+        + "([Status] = 1 AND [ApprovedByUserId] IS NOT NULL AND [ApprovedByUserId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [ApprovedByUserId] <> [PreparedByUserId] AND [ApprovedAtUtc] IS NOT NULL AND [ClosedByUserId] IS NULL AND [ClosedAtUtc] IS NULL) OR "
+        + "([Status] = 2 AND [ApprovedByUserId] IS NOT NULL AND [ApprovedByUserId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [ApprovedByUserId] <> [PreparedByUserId] AND [ApprovedAtUtc] IS NOT NULL "
+        + "AND [ClosedByUserId] IS NOT NULL AND [ClosedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [ClosedAtUtc] IS NOT NULL)";
+
+    /// <summary>A command record names its period, except a recorded terminal refusal that has none (§7).</summary>
+    internal const string CommandTargetCheck =
+        "[PeriodId] IS NOT NULL OR JSON_VALUE([ResultJson], '$.outcome') = 'Refused'";
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -58,6 +76,7 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
         ConfigureDeliveries(modelBuilder);
         ConfigurePostingExceptions(modelBuilder);
         ConfigurePendingValuations(modelBuilder);
+        ConfigureCommands(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -100,10 +119,8 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
             table.HasCheckConstraint("CK_Periods_Identity",
                 "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000'");
             table.HasCheckConstraint("CK_Periods_Dates", "[EndsOn] >= [StartsOn]");
-            table.HasCheckConstraint("CK_Periods_Status",
-                "([Status] = 1 AND [ClosedByUserId] IS NULL AND [ClosedAtUtc] IS NULL) OR "
-                + "([Status] = 2 AND [ClosedByUserId] IS NOT NULL AND [ClosedByUserId] <> '00000000-0000-0000-0000-000000000000' "
-                + "AND [ClosedAtUtc] IS NOT NULL)");
+            table.HasCheckConstraint("CK_Periods_Prepared", "[PreparedByUserId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_Periods_Status", PeriodStatusCheck);
             table.HasCheckConstraint("CK_Periods_Version", "[Version] >= 1");
         });
         entity.HasKey(x => x.Id);
@@ -266,6 +283,35 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    private void ConfigureCommands(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<AccountingCommandRow>();
+        entity.ToTable("Commands", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_Commands_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND LEN([ActorId]) > 0 AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_Commands_KeyHash", "LEN([IdempotencyKeyHash]) = 64");
+            table.HasCheckConstraint("CK_Commands_PayloadHash", "LEN([PayloadHash]) = 64");
+            table.HasCheckConstraint("CK_Commands_ResultJson", "ISJSON([ResultJson]) = 1");
+            table.HasCheckConstraint("CK_Commands_Target", CommandTargetCheck);
+        });
+        entity.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        entity.Property(x => x.CommandName).HasMaxLength(64);
+        entity.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false);
+        entity.Property(x => x.ActorId).HasMaxLength(128).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        entity.Property(x => x.ResultJson).HasColumnType("nvarchar(max)").IsRequired();
+        entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<PeriodRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PeriodId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ApplyWriteGuards()
     {
         AccountingAuditEventTenantGuard.Validate(this, companyContext);
@@ -297,8 +343,9 @@ public sealed class AccountingDbContext(DbContextOptions<AccountingDbContext> op
                 string[] allowed = entry.Entity switch
                 {
                     PeriodCalendarRow => [nameof(PeriodCalendarRow.UpdatedAtUtc)],
-                    PeriodRow => [nameof(PeriodRow.Status), nameof(PeriodRow.ClosedByUserId), nameof(PeriodRow.ClosedAtUtc),
-                        nameof(PeriodRow.UpdatedAtUtc)],
+                    // Ö4: a proposal changes only by its approval, an open period only by its close.
+                    PeriodRow => [nameof(PeriodRow.Status), nameof(PeriodRow.ApprovedByUserId), nameof(PeriodRow.ApprovedAtUtc),
+                        nameof(PeriodRow.ClosedByUserId), nameof(PeriodRow.ClosedAtUtc), nameof(PeriodRow.UpdatedAtUtc)],
                     PostingExceptionRow => [nameof(PostingExceptionRow.Status), nameof(PostingExceptionRow.PostingRuleVersion),
                         nameof(PostingExceptionRow.MissingMappingKeysJson), nameof(PostingExceptionRow.FirstMessageId),
                         nameof(PostingExceptionRow.UpdatedAtUtc)],

@@ -162,6 +162,75 @@ partial class AccountingDbContextModelSnapshot : ModelSnapshot
             });
         });
 
+        modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingCommandRow", b =>
+        {
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("CommandName")
+                .HasMaxLength(64)
+                .HasColumnType("nvarchar(64)");
+
+            b.Property<string>("IdempotencyKeyHash")
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<string>("ActorId")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)")
+                .UseCollation("Latin1_General_100_BIN2");
+
+            b.Property<string>("CorrelationId")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<string>("PayloadHash")
+                .IsRequired()
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<Guid?>("PeriodId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<DateTimeOffset>("RecordedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("ResultJson")
+                .IsRequired()
+                .HasColumnType("nvarchar(max)");
+
+            b.HasKey("CompanyId", "CommandName", "IdempotencyKeyHash");
+
+            b.HasIndex("CompanyId", "PeriodId");
+
+            b.ToTable("Commands", "accounting", t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_Commands_Identity",
+                    "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([ActorId]) > 0 AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0");
+
+                t.HasCheckConstraint(
+                    "CK_Commands_KeyHash",
+                    "LEN([IdempotencyKeyHash]) = 64");
+
+                t.HasCheckConstraint(
+                    "CK_Commands_PayloadHash",
+                    "LEN([PayloadHash]) = 64");
+
+                t.HasCheckConstraint(
+                    "CK_Commands_ResultJson",
+                    "ISJSON([ResultJson]) = 1");
+
+                t.HasCheckConstraint(
+                    "CK_Commands_Target",
+                    "[PeriodId] IS NOT NULL OR JSON_VALUE([ResultJson], '$.outcome') = 'Refused'");
+            });
+        });
+
         modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.DeliveryRow", b =>
         {
             b.Property<Guid>("CompanyId")
@@ -462,6 +531,12 @@ partial class AccountingDbContextModelSnapshot : ModelSnapshot
             b.Property<Guid>("Id")
                 .HasColumnType("uniqueidentifier");
 
+            b.Property<DateTimeOffset?>("ApprovedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<Guid?>("ApprovedByUserId")
+                .HasColumnType("uniqueidentifier");
+
             b.Property<DateTimeOffset?>("ClosedAtUtc")
                 .HasColumnType("datetimeoffset");
 
@@ -476,6 +551,12 @@ partial class AccountingDbContextModelSnapshot : ModelSnapshot
 
             b.Property<DateOnly>("EndsOn")
                 .HasColumnType("date");
+
+            b.Property<DateTimeOffset>("PreparedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<Guid>("PreparedByUserId")
+                .HasColumnType("uniqueidentifier");
 
             b.Property<byte[]>("RowVersion")
                 .IsConcurrencyToken()
@@ -513,8 +594,12 @@ partial class AccountingDbContextModelSnapshot : ModelSnapshot
                     "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000'");
 
                 t.HasCheckConstraint(
+                    "CK_Periods_Prepared",
+                    "[PreparedByUserId] <> '00000000-0000-0000-0000-000000000000'");
+
+                t.HasCheckConstraint(
                     "CK_Periods_Status",
-                    "([Status] = 1 AND [ClosedByUserId] IS NULL AND [ClosedAtUtc] IS NULL) OR ([Status] = 2 AND [ClosedByUserId] IS NOT NULL AND [ClosedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [ClosedAtUtc] IS NOT NULL)");
+                    "([Status] = 3 AND [ApprovedByUserId] IS NULL AND [ApprovedAtUtc] IS NULL AND [ClosedByUserId] IS NULL AND [ClosedAtUtc] IS NULL) OR ([Status] = 1 AND [ApprovedByUserId] IS NOT NULL AND [ApprovedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [ApprovedByUserId] <> [PreparedByUserId] AND [ApprovedAtUtc] IS NOT NULL AND [ClosedByUserId] IS NULL AND [ClosedAtUtc] IS NULL) OR ([Status] = 2 AND [ApprovedByUserId] IS NOT NULL AND [ApprovedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [ApprovedByUserId] <> [PreparedByUserId] AND [ApprovedAtUtc] IS NOT NULL AND [ClosedByUserId] IS NOT NULL AND [ClosedByUserId] <> '00000000-0000-0000-0000-000000000000' AND [ClosedAtUtc] IS NOT NULL)");
 
                 t.HasCheckConstraint(
                     "CK_Periods_Version",
@@ -579,6 +664,21 @@ partial class AccountingDbContextModelSnapshot : ModelSnapshot
                     "CK_PostingExceptions_Version",
                     "[Version] >= 1");
             });
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.AccountingCommandRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                .WithMany()
+                .HasForeignKey("CompanyId")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+
+            b.HasOne("GoymenERP.Modules.Accounting.Infrastructure.Persistence.PeriodRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "PeriodId")
+                .HasPrincipalKey("CompanyId", "Id")
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity("GoymenERP.Modules.Accounting.Infrastructure.Persistence.DeliveryRow", b =>
