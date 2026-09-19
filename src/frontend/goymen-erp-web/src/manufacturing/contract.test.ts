@@ -4,8 +4,16 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { decodeMassBalance, decodeOrder, factBody, isKilogramText, type FactSnapshot } from './contract'
-import { ROLL_1, massBalance, order, roll, rollBalance, unavailable } from './testHarness'
+import {
+  closeBody,
+  decodeMassBalance,
+  decodeOrder,
+  decodeOrderList,
+  factBody,
+  isKilogramText,
+  type FactSnapshot,
+} from './contract'
+import { ORDER, ROLL_1, massBalance, order, orderList, orderSummary, roll, rollBalance, unavailable } from './testHarness'
 
 describe('decodeOrder', () => {
   it('keeps every kilogram as the server wrote it, the signed difference included', () => {
@@ -134,5 +142,48 @@ describe('factBody', () => {
   it('adds the output class only to an output', () => {
     expect(factBody({ ...base, kind: 'outputs', outputClass: 'Scrap' })).toMatchObject({ outputClass: 'Scrap' })
     expect(factBody({ ...base, kind: 'wip-measurements', outputClass: 'Scrap' })).not.toHaveProperty('outputClass')
+  })
+})
+
+describe('decodeOrderList', () => {
+  it('keeps the summary the server wrote, kilograms as text and the cursor opaque', () => {
+    const decoded = decodeOrderList(
+      orderList([orderSummary({ plannedInputKg: '1000.125', target: { basis: 'InputMass', kg: '900' } })], 'CURSOR-1'),
+    )
+    expect(decoded?.nextCursor).toBe('CURSOR-1')
+    expect(decoded?.orders[0]).toMatchObject({
+      orderId: ORDER,
+      status: 'Open',
+      plannedRollCount: 2,
+      plannedInputKg: '1000.125',
+      target: { basis: 'InputMass', kg: '900' },
+      closedAtUtc: null,
+    })
+  })
+
+  it('reads an empty page as an empty page, not as a missing answer', () => {
+    expect(decodeOrderList(orderList([], null))).toEqual({ orders: [], nextCursor: null })
+  })
+
+  it.each([
+    ['no orders array', { nextCursor: null }],
+    ['a cursor that is neither text nor null', orderList([orderSummary()], 7 as unknown as string)],
+    ['an empty cursor', orderList([orderSummary()], '')],
+    ['an id that is not a guid', orderList([orderSummary({ orderId: 'nope' })])],
+    ['a status the contract does not have', orderList([orderSummary({ status: 'Cancelled' })])],
+    ['a kilogram that is not the server’s text', orderList([orderSummary({ plannedInputKg: '1,5' })])],
+    ['a negative roll count', orderList([orderSummary({ plannedRollCount: -1 })])],
+    ['a version of zero', orderList([orderSummary({ version: 0 })])],
+    ['a closed order without its close time', orderList([orderSummary({ status: 'Closed' })])],
+    ['an open order with a close time', orderList([orderSummary({ closedAtUtc: '2026-09-19T10:00:00.000Z' })])],
+    ['a half-filled target', orderList([orderSummary({ target: { basis: 'InputMass' } })])],
+  ])('fails closed on %s', (_case, body) => {
+    expect(decodeOrderList(body)).toBeNull()
+  })
+})
+
+describe('closeBody', () => {
+  it('sends the version the screen read and nothing else', () => {
+    expect(closeBody({ idempotencyKey: 'k', expectedVersion: 4 })).toEqual({ expectedVersion: 4 })
   })
 })

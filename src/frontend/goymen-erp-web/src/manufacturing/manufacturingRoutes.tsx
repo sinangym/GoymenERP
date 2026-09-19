@@ -17,6 +17,7 @@ import {
   type ManufacturingCapabilityId,
 } from './capabilities'
 import { OrderDetailPage } from './OrderDetailPage'
+import { OrderListPage } from './OrderListPage'
 
 /**
  * `CapabilityRoute` types its prop as the shell's `CapabilityId` union, which does not
@@ -31,6 +32,11 @@ function gate(capability: ManufacturingCapabilityId, children: ReactNode) {
 }
 
 export const manufacturingRoutes: RouteObject[] = [
+  {
+    // Static before parameterized: `/uretim/emirler` is not an order id.
+    path: MANUFACTURING_ROUTE[MANUFACTURING_CAPABILITY.orderList].slice(1),
+    element: gate(MANUFACTURING_CAPABILITY.orderList, <OrderListPage />),
+  },
   {
     path: MANUFACTURING_ROUTE[MANUFACTURING_CAPABILITY.orderDetail].slice(1),
     element: gate(MANUFACTURING_CAPABILITY.orderDetail, <OrderDetailPage />),

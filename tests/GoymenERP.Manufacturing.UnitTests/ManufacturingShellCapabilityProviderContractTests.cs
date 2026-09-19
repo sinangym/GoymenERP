@@ -5,53 +5,83 @@ using GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 namespace GoymenERP.Manufacturing.UnitTests;
 
 /// <summary>
-/// The published Manufacturing shell provider (MFG-UI card D1–D3; MFG-UI-F): one route and one control on
-/// it, the frontend's ids and route (<c>src/manufacturing/capabilities.ts</c> read from the repository,
-/// so a drift is red here), company-wide scope, and <c>ImplementationAvailable: true</c> on both. The
-/// control is its parent with only its id, parent and permissions changed, so the registry's control rule
-/// (same route, context and scope; the parent's permissions kept; never available under a staged parent)
-/// holds by construction.
+/// The published Manufacturing shell provider (MFG-UI card D1–D3; MFG-UI-F; MFG-ORD): two routes — the
+/// order screen and the order list — and two controls on the order screen, the frontend's ids and routes
+/// (<c>src/manufacturing/capabilities.ts</c> read from the repository, so a drift is red here),
+/// company-wide scope, and <c>ImplementationAvailable: true</c> on all of them. Each control is its
+/// parent with only its id, parent and permissions changed, so the registry's control rule (same route,
+/// context and scope; the parent's permissions kept; never available under a staged parent) holds by
+/// construction.
 /// </summary>
 public sealed class ManufacturingShellCapabilityProviderContractTests
 {
     private const string FrontendCapabilities = "src/frontend/goymen-erp-web/src/manufacturing/capabilities.ts";
 
     [Fact]
-    public void The_order_route_and_its_fact_control_are_published_with_the_frontends_ids()
+    public void The_order_routes_and_their_controls_are_published_with_the_frontends_ids()
     {
         var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(), FrontendCapabilities));
         var provider = new ManufacturingShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
 
         Assert.Equal(("MANUFACTURING", "1.0"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(2, declarations.Count);
+        Assert.Equal(4, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
             Assert.Contains($"'{declaration.RoutePath}'", source);
             Assert.Equal(
-                ("manufacturing.order-detail", "/uretim/emir/:orderId", "MFG-01"),
-                (declaration.RouteId, declaration.RoutePath, declaration.ScreenId));
-            Assert.Equal(
-                (ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
-                    ShellCapabilityScopeRequirement.CompanyWide),
-                (declaration.RoutePrecedence, declaration.ContextRequirement, declaration.ScopeRequirement));
+                (ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide),
+                (declaration.ContextRequirement, declaration.ScopeRequirement));
             Assert.Null(declaration.GlobalProductOperation);
             Assert.True(declaration.ImplementationAvailable);
         }
 
-        var detail = Assert.Single(declarations, item => item.ParentCapabilityId is null);
-        Assert.Equal("manufacturing.orders.detail", detail.CapabilityId);
+        var detail = Assert.Single(declarations, item => item.CapabilityId == "manufacturing.orders.detail");
+        Assert.Equal(
+            ("manufacturing.order-detail", "/uretim/emir/:orderId", "MFG-01",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic),
+            (detail.RouteId, detail.RoutePath, detail.ScreenId, detail.RoutePrecedence));
+        Assert.Null(detail.ParentCapabilityId);
         Assert.Equal([ErpPermissions.ManufacturingOrdersRead], detail.RequiredPermissions);
 
-        // A control: the same route, its parent's permission plus the write one (card D3).
-        var facts = Assert.Single(declarations, item => item.ParentCapabilityId is not null);
-        Assert.Equal(("manufacturing.orders.facts", "manufacturing.orders.detail"), (facts.CapabilityId, facts.ParentCapabilityId));
-        Assert.Equal([ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingFactsRecord], facts.RequiredPermissions);
+        // The list is its own route and its own screen: static, so it never matches as an order id.
+        var list = Assert.Single(declarations, item => item.CapabilityId == "manufacturing.orders.list");
         Assert.Equal(
-            detail with { CapabilityId = facts.CapabilityId, ParentCapabilityId = facts.ParentCapabilityId, RequiredPermissions = facts.RequiredPermissions },
-            facts);
-        Assert.Superset(detail.RequiredPermissions.ToHashSet(StringComparer.Ordinal), facts.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
+            ("manufacturing.order-list", "/uretim/emirler", "MFG-02", ShellCapabilityRoutePrecedence.Static),
+            (list.RouteId, list.RoutePath, list.ScreenId, list.RoutePrecedence));
+        Assert.Null(list.ParentCapabilityId);
+        Assert.Equal([ErpPermissions.ManufacturingOrdersRead], list.RequiredPermissions);
+
+        // The controls: the same route as the order screen, its permission plus their own.
+        AssertControl(declarations, detail, "manufacturing.orders.facts",
+            [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingFactsRecord]);
+        AssertControl(declarations, detail, "manufacturing.orders.close",
+            [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingOrdersClose]);
+
+        // Closing is not recording: neither control's permissions contain the other's own permission.
+        var facts = Assert.Single(declarations, item => item.CapabilityId == "manufacturing.orders.facts");
+        var close = Assert.Single(declarations, item => item.CapabilityId == "manufacturing.orders.close");
+        Assert.DoesNotContain(ErpPermissions.ManufacturingOrdersClose, facts.RequiredPermissions);
+        Assert.DoesNotContain(ErpPermissions.ManufacturingFactsRecord, close.RequiredPermissions);
+    }
+
+    private static void AssertControl(IReadOnlyCollection<ShellCapabilityDeclaration> declarations,
+        ShellCapabilityDeclaration parent, string capabilityId, string[] permissions)
+    {
+        var control = Assert.Single(declarations, item => item.CapabilityId == capabilityId);
+        Assert.Equal(parent.CapabilityId, control.ParentCapabilityId);
+        Assert.Equal(permissions, control.RequiredPermissions);
+        Assert.Equal(
+            parent with
+            {
+                CapabilityId = control.CapabilityId,
+                ParentCapabilityId = control.ParentCapabilityId,
+                RequiredPermissions = control.RequiredPermissions,
+            },
+            control);
+        Assert.Superset(parent.RequiredPermissions.ToHashSet(StringComparer.Ordinal),
+            control.RequiredPermissions.ToHashSet(StringComparer.Ordinal));
     }
 
     private static string FindRepositoryRoot()

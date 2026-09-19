@@ -151,7 +151,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
-                "b6ce24f17c5d9c8ae56ac36ebc45cb8269599db318a6206317fec632ff134ae3",
+                "ece62e44f90d8396f12fff01fbb0625b7d202b77196bf368fd3dffea5ced64f1",
 
             // organization
             ["tools/relational_inventory/organization.txt"] =
@@ -489,7 +489,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "55bbdf12bddf4c74e0cfb2bb4a1131e2f8385d2332bc457658b8ff1d3cfd420b",
+                        "f89b494d209ca3be43b950d33dfad580ff71a968f856eb5314ac77e88334af08",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

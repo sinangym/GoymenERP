@@ -1,23 +1,27 @@
 /**
- * Capability ids of the Manufacturing order screen — the frontend's side of the
+ * Capability ids of the Manufacturing order screens — the frontend's side of the
  * coordinator-approved MFG-UI card (D2), not a grant.
  *
- * The server's `ManufacturingShellCapabilityProvider` declares both ids PUBLISHED
+ * The server's `ManufacturingShellCapabilityProvider` declares these ids PUBLISHED
  * (`ImplementationAvailable: true`, MFG-UI-F #349, after the `mfg` browser acceptance). The
  * registry still publishes each only to an actor holding its permissions in the context
  * company; for anyone else `CapabilityRoute` closes the route onto the neutral not-found
  * block and `hasCapability` answers false. The frontend never mints a capability to open
  * its own screen, and the server re-authorizes every request regardless (ERP-000K §10.2).
  *
- * WHY TWO IDS. They map onto two permissions that are enforced separately on the
- * server (`ManufacturingEndpoints`):
+ * WHY FOUR IDS. They map onto the permissions the server enforces separately
+ * (`ManufacturingEndpoints`):
  *
  *   manufacturing.orders.detail <- manufacturing.orders.read
  *   manufacturing.orders.facts  <- manufacturing.orders.read + manufacturing.facts.record
+ *   manufacturing.orders.list   <- manufacturing.orders.read
+ *   manufacturing.orders.close  <- manufacturing.orders.read + manufacturing.orders.close
  *
  * Reading an order and recording a fact on it are different authorities, so a reader
  * sees the balances and NO form (card D3: without the capability the control is not
- * drawn; the server enforces either way).
+ * drawn; the server enforces either way). Closing is a third authority: whoever may
+ * record a fact does not thereby close the order, and the close button is a control of
+ * the detail screen, drawn only for its own capability.
  *
  * This is a technical, functional sub-view (card D1). The canonical production screens
  * (PR-09/13/14/15) are `DECISION_ONLY_REFERENCE_MISSING`; nothing here is a locked
@@ -29,6 +33,10 @@ export const MANUFACTURING_CAPABILITY = {
   orderDetail: 'manufacturing.orders.detail',
   /** The fact forms INSIDE the order screen. Not a route — a control. */
   orderFacts: 'manufacturing.orders.facts',
+  /** MFG-02 the company's production orders. Route `/uretim/emirler`. */
+  orderList: 'manufacturing.orders.list',
+  /** The close action INSIDE the order screen. Not a route — a control, like the fact forms. */
+  orderClose: 'manufacturing.orders.close',
 } as const
 
 export type ManufacturingCapabilityId =
@@ -37,14 +45,24 @@ export type ManufacturingCapabilityId =
 /** Route path per routed capability, as handed to the shell owner. */
 export const MANUFACTURING_ROUTE: Record<string, string> = {
   [MANUFACTURING_CAPABILITY.orderDetail]: '/uretim/emir/:orderId',
+  [MANUFACTURING_CAPABILITY.orderList]: '/uretim/emirler',
 }
 
-/** Nav label. None: an order is opened by its id, never from the sidebar. */
+/**
+ * Nav label per routed capability. The detail has none — an order is opened from the list or by
+ * its id — and the list is the module's one sidebar entry.
+ */
 export const MANUFACTURING_NAV_LABEL: Record<string, string> = {
   [MANUFACTURING_CAPABILITY.orderDetail]: '',
+  [MANUFACTURING_CAPABILITY.orderList]: 'Üretim emirleri',
 }
 
 /** Concrete path to one order. */
 export function orderDetailPath(orderId: string): string {
   return `/uretim/emir/${encodeURIComponent(orderId)}`
+}
+
+/** The order list's own path. */
+export function orderListPath(): string {
+  return MANUFACTURING_ROUTE[MANUFACTURING_CAPABILITY.orderList]
 }

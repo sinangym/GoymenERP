@@ -14,13 +14,16 @@ namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
 /// Manufacturing's published shell capability provider through the real host on a real SQL Server
-/// (MFG-UI-F, the S03-c pattern): the order screen and its fact-form control follow the Manufacturing
-/// permissions of the actor in the context company. The grants are synthetic, isolated role assignments in
+/// (MFG-UI-F, the S03-c pattern; MFG-ORD adds the order list and the close control): the screens and the
+/// two controls follow the Manufacturing permissions of the actor in the context company. The grants are synthetic, isolated role assignments in
 /// this test's own database; they are not a Sinan or production grant and are never seeded.
 /// <list type="bullet">
 /// <item>no grant opens nothing;</item>
 /// <item><c>facts.record</c> alone opens nothing: the control needs its parent's read;</item>
-/// <item>read + record opens both; read alone opens the order screen, not the forms;</item>
+/// <item>read + record opens the screen, its forms and the list; read alone opens the screen and the
+/// list, not the forms and not the close;</item>
+/// <item>the close control needs its own name on top of the read, and recording a fact never opens it
+/// (MFG-ORD: three authorities, not one);</item>
 /// <item>the grant of company A opens nothing in company B for the same actor (who holds a
 /// non-Manufacturing assignment there, so the context resolves and the answer is measured, not a 403);</item>
 /// <item>a site-scoped grant opens nothing (the declarations are company-wide, K-1), and a site-scoped
@@ -29,8 +32,11 @@ namespace GoymenERP.Api.IntegrationTests;
 /// </summary>
 public sealed class ManufacturingShellCapabilitySqlServerRelationalAcceptanceTests
 {
+    // Ordinal order, as the snapshot projection sorts them: close < detail < facts < list.
+    private const string Close = "manufacturing.orders.close";
     private const string Detail = "manufacturing.orders.detail";
     private const string Facts = "manufacturing.orders.facts";
+    private const string List = "manufacturing.orders.list";
 
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
@@ -60,11 +66,12 @@ public sealed class ManufacturingShellCapabilitySqlServerRelationalAcceptanceTes
                 Assert.Empty(ManufacturingOnly(await ReadAsync(recorderOnly)));
             }
 
-            // + read: the order screen and, with the record permission already held, its forms.
+            // + read: the order screen, its forms (the record permission is already held) and the list,
+            // which needs only the read (MFG-ORD). NOT the close: that is its own name.
             await GrantAsync(factory, TestUsers.CompanyA, CompanyA, ErpPermissions.ManufacturingOrdersRead, AccessScopeType.Company, CompanyA);
             using (var recorder = factory.CreateClientFor(TestUsers.CompanyA, CompanyA))
             {
-                Assert.Equal(new[] { Detail, Facts }, ManufacturingOnly(await ReadAsync(recorder)));
+                Assert.Equal(new[] { Detail, Facts, List }, ManufacturingOnly(await ReadAsync(recorder)));
             }
 
             // The grants are company A's. The same actor gets a non-Manufacturing assignment in company B, so the
@@ -89,12 +96,27 @@ public sealed class ManufacturingShellCapabilitySqlServerRelationalAcceptanceTes
                 Assert.Empty(ManufacturingOnly(snapshot));
             }
 
-            // + a company-wide read: the order screen only. Read alone never opens the forms, and the record
-            // permission this actor holds is site-scoped, so it does not count.
+            // + a company-wide read: the order screen and the list. Read alone never opens the forms, and the
+            // record permission this actor holds is site-scoped, so it does not count.
             await GrantAsync(factory, TestUsers.CompanyB, CompanyB, ErpPermissions.ManufacturingOrdersRead, AccessScopeType.Company, CompanyB);
             using (var reader = factory.CreateClientFor(TestUsers.CompanyB, CompanyB))
             {
-                Assert.Equal(new[] { Detail }, ManufacturingOnly(await ReadAsync(reader)));
+                Assert.Equal(new[] { Detail, List }, ManufacturingOnly(await ReadAsync(reader)));
+            }
+
+            // MFG-ORD, the close's own axis, measured on an actor that holds NO fact permission company-wide:
+            // + close opens the close control beside the screen and the list, and never the fact forms.
+            await GrantAsync(factory, TestUsers.CompanyB, CompanyB, ErpPermissions.ManufacturingOrdersClose, AccessScopeType.Company, CompanyB);
+            using (var closer = factory.CreateClientFor(TestUsers.CompanyB, CompanyB))
+            {
+                Assert.Equal(new[] { Close, Detail, List }, ManufacturingOnly(await ReadAsync(closer)));
+            }
+
+            // The close alone, on a fresh actor: a control never opens without its parent's read.
+            await GrantAsync(factory, TestUsers.NoAssignment, CompanyA, ErpPermissions.ManufacturingOrdersClose, AccessScopeType.Company, CompanyA);
+            using (var closeOnly = factory.CreateClientFor(TestUsers.NoAssignment, CompanyA))
+            {
+                Assert.Empty(ManufacturingOnly(await ReadAsync(closeOnly)));
             }
         }
         finally

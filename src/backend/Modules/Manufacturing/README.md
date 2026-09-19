@@ -70,6 +70,8 @@ Deliberate limits of this slice:
 | `POST /orders` | `manufacturing.orders.create` | 201 `OrderViewV1` |
 | `POST /orders/{orderId}/input-issues` · `input-returns` · `wip-measurements` · `outputs` | `manufacturing.facts.record` | 200 `OrderViewV1` |
 | `GET /orders/{orderId}` | `manufacturing.orders.read` | 200 `OrderViewV1`: each roll's issued − returned = outputs by class + WIP + unexplained (signed), cost `NotCalculated` |
+| `GET /orders` (MFG-ORD) | `manufacturing.orders.read` | 200 `OrderListViewV1`: one page of this company's orders, newest first |
+| `POST /orders/{orderId}/close` (MFG-ORD) | `manufacturing.orders.close` | 200 `OrderViewV1` (closed), or the domain's refusal |
 
 Rules held here:
 
@@ -97,11 +99,22 @@ Rules held here:
   - A client branches on the code, not on the endpoint. A code a screen does not handle is shown as a generic refusal.
   - Narrowing per endpoint is a separate change: the endpoint, the regenerated OpenAPI and the contract expectations change together.
 
-Not here: closing an order, a list or search, cost, Inventory movements (T15), or any role assignment.
+Not here: cost, search beyond the order list's status filter, Inventory movements (T15), or any role assignment.
+
+### MFG-ORD — the order list and the close (coordinator-approved card)
+
+- **List** `GET /orders?pageSize&cursor&status`. The stored rows only: plan, work center, process, status, version, planned roll count, planned input mass (lossless text), the order's target snapshot, created and closed times. **No balance, no difference and no engine answer** — those are one order's own reads — and **no roll or order label**: the label read is Inventory's (ÜRÜN / T15), so the id travels as a technical reference and the screen says so.
+  - Newest first (`createdAtUtc desc, id desc`), page size 1–100 (default 50), keyset cursor as Sales' draft list (#257): opaque, bound to the company and ordering that produced it. A cursor of another company or ordering, or one that cannot be read, is 400 on `cursor` (`manufacturing_list_cursor_invalid` inside the store) — never a silent first page. `status` is an `OrderStatus` name exactly (`Open` / `Closed`); anything else is 400 on `status`.
+  - Another company's order is in no page: the list runs under the company context and the tenant filter, and it stores nothing.
+- **Close** `POST /orders/{orderId}/close` with `expectedVersion`, one `Idempotency-Key` per attempt.
+  - The rule is the domain's and unchanged (MFG-4, Business 5728619644): every planned roll accounts for its own issued mass, a surplus on one roll never covers a gap on another, remaining WIP stays as its own position, and any unexplained difference refuses the close with `manufacturing_unexplained_difference` (422). **No tolerance and no write-off**, here or on the screen.
+  - ADR-011: the success is recorded in the same save as the close and its audit event (§6, `manufacturing.order.close.v1`); a terminal not-found or version conflict is recorded on its own and replays (§7); the loser of a race on one key answers from the winner's record (§8). A closed order refuses a second close with `manufacturing_order_closed` — a replay of the first key is the first answer, never a second close.
+  - `manufacturing.orders.close` is its own permission, registered centrally and granted by a human gate. Recording a fact does not close an order.
 
 ## MFG-UI — the order screen (approved card, D1–D5)
 
 - **Shell provider** `Infrastructure/Shell/ManufacturingShellCapabilityProvider`: `manufacturing.orders.detail` → `/uretim/emir/:orderId` (`manufacturing.orders.read`) and its control `manufacturing.orders.facts` (+ `manufacturing.facts.record`). Company-wide, single company.
+  - **MFG-ORD adds** the list route `manufacturing.orders.list` → `/uretim/emirler` (`MFG-02`, static, `manufacturing.orders.read`) and a second control on the order screen, `manufacturing.orders.close` (+ `manufacturing.orders.close`). Four declarations in total; the controls stay their parent with only id, parent and permissions changed.
   - **Published (MFG-UI-F):** `ImplementationAvailable: true` on both rows. The `mfg` browser suite accepted the staged screen (#323, run 35438064043), and it runs on the `normal` profile since this change.
     - The facts control is the detail with only its id, parent and permissions changed, so the registry's control rule holds by construction: same route, context and scope; the parent's permission kept; never available under a staged parent.
     - Real SQL (`ManufacturingShellCapabilitySqlServerRelationalAcceptanceTests`, through the real host):
@@ -321,7 +334,7 @@ Pure, decimal, versioned calculators on the same core and under the same rules a
 
 - No stock movement, lot or label: Inventory owns those.
 - No trim/kerf value, tolerance number, template, rounding stage or roll-substitution policy. The only formulas are the five process engines (MFG-6…9, DEC-PRDCT-001's order complete) and the mass-balance calculator (MFG-BAL) above, and every parameter is supplied to them.
-- No UI yet (the normal screen is the next card); HTTP since MFG-API, persistence since MFG-5 (above).
+- No UI beyond the order screen and its list (MFG-UI, MFG-ORD); HTTP since MFG-API, persistence since MFG-5 (above).
 - No planning, capacity or costing on top of the engines yet: each engine's plan slice (the #342 pattern) comes with its sources.
 
 ## dependency_wait
