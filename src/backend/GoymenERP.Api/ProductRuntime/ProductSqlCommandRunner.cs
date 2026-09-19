@@ -11,6 +11,7 @@ using GoymenERP.Modules.Idempotency.Infrastructure.Executions;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Domain.Products;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
@@ -89,7 +90,9 @@ public sealed class ProductSqlCommandRunner(ProductRuntimeOptions options, IServ
         try
         {
             await using var product = await ProductDraftParticipant.EnlistAsync(connection, transaction, current.Context, cancellationToken,
-                onStaged: token => observer.ObserveAsync(ProductCommandAttemptStage.ProductStaged, current.Context, token));
+                onStaged: token => observer.ObserveAsync(ProductCommandAttemptStage.ProductStaged, current.Context, token),
+                // PRD-UNIT-1: without a registered Settings catalog a unit reference stays refused (fail-closed).
+                units: scope.ServiceProvider.GetService<ISettingsUnitIdentityCatalogV1>());
             await using var audit = await GroupSharedAuditSession.EnlistAsync(scope.ServiceProvider.GetRequiredService<AuditDbContext>(),
                 connection, transaction, current.Context, cancellationToken);
             await using var terminal = await GroupSharedCommandTerminalSession.EnlistAsync(connection, transaction,

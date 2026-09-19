@@ -73,6 +73,26 @@ public sealed class ProductReferenceValidationTests
     }
 
     [Fact]
+    public async Task Only_the_stock_and_sales_unit_roles_are_open_and_the_others_never_reach_the_catalogue()
+    {
+        // U-08 minimal (PRD-UNIT-1): purchase, price, production and package wait for their own decision.
+        var catalog = new Catalog();
+        var exception = await Assert.ThrowsAsync<ProductValidationException>(() => new ProductDraftValidator(catalog)
+            .ValidateCreateAsync(new("Sac", catalog.Group.Id, References: new(Units: new(Stock: catalog.UnitId, Sales: catalog.UnitId,
+                Purchase: catalog.UnitId, Price: catalog.UnitId, Production: catalog.UnitId, Package: catalog.UnitId)))));
+
+        Assert.Equal([(catalog.UnitId, true), (catalog.UnitId, false)], catalog.CheckedUnits);
+        Assert.Equal(
+            [
+                new ProductFieldError("references.units.purchase", "invalid_reference"),
+                new ProductFieldError("references.units.price", "invalid_reference"),
+                new ProductFieldError("references.units.production", "invalid_reference"),
+                new ProductFieldError("references.units.package", "invalid_reference"),
+            ],
+            exception.Errors);
+    }
+
+    [Fact]
     public async Task Supplied_template_fields_must_pass_the_catalog_profile()
     {
         var catalog = new Catalog();
