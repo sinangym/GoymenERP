@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Product.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Domain.Products;
 using Microsoft.EntityFrameworkCore;
@@ -19,6 +20,26 @@ public sealed class ProductReadStore(ProductDbContext context) : IProductSalesRe
         ArgumentNullException.ThrowIfNull(scope);
         var row = await context.Products.AsNoTracking().SingleOrDefaultAsync(product => product.Id == productId, cancellationToken);
         return row?.ToRecord();
+    }
+
+    /// <summary>
+    /// The released family definition when it is well formed; null when none is released or the release
+    /// is malformed (a read of options is not the place to fail: the catalogue is simply unavailable).
+    /// </summary>
+    public async Task<ProductFamilyDefinitionV2?> ReadFamilyDefinitionAsync(GroupSharedMasterReadContext authority,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(authority);
+        try
+        {
+            var definition = await new SqlProductFamilyDefinitionSource(context).GetAsync(cancellationToken);
+            ProductFamilyDefinitionRulesV2.RequireWellFormed(definition);
+            return definition;
+        }
+        catch (ProductOperationException)
+        {
+            return null;
+        }
     }
 
     public async Task<ProductStoredRecord?> ReadByIdAsync(GroupSharedMasterReadContext authority, Guid id,

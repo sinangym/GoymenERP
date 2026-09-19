@@ -4,9 +4,9 @@ namespace GoymenERP.Modules.Product.Application.Contracts;
 /// Family-required field, reference and tracking validation that a Product must pass
 /// before a Sales selection can use it (DEC-PRD-002/010, Business #254 section 4).
 /// The first family's rules are accepted (GDC band/coil, kg→kg; Business #265 5722701085) and
-/// encoded by <c>GdcBandCoilFamilyRequirementPolicyV1</c>; its data (family, template fields,
-/// controlled quality and coating lists) comes from the authorised source through
-/// <see cref="IGdcBandCoilFamilyDefinitionSourceV1"/>, which has none yet. An
+/// encoded by <c>ProductFamilyRequirementPolicyV2</c>; its data (families, template fields,
+/// controlled dictionaries) comes from the Product-owned registry through
+/// <see cref="IProductFamilyDefinitionSourceV2"/> (PRD-FAM-1). An
 /// implementation must never report "no errors" for a
 /// family it holds no accepted rule set for, and must not infer requiredness, scale or
 /// tracking from completeness labels, examples or the U-09 candidate table.

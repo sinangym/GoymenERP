@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GoymenERP.Modules.Product.Application.Contracts;
 
 /// <summary>
@@ -16,7 +18,22 @@ public interface IProductService
         string idempotencyKey, CancellationToken cancellationToken);
     Task<ProductMutationResponse> EditDraftAsync(Guid id, EditProductDraftRequest request,
         string idempotencyKey, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// DEC-PRD-010: approves a Draft card for firm use (Draft -> Active) at the version the approver
+    /// read. Needs the global Product <c>Activate</c> authority; replay and races follow the same
+    /// command boundary as the draft writes.
+    /// </summary>
+    Task<ProductMutationResponse> ActivateAsync(Guid id, ActivateProductRequest request,
+        string idempotencyKey, CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// The approval body: only the version the approver read. The card is the route's; an unknown member
+/// (a lifecycle, a company, anything else) is refused at binding, as for the draft requests.
+/// </summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record ActivateProductRequest([property: JsonRequired] string ExpectedVersion);
 
 public sealed record ProductPage(IReadOnlyList<ProductDraftView> Items, string? NextCursor);
 public sealed record ProductListQuery(string? Q = null, string? Lifecycle = null,

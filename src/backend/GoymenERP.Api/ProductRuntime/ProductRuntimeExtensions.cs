@@ -72,12 +72,13 @@ public static class ProductRuntimeExtensions
         // Product's four screens in the shell, granted only from the global Product authority.
         services.AddSingleton<IShellCapabilityProvider, ProductShellCapabilityProvider>();
         // C3: the Product owner's operational-selection runtimes (sales and stock), composed as the
-        // owner decided. The accepted GDC band/coil rule set over the shipped unavailable definition
-        // source: until the authorised data exists every otherwise-valid selection is 503
-        // product_family_policy_unavailable. No grant, no Settings registration of its own; without
-        // the configured runtime or a registered Settings provider both ports answer 503.
-        services.TryAddScoped<IGdcBandCoilFamilyDefinitionSourceV1, UnavailableGdcBandCoilFamilyDefinitionSourceV1>();
-        services.TryAddScoped<IProductFamilyRequirementPolicyV1, GdcBandCoilFamilyRequirementPolicyV1>();
+        // owner decided. The accepted GDC band/coil rule set over the released family definition read
+        // from Product's own registry (PRD-FAM-1, #334): while the registry holds no released family,
+        // every otherwise-valid selection is 503 product_family_policy_unavailable, as before. No grant,
+        // no Settings registration of its own; without the configured runtime or a registered Settings
+        // provider both ports answer 503.
+        services.TryAddScoped<IProductFamilyDefinitionSourceV2, SqlProductFamilyDefinitionSource>();
+        services.TryAddScoped<IProductFamilyRequirementPolicyV1, ProductFamilyRequirementPolicyV2>();
         services.AddScoped<IProductSalesEligibilityV1>(provider => CreateEligibility<IProductSalesEligibilityV1>(provider,
             (company, user, authority, records, policy, units) =>
                 new ProductSalesEligibilityService(company, user, authority, records, policy, units),
@@ -150,4 +151,5 @@ internal sealed class UnconfiguredProductService : IProductService
     public Task<ProductReferenceOptions> GetReferenceOptionsAsync(ProductReferenceQuery query, CancellationToken cancellationToken) => throw Denied();
     public Task<ProductMutationResponse> CreateDraftAsync(CreateProductDraftRequest request, string idempotencyKey, CancellationToken cancellationToken) => throw Denied();
     public Task<ProductMutationResponse> EditDraftAsync(Guid id, EditProductDraftRequest request, string idempotencyKey, CancellationToken cancellationToken) => throw Denied();
+    public Task<ProductMutationResponse> ActivateAsync(Guid id, ActivateProductRequest request, string idempotencyKey, CancellationToken cancellationToken) => throw Denied();
 }

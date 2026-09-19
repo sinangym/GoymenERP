@@ -41,7 +41,7 @@ public sealed class ProductDraftValidator(IProductReferenceCatalog catalog)
             errors.Add(new("classification", "invalid_reference"));
         }
 
-        await ValidateReferencesAsync(references, errors, cancellationToken);
+        await ValidateReferencesAsync(request.FamilyId, references, errors, cancellationToken);
         ThrowIfInvalid(errors);
         return new(name, group, request.ClassId, request.FamilyId, roles, references);
     }
@@ -137,12 +137,15 @@ public sealed class ProductDraftValidator(IProductReferenceCatalog catalog)
         foreach (var (field, id) in Units(references.Units)) { RequireOptionalId(id, field, errors); }
     }
 
-    private async Task ValidateReferencesAsync(ProductReferences references, List<ProductFieldError> errors,
+    private async Task ValidateReferencesAsync(Guid? familyId, ProductReferences references, List<ProductFieldError> errors,
         CancellationToken cancellationToken)
     {
         foreach (var (field, id) in Units(references.Units))
         {
-            if (id.HasValue && !await catalog.IsUnitValidAsync(id.Value, field == "references.units.stock", cancellationToken))
+            // U-08 minimal (PRD-UNIT-1): only the stock and sales roles are open; the others are refused
+            // without asking the catalogue until their own decision.
+            if (id.HasValue && (!OpenUnitRoles.Contains(field)
+                || !await catalog.IsUnitValidAsync(id.Value, field == "references.units.stock", cancellationToken)))
             {
                 errors.Add(new(field, "invalid_reference"));
             }
@@ -150,7 +153,7 @@ public sealed class ProductDraftValidator(IProductReferenceCatalog catalog)
 
         if (references.TemplateId.HasValue)
         {
-            errors.AddRange(await catalog.ValidateTemplateAsync(references, cancellationToken));
+            errors.AddRange(await catalog.ValidateTemplateAsync(familyId, references, cancellationToken));
         }
 
         if (references.TrackingPolicyId.HasValue
@@ -159,6 +162,8 @@ public sealed class ProductDraftValidator(IProductReferenceCatalog catalog)
             errors.Add(new("references.trackingPolicyId", "invalid_reference"));
         }
     }
+
+    private static readonly string[] OpenUnitRoles = ["references.units.stock", "references.units.sales"];
 
     private static IEnumerable<(string Field, Guid? Id)> Units(ProductUnitReferences? units)
     {

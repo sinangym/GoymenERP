@@ -41,7 +41,10 @@ public static class InventoryStoreCodes
     /// </summary>
     public const string LotNotFound = "inventory_lot_not_found";
 
-    /// <summary>The same lot id was offered with different facts (product, heat or coil).</summary>
+    /// <summary>
+    /// The same lot id was offered with different facts (product, heat or coil), or the id is held by
+    /// another company (invisible here; a retry gets the same answer, #324 P3-1).
+    /// </summary>
     public const string LotConflict = "inventory_lot_conflict";
 
     /// <summary>A label and its lot name different products: a lot is of one product.</summary>
@@ -50,7 +53,10 @@ public static class InventoryStoreCodes
     /// <summary>A movement names a label this company has not registered.</summary>
     public const string LabelNotRegistered = "inventory_label_not_registered";
 
-    /// <summary>The same label id was offered with different identity facts, or a history that does not extend the stored one.</summary>
+    /// <summary>
+    /// The same label id was offered with different identity facts, or a history that does not extend the
+    /// stored one, or the id is held by another company (invisible here; a retry gets the same answer).
+    /// </summary>
     public const string LabelConflict = "inventory_label_conflict";
 
     /// <summary>

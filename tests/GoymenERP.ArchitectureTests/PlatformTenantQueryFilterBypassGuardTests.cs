@@ -44,9 +44,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for FIN-UI-1a (#325) on top of BROWSER-CI a2 part 2 (#330) and SALES-API (#321): the
     // staged Finance shell provider registered before the shell authority is chosen (C+O+P+S+F row), beside
     // #330's one call to C01E2eFixtureWriterActivation.Configure. No OpenAPI-generation, network or
-    // hosted-service surface of the startup source changed otherwise.
+    // hosted-service surface of the startup source changed otherwise. Re-fingerprinted for PRD-UNIT-1: one
+    // singleton registration of Settings' unit-identity catalog (immutable source data); nothing else.
     private const string ReviewedOpenApiStartupFingerprint =
-        "777a46487c2eb01d909d1b1cdee0af8ac1f8ea7400246af577b3bba600b8a01a";
+        "aa28a9b91c9102dc3d8cefcc715228be94b53f74bd8dfeeb87d1ce3cdcf94cb0";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -78,10 +79,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "0a5d40cdf5b24b687eb6acbf6f96d4b70d050a24e9268498aa6a12007bb9e525";
     private const string SqlServerRcsiIntegrationProjectPath =
         "tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj";
-    // Re-fingerprinted for the ProjectReferences of the module SQL acceptance classes (Inventory,
-    // Accounting, Finance, Manufacturing, Sales). Publish target and discovery contract unchanged.
+    // Re-fingerprinted for #331: one linked Compile item (the browser-suite runner's BrowserSuiteHost.cs,
+    // for BrowserSuiteHostEnvelopeTests), after the module SQL acceptance ProjectReferences. Publish
+    // target and discovery contract unchanged.
     private const string ReviewedSqlServerRcsiIntegrationProjectFingerprint =
-        "3d823b3b7f8830e0bd4b85cd30b74e34876bb6d788bef3a168c3056be74b6fe2";
+        "eed96a445bbedb5cea3f92bccc2dd0695b0dc5326defbbf7a05ce817bed852ad";
     private const string SqlServerRcsiRelationalAcceptancePath =
         "tests/GoymenERP.Api.IntegrationTests/"
         + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.cs";
@@ -127,7 +129,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // inventory
             ["tools/relational_inventory/inventory.txt"] =
-                "b2aa8f8c522d817043f50fc93003b6faeb80472b2b31ec1a3b08bf71da4e0eed",
+                "e0b8743d49e562c718ebb7051aeea7675ab993f5102e8b960aa844d1c3dc0c49",
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
@@ -143,7 +145,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // product
             ["tools/relational_inventory/product.txt"] =
-                "f6b814f1b5cb5c7dbbef5dc074ff3cb74ebf48242a1c5cbe22e06a39e8796c2c",
+                "15e67b1902045229482f995624e536aecaabd11877c47cccfb1fb2617226a414",
 
             // sales
             ["tools/relational_inventory/sales.txt"] =
@@ -204,10 +206,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "49a56885af157d474d86a1726c0e1591bcf612262036d81cf8f1e73be9571cdb",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
-                "a25322e5924213ccdf3241e0d1ff4cc15f5d6be168345894eaba3f6b77204812",
+                "0ad206ef3d741157f24c2433f887871e3fd576ef950ef57ad13b09adc9c3e0e5",
             ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
              + "Persistence/GroupSharedCommandDbContext.cs"] =
-                "8049fa3a764b3695a477be42aa585c70268601871927429e33674ac860635d08"
+                "6fe01949b839e3005d33c3aa00c02982add6a1af63482005b43b277b95c5dfc3"
         };
 
     // Accepted module initializers own one exact Migrate/EnsureCreated provider branch each.
@@ -222,12 +224,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // here (no new database capability; MigrateAsync stays 2).
                 // Re-measured for #316 on top of C3: ProductShellCapabilityProvider is registered here (a
                 // singleton shell provider; no new database capability, MigrateAsync stays 2).
+                // Re-measured for PRD-FAM-1 (#334): the family definition source and policy are the V2
+                // registry pair (a scoped EF read over ProductDbContext; no new database capability,
+                // MigrateAsync stays 2).
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs"] =
-                    new("ef07c9ff234f99afe549309e4fd7bc244d84bf3ce458e5bd39ae57c67f86d8b1",
+                    new("5c532feecc486eaeccde7db76beeb3d7ecdac7c6fe1650ad94311298c2616d2f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
+                // Re-measured for PRD-UNIT-1: the Product participant gets Settings' unit-identity catalog
+                // (GetService; unregistered stays fail-closed). SqlClient/SqlConnection counts unchanged.
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductSqlCommandRunner.cs"] =
-                    new("a7b69d45b14f11c63c12f67b44bed0588dad1e549f7022804e03cc296285fdca",
+                    new("36ee56a13d31b3c4aea130b801db15b983768eacfc2f5827047059ead463ed36",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Microsoft.Data.SqlClient"] = 1, ["SqlConnection"] = 1 }),
                 ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Services/GroupSharedAuditSession.cs"] =
@@ -255,8 +262,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
                  + "Persistence/ProductDraftParticipant.cs"] =
+                    // Re-measured for PRD-UNIT-1 (ÜRÜN): unit identities are resolved through Settings'
+                    // catalog; System.Data.Common/DbConnection counts unchanged.
                     new(
-                        "9273f2b058ad8f9863504a5f1f5a4c2605431559d0e001c19793135aaf3a238d",
+                        "f59d7bbd85559638482f4caf718bff0bd5e596fc259424d8ac12553ba4f0d815",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -335,11 +344,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // INV-2 (#293): the SqlClient namespace only to recognise a unique-key violation
                 // (SqlException 2601/2627) after SaveChanges, as the Idempotency terminal store does.
-                // No connection, command or raw SQL.
+                // No connection, command or raw SQL. Re-fingerprinted for #333 (#324 P3-1): a lot/label
+                // primary-key collision reads, tenant-filtered and AsNoTracking, whether this company holds
+                // the id (retry) or not (conflict); still no connection, command or raw SQL.
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
                     new(
-                        "aee840ce25a289eeaeb29291b71fc0eba956987066fd2a0de08783038b099c20",
+                        "af485f916d6c16be871e026ed1b747764ef8e3d34362226f1dd16e9e6fd93ce2",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -524,12 +535,28 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("09b167e9837c486f8487bc8a30518d37a98ee90d6cea5842a40df6fd7c7e00f8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
+                // PRD-FAM-1 (#334): the Down's only raw SQL is Product's existing rollback refusal (51044)
+                // while any card or registry row exists; forward fix, no row is dropped. Re-measured for
+                // ORG #2 P3-1 (CK_TemplateFields_Candidate in Up); the Down is unchanged.
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/20260919100000_AddProductFamilyRegistry.cs"] =
+                    new("8a7f1a3e29cf5c1855797ccf2008bf09789e141ef76ab9169201789e415fe649",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20260912175120_AddExplicitProductAssignments.cs"] =
                     new("b366831c39d682f7f1d45664300082806248a8b54910799c83adfcca3f64d14b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Persistence/Migrations/20260912175124_InitialGroupSharedTerminals.cs"] =
                     new("ed1ef07eb88ee1ea324479d5ab498d213ecf3cfdba4cf5ab4eae49292c4dc4c7",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // #329: each Down's only raw SQL is the module's existing rollback refusal (51042/51043).
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20260918230000_AllowProductActivateAssignments.cs"] =
+                    new("7b5ca37647eb351caa33e1dcc24b5c726e9d732ab2b4e4e434e5c285d4f2dd30",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Persistence/Migrations/20260918230100_AllowProductActivateTerminals.cs"] =
+                    new("4716d015c2cd1a883d84d95589654f2d57077c06c8c641f2f148234453138c15",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Persistence/Migrations/20260912173914_AddGlobalProductAuditSubject.cs"] =

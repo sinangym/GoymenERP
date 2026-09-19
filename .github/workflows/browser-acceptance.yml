@@ -75,8 +75,8 @@ jobs:
             pr="$EVENT_PR"
           fi
           case "$suite" in
-            smoke|c03|s03) read_only=true ;;
-            org03|u02|fin01) read_only=false ;;
+            smoke|c03) read_only=true ;;
+            org03|u02|s03|fin01) read_only=false ;;
             *) echo "::error::BROWSER_SUITE_UNKNOWN: '$suite'"; exit 1 ;;
           esac
           [[ "$pr" =~ ^[1-9][0-9]*$ ]] || { echo "::error::BROWSER_PR_INVALID: '$pr'"; exit 1; }
@@ -301,6 +301,25 @@ jobs:
             --no-restore \
             -- materialize
 
+      - name: Build the suite fixture runner
+        # Building the runner builds the Api, whose build-time OpenAPI generation starts Program with this
+        # process's environment. The run's C-01 envelope variables (exported to every step for the
+        # canonical path) would make Program request the disposable envelope outside Testing and fail the
+        # build (run 35392194453). So the build runs with every envelope variable removed (by prefix, so a
+        # new one is removed too); the next step runs the built runner with --no-build.
+        if: env.BROWSER_E2E_SUITE_FIXTURE == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          envelope=()
+          while IFS= read -r name; do envelope+=(-u "$name"); done \
+            < <(compgen -e | grep -E '^(GOYMEN_ERP_C01_E2E_|C01E2e__)' || true)
+          env "${envelope[@]}" dotnet build \
+            tests/GoymenERP.BrowserSuiteFixtureTool/GoymenERP.BrowserSuiteFixtureTool.csproj \
+            -noAutoResponse \
+            --configuration Release \
+            --no-restore
+
       - name: Materialize the suite's fixture
         # Stage 2 (a2 part 2): the suite owner's seed runs through the real API host (in process, the
         # container's validated environment, the disposable database over loopback): real endpoints and
@@ -328,6 +347,7 @@ jobs:
             --project tests/GoymenERP.BrowserSuiteFixtureTool/GoymenERP.BrowserSuiteFixtureTool.csproj \
             --configuration Release \
             --no-restore \
+            --no-build \
             -- materialize --suite "$BROWSER_SUITE"
           python3 -I -S -B tools/validate_browser_acceptance.py seed-export \
             --suite "$BROWSER_SUITE" \

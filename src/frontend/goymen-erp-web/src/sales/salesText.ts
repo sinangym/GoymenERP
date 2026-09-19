@@ -39,6 +39,18 @@ export const ORDER_DRAFT_TEXT = {
     'Şu alanları düzeltin. Önceki gönderimin sonucu hâlâ bilinmiyor; taslak kaydedilmiş olabilir.',
   referencesUnavailable:
     'Cari hesabı, satışa uygun ürün, birim ve para birimi seçenekleri henüz yayımlanmadı. Seçenekler olmadan taslak oluşturulamaz.',
+  /** Which reference source is missing and why, from the real answers — no source is guessed. */
+  referencesMissing: (missing: readonly { readonly source: string; readonly reason: string }[]) =>
+    'Sunulmayan kaynaklar: ' +
+    missing
+      .map((m) => {
+        const name =
+          m.source === 'accounts' ? 'cari hesapları' : m.source === 'currencies' ? 'para birimleri' : 'satışa uygun ürünler ve birimler'
+        const why = m.reason === 'no-list-route' ? 'liste kaynağı yayımlanmadı' : `gerçek yanıt ${m.reason}`
+        return `${name} (${why})`
+      })
+      .join('; ') +
+    '.',
   validation: {
     customerRequired: 'Cari ve bu şirketteki hesabını seçin.',
     customerNotOffered: 'Seçilen cari hesabı artık seçilebilir değil. Listeden yeniden seçin.',

@@ -48,6 +48,12 @@ const NAV_CAPABILITIES: readonly CapabilityId[] = [
    */
   CAPABILITY.organizationSitesList,
   /**
+   * Listed together with the routes that serve them (S03). Each renders only where the server's
+   * snapshot carries the capability; the 360 is reached from a row, never from the sidebar.
+   */
+  CAPABILITY.salesDraftsList,
+  CAPABILITY.salesDraftsCreate,
+  /**
    * Listed together with the routes that serve them (FIN-UI-1b). Each renders only where the server's
    * snapshot carries the capability; the new draft, the detail and the propose screen have none.
    */

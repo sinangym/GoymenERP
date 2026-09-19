@@ -22,7 +22,7 @@ namespace GoymenERP.Modules.Product.Application.Contracts;
 /// inactive, not effective on <c>EffectiveOn</c>, or (stock only) not kilogram.</item>
 /// <item><c>orderUnitId</c>: <c>invalid_reference</c> (empty), <c>unsupported_order_unit</c>.</item>
 /// <item>Field errors returned by the accepted family-required policy. The first one, GDC
-/// band/coil (<c>GdcBandCoilFamilyRequirementPolicyV1</c>), answers on
+/// band/coil (<c>ProductFamilyRequirementPolicyV2</c>), answers on
 /// <c>references.attributes.{fieldId}</c> with <c>required</c>, <c>family_invalid_value</c>,
 /// <c>family_precision_exceeded</c> or <c>family_not_controlled</c>, and on
 /// <c>references.units.stock</c> / <c>references.units.sales</c> with <c>required</c> (a missing

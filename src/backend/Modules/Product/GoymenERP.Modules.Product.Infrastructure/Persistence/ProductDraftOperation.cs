@@ -3,6 +3,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Product.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Domain.Products;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Product.Infrastructure.Persistence;
@@ -19,14 +20,14 @@ internal static class ProductDraftOperation
 
     public static async Task<ProductDraftWriteResult> StageAsync(ProductDbContext context,
         GroupSharedMasterCommandContext authority, ProductCommandIntent intent, TimeProvider clock,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, ISettingsUnitIdentityCatalogV1? units = null)
     {
         if (context.ChangeTracker.HasChanges())
             throw new InvalidOperationException("A Product attempt requires a fresh write context.");
         var envelope = JsonSerializer.Deserialize<FrozenEnvelope>(intent.CanonicalRequestJson, Json)
             ?? throw new InvalidOperationException("The frozen Product envelope is missing.");
         var operation = envelope.Operation;
-        var catalog = new ProductCodeOnlyReferenceCatalog(context, authority);
+        var catalog = new ProductRegistryReferenceCatalog(context, authority, units);
         var validator = new ProductDraftValidator(catalog);
         if (operation == "product.draft.create.v1")
         {
@@ -64,6 +65,28 @@ internal static class ProductDraftOperation
             var after = ProductStoredRecord.Capture(product, validated.References);
             row.ApplyEdit(after);
             return new(Card(before, validated.Group.Name), Card(after, validated.Group.Name), request.Reason);
+        }
+        if (operation == ProductCommandIntent.ActivateOperation)
+        {
+            if (authority.Operation != GroupSharedMasterOperation.Activate) throw WrongOperation();
+            var id = envelope.ProductId
+                ?? throw new InvalidOperationException("The frozen Product target is missing.");
+            var request = envelope.Request.Deserialize<ActivateProductRequest>(Json)
+                ?? throw new InvalidOperationException("The frozen activation request is missing.");
+            var row = await context.Products.SingleOrDefaultAsync(product => product.Id == id, cancellationToken)
+                ?? throw new ProductOperationException(ProductApiV1.NotFound, 404);
+            var before = row.ToRecord();
+            var product = before.RestoreProduct();
+            if (product.Lifecycle != ProductLifecycle.Draft)
+                throw new ProductOperationException(ProductApiV1.LifecycleConflict, 409);
+            product.Activate(ProductVersion.Parse(request.ExpectedVersion), clock.GetUtcNow());
+            var after = ProductStoredRecord.Capture(product, before.RestoreReferences());
+            row.ApplyActivation(after);
+            var groupName = await context.CodeGroups.AsNoTracking().Where(group => group.Id == row.GroupId)
+                .Select(group => group.Name).SingleOrDefaultAsync(cancellationToken)
+                ?? throw new InvalidOperationException("The stored Product code group is missing.");
+            // System action label, as for creation: the approval carries no user-supplied reason.
+            return new(Card(before, groupName), Card(after, groupName), "Ürün kartı onayı", "product.card.activated.v1");
         }
         throw new InvalidOperationException("The frozen Product operation is unsupported.");
     }

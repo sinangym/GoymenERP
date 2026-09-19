@@ -117,6 +117,8 @@ Card: #66 5733503803 (ÜRÜN). Business accepted it as an independent core slice
 | A first arrival stores the lot, its labels and their audit events in one save, or nothing | `IInventoryLotStore.SaveLotAsync` | one `SaveChanges` (SQL transaction) |
 | The lot id is the R3 identity: the same id with the same facts is a replay (labels given with it are saved as `SaveLabelAsync` would); other facts are `inventory_lot_conflict` | `InventoryStore.SaveLotAsync` | store + PK |
 | Two first arrivals of one lot: one wins, the other stores nothing (`inventory_concurrent_change` via `PK_Lots`); retried, it is a replay | `PK_Lots` | SQL |
+| A lot or label id another company holds collides on the key but is invisible here: `inventory_lot_conflict` / `inventory_label_conflict`, never `inventory_concurrent_change` — a retry would collide forever (#324 P3-1). The store re-reads the id SQL names as the duplicate key under the tenant filter; nothing of the other record is disclosed | `InventoryStore.SaveAsync` | store + PK |
+| A label stored before the lot table, naming no lot, makes `AddMaterialLots` fail visibly (547 on `FK_Labels_Lots_CompanyId_LotId`); the migration's transaction takes the lot table back, the label is untouched, no lot is invented (#324 P3-2) | `AddMaterialLots` | SQL (real-SQL case) |
 | Heat and coil are the lot's own real values; null = unknown, never empty or 0 (Ö3); a text longer than 64 is refused, never cut | `MaterialLot`, `CK_Lots_Trace` | domain + store + SQL |
 | A lot is append-only: nothing changes its heat or coil afterwards, nothing deletes it | `InventoryDbContext` write guard | write guard |
 

@@ -77,6 +77,28 @@ public sealed record ProductCommandIntent
         }, Json));
     }
 
+    public static ProductCommandIntent Activate(string key, Guid productId, ActivateProductRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (productId == Guid.Empty)
+            throw new ProductValidationException([new("productId", "invalid_reference")]);
+        try { _ = ProductVersion.Parse(request.ExpectedVersion); }
+        catch (ArgumentException)
+        {
+            throw new ProductValidationException([new("expectedVersion", "invalid_version")]);
+        }
+
+        return new(key, JsonSerializer.SerializeToElement(new
+        {
+            operation = ActivateOperation,
+            productId,
+            request,
+        }, Json));
+    }
+
+    /// <summary>The versioned command name of the DEC-PRD-010 approval.</summary>
+    public const string ActivateOperation = "product.card.activate.v1";
+
     private static string NormalizeName(string value)
     {
         try { return Domain.Products.Product.NormalizeName(value); }
