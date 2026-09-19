@@ -584,7 +584,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "PurchasingDesignTimeDbContextFactory.cs"] =
                     new(
                         "PurchasingDbContext",
-                        "1f18bc244888b237e6de9884f761bb54139c4da11e2446b4cdfac0e9d5d844d6"")
+                        "1f18bc244888b237e6de9884f761bb54139c4da11e2446b4cdfac0e9d5d844d6")
             };
 
     // Migration data/raw SQL operations are deployment-time DDL/DML, not runtime global-query-
