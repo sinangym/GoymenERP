@@ -137,7 +137,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // organization
             ["tools/relational_inventory/organization.txt"] =
-                "5e7213ff8c4fc1550084614a5b80f26c4bc5ef73c8fafbed7495877ed26b0249",
+                "867cbf0bea79eb96e1bfeb7499d6dffac0eae15eaec416d140117db78268928e",
 
             // platform
             ["tools/relational_inventory/platform.txt"] =
@@ -321,11 +321,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["FromSqlInterpolated"] = 1
                         }),
+                // OrganizationModuleExtensions re-fingerprinted for the location module read registration: one
+                // AddScoped line; its Migrate/EnsureCreated branch is unchanged.
                 ["src/backend/Modules/Organization/"
                  + "GoymenERP.Modules.Organization.Infrastructure/"
                  + "OrganizationModuleExtensions.cs"] =
                     new(
-                        "e19705b2bb98278cb7aa7e510be3f646f721c54aa69e78993657071cebaf9ce6",
+                        "653d337ab7db514447b013be1954afefe5f843091225495c8b8c5758101842cf",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
