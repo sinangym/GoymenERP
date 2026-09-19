@@ -211,7 +211,7 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
             b.HasIndex("CompanyId", "DraftId")
                 .IsUnique()
                 .HasDatabaseName("UX_DraftAttempts_DraftId")
-                .HasFilter("[DraftId] IS NOT NULL");
+                .HasFilter("[DraftId] IS NOT NULL AND [CommandName] = N'sales.order-draft.create.v1'");
 
             b.ToTable("DraftAttempts", "sales", t =>
             {

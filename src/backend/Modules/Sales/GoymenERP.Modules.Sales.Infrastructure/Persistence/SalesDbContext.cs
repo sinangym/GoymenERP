@@ -1,6 +1,7 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
+using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -41,6 +42,15 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         + "OR ([ApprovalState] = 2 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) "
         + "OR ([ApprovalState] = 3 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [RejectionReason] IS NULL) "
         + "OR ([ApprovalState] = 4 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND ([RejectionReason] IS NULL OR LEN([RejectionReason]) > 0))";
+
+    /// <summary>
+    /// UX_DraftAttempts_DraftId: a stored draft is born from exactly one create attempt. Since SALES-A1 the
+    /// state commands (submit / approve / reject) record their own attempts against the same draft, one per
+    /// key and as many as the axis allows (a rejected draft is submitted again), so the uniqueness is
+    /// filtered to the create command; the attempt key (CompanyId, CommandName, IdempotencyKeyHash) stays the
+    /// primary key for every command.
+    /// </summary>
+    internal const string CreateAttemptFilter = "[DraftId] IS NOT NULL AND [CommandName] = N'" + SalesDraftCommands.CreateV1 + "'";
 
     internal DbSet<DraftNumberRow> DraftNumbers => Set<DraftNumberRow>();
 
@@ -243,7 +253,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
         entity.Property(x => x.RefusalJson).HasColumnType("nvarchar(max)");
         entity.HasIndex(x => new { x.CompanyId, x.DraftId }).IsUnique().HasDatabaseName("UX_DraftAttempts_DraftId")
-            .HasFilter("[DraftId] IS NOT NULL");
+            .HasFilter(CreateAttemptFilter);
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<DraftRow>().WithMany()

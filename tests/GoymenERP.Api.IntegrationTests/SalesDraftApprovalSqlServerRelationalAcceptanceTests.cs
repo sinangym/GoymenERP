@@ -317,6 +317,13 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         // create + submit + approve stored the draft; the closed rejection and the stale approval are the two recorded refusals.
         Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE DraftId = @id AND Outcome = 1", ("@id", draft.Id)));
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE Outcome = 2 AND ISJSON(RefusalJson) = 1"));
+        // UX_DraftAttempts_DraftId, narrowed to the create command, still guards creation: a second create attempt
+        // for the same stored draft is refused by the index itself (2601), while the state attempts above shared the id.
+        var duplicateCreate = await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
+            "INSERT INTO sales.DraftAttempts (CompanyId, CommandName, IdempotencyKeyHash, RequestHash, ActorId, Outcome, DraftId, CorrelationId, RecordedAtUtc) "
+            + "VALUES (@c, @n, @k, @r, N'SENTETIK-actor', 1, @id, N'SENTETIK-correlation', SYSDATETIMEOFFSET()); SELECT 1",
+            ("@c", CompanyA), ("@n", SalesDraftCommands.CreateV1), ("@k", new string('a', 64)), ("@r", new string('b', 64)), ("@id", draft.Id)));
+        Assert.Equal(2601, duplicateCreate.Number);
         Assert.Equal(2, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id AND EventType IN (N'sales.order-draft.submitted.v1', N'sales.order-draft.approved.v1')",
             ("@id", draft.Id.ToString("D"))));
@@ -349,6 +356,12 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT ApprovalState FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id)));
         Assert.Equal(run.Actor, await run.ScalarAsync<string>("SELECT SubmittedBy FROM sales.Drafts WHERE Id = @id", ("@id", draft.Id)));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sys.check_constraints WHERE [name] = N'CK_Drafts_Approval'"));
+        // The refusal also covers the attempts: the submit attempt (a non-create attempt with the draft's id) is still
+        // there, and the create-only uniqueness the pre-A1 index could not hold it under is still the narrowed one.
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.DraftAttempts WHERE DraftId = @id AND CommandName <> @c", ("@id", draft.Id), ("@c", SalesDraftCommands.CreateV1)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sys.indexes WHERE [name] = N'UX_DraftAttempts_DraftId' AND is_unique = 1 AND has_filter = 1 AND filter_definition LIKE N'%sales.order-draft.create.v1%'"));
     }
 
     private static readonly SalesDraftStateAudit Submitted = new("sales.order-draft.submitted.v1", "Submit", "SENTETIK onaya gönderildi");
