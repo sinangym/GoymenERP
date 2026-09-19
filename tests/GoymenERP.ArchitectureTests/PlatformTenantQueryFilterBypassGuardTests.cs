@@ -131,7 +131,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // inventory
             ["tools/relational_inventory/inventory.txt"] =
-                "a8123a12524f95842a2dd73b59683471452f16f9b7383acdd20d771d1d9cbf94",
+                "be288874fa79b0b79727d618d88fd7d98d0e63b36136dac27b577ff67864e0c3",
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
@@ -358,17 +358,19 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // catch filter, as the other module stores do. No connection, command or raw SQL.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/InventoryOpeningCommandService.cs"] =
                     new(
-                        "ba4b8c38495ffdded4eadeed4e858a7ef45e49ee94900da6e25c62cdb39609a3",
+                        "06e075f9a95cea494802ae40e03d4a1925efa3f48f3fea9dc20e18a4527a12ef",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
                         }),
                 // Re-fingerprinted for ÜRÜN's P3 follow-up: the colliding lot/label id is read from the
                 // key error itself (SqlException.Errors 2601/2627); SqlClient count unchanged (1).
+                // Re-fingerprinted for INV-OPEN-1 part 2 on top of #341: the opening count's PK collision
+                // uses the same key-error read ('PK_OpeningCounts'); SqlClient count unchanged (1).
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
                     new(
-                        "4484b328085b6d605a6367c43ee07eee8431495ff4c1d686a0496c8339347464",
+                        "319000a3ba576f1bdd9ba83fb6472fc50ceb23ce5bc022aa3494d8312312a5f8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
