@@ -17,6 +17,7 @@ namespace GoymenERP.Manufacturing.UnitTests;
 public sealed class ManufacturingCommandServiceTests
 {
     private const string Permission = "manufacturing.facts.record";
+    private const string ClosePermission = "manufacturing.orders.close";
     private static readonly Guid Company = Guid.Parse("10000000-0000-0000-0000-000000000001");
     private static readonly Guid Actor = Guid.Parse("a1000000-0000-0000-0000-00000000000a");
     private static readonly Guid WorkCenter = Guid.Parse("c1000000-0000-0000-0000-00000000000c");
@@ -518,6 +519,191 @@ public sealed class ManufacturingCommandServiceTests
         Assert.Empty(fixture.Store.Writes);
     }
 
+    // ---- MFG-ORD: the close command ----------------------------------------------------------------
+
+    [Fact]
+    public async Task The_close_is_recorded_once_and_the_same_key_answers_from_that_record()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.BalancedOrderAsync();
+
+        var closed = await fixture.Service.CloseOrderAsync(order.Id, new CloseOrderRequestV1(order.Version), "close-1",
+            ClosePermission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Ok, false, null), (closed.Status, closed.IsReplay, closed.Code));
+        Assert.Equal("Closed", closed.Resource!.Status);
+        Assert.Equal(ClosePermission, Assert.Single(fixture.Store.Writes).PermissionCode);
+        Assert.Single(fixture.Store.Commands);
+
+        // The same key again is the stored answer, not a second close (which the domain would refuse).
+        var again = await fixture.Service.CloseOrderAsync(order.Id, new CloseOrderRequestV1(order.Version), "close-1",
+            ClosePermission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Ok, true, "corr-1"), (again.Status, again.IsReplay, again.OriginalCorrelationId));
+        Assert.Single(fixture.Store.Writes);
+    }
+
+    [Fact]
+    public async Task An_unexplained_difference_refuses_the_close_and_that_refusal_is_not_this_keys_answer()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.ApprovedOrderAsync();
+        order.IssueInput(order.Version, Guid.NewGuid(), Roll, new Kilograms(100m), At);
+        // 60 declared of 100 issued: the difference stays unexplained, and MFG-4 refuses the close.
+        order.DeclareOutput(order.Version, Guid.NewGuid(), Roll, OutputClass.GoodProduct, new Kilograms(60m), At);
+
+        var result = await fixture.Service.CloseOrderAsync(order.Id, new CloseOrderRequestV1(order.Version), "close-1",
+            ClosePermission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Unprocessable, ManufacturingRuleCodes.UnexplainedDifference),
+            (result.Status, result.Code));
+        Assert.Equal(OrderStatus.Open, order.Status);
+        Assert.Empty(fixture.Store.Writes);
+        // Not a terminal: the same key may be sent again once the missing realization is recorded.
+        Assert.Empty(fixture.Store.Commands);
+    }
+
+    [Fact]
+    public async Task A_stale_version_is_a_recorded_terminal_and_the_same_key_answers_from_it()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.BalancedOrderAsync();
+        var stale = order.Version - 1;
+
+        var conflict = await fixture.Service.CloseOrderAsync(order.Id, new CloseOrderRequestV1(stale), "close-1",
+            ClosePermission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingRuleCodes.VersionConflict, stale, order.Version),
+            (conflict.Status, conflict.Code, conflict.ExpectedVersion, conflict.CurrentVersion));
+        Assert.Equal(OrderStatus.Open, order.Status);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Single(fixture.Store.Commands);
+
+        var again = await fixture.Service.CloseOrderAsync(order.Id, new CloseOrderRequestV1(stale), "close-1",
+            ClosePermission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingRuleCodes.VersionConflict, true),
+            (again.Status, again.Code, again.IsReplay));
+        Assert.Empty(fixture.Store.Writes);
+    }
+
+    [Theory]
+    [InlineData(0L)]
+    [InlineData(-1L)]
+    public async Task A_close_without_the_version_it_read_is_invalid_and_no_authority_is_asked(long version)
+    {
+        var fixture = new Fixture();
+        var order = await fixture.BalancedOrderAsync();
+
+        var result = await fixture.Service.CloseOrderAsync(order.Id, new CloseOrderRequestV1(version), "close-1",
+            ClosePermission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Invalid, ManufacturingApiCodes.RequestInvalid, "expectedVersion"),
+            (result.Status, result.Code, result.Field));
+        Assert.Equal(0, fixture.Authority.Asked);
+        Assert.Empty(fixture.Store.Writes);
+    }
+
+    [Fact]
+    public async Task A_grant_that_is_not_company_wide_does_not_close_an_order()
+    {
+        var fixture = new Fixture();
+        var order = await fixture.BalancedOrderAsync();
+        fixture.Authority.Scope = Scope(companyWide: false, "PRODUCTION_OPERATOR");
+
+        var result = await fixture.Service.CloseOrderAsync(order.Id, new CloseOrderRequestV1(order.Version), "close-1",
+            ClosePermission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Denied, ManufacturingApiCodes.AuthorityDenied), (result.Status, result.Code));
+        Assert.Equal(OrderStatus.Open, order.Status);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.Commands);
+    }
+
+    // ---- MFG-ORD: the order list read --------------------------------------------------------------
+
+    [Fact]
+    public async Task The_list_answers_the_stored_summaries_as_text_with_the_page_the_store_gave()
+    {
+        var fixture = new Fixture();
+        fixture.Store.Summaries.Add(Summary(OrderStatus.Open, new Kilograms(1500.250m), new Kilograms(1200m)));
+        fixture.Store.Summaries.Add(Summary(OrderStatus.Closed, new Kilograms(800m), target: null));
+        fixture.Store.NextCursor = "cursor-2";
+
+        var result = await fixture.Service.ListOrdersAsync(null, null, null, CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
+        var page = result.Resource!;
+        Assert.Equal("cursor-2", page.NextCursor);
+        Assert.Equal(["Open", "Closed"], page.Orders.Select(summary => summary.Status));
+        // Kilograms keep the server's lossless text; a trailing zero is not a digit.
+        Assert.Equal("1500.25", page.Orders[0].PlannedInputKg);
+        Assert.Equal(new TargetViewV1("InputMass", "1200"), page.Orders[0].Target);
+        Assert.Null(page.Orders[1].Target);
+        // The default page and no filter: the store was asked exactly that.
+        Assert.Equal((50, (string?)null, (OrderStatus?)null), Assert.Single(fixture.Store.ListCalls));
+    }
+
+    [Fact]
+    public async Task The_list_passes_the_status_filter_and_the_cursor_it_was_given()
+    {
+        var fixture = new Fixture();
+
+        var result = await fixture.Service.ListOrdersAsync(10, "cursor-1", "Closed", CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
+        Assert.Equal((10, "cursor-1", (OrderStatus?)OrderStatus.Closed), Assert.Single(fixture.Store.ListCalls));
+    }
+
+    [Theory]
+    [InlineData(0, null, "pageSize")]
+    [InlineData(101, null, "pageSize")]
+    [InlineData(null, "open", "status")]
+    [InlineData(null, "1", "status")]
+    [InlineData(null, "Cancelled", "status")]
+    public async Task A_list_request_outside_the_contract_is_invalid_and_the_store_is_not_asked(int? pageSize,
+        string? status, string field)
+    {
+        var fixture = new Fixture();
+
+        var result = await fixture.Service.ListOrdersAsync(pageSize, null, status, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Invalid, ManufacturingApiCodes.RequestInvalid, field),
+            (result.Status, result.Code, result.Field));
+        Assert.Empty(fixture.Store.ListCalls);
+    }
+
+    [Fact]
+    public async Task A_cursor_the_store_refuses_is_answered_on_the_cursor_never_as_a_first_page()
+    {
+        var fixture = new Fixture();
+        fixture.Store.Summaries.Add(Summary(OrderStatus.Open, new Kilograms(10m), target: null));
+        fixture.Store.ListFault = ManufacturingStoreCodes.ListCursorInvalid;
+
+        var result = await fixture.Service.ListOrdersAsync(null, "not-this-company", null, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Invalid, ManufacturingApiCodes.RequestInvalid, "cursor"),
+            (result.Status, result.Code, result.Field));
+        Assert.Null(result.Resource);
+    }
+
+    [Fact]
+    public async Task A_read_that_keeps_meeting_commits_is_retryable_for_the_list_too()
+    {
+        var fixture = new Fixture();
+        fixture.Store.ListFault = ManufacturingStoreCodes.ConcurrentChange;
+
+        var result = await fixture.Service.ListOrdersAsync(null, null, null, CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Unavailable, result.Status);
+        Assert.Null(result.Resource);
+    }
+
+    private static ManufacturingOrderSummary Summary(OrderStatus status, Kilograms plannedInput, Kilograms? target) =>
+        new(Guid.NewGuid(), Company, Guid.NewGuid(), WorkCenter, ManufacturingProcess.Slitting, status, 1, 2,
+            plannedInput, target is null ? null : TargetBasis.InputMass, target, At,
+            status == OrderStatus.Closed ? Actor : null, status == OrderStatus.Closed ? At : null);
+
     private static RecordFactRequestV1 Fact(long version, string kg) => new(Guid.NewGuid(), version, Roll, kg, At);
 
     private static PermissionScope Scope(bool companyWide, params string[] roles) => new(true, companyWide,
@@ -551,6 +737,15 @@ public sealed class ManufacturingCommandServiceTests
         public User User { get; } = new();
 
         public ManufacturingCommandService Service { get; }
+
+        /// <summary>An order whose one roll accounts for everything issued: the close's own condition (MFG-4).</summary>
+        public async Task<ProductionOrder> BalancedOrderAsync()
+        {
+            var order = await ApprovedOrderAsync();
+            order.IssueInput(order.Version, Guid.NewGuid(), Roll, new Kilograms(100m), At);
+            order.DeclareOutput(order.Version, Guid.NewGuid(), Roll, OutputClass.GoodProduct, new Kilograms(100m), At);
+            return order;
+        }
 
         public async Task<ProductionOrder> ApprovedOrderAsync()
         {
@@ -733,8 +928,40 @@ public sealed class ManufacturingCommandServiceTests
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public Task CloseOrderAsync(Guid orderId, long expectedVersion, Guid closedByUserId, DateTimeOffset closedAt,
-            ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+            ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            Guard();
+            OnWrite?.Invoke(metadata);
+            var order = Orders.GetValueOrDefault(orderId)
+                ?? throw new ManufacturingStoreException(ManufacturingStoreCodes.OrderNotFound, "yok");
+            // The domain decides, as the real store does; nothing below runs for a refused close.
+            order.Close(expectedVersion, closedByUserId, closedAt);
+            Complete(metadata, order);
+            Writes.Add(metadata);
+            return Task.CompletedTask;
+        }
+
+        /// <summary>What the list answers, and what it was asked.</summary>
+        public List<ManufacturingOrderSummary> Summaries { get; } = [];
+
+        public List<(int PageSize, string? Cursor, OrderStatus? Status)> ListCalls { get; } = [];
+
+        public string? NextCursor { get; set; }
+
+        public string? ListFault { get; set; }
+
+        public Task<ManufacturingOrderPage> ListOrdersAsync(int pageSize, string? cursor, OrderStatus? status,
+            CancellationToken cancellationToken = default)
+        {
+            ListCalls.Add((pageSize, cursor, status));
+            if (ListFault is { } code)
+            {
+                throw new ManufacturingStoreException(code, "sentetik liste reddi");
+            }
+
+            var rows = Summaries.Where(summary => status is null || summary.Status == status).ToList();
+            return Task.FromResult(new ManufacturingOrderPage(rows, NextCursor));
+        }
 
         /// <summary>A read the store itself refuses (for example re-reads that keep meeting commits).</summary>
         public string? ReadFault { get; set; }

@@ -10,13 +10,15 @@
  *   recorderActor — Development user holding, company-wide in `companyId`, the five Manufacturing
  *                   permissions (plans.write, plans.approve, orders.create, facts.record, orders.read)
  *   readerActor   — Development user holding only manufacturing.orders.read there
+ *   closerActor   — Development user holding manufacturing.orders.read + manufacturing.orders.close,
+ *                   and no fact permission (MFG-ORD: closing is its own authority)
  *   companyId     — the company whose approved kilogram profile the real Settings provider answers
  *   workCenterId  — one of that company's work centers
  *   orderId       — an open order the fixture (tests/GoymenERP.BrowserSuiteFixtureTool/Suites/MFG)
  *                   arranged through the real API; the reader case reads it
  *   rollId        — that order's parent roll
  *
- * The screen's capabilities (`manufacturing.orders.detail` / `.facts`) are published by the normal
+ * The screen's capabilities (`manufacturing.orders.detail` / `.facts` / `.list` / `.close`) are published by the normal
  * runtime (MFG-UI-F; first accepted on the disposable `mfg-staged` profile, card D4) and opened to the
  * actors only by their synthetic grants.
  */
@@ -24,6 +26,7 @@
 export interface MfgSeed {
   readonly recorderActor: string
   readonly readerActor: string
+  readonly closerActor: string
   readonly companyId: string
   readonly workCenterId: string
   readonly orderId: string
@@ -67,13 +70,15 @@ export function readEnvironment(): MfgEnvironment {
   const seed: MfgSeed = {
     recorderActor: text(raw, 'recorderActor'),
     readerActor: text(raw, 'readerActor'),
+    closerActor: text(raw, 'closerActor'),
     companyId: text(raw, 'companyId', true),
     workCenterId: text(raw, 'workCenterId', true),
     orderId: text(raw, 'orderId', true),
     rollId: text(raw, 'rollId', true),
   }
-  if (seed.recorderActor === seed.readerActor) {
-    throw new Error('BROWSER_E2E_MFG_SEED binds the same actor as recorder and reader')
+  // Three distinct authorities: recording a fact, reading, and closing (MFG-ORD).
+  if (new Set([seed.recorderActor, seed.readerActor, seed.closerActor]).size !== 3) {
+    throw new Error('BROWSER_E2E_MFG_SEED must bind a distinct recorder, reader and closer')
   }
   return { apiBaseUrl, testedCommit, seed }
 }
