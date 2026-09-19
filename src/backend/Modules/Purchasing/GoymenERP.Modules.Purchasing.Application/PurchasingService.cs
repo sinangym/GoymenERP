@@ -7,6 +7,7 @@ using GoymenERP.Modules.Purchasing.Domain;
 using GoymenERP.Modules.Purchasing.Domain.Orders;
 using GoymenERP.Modules.Purchasing.Domain.Quantities;
 using GoymenERP.Modules.Purchasing.Domain.Requests;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Purchasing.Application;
 
@@ -46,6 +47,8 @@ public sealed class PurchasingService(
     private const int MaximumPageSize = 100;
     private const int MaximumCursorLength = 8192;
     private const int MaximumProductVersionLength = 64;
+    // decimal(18,3): at most 15 integer digits; a wider text is refused at the wire, never a provider exception at the save (FİNANS #350 P3-2).
+    private const int MaximumIntegerDigits = 15;
 
     // ---- requests -------------------------------------------------------------------------------
 
@@ -66,14 +69,21 @@ public sealed class PurchasingService(
         }
 
         var lines = new List<(PurchaseRequestLineRequest Line, string ProductVersion, Quantity Quantity)>(request.Lines.Count);
-        for (var index = 0; index < request.Lines.Count; index++)
+        try
         {
-            var line = request.Lines[index];
-            var productVersion = await ReadProductAsync(scope, envelope, requestHash, PurchasingCommands.RequestCreateV1, line.ProductId,
-                line.ExpectedProductVersion, line.UnitId, request.EffectiveOn, index, cancellationToken);
-            var quantity = await VerifyUnitAsync(scope, bindings.CreatePermission, line.UnitId, line.Quantity, request.EffectiveOn, $"lines[{index}]",
-                cancellationToken);
-            lines.Add((line, productVersion, quantity));
+            for (var index = 0; index < request.Lines.Count; index++)
+            {
+                var line = request.Lines[index];
+                var productVersion = await ReadProductAsync(scope, envelope, requestHash, PurchasingCommands.RequestCreateV1, line.ProductId,
+                    line.ExpectedProductVersion, line.UnitId, request.EffectiveOn, index, cancellationToken);
+                var quantity = await VerifyUnitAsync(scope, bindings.CreatePermission, line.UnitId, line.Quantity, request.EffectiveOn, $"lines[{index}]",
+                    cancellationToken);
+                lines.Add((line, productVersion, quantity));
+            }
+        }
+        catch (ReplayWinnerException winner)
+        {
+            return ReplayedRequest(winner.Replay);
         }
 
         // The last fence that can still prevent the write; none after the commit.
@@ -146,13 +156,13 @@ public sealed class PurchasingService(
         }
         catch (PurchasingVersionConflictException)
         {
-            throw await TerminalAsync(envelope, requestHash, PurchasingCommands.RequestSubmitV1,
-                new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.VersionConflict, [new("expectedVersion", "version_conflict")]), cancellationToken);
+            return await TerminalAsync(envelope, requestHash, PurchasingCommands.RequestSubmitV1,
+                new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.VersionConflict, [new("expectedVersion", "version_conflict")]), ReplayedRequest, cancellationToken);
         }
         catch (PurchasingRuleException exception) when (exception.Code == PurchasingRuleCodes.RequestNotDraft)
         {
-            throw await TerminalAsync(envelope, requestHash, PurchasingCommands.RequestSubmitV1,
-                new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.RequestNotDraft, [new("status", exception.Code)]), cancellationToken);
+            return await TerminalAsync(envelope, requestHash, PurchasingCommands.RequestSubmitV1,
+                new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.RequestNotDraft, [new("status", exception.Code)]), ReplayedRequest, cancellationToken);
         }
         catch (PurchasingRuleException exception)
         {
@@ -243,14 +253,21 @@ public sealed class PurchasingService(
             ? await ReadSourceRequestAsync(scope, request, sourceRequestId, cancellationToken)
             : null;
         var lines = new List<(PurchaseOrderLineRequest Line, string ProductVersion, Quantity Quantity)>(request.Lines.Count);
-        for (var index = 0; index < request.Lines.Count; index++)
+        try
         {
-            var line = request.Lines[index];
-            var productVersion = await ReadProductAsync(scope, envelope, requestHash, PurchasingCommands.OrderCreateV1, line.ProductId,
-                line.ExpectedProductVersion, line.UnitId, request.EffectiveOn, index, cancellationToken);
-            var quantity = await VerifyUnitAsync(scope, bindings.CreatePermission, line.UnitId, line.Quantity, request.EffectiveOn, $"lines[{index}]",
-                cancellationToken);
-            lines.Add((line, productVersion, quantity));
+            for (var index = 0; index < request.Lines.Count; index++)
+            {
+                var line = request.Lines[index];
+                var productVersion = await ReadProductAsync(scope, envelope, requestHash, PurchasingCommands.OrderCreateV1, line.ProductId,
+                    line.ExpectedProductVersion, line.UnitId, request.EffectiveOn, index, cancellationToken);
+                var quantity = await VerifyUnitAsync(scope, bindings.CreatePermission, line.UnitId, line.Quantity, request.EffectiveOn, $"lines[{index}]",
+                    cancellationToken);
+                lines.Add((line, productVersion, quantity));
+            }
+        }
+        catch (ReplayWinnerException winner)
+        {
+            return ReplayedOrder(winner.Replay);
         }
 
         await RequireStillAsync(scope, bindings.CreatePermission, cancellationToken);
@@ -324,13 +341,13 @@ public sealed class PurchasingService(
         }
         catch (PurchasingVersionConflictException)
         {
-            throw await TerminalAsync(envelope, requestHash, PurchasingCommands.OrderApproveV1,
-                new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.VersionConflict, [new("expectedVersion", "version_conflict")]), cancellationToken);
+            return await TerminalAsync(envelope, requestHash, PurchasingCommands.OrderApproveV1,
+                new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.VersionConflict, [new("expectedVersion", "version_conflict")]), ReplayedOrder, cancellationToken);
         }
         catch (PurchasingRuleException exception) when (exception.Code == PurchasingRuleCodes.OrderNotDraft)
         {
-            throw await TerminalAsync(envelope, requestHash, PurchasingCommands.OrderApproveV1,
-                new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.OrderState, [new("status", exception.Code)]), cancellationToken);
+            return await TerminalAsync(envelope, requestHash, PurchasingCommands.OrderApproveV1,
+                new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.OrderState, [new("status", exception.Code)]), ReplayedOrder, cancellationToken);
         }
         catch (PurchasingRuleException exception)
         {
@@ -343,9 +360,9 @@ public sealed class PurchasingService(
         catch (PurchasingStoreException exception) when (exception.Code == PurchasingStoreCodes.RequestLineOverSourced)
         {
             // Sinan 5738113623 §1: the shares of a request line never exceed its need; terminal for this key (§7).
-            throw await TerminalAsync(envelope, requestHash, PurchasingCommands.OrderApproveV1,
+            return await TerminalAsync(envelope, requestHash, PurchasingCommands.OrderApproveV1,
                 new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.RequestLineOverSourced,
-                    exception.Errors.Count > 0 ? exception.Errors : [new("lines", exception.Code)]), cancellationToken);
+                    exception.Errors.Count > 0 ? exception.Errors : [new("lines", exception.Code)]), ReplayedOrder, cancellationToken);
         }
         catch (PurchasingStoreException exception) when (exception.Code == PurchasingStoreCodes.ConcurrentChange)
         {
@@ -550,8 +567,9 @@ public sealed class PurchasingService(
 
                 if (errors.Any(error => error.Code == "version_conflict"))
                 {
-                    throw await TerminalAsync(envelope, requestHash, commandName,
-                        new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.VersionConflict, errors), cancellationToken);
+                    return await TerminalAsync<string>(envelope, requestHash, commandName,
+                        new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.VersionConflict, errors),
+                        replay => throw new ReplayWinnerException(replay), cancellationToken);
                 }
 
                 throw new PurchasingServiceException(422, PurchasingProblemCodesV1.UnsupportedProduct, errors);
@@ -565,11 +583,7 @@ public sealed class PurchasingService(
     private async Task<Quantity> VerifyUnitAsync(Scope scope, string? permission, Guid unitId, string quantityText, DateOnly effectiveOn,
         string field, CancellationToken cancellationToken)
     {
-        if (!decimal.TryParse(quantityText, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value))
-        {
-            throw new PurchasingServiceException(400, "validation_failed", [new($"{field}.quantity", "invalid_decimal_text")]);
-        }
-
+        var value = ReadQuantityText(quantityText, field);
         var verification = await GuardedAsync(scope, permission, () => units.VerifyAsync(scope.CompanyId, unitId, value, effectiveOn, cancellationToken),
             cancellationToken);
         if (verification.Unit is { } unit)
@@ -590,6 +604,39 @@ public sealed class PurchasingService(
             _ => new PurchasingServiceException(422, PurchasingProblemCodesV1.UnsupportedUnit,
                 [new($"{field}.unitId", verification.Code ?? PurchasingProblemCodesV1.UnsupportedUnit)]),
         };
+    }
+
+    /// <summary>
+    /// Ö2 "never rounded" (FİNANS #350 P2-1, the same pattern here): the text is validated lexically FIRST — digits and one inner '.',
+    /// a non-zero digit, at most the kilogram cap of decimals (Settings' <see cref="ExactPositiveDecimalV1"/>, the Finance / Inventory
+    /// shape) and at most 15 integer digits (the column) — and only the validated text is converted, so a text with more digits than a
+    /// decimal holds can never round ("2.9999999999999999999999999999999" is refused, it never becomes 3). The owner's profile scale
+    /// (≤ 3) is then measured by the verifier on the exact value.
+    /// </summary>
+    private static decimal ReadQuantityText(string quantityText, string field)
+    {
+        try
+        {
+            ExactPositiveDecimalV1.Parse(quantityText, Quantity.KilogramScale);
+        }
+        catch (SettingsPrerequisiteException exception) when (exception.Code == "settings_decimal_scale_exceeded")
+        {
+            throw new PurchasingServiceException(422, PurchasingProblemCodesV1.UnsupportedUnit, [new($"{field}.unitId", PurchaseUnitCodes.QuantityScaleExceeded)]);
+        }
+        catch (SettingsPrerequisiteException)
+        {
+            throw new PurchasingServiceException(400, "validation_failed", [new($"{field}.quantity", "invalid_decimal_text")]);
+        }
+
+        var point = quantityText.IndexOf('.', StringComparison.Ordinal);
+        var integerPart = point < 0 ? quantityText : quantityText[..point];
+        if (integerPart.TrimStart('0').Length > MaximumIntegerDigits)
+        {
+            throw new PurchasingServiceException(422, "validation_failed", [new($"{field}.quantity", PurchasingStoreCodes.ValueDoesNotFit)]);
+        }
+
+        // At most 18 significant digits by now: the conversion is exact.
+        return decimal.Parse(quantityText, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture);
     }
 
     // ---- replay / terminal ----------------------------------------------------------------------
@@ -631,9 +678,13 @@ public sealed class PurchasingService(
         }
     }
 
-    /// <summary>§7: the terminal refusal is recorded before it is answered; a key taken meanwhile (§8) answers the winner's record.</summary>
-    private async Task<PurchasingServiceException> TerminalAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
-        PurchasingTerminalRefusal refusal, CancellationToken cancellationToken)
+    /// <summary>
+    /// §7: the terminal refusal is recorded before it is answered. §8: if the same key was taken meanwhile, the winner's record is
+    /// the answer — its refusal replayed, or its stored record returned through <paramref name="winner"/> as a replay (FİNANS #350
+    /// P3-1, the same pattern here: never <c>concurrent_change</c> for a loser that lands on a terminal path after the winner committed).
+    /// </summary>
+    private async Task<TResponse> TerminalAsync<TResponse>(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
+        PurchasingTerminalRefusal refusal, Func<PurchasingReplay, TResponse> winner, CancellationToken cancellationToken)
     {
         try
         {
@@ -648,27 +699,32 @@ public sealed class PurchasingService(
             }
             catch (PurchasingStoreException raced)
             {
-                return Store(raced);
+                throw Store(raced);
             }
 
             if (won?.Refusal is { } recorded)
             {
-                return new PurchasingServiceException(recorded.Status, recorded.Code, recorded.Errors, isReplay: true,
+                throw new PurchasingServiceException(recorded.Status, recorded.Code, recorded.Errors, isReplay: true,
                     originalCorrelationId: won.OriginalCorrelationId);
             }
 
             if (won is { Request: not null } or { Order: not null })
             {
-                // The winner stored the transition: the same command is a replay of its result, not a refusal.
-                return new PurchasingServiceException(409, PurchasingProblemCodesV1.ConcurrentChange);
+                return winner(won);
             }
         }
         catch (PurchasingStoreException exception)
         {
-            return Store(exception);
+            throw Store(exception);
         }
 
-        return new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors);
+        throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors);
+    }
+
+    /// <summary>A create's stale-product-version refusal lost the key to a winner that stored the record (§8): the create answers that record as a replay.</summary>
+    private sealed class ReplayWinnerException(PurchasingReplay replay) : Exception("§8 winner")
+    {
+        public PurchasingReplay Replay { get; } = replay;
     }
 
     private static PurchasingServiceException Store(PurchasingStoreException exception) => exception.Code switch

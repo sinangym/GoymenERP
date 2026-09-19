@@ -209,6 +209,46 @@ public sealed class PurchasingServiceTests
             (refusal.Status, refusal.Code, refusal.Errors[0].Field, refusal.Errors[0].Code));
     }
 
+    [Theory]
+    [InlineData("2.9999999999999999999999999999999")]
+    [InlineData("1.00000000000000000000000000000001")]
+    public async Task A_quantity_text_longer_than_a_decimal_holds_is_refused_on_the_text_and_never_rounded(string text)
+    {
+        // FİNANS #350 P2-1 (the same pattern here): decimal.Parse would round these past 28 digits; the text is refused before any conversion.
+        var world = new World();
+        var refusal = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service().CreateOrderAsync(OrderOf(null, null, text), Metadata("k-long")));
+        Assert.Equal((422, PurchasingProblemCodesV1.UnsupportedUnit, "lines[0].unitId", PurchaseUnitCodes.QuantityScaleExceeded),
+            (refusal.Status, refusal.Code, refusal.Errors[0].Field, refusal.Errors[0].Code));
+        Assert.Empty(world.Store.Envelopes);
+    }
+
+    [Fact]
+    public async Task A_quantity_with_more_than_fifteen_integer_digits_does_not_fit_the_column_and_is_refused_before_any_owner()
+    {
+        var world = new World();
+        var refused = await Assert.ThrowsAsync<PurchasingServiceException>(() => world.Service().CreateOrderAsync(OrderOf(null, null, "1234567890123456"), Metadata("k-wide")));
+        Assert.Equal((422, "validation_failed", "lines[0].quantity", PurchasingStoreCodes.ValueDoesNotFit),
+            (refused.Status, refused.Code, refused.Errors[0].Field, refused.Errors[0].Code));
+        Assert.Empty(world.Store.Envelopes);
+        Assert.Equal("1.25", (await world.Service().CreateOrderAsync(OrderOf(null, null, "000000000000000001.250"), Metadata("k-zeros"))).Detail.Lines[0].Ordered);
+    }
+
+    [Fact]
+    public async Task A_same_key_race_lost_on_a_terminal_path_answers_the_winners_stored_transition()
+    {
+        // ADR-011 §8 (FİNANS #350 P3-1, the same pattern here): B loads the order after A approved it under the same key, hits a stale
+        // version, and finds the key taken when recording the refusal: A's stored transition is B's answer, as a replay.
+        var world = new World();
+        var id = (await world.Service().CreateOrderAsync(OrderOf(null, null, "5"), Metadata("k-create"))).Detail.Order.Id;
+        await world.Service().ApproveOrderAsync(id, new ApprovePurchaseOrderRequest("2"), Metadata("k-approve-a"));
+        world.Store.BeforeRefusal = (envelope, hash, command) => world.Store.PlantWinner(envelope, hash, command, id, "SENTETIK-winner");
+
+        var answer = await world.Service().ApproveOrderAsync(id, new ApprovePurchaseOrderRequest("2"), Metadata("k-approve-b"));
+
+        Assert.Equal((true, "SENTETIK-winner", "Approved", "3"), (answer.IsReplay, answer.OriginalCorrelationId, answer.Detail.Order.Status, answer.Detail.Order.Version));
+        Assert.Empty(world.Store.Refusals);
+    }
+
     [Fact]
     public async Task Approval_moves_the_order_one_version_under_the_approve_name_and_a_stale_version_is_a_recorded_terminal_refusal_that_replays()
     {
@@ -473,6 +513,12 @@ public sealed class PurchasingServiceTests
         private readonly List<StoredPurchaseOrder> _orders = [];
         public List<PurchasingWriteEnvelope> Envelopes { get; } = [];
         public List<(string Command, PurchasingTerminalRefusal Refusal)> Refusals { get; } = [];
+        public Action<PurchasingWriteEnvelope, string, string>? BeforeRefusal { get; set; }
+
+        /// <summary>Simulates the same key's winner storing its transition between this caller's replay read and its refusal record (§8).</summary>
+        public void PlantWinner(PurchasingWriteEnvelope envelope, string requestHash, string commandName, Guid orderId, string correlation) =>
+            _attempts[(commandName, envelope.IdempotencyKey)] =
+                new Attempt(envelope.ActorId, requestHash, null, _orders.Single(candidate => candidate.Order.Id == orderId), null, correlation);
         public List<(string Command, Guid Id, long Before, long After)> Transitions { get; } = [];
         public int Replays { get; private set; }
         public bool OverSourced { get; set; }
@@ -583,6 +629,7 @@ public sealed class PurchasingServiceTests
         public Task RecordRefusalAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName, PurchasingTerminalRefusal refusal,
             CancellationToken cancellationToken = default)
         {
+            BeforeRefusal?.Invoke(envelope, requestHash, commandName);
             if (_attempts.ContainsKey((commandName, envelope.IdempotencyKey)))
             {
                 throw new PurchasingStoreException(PurchasingStoreCodes.ConcurrentChange, "synthetic");
