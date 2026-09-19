@@ -100,6 +100,25 @@ public sealed class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task An_authority_lost_after_the_commit_does_not_hide_the_stored_draft()
+    {
+        // S03 (ORG #321 P3-1): the grant is revoked between the last fence and the commit. The draft and
+        // its attempt are stored; the answer is that draft, not a 403 that would make the caller drop
+        // its key and create a second one. The next request of the key meets the fence first (§5).
+        var world = new World();
+        world.Store.OnStore = () => world.Authority.Granted = false;
+        var request = Request();
+
+        var response = await world.Service().CreateDraftAsync(request, Metadata("k-1"));
+
+        Assert.False(response.IsReplay);
+        Assert.Single(world.Store.Envelopes);
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(request, Metadata("k-1")));
+        Assert.Equal(403, refused.Status);
+        Assert.Equal(1, world.Store.Replays);
+    }
+
+    [Fact]
     public async Task The_loser_of_a_same_key_race_answers_the_winners_draft_as_a_replay()
     {
         var world = new World { Store = { Race = "draft-at-store" } };
@@ -464,6 +483,8 @@ public sealed class SalesDraftServiceTests
         public List<(SalesDraftWriteEnvelope Envelope, SalesDraftTerminalRefusal Refusal)> Refusals { get; } = [];
         public int Replays { get; private set; }
         public string? Fault { get; set; }
+        /// <summary>Runs when the store is about to commit: what changes in the world between the last fence and the commit.</summary>
+        public Action? OnStore { get; set; }
         /// <summary>A same-key race lost once: "draft-at-store" (the winner stored a draft), "empty-at-store" (nothing under the key), "refusal-at-record" (the winner recorded the refusal).</summary>
         public string? Race { get; set; }
         public SalesOrderDraft? Winner { get; private set; }
@@ -472,6 +493,7 @@ public sealed class SalesDraftServiceTests
             CancellationToken cancellationToken = default)
         {
             if (Fault is not null) throw new SalesDraftStoreException(Fault, "synthetic");
+            OnStore?.Invoke();
             if (Race is "draft-at-store" or "empty-at-store")
             {
                 var race = Race;

@@ -42,9 +42,21 @@ public sealed class ProductReader(ProductReadStore store, ProductCursorCodec cur
             if (!groups.Any(group => group.Id == query.GroupId))
                 throw new ProductValidationException([new("groupId", "invalid_reference")]);
             // ClassId is echoed only as the requested filter, never as a verified
-            // catalogue entry. All five unavailable sources remain explicit.
-            return new ProductReferenceOptions(query.GroupId, query.ClassId, [], [], [], [], [],
-                ["classes", "families", "units", "trackingPolicies", "templates"]);
+            // catalogue entry. Families and templates come from a well-formed released
+            // registry (PRD-FAM-1); without one they stay explicitly unavailable, as do
+            // classes, units and tracking policies.
+            var definition = await store.ReadFamilyDefinitionAsync(context, cancellationToken);
+            if (definition is null)
+            {
+                return new ProductReferenceOptions(query.GroupId, query.ClassId, [], [], [], [], [],
+                    ["classes", "families", "units", "trackingPolicies", "templates"]);
+            }
+
+            return new ProductReferenceOptions(query.GroupId, query.ClassId, [],
+                [.. definition.Families.Select(family => new ProductReferenceOption(family.Id, family.Name))],
+                [], [],
+                [.. definition.Templates.Select(template => new ProductTemplateOption(template.Id, template.Version, template.Name))],
+                ["classes", "units", "trackingPolicies"]);
         }, cancellationToken);
 
     private async Task<T> ReadAsync<T>(Func<GroupSharedMasterReadContext, Task<T>> read, CancellationToken cancellationToken)

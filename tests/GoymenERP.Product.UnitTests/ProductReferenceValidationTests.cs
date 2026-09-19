@@ -141,7 +141,7 @@ public sealed class ProductReferenceValidationTests
             return Task.FromResult(id == UnitId);
         }
         public Task<bool> IsTrackingPolicyValidAsync(Guid id, CancellationToken cancellationToken) => Task.FromResult(false);
-        public Task<IReadOnlyList<ProductFieldError>> ValidateTemplateAsync(ProductReferences references,
+        public Task<IReadOnlyList<ProductFieldError>> ValidateTemplateAsync(Guid? familyId, ProductReferences references,
             CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<ProductFieldError>>(
                 [new("references.templateId", "invalid_reference")]);
     }

@@ -1,5 +1,6 @@
 using GoymenERP.Modules.Inventory.Domain.Balances;
 using GoymenERP.Modules.Inventory.Domain.Labels;
+using GoymenERP.Modules.Inventory.Domain.Lots;
 using GoymenERP.Modules.Inventory.Domain.Movements;
 
 namespace GoymenERP.Modules.Inventory.Application;
@@ -34,10 +35,28 @@ public static class InventoryStoreCodes
     /// <summary>The record's company is not the server-resolved company context (or there is none).</summary>
     public const string CompanyContextMismatch = "inventory_company_context_mismatch";
 
+    /// <summary>
+    /// A label names a lot this company has not stored (DEC-PRD-003: a label belongs to a real lot
+    /// record). The schema holds the same rule: a label row without its company's lot row is refused.
+    /// </summary>
+    public const string LotNotFound = "inventory_lot_not_found";
+
+    /// <summary>
+    /// The same lot id was offered with different facts (product, heat or coil), or the id is held by
+    /// another company (invisible here; a retry gets the same answer, #324 P3-1).
+    /// </summary>
+    public const string LotConflict = "inventory_lot_conflict";
+
+    /// <summary>A label and its lot name different products: a lot is of one product.</summary>
+    public const string LotProductMismatch = "inventory_lot_product_mismatch";
+
     /// <summary>A movement names a label this company has not registered.</summary>
     public const string LabelNotRegistered = "inventory_label_not_registered";
 
-    /// <summary>The same label id was offered with different identity facts, or a history that does not extend the stored one.</summary>
+    /// <summary>
+    /// The same label id was offered with different identity facts, or a history that does not extend the
+    /// stored one, or the id is held by another company (invisible here; a retry gets the same answer).
+    /// </summary>
     public const string LabelConflict = "inventory_label_conflict";
 
     /// <summary>
@@ -83,13 +102,35 @@ public interface IInventoryLabelStore
 {
     /// <summary>
     /// Stores a new label, or the prints and attachments added to a stored one since it was last
-    /// saved. The same label again with nothing new is a replay.
+    /// saved. The same label again with nothing new is a replay. A new label's lot must already be
+    /// stored in this company, of the same product (<see cref="InventoryStoreCodes.LotNotFound"/>,
+    /// <see cref="InventoryStoreCodes.LotProductMismatch"/>); a first arrival saves both through
+    /// <see cref="IInventoryLotStore.SaveLotAsync"/>.
     /// </summary>
     Task<InventoryWriteOutcome> SaveLabelAsync(MaterialLabel label, InventoryCommandMetadata metadata,
         CancellationToken cancellationToken = default);
 
     /// <summary>The company's stored label, or null (another company's label is null too).</summary>
     Task<MaterialLabel?> FindLabelAsync(Guid labelId, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// The persistent lot store of the server-resolved company (DEC-PRD-003, Ö3). A lot's facts never
+/// change in this slice: there is no update path.
+/// </summary>
+public interface IInventoryLotStore
+{
+    /// <summary>
+    /// Stores a lot and, in the same save, the given labels of it (a first arrival: the lot, its
+    /// labels and their audit events commit together or not at all). The same lot id with the same
+    /// facts is a replay of the lot; each label is then saved as <see cref="IInventoryLabelStore.SaveLabelAsync"/>
+    /// would (new, extended or replayed). Every label must name this lot and its product.
+    /// </summary>
+    Task<InventoryWriteOutcome> SaveLotAsync(MaterialLot lot, IReadOnlyList<MaterialLabel> labels,
+        InventoryCommandMetadata metadata, CancellationToken cancellationToken = default);
+
+    /// <summary>The company's stored lot, or null (another company's lot is null too).</summary>
+    Task<MaterialLot?> FindLotAsync(Guid lotId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

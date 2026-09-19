@@ -12,7 +12,7 @@ public interface IProductReferenceCatalog
         CancellationToken cancellationToken);
     Task<bool> IsUnitValidAsync(Guid id, bool requiresKilogram, CancellationToken cancellationToken);
     Task<bool> IsTrackingPolicyValidAsync(Guid id, CancellationToken cancellationToken);
-    Task<IReadOnlyList<ProductFieldError>> ValidateTemplateAsync(ProductReferences references,
+    Task<IReadOnlyList<ProductFieldError>> ValidateTemplateAsync(Guid? familyId, ProductReferences references,
         CancellationToken cancellationToken);
 }
 

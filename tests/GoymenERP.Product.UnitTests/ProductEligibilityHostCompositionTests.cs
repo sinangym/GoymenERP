@@ -51,11 +51,12 @@ public sealed class ProductEligibilityHostCompositionTests
 
         Assert.IsType<ProductSalesEligibilityService>(scope.ServiceProvider.GetRequiredService<IProductSalesEligibilityV1>());
         Assert.IsType<ProductStockEligibilityService>(scope.ServiceProvider.GetRequiredService<IProductStockEligibilityV1>());
-        Assert.IsType<GdcBandCoilFamilyRequirementPolicyV1>(
+        Assert.IsType<ProductFamilyRequirementPolicyV2>(
             scope.ServiceProvider.GetRequiredService<IProductFamilyRequirementPolicyV1>());
-        // Rules accepted, data not: the definition source is the shipped unavailable one.
-        Assert.IsType<UnavailableGdcBandCoilFamilyDefinitionSourceV1>(
-            scope.ServiceProvider.GetRequiredService<IGdcBandCoilFamilyDefinitionSourceV1>());
+        // PRD-FAM-1: the definition is read from the Product-owned registry; with no release it is
+        // unavailable (503), exactly like the source it replaced.
+        Assert.IsType<SqlProductFamilyDefinitionSource>(
+            scope.ServiceProvider.GetRequiredService<IProductFamilyDefinitionSourceV2>());
         Assert.Single(scope.ServiceProvider.GetServices<IProductSalesEligibilityV1>());
         Assert.Single(scope.ServiceProvider.GetServices<IProductStockEligibilityV1>());
     }

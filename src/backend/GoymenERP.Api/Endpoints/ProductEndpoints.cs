@@ -61,6 +61,14 @@ public static class ProductEndpoints
                 ReadIdempotencyKey(context), cancellationToken))))
             .WithName("EditProductDraftV1").Produces<ProductMutationResponse>()
             .WithProductRuntimeContract(mutation: true, notFound: true, primitiveBinding: true).WithIdempotencyContract(200);
+
+        // DEC-PRD-010: approval of a Draft card (Draft -> Active) under the global Activate authority.
+        group.MapPost("/{id:guid}/activation", async (Guid id, ActivateProductRequest request,
+            IProductService service, HttpContext context, CancellationToken cancellationToken) =>
+            await ExecuteAsync(context, async () => Results.Ok(await service.ActivateAsync(id, request,
+                ReadIdempotencyKey(context), cancellationToken))))
+            .WithName("ActivateProductV1").Produces<ProductMutationResponse>()
+            .WithProductRuntimeContract(mutation: true, notFound: true, primitiveBinding: true).WithIdempotencyContract(200);
         return endpoints;
     }
 

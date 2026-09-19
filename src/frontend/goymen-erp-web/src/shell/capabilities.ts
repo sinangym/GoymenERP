@@ -122,6 +122,12 @@ export const CAPABILITY = {
    * that is a fact about who holds them, not an argument for one id.
    */
   organizationLocationsDetail: 'organization.locations.detail',
+  /** S-02 sales order draft list. Route `/satis/siparisler`, owner the Sales lane (SİPARİŞ). */
+  salesDraftsList: 'sales.drafts.list',
+  /** S-04 Sales order 360, one draft. Route `/satis/siparisler/:draftId`. A SEPARATE grant from the list. */
+  salesDraftsDetail: 'sales.drafts.detail',
+  /** S-03 new sales order draft. Route `/satis/siparisler/yeni`. A SEPARATE grant from reading. */
+  salesDraftsCreate: 'sales.drafts.create',
   /**
    * MFG-01 production order (technical sub-view, MFG-UI D1). Route `/uretim/emir/:orderId`.
    *
@@ -156,6 +162,10 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   // rule the Cari and Ürün routes already follow. The Organization lane fixes that
   // shape in `organizationRoutes.tsx` rather than leaving it to this consumer.
   [CAPABILITY.organizationLocationsDetail]: '/ayarlar/organizasyon/lokasyon/:locationId',
+  [CAPABILITY.salesDraftsList]: '/satis/siparisler',
+  // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a draft id.
+  [CAPABILITY.salesDraftsCreate]: '/satis/siparisler/yeni',
+  [CAPABILITY.salesDraftsDetail]: '/satis/siparisler/:draftId',
   [CAPABILITY.manufacturingOrdersDetail]: '/uretim/emir/:orderId',
 }
 
@@ -179,6 +189,10 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // Nor this one: the card is reached from a location row, never from the sidebar. So
   // `NAV_CAPABILITIES` gains exactly ONE Organization entry when the routes are mounted.
   [CAPABILITY.organizationLocationsDetail]: '',
+  [CAPABILITY.salesDraftsList]: 'Sipariş Taslakları',
+  [CAPABILITY.salesDraftsCreate]: 'Yeni Sipariş Taslağı',
+  // Nor this one: the 360 is reached from a list row, never from the sidebar.
+  [CAPABILITY.salesDraftsDetail]: '',
   // Nor this one: an order is opened by its id, never from the sidebar.
   [CAPABILITY.manufacturingOrdersDetail]: '',
 }

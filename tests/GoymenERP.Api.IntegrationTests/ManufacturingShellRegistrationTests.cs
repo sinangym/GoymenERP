@@ -1,6 +1,7 @@
 using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
+using GoymenERP.Modules.Finance.Infrastructure.Shell;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 using GoymenERP.Modules.Organization.Infrastructure.Shell;
 using GoymenERP.Modules.Product.Infrastructure.Shell;
@@ -14,23 +15,23 @@ namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
 /// MFG-UI (#323), central: the normal host registers Manufacturing's staged provider beside Counterparty,
-/// Organization, Product and Sales; the disposable mfg-staged profile (D4) opens exactly Manufacturing's own
+/// Organization, Product, published Sales and staged Finance; the disposable mfg-staged profile (D4) opens exactly Manufacturing's own
 /// declarations beside the list-only C-01 set.
 /// </summary>
 public sealed class ManufacturingShellRegistrationTests
 {
     [Fact]
-    public void The_Manufacturing_authority_is_the_registry_revision_of_the_five_real_providers()
+    public void The_Manufacturing_authority_is_the_registry_revision_of_the_six_real_providers()
     {
         IShellCapabilityProvider[] providers =
         [
             new CounterpartyShellCapabilityProvider(), new OrganizationShellCapabilityProvider(),
             new ProductShellCapabilityProvider(), new SalesShellCapabilityProvider(),
-            new ManufacturingShellCapabilityProvider(),
+            new FinanceShellCapabilityProvider(), new ManufacturingShellCapabilityProvider(),
         ];
 
         // On failure xUnit prints the actual revision: the constant is never guessed.
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10SalesV10AndManufacturingV10,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10FinanceV10AndManufacturingV10,
             ShellCapabilityRegistry.ComputeCandidateRevision(providers));
     }
 
@@ -42,7 +43,7 @@ public sealed class ManufacturingShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10SalesV10AndManufacturingV10,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10FinanceV10AndManufacturingV10,
             authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
@@ -52,6 +53,23 @@ public sealed class ManufacturingShellRegistrationTests
             .ToArray();
         Assert.Equal(2, manufacturing.Length);
         Assert.All(manufacturing, item => Assert.False(item.Declaration.ImplementationAvailable));
+    }
+
+    // Since Finance is host-wired (#325) the host always registers it: the earlier set without Finance
+    // (#323's first row) is no reviewed set any more and keeps the Counterparty-only authority.
+    [Fact]
+    public void Manufacturing_without_Finance_is_not_a_reviewed_set()
+    {
+        var services = NormalHost();
+        services.Remove(Assert.Single(services, item => item.ImplementationType == typeof(FinanceShellCapabilityProvider)));
+
+        var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
+            new ConfigurationBuilder().Build());
+
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyListCreateLinkAndDetailV15, authority);
+        using var container = services.BuildServiceProvider();
+        Assert.Throws<InvalidOperationException>(() => new ShellCapabilityRegistry(
+            container.GetServices<IShellCapabilityProvider>(), new ShellCapabilityAuthorityCatalog([authority])));
     }
 
     [Fact]
@@ -138,6 +156,7 @@ public sealed class ManufacturingShellRegistrationTests
         services.AddSingleton<IShellCapabilityProvider, OrganizationShellCapabilityProvider>();
         services.AddSingleton<IShellCapabilityProvider, ProductShellCapabilityProvider>();
         services.AddSingleton<IShellCapabilityProvider, SalesShellCapabilityProvider>();
+        services.AddSingleton<IShellCapabilityProvider, FinanceShellCapabilityProvider>();
         services.AddSingleton<IShellCapabilityProvider, ManufacturingShellCapabilityProvider>();
         return services;
     }

@@ -7,6 +7,24 @@ internal interface IInventoryTenantRow
 }
 
 /// <summary>
+/// A stored <see cref="Domain.Lots.MaterialLot"/> (DEC-PRD-003). Append-only in this slice: nothing
+/// updates it, so its version stays 1; the version and row version are there for a later, decided
+/// completion of its facts (Ö3). Every label of the company references it by (company, lot).
+/// </summary>
+internal sealed class LotRow : IInventoryTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid ProductId { get; set; }
+    public string? HeatNumber { get; set; }
+    public string? CoilNumber { get; set; }
+    public long Version { get; set; }
+    public byte[] RowVersion { get; set; } = [];
+    public DateTimeOffset CreatedAtUtc { get; set; }
+    public string CreatedBy { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// A stored <see cref="Domain.Labels.MaterialLabel"/>: its identity facts, and a version bumped by
 /// every write that touches the label (its stock, prints or attachments). Two writes that read the
 /// same version cannot both commit: that is the persistent race guard of one physical piece.

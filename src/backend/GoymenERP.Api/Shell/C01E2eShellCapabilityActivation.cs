@@ -1,5 +1,6 @@
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
+using GoymenERP.Modules.Finance.Infrastructure.Shell;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 using GoymenERP.Modules.Organization.Infrastructure.Shell;
 using GoymenERP.Modules.Product.Infrastructure.Shell;
@@ -72,6 +73,7 @@ internal static class C01E2eShellCapabilityActivation
         typeof(OrganizationShellCapabilityProvider),
         typeof(ProductShellCapabilityProvider),
         typeof(SalesShellCapabilityProvider),
+        typeof(FinanceShellCapabilityProvider),
         typeof(ManufacturingShellCapabilityProvider),
     ];
 
@@ -90,13 +92,20 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
                 typeof(SalesShellCapabilityProvider),
             },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10AndSalesV10),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10AndPublishedSalesV10),
         (new[]
             {
                 typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
-                typeof(SalesShellCapabilityProvider), typeof(ManufacturingShellCapabilityProvider),
+                typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
             },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10SalesV10AndManufacturingV10),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10AndFinanceV10),
+        (new[]
+            {
+                typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
+                typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
+                typeof(ManufacturingShellCapabilityProvider),
+            },
+            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10FinanceV10AndManufacturingV10),
     ];
 
     private static string NormalAuthority(IServiceCollection services)

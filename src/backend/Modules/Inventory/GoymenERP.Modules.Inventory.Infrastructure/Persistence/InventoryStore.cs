@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Inventory.Application;
@@ -9,6 +10,7 @@ using GoymenERP.Modules.Inventory.Domain;
 using GoymenERP.Modules.Inventory.Domain.Balances;
 using GoymenERP.Modules.Inventory.Domain.Costing;
 using GoymenERP.Modules.Inventory.Domain.Labels;
+using GoymenERP.Modules.Inventory.Domain.Lots;
 using GoymenERP.Modules.Inventory.Domain.Movements;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Inventory.Domain.Stock;
@@ -22,6 +24,9 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// stock fact, the balances it changes, the label versions it bumps and its audit event commit
 /// together or not at all.
 /// <list type="bullet">
+/// <item><b>Lot (DEC-PRD-003):</b> a new label names a lot of this company and of its product; a
+/// first arrival stores the lot and its labels in one save (<see cref="SaveLotAsync"/>). A lot's
+/// facts never change here.</item>
 /// <item><b>Company:</b> a record of any other company than the resolved context is refused
 /// before anything is read (<see cref="InventoryStoreCodes.CompanyContextMismatch"/>); every read
 /// runs under the tenant filter.</item>
@@ -44,13 +49,14 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// <item><b>Audit:</b> ADR-009 envelope from <see cref="InventoryCommandMetadata"/>, in the same save.</item>
 /// </list>
 /// </summary>
-public sealed class InventoryStore(
+public sealed partial class InventoryStore(
     InventoryDbContext dbContext,
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
     InventoryKilogramScale kilogramScale,
-    TimeProvider timeProvider) : IInventoryLabelStore, IInventoryMovementStore
+    TimeProvider timeProvider) : IInventoryLotStore, IInventoryLabelStore, IInventoryMovementStore
 {
+    private const string LotEntityType = "Inventory.MaterialLot";
     private const string LabelEntityType = "Inventory.MaterialLabel";
     private const string MovementEntityType = "Inventory.StockMovement";
     private const int ActorMaximumLength = 128;
@@ -60,6 +66,77 @@ public sealed class InventoryStore(
 
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
+    public async Task<InventoryWriteOutcome> SaveLotAsync(MaterialLot lot, IReadOnlyList<MaterialLabel> labels,
+        InventoryCommandMetadata metadata, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(lot);
+        ArgumentNullException.ThrowIfNull(labels);
+        RequireMetadata(metadata);
+        RequireCompany(lot.CompanyId);
+        RequireLotFits(lot);
+        foreach (var label in labels)
+        {
+            ArgumentNullException.ThrowIfNull(label);
+            if (label.LotId != lot.Id)
+            {
+                throw Refused(InventoryStoreCodes.LotNotFound, "Etiket bu kayıtta verilen lotu adlandırmıyor.");
+            }
+
+            RequireCompany(label.CompanyId);
+            RequireLabelFits(label);
+        }
+
+        if (labels.Select(label => label.Id).Distinct().Count() != labels.Count)
+        {
+            throw Refused(InventoryStoreCodes.LabelConflict, "Aynı etiket bu kayıtta iki kez verildi.");
+        }
+
+        var recorded = false;
+        var stored = await dbContext.Lots.AsNoTracking().SingleOrDefaultAsync(row => row.Id == lot.Id, cancellationToken);
+        if (stored is null)
+        {
+            dbContext.Lots.Add(new LotRow
+            {
+                Id = lot.Id,
+                CompanyId = lot.CompanyId,
+                ProductId = lot.ProductId,
+                HeatNumber = lot.HeatNumber,
+                CoilNumber = lot.CoilNumber,
+                Version = 1,
+                CreatedAtUtc = timeProvider.GetUtcNow(),
+                CreatedBy = metadata.ActorId.Trim(),
+            });
+            Audit(metadata, lot.CompanyId, LotEntityType, lot.Id, "inventory.lot.registered.v1", "Register",
+                versionBefore: null, versionAfter: 1, before: "{}", after: LotAudit(lot), "Lot kaydı");
+            recorded = true;
+        }
+        else if (!SameLot(stored, lot))
+        {
+            throw Refused(InventoryStoreCodes.LotConflict, "Aynı lot kimliği farklı lot bilgileriyle verildi.");
+        }
+
+        foreach (var label in labels)
+        {
+            // The lot of this call: just staged or already stored with the same facts (checked above).
+            recorded |= await StageLabelAsync(label, metadata, lot, cancellationToken);
+        }
+
+        if (!recorded)
+        {
+            return InventoryWriteOutcome.Replayed;
+        }
+
+        await SaveAsync(cancellationToken);
+        return InventoryWriteOutcome.Recorded;
+    }
+
+    public async Task<MaterialLot?> FindLotAsync(Guid lotId, CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        var row = await dbContext.Lots.AsNoTracking().SingleOrDefaultAsync(candidate => candidate.Id == lotId, cancellationToken);
+        return row is null ? null : ToLot(row);
+    }
+
     public async Task<InventoryWriteOutcome> SaveLabelAsync(MaterialLabel label, InventoryCommandMetadata metadata,
         CancellationToken cancellationToken = default)
     {
@@ -67,11 +144,39 @@ public sealed class InventoryStore(
         RequireMetadata(metadata);
         RequireCompany(label.CompanyId);
         RequireLabelFits(label);
+        if (!await StageLabelAsync(label, metadata, lotOfThisCall: null, cancellationToken))
+        {
+            return InventoryWriteOutcome.Replayed;
+        }
 
+        await SaveAsync(cancellationToken);
+        return InventoryWriteOutcome.Recorded;
+    }
+
+    /// <summary>
+    /// Adds what saving <paramref name="label"/> changes to the context, without saving: a new label
+    /// (its lot of the same product), or the prints and attachments that extend a stored one. False
+    /// when nothing is new (a replay). The lot is <paramref name="lotOfThisCall"/> when the caller is
+    /// saving it in the same call; otherwise it is read through the tenant-filtered query — never from
+    /// the change tracker, which the tenant filter does not cover.
+    /// </summary>
+    private async Task<bool> StageLabelAsync(MaterialLabel label, InventoryCommandMetadata metadata,
+        MaterialLot? lotOfThisCall, CancellationToken cancellationToken)
+    {
         var stored = await dbContext.Labels.SingleOrDefaultAsync(row => row.Id == label.Id, cancellationToken);
         var now = timeProvider.GetUtcNow();
         if (stored is null)
         {
+            var lotProductId = lotOfThisCall is not null && lotOfThisCall.Id == label.LotId
+                ? lotOfThisCall.ProductId
+                : await dbContext.Lots.AsNoTracking().Where(row => row.Id == label.LotId)
+                    .Select(row => (Guid?)row.ProductId).SingleOrDefaultAsync(cancellationToken)
+                    ?? throw Refused(InventoryStoreCodes.LotNotFound, "Etiketin lotu bu şirkette kayıtlı değil.");
+            if (lotProductId != label.ProductId)
+            {
+                throw Refused(InventoryStoreCodes.LotProductMismatch, "Etiket ile lotu farklı ürünleri adlandırıyor.");
+            }
+
             dbContext.Labels.Add(new LabelRow
             {
                 Id = label.Id,
@@ -90,8 +195,7 @@ public sealed class InventoryStore(
             AddDocuments(label, fromSequence: 1);
             Audit(metadata, label.CompanyId, LabelEntityType, label.Id, "inventory.label.registered.v1", "Register",
                 versionBefore: null, versionAfter: 1, before: "{}", after: LabelAudit(label), "Etiket kaydı");
-            await SaveAsync(cancellationToken);
-            return InventoryWriteOutcome.Recorded;
+            return true;
         }
 
         if (!string.Equals(stored.Code, label.Code, StringComparison.Ordinal)
@@ -120,7 +224,7 @@ public sealed class InventoryStore(
 
         if (storedPrints.Count == label.Prints.Count && storedDocuments.Count == label.DocumentAttachments.Count)
         {
-            return InventoryWriteOutcome.Replayed;
+            return false;
         }
 
         AddPrints(label, fromSequence: storedPrints.Count + 1);
@@ -132,8 +236,7 @@ public sealed class InventoryStore(
             versionBefore: before, versionAfter: stored.Version,
             before: JsonSerializer.Serialize(new { prints = storedPrints.Count, documents = storedDocuments.Count }, Json),
             after: LabelAudit(label), "Etiket baskı/belge geçmişi");
-        await SaveAsync(cancellationToken);
-        return InventoryWriteOutcome.Recorded;
+        return true;
     }
 
     public async Task<MaterialLabel?> FindLabelAsync(Guid labelId, CancellationToken cancellationToken = default)
@@ -342,6 +445,11 @@ public sealed class InventoryStore(
 
     private async Task SaveAsync(CancellationToken cancellationToken)
     {
+        // A primary-key collision on a lot or label id (#324 P3-1) is either two first arrivals of this
+        // company racing — a retry reads the stored record — or an id another company holds, invisible
+        // here under the tenant filter: a retry would collide forever, so that is a conflict with no
+        // retry advice, and nothing about the other record is disclosed. The colliding id is the one SQL
+        // names as the duplicate key; if it cannot be read, the answer stays the retryable one.
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -358,13 +466,35 @@ public sealed class InventoryStore(
                 var message when message.Contains("UX_Movements_Source", StringComparison.Ordinal) => InventoryStoreCodes.DuplicateSource,
                 var message when message.Contains("IX_Labels_CompanyId_Code", StringComparison.Ordinal) => InventoryStoreCodes.LabelCodeTaken,
                 var message when message.Contains("PK_Movements", StringComparison.Ordinal) => InventoryStoreCodes.ConcurrentChange,
+                var message when message.Contains("'PK_Lots'", StringComparison.Ordinal) =>
+                    DuplicateKey(message) is { } lotId
+                    && !await dbContext.Lots.AsNoTracking().AnyAsync(row => row.Id == lotId, cancellationToken)
+                        ? InventoryStoreCodes.LotConflict
+                        : InventoryStoreCodes.ConcurrentChange,
+                var message when message.Contains("'PK_Labels'", StringComparison.Ordinal) =>
+                    DuplicateKey(message) is { } labelId
+                    && !await dbContext.Labels.AsNoTracking().AnyAsync(row => row.Id == labelId, cancellationToken)
+                        ? InventoryStoreCodes.LabelConflict
+                        : InventoryStoreCodes.ConcurrentChange,
                 // Two first movements of one source raced for its grain: retried, the loser reads it.
                 var message when message.Contains("PK_SourceGrains", StringComparison.Ordinal) => InventoryStoreCodes.ConcurrentChange,
                 _ => InventoryStoreCodes.ConcurrentChange,
             };
-            throw Refused(code, "Kayıt tekillik kuralına takıldı; hiçbir şey kaydedilmedi.", exception);
+            throw Refused(code, code is InventoryStoreCodes.LotConflict or InventoryStoreCodes.LabelConflict
+                ? "Bu kimlik bu şirkette kullanılamıyor; hiçbir şey kaydedilmedi, yeniden denemek aynı cevabı verir."
+                : "Kayıt tekillik kuralına takıldı; hiçbir şey kaydedilmedi.", exception);
         }
     }
+
+    /// <summary>The single GUID of a primary-key message: its duplicate key value (the only GUID in it).</summary>
+    private static Guid? DuplicateKey(string message)
+    {
+        var matches = GuidPattern().Matches(message);
+        return matches.Count == 1 && Guid.TryParseExact(matches[0].Value, "D", out var id) ? id : null;
+    }
+
+    [GeneratedRegex("[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}", RegexOptions.CultureInvariant)]
+    private static partial Regex GuidPattern();
 
     private async Task<bool> SourceTakenAsync(StockMovement movement, CancellationToken cancellationToken)
     {
@@ -514,6 +644,15 @@ public sealed class InventoryStore(
         }
     }
 
+    private static void RequireLotFits(MaterialLot lot)
+    {
+        if ((lot.HeatNumber?.Length ?? 0) > MaterialLot.MaximumTraceLength
+            || (lot.CoilNumber?.Length ?? 0) > MaterialLot.MaximumTraceLength)
+        {
+            throw Refused(InventoryStoreCodes.ValueDoesNotFit, "Lotun heat/coil numarası kayıt alanına sığmıyor; kesilmez, reddedilir.");
+        }
+    }
+
     private static void RequireCostFits(CostResult cost)
     {
         // Not a money policy: the stored column holds 18 decimals and 20 integer digits, and a value
@@ -534,6 +673,16 @@ public sealed class InventoryStore(
         && string.Equals(row.CoilNumber, label.CoilNumber, StringComparison.Ordinal)
         && string.Equals(row.RequiredDocumentsJson,
             JsonSerializer.Serialize(label.RequiredDocuments.Order(StringComparer.Ordinal), Json), StringComparison.Ordinal);
+
+    /// <summary>A replay repeats the stored lot facts exactly.</summary>
+    private static bool SameLot(LotRow row, MaterialLot lot) =>
+        row.CompanyId == lot.CompanyId && row.ProductId == lot.ProductId
+        && string.Equals(row.HeatNumber, lot.HeatNumber, StringComparison.Ordinal)
+        && string.Equals(row.CoilNumber, lot.CoilNumber, StringComparison.Ordinal);
+
+    /// <summary>Rebuilds a stored lot through the domain: a stored row that breaks a rule is refused, not repaired.</summary>
+    private static MaterialLot ToLot(LotRow row) =>
+        new MaterialLot(row.Id, row.CompanyId, row.ProductId, row.HeatNumber, row.CoilNumber);
 
     /// <summary>The label facts a position needs (company, product, id); prints and documents do not matter there.</summary>
     private static MaterialLabel IdentityOnly(LabelRow row) =>
@@ -597,6 +746,14 @@ public sealed class InventoryStore(
         }, Json);
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
     }
+
+    private static string LotAudit(MaterialLot lot) => JsonSerializer.Serialize(new
+    {
+        lot.Id,
+        lot.ProductId,
+        lot.HeatNumber,
+        lot.CoilNumber,
+    }, Json);
 
     private static string LabelAudit(MaterialLabel label) => JsonSerializer.Serialize(new
     {

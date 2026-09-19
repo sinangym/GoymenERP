@@ -26,6 +26,23 @@ public sealed class GroupSharedCommandPersistenceTests
         Assert.False(restored.MatchesReauthorizedIntent(Context(anotherOrigin: true), Key, Payload));
     }
 
+    // #329: each owner command's stored terminal identity restores; the SQL check admits the same set.
+    [Theory]
+    [InlineData(GroupSharedMasterOperation.DraftCreate, "product.draft.create.v1")]
+    [InlineData(GroupSharedMasterOperation.DraftBasicEdit, "product.draft.basic-edit.v1")]
+    [InlineData(GroupSharedMasterOperation.Activate, "product.card.activate.v1")]
+    public void EachOwnerCommandRestoresFromItsStoredIdentity(GroupSharedMasterOperation operation, string commandName)
+    {
+        var binding = GroupSharedCommandBinding.Create(Context(operation), Key, Payload);
+        Assert.Equal(commandName, binding.Key.CommandName);
+        Assert.Equal(binding, GroupSharedCommandBinding.RestoreStored("Product", commandName, Key, Actor, Origin, Payload));
+        using var context = new GroupSharedCommandDbContext(new DbContextOptionsBuilder<GroupSharedCommandDbContext>()
+            .UseSqlServer("Server=localhost;Database=MODEL_ONLY;Integrated Security=true;TrustServerCertificate=true").Options);
+        var check = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(GroupSharedCommandTerminalRecord))!
+            .GetCheckConstraints().Single(x => x.Name == "CK_GroupSharedTerminals_ProductCommands").Sql;
+        Assert.Contains($"'{commandName}'", check, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("subject")]
     [InlineData("command")]
@@ -86,4 +103,7 @@ public sealed class GroupSharedCommandPersistenceTests
         GroupSharedMasterCommandContext.FromServerDecision(new(true, GroupSharedMasterKind.Product,
             GroupSharedMasterOperation.DraftCreate, Actor, anotherOrigin ? Guid.NewGuid() : Origin, "rev-1"),
             GroupSharedMasterOperation.DraftCreate);
+    private static GroupSharedMasterCommandContext Context(GroupSharedMasterOperation operation) =>
+        GroupSharedMasterCommandContext.FromServerDecision(new(true, GroupSharedMasterKind.Product,
+            operation, Actor, Origin, "rev-1"), operation);
 }

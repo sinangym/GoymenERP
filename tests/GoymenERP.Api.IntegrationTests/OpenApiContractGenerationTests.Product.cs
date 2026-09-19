@@ -29,6 +29,10 @@ public sealed partial class OpenApiContractGenerationTests
         new("patch", "/api/v1/products/{id}/draft", "EditProductDraftV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/EditProductDraftRequest", ["path:id:true:type:string;format:uuid"]),
+        // DEC-PRD-010 (#329): the Draft -> Active card approval.
+        new("post", "/api/v1/products/{id}/activation", "ActivateProductV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/ActivateProductRequest", ["path:id:true:type:string;format:uuid"]),
     ];
 
     private static readonly IReadOnlyDictionary<string, string> ProductSuccessSchemas = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -39,6 +43,7 @@ public sealed partial class OpenApiContractGenerationTests
         ["GetProductV1"] = "ref:ProductCardView",
         ["CreateProductDraftV1"] = "ref:ProductMutationResponse",
         ["EditProductDraftV1"] = "ref:ProductMutationResponse",
+        ["ActivateProductV1"] = "ref:ProductMutationResponse",
     };
 
     private static bool IsProductOperation(string id) => ProductSuccessSchemas.ContainsKey(id);
@@ -95,7 +100,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ? ["company_context_invalid", "correlation_metadata_invalid", "invalid_cursor", "validation_failed"]
                     : ["company_context_invalid", "correlation_metadata_invalid", "validation_failed"],
                 401 => ["authentication_required"], 404 => ["not_found"],
-                409 => expected.Method == "patch" ? ["idempotency_conflict", "lifecycle_conflict", "version_conflict"] : ["idempotency_conflict"],
+                409 => expected.OperationId is "EditProductDraftV1" or "ActivateProductV1"
+                    ? ["idempotency_conflict", "lifecycle_conflict", "version_conflict"] : ["idempotency_conflict"],
                 500 => ["internal_error"], 503 => ["product_write_contention"], _ => [],
             };
             Assert.Equal(codes.Length > 0, response.Value.TryGetProperty("x-erp-problem-codes", out var actualCodes));
@@ -150,7 +156,8 @@ public sealed partial class OpenApiContractGenerationTests
         AssertRequestSchema(schemas.GetProperty("CreateProductDraftRequest"), ["name", "groupId"], ["classId", "familyId", "roles", "references"],
             ["name", "groupId", "classId", "familyId", "roles", "references"]);
         AssertRequestSchema(schemas.GetProperty("EditProductDraftRequest"), ["expectedVersion", "changes", "reason"], [], ["expectedVersion", "changes", "reason"]);
-        foreach (var name in new[] { "CreateProductDraftRequest", "EditProductDraftRequest", "ProductDraftChanges", "ProductReferenceChanges", "ProductUnitChanges", "ProductRoleInputs", "ProductRoleInput" })
+        AssertRequestSchema(schemas.GetProperty("ActivateProductRequest"), ["expectedVersion"], [], ["expectedVersion"]);
+        foreach (var name in new[] { "CreateProductDraftRequest", "EditProductDraftRequest", "ActivateProductRequest", "ProductDraftChanges", "ProductReferenceChanges", "ProductUnitChanges", "ProductRoleInputs", "ProductRoleInput" })
             Assert.False(schemas.GetProperty(name).GetProperty("additionalProperties").GetBoolean());
         var changes = schemas.GetProperty("ProductDraftChanges");
         Assert.Equal(1, changes.GetProperty("minProperties").GetInt32());
@@ -163,10 +170,14 @@ public sealed partial class OpenApiContractGenerationTests
             Assert.Equal("#/components/schemas/" + target, Assert.Single(schemas.GetProperty(optional).GetProperty("allOf").EnumerateArray()).GetProperty("$ref").GetString());
         Assert.Equal("object", Assert.Single(schemas.GetProperty("OptionalOfIReadOnlyDictionaryOfstringAndJsonElement").GetProperty("allOf").EnumerateArray()).GetProperty("type").GetString());
         Assert.Equal(2, schemas.GetProperty("ProductRoleInput").GetProperty("oneOf").GetArrayLength());
-        var version = schemas.GetProperty("EditProductDraftRequest").GetProperty("properties").GetProperty("expectedVersion");
-        Assert.Equal("string", version.GetProperty("type").GetString());
-        Assert.Equal(19, version.GetProperty("maxLength").GetInt32());
-        Assert.Equal(ErpOpenApiContract.PositiveIntegerStringPattern, version.GetProperty("pattern").GetString());
+        foreach (var request in new[] { "EditProductDraftRequest", "ActivateProductRequest" })
+        {
+            var version = schemas.GetProperty(request).GetProperty("properties").GetProperty("expectedVersion");
+            Assert.Equal("string", version.GetProperty("type").GetString());
+            Assert.Equal(1, version.GetProperty("minLength").GetInt32());
+            Assert.Equal(19, version.GetProperty("maxLength").GetInt32());
+            Assert.Equal(ErpOpenApiContract.PositiveIntegerStringPattern, version.GetProperty("pattern").GetString());
+        }
         var problem = schemas.GetProperty("ProductRuntimeProblemContract");
         Assert.Equal(["status", "title", "type"], problem.GetProperty("required").EnumerateArray().Select(value => value.GetString()).Order(StringComparer.Ordinal));
         Assert.False(problem.GetProperty("properties").TryGetProperty("conflict", out _));

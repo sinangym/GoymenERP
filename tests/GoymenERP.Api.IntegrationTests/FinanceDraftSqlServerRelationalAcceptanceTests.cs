@@ -129,7 +129,8 @@ public sealed class FinanceDraftSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.ReceiptDrafts"));
         Assert.Equal("1100", await run.ScalarAsync<string>("SELECT AmountText FROM finance.ReceiptDrafts"));
         Assert.Equal(2L, await run.ScalarAsync<long>("SELECT Version FROM finance.ReceiptDrafts"));
-        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.Commands"));
+        // The create, the update and the stale save, kept as its key's terminal answer (ADR-011 §7).
+        Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.Commands"));
     }
 
     [SqlServerFact]

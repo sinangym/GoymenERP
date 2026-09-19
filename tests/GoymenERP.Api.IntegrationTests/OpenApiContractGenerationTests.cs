@@ -211,6 +211,16 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/sales/drafts/{id}", "GetSalesOrderDraftV1",
             AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:id:true:type:string;format:uuid"]),
+        new("post", "/api/v1/finance/bank-accounts", "ProposeFinanceBankAccountV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/BankAccountProposeRequest"),
+        new("post", "/api/v1/finance/bank-accounts/{accountId}/approval", "ApproveFinanceBankAccountV1",
+            AuthenticatedResponses("200:application/json", "422:application/json", "409:application/json", "400:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/BankAccountApprovalBody", ["path:accountId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/finance/bank-accounts/master", "GetFinanceBankAccountMasterV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
+        new("get", "/api/v1/finance/bank-accounts/currency-candidates", "GetFinanceBankAccountCurrencyCandidatesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
         .. ProductOperations,
     ];
 
@@ -258,6 +268,10 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetSalesOrderDraftsV1"] = "ref:SalesOrderDraftListResponse",
             ["CreateSalesOrderDraftV1"] = "ref:SalesOrderDraftResponse",
             ["GetSalesOrderDraftV1"] = "ref:SalesOrderDraftDetailView",
+            ["ProposeFinanceBankAccountV1"] = "ref:BankAccountCommandResult",
+            ["ApproveFinanceBankAccountV1"] = "ref:BankAccountCommandResult",
+            ["GetFinanceBankAccountMasterV1"] = "ref:BankAccountMasterPage",
+            ["GetFinanceBankAccountCurrencyCandidatesV1"] = "ref:BankAccountCurrencyCandidates",
         };
 
     private static readonly HashSet<string> RequiredCompanyOperations =
@@ -296,6 +310,10 @@ public sealed partial class OpenApiContractGenerationTests
         "GetSalesOrderDraftsV1",
         "CreateSalesOrderDraftV1",
         "GetSalesOrderDraftV1",
+        "ProposeFinanceBankAccountV1",
+        "ApproveFinanceBankAccountV1",
+        "GetFinanceBankAccountMasterV1",
+        "GetFinanceBankAccountCurrencyCandidatesV1",
     ];
 
     private static readonly HashSet<string> OptionalCompanyOperations =
@@ -321,6 +339,8 @@ public sealed partial class OpenApiContractGenerationTests
         "DeclareManufacturingOutputV1",
         "SaveFinanceManualReceiptDraftV1",
         "CreateSalesOrderDraftV1",
+        "ProposeFinanceBankAccountV1",
+        "ApproveFinanceBankAccountV1",
     ];
 
     private static readonly IReadOnlyDictionary<string, HashSet<int>>
@@ -355,8 +375,14 @@ public sealed partial class OpenApiContractGenerationTests
                 ["ReturnManufacturingInputV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["RecordManufacturingWorkInProgressV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["DeclareManufacturingOutputV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
-                ["SaveFinanceManualReceiptDraftV1"] = [StatusCodes.Status200OK],
+                // ADR-011 §7 (#325): a recorded 409/422 terminal refusal is replayed too.
+                ["SaveFinanceManualReceiptDraftV1"] =
+                [
+                    StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity,
+                ],
                 ["CreateSalesOrderDraftV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
+                ["ProposeFinanceBankAccountV1"] = [StatusCodes.Status200OK],
+                ["ApproveFinanceBankAccountV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
             };
 
     private static readonly HashSet<string> EmptyBodyPossible400Operations =
@@ -385,6 +411,10 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceBankAccountsV1",
         "GetSalesOrderDraftsV1",
         "CreateSalesOrderDraftV1",
+        "ProposeFinanceBankAccountV1",
+        "ApproveFinanceBankAccountV1",
+        "GetFinanceBankAccountMasterV1",
+        "GetFinanceBankAccountCurrencyCandidatesV1",
     ];
 
     private static readonly HashSet<string> CodeLessProblemResponses =
@@ -423,6 +453,10 @@ public sealed partial class OpenApiContractGenerationTests
         "GetFinanceManualReceiptsV1:400",
         "GetFinanceManualReceiptV1:400",
         "GetFinanceBankAccountsV1:400",
+        "ProposeFinanceBankAccountV1:400",
+        "ApproveFinanceBankAccountV1:400",
+        "GetFinanceBankAccountMasterV1:400",
+        "GetFinanceBankAccountCurrencyCandidatesV1:400",
     ];
 
     // MFG-API (#313): every Manufacturing write advertises the endpoint's one conflict and one
@@ -519,6 +553,30 @@ public sealed partial class OpenApiContractGenerationTests
         ExpectedSuccessComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["BankAccountCommandResult"] = ObjectSchema(
+                    ["outcome", "resource", "isReplay", "originalCorrelationId", "issues"],
+                    ("outcome", "ref:CommandOutcome"),
+                    ("resource", "oneOf:ref:BankAccountView|type:null"),
+                    ("isReplay", "type:boolean"),
+                    ("originalCorrelationId", "type:string"),
+                    ("issues", "type:array;items:ref:ValidationIssue")),
+                ["BankAccountCurrencyCandidate"] = ObjectSchema(
+                    ["currencyId", "code", "displayLabel"],
+                    ("currencyId", "type:string;format:uuid"),
+                    ("code", "type:string"),
+                    ("displayLabel", "type:string")),
+                ["BankAccountCurrencyCandidates"] = ObjectSchema(
+                    ["companyId", "items"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("items", "type:array;items:ref:BankAccountCurrencyCandidate")),
+                ["BankAccountMasterItem"] = ObjectSchema(
+                    ["account", "isOwnProposal"],
+                    ("account", "ref:BankAccountView"),
+                    ("isOwnProposal", "type:boolean")),
+                ["BankAccountMasterPage"] = ObjectSchema(
+                    ["companyId", "items"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("items", "type:array;items:ref:BankAccountMasterItem")),
                 ["SalesDraftDeliverySliceV1"] = ObjectSchema(
                     ["sliceId", "orderUnitId", "quantity", "requestedDeliveryDate"],
                     ("sliceId", "type:string;format:uuid"),
@@ -933,14 +991,20 @@ public sealed partial class OpenApiContractGenerationTests
                     ("allowedCompanyIds", "type:array;items:type:string;format:uuid")),
                 ["InventoryLabelViewV1"] = ObjectSchema(
                     ["labelId", "companyId", "code", "productId", "lotId", "heatNumber", "coilNumber",
-                        "documentStatus", "requiredDocuments", "documents", "prints"],
+                        "documentStatus", "requiredDocuments", "documents", "prints", "lot"],
                     ("labelId", "type:string;format:uuid"), ("companyId", "type:string;format:uuid"),
                     ("code", "type:string"), ("productId", "type:string;format:uuid"),
                     ("lotId", "type:string;format:uuid"), ("heatNumber", "type:null|string"),
                     ("coilNumber", "type:null|string"), ("documentStatus", "type:string"),
                     ("requiredDocuments", "type:array;items:type:string"),
                     ("documents", "type:array;items:ref:InventoryLabelDocumentV1"),
-                    ("prints", "type:array;items:ref:InventoryLabelPrintV1")),
+                    ("prints", "type:array;items:ref:InventoryLabelPrintV1"),
+                    ("lot", "ref:InventoryLotV1")),
+                // T07 lot record (#324): the label's lot, one per (company, lot).
+                ["InventoryLotV1"] = ObjectSchema(
+                    ["id", "heatNumber", "coilNumber"],
+                    ("id", "type:string;format:uuid"), ("heatNumber", "type:null|string"),
+                    ("coilNumber", "type:null|string")),
                 ["InventoryLabelDocumentV1"] = ObjectSchema(
                     ["kind", "attachedAtUtc"],
                     ("kind", "type:string"), ("attachedAtUtc", "type:string;format:date-time")),
@@ -1002,6 +1066,13 @@ public sealed partial class OpenApiContractGenerationTests
         ExpectedRequestComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["BankAccountApprovalBody"] = ObjectSchema(
+                    ["expectedVersion"],
+                    ("expectedVersion", "type:string")),
+                ["BankAccountProposeRequest"] = ObjectSchema(
+                    ["displayName", "currencyId"],
+                    ("displayName", "type:string"),
+                    ("currencyId", "type:string;format:uuid")),
                 ["CreateSalesOrderDraftRequest"] = ObjectSchema(
                     ["kind", "partyId", "companyAccountId", "businessDate", "currencyId", "lines"],
                     ("kind", "type:string"),
@@ -1677,9 +1748,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(46, operations.Count);
+        Assert.Equal(51, operations.Count);
         Assert.Equal(
-            46,
+            51,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

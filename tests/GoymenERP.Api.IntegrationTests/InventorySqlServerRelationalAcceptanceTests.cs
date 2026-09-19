@@ -7,6 +7,7 @@ using GoymenERP.Modules.Inventory.Domain;
 using GoymenERP.Modules.Inventory.Domain.Balances;
 using GoymenERP.Modules.Inventory.Domain.Costing;
 using GoymenERP.Modules.Inventory.Domain.Labels;
+using GoymenERP.Modules.Inventory.Domain.Lots;
 using GoymenERP.Modules.Inventory.Domain.Movements;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Inventory.Domain.Stock;
@@ -15,6 +16,8 @@ using GoymenERP.Modules.Settings.Application;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -29,7 +32,9 @@ public sealed class InventorySqlServerRelationalAcceptanceTests
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
     private static readonly Guid Product = Guid.Parse("7e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a61");
-    private static readonly Guid Lot = Guid.Parse("7e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a62");
+    // One synthetic lot per company, stored when the run starts (DEC-PRD-003: every label names a lot of its own company).
+    private static readonly Guid LotA = Guid.Parse("7e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a62");
+    private static readonly Guid LotB = Guid.Parse("7e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a63");
     private static readonly DateTimeOffset At = new(2026, 9, 18, 9, 0, 0, TimeSpan.Zero);
 
     [SqlServerFact]
@@ -328,8 +333,8 @@ public sealed class InventorySqlServerRelationalAcceptanceTests
         Assert.Contains("_CI_", collation, StringComparison.Ordinal);
 
         var label = NewLabel(CompanyA, "SYN-CASE-1");
-        var sameIdOtherSpelling = new MaterialLabel(label.Id, CompanyA, "syn-case-1", Product, Lot);
-        var sameIdOtherCode = new MaterialLabel(label.Id, CompanyA, "SYN-CASE-2", Product, Lot);
+        var sameIdOtherSpelling = new MaterialLabel(label.Id, CompanyA, "syn-case-1", Product, LotA);
+        var sameIdOtherCode = new MaterialLabel(label.Id, CompanyA, "SYN-CASE-2", Product, LotA);
         await using (var a = run.Store(CompanyA))
         {
             Assert.Equal(InventoryWriteOutcome.Recorded, await a.Labels.SaveLabelAsync(label, Metadata(run)));
@@ -466,7 +471,272 @@ public sealed class InventorySqlServerRelationalAcceptanceTests
         }
     }
 
-    private static MaterialLabel NewLabel(Guid company, string code) => new(Guid.NewGuid(), company, code, Product, Lot);
+    [SqlServerFact]
+    public async Task A_lot_and_its_labels_are_stored_in_one_save_with_their_audit_events_or_not_at_all()
+    {
+        // DEC-PRD-003 / Business #66 5734060341: lot + labels + audit are one transaction.
+        await using var run = await Run.StartAsync();
+        var lot = new MaterialLot(Guid.NewGuid(), CompanyA, Product, heatNumber: "SYN-HEAT-1");
+        var first = new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-LOT-ONE-1", Product, lot.Id);
+        var second = new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-LOT-ONE-2", Product, lot.Id);
+        await using (var a = run.Store(CompanyA))
+        {
+            Assert.Equal(InventoryWriteOutcome.Recorded, await a.Lots.SaveLotAsync(lot, [first, second], Metadata(run)));
+            var stored = (await a.Lots.FindLotAsync(lot.Id))!;
+            Assert.Equal((CompanyA, Product, (string?)"SYN-HEAT-1", (string?)null),
+                (stored.CompanyId, stored.ProductId, stored.HeatNumber, stored.CoilNumber));
+        }
+
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Labels WHERE LotId = @l", ("@l", lot.Id)));
+        // One event per stored record, one correlation: the lot and its two labels.
+        Assert.Equal(3, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @c", ("@c", run.Correlation)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Inventory.MaterialLot' AND EntityId = @id",
+            ("@id", lot.Id.ToString("D"))));
+
+        // A save that fails in the database leaves nothing: the second label's code is taken, so the new lot,
+        // its first label and every audit event roll back together.
+        var failing = new MaterialLot(Guid.NewGuid(), CompanyA, Product);
+        await using (var a = run.Store(CompanyA))
+        {
+            Assert.Equal(InventoryStoreCodes.LabelCodeTaken, (await Assert.ThrowsAsync<InventoryStoreException>(() => a.Lots.SaveLotAsync(
+                failing,
+                [
+                    new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-LOT-TWO-1", Product, failing.Id),
+                    new MaterialLabel(Guid.NewGuid(), CompanyA, "syn-lot-one-1", Product, failing.Id),
+                ],
+                Metadata(run)))).Code);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Lots WHERE Id = @l", ("@l", failing.Id)));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Labels WHERE LotId = @l", ("@l", failing.Id)));
+        Assert.Equal(3, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @c", ("@c", run.Correlation)));
+    }
+
+    [SqlServerFact]
+    public async Task A_label_without_its_lot_is_refused_by_the_store_and_by_the_schema()
+    {
+        await using var run = await Run.StartAsync();
+        var missingLot = Guid.NewGuid();
+        await using (var a = run.Store(CompanyA))
+        {
+            Assert.Equal(InventoryStoreCodes.LotNotFound, (await Assert.ThrowsAsync<InventoryStoreException>(() => a.Labels.SaveLabelAsync(
+                new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-NO-LOT", Product, missingLot), Metadata(run)))).Code);
+            // A lot is of one product: a label of another product cannot name it.
+            Assert.Equal(InventoryStoreCodes.LotProductMismatch, (await Assert.ThrowsAsync<InventoryStoreException>(() => a.Labels.SaveLabelAsync(
+                new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-OTHER-PRODUCT", Guid.NewGuid(), LotA), Metadata(run)))).Code);
+        }
+
+        // Without the store (a writer that skips its check): SQL refuses the orphan itself.
+        await using (var raw = run.Context(CompanyA))
+        {
+            raw.Labels.Add(RawLabel(CompanyA, missingLot));
+            var error = await Assert.ThrowsAsync<DbUpdateException>(() => raw.SaveChangesAsync());
+            var sql = Assert.IsType<SqlException>(error.InnerException);
+            Assert.Equal(547, sql.Number);
+            Assert.Contains("FK_Labels_Lots_CompanyId_LotId", sql.Message, StringComparison.Ordinal);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Labels WHERE LotId = @l", ("@l", missingLot)));
+    }
+
+    [SqlServerFact]
+    public async Task Company_B_can_neither_see_nor_name_company_A_lot()
+    {
+        await using var run = await Run.StartAsync();
+        await using (var b = run.Store(CompanyB))
+        {
+            Assert.Null(await b.Lots.FindLotAsync(LotA));
+            Assert.NotNull(await b.Lots.FindLotAsync(LotB));
+            // B's own label naming A's lot: the tenant filter hides A's lot, so it does not exist for B.
+            Assert.Equal(InventoryStoreCodes.LotNotFound, (await Assert.ThrowsAsync<InventoryStoreException>(() => b.Labels.SaveLabelAsync(
+                new MaterialLabel(Guid.NewGuid(), CompanyB, "SYN-B-NAMES-A", Product, LotA), Metadata(run)))).Code);
+            // A's lot offered in B's context is refused before anything is read.
+            Assert.Equal(InventoryStoreCodes.CompanyContextMismatch, (await Assert.ThrowsAsync<InventoryStoreException>(() => b.Lots.SaveLotAsync(
+                new MaterialLot(LotA, CompanyA, Product), [], Metadata(run)))).Code);
+        }
+
+        // #324 P3-1: an id another company holds collides on the key, invisible to B. A retry would collide
+        // forever, so the answer is a conflict with no retry advice — the same on every attempt (a fresh
+        // store each time, as each request is) — and not concurrent_change.
+        var labelOfA = NewLabel(CompanyA, "SYN-A-HOLDS-ITS-ID");
+        await using (var a = run.Store(CompanyA))
+        {
+            Assert.Equal(InventoryWriteOutcome.Recorded, await a.Labels.SaveLabelAsync(labelOfA, Metadata(run)));
+        }
+
+        for (var attempt = 1; attempt <= 2; attempt++)
+        {
+            await using (var b = run.Store(CompanyB))
+            {
+                Assert.Equal(InventoryStoreCodes.LotConflict, (await Assert.ThrowsAsync<InventoryStoreException>(() => b.Lots.SaveLotAsync(
+                    new MaterialLot(LotA, CompanyB, Product), [], Metadata(run)))).Code);
+            }
+
+            await using (var b = run.Store(CompanyB))
+            {
+                Assert.Equal(InventoryStoreCodes.LabelConflict, (await Assert.ThrowsAsync<InventoryStoreException>(() => b.Labels.SaveLabelAsync(
+                    new MaterialLabel(labelOfA.Id, CompanyB, "SYN-B-REUSES-A-ID", Product, LotB), Metadata(run)))).Code);
+            }
+        }
+
+        await using (var a = run.Store(CompanyA))
+        {
+            Assert.Equal(CompanyA, (await a.Lots.FindLotAsync(LotA))!.CompanyId);
+            Assert.Equal(labelOfA.Code, (await a.Labels.FindLabelAsync(labelOfA.Id))!.Code);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE Code = N'SYN-B-REUSES-A-ID'"));
+
+        // Without the store: the (company, lot) key makes a cross-company link impossible in the schema.
+        await using (var raw = run.Context(CompanyB))
+        {
+            raw.Labels.Add(RawLabel(CompanyB, LotA));
+            var error = await Assert.ThrowsAsync<DbUpdateException>(() => raw.SaveChangesAsync());
+            var sql = Assert.IsType<SqlException>(error.InnerException);
+            Assert.Equal(547, sql.Number);
+            Assert.Contains("FK_Labels_Lots_CompanyId_LotId", sql.Message, StringComparison.Ordinal);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE CompanyId = @b AND LotId = @l", ("@b", CompanyB), ("@l", LotA)));
+    }
+
+    /// <summary>
+    /// #324 P3-2 (Business #66 5734060341: the migration fails visibly, no lot is invented): a label
+    /// stored before the lot table existed, naming a lot that does not exist, makes AddMaterialLots fail
+    /// when the foreign key is added. The migration's transaction takes the lot table back with it, the
+    /// label stays as it was, and the history does not record the migration.
+    /// </summary>
+    [SqlServerFact]
+    public async Task A_label_without_its_lot_makes_the_lot_migration_fail_visibly_and_changes_nothing()
+    {
+        await using var run = await Run.StartAsync(migrateInventory: false);
+        const string BeforeLots = "20260918160000_AddInventorySourceGrain";
+        await using (var context = run.Context(CompanyA))
+        {
+            await context.GetService<IMigrator>().MigrateAsync(BeforeLots);
+        }
+
+        var orphan = RawLabel(CompanyA, Guid.NewGuid());
+        await using (var raw = run.Context(CompanyA))
+        {
+            raw.Labels.Add(orphan);
+            await raw.SaveChangesAsync();
+        }
+
+        await using (var context = run.Context(CompanyA))
+        {
+            var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync());
+            Assert.Equal(547, error.Number);
+            Assert.Contains("FK_Labels_Lots_CompanyId_LotId", error.Message, StringComparison.Ordinal);
+            Assert.Equal(BeforeLots, (await context.Database.GetAppliedMigrationsAsync()).Last());
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sys.tables WHERE [name] = N'Lots' AND [schema_id] = SCHEMA_ID(N'inventory')"));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sys.foreign_keys WHERE [name] = N'FK_Labels_Lots_CompanyId_LotId'"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Labels WHERE Id = @id AND LotId = @lot AND Version = 1",
+            ("@id", orphan.Id), ("@lot", orphan.LotId)));
+    }
+
+    [SqlServerFact]
+    public async Task The_same_lot_replays_another_content_conflicts_and_a_racing_first_arrival_leaves_one()
+    {
+        await using var run = await Run.StartAsync();
+        var lot = new MaterialLot(Guid.NewGuid(), CompanyA, Product, coilNumber: "SYN-COIL-1");
+        await using (var a = run.Store(CompanyA))
+        {
+            Assert.Equal(InventoryWriteOutcome.Recorded, await a.Lots.SaveLotAsync(lot, [], Metadata(run)));
+            Assert.Equal(InventoryWriteOutcome.Replayed, await a.Lots.SaveLotAsync(
+                new MaterialLot(lot.Id, CompanyA, Product, coilNumber: "SYN-COIL-1"), [], Metadata(run)));
+            // Q3 (Business #66 5734060341): no path changes a stored lot's heat or coil; another content is a conflict.
+            Assert.Equal(InventoryStoreCodes.LotConflict, (await Assert.ThrowsAsync<InventoryStoreException>(() => a.Lots.SaveLotAsync(
+                new MaterialLot(lot.Id, CompanyA, Product, heatNumber: "SYN-HEAT-LATER", coilNumber: "SYN-COIL-1"), [],
+                Metadata(run)))).Code);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Inventory.MaterialLot' AND EntityId = @id",
+            ("@id", lot.Id.ToString("D"))));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Lots WHERE Id = @id AND HeatNumber IS NULL", ("@id", lot.Id)));
+
+        // Two first arrivals of one new lot pass the lookup and wait for each other at the save: one wins, the
+        // other stores nothing, and its retry is the winner's replay.
+        var racing = new MaterialLot(Guid.NewGuid(), CompanyA, Product);
+        var barrier = new Barrier(2);
+        async Task<object> ArriveAsync(string code)
+        {
+            await using var writer = run.Store(CompanyA, new BarrierInterceptor(barrier));
+            try
+            {
+                return await writer.Lots.SaveLotAsync(racing,
+                    [new MaterialLabel(Guid.NewGuid(), CompanyA, code, Product, racing.Id)], Metadata(run));
+            }
+            catch (InventoryStoreException exception)
+            {
+                return exception.Code;
+            }
+        }
+
+        var results = await Task.WhenAll(Task.Run(() => ArriveAsync("SYN-RACE-1")), Task.Run(() => ArriveAsync("SYN-RACE-2")));
+
+        Assert.Single(results, result => result is InventoryWriteOutcome.Recorded);
+        Assert.Single(results, result => result is string code && code == InventoryStoreCodes.ConcurrentChange);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Lots WHERE Id = @id", ("@id", racing.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Labels WHERE LotId = @id", ("@id", racing.Id)));
+        await using (var a = run.Store(CompanyA))
+        {
+            Assert.Equal(InventoryWriteOutcome.Replayed, await a.Lots.SaveLotAsync(racing, [], Metadata(run)));
+        }
+    }
+
+    [SqlServerFact]
+    public async Task Unknown_heat_and_coil_stay_null_and_a_text_that_does_not_fit_is_refused_not_cut()
+    {
+        await using var run = await Run.StartAsync();
+        var unknown = new MaterialLot(Guid.NewGuid(), CompanyA, Product, heatNumber: "  ", coilNumber: null);
+        await using (var a = run.Store(CompanyA))
+        {
+            await a.Lots.SaveLotAsync(unknown, [], Metadata(run));
+            Assert.Equal(InventoryStoreCodes.ValueDoesNotFit, (await Assert.ThrowsAsync<InventoryStoreException>(() => a.Lots.SaveLotAsync(
+                new MaterialLot(Guid.NewGuid(), CompanyA, Product, heatNumber: new string('H', MaterialLot.MaximumTraceLength + 1)), [],
+                Metadata(run)))).Code);
+        }
+
+        // Null, never an empty text or a zero (Ö3: nothing is generated or defaulted).
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.Lots WHERE Id = @id AND HeatNumber IS NULL AND CoilNumber IS NULL", ("@id", unknown.Id)));
+
+        // The schema refuses an empty text too, without the domain.
+        await using (var raw = run.Context(CompanyA))
+        {
+            raw.Lots.Add(new LotRow
+            {
+                Id = Guid.NewGuid(), CompanyId = CompanyA, ProductId = Product, HeatNumber = string.Empty, Version = 1,
+                CreatedAtUtc = At, CreatedBy = "synthetic-actor",
+            });
+            var error = await Assert.ThrowsAsync<DbUpdateException>(() => raw.SaveChangesAsync());
+            var sql = Assert.IsType<SqlException>(error.InnerException);
+            Assert.Equal(547, sql.Number);
+            Assert.Contains("CK_Lots_Trace", sql.Message, StringComparison.Ordinal);
+        }
+    }
+
+    private static LabelRow RawLabel(Guid company, Guid lot) => new()
+    {
+        Id = Guid.NewGuid(), CompanyId = company, Code = $"SYN-RAW-{Guid.NewGuid():N}", ProductId = Product, LotId = lot,
+        RequiredDocumentsJson = "[]", Version = 1, CreatedAtUtc = At, UpdatedAtUtc = At,
+    };
+
+    private static MaterialLabel NewLabel(Guid company, string code) =>
+        new(Guid.NewGuid(), company, code, Product, company == CompanyB ? LotB : LotA);
 
     private static StockPosition Position(Guid company, Guid location, MaterialLabel label, BlockState block) =>
         new(company, new StockOwner(StockPartyKind.Company, company), new StockCustodian(StockPartyKind.Company, company),
@@ -520,7 +790,8 @@ public sealed class InventorySqlServerRelationalAcceptanceTests
         public Guid Actor { get; } = Guid.NewGuid();
         public string Correlation { get; } = $"inv2-{Guid.NewGuid():N}";
 
-        public static async Task<Run> StartAsync()
+        /// <param name="migrateInventory">False: the host's modules only; the test runs Inventory's migrations itself.</param>
+        public static async Task<Run> StartAsync(bool migrateInventory = true)
         {
             var baseConnectionString = Environment.GetEnvironmentVariable(
                 SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
@@ -531,8 +802,24 @@ public sealed class InventorySqlServerRelationalAcceptanceTests
             using var client = factory.CreateClient();
             using var health = await client.GetAsync("/health/live");
             health.EnsureSuccessStatusCode();
-            await using var context = run.Context(CompanyA);
-            await context.Database.MigrateAsync();
+            if (!migrateInventory)
+            {
+                return run;
+            }
+
+            await using (var context = run.Context(CompanyA))
+            {
+                await context.Database.MigrateAsync();
+            }
+
+            // Each company's synthetic lot, under its own correlation so no test's audit count sees it.
+            foreach (var (company, lot) in new[] { (CompanyA, LotA), (CompanyB, LotB) })
+            {
+                await using var scope = run.Store(company);
+                await scope.Lots.SaveLotAsync(new MaterialLot(lot, company, Product), [],
+                    Metadata(run) with { CorrelationId = $"inv-lot-seed-{Guid.NewGuid():N}" });
+            }
+
             return run;
         }
 
@@ -604,6 +891,7 @@ public sealed class InventorySqlServerRelationalAcceptanceTests
 
     private sealed class StoreScope(InventoryDbContext dbContext, InventoryStore store) : IAsyncDisposable
     {
+        public IInventoryLotStore Lots => store;
         public IInventoryLabelStore Labels => store;
         public IInventoryMovementStore Movements => store;
 
