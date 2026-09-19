@@ -605,6 +605,10 @@ class RelationalInventoryLoaderTests(unittest.TestCase):
             VERIFIER.module_of(prefix + "SalesDraftApiSqlServerRelationalAcceptanceTests.Case"),
         )
         self.assertEqual(
+            "logistics",
+            VERIFIER.module_of(prefix + "LogisticsInstructionSqlServerRelationalAcceptanceTests.Case"),
+        )
+        self.assertEqual(
             "purchasing",
             VERIFIER.module_of(prefix + "PurchasingOrderSqlServerRelationalAcceptanceTests.Case"),
         )

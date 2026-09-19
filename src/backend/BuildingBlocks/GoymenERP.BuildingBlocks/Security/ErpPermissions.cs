@@ -130,6 +130,23 @@ public static class ErpPermissions
     public const string SalesOrdersApprove = "sales.orders.approve";
 
     /// <summary>
+    /// LOG-4a (Business #66 5737790175: the loading instruction on approved order lines, one stock effect): the
+    /// Logistics owner's names (LogisticsPermissionManifestV1), the backend owners' technical mapping (Business
+    /// #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Registered, not granted: no
+    /// role, seed or user receives them here (Sinan #66 5738113623 §4: personas deny-first, no real
+    /// assignment). Company-wide only: an instruction names the company's customer and order lines. Not
+    /// Critical: no source makes any of them a segregated duty (no maker≠checker, threshold or second person
+    /// is decided); a loaded share is a record-type name, as manufacturing.facts.record.
+    /// </summary>
+    public const string LogisticsLoadingInstructionsCreate = "logistics.loading-instructions.create";
+
+    /// <inheritdoc cref="LogisticsLoadingInstructionsCreate"/>
+    public const string LogisticsLoadingInstructionsRead = "logistics.loading-instructions.read";
+
+    /// <inheritdoc cref="LogisticsLoadingInstructionsCreate"/>
+    public const string LogisticsLoadsRecord = "logistics.loads.record";
+
+    /// <summary>
     /// PUR-4a (Business #66 5737790175: the purchase supply link of the core chain): the Purchasing owner's names
     /// (PurchasingPermissionManifestV1), the backend owners' technical mapping (Business #254 5654539215) recorded
     /// and confirmed by the coordinator (#66 5743488059). Read, create and approve are separate names so that
@@ -177,6 +194,9 @@ public static class ErpPermissions
             InventoryLabelsRead,
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
+            LogisticsLoadingInstructionsCreate,
+            LogisticsLoadingInstructionsRead,
+            LogisticsLoadsRecord,
             PurchasingOrdersCreate,
             PurchasingOrdersRead,
             PurchasingOrdersApprove,
@@ -223,6 +243,9 @@ public static class ErpPermissions
             InventoryLabelsRead,
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
+            LogisticsLoadingInstructionsCreate,
+            LogisticsLoadingInstructionsRead,
+            LogisticsLoadsRecord,
             PurchasingOrdersCreate,
             PurchasingOrdersRead,
             PurchasingOrdersApprove,

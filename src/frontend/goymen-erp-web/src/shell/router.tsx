@@ -144,15 +144,17 @@ export const shellRoutes: RouteObject[] = [
       /**
        * The Manufacturing lane's own routes, declared in
        * `src/manufacturing/manufacturingRoutes.tsx` and mounted here by the shared-integration
-       * owner (MFG-UI handoff). Each is wrapped in `CapabilityRoute`, so while the server keeps the
-       * capability staged the route renders the neutral not-found block and reads nothing.
+       * owner (MFG-UI handoff). Each is wrapped in `CapabilityRoute`: the capability is published
+       * (MFG-UI-F), so a route opens only for an actor the registry grants it; for anyone else it
+       * renders the neutral not-found block and reads nothing.
        */
       ...manufacturingRoutes,
       /**
        * The Finance lane's own routes, declared in `src/finance/financeRoutes.tsx` (receipt list, `yeni`,
        * `:sourceId`; bank-account list and `yeni`) and mounted here by the shared-integration owner
-       * (FIN-UI-1b handoff), before the catch-all. Each is wrapped in `CapabilityRoute`: while the
-       * declarations are staged, every Finance route closes onto the neutral not-found block.
+       * (FIN-UI-1b handoff), before the catch-all. Each is wrapped in `CapabilityRoute`: the declarations
+       * are published (FIN-UI-1c), so a route opens only for an actor the registry grants it; for anyone
+       * else it closes onto the neutral not-found block.
        */
       ...financeRoutes,
       {

@@ -2,7 +2,7 @@
 #
 # Owner: ORGANİZASYON (Manufacturing owner; suite owner). Validated with the merged model by
 # tools/validate_browser_acceptance.py once the central writer registers the `mfg` suite
-# (SUITES / SUITE_PROFILES `mfg-staged`, SUITE_API_EXTENSIONS["mfg"] = actors + identity,
+# (SUITES / SUITE_PROFILES `normal` since MFG-UI-F, first `mfg-staged`; SUITE_API_EXTENSIONS["mfg"] = actors + identity,
 # SUITE_IDENTITY_PERMISSIONS["mfg"] = the five Manufacturing names below).
 #
 # Two synthetic actors after the canonical two, each with its Identity user, a synthetic role and a

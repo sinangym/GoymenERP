@@ -15,10 +15,12 @@ namespace GoymenERP.Modules.Finance.Infrastructure.Shell;
 /// control and keeps its list's F-04.
 /// </para>
 /// <para>
-/// <b>Staged first:</b> every declaration is <c>ImplementationAvailable: false</c> until the FIN-01
-/// browser acceptance; a separate flip PR makes them available, as for Cari. The approval is a control
-/// of the F-04 list (<c>ParentCapabilityId</c>), not a route. A declaration grants nothing: each route's
-/// service measures its permission afresh.
+/// <b>Published (FIN-UI-1c):</b> every declaration is <c>ImplementationAvailable: true</c>, flipped by its own
+/// PR after the FIN-01 browser acceptance on the staged profile (run 35444049175, #332), the S03-c precedent.
+/// Nothing else changed: ids, routes, screens, permissions, context and scope are FIN-UI-1a's. The approval
+/// is a control of the F-04 list (<c>ParentCapabilityId</c>), not a route. A declaration grants nothing: a
+/// screen is published to an actor only with its own narrow Finance name (grants stay a human gate), and
+/// each route's service measures its permission afresh.
 /// </para>
 /// <para>
 /// The host registers this provider together with its shell authority (the central writer's); this
@@ -88,5 +90,5 @@ public sealed class FinanceShellCapabilityProvider : IShellCapabilityProvider
         string screenId, ShellCapabilityRoutePrecedence precedence, IReadOnlyCollection<string> permissions) =>
         new ShellCapabilityDeclaration(capabilityId, routeId, routePath, screenId, precedence,
             ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide, permissions,
-            ImplementationAvailable: false);
+            ImplementationAvailable: true);
 }

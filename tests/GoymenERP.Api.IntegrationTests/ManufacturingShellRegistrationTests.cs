@@ -14,9 +14,9 @@ using Microsoft.Extensions.Hosting;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
-/// MFG-UI (#323), central: the normal host registers Manufacturing's staged provider beside Counterparty,
-/// Organization, Product, published Sales and staged Finance; the disposable mfg-staged profile (D4) opens exactly Manufacturing's own
-/// declarations beside the list-only C-01 set.
+/// MFG-UI (#323), central: the normal host registers Manufacturing's provider beside Counterparty,
+/// Organization, Product, published Sales and published Finance. MFG-UI-F: the order detail and its facts
+/// control are published (availability only), and the disposable mfg-staged profile (D4) is retired.
 /// </summary>
 public sealed class ManufacturingShellRegistrationTests
 {
@@ -31,19 +31,19 @@ public sealed class ManufacturingShellRegistrationTests
         ];
 
         // On failure xUnit prints the actual revision: the constant is never guessed.
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10FinanceV10AndManufacturingV10,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10AndPublishedManufacturingV10,
             ShellCapabilityRegistry.ComputeCandidateRevision(providers));
     }
 
     [Fact]
-    public void The_normal_host_with_Manufacturing_gets_its_authority_and_the_staged_screen_grants_nothing()
+    public void The_normal_host_with_Manufacturing_gets_its_authority_and_serves_the_published_screen()
     {
         var services = NormalHost();
 
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10FinanceV10AndManufacturingV10,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10AndPublishedManufacturingV10,
             authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
@@ -51,8 +51,10 @@ public sealed class ManufacturingShellRegistrationTests
         var manufacturing = registry.Registrations
             .Where(item => item.Owner == ManufacturingShellCapabilityProvider.OwnerId)
             .ToArray();
+        // The order detail and its facts control, published (MFG-UI-F). A declaration still grants nothing:
+        // each route's service measures its own Manufacturing permission afresh.
         Assert.Equal(2, manufacturing.Length);
-        Assert.All(manufacturing, item => Assert.False(item.Declaration.ImplementationAvailable));
+        Assert.All(manufacturing, item => Assert.True(item.Declaration.ImplementationAvailable));
     }
 
     // Since Finance is host-wired (#325) the host always registers it: the earlier set without Finance
@@ -103,50 +105,19 @@ public sealed class ManufacturingShellRegistrationTests
             Assert.Single(services, item => item.ServiceType == typeof(IShellCapabilityProvider)).ImplementationType);
     }
 
+    // MFG-UI-F: the disposable mfg-staged profile ("manufacturing-order-detail", #323 D4) is retired. Its value
+    // is no profile any more: inside the C-01 envelope it fails closed at startup, as any unknown one.
     [Fact]
-    public void The_mfg_staged_profile_opens_only_Manufacturings_own_declarations_beside_the_C01_list()
+    public void The_retired_mfg_staged_profile_value_fails_closed()
     {
         var services = NormalHost();
         var envelope = new Dictionary<string, string?>(C01E2eShellCapabilityActivationTests.ExactEnvelope())
         {
-            [C01E2eShellCapabilityActivation.ProfileConfigurationKey] =
-                C01E2eShellCapabilityActivation.ManufacturingOrderDetailProfile,
+            [C01E2eShellCapabilityActivation.ProfileConfigurationKey] = "manufacturing-order-detail",
         };
 
-        var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
-            new ConfigurationBuilder().AddInMemoryCollection(envelope).Build());
-
-        Assert.Equal(ShellCapabilityRegistryAuthorities.C01DisposableManufacturingOrderDetailV1, authority);
-        Assert.Equal(
-            [typeof(C01E2eShellCapabilityProvider), typeof(C01E2eManufacturingOrderDetailShellCapabilityProvider)],
-            services.Where(item => item.ServiceType == typeof(IShellCapabilityProvider))
-                .Select(item => item.ImplementationType));
-        using var container = services.BuildServiceProvider();
-        var providers = container.GetServices<IShellCapabilityProvider>().ToArray();
-        Assert.Equal(authority, ShellCapabilityRegistry.ComputeCandidateRevision(providers));
-        var registry = new ShellCapabilityRegistry(providers, new ShellCapabilityAuthorityCatalog([authority]));
-
-        // Same ids, route, access and parent as the owner's declarations; only availability differs.
-        var owner = new ManufacturingShellCapabilityProvider().GetDeclarations()
-            .ToDictionary(declaration => declaration.CapabilityId);
-        var opened = registry.Registrations
-            .Where(item => item.Owner == ManufacturingShellCapabilityProvider.OwnerId)
-            .ToArray();
-        Assert.Equal(owner.Keys.Order(), opened.Select(item => item.Declaration.CapabilityId).Order());
-        Assert.All(opened, item =>
-        {
-            var expected = owner[item.Declaration.CapabilityId];
-            var actual = item.Declaration;
-            Assert.True(actual.ImplementationAvailable);
-            Assert.Equal(
-                (expected.RouteId, expected.RoutePath, expected.ScreenId, expected.RoutePrecedence,
-                    expected.ContextRequirement, expected.ScopeRequirement, expected.ParentCapabilityId),
-                (actual.RouteId, actual.RoutePath, actual.ScreenId, actual.RoutePrecedence,
-                    actual.ContextRequirement, actual.ScopeRequirement, actual.ParentCapabilityId));
-            Assert.Equal(expected.RequiredPermissions.Order(), actual.RequiredPermissions.Order());
-        });
-        Assert.DoesNotContain(registry.Registrations, item => item.Owner == SalesShellCapabilityProvider.OwnerId
-                                                              || item.Owner == ProductShellCapabilityProvider.OwnerId);
+        Assert.Throws<InvalidOperationException>(() => C01E2eShellCapabilityActivation.Configure(services,
+            new TestingEnvironment(), new ConfigurationBuilder().AddInMemoryCollection(envelope).Build()));
     }
 
     private static ServiceCollection NormalHost()

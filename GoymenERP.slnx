@@ -47,6 +47,7 @@
   <Folder Name="/src/backend/Modules/Logistics/">
     <Project Path="src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Application/GoymenERP.Modules.Logistics.Application.csproj" />
     <Project Path="src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Domain/GoymenERP.Modules.Logistics.Domain.csproj" />
+    <Project Path="src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/GoymenERP.Modules.Logistics.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/src/backend/Modules/Manufacturing/">
     <Project Path="src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Application/GoymenERP.Modules.Manufacturing.Application.csproj" />

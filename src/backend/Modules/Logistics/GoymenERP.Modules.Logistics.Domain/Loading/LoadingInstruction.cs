@@ -76,19 +76,20 @@ public sealed class LoadingInstruction
         new(id, companyId, customerPartyId, companyAccountId, now);
 
     /// <summary>
-    /// What should be loaded for one product, from the sales order line it serves (identity only,
-    /// §5 "her olayın kaynak kimliği vardır"), in a Settings unit (identity only; the unit's
+    /// What should be loaded for one product, from the sales order line it serves (its identity
+    /// binding: order, line, revision — §5 "her olayın kaynak kimliği vardır"; LOG-4 D4: only an
+    /// APPROVED line is a need, the Sales owner answers that at command time), in a Settings unit (identity only; the unit's
     /// profile and the quantity's scale are verified by the Application layer), optionally
     /// drawing from one Inventory allocation. Loading is a sub-share of the allocation, never a
     /// second reservation.
     /// </summary>
-    public LoadingInstructionLine AddLine(long expectedVersion, Guid lineId, Guid sourceOrderLineId, Guid productId, Guid unitId,
+    public LoadingInstructionLine AddLine(long expectedVersion, Guid lineId, SourceOrderLineRef source, Guid productId, Guid unitId,
         Guid? allocationId, Quantity instructed, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
         RequireStatus(LoadingInstructionStatus.Draft, LogisticsRuleCodes.InstructionNotDraft, "Yalnız taslak talimata satır eklenebilir.");
         Identity.Require(lineId, nameof(lineId));
-        Identity.Require(sourceOrderLineId, nameof(sourceOrderLineId));
+        SourceOrderLineRef.Require(source);
         Identity.Require(productId, nameof(productId));
         Identity.Require(unitId, nameof(unitId));
         if (allocationId == Guid.Empty)
@@ -106,7 +107,7 @@ public sealed class LoadingInstruction
             throw new LogisticsRuleException(LogisticsRuleCodes.DuplicateLineId, "Aynı talimat satırı kimliği ikinci kez eklenemez.");
         }
 
-        var line = new LoadingInstructionLine(lineId, sourceOrderLineId, productId, unitId, allocationId, instructed);
+        var line = new LoadingInstructionLine(lineId, source, productId, unitId, allocationId, instructed);
         lines.Add(line);
         Touch(now);
         return line;

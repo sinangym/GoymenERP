@@ -5,9 +5,9 @@ namespace GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 
 /// <summary>
 /// Publishes the Manufacturing order screen to the shell (MFG-UI card, coordinator-approved) —
-/// STAGED: both declarations are <c>ImplementationAvailable: false</c> until the browser suite
-/// <c>mfg</c> accepts the screen, when a separate exact-head change flips them (the Cari pattern,
-/// card D1).
+/// PUBLISHED (MFG-UI-F): both declarations are <c>ImplementationAvailable: true</c>, after the <c>mfg</c>
+/// browser suite accepted the staged screen (the S03-c / FIN-UI-1c pattern). The screen opens to whoever
+/// holds the permission in the context company; publishing grants nothing (every grant is a human gate).
 /// <list type="bullet">
 /// <item><c>manufacturing.orders.detail</c> → <c>/uretim/emir/:orderId</c> on
 /// <see cref="ErpPermissions.ManufacturingOrdersRead"/>.</item>
@@ -48,7 +48,7 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
             ShellCapabilityContextRequirement.SingleCompany,
             ShellCapabilityScopeRequirement.CompanyWide,
             [ErpPermissions.ManufacturingOrdersRead],
-            ImplementationAvailable: false);
+            ImplementationAvailable: true);
 
         return
         [
