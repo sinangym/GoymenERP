@@ -184,6 +184,17 @@ const ISSUE_TEXT: Readonly<Record<string, string>> = {
   finance_period_scope_mismatch: 'Dönem bilgisi bu işlemle eşleşmiyor.',
   finance_period_ineligible: 'İşlem tarihi uygun bir döneme ait değil.',
   finance_period_metadata_invalid: 'Dönem bilgisi eksik veya geçersiz.',
+  // FIN-UI-1a (bank-account master, terminal refusals)
+  draft_not_found: 'Bu taslak bu şirkette bulunamadı.',
+  version_conflict: 'Kayıt başka bir işlemle değişti; güncel sürümü okuyun.',
+  display_name_invalid: 'Hesap adı boş olamaz ve başında/sonunda boşluk olamaz.',
+  finance_value_does_not_fit: 'Bir alan izin verilen uzunluğu aşıyor.',
+  currency_not_a_candidate: 'Seçilen para birimi bu şirketin para birimleri arasında değil.',
+  bank_account_not_found: 'Bu banka hesabı bu şirkette bulunamadı.',
+  bank_account_not_proposed: 'Bu hesap onay beklemiyor; zaten onaylanmış olabilir.',
+  finance_approver_is_proposer: 'Hesabı öneren kişi onu onaylayamaz; başka bir yetkili onaylamalı.',
+  idempotency_key_invalid: 'İşlem anahtarı geçersiz.',
+  settings_money_profile_not_found: 'Seçilen para birimi için onaylı tutar profili yok.',
 }
 
 export function issueText(code: string): string {
@@ -191,3 +202,14 @@ export function issueText(code: string): string {
 }
 
 export const PORT_MISSING_DETAIL = 'Finans servisi bu ortamda bağlı değil.'
+
+// F-02 route pages (FIN-UI-1b)
+export const RECEIPTS_TITLE = 'Tahsilat taslakları'
+export const RECEIPTS_NOTICE =
+  'Taslaklar para etkisi taşımaz. Yeni bir tahsilat taslağı ilgili cari hesabın ekranından başlatılır.'
+export const RECEIPT_DRAFT_TITLE = 'Yeni tahsilat taslağı'
+export const RECEIPT_DRAFT_NEEDS_PARTY =
+  'Tahsilat taslağı bir cari hesaptan başlatılır. Cari hesabın ekranındaki "Tahsilat taslağı" bağlantısını kullanın.'
+export const RECEIPT_DETAIL_TITLE = 'Tahsilat taslağı'
+export const OPEN_SAVED_DRAFT = 'Kaydedilen taslağı aç'
+export const BACK_TO_RECEIPTS = 'Tahsilat taslaklarına dön'

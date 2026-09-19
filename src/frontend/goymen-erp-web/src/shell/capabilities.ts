@@ -135,6 +135,22 @@ export const CAPABILITY = {
    * the `organization.locations.status` precedent), not a route, so it is not in this table.
    */
   manufacturingOrdersDetail: 'manufacturing.orders.detail',
+  /** F-02 manual-receipt draft list. Route `/finans/tahsilatlar`, owner the Finance lane (FİNANS). */
+  financeReceiptsList: 'finance.receipts.list',
+  /** F-02 new draft, entered from a Cari account (`?partyId&companyAccountId`). Route `/finans/tahsilatlar/yeni`. */
+  financeReceiptsDraft: 'finance.receipts.draft',
+  /** F-02 one draft. Route `/finans/tahsilatlar/:sourceId`. A SEPARATE grant from the list. */
+  financeReceiptsDetail: 'finance.receipts.detail',
+  /** F-04 bank-account master. Route `/finans/banka-hesaplari`. */
+  financeBankAccountsList: 'finance.bank-accounts.list',
+  /**
+   * F-04 propose a bank account. Route `/finans/banka-hesaplari/yeni`.
+   *
+   * `finance.bank-accounts.approve` is deliberately NOT here: it is a control of the F-04 list (the
+   * provider's `ParentCapabilityId`), not a route, so it belongs in no route registry. The list checks
+   * it itself, and the server refuses a self-approval anyway.
+   */
+  financeBankAccountsPropose: 'finance.bank-accounts.propose',
 } as const
 
 export type CapabilityId = (typeof CAPABILITY)[keyof typeof CAPABILITY]
@@ -167,6 +183,12 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.salesDraftsCreate]: '/satis/siparisler/yeni',
   [CAPABILITY.salesDraftsDetail]: '/satis/siparisler/:draftId',
   [CAPABILITY.manufacturingOrdersDetail]: '/uretim/emir/:orderId',
+  [CAPABILITY.financeReceiptsList]: '/finans/tahsilatlar',
+  // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a source id.
+  [CAPABILITY.financeReceiptsDraft]: '/finans/tahsilatlar/yeni',
+  [CAPABILITY.financeReceiptsDetail]: '/finans/tahsilatlar/:sourceId',
+  [CAPABILITY.financeBankAccountsList]: '/finans/banka-hesaplari',
+  [CAPABILITY.financeBankAccountsPropose]: '/finans/banka-hesaplari/yeni',
 }
 
 /** Nav label per capability. Only rendered when the server granted the capability. */
@@ -195,4 +217,11 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   [CAPABILITY.salesDraftsDetail]: '',
   // Nor this one: an order is opened by its id, never from the sidebar.
   [CAPABILITY.manufacturingOrdersDetail]: '',
+  [CAPABILITY.financeReceiptsList]: 'Tahsilat Taslakları',
+  [CAPABILITY.financeBankAccountsList]: 'Banka Hesapları',
+  // None of these three: the new draft is entered from a Cari account, the detail from a list row and
+  // the propose screen from the F-04 list, never from the sidebar.
+  [CAPABILITY.financeReceiptsDraft]: '',
+  [CAPABILITY.financeReceiptsDetail]: '',
+  [CAPABILITY.financeBankAccountsPropose]: '',
 }

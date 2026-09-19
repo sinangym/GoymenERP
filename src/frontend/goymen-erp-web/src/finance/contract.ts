@@ -413,7 +413,9 @@ export function decodeCommandResult(value: unknown, companyId: string): Decoded<
     !COMMAND_OUTCOMES.includes(value.outcome) ||
     typeof value.isReplay !== 'boolean' ||
     typeof value.originalCorrelationId !== 'string' ||
-    value.originalCorrelationId.length === 0 ||
+    // A replay names the first attempt's correlation. A status-only answer (403 Denied, 503
+    // Unavailable, restated by the HTTP port) carries none, and is still a definite outcome.
+    (value.isReplay && value.originalCorrelationId.length === 0) ||
     !Array.isArray(value.issues)
   ) {
     return FAIL

@@ -22,34 +22,54 @@ import type { FinanceReceiptPort, FinanceScope, PortReply } from './port'
 import type { HttpReadReply } from './http'
 import type { DraftContextRequest } from './draftContext'
 import type { DraftSaveRequest, RecordRequest, ReverseRequest } from './contract'
+import type { BankAccountApprovalBody, BankAccountProposeRequest } from './bankAccountContract'
 import { clearAttemptStore } from './receiptCommand'
+import { clearBankAttemptStore } from './bankAccountCommand'
 import { DRAFT_CONTEXT_EXAMPLE, EXAMPLE_BANK, EXAMPLE_COMPANY, EXAMPLE_CURRENCY, NEGATIVE_EXAMPLE, NORMAL_EXAMPLE } from './contractExamples'
 
 export const COMPANY_A = EXAMPLE_COMPANY
 export const COMPANY_B = 'bbbbbbbb-0000-4000-8000-000000000002'
 export const ACTOR = '99999999-9999-4999-8999-999999999999'
 
-export function shellFor(companyId: string, revision = 1): ShellState {
+export function shellFor(companyId: string, revision = 1, capabilities: readonly string[] = []): ShellState {
   return {
     ...initialShellState,
     phase: 'idle',
-    activeContext: { userId: ACTOR, scopeMode: 'single', companyId, capabilityGeneration: 'finance-gen-1', capabilities: [] },
+    activeContext: {
+      userId: ACTOR,
+      scopeMode: 'single',
+      companyId,
+      capabilityGeneration: 'finance-gen-1',
+      capabilities: [...capabilities],
+    },
     committedContextRevision: revision,
     sessionEpoch: 1,
     bootstrappedSessionEpoch: 1,
   }
 }
 
-type CommandName = 'draftSave' | 'record' | 'reverse'
-type ReadName = 'listBankAccounts' | 'listSources' | 'sourceDetail' | 'draftContext'
+type CommandName = 'draftSave' | 'record' | 'reverse' | 'proposeBankAccount' | 'approveBankAccount'
+type ReadName =
+  | 'listBankAccounts'
+  | 'listSources'
+  | 'sourceDetail'
+  | 'draftContext'
+  | 'listBankAccountMaster'
+  | 'bankAccountCurrencyCandidates'
 
 export interface CommandCall {
   readonly method: CommandName
   readonly scope: FinanceScope
   readonly key: string
-  readonly request: DraftSaveRequest | RecordRequest | ReverseRequest
+  /** The body; for an approval `{ accountId, body }`. */
+  readonly request: DraftSaveRequest | RecordRequest | ReverseRequest | BankAccountProposeRequest | ApprovalCall
   resolve(reply: PortReply): Promise<void>
   reject(): Promise<void>
+}
+
+export interface ApprovalCall {
+  readonly accountId: string
+  readonly body: BankAccountApprovalBody
 }
 
 export interface ReadCall {
@@ -80,7 +100,7 @@ export function recordingPort(respond: ReadResponder) {
 
   const command =
     (method: CommandName) =>
-    (scope: FinanceScope, key: string, request: DraftSaveRequest | RecordRequest | ReverseRequest) =>
+    (scope: FinanceScope, key: string, request: CommandCall['request']) =>
       new Promise<PortReply>((resolvePromise, rejectPromise) => {
         commands.push({
           method,
@@ -112,6 +132,10 @@ export function recordingPort(respond: ReadResponder) {
     draftSave: command('draftSave'),
     record: command('record'),
     reverse: command('reverse'),
+    listBankAccountMaster: read('listBankAccountMaster') as FinanceReceiptPort['listBankAccountMaster'],
+    bankAccountCurrencyCandidates: read('bankAccountCurrencyCandidates') as FinanceReceiptPort['bankAccountCurrencyCandidates'],
+    proposeBankAccount: command('proposeBankAccount'),
+    approveBankAccount: (scope, key, accountId, approval) => command('approveBankAccount')(scope, key, { accountId, body: approval }),
   }
   return { port, commands, reads }
 }
@@ -156,6 +180,7 @@ export function renderFinance(
   options: { readonly port: FinanceReceiptPort | null; readonly shell?: ShellState },
 ) {
   clearAttemptStore()
+  clearBankAttemptStore()
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
   const shell = options.shell ?? shellFor(COMPANY_A)
   let generation = 0
