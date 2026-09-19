@@ -6,6 +6,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../GoymenERP.Modules.Logistics.Domain/GoymenERP.Modules.Logistics.Domain.csproj" />
+    <ProjectReference Include="../../../BuildingBlocks/GoymenERP.BuildingBlocks/GoymenERP.BuildingBlocks.csproj" />
+    <ProjectReference Include="../../Sales/GoymenERP.Modules.Sales.Application/GoymenERP.Modules.Sales.Application.csproj" />
     <ProjectReference Include="../../Settings/GoymenERP.Modules.Settings.Application/GoymenERP.Modules.Settings.Application.csproj" />
   </ItemGroup>
 </Project>

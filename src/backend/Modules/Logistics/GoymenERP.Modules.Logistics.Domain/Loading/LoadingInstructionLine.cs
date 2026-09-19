@@ -15,10 +15,10 @@ namespace GoymenERP.Modules.Logistics.Domain.Loading;
 /// </summary>
 public sealed class LoadingInstructionLine
 {
-    internal LoadingInstructionLine(Guid id, Guid sourceOrderLineId, Guid productId, Guid unitId, Guid? allocationId, Quantity instructed)
+    internal LoadingInstructionLine(Guid id, SourceOrderLineRef source, Guid productId, Guid unitId, Guid? allocationId, Quantity instructed)
     {
         Id = id;
-        SourceOrderLineId = sourceOrderLineId;
+        Source = source;
         ProductId = productId;
         UnitId = unitId;
         AllocationId = allocationId;
@@ -30,8 +30,11 @@ public sealed class LoadingInstructionLine
 
     public Guid Id { get; }
 
-    /// <summary>The sales order line this loading serves (Sales identity only; §5 source identity).</summary>
-    public Guid SourceOrderLineId { get; }
+    /// <summary>The sales order line this loading serves: order, line and revision (Sales identities only; §5 source identity; LOG-4 D4).</summary>
+    public SourceOrderLineRef Source { get; }
+
+    /// <summary>The sales order line's id (the binding's line member, kept for readers of LOG-1..3).</summary>
+    public Guid SourceOrderLineId => Source.LineId;
 
     public Guid ProductId { get; }
 

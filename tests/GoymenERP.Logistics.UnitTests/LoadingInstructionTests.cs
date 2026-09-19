@@ -21,7 +21,7 @@ public sealed class LoadingInstructionTests
     private static LoadingInstruction Draft() => LoadingInstruction.Create(Guid.NewGuid(), Company, Customer, Account, T0);
 
     private static LoadingInstructionLine Line(LoadingInstruction instruction, long expectedVersion, decimal kilograms, Guid? allocationId = null) =>
-        instruction.AddLine(expectedVersion, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), KgUnit, allocationId, Kg(kilograms), T0);
+        instruction.AddLine(expectedVersion, Guid.NewGuid(), new SourceOrderLineRef(Guid.NewGuid(), Guid.NewGuid(), 0), Guid.NewGuid(), KgUnit, allocationId, Kg(kilograms), T0);
 
     private static (LoadingInstruction Instruction, LoadingInstructionLine Line) Issued(decimal kilograms)
     {
@@ -51,11 +51,11 @@ public sealed class LoadingInstructionTests
         var instruction = Draft();
         var orderLine = Guid.NewGuid();
         var product = Guid.NewGuid();
-        Assert.Throws<ArgumentException>(() => instruction.AddLine(1, Guid.NewGuid(), Guid.Empty, product, KgUnit, null, Kg(1), T0));
-        Assert.Throws<ArgumentException>(() => instruction.AddLine(1, Guid.NewGuid(), orderLine, Guid.Empty, KgUnit, null, Kg(1), T0));
-        Assert.Throws<ArgumentException>(() => instruction.AddLine(1, Guid.NewGuid(), orderLine, product, Guid.Empty, null, Kg(1), T0));
-        Assert.Throws<ArgumentException>(() => instruction.AddLine(1, Guid.NewGuid(), orderLine, product, KgUnit, Guid.Empty, Kg(1), T0));
-        var line = instruction.AddLine(1, Guid.NewGuid(), orderLine, product, KgUnit, null, Kg(6_000m), T0);
+        Assert.Throws<ArgumentException>(() => instruction.AddLine(1, Guid.NewGuid(), new SourceOrderLineRef(Guid.NewGuid(), Guid.Empty, 0), product, KgUnit, null, Kg(1), T0));
+        Assert.Throws<ArgumentException>(() => instruction.AddLine(1, Guid.NewGuid(), new SourceOrderLineRef(Guid.NewGuid(), orderLine, 0), Guid.Empty, KgUnit, null, Kg(1), T0));
+        Assert.Throws<ArgumentException>(() => instruction.AddLine(1, Guid.NewGuid(), new SourceOrderLineRef(Guid.NewGuid(), orderLine, 0), product, Guid.Empty, null, Kg(1), T0));
+        Assert.Throws<ArgumentException>(() => instruction.AddLine(1, Guid.NewGuid(), new SourceOrderLineRef(Guid.NewGuid(), orderLine, 0), product, KgUnit, Guid.Empty, Kg(1), T0));
+        var line = instruction.AddLine(1, Guid.NewGuid(), new SourceOrderLineRef(Guid.NewGuid(), orderLine, 0), product, KgUnit, null, Kg(6_000m), T0);
         Assert.Equal((orderLine, product, KgUnit, (Guid?)null), (line.SourceOrderLineId, line.ProductId, line.UnitId, line.AllocationId));
     }
 
@@ -65,10 +65,10 @@ public sealed class LoadingInstructionTests
         var instruction = Draft();
         Assert.Equal(LogisticsRuleCodes.InstructionWithoutLines, CodeOf(() => instruction.Issue(1, T0)));
         var lineId = Guid.NewGuid();
-        Assert.Throws<ArgumentOutOfRangeException>(() => instruction.AddLine(1, lineId, Guid.NewGuid(), Guid.NewGuid(), KgUnit, null, Kg(0), T0));
-        instruction.AddLine(1, lineId, Guid.NewGuid(), Guid.NewGuid(), KgUnit, null, Kg(6_000m), T0);
+        Assert.Throws<ArgumentOutOfRangeException>(() => instruction.AddLine(1, lineId, new SourceOrderLineRef(Guid.NewGuid(), Guid.NewGuid(), 0), Guid.NewGuid(), KgUnit, null, Kg(0), T0));
+        instruction.AddLine(1, lineId, new SourceOrderLineRef(Guid.NewGuid(), Guid.NewGuid(), 0), Guid.NewGuid(), KgUnit, null, Kg(6_000m), T0);
         Assert.Equal(LogisticsRuleCodes.DuplicateLineId,
-            CodeOf(() => instruction.AddLine(2, lineId, Guid.NewGuid(), Guid.NewGuid(), KgUnit, null, Kg(1), T0)));
+            CodeOf(() => instruction.AddLine(2, lineId, new SourceOrderLineRef(Guid.NewGuid(), Guid.NewGuid(), 0), Guid.NewGuid(), KgUnit, null, Kg(1), T0)));
         instruction.Issue(2, T0.AddMinutes(1));
         Assert.Equal(LoadingInstructionStatus.Issued, instruction.Status);
         Assert.Equal(LogisticsRuleCodes.InstructionNotDraft, CodeOf(() => Line(instruction, 3, 1)));
@@ -368,7 +368,7 @@ public sealed class LoadingInstructionTests
     public void Pieces_and_kilograms_are_separate_lines_with_separate_shares()
     {
         var instruction = Draft();
-        var pieces = instruction.AddLine(1, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), null, Quantity.Of(20m, QuantityUnit.Piece), T0);
+        var pieces = instruction.AddLine(1, Guid.NewGuid(), new SourceOrderLineRef(Guid.NewGuid(), Guid.NewGuid(), 0), Guid.NewGuid(), Guid.NewGuid(), null, Quantity.Of(20m, QuantityUnit.Piece), T0);
         var kilograms = Line(instruction, 2, 500m, Allocation);
         instruction.Issue(3, T0);
         instruction.RecordLoad(4, Guid.NewGuid(), pieces.Id, Quantity.Of(20m, QuantityUnit.Piece), MeasurementKind.Measured, T0);
