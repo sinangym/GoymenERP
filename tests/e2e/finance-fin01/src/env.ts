@@ -12,8 +12,8 @@
  *   proposerActor    — Development user proposing the account and preparing the draft
  *   approverActor    — another Development user, who approves (Ö4: never the proposer)
  *
- * The Finance capabilities must be published by the stack's staged Finance profile, since the
- * provider is staged in the normal runtime (card FIN-UI-1 §6).
+ * The Finance capabilities come from the NORMAL host: the provider is published since FIN-UI-1c, and a
+ * screen opens only for an actor holding its own Finance permission (the suite override's grants).
  */
 
 export interface Fin01Seed {

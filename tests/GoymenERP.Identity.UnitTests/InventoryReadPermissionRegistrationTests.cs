@@ -26,6 +26,8 @@ public sealed class InventoryReadPermissionRegistrationTests
     {
         ErpPermissions.InventoryLabelsRead,
         ErpPermissions.InventoryBalancesRead,
+        // INV-OPEN-1 part 2 (T07 = A): the opening record name, registered the same way (reason on the constant).
+        ErpPermissions.InventoryOpeningStockRecord,
     };
 
     [Fact]
@@ -33,6 +35,7 @@ public sealed class InventoryReadPermissionRegistrationTests
     {
         Assert.Equal("inventory.labels.read", ErpPermissions.InventoryLabelsRead);
         Assert.Equal("inventory.balances.read", ErpPermissions.InventoryBalancesRead);
+        Assert.Equal("inventory.opening-stock.record", ErpPermissions.InventoryOpeningStockRecord);
     }
 
     [Theory]

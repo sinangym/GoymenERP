@@ -1,5 +1,7 @@
+using System.Text.Json;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
+using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
 
@@ -9,7 +11,8 @@ namespace GoymenERP.Api.Endpoints;
 /// T07(a): Inventory's read surface, company-scoped. Each read needs the server-resolved company
 /// (<c>X-Company-Id</c>) and its own permission, checked by the host's policy against the actor's
 /// current grants. A label of another company, or one that does not exist, is the same 404: the
-/// tenant filter never shows it. No write is exposed here; the receipt is a later slice.
+/// tenant filter never shows it. The one write is the opening count (INV-OPEN-1 part 2), below; the
+/// receipt is a later slice.
 /// </summary>
 public static class InventoryEndpoints
 {
@@ -72,8 +75,197 @@ public static class InventoryEndpoints
             .ProducesErpCodeLessNotFound()
             .ProducesErpAuthenticatedProblems();
 
+        MapOpeningCountEndpoints(group);
         return endpoints;
     }
+
+    /// <summary>
+    /// INV-OPEN-1 part 2 (T07 = A, #66 5738113623 §2): record an opening count and read one back. The
+    /// permission (<c>inventory.opening-stock.record</c>), the company, the location and every line's product
+    /// are measured by the owner's service at each fence, not by a route policy, so a revocation in flight is
+    /// seen. ADR-011: one canonical <c>Idempotency-Key</c>; 201 with the count on the first recording, 200 for
+    /// the same key again; a replay — success or a recorded terminal refusal (§7) — carries
+    /// <c>Idempotency-Replayed</c> and <c>Idempotency-Original-Correlation-Id</c>. The problem boundary is the
+    /// Sales one: 401/403/404/503 are platform problems without the owner's code; 400/409/422 carry the
+    /// code, the per-field errors and the correlation id. Every advertised code is the owner's closed set.
+    /// </summary>
+    private static void MapOpeningCountEndpoints(RouteGroupBuilder group)
+    {
+        group.MapPost(OpeningCountsPath, async (
+                HttpContext httpContext,
+                IInventoryOpeningCommandService service,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key) || !correlation.IsResolved)
+                {
+                    return OpeningProblem(StatusCodes.Status400BadRequest, InventoryOpeningCodesV1.ValidationFailed, correlation);
+                }
+
+                if (!httpContext.Request.HasJsonContentType())
+                {
+                    return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                OpeningCountRequestV1? request;
+                try
+                {
+                    request = await JsonSerializer.DeserializeAsync<OpeningCountRequestV1>(httpContext.Request.Body,
+                        OpeningJson, cancellationToken);
+                }
+                catch (JsonException)
+                {
+                    return OpeningProblem(StatusCodes.Status400BadRequest, InventoryOpeningCodesV1.ValidationFailed, correlation);
+                }
+
+                if (request is null)
+                {
+                    return OpeningProblem(StatusCodes.Status400BadRequest, InventoryOpeningCodesV1.ValidationFailed, correlation);
+                }
+
+                // The actor, role codes and scope are the service's own fresh measurement; the host passes only
+                // the request's identity and transport facts.
+                var metadata = new InventoryCommandMetadata(
+                    currentUser.UserId ?? string.Empty,
+                    ErpPermissions.InventoryOpeningStockRecord,
+                    [],
+                    correlation.CorrelationId,
+                    correlation.CausationId,
+                    key,
+                    correlation.SourceChannel,
+                    correlation.ClientIpAddress,
+                    correlation.UserAgent);
+                try
+                {
+                    var result = await service.RecordAsync(request, metadata, cancellationToken);
+                    if (result.IsReplay)
+                    {
+                        ApplyReplayHeaders(httpContext, result.OriginalCorrelationId);
+                    }
+
+                    return Results.Json(result.Count, OpeningJson,
+                        statusCode: result.IsReplay ? StatusCodes.Status200OK : StatusCodes.Status201Created);
+                }
+                catch (InventoryOpeningServiceException exception)
+                {
+                    if (exception.IsReplay)
+                    {
+                        ApplyReplayHeaders(httpContext, exception.OriginalCorrelationId
+                            ?? throw new InvalidOperationException("Replayed refusal without its original correlation."));
+                    }
+
+                    return OpeningProblem(exception, correlation);
+                }
+            })
+            .RequireCompanyContext()
+            .WithName("RecordInventoryOpeningCountV1")
+            // The replayable results: the count (200 on a replay) and the recorded terminal refusals (409, 422).
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<OpeningCountRequestV1>("application/json")
+            .Produces<OpeningCountViewV1>(StatusCodes.Status201Created)
+            .Produces<OpeningCountViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest([.. InventoryOpeningCodesV1.Status400Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict([.. InventoryOpeningCodesV1.Status409Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpUnprocessableEntity([.. InventoryOpeningCodesV1.Status422Codes.Order(StringComparer.Ordinal)])
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapGet(OpeningCountsPath + "/{countId:guid}", async (
+                Guid countId,
+                HttpContext httpContext,
+                IInventoryOpeningCommandService service,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                try
+                {
+                    return Results.Json(await service.ReadAsync(countId, cancellationToken), OpeningJson);
+                }
+                catch (InventoryOpeningServiceException exception)
+                {
+                    return OpeningProblem(exception, correlation);
+                }
+            })
+            .RequireCompanyContext()
+            .WithName("GetInventoryOpeningCountV1")
+            .Produces<OpeningCountViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>
+    /// The service's refusal as a problem: platform 401/403/404/503 stay code-less (the platform writer
+    /// answers them with its own public code), every other status carries the owner's code and field errors.
+    /// </summary>
+    private static IResult OpeningProblem(InventoryOpeningServiceException exception, ICorrelationContext correlation)
+    {
+        if (exception.Status is StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden
+            or StatusCodes.Status404NotFound or StatusCodes.Status503ServiceUnavailable)
+        {
+            return Results.Problem(statusCode: exception.Status);
+        }
+
+        var extensions = new Dictionary<string, object?>
+        {
+            ["code"] = exception.Code,
+            ["correlationId"] = correlation.IsResolved ? correlation.CorrelationId : null,
+        };
+        if (exception.Issues.Count > 0)
+        {
+            extensions["errors"] = exception.Issues;
+        }
+
+        return Results.Problem(statusCode: exception.Status, extensions: extensions);
+    }
+
+    private static IResult OpeningProblem(int statusCode, string code, ICorrelationContext correlation) => Results.Problem(
+        statusCode: statusCode,
+        extensions: new Dictionary<string, object?>
+        {
+            ["code"] = code,
+            ["correlationId"] = correlation.IsResolved ? correlation.CorrelationId : null,
+        });
+
+    private static bool TryReadIdempotencyKey(IHeaderDictionary headers, out string idempotencyKey)
+    {
+        idempotencyKey = string.Empty;
+        if (!headers.TryGetValue(IdempotencyHeaderName, out var values) || values.Count != 1 || values[0] is not { } value
+            || string.IsNullOrWhiteSpace(value) || !string.Equals(value, value.Trim(), StringComparison.Ordinal)
+            || value.Length > MaximumIdempotencyKeyLength || value.Contains(',', StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        idempotencyKey = value;
+        return true;
+    }
+
+    private static void ApplyReplayHeaders(HttpContext httpContext, string originalCorrelationId)
+    {
+        httpContext.Response.Headers["Idempotency-Replayed"] = "true";
+        httpContext.Response.Headers["Idempotency-Original-Correlation-Id"] = originalCorrelationId;
+    }
+
+    private static void SetPrivateNoStore(HttpResponse response)
+    {
+        response.Headers.CacheControl = "private, no-store";
+        response.Headers.Pragma = "no-cache";
+    }
+
+    private const string OpeningCountsPath = "/opening-counts";
+    private const string IdempotencyHeaderName = "Idempotency-Key";
+    private const int MaximumIdempotencyKeyLength = 128;
+
+    // The contract DTOs refuse unknown and missing required members themselves (JsonUnmappedMemberHandling,
+    // JsonRequired); web defaults give camelCase names and ISO dates.
+    private static readonly JsonSerializerOptions OpeningJson = new(JsonSerializerDefaults.Web);
 
     private static IResult NotFound() =>
         Results.Problem(

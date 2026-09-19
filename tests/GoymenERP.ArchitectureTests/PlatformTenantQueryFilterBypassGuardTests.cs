@@ -45,9 +45,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // (#321) and PRD-UNIT-1 (#335): the staged Finance and Manufacturing shell providers registered before the
     // shell authority is chosen (C+O+P+S+F+M row), beside #330's one call to
     // C01E2eFixtureWriterActivation.Configure and #335's one singleton registration of Settings' unit-identity
-    // catalog. No OpenAPI-generation, network or hosted-service surface of the startup source changed otherwise.
+    // catalog. Re-fingerprinted for INV-OPEN-1 part 2: two scoped host ports of the opening command
+    // (Organization's location module read, Product's stock eligibility). No OpenAPI-generation, network or
+    // hosted-service surface of the startup source changed otherwise.
     private const string ReviewedOpenApiStartupFingerprint =
-        "e737f071a4361b6369742c6c725efc4e10bcf63a933bfe942499c844e290c215";
+        "1636f6d9dec60972df11aa502145c9ac660be617d8a6a69de4b80031a456c600";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -121,7 +123,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // finance
             ["tools/relational_inventory/finance.txt"] =
-                "8e167cef2e6ecfb28c1aeadd621414ebdb10b20198060cd09e81f5201dafb563",
+                "cfd16410fe379d3482c4f49f5aebb1e47cd2e40808f370cc057e441d5ff66044",
 
             // identity
             ["tools/relational_inventory/identity.txt"] =
@@ -129,7 +131,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // inventory
             ["tools/relational_inventory/inventory.txt"] =
-                "9bbead2ad725a9afbf3a90970654fe6f1e0f86f440f59f999ad97f68b6701354",
+                "be288874fa79b0b79727d618d88fd7d98d0e63b36136dac27b577ff67864e0c3",
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
@@ -149,7 +151,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // sales
             ["tools/relational_inventory/sales.txt"] =
-                "f61e8027e7a041c0cfe15e79fb8bb4a3510fb753fb0bf99397293118949aedc8",
+                "c2906e9ba18bf1942cc2ed5b03d164b1985287f5118b2f14b78e480cb1fd0047",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
@@ -203,7 +205,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // row and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
              + "Persistence/InventoryDbContext.cs"] =
-                "73c2a33c6a4fbc77079c4eb3f17e2eba237b4a16ba6b961554a2d50dccbf2809",
+                "7c0c51016d4a47b6d9b5faf34a013d0eb76b4337899d1cf64601037aed44ce20",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "0ad206ef3d741157f24c2433f887871e3fd576ef950ef57ad13b09adc9c3e0e5",
@@ -338,7 +340,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Inventory.Infrastructure/"
                  + "InventoryModuleExtensions.cs"] =
                     new(
-                        "ef1a2f3eccdeeb6f71b0c1ccd1569f5ff80edc8227142d358268cb53aeb59606",
+                        "504b6cefb77e200e444765d719dac6fd79e7078552b92e401c4aa6250b754e57",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -351,12 +353,24 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // the id (retry) or not (conflict); still no connection, command or raw SQL. Re-fingerprinted
                 // for INV-OPEN-1 (T07 = A): the opening count is written through the same tenant-filtered
                 // context in one save; SqlClient count unchanged (1).
+                // INV-OPEN-1 part 2: the opening-count command reads through the tenant-filtered context and uses
+                // the SqlClient namespace only to recognise a unique-key violation (SqlException 2601/2627) in a
+                // catch filter, as the other module stores do. No connection, command or raw SQL.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/InventoryOpeningCommandService.cs"] =
+                    new(
+                        "3c4f8e7cac8ed19b0416e3ae4d9e945e14aec07eeae53960806bdbcdccfd3e50",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
+                        }),
                 // Re-fingerprinted for ÜRÜN's P3 follow-up: the colliding lot/label id is read from the
                 // key error itself (SqlException.Errors 2601/2627); SqlClient count unchanged (1).
+                // Re-fingerprinted for INV-OPEN-1 part 2 on top of #341: the opening count's PK collision
+                // uses the same key-error read ('PK_OpeningCounts'); SqlClient count unchanged (1).
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
                     new(
-                        "ead38f9bfea11e62a0531dbdb6139175a5483a3e092cbba321e5b654b131f4f5",
+                        "319000a3ba576f1bdd9ba83fb6472fc50ceb23ce5bc022aa3494d8312312a5f8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -462,7 +476,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Sales/"
                  + "GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs"] =
                     new(
-                        "a8c96902696637b45c2b650f60ad17d8dbec3d975b999987b510a14122dd5bc5",
+                        "751ff0e47c4689b9d30a183b3ba4c8e96c5580250530bbc793586733c01e7f68",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -549,6 +563,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // slitting spec is stored; forward fix, no spec is dropped.
                 ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/20260919130000_AddPlanSlittingSpecs.cs"] =
                     new("2c9558291e1159f12ec838b7ab8d0a9e468630e384b0777896473a5f3c336f51",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // INV-OPEN-1 part 2: each Down's only raw SQL is the Inventory refusal (51046) while an opening
+                // count, its posted stock or a command record exists; forward fix, no row is dropped.
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260919120000_AddOpeningCounts.cs"] =
+                    new("85e41efd96d2e38d19db1ac6bc22fd761203937119e9af44c0c9bb68a2c7d2a9",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/Migrations/20260919140000_AddInventoryCommands.cs"] =
+                    new("450f545cc1ce2e303794dbf0a80566f18bef41cba222366603e3e35288dbe69d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/20260912175128_InitialProductDrafts.cs"] =

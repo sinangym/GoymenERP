@@ -41,6 +41,18 @@ public static class ErpPermissions
     public const string InventoryBalancesRead = "inventory.balances.read";
 
     /// <summary>
+    /// INV-OPEN-1 part 2: record (and read back) an opening count, the Inventory owner's name
+    /// (InventoryPermissionManifestV1.OpeningStockRecord). Sinan's T07 = A (#66 5738113623 §2) decides that
+    /// one narrowly authorized user records the opening; the name is the backend owners' technical mapping
+    /// (Business #254 5654539215), confirmed by the coordinator. Registered, not granted: no role, seed or
+    /// user receives it here. Company-wide only: the count names any location of the company. Not
+    /// Critical, as manufacturing.facts.record: a record-type name, and no source makes it a segregated
+    /// duty (T07 = A has no maker≠checker). The opening user also needs product.operational-selection.read
+    /// for the per-line eligibility (a human grant pairing).
+    /// </summary>
+    public const string InventoryOpeningStockRecord = "inventory.opening-stock.record";
+
+    /// <summary>
     /// Finance bank-account master (FS0, #312): names are the Finance owner's technical mapping
     /// (Business #254 5654539215). Registering them makes them KNOWN, not granted: no role and no
     /// user receives them here, and who holds which is a human gate. All three are company-wide
@@ -146,6 +158,7 @@ public static class ErpPermissions
             ManufacturingOrdersRead,
             InventoryLabelsRead,
             InventoryBalancesRead,
+            InventoryOpeningStockRecord,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
@@ -188,6 +201,7 @@ public static class ErpPermissions
             ManufacturingOrdersRead,
             InventoryLabelsRead,
             InventoryBalancesRead,
+            InventoryOpeningStockRecord,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,

@@ -1,12 +1,12 @@
 /**
- * Finance screen mount ids and routes — exactly what the backend's staged
+ * Finance screen mount ids and routes — exactly what the backend's
  * `FinanceShellCapabilityProvider` declares (FIN-UI-1a, #325), pinned by a test to that file.
  *
- * STATUS: DECLARED, STAGED. Every declaration is `ImplementationAvailable: false` until the FIN-01
- * browser acceptance (card FIN-UI-1 §6); `ShellCapabilityService` never publishes a staged
- * declaration, so in the normal runtime `CapabilityRoute` closes every Finance route onto the
- * neutral not-found block and calls nothing. The ids are mount keys, not permissions: each route's
- * service measures its own permission afresh.
+ * STATUS: PUBLISHED (FIN-UI-1c). Every declaration is `ImplementationAvailable: true` since the flip
+ * that followed the FIN-01 browser acceptance (#332, run 35444049175). A screen is still published to
+ * an actor only with its own narrow Finance permission; without it `CapabilityRoute` closes the route
+ * onto the neutral not-found block and calls nothing. The ids are mount keys, not permissions: each
+ * route's service measures its own permission afresh.
  *
  * The approval is a CONTROL of the F-04 list (the provider's `ParentCapabilityId`), never a route:
  * it is a `hasCapability` check inside the list, and the server refuses a self-approval (Ö4) anyway.

@@ -192,6 +192,8 @@ export const ORDER_DETAIL_TEXT = {
     forbidden: 'Bu şirkette bu işlem için yetkiniz yok; işlem uygulanmadı.',
     notFound: 'Taslak bulunamadı; işlem uygulanmadı.',
     conflict: 'İşlem taslağın güncel durumuyla çakıştı; taslak yeniden okundu.',
+    /** SALES-A1 409 `version_conflict` on a command: the DRAFT moved after this screen read it (not the S-03 product-version sentence). */
+    versionConflict: 'Taslak siz okuduktan sonra değişti; güncel durum gösteriliyor.',
     validation: 'İşlem uygulanmadı; gönderilen bilgi geçerli değil.',
     unexpected: 'İşlem uygulanmadı. Beklenmeyen bir yanıt alındı.',
     completed: 'İşlem kaydedildi.',

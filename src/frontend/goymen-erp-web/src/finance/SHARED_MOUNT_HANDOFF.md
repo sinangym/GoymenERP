@@ -3,15 +3,15 @@
 Owner of this file: FİNANS (`src/finance/**`). Recipient: the shared shell/router owner (CARİ), via
 the coordinator. Nothing here is applied to a shared file by this lane.
 
-Status: **READY TO MOUNT (FIN-UI-1b).** Both earlier blockers are resolved:
+Status: **MOUNTED (FIN-UI-1b, #332) and PUBLISHED (FIN-UI-1c).** The history below is kept as it was handed off:
 1. The Finance shell capability provider exists (FIN-UI-1a, #325):
    `FinanceShellCapabilityProvider`, six STAGED declarations (`ImplementationAvailable: false`).
 2. The HTTP port covers every published route (`./httpPort.ts`); Record and Reverse have no route
    (T05, OPEN-009) and are not offered on the mounted detail page.
 
-The declarations stay staged until the FIN-01 browser acceptance (card FIN-UI-1 §6). In the normal
-runtime every Finance route therefore closes onto the neutral not-found block and calls nothing; the
-disposable Finance staged profile (central, mfg precedent) opens only their availability for FIN-01.
+FIN-UI-1c publishes the declarations (`ImplementationAvailable: true`) after the FIN-01 acceptance on the
+disposable staged profile (#332, run 35444049175); fin01 then runs on the NORMAL profile. A route opens
+only for an actor holding its own Finance permission; grants stay a human gate.
 
 ## What exists in `src/finance/**`
 

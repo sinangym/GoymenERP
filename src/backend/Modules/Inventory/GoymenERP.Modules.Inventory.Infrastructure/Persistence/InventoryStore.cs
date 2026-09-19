@@ -704,11 +704,18 @@ public sealed partial class InventoryStore(
                     && !await dbContext.Labels.AsNoTracking().AnyAsync(row => row.Id == labelId, cancellationToken)
                         ? InventoryStoreCodes.LabelConflict
                         : InventoryStoreCodes.ConcurrentChange,
+                // The same for an opening count id (SİPARİŞ #337 P3): raced here, or held by another company.
+                var message when message.Contains("'PK_OpeningCounts'", StringComparison.Ordinal) =>
+                    DuplicateKey(Errors(sql), "'PK_OpeningCounts'") is { } countId
+                    && !await dbContext.OpeningCounts.AsNoTracking().AnyAsync(row => row.Id == countId, cancellationToken)
+                        ? InventoryStoreCodes.OpeningConflict
+                        : InventoryStoreCodes.ConcurrentChange,
                 // Two first movements of one source raced for its grain: retried, the loser reads it.
                 var message when message.Contains("PK_SourceGrains", StringComparison.Ordinal) => InventoryStoreCodes.ConcurrentChange,
                 _ => InventoryStoreCodes.ConcurrentChange,
             };
             throw Refused(code, code is InventoryStoreCodes.LotConflict or InventoryStoreCodes.LabelConflict
+                or InventoryStoreCodes.OpeningConflict
                 ? "Bu kimlik bu şirkette kullanılamıyor; hiçbir şey kaydedilmedi, yeniden denemek aynı cevabı verir."
                 : "Kayıt tekillik kuralına takıldı; hiçbir şey kaydedilmedi.", exception);
         }
