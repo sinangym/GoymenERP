@@ -21,11 +21,33 @@ import { expect, test, type Page } from '@playwright/test'
  * Preconditions of the stack (BROWSER-CI stage 2, real services only, no raw SQL): the shell mounts
  * the Sales routes, the Sales provider publishes the three capabilities to the shell (a staged
  * declaration is never published — `ShellCapabilityService` filters `ImplementationAvailable`), and
- * the authorized actor holds `sales.drafts.create` + `sales.drafts.read` as a disposable grant.
+ * the granted actor holds `sales.drafts.create` + `sales.drafts.read` as a disposable grant: the
+ * suite's own actor from `infra/browser-suites/s03.override.yml` (see GRANTED_ACTOR below). Run
+ * 35433507691 measured what happens without it: the canonical `group-bootstrap-admin` holds no Sales
+ * grant, the shell publishes no `sales.*` capability, both granted screens close (V2A-01/02 fail),
+ * only V2A-03 passes.
  */
 
 const DRAFTS_PATH = '/api/v1/sales/drafts'
 const unauthorizedBaseUrl = process.env.BROWSER_E2E_UNAUTHORIZED_BASE_URL?.trim() ?? ''
+
+/**
+ * The suite's granted actor: the one suite actor of `infra/browser-suites/s03.override.yml`
+ * (BootstrapIdentity index 2), whose seeded role holds exactly `sales.drafts.create`,
+ * `sales.drafts.read` and `product.operational-selection.read` in GDC (the validator's closed list for
+ * s03). The authorized web is built for `group-bootstrap-admin`, which holds no Sales grant, so the
+ * granted tests sign in as this actor at the network layer: Playwright's extra headers replace the
+ * page's own `X-Development-User` on every request (measured: the API sees the extra value, the page's
+ * value never reaches it). The API still authorizes the header itself — the shell publishes the three
+ * Sales capabilities only because the seeded grant exists; nothing is mocked. The ungranted test
+ * (V2A-03) sends no extra header and stays the unauthorized web's canonical `company-a-user`.
+ */
+const GRANTED_ACTOR = 's03-sales-clerk'
+const DEVELOPMENT_USER_HEADER = 'X-Development-User'
+
+async function signInAsGrantedActor(page: Page): Promise<void> {
+  await page.setExtraHTTPHeaders({ [DEVELOPMENT_USER_HEADER]: GRANTED_ACTOR })
+}
 
 type DraftTraffic = { readonly reads: number; readonly writes: number; readonly writeStatuses: number[] }
 
@@ -54,6 +76,7 @@ async function expectEmptyList(page: Page, traffic: DraftTraffic): Promise<void>
 }
 
 test('S03-V2A-01 the granted actor reads the real, empty draft list', async ({ page }) => {
+  await signInAsGrantedActor(page)
   const traffic = watchDrafts(page)
   await page.goto('/satis/siparisler')
   await expectEmptyList(page, traffic)
@@ -61,6 +84,7 @@ test('S03-V2A-01 the granted actor reads the real, empty draft list', async ({ p
 })
 
 test('S03-V2A-02 the granted actor\'s create attempt is refused honestly by the real owners and writes nothing', async ({ page }) => {
+  await signInAsGrantedActor(page)
   const traffic = watchDrafts(page)
   // The form reads its customer options from the REAL accounts reference route (ÜRÜN #327 P2-1, a):
   // the answer is measured here, whatever it is. Currencies and products have no list route on main
