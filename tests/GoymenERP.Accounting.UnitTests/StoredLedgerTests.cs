@@ -113,18 +113,35 @@ public sealed class StoredLedgerTests
     }
 
     [Fact]
-    public void A_stored_period_is_restored_open_or_closed_with_its_full_trace()
+    public void A_stored_period_is_restored_proposed_open_or_closed_with_its_full_trace()
     {
         var company = Guid.NewGuid();
-        var open = AccountingPeriod.Restore(Guid.NewGuid(), company, new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30), null, null);
+        var september = (new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30));
+        var proposed = AccountingPeriod.Restore(Guid.NewGuid(), company, september.Item1, september.Item2,
+            AccountingWorld.Preparer, AccountingWorld.PreparedAt, null, null, null, null);
+        var open = AccountingPeriod.Restore(Guid.NewGuid(), company, september.Item1, september.Item2,
+            AccountingWorld.Preparer, AccountingWorld.PreparedAt, AccountingWorld.Approver, AccountingWorld.ApprovedAt, null, null);
         var closed = AccountingPeriod.Restore(Guid.NewGuid(), company, new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31),
+            AccountingWorld.Preparer, AccountingWorld.PreparedAt, AccountingWorld.Approver, AccountingWorld.ApprovedAt,
             AccountingWorld.Closer, AccountingWorld.ClosedAt);
 
-        Assert.Equal(AccountingPeriodStatus.Open, open.Status);
+        Assert.Equal((AccountingPeriodStatus.Proposed, (Guid?)null), (proposed.Status, proposed.ApprovedByUserId));
+        Assert.Equal((AccountingPeriodStatus.Open, (Guid?)AccountingWorld.Approver), (open.Status, open.ApprovedByUserId));
         Assert.Equal((AccountingPeriodStatus.Closed, (Guid?)AccountingWorld.Closer, (DateTimeOffset?)AccountingWorld.ClosedAt),
             (closed.Status, closed.ClosedByUserId, closed.ClosedAtUtc));
+
+        // A half trace, a close without an approval, or a stored self-approval is refused, never repaired.
         Assert.Equal(AccountingErrorCodes.InvalidReference, CodeOf(() => AccountingPeriod.Restore(Guid.NewGuid(), company,
-            new DateOnly(2026, 8, 1), new DateOnly(2026, 8, 31), AccountingWorld.Closer, closedAtUtc: null)));
+            september.Item1, september.Item2, AccountingWorld.Preparer, AccountingWorld.PreparedAt, AccountingWorld.Approver, null, null, null)));
+        Assert.Equal(AccountingErrorCodes.InvalidReference, CodeOf(() => AccountingPeriod.Restore(Guid.NewGuid(), company,
+            september.Item1, september.Item2, AccountingWorld.Preparer, AccountingWorld.PreparedAt, null, null,
+            AccountingWorld.Closer, AccountingWorld.ClosedAt)));
+        Assert.Equal(AccountingErrorCodes.InvalidReference, CodeOf(() => AccountingPeriod.Restore(Guid.NewGuid(), company,
+            september.Item1, september.Item2, AccountingWorld.Preparer, AccountingWorld.PreparedAt, AccountingWorld.Approver,
+            AccountingWorld.ApprovedAt, AccountingWorld.Closer, closedAtUtc: null)));
+        Assert.Equal(AccountingErrorCodes.PeriodSelfApproval, CodeOf(() => AccountingPeriod.Restore(Guid.NewGuid(), company,
+            september.Item1, september.Item2, AccountingWorld.Preparer, AccountingWorld.PreparedAt, AccountingWorld.Preparer,
+            AccountingWorld.ApprovedAt, null, null)));
     }
 
     private static Journal Restore(Journal journal) =>
