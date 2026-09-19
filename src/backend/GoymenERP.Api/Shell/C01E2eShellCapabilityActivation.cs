@@ -28,9 +28,8 @@ internal static class C01E2eShellCapabilityActivation
     // availability: list and detail, still only inside this disposable envelope.
     internal const string ProfileConfigurationKey = "C01E2e:Profile";
     internal const string CariListDetailProfile = "cari-list-detail";
-    // MFG-UI D4 (#323, mfg-staged): the Manufacturing order screen opened inside this envelope only, beside
-    // the list-only C-01 Counterparty set, before any normal-runtime availability.
-    internal const string ManufacturingOrderDetailProfile = "manufacturing-order-detail";
+    // MFG-UI D4's mfg-staged profile ("manufacturing-order-detail", #323) is retired: Manufacturing is
+    // published on the normal host (MFG-UI-F), so its screen needs no disposable envelope any more.
     // FIN-UI-1b's fin-staged profile ("finance-bank-accounts-and-drafts", #332) is retired: Finance is
     // published on the normal host (FIN-UI-1c), so its screens need no disposable envelope any more.
 
@@ -57,10 +56,6 @@ internal static class C01E2eShellCapabilityActivation
             case CariListDetailProfile:
                 ReplaceExactCounterpartyProvider<C01E2eCariListDetailShellCapabilityProvider>(services);
                 return ShellCapabilityRegistryAuthorities.C01DisposableCariListDetailV1;
-            case ManufacturingOrderDetailProfile:
-                ReplaceExactCounterpartyProvider<C01E2eShellCapabilityProvider>(services);
-                services.AddSingleton<IShellCapabilityProvider, C01E2eManufacturingOrderDetailShellCapabilityProvider>();
-                return ShellCapabilityRegistryAuthorities.C01DisposableManufacturingOrderDetailV1;
             default:
                 throw new InvalidOperationException(
                     "C-01 disposable capability profili tanınmıyor.");
@@ -107,7 +102,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
                 typeof(ManufacturingShellCapabilityProvider),
             },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10AndManufacturingV10),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10AndPublishedManufacturingV10),
     ];
 
     private static string NormalAuthority(IServiceCollection services)
@@ -265,22 +260,6 @@ internal sealed class C01E2eCariListDetailShellCapabilityProvider : IShellCapabi
 
     public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
         C01E2eStagedDeclarations.Open(_source, detail: true);
-}
-
-// mfg-staged (#323 D4): Manufacturing's own declarations, only their availability opened; ids, route,
-// context, scope, permissions and the facts control's parent stay the owner's.
-internal sealed class C01E2eManufacturingOrderDetailShellCapabilityProvider : IShellCapabilityProvider
-{
-    private readonly ManufacturingShellCapabilityProvider _source = new();
-
-    public string Owner => _source.Owner;
-
-    public string ContractVersion => _source.ContractVersion;
-
-    public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
-        Array.AsReadOnly(_source.GetDeclarations()
-            .Select(declaration => declaration with { ImplementationAvailable = true })
-            .ToArray());
 }
 
 internal static class C01E2eStagedDeclarations

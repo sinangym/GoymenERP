@@ -39,7 +39,7 @@ def model(profile):
     return result
 
 
-SUITE_FOR = {"c01-list-only": "smoke", "cari-staged": "c03", "normal": "org03", "mfg-staged": "mfg"}
+SUITE_FOR = {"c01-list-only": "smoke", "cari-staged": "c03", "normal": "org03"}
 
 
 class ProfileRegistryTests(unittest.TestCase):
@@ -95,14 +95,17 @@ class ComposeFileDerivationTests(unittest.TestCase):
         ).replace(browser.CANONICAL_SUITE_LABEL, browser.PROFILE_SUITE_LABELS["cari-staged"])
         self.assertEqual(expected, staged)
 
-    def test_mfg_staged_is_the_canonical_file_plus_its_profile_line(self):
-        # MFG-UI D4 (#323): the same two transforms, with the manufacturing-order-detail profile.
-        staged = self._body((ROOT / browser.PROFILE_COMPOSE_FILES["mfg-staged"]).read_text(encoding="utf-8"))
-        anchor = '      C01E2e__EnableListCapability: "true"\n'
-        expected = self.canonical.replace(
-            anchor, anchor + f"      {browser.CARI_STAGED_PROFILE_KEY}: {browser.STAGED_PROFILE_VALUES['mfg-staged']}\n"
-        ).replace(browser.CANONICAL_SUITE_LABEL, browser.PROFILE_SUITE_LABELS["mfg-staged"])
-        self.assertEqual(expected, staged)
+    def test_the_mfg_staged_profile_is_retired(self):
+        # MFG-UI-F: Manufacturing is published on the normal host and mfg runs there; the disposable mfg-staged
+        # profile (#323 D4) has no compose file, no label and no activation value any more.
+        self.assertEqual("normal", browser.profile_of("mfg"))
+        self.assertNotIn("mfg-staged", browser.PROFILES)
+        for table in (browser.PROFILE_COMPOSE_FILES, browser.PROFILE_SUITE_LABELS, browser.STAGED_PROFILE_VALUES):
+            self.assertNotIn("mfg-staged", table)
+        self.assertFalse((ROOT / "infra/docker-compose.browser-mfg-staged.yml").exists())
+        activation = (ROOT / "src/backend/GoymenERP.Api/Shell/C01E2eShellCapabilityActivation.cs").read_text(
+            encoding="utf-8")
+        self.assertNotIn('Profile = "manufacturing-order-detail";', activation)
 
     def test_the_fin_staged_profile_is_retired(self):
         # FIN-UI-1c: Finance is published on the normal host and fin01 runs there; the disposable fin-staged
@@ -124,8 +127,7 @@ class ComposeFileDerivationTests(unittest.TestCase):
                 self.assertIn(f'Profile = "{value}";', activation)
 
     def test_a_staged_profile_refuses_the_other_profile_value(self):
-        for profile, suite, wrong in (("mfg-staged", "mfg", "cari-list-detail"),
-                                      ("cari-staged", "c03", "manufacturing-order-detail"),
+        for profile, suite, wrong in (("cari-staged", "c03", "manufacturing-order-detail"),
                                       ("cari-staged", "c03", "finance-bank-accounts-and-drafts")):
             with self.subTest(profile=profile):
                 wrong_model = model(profile)
