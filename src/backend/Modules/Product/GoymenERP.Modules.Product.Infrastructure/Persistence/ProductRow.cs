@@ -48,6 +48,26 @@ public sealed class ProductRow
         CopyState(record);
     }
 
+    // DEC-PRD-010 approval: the one lifecycle move this slice writes. Identity and every card value
+    // stay; only Draft -> Active, one version and the update time change.
+    public void ApplyActivation(ProductStoredRecord record)
+    {
+        _ = record.RestoreProduct();
+        _ = record.RestoreReferences();
+        if (record.Id != Id || record.Code != Code || record.GroupId != GroupId || record.CreatedAtUtc != CreatedAtUtc
+            || record.Name != Name || record.ClassId != ClassId || record.FamilyId != FamilyId
+            || record.ReferencesJson != ReferencesJson
+            || record.Purchasable.Value != PurchasableValue || record.Purchasable.Provenance != PurchasableProvenance
+            || record.Sellable.Value != SellableValue || record.Sellable.Provenance != SellableProvenance
+            || record.ProductionInput.Value != ProductionInputValue || record.ProductionInput.Provenance != ProductionInputProvenance
+            || record.ProductionOutput.Value != ProductionOutputValue || record.ProductionOutput.Provenance != ProductionOutputProvenance
+            || Lifecycle != (int)Domain.Products.ProductLifecycle.Draft
+            || record.Lifecycle != (int)Domain.Products.ProductLifecycle.Active
+            || record.Version != checked(Version + 1))
+            throw new InvalidOperationException("A Product activation must preserve the card and move Draft to Active by one version.");
+        CopyState(record);
+    }
+
     public ProductStoredRecord ToRecord() => new(Id, Code, Name, GroupId, ClassId, FamilyId,
         new(PurchasableValue, PurchasableProvenance), new(SellableValue, SellableProvenance),
         new(ProductionInputValue, ProductionInputProvenance), new(ProductionOutputValue, ProductionOutputProvenance),

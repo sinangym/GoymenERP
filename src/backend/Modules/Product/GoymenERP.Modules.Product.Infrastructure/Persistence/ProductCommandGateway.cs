@@ -43,6 +43,10 @@ public sealed class ProductCommandGateway(
         CancellationToken cancellationToken) => ResolveAsync(GroupSharedMasterOperation.DraftBasicEdit,
             ProductCommandIntent.EditDraft(key, productId, request), productId, cancellationToken);
 
+    public Task<ProductPreparedCommand> PrepareActivateAsync(string key, Guid productId, ActivateProductRequest request,
+        CancellationToken cancellationToken) => ResolveAsync(GroupSharedMasterOperation.Activate,
+            ProductCommandIntent.Activate(key, productId, request), productId, cancellationToken);
+
     // The owner uses this after a whole-attempt rollback/unique race and before
     // relying on any prepared replay. It reuses the canonical response validator
     // and never reconstructs an intent from mutable HTTP inputs or a raw key.
@@ -59,6 +63,8 @@ public sealed class ProductCommandGateway(
         {
             "product.draft.create.v1" when envelope.ProductId is null => GroupSharedMasterOperation.DraftCreate,
             "product.draft.basic-edit.v1" when envelope.ProductId is { } id && id != Guid.Empty => GroupSharedMasterOperation.DraftBasicEdit,
+            ProductCommandIntent.ActivateOperation when envelope.ProductId is { } target && target != Guid.Empty
+                => GroupSharedMasterOperation.Activate,
             _ => throw new InvalidOperationException("The frozen Product operation or target is invalid."),
         };
         if (prepared.Context.Operation != operation || envelope.Request.ValueKind != JsonValueKind.Object)
@@ -88,7 +94,8 @@ public sealed class ProductCommandGateway(
                 if (terminal.StatusCode != expectedStatus || terminal.SchemaVersion != 1)
                     throw new InvalidOperationException("Stored Product response status/schema is unsupported.");
                 var response = JsonSerializer.Deserialize<ProductMutationResponse>(terminal.ResponseJson, Json);
-                ValidateResponse(response, expectedProductId);
+                ValidateResponse(response, expectedProductId,
+                    operation == GroupSharedMasterOperation.Activate ? ProductLifecycle.Active : ProductLifecycle.Draft);
                 // Only the documented replay indicator changes. UUID, code, version
                 // and values remain the canonical response of the original write.
                 return new(result.Context, intent, response! with { IsReplay = true }, terminal.OriginalCorrelationId);
@@ -97,12 +104,13 @@ public sealed class ProductCommandGateway(
         }
     }
 
-    private static void ValidateResponse(ProductMutationResponse? response, Guid? expectedProductId)
+    private static void ValidateResponse(ProductMutationResponse? response, Guid? expectedProductId,
+        ProductLifecycle expectedLifecycle)
     {
         var product = response?.Card?.Product;
         if (product is null || response!.Card.References is null || product.Id == Guid.Empty
             || (expectedProductId.HasValue && product.Id != expectedProductId.Value)
-            || product.Lifecycle != "Draft" || product.Roles is null || product.Labels is null
+            || product.Lifecycle != expectedLifecycle.ToString() || product.Roles is null || product.Labels is null
             || product.Completeness is null || product.Completeness.MissingFields is null
             || product.Completeness.Evaluation is not ("NotEvaluated" or "Incomplete" or "Complete"))
             throw new InvalidOperationException("Stored Product response is invalid.");
@@ -113,7 +121,7 @@ public sealed class ProductCommandGateway(
             product.GroupId, product.ClassId, product.FamilyId,
             new(RestoreRole(product.Roles.Purchasable), RestoreRole(product.Roles.Sellable),
                 RestoreRole(product.Roles.ProductionInput), RestoreRole(product.Roles.ProductionOutput)),
-            ProductLifecycle.Draft, ProductVersion.Parse(product.Version), product.CreatedAtUtc, product.UpdatedAtUtc);
+            expectedLifecycle, ProductVersion.Parse(product.Version), product.CreatedAtUtc, product.UpdatedAtUtc);
     }
 
     private static ProductRoleState RestoreRole(ProductRoleView? role) => (role?.Provenance, role?.Value) switch

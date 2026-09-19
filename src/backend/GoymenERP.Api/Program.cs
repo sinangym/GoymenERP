@@ -17,6 +17,7 @@ using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
+using GoymenERP.Modules.Finance.Infrastructure.Shell;
 using GoymenERP.Modules.Idempotency.Infrastructure;
 using GoymenERP.Modules.Inventory.Infrastructure;
 using GoymenERP.Modules.Manufacturing.Infrastructure;
@@ -146,6 +147,8 @@ builder.Services.AddSalesModule(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
 // Registered before the shell authority is chosen: the module table maps the provider set.
 builder.Services.AddSingleton<IShellCapabilityProvider, SalesShellCapabilityProvider>();
+// FIN-UI-1a (#325): Finance's (staged) receipt and bank-account screens, before the authority is chosen.
+builder.Services.AddSingleton<IShellCapabilityProvider, FinanceShellCapabilityProvider>();
 var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
     builder.Services,
     builder.Environment,

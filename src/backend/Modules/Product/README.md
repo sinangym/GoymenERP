@@ -338,8 +338,8 @@ Fail-closed limits at this base, not policy choices:
   otherwise valid Active selection is still never usable. No other family is accepted, and
   nothing here infers one.
 - No offered-unit or conversion policy is accepted (U-08), so only the sales unit is offered.
-- There is no activation command, so real rows are Draft and are rejected with
-  `lifecycle_conflict`.
+- Approval (Draft -> Active) exists since the activation slice below; until a person holds the
+  global `Activate` grant, real rows stay Draft and are rejected with `lifecycle_conflict`.
 - The runtime is not yet composed in the API host. Host wiring (DI, the reviewed-source
   fingerprint and its composition test) is the central writer's; the name is registered (#277)
   and a real grant is a human gate. Until then the Sales product
@@ -419,3 +419,32 @@ accepted; `GdcBandCoilFamilyRequirementPolicyV1` encodes it exactly:
 ```powershell
 dotnet test tests/GoymenERP.Product.UnitTests/GoymenERP.Product.UnitTests.csproj --filter FullyQualifiedName~ProductSalesEligibilityServiceTests
 ```
+
+## Card approval (Draft -> Active, DEC-PRD-010)
+
+Card: #66 5735046942, approved by the coordinator. DEC-PRD-010 (KİLİTLİ): a Draft card is not used in a
+firm transaction; "Stok/planlama rolü onaylayabilir; yetki ayarlanabilir."
+
+| Rule | Where |
+|---|---|
+| Only Draft becomes Active, at the version the approver read; one version up; every card value kept | `Product.Activate`, `ProductRow.ApplyActivation` |
+| A stale version is `409 version_conflict`; a card that is not a Draft is `409 lifecycle_conflict`; an unknown card `404`; an Active card is not edited as a draft (`409 lifecycle_conflict`) | `ProductDraftOperation` |
+| Authority is the global Product operation `Activate`, measured fresh on every attempt and again before commit (a revocation in flight is `403`, nothing written); no company permission | `ProductCommandGateway`, the host runner |
+| `POST /api/v1/products/{id}/activation` with `{expectedVersion}` and `Idempotency-Key`: the same key and request replays the stored `200` with `Idempotency-Replayed` and the first correlation; another request under the key is `409 idempotency_conflict`; two racing callers of one key leave one transition, the loser replays it | the shared command boundary (`product.card.activate.v1`) |
+| One canonical audit event `product.card.activated.v1`, before/after card, in the same transaction | the host's audit session |
+
+- **No completeness precondition.** No source makes one; the eligibility reads (sales/stock) still judge
+  the whole card at the moment of use, and without the GDC family data they stay `503`.
+- **Not here:** maker != checker (not in the sources), Excel import, deactivation (Active -> Inactive),
+  bulk approval, the UI and its shell control (the registry's global-Product table and control rule are
+  central; they come with the U-01-360 control slice), the role mapping and any grant (a human decision).
+- **ADR-011 §7 terminal replay** of a refusal (stale version, not found) is not stored by the shared
+  Product command boundary: only a success is a terminal there, as for the draft writes. A retried refusal
+  is computed again (and still refused). This slice does not change the shared boundary.
+
+**Central (CARİ), before this compiles:** `GroupSharedMasterOperation.Activate` (BuildingBlocks); Identity
+`ProductMasterOperation.Activate = 4`, the `CK_ProductMasterAssignments_Operation` migration and the explicit
+mapping in `SqlProductMasterAuthorizationService` (its allowlist admits `Activate` and its default branch
+becomes an explicit case — today `_ => DraftBasicEdit` would read an Activate check as a DraftBasicEdit grant);
+`UnconfiguredProductService.ActivateAsync` in `ProductRuntimeExtensions`; guard pins; the relational
+verifier's five `ProductActivationSqlServerRelationalAcceptanceTests` names; OpenAPI (`ActivateProductV1`).

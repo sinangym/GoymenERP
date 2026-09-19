@@ -1,0 +1,17 @@
+# u02 (ÜRÜN): the suite's closed-list API extensions on top of the `normal` profile, validated by
+# tools/validate_browser_acceptance.py with the merged model (SUITE_API_EXTENSIONS["u02"]).
+#  - The Product runtime's issuer binding (#319 P3): both keys, lowercase v4 synthetic ids.
+#  - The issuer's Identity user (coordinator: the issuer-user rule, a narrow extension of D1): the one
+#    non-actor Identity user of this suite, equal to the issuer keys, subject u02-issuer (not a
+#    BootstrapIdentity user, so it can never sign in), no role, no assignment, no permission.
+# Every value is synthetic and exists only in the run's disposable database. s03 shares these values (D3).
+services:
+  api:
+    environment:
+      ProductRuntime__IssuerLocalUserId: b2000000-0000-4000-8000-000000000201
+      ProductRuntime__IssuerExternalIdentityId: b2100000-0000-4000-8000-000000000201
+      IdentitySeed__Users__5__Id: b2000000-0000-4000-8000-000000000201
+      IdentitySeed__Users__5__DisplayName: SENTETIK browser-suite:u02 Product issuer
+      IdentitySeed__Users__5__ExternalIdentities__0__Id: b2100000-0000-4000-8000-000000000201
+      IdentitySeed__Users__5__ExternalIdentities__0__Issuer: urn:goymen:development-bootstrap
+      IdentitySeed__Users__5__ExternalIdentities__0__Subject: u02-issuer

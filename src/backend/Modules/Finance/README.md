@@ -102,7 +102,7 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
 | `GET /api/v1/finance/bank-accounts` | FS0 `ListAuthorizedAsync` | `BankAccountPage` |
 
 - **Company, actor, correlation** come only from the server context (`X-Company-Id` plus access, the authenticated actor, `X-Correlation-Id`).
-- **Idempotency-Key** is required on the save: exactly one canonical value of at most 128 characters, otherwise 400. A replay carries `Idempotency-Replayed: true` and `Idempotency-Original-Correlation-Id`. Only a stored success replays until ADR-011 §7's terminal replay (FIN-UI-1).
+- **Idempotency-Key** is required on the save: exactly one canonical value of at most 128 characters, otherwise 400. A replay carries `Idempotency-Replayed: true` and `Idempotency-Original-Correlation-Id`. What replays is the stored success and, since FIN-UI-1, the recorded terminal refusals (see below).
 - **Enums** travel as their names (`CommandOutcome`, `SourceStage`, `AmountDisclosure`, `AllocationKnowledge` carry a string-enum converter, so the generated OpenAPI says so too).
 - **Permission** is not a route policy. The services ask `FinancePermissionPort` afresh at every fence, through `IErpAuthorityRevalidationService` (#276), and only a granted company-wide scope is `Allowed`. A name not yet registered centrally is `Unavailable` (503), not a refusal.
 
@@ -117,6 +117,21 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
 - **Settings' `settings_money_profile_not_found`** (the chosen currency has no approved profile) is a 422 validation result of the save (`money.currencyId`), not an outage. The draft-context read keeps it as 503 with its code: there the currency is the bank account's, not the request's.
 - **List:** newest created first (`CreatedAtUtc desc, Id desc`, new index), so an edit never moves a draft between pages. The page size is a fixed technical 50, not a policy, and each amount is disclosed only with a fresh `ReadAmount`.
 - **Honest runtime:** until T02-b is on main and a real bank account is approved, a save answers 503 or 422 with its owner's code. It is never painted green.
+
+## FIN-UI-1a: the bank-account master over HTTP, terminal replay and the race (card approved on #66)
+
+| Route | Service | Answer |
+|---|---|---|
+| `POST /api/v1/finance/bank-accounts` | `ProposeAsync` (`BankAccountProposeRequest`) | `BankAccountCommandResult` with the save's mapping (200 / 422 / 409; 403 and 503 as platform problems) |
+| `POST /api/v1/finance/bank-accounts/{accountId}/approval` | `ApproveAsync` (body `BankAccountApprovalBody`: `expectedVersion`) | the same; the proposer's own approval is 403 (Ö4) |
+| `GET /api/v1/finance/bank-accounts/master` | `ListMasterAsync` (read authority) | `BankAccountMasterPage`: each account with `isOwnProposal`, so F-04 offers the approval only to someone else |
+| `GET /api/v1/finance/bank-accounts/currency-candidates` | `CurrencyCandidatesAsync` (propose authority) | Settings' candidates as given; empty means none, an unusable source is 503, never a default |
+
+- **Visibility (least privilege, coordinator's technical default):** a pending proposal is shown only to a caller who may propose or approve (a fresh grant). A read-only caller sees approved accounts only, in `GET /bank-accounts`, in the master list and by id; the draft save treats a hidden proposal as `bank_account_ineligible`. Business may decide otherwise in a later slice.
+- **Audit (ADR-009):** a proposal is audited with the roles that granted `finance.bank-account.propose`, an approval with those of `finance.bank-account.approve` (`FinanceBankAccountEnvelopes`).
+- **ADR-011 §7:** an authorized terminal refusal is the key's result for good: for the save, `draft_not_found` (422) and a stale `expectedVersion` (409); for the approval, `bank_account_not_found` (422) and a stale version (409). It is recorded alone (no business change, no audit event) and replayed with its first correlation even after the target moved on. A refusal whose target does not exist has none: `CK_Commands_Target` admits a target-less record only when its stored outcome is `ValidationFailed` (migration `RecordTerminalCommandResults`, whose `Down` restores the stricter rule and fails visibly if such a row exists). Refusals on the merits (an owner's answer, a currency outside the candidates) are not terminal and are not recorded.
+- **ADR-011 §8:** a save that loses a race (a unique key or the row version) keeps nothing tracked and reads the key afresh: if another caller of the same key won, its record is this answer too, as a replay; only a race that left the key empty is `concurrent_change` (409).
+- **Shell (staged):** `Shell/FinanceShellCapabilityProvider` declares F-02's list, draft and detail routes, F-04's list and propose routes and the approval as a control of the list, all `ImplementationAvailable: false` until the FIN-01 browser acceptance. One screen id per route, as the registry requires: F-02 and F-04 (the catalog's ids) for the lists, F-02-NEW, F-02-DETAIL and F-04-NEW for the others; the approval keeps F-04. `FinanceShellCapabilityRegistryTests` runs it through the real registry. The host registers it with its shell authority (central).
 
 ## Validation
 

@@ -42,12 +42,12 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         ];
 
         // On failure xUnit prints the actual revision: the constant is never guessed.
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10AndSalesV10,
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10AndPublishedSalesV10,
             ShellCapabilityRegistry.ComputeCandidateRevision(providers));
     }
 
     [Fact]
-    public void The_normal_host_with_Sales_gets_its_authority_and_the_staged_screens_grant_nothing()
+    public void The_normal_host_with_Sales_gets_its_authority_and_the_published_screens_are_available()
     {
         var services = new ServiceCollection();
         services.AddSingleton<IShellCapabilityProvider, CounterpartyShellCapabilityProvider>();
@@ -58,14 +58,15 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         var authority = C01E2eShellCapabilityActivation.Configure(services, new TestingEnvironment(),
             new ConfigurationBuilder().Build());
 
-        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10AndSalesV10, authority);
+        Assert.Equal(ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10AndPublishedSalesV10, authority);
         using var container = services.BuildServiceProvider();
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
             new ShellCapabilityAuthorityCatalog([authority]));
         var sales = registry.Registrations.Where(item => item.Owner == SalesShellCapabilityProvider.OwnerId).ToArray();
         Assert.Equal(3, sales.Length);
-        // Staged: nothing Sales is available until the s03 acceptance and a separate exact-head change.
-        Assert.All(sales, item => Assert.False(item.Declaration.ImplementationAvailable));
+        // Published (S03-c, #328): available; each still opens only for an actor holding its Sales permission
+        // in the context company (SalesShellCapabilitySqlServerRelationalAcceptanceTests).
+        Assert.All(sales, item => Assert.True(item.Declaration.ImplementationAvailable));
     }
 
     [Fact]

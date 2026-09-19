@@ -98,7 +98,7 @@ MAX_SUITE_ACTORS = 8
 SUITE_API_EXTENSIONS = {
     # U-02: the Product runtime's issuer binding, matching the suite seed's local user and
     # external identity (ÜRÜN, #319 P3).
-    "u02": {"issuer": True, "actors": False, "identity": False},
+    "u02": {"issuer": True, "actors": False, "identity": True},
     # ORG-03: extra synthetic development actors after the canonical two (ORG, #319 P3-1).
     "org03": {"issuer": False, "actors": True, "identity": False},
     # S-03 (SİPARİŞ): the deployment's Product issuer binding (shared with u02, ÜRÜN's values), the
@@ -127,6 +127,8 @@ _IDENTITY_FIELDS = {
 }
 _SYNTHETIC_ID_PREFIX = {"Users": "b20", "External": "b21", "Roles": "b30", "Assignments": "b40"}
 SUITE_IDENTITY_PERMISSIONS = {
+    # u02 seeds only the issuer's Identity user, which holds nothing (the issuer-user rule).
+    "u02": (),
     "s03": ("sales.drafts.create", "sales.drafts.read", "product.operational-selection.read"),
 }
 
@@ -149,6 +151,31 @@ def _indexed(entries: dict[int, dict[str, str]], start: int, label: str) -> list
     require(indices == list(range(start, start + len(indices))),
             f"suite {label} must continue the built-in seed contiguously from index {start}")
     return [entries[index] for index in indices]
+
+
+def _issuer_user(suite: str, extra: dict, actor_ids: list[str], users: dict[str, str],
+                 user_rows: dict[str, dict[str, str]]) -> str | None:
+    """The issuer-user rule (coordinator decision, a narrow extension of D1): a suite that binds the Product
+    issuer (issuer list + both ISSUER_KEYS) may seed at most ONE Identity user that is no actor: the
+    issuer's own user, whose Id and external identity Id are the issuer keys, whose subject is
+    '<suite>-issuer' (never a BootstrapIdentity user, so it cannot sign in) and which holds no role,
+    assignment or permission. Returns its id, or None when the suite seeds no such user."""
+    non_actor = [user_id for user_id, subject in users.items() if subject not in actor_ids]
+    issuer_subject = f"{suite}-issuer"
+    require(issuer_subject not in actor_ids, f"no BootstrapIdentity user may be {issuer_subject}")
+    if not non_actor:
+        return None
+    # A second non-actor user fails the actor/user bijection in the caller.
+    require(SUITE_API_EXTENSIONS[suite]["issuer"] and all(key in extra for key in ISSUER_KEYS),
+            f"suite {suite}: an Identity user without an actor is only the bound Product issuer's")
+    issuer_user = non_actor[0]
+    row = user_rows[issuer_user]
+    require(issuer_user == extra[ISSUER_KEYS[0]],
+            "the issuer's Identity user Id must equal ProductRuntime__IssuerLocalUserId")
+    require(row["ExternalIdentities__0__Id"] == extra[ISSUER_KEYS[1]],
+            "the issuer's external identity Id must equal ProductRuntime__IssuerExternalIdentityId")
+    require(users[issuer_user] == issuer_subject, f"the issuer's subject must be {issuer_subject}")
+    return issuer_user
 
 
 def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> None:
@@ -179,6 +206,7 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
         return value
 
     users = {}
+    user_rows = {}
     for position, user in enumerate(_indexed(grouped["Users"], len(builtin["Users"]), "Identity users")):
         label = f"suite Identity user {position}"
         require(set(user) == {"Id", "DisplayName", "ExternalIdentities__0__Id",
@@ -190,7 +218,9 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
         require(user["ExternalIdentities__0__Issuer"] == BOOTSTRAP_ISSUER,
                 f"{label} external identity must be the development bootstrap issuer")
         users[user_id] = user["ExternalIdentities__0__Subject"]
-    require(sorted(users.values()) == sorted(actor_ids),
+        user_rows[user_id] = user
+    issuer_user = _issuer_user(suite, extra, actor_ids, users, user_rows)
+    require(sorted(subject for user_id, subject in users.items() if user_id != issuer_user) == sorted(actor_ids),
             "every suite actor needs exactly one Identity user whose subject is its id, and nothing else")
 
     roles = {}
@@ -220,7 +250,8 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
                                                           "Scopes__0__Type", "Scopes__0__Id"},
                 f"{label} needs Id, UserId, RoleId, CompanyId, ValidFromUtc and one company scope")
         unique(_synthetic_id(assignment["Id"], "Assignments", f"{label} Id"))
-        require(assignment["UserId"] in users, f"{label} must assign a suite Identity user")
+        require(assignment["UserId"] in users and assignment["UserId"] != issuer_user,
+                f"{label} must assign a suite actor's Identity user (the Product issuer holds no grant)")
         require(assignment["RoleId"] in roles, f"{label} must assign a suite role")
         require(assignment["CompanyId"] in companies, f"{label} company must be a seeded company")
         require(assignment["ValidFromUtc"] == IDENTITY_VALID_FROM, f"{label} must be valid from {IDENTITY_VALID_FROM}")
@@ -229,7 +260,7 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
         require(assignment["Scopes__0__Type"] == "Company" and assignment["Scopes__0__Id"] == assignment["CompanyId"],
                 f"{label} must be company-wide on its own company")
         assigned.add(assignment["UserId"])
-    require(set(users) <= assigned, "every suite Identity user needs at least one assignment")
+    require(set(users) - {issuer_user} <= assigned, "every suite actor's Identity user needs at least one assignment")
 
 
 # Stage 2 (a2 part 2): suites whose owner seeds data through the fixture runner
@@ -238,7 +269,10 @@ def validate_suite_identity(suite: str, extra: dict, actor_ids: list[str]) -> No
 # only. A read-only suite cannot have a fixture: its post-browser SQL check compares against the
 # canonical baseline, which a seed would move.
 FIXTURE_TOOL_SUITES_DIRECTORY = "tests/GoymenERP.BrowserSuiteFixtureTool/Suites"
-SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {}
+SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
+    # ÜRÜN's Suites/U02 seed (#331): the company, the gated code group and the two canonical actors.
+    "u02": frozenset({"companyId", "codeGroupId", "authorizedActor", "unauthorizedActor"}),
+}
 _OUTPUT_KEY = re.compile(r"^[a-z][A-Za-z0-9]{0,39}$")
 # Any non-nil lowercase GUID: seeded reference ids (companies, work centres) need not be RFC 4122.
 _ANY_GUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
