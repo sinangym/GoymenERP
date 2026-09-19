@@ -133,6 +133,7 @@ public static class ManufacturingEndpoints
             .Produces<OrderViewV1>(StatusCodes.Status200OK)
             .ProducesErpBadRequest()
             .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
         return endpoints;

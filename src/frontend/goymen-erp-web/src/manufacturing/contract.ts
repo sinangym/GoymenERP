@@ -1,0 +1,278 @@
+/**
+ * Wire contract of `GET /api/v1/manufacturing/orders/{orderId}` (`OrderViewV1`, MFG-API #313)
+ * and of the fact commands' request bodies.
+ *
+ * Kilograms travel as lossless invariant TEXT (Ö2): a JSON number would lose digits in a
+ * browser. They are decoded as text, displayed as text and sent as text; this layer never
+ * turns one into a number, rounds it or pads it.
+ *
+ * Decoding fails CLOSED: a body that does not match the contract is `null`, and the screen
+ * says the answer could not be read. A partially trusted order would put one roll's
+ * figures beside another's.
+ */
+
+/** The five output classes of DEC-PRDCT-006, by their server names. */
+export const OUTPUT_CLASSES = [
+  'GoodProduct',
+  'SecondQuality',
+  'UsableRemnant',
+  'Scrap',
+  'ProcessLoss',
+] as const
+
+export type OutputClass = (typeof OUTPUT_CLASSES)[number]
+
+export type OrderStatus = 'Open' | 'Closed'
+
+export interface RollBalance {
+  readonly parentRollId: string
+  readonly plannedKg: string
+  readonly issuedKg: string
+  readonly returnedKg: string
+  readonly netIssuedKg: string
+  readonly outputsKg: Readonly<Record<OutputClass, string>>
+  readonly workInProgressKg: string
+  /** Signed: never folded into a class, never shown as 0 when it is not. */
+  readonly unexplainedKg: string
+  readonly isFullyAccounted: boolean
+}
+
+/** Only in the basis the plan declared; `basis === null` means unavailable, never 0. */
+export interface RemainingTarget {
+  readonly basis: string | null
+  readonly targetKg: string | null
+  readonly achievedKg: string | null
+  readonly remainingKg: string | null
+}
+
+export interface ProductionOrderView {
+  readonly orderId: string
+  readonly companyId: string
+  readonly planId: string
+  readonly workCenterId: string
+  readonly process: string
+  readonly status: OrderStatus
+  /** The version the next fact must name as `expectedVersion`. */
+  readonly version: number
+  readonly target: { readonly basis: string; readonly kg: string } | null
+  readonly remainingTarget: RemainingTarget
+  readonly rolls: readonly RollBalance[]
+  /** `NotCalculated` in this slice: a status, never an amount. */
+  readonly costStatus: 'NotCalculated'
+  readonly closedByUserId: string | null
+  readonly closedAtUtc: string | null
+}
+
+const GUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+/** The server's own `Text(decimal)`: invariant, no grouping, no exponent. */
+const KG_OUT = /^(0|[1-9][0-9]*)(\.[0-9]*[1-9])?$/
+const SIGNED_KG_OUT = /^-?(0|[1-9][0-9]*)(\.[0-9]*[1-9])?$/
+/**
+ * The command's input grammar, the same as the server's (`KilogramText`): plain,
+ * non-negative, dot decimal. The SCALE is not decided here — the company's kilogram
+ * profile is the server's question, and more decimals than it allows are refused
+ * there (`manufacturing_mass_scale_exceeded`), never rounded here.
+ */
+const KG_IN = /^(0|[1-9][0-9]{0,17})(\.[0-9]{1,20})?$/
+
+export function isKilogramText(value: string): boolean {
+  return KG_IN.test(value)
+}
+
+type Json = Record<string, unknown>
+
+function isObject(value: unknown): value is Json {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function guid(value: unknown): string | null {
+  return typeof value === 'string' && GUID.test(value) ? value : null
+}
+
+function nullableGuid(value: unknown): string | null | undefined {
+  if (value === null) return null
+  return guid(value) ?? undefined
+}
+
+function kg(value: unknown, signed = false): string | null {
+  return typeof value === 'string' && (signed ? SIGNED_KG_OUT : KG_OUT).test(value) ? value : null
+}
+
+function nullableKg(value: unknown): string | null | undefined {
+  if (value === null) return null
+  return kg(value) ?? undefined
+}
+
+function decodeOutputs(value: unknown): Record<OutputClass, string> | null {
+  if (!isObject(value)) return null
+  const keys = Object.keys(value)
+  if (keys.length !== OUTPUT_CLASSES.length) return null
+  const outputs = {} as Record<OutputClass, string>
+  for (const outputClass of OUTPUT_CLASSES) {
+    const mass = kg(value[outputClass])
+    if (mass === null) return null
+    outputs[outputClass] = mass
+  }
+  return outputs
+}
+
+function decodeRoll(value: unknown): RollBalance | null {
+  if (!isObject(value)) return null
+  const parentRollId = guid(value.parentRollId)
+  const plannedKg = kg(value.plannedKg)
+  const issuedKg = kg(value.issuedKg)
+  const returnedKg = kg(value.returnedKg)
+  const netIssuedKg = kg(value.netIssuedKg)
+  const outputsKg = decodeOutputs(value.outputsKg)
+  const workInProgressKg = kg(value.workInProgressKg)
+  const unexplainedKg = kg(value.unexplainedKg, true)
+  if (
+    parentRollId === null ||
+    plannedKg === null ||
+    issuedKg === null ||
+    returnedKg === null ||
+    netIssuedKg === null ||
+    outputsKg === null ||
+    workInProgressKg === null ||
+    unexplainedKg === null ||
+    typeof value.isFullyAccounted !== 'boolean'
+  ) {
+    return null
+  }
+  return {
+    parentRollId,
+    plannedKg,
+    issuedKg,
+    returnedKg,
+    netIssuedKg,
+    outputsKg,
+    workInProgressKg,
+    unexplainedKg,
+    isFullyAccounted: value.isFullyAccounted,
+  }
+}
+
+function decodeRemaining(value: unknown): RemainingTarget | null {
+  if (!isObject(value)) return null
+  const basis = value.basis
+  const targetKg = nullableKg(value.targetKg)
+  const achievedKg = nullableKg(value.achievedKg)
+  // Remaining may be negative once the target is exceeded; it is the server's figure.
+  const remainingKg =
+    value.remainingKg === null ? null : (kg(value.remainingKg, true) ?? undefined)
+  if (targetKg === undefined || achievedKg === undefined || remainingKg === undefined) return null
+  if (basis === null) {
+    // Unavailable is all-null: a half-filled answer is not a contract shape.
+    return targetKg === null && achievedKg === null && remainingKg === null
+      ? { basis: null, targetKg: null, achievedKg: null, remainingKg: null }
+      : null
+  }
+  if (typeof basis !== 'string' || targetKg === null || achievedKg === null || remainingKg === null) {
+    return null
+  }
+  return { basis, targetKg, achievedKg, remainingKg }
+}
+
+function decodeTarget(value: unknown): ProductionOrderView['target'] | undefined {
+  if (value === null) return null
+  if (!isObject(value) || typeof value.basis !== 'string') return undefined
+  const mass = kg(value.kg)
+  return mass === null ? undefined : { basis: value.basis, kg: mass }
+}
+
+/** A positive safe integer: the version is compared and sent back, never computed. */
+function version(value: unknown): number | null {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
+}
+
+export function decodeOrder(body: unknown): ProductionOrderView | null {
+  if (!isObject(body)) return null
+  const orderId = guid(body.orderId)
+  const companyId = guid(body.companyId)
+  const planId = guid(body.planId)
+  const workCenterId = guid(body.workCenterId)
+  const orderVersion = version(body.version)
+  const target = decodeTarget(body.target)
+  const remainingTarget = decodeRemaining(body.remainingTarget)
+  const closedByUserId = nullableGuid(body.closedByUserId)
+  const closedAtUtc =
+    body.closedAtUtc === null
+      ? null
+      : typeof body.closedAtUtc === 'string' && !Number.isNaN(Date.parse(body.closedAtUtc))
+        ? body.closedAtUtc
+        : undefined
+  if (
+    orderId === null ||
+    companyId === null ||
+    planId === null ||
+    workCenterId === null ||
+    orderVersion === null ||
+    target === undefined ||
+    remainingTarget === null ||
+    closedByUserId === undefined ||
+    closedAtUtc === undefined ||
+    typeof body.process !== 'string' ||
+    (body.status !== 'Open' && body.status !== 'Closed') ||
+    body.costStatus !== 'NotCalculated' ||
+    !Array.isArray(body.rolls)
+  ) {
+    return null
+  }
+  const rolls: RollBalance[] = []
+  for (const raw of body.rolls) {
+    const roll = decodeRoll(raw)
+    if (roll === null) return null
+    rolls.push(roll)
+  }
+  return {
+    orderId,
+    companyId,
+    planId,
+    workCenterId,
+    process: body.process,
+    status: body.status,
+    version: orderVersion,
+    target,
+    remainingTarget,
+    rolls,
+    costStatus: 'NotCalculated',
+    closedByUserId,
+    closedAtUtc,
+  }
+}
+
+/** The four fact commands of the order, by route segment. */
+export const FACT_KINDS = ['input-issues', 'input-returns', 'wip-measurements', 'outputs'] as const
+
+export type FactKind = (typeof FACT_KINDS)[number]
+
+/**
+ * One fact as the caller froze it at submit. `factId` and the Idempotency-Key are chosen
+ * once per snapshot: re-sending an unresolved snapshot sends both unchanged, so the
+ * server answers it as the same command (ADR-011) and the same fact (R3).
+ */
+export interface FactSnapshot {
+  readonly kind: FactKind
+  readonly factId: string
+  readonly idempotencyKey: string
+  readonly expectedVersion: number
+  readonly parentRollId: string
+  readonly kg: string
+  /** ISO-8601 UTC (`Z`): the server requires a UTC fact time. */
+  readonly occurredAtUtc: string
+  /** Only for `outputs`. */
+  readonly outputClass: OutputClass | null
+}
+
+/** The request body exactly as `RecordFactRequestV1` / `DeclareOutputRequestV1` name it. */
+export function factBody(snapshot: FactSnapshot): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    factId: snapshot.factId,
+    expectedVersion: snapshot.expectedVersion,
+    parentRollId: snapshot.parentRollId,
+    kg: snapshot.kg,
+    occurredAtUtc: snapshot.occurredAtUtc,
+  }
+  if (snapshot.kind === 'outputs') body.outputClass = snapshot.outputClass
+  return body
+}
