@@ -65,7 +65,13 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     const currency = page.getByLabel('Para birimi', { exact: true })
     await expect(currency).toHaveValue('')
     await page.getByLabel('Hesap adı', { exact: true }).fill(ACCOUNT_NAME)
-    await currency.selectOption({ label: /^TRY — / })
+    // selectOption takes a string label only; the display label is Settings' own text, so the TRY
+    // candidate is found by its code prefix and chosen by its server-given value (the currency id).
+    const tryOption = currency.locator('option', { hasText: /^TRY — / })
+    await expect(tryOption).toHaveCount(1, { timeout: 30_000 })
+    const tryCurrencyId = await tryOption.getAttribute('value')
+    expect(tryCurrencyId).toMatch(/^[0-9a-f-]{36}$/)
+    await currency.selectOption(tryCurrencyId!)
 
     const post = page.waitForRequest((request) => PROPOSE_RE.test(request.url()) && request.method() === 'POST')
     const answer = page.waitForResponse((response) => PROPOSE_RE.test(response.url()) && response.request().method() === 'POST')
@@ -73,6 +79,7 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     const sent = await post
     expect(sent.headers()['idempotency-key']).toMatch(/^[0-9a-f]{32}$/)
     expect(Object.keys(sent.postDataJSON()).sort()).toEqual(['currencyId', 'displayName'])
+    expect(sent.postDataJSON().currencyId).toBe(tryCurrencyId)
     expect((await answer).status()).toBe(200)
     await expect(page.getByText('Hesap önerildi; onay bekliyor.', { exact: false })).toBeVisible()
 
