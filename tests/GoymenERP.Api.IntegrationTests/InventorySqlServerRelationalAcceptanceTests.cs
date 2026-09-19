@@ -581,6 +581,15 @@ public sealed class InventorySqlServerRelationalAcceptanceTests
                 Assert.Equal(InventoryStoreCodes.LabelConflict, (await Assert.ThrowsAsync<InventoryStoreException>(() => b.Labels.SaveLabelAsync(
                     new MaterialLabel(labelOfA.Id, CompanyB, "SYN-B-REUSES-A-ID", Product, LotB), Metadata(run)))).Code);
             }
+
+            // #333 SİPARİŞ P3-1: A's lot id AND A's label id in ONE save. Both keys can collide in the same batch,
+            // so the combined message may carry two GUIDs; the id is read from the lot key's own error.
+            await using (var b = run.Store(CompanyB))
+            {
+                Assert.Equal(InventoryStoreCodes.LotConflict, (await Assert.ThrowsAsync<InventoryStoreException>(() => b.Lots.SaveLotAsync(
+                    new MaterialLot(LotA, CompanyB, Product),
+                    [new MaterialLabel(labelOfA.Id, CompanyB, "SYN-B-REUSES-BOTH", Product, LotA)], Metadata(run)))).Code);
+            }
         }
 
         await using (var a = run.Store(CompanyA))
@@ -590,7 +599,7 @@ public sealed class InventorySqlServerRelationalAcceptanceTests
         }
 
         Assert.Equal(0, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM inventory.Labels WHERE Code = N'SYN-B-REUSES-A-ID'"));
+            "SELECT COUNT(*) FROM inventory.Labels WHERE Code IN (N'SYN-B-REUSES-A-ID', N'SYN-B-REUSES-BOTH')"));
 
         // Without the store: the (company, lot) key makes a cross-company link impossible in the schema.
         await using (var raw = run.Context(CompanyB))
