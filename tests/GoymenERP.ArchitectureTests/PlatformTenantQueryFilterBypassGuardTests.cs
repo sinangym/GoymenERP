@@ -44,9 +44,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for FIN-UI-1a (#325) on top of BROWSER-CI a2 part 2 (#330) and SALES-API (#321): the
     // staged Finance shell provider registered before the shell authority is chosen (C+O+P+S+F row), beside
     // #330's one call to C01E2eFixtureWriterActivation.Configure. No OpenAPI-generation, network or
-    // hosted-service surface of the startup source changed otherwise.
+    // hosted-service surface of the startup source changed otherwise. Re-fingerprinted for PRD-UNIT-1: one
+    // singleton registration of Settings' unit-identity catalog (immutable source data); nothing else.
     private const string ReviewedOpenApiStartupFingerprint =
-        "777a46487c2eb01d909d1b1cdee0af8ac1f8ea7400246af577b3bba600b8a01a";
+        "aa28a9b91c9102dc3d8cefcc715228be94b53f74bd8dfeeb87d1ce3cdcf94cb0";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -144,7 +145,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // product
             ["tools/relational_inventory/product.txt"] =
-                "b6f7b933a360d1780e3454f46f38d9244ffe9085a2ae6264e2f2ccbd51d749a8",
+                "15e67b1902045229482f995624e536aecaabd11877c47cccfb1fb2617226a414",
 
             // sales
             ["tools/relational_inventory/sales.txt"] =
@@ -230,8 +231,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("5c532feecc486eaeccde7db76beeb3d7ecdac7c6fe1650ad94311298c2616d2f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
+                // Re-measured for PRD-UNIT-1: the Product participant gets Settings' unit-identity catalog
+                // (GetService; unregistered stays fail-closed). SqlClient/SqlConnection counts unchanged.
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductSqlCommandRunner.cs"] =
-                    new("a7b69d45b14f11c63c12f67b44bed0588dad1e549f7022804e03cc296285fdca",
+                    new("36ee56a13d31b3c4aea130b801db15b983768eacfc2f5827047059ead463ed36",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Microsoft.Data.SqlClient"] = 1, ["SqlConnection"] = 1 }),
                 ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Services/GroupSharedAuditSession.cs"] =
@@ -259,8 +262,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
                  + "Persistence/ProductDraftParticipant.cs"] =
+                    // Re-measured for PRD-UNIT-1 (ÜRÜN): unit identities are resolved through Settings'
+                    // catalog; System.Data.Common/DbConnection counts unchanged.
                     new(
-                        "9273f2b058ad8f9863504a5f1f5a4c2605431559d0e001c19793135aaf3a238d",
+                        "f59d7bbd85559638482f4caf718bff0bd5e596fc259424d8ac12553ba4f0d815",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
