@@ -185,7 +185,7 @@ Not here: closing an order, a list or search, cost, Inventory movements (T15), o
 - **Migration** `20260919130000_AddPlanSlittingSpecs`: its Down refuses with `THROW 51047` (Manufacturing's one module number) while any spec is stored. Forward fix. Real SQL: it rolls back and forward cleanly with no spec, and refuses (51047) with one.
 - **Open item** (#66 NEEDS-BUSINESS 5741547443): whether a slitting plan's parent mass is the whole coil (the label's balance) or may be a part of it. Until it is answered, the engine takes the planned mass (the kg that passes the line) and **no rule** ties it to the label's balance either way. The balance itself also needs Inventory's module read.
 
-- **Carried (FİNANS #342 INFO-3):** the store's decimal(18,3) column bound `KilogramColumnLimit` also bounds the band width. It is to get a neutral name (e.g. `Decimal18Scale3Limit`) in the next slice that touches the guard-pinned `ManufacturingStore.cs` anyway. Deferred so that pure-domain slices stay non-central (coordinator ruling).
+- **Done in the BAL slice (FİNANS #342 INFO-3):** the store's decimal(18,3) column bound, which also bounds the band width, is named neutrally: `Decimal18Scale3Limit` (was `KilogramColumnLimit`). Same value, same checks.
 
 ## MFG-7 slice 1 — the Cold Rolling engine (Business 5737790175, DEC-PRDCT-001 order)
 
@@ -283,6 +283,27 @@ Pure, decimal, versioned calculators on the same core and under the same rules a
   - The master states no kerf golden ("yeni sürümde ayrıca hesaplanır"), so none is invented: CUT-007 / CUT-008 are tested with explicit inputs.
   - Density 7850 kg/m³ is a test input.
 
+## MFG-BAL — the mass-balance calculator (coordinator-approved consistency slice)
+
+`Domain/Engines/Balance/MassBalanceEngineV1` (`GDC-BAL/1`) is master v3 §28.9 BAL-003, BAL-004 and BAL-006, on the same core as the five process engines. Every input is explicit and named; nothing is derived inside the engine.
+
+| ID | Master §28.9 | Engine |
+|---|---|---|
+| BAL-003 mass difference | `Toplam Fiilî Girdi − (İyi Ürün + İkinci Kalite + Geri Kazanılabilir Yan Ürün + Hurda + Stok Dışı Proses Kaybı + Kalan WIP + Onaylı Ölçüm Düzeltmesi)` | `Difference`, exact; signed (never clamped); the correction is signed too |
+| BAL-004 fire % | `FireKg / HammaddeKg × 100` | `ScrapPercent`: `FireKg × 100 / HammaddeKg` (one division), both masses stated by the caller |
+| BAL-006 actual unit kg | `GerçekKg / GerçekAdet` | `ActualUnitMass`; a missing count is `Unavailable(actualCount)` |
+
+- **MFG-4's close runs on BAL-003.** `MassBalance` (one parent roll) computes its difference through the engine: one calculator for the close, the order read and any report (AGENTS).
+  - The order's facts map one to one: net issued (issued − returned) → actual input; good product, second quality, usable remnant (the recoverable by-product), scrap and process loss (the non-stock process loss) → their classes; the latest WIP reading → remaining WIP.
+  - A test pins that every `OutputClass` is a BAL-003 category, so a class added later cannot drop out of the balance.
+  - **The approved measurement correction** is the sum of the order's recorded corrections. The order has no correction fact yet, so that sum is 0. This is a fact of the data, not a default. Ö7's correction and exception path is a recorded dependency.
+  - The close's behaviour is unchanged and stays pinned by `WipCloseTests` and `OrderTargetAndCloseTests`: per roll, never offset, refused while any roll's difference is non-zero, WIP a position of its own.
+- **Not on the order read (coordinator ruling):** BAL-004 and BAL-006 have no inputs the order can supply without a decision, and a field that can only answer Unavailable adds contract surface without user value (5734735965). So this slice has no API or OpenAPI change.
+  - **BAL-004** is waiting on Business (NEEDS-BUSINESS on #66): is "Fire" only scrap, or scrap + non-stock process loss? Is the base the issued or the net issued mass?
+  - **BAL-006** needs a piece count, which the order's kg-only facts do not have. The count fact belongs to the count-producing processes (the TUB / CUT realization slices) and arrives with them.
+- **Not in version 1:** BAL-005 (the distribution of an empty actual quantity needs the §28.1 rounding stage, not decided), tolerance (Ö7: no approved profile; the close refuses any non-zero difference) and BAL-001 / BAL-002 (the donor's reference behaviour only).
+- **Golden:** §28.9 states no worked example, so none is invented. `MassBalanceEngineTests` uses explicit inputs with exact expected values.
+
 ## Behaviour kept on purpose — Business decision pending
 
 - **One approved plan can open more than one order** (`FromApprovedPlan` does not mark the plan as converted). §7.3 does not say whether a plan becomes one order or several partial ones; the question is open with Business (#66 5728934213, the same principle as Purchasing's request → several orders). Pinned by a test; changes only by that decision. The physical guard is Inventory's.
@@ -290,7 +311,7 @@ Pure, decimal, versioned calculators on the same core and under the same rules a
 ## What this module is not
 
 - No stock movement, lot or label: Inventory owns those.
-- No trim/kerf value, tolerance number, template, rounding stage or roll-substitution policy. The only formulas are the five engines above (MFG-6…9, DEC-PRDCT-001's order complete), and every parameter is supplied to them.
+- No trim/kerf value, tolerance number, template, rounding stage or roll-substitution policy. The only formulas are the five process engines (MFG-6…9, DEC-PRDCT-001's order complete) and the mass-balance calculator (MFG-BAL) above, and every parameter is supplied to them.
 - No UI yet (the normal screen is the next card); HTTP since MFG-API, persistence since MFG-5 (above).
 - No planning, capacity or costing on top of the engines yet: each engine's plan slice (the #342 pattern) comes with its sources.
 

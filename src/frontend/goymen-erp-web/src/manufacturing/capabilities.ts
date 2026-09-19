@@ -2,12 +2,12 @@
  * Capability ids of the Manufacturing order screen — the frontend's side of the
  * coordinator-approved MFG-UI card (D2), not a grant.
  *
- * The server's `ManufacturingShellCapabilityProvider` declares both ids STAGED
- * (`ImplementationAvailable: false`, card D1): until the browser suite accepts the
- * screen, the registry publishes neither, so `CapabilityRoute` closes the route onto
- * the neutral not-found block and `hasCapability` answers false. That is the intended
- * state, not a gap. The frontend never mints a capability to open its own screen, and
- * the server re-authorizes every request regardless (ERP-000K §10.2).
+ * The server's `ManufacturingShellCapabilityProvider` declares both ids PUBLISHED
+ * (`ImplementationAvailable: true`, MFG-UI-F #349, after the `mfg` browser acceptance). The
+ * registry still publishes each only to an actor holding its permissions in the context
+ * company; for anyone else `CapabilityRoute` closes the route onto the neutral not-found
+ * block and `hasCapability` answers false. The frontend never mints a capability to open
+ * its own screen, and the server re-authorizes every request regardless (ERP-000K §10.2).
  *
  * WHY TWO IDS. They map onto two permissions that are enforced separately on the
  * server (`ManufacturingEndpoints`):

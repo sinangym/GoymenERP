@@ -43,7 +43,9 @@ public sealed class ManufacturingStore(
     private const string PlanEntityType = "Manufacturing.ProductionPlan";
     private const string OrderEntityType = "Manufacturing.ProductionOrder";
     private const int ActorMaximumLength = 128;
-    private const decimal KilogramColumnLimit = 1_000_000_000_000_000m;
+    // The exclusive bound of a decimal(18,3) column (15 integer digits): every such column — the masses and the
+    // plan's band widths alike — refuses a value at or above it before the save (FİNANS #342 INFO-3: a neutral name).
+    private const decimal Decimal18Scale3Limit = 1_000_000_000_000_000m;
 
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
@@ -62,7 +64,7 @@ public sealed class ManufacturingStore(
         RequireFits(plan.Inputs.Select(input => input.PlannedMass).Concat(plan.Target is { } t ? [t.Mass] : [])
             .Concat(plan.Spec?.WindingTargetKg is { } winding ? [winding] : []));
         // A band width is a decimal(18,3) millimetre: beyond the column it is refused, never cut.
-        if (plan.Spec is { } widths && widths.Lines.Any(line => line.BandWidthMm >= KilogramColumnLimit))
+        if (plan.Spec is { } widths && widths.Lines.Any(line => line.BandWidthMm >= Decimal18Scale3Limit))
         {
             throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Bant eni kayıt sütununa sığmıyor.");
         }
@@ -719,7 +721,7 @@ public sealed class ManufacturingStore(
         // Not a production policy: the stored column is decimal(18,3). Kilograms already refuse a
         // fourth decimal (Ö2); a mass with more integer digits than the column holds is refused,
         // never cut by the database.
-        if (masses.Any(mass => mass.Value >= KilogramColumnLimit))
+        if (masses.Any(mass => mass.Value >= Decimal18Scale3Limit))
         {
             throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Kütle kayıt alanına sığmıyor; kesilmez, reddedilir.");
         }

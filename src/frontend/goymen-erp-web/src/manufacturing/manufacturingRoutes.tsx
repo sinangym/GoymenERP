@@ -2,9 +2,9 @@
  * The Manufacturing route table, ready for the shell owner to spread into
  * `shell/router.tsx` as `...manufacturingRoutes` (see ./SHARED_MOUNT_HANDOFF.md).
  *
- * Wrapped in `<CapabilityRoute>`: while the server keeps the capability staged
- * (MFG-UI card D1), the route mounts nothing and renders the same neutral not-found
- * block any unknown path gets.
+ * Wrapped in `<CapabilityRoute>`: the capability is published (MFG-UI-F #349), but the
+ * registry grants it only to an actor holding its permission; for anyone else the route
+ * mounts nothing and renders the same neutral not-found block any unknown path gets.
  */
 
 import type { ReactNode } from 'react'
