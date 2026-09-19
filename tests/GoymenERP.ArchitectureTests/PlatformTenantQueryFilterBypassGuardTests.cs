@@ -149,7 +149,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
-                "d2319e1cab2894185ef5e9450886a90a9200be602cbfa5ec9f87e8da68f593fb",
+                "b6ce24f17c5d9c8ae56ac36ebc45cb8269599db318a6206317fec632ff134ae3",
 
             // organization
             ["tools/relational_inventory/organization.txt"] =
@@ -477,8 +477,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // connection, command or raw SQL.
                 // Re-measured for MFG-API (#313): the same single SqlClient use now also recognises 547 on the
                 // named composite work-center FK (manufacturing_work_center_not_found); still recognition only,
-                // no connection, command or raw SQL. Re-fingerprinted for MFG-BAL: the order close reads the
-                // GDC-BAL/1 mass-balance result (BAL-003); SqlClient count unchanged (1).
+                // no connection, command or raw SQL. Re-fingerprinted for MFG-BAL: the Decimal18Scale3Limit rename
+                // (FİNANS #342 INFO-3: one neutral name for every decimal(18,3) column bound); SqlClient count
+                // unchanged (1).
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
