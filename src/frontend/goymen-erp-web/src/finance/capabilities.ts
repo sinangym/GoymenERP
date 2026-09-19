@@ -25,6 +25,12 @@ export const FINANCE_CAPABILITY = {
   bankAccountsPropose: 'finance.bank-accounts.propose',
   /** F-04 — the approval control of the list (not a route). */
   bankAccountsApprove: 'finance.bank-accounts.approve',
+  /**
+   * F-02 — the Record control of the detail (not a route; FIN-T05a). No provider declares it yet: the declaration and
+   * its authority revision are central (FIN-T05's round, after Q1 names the period date), so `hasCapability` answers
+   * false and the control is never offered before then.
+   */
+  receiptsRecord: 'finance.receipts.record',
 } as const
 
 export type FinanceCapabilityId = (typeof FINANCE_CAPABILITY)[keyof typeof FINANCE_CAPABILITY]

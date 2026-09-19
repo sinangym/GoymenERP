@@ -64,9 +64,16 @@ public sealed class ReceiptDraftService(
     IAuditEventCollector auditEvents,
     FinanceReceiptDraftBinding binding,
     FinanceAuditEnvelope envelope,
-    TimeProvider timeProvider) : IManualReceiptService
+    TimeProvider timeProvider,
+    FinanceAuditEnvelope? recordEnvelope = null,
+    IFinanceRecordPeriodRule? periodRule = null) : IManualReceiptService
 {
     public const string SaveDraftCommand = "finance.manual-receipt.draft.save";
+
+    /// <summary>FIN-T05a: the Record command's name in the ADR-011 log.</summary>
+    public const string RecordCommand = "finance.manual-receipt.record";
+
+    private readonly IFinanceRecordPeriodRule _periodRule = periodRule ?? new UndecidedFinanceRecordPeriodRule();
     private const string EntityType = "Finance.ReceiptDraft";
     private const int IdentityMaximumLength = 128;
     private const int BankReferenceMaximumLength = 128;
@@ -105,7 +112,7 @@ public sealed class ReceiptDraftService(
 
         var payloadHash = PayloadHash(request);
         var keyHash = FinanceCommandKeys.Hash(key);
-        if (await PriorAsync(context, keyHash, payloadHash, cancellationToken) is { } prior)
+        if (await PriorAsync(context, SaveDraftCommand, FinanceAction.SaveDraft, keyHash, payloadHash, cancellationToken) is { } prior)
         {
             return prior;
         }
@@ -139,16 +146,22 @@ public sealed class ReceiptDraftService(
             if (row is null)
             {
                 // Terminal (ADR-011 §7): the key keeps this answer; there is no draft to point at.
-                return await TerminalAsync(context, keyHash, payloadHash, draftId: null,
+                return await TerminalAsync(context, SaveDraftCommand, FinanceAction.SaveDraft, keyHash, payloadHash, draftId: null,
                     Refused(context, CommandOutcome.ValidationFailed, Issue("draftId", "draft_not_found")), cancellationToken);
             }
 
             if (!string.Equals(VersionText(row.Version), request.ExpectedVersion, StringComparison.Ordinal))
             {
                 // Terminal (§7): a retry of this key answers the same conflict even after the draft moves on.
-                return await TerminalAsync(context, keyHash, payloadHash, row.Id,
+                return await TerminalAsync(context, SaveDraftCommand, FinanceAction.SaveDraft, keyHash, payloadHash, row.Id,
                     Refused(context, CommandOutcome.VersionConflict, Issue("expectedVersion", "version_conflict")),
                     cancellationToken);
+            }
+
+            if (row.Stage != ReceiptStages.Draft)
+            {
+                // FIN-T05a: a recorded source is never edited again; not terminal, the key stays free.
+                return Refused(context, CommandOutcome.ValidationFailed, Issue("draftId", "source_not_draft"));
             }
         }
 
@@ -262,7 +275,7 @@ public sealed class ReceiptDraftService(
         Audit(context, metadata, row.Id, versionBefore is null ? "finance.receipt-draft.created.v1" : "finance.receipt-draft.updated.v1",
             versionBefore is null ? "Create" : "Update", versionBefore, row.Version, before, DraftAudit(row));
 
-        if (await SaveAsync(context, keyHash, payloadHash, cancellationToken) is { } lost)
+        if (await SaveAsync(context, SaveDraftCommand, FinanceAction.SaveDraft, keyHash, payloadHash, cancellationToken) is { } lost)
         {
             return lost;
         }
@@ -357,13 +370,243 @@ public sealed class ReceiptDraftService(
             new SourcePage(context.CompanyId, [.. page.Select(row => Detail(row, Disclosure(amount)).Source)], next));
     }
 
-    public Task<CommandResult> RecordAsync(FinanceContext context, CommandMetadata metadata, RecordRequest request,
+    /// <summary>
+    /// FIN-T05a (card #66 5743678389): the Record of a realized manual bank receipt — ONE money event, exactly once.
+    /// <list type="bullet">
+    /// <item><b>Authority:</b> the narrow <c>Record</c> name (Ö4: one authorised operator, no second approval), measured
+    /// fresh before anything is read, after every owner read and right before the one save; replay included.</item>
+    /// <item><b>ADR-011:</b> its own command name in the log; the same key, request and actor replays; a missing source
+    /// and a stale version are terminal (§7); a state refusal (not a draft) or an owner or period refusal is not, so a
+    /// corrected retry is measured again; the loser of a race answers the winner's record (§8).</item>
+    /// <item><b>At record time</b> the owners are read again: the bank account (approved, usable, same currency), the
+    /// party account (active) and the Settings money profile (in effect, same profile, the stored amount within its
+    /// scale — Ö2, never rounded).</item>
+    /// <item><b>Period (Ö5):</b> <see cref="IFinanceRecordPeriodRule"/>. Q1 (which date decides) is open, so the only
+    /// rule answers Unavailable and every Record is refused with <c>finance_period_rule_unavailable</c>: nothing below
+    /// runs in the product until Q1 is answered.</item>
+    /// <item><b>One save:</b> the source turns Recorded (its version moves once), ONE <c>MoneyEvents</c> row, the
+    /// command record and the audit event. A second event for the same source is refused by the unique index even to a
+    /// lost race. The bank inflow and the customer credit are reads of that one row; no allocation, journal or
+    /// official document is made.</item>
+    /// </list>
+    /// </summary>
+    public async Task<CommandResult> RecordAsync(FinanceContext context, CommandMetadata metadata, RecordRequest request,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
-        // Record is T05: money, period, FX and OPEN-009 authority are not part of a draft.
-        return Task.FromResult(Refused(context, SameContext(context) ? CommandOutcome.Unavailable : CommandOutcome.Denied));
+        if (!SameContext(context))
+        {
+            return Refused(context, CommandOutcome.Denied);
+        }
+
+        if (await FenceAsync(context, FinanceAction.Record, request.DraftId, cancellationToken) is { } denied)
+        {
+            return denied;
+        }
+
+        var key = metadata.IdempotencyKey;
+        if (!IsCanonical(key) || key.Length > IdentityMaximumLength)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("idempotencyKey", "idempotency_key_invalid"));
+        }
+
+        if (context.ActorId.Length > IdentityMaximumLength || context.CorrelationId.Length > IdentityMaximumLength)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("context", "finance_value_does_not_fit"));
+        }
+
+        var payloadHash = RecordPayloadHash(request);
+        var keyHash = FinanceCommandKeys.Hash(key);
+        if (await PriorAsync(context, RecordCommand, FinanceAction.Record, keyHash, payloadHash, cancellationToken) is { } prior)
+        {
+            return prior;
+        }
+
+        if (request.DraftId == Guid.Empty || string.IsNullOrWhiteSpace(request.ExpectedVersion))
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("draftId", "draft_identity_invalid"));
+        }
+
+        var operation = binding.MoneyOperation;
+        if (string.IsNullOrWhiteSpace(operation))
+        {
+            return Refused(context, CommandOutcome.Unavailable, Issue("profile", "finance_operation_mapping_unavailable"));
+        }
+
+        var row = await dbContext.ReceiptDrafts.SingleOrDefaultAsync(candidate => candidate.Id == request.DraftId, cancellationToken);
+        if (row is null)
+        {
+            return await TerminalAsync(context, RecordCommand, FinanceAction.Record, keyHash, payloadHash, draftId: null,
+                Refused(context, CommandOutcome.ValidationFailed, Issue("draftId", "draft_not_found")), cancellationToken);
+        }
+
+        if (!string.Equals(VersionText(row.Version), request.ExpectedVersion, StringComparison.Ordinal))
+        {
+            return await TerminalAsync(context, RecordCommand, FinanceAction.Record, keyHash, payloadHash, row.Id,
+                Refused(context, CommandOutcome.VersionConflict, Issue("expectedVersion", "version_conflict")), cancellationToken);
+        }
+
+        if (row.Stage != ReceiptStages.Draft)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, Issue("draftId", "source_not_draft"));
+        }
+
+        // The stored preparation, exactly as saved, re-checked against the owners' CURRENT answers.
+        var preparation = new ReceiptPreparation(row.PartyId, row.CompanyAccountId, row.TreasuryAccountId,
+            new MoneyText(row.AmountText, row.CurrencyId), new ProfileReference(row.ProfileId, row.ProfileVersion),
+            row.OccurredOn, row.ValueOn, row.BankReference, row.Description);
+
+        var bankRead = await banks.GetAuthorizedAsync(context, row.TreasuryAccountId, cancellationToken);
+        if (await FenceAsync(context, FinanceAction.Record, row.Id, cancellationToken) is { } afterBank)
+        {
+            return afterBank;
+        }
+
+        switch (bankRead.Outcome)
+        {
+            case ReadOutcome.Denied:
+                return Refused(context, CommandOutcome.Denied);
+            case ReadOutcome.NotFound:
+                return Refused(context, CommandOutcome.ValidationFailed, Issue("treasuryAccountId", "bank_account_ineligible"));
+            case ReadOutcome.Found when bankRead.Resource is not null:
+                break;
+            default:
+                return Refused(context, CommandOutcome.Unavailable, Issue("treasuryAccountId", "bank_account_unavailable"));
+        }
+
+        var partyRead = await parties.GetAuthorizedAsync(context, row.PartyId, row.CompanyAccountId, cancellationToken);
+        if (await FenceAsync(context, FinanceAction.Record, row.Id, cancellationToken) is { } afterParty)
+        {
+            return afterParty;
+        }
+
+        switch (partyRead.Outcome)
+        {
+            case ReadOutcome.Denied:
+                return Refused(context, CommandOutcome.Denied);
+            case ReadOutcome.NotFound:
+                return Refused(context, CommandOutcome.ValidationFailed, Issue("companyAccountId", "party_account_ineligible"));
+            case ReadOutcome.Found when partyRead.Resource is not null:
+                break;
+            default:
+                return Refused(context, CommandOutcome.Unavailable, Issue("companyAccountId", "party_account_unavailable"));
+        }
+
+        IReadOnlyList<ValidationIssue> issues;
+        try
+        {
+            issues = await new SettingsReceiptPrerequisites(settings).ValidatePreparationAsync(context,
+                operation, preparation, bankRead.Resource, partyRead.Resource, cancellationToken);
+        }
+        catch (SettingsPrerequisiteException exception)
+        {
+            if (await FenceAsync(context, FinanceAction.Record, row.Id, cancellationToken) is { } fenced)
+            {
+                return fenced;
+            }
+
+            return exception.Code switch
+            {
+                "settings_access_denied" => Refused(context, CommandOutcome.Denied),
+                SettingsPrerequisiteCodesV1.MoneyProfileNotFound =>
+                    Refused(context, CommandOutcome.ValidationFailed, Issue("money.currencyId", exception.Code)),
+                _ => Refused(context, CommandOutcome.Unavailable, Issue("profile", exception.Code)),
+            };
+        }
+
+        if (await FenceAsync(context, FinanceAction.Record, row.Id, cancellationToken) is { } afterSettings)
+        {
+            return afterSettings;
+        }
+
+        if (issues.Count > 0)
+        {
+            return Refused(context, CommandOutcome.ValidationFailed, [.. issues]);
+        }
+
+        // Ö5: recorded only in an OPEN period. Which date decides is Q1 (#66 5745134466); until it is answered the rule
+        // decides nothing and this refuses, before any write.
+        var now = timeProvider.GetUtcNow();
+        var period = await _periodRule.CheckAsync(context, row.OccurredOn, row.ValueOn, now, cancellationToken);
+        if (await FenceAsync(context, FinanceAction.Record, row.Id, cancellationToken) is { } afterPeriod)
+        {
+            return afterPeriod;
+        }
+
+        switch (period.Outcome)
+        {
+            case RecordPeriodOutcome.Open:
+                break;
+            case RecordPeriodOutcome.NotOpen:
+                return Refused(context, CommandOutcome.ValidationFailed,
+                    Issue("occurredOn", period.Code ?? RecordPeriodAnswer.PeriodNotOpenCode));
+            default:
+                // A definite refusal the user can read (422 with its code), not an outage: a 503 would put the screen into
+                // "result unknown, resend" for a rule that is simply not decided. Not terminal: the key stays free.
+                return Refused(context, CommandOutcome.ValidationFailed,
+                    Issue("period", period.Code ?? RecordPeriodAnswer.RuleUnavailableCode));
+        }
+
+        var versionBefore = row.Version;
+        var before = DraftAudit(row);
+        row.Stage = ReceiptStages.Recorded;
+        row.RecordedAtUtc = now;
+        row.RecordedBy = context.ActorId;
+        row.Version = checked(row.Version + 1);
+        dbContext.MoneyEvents.Add(new MoneyEventRow
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = context.CompanyId,
+            SourceId = row.Id,
+            Kind = MoneyEventKinds.ManualBankReceiptRecorded,
+            PartyId = row.PartyId,
+            CompanyAccountId = row.CompanyAccountId,
+            TreasuryAccountId = row.TreasuryAccountId,
+            CurrencyId = row.CurrencyId,
+            AmountText = row.AmountText,
+            ProfileId = row.ProfileId,
+            ProfileVersion = row.ProfileVersion,
+            OccurredOn = row.OccurredOn,
+            ValueOn = row.ValueOn,
+            RecordedAtUtc = now,
+            RecordedBy = context.ActorId,
+            CorrelationId = context.CorrelationId,
+        });
+
+        var amountDecision = await permissions.CheckAsync(context, FinanceAction.ReadAmount, row.Id, cancellationToken);
+        var result = new CommandResult(CommandOutcome.Succeeded, Detail(row, AmountDisclosure.Visible), IsReplay: false,
+            context.CorrelationId, []);
+        dbContext.Commands.Add(new FinanceCommandRow
+        {
+            CompanyId = context.CompanyId,
+            CommandName = RecordCommand,
+            IdempotencyKeyHash = keyHash,
+            ActorId = context.ActorId,
+            PayloadHash = payloadHash,
+            DraftId = row.Id,
+            ResultJson = JsonSerializer.Serialize(result, Json),
+            CorrelationId = context.CorrelationId,
+            RecordedAtUtc = now,
+        });
+        Audit(context, metadata, row.Id, "finance.manual-receipt.recorded.v1", "Record", versionBefore, row.Version, before,
+            DraftAudit(row), recordEnvelope ?? envelope, "Manuel banka tahsilatı kesin kayda alındı (tek para olayı)");
+
+        // The last fence that can still prevent the write; none after the commit.
+        if (await FenceAsync(context, FinanceAction.Record, row.Id, cancellationToken) is { } beforeSave)
+        {
+            dbContext.ChangeTracker.Clear();
+            return beforeSave;
+        }
+
+        if (await SaveAsync(context, RecordCommand, FinanceAction.Record, keyHash, payloadHash, cancellationToken) is { } lost)
+        {
+            return lost;
+        }
+
+        return Disclose(result, amountDecision);
     }
 
     public Task<CommandResult> ReverseAsync(FinanceContext context, CommandMetadata metadata, ReverseRequest request,
@@ -378,6 +621,10 @@ public sealed class ReceiptDraftService(
     internal static string PayloadHash(DraftSaveRequest request) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request, Json)))).ToLowerInvariant();
 
+    /// <summary>The canonical content of a record request: the exact contract JSON of the whole request.</summary>
+    internal static string RecordPayloadHash(RecordRequest request) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request, Json)))).ToLowerInvariant();
+
     /// <summary>The lossless version text the contract carries.</summary>
     internal static string VersionText(long version) => version.ToString(CultureInfo.InvariantCulture);
 
@@ -386,11 +633,11 @@ public sealed class ReceiptDraftService(
     /// under a fresh fence; another payload or actor under the same key is a conflict that discloses
     /// nothing of the earlier result (§3). Null when the key holds nothing.
     /// </summary>
-    private async Task<CommandResult?> PriorAsync(FinanceContext context, string keyHash, string payloadHash,
-        CancellationToken cancellationToken)
+    private async Task<CommandResult?> PriorAsync(FinanceContext context, string commandName, FinanceAction action, string keyHash,
+        string payloadHash, CancellationToken cancellationToken)
     {
         var prior = await dbContext.Commands.AsNoTracking()
-            .SingleOrDefaultAsync(row => row.CommandName == SaveDraftCommand && row.IdempotencyKeyHash == keyHash,
+            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash,
                 cancellationToken);
         if (prior is null)
         {
@@ -398,7 +645,7 @@ public sealed class ReceiptDraftService(
         }
 
         return prior.PayloadHash == payloadHash && string.Equals(prior.ActorId, context.ActorId, StringComparison.Ordinal)
-            ? await ReplayAsync(context, prior, cancellationToken)
+            ? await ReplayAsync(context, action, prior, cancellationToken)
             : Refused(context, CommandOutcome.IdempotencyConflict);
     }
 
@@ -407,8 +654,8 @@ public sealed class ReceiptDraftService(
     /// of it stays tracked and the key is read afresh: another caller of the same key that won is this
     /// answer too (ADR-011 §8); a race that left this key empty is a <c>concurrent_change</c>.
     /// </summary>
-    private async Task<CommandResult?> SaveAsync(FinanceContext context, string keyHash, string payloadHash,
-        CancellationToken cancellationToken)
+    private async Task<CommandResult?> SaveAsync(FinanceContext context, string commandName, FinanceAction action, string keyHash,
+        string payloadHash, CancellationToken cancellationToken)
     {
         try
         {
@@ -419,7 +666,7 @@ public sealed class ReceiptDraftService(
             || exception.InnerException is SqlException { Number: 2601 or 2627 })
         {
             dbContext.ChangeTracker.Clear();
-            return await PriorAsync(context, keyHash, payloadHash, cancellationToken)
+            return await PriorAsync(context, commandName, action, keyHash, payloadHash, cancellationToken)
                 ?? Refused(context, CommandOutcome.VersionConflict, Issue("request", "concurrent_change"));
         }
     }
@@ -428,13 +675,13 @@ public sealed class ReceiptDraftService(
     /// ADR-011 §7: an authorized terminal refusal is the key's result for good. It is recorded alone
     /// (no business change, no audit event) and answered; a retry of the key replays it.
     /// </summary>
-    private async Task<CommandResult> TerminalAsync(FinanceContext context, string keyHash, string payloadHash,
-        Guid? draftId, CommandResult refusal, CancellationToken cancellationToken)
+    private async Task<CommandResult> TerminalAsync(FinanceContext context, string commandName, FinanceAction action, string keyHash,
+        string payloadHash, Guid? draftId, CommandResult refusal, CancellationToken cancellationToken)
     {
         dbContext.Commands.Add(new FinanceCommandRow
         {
             CompanyId = context.CompanyId,
-            CommandName = SaveDraftCommand,
+            CommandName = commandName,
             IdempotencyKeyHash = keyHash,
             ActorId = context.ActorId,
             PayloadHash = payloadHash,
@@ -443,15 +690,16 @@ public sealed class ReceiptDraftService(
             CorrelationId = context.CorrelationId,
             RecordedAtUtc = timeProvider.GetUtcNow(),
         });
-        return await SaveAsync(context, keyHash, payloadHash, cancellationToken) ?? refusal;
+        return await SaveAsync(context, commandName, action, keyHash, payloadHash, cancellationToken) ?? refusal;
     }
 
-    private async Task<CommandResult> ReplayAsync(FinanceContext context, FinanceCommandRow prior, CancellationToken cancellationToken)
+    private async Task<CommandResult> ReplayAsync(FinanceContext context, FinanceAction action, FinanceCommandRow prior,
+        CancellationToken cancellationToken)
     {
         var stored = JsonSerializer.Deserialize<CommandResult>(prior.ResultJson, Json)
             ?? throw new InvalidOperationException("Kayıtlı komut sonucu okunamadı.");
         var amount = await permissions.CheckAsync(context, FinanceAction.ReadAmount, prior.DraftId, cancellationToken);
-        if (await FenceAsync(context, FinanceAction.SaveDraft, prior.DraftId, cancellationToken) is { } fenced)
+        if (await FenceAsync(context, action, prior.DraftId, cancellationToken) is { } fenced)
         {
             return fenced;
         }
@@ -530,12 +778,17 @@ public sealed class ReceiptDraftService(
         var amount = disclosure == AmountDisclosure.Visible
             ? new AmountView(AmountDisclosure.Visible, new MoneyText(row.AmountText, row.CurrencyId))
             : new AmountView(disclosure, null);
-        var summary = new SourceSummary(row.Id, row.CompanyId, row.Id.ToString("D"), VersionText(row.Version), SourceStage.Draft,
+        var recorded = row.Stage == ReceiptStages.Recorded;
+        var summary = new SourceSummary(row.Id, row.CompanyId, row.Id.ToString("D"), VersionText(row.Version),
+            recorded ? SourceStage.Recorded : SourceStage.Draft,
             row.PartyId, row.CompanyAccountId, row.TreasuryAccountId, row.CurrencyId, row.OccurredOn, row.ValueOn, amount);
-        // A draft has no allocation fact: unknown, never 0.
+        // A draft has no allocation fact: unknown, never 0. A recorded source has no allocation relation yet (FS3), so
+        // what is known is exact: unallocated = the source amount - 0 active allocations (card #66 5743678389 §2).
+        var unallocated = recorded
+            ? new UnallocatedView(AllocationKnowledge.Known, amount)
+            : new UnallocatedView(AllocationKnowledge.Unavailable, new AmountView(AmountDisclosure.Unavailable, null));
         return new SourceDetail(summary, new ProfileReference(row.ProfileId, row.ProfileVersion), row.BankReference,
-            row.Description, RecordedAtUtc: null, ReversalSourceId: null, ReversesSourceId: null,
-            new UnallocatedView(AllocationKnowledge.Unavailable, new AmountView(AmountDisclosure.Unavailable, null)));
+            row.Description, RecordedAtUtc: row.RecordedAtUtc, ReversalSourceId: null, ReversesSourceId: null, unallocated);
     }
 
     /// <summary>Applies a FRESH amount decision to a result, so a replay never discloses more than now allowed.</summary>
@@ -559,6 +812,11 @@ public sealed class ReceiptDraftService(
 
     private void Audit(FinanceContext context, CommandMetadata metadata, Guid draftId, string eventType, string operation,
         long? versionBefore, long? versionAfter, string before, string after)
+        => Audit(context, metadata, draftId, eventType, operation, versionBefore, versionAfter, before, after, envelope,
+            "Manuel banka tahsilatı taslağı (para etkisi yok)");
+
+    private void Audit(FinanceContext context, CommandMetadata metadata, Guid draftId, string eventType, string operation,
+        long? versionBefore, long? versionAfter, string before, string after, FinanceAuditEnvelope audit, string reason)
     {
         auditEvents.Enqueue(new AuditEventDraft(
             context.CompanyId,
@@ -570,17 +828,17 @@ public sealed class ReceiptDraftService(
             versionAfter,
             AuditActorTypes.User,
             context.ActorId,
-            envelope.PermissionCode,
-            envelope.RoleCodes,
+            audit.PermissionCode,
+            audit.RoleCodes,
             before,
             after,
-            "Manuel banka tahsilatı taslağı (para etkisi yok)",
+            reason,
             ApprovalContextJson: null,
             AuditAiInvolvement.None,
             AiContextJson: null,
-            envelope.SourceChannel,
-            envelope.ClientIpAddress,
-            envelope.UserAgent,
+            audit.SourceChannel,
+            audit.ClientIpAddress,
+            audit.UserAgent,
             context.CorrelationId,
             context.CausationId,
             metadata.IdempotencyKey));
@@ -591,7 +849,8 @@ public sealed class ReceiptDraftService(
     {
         row.Id,
         version = VersionText(row.Version),
-        stage = "Draft",
+        stage = row.Stage == ReceiptStages.Recorded ? "Recorded" : "Draft",
+        row.RecordedAtUtc,
         row.PartyId,
         row.CompanyAccountId,
         row.TreasuryAccountId,

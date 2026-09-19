@@ -92,7 +92,7 @@ public static class FinanceEndpoints
     /// platform problems. A malformed or foreign list cursor is 400.</item>
     /// </list>
     /// Permission is not a route policy: the services ask the Finance permission port afresh at every
-    /// fence (#276), so a revocation in flight is seen. No Record or Reverse route exists (T05, OPEN-009).
+    /// fence (#276), so a revocation in flight is seen. Record exists since FIN-T05a (refused until Q1); Reverse has no route (FIN-T06).
     /// </summary>
     private static void MapManualReceiptEndpoints(IEndpointRouteBuilder endpoints)
     {
@@ -143,6 +143,58 @@ public static class FinanceEndpoints
             .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
                 StatusCodes.Status422UnprocessableEntity)
             .Accepts<DraftSaveRequest>("application/json")
+            .Produces<CommandResult>(StatusCodes.Status200OK)
+            .Produces<CommandResult>(StatusCodes.Status422UnprocessableEntity)
+            .Produces<CommandResult>(StatusCodes.Status409Conflict)
+            .ProducesErpAuthenticatedProblems()
+            .ProducesErpBadRequest()
+            .AllowsEmptyErpBadRequestBody()
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpServiceUnavailable();
+
+        // FIN-T05a: the Record of a realized manual bank receipt (card #66 5743678389): one money event, exactly once,
+        // under the narrow Record name (Ö4). The route's source id and the body's draftId name the same source. Until Q1
+        // (#66 5745134466) names the period date every Record is a 422 finance_period_rule_unavailable, before any write.
+        endpoints.MapPost(ManualReceiptsPath + "/{sourceId:guid}/record", async (
+                Guid sourceId,
+                HttpContext httpContext,
+                IManualReceiptService service,
+                ICompanyContext companyContext,
+                ICurrentUser currentUser,
+                ICorrelationContext correlation,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext);
+                if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var key))
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (!httpContext.Request.HasJsonContentType())
+                {
+                    return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                var request = await ReadBodyAsync<RecordRequest>(httpContext, cancellationToken);
+                if (request is null || request.DraftId != sourceId)
+                {
+                    return Results.Problem(statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                var result = await service.RecordAsync(Context(companyContext, currentUser, correlation),
+                    new CommandMetadata(key), request, cancellationToken);
+                return Command(httpContext, result, result.Outcome, result.IsReplay, result.OriginalCorrelationId);
+            })
+            .WithName("RecordFinanceManualReceiptV1")
+            .WithTags("Finance")
+            .RequireAuthorization()
+            .RequireCompanyContext()
+            // The replayable results: the stored success (200) and the recorded terminal refusals (§7: a missing source
+            // is a 422, a stale version a 409).
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<RecordRequest>("application/json")
             .Produces<CommandResult>(StatusCodes.Status200OK)
             .Produces<CommandResult>(StatusCodes.Status422UnprocessableEntity)
             .Produces<CommandResult>(StatusCodes.Status409Conflict)

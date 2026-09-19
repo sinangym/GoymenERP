@@ -75,6 +75,9 @@ public static class FinanceModuleExtensions
         services.AddScoped<IFinanceBankAccountReader>(provider => provider.GetRequiredService<FinanceBankAccountService>());
         services.AddScoped<IFinanceBankAccountMaster>(provider => provider.GetRequiredService<FinanceBankAccountService>());
         services.AddScoped<IManualReceiptService>(CreateReceiptDraftService);
+        // FIN-T05a: the Record's period gate. Q1 (#66 5745134466) is open, so the only rule decides nothing and every
+        // Record is refused (finance_period_rule_unavailable); Q1's answer replaces this one binding.
+        services.TryAddSingleton<IFinanceRecordPeriodRule, UndecidedFinanceRecordPeriodRule>();
         services.TryAddSingleton(TimeProvider.System);
         return services;
     }
@@ -112,7 +115,9 @@ public static class FinanceModuleExtensions
             provider.GetRequiredService<IAuditEventCollector>(),
             new FinanceReceiptDraftBinding(FinanceMoneyOperations.ManualBankReceiptV1),
             Envelope(provider, FinancePermissionNames.DraftSave, permissions, FinanceAction.SaveDraft),
-            provider.GetRequiredService<TimeProvider>());
+            provider.GetRequiredService<TimeProvider>(),
+            Envelope(provider, FinancePermissionNames.Record, permissions, FinanceAction.Record),
+            provider.GetRequiredService<IFinanceRecordPeriodRule>());
     }
 
     /// <summary>The ADR-009 envelope of the request: the permission that authorizes the write and its roles.</summary>

@@ -20,7 +20,7 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
 | Part | What |
 |---|---|
 | `FinanceDbContext` | Schema `finance`. `ReceiptDrafts` and `Commands` are tenant tables: filtered by the server-resolved company and write-guarded (no delete, no company change, allowed fields only). Audit's sidecar is written in the same save |
-| `ReceiptDraftService` | `IManualReceiptService.DraftSaveAsync`, `ListAuthorizedAsync` (FIN-T04b) and `DetailAuthorizedAsync`. `Record` and `Reverse` answer `Unavailable` (T05; OPEN-009) |
+| `ReceiptDraftService` | `IManualReceiptService.DraftSaveAsync`, `ListAuthorizedAsync` (FIN-T04b) and `DetailAuthorizedAsync`. `RecordAsync` since FIN-T05a (below; refused until Q1); `Reverse` answers `Unavailable` (FIN-T06) |
 | Migration | `20260918200000_InitialFinanceDrafts` (hand-written; a unit test pins snapshot == model) |
 | `FinanceModuleExtensions` | DbContext registration and the migrate initializer. The host does not call it yet |
 | `FinanceBankAccountService` | FS0: the bank account master (`IFinanceBankAccountMaster`) and its authorized reader (`IFinanceBankAccountReader`); see below |
@@ -113,7 +113,8 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
   | `ReadAmount` | `finance.manual-receipt.amount.read` |
   | `ReadBankAccounts` | `finance.bank-account.read` (FS0) |
 
-  Record and Reverse have no name (OPEN-009).
+  Record's name is `finance.manual-receipt.record` since FIN-T05a (Ö4; registered centrally in FIN-T05's round). Reverse has
+  no name (FIN-T06).
 - **Settings' `settings_money_profile_not_found`** (the chosen currency has no approved profile) is a 422 validation result of the save (`money.currencyId`), not an outage. The draft-context read keeps it as 503 with its code: there the currency is the bank account's, not the request's.
 - **List:** newest created first (`CreatedAtUtc desc, Id desc`, new index), so an edit never moves a draft between pages. The page size is a fixed technical 50, not a policy, and each amount is disclosed only with a fresh `ReadAmount`.
 - **Honest runtime:** until T02-b is on main and a real bank account is approved, a save answers 503 or 422 with its owner's code. It is never painted green.
@@ -133,6 +134,41 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
 - **ADR-011 §8:** a save that loses a race (a unique key or the row version) keeps nothing tracked and reads the key afresh: if another caller of the same key won, its record is this answer too, as a replay; only a race that left the key empty is `concurrent_change` (409).
 - **Shell (published, FIN-UI-1c):** `Shell/FinanceShellCapabilityProvider` declares F-02's list, draft and detail routes, F-04's list and propose routes and the approval as a control of the list, all `ImplementationAvailable: true` since the flip after the FIN-01 browser acceptance (#332). A screen reaches an actor only with its own narrow Finance permission (real-SQL grant matrix: `FinanceShellCapabilitySqlServerRelationalAcceptanceTests`); no grant is seeded. One screen id per route, as the registry requires: F-02 and F-04 (the catalog's ids) for the lists, F-02-NEW, F-02-DETAIL and F-04-NEW for the others; the approval keeps F-04. `FinanceShellCapabilityRegistryTests` runs it through the real registry. The host registers it with its shell authority (central).
 
+## FIN-T05a: Record of a realized manual bank receipt (card #66 5743678389) — PREPARATION, refused until Q1
+
+> **Runtime status: every Record is refused and nothing is stored.** Q1 — which date decides a recorded receipt's
+> period (#66 5745134466) — is open, so the only registered period rule (`UndecidedFinanceRecordPeriodRule`) reads
+> nothing and answers Unavailable; `RecordAsync` answers 422 `ValidationFailed` with
+> `period: finance_period_rule_unavailable`, before any write. It is a definite refusal (not an outage 503, which the
+> screen would treat as an unknown outcome to resend) and not the key's answer. This slice is **not a finance
+> delivery**: Q1's answer changes ONE binding (which date, read through Accounting's period port), not the command.
+
+- **Command:** `POST /api/v1/finance/manual-receipts/{sourceId}/record`, body the #258 `RecordRequest` (`draftId` must be
+  the route's `sourceId`, else 400), `Idempotency-Key`; answered like the save (200 / 422 / 409; 403 / 503 code-less).
+- **Authority (Ö4):** the narrow `Record` name, measured fresh before anything is read, after every owner read, after the
+  period rule and right before the one save; no second approval, no amount threshold. The grant is human.
+- **At record time** the owners are read again: the bank account (approved, usable, same currency), the party account
+  (active) and the Settings money profile (in effect, the same profile, the stored amount within its scale — Ö2, never
+  rounded). Any refusal stores nothing.
+- **One money event, exactly once:** in ONE save the source turns `Recorded` (its version moves once; who and when are
+  kept), ONE `finance.MoneyEvents` row, the ADR-011 command record and the audit event
+  (`finance.manual-receipt.recorded.v1`, with the Record name's roles). The event is unique per (company, source, kind),
+  append-only, bound to the company's source; its facts keep Ö5's dates apart (`OccurredOn`, `ValueOn`, `RecordedAtUtc`).
+  The bank inflow and the customer credit are READS of this one row, never two rows; a distribution is not a money event.
+- **ADR-011:** its own command name (`finance.manual-receipt.record`). Terminal (§7): a missing source (422
+  `draft_not_found`) and a stale version (409). NOT terminal: a recorded source (`source_not_draft`), owner refusals and
+  the period rule, so a corrected retry is measured again. §8: a lost race (version or unique index) reads the key.
+- **Unallocated:** a recorded source has no allocation relation yet (FS3), so it is `Known` = the source amount − 0.
+- **A recorded source never changes again:** the save refuses it (`source_not_draft`) and the write guard refuses any edit;
+  its correction is the reversal (FIN-T06, maker≠checker, Ö4).
+- **Migration** `20260920090000_AddMoneyEvents`: the stage and record trace on `ReceiptDrafts` (`CK_ReceiptDrafts_Stage`)
+  and `MoneyEvents`. Down refuses with `THROW 51051` (Finance's module number, coordinator-assigned) while any money event
+  or recorded source exists: a forward fix.
+- **Screen:** the F-02 detail offers Record only to the holder of the `finance.receipts.record` control; no provider
+  declares it until FIN-T05's central round, so it is not offered.
+- **Not here:** no allocation, no journal (ACC-V1 takes the recorded source later), no official document (Ö8), no balance
+  or statement read (FIN-T05b), no reversal (FIN-T06), no number series (Q2: the source shows its id).
+
 ## Validation
 
 - `tests/GoymenERP.Finance.UnitTests`: contract and adapter tests, plus `FinanceDraftPersistenceModelTests`. The latter checks schema, filters, the idempotency key, snapshot == model, the write guard and the payload hash, all without a database.
@@ -150,4 +186,8 @@ contract `GoymenERP.Modules.Finance.Contracts` (#258, #261). The contract's own 
   - currency outside the candidates, and the real unavailable Settings adapter;
   - racing approvals, and the database's own Ö4 check;
   - rollback.
+- `tests/GoymenERP.Api.IntegrationTests/FinanceRecordSqlServerRelationalAcceptanceTests.cs` (FIN-T05a) runs the Record on real
+  SQL Server: the product's undecided rule refuses and stores nothing; with a synthetic open-period TEST INPUT (not a
+  policy) one money event, every answer of its key, company isolation, a race of two records (one event) and the
+  51051 Down refusal.
 - None of this is API or browser evidence.

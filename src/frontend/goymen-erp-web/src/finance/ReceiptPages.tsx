@@ -11,8 +11,10 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { StateBlock } from '../shell/StateBlock'
+import { useShellState } from '../shell/shellContext'
+import { hasCapability } from '../shell/shellState'
 import { isBoundUuid, type SourceDetail } from './contract'
-import { FINANCE_ROUTE, receiptDetailPath } from './capabilities'
+import { FINANCE_CAPABILITY, FINANCE_ROUTE, receiptDetailPath } from './capabilities'
 import { FinanceSourceDetail } from './FinanceSourceDetail'
 import { FinanceSourceList } from './FinanceSourceList'
 import {
@@ -69,11 +71,14 @@ export function ReceiptDraftPage() {
 
 export function ReceiptDetailPage() {
   const { sourceId } = useParams()
+  const shell = useShellState()
+  // FIN-T05a: the Record control only for the holder of its capability (declared in FIN-T05's central round).
+  const canRecord = hasCapability(shell, FINANCE_CAPABILITY.receiptsRecord)
   return (
     <section aria-labelledby="finance-receipt-detail-title">
       <h1 id="finance-receipt-detail-title">{RECEIPT_DETAIL_TITLE}</h1>
       {isBoundUuid(sourceId) ? (
-        <FinanceSourceDetail sourceId={sourceId} />
+        <FinanceSourceDetail sourceId={sourceId} offerRecord={canRecord} />
       ) : (
         <StateBlock state={{ kind: 'not-found' }} subject={SOURCE_SUBJECT} />
       )}
