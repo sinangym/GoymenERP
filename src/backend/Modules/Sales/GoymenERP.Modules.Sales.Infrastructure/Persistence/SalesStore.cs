@@ -134,15 +134,16 @@ public sealed class SalesStore(
     }
 
     public async Task<SalesDraftReplay?> FindReplayAsync(SalesDraftWriteEnvelope envelope, string requestHash,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, string commandName = SalesDraftCommands.CreateV1)
     {
         RequireEnvelope(envelope);
         RequireHash(requestHash);
+        RequireCommand(commandName);
         RequireResolvedCompany();
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
         var actorId = envelope.ActorId.Trim();
         var attempt = await dbContext.DraftAttempts.AsNoTracking()
-            .SingleOrDefaultAsync(row => row.CommandName == SalesDraftCommands.CreateV1 && row.IdempotencyKeyHash == keyHash,
+            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash,
                 cancellationToken);
         if (attempt is null)
         {
@@ -173,11 +174,12 @@ public sealed class SalesStore(
     }
 
     public async Task RecordRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash, SalesDraftTerminalRefusal refusal,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, string commandName = SalesDraftCommands.CreateV1)
     {
         ArgumentNullException.ThrowIfNull(refusal);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
+        RequireCommand(commandName);
         var companyId = RequireResolvedCompany();
         if (refusal.Status is < 400 or > 599 || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null
             || refusal.Errors.Any(error => error is null || string.IsNullOrWhiteSpace(error.Field) || string.IsNullOrWhiteSpace(error.Code)))
@@ -187,7 +189,7 @@ public sealed class SalesStore(
 
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
         if (await dbContext.DraftAttempts.AsNoTracking()
-                .AnyAsync(row => row.CommandName == SalesDraftCommands.CreateV1 && row.IdempotencyKeyHash == keyHash, cancellationToken))
+                .AnyAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken))
         {
             throw Refused(SalesDraftStoreCodes.ConcurrentChange, "Bu anahtar zaten bir deneme taşıyor; tekrar onu alır.");
         }
@@ -195,7 +197,7 @@ public sealed class SalesStore(
         dbContext.DraftAttempts.Add(new DraftAttemptRow
         {
             CompanyId = companyId,
-            CommandName = SalesDraftCommands.CreateV1,
+            CommandName = commandName,
             IdempotencyKeyHash = keyHash,
             RequestHash = requestHash,
             ActorId = envelope.ActorId.Trim(),
@@ -208,6 +210,121 @@ public sealed class SalesStore(
         await SaveAsync(cancellationToken);
     }
 
+    public async Task<SalesDraftStateResult?> UpdateDraftStateAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(mutate);
+        ArgumentNullException.ThrowIfNull(audit);
+        RequireEnvelope(envelope);
+        RequireHash(requestHash);
+        RequireCommand(commandName);
+        if (!SalesDraftCommands.IsStateCommand(commandName))
+        {
+            throw new ArgumentException("Yalnız onay ekseni komutları bir taslağın durumunu değiştirir.", nameof(commandName));
+        }
+
+        if (string.IsNullOrWhiteSpace(audit.EventType) || string.IsNullOrWhiteSpace(audit.Operation) || string.IsNullOrWhiteSpace(audit.Reason))
+        {
+            throw new ArgumentException("Durum komutunun audit olayı tür, işlem ve gerekçe ister.", nameof(audit));
+        }
+
+        var companyId = RequireResolvedCompany();
+        var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
+        var actorId = envelope.ActorId.Trim();
+        var attempt = await dbContext.DraftAttempts.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken);
+        if (attempt is not null)
+        {
+            // ADR-011 §3/§4: the same content of the same actor answers the stored record as it is now; anything else is one 409.
+            if (!string.Equals(attempt.ActorId, actorId, StringComparison.Ordinal)
+                || !string.Equals(attempt.RequestHash, requestHash, StringComparison.Ordinal))
+            {
+                throw Refused(SalesDraftStoreCodes.SameKeyPayloadMismatch,
+                    "Aynı Idempotency-Key başka bir istekle geldi; ilk cevap bu isteğe verilmez.");
+            }
+
+            if (attempt.Outcome != AttemptOutcomeRecorded || attempt.DraftId is not { } recordedId)
+            {
+                throw Refused(SalesDraftStoreCodes.ConcurrentChange, "Bu anahtar kayıtlı bir terminal reddi taşıyor; tekrar aynı reddi alır.");
+            }
+
+            var stored = await FindDraftAsync(recordedId, cancellationToken)
+                ?? throw new InvalidOperationException("Kayıtlı deneme kaydının taslağı bulunamadı.");
+            return new SalesDraftStateResult(stored, SalesDraftWriteOutcome.Replayed, attempt.CorrelationId);
+        }
+
+        if (draftId == Guid.Empty)
+        {
+            return null;
+        }
+
+        // The header is tracked (its version is the concurrency token of this write); the lines are read as before.
+        var row = await dbContext.Drafts.SingleOrDefaultAsync(candidate => candidate.Id == draftId, cancellationToken);
+        if (row is null)
+        {
+            return null;
+        }
+
+        var draft = (await RestoreAsync([row], cancellationToken)).Single();
+        var before = new { state = draft.ApprovalState.ToString(), version = draft.Version, approval = draft.Approval };
+        var versionBefore = draft.Version;
+        var now = timeProvider.GetUtcNow();
+        // The domain decides: the expected version, the allowed transition and the reason bound. A
+        // refusal leaves the tracked row untouched (nothing below has run) and is the caller's to answer.
+        mutate(draft, now);
+        if (draft.Version != versionBefore + 1 || draft.Id != row.Id || draft.CompanyId != companyId)
+        {
+            throw new InvalidOperationException("Onay geçişi tam olarak bir sürüm ilerletir ve taslağı değiştirmez.");
+        }
+
+        row.ApprovalState = (int)draft.ApprovalState;
+        row.SubmittedBy = draft.Approval.SubmittedBy;
+        row.SubmittedAtUtc = draft.Approval.SubmittedAtUtc;
+        row.DecidedBy = draft.Approval.DecidedBy;
+        row.DecidedAtUtc = draft.Approval.DecidedAtUtc;
+        row.RejectionReason = draft.Approval.RejectionReason;
+        row.Version = draft.Version;
+        row.UpdatedAtUtc = draft.UpdatedAtUtc;
+        dbContext.DraftAttempts.Add(new DraftAttemptRow
+        {
+            CompanyId = companyId,
+            CommandName = commandName,
+            IdempotencyKeyHash = keyHash,
+            RequestHash = requestHash,
+            ActorId = actorId,
+            Outcome = AttemptOutcomeRecorded,
+            DraftId = draft.Id,
+            CorrelationId = envelope.CorrelationId.Trim(),
+            RecordedAtUtc = now,
+        });
+        auditEvents.Enqueue(new AuditEventDraft(
+            companyId,
+            audit.EventType,
+            DraftEntityType,
+            draft.Id.ToString("D"),
+            audit.Operation,
+            EntityVersionBefore: versionBefore,
+            EntityVersionAfter: draft.Version,
+            AuditActorTypes.User,
+            envelope.ActorId,
+            envelope.PermissionCode,
+            envelope.RoleCodes,
+            JsonSerializer.Serialize(before, Json),
+            JsonSerializer.Serialize(new { state = draft.ApprovalState.ToString(), version = draft.Version, approval = draft.Approval }, Json),
+            audit.Reason,
+            ApprovalContextJson: null,
+            AuditAiInvolvement.None,
+            AiContextJson: null,
+            envelope.SourceChannel,
+            envelope.ClientIpAddress,
+            envelope.UserAgent,
+            envelope.CorrelationId,
+            envelope.CausationId,
+            envelope.IdempotencyKey));
+        await SaveAsync(cancellationToken);
+        return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
+    }
+
     public async Task<SalesOrderDraft?> FindDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
     {
         RequireResolvedCompany();
@@ -215,7 +332,8 @@ public sealed class SalesStore(
         return row is null ? null : (await RestoreAsync([row], cancellationToken)).Single();
     }
 
-    public async Task<SalesDraftPage> ListDraftsAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default)
+    public async Task<SalesDraftPage> ListDraftsAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default,
+        InternalApprovalState? approvalState = null)
     {
         var companyId = RequireResolvedCompany();
         if (pageSize is < 1 or > MaximumPageSize)
@@ -224,6 +342,17 @@ public sealed class SalesStore(
         }
 
         var query = dbContext.Drafts.AsNoTracking();
+        if (approvalState is { } state)
+        {
+            if (!Enum.IsDefined(state))
+            {
+                throw new ArgumentOutOfRangeException(nameof(approvalState));
+            }
+
+            var stateValue = (int)state;
+            query = query.Where(row => row.ApprovalState == stateValue);
+        }
+
         if (cursor is not null)
         {
             var (createdAtUtc, id) = ListCursor.Decode(cursor, companyId);
@@ -254,6 +383,12 @@ public sealed class SalesStore(
             State = (int)draft.State,
             Revision = draft.Revision,
             Version = draft.Version,
+            ApprovalState = (int)draft.ApprovalState,
+            SubmittedBy = draft.Approval.SubmittedBy,
+            SubmittedAtUtc = draft.Approval.SubmittedAtUtc,
+            DecidedBy = draft.Approval.DecidedBy,
+            DecidedAtUtc = draft.Approval.DecidedAtUtc,
+            RejectionReason = draft.Approval.RejectionReason,
             PartyId = header.PartyId,
             CompanyAccountId = header.CompanyAccountId,
             CurrencyId = header.CurrencyId,
@@ -403,6 +538,10 @@ public sealed class SalesStore(
                 }
             }
 
+            // SALES-A1: the stored approval axis, restored without a transition; the facts must fit the state.
+            draft.RestoreApproval((InternalApprovalState)row.ApprovalState,
+                new ApprovalFacts(row.SubmittedBy, row.SubmittedAtUtc, row.DecidedBy, row.DecidedAtUtc, row.RejectionReason),
+                row.Version, row.UpdatedAtUtc);
             if (draft.Version != row.Version)
             {
                 throw new InvalidOperationException("Kayıtlı taslağın sürümü satırlarından yeniden kurulan sürümle uyuşmuyor.");
@@ -510,6 +649,15 @@ public sealed class SalesStore(
         }
     }
 
+    private static void RequireCommand(string commandName)
+    {
+        if (commandName is not (SalesDraftCommands.CreateV1 or SalesDraftCommands.SubmitV1 or SalesDraftCommands.ApproveV1
+            or SalesDraftCommands.RejectV1))
+        {
+            throw new ArgumentException("Bilinmeyen Sales komut adı.", nameof(commandName));
+        }
+    }
+
     private static void RequireHash(string requestHash)
     {
         if (string.IsNullOrWhiteSpace(requestHash) || requestHash.Length != 64
@@ -536,6 +684,7 @@ public sealed class SalesStore(
         draft.DocumentNo,
         kind = draft.Kind.ToString(),
         state = draft.State.ToString(),
+        approvalState = draft.ApprovalState.ToString(),
         revision = draft.Revision,
         draft.Header.PartyId,
         draft.Header.CompanyAccountId,

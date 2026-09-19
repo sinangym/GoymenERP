@@ -20,6 +20,7 @@ import { CariContactEditPage } from '../cari/CariContactEditPage'
 import { productRoutes } from '../product/productRoutes'
 import { organizationRoutes } from '../organization/organizationRoutes'
 import { salesRoutes } from '../sales/salesRoutes'
+import { manufacturingRoutes } from '../manufacturing/manufacturingRoutes'
 import { financeRoutes } from '../finance/financeRoutes'
 import { StateBlock } from './StateBlock'
 
@@ -140,6 +141,13 @@ export const shellRoutes: RouteObject[] = [
        * catch-all. Each is wrapped in `CapabilityRoute`: an unpublished capability reads nothing.
        */
       ...salesRoutes,
+      /**
+       * The Manufacturing lane's own routes, declared in
+       * `src/manufacturing/manufacturingRoutes.tsx` and mounted here by the shared-integration
+       * owner (MFG-UI handoff). Each is wrapped in `CapabilityRoute`, so while the server keeps the
+       * capability staged the route renders the neutral not-found block and reads nothing.
+       */
+      ...manufacturingRoutes,
       /**
        * The Finance lane's own routes, declared in `src/finance/financeRoutes.tsx` (receipt list, `yeni`,
        * `:sourceId`; bank-account list and `yeni`) and mounted here by the shared-integration owner

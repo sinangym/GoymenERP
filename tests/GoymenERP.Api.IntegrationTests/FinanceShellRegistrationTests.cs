@@ -57,7 +57,8 @@ public sealed class FinanceShellRegistrationTests
         // Five routes and the approval control; staged until the fin01 acceptance and a separate change.
         Assert.Equal(6, finance.Length);
         Assert.All(finance, item => Assert.False(item.Declaration.ImplementationAvailable));
-        Assert.Equal(3, registry.Registrations.Count(item => item.Owner == SalesShellCapabilityProvider.OwnerId));
+        // Three Sales screens plus the SALES-A1 approve control.
+        Assert.Equal(4, registry.Registrations.Count(item => item.Owner == SalesShellCapabilityProvider.OwnerId));
     }
 
     [Fact]

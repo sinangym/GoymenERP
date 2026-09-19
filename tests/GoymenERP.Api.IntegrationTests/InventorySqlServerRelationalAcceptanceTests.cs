@@ -9,6 +9,7 @@ using GoymenERP.Modules.Inventory.Domain.Costing;
 using GoymenERP.Modules.Inventory.Domain.Labels;
 using GoymenERP.Modules.Inventory.Domain.Lots;
 using GoymenERP.Modules.Inventory.Domain.Movements;
+using GoymenERP.Modules.Inventory.Domain.Opening;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
@@ -580,6 +581,15 @@ public sealed class InventorySqlServerRelationalAcceptanceTests
                 Assert.Equal(InventoryStoreCodes.LabelConflict, (await Assert.ThrowsAsync<InventoryStoreException>(() => b.Labels.SaveLabelAsync(
                     new MaterialLabel(labelOfA.Id, CompanyB, "SYN-B-REUSES-A-ID", Product, LotB), Metadata(run)))).Code);
             }
+
+            // #333 SİPARİŞ P3-1: A's lot id AND A's label id in ONE save. Both keys can collide in the same batch,
+            // so the combined message may carry two GUIDs; the id is read from the lot key's own error.
+            await using (var b = run.Store(CompanyB))
+            {
+                Assert.Equal(InventoryStoreCodes.LotConflict, (await Assert.ThrowsAsync<InventoryStoreException>(() => b.Lots.SaveLotAsync(
+                    new MaterialLot(LotA, CompanyB, Product),
+                    [new MaterialLabel(labelOfA.Id, CompanyB, "SYN-B-REUSES-BOTH", Product, LotA)], Metadata(run)))).Code);
+            }
         }
 
         await using (var a = run.Store(CompanyA))
@@ -589,7 +599,7 @@ public sealed class InventorySqlServerRelationalAcceptanceTests
         }
 
         Assert.Equal(0, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM inventory.Labels WHERE Code = N'SYN-B-REUSES-A-ID'"));
+            "SELECT COUNT(*) FROM inventory.Labels WHERE Code IN (N'SYN-B-REUSES-A-ID', N'SYN-B-REUSES-BOTH')"));
 
         // Without the store: the (company, lot) key makes a cross-company link impossible in the schema.
         await using (var raw = run.Context(CompanyB))
@@ -643,6 +653,190 @@ public sealed class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM inventory.Labels WHERE Id = @id AND LotId = @lot AND Version = 1",
             ("@id", orphan.Id), ("@lot", orphan.LotId)));
+    }
+
+    /// <summary>
+    /// INV-OPEN-1 (T07 opening stock, decision A #66 5738113623 §2): a physical count of two pieces posts,
+    /// in one save, the lot, two new labels, one receipt each (sourced by its count line) and their
+    /// balances; the book equals the count (Reconcile is empty); the same count again is a replay, another
+    /// content under its id a conflict. The real approved GDC kg profile decides the scale.
+    /// </summary>
+    [SqlServerFact]
+    public async Task An_opening_count_posts_one_receipt_per_counted_piece_that_reconciles_and_replays()
+    {
+        await using var run = await Run.StartAsync();
+        var location = await run.LocationOfAsync(CompanyA);
+        var lot = new MaterialLot(Guid.NewGuid(), CompanyA, Product, coilNumber: "SYN-OPEN-COIL");
+        var count = new OpeningCount(Guid.NewGuid(), CompanyA, location, new DateOnly(2026, 9, 19), "SYN-SHEET-OPEN-1",
+        [
+            new(Guid.NewGuid(), lot, new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-OPEN-1", Product, lot.Id), Kilograms.Positive(1250.5m)),
+            new(Guid.NewGuid(), lot, new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-OPEN-2", Product, lot.Id), Kilograms.Positive(980m)),
+        ]);
+
+        await using (var a = run.Store(CompanyA))
+        {
+            Assert.Equal(InventoryWriteOutcome.Recorded, await a.Opening.RecordAsync(count, Metadata(run)));
+        }
+
+        await using (var a = run.Store(CompanyA))
+        {
+            foreach (var line in count.Lines)
+            {
+                var balance = Assert.Single(await a.Movements.ReadBalancesAsync(line.Label.Id));
+                Assert.Equal(line.Quantity, balance.Quantity);
+                Assert.Equal((count.CompanyId, location, BlockState.Free), (balance.Position.Owner.Id, balance.Position.LocationId, balance.Position.Block));
+                var movement = Assert.Single(await a.Movements.ReadMovementsAsync(line.Label.Id));
+                Assert.Equal((line.Id, new StockSourceReference(OpeningCount.SourceKind, count.Id, line.Id)), (movement.Id, movement.Source));
+                // Book = count at opening.
+                Assert.Empty(StockLedger.Reconcile([balance], [movement]));
+            }
+
+            var stored = (await a.Opening.ReadCountAsync(count.Id))!;
+            Assert.Equal(("SYN-SHEET-OPEN-1", new DateOnly(2026, 9, 19)), (stored.SheetReference, stored.CountedOn));
+            Assert.Equal(count.Lines.Select(line => (line.Id, line.Label.Code, line.Quantity)),
+                stored.Lines.Select(line => (line.Id, line.Label.Code, line.Quantity)));
+
+            // R3: the same count again has no second effect; another content under its id is refused.
+            Assert.Equal(InventoryWriteOutcome.Replayed, await a.Opening.RecordAsync(count, Metadata(run)));
+            var changed = new OpeningCount(count.Id, CompanyA, location, count.CountedOn, "SYN-SHEET-OTHER", count.Lines);
+            Assert.Equal(InventoryStoreCodes.OpeningConflict, (await Assert.ThrowsAsync<InventoryStoreException>(
+                () => a.Opening.RecordAsync(changed, Metadata(run)))).Code);
+        }
+
+        Assert.Equal((1, 2, 2), (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.OpeningCounts"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.OpeningCountLines"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements WHERE SourceKind = N'inventory.opening-count'")));
+        // One audit event each: the lot, two labels, two receipts and the count; none for the replay.
+        Assert.Equal(6, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE CorrelationId = @c", ("@c", run.Correlation)));
+    }
+
+    /// <summary>
+    /// Opening is never an adjustment: a piece whose label is already stored is refused and the whole count
+    /// writes nothing — with stock <c>inventory_label_already_in_stock</c> (a book/count difference is ST-05
+    /// with its second approval), without stock <c>inventory_label_conflict</c> (opening registers new pieces).
+    /// </summary>
+    [SqlServerFact]
+    public async Task An_opening_never_adjusts_a_stored_label_and_a_refused_count_writes_nothing()
+    {
+        await using var run = await Run.StartAsync();
+        var location = await run.LocationOfAsync(CompanyA);
+        var stocked = NewLabel(CompanyA, "SYN-OPEN-STOCKED");
+        var known = NewLabel(CompanyA, "SYN-OPEN-KNOWN");
+        await using (var a = run.Store(CompanyA))
+        {
+            await a.Labels.SaveLabelAsync(stocked, Metadata(run));
+            await a.Labels.SaveLabelAsync(known, Metadata(run));
+        }
+
+        await using (var a = run.Store(CompanyA))
+        {
+            await a.Movements.RecordMovementAsync(
+                Movement(CompanyA, StockMovementKind.Receipt, In(Position(CompanyA, location, stocked, BlockState.Free), 10m)), Metadata(run));
+        }
+
+        var lotA = new MaterialLot(LotA, CompanyA, Product);
+        var fresh = NewLabel(CompanyA, "SYN-OPEN-FRESH");
+        foreach (var (existing, expected) in new[] { (stocked, InventoryRuleCodes.LabelAlreadyInStock), (known, InventoryStoreCodes.LabelConflict) })
+        {
+            var count = new OpeningCount(Guid.NewGuid(), CompanyA, location, new DateOnly(2026, 9, 19), "SYN-SHEET-OPEN-2",
+            [
+                new(Guid.NewGuid(), lotA, fresh, Kilograms.Positive(5m)),
+                new(Guid.NewGuid(), lotA, existing, Kilograms.Positive(5m)),
+            ]);
+            await using var a = run.Store(CompanyA);
+            var error = await Assert.ThrowsAnyAsync<Exception>(() => a.Opening.RecordAsync(count, Metadata(run)));
+            Assert.Equal(expected, error switch
+            {
+                InventoryRuleException rule => rule.Code,
+                InventoryStoreException store => store.Code,
+                _ => error.GetType().Name,
+            });
+        }
+
+        await using (var a = run.Store(CompanyA))
+        {
+            Assert.Null(await a.Labels.FindLabelAsync(fresh.Id));
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.OpeningCounts"));
+        Assert.Equal(10m, await run.ScalarAsync<decimal>(
+            "SELECT QuantityKg FROM inventory.Balances WHERE LabelId = @id", ("@id", stocked.Id)));
+    }
+
+    /// <summary>One save: a count whose second piece's code is already taken leaves no lot, label, receipt or count behind.</summary>
+    [SqlServerFact]
+    public async Task An_opening_count_is_written_whole_or_not_at_all()
+    {
+        await using var run = await Run.StartAsync();
+        var location = await run.LocationOfAsync(CompanyA);
+        await using (var a = run.Store(CompanyA))
+        {
+            await a.Labels.SaveLabelAsync(NewLabel(CompanyA, "SYN-OPEN-TAKEN"), Metadata(run));
+        }
+
+        var lot = new MaterialLot(Guid.NewGuid(), CompanyA, Product);
+        var first = new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-OPEN-FIRST", Product, lot.Id);
+        var count = new OpeningCount(Guid.NewGuid(), CompanyA, location, new DateOnly(2026, 9, 19), "SYN-SHEET-OPEN-3",
+        [
+            new(Guid.NewGuid(), lot, first, Kilograms.Positive(7m)),
+            new(Guid.NewGuid(), lot, new MaterialLabel(Guid.NewGuid(), CompanyA, "SYN-OPEN-TAKEN", Product, lot.Id), Kilograms.Positive(7m)),
+        ]);
+        await using (var a = run.Store(CompanyA))
+        {
+            Assert.Equal(InventoryStoreCodes.LabelCodeTaken, (await Assert.ThrowsAsync<InventoryStoreException>(
+                () => a.Opening.RecordAsync(count, Metadata(run)))).Code);
+        }
+
+        Assert.Equal((0, 0, 0, 0), (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.OpeningCounts"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Lots WHERE Id = @id", ("@id", lot.Id)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Labels WHERE Id = @id", ("@id", first.Id)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements WHERE SourceKind = N'inventory.opening-count'")));
+    }
+
+    /// <summary>
+    /// Company B can neither record A's count nor open without its own approved kg profile (fail-closed); and
+    /// without the store the schema refuses a count at another company's location.
+    /// </summary>
+    [SqlServerFact]
+    public async Task Company_B_cannot_open_into_A_and_opens_nothing_without_its_own_kg_profile()
+    {
+        await using var run = await Run.StartAsync();
+        var locationA = await run.LocationOfAsync(CompanyA);
+        var locationB = await run.LocationOfAsync(CompanyB);
+        var lotA = new MaterialLot(LotA, CompanyA, Product);
+        var lotB = new MaterialLot(LotB, CompanyB, Product);
+        var countOfA = new OpeningCount(Guid.NewGuid(), CompanyA, locationA, new DateOnly(2026, 9, 19), "SYN-SHEET-A",
+            [new(Guid.NewGuid(), lotA, NewLabel(CompanyA, "SYN-OPEN-A"), Kilograms.Positive(1m))]);
+        var countOfB = new OpeningCount(Guid.NewGuid(), CompanyB, locationB, new DateOnly(2026, 9, 19), "SYN-SHEET-B",
+            [new(Guid.NewGuid(), lotB, NewLabel(CompanyB, "SYN-OPEN-B"), Kilograms.Positive(1m))]);
+
+        await using (var b = run.Store(CompanyB))
+        {
+            Assert.Equal(InventoryStoreCodes.CompanyContextMismatch, (await Assert.ThrowsAsync<InventoryStoreException>(
+                () => b.Opening.RecordAsync(countOfA, Metadata(run)))).Code);
+            // B has no approved kilogram profile (only GDC does): refused with the Settings owner's own code.
+            Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<InventoryStoreException>(
+                () => b.Opening.RecordAsync(countOfB, Metadata(run)))).Code);
+        }
+
+        await using (var raw = run.Context(CompanyB))
+        {
+            raw.OpeningCounts.Add(new OpeningCountRow
+            {
+                Id = Guid.NewGuid(), CompanyId = CompanyB, LocationId = locationA, CountedOn = new DateOnly(2026, 9, 19),
+                SheetReference = "SYN-RAW", ContentHash = new string('0', 64), RecordedAtUtc = At, RecordedBy = "synthetic-actor",
+                CorrelationId = run.Correlation,
+            });
+            var error = await Assert.ThrowsAsync<DbUpdateException>(() => raw.SaveChangesAsync());
+            var sql = Assert.IsType<SqlException>(error.InnerException);
+            Assert.Equal(547, sql.Number);
+            Assert.Contains("FK_OpeningCounts_Locations_CompanyId_LocationId", sql.Message, StringComparison.Ordinal);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.OpeningCounts"));
     }
 
     [SqlServerFact]
@@ -894,6 +1088,7 @@ public sealed class InventorySqlServerRelationalAcceptanceTests
         public IInventoryLotStore Lots => store;
         public IInventoryLabelStore Labels => store;
         public IInventoryMovementStore Movements => store;
+        public IInventoryOpeningStore Opening => store;
 
         public ValueTask DisposeAsync() => dbContext.DisposeAsync();
     }

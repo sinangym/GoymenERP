@@ -65,7 +65,12 @@ public sealed class SalesPersistenceModelTests
             attempts.FindProperty(nameof(DraftAttemptRow.RequestHash))!.IsUnicode()));
         Assert.True(UniqueIndex(attempts, "UX_DraftAttempts_DraftId"));
         // ADR-011 §7: an attempt is a stored draft or a recorded terminal refusal; the draft index covers stored drafts only.
-        Assert.Equal("[DraftId] IS NOT NULL", attempts.GetIndexes().Single(index => index.GetDatabaseName() == "UX_DraftAttempts_DraftId").GetFilter());
+        // SALES-A1: it covers the CREATE attempt only (a draft is born from exactly one); the state commands' attempts
+        // share the draft id, one per key, and stay unique by the primary key.
+        Assert.Equal("[DraftId] IS NOT NULL AND [CommandName] = N'sales.order-draft.create.v1'",
+            attempts.GetIndexes().Single(index => index.GetDatabaseName() == "UX_DraftAttempts_DraftId").GetFilter());
+        Assert.Equal(SalesDbContext.CreateAttemptFilter,
+            attempts.GetIndexes().Single(index => index.GetDatabaseName() == "UX_DraftAttempts_DraftId").GetFilter());
         Assert.True(attempts.FindProperty(nameof(DraftAttemptRow.DraftId))!.IsNullable);
         Assert.NotNull(attempts.FindProperty(nameof(DraftAttemptRow.Outcome)));
         Assert.NotNull(attempts.FindProperty(nameof(DraftAttemptRow.RefusalJson)));

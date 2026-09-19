@@ -182,6 +182,50 @@ public sealed class ProductFamilyRegistrySqlServerRelationalAcceptanceTests
                 (await policy.ValidateAsync(partial, default)).Select(error => (error.Field, error.Code)));
         });
 
+    [SqlServerFact]
+    public Task A_required_colour_with_no_values_keeps_only_painted_cards_closed() =>
+        WithDatabaseAsync(release: true, async factory =>
+        {
+            // Business 5740811346: colour applies with the painted coating, no colour value is activated.
+            // A required colour field with an empty dictionary: the release stays well formed and only a
+            // painted card is refused.
+            await ExecuteAsync(factory,
+                "INSERT INTO [product].[DictionaryEntries] ([Dictionary], [Code], [DisplayName], [Status], [SourceRef], [IsExplicitNone]) "
+                + "VALUES ('syn-coatings', N'syn-painted', N'Sentetik boyalı', 1, 'SYNTHETIC-TEST', 0);");
+            await ExecuteAsync(factory,
+                "INSERT INTO [product].[TemplateFields] ([TemplateId], [TemplateVersion], [Key], [Position], [Kind], [Role], [Required], [Dictionary], [AllowsCandidate], [AppliesWhenField], [AppliesWhenCode], [ParentField]) "
+                + $"VALUES ('{TemplateId:D}', 1, 'syn-colour', 7, 2, NULL, 1, 'syn-colours', 0, 'syn-coating', N'syn-painted', NULL);");
+
+            using var client = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
+            var painted = new Dictionary<string, object?>(Valid()) { ["syn-coating"] = "syn-painted" };
+            var paintedWithColour = new Dictionary<string, object?>(painted) { ["syn-colour"] = "syn-red" };
+            var ids = new List<Guid>();
+            foreach (var (key, attributes) in new[]
+            {
+                ("family-colour-uncoated", Valid()),
+                ("family-colour-painted", painted),
+                ("family-colour-painted-red", paintedWithColour),
+            })
+            {
+                using var created = await CreateAsync(client, key, HotCoil, templated: true, attributes);
+                Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+                ids.Add((await created.Content.ReadFromJsonAsync<ProductMutationResponse>())!.Card.Product.Id);
+            }
+
+            await using var scope = factory.Services.CreateAsyncScope();
+            var policy = new ProductFamilyRequirementPolicyV2(
+                new SqlProductFamilyDefinitionSource(scope.ServiceProvider.GetRequiredService<ProductDbContext>()));
+            (string, string)[] units =
+                [("references.units.stock", ProductFamilyPolicyCodesV1.Required), ("references.units.sales", ProductFamilyPolicyCodesV1.Required)];
+            async Task<IEnumerable<(string, string)>> Judge(Guid id) =>
+                (await policy.ValidateAsync((await client.GetFromJsonAsync<ProductCardView>($"/api/v1/products/{id:D}"))!, default))
+                    .Select(error => (error.Field, error.Code)).ToList();
+
+            Assert.Equal(units, await Judge(ids[0]));
+            Assert.Equal([("references.attributes.syn-colour", ProductFamilyPolicyCodesV1.Required), .. units], await Judge(ids[1]));
+            Assert.Equal([("references.attributes.syn-colour", ProductFamilyPolicyCodesV1.NotControlled), .. units], await Judge(ids[2]));
+        });
+
     private static Dictionary<string, object?> Valid() => new()
     {
         ["syn-thickness-mm"] = 1.5m,

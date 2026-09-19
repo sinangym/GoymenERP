@@ -133,6 +133,36 @@ Business #66 5734060341, held exactly (open until answered; fail-closed meanwhil
 
 **Idempotency.** The store's R3 identity (lot id + facts) is what exists today. The ADR-011 command record (company, command, key hash; actor compared; first correlation; terminal replay; one exit for a race) comes with the HTTP receipt write, which waits for 5731613477; this slice has no HTTP write and no command table.
 
+## T07 opening stock (INV-OPEN-1, part 1: domain + store + migration)
+
+Decision A (#66 5738113623 §2): one narrow authorized user records a company's opening stock from a
+physical count. There is no second approver; the recorder is the audited actor. The general stock-
+adjustment and count-difference rules and their second approval are not relaxed.
+
+| Rule | Where | Enforced by |
+|---|---|---|
+| The count document IS the source: every opening receipt's source is `("inventory.opening-count", countId, lineId)`; no receipt without a count line, and no line posted twice | `OpeningCount.ReceiptOf`, `FK_OpeningCountLines_Movements_CompanyId_LineId`, `IX_OpeningCountLines_CompanyId_LineId`, the per-source-line uniqueness | domain + store + SQL |
+| Kept: company, location, counted-on date, the sheet reference. No personal name (the recorder is in the audit, ADR-009) | `OpeningCount`, `inventory.OpeningCounts` | domain + SQL |
+| Quantity = counted kg exactly: Ö2 (at most 3 decimals, refused rather than cut) and the company's approved kg profile on the counted-on date (fail-closed) | `Kilograms.Positive`, `InventoryKilogramScale` | domain + store |
+| Book = count at opening: each new piece's balance is exactly its counted kg (`StockLedger.Reconcile` is empty) | `InventoryStore.RecordAsync` | SQL |
+| Opening is never an adjustment: a stored label is refused. With stock → `inventory_label_already_in_stock`; without → `inventory_label_conflict`. A book/count difference is ST-05 | `InventoryStore.RecordAsync` | store |
+| Owner and custodian are the company itself; the location is the company's own (`FK_OpeningCounts_Locations_CompanyId_LocationId`); stock is free | `OpeningCount.PositionOf`, schema | domain + SQL |
+| One save: the count, its lines, each lot (new or the same stored facts), each new label, one receipt and balance per piece, and the audit events commit together or not at all | `InventoryStore.RecordAsync` | SQL |
+| R3: the count id is the identity; the same content is a replay, another content `inventory_opening_conflict` | `OpeningHash`, `OpeningCounts.ContentHash` | store |
+
+Not in this part: product eligibility per line (Product's `IProductStockEligibilityV1`, asked by the
+command service before the store; it needs #335 + the family release), the permission
+`inventory.opening-stock.record` (the grant is human), the endpoint, the UI, and any real opening data.
+
+## #333 follow-up: the duplicate key of its own error
+
+A lot and its label can collide in ONE save (another company's lot and label ids in the same batch); the
+combined SQL message then carries two GUIDs. The colliding id is read from the named key's OWN error in
+`SqlException.Errors` (2601/2627, exactly one naming `'PK_Lots'` / `'PK_Labels'`, exactly one GUID in it);
+anything else is null and the answer stays the retryable `inventory_concurrent_change` — never a made-up
+conflict (`InventoryDuplicateKeyTests`; real SQL: company B offers A's lot and A's label in one call →
+`inventory_lot_conflict`).
+
 ## dependency_wait
 
 - **Central registration (CARİ, same branch, sequential):** the tenant guard's reviewed inventory (this DbContext's fingerprint, the design-time factory and the initializer's `Migrate`/`EnsureCreated` branch); the module-dependency allowlist edge `Inventory.Infrastructure → Audit.Infrastructure` (ADR-009); the `Api.IntegrationTests` project reference to Inventory; and the relational verifier's BROAD list and counts for `InventorySqlServerRelationalAcceptanceTests`.

@@ -3,6 +3,7 @@
 # One fully qualified test name per line, sorted. A test that executes n > 1 times (theory rows)
 # is written `<name>  x<n>  # <reason>`. Read by tools/verify_rcsi_relational_acceptance.py.
 
+GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.A_read_that_keeps_meeting_concurrent_commits_is_a_retryable_503_platform_problem
 GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.An_authorized_user_plans_approves_orders_records_facts_and_reads_the_roll_balance
 GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.Another_companys_order_is_not_found_and_the_company_comes_only_from_the_context
 GoymenERP.Api.IntegrationTests.ManufacturingApiSqlServerRelationalAcceptanceTests.Each_endpoint_needs_its_own_grant_and_a_refused_write_stores_nothing

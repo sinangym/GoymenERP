@@ -42,6 +42,8 @@ public static class OrganizationModuleExtensions
         });
         services.AddScoped<OrganizationBootstrapWriteScope>();
         services.AddScoped<IOrganizationService, OrganizationService>();
+        // The module read for other modules' commands: company-scoped, no user permission gate.
+        services.AddScoped<IOrganizationLocationStatusReaderV1, OrganizationLocationStatusReader>();
         services.AddScoped<OrganizationDataSeeder>();
         services.AddSingleton<IShellCapabilityProvider, OrganizationShellCapabilityProvider>();
 

@@ -21,6 +21,7 @@ using GoymenERP.Modules.Finance.Infrastructure.Shell;
 using GoymenERP.Modules.Idempotency.Infrastructure;
 using GoymenERP.Modules.Inventory.Infrastructure;
 using GoymenERP.Modules.Manufacturing.Infrastructure;
+using GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 using GoymenERP.Modules.Organization.Infrastructure;
 using GoymenERP.Modules.Identity.Infrastructure;
 using GoymenERP.Modules.Product.Application.Contracts;
@@ -151,6 +152,8 @@ builder.Services.AddSalesModule(
 builder.Services.AddSingleton<IShellCapabilityProvider, SalesShellCapabilityProvider>();
 // FIN-UI-1a (#325): Finance's (staged) receipt and bank-account screens, before the authority is chosen.
 builder.Services.AddSingleton<IShellCapabilityProvider, FinanceShellCapabilityProvider>();
+// MFG-UI (#323): Manufacturing's (staged) order detail and facts control, before the authority is chosen.
+builder.Services.AddSingleton<IShellCapabilityProvider, ManufacturingShellCapabilityProvider>();
 var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
     builder.Services,
     builder.Environment,

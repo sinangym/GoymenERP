@@ -611,6 +611,105 @@ partial class InventoryDbContextModelSnapshot : ModelSnapshot
             });
         });
 
+        modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OpeningCountLineRow", b =>
+        {
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("CountId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<int>("LineNumber")
+                .HasColumnType("int");
+
+            b.Property<Guid>("LabelId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("LineId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("LotId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<decimal>("QuantityKg")
+                .HasPrecision(18, 3)
+                .HasColumnType("decimal(18,3)");
+
+            b.HasKey("CompanyId", "CountId", "LineNumber");
+
+            b.HasIndex("CompanyId", "LabelId");
+
+            b.HasIndex("CompanyId", "LineId")
+                .IsUnique();
+
+            b.ToTable("OpeningCountLines", "inventory", t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_OpeningCountLines_LineNumber",
+                    "[LineNumber] >= 1");
+
+                t.HasCheckConstraint(
+                    "CK_OpeningCountLines_Quantity",
+                    "[QuantityKg] > 0");
+            });
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OpeningCountRow", b =>
+        {
+            b.Property<Guid>("Id")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("ContentHash")
+                .IsRequired()
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<string>("CorrelationId")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<DateOnly>("CountedOn")
+                .HasColumnType("date");
+
+            b.Property<Guid>("LocationId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<DateTimeOffset>("RecordedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("RecordedBy")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<string>("SheetReference")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.HasKey("Id");
+
+            b.HasAlternateKey("CompanyId", "Id");
+
+            b.HasIndex("CompanyId", "LocationId");
+
+            b.ToTable("OpeningCounts", "inventory", t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_OpeningCounts_Identity",
+                    "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [LocationId] <> '00000000-0000-0000-0000-000000000000'");
+
+                t.HasCheckConstraint(
+                    "CK_OpeningCounts_Text",
+                    "LEN([SheetReference]) > 0 AND LEN([ContentHash]) = 64 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            });
+        });
+
         modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OrganizationCompanyReference", b =>
         {
             b.Property<Guid>("Id")
@@ -772,6 +871,45 @@ partial class InventoryDbContextModelSnapshot : ModelSnapshot
                 .WithMany()
                 .HasForeignKey("CompanyId", "Kind", "SourceKind", "SourceId", "SourceGrain")
                 .HasPrincipalKey("CompanyId", "Kind", "SourceKind", "SourceId", "Grain")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OpeningCountLineRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.LabelRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "LabelId")
+                .HasPrincipalKey("CompanyId", "Id")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+
+            b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.MovementRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "LineId")
+                .HasPrincipalKey("CompanyId", "Id")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+
+            b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OpeningCountRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "CountId")
+                .HasPrincipalKey("CompanyId", "Id")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OpeningCountRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                .WithMany()
+                .HasForeignKey("CompanyId")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+
+            b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OrganizationLocationReference", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "LocationId")
                 .OnDelete(DeleteBehavior.Restrict)
                 .IsRequired();
         });

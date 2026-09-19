@@ -41,6 +41,12 @@ public static class SalesRuleCodes
 
     public const string DraftNotDraft = "sales_draft_not_draft";
     public const string DraftWithoutLines = "sales_draft_without_lines";
+
+    /// <summary>The internal approval transition is not allowed from the draft's current approval state (SALES-A1; also: lines of a submitted or approved draft do not change).</summary>
+    public const string StateConflict = "sales_state_conflict";
+
+    /// <summary>A rejection reason longer than the technical bound; refused, never cut.</summary>
+    public const string ApprovalReasonTooLong = "sales_approval_reason_too_long";
     public const string TooManyLines = "sales_too_many_lines";
     public const string DuplicateLineId = "sales_duplicate_line_id";
     public const string NoteTooLong = "sales_note_too_long";

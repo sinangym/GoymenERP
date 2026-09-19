@@ -25,7 +25,11 @@ internal sealed class DraftNumberRow : ISalesTenantRow
     public DateTimeOffset UpdatedAtUtc { get; set; }
 }
 
-/// <summary>The stored draft header with its owner snapshots. Append-only in this slice: only its version may move.</summary>
+/// <summary>
+/// The stored draft header with its owner snapshots. Its lines are append-only; the header changes
+/// only along the internal approval axis (SALES-A1: <see cref="ApprovalState"/> and the approval
+/// facts, with the version and the update time) — nothing else moves.
+/// </summary>
 internal sealed class DraftRow : ISalesTenantRow
 {
     public Guid Id { get; set; }
@@ -36,6 +40,14 @@ internal sealed class DraftRow : ISalesTenantRow
     public int Revision { get; set; }
     public long Version { get; set; }
     public byte[] RowVersion { get; set; } = [];
+
+    /// <summary>SALES-A1: 1 Preparing, 2 PendingApproval, 3 Approved, 4 Rejected (<c>InternalApprovalState</c>); the facts follow the state (check constraint).</summary>
+    public int ApprovalState { get; set; }
+    public string? SubmittedBy { get; set; }
+    public DateTimeOffset? SubmittedAtUtc { get; set; }
+    public string? DecidedBy { get; set; }
+    public DateTimeOffset? DecidedAtUtc { get; set; }
+    public string? RejectionReason { get; set; }
     public Guid PartyId { get; set; }
     public Guid CompanyAccountId { get; set; }
     public Guid CurrencyId { get; set; }

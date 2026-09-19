@@ -149,13 +149,17 @@ public sealed class SalesDraftService(
     /// The key's recorded result under the fence; the store's refusals keep their public meaning
     /// (another content or actor under the same key is 409 <c>same_key_payload_mismatch</c>, §3).
     /// </summary>
-    private async Task<SalesDraftReplay?> FindReplayAsync(Scope scope, SalesDraftWriteEnvelope envelope, string requestHash,
-        CancellationToken cancellationToken)
+    private Task<SalesDraftReplay?> FindReplayAsync(Scope scope, SalesDraftWriteEnvelope envelope, string requestHash,
+        CancellationToken cancellationToken) =>
+        FindReplayAsync(scope, bindings.CreatePermission, envelope, requestHash, SalesDraftCommands.CreateV1, cancellationToken);
+
+    private async Task<SalesDraftReplay?> FindReplayAsync(Scope scope, string? permission, SalesDraftWriteEnvelope envelope, string requestHash,
+        string commandName, CancellationToken cancellationToken)
     {
         try
         {
-            return await GuardedAsync(scope, bindings.CreatePermission,
-                () => store.FindReplayAsync(envelope, requestHash, cancellationToken), cancellationToken);
+            return await GuardedAsync(scope, permission,
+                () => store.FindReplayAsync(envelope, requestHash, cancellationToken, commandName), cancellationToken);
         }
         catch (SalesDraftStoreException exception)
         {
@@ -218,11 +222,24 @@ public sealed class SalesDraftService(
             throw new SalesDraftServiceException(400, "validation_failed");
         }
 
+        // SALES-A1: an exact approval state name narrows the list; anything else is a shape error, never "all".
+        InternalApprovalState? approvalState = null;
+        if (query.ApprovalState is not null)
+        {
+            if (!Enum.TryParse<InternalApprovalState>(query.ApprovalState, ignoreCase: false, out var parsed) || !Enum.IsDefined(parsed)
+                || !string.Equals(parsed.ToString(), query.ApprovalState, StringComparison.Ordinal))
+            {
+                throw new SalesDraftServiceException(400, "validation_failed", [new("approvalState", "validation_failed")]);
+            }
+
+            approvalState = parsed;
+        }
+
         SalesDraftPage page;
         try
         {
             page = await GuardedAsync(scope, bindings.ReadPermission,
-                () => store.ListDraftsAsync(pageSize, query.Cursor, cancellationToken), cancellationToken);
+                () => store.ListDraftsAsync(pageSize, query.Cursor, cancellationToken, approvalState), cancellationToken);
         }
         catch (SalesDraftStoreException exception)
         {
@@ -230,6 +247,121 @@ public sealed class SalesDraftService(
         }
 
         return new SalesOrderDraftListResponse([.. page.Items.Select(Summary)], page.NextCursor);
+    }
+
+    // ---- internal approval (SALES-A1) ------------------------------------------------------------
+
+    public Task<SalesOrderDraftResponse> SubmitDraftAsync(Guid draftId, SalesDraftStateCommandRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        StateCommandAsync(draftId, request, metadata, SalesDraftCommands.SubmitV1, bindings.CreatePermission,
+            (draft, actor, expected, now) => draft.Submit(expected, actor, now),
+            new SalesDraftStateAudit("sales.order-draft.submitted.v1", "Submit", "Satış sipariş taslağı onaya gönderildi"),
+            cancellationToken);
+
+    public Task<SalesOrderDraftResponse> ApproveDraftAsync(Guid draftId, SalesDraftStateCommandRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        StateCommandAsync(draftId, request, metadata, SalesDraftCommands.ApproveV1, bindings.ApprovePermission,
+            (draft, actor, expected, now) => draft.Approve(expected, actor, now),
+            new SalesDraftStateAudit("sales.order-draft.approved.v1", "Approve", "Satış sipariş taslağı iç onay aldı"),
+            cancellationToken);
+
+    public Task<SalesOrderDraftResponse> RejectDraftAsync(Guid draftId, SalesDraftStateCommandRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        StateCommandAsync(draftId, request, metadata, SalesDraftCommands.RejectV1, bindings.ApprovePermission,
+            (draft, actor, expected, now) => draft.Reject(expected, actor, request?.Reason, now),
+            new SalesDraftStateAudit("sales.order-draft.rejected.v1", "Reject", "Satış sipariş taslağı iç onayda reddedildi"),
+            cancellationToken);
+
+    /// <summary>
+    /// One internal-approval command: the fence for <paramref name="permission"/> first (§5), the key's
+    /// replay next (§4/§7: the stored record, or the recorded terminal refusal), then the fence again right
+    /// before the single save, and the store's one save. The domain decides the transition; a stale
+    /// version or a wrong state is the key's TERMINAL result (§7: recorded, then replayed); a lost race
+    /// answers the winner (§8). Nothing is measured after the commit (S03). Another company's draft, or
+    /// none, is 404, never 403.
+    /// </summary>
+    private async Task<SalesOrderDraftResponse> StateCommandAsync(Guid draftId, SalesDraftStateCommandRequest request,
+        SalesCommandMetadata metadata, string commandName, string? permission,
+        Action<SalesOrderDraft, string, long, DateTimeOffset> transition, SalesDraftStateAudit audit, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(metadata);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var scope = await RequireAsync(permission, cancellationToken);
+        if (!long.TryParse(request.ExpectedVersion, NumberStyles.None, CultureInfo.InvariantCulture, out var expectedVersion) || expectedVersion < 1)
+        {
+            throw new SalesDraftServiceException(400, "validation_failed", [new("expectedVersion", "validation_failed")]);
+        }
+
+        var requestHash = SalesDraftRequestHash.Compute(commandName, draftId, request);
+        var envelope = Envelope(scope, metadata, permission!);
+        var replay = await FindReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
+        if (replay is not null)
+        {
+            return Replayed(replay);
+        }
+
+        if (draftId == Guid.Empty)
+        {
+            throw new SalesDraftServiceException(404, "not_found");
+        }
+
+        // The last fence that can still prevent the write; none after the commit (ORG #321 P3-1).
+        await RequireStillAsync(scope, permission, cancellationToken);
+        SalesDraftStateResult? result;
+        try
+        {
+            result = await store.UpdateDraftStateAsync(envelope, requestHash, commandName, draftId,
+                (draft, now) => transition(draft, scope.ActorId, expectedVersion, now), audit, cancellationToken);
+        }
+        catch (SalesVersionConflictException exception)
+        {
+            // §7: the caller's expected version is stale — recorded under the key, replayed on retry.
+            throw await TerminalAsync(envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict,
+                [new("expectedVersion", exception.Code)]), cancellationToken, commandName);
+        }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.StateConflict)
+        {
+            // §7: the transition is not allowed from the draft's state — terminal for this key too.
+            throw await TerminalAsync(envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict,
+                [new("approvalState", exception.Code)]), cancellationToken, commandName);
+        }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.ApprovalReasonTooLong)
+        {
+            throw new SalesDraftServiceException(422, SalesDraftProblemCodesV1.ApprovalReasonTooLong, [new("reason", exception.Code)]);
+        }
+        catch (SalesRuleException exception)
+        {
+            throw new SalesDraftServiceException(422, "validation_failed", [new("draft", exception.Code)]);
+        }
+        catch (ArgumentException)
+        {
+            throw new SalesDraftServiceException(400, "validation_failed");
+        }
+        catch (SalesDraftStoreException exception) when (exception.Code == SalesDraftStoreCodes.ConcurrentChange)
+        {
+            // §8: a lost same-key race answers the winner, read afresh; a lost draft-version race (another
+            // key moved the draft) is the caller's concurrent_change to retry with a fresh read.
+            var won = await FindReplayAsync(scope, permission, envelope, requestHash, commandName, cancellationToken);
+            if (won is null)
+            {
+                throw Store(exception);
+            }
+
+            return Replayed(won);
+        }
+        catch (SalesDraftStoreException exception)
+        {
+            throw Store(exception);
+        }
+
+        if (result is null)
+        {
+            throw new SalesDraftServiceException(404, "not_found");
+        }
+
+        return Response(result.Draft, result.Outcome == SalesDraftWriteOutcome.Replayed, result.OriginalCorrelationId);
     }
 
     // ---- authority ------------------------------------------------------------------------------
@@ -304,7 +436,10 @@ public sealed class SalesDraftService(
         && companyContext.IsResolved && companyContext.CompanyId == companyId && currentUser.CanAccessCompany(companyId);
 
     private SalesDraftWriteEnvelope Envelope(Scope scope, SalesCommandMetadata metadata) =>
-        new(scope.ActorId, bindings.CreatePermission!, scope.RoleCodes, metadata.CorrelationId, metadata.CausationId,
+        Envelope(scope, metadata, bindings.CreatePermission!);
+
+    private SalesDraftWriteEnvelope Envelope(Scope scope, SalesCommandMetadata metadata, string permission) =>
+        new(scope.ActorId, permission, scope.RoleCodes, metadata.CorrelationId, metadata.CausationId,
             metadata.IdempotencyKey, correlation.SourceChannel, correlation.ClientIpAddress, correlation.UserAgent);
 
     // ---- contract deltas (card decisions 2 and 3) ---------------------------------------------
@@ -527,18 +662,18 @@ public sealed class SalesDraftService(
     /// answers this refusal unrecorded (the retry records or replays).
     /// </summary>
     private async Task<SalesDraftServiceException> TerminalAsync(SalesDraftWriteEnvelope envelope, string requestHash,
-        SalesDraftTerminalRefusal refusal, CancellationToken cancellationToken)
+        SalesDraftTerminalRefusal refusal, CancellationToken cancellationToken, string commandName = SalesDraftCommands.CreateV1)
     {
         try
         {
-            await store.RecordRefusalAsync(envelope, requestHash, refusal, cancellationToken);
+            await store.RecordRefusalAsync(envelope, requestHash, refusal, cancellationToken, commandName);
         }
         catch (SalesDraftStoreException exception) when (exception.Code == SalesDraftStoreCodes.ConcurrentChange)
         {
             SalesDraftReplay? won;
             try
             {
-                won = await store.FindReplayAsync(envelope, requestHash, cancellationToken);
+                won = await store.FindReplayAsync(envelope, requestHash, cancellationToken, commandName);
             }
             catch (SalesDraftStoreException raced)
             {
@@ -586,7 +721,8 @@ public sealed class SalesDraftService(
     private static SalesOrderDraftSummaryView Summary(SalesOrderDraft draft) =>
         new(draft.Id, draft.CompanyId, draft.DocumentNo, draft.Kind.ToString(), draft.State.ToString(),
             draft.Version.ToString(CultureInfo.InvariantCulture), SalesDraftApiV1.Rev0, draft.Header.PartyId,
-            draft.Header.CompanyAccountId, draft.Header.CurrencyId, draft.Header.BusinessDate, draft.CreatedAtUtc, draft.Lines.Count);
+            draft.Header.CompanyAccountId, draft.Header.CurrencyId, draft.Header.BusinessDate, draft.CreatedAtUtc, draft.Lines.Count,
+            draft.ApprovalState.ToString());
 
     private static SalesOrderDraftDetailView Detail(SalesOrderDraft draft) =>
         new(Summary(draft), draft.Header.RequestedDeliveryDate, draft.Header.Note,
@@ -599,7 +735,9 @@ public sealed class SalesDraftService(
                         slice.QuantityText, slice.RequestedDeliveryDate))],
                 line.Commercial.DiscountPercent))],
             Reference(draft.Header.DeliveryAddress), Reference(draft.Header.Contact), Reference(draft.Header.Responsible),
-            Reference(draft.Header.PaymentTerms), Reference(draft.Header.SourceStrategy), Reference(draft.Header.Package));
+            Reference(draft.Header.PaymentTerms), Reference(draft.Header.SourceStrategy), Reference(draft.Header.Package),
+            new SalesDraftApprovalV1(draft.Approval.SubmittedBy, draft.Approval.SubmittedAtUtc, draft.Approval.DecidedBy,
+                draft.Approval.DecidedAtUtc, draft.Approval.RejectionReason));
 
     private static SalesDraftOwnerReferenceV1? Reference(OwnerReference? reference) =>
         reference is null ? null : new SalesDraftOwnerReferenceV1(reference.Id, reference.ExpectedVersion);

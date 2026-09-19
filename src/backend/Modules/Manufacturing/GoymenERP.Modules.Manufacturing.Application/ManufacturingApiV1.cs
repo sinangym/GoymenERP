@@ -315,7 +315,11 @@ public sealed partial class ManufacturingCommandService(
                 valid.ParentRollId, outputClass, mass, at, metadata, cancellationToken), cancellationToken);
     }
 
-    /// <summary>The company's order rebuilt from its stored facts; another company's order is not found.</summary>
+    /// <summary>
+    /// The company's order rebuilt from its stored facts; another company's order is not found. A read
+    /// that still meets concurrent commits after the store's own re-reads is a retryable consistency
+    /// failure (503), not a command conflict: 409 belongs to commands (FİNANS #313 INFO-4).
+    /// </summary>
     public async Task<ManufacturingApiResult<OrderViewV1>> GetOrderAsync(Guid orderId, CancellationToken cancellationToken)
     {
         if (!HasContext())
@@ -323,9 +327,19 @@ public sealed partial class ManufacturingCommandService(
             return Denied<OrderViewV1>();
         }
 
-        return orderId == Guid.Empty
-            ? NotFoundResult<OrderViewV1>()
-            : await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, isReplay: false, cancellationToken);
+        if (orderId == Guid.Empty)
+        {
+            return NotFoundResult<OrderViewV1>();
+        }
+
+        try
+        {
+            return await OrderResultAsync(orderId, ManufacturingApiStatus.Ok, isReplay: false, cancellationToken);
+        }
+        catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
+        {
+            return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unavailable, null, false, null);
+        }
     }
 
     private Task<ManufacturingApiResult<OrderViewV1>> RecordAsync(Guid orderId, RecordFactRequestV1? request,

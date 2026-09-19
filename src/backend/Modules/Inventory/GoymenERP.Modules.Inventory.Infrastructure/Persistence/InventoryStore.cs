@@ -12,6 +12,7 @@ using GoymenERP.Modules.Inventory.Domain.Costing;
 using GoymenERP.Modules.Inventory.Domain.Labels;
 using GoymenERP.Modules.Inventory.Domain.Lots;
 using GoymenERP.Modules.Inventory.Domain.Movements;
+using GoymenERP.Modules.Inventory.Domain.Opening;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Inventory.Domain.Stock;
 using Microsoft.Data.SqlClient;
@@ -54,11 +55,12 @@ public sealed partial class InventoryStore(
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
     InventoryKilogramScale kilogramScale,
-    TimeProvider timeProvider) : IInventoryLotStore, IInventoryLabelStore, IInventoryMovementStore
+    TimeProvider timeProvider) : IInventoryLotStore, IInventoryLabelStore, IInventoryMovementStore, IInventoryOpeningStore
 {
     private const string LotEntityType = "Inventory.MaterialLot";
     private const string LabelEntityType = "Inventory.MaterialLabel";
     private const string MovementEntityType = "Inventory.StockMovement";
+    private const string OpeningCountEntityType = "Inventory.OpeningCount";
     private const int ActorMaximumLength = 128;
     private const int ReasonMaximumLength = 1000;
     private const int DocumentKindMaximumLength = 64;
@@ -398,6 +400,232 @@ public sealed partial class InventoryStore(
         return InventoryWriteOutcome.Recorded;
     }
 
+    /// <summary>
+    /// INV-OPEN-1 (decision A, #66 5738113623 §2): the opening stock of one physical count, in ONE save —
+    /// the count and its lines, each piece's lot (new, or stored with the same facts), its NEW label, its one
+    /// receipt with the resulting balance, and the audit events. No second approver; the recorder is the
+    /// audited actor. Book = count at opening: every balance written here is exactly its counted kilograms.
+    /// </summary>
+    public async Task<InventoryWriteOutcome> RecordAsync(OpeningCount count, InventoryCommandMetadata metadata,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(count);
+        RequireMetadata(metadata);
+        RequireCompany(count.CompanyId);
+        foreach (var line in count.Lines)
+        {
+            RequireLotFits(line.Lot);
+            RequireLabelFits(line.Label);
+        }
+
+        // R3: the count id is the identity; the same content is a replay with no second effect.
+        var hash = OpeningHash(count);
+        var stored = await dbContext.OpeningCounts.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.Id == count.Id, cancellationToken);
+        if (stored is not null)
+        {
+            return string.Equals(stored.ContentHash, hash, StringComparison.Ordinal)
+                ? InventoryWriteOutcome.Replayed
+                : throw Refused(InventoryStoreCodes.OpeningConflict, "Aynı açılış sayımı kimliği farklı içerikle verildi.");
+        }
+
+        // Counted kilograms against the company's approved kg profile on the counted-on date (fail-closed).
+        var scale = await kilogramScale.CheckAsync(count.CompanyId, count.CountedOn,
+            count.Lines.Select(line => line.Quantity), cancellationToken);
+        if (!scale.IsAccepted)
+        {
+            throw Refused(scale.Code!, "Sayılan miktar şirketin onaylı kilogram profiline uymuyor.");
+        }
+
+        // An opening registers NEW pieces only: a stored label is never opened again.
+        var labelIds = count.Lines.Select(line => line.Label.Id).ToArray();
+        var knownLabels = await dbContext.Labels.AsNoTracking().Where(row => labelIds.Contains(row.Id))
+            .Select(row => row.Id).ToListAsync(cancellationToken);
+        if (knownLabels.Count > 0)
+        {
+            if (await dbContext.Balances.AsNoTracking()
+                    .AnyAsync(row => knownLabels.Contains(row.LabelId) && row.QuantityKg != 0m, cancellationToken))
+            {
+                // Opening is never an adjustment: a book/count difference is ST-05 with its second approval.
+                throw new InventoryRuleException(InventoryRuleCodes.LabelAlreadyInStock,
+                    "Stok taşıyan bir etiket açılış sayımıyla yeniden girilemez; fark sayımı ayrı bir süreçtir.");
+            }
+
+            throw Refused(InventoryStoreCodes.LabelConflict, "Açılış sayımı yalnız yeni parça kaydeder; bu etiket kayıtlı.");
+        }
+
+        var now = timeProvider.GetUtcNow();
+        foreach (var lot in count.Lines.Select(line => line.Lot).DistinctBy(lot => lot.Id))
+        {
+            var storedLot = await dbContext.Lots.AsNoTracking().SingleOrDefaultAsync(row => row.Id == lot.Id, cancellationToken);
+            if (storedLot is null)
+            {
+                dbContext.Lots.Add(new LotRow
+                {
+                    Id = lot.Id,
+                    CompanyId = lot.CompanyId,
+                    ProductId = lot.ProductId,
+                    HeatNumber = lot.HeatNumber,
+                    CoilNumber = lot.CoilNumber,
+                    Version = 1,
+                    CreatedAtUtc = now,
+                    CreatedBy = metadata.ActorId.Trim(),
+                });
+                Audit(metadata, lot.CompanyId, LotEntityType, lot.Id, "inventory.lot.registered.v1", "Register",
+                    versionBefore: null, versionAfter: 1, before: "{}", after: LotAudit(lot), "Lot kaydı (açılış sayımı)");
+            }
+            else if (!SameLot(storedLot, lot))
+            {
+                throw Refused(InventoryStoreCodes.LotConflict, "Aynı lot kimliği farklı lot bilgileriyle verildi.");
+            }
+        }
+
+        var number = 0;
+        foreach (var line in count.Lines)
+        {
+            var label = line.Label;
+            dbContext.Labels.Add(new LabelRow
+            {
+                Id = label.Id,
+                CompanyId = label.CompanyId,
+                Code = label.Code,
+                ProductId = label.ProductId,
+                LotId = label.LotId,
+                HeatNumber = label.HeatNumber,
+                CoilNumber = label.CoilNumber,
+                RequiredDocumentsJson = JsonSerializer.Serialize(label.RequiredDocuments.Order(StringComparer.Ordinal), Json),
+                Version = 1,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now,
+            });
+            AddPrints(label, fromSequence: 1);
+            AddDocuments(label, fromSequence: 1);
+            Audit(metadata, label.CompanyId, LabelEntityType, label.Id, "inventory.label.registered.v1", "Register",
+                versionBefore: null, versionAfter: 1, before: "{}", after: LabelAudit(label), "Etiket kaydı (açılış sayımı)");
+
+            // The one receipt of the piece: the domain ledger decides (a new piece has no stored balance).
+            var movement = count.ReceiptOf(line);
+            new StockLedger().Apply(movement);
+            var position = count.PositionOf(line);
+            var grain = (int)movement.Source.Grain;
+            if (number == 0)
+            {
+                dbContext.SourceGrains.Add(new SourceGrainRow
+                {
+                    CompanyId = count.CompanyId,
+                    Kind = (int)movement.Kind,
+                    SourceKind = movement.Source.Kind,
+                    SourceId = movement.Source.Id,
+                    Grain = grain,
+                });
+            }
+
+            var payloadHash = PayloadHash(movement);
+            dbContext.Movements.Add(new MovementRow
+            {
+                Id = movement.Id,
+                CompanyId = movement.CompanyId,
+                Kind = (int)movement.Kind,
+                OccurredAtUtc = movement.OccurredAtUtc,
+                SourceKind = movement.Source.Kind,
+                SourceId = movement.Source.Id,
+                SourceLineId = movement.Source.LineId,
+                SourceGrain = grain,
+                CostStatus = (int)movement.Cost.Status,
+                CostAmount = movement.Cost.Amount,
+                CostCurrencyId = movement.Cost.CurrencyId,
+                PayloadHash = payloadHash,
+                RecordedAtUtc = now,
+                RecordedBy = metadata.ActorId.Trim(),
+                CorrelationId = metadata.CorrelationId.Trim(),
+            });
+            dbContext.MovementLines.Add(new MovementLineRow
+            {
+                CompanyId = position.CompanyId,
+                MovementId = movement.Id,
+                LineNumber = 1,
+                Direction = (int)StockDirection.In,
+                OwnerKind = (int)position.Owner.Kind,
+                OwnerId = position.Owner.Id,
+                CustodianKind = (int)position.Custodian.Kind,
+                CustodianId = position.Custodian.Id,
+                LocationId = position.LocationId,
+                LabelId = position.LabelId,
+                ProductId = position.ProductId,
+                Block = (int)position.Block,
+                QuantityKg = line.Quantity.Value,
+            });
+            dbContext.Balances.Add(new BalanceRow
+            {
+                Id = Guid.NewGuid(),
+                CompanyId = position.CompanyId,
+                OwnerKind = (int)position.Owner.Kind,
+                OwnerId = position.Owner.Id,
+                CustodianKind = (int)position.Custodian.Kind,
+                CustodianId = position.Custodian.Id,
+                LocationId = position.LocationId,
+                LabelId = position.LabelId,
+                ProductId = position.ProductId,
+                Block = (int)position.Block,
+                QuantityKg = line.Quantity.Value,
+            });
+            Audit(metadata, movement.CompanyId, MovementEntityType, movement.Id, "inventory.movement.recorded.v1", "Record",
+                versionBefore: null, versionAfter: 1, before: "{}", after: MovementAudit(movement, payloadHash),
+                "Açılış sayımı girişi");
+
+            dbContext.OpeningCountLines.Add(new OpeningCountLineRow
+            {
+                CompanyId = count.CompanyId,
+                CountId = count.Id,
+                LineNumber = ++number,
+                LineId = line.Id,
+                LabelId = label.Id,
+                LotId = line.Lot.Id,
+                QuantityKg = line.Quantity.Value,
+            });
+        }
+
+        dbContext.OpeningCounts.Add(new OpeningCountRow
+        {
+            Id = count.Id,
+            CompanyId = count.CompanyId,
+            LocationId = count.LocationId,
+            CountedOn = count.CountedOn,
+            SheetReference = count.SheetReference,
+            ContentHash = hash,
+            RecordedAtUtc = now,
+            RecordedBy = metadata.ActorId.Trim(),
+            CorrelationId = metadata.CorrelationId.Trim(),
+        });
+        Audit(metadata, count.CompanyId, OpeningCountEntityType, count.Id, "inventory.opening-count.recorded.v1", "Record",
+            versionBefore: null, versionAfter: 1, before: "{}", after: OpeningAudit(count, hash), "Açılış sayımı");
+        await SaveAsync(cancellationToken);
+        return InventoryWriteOutcome.Recorded;
+    }
+
+    public async Task<OpeningCount?> ReadCountAsync(Guid countId, CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        var row = await dbContext.OpeningCounts.AsNoTracking().SingleOrDefaultAsync(candidate => candidate.Id == countId, cancellationToken);
+        if (row is null)
+        {
+            return null;
+        }
+
+        var lines = await dbContext.OpeningCountLines.AsNoTracking().Where(line => line.CountId == countId)
+            .OrderBy(line => line.LineNumber).ToListAsync(cancellationToken);
+        var labelIds = lines.Select(line => line.LabelId).ToArray();
+        var labels = await RestoreLabelsAsync(
+            await dbContext.Labels.AsNoTracking().Where(label => labelIds.Contains(label.Id)).ToListAsync(cancellationToken),
+            cancellationToken);
+        var lotIds = lines.Select(line => line.LotId).Distinct().ToArray();
+        var lots = (await dbContext.Lots.AsNoTracking().Where(lot => lotIds.Contains(lot.Id)).ToListAsync(cancellationToken))
+            .ToDictionary(lot => lot.Id, ToLot);
+        return new OpeningCount(row.Id, row.CompanyId, row.LocationId, row.CountedOn, row.SheetReference,
+            lines.Select(line => new OpeningCountLine(line.LineId, lots[line.LotId], labels[line.LabelId],
+                Kilograms.Positive(line.QuantityKg))));
+    }
+
     public async Task<IReadOnlyList<StockBalance>> ReadBalancesAsync(Guid labelId, CancellationToken cancellationToken = default)
     {
         RequireResolvedCompany();
@@ -449,7 +677,7 @@ public sealed partial class InventoryStore(
         // company racing — a retry reads the stored record — or an id another company holds, invisible
         // here under the tenant filter: a retry would collide forever, so that is a conflict with no
         // retry advice, and nothing about the other record is disclosed. The colliding id is the one SQL
-        // names as the duplicate key; if it cannot be read, the answer stays the retryable one.
+        // names as the duplicate key in that key's own error; if it cannot be read, the answer stays the retryable one.
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -467,12 +695,12 @@ public sealed partial class InventoryStore(
                 var message when message.Contains("IX_Labels_CompanyId_Code", StringComparison.Ordinal) => InventoryStoreCodes.LabelCodeTaken,
                 var message when message.Contains("PK_Movements", StringComparison.Ordinal) => InventoryStoreCodes.ConcurrentChange,
                 var message when message.Contains("'PK_Lots'", StringComparison.Ordinal) =>
-                    DuplicateKey(message) is { } lotId
+                    DuplicateKey(Errors(sql), "'PK_Lots'") is { } lotId
                     && !await dbContext.Lots.AsNoTracking().AnyAsync(row => row.Id == lotId, cancellationToken)
                         ? InventoryStoreCodes.LotConflict
                         : InventoryStoreCodes.ConcurrentChange,
                 var message when message.Contains("'PK_Labels'", StringComparison.Ordinal) =>
-                    DuplicateKey(message) is { } labelId
+                    DuplicateKey(Errors(sql), "'PK_Labels'") is { } labelId
                     && !await dbContext.Labels.AsNoTracking().AnyAsync(row => row.Id == labelId, cancellationToken)
                         ? InventoryStoreCodes.LabelConflict
                         : InventoryStoreCodes.ConcurrentChange,
@@ -486,12 +714,28 @@ public sealed partial class InventoryStore(
         }
     }
 
-    /// <summary>The single GUID of a primary-key message: its duplicate key value (the only GUID in it).</summary>
-    private static Guid? DuplicateKey(string message)
+    /// <summary>
+    /// The duplicate key of one primary key: read from that key's OWN error, never from the combined message.
+    /// One save can collide on several keys (a lot and its label in the same batch, #333 SİPARİŞ P3-1); the
+    /// combined message then carries several GUIDs. Exactly one duplicate-key error (2601/2627) naming
+    /// <paramref name="constraint"/> must exist, and its message must carry exactly one GUID (a single-column
+    /// key); anything else is null, and the answer stays the retryable one.
+    /// </summary>
+    internal static Guid? DuplicateKey(IEnumerable<(int Number, string Message)> errors, string constraint)
     {
-        var matches = GuidPattern().Matches(message);
+        var own = errors.Where(error => error.Number is 2601 or 2627
+            && error.Message.Contains(constraint, StringComparison.Ordinal)).ToArray();
+        if (own.Length != 1)
+        {
+            return null;
+        }
+
+        var matches = GuidPattern().Matches(own[0].Message);
         return matches.Count == 1 && Guid.TryParseExact(matches[0].Value, "D", out var id) ? id : null;
     }
+
+    private static IEnumerable<(int Number, string Message)> Errors(SqlException sql) =>
+        sql.Errors.Cast<SqlError>().Select(error => (error.Number, error.Message));
 
     [GeneratedRegex("[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}", RegexOptions.CultureInvariant)]
     private static partial Regex GuidPattern();
@@ -746,6 +990,47 @@ public sealed partial class InventoryStore(
         }, Json);
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
     }
+
+    /// <summary>
+    /// The canonical content of an opening count: location, date, sheet reference and every line with its
+    /// piece, lot and kilograms (trailing zeros normalised), in order. Its hash is the R3 comparison.
+    /// </summary>
+    internal static string OpeningHash(OpeningCount count)
+    {
+        var canonical = JsonSerializer.Serialize(new
+        {
+            locationId = count.LocationId,
+            countedOn = count.CountedOn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            sheetReference = count.SheetReference,
+            lines = count.Lines.Select(line => new
+            {
+                id = line.Id,
+                quantityKg = line.Quantity.ToString(),
+                lot = new { id = line.Lot.Id, productId = line.Lot.ProductId, heat = line.Lot.HeatNumber, coil = line.Lot.CoilNumber },
+                label = new
+                {
+                    id = line.Label.Id,
+                    code = line.Label.Code,
+                    heat = line.Label.HeatNumber,
+                    coil = line.Label.CoilNumber,
+                    requiredDocuments = line.Label.RequiredDocuments.Order(StringComparer.Ordinal),
+                    prints = line.Label.Prints.Count,
+                    documents = line.Label.DocumentAttachments.Count,
+                },
+            }),
+        }, Json);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+    }
+
+    private static string OpeningAudit(OpeningCount count, string hash) => JsonSerializer.Serialize(new
+    {
+        count.Id,
+        count.LocationId,
+        countedOn = count.CountedOn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+        count.SheetReference,
+        lines = count.Lines.Count,
+        contentHash = hash,
+    }, Json);
 
     private static string LotAudit(MaterialLot lot) => JsonSerializer.Serialize(new
     {

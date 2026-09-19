@@ -35,12 +35,12 @@ _spec.loader.exec_module(c01)
 ContractError = c01.ContractError
 require = c01.require
 
-SUITES = ("smoke", "c03", "org03", "u02", "s03", "fin01")
+SUITES = ("smoke", "c03", "org03", "u02", "s03", "mfg", "fin01")
 # s03 writes since S03 (#327): V2A-02 attempts a POST (nothing is stored, but it is no read-only run).
 READ_ONLY_SUITES = ("smoke", "c03")
 _SUITE_PATTERN = re.compile(r"^[a-z0-9]+$")
 
-PROFILES = ("c01-list-only", "cari-staged", "normal", "fin-staged")
+PROFILES = ("c01-list-only", "cari-staged", "normal", "mfg-staged", "fin-staged")
 SUITE_PROFILES = {
     "smoke": "c01-list-only",
     "c03": "cari-staged",
@@ -48,6 +48,8 @@ SUITE_PROFILES = {
     "u02": "normal",
     # S-03 v1 (#321): fail-closed evidence on the normal host (staged Sales screens, no grant).
     "s03": "normal",
+    # MFG-UI (#323, D4): the Manufacturing order screen opened only inside the disposable envelope.
+    "mfg": "mfg-staged",
     # FIN-01 (#332, FIN-UI-1b): Finance's staged screens opened only inside the disposable envelope.
     "fin01": "fin-staged",
 }
@@ -55,12 +57,14 @@ PROFILE_COMPOSE_FILES = {
     "c01-list-only": "infra/docker-compose.c01-e2e.yml",
     "cari-staged": "infra/docker-compose.browser-cari-staged.yml",
     "normal": "infra/docker-compose.browser-normal.yml",
+    "mfg-staged": "infra/docker-compose.browser-mfg-staged.yml",
     "fin-staged": "infra/docker-compose.browser-fin-staged.yml",
 }
 PROFILE_SUITE_LABELS = {
     "c01-list-only": "C01-REAL-BROWSER-E2E-V1",
     "cari-staged": "BROWSER-SUITE-CARI-STAGED-V1",
     "normal": "BROWSER-SUITE-NORMAL-V1",
+    "mfg-staged": "BROWSER-SUITE-MFG-STAGED-V1",
     "fin-staged": "BROWSER-SUITE-FIN-STAGED-V1",
 }
 CANONICAL_SUITE_LABEL = PROFILE_SUITE_LABELS["c01-list-only"]
@@ -69,6 +73,7 @@ CARI_STAGED_PROFILE_VALUE = "cari-list-detail"
 # Each envelope profile's exact C01E2e__Profile value (C01E2eShellCapabilityActivation's profiles).
 STAGED_PROFILE_VALUES = {
     "cari-staged": CARI_STAGED_PROFILE_VALUE,
+    "mfg-staged": "manufacturing-order-detail",
     "fin-staged": "finance-bank-accounts-and-drafts",
 }
 # The disposable C-01 capability envelope, as the canonical compose file sets it on the API.
@@ -114,6 +119,8 @@ SUITE_API_EXTENSIONS = {
     # S-03 (SİPARİŞ): the deployment's Product issuer binding (shared with u02, ÜRÜN's values), the
     # suite's actors and their Identity users and grants (coordinator decisions 1 and 3, a2 part 2).
     "s03": {"issuer": True, "actors": True, "identity": True},
+    # MFG (ORG, #323 5735635840): a recorder and a reader actor with their Identity users and grants.
+    "mfg": {"issuer": False, "actors": True, "identity": True},
     # FIN-01 (FİNANS, #332): a proposer and an approver actor with their Identity users and grants.
     "fin01": {"issuer": False, "actors": True, "identity": True},
 }
@@ -141,7 +148,17 @@ _SYNTHETIC_ID_PREFIX = {"Users": "b20", "External": "b21", "Roles": "b30", "Assi
 SUITE_IDENTITY_PERMISSIONS = {
     # u02 seeds only the issuer's Identity user, which holds nothing (the issuer-user rule).
     "u02": (),
-    "s03": ("sales.drafts.create", "sales.drafts.read", "product.operational-selection.read"),
+    # SALES-A1 (coordinator): the approval and the draft's party read, for the v2b positive path.
+    "s03": ("sales.drafts.create", "sales.drafts.read", "product.operational-selection.read",
+            "counterparty.parties.read", "sales.orders.approve"),
+    # The five Manufacturing names (recorder); the reader holds only manufacturing.orders.read.
+    "mfg": (
+        "manufacturing.plans.write",
+        "manufacturing.plans.approve",
+        "manufacturing.orders.create",
+        "manufacturing.facts.record",
+        "manufacturing.orders.read",
+    ),
     # The six Finance names and the Cari owner's authorized party read (the draft reaches the party
     # through it); the approver holds only finance.bank-account.read and .approve.
     "fin01": (
@@ -295,6 +312,9 @@ FIXTURE_TOOL_SUITES_DIRECTORY = "tests/GoymenERP.BrowserSuiteFixtureTool/Suites"
 SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     # ÜRÜN's Suites/U02 seed (#331): the company, the gated code group and the two canonical actors.
     "u02": frozenset({"companyId", "codeGroupId", "authorizedActor", "unauthorizedActor"}),
+    # ORG's Suites/MFG seed (#323 5735635840): the actors, the company, the seeded work centre (read
+    # through the real Organization API) and the plan -> approval -> order it writes through the real API.
+    "mfg": frozenset({"recorderActor", "readerActor", "companyId", "workCenterId", "orderId", "rollId"}),
     # FİNANS's Suites/Fin01 seed (#332): the company, the customer opened through the real Cari API and
     # its company account, and the two suite actors. No SQL, no gated writer, no Finance row.
     "fin01": frozenset({"companyId", "partyId", "companyAccountId", "proposerActor", "approverActor"}),

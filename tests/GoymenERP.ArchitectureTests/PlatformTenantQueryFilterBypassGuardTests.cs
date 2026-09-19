@@ -41,13 +41,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "OpenApiDocumentGenerationMode.cs";
     private const string OpenApiStartupPath =
         "src/backend/GoymenERP.Api/Program.cs";
-    // Re-fingerprinted for FIN-UI-1a (#325) on top of BROWSER-CI a2 part 2 (#330) and SALES-API (#321): the
-    // staged Finance shell provider registered before the shell authority is chosen (C+O+P+S+F row), beside
-    // #330's one call to C01E2eFixtureWriterActivation.Configure. No OpenAPI-generation, network or
-    // hosted-service surface of the startup source changed otherwise. Re-fingerprinted for PRD-UNIT-1: one
-    // singleton registration of Settings' unit-identity catalog (immutable source data); nothing else.
+    // Re-fingerprinted for MFG-UI (#323) on top of FIN-UI-1a (#325), BROWSER-CI a2 part 2 (#330), SALES-API
+    // (#321) and PRD-UNIT-1 (#335): the staged Finance and Manufacturing shell providers registered before the
+    // shell authority is chosen (C+O+P+S+F+M row), beside #330's one call to
+    // C01E2eFixtureWriterActivation.Configure and #335's one singleton registration of Settings' unit-identity
+    // catalog. No OpenAPI-generation, network or hosted-service surface of the startup source changed otherwise.
     private const string ReviewedOpenApiStartupFingerprint =
-        "aa28a9b91c9102dc3d8cefcc715228be94b53f74bd8dfeeb87d1ce3cdcf94cb0";
+        "e737f071a4361b6369742c6c725efc4e10bcf63a933bfe942499c844e290c215";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -129,15 +129,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // inventory
             ["tools/relational_inventory/inventory.txt"] =
-                "e0b8743d49e562c718ebb7051aeea7675ab993f5102e8b960aa844d1c3dc0c49",
+                "9bbead2ad725a9afbf3a90970654fe6f1e0f86f440f59f999ad97f68b6701354",
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
-                "8b8b3bcd8cd5dc3598cfe1c84caa0fb78c724a4b1134e580a456ed92cb58f7ee",
+                "117270f5953021654cdbdc2986ad353582c9d4060a5cd3766a1a8bf699ea8cf3",
 
             // organization
             ["tools/relational_inventory/organization.txt"] =
-                "5e7213ff8c4fc1550084614a5b80f26c4bc5ef73c8fafbed7495877ed26b0249",
+                "867cbf0bea79eb96e1bfeb7499d6dffac0eae15eaec416d140117db78268928e",
 
             // platform
             ["tools/relational_inventory/platform.txt"] =
@@ -145,11 +145,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // product
             ["tools/relational_inventory/product.txt"] =
-                "15e67b1902045229482f995624e536aecaabd11877c47cccfb1fb2617226a414",
+                "7994d6f4490ebbc0a5204e47afd28543050f90688a8a9d9e33f5542ed24a1223",
 
             // sales
             ["tools/relational_inventory/sales.txt"] =
-                "e9d370fe16a4dc85de31dd3b870d72bb22779e92e05cb27028d7951bb4b103d5",
+                "f61e8027e7a041c0cfe15e79fb8bb4a3510fb753fb0bf99397293118949aedc8",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
@@ -181,7 +181,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "886fd0d0a45de77804e1e6f2d2edef2c487299a4192717987779d5b0169edb03",
+                "ef88262bd01e1d118b13f50944ae831870d42615a3f559e4fe95e6fdf3d5a498",
             // Re-measured for MFG-API (#313): the ADR-011 command log (CommandRecords) is mapped here, company-
             // scoped with the CompanyId filter like every other tenant row.
             // MFG-5 (#303): company-scoped like Organization; every tenant row and AuditEvent carries the
@@ -203,7 +203,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // row and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
              + "Persistence/InventoryDbContext.cs"] =
-                "49a56885af157d474d86a1726c0e1591bcf612262036d81cf8f1e73be9571cdb",
+                "73c2a33c6a4fbc77079c4eb3f17e2eba237b4a16ba6b961554a2d50dccbf2809",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "0ad206ef3d741157f24c2433f887871e3fd576ef950ef57ad13b09adc9c3e0e5",
@@ -321,11 +321,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["FromSqlInterpolated"] = 1
                         }),
+                // OrganizationModuleExtensions re-fingerprinted for the location module read registration: one
+                // AddScoped line; its Migrate/EnsureCreated branch is unchanged.
                 ["src/backend/Modules/Organization/"
                  + "GoymenERP.Modules.Organization.Infrastructure/"
                  + "OrganizationModuleExtensions.cs"] =
                     new(
-                        "e19705b2bb98278cb7aa7e510be3f646f721c54aa69e78993657071cebaf9ce6",
+                        "653d337ab7db514447b013be1954afefe5f843091225495c8b8c5758101842cf",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -346,11 +348,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // (SqlException 2601/2627) after SaveChanges, as the Idempotency terminal store does.
                 // No connection, command or raw SQL. Re-fingerprinted for #333 (#324 P3-1): a lot/label
                 // primary-key collision reads, tenant-filtered and AsNoTracking, whether this company holds
-                // the id (retry) or not (conflict); still no connection, command or raw SQL.
+                // the id (retry) or not (conflict); still no connection, command or raw SQL. Re-fingerprinted
+                // for INV-OPEN-1 (T07 = A): the opening count is written through the same tenant-filtered
+                // context in one save; SqlClient count unchanged (1).
+                // Re-fingerprinted for ÜRÜN's P3 follow-up: the colliding lot/label id is read from the
+                // key error itself (SqlException.Errors 2601/2627); SqlClient count unchanged (1).
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
                     new(
-                        "af485f916d6c16be871e026ed1b747764ef8e3d34362226f1dd16e9e6fd93ce2",
+                        "ead38f9bfea11e62a0531dbdb6139175a5483a3e092cbba321e5b654b131f4f5",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -443,7 +449,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Sales.Infrastructure/"
                  + "SalesModuleExtensions.cs"] =
                     new(
-                        "c8731cff0edf9073c5e245d4f8e9576254e6398cc1a54bc56a88e660cac6df9f",
+                        "e9e9bc39b1e3291de032e62a3ab2d2ebd0ba70e32c8b2ad7828207e6c331cfdc",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -451,11 +457,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // SALES-P2 (#315): the SqlClient namespace only to recognise a unique-key violation
                 // (SqlException 2601/2627) after SaveChanges, as the other module stores do. No
-                // connection, command or raw SQL.
+                // connection, command or raw SQL. Re-fingerprinted for SALES-A1: the approval commands
+                // (one save each, attempts keyed per command); SqlClient count unchanged.
                 ["src/backend/Modules/Sales/"
                  + "GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs"] =
                     new(
-                        "eb7eefaefea26f02d6abf160acf69bfb030be1be1073b2a22185a4fe4608363c",
+                        "a8c96902696637b45c2b650f60ad17d8dbec3d975b999987b510a14122dd5bc5",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -531,6 +538,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedMigrationMutationSources =
             new Dictionary<string, ReviewedMigrationMutationSource>(StringComparer.Ordinal)
             {
+                // SALES-A1: the Down's only raw SQL is the refusal (51045) while any draft left Preparing or any
+                // state-command attempt carries a DraftId (the pre-A1 unique index could not be restored);
+                // forward fix, no approval fact or attempt is dropped.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260919120000_AddDraftApproval.cs"] =
+                    new("d5aa478dc70559fa55e54df47a2fc6703a4677b1db4caab425fbe9b3ea10e89c",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/20260912175128_InitialProductDrafts.cs"] =
                     new("09b167e9837c486f8487bc8a30518d37a98ee90d6cea5842a40df6fd7c7e00f8",
                         new Dictionary<string, int>(StringComparer.Ordinal)

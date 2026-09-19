@@ -211,10 +211,14 @@ public static class ProductFamilyDefinitionRulesV2
         {
             var reference = field.Kind == ProductTemplateFieldKindV2.DictionaryReference;
             // A candidate never satisfies a required field: no required field takes candidates (ORG #334 P3-1).
+            // A role field's dictionary must hold an approved entry (checked with the rule set below); a
+            // non-role field's dictionary may be empty while its values are undecided (Business 5740811346:
+            // colour applies with the painted coating but no colour value is activated). Such a field
+            // refuses every value it is given, and when required it keeps its cards closed.
             if (!Enum.IsDefined(field.Kind)
                 || (field.Required && field.AllowsCandidate)
                 || (reference ? string.IsNullOrWhiteSpace(field.Dictionary)
-                    || definition.Entries.All(entry => entry.Dictionary != field.Dictionary)
+                    || (field.Role is not null && definition.Entries.All(entry => entry.Dictionary != field.Dictionary))
                     : field.Dictionary is not null || field.AllowsCandidate || field.ParentField is not null)
                 || (field.AppliesWhenField is null) != (field.AppliesWhenCode is null)
                 || (field.Role is not null && !RequiredMeasureRoles.Concat(RequiredReferenceRoles).Contains(field.Role)))
