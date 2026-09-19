@@ -182,6 +182,42 @@ public sealed class LogisticsInstructionSqlServerRelationalAcceptanceTests
         }
 
         Assert.Equal((1, 1, 0, 1, 1, 2L, 1), await run.CountsAsync(id));
+
+        // §8 for a MUTATION (FİNANS #350 P3-1): two issues under one key race at the save; one is Recorded, the loser loses at the
+        // store and its retry under the same key reads the winner's stored transition — one attempt, one issued audit, version 3.
+        var issueBarrier = new Barrier(2);
+        async Task<object> IssueAsync()
+        {
+            await using var writer = run.Store(CompanyA, new BarrierInterceptor(issueBarrier));
+            try
+            {
+                var result = await writer.Store.MutateInstructionAsync(run.Envelope("k-race-issue"), Hash("race-issue"), LogisticsCommands.IssueV1, id,
+                    (instruction, now) => instruction.Issue(2, now), Issued);
+                return result!.Outcome;
+            }
+            catch (LogisticsStoreException exception)
+            {
+                return exception.Code;
+            }
+            catch (LogisticsVersionConflictException)
+            {
+                return "version_conflict";
+            }
+        }
+
+        var issues = await Task.WhenAll(Task.Run(IssueAsync), Task.Run(IssueAsync));
+        Assert.Single(issues, result => result is LogisticsWriteOutcome.Recorded);
+        Assert.Single(issues, result => result is string code && code == LogisticsStoreCodes.ConcurrentChange);
+        await using (var a = run.Store(CompanyA))
+        {
+            var retry = await a.Store.FindReplayAsync(run.Envelope("k-race-issue", correlation: "SENTETIK-loser"), Hash("race-issue"), LogisticsCommands.IssueV1);
+            Assert.Equal((LoadingInstructionStatus.Issued, 3L, run.Correlation),
+                (retry!.Instruction!.Instruction.Status, retry.Instruction.Instruction.Version, retry.OriginalCorrelationId));
+        }
+
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM logistics.LoadingAttempts"));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'logistics.loading-instruction.issued.v1'"));
+        Assert.Equal((1, 1, 0, 2, 2, 3L, 2), await run.CountsAsync(id));
     }
 
     [SqlServerFact]

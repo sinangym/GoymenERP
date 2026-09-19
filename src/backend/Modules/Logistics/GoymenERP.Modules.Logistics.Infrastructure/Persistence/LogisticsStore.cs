@@ -28,6 +28,8 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
     private const int MaximumPageSize = 100;
     private const int AttemptOutcomeRecorded = 1;
     private const int AttemptOutcomeRefused = 2;
+    // decimal(18,3): 15 integer digits and 3 decimals; a value outside is refused before the save, never a provider exception (FİNANS #350 P3-2).
+    private const decimal ColumnBound = 1_000_000_000_000_000m;
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task<LogisticsStoreResult> StoreInstructionAsync(LogisticsWriteEnvelope envelope, string requestHash, DateOnly effectiveOn,
@@ -99,7 +101,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
                 UnitId = line.UnitId,
                 UnitIsKilogram = line.InstructedQuantity.Unit == QuantityUnit.Kilogram,
                 AllocationId = line.AllocationId,
-                Instructed = line.InstructedQuantity.Value,
+                Instructed = RequireFits(line.InstructedQuantity.Value),
                 Loaded = 0m,
                 Shipped = 0m,
                 Delivered = 0m,
@@ -255,7 +257,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
                 ShareId = share.ShareId,
                 LineId = share.LineId,
                 Kind = (int)share.Kind,
-                Quantity = share.Quantity.Value,
+                Quantity = RequireFits(share.Quantity.Value),
                 Measurement = share.Measurement is { } measurement ? (int)measurement : null,
                 SourceShipmentId = share.SourceShipmentId,
                 RecordedAtUtc = share.RecordedAtUtc,
@@ -500,6 +502,11 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(idempotencyKey.Trim())));
 
     private static LogisticsStoreException Refused(string code, string message, Exception? inner = null) => new LogisticsStoreException(code, message, inner);
+
+    private static decimal RequireFits(decimal value) =>
+        value < ColumnBound && Quantity.SignificantDecimals(value) <= Quantity.KilogramScale
+            ? value
+            : throw Refused(LogisticsStoreCodes.ValueDoesNotFit, "Miktar decimal(18,3) sütununa sığmıyor; hiçbir şey kaydedilmedi.");
 
     /// <summary>The opaque, company-bound list cursor (the Sales shape): base64url of company | createdAtUtc ticks | id.</summary>
     internal static class ListCursor

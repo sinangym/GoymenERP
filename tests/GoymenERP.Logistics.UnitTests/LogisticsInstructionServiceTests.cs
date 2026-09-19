@@ -223,6 +223,58 @@ public sealed class LogisticsInstructionServiceTests
 
     // ---- world ----------------------------------------------------------------------------------
 
+    [Theory]
+    [InlineData("2.9999999999999999999999999999999")]
+    [InlineData("1.00000000000000000000000000000001")]
+    public async Task A_quantity_text_longer_than_a_decimal_holds_is_refused_on_the_text_and_never_rounded(string text)
+    {
+        // FİNANS #350 P2-1: decimal.Parse would round these past 28 digits (to 3 and 1); the text is refused before any conversion.
+        var world = new World();
+        var create = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().CreateInstructionAsync(Request(quantity: text), Metadata("k-long")));
+        Assert.Equal((422, LogisticsProblemCodesV1.UnsupportedUnit, "lines[0].unitId", LoadingUnitCodes.QuantityScaleExceeded),
+            (create.Status, create.Code, create.Errors[0].Field, create.Errors[0].Code));
+        Assert.Empty(world.Store.Envelopes);
+
+        var created = await world.Service().CreateInstructionAsync(Request(quantity: "4"), Metadata("k-create"));
+        var id = created.Detail.Instruction.Id;
+        var lineId = created.Detail.Lines[0].LineId;
+        await world.Service().IssueInstructionAsync(id, new IssueLoadingInstructionRequest("2"), Metadata("k-issue"));
+        var load = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service().RecordLoadAsync(id, lineId, new RecordLoadRequest("3", Guid.NewGuid(), text, "Measured"), Metadata("k-load")));
+        Assert.Equal((422, LogisticsProblemCodesV1.UnsupportedUnit, "load.unitId", LoadingUnitCodes.QuantityScaleExceeded),
+            (load.Status, load.Code, load.Errors[0].Field, load.Errors[0].Code));
+        Assert.Equal(("3", "0"), ((await world.Service().GetInstructionDetailAsync(id)).Instruction.Version, (await world.Service().GetInstructionDetailAsync(id)).Lines[0].Loaded));
+    }
+
+    [Fact]
+    public async Task A_quantity_with_more_than_fifteen_integer_digits_does_not_fit_the_column_and_is_refused_before_any_owner()
+    {
+        var world = new World();
+        var refused = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service().CreateInstructionAsync(Request(quantity: "1234567890123456"), Metadata("k-wide")));
+        Assert.Equal((422, "validation_failed", "lines[0].quantity", LogisticsStoreCodes.ValueDoesNotFit),
+            (refused.Status, refused.Code, refused.Errors[0].Field, refused.Errors[0].Code));
+        Assert.Empty(world.Store.Envelopes);
+        Assert.Equal("1.25", (await world.Service().CreateInstructionAsync(Request(quantity: "000000000000000001.250"), Metadata("k-zeros"))).Detail.Lines[0].Instructed);
+    }
+
+    [Fact]
+    public async Task A_same_key_race_lost_on_a_terminal_path_answers_the_winners_stored_transition()
+    {
+        // ADR-011 §8 (FİNANS #350 P3-1): B loads the instruction after A committed under the same key, hits a stale version, and
+        // finds the key taken when recording the refusal: A's stored transition is B's answer, as a replay — not concurrent_change.
+        var world = new World();
+        var id = (await world.Service().CreateInstructionAsync(Request(quantity: "4"), Metadata("k-create"))).Detail.Instruction.Id;
+        await world.Service().IssueInstructionAsync(id, new IssueLoadingInstructionRequest("2"), Metadata("k-issue-a"));
+        world.Store.BeforeRefusal = (envelope, hash, command) => world.Store.PlantWinner(envelope, hash, command, id, "SENTETIK-winner");
+
+        var answer = await world.Service().IssueInstructionAsync(id, new IssueLoadingInstructionRequest("2"), Metadata("k-issue-b"));
+
+        Assert.Equal((true, "SENTETIK-winner", "Issued", "3"),
+            (answer.IsReplay, answer.OriginalCorrelationId, answer.Detail.Instruction.Status, answer.Detail.Instruction.Version));
+        Assert.Empty(world.Store.Refusals);
+    }
+
     private static CreateLoadingInstructionRequest Request(string quantity = "1.25") =>
         new(Party, Account, Day, [new LoadingInstructionLineRequest(Guid.NewGuid(), Order, OrderLine, KgUnit, quantity)]);
 
@@ -365,6 +417,12 @@ public sealed class LogisticsInstructionServiceTests
         public List<LogisticsTerminalRefusal> Refusals { get; } = [];
         public List<(string Command, Guid Id, long Before, long After)> Transitions { get; } = [];
         public int Replays { get; private set; }
+        public Action<LogisticsWriteEnvelope, string, string>? BeforeRefusal { get; set; }
+
+        /// <summary>Simulates the same key's winner storing its transition between this caller's replay read and its refusal record (§8).</summary>
+        public void PlantWinner(LogisticsWriteEnvelope envelope, string requestHash, string commandName, Guid instructionId, string correlation) =>
+            _attempts[(commandName, envelope.IdempotencyKey)] =
+                (envelope.ActorId, requestHash, _instructions.Single(candidate => candidate.Instruction.Id == instructionId), null, correlation);
 
         public Task<LogisticsStoreResult> StoreInstructionAsync(LogisticsWriteEnvelope envelope, string requestHash, DateOnly effectiveOn,
             Func<LoadingInstruction> build, CancellationToken cancellationToken = default)
@@ -397,6 +455,7 @@ public sealed class LogisticsInstructionServiceTests
         public Task RecordRefusalAsync(LogisticsWriteEnvelope envelope, string requestHash, string commandName, LogisticsTerminalRefusal refusal,
             CancellationToken cancellationToken = default)
         {
+            BeforeRefusal?.Invoke(envelope, requestHash, commandName);
             if (_attempts.ContainsKey((commandName, envelope.IdempotencyKey)))
             {
                 throw new LogisticsStoreException(LogisticsStoreCodes.ConcurrentChange, "synthetic");

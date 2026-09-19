@@ -396,7 +396,7 @@ public sealed class LoadingInstructionTests
     [Fact]
     public void The_line_level_guard_is_a_second_authority_and_reports_itself_as_such()
     {
-        var line = new LoadingInstructionLine(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), KgUnit, null, Kg(100m));
+        var line = new LoadingInstructionLine(Guid.NewGuid(), new SourceOrderLineRef(Guid.NewGuid(), Guid.NewGuid(), 0), Guid.NewGuid(), KgUnit, null, Kg(100m));
         line.AddLoaded(Kg(60m));
         Assert.Equal(LogisticsRuleCodes.InternalInvariant, CodeOf(() => line.AddLoaded(Kg(41m))));
         Assert.Equal(LogisticsRuleCodes.InternalInvariant, CodeOf(() => line.AddShipped(Kg(61m))));

@@ -7,6 +7,7 @@ using GoymenERP.Modules.Logistics.Domain;
 using GoymenERP.Modules.Logistics.Domain.Loading;
 using GoymenERP.Modules.Logistics.Domain.Quantities;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Logistics.Application;
 
@@ -41,6 +42,8 @@ public sealed class LogisticsInstructionService(
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
     private const int MaximumCursorLength = 8192;
+    // decimal(18,3): at most 15 integer digits; a wider text is refused at the wire, never a provider exception at the save (FİNANS #350 P3-2).
+    private const int MaximumIntegerDigits = 15;
 
     public async Task<LoadingInstructionResponse> CreateInstructionAsync(CreateLoadingInstructionRequest request,
         LogisticsCommandMetadata metadata, CancellationToken cancellationToken = default)
@@ -261,27 +264,27 @@ public sealed class LogisticsInstructionService(
         }
         catch (LogisticsVersionConflictException)
         {
-            throw await TerminalAsync(envelope, requestHash, commandName,
+            return await TerminalAsync(envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.VersionConflict, [new("expectedVersion", "version_conflict")]), cancellationToken);
         }
         catch (LogisticsRuleException exception) when (exception.Code is LogisticsRuleCodes.InstructionNotDraft or LogisticsRuleCodes.InstructionNotIssued)
         {
-            throw await TerminalAsync(envelope, requestHash, commandName,
+            return await TerminalAsync(envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.InstructionState, [new("status", exception.Code)]), cancellationToken);
         }
         catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.LoadExceedsInstructed)
         {
-            throw await TerminalAsync(envelope, requestHash, commandName,
+            return await TerminalAsync(envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.LoadExceedsInstructed, [new("quantity", exception.Code)]), cancellationToken);
         }
         catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.LineBlocked)
         {
-            throw await TerminalAsync(envelope, requestHash, commandName,
+            return await TerminalAsync(envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.LineBlocked, [new("lineId", exception.Code)]), cancellationToken);
         }
         catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.DuplicateShareId)
         {
-            throw await TerminalAsync(envelope, requestHash, commandName,
+            return await TerminalAsync(envelope, requestHash, commandName,
                 new LogisticsTerminalRefusal(409, LogisticsProblemCodesV1.DuplicateShare, [new("loadId", exception.Code)]), cancellationToken);
         }
         catch (LogisticsRuleException exception) when (exception.Code == LogisticsRuleCodes.LineNotFound)
@@ -394,11 +397,7 @@ public sealed class LogisticsInstructionService(
     private async Task<Quantity> VerifyUnitAsync(Scope scope, string? permission, Guid unitId, string quantityText, DateOnly effectiveOn,
         string field, CancellationToken cancellationToken)
     {
-        if (!decimal.TryParse(quantityText, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value))
-        {
-            throw new LogisticsInstructionServiceException(400, "validation_failed", [new($"{field}.quantity", "invalid_decimal_text")]);
-        }
-
+        var value = ReadQuantityText(quantityText, field);
         var verification = await GuardedAsync(scope, permission, () => units.VerifyAsync(scope.CompanyId, unitId, value, effectiveOn, cancellationToken),
             cancellationToken);
         if (verification.Unit is { } unit)
@@ -419,6 +418,40 @@ public sealed class LogisticsInstructionService(
             _ => new LogisticsInstructionServiceException(422, LogisticsProblemCodesV1.UnsupportedUnit,
                 [new($"{field}.unitId", verification.Code ?? LogisticsProblemCodesV1.UnsupportedUnit)]),
         };
+    }
+
+    /// <summary>
+    /// Ö2 "never rounded" (FİNANS #350 P2-1): the text is validated lexically FIRST — digits and one inner '.', a non-zero digit,
+    /// at most the kilogram cap of decimals (Settings' <see cref="ExactPositiveDecimalV1"/>, the Finance / Inventory shape) and at
+    /// most 15 integer digits (the column) — and only the validated text is converted, so a text with more digits than a decimal
+    /// holds can never round ("2.9999999999999999999999999999999" is refused, it never becomes 3). The owner's profile scale (≤ 3)
+    /// is then measured by the verifier on the exact value.
+    /// </summary>
+    private static decimal ReadQuantityText(string quantityText, string field)
+    {
+        try
+        {
+            ExactPositiveDecimalV1.Parse(quantityText, Quantity.KilogramScale);
+        }
+        catch (SettingsPrerequisiteException exception) when (exception.Code == "settings_decimal_scale_exceeded")
+        {
+            throw new LogisticsInstructionServiceException(422, LogisticsProblemCodesV1.UnsupportedUnit,
+                [new($"{field}.unitId", LoadingUnitCodes.QuantityScaleExceeded)]);
+        }
+        catch (SettingsPrerequisiteException)
+        {
+            throw new LogisticsInstructionServiceException(400, "validation_failed", [new($"{field}.quantity", "invalid_decimal_text")]);
+        }
+
+        var point = quantityText.IndexOf('.', StringComparison.Ordinal);
+        var integerPart = point < 0 ? quantityText : quantityText[..point];
+        if (integerPart.TrimStart('0').Length > MaximumIntegerDigits)
+        {
+            throw new LogisticsInstructionServiceException(422, "validation_failed", [new($"{field}.quantity", LogisticsStoreCodes.ValueDoesNotFit)]);
+        }
+
+        // At most 18 significant digits by now: the conversion is exact.
+        return decimal.Parse(quantityText, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture);
     }
 
     // ---- replay / terminal ----------------------------------------------------------------------
@@ -447,8 +480,12 @@ public sealed class LogisticsInstructionService(
         return Response(replay.Instruction!, isReplay: true, replay.OriginalCorrelationId);
     }
 
-    /// <summary>§7: the terminal refusal is recorded before it is answered; a key taken meanwhile (§8) answers the winner's record.</summary>
-    private async Task<LogisticsInstructionServiceException> TerminalAsync(LogisticsWriteEnvelope envelope, string requestHash, string commandName,
+    /// <summary>
+    /// §7: the terminal refusal is recorded before it is answered. §8: if the same key was taken meanwhile, the winner's record is
+    /// the answer — its refusal replayed, or its stored transition returned as a replay (FİNANS #350 P3-1: never <c>concurrent_change</c>
+    /// for a loser that lands on a terminal path after the winner committed).
+    /// </summary>
+    private async Task<LoadingInstructionResponse> TerminalAsync(LogisticsWriteEnvelope envelope, string requestHash, string commandName,
         LogisticsTerminalRefusal refusal, CancellationToken cancellationToken)
     {
         try
@@ -464,23 +501,22 @@ public sealed class LogisticsInstructionService(
             }
             catch (LogisticsStoreException raced)
             {
-                return Store(raced);
+                throw Store(raced);
             }
 
             if (won?.Refusal is { } recorded)
             {
-                return new LogisticsInstructionServiceException(recorded.Status, recorded.Code, recorded.Errors, isReplay: true,
+                throw new LogisticsInstructionServiceException(recorded.Status, recorded.Code, recorded.Errors, isReplay: true,
                     originalCorrelationId: won.OriginalCorrelationId);
             }
 
             if (won?.Instruction is not null)
             {
-                // The winner stored the transition: the same command is a replay of its result, not a refusal.
-                return new LogisticsInstructionServiceException(409, LogisticsProblemCodesV1.ConcurrentChange);
+                return Replayed(won);
             }
         }
 
-        return new LogisticsInstructionServiceException(refusal.Status, refusal.Code, refusal.Errors);
+        throw new LogisticsInstructionServiceException(refusal.Status, refusal.Code, refusal.Errors);
     }
 
     private static LogisticsInstructionServiceException Store(LogisticsStoreException exception) => exception.Code switch

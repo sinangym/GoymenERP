@@ -41,7 +41,11 @@ public sealed class LoadingInstructionLine
     /// <summary>The Settings unit this line is in (identity only).</summary>
     public Guid UnitId { get; }
 
-    /// <summary>The Inventory allocation this loading draws from, identity only; null when loading from free stock.</summary>
+    /// <summary>
+    /// The Inventory allocation this loading draws from, identity only; null while no allocation is bound to the line.
+    /// The binding comes with INV-AL-1 and shipment consumes it in LOG-5 (D3); whether a load without one is allowed
+    /// is not decided here.
+    /// </summary>
     public Guid? AllocationId { get; }
 
     public Quantity InstructedQuantity { get; }
