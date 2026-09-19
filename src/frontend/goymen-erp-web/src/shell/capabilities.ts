@@ -151,6 +151,12 @@ export const CAPABILITY = {
    * it itself, and the server refuses a self-approval anyway.
    */
   financeBankAccountsPropose: 'finance.bank-accounts.propose',
+  /** L-02 loading-instruction list. Route `/lojistik/yukleme-talimatlari`, owner the Sales/Logistics lane (SİPARİŞ). */
+  logisticsInstructionsList: 'logistics.instructions.list',
+  /** L-03 new loading instruction. Route `/lojistik/yukleme-talimatlari/yeni`. A SEPARATE grant from reading. */
+  logisticsInstructionsCreate: 'logistics.instructions.create',
+  /** L-02-DETAIL one instruction. Route `/lojistik/yukleme-talimatlari/:instructionId`. A SEPARATE grant from the list. */
+  logisticsInstructionsDetail: 'logistics.instructions.detail',
 } as const
 
 export type CapabilityId = (typeof CAPABILITY)[keyof typeof CAPABILITY]
@@ -189,6 +195,10 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.financeReceiptsDetail]: '/finans/tahsilatlar/:sourceId',
   [CAPABILITY.financeBankAccountsList]: '/finans/banka-hesaplari',
   [CAPABILITY.financeBankAccountsPropose]: '/finans/banka-hesaplari/yeni',
+  [CAPABILITY.logisticsInstructionsList]: '/lojistik/yukleme-talimatlari',
+  // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as an instruction id.
+  [CAPABILITY.logisticsInstructionsCreate]: '/lojistik/yukleme-talimatlari/yeni',
+  [CAPABILITY.logisticsInstructionsDetail]: '/lojistik/yukleme-talimatlari/:instructionId',
 }
 
 /** Nav label per capability. Only rendered when the server granted the capability. */
@@ -224,4 +234,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   [CAPABILITY.financeReceiptsDraft]: '',
   [CAPABILITY.financeReceiptsDetail]: '',
   [CAPABILITY.financeBankAccountsPropose]: '',
+  [CAPABILITY.logisticsInstructionsList]: 'Yükleme Talimatları',
+  [CAPABILITY.logisticsInstructionsCreate]: 'Yeni Yükleme Talimatı',
+  // Nor this one: an instruction is opened from a list row, never from the sidebar.
+  [CAPABILITY.logisticsInstructionsDetail]: '',
 }

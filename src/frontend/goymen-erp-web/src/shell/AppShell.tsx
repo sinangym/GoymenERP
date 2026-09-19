@@ -59,6 +59,12 @@ const NAV_CAPABILITIES: readonly CapabilityId[] = [
    */
   CAPABILITY.financeReceiptsList,
   CAPABILITY.financeBankAccountsList,
+  /**
+   * Listed together with the routes that serve them (LOG-4b). Each renders only where the server's
+   * snapshot carries the capability (staged until the l04 suite); the detail is reached from a row.
+   */
+  CAPABILITY.logisticsInstructionsList,
+  CAPABILITY.logisticsInstructionsCreate,
 ]
 
 export function AppShell() {
