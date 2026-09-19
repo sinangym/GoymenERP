@@ -6,19 +6,19 @@ using GoymenERP.Modules.Finance.Infrastructure.Shell;
 namespace GoymenERP.Finance.UnitTests;
 
 /// <summary>
-/// FIN-UI-1's staged shell declarations (card fincard §6): F-02 and F-04's routes and the approval
-/// control, exactly as mapped, every one still unavailable until the FIN-01 browser acceptance and
-/// its separate flip PR. The host registry's own rules are proven where the host registers it.
+/// FIN-UI-1's shell declarations: F-02 and F-04's routes and the approval control, exactly as mapped,
+/// every one PUBLISHED by the FIN-UI-1c flip after the FIN-01 browser acceptance (#332). The host
+/// registry's own rules are proven where the host registers it.
 /// </summary>
 public sealed class FinanceShellCapabilityProviderTests
 {
     [Fact]
-    public void Every_declaration_is_staged_until_the_flip()
+    public void Every_declaration_is_published_after_the_flip()
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
         Assert.Equal(6, declarations.Count);
-        Assert.All(declarations, declaration => Assert.False(declaration.ImplementationAvailable));
+        Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
     }
 
     [Fact]

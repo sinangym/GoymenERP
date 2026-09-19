@@ -123,7 +123,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // finance
             ["tools/relational_inventory/finance.txt"] =
-                "8e167cef2e6ecfb28c1aeadd621414ebdb10b20198060cd09e81f5201dafb563",
+                "cfd16410fe379d3482c4f49f5aebb1e47cd2e40808f370cc057e441d5ff66044",
 
             // identity
             ["tools/relational_inventory/identity.txt"] =
@@ -151,7 +151,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // sales
             ["tools/relational_inventory/sales.txt"] =
-                "f61e8027e7a041c0cfe15e79fb8bb4a3510fb753fb0bf99397293118949aedc8",
+                "c2906e9ba18bf1942cc2ed5b03d164b1985287f5118b2f14b78e480cb1fd0047",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
@@ -476,7 +476,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Sales/"
                  + "GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs"] =
                     new(
-                        "a8c96902696637b45c2b650f60ad17d8dbec3d975b999987b510a14122dd5bc5",
+                        "751ff0e47c4689b9d30a183b3ba4c8e96c5580250530bbc793586733c01e7f68",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

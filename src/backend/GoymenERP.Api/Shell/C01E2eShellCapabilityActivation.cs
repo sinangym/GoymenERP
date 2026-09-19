@@ -31,10 +31,8 @@ internal static class C01E2eShellCapabilityActivation
     // MFG-UI D4 (#323, mfg-staged): the Manufacturing order screen opened inside this envelope only, beside
     // the list-only C-01 Counterparty set, before any normal-runtime availability.
     internal const string ManufacturingOrderDetailProfile = "manufacturing-order-detail";
-    // FIN-UI-1b (#332, fin-staged): Finance's bank-account and receipt-draft screens opened inside this
-    // envelope only, beside the list-only C-01 Counterparty set, before any normal-runtime availability
-    // (card FIN-UI-1 §6; the mfg D4 precedent).
-    internal const string FinanceBankAccountsAndDraftsProfile = "finance-bank-accounts-and-drafts";
+    // FIN-UI-1b's fin-staged profile ("finance-bank-accounts-and-drafts", #332) is retired: Finance is
+    // published on the normal host (FIN-UI-1c), so its screens need no disposable envelope any more.
 
     internal static string Configure(
         IServiceCollection services,
@@ -63,10 +61,6 @@ internal static class C01E2eShellCapabilityActivation
                 ReplaceExactCounterpartyProvider<C01E2eShellCapabilityProvider>(services);
                 services.AddSingleton<IShellCapabilityProvider, C01E2eManufacturingOrderDetailShellCapabilityProvider>();
                 return ShellCapabilityRegistryAuthorities.C01DisposableManufacturingOrderDetailV1;
-            case FinanceBankAccountsAndDraftsProfile:
-                ReplaceExactCounterpartyProvider<C01E2eShellCapabilityProvider>(services);
-                services.AddSingleton<IShellCapabilityProvider, C01E2eFinanceBankAccountsAndDraftsShellCapabilityProvider>();
-                return ShellCapabilityRegistryAuthorities.C01DisposableFinanceBankAccountsAndDraftsV1;
             default:
                 throw new InvalidOperationException(
                     "C-01 disposable capability profili tanınmıyor.");
@@ -106,14 +100,14 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
                 typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
             },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10AndFinanceV10),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10AndPublishedFinanceV10),
         (new[]
             {
                 typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
                 typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
                 typeof(ManufacturingShellCapabilityProvider),
             },
-            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10FinanceV10AndManufacturingV10),
+            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10AndManufacturingV10),
     ];
 
     private static string NormalAuthority(IServiceCollection services)
@@ -278,22 +272,6 @@ internal sealed class C01E2eCariListDetailShellCapabilityProvider : IShellCapabi
 internal sealed class C01E2eManufacturingOrderDetailShellCapabilityProvider : IShellCapabilityProvider
 {
     private readonly ManufacturingShellCapabilityProvider _source = new();
-
-    public string Owner => _source.Owner;
-
-    public string ContractVersion => _source.ContractVersion;
-
-    public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
-        Array.AsReadOnly(_source.GetDeclarations()
-            .Select(declaration => declaration with { ImplementationAvailable = true })
-            .ToArray());
-}
-
-// fin-staged (#332): Finance's own six declarations, only their availability opened; ids, routes,
-// context, scope, permissions and the approval control's parent stay the owner's.
-internal sealed class C01E2eFinanceBankAccountsAndDraftsShellCapabilityProvider : IShellCapabilityProvider
-{
-    private readonly FinanceShellCapabilityProvider _source = new();
 
     public string Owner => _source.Owner;
 
