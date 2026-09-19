@@ -5,6 +5,7 @@ using GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 using GoymenERP.Modules.Logistics.Infrastructure.Shell;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace GoymenERP.Logistics.UnitTests;
 
@@ -39,23 +40,24 @@ public sealed class LogisticsPersistenceModelTests
     public void The_identities_are_the_attempt_key_the_line_and_share_ids_and_one_create_attempt_per_instruction()
     {
         using var context = Context();
-        var attempts = context.Model.FindEntityType(typeof(LoadingAttemptRow))!;
+        // Check constraints, collations and index filters are design-time configuration, not in the read-optimized runtime model.
+        var designModel = context.GetService<IDesignTimeModel>().Model;
+        var attempts = designModel.FindEntityType(typeof(LoadingAttemptRow))!;
         Assert.Equal(["CompanyId", "CommandName", "IdempotencyKeyHash"], attempts.FindPrimaryKey()!.Properties.Select(property => property.Name).ToArray());
-        // Collations and index filters are design-time configuration, not in the read-optimized runtime model (the Sales persistence test's shape).
-        var design = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(LoadingAttemptRow))!;
+        var design = designModel.FindEntityType(typeof(LoadingAttemptRow))!;
         Assert.Equal(LogisticsDbContext.IdentityCollation, design.FindProperty(nameof(LoadingAttemptRow.IdempotencyKeyHash))!.GetCollation());
         Assert.Equal(LogisticsDbContext.IdentityCollation, design.FindProperty(nameof(LoadingAttemptRow.CommandName))!.GetCollation());
         var creates = design.GetIndexes().Single(index => index.GetDatabaseName() == "UX_LoadingAttempts_InstructionId");
         Assert.True(creates.IsUnique);
         Assert.Equal("[InstructionId] IS NOT NULL AND [CommandName] = N'logistics.loading-instruction.create.v1'", creates.GetFilter());
-        var lines = context.Model.FindEntityType(typeof(LoadingInstructionLineRow))!;
+        var lines = designModel.FindEntityType(typeof(LoadingInstructionLineRow))!;
         Assert.True(lines.GetIndexes().Single(index => index.GetDatabaseName() == "UX_LoadingInstructionLines_LineId").IsUnique);
         Assert.Contains(lines.GetCheckConstraints(), check => check.Name == "CK_LoadingInstructionLines_Shares"
             && check.Sql.Contains("[Loaded] <= [Instructed] AND [Shipped] <= [Loaded] AND [Delivered] <= [Shipped]", StringComparison.Ordinal));
-        var shares = context.Model.FindEntityType(typeof(LoadingShareRow))!;
+        var shares = designModel.FindEntityType(typeof(LoadingShareRow))!;
         Assert.True(shares.GetIndexes().Single(index => index.GetDatabaseName() == "UX_LoadingShares_ShareId").IsUnique);
         Assert.Equal(3, shares.FindProperty(nameof(LoadingShareRow.Quantity))!.GetScale());
-        var instructions = context.Model.FindEntityType(typeof(LoadingInstructionRow))!;
+        var instructions = designModel.FindEntityType(typeof(LoadingInstructionRow))!;
         Assert.True(instructions.FindProperty(nameof(LoadingInstructionRow.Version))!.IsConcurrencyToken);
         Assert.Equal(LogisticsCommands.CreateV1, "logistics.loading-instruction.create.v1");
     }
