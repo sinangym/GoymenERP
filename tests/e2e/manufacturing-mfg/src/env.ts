@@ -16,9 +16,9 @@
  *                   arranged through the real API; the reader case reads it
  *   rollId        — that order's parent roll
  *
- * The screen's capabilities (`manufacturing.orders.detail` / `.facts`) must be published by the
- * stack's capability profile (MFG-UI card D4, `mfg-staged`), since the provider is staged in the
- * normal runtime.
+ * The screen's capabilities (`manufacturing.orders.detail` / `.facts`) are published by the normal
+ * runtime (MFG-UI-F; first accepted on the disposable `mfg-staged` profile, card D4) and opened to the
+ * actors only by their synthetic grants.
  */
 
 export interface MfgSeed {
