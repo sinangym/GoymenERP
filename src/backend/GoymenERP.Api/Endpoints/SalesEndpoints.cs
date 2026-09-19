@@ -280,6 +280,7 @@ public static class SalesEndpoints
         // (ADR-011 §4); a stale version or a wrong state is the key's recorded 409 (§7). Submit follows
         // the create permission, approve and reject the `sales.orders.approve` name — both measured by
         // the service; another company's draft is 404.
+        MapDraftDetail(drafts);
         MapStateCommand(drafts, "/{id:guid}/submission", "SubmitSalesOrderDraftV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.SubmitDraftAsync(id, body, metadata, cancellationToken),
             unprocessableCodes: ["validation_failed"]);
@@ -364,7 +365,11 @@ public static class SalesEndpoints
         {
             route.ProducesErpUnprocessableEntity(unprocessableCodes);
         }
+    }
 
+    /// <summary>GET detail, mapped exactly once (the endpoint name is unique per host).</summary>
+    private static void MapDraftDetail(RouteGroupBuilder drafts)
+    {
         drafts.MapGet("/{id:guid}", async (
             Guid id,
             HttpContext httpContext,
