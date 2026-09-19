@@ -98,6 +98,12 @@ public static class ManufacturingStoreCodes
 
     /// <summary>A text or mass does not fit its stored column; it is refused, never cut.</summary>
     public const string ValueDoesNotFit = "manufacturing_value_does_not_fit";
+
+    /// <summary>
+    /// The list cursor cannot be read, or belongs to another company or another ordering. Nothing is
+    /// listed: a cursor is never guessed and never silently restarted at the first page.
+    /// </summary>
+    public const string ListCursorInvalid = "manufacturing_list_cursor_invalid";
 }
 
 /// <summary>A manufacturing record could not be written; <see cref="Code"/> says why. Nothing was stored.</summary>
@@ -124,6 +130,24 @@ public interface IManufacturingPlanStore
     /// <summary>The company's stored plan, or null (another company's plan is null too).</summary>
     Task<ProductionPlan?> FindPlanAsync(Guid planId, CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// One stored order as a list reads it: the order's own row and the count and planned mass of its
+/// input snapshot. No realization fact is rebuilt and nothing is calculated — a balance, a
+/// difference and a roll label are not here. The label belongs to Inventory's label read (ÜRÜN),
+/// and the roll ids are not in the summary at all.
+/// </summary>
+public sealed record ManufacturingOrderSummary(
+    Guid OrderId, Guid CompanyId, Guid PlanId, Guid WorkCenterId, ManufacturingProcess Process, OrderStatus Status,
+    long Version, int PlannedRollCount, Kilograms PlannedInputMass, TargetBasis? TargetBasis, Kilograms? TargetMass,
+    DateTimeOffset CreatedAtUtc, Guid? ClosedByUserId, DateTimeOffset? ClosedAtUtc);
+
+/// <summary>
+/// One page of the company's orders, newest first (createdAtUtc desc, id desc), as Sales' draft list
+/// pages (#257): <see cref="NextCursor"/> null is the end, and the cursor is opaque and bound to the
+/// company and ordering that produced it.
+/// </summary>
+public sealed record ManufacturingOrderPage(IReadOnlyList<ManufacturingOrderSummary> Orders, string? NextCursor);
 
 /// <summary>
 /// The persistent order store of the server-resolved company. Every realization fact is stored
@@ -157,11 +181,22 @@ public interface IManufacturingOrderStore
     /// <summary>
     /// Closes the stored order at the version the caller read. The decision is the domain's
     /// (MFG-4: every roll reconciles on its own; remaining WIP does not block; any unexplained
-    /// difference refuses), taken on the order rebuilt from its stored facts.
+    /// difference refuses), taken on the order rebuilt from its stored facts. The close, its audit
+    /// event and its command record (ADR-011 §6) commit in one save or not at all.
     /// </summary>
     Task CloseOrderAsync(Guid orderId, long expectedVersion, Guid closedByUserId, DateTimeOffset closedAt,
         ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default);
 
     /// <summary>The company's stored order rebuilt from its facts, or null (another company's order is null too).</summary>
     Task<ProductionOrder?> FindOrderAsync(Guid orderId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// One page of this company's orders, newest first, optionally only those in
+    /// <paramref name="status"/>. <paramref name="cursor"/> is the previous page's
+    /// <see cref="ManufacturingOrderPage.NextCursor"/>; another company's, another ordering's or an
+    /// unreadable cursor is <see cref="ManufacturingStoreCodes.ListCursorInvalid"/>. A page size
+    /// outside the store's bound is an <see cref="ArgumentOutOfRangeException"/>.
+    /// </summary>
+    Task<ManufacturingOrderPage> ListOrdersAsync(int pageSize, string? cursor, OrderStatus? status,
+        CancellationToken cancellationToken = default);
 }

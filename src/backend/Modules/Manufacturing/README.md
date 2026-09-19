@@ -32,7 +32,7 @@ Source of truth: #275 plan v2 §7.3, §13, R3, R6 and `SINAN_KARARLARI_2026-09-1
 - `ManufacturingMassVerifier` — verifies a measured mass against the company's kilogram unit profile through `ISettingsPrerequisiteProvider` (Contracts.V1 only; no concrete Settings provider) before a fact is recorded with it:
   - fail-closed: every Settings failure is a refusal with the owner's code kept verbatim (`settings_access_denied`, `settings_provider_unavailable`, `SettingsPrerequisiteCodesV1.UnitProfileNotFound`, `settings_profile_invalid`) — "denied", "unavailable" and "no profile" stay distinct;
   - the unit asked about is always `SettingsUnitIdentitiesV1.Kilogram`; the profile must belong to the server-resolved company the caller passes (`…_profile_company_mismatch`), be a well-formed kilogram profile for that unit (`…_profile_invalid`) and be active on the effective date (`…_profile_not_in_effect`);
-  - precision = min(profile scale, Ö2's 3); more decimals are refused (`manufacturing_mass_scale_exceeded`), never rounded; trailing zeros are not precision;
+  - precision = min(profile scale, Ö2's 3); more decimals are refused (`manufacturing_mass_scale_exceeded`), never rounded; the verifier works on a `decimal`, where trailing zeros are not precision. At the HTTP text boundary the API counts every written decimal, trailing zeros included (see MFG-API "Kilograms");
   - a negative mass is refused (`manufacturing_mass_negative`); a zero mass is a valid reading (WIP), and whether a fact needs a positive mass stays the order's rule;
   - the result carries the profile snapshot the port asks consumers to keep with what they record: unit, profile id, profile version as invariant text (the Purchasing/Logistics shape, SİPARİŞ #292 P3-b), the owner's raw `ProfileScale` and the applied `Scale` = min(profile, 3) — the one a consumer may offer for input or display (ÜRÜN #292 P3-1, PUR-3's shape). It authorizes nothing and is not a production policy.
 
@@ -70,11 +70,15 @@ Deliberate limits of this slice:
 | `POST /orders` | `manufacturing.orders.create` | 201 `OrderViewV1` |
 | `POST /orders/{orderId}/input-issues` · `input-returns` · `wip-measurements` · `outputs` | `manufacturing.facts.record` | 200 `OrderViewV1` |
 | `GET /orders/{orderId}` | `manufacturing.orders.read` | 200 `OrderViewV1`: each roll's issued − returned = outputs by class + WIP + unexplained (signed), cost `NotCalculated` |
+| `GET /orders` (MFG-ORD) | `manufacturing.orders.read` | 200 `OrderListViewV1`: one page of this company's orders, newest first |
+| `POST /orders/{orderId}/close` (MFG-ORD) | `manufacturing.orders.close` | 200 `OrderViewV1` (closed), or the domain's refusal |
 
 Rules held here:
 
 - **Company:** only from the context; no request carries one. Another company's plan or order is the same code-less 404 as an unknown id.
-- **Kilograms (Ö2):** plain invariant decimal text (no sign, exponent or grouping), checked against the company's kilogram profile (`ManufacturingMassVerifier`) before anything is written. Facts use their own UTC date; plan masses use the server's date. More decimals than the profile allows is `manufacturing_mass_scale_exceeded` (422), never rounded. Settings `settings_access_denied` → 403; `settings_provider_unavailable` / `settings_profile_invalid` → 503 (for example a company with no approved kilogram source); any other Settings or mass refusal → 422 with its code.
+- **Kilograms (Ö2):** plain invariant decimal text (no sign, exponent or grouping), checked against the company's kilogram profile (`ManufacturingMassVerifier`) before anything is written. Facts use their own UTC date; plan masses use the server's date. More decimals than the profile allows is `manufacturing_mass_scale_exceeded` (422), never rounded.
+  - **The text is measured, not the number** (BAL slice 2; FİNANS #353 INFO-1, coordinator ruling: consistency with Settings' `ExactPositiveDecimalV1` text rule, not a new policy). Every written decimal counts, trailing zeros included: with the approved scale 3, `10.500` is recorded and `10.5000` is refused with `manufacturing_mass_scale_exceeded`. Settings still answers first, so its refusals keep their precedence. Zero stays a valid reading (a WIP of 0), unlike Settings' positive-only wire value.
+  - A text with more significant digits than a `decimal` holds exactly (over 28) is invalid text (400 `manufacturing_request_invalid`), never rounded (#353). Settings `settings_access_denied` → 403; `settings_provider_unavailable` / `settings_profile_invalid` → 503 (for example a company with no approved kilogram source); any other Settings or mass refusal → 422 with its code.
 - **Authority (#276):** the endpoint policy answers first. The permission is then measured fresh with `IErpAuthorityRevalidationService` twice: before any stored answer is read (ADR-011 §5), and again after the Settings read. Only a company-wide grant writes. Its role codes and the endpoint's permission go into the ADR-009 audit envelope, together with the request's correlation, causation and channel and the `Idempotency-Key` as its hash.
 - **Idempotency (ADR-011 §2–§8):** every write is one command attempt in the module's own log (`manufacturing.Commands`).
   - **Key:** unique `(CompanyId, CommandName, IdempotencyKeyHash)`. The raw `Idempotency-Key` is never stored, only the uppercase SHA-256 of the trimmed key.
@@ -95,11 +99,22 @@ Rules held here:
   - A client branches on the code, not on the endpoint. A code a screen does not handle is shown as a generic refusal.
   - Narrowing per endpoint is a separate change: the endpoint, the regenerated OpenAPI and the contract expectations change together.
 
-Not here: closing an order, a list or search, cost, Inventory movements (T15), or any role assignment.
+Not here: cost, search beyond the order list's status filter, Inventory movements (T15), or any role assignment.
+
+### MFG-ORD — the order list and the close (coordinator-approved card)
+
+- **List** `GET /orders?pageSize&cursor&status`. The stored rows only: plan, work center, process, status, version, planned roll count, planned input mass (lossless text), the order's target snapshot, created and closed times. **No balance, no difference and no engine answer** — those are one order's own reads — and **no roll or order label**: the label read is Inventory's (ÜRÜN / T15), so the id travels as a technical reference and the screen says so.
+  - Newest first (`createdAtUtc desc, id desc`), page size 1–100 (default 50), keyset cursor as Sales' draft list (#257): opaque, bound to the company and ordering that produced it. A cursor of another company or ordering, or one that cannot be read, is 400 on `cursor` (`manufacturing_list_cursor_invalid` inside the store) — never a silent first page. `status` is an `OrderStatus` name exactly (`Open` / `Closed`); anything else is 400 on `status`.
+  - Another company's order is in no page: the list runs under the company context and the tenant filter, and it stores nothing.
+- **Close** `POST /orders/{orderId}/close` with `expectedVersion`, one `Idempotency-Key` per attempt.
+  - The rule is the domain's and unchanged (MFG-4, Business 5728619644): every planned roll accounts for its own issued mass, a surplus on one roll never covers a gap on another, remaining WIP stays as its own position, and any unexplained difference refuses the close with `manufacturing_unexplained_difference` (422). **No tolerance and no write-off**, here or on the screen.
+  - ADR-011: the success is recorded in the same save as the close and its audit event (§6, `manufacturing.order.close.v1`); a terminal not-found or version conflict is recorded on its own and replays (§7); the loser of a race on one key answers from the winner's record (§8). A closed order refuses a second close with `manufacturing_order_closed` — a replay of the first key is the first answer, never a second close.
+  - `manufacturing.orders.close` is its own permission, registered centrally and granted by a human gate. Recording a fact does not close an order.
 
 ## MFG-UI — the order screen (approved card, D1–D5)
 
 - **Shell provider** `Infrastructure/Shell/ManufacturingShellCapabilityProvider`: `manufacturing.orders.detail` → `/uretim/emir/:orderId` (`manufacturing.orders.read`) and its control `manufacturing.orders.facts` (+ `manufacturing.facts.record`). Company-wide, single company.
+  - **MFG-ORD adds** the list route `manufacturing.orders.list` → `/uretim/emirler` (`MFG-02`, static, `manufacturing.orders.read`) and a second control on the order screen, `manufacturing.orders.close` (+ `manufacturing.orders.close`). Four declarations in total; the controls stay their parent with only id, parent and permissions changed.
   - **Published (MFG-UI-F):** `ImplementationAvailable: true` on both rows. The `mfg` browser suite accepted the staged screen (#323, run 35438064043), and it runs on the `normal` profile since this change.
     - The facts control is the detail with only its id, parent and permissions changed, so the registry's control rule holds by construction: same route, context and scope; the parent's permission kept; never available under a staged parent.
     - Real SQL (`ManufacturingShellCapabilitySqlServerRelationalAcceptanceTests`, through the real host):
@@ -298,9 +313,16 @@ Pure, decimal, versioned calculators on the same core and under the same rules a
   - A test pins that every `OutputClass` is a BAL-003 category, so a class added later cannot drop out of the balance.
   - **The approved measurement correction** is the sum of the order's recorded corrections. The order has no correction fact yet, so that sum is 0. This is a fact of the data, not a default. Ö7's correction and exception path is a recorded dependency.
   - The close's behaviour is unchanged and stays pinned by `WipCloseTests` and `OrderTargetAndCloseTests`: per roll, never offset, refused while any roll's difference is non-zero, WIP a position of its own.
-- **Not on the order read (coordinator ruling):** BAL-004 and BAL-006 have no inputs the order can supply without a decision, and a field that can only answer Unavailable adds contract surface without user value (5734735965). So this slice has no API or OpenAPI change.
-  - **BAL-004** is waiting on Business (NEEDS-BUSINESS on #66): is "Fire" only scrap, or scrap + non-stock process loss? Is the base the issued or the net issued mass?
-  - **BAL-006** needs a piece count, which the order's kg-only facts do not have. The count fact belongs to the count-producing processes (the TUB / CUT realization slices) and arrives with them.
+- **The GDC-BAL/1 read (BAL slice 2):** `GET /api/v1/manufacturing/orders/{orderId}/mass-balance` (`GetManufacturingOrderMassBalanceV1` → `MassBalanceViewV1`).
+  - Same order, company context, read permission (`manufacturing.orders.read`) and answers as the order read: another company's order and an unknown id are the same code-less 404; a read that keeps meeting commits is a retryable 503; `private, no-store`. It computes and stores nothing.
+  - Per planned parent roll: **BAL-003** (`difference`: actual input, accounted, signed difference, fully accounted), the same calculation the close uses.
+  - **BAL-004** (`scrapPercent`) and **BAL-006** (`actualUnitKg`) are the engine's own answer to the inputs the order can supply without a decision: none. So they answer `Unavailable` and name the inputs (`fireKg`, `rawMaterialKg`; `actualKg`, `actualCount`), never a number.
+    - BAL-004 waits for Business (#66 5744055923): is "Fire" only scrap, or scrap + non-stock process loss, and is the base the issued or the net issued mass?
+    - BAL-006 needs a piece count, which the order's kg-only facts do not have. It belongs to the count-producing processes (the TUB / CUT realization slices).
+    - A plan or report that one day feeds BAL-004 must say where its inputs come from: the calculator accepts fire above the raw material (a percent above 100); no bound is decided and none is invented (FİNANS #353 INFO-2).
+  - **The order screen's panel** ("Kütle dengesi (GDC-BAL/1)", #323 screen, normal runtime): its own read, keyed by the order's version, so every re-read after an accepted fact reads the balance again. `Unavailable` shows "Hesaplanamıyor — eksik girdi: …" with the inputs in the user's words; nothing is summed on the client. No new shell declaration: the panel is part of the order screen and needs its read grant.
+  - Real SQL through the host: `ManufacturingApiSqlServerRelationalAcceptanceTests.The_mass_balance_read_is_bal003_of_the_stored_facts_only_for_the_context_company_and_the_read_grant`. Browser: the `mfg` suite reads the panel after a fact (recorder) and with the read grant alone (reader).
+- **`MassBalance.Reconciliation` stays a computed getter** (SİPARİŞ #353 INFO-1): caching it in the record would survive a `with` copy and go stale; the calculation is seven sums and one subtraction. The read computes it once per roll.
 - **Not in version 1:** BAL-005 (the distribution of an empty actual quantity needs the §28.1 rounding stage, not decided), tolerance (Ö7: no approved profile; the close refuses any non-zero difference) and BAL-001 / BAL-002 (the donor's reference behaviour only).
 - **Golden:** §28.9 states no worked example, so none is invented. `MassBalanceEngineTests` uses explicit inputs with exact expected values.
 
@@ -312,7 +334,7 @@ Pure, decimal, versioned calculators on the same core and under the same rules a
 
 - No stock movement, lot or label: Inventory owns those.
 - No trim/kerf value, tolerance number, template, rounding stage or roll-substitution policy. The only formulas are the five process engines (MFG-6…9, DEC-PRDCT-001's order complete) and the mass-balance calculator (MFG-BAL) above, and every parameter is supplied to them.
-- No UI yet (the normal screen is the next card); HTTP since MFG-API, persistence since MFG-5 (above).
+- No UI beyond the order screen and its list (MFG-UI, MFG-ORD); HTTP since MFG-API, persistence since MFG-5 (above).
 - No planning, capacity or costing on top of the engines yet: each engine's plan slice (the #342 pattern) comes with its sources.
 
 ## dependency_wait

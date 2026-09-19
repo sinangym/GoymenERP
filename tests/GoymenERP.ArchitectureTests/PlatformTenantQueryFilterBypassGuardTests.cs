@@ -151,7 +151,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
-                "d2319e1cab2894185ef5e9450886a90a9200be602cbfa5ec9f87e8da68f593fb",
+                "ece62e44f90d8396f12fff01fbb0625b7d202b77196bf368fd3dffea5ced64f1",
 
             // organization
             ["tools/relational_inventory/organization.txt"] =
@@ -483,12 +483,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // connection, command or raw SQL.
                 // Re-measured for MFG-API (#313): the same single SqlClient use now also recognises 547 on the
                 // named composite work-center FK (manufacturing_work_center_not_found); still recognition only,
-                // no connection, command or raw SQL. Re-fingerprinted for MFG-BAL: the order close reads the
-                // GDC-BAL/1 mass-balance result (BAL-003); SqlClient count unchanged (1).
+                // no connection, command or raw SQL. Re-fingerprinted for MFG-BAL: the Decimal18Scale3Limit rename
+                // (FİNANS #342 INFO-3: one neutral name for every decimal(18,3) column bound); SqlClient count
+                // unchanged (1).
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "55bbdf12bddf4c74e0cfb2bb4a1131e2f8385d2332bc457658b8ff1d3cfd420b",
+                        "f89b494d209ca3be43b950d33dfad580ff71a968f856eb5314ac77e88334af08",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

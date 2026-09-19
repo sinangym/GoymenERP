@@ -122,7 +122,8 @@ SUITE_API_EXTENSIONS = {
     # S-03 (SİPARİŞ): the deployment's Product issuer binding (shared with u02, ÜRÜN's values), the
     # suite's actors and their Identity users and grants (coordinator decisions 1 and 3, a2 part 2).
     "s03": {"issuer": True, "actors": True, "identity": True},
-    # MFG (ORG, #323 5735635840): a recorder and a reader actor with their Identity users and grants.
+    # MFG (ORG, #323 5735635840): a recorder, a reader and (MFG-ORD) a closer actor with their Identity
+    # users and grants.
     "mfg": {"issuer": False, "actors": True, "identity": True},
     # FIN-01 (FİNANS, #332): a proposer and an approver actor with their Identity users and grants.
     "fin01": {"issuer": False, "actors": True, "identity": True},
@@ -158,13 +159,15 @@ SUITE_IDENTITY_PERMISSIONS = {
     # SALES-A1 (coordinator): the approval and the draft's party read, for the v2b positive path.
     "s03": ("sales.drafts.create", "sales.drafts.read", "product.operational-selection.read",
             "counterparty.parties.read", "sales.orders.approve"),
-    # The five Manufacturing names (recorder); the reader holds only manufacturing.orders.read.
+    # The five Manufacturing names the recorder holds, plus the close (MFG-ORD): the reader holds only
+    # manufacturing.orders.read and the closer only that plus manufacturing.orders.close.
     "mfg": (
         "manufacturing.plans.write",
         "manufacturing.plans.approve",
         "manufacturing.orders.create",
         "manufacturing.facts.record",
         "manufacturing.orders.read",
+        "manufacturing.orders.close",
     ),
     # The six Finance names and the Cari owner's authorized party read (the draft reaches the party
     # through it); the approver holds only finance.bank-account.read and .approve.
@@ -328,7 +331,9 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     "u02": frozenset({"companyId", "codeGroupId", "authorizedActor", "unauthorizedActor"}),
     # ORG's Suites/MFG seed (#323 5735635840): the actors, the company, the seeded work centre (read
     # through the real Organization API) and the plan -> approval -> order it writes through the real API.
-    "mfg": frozenset({"recorderActor", "readerActor", "companyId", "workCenterId", "orderId", "rollId"}),
+    # MFG-ORD adds the closer actor; the list and the close need no further seeded row.
+    "mfg": frozenset({"recorderActor", "readerActor", "closerActor", "companyId", "workCenterId",
+                      "orderId", "rollId"}),
     # FİNANS's Suites/Fin01 seed (#332): the company, the customer opened through the real Cari API and
     # its company account, and the two suite actors. No SQL, no gated writer, no Finance row.
     "fin01": frozenset({"companyId", "partyId", "companyAccountId", "proposerActor", "approverActor"}),

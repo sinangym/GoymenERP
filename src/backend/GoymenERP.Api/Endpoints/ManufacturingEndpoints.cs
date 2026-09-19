@@ -17,7 +17,7 @@ namespace GoymenERP.Api.Endpoints;
 /// attempt per command and key, replayed with <c>Idempotency-Replayed</c> and
 /// <c>Idempotency-Original-Correlation-Id</c>; another request or actor under the key is 409) and is
 /// measured again against fresh authority before it is stored. Another company's plan or order is the same
-/// code-less 404 as an unknown id. No close, list or cost here.
+/// code-less 404 as an unknown id. MFG-ORD added the order list and the close; no cost here.
 /// </summary>
 public static class ManufacturingEndpoints
 {
@@ -118,6 +118,47 @@ public static class ManufacturingEndpoints
             .Produces<OrderViewV1>(StatusCodes.Status200OK)
             .WithWriteProblems(notFound: true);
 
+        // MFG-ORD: the close of an order at the version the caller read. The rule is the domain's
+        // (MFG-4, Business 5728619644): no tolerance, no write-off, and an unexplained difference is a
+        // 422 naming its code. One attempt per Idempotency-Key, like every other write here.
+        group.MapPost("/orders/{orderId:guid}/close", async (
+                Guid orderId,
+                CloseOrderRequestV1 request,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await WriteAsync(httpContext, key => service.CloseOrderAsync(orderId, request, key,
+                ErpPermissions.ManufacturingOrdersClose, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingOrdersClose)
+            .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict)
+            .WithName("CloseManufacturingOrderV1")
+            .Accepts<CloseOrderRequestV1>("application/json")
+            .Produces<OrderViewV1>(StatusCodes.Status200OK)
+            .WithWriteProblems(notFound: true);
+
+        // MFG-ORD: the company's orders, newest first, from the stored rows only — no balance and no
+        // roll label (the label is Inventory's read). The same read grant as the order screen.
+        group.MapGet("/orders", async (
+                int? pageSize,
+                string? cursor,
+                string? status,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.ListOrdersAsync(pageSize, cursor, status, cancellationToken),
+                    location: null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingOrdersRead)
+            .WithName("ListManufacturingOrdersV1")
+            .Produces<OrderListViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(BadRequestCodes)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         group.MapGet("/orders/{orderId:guid}", async (
                 Guid orderId,
                 ManufacturingCommandService service,
@@ -131,6 +172,26 @@ public static class ManufacturingEndpoints
             .RequireAuthorization(ErpPermissions.ManufacturingOrdersRead)
             .WithName("GetManufacturingOrderV1")
             .Produces<OrderViewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        // BAL slice 2: the order's GDC-BAL/1 read — the same order, context, permission and answers as the order read,
+        // computed by the one mass-balance calculator the close uses. A read: nothing is stored.
+        group.MapGet("/orders/{orderId:guid}/mass-balance", async (
+                Guid orderId,
+                ManufacturingCommandService service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.GetMassBalanceAsync(orderId, cancellationToken), location: null);
+            })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.ManufacturingOrdersRead)
+            .WithName("GetManufacturingOrderMassBalanceV1")
+            .Produces<MassBalanceViewV1>(StatusCodes.Status200OK)
             .ProducesErpBadRequest()
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable()
@@ -278,6 +339,7 @@ internal static class ManufacturingProblemCodes
         ManufacturingRuleCodes.PlanNotDraft,
         ManufacturingRuleCodes.PlanNotApproved,
         ManufacturingRuleCodes.OrderClosed,
+        ManufacturingRuleCodes.UnexplainedDifference,
         ManufacturingRuleCodes.RollNotInOrder,
         ManufacturingRuleCodes.RollNotIssued,
         ManufacturingRuleCodes.InputAlreadyIssued,

@@ -51,9 +51,17 @@ public sealed class ManufacturingShellRegistrationTests
         var manufacturing = registry.Registrations
             .Where(item => item.Owner == ManufacturingShellCapabilityProvider.OwnerId)
             .ToArray();
-        // The order detail and its facts control, published (MFG-UI-F). A declaration still grants nothing:
-        // each route's service measures its own Manufacturing permission afresh.
-        Assert.Equal(2, manufacturing.Length);
+        // The order detail, its two controls (the fact forms and, MFG-ORD, the close) and the MFG-02 order
+        // list, published. A declaration still grants nothing: each route's service measures its own
+        // Manufacturing permission afresh, and the close measures its own name on top of the read.
+        Assert.Equal(4, manufacturing.Length);
+        string[] expected =
+        [
+            "manufacturing.orders.close", "manufacturing.orders.detail", "manufacturing.orders.facts",
+            "manufacturing.orders.list",
+        ];
+        Assert.Equal(expected,
+            manufacturing.Select(item => item.Declaration.CapabilityId).Order(StringComparer.Ordinal).ToArray());
         Assert.All(manufacturing, item => Assert.True(item.Declaration.ImplementationAvailable));
     }
 

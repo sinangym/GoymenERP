@@ -29,9 +29,14 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
 
     public const string DetailCapabilityId = "manufacturing.orders.detail";
     public const string FactsCapabilityId = "manufacturing.orders.facts";
+    public const string ListCapabilityId = "manufacturing.orders.list";
+    public const string CloseCapabilityId = "manufacturing.orders.close";
     public const string DetailRouteId = "manufacturing.order-detail";
     public const string DetailRoutePath = "/uretim/emir/:orderId";
     public const string DetailScreenId = "MFG-01";
+    public const string ListRouteId = "manufacturing.order-list";
+    public const string ListRoutePath = "/uretim/emirler";
+    public const string ListScreenId = "MFG-02";
 
     public string Owner => OwnerId;
 
@@ -50,6 +55,17 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
             [ErpPermissions.ManufacturingOrdersRead],
             ImplementationAvailable: true);
 
+        var list = new ShellCapabilityDeclaration(
+            ListCapabilityId,
+            ListRouteId,
+            ListRoutePath,
+            ListScreenId,
+            ShellCapabilityRoutePrecedence.Static,
+            ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [ErpPermissions.ManufacturingOrdersRead],
+            ImplementationAvailable: true);
+
         return
         [
             detail,
@@ -59,6 +75,15 @@ public sealed class ManufacturingShellCapabilityProvider : IShellCapabilityProvi
                 ParentCapabilityId = DetailCapabilityId,
                 RequiredPermissions = [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingFactsRecord],
             },
+            // MFG-ORD: the close is a control of the order screen, like the fact forms — the same route
+            // and context, its own permission on top of the read. Recording a fact never closes an order.
+            detail with
+            {
+                CapabilityId = CloseCapabilityId,
+                ParentCapabilityId = DetailCapabilityId,
+                RequiredPermissions = [ErpPermissions.ManufacturingOrdersRead, ErpPermissions.ManufacturingOrdersClose],
+            },
+            list,
         ];
     }
 }

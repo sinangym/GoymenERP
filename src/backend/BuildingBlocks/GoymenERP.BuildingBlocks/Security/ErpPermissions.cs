@@ -91,6 +91,15 @@ public static class ErpPermissions
     public const string ManufacturingOrdersRead = "manufacturing.orders.read";
 
     /// <summary>
+    /// The order's close (MFG-ORD, #66 5743488059): its own name, because recording a fact is not
+    /// closing an order — a holder of <see cref="ManufacturingFactsRecord"/> does not thereby end the
+    /// order's WIP. Registered, not granted, and company-wide only for the reason above (K-1). Not
+    /// Critical: no source names the close a segregated duty (K-2); if one does, the flag is a human
+    /// decision, not this file's.
+    /// </summary>
+    public const string ManufacturingOrdersClose = "manufacturing.orders.close";
+
+    /// <summary>
     /// Finance manual-receipt draft (FIN-T04b, #320): the Finance owner's technical names
     /// (FinancePermissionNames, Business #254 5654539215), same strings. Registered, not granted:
     /// no role and no user receives them here; who holds which is a human gate. All three are
@@ -216,6 +225,7 @@ public static class ErpPermissions
             ManufacturingOrdersCreate,
             ManufacturingFactsRecord,
             ManufacturingOrdersRead,
+            ManufacturingOrdersClose,
             InventoryLabelsRead,
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
@@ -271,6 +281,7 @@ public static class ErpPermissions
             ManufacturingOrdersCreate,
             ManufacturingFactsRecord,
             ManufacturingOrdersRead,
+            ManufacturingOrdersClose,
             InventoryLabelsRead,
             InventoryBalancesRead,
             InventoryOpeningStockRecord,
