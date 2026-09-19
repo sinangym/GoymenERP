@@ -9,7 +9,7 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Shell;
 /// detail is the read view of one L-02 row ("L-02-DETAIL", the F-02-DETAIL precedent; the master has no
 /// separate detail id). L-01 (Sevk Edilebilir Siparişler) and L-04 (Araç / Sürücü / Kapı) are other screens
 /// and are not declared here; recording a load is L-05's act (Fiilî Yükleme) and will be declared with that
-/// screen, in LOG-4a it is a server-measured command on the detail. STAGED —
+/// screen, in LOG-4a it is a server-measured command on the detail.
 /// STAGED (<c>ImplementationAvailable: false</c>): LOG-4b brings the frontend, and the flip to published
 /// precedes its browser suite (the S03-c lesson: a staged declaration is never published, so nothing opens
 /// before the screens exist). A declaration grants nothing: the screens open only for an actor holding the
