@@ -128,7 +128,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // inventory
             ["tools/relational_inventory/inventory.txt"] =
-                "b2aa8f8c522d817043f50fc93003b6faeb80472b2b31ec1a3b08bf71da4e0eed",
+                "e0b8743d49e562c718ebb7051aeea7675ab993f5102e8b960aa844d1c3dc0c49",
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
@@ -336,11 +336,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // INV-2 (#293): the SqlClient namespace only to recognise a unique-key violation
                 // (SqlException 2601/2627) after SaveChanges, as the Idempotency terminal store does.
-                // No connection, command or raw SQL.
+                // No connection, command or raw SQL. Re-fingerprinted for #333 (#324 P3-1): a lot/label
+                // primary-key collision reads, tenant-filtered and AsNoTracking, whether this company holds
+                // the id (retry) or not (conflict); still no connection, command or raw SQL.
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
                     new(
-                        "aee840ce25a289eeaeb29291b71fc0eba956987066fd2a0de08783038b099c20",
+                        "af485f916d6c16be871e026ed1b747764ef8e3d34362226f1dd16e9e6fd93ce2",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
