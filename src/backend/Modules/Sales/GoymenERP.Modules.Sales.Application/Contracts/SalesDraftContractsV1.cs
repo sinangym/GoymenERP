@@ -28,10 +28,27 @@ public sealed record SalesDraftOwnerReferenceV1(Guid Id, string ExpectedVersion)
 public sealed record SalesDraftDeliverySliceV1(
     Guid SliceId, Guid OrderUnitId, string Quantity, DateOnly RequestedDeliveryDate);
 
+// SALES-A1 (contract delta): `approvalState` is the internal approval axis — "Preparing",
+// "PendingApproval", "Approved" or "Rejected" — beside the lifecycle `state` ("Draft"), the
+// commercial `revision` and the concurrency `version`. Four separate facts, never merged.
 public sealed record SalesOrderDraftSummaryView(
     Guid Id, Guid CompanyId, string DocumentNo, string Kind, string State,
     string Version, string Revision, Guid PartyId, Guid CompanyAccountId,
-    Guid CurrencyId, DateOnly BusinessDate, DateTimeOffset CreatedAtUtc, int LineCount);
+    Guid CurrencyId, DateOnly BusinessDate, DateTimeOffset CreatedAtUtc, int LineCount,
+    string ApprovalState);
+
+/// <summary>SALES-A1: the approval facts of the detail; every member null until it happened (ADR-009 audit facts, shown, never derived).</summary>
+public sealed record SalesDraftApprovalV1(
+    string? SubmittedBy, DateTimeOffset? SubmittedAtUtc,
+    string? DecidedBy, DateTimeOffset? DecidedAtUtc,
+    string? RejectionReason);
+
+/// <summary>
+/// SALES-A1: the body of a state command (submission / approval / rejection): the expected
+/// concurrency version as text (the same shape as every version on this wire) and, for a
+/// rejection only, the optional reason. Strict: no other member, no missing version.
+/// </summary>
+public sealed record SalesDraftStateCommandRequest(string ExpectedVersion, string? Reason = null);
 
 public sealed record SalesOrderDraftLineDetail(
     Guid LineId, int LineNo, Guid ProductId, string ProductVersion,
@@ -48,14 +65,16 @@ public sealed record SalesOrderDraftDetailView(
     SalesDraftOwnerReferenceV1? Responsible,
     SalesDraftOwnerReferenceV1? PaymentTerms,
     SalesDraftOwnerReferenceV1? SourceStrategy,
-    SalesDraftOwnerReferenceV1? Package);
+    SalesDraftOwnerReferenceV1? Package,
+    SalesDraftApprovalV1 Approval);
 
 public sealed record SalesOrderDraftResponse(
     SalesOrderDraftDetailView Detail, bool IsReplay, string OriginalCorrelationId);
 
 public sealed record SalesOrderDraftListResponse(
     IReadOnlyList<SalesOrderDraftSummaryView> Items, string? NextCursor);
-public sealed record SalesOrderDraftListQuery(int PageSize = 50, string? Cursor = null);
+/// <param name="ApprovalState">SALES-A1: an exact approval state name to narrow the list to, or null for every draft.</param>
+public sealed record SalesOrderDraftListQuery(int PageSize = 50, string? Cursor = null, string? ApprovalState = null);
 public sealed record SalesDraftFieldError(string Field, string Code);
 public sealed record SalesDraftProblem(int Status, string Title, string? Code = null,
     string? CorrelationId = null, IReadOnlyList<SalesDraftFieldError>? Errors = null);
@@ -73,6 +92,14 @@ public static class SalesDraftApiV1
     /// said 200 for the replay), decided with the coordinator on #321.
     /// </summary>
     public const int CreatedStatus = 201;
+
+    // SALES-A1: the internal-approval commands. Each answers the draft after the transition with 200
+    // (the command's result IS the detail view; the Counterparty / Manufacturing pattern), and the
+    // same key again answers 200 with `Idempotency-Replayed` and the first correlation (ADR-011 §4).
+    public const string SubmissionPath = "/api/v1/sales/drafts/{id}/submission";
+    public const string ApprovalPath = "/api/v1/sales/drafts/{id}/approval";
+    public const string RejectionPath = "/api/v1/sales/drafts/{id}/rejection";
+    public const int StateCommandStatus = 200;
 }
 
 // Shape validation only. Owner profile scale, current permissions and references
@@ -126,6 +153,24 @@ public static class SalesDraftJson
             if (line.DiscountPercent is not null) RequireDecimalShape(line.DiscountPercent, positive: false);
             SalesDraftDeliveryPlanV1.GetUnscheduledQuantity(line);
         }
+        return request;
+    }
+
+    /// <summary>
+    /// SALES-A1: the strict body of a state command. <c>expectedVersion</c> is required, positive
+    /// integer text (as every version on this wire, at most 19 digits); <c>reason</c> is accepted
+    /// only where <paramref name="allowReason"/> (the rejection) and is otherwise an unknown member.
+    /// The reason's length is the domain's rule (422), not a shape rule.
+    /// </summary>
+    public static SalesDraftStateCommandRequest ReadStateCommand(string json, bool allowReason)
+    {
+        var request = JsonSerializer.Deserialize<SalesDraftStateCommandRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        if (string.IsNullOrEmpty(request.ExpectedVersion) || request.ExpectedVersion.Length > 19
+            || !Regex.IsMatch(request.ExpectedVersion, "\\A[1-9][0-9]*\\z"))
+            throw new JsonException("Invalid expected version.");
+        if (!allowReason && request.Reason is not null)
+            throw new JsonException("A reason is only given with a rejection.");
         return request;
     }
 

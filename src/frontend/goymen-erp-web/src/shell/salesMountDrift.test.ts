@@ -21,9 +21,16 @@ describe('shell ↔ Sales lane capability ids', () => {
     expect(CAPABILITY.salesDraftsCreate).toBe(SALES_CAPABILITY.draftsCreate)
   })
 
-  it('mounts every Sales id the lane declares, and nothing else under sales.', () => {
+  it('mounts every routed Sales id the lane declares, and nothing else under sales.; the approve control is no route', () => {
     const shellSalesIds = (Object.values(CAPABILITY) as string[]).filter((id) => id.startsWith('sales.'))
-    expect([...shellSalesIds].sort()).toEqual([...Object.values(SALES_CAPABILITY)].sort())
+    // SALES-A1: `sales.orders.approve` is a control of the S-04 detail (the provider's ParentCapabilityId),
+    // checked inside the detail with hasCapability, so it belongs in no route registry (the Finance pattern).
+    const laneRoutedIds = (Object.values(SALES_CAPABILITY) as string[]).filter(
+      (id) => id !== SALES_CAPABILITY.ordersApprove,
+    )
+    expect([...shellSalesIds].sort()).toEqual([...laneRoutedIds].sort())
+    expect(Object.keys(CAPABILITY_ROUTE)).not.toContain(SALES_CAPABILITY.ordersApprove)
+    expect(Object.keys(CAPABILITY_NAV_LABEL)).not.toContain(SALES_CAPABILITY.ordersApprove)
   })
 
   it('agrees with the lane on every route, value by value', () => {

@@ -23,6 +23,8 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
     [Theory]
     [InlineData(SalesPermissionManifestV1.DraftsCreate, ErpPermissions.SalesDraftsCreate)]
     [InlineData(SalesPermissionManifestV1.DraftsRead, ErpPermissions.SalesDraftsRead)]
+    // SALES-A1: the approval name. Company-wide, not Critical (the reason is on ErpPermissions.SalesOrdersApprove).
+    [InlineData(SalesPermissionManifestV1.OrdersApprove, ErpPermissions.SalesOrdersApprove)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);
@@ -30,6 +32,13 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         Assert.Single(ErpPermissions.All, known => known == ownerName);
         Assert.True(ErpPermissions.RequiresCompanyWideScope(ownerName));
         Assert.False(ErpPermissions.IsCritical(ownerName));
+    }
+
+    [Fact]
+    public void Every_owner_name_is_registered_and_nothing_else_under_sales()
+    {
+        Assert.Equal(SalesPermissionManifestV1.Names.Order(StringComparer.Ordinal),
+            ErpPermissions.All.Where(name => name.StartsWith("sales.", StringComparison.Ordinal)).Order(StringComparer.Ordinal));
     }
 
     [Fact]
@@ -63,7 +72,11 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
             new ShellCapabilityAuthorityCatalog([authority]));
         var sales = registry.Registrations.Where(item => item.Owner == SalesShellCapabilityProvider.OwnerId).ToArray();
-        Assert.Equal(3, sales.Length);
+        // Three screens plus the SALES-A1 approve control of the detail.
+        Assert.Equal(4, sales.Length);
+        Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId,
+            Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.ApproveCapabilityId)
+                .Declaration.ParentCapabilityId);
         // Published (S03-c, #328): available; each still opens only for an actor holding its Sales permission
         // in the context company (SalesShellCapabilitySqlServerRelationalAcceptanceTests).
         Assert.All(sales, item => Assert.True(item.Declaration.ImplementationAvailable));

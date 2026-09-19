@@ -1,31 +1,59 @@
 /**
- * S-04 Sipariş 360 — the draft as `GET /api/v1/sales/drafts/{id}` describes it (#257).
+ * S-04 Sipariş 360 — the draft as `GET /api/v1/sales/drafts/{id}` describes it (#257), with the
+ * SALES-A1 internal approval axis (DEC-SAL-001/002; Business 5737989917).
  *
  * Only what the detail carries:
- *  - the commercial revision (`Rev.0`) and the concurrency version are shown as two
- *    separate facts, never merged into "v1" or similar;
- *  - a null is shown as unknown, never as zero, cash, today or "none": an unknown
- *    price is "not priced", an unknown plan is "no plan entered", an empty plan is
- *    "no planned slices" — three different statements;
- *  - "unplanned" is the quantity not yet placed on a dated slice. It is not
- *    delivered, reserved or open; nothing has been delivered on a draft;
- *  - party, account, currency and unit have no display name in this contract, so
- *    their ids are shown as ids rather than resolved by a client lookup.
+ *  - the lifecycle state (Draft), the internal approval state, the commercial revision
+ *    (`Rev.0`) and the concurrency version are FOUR separate facts, never merged;
+ *  - the approval facts (who submitted / decided, when, the reason) are shown as stored,
+ *    "not yet" when null — never derived, never defaulted;
+ *  - a null is shown as unknown, never as zero, cash, today or "none";
+ *  - "unplanned" is the quantity not yet placed on a dated slice; nothing has been
+ *    delivered, reserved or allocated on a draft — the linked effects line says so honestly
+ *    (D4: allocation 0 / loading 0, no consumer in this slice).
  *
- * No approval, allocation, shipment, invoice or money tab: none exists for a draft.
+ * Commands: "Onaya gönder" follows the create capability (whoever may create may submit);
+ * "Onayla" / "Reddet" follow the `sales.orders.approve` control the shell publishes only to an
+ * actor holding the approve permission beside the read. The shell decides the buttons; the API
+ * measures the grant afresh on every send. Each command is one idempotent attempt (the same rules
+ * as the create: one key per snapshot, an unknown outcome keeps its key, a retry resends the same
+ * snapshot). After a recorded transition the detail is re-read — the answer is the server's.
+ *
+ * No allocation, shipment, invoice or money tab: none exists for a draft.
  */
 
-import { useQuery } from '@tanstack/react-query'
+import { useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router'
-import { fetchDraftDetail } from './api'
-import { OWNER_REFERENCE_FIELDS, type DraftDetail, type DraftLine } from './contract'
+import { fetchDraftDetail, sendDraftCommand } from './api'
+import {
+  APPROVAL_STATE,
+  OWNER_REFERENCE_FIELDS,
+  type DraftDetail,
+  type DraftLine,
+  type DraftMutation,
+  type DraftStateCommand,
+  type DraftStateCommandRequest,
+} from './contract'
 import { unplannedQuantity } from './deliveryPlan'
 import { formatBusinessDate, formatInstant } from './format'
+import {
+  abandon,
+  applyOutcome,
+  beginSend,
+  decideSubmit,
+  generateOrderAttemptKey,
+  isOutcomeStillUnknown,
+  liveSnapshot,
+  orderAttemptBinding,
+  type OrderAttemptSnapshot,
+  type OrderAttemptState,
+} from './orderAttempt'
 import { SALES_CAPABILITY, SALES_ROUTE } from './capabilities'
-import { ORDER_DETAIL_TEXT as T } from './salesText'
+import { APPROVAL_STATE_TEXT, ORDER_DETAIL_TEXT as T, problemCodeText } from './salesText'
 import { classifyOutcome } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
-import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
+import { contextKey, contextKeyString, hasCapability, type ShellState } from '../shell/shellState'
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './SalesPages.module.css'
@@ -39,9 +67,11 @@ export function SalesDraftDetailPage() {
   const namespace = key === null ? null : contextKeyString(key)
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const boundary = useAuthBoundary()
+  const queryClient = useQueryClient()
 
+  const queryKey = [namespace ?? 'no-context', shell.routeEntryGeneration, 'sales-draft', draftId ?? '']
   const query = useQuery({
-    queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'sales-draft', draftId ?? ''],
+    queryKey,
     enabled: namespace !== null && companyId !== null && (draftId ?? '').length > 0,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
@@ -70,11 +100,35 @@ export function SalesDraftDetailPage() {
       </section>
     )
   }
-  return <DraftView detail={outcome.data} backLink={backLink} />
+  return (
+    <DraftView
+      detail={outcome.data}
+      backLink={backLink}
+      commands={
+        companyId === null ? null : (
+          <ApprovalCommands
+            key={`${namespace ?? ''}:${outcome.data.draft.id}`}
+            shell={shell}
+            detail={outcome.data}
+            companyId={companyId}
+            onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
+          />
+        )
+      }
+    />
+  )
 }
 
-export function DraftView({ detail, backLink }: { readonly detail: DraftDetail; readonly backLink: React.ReactNode }) {
-  const { draft } = detail
+export function DraftView({
+  detail,
+  backLink,
+  commands = null,
+}: {
+  readonly detail: DraftDetail
+  readonly backLink: React.ReactNode
+  readonly commands?: React.ReactNode
+}) {
+  const { draft, approval } = detail
   return (
     <article className={styles.page} aria-labelledby="sales-detail-heading">
       {backLink}
@@ -86,11 +140,15 @@ export function DraftView({ detail, backLink }: { readonly detail: DraftDetail; 
           <p className={styles.muted}>{T.referenceNote}</p>
         </div>
         <span className={styles.badge} data-testid="sales-draft-state">
-          {T.stateDraft}
+          {T.stateDraft} · {APPROVAL_STATE_TEXT[draft.approvalState]}
         </span>
       </header>
 
       <dl className={styles.facts}>
+        <div>
+          <dt>{T.approval.state}</dt>
+          <dd data-testid="sales-draft-approval-state">{APPROVAL_STATE_TEXT[draft.approvalState]}</dd>
+        </div>
         <div>
           <dt>{T.revision}</dt>
           <dd data-testid="sales-draft-revision">{draft.revision}</dd>
@@ -131,6 +189,40 @@ export function DraftView({ detail, backLink }: { readonly detail: DraftDetail; 
         </div>
       </dl>
 
+      <section className={styles.section} aria-labelledby="sales-approval-heading" data-testid="sales-approval">
+        <h2 id="sales-approval-heading">{T.approval.heading}</h2>
+        <dl className={styles.facts}>
+          <div>
+            <dt>{T.approval.submittedBy}</dt>
+            <dd data-testid="sales-approval-submitted-by">{approval.submittedBy ?? T.approval.notYet}</dd>
+          </div>
+          <div>
+            <dt>{T.approval.submittedAt}</dt>
+            <dd>{approval.submittedAtUtc === null ? T.approval.notYet : formatInstant(approval.submittedAtUtc)}</dd>
+          </div>
+          <div>
+            <dt>{T.approval.decidedBy}</dt>
+            <dd data-testid="sales-approval-decided-by">{approval.decidedBy ?? T.approval.notYet}</dd>
+          </div>
+          <div>
+            <dt>{T.approval.decidedAt}</dt>
+            <dd>{approval.decidedAtUtc === null ? T.approval.notYet : formatInstant(approval.decidedAtUtc)}</dd>
+          </div>
+          {draft.approvalState === APPROVAL_STATE.rejected ? (
+            <div>
+              <dt>{T.approval.rejectionReason}</dt>
+              <dd data-testid="sales-approval-reason">{approval.rejectionReason ?? T.approval.noReason}</dd>
+            </div>
+          ) : null}
+        </dl>
+        <p className={styles.muted} data-testid="sales-approval-linked-effects">
+          {T.approval.linkedEffects}
+        </p>
+        {draft.approvalState === APPROVAL_STATE.approved ? <p className={styles.muted}>{T.approval.approvedNote}</p> : null}
+        {draft.approvalState === APPROVAL_STATE.rejected ? <p className={styles.muted}>{T.approval.rejectedNote}</p> : null}
+        {commands}
+      </section>
+
       <section className={styles.section} aria-labelledby="sales-commercial-heading">
         <h2 id="sales-commercial-heading">{T.commercialHeading}</h2>
         <dl className={styles.facts}>
@@ -156,6 +248,165 @@ export function DraftView({ detail, backLink }: { readonly detail: DraftDetail; 
       </section>
     </article>
   )
+}
+
+/* ── SALES-A1: the commands ────────────────────────────────────────────────── */
+
+type CommandAttempt = OrderAttemptState<DraftStateCommandRequest, DraftMutation>
+
+/** The attempt binding scope of the detail's commands: one per draft, so a key never crosses drafts. */
+const commandScope = (draftId: string, command: DraftStateCommand) => `sales.draft.${command}:${draftId}`
+
+function ApprovalCommands({
+  shell,
+  detail,
+  companyId,
+  onRecorded,
+}: {
+  readonly shell: ShellState
+  readonly detail: DraftDetail
+  readonly companyId: string
+  readonly onRecorded: () => void
+}) {
+  const { draft } = detail
+  const canSubmit = hasCapability(shell, SALES_CAPABILITY.draftsCreate)
+  const canDecide = hasCapability(shell, SALES_CAPABILITY.ordersApprove)
+  const [attempt, setAttempt] = useState<CommandAttempt>({ phase: 'idle' })
+  const [command, setCommand] = useState<DraftStateCommand | null>(null)
+  const [reason, setReason] = useState('')
+  const attemptRef = useRef(attempt)
+  attemptRef.current = attempt
+
+  const offerSubmit =
+    canSubmit && (draft.approvalState === APPROVAL_STATE.preparing || draft.approvalState === APPROVAL_STATE.rejected)
+  const offerDecision = canDecide && draft.approvalState === APPROVAL_STATE.pendingApproval
+  if (!offerSubmit && !offerDecision && attempt.phase === 'idle') return null
+
+  async function send(kind: DraftStateCommand, snapshot: OrderAttemptSnapshot<DraftStateCommandRequest>) {
+    const previous = attemptRef.current
+    const inFlight = beginSend<DraftStateCommandRequest, DraftMutation>(snapshot)
+    attemptRef.current = inFlight
+    setAttempt(inFlight)
+    setCommand(kind)
+    const outcome = await sendDraftCommand(kind, snapshot.payload, {
+      idempotencyKey: snapshot.key,
+      companyId: snapshot.companyId,
+      draftId: draft.id,
+    })
+    const next = applyOutcome(inFlight, snapshot, orderAttemptBinding(shell, commandScope(draft.id, kind)), outcome, previous)
+    attemptRef.current = next
+    setAttempt(next)
+    if (next.phase === 'completed' || (next.phase === 'failed' && next.failure === 'conflict')) onRecorded()
+  }
+
+  function start(kind: DraftStateCommand) {
+    const binding = orderAttemptBinding(shell, commandScope(draft.id, kind))
+    if (binding === null) return
+    const payload: DraftStateCommandRequest =
+      kind === 'rejection' && reason.trim() !== ''
+        ? { expectedVersion: draft.version, reason: reason.trim() }
+        : { expectedVersion: draft.version }
+    const decision = decideSubmit(
+      attemptRef.current,
+      { path: `${draft.id}/${kind}`, binding, companyId, payload },
+      generateOrderAttemptKey,
+    )
+    if (decision.type !== 'send') return
+    void send(kind, decision.snapshot)
+  }
+
+  function retry() {
+    const live = liveSnapshot(attemptRef.current)
+    if (live === null || command === null || attemptRef.current.phase === 'submitting') return
+    void send(command, live)
+  }
+
+  function leave() {
+    const next = abandon(attemptRef.current)
+    attemptRef.current = next
+    setAttempt(next)
+  }
+
+  const frozen = attempt.phase === 'submitting' || isOutcomeStillUnknown(attempt)
+  const notice = commandNotice(attempt)
+
+  return (
+    <div className={styles.actions} data-testid="sales-approval-commands">
+      {notice === null ? null : (
+        <p role={attempt.phase === 'failed' ? 'alert' : 'status'} className={styles.notice} data-testid="sales-approval-notice">
+          {notice}
+        </p>
+      )}
+      {isOutcomeStillUnknown(attempt) && attempt.phase !== 'submitting' ? (
+        <>
+          <button type="button" className={styles.secondaryButton} onClick={retry}>
+            {T.approval.retry}
+          </button>
+          <button type="button" className={styles.linkButton} onClick={leave}>
+            {T.approval.abandon}
+          </button>
+        </>
+      ) : null}
+      {offerSubmit ? (
+        <button type="button" className={styles.primaryButton} disabled={frozen} onClick={() => start('submission')}>
+          {T.approval.submit}
+        </button>
+      ) : null}
+      {offerDecision ? (
+        <>
+          <button type="button" className={styles.primaryButton} disabled={frozen} onClick={() => start('approval')}>
+            {T.approval.approve}
+          </button>
+          <label htmlFor="sales-rejection-reason">{T.approval.reasonLabel}</label>
+          <textarea
+            id="sales-rejection-reason"
+            maxLength={4000}
+            value={reason}
+            disabled={frozen}
+            onChange={(event) => setReason(event.target.value)}
+          />
+          <button type="button" className={styles.secondaryButton} disabled={frozen} onClick={() => start('rejection')}>
+            {T.approval.reject}
+          </button>
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+/** The notice of one command attempt, in the approval's own words. */
+function commandNotice(attempt: CommandAttempt): string | null {
+  switch (attempt.phase) {
+    case 'idle':
+      return null
+    case 'submitting':
+      return T.approval.submitting
+    case 'unknown':
+      return T.approval.unknown
+    case 'abandoned':
+      return T.approval.unknown
+    case 'completed':
+      return attempt.result.isReplay ? T.approval.replayed : T.approval.completed
+    case 'failed': {
+      const codeText = problemCodeText(attempt.problem?.code ?? null)
+      const base =
+        attempt.failure === 'unauthenticated'
+          ? T.approval.unauthenticated
+          : attempt.failure === 'forbidden'
+            ? T.approval.forbidden
+            : attempt.failure === 'not-found'
+              ? T.approval.notFound
+              : attempt.failure === 'conflict'
+                ? T.approval.conflict
+                : attempt.failure === 'validation'
+                  ? T.approval.validation
+                  : T.approval.unexpected
+      const text = codeText === null ? base : `${base} ${codeText}`
+      return attempt.unresolvedSince === undefined ? text : `${text} ${T.approval.refusedAfterUnknown}`
+    }
+    default:
+      return null
+  }
 }
 
 function LineView({ line }: { readonly line: DraftLine }) {

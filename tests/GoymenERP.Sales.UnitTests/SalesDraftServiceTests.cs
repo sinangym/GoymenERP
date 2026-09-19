@@ -171,8 +171,8 @@ public sealed class SalesDraftServiceTests
             case "not-granted": world.Authority.Granted = false; break;
             case "site-scoped": world.Authority.CompanyWide = false; break;
             // A name outside the central catalogue (the Sales names themselves are registered since #321's central commit).
-            case "unregistered-name": world.Bindings = new SalesDraftServiceBindings("sales.synthetic.unregistered", ReadPermission); break;
-            default: world.Bindings = new SalesDraftServiceBindings(null, ReadPermission); break;
+            case "unregistered-name": world.Bindings = new SalesDraftServiceBindings("sales.synthetic.unregistered", ReadPermission, ApprovePermission); break;
+            default: world.Bindings = new SalesDraftServiceBindings(null, ReadPermission, ApprovePermission); break;
         }
 
         var error = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(Request(), Metadata("k-1")));
@@ -316,6 +316,154 @@ public sealed class SalesDraftServiceTests
         Assert.Equal((400, "validation_failed"), (tooBig.Status, tooBig.Code));
     }
 
+    // ---- SALES-A1: the internal approval commands --------------------------------------------
+
+    private const string ApprovePermission = ErpPermissions.CounterpartyPartiesRead;
+
+    private static SalesDraftStateCommandRequest Command(string version, string? reason = null) => new(version, reason);
+
+    [Fact]
+    public async Task A_draft_is_submitted_approved_and_answered_after_each_transition_with_its_audit_facts()
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail.Draft;
+        Assert.Equal(("Preparing", "2"), (created.ApprovalState, created.Version));
+
+        var submitted = await world.Service().SubmitDraftAsync(created.Id, Command("2"), Metadata("k-submit"));
+        Assert.False(submitted.IsReplay);
+        Assert.Equal(("PendingApproval", "3", Actor), (submitted.Detail.Draft.ApprovalState, submitted.Detail.Draft.Version, submitted.Detail.Approval.SubmittedBy));
+        Assert.NotNull(submitted.Detail.Approval.SubmittedAtUtc);
+        Assert.Null(submitted.Detail.Approval.DecidedBy);
+        // The submission runs under the create permission; the envelope and the audit facts say so.
+        var submission = Assert.Single(world.Store.Transitions);
+        Assert.Equal((SalesDraftCommands.SubmitV1, CreatePermission, "sales.order-draft.submitted.v1", "Submit", 2L, 3L),
+            (submission.Command, submission.Envelope.PermissionCode, submission.Audit.EventType, submission.Audit.Operation, submission.VersionBefore, submission.VersionAfter));
+
+        var approved = await world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-approve"));
+        Assert.Equal(("Approved", "4", Actor, Actor), (approved.Detail.Draft.ApprovalState, approved.Detail.Draft.Version,
+            approved.Detail.Approval.SubmittedBy, approved.Detail.Approval.DecidedBy));
+        Assert.Null(approved.Detail.Approval.RejectionReason);
+        Assert.Equal((SalesDraftCommands.ApproveV1, ApprovePermission, "sales.order-draft.approved.v1", "Approve"),
+            (world.Store.Transitions[1].Command, world.Store.Transitions[1].Envelope.PermissionCode, world.Store.Transitions[1].Audit.EventType, world.Store.Transitions[1].Audit.Operation));
+        Assert.Equal(ApprovePermission, world.Authority.LastPermission);
+
+        // The list shows the axis and narrows to it; the detail carries the facts.
+        var pending = await world.Service().GetDraftListAsync(new SalesOrderDraftListQuery(ApprovalState: "PendingApproval"));
+        Assert.Empty(pending.Items);
+        var approvedList = await world.Service().GetDraftListAsync(new SalesOrderDraftListQuery(ApprovalState: "Approved"));
+        Assert.Equal("Approved", Assert.Single(approvedList.Items).ApprovalState);
+        var detail = await world.Service().GetDraftDetailAsync(created.Id);
+        Assert.Equal(("Approved", Actor), (detail.Draft.ApprovalState, detail.Approval.DecidedBy));
+        var badFilter = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().GetDraftListAsync(new SalesOrderDraftListQuery(ApprovalState: "approved")));
+        Assert.Equal((400, "validation_failed"), (badFilter.Status, badFilter.Code));
+    }
+
+    [Fact]
+    public async Task A_rejection_carries_its_reason_returns_the_draft_to_the_preparer_and_a_resubmission_is_allowed()
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail.Draft;
+        await world.Service().SubmitDraftAsync(created.Id, Command("2"), Metadata("k-submit"));
+
+        var rejected = await world.Service().RejectDraftAsync(created.Id, Command("3", "  SENTETIK neden  "), Metadata("k-reject"));
+        Assert.Equal(("Rejected", "4", "SENTETIK neden"), (rejected.Detail.Draft.ApprovalState, rejected.Detail.Draft.Version, rejected.Detail.Approval.RejectionReason));
+        Assert.Equal("sales.order-draft.rejected.v1", world.Store.Transitions[^1].Audit.EventType);
+
+        // No reason is "no reason", never a default text; the same Rev.0 goes back for approval.
+        var again = await world.Service().SubmitDraftAsync(created.Id, Command("4"), Metadata("k-submit-2"));
+        Assert.Equal(("PendingApproval", "5", SalesDraftApiV1.Rev0), (again.Detail.Draft.ApprovalState, again.Detail.Draft.Version, again.Detail.Draft.Revision));
+        Assert.Null(again.Detail.Approval.DecidedBy);
+        Assert.Null(again.Detail.Approval.RejectionReason);
+
+        var tooLong = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().RejectDraftAsync(created.Id, Command("5", new string('x', SalesOrderDraft.MaximumRejectionReasonLength + 1)), Metadata("k-reject-2")));
+        Assert.Equal((422, SalesDraftProblemCodesV1.ApprovalReasonTooLong, "reason"), (tooLong.Status, tooLong.Code, tooLong.Errors[0].Field));
+        Assert.Empty(world.Store.Refusals);
+    }
+
+    [Fact]
+    public async Task A_wrong_state_and_a_stale_version_are_terminal_for_the_key_and_replay_with_the_first_correlation()
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail.Draft;
+
+        // Approving a draft that was never submitted: 409 sales_state_conflict, recorded under the key.
+        var wrongState = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveDraftAsync(created.Id, Command("2"), Metadata("k-approve")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict, false, "approvalState"), (wrongState.Status, wrongState.Code, wrongState.IsReplay, wrongState.Errors[0].Field));
+        var recorded = Assert.Single(world.Store.Refusals);
+        Assert.Equal(("k-approve", 409, SalesDraftProblemCodesV1.StateConflict), (recorded.Envelope.IdempotencyKey, recorded.Refusal.Status, recorded.Refusal.Code));
+        var replayed = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveDraftAsync(created.Id, Command("2"), Metadata("k-approve", correlation: "retry")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict, true, "synthetic-correlation"), (replayed.Status, replayed.Code, replayed.IsReplay, replayed.OriginalCorrelationId));
+        // The same key with another version is another content: one 409, nothing disclosed.
+        var other = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-approve")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.SameKeyPayloadMismatch), (other.Status, other.Code));
+
+        // A stale version: 409 version_conflict, terminal too; the draft did not move.
+        var stale = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().SubmitDraftAsync(created.Id, Command("1"), Metadata("k-stale")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.VersionConflict, "expectedVersion"), (stale.Status, stale.Code, stale.Errors[0].Field));
+        Assert.Equal(2, world.Store.Refusals.Count);
+        Assert.Equal("Preparing", (await world.Service().GetDraftDetailAsync(created.Id)).Draft.ApprovalState);
+        Assert.Empty(world.Store.Transitions);
+    }
+
+    [Fact]
+    public async Task The_same_key_answers_the_stored_transition_again_and_a_lost_race_answers_the_winner()
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail.Draft;
+        var first = await world.Service().SubmitDraftAsync(created.Id, Command("2"), Metadata("k-submit"));
+        var replay = await world.Service().SubmitDraftAsync(created.Id, Command("2"), Metadata("k-submit", correlation: "second"));
+        Assert.True(replay.IsReplay);
+        Assert.Equal((first.Detail.Draft.Id, "synthetic-correlation", "PendingApproval"), (replay.Detail.Draft.Id, replay.OriginalCorrelationId, replay.Detail.Draft.ApprovalState));
+        Assert.Single(world.Store.Transitions);
+
+        // Another key's transition took the draft's version first: the caller's concurrent_change, nothing recorded.
+        world.Store.Race = "version-at-store";
+        var raced = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-approve")));
+        Assert.Equal((409, SalesDraftProblemCodesV1.ConcurrentChange), (raced.Status, raced.Code));
+        Assert.Empty(world.Store.Refusals);
+    }
+
+    [Theory]
+    [InlineData("not-granted", 403)]
+    [InlineData("site-scoped", 403)]
+    [InlineData("unbound-approve", 503)]
+    [InlineData("unauthenticated", 401)]
+    public async Task An_approval_without_the_approve_authority_is_refused_before_the_draft_is_read(string fault, int status)
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail.Draft;
+        await world.Service().SubmitDraftAsync(created.Id, Command("2"), Metadata("k-submit"));
+        world.Store.OnStore = () => throw new InvalidOperationException("the store must not be reached");
+        switch (fault)
+        {
+            case "not-granted": world.Authority.Granted = false; break;
+            case "site-scoped": world.Authority.CompanyWide = false; break;
+            case "unbound-approve": world.Bindings = new SalesDraftServiceBindings(CreatePermission, ReadPermission, null); break;
+            default: world.User.Authenticated = false; break;
+        }
+
+        var error = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-approve")));
+
+        Assert.Equal(status, error.Status);
+        if (status == 503) Assert.Equal(SalesDraftProblemCodesV1.PermissionUnregistered, error.Code);
+        Assert.Single(world.Store.Transitions);
+    }
+
+    [Fact]
+    public async Task A_state_command_on_an_unknown_or_another_companys_draft_is_404_and_a_malformed_version_is_400()
+    {
+        var world = new World();
+        var missing = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().SubmitDraftAsync(Guid.NewGuid(), Command("1"), Metadata("k-1")));
+        Assert.Equal(404, missing.Status);
+        var empty = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().SubmitDraftAsync(Guid.Empty, Command("1"), Metadata("k-2")));
+        Assert.Equal(404, empty.Status);
+        var overflow = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().SubmitDraftAsync(Guid.NewGuid(), Command("99999999999999999999"), Metadata("k-3")));
+        Assert.Equal((400, "validation_failed"), (overflow.Status, overflow.Code));
+        Assert.Empty(world.Store.Refusals);
+        Assert.Empty(world.Store.Transitions);
+    }
+
     // ---- request ----------------------------------------------------------------------------
 
     private static CreateSalesOrderDraftRequest Request(int lines = 1)
@@ -342,7 +490,7 @@ public sealed class SalesDraftServiceTests
         public FakeProducts Products { get; init; } = new();
         public FakeStore Store { get; init; } = new();
         public bool NoProducts { get; set; }
-        public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission);
+        public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission);
 
         public SalesDraftService Service()
         {
@@ -477,10 +625,12 @@ public sealed class SalesDraftServiceTests
     /// <summary>An in-memory store with the contract's replay semantics; no database, no owner rule.</summary>
     private sealed class FakeStore : ISalesOrderDraftStore
     {
-        private readonly Dictionary<string, (string Actor, string Hash, SalesOrderDraft? Draft, SalesDraftTerminalRefusal? Refusal, string Correlation)> _attempts = [];
+        private readonly Dictionary<(string Command, string Key), (string Actor, string Hash, SalesOrderDraft? Draft, SalesDraftTerminalRefusal? Refusal, string Correlation)> _attempts = [];
         private readonly List<SalesOrderDraft> _drafts = [];
         public List<SalesDraftWriteEnvelope> Envelopes { get; } = [];
         public List<(SalesDraftWriteEnvelope Envelope, SalesDraftTerminalRefusal Refusal)> Refusals { get; } = [];
+        /// <summary>SALES-A1: every state transition the store committed, with its audit facts.</summary>
+        public List<(string Command, Guid DraftId, SalesDraftWriteEnvelope Envelope, SalesDraftStateAudit Audit, long VersionBefore, long VersionAfter)> Transitions { get; } = [];
         public int Replays { get; private set; }
         public string? Fault { get; set; }
         /// <summary>Runs when the store is about to commit: what changes in the world between the last fence and the commit.</summary>
@@ -488,6 +638,34 @@ public sealed class SalesDraftServiceTests
         /// <summary>A same-key race lost once: "draft-at-store" (the winner stored a draft), "empty-at-store" (nothing under the key), "refusal-at-record" (the winner recorded the refusal).</summary>
         public string? Race { get; set; }
         public SalesOrderDraft? Winner { get; private set; }
+
+        public Task<SalesDraftStateResult?> UpdateDraftStateAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+            Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit, CancellationToken cancellationToken = default)
+        {
+            if (Fault is not null) throw new SalesDraftStoreException(Fault, "synthetic");
+            if (_attempts.TryGetValue((commandName, envelope.IdempotencyKey), out var attempt))
+            {
+                if (attempt.Actor != envelope.ActorId || attempt.Hash != requestHash)
+                    throw new SalesDraftStoreException(SalesDraftStoreCodes.SameKeyPayloadMismatch, "synthetic");
+                if (attempt.Draft is null) throw new SalesDraftStoreException(SalesDraftStoreCodes.ConcurrentChange, "synthetic refusal under the key");
+                return Task.FromResult<SalesDraftStateResult?>(new SalesDraftStateResult(attempt.Draft, SalesDraftWriteOutcome.Replayed, attempt.Correlation));
+            }
+
+            var draft = _drafts.SingleOrDefault(candidate => candidate.Id == draftId);
+            if (draft is null) return Task.FromResult<SalesDraftStateResult?>(null);
+            OnStore?.Invoke();
+            if (Race == "version-at-store")
+            {
+                Race = null;
+                throw new SalesDraftStoreException(SalesDraftStoreCodes.ConcurrentChange, "synthetic version race");
+            }
+
+            var before = draft.Version;
+            mutate(draft, TimeProvider.System.GetUtcNow());
+            _attempts[(commandName, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, draft, null, envelope.CorrelationId);
+            Transitions.Add((commandName, draftId, envelope, audit, before, draft.Version));
+            return Task.FromResult<SalesDraftStateResult?>(new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId));
+        }
 
         public Task<SalesDraftStoreResult> StoreDraftAsync(SalesDraftWriteEnvelope envelope, string requestHash, Func<string, SalesOrderDraft> build,
             CancellationToken cancellationToken = default)
@@ -503,7 +681,7 @@ public sealed class SalesDraftServiceTests
                     Winner = build("SO-2026-000099");
                     Winner.RequireStorable();
                     _drafts.Add(Winner);
-                    _attempts[envelope.IdempotencyKey] = (envelope.ActorId, requestHash, Winner, null, "winner-correlation");
+                    _attempts[(SalesDraftCommands.CreateV1, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, Winner, null, "winner-correlation");
                 }
 
                 throw new SalesDraftStoreException(SalesDraftStoreCodes.ConcurrentChange, "synthetic race");
@@ -512,32 +690,35 @@ public sealed class SalesDraftServiceTests
             var draft = build($"SO-2026-{_drafts.Count + 1:D6}");
             draft.RequireStorable();
             _drafts.Add(draft);
-            _attempts[envelope.IdempotencyKey] = (envelope.ActorId, requestHash, draft, null, envelope.CorrelationId);
+            _attempts[(SalesDraftCommands.CreateV1, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, draft, null, envelope.CorrelationId);
             Envelopes.Add(envelope);
             return Task.FromResult(new SalesDraftStoreResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId));
         }
 
-        public Task<SalesDraftReplay?> FindReplayAsync(SalesDraftWriteEnvelope envelope, string requestHash, CancellationToken cancellationToken = default)
+        public Task<SalesDraftReplay?> FindReplayAsync(SalesDraftWriteEnvelope envelope, string requestHash, CancellationToken cancellationToken = default,
+            string commandName = SalesDraftCommands.CreateV1)
         {
             Replays++;
             if (Fault is not null) throw new SalesDraftStoreException(Fault, "synthetic");
-            if (!_attempts.TryGetValue(envelope.IdempotencyKey, out var attempt)) return Task.FromResult<SalesDraftReplay?>(null);
+            if (!_attempts.TryGetValue((commandName, envelope.IdempotencyKey), out var attempt)) return Task.FromResult<SalesDraftReplay?>(null);
             if (attempt.Actor != envelope.ActorId || attempt.Hash != requestHash)
                 throw new SalesDraftStoreException(SalesDraftStoreCodes.SameKeyPayloadMismatch, "synthetic");
             return Task.FromResult<SalesDraftReplay?>(new SalesDraftReplay(attempt.Draft, attempt.Refusal, attempt.Correlation));
         }
 
         public Task RecordRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash, SalesDraftTerminalRefusal refusal,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default, string commandName = SalesDraftCommands.CreateV1)
         {
             if (Race == "refusal-at-record")
             {
                 Race = null;
-                _attempts[envelope.IdempotencyKey] = (envelope.ActorId, requestHash, null, refusal, "winner-correlation");
+                _attempts[(commandName, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, null, refusal, "winner-correlation");
                 throw new SalesDraftStoreException(SalesDraftStoreCodes.ConcurrentChange, "synthetic race");
             }
 
-            _attempts[envelope.IdempotencyKey] = (envelope.ActorId, requestHash, null, refusal, envelope.CorrelationId);
+            if (_attempts.ContainsKey((commandName, envelope.IdempotencyKey)))
+                throw new SalesDraftStoreException(SalesDraftStoreCodes.ConcurrentChange, "synthetic: the key already holds an attempt");
+            _attempts[(commandName, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, null, refusal, envelope.CorrelationId);
             Refusals.Add((envelope, refusal));
             return Task.CompletedTask;
         }
@@ -545,10 +726,12 @@ public sealed class SalesDraftServiceTests
         public Task<SalesOrderDraft?> FindDraftAsync(Guid draftId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_drafts.SingleOrDefault(draft => draft.Id == draftId));
 
-        public Task<SalesDraftPage> ListDraftsAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default)
+        public Task<SalesDraftPage> ListDraftsAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default,
+            InternalApprovalState? approvalState = null)
         {
             if (Fault is not null) throw new SalesDraftStoreException(Fault, "synthetic");
-            return Task.FromResult(new SalesDraftPage([.. _drafts.OrderByDescending(draft => draft.CreatedAtUtc).Take(pageSize)], null));
+            var drafts = _drafts.Where(draft => approvalState is null || draft.ApprovalState == approvalState);
+            return Task.FromResult(new SalesDraftPage([.. drafts.OrderByDescending(draft => draft.CreatedAtUtc).Take(pageSize)], null));
         }
     }
 }

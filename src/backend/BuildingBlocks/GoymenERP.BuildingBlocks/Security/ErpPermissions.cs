@@ -106,6 +106,17 @@ public static class ErpPermissions
     /// <inheritdoc cref="SalesDraftsCreate"/>
     public const string SalesDraftsRead = "sales.drafts.read";
 
+    /// <summary>
+    /// SALES-A1 (Business #66 5737989917): the internal approval decision on a sales order draft
+    /// (POST …/approval and …/rejection), the Sales owner's name (SalesPermissionManifestV1.OrdersApprove).
+    /// Registered, not granted: no seeded role and no user receives it; who approves is a human gate
+    /// (Sinan's persona decision 2026-09-19 names the Müdür, applied only by a later grant card).
+    /// Company-wide only, like the draft names. Not Critical, as manufacturing.plans.approve: no source
+    /// makes the approval a segregated duty (no maker≠checker, threshold or second person is decided),
+    /// and an approved draft commits no stock, money or price.
+    /// </summary>
+    public const string SalesOrdersApprove = "sales.orders.approve";
+
     public const string IdentityProfileRead = "identity.profile.read";
     public const string IdentityAccessRequest = "identity.access.request";
     public const string IdentityAccessApprove = "identity.access.approve";
@@ -127,6 +138,7 @@ public static class ErpPermissions
             ProductOperationalSelectionRead,
             SalesDraftsCreate,
             SalesDraftsRead,
+            SalesOrdersApprove,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
@@ -168,6 +180,7 @@ public static class ErpPermissions
             ProductOperationalSelectionRead,
             SalesDraftsCreate,
             SalesDraftsRead,
+            SalesOrdersApprove,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,

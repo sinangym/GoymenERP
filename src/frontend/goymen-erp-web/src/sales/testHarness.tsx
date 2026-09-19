@@ -27,6 +27,8 @@ export const PRODUCT = '22222222-2222-2222-2222-222222222222'
 export const KG = '44444444-4444-4444-4444-444444444444'
 
 export const ALL_SALES = [SALES_CAPABILITY.draftsList, SALES_CAPABILITY.draftsDetail, SALES_CAPABILITY.draftsCreate]
+/** SALES-A1: the three screens plus the approve control the shell publishes to an approver. */
+export const ALL_SALES_WITH_APPROVE = [...ALL_SALES, SALES_CAPABILITY.ordersApprove]
 
 export const OPTIONS_A: OrderDraftOptions = {
   accounts: [{ partyId: PARTY, companyAccountId: ACCOUNT, label: 'ABC Demir — A hesabı' }],
@@ -70,6 +72,8 @@ export interface HarnessConfig {
   readonly onList?: (url: string, companyId: string | null) => Response | Promise<Response>
   readonly onDetail?: (url: string, companyId: string | null) => Response | Promise<Response>
   readonly onCreate?: (attempt: number, call: RecordedCall) => Response | Promise<Response>
+  /** SALES-A1: a POST on `/sales/drafts/{id}/(submission|approval|rejection)`. */
+  readonly onCommand?: (command: string, call: RecordedCall) => Response | Promise<Response>
 }
 
 export function installFetch(config: HarnessConfig = {}) {
@@ -98,6 +102,11 @@ export function installFetch(config: HarnessConfig = {}) {
         })
       }
       if (url.includes('/sales/drafts')) {
+        const command = /\/sales\/drafts\/[^/?]+\/(submission|approval|rejection)$/.exec(url)?.[1]
+        if (call.method === 'POST' && command !== undefined) {
+          if (config.onCommand === undefined) throw new Error(`unexpected ${command}`)
+          return config.onCommand(command, call)
+        }
         if (call.method === 'POST') {
           creates += 1
           if (config.onCreate === undefined) throw new Error('unexpected create')

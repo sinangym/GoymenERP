@@ -140,7 +140,9 @@ _SYNTHETIC_ID_PREFIX = {"Users": "b20", "External": "b21", "Roles": "b30", "Assi
 SUITE_IDENTITY_PERMISSIONS = {
     # u02 seeds only the issuer's Identity user, which holds nothing (the issuer-user rule).
     "u02": (),
-    "s03": ("sales.drafts.create", "sales.drafts.read", "product.operational-selection.read"),
+    # SALES-A1 (coordinator): the approval and the draft's party read, for the v2b positive path.
+    "s03": ("sales.drafts.create", "sales.drafts.read", "product.operational-selection.read",
+            "counterparty.parties.read", "sales.orders.approve"),
     # The five Manufacturing names (recorder); the reader holds only manufacturing.orders.read.
     "mfg": (
         "manufacturing.plans.write",
