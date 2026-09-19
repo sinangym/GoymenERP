@@ -358,7 +358,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // catch filter, as the other module stores do. No connection, command or raw SQL.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/InventoryOpeningCommandService.cs"] =
                     new(
-                        "06e075f9a95cea494802ae40e03d4a1925efa3f48f3fea9dc20e18a4527a12ef",
+                        "3c4f8e7cac8ed19b0416e3ae4d9e945e14aec07eeae53960806bdbcdccfd3e50",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
