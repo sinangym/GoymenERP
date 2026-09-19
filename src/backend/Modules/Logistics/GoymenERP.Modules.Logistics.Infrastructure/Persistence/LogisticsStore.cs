@@ -29,7 +29,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
     private const int MaximumPageSize = 100;
     private const int AttemptOutcomeRecorded = 1;
     private const int AttemptOutcomeRefused = 2;
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task<LogisticsStoreResult> StoreInstructionAsync(LogisticsWriteEnvelope envelope, string requestHash, DateOnly effectiveOn,
         Func<LoadingInstruction> build, CancellationToken cancellationToken = default)
@@ -402,7 +402,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
     }
 
     private static LoadingAttemptRow Attempt(Guid companyId, string commandName, string keyHash, string requestHash, string actorId,
-        LogisticsWriteEnvelope envelope, Guid? instructionId, DateTimeOffset now) => new()
+        LogisticsWriteEnvelope envelope, Guid? instructionId, DateTimeOffset now) => new LoadingAttemptRow()
     {
         CompanyId = companyId,
         CommandName = commandName,
@@ -500,7 +500,7 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
     public static string IdempotencyKeyHash(string idempotencyKey) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(idempotencyKey.Trim())));
 
-    private static LogisticsStoreException Refused(string code, string message, Exception? inner = null) => new(code, message, inner);
+    private static LogisticsStoreException Refused(string code, string message, Exception? inner = null) => new LogisticsStoreException(code, message, inner);
 
     /// <summary>The opaque, company-bound list cursor (the Sales shape): base64url of company | createdAtUtc ticks | id.</summary>
     internal static class ListCursor

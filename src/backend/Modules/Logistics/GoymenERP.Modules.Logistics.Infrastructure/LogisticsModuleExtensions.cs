@@ -53,7 +53,7 @@ public static class LogisticsModuleExtensions
     }
 
     // A named factory so that no registration statement of this module names the company context (architecture guard).
-    private static LogisticsInstructionService CreateInstructionService(IServiceProvider serviceProvider) => new(
+    private static LogisticsInstructionService CreateInstructionService(IServiceProvider serviceProvider) => new LogisticsInstructionService(
         serviceProvider.GetRequiredService<ICompanyContext>(),
         serviceProvider.GetRequiredService<ICurrentUser>(),
         serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
