@@ -12,10 +12,12 @@ import {
   linePlanHint,
   removeLine,
   removeSlice,
+  setAccount,
   setLineProduct,
   sliceFieldId,
   updateSlice,
   validateOrderDraft,
+  type DeliveryReferenceOptions,
   type OrderDraftFormValues,
   type OrderDraftOptions,
 } from './orderDraftForm'
@@ -34,6 +36,13 @@ const OTHER_ACCOUNT = '55555555-5555-5555-5555-555555555556'
 const DRAFT_PRODUCT = '22222222-2222-2222-2222-222222222223'
 const OTHER_PRODUCT = '22222222-2222-2222-2222-222222222224'
 const PIECE = '44444444-4444-4444-4444-444444444445'
+// SALES-A2a: the Cari owner's contact information of the example account (synthetic).
+const ADDRESS = 'aaaaaaaa-1111-4111-8111-000000000401'
+const CONTACT = 'bbbbbbbb-1111-4111-8111-000000000401'
+const DELIVERY: DeliveryReferenceOptions = {
+  addresses: [{ id: ADDRESS, version: '4', purpose: 'delivery', text: 'Sanayi Cad. 1, Kocaeli, TR' }],
+  contacts: [{ id: CONTACT, version: '2', displayName: 'Ayşe Yükleme', jobTitle: null, purpose: 'delivery' }],
+}
 
 const OPTIONS: OrderDraftOptions = {
   accounts: [{ partyId: PARTY, companyAccountId: ACCOUNT, label: 'Cari A' }],
@@ -67,6 +76,8 @@ function exampleForm(over: Partial<OrderDraftFormValues> = {}): OrderDraftFormVa
         ],
       },
     ],
+    deliveryAddressId: '',
+    contactId: '',
     ...over,
   }
 }
@@ -281,5 +292,42 @@ describe('line editing and server paths', () => {
     expect(formFieldForServerPath('companyAccountId', sent)).toBe(ORDER_FIELD.customer)
     expect(formFieldForServerPath('lines[5].quantity', sent)).toBeNull()
     expect(formFieldForServerPath('idempotencyKey', sent)).toBeNull()
+  })
+})
+
+describe('SALES-A2a — delivery address and contact are chosen from the owner, and optional', () => {
+  it('sends the chosen references with the owner versions, and null when nothing is chosen', () => {
+    const chosen = validateOrderDraft(exampleForm({ deliveryAddressId: ADDRESS, contactId: CONTACT }), OPTIONS, DELIVERY)
+    expect(chosen.ok).toBe(true)
+    if (!chosen.ok) return
+    expect(chosen.payload.deliveryAddress).toEqual({ id: ADDRESS, expectedVersion: '4' })
+    expect(chosen.payload.contact).toEqual({ id: CONTACT, expectedVersion: '2' })
+    // No address text travels: the owner's identity and version only.
+    expect(JSON.stringify(chosen.payload)).not.toContain('Sanayi')
+    const none = validateOrderDraft(exampleForm(), OPTIONS, DELIVERY)
+    expect(none.ok && none.payload.deliveryAddress).toBeNull()
+    expect(none.ok && none.payload.contact).toBeNull()
+    expect(none.ok && none.payload.responsible).toBeNull()
+  })
+
+  it('refuses a reference the owner does not list for the account, or one chosen before the list answered', () => {
+    const unknown = validateOrderDraft(exampleForm({ deliveryAddressId: CONTACT, contactId: ADDRESS }), OPTIONS, DELIVERY)
+    expect(!unknown.ok && unknown.errors[ORDER_FIELD.deliveryAddress]).toBe(ORDER_DRAFT_TEXT.validation.deliveryAddressNotOffered)
+    expect(!unknown.ok && unknown.errors[ORDER_FIELD.contact]).toBe(ORDER_DRAFT_TEXT.validation.contactNotOffered)
+    const early = validateOrderDraft(exampleForm({ deliveryAddressId: ADDRESS }), OPTIONS, null)
+    expect(!early.ok && Object.keys(early.errors)).toEqual([ORDER_FIELD.deliveryAddress])
+  })
+
+  it('choosing another account clears both; the same account keeps them', () => {
+    const form = exampleForm({ deliveryAddressId: ADDRESS, contactId: CONTACT })
+    expect(setAccount(form, PARTY, ACCOUNT)).toBe(form)
+    const other = setAccount(form, PARTY, OTHER_ACCOUNT)
+    expect([other.companyAccountId, other.deliveryAddressId, other.contactId]).toEqual([OTHER_ACCOUNT, '', ''])
+  })
+
+  it('is not pristine with a chosen reference, and places the server paths on the selects', () => {
+    expect(isOrderDraftPristine({ ...emptyOrderDraftForm(LINE), contactId: CONTACT })).toBe(false)
+    expect(formFieldForServerPath('deliveryAddress', [])).toBe(ORDER_FIELD.deliveryAddress)
+    expect(formFieldForServerPath('contact', [])).toBe(ORDER_FIELD.contact)
   })
 })

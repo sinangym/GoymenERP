@@ -500,6 +500,251 @@ public sealed class SalesReferenceReadHandlerTests
         Assert.Null(result.Value);
     }
 
+    // ---- SALES-A2a: the two list reads ------------------------------------------------------------
+
+    [Fact]
+    public async Task List_reads_deny_without_policy_and_without_touching_their_owners()
+    {
+        var f = new Fixture();
+        Assert.Equal(403, (await f.Handler(new()).GetContactInformationAsync(f.ContactQuery)).StatusCode);
+        Assert.Equal(403, (await f.Handler(new()).GetCurrenciesAsync(f.CurrenciesQuery)).StatusCode);
+        f.User.IsAuthenticated = false;
+        Assert.Equal(401, (await f.Handler().GetContactInformationAsync(f.ContactQuery)).StatusCode);
+        Assert.Equal(401, (await f.Handler().GetCurrenciesAsync(f.CurrenciesQuery)).StatusCode);
+        Assert.Equal(0, f.ContactInformation.Calls + f.Candidates.Calls + f.Settings.Calls);
+    }
+
+    [Fact]
+    public async Task List_reads_without_their_owner_port_are_unavailable_not_empty()
+    {
+        var f = new Fixture();
+        var contacts = await f.Handler(contactMissing: true).GetContactInformationAsync(f.ContactQuery);
+        Assert.Equal((503, "counterparty_provider_unavailable"), (contacts.StatusCode, contacts.Code));
+        var currencies = await f.Handler(candidatesMissing: true).GetCurrenciesAsync(f.CurrenciesQuery);
+        Assert.Equal((503, "settings_provider_unavailable"), (currencies.StatusCode, currencies.Code));
+        Assert.Null(contacts.Value);
+        Assert.Null(currencies.Value);
+        Assert.Equal(0, f.Settings.Calls);
+    }
+
+    [Fact]
+    public async Task Contact_information_offers_only_active_items_with_the_owners_versions_and_a_joined_text()
+    {
+        var f = new Fixture();
+        var result = await f.Handler().GetContactInformationAsync(f.ContactQuery);
+        Assert.Equal(200, result.StatusCode);
+        var value = result.Value!;
+        Assert.Equal((f.Company, f.Party, f.Account, "9007199254740993"),
+            (value.CompanyId, value.PartyId, value.CompanyAccountId, value.AccountVersion));
+        var address = Assert.Single(value.Addresses);
+        Assert.Equal((f.ActiveAddress, "3", "delivery", "TR", "Sanayi Cad. 1", "Kocaeli", "Gebze", "41400"),
+            (address.Id, address.Version, address.Purpose, address.CountryCode, address.Line1, address.City, address.District, address.PostalCode));
+        Assert.Equal("Sanayi Cad. 1, Gebze Kocaeli 41400, TR", address.Text);
+        var contact = Assert.Single(value.Contacts);
+        Assert.Equal((f.ActiveContact, "2", "Ayşe Yükleme", "Sevkiyat", "delivery"),
+            (contact.Id, contact.Version, contact.DisplayName, contact.JobTitle, contact.Purpose));
+        Assert.Equal((f.Party, f.Account), f.ContactInformation.Asked);
+        // The permission is measured before and after the owner read.
+        Assert.Equal(2, f.Auth.Calls);
+    }
+
+    [Fact]
+    public void The_address_text_leaves_blank_parts_out()
+    {
+        var full = new SalesPartyAddressV1(Guid.NewGuid(), "1", true, "delivery", "TR", "Sanayi Cad. 1", "Kat 2", "Kocaeli", "Gebze", "41400");
+        Assert.Equal("Sanayi Cad. 1, Kat 2, Gebze Kocaeli 41400, TR", SalesReferenceReadHandler.AddressText(full));
+        var bare = full with { Line2 = " ", City = null, District = null, PostalCode = "" };
+        Assert.Equal("Sanayi Cad. 1, TR", SalesReferenceReadHandler.AddressText(bare));
+    }
+
+    [Fact]
+    public async Task Contact_information_with_empty_ids_is_refused_before_the_owner()
+    {
+        var f = new Fixture();
+        var result = await f.Handler().GetContactInformationAsync(new(Guid.Empty, f.Account));
+        Assert.Equal((400, "validation_failed"), (result.StatusCode, result.Code));
+        Assert.Equal(400, (await f.Handler().GetContactInformationAsync(new(f.Party, Guid.Empty))).StatusCode);
+        Assert.Equal(0, f.ContactInformation.Calls);
+    }
+
+    [Theory]
+    [InlineData(SalesPartyContactInformationOutcomeV1.Denied, 403, null)]
+    [InlineData(SalesPartyContactInformationOutcomeV1.NotFound, 404, null)]
+    [InlineData(SalesPartyContactInformationOutcomeV1.Unavailable, 503, "counterparty_provider_unavailable")]
+    public async Task Contact_information_owner_outcomes_keep_their_meaning(
+        SalesPartyContactInformationOutcomeV1 outcome, int status, string? code)
+    {
+        var f = new Fixture();
+        f.ContactInformation.Answer = new(outcome, null);
+        var result = await f.Handler().GetContactInformationAsync(f.ContactQuery);
+        Assert.Equal((status, code), (result.StatusCode, result.Code));
+        Assert.Null(result.Value);
+    }
+
+    [Fact]
+    public async Task Contact_information_of_another_company_is_denied_and_a_malformed_answer_is_unavailable()
+    {
+        var f = new Fixture();
+        var information = f.ContactInformation.Answer.Information!;
+        f.ContactInformation.Answer = new(SalesPartyContactInformationOutcomeV1.Found, information with { CompanyId = Guid.NewGuid() });
+        Assert.Equal(403, (await f.Handler().GetContactInformationAsync(f.ContactQuery)).StatusCode);
+
+        f.ContactInformation.Answer = new(SalesPartyContactInformationOutcomeV1.Found, information with { CompanyAccountId = Guid.NewGuid() });
+        var other = await f.Handler().GetContactInformationAsync(f.ContactQuery);
+        Assert.Equal((503, "reference_provider_invalid"), (other.StatusCode, other.Code));
+
+        f.ContactInformation.Answer = new(SalesPartyContactInformationOutcomeV1.Found, information with { AccountVersion = "007" });
+        Assert.Equal(503, (await f.Handler().GetContactInformationAsync(f.ContactQuery)).StatusCode);
+
+        var blankLine = information.Addresses[0] with { Line1 = " " };
+        f.ContactInformation.Answer = new(SalesPartyContactInformationOutcomeV1.Found, information with { Addresses = [blankLine] });
+        Assert.Equal(503, (await f.Handler().GetContactInformationAsync(f.ContactQuery)).StatusCode);
+
+        var blankName = information.Contacts[0] with { DisplayName = "" };
+        f.ContactInformation.Answer = new(SalesPartyContactInformationOutcomeV1.Found, information with { Contacts = [blankName] });
+        Assert.Equal(503, (await f.Handler().GetContactInformationAsync(f.ContactQuery)).StatusCode);
+
+        // An INACTIVE malformed item is not offered, so it is not a reason to refuse the active ones.
+        var inactiveBlank = information.Addresses[1] with { Line1 = "" };
+        f.ContactInformation.Answer = new(SalesPartyContactInformationOutcomeV1.Found,
+            information with { Addresses = [information.Addresses[0], inactiveBlank] });
+        Assert.Equal(200, (await f.Handler().GetContactInformationAsync(f.ContactQuery)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Contact_information_is_not_released_after_the_permission_or_the_company_is_lost()
+    {
+        var f = new Fixture();
+        f.ContactInformation.OnRead = () => f.Auth.Allowed = false;
+        var lost = await f.Handler().GetContactInformationAsync(f.ContactQuery);
+        Assert.Equal(403, lost.StatusCode);
+        Assert.Null(lost.Value);
+
+        var g = new Fixture();
+        g.ContactInformation.OnRead = () => g.Context.Set(Guid.NewGuid());
+        Assert.Equal(403, (await g.Handler().GetContactInformationAsync(g.ContactQuery)).StatusCode);
+
+        var h = new Fixture();
+        h.ContactInformation.Error = new UnauthorizedAccessException("owner-internal-detail");
+        var refused = await h.Handler().GetContactInformationAsync(h.ContactQuery);
+        Assert.Equal(403, refused.StatusCode);
+        Assert.Null(refused.Code);
+    }
+
+    [Fact]
+    public async Task Currencies_revalidate_every_candidate_for_the_operation_and_date_and_offer_the_usable_ones_in_order()
+    {
+        var f = new Fixture();
+        var result = await f.Handler().GetCurrenciesAsync(f.CurrenciesQuery);
+        Assert.Equal(200, result.StatusCode);
+        var value = result.Value!;
+        Assert.Equal((f.Company, f.Day), (value.CompanyId, value.EffectiveOn));
+        Assert.Equal(new[] { f.Currency, f.SecondCurrency }, value.Currencies.Select(c => c.CurrencyId).ToArray());
+        var first = value.Currencies[0];
+        Assert.Equal((f.Company, f.Day, "XYZ", "XYZ", f.Profile, "9007199254740993"),
+            (first.CompanyId, first.EffectiveOn, first.Code, first.Label, first.ProfileId, first.ProfileVersion));
+        Assert.Equal("4", value.Currencies[1].ProfileVersion);
+        Assert.Equal(1, f.Candidates.Calls);
+        Assert.Equal(new[] { (f.Currency, "controlled.operation", f.Day), (f.SecondCurrency, "controlled.operation", f.Day) },
+            f.Settings.MoneyCalls.ToArray());
+        // Measured before, after the list read, and after each profile read.
+        Assert.Equal(4, f.Auth.Calls);
+    }
+
+    [Fact]
+    public async Task A_candidate_without_a_profile_for_the_operation_or_not_in_effect_is_left_out_not_an_outage()
+    {
+        var f = new Fixture();
+        f.Settings.MoneyErrors[f.SecondCurrency] = new SettingsPrerequisiteException(SettingsPrerequisiteCodesV1.MoneyProfileNotFound);
+        var missing = await f.Handler().GetCurrenciesAsync(f.CurrenciesQuery);
+        Assert.Equal(200, missing.StatusCode);
+        Assert.Equal(f.Currency, Assert.Single(missing.Value!.Currencies).CurrencyId);
+
+        var g = new Fixture();
+        g.Settings.Money = g.Settings.Money with { IsActive = false };
+        var inactive = await g.Handler().GetCurrenciesAsync(g.CurrenciesQuery);
+        Assert.Equal(g.SecondCurrency, Assert.Single(inactive.Value!.Currencies).CurrencyId);
+
+        var h = new Fixture();
+        h.Settings.Money = h.Settings.Money with { EffectiveFrom = h.Day.AddDays(1) };
+        Assert.Equal(h.SecondCurrency, Assert.Single((await h.Handler().GetCurrenciesAsync(h.CurrenciesQuery)).Value!.Currencies).CurrencyId);
+    }
+
+    [Fact]
+    public async Task An_empty_candidate_list_is_an_empty_answer_and_a_malformed_one_is_unavailable()
+    {
+        var f = new Fixture();
+        f.Candidates.List = [];
+        var empty = await f.Handler().GetCurrenciesAsync(f.CurrenciesQuery);
+        Assert.Equal(200, empty.StatusCode);
+        Assert.Empty(empty.Value!.Currencies);
+        Assert.Equal(0, f.Settings.Calls);
+
+        f.Candidates.List = [new(f.Currency, "XYZ", "XYZ"), new(f.Currency, "XYZ", "XYZ again")];
+        var duplicate = await f.Handler().GetCurrenciesAsync(f.CurrenciesQuery);
+        Assert.Equal((503, "settings_provider_unavailable"), (duplicate.StatusCode, duplicate.Code));
+        Assert.Equal(0, f.Settings.Calls);
+    }
+
+    [Theory]
+    [InlineData("settings_access_denied", 403)]
+    [InlineData("settings_provider_unavailable", 503)]
+    public async Task A_settings_failure_on_the_list_or_on_a_candidate_fails_the_whole_read(string code, int status)
+    {
+        var f = new Fixture();
+        f.Candidates.Error = new SettingsPrerequisiteException(code);
+        var list = await f.Handler().GetCurrenciesAsync(f.CurrenciesQuery);
+        Assert.Equal((status, code), (list.StatusCode, list.Code));
+
+        var g = new Fixture();
+        g.Settings.MoneyErrors[g.SecondCurrency] = new SettingsPrerequisiteException(code);
+        var candidate = await g.Handler().GetCurrenciesAsync(g.CurrenciesQuery);
+        Assert.Equal((status, code), (candidate.StatusCode, candidate.Code));
+        Assert.Null(candidate.Value);
+    }
+
+    [Fact]
+    public async Task A_foreign_or_malformed_candidate_profile_cannot_be_offered()
+    {
+        var f = new Fixture();
+        f.Settings.MoneyProfiles[f.SecondCurrency] = f.Settings.MoneyProfiles[f.SecondCurrency] with { CompanyId = Guid.NewGuid() };
+        Assert.Equal(403, (await f.Handler().GetCurrenciesAsync(f.CurrenciesQuery)).StatusCode);
+
+        var g = new Fixture();
+        g.Settings.MoneyProfiles[g.SecondCurrency] = g.Settings.MoneyProfiles[g.SecondCurrency] with { CurrencyId = Guid.NewGuid() };
+        var other = await g.Handler().GetCurrenciesAsync(g.CurrenciesQuery);
+        Assert.Equal((503, "reference_provider_invalid"), (other.StatusCode, other.Code));
+
+        var h = new Fixture();
+        h.Settings.MoneyProfiles[h.SecondCurrency] = h.Settings.MoneyProfiles[h.SecondCurrency] with { CurrencyCode = " " };
+        Assert.Equal(503, (await h.Handler().GetCurrenciesAsync(h.CurrenciesQuery)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Currencies_need_the_bound_operation_and_are_not_released_after_the_permission_is_lost()
+    {
+        var f = new Fixture();
+        var unbound = await f.Handler(Fixture.Bindings with { MoneyOperation = null }).GetCurrenciesAsync(f.CurrenciesQuery);
+        Assert.Equal((503, "settings_operation_unavailable"), (unbound.StatusCode, unbound.Code));
+        Assert.Equal(0, f.Candidates.Calls + f.Settings.Calls);
+
+        var g = new Fixture();
+        g.Candidates.OnRead = () => g.Auth.Allowed = false;
+        Assert.Equal(403, (await g.Handler().GetCurrenciesAsync(g.CurrenciesQuery)).StatusCode);
+        Assert.Equal(0, g.Settings.Calls);
+
+        var h = new Fixture();
+        h.Settings.OnRead = () => h.Auth.Allowed = false;
+        var lost = await h.Handler().GetCurrenciesAsync(h.CurrenciesQuery);
+        Assert.Equal(403, lost.StatusCode);
+        Assert.Null(lost.Value);
+
+        var i = new Fixture();
+        i.Settings.MoneyErrors[i.Currency] = new SettingsPrerequisiteException(SettingsPrerequisiteCodesV1.MoneyProfileNotFound);
+        i.Settings.OnRead = () => i.Auth.Allowed = false;
+        Assert.Equal(403, (await i.Handler().GetCurrenciesAsync(i.CurrenciesQuery)).StatusCode);
+    }
+
     private sealed class Fixture
     {
         public static readonly SalesReferenceReadBindings Bindings = new(
@@ -520,8 +765,18 @@ public sealed class SalesReferenceReadHandlerTests
         public Accounts Accounts { get; } = new();
         public Settings Settings { get; } = new();
         public Products Products { get; } = new();
+        // SALES-A2a: the Settings candidate reader and the Cari contact-information port.
+        public Candidates Candidates { get; } = new();
+        public ContactInformation ContactInformation { get; } = new();
+        public Guid Party { get; } = Guid.NewGuid();
+        public Guid Account { get; } = Guid.NewGuid();
+        public Guid ActiveAddress { get; } = Guid.NewGuid();
+        public Guid ActiveContact { get; } = Guid.NewGuid();
+        public Guid SecondCurrency { get; } = Guid.NewGuid();
         public SalesCurrencyQueryV1 CurrencyQuery => new(Currency, Day);
         public SalesProductQueryV1 ProductQuery => new(Product, "7", Unit, Day);
+        public SalesContactInformationQueryV1 ContactQuery => new(Party, Account);
+        public SalesCurrencyListQueryV1 CurrenciesQuery => new(Day);
         public Fixture()
         {
             Context.Set(Company);
@@ -539,9 +794,26 @@ public sealed class SalesReferenceReadHandlerTests
             var sales = AddUnit(SalesUnit, "sales-unit", Guid.NewGuid(), 2);
             var order = AddUnit(Unit, "order-unit", OrderProfile, 3);
             Products.Result = new(new(Product, "7", "P001", "Example Product", stock, sales, order, Day), []);
+            // SALES-A2a: two candidates of the company; the second has its own profile (in effect too).
+            Candidates.List = [new(Currency, "XYZ", "XYZ - Example"), new(SecondCurrency, "ABC", "ABC - Second")];
+            Settings.MoneyProfiles[SecondCurrency] = new(Company, SecondCurrency, "ABC", "controlled.operation",
+                new(Guid.NewGuid(), 4), 2, true, Day.AddDays(-2), null);
+            // One active and one inactive address and contact; the inactive ones must never be offered.
+            ContactInformation.Answer = new(SalesPartyContactInformationOutcomeV1.Found, new SalesPartyContactInformationV1(
+                Party, Account, Company, "9007199254740993",
+                [
+                    new(ActiveAddress, "3", true, "delivery", "TR", "Sanayi Cad. 1", null, "Kocaeli", "Gebze", "41400"),
+                    new(Guid.NewGuid(), "1", false, "delivery", "TR", "Old street", null, null, null, null),
+                ],
+                [
+                    new(ActiveContact, "2", true, "Ayşe Yükleme", "Sevkiyat", "delivery"),
+                    new(Guid.NewGuid(), "5", false, "Former Person", null, "delivery"),
+                ]));
         }
-        public SalesReferenceReadHandler Handler(SalesReferenceReadBindings? bindings = null, bool productMissing = false) =>
-            new(Context, User, Auth, Accounts, Settings, productMissing ? null : Products, bindings ?? Bindings);
+        public SalesReferenceReadHandler Handler(SalesReferenceReadBindings? bindings = null, bool productMissing = false,
+            bool candidatesMissing = false, bool contactMissing = false) =>
+            new(Context, User, Auth, Accounts, Settings, productMissing ? null : Products, bindings ?? Bindings,
+                candidatesMissing ? null : Candidates, contactMissing ? null : ContactInformation);
         private ProductSalesUnitProfileV1 AddUnit(Guid unitId, string code, Guid profileId, long version)
         {
             Settings.Units[unitId] = new(Company, unitId, code, "owner-dimension", false,
@@ -593,6 +865,9 @@ public sealed class SalesReferenceReadHandlerTests
         public Exception? Error { get; set; }
         public MoneyProfileV1 Money { get; set; } = null!;
         public Dictionary<Guid, UnitProfileV1> Units { get; } = [];
+        /// <summary>SALES-A2a: a per-currency money answer (or error) for the list read; a currency without one answers <see cref="Money"/>.</summary>
+        public Dictionary<Guid, MoneyProfileV1> MoneyProfiles { get; } = [];
+        public Dictionary<Guid, Exception> MoneyErrors { get; } = [];
         private void Read(CancellationToken token) { token.ThrowIfCancellationRequested(); OnRead?.Invoke(); if (Error is not null) throw Error; }
         public Task<UnitProfileV1> GetUnitProfileAsync(Guid unitId, DateOnly effectiveOn, CancellationToken cancellationToken = default)
         {
@@ -603,7 +878,12 @@ public sealed class SalesReferenceReadHandlerTests
                 : throw new InvalidOperationException($"Unexpected unit profile read {unitId:D}.");
         }
         public Task<MoneyProfileV1> GetMoneyProfileAsync(Guid currencyId, string operation, DateOnly effectiveOn, CancellationToken cancellationToken = default)
-        { MoneyCalls.Add((currencyId, operation, effectiveOn)); Read(cancellationToken); return Task.FromResult(Money); }
+        {
+            MoneyCalls.Add((currencyId, operation, effectiveOn));
+            Read(cancellationToken);
+            if (MoneyErrors.TryGetValue(currencyId, out var error)) throw error;
+            return Task.FromResult(MoneyProfiles.TryGetValue(currencyId, out var profile) ? profile : Money);
+        }
         public Task<PeriodEligibilityV1> GetPeriodEligibilityAsync(string operation, DateOnly occurredOn, DateOnly? valueOn,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
@@ -616,5 +896,26 @@ public sealed class SalesReferenceReadHandlerTests
         public Exception? Error { get; set; }
         public Task<ProductSalesEligibilityV1> EvaluateAsync(ProductSalesSelectionV1 selection, CancellationToken cancellationToken)
         { Calls++; Selection = selection; OnRead?.Invoke(); if (Error is not null) throw Error; return Task.FromResult(Result); }
+    }
+    /// <summary>SALES-A2a: the Settings owner's candidate list, as given (the handler revalidates each).</summary>
+    private sealed class Candidates : ISettingsMoneyCandidateReader
+    {
+        public int Calls { get; private set; }
+        public Action? OnRead { get; set; }
+        public Exception? Error { get; set; }
+        public IReadOnlyList<MoneyCurrencyCandidateV1> List { get; set; } = [];
+        public Task<IReadOnlyList<MoneyCurrencyCandidateV1>> GetMoneyCurrencyCandidatesAsync(CancellationToken cancellationToken = default)
+        { Calls++; OnRead?.Invoke(); if (Error is not null) throw Error; return Task.FromResult(List); }
+    }
+    /// <summary>SALES-A2a: the Cari owner's contact-information answer for the party account asked.</summary>
+    private sealed class ContactInformation : ISalesPartyContactInformationPortV1
+    {
+        public int Calls { get; private set; }
+        public Action? OnRead { get; set; }
+        public Exception? Error { get; set; }
+        public (Guid PartyId, Guid CompanyAccountId)? Asked { get; private set; }
+        public SalesPartyContactInformationAnswerV1 Answer { get; set; } = new(SalesPartyContactInformationOutcomeV1.Unavailable, null);
+        public Task<SalesPartyContactInformationAnswerV1> GetContactInformationAsync(Guid partyId, Guid companyAccountId, CancellationToken cancellationToken = default)
+        { Calls++; Asked = (partyId, companyAccountId); OnRead?.Invoke(); if (Error is not null) throw Error; return Task.FromResult(Answer); }
     }
 }

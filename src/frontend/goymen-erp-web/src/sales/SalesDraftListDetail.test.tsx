@@ -9,8 +9,21 @@ import userEvent from '@testing-library/user-event'
 import listResponseRaw from './examples/list-response.json?raw'
 import detailResponseRaw from './examples/detail-response.json?raw'
 import { SALES_CAPABILITY } from './capabilities'
-import { ORDER_DETAIL_TEXT, ORDER_LIST_TEXT } from './salesText'
-import { COMPANY_A, deferred, installFetch, json, renderSalesApp } from './testHarness'
+import type { UseContactInformation } from './referenceSource'
+import { ORDER_DETAIL_TEXT, ORDER_DRAFT_TEXT, ORDER_LIST_TEXT } from './salesText'
+import {
+  ADDRESS,
+  ADDRESS_TEXT,
+  COMPANY_A,
+  CONTACT,
+  CURRENCY,
+  controlledContactInformation,
+  controlledSource,
+  deferred,
+  installFetch,
+  json,
+  renderSalesApp,
+} from './testHarness'
 
 const DRAFT = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 
@@ -169,5 +182,72 @@ describe('S-04 detail', () => {
     renderSalesApp('/satis/siparisler/yeni')
     await waitFor(() => expect(screen.getByText('Bulunamadı — sayfa')).toBeTruthy())
     expect(fetch.salesCalls()).toHaveLength(0)
+  })
+})
+
+describe('SALES-A2a — the delivery block on the detail', () => {
+  const D = ORDER_DETAIL_TEXT.delivery
+  const path = `/satis/siparisler/${DRAFT}`
+  const OTHER_CONTACT = 'bbbbbbbb-1111-4111-8111-000000000409'
+
+  it('says nothing was chosen for the example, and shows the currency code from the currencies list', async () => {
+    installFetch({ onDetail: () => json(detailResponseRaw) })
+    renderSalesApp(path)
+    await screen.findByRole('heading', { name: 'SO-2026-0001' })
+    expect(screen.getByTestId('sales-currency-code').textContent).toBe('TRY')
+    expect(screen.getByTestId('sales-delivery-address-text').textContent).toBe(D.addressNotChosen)
+    expect(screen.getByTestId('sales-delivery-contact-text').textContent).toBe(D.contactNotChosen)
+    expect(screen.getByTestId('sales-delivery-none').textContent).toBe(D.notChosen)
+    // The ids are still shown where they always were.
+    expect(screen.getByTestId('sales-draft-deliveryAddress').textContent).toBe(ORDER_DETAIL_TEXT.unknown)
+  })
+
+  it('shows the owner’s current text for a stored reference, notes a moved version, and says when an id is no longer listed', async () => {
+    installFetch({
+      onDetail: () =>
+        json(
+          tweakDetail((b) => {
+            b.deliveryAddress = { id: ADDRESS, expectedVersion: '3' }
+            b.contact = { id: OTHER_CONTACT, expectedVersion: '1' }
+          }),
+        ),
+    })
+    renderSalesApp(path)
+    await screen.findByRole('heading', { name: 'SO-2026-0001' })
+    expect(screen.getByTestId('sales-delivery-address-text').textContent).toBe(`${ADDRESS_TEXT} — ${D.versionChanged}`)
+    expect(screen.getByTestId('sales-delivery-contact-text').textContent).toBe(`${OTHER_CONTACT} — ${D.notListed}`)
+    expect(screen.queryByTestId('sales-delivery-none')).toBeNull()
+    expect(screen.getByTestId('sales-draft-deliveryAddress').textContent).toBe(`${ADDRESS} (3)`)
+  })
+
+  it('a failing read names its reason beside the id and offers a retry; the draft stays shown', async () => {
+    const retry = vi.fn()
+    const failing: UseContactInformation = (companyId) =>
+      companyId === '' ? { status: 'idle' } : { status: 'unavailable', reason: 'http-503', retry }
+    installFetch({ onDetail: () => json(tweakDetail((b) => (b.contact = { id: CONTACT, expectedVersion: '2' }))) })
+    renderSalesApp(path, controlledSource, { contactInformation: failing })
+    await screen.findByRole('heading', { name: 'SO-2026-0001' })
+    const contact = screen.getByTestId('sales-delivery-contact-text')
+    expect(contact.textContent).toContain(`${CONTACT} — ${D.unreadable('http-503')}`)
+    await userEvent.click(within(contact).getByRole('button', { name: ORDER_DRAFT_TEXT.references.retry }))
+    expect(retry).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId('sales-draft-version').textContent).toBe('9007199254740993')
+  })
+
+  it('without the create grant no reference read is asked; the ids are shown with the reason', async () => {
+    const asked = vi.fn()
+    const spying: UseContactInformation = (companyId, partyId, companyAccountId) => {
+      if (companyId !== '') asked()
+      return controlledContactInformation(companyId, partyId, companyAccountId)
+    }
+    installFetch({
+      capabilities: [SALES_CAPABILITY.draftsList, SALES_CAPABILITY.draftsDetail],
+      onDetail: () => json(tweakDetail((b) => (b.deliveryAddress = { id: ADDRESS, expectedVersion: '4' }))),
+    })
+    renderSalesApp(path, controlledSource, { contactInformation: spying })
+    await screen.findByRole('heading', { name: 'SO-2026-0001' })
+    expect(screen.getByTestId('sales-delivery-address-text').textContent).toBe(`${ADDRESS} — ${D.noGrant}`)
+    expect(screen.getByTestId('sales-currency-code').textContent).toBe(`${CURRENCY} — ${D.noGrant}`)
+    expect(asked).not.toHaveBeenCalled()
   })
 })

@@ -28,6 +28,8 @@ import {
   REV_0,
   SALES_DRAFT_PATH,
   STATE_COMMAND_STATUS,
+  decodeContactInformationOptions,
+  decodeCurrencyOptions,
   decodeDraftDetail,
   decodeDraftMutation,
   decodeDraftPage,
@@ -35,6 +37,8 @@ import {
   salesDraftCommandPath,
   salesDraftDetailPath,
   type ApprovalState,
+  type ContactInformationOptions,
+  type CurrencyOption,
   type DeliverySlice,
   type DraftCreateRequest,
   type DraftDetail,
@@ -182,6 +186,71 @@ export async function fetchAccountOptions(companyId: string, signal?: AbortSigna
   }
   const accounts = decodeAccountOptions(raw.body, companyId)
   return accounts === null ? { type: 'malformed' } : { type: 'ready', accounts }
+}
+
+/* ── SALES-A2a: the two LIST reads of the create form's selects ───────────── */
+
+/**
+ * `/sales/references/currencies` LISTS the company's currencies usable for a sales draft on a business
+ * date (the Settings owner's candidates, each revalidated by the Sales owner); `/sales/references/
+ * contact-information` LISTS the Cari owner's active delivery addresses and contact persons of one party
+ * account. Both are bound to `sales.drafts.create` on the server. Products still have no list (E1).
+ */
+export const SALES_REFERENCE_CURRENCIES_PATH = '/sales/references/currencies'
+export const SALES_REFERENCE_CONTACT_INFORMATION_PATH = '/sales/references/contact-information'
+
+/** One shape for every reference list read: the real answer, never a default. */
+export type ReferenceListOutcome<T> =
+  | { readonly type: 'ready'; readonly data: T }
+  | { readonly type: 'http'; readonly status: number; readonly code: string | null }
+  | { readonly type: 'network' }
+  | { readonly type: 'malformed' }
+
+async function readReferenceList<T>(
+  path: string,
+  companyId: string,
+  decode: (body: unknown) => T | null,
+  signal: AbortSignal | undefined,
+): Promise<ReferenceListOutcome<T>> {
+  const raw = await request(path, { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return { type: 'network' }
+  if (raw.status !== 200) {
+    const problem = decodeProblem(raw.body, raw.status)
+    return { type: 'http', status: raw.status, code: problem?.code ?? null }
+  }
+  const data = decode(raw.body)
+  return data === null ? { type: 'malformed' } : { type: 'ready', data }
+}
+
+export type CurrencyOptionsOutcome = ReferenceListOutcome<readonly CurrencyOption[]>
+
+/** The currencies usable on `effectiveOn` (the form's business date); an empty list is "none", not an error. */
+export function fetchCurrencyOptions(effectiveOn: string, companyId: string, signal?: AbortSignal): Promise<CurrencyOptionsOutcome> {
+  const params = new URLSearchParams({ effectiveOn })
+  return readReferenceList(
+    `${SALES_REFERENCE_CURRENCIES_PATH}?${params.toString()}`,
+    companyId,
+    (body) => decodeCurrencyOptions(body, companyId, effectiveOn),
+    signal,
+  )
+}
+
+export type ContactInformationOutcome = ReferenceListOutcome<ContactInformationOptions>
+
+/** The chosen account's active addresses and contacts; empty lists mean the owner lists none. */
+export function fetchContactInformationOptions(
+  partyId: string,
+  companyAccountId: string,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ContactInformationOutcome> {
+  const params = new URLSearchParams({ partyId, companyAccountId })
+  return readReferenceList(
+    `${SALES_REFERENCE_CONTACT_INFORMATION_PATH}?${params.toString()}`,
+    companyId,
+    (body) => decodeContactInformationOptions(body, companyId, partyId, companyAccountId),
+    signal,
+  )
 }
 
 /* ── Create ───────────────────────────────────────────────────────────────── */

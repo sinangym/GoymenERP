@@ -20,12 +20,18 @@ import errorSettingsAccess from './examples/error-settings-access.json?raw'
 import listResponse from './examples/list-response.json?raw'
 import productOwnerSelection from './examples/product-owner-selection.json?raw'
 import replayResponse from './examples/replay-response.json?raw'
+// SALES-A2a: the two reference LIST reads (FE-authored examples of the Sales owner's shapes; not #257 copies).
+import contactInformationResponse from './examples/contact-information-response.json?raw'
+import currenciesResponse from './examples/currencies-response.json?raw'
 import {
   SALES_PROBLEM_CODE,
+  decodeContactInformationOptions,
+  decodeCurrencyOptions,
   decodeDraftDetail,
   decodeDraftMutation,
   decodeDraftPage,
   decodeProblem,
+  hasPriceLikeKey,
 } from './contract'
 import { PROBLEM_CODE_TEXT } from './salesText'
 
@@ -212,5 +218,76 @@ describe('SALES-A1 approval axis', () => {
     const body = clone(parse(listResponse)) as any
     body.items[0].approvalState = 'approved'
     expect(decodeDraftPage(body)).toBeNull()
+  })
+})
+
+describe('SALES-A2a reference lists', () => {
+  const COMPANY = '99999999-9999-9999-9999-999999999999'
+  const PARTY = '11111111-1111-1111-1111-111111111111'
+  const ACCOUNT = '55555555-5555-5555-5555-555555555555'
+  const ADDRESS = 'aaaaaaaa-1111-4111-8111-000000000401'
+  const CONTACT = 'bbbbbbbb-1111-4111-8111-000000000401'
+  type Rows = { currencies: Record<string, unknown>[] }
+  type Lists = { addresses: Record<string, unknown>[]; contacts: Record<string, unknown>[] }
+
+  it('reads the currencies example bound to its company and date; another company or date is refused', () => {
+    expect(decodeCurrencyOptions(parse(currenciesResponse), COMPANY, '2026-09-13')).toEqual([
+      { currencyId: '33333333-3333-3333-3333-333333333333', code: 'TRY', profileId: 'cccccccc-1111-4111-8111-000000000401', profileVersion: '3' },
+    ])
+    expect(decodeCurrencyOptions(parse(currenciesResponse), COMPANY, '2026-09-14')).toBeNull()
+    expect(decodeCurrencyOptions(parse(currenciesResponse), '88888888-8888-8888-8888-888888888888', '2026-09-13')).toBeNull()
+    expect(decodeCurrencyOptions({ companyId: COMPANY, effectiveOn: '2026-09-13', currencies: [] }, COMPANY, '2026-09-13')).toEqual([])
+  })
+
+  it('refuses a currency row missing a member, carrying an unknown one, repeated, or naming a price', () => {
+    const missing = parse(currenciesResponse) as unknown as Rows
+    delete missing.currencies[0].profileVersion
+    expect(decodeCurrencyOptions(missing, COMPANY, '2026-09-13')).toBeNull()
+    const unknown = parse(currenciesResponse) as unknown as Rows
+    unknown.currencies[0].rate = '1'
+    expect(decodeCurrencyOptions(unknown, COMPANY, '2026-09-13')).toBeNull()
+    const repeated = parse(currenciesResponse) as unknown as Rows
+    repeated.currencies.push(clone(repeated.currencies[0]))
+    expect(decodeCurrencyOptions(repeated, COMPANY, '2026-09-13')).toBeNull()
+    const priced = parse(currenciesResponse) as unknown as Rows
+    priced.currencies[0].unitPrice = '1'
+    expect(hasPriceLikeKey(priced)).toBe(true)
+    expect(decodeCurrencyOptions(priced, COMPANY, '2026-09-13')).toBeNull()
+  })
+
+  it('reads the contact-information example bound to its account, texts and versions verbatim', () => {
+    expect(decodeContactInformationOptions(parse(contactInformationResponse), COMPANY, PARTY, ACCOUNT)).toEqual({
+      partyId: PARTY,
+      companyAccountId: ACCOUNT,
+      accountVersion: '2',
+      addresses: [{ id: ADDRESS, version: '4', purpose: 'delivery', text: 'SENTETIK Sanayi Cad. 1, Kocaeli, TR' }],
+      contacts: [{ id: CONTACT, version: '2', displayName: 'SENTETIK Ayşe Yükleme', jobTitle: 'Sevkiyat', purpose: 'delivery' }],
+    })
+    expect(decodeContactInformationOptions(parse(contactInformationResponse), COMPANY, PARTY, '55555555-5555-5555-5555-555555555556')).toBeNull()
+    expect(decodeContactInformationOptions(parse(contactInformationResponse), '88888888-8888-8888-8888-888888888888', PARTY, ACCOUNT)).toBeNull()
+  })
+
+  it('refuses a repeated address, a blank version, a channel member, or a payment-like member anywhere', () => {
+    const repeated = parse(contactInformationResponse) as unknown as Lists
+    repeated.addresses.push(clone(repeated.addresses[0]))
+    expect(decodeContactInformationOptions(repeated, COMPANY, PARTY, ACCOUNT)).toBeNull()
+    const blank = parse(contactInformationResponse) as unknown as Lists
+    blank.contacts[0].version = ' '
+    expect(decodeContactInformationOptions(blank, COMPANY, PARTY, ACCOUNT)).toBeNull()
+    const channel = parse(contactInformationResponse) as unknown as Lists
+    channel.contacts[0].channels = []
+    expect(decodeContactInformationOptions(channel, COMPANY, PARTY, ACCOUNT)).toBeNull()
+    const paid = parse(contactInformationResponse) as unknown as Lists
+    paid.addresses[0].paymentTerms = null
+    expect(decodeContactInformationOptions(paid, COMPANY, PARTY, ACCOUNT)).toBeNull()
+    // Empty lists are the owner's honest "none", not a failure.
+    expect(
+      decodeContactInformationOptions(
+        { companyId: COMPANY, partyId: PARTY, companyAccountId: ACCOUNT, accountVersion: '2', addresses: [], contacts: [] },
+        COMPANY,
+        PARTY,
+        ACCOUNT,
+      ),
+    ).toEqual({ partyId: PARTY, companyAccountId: ACCOUNT, accountVersion: '2', addresses: [], contacts: [] })
   })
 })

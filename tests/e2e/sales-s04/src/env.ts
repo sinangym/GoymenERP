@@ -8,13 +8,22 @@
  * `infra/browser-suites/s04.override.yml`. This suite adds no actor, role or grant; it only names what it
  * needs:
  *
- *   preparerActor — Development user holding sales.drafts.create + sales.drafts.read company-wide in `companyId`
- *   approverActor — Development user holding sales.orders.approve + sales.drafts.read there
- *   readerActor   — Development user holding only sales.drafts.read there
- *   companyId     — the GDC company the web profile's shell is committed to
- *   draftId       — the ONE Preparing draft with two lines the seed wrote through the gated Sales fixture
- *                   writer (synthetic owner snapshots; no attempt, no audit); every transition the suite
- *                   makes on it goes through the real API + UI
+ *   preparerActor        — Development user holding sales.drafts.create + sales.drafts.read company-wide in `companyId`
+ *   approverActor        — Development user holding sales.orders.approve + sales.drafts.read there
+ *   readerActor          — Development user holding only sales.drafts.read there
+ *   companyId            — the GDC company the web profile's shell is committed to
+ *   draftId              — the ONE Preparing draft with two lines the seed wrote through the gated Sales fixture
+ *                          writer (synthetic owner snapshots; no attempt, no audit); every transition the suite
+ *                          makes on it goes through the real API + UI
+ *   deliveryDraftId      — SALES-A2a: the SECOND draft the gated writer wrote on the REAL Cari party below, carrying
+ *                          the REAL delivery address and contact (ids + the owner's versions); reopened, never mutated
+ *   realPartyId          — the REAL Cari party the seed opened through the real counterparty endpoint
+ *   realCompanyAccountId — its company account in `companyId`
+ *   deliveryAddressId    — the REAL delivery address written through the real contact-information command
+ *   deliveryContactId    — the REAL contact person written the same way
+ *   deliveryAddressText  — the address text the real Sales contact-information reference answered
+ *   deliveryContactName  — the contact's display name the same read answered
+ *   currencyCode         — the code of the approved currency the real Sales currencies reference lists on the business date
  */
 
 export interface S04Seed {
@@ -23,6 +32,14 @@ export interface S04Seed {
   readonly readerActor: string
   readonly companyId: string
   readonly draftId: string
+  readonly deliveryDraftId: string
+  readonly realPartyId: string
+  readonly realCompanyAccountId: string
+  readonly deliveryAddressId: string
+  readonly deliveryContactId: string
+  readonly deliveryAddressText: string
+  readonly deliveryContactName: string
+  readonly currencyCode: string
 }
 
 export interface S04Environment {
@@ -65,9 +82,20 @@ export function readEnvironment(): S04Environment {
     readerActor: text(raw, 'readerActor'),
     companyId: text(raw, 'companyId', true),
     draftId: text(raw, 'draftId', true),
+    deliveryDraftId: text(raw, 'deliveryDraftId', true),
+    realPartyId: text(raw, 'realPartyId', true),
+    realCompanyAccountId: text(raw, 'realCompanyAccountId', true),
+    deliveryAddressId: text(raw, 'deliveryAddressId', true),
+    deliveryContactId: text(raw, 'deliveryContactId', true),
+    deliveryAddressText: text(raw, 'deliveryAddressText'),
+    deliveryContactName: text(raw, 'deliveryContactName'),
+    currencyCode: text(raw, 'currencyCode'),
   }
   if (new Set([seed.preparerActor, seed.approverActor, seed.readerActor]).size !== 3) {
     throw new Error('BROWSER_E2E_S04_SEED binds the same actor to two roles')
+  }
+  if (seed.draftId === seed.deliveryDraftId) {
+    throw new Error('BROWSER_E2E_S04_SEED names the same draft twice')
   }
   return { apiBaseUrl, testedCommit, seed }
 }

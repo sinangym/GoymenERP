@@ -25,11 +25,15 @@ namespace GoymenERP.Modules.Sales.Application;
 /// terminal refusal (the Product owner's <c>version_conflict</c>) again; another content or actor
 /// is one 409.</item>
 /// <item><b>Owners, in order:</b> Cari account (party + account + active + this company) →
-/// Settings money profile for <see cref="SalesMoneyOperations.OrderDraftV1"/> on the business date →
-/// per line the Product eligibility (three unit bindings) → the order unit's Settings profile.
-/// Nothing is cached, defaulted or copied from an example; each owner refusal is its own answer.</item>
-/// <item><b>Fail-closed contract deltas</b> (card decisions 2–3): a commercial field or an owner
-/// reference that has no owner port yet is refused with 422, never stored unvalidated.</item>
+/// the Cari contact information of that account when the request names a delivery address or a
+/// contact (SALES-A2a: the reference must be an ACTIVE address / contact of the account at the
+/// owner's version) → Settings money profile for <see cref="SalesMoneyOperations.OrderDraftV1"/> on
+/// the business date → per line the Product eligibility (three unit bindings) → the order unit's
+/// Settings profile. Nothing is cached, defaulted or copied from an example; each owner refusal is
+/// its own answer.</item>
+/// <item><b>Fail-closed contract deltas</b> (card decisions 2–3): a commercial field, or an owner
+/// reference whose owner port does not exist yet (responsible, payment terms, source strategy,
+/// package), is refused with 422, never stored unvalidated.</item>
 /// <item><b>Domain decides</b> the draft; the store keeps what the domain accepted, one save with
 /// the audit event.</item>
 /// </list>
@@ -44,7 +48,8 @@ public sealed class SalesDraftService(
     IProductSalesEligibilityV1? products,
     ISalesOrderDraftStore store,
     SalesDraftServiceBindings bindings,
-    TimeProvider timeProvider) : ISalesDraftService
+    TimeProvider timeProvider,
+    ISalesPartyContactInformationPortV1? contactInformation = null) : ISalesDraftService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -78,10 +83,12 @@ public sealed class SalesDraftService(
         // is recorded as the key's terminal result; if another caller of the same key wins that
         // record meanwhile, the winner's result is answered instead (ADR-011 §8; RaceWon).
         MoneyProfileSnapshot money;
+        OwnerReferences references;
         var lineInputs = new List<SalesDraftLineInput>(request.Lines.Count);
         try
         {
             await RequireAccountAsync(scope, request, cancellationToken);
+            references = await ReadOwnerReferencesAsync(scope, request, envelope, requestHash, cancellationToken);
             money = await ReadMoneyProfileAsync(scope, request, cancellationToken);
             for (var index = 0; index < request.Lines.Count; index++)
             {
@@ -95,7 +102,7 @@ public sealed class SalesDraftService(
 
         // 5. The domain builds the draft on the store's document number; the store keeps one save.
         var header = new SalesDraftHeader(request.PartyId, request.CompanyAccountId, request.CurrencyId, request.BusinessDate,
-            request.RequestedDeliveryDate, request.Note);
+            request.RequestedDeliveryDate, request.Note, DeliveryAddress: references.DeliveryAddress, Contact: references.Contact);
         var now = timeProvider.GetUtcNow();
         SalesDraftStoreResult stored;
         try
@@ -444,13 +451,16 @@ public sealed class SalesDraftService(
 
     // ---- contract deltas (card decisions 2 and 3) ---------------------------------------------
 
+    // SALES-A2a: the delivery address and the contact have their owner port (the Cari contact information) and
+    // are validated in ReadOwnerReferencesAsync; the other four still have none (T28, the Cari terms catalogue,
+    // the Identity user list, the source module) and stay refused here, never stored unvalidated.
     private static void RefuseUnavailableOwnerReferences(CreateSalesOrderDraftRequest request)
     {
         var errors = new List<SalesDraftFieldError>();
         foreach (var (field, reference) in new (string, SalesDraftOwnerReferenceV1?)[]
                  {
-                     ("deliveryAddress", request.DeliveryAddress), ("contact", request.Contact), ("responsible", request.Responsible),
-                     ("paymentTerms", request.PaymentTerms), ("sourceStrategy", request.SourceStrategy), ("package", request.Package),
+                     ("responsible", request.Responsible), ("paymentTerms", request.PaymentTerms),
+                     ("sourceStrategy", request.SourceStrategy), ("package", request.Package),
                  })
         {
             if (reference is not null)
@@ -517,6 +527,108 @@ public sealed class SalesDraftService(
             default:
                 throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable);
         }
+    }
+
+    private sealed record OwnerReferences(OwnerReference? DeliveryAddress, OwnerReference? Contact);
+
+    /// <summary>
+    /// SALES-A2a (Business 5745076917 item 2): the delivery address and the contact are the Cari owner's
+    /// operational address / contact of the draft's party account, read ONCE through
+    /// <see cref="ISalesPartyContactInformationPortV1"/> after the account answered, under the same fence
+    /// as every owner read. A reference the owner does not list, or lists inactive, is 422
+    /// <see cref="SalesDraftProblemCodesV1.OwnerReferenceInvalid"/> (not recorded: the next attempt asks
+    /// again); a reference at another version than the owner's is the terminal 409
+    /// <see cref="SalesDraftProblemCodesV1.VersionConflict"/> of ADR-011 §7, recorded under the key like the
+    /// Product owner's stale version. The draft stores the identity and the owner's version — never a copy of
+    /// the address or the person. Without a reference the port is not asked; without a port a reference is 503.
+    /// </summary>
+    private async Task<OwnerReferences> ReadOwnerReferencesAsync(Scope scope, CreateSalesOrderDraftRequest request,
+        SalesDraftWriteEnvelope envelope, string requestHash, CancellationToken cancellationToken)
+    {
+        if (request.DeliveryAddress is null && request.Contact is null)
+        {
+            return new OwnerReferences(null, null);
+        }
+
+        if (contactInformation is null)
+        {
+            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable);
+        }
+
+        var answer = await GuardedAsync(scope, bindings.CreatePermission,
+            () => contactInformation.GetContactInformationAsync(request.PartyId, request.CompanyAccountId, cancellationToken), cancellationToken);
+        SalesPartyContactInformationV1 information;
+        switch (answer.Outcome)
+        {
+            case SalesPartyContactInformationOutcomeV1.Found when answer.Information is { } found:
+                // The account read already bound the account to this company; an answer for another party, account or
+                // company here is the provider contradicting itself, not the user's input: 503, never a user error.
+                if (found.PartyId != request.PartyId || found.CompanyAccountId != request.CompanyAccountId
+                    || found.CompanyId != scope.CompanyId)
+                {
+                    throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
+                }
+
+                information = found;
+                break;
+            case SalesPartyContactInformationOutcomeV1.NotFound:
+                throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.AccountState,
+                    [new("partyId", "invalid_reference"), new("companyAccountId", "invalid_reference")]);
+            case SalesPartyContactInformationOutcomeV1.Denied:
+                throw new SalesDraftServiceException(403, "forbidden");
+            default:
+                throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable);
+        }
+
+        var invalid = new List<SalesDraftFieldError>();
+        var stale = new List<SalesDraftFieldError>();
+        var deliveryAddress = Resolve("deliveryAddress", request.DeliveryAddress,
+            information.Addresses.Select(address => (address.Id, address.Version, address.IsActive)), invalid, stale);
+        var contact = Resolve("contact", request.Contact,
+            information.Contacts.Select(person => (person.Id, person.Version, person.IsActive)), invalid, stale);
+        if (invalid.Count > 0)
+        {
+            throw new SalesDraftServiceException(422, SalesDraftProblemCodesV1.OwnerReferenceInvalid, invalid);
+        }
+
+        if (stale.Count > 0)
+        {
+            throw await TerminalAsync(envelope, requestHash,
+                new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict, stale), cancellationToken);
+        }
+
+        return new OwnerReferences(deliveryAddress, contact);
+    }
+
+    /// <summary>One owner item the request named: listed and active → the stored reference; otherwise its field error.</summary>
+    private static OwnerReference? Resolve(string field, SalesDraftOwnerReferenceV1? requested,
+        IEnumerable<(Guid Id, string Version, bool IsActive)> owned, List<SalesDraftFieldError> invalid, List<SalesDraftFieldError> stale)
+    {
+        if (requested is null)
+        {
+            return null;
+        }
+
+        var matches = owned.Where(item => item.Id == requested.Id).ToArray();
+        if (matches.Length > 1 || (matches.Length == 1 && (matches[0].Id == Guid.Empty || string.IsNullOrWhiteSpace(matches[0].Version))))
+        {
+            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
+        }
+
+        if (matches.Length == 0 || !matches[0].IsActive)
+        {
+            invalid.Add(new(field, SalesDraftProblemCodesV1.OwnerReferenceInvalid));
+            return null;
+        }
+
+        if (!string.Equals(matches[0].Version, requested.ExpectedVersion.Trim(), StringComparison.Ordinal))
+        {
+            stale.Add(new(field, SalesDraftProblemCodesV1.VersionConflict));
+            return null;
+        }
+
+        // The owner's version text as the owner returned it (the comparison was ordinal, so they are equal).
+        return new OwnerReference(requested.Id, matches[0].Version);
     }
 
     private async Task<MoneyProfileSnapshot> ReadMoneyProfileAsync(Scope scope, CreateSalesOrderDraftRequest request,

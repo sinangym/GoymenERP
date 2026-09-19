@@ -21,8 +21,30 @@ export const ORDER_DRAFT_TEXT = {
     slices: 'Termin dilimleri',
     sliceQuantity: 'Dilim miktarı',
     sliceDate: 'Dilim termini',
+    /** SALES-A2a: chosen from the Cari owner's contact information of the chosen account; optional. */
+    deliveryAddress: 'Teslimat adresi',
+    deliveryContact: 'Teslimat kişisi',
   },
   choose: 'Seçin',
+  /** SALES-A2a: the empty choice of an optional reference — nothing is sent, never a default. */
+  notChosen: '— seçilmedi —',
+  /** SALES-A2a: the header selects' own read states (each real answer, never a guessed option). */
+  references: {
+    currencyIdle: 'Para birimleri sipariş tarihine göre listelenir; önce sipariş tarihini girin.',
+    currencyLoading: 'Para birimleri okunuyor…',
+    currencyEmpty: 'Bu sipariş tarihinde onaylı para birimi yok.',
+    currencyUnavailable: (reason: string) => `Para birimleri okunamadı (${reason}).`,
+    deliveryIdle: 'Teslimat adresi ve kişisi cari hesabı seçildikten sonra listelenir.',
+    deliveryLoading: 'Yükleniyor…',
+    noAddress: 'Kayıtlı adres yok',
+    noContact: 'Kayıtlı kişi yok',
+    deliveryUnavailable: (reason: string) => `Cari iletişim bilgileri okunamadı (${reason}).`,
+    retry: 'Tekrar dene',
+    /** 409 `version_conflict` on `deliveryAddress` / `contact`: the Cari owner's item moved after the list was read (not the product sentence). */
+    versionConflict: 'Cari adres/kişi kaydı siz seçtikten sonra değişti; listeyi yenileyip yeniden seçin.',
+    /** E1: the product list is not published; the header is real, the lines and the submit are withheld. */
+    linesWithheld: 'Ürün listesi henüz sunulmuyor: satırlar ve gönderim kapalı.',
+  },
   addLine: 'Satır ekle',
   removeLine: 'Satırı kaldır',
   addSlice: 'Termin dilimi ekle',
@@ -58,6 +80,8 @@ export const ORDER_DRAFT_TEXT = {
     dateInvalid: 'Takvimde var olan bir tarih girin.',
     currencyRequired: 'Para birimini seçin.',
     currencyNotOffered: 'Seçilen para birimi artık seçilebilir değil.',
+    deliveryAddressNotOffered: 'Seçilen teslimat adresi bu cari hesabında artık sunulmuyor. Listeden yeniden seçin.',
+    contactNotOffered: 'Seçilen teslimat kişisi bu cari hesabında artık sunulmuyor. Listeden yeniden seçin.',
     noteTooLong: 'Açıklama en fazla 4000 karakter olabilir.',
     linesRequired: 'En az bir sipariş satırı ekleyin.',
     tooManyLines: 'Bir taslakta en fazla 500 satır olabilir.',
@@ -123,7 +147,9 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
   [SALES_PROBLEM_CODE.versionConflict]: 'Ürün bilgisi bu seçimden sonra değişti; ürünü yeniden seçin.',
   [SALES_PROBLEM_CODE.concurrentChange]: 'Aynı anda başka bir kayıt öne geçti; aynı gönderimi tekrar deneyin.',
   [SALES_PROBLEM_CODE.commercialNotAvailable]: 'Fiyat ve iskonto bu sürümde kaydedilmez; alanları boş bırakın.',
-  [SALES_PROBLEM_CODE.ownerReferenceUnavailable]: 'Adres, kişi ve benzeri referanslar bu sürümde kaydedilmez; alanları boş bırakın.',
+  [SALES_PROBLEM_CODE.ownerReferenceUnavailable]: 'Sorumlu, vade, kaynak ve paket referansları bu sürümde kaydedilmez; alanları boş bırakın.',
+  [SALES_PROBLEM_CODE.ownerReferenceInvalid]:
+    'Seçilen teslimat adresi ya da kişisi bu cari hesabında kayıtlı değil ya da pasif; listeden yeniden seçin.',
   [SALES_PROBLEM_CODE.commandMetadataInvalid]: 'İşlem anahtarı eksik ya da geçersiz; gönderim yapılmadı.',
   [SALES_PROBLEM_CODE.invalidCursor]: 'Liste sayfası imleci geçersiz; listeyi baştan açın.',
   [SALES_PROBLEM_CODE.stateConflict]: 'Bu işlem taslağın şu anki onay durumunda yapılamaz; taslağı yeniden açın.',
@@ -229,7 +255,23 @@ export const ORDER_DETAIL_TEXT = {
   unknown: 'Bilinmiyor',
   notPriced: 'Fiyatlandırılmadı',
   referenceNote:
-    'Cari, birim ve para birimi adları bu sözleşmede yok; kimlikler gösteriliyor. Taslak onay, stok veya finans etkisi oluşturmaz.',
+    'Cari ve birim adları bu sözleşmede yok; kimlikler gösteriliyor. Taslak onay, stok veya finans etkisi oluşturmaz.',
+  /** SALES-A2a: the delivery block — the owner's texts for the stored references, read afresh; never a guessed name. */
+  delivery: {
+    heading: 'Teslimat',
+    currency: 'Para birimi',
+    address: 'Teslimat adresi',
+    contact: 'Teslimat kişisi',
+    notChosen: 'Teslimat adresi/kişisi seçilmedi',
+    addressNotChosen: 'Teslimat adresi seçilmedi',
+    contactNotChosen: 'Teslimat kişisi seçilmedi',
+    reading: 'Okunuyor…',
+    notListed: 'Kayıt bulunamadı',
+    unreadable: (reason: string) => `Ad okunamadı (${reason})`,
+    noGrant: 'Ad okunamıyor (referans okuma yetkisi yok)',
+    currencyNotListed: 'Kod okunamadı',
+    versionChanged: 'Kayıt sürümü taslaktan sonra değişti.',
+  },
   ownerReference: {
     deliveryAddress: 'Teslim adresi',
     contact: 'Muhatap',

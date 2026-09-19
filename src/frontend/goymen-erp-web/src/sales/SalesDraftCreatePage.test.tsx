@@ -12,21 +12,30 @@ import replayResponseRaw from './examples/replay-response.json?raw'
 import errorProductRaw from './examples/error-product.json?raw'
 import errorReplayRaw from './examples/error-replay.json?raw'
 import { resetPendingDrafts } from './pendingDrafts'
-import { unavailableReferenceSource } from './referenceSource'
+import { unavailableReferenceSource, type UseContactInformation, type UseCurrencyOptions } from './referenceSource'
 import { SALES_CAPABILITY } from './capabilities'
+import { ORDER_FIELD } from './orderDraftForm'
 import { ORDER_DRAFT_TEXT as T } from './salesText'
 import {
   ACCOUNT,
+  ADDRESS,
+  ADDRESS_TEXT,
   COMPANY_A,
   COMPANY_B,
+  CONTACT,
+  CONTACT_NAME,
+  CURRENCIES_A,
   CURRENCY,
   KG,
+  OTHER_ACCOUNT,
   PARTY,
   PRODUCT,
+  controlledSource,
   deferred,
   installFetch,
   json,
   renderSalesApp,
+  useHeaderOnlySource,
 } from './testHarness'
 
 const PATH = '/satis/siparisler/yeni'
@@ -320,5 +329,148 @@ describe('company context', () => {
     await switchedTo(COMPANY_A)
     expect(await screen.findByRole('heading', { name: T.attempt.completed })).toBeTruthy()
     expect(fetch.salesCalls()).toHaveLength(1)
+  })
+})
+
+/** Rewrites the example answer so it describes the ids AND the owner references THIS form sent. */
+function answerWithReferences(raw: string, body: string | null): string {
+  const sent = JSON.parse(body as string)
+  const answer = JSON.parse(answerFor(raw, body))
+  answer.detail.deliveryAddress = sent.deliveryAddress
+  answer.detail.contact = sent.contact
+  return JSON.stringify(answer)
+}
+
+describe('SALES-A2a — delivery address, contact and the currencies list', () => {
+  it('offers the chosen account’s addresses and contacts, and sends the chosen ones as id + owner version', async () => {
+    const pending = deferred<Response>()
+    const fetch = installFetch({ onCreate: () => pending.promise })
+    renderSalesApp(PATH)
+    await formVisible()
+    // Before an account is chosen nothing is asked and nothing is offered.
+    expect(screen.getByTestId('sales-delivery-status').textContent).toBe(T.references.deliveryIdle)
+    expect((screen.getByTestId('sales-delivery-address-select') as HTMLSelectElement).disabled).toBe(true)
+    await fillExample()
+
+    const address = screen.getByLabelText(T.field.deliveryAddress) as HTMLSelectElement
+    expect(Array.from(address.options).map((o) => o.textContent)).toEqual([T.notChosen, ADDRESS_TEXT])
+    await userEvent.selectOptions(address, ADDRESS)
+    const contact = screen.getByLabelText(T.field.deliveryContact) as HTMLSelectElement
+    expect(Array.from(contact.options).map((o) => o.textContent)).toEqual([T.notChosen, `${CONTACT_NAME} · Sevkiyat`])
+    await userEvent.selectOptions(contact, CONTACT)
+    expect(screen.queryByTestId('sales-delivery-status')).toBeNull()
+
+    await userEvent.click(saveButton())
+    await screen.findByText(T.attempt.submitting)
+    const [call] = fetch.salesCalls()
+    const body = JSON.parse(call.body as string)
+    expect(body.deliveryAddress).toEqual({ id: ADDRESS, expectedVersion: '4' })
+    expect(body.contact).toEqual({ id: CONTACT, expectedVersion: '2' })
+    expect(body).toMatchObject({ responsible: null, paymentTerms: null, sourceStrategy: null, package: null })
+    // Identities and versions only: no address text or name leaves the browser.
+    expect(call.body).not.toContain('Sanayi')
+    expect(call.body).not.toContain(CONTACT_NAME)
+
+    // The answer reflects the references by value, so the attempt completes.
+    await act(async () => pending.resolve(json(answerWithReferences(createResponseRaw, call.body), 201)))
+    expect(await screen.findByRole('heading', { name: T.attempt.completed })).toBeTruthy()
+  })
+
+  it('sends null when nothing is chosen; choosing another account clears the chosen references', async () => {
+    const fetch = installFetch({ onCreate: () => deferred<Response>().promise })
+    renderSalesApp(PATH)
+    await fillExample()
+    await userEvent.selectOptions(screen.getByLabelText(T.field.deliveryAddress), ADDRESS)
+    await userEvent.selectOptions(screen.getByLabelText(T.field.deliveryContact), CONTACT)
+
+    await userEvent.selectOptions(screen.getByLabelText(T.field.customer), `${PARTY}|${OTHER_ACCOUNT}`)
+    const address = screen.getByLabelText(T.field.deliveryAddress) as HTMLSelectElement
+    expect(address.value).toBe('')
+    // The other account lists nothing: the selects say so and cannot be chosen from.
+    expect(address.disabled).toBe(true)
+    expect(address.options[0].textContent).toBe(T.references.noAddress)
+    expect((screen.getByLabelText(T.field.deliveryContact) as HTMLSelectElement).options[0].textContent).toBe(T.references.noContact)
+
+    await userEvent.selectOptions(screen.getByLabelText(T.field.customer), `${PARTY}|${ACCOUNT}`)
+    expect((screen.getByLabelText(T.field.deliveryAddress) as HTMLSelectElement).value).toBe('')
+    await userEvent.click(saveButton())
+    await screen.findByText(T.attempt.submitting)
+    const body = JSON.parse(fetch.salesCalls()[0].body as string)
+    expect(body.deliveryAddress).toBeNull()
+    expect(body.contact).toBeNull()
+  })
+
+  it('a contact-information read that fails says so with its reason and a retry; the form is not withheld', async () => {
+    const retry = vi.fn()
+    const failing: UseContactInformation = (_companyId, partyId) =>
+      partyId === '' ? { status: 'idle' } : { status: 'unavailable', reason: 'http-503:service_unavailable', retry }
+    installFetch()
+    renderSalesApp(PATH, controlledSource, { contactInformation: failing })
+    await formVisible()
+    await userEvent.selectOptions(screen.getByLabelText(T.field.customer), `${PARTY}|${ACCOUNT}`)
+
+    expect(screen.getByTestId('sales-delivery-status').textContent).toContain(
+      T.references.deliveryUnavailable('http-503:service_unavailable'),
+    )
+    await userEvent.click(screen.getByTestId('sales-contact-information-retry'))
+    expect(retry).toHaveBeenCalledTimes(1)
+    expect((screen.getByLabelText(T.field.deliveryAddress) as HTMLSelectElement).disabled).toBe(true)
+    expect(saveButton()).toBeTruthy()
+  })
+
+  it('on main (header only): the header is real, the currencies follow the business date, the lines and submit are withheld', async () => {
+    const asked: string[] = []
+    const currencies: UseCurrencyOptions = (companyId, effectiveOn) => {
+      asked.push(effectiveOn)
+      if (effectiveOn === '') return { status: 'idle' }
+      return { status: 'ready', data: companyId === COMPANY_A && effectiveOn === '2026-09-13' ? CURRENCIES_A : [] }
+    }
+    const fetch = installFetch()
+    renderSalesApp(PATH, useHeaderOnlySource, { currencies })
+    await formVisible()
+
+    expect(screen.getByTestId('sales-lines-withheld').textContent).toContain(T.references.linesWithheld)
+    expect(screen.getByTestId('sales-references-missing').textContent).toContain(
+      'satışa uygun ürünler ve birimler (liste kaynağı yayımlanmadı)',
+    )
+    expect(screen.queryByRole('button', { name: T.save })).toBeNull()
+    expect(screen.queryByLabelText(T.field.product)).toBeNull()
+    expect(screen.getByLabelText(T.field.customer)).toBeTruthy()
+
+    const currency = screen.getByTestId('sales-currency-select') as HTMLSelectElement
+    expect(currency.disabled).toBe(true)
+    expect(screen.getByTestId('sales-currency-status').textContent).toBe(T.references.currencyIdle)
+
+    fireEvent.change(screen.getByLabelText(T.field.businessDate), { target: { value: '2026-09-13' } })
+    await waitFor(() => expect(currency.disabled).toBe(false))
+    expect(Array.from(currency.options).map((o) => o.textContent)).toEqual([T.choose, 'TRY'])
+    expect(screen.queryByTestId('sales-currency-status')).toBeNull()
+    await userEvent.selectOptions(currency, CURRENCY)
+    expect(currency.value).toBe(CURRENCY)
+
+    // Another date lists nothing: the chosen currency is cleared and the field says so.
+    fireEvent.change(screen.getByLabelText(T.field.businessDate), { target: { value: '2026-09-14' } })
+    await waitFor(() => expect(currency.value).toBe(''))
+    expect(screen.getByTestId('sales-currency-status').textContent).toBe(T.references.currencyEmpty)
+    expect(document.getElementById(`${ORDER_FIELD.currency}-error`)?.textContent).toBe(T.validation.currencyNotOffered)
+    expect(asked).toContain('2026-09-13')
+    expect(asked).toContain('2026-09-14')
+    expect(fetch.salesCalls()).toHaveLength(0)
+  })
+
+  it('a currencies read that fails is said beside the select, with a retry', async () => {
+    const retry = vi.fn()
+    const failing: UseCurrencyOptions = (_companyId, effectiveOn) =>
+      effectiveOn === '' ? { status: 'idle' } : { status: 'unavailable', reason: 'network', retry }
+    installFetch()
+    renderSalesApp(PATH, useHeaderOnlySource, { currencies: failing })
+    await formVisible()
+    fireEvent.change(screen.getByLabelText(T.field.businessDate), { target: { value: '2026-09-13' } })
+
+    expect(await screen.findByTestId('sales-currency-retry')).toBeTruthy()
+    expect(screen.getByTestId('sales-currency-status').textContent).toContain(T.references.currencyUnavailable('network'))
+    expect((screen.getByTestId('sales-currency-select') as HTMLSelectElement).disabled).toBe(true)
+    await userEvent.click(screen.getByTestId('sales-currency-retry'))
+    expect(retry).toHaveBeenCalledTimes(1)
   })
 })

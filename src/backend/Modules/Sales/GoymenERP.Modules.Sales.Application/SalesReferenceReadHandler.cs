@@ -9,11 +9,16 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 namespace GoymenERP.Modules.Sales.Application;
 
 // Read-only orchestration over actual owner ports. No table access or writes.
+// SALES-A2a: the two list reads take the Settings candidate reader and the Cari contact-information
+// port as OPTIONAL trailing inputs, so the host's existing factory keeps compiling; while the central
+// composition does not pass them, each read answers 503 (a missing owner, never an empty list).
 public sealed class SalesReferenceReadHandler(
     ICompanyContext companyContext, ICurrentUser currentUser,
     IErpAuthorizationService authorization, ISalesAccountSelectionSourceV1 counterparties,
     ISettingsPrerequisiteProvider settings, IProductSalesEligibilityV1? products,
-    SalesReferenceReadBindings bindings) : ISalesReferenceReadService
+    SalesReferenceReadBindings bindings,
+    ISettingsMoneyCandidateReader? currencyCandidates = null,
+    ISalesPartyContactInformationPortV1? contactInformation = null) : ISalesReferenceReadService
 {
     private const int SearchRuneLimit = 200;
 
@@ -164,6 +169,141 @@ public sealed class SalesReferenceReadHandler(
         {
             return Failure<SalesProductReferenceV1>(403);
         }
+    }
+
+    /// <summary>
+    /// SALES-A2a: the Cari owner's ACTIVE addresses and contacts of one party account, for the create
+    /// form's delivery selects. Bound to the accounts permission (the same form). Owner outcomes: Denied
+    /// 403; NotFound 404 code-less (no such party, or the account is not that party's in this company);
+    /// Unavailable 503. The owner's identities and versions are re-checked before anything is offered:
+    /// a malformed answer is 503 <c>reference_provider_invalid</c>, another company's is 403.
+    /// </summary>
+    public async Task<SalesReferenceReadResult<SalesContactInformationOptionsV1>> GetContactInformationAsync(
+        SalesContactInformationQueryV1 query, CancellationToken cancellationToken = default)
+    {
+        var scope = await GetScopeAsync(bindings.AccountsPermission, cancellationToken);
+        if (scope.Status != 200) return Failure<SalesContactInformationOptionsV1>(scope.Status);
+        if (query.PartyId == Guid.Empty || query.CompanyAccountId == Guid.Empty)
+            return Failure<SalesContactInformationOptionsV1>(400, "validation_failed");
+        if (contactInformation is null)
+            return Failure<SalesContactInformationOptionsV1>(503, "counterparty_provider_unavailable");
+        SalesPartyContactInformationAnswerV1 answer;
+        try
+        {
+            answer = await contactInformation.GetContactInformationAsync(query.PartyId, query.CompanyAccountId, cancellationToken);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Failure<SalesContactInformationOptionsV1>(403);
+        }
+        if (!await StillAuthorizedAsync(scope, bindings.AccountsPermission, cancellationToken))
+            return Failure<SalesContactInformationOptionsV1>(403);
+        switch (answer.Outcome)
+        {
+            case SalesPartyContactInformationOutcomeV1.Found when answer.Information is { } information:
+                if (information.PartyId != query.PartyId || information.CompanyAccountId != query.CompanyAccountId
+                    || !ValidVersion(information.AccountVersion))
+                    return Failure<SalesContactInformationOptionsV1>(503, "reference_provider_invalid");
+                if (information.CompanyId != scope.Company) return Failure<SalesContactInformationOptionsV1>(403);
+                var addresses = new List<SalesAddressOptionV1>();
+                foreach (var address in information.Addresses.Where(a => a.IsActive))
+                {
+                    if (address.Id == Guid.Empty || !ValidVersion(address.Version) || string.IsNullOrWhiteSpace(address.Purpose)
+                        || string.IsNullOrWhiteSpace(address.CountryCode) || string.IsNullOrWhiteSpace(address.Line1))
+                        return Failure<SalesContactInformationOptionsV1>(503, "reference_provider_invalid");
+                    addresses.Add(new(address.Id, address.Version, address.Purpose, AddressText(address), address.CountryCode,
+                        address.Line1, address.Line2, address.City, address.District, address.PostalCode));
+                }
+                var contacts = new List<SalesContactOptionV1>();
+                foreach (var contact in information.Contacts.Where(c => c.IsActive))
+                {
+                    if (contact.Id == Guid.Empty || !ValidVersion(contact.Version) || string.IsNullOrWhiteSpace(contact.Purpose)
+                        || string.IsNullOrWhiteSpace(contact.DisplayName))
+                        return Failure<SalesContactInformationOptionsV1>(503, "reference_provider_invalid");
+                    contacts.Add(new(contact.Id, contact.Version, contact.DisplayName, contact.JobTitle, contact.Purpose));
+                }
+                return Success(new SalesContactInformationOptionsV1(scope.Company, information.PartyId, information.CompanyAccountId,
+                    information.AccountVersion, addresses, contacts));
+            case SalesPartyContactInformationOutcomeV1.NotFound:
+                return Failure<SalesContactInformationOptionsV1>(404);
+            case SalesPartyContactInformationOutcomeV1.Denied:
+                return Failure<SalesContactInformationOptionsV1>(403);
+            default:
+                return Failure<SalesContactInformationOptionsV1>(503, "counterparty_provider_unavailable");
+        }
+    }
+
+    /// <summary>
+    /// SALES-A2a: the company's currencies a draft may be opened in on the business date. The Settings
+    /// owner's candidate list (<see cref="ISettingsMoneyCandidateReader"/>: being listed is not validity)
+    /// is revalidated candidate by candidate through the same known-id money read the single currency
+    /// route and the create use, for the accepted Sales operation. A candidate whose profile is not
+    /// active or in effect on the date, or that has no profile for the operation, is left out — this is
+    /// a list, not a validator; an empty list is a well-formed answer. A malformed candidate list, a
+    /// missing reader or a Settings outage is 503, never an empty list; a profile of another company
+    /// is 403; a malformed profile is 503 <c>reference_provider_invalid</c> (the single currency route's
+    /// conditions; the label is the owner's code, as there). The order is the owner's; nothing is selected by default.
+    /// </summary>
+    public async Task<SalesReferenceReadResult<SalesCurrencyOptionsV1>> GetCurrenciesAsync(
+        SalesCurrencyListQueryV1 query, CancellationToken cancellationToken = default)
+    {
+        var scope = await GetScopeAsync(bindings.CurrencyPermission, cancellationToken);
+        if (scope.Status != 200) return Failure<SalesCurrencyOptionsV1>(scope.Status);
+        if (string.IsNullOrWhiteSpace(bindings.MoneyOperation))
+            return Failure<SalesCurrencyOptionsV1>(503, "settings_operation_unavailable");
+        if (currencyCandidates is null)
+            return Failure<SalesCurrencyOptionsV1>(503, "settings_provider_unavailable");
+        try
+        {
+            var candidates = MoneyCurrencyCandidatesV1.EnsureWellFormed(
+                await currencyCandidates.GetMoneyCurrencyCandidatesAsync(cancellationToken));
+            if (!await StillAuthorizedAsync(scope, bindings.CurrencyPermission, cancellationToken))
+                return Failure<SalesCurrencyOptionsV1>(403);
+            var options = new List<SalesCurrencyReferenceV1>(candidates.Count);
+            foreach (var candidate in candidates)
+            {
+                MoneyProfileV1 profile;
+                try
+                {
+                    profile = await settings.GetMoneyProfileAsync(candidate.CurrencyId,
+                        bindings.MoneyOperation, query.EffectiveOn, cancellationToken);
+                }
+                catch (SettingsPrerequisiteException exception)
+                    when (exception.Code == SettingsPrerequisiteCodesV1.MoneyProfileNotFound)
+                {
+                    // Listed by the owner, but with no profile for this operation: not offered, not an outage.
+                    if (!await StillAuthorizedAsync(scope, bindings.CurrencyPermission, cancellationToken))
+                        return Failure<SalesCurrencyOptionsV1>(403);
+                    continue;
+                }
+                if (!await StillAuthorizedAsync(scope, bindings.CurrencyPermission, cancellationToken))
+                    return Failure<SalesCurrencyOptionsV1>(403);
+                if (profile.CompanyId != scope.Company) return Failure<SalesCurrencyOptionsV1>(403);
+                if (profile.CurrencyId != candidate.CurrencyId || profile.Operation != bindings.MoneyOperation
+                    || !ValidProfile(profile.Profile) || profile.Scale < 0 || string.IsNullOrWhiteSpace(profile.CurrencyCode))
+                    return Failure<SalesCurrencyOptionsV1>(503, "reference_provider_invalid");
+                if (!profile.IsActive || !Effective(query.EffectiveOn, profile.EffectiveFrom, profile.EffectiveThrough))
+                    continue;
+                options.Add(new SalesCurrencyReferenceV1(scope.Company, query.EffectiveOn, profile.CurrencyId,
+                    profile.CurrencyCode, profile.CurrencyCode, profile.Profile.ProfileId,
+                    profile.Profile.Version.ToString(CultureInfo.InvariantCulture)));
+            }
+            return Success(new SalesCurrencyOptionsV1(scope.Company, query.EffectiveOn, options));
+        }
+        catch (SettingsPrerequisiteException exception)
+        {
+            return await ReleaseFailureAsync(scope, bindings.CurrencyPermission,
+                SettingsFailure<SalesCurrencyOptionsV1>(exception), cancellationToken);
+        }
+    }
+
+    /// <summary>The owner's address as one display text: "Line1, Line2, District City PostalCode, CountryCode", empty parts left out.</summary>
+    public static string AddressText(SalesPartyAddressV1 address)
+    {
+        var locality = string.Join(' ', new[] { address.District, address.City, address.PostalCode }
+            .Where(part => !string.IsNullOrWhiteSpace(part)).Select(part => part!.Trim()));
+        return string.Join(", ", new[] { address.Line1, address.Line2, locality, address.CountryCode }
+            .Where(part => !string.IsNullOrWhiteSpace(part)).Select(part => part!.Trim()));
     }
 
     // Only the owner's version conflict means the known selection moved on. Its
