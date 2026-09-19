@@ -303,6 +303,9 @@ public sealed partial class OpenApiContractGenerationTests
             ParameterValues: ["path:journalId:true:type:string;format:uuid"]),
         new("get", "/api/v1/accounting/posting-queues", "GetAccountingPostingQueuesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
+        new("get", "/api/v1/manufacturing/orders/{orderId}/mass-balance", "GetManufacturingOrderMassBalanceV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:orderId:true:type:string;format:uuid"]),
         .. ProductOperations,
     ];
 
@@ -380,6 +383,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetAccountingJournalsV1"] = "ref:JournalPageV1",
             ["GetAccountingJournalV1"] = "ref:JournalDetailV1",
             ["GetAccountingPostingQueuesV1"] = "ref:PostingQueuesV1",
+            ["GetManufacturingOrderMassBalanceV1"] = "ref:MassBalanceViewV1",
         };
 
     private static readonly HashSet<string> RequiredCompanyOperations =
@@ -448,6 +452,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetAccountingJournalsV1",
         "GetAccountingJournalV1",
         "GetAccountingPostingQueuesV1",
+        "GetManufacturingOrderMassBalanceV1",
     ];
 
     private static readonly HashSet<string> OptionalCompanyOperations =
@@ -630,6 +635,7 @@ public sealed partial class OpenApiContractGenerationTests
         "ApproveAccountingPeriodV1:404",
         "CloseAccountingPeriodV1:404",
         "GetAccountingJournalV1:404",
+        "GetManufacturingOrderMassBalanceV1:404",
     ];
 
     private static readonly HashSet<string> MixedProblemResponses =
@@ -801,6 +807,31 @@ public sealed partial class OpenApiContractGenerationTests
         ExpectedSuccessComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["EngineAnswerViewV1"] = ObjectSchema(
+                    ["outcome", "value", "missingParameters", "refusalCode", "refusedParameter"],
+                    ("outcome", "type:string"),
+                    ("value", "type:null|string"),
+                    ("missingParameters", "type:array;items:type:string"),
+                    ("refusalCode", "type:null|string"),
+                    ("refusedParameter", "type:null|string")),
+                ["MassBalanceViewV1"] = ObjectSchema(
+                    ["orderId", "version", "formulaVersion", "rolls"],
+                    ("orderId", "type:string;format:uuid"),
+                    ("version", "type:integer|string;format:int64"),
+                    ("formulaVersion", "type:string"),
+                    ("rolls", "type:array;items:ref:RollMassBalanceViewV1")),
+                ["MassDifferenceViewV1"] = ObjectSchema(
+                    ["actualInputKg", "accountedKg", "differenceKg", "isFullyAccounted"],
+                    ("actualInputKg", "type:string"),
+                    ("accountedKg", "type:string"),
+                    ("differenceKg", "type:string"),
+                    ("isFullyAccounted", "type:boolean")),
+                ["RollMassBalanceViewV1"] = ObjectSchema(
+                    ["parentRollId", "difference", "scrapPercent", "actualUnitKg"],
+                    ("parentRollId", "type:string;format:uuid"),
+                    ("difference", "ref:MassDifferenceViewV1"),
+                    ("scrapPercent", "ref:EngineAnswerViewV1"),
+                    ("actualUnitKg", "ref:EngineAnswerViewV1")),
                 ["JournalDetailV1"] = ObjectSchema(
                     ["journal", "lines"],
                     ("journal", "ref:JournalSummaryV1"),
@@ -1526,6 +1557,7 @@ public sealed partial class OpenApiContractGenerationTests
         ExpectedRequestComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+// shared request/success: []
                 ["PeriodCommandRequestV1"] = ObjectSchema(
                     ["expectedVersion"],
                     ("expectedVersion", "type:integer|string;format:int64")),
@@ -2286,9 +2318,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(77, operations.Count);
+        Assert.Equal(78, operations.Count);
         Assert.Equal(
-            77,
+            78,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
