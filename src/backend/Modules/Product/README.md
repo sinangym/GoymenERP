@@ -207,7 +207,7 @@ actor, origin and authority revision. The host must supply signing material and 
 technical lifetime. No key is committed, generated as a production default or registered
 in the host. Reference labels outside the available code-group catalogue remain null.
 
-`ProductCodeOnlyReferenceCatalog` validates the actual SQL code group for the minimum
+`ProductRegistryReferenceCatalog` (formerly `ProductCodeOnlyReferenceCatalog`) validates the actual SQL code group for the minimum
 Draft. Missing optional class/family/unit/template/tracking values remain permitted;
 supplied references without an accepted catalogue adapter fail validation. The read
 options endpoint explicitly lists all five catalogues as unavailable, rather than
@@ -294,7 +294,7 @@ Order and outcomes:
 | Product missing / empty id | error `productId invalid_reference` |
 | Draft or Inactive, unknown/false sellable, stale version, missing stock/sales unit | `ProductSalesPreconditions` errors |
 | Order unit is not the Product's own sales unit | error `orderUnitId unsupported_order_unit` |
-| Family-required rules | `IProductFamilyRequirementPolicyV1`. GDC band/coil (`GdcBandCoilFamilyRequirementPolicyV1`) returns its field errors; a card of any other family, or missing authorised data, is 503 `product_family_policy_unavailable`; a null answer or a malformed definition is 503 `product_family_policy_invalid` |
+| Family-required rules | `IProductFamilyRequirementPolicyV1`. GDC band/coil (`ProductFamilyRequirementPolicyV2`, PRD-FAM-1) returns its field errors; a card of any other family, or missing authorised data, is 503 `product_family_policy_unavailable`; a null answer or a malformed definition is 503 `product_family_policy_invalid` |
 | Stock/sales unit profile inactive, not effective on the date, or stock not kilogram | error `references.units.stock` / `references.units.sales` `invalid_reference` |
 | Settings provider failure | `SettingsPrerequisiteException` with the provider's code (`settings_access_denied`, `settings_provider_unavailable`, …); `settings_profile_invalid` only for malformed, foreign or self-contradictory profile data |
 | All pass | `ProductSalesSnapshotV1` with the owner's exact profile ids/versions; order unit = sales unit |
@@ -388,7 +388,7 @@ family policy its only honest answer would be 503.
 ## GDC band/coil family policy (first accepted family)
 
 Source: Business #265 5722701085 (Sinan Ö1/Ö2 of 2026-09-18, #66 5722637822). The rule set is
-accepted; `GdcBandCoilFamilyRequirementPolicyV1` encodes it exactly:
+accepted; `ProductFamilyRequirementPolicyV2` encodes it exactly over the released family definition (PRD-FAM-1):
 
 | Rule | Field | Answer when broken |
 |---|---|---|
@@ -402,19 +402,44 @@ accepted; `GdcBandCoilFamilyRequirementPolicyV1` encodes it exactly:
 - Every broken rule is reported together; order carries no precedence.
 - Draft/Inactive, the sellable role, the Settings profiles (stock must be kilogram) and the
   authority fences stay the eligibility read's: a positive answer needs all of them together.
-- **Data, not policy, is missing.** Which family the rules cover, which template fields hold the
-  measures, and the controlled quality and coating lists come from the authorised owner through
-  `IGdcBandCoilFamilyDefinitionSourceV1` (`GdcBandCoilFamilyDefinitionV1`). None exists yet, so
-  the shipped `UnavailableGdcBandCoilFamilyDefinitionSourceV1` answers 503
-  `product_family_policy_unavailable`. The policy is not reopened; the data is brought.
+- **The released family definition (PRD-FAM-1).** Families, the template version bound to them and
+  the controlled dictionaries come from the Product-owned registry (`product.Families`,
+  `product.Templates`, `product.TemplateFamilies`, `product.TemplateFields`,
+  `product.DictionaryEntries`) through `IProductFamilyDefinitionSourceV2` /
+  `SqlProductFamilyDefinitionSource`. The field keys and roles are data, not code: the rule set
+  needs one required, unconditional field for each of thickness, width, quality and coating, and
+  the coating dictionary states exactly one explicit "none" (Kaplamasız). Cins/Tür/Tip are fixed
+  by the family (#66 5739827887), never typed on a card.
+- **No release, no answer.** With an empty registry every evaluation is 503
+  `product_family_policy_unavailable` (as the unavailable source it replaced), draft save refuses
+  any family and template (`invalid_reference`), and reference options keep `families` and
+  `templates` unavailable. Nothing is seeded; the first release is loaded only by the decided route
+  (Business Q6) and every row carries its `SourceRef`.
+- **Candidates.** A dictionary entry is Approved or Candidate. A candidate (a Göymen commercial code
+  without an established meaning, or a web/standard suggestion) is held without an invented meaning
+  or mass and never satisfies a controlled field: `family_value_candidate`. Only a field that takes
+  candidates (the optional sub-quality) may hold one, and only under its own parent grade
+  (`family_value_parent_mismatch`).
+- **Applicability.** A designation applies with the zinc coating and a colour with the painted one;
+  supplied elsewhere they are `family_field_not_applicable`. Whether a designation is required with
+  zinc (Q3) and what the colour list is (Q4) are open: neither is required.
+- The card must be bound to its family's template version (`references.templateId` missing →
+  `required`, another template or version → `family_template_mismatch`); an attribute the template
+  does not have is `family_field_unknown`.
 - A card of another family, or with no family, is 503 `product_family_policy_unavailable`, never
-  "no errors". A malformed definition (empty family, blank or duplicate field, empty list,
-  uncoated status not listed) is 503 `product_family_policy_invalid`.
-- The codes are the family policy's own (`ProductFamilyPolicyCodesV1`), not the draft edit set
-  (`ProductFieldCodesV1`). Sales maps them like any Product field error.
-- Not in this slice: the authorised definition source, host registration (C3) of the eligibility
-  runtime or of this policy, and any grant. Tests use an isolated synthetic definition only;
-  nothing is seeded.
+  "no errors". A malformed release (a family in no or two templates, a missing or optional role
+  field, no or two explicit "none" values, a candidate "none", an unknown dictionary, a condition
+  on an unknown or unapproved code, a parent code that does not exist, a non-positive mass,
+  duplicate codes, blank sources) is 503 `product_family_policy_invalid` as a whole.
+- **Draft save** checks only the template binding and the attribute keys, with the closed v1 draft
+  codes (`invalid_reference`): a Draft may be incomplete or hold a candidate. The family policy's
+  own codes (`ProductFamilyPolicyCodesV1`) answer when a card is judged for operational use; Sales
+  maps them like any Product field error.
+- A card names a released family or none: `FK_Products_Families_FamilyId` (no card held a family
+  before the registry). The registry migration's Down refuses (51044) while any Product or registry
+  row exists: forward fix.
+- **Units stay closed** (PRD-UNIT-1): the unit catalogue still rejects every supplied unit, so no
+  card can hold the kg→kg bindings yet and eligibility stays negative on `references.units.*`.
 
 ```powershell
 dotnet test tests/GoymenERP.Product.UnitTests/GoymenERP.Product.UnitTests.csproj --filter FullyQualifiedName~ProductSalesEligibilityServiceTests
