@@ -526,21 +526,49 @@ public sealed class ManufacturingCommandServiceTests
     {
         var fixture = new Fixture();
         var order = await fixture.BalancedOrderAsync();
+        // The version the CALLER read, kept: the close advances the order, and a replay is the same
+        // request again, not the request the order would take next.
+        var read = order.Version;
 
-        var closed = await fixture.Service.CloseOrderAsync(order.Id, new CloseOrderRequestV1(order.Version), "close-1",
+        var closed = await fixture.Service.CloseOrderAsync(order.Id, new CloseOrderRequestV1(read), "close-1",
             ClosePermission, CancellationToken.None);
 
         Assert.Equal((ManufacturingApiStatus.Ok, false, null), (closed.Status, closed.IsReplay, closed.Code));
         Assert.Equal("Closed", closed.Resource!.Status);
         Assert.Equal(ClosePermission, Assert.Single(fixture.Store.Writes).PermissionCode);
+        // §6: the record joined the business save, not a second one.
         Assert.Single(fixture.Store.Commands);
 
-        // The same key again is the stored answer, not a second close (which the domain would refuse).
-        var again = await fixture.Service.CloseOrderAsync(order.Id, new CloseOrderRequestV1(order.Version), "close-1",
+        // §4: the same key with the same request is the stored answer, not a second close (which the
+        // domain would refuse as `manufacturing_order_closed`).
+        var again = await fixture.Service.CloseOrderAsync(order.Id, new CloseOrderRequestV1(read), "close-1",
             ClosePermission, CancellationToken.None);
 
         Assert.Equal((ManufacturingApiStatus.Ok, true, "corr-1"), (again.Status, again.IsReplay, again.OriginalCorrelationId));
         Assert.Single(fixture.Store.Writes);
+    }
+
+    [Fact]
+    public async Task The_close_key_with_another_version_is_a_conflict_that_discloses_nothing_and_closes_nothing()
+    {
+        // §3: the key names one attempt of one request. Sending the closed order's NEW version under the
+        // first attempt's key is a different request, so it is answered with the non-disclosing conflict —
+        // never with the first close's stored answer, and never with a second close.
+        var fixture = new Fixture();
+        var order = await fixture.BalancedOrderAsync();
+        var read = order.Version;
+        var closed = await fixture.Service.CloseOrderAsync(order.Id, new CloseOrderRequestV1(read), "close-1",
+            ClosePermission, CancellationToken.None);
+        Assert.Equal(ManufacturingApiStatus.Ok, closed.Status);
+
+        var moved = await fixture.Service.CloseOrderAsync(order.Id, new CloseOrderRequestV1(order.Version), "close-1",
+            ClosePermission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingApiCodes.IdempotencyConflict, false),
+            (moved.Status, moved.Code, moved.IsReplay));
+        Assert.Null(moved.Resource);
+        Assert.Single(fixture.Store.Writes);
+        Assert.Single(fixture.Store.Commands);
     }
 
     [Fact]

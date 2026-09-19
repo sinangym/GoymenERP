@@ -478,8 +478,9 @@ describe('the close (MFG-ORD)', () => {
 
     const refusal = await screen.findByTestId('close-refusal')
     expect(refusal.textContent).toContain('açıklanamayan kütle farkı')
-    // No tolerance is offered anywhere on the screen.
-    expect(screen.queryByText(/tolerans ile geçilmez/)).toBeTruthy()
+    // No tolerance is offered anywhere on the screen: the rule says so in the section's help text AND in
+    // the refusal itself, so the phrase is expected twice, never once and never nowhere.
+    expect(screen.getAllByText(/tolerans ile geçilmez/)).toHaveLength(2)
     expect(posts(recorded).filter((request) => request.url.endsWith('/close'))).toHaveLength(1)
     expect(screen.queryByTestId('order-already-closed')).toBeNull()
   })

@@ -168,8 +168,9 @@ describe('order list', () => {
   it('shows no table at all when the answer does not match the contract', async () => {
     stub({ pages: [() => json({ orders: [{ orderId: 'not-a-guid' }], nextCursor: null })] })
     renderAt(PATH)
-    // Fail closed: a body that does not match the contract is not half-shown.
-    expect(await screen.findByText('Beklenmeyen yanıt')).toBeTruthy()
+    // Fail closed: a body that does not match the contract is not half-shown. The block is matched by its
+    // own state attribute, because its title text is rendered beside the subject in one paragraph.
+    await waitFor(() => expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull())
     expect(screen.queryByRole('table')).toBeNull()
   })
 })
