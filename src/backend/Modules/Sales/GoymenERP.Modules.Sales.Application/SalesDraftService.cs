@@ -649,11 +649,42 @@ public sealed class SalesDraftService(
     private static UnitBindingSnapshot Binding(ProductSalesUnitProfileV1 unit) =>
         new(unit.CompanyId, unit.UnitId, unit.ProfileId, unit.Version);
 
-    /// <summary>The wire's plain decimal text (already shape-checked by <see cref="SalesDraftJson"/>), as the domain's value.</summary>
-    private static decimal Decimal(string text) =>
-        decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value)
-            ? value
-            : throw new SalesDraftServiceException(400, "validation_failed", [new("quantity", "invalid_decimal_text")]);
+    // decimal(18,3): at most 15 integer digits; a wider text is refused at the wire, never a provider exception at the save.
+    private const int MaximumIntegerDigits = 15;
+
+    /// <summary>
+    /// The wire's plain decimal text as the domain's value — Ö2 "never rounded" (FİNANS #350 P2-1, the same pattern here): the
+    /// text is validated lexically FIRST — digits and one inner '.', a non-zero digit, at most the kilogram cap of decimals
+    /// (Settings' <see cref="ExactPositiveDecimalV1"/>, the Finance / Inventory shape; a count unit's tighter scale is the
+    /// domain's <c>AppliedScale</c>) and at most 15 integer digits — and only the validated text is converted, so a text with
+    /// more digits than a decimal holds can never round ("2.9999999999999999999999999999999" is refused; it never became 3 with
+    /// the verbatim text kept beside it). <see cref="SalesDraftJson"/> checks the shape only.
+    /// </summary>
+    private static decimal Decimal(string text)
+    {
+        try
+        {
+            ExactPositiveDecimalV1.Parse(text, Quantity.KilogramScale);
+        }
+        catch (SettingsPrerequisiteException exception) when (exception.Code == "settings_decimal_scale_exceeded")
+        {
+            throw new SalesDraftServiceException(422, "validation_failed", [new("quantity", SalesRuleCodes.QuantityScaleExceeded)]);
+        }
+        catch (SettingsPrerequisiteException)
+        {
+            throw new SalesDraftServiceException(400, "validation_failed", [new("quantity", "invalid_decimal_text")]);
+        }
+
+        var point = text.IndexOf('.', StringComparison.Ordinal);
+        var integerPart = point < 0 ? text : text[..point];
+        if (integerPart.TrimStart('0').Length > MaximumIntegerDigits)
+        {
+            throw new SalesDraftServiceException(422, "validation_failed", [new("quantity", SalesDraftStoreCodes.ValueDoesNotFit)]);
+        }
+
+        // At most 18 significant digits by now: the conversion is exact.
+        return decimal.Parse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture);
+    }
 
     /// <summary>
     /// ADR-011 §7: a terminal refusal is recorded under the key before it is answered. If another
