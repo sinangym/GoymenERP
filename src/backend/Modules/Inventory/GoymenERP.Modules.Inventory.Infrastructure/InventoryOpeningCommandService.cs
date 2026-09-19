@@ -50,13 +50,13 @@ public sealed class InventoryOpeningCommandService(
     public const string RecordCommand = "inventory.opening-count.record";
     private const int IdentityMaximumLength = 128;
 
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     /// <summary>
     /// The store's refusals a key keeps for good (ADR-011 §7): a conflict with what is stored, answered 409. (A
     /// location not found is terminal too, answered 422 on its own path.)
     /// </summary>
-    private static readonly HashSet<string> TerminalCodes = new(StringComparer.Ordinal)
+    private static readonly HashSet<string> TerminalCodes = new HashSet<string>(StringComparer.Ordinal)
     {
         InventoryStoreCodes.OpeningConflict,
         InventoryStoreCodes.LabelConflict,
@@ -319,7 +319,7 @@ public sealed class InventoryOpeningCommandService(
     }
 
     private InventoryCommandRow CommandRow(Scope scope, string keyHash, string payloadHash, Guid countId,
-        string correlationId, CommandResult result) => new()
+        string correlationId, CommandResult result) => new InventoryCommandRow()
     {
         CompanyId = scope.CompanyId,
         CommandName = RecordCommand,
@@ -475,17 +475,17 @@ public sealed class InventoryOpeningCommandService(
         }
     }
 
-    private static OpeningCountViewV1 View(OpeningCount count) => new(count.Id, count.CompanyId, count.LocationId,
+    private static OpeningCountViewV1 View(OpeningCount count) => new OpeningCountViewV1(count.Id, count.CompanyId, count.LocationId,
         count.CountedOn, count.SheetReference,
         [.. count.Lines.Select(line => new OpeningCountLineViewV1(line.Id, line.Label.Id, line.Label.Code, line.Lot.Id,
             line.Lot.HeatNumber, line.Lot.CoilNumber, line.Lot.ProductId, line.Quantity.ToString()))]);
 
-    private static InventoryOpeningServiceException Forbidden() => new(403, InventoryOpeningCodesV1.Forbidden);
+    private static InventoryOpeningServiceException Forbidden() => new InventoryOpeningServiceException(403, InventoryOpeningCodesV1.Forbidden);
 
     private static InventoryOpeningServiceException Validation(params InventoryFieldIssueV1[] issues) =>
-        new(400, InventoryOpeningCodesV1.ValidationFailed, issues);
+        new InventoryOpeningServiceException(400, InventoryOpeningCodesV1.ValidationFailed, issues);
 
-    private static InventoryFieldIssueV1 Issue(string field, string code) => new(field, code);
+    private static InventoryFieldIssueV1 Issue(string field, string code) => new InventoryFieldIssueV1(field, code);
 
     private sealed record Scope(Guid CompanyId, string ActorId, IReadOnlyCollection<string> RoleCodes);
 
