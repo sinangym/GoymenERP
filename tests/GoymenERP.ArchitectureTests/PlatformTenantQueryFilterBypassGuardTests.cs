@@ -205,7 +205,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "49a56885af157d474d86a1726c0e1591bcf612262036d81cf8f1e73be9571cdb",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
-                "f1de76546547ef1f5e71ada046a865bb71382d7b7fbd9bfffc403d939c11b390",
+                "0ad206ef3d741157f24c2433f887871e3fd576ef950ef57ad13b09adc9c3e0e5",
             ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
              + "Persistence/GroupSharedCommandDbContext.cs"] =
                 "6fe01949b839e3005d33c3aa00c02982add6a1af63482005b43b277b95c5dfc3"
@@ -531,9 +531,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // PRD-FAM-1 (#334): the Down's only raw SQL is Product's existing rollback refusal (51044)
-                // while any card or registry row exists; forward fix, no row is dropped.
+                // while any card or registry row exists; forward fix, no row is dropped. Re-measured for
+                // ORG #2 P3-1 (CK_TemplateFields_Candidate in Up); the Down is unchanged.
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/20260919100000_AddProductFamilyRegistry.cs"] =
-                    new("0327d0775e1f51dbe504e1797ed15af897b08e8474c68756ab1d91fd88de9844",
+                    new("8a7f1a3e29cf5c1855797ccf2008bf09789e141ef76ab9169201789e415fe649",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20260912175120_AddExplicitProductAssignments.cs"] =
