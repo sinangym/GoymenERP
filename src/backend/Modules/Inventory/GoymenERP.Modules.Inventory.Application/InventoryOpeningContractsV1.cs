@@ -1,0 +1,146 @@
+using System.Text.Json.Serialization;
+
+namespace GoymenERP.Modules.Inventory.Application;
+
+/// <summary>
+/// The Inventory permission names this module asks the central catalogue about (INV-OPEN-1 part 2).
+/// Registering a name and granting it are not this module's: an unregistered name answers 503, and the
+/// grant is a human decision (decision A: one narrow authorized user, #66 5738113623 §2).
+/// </summary>
+public static class InventoryPermissionManifestV1
+{
+    /// <summary>Record — and read back — an opening count. Company-wide.</summary>
+    public const string OpeningStockRecord = "inventory.opening-stock.record";
+}
+
+/// <summary>The opening count as the client sends it: one physical count sheet of one location.</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record OpeningCountRequestV1(
+    [property: JsonRequired] Guid CountId,
+    [property: JsonRequired] Guid LocationId,
+    [property: JsonRequired] DateOnly CountedOn,
+    [property: JsonRequired] string SheetReference,
+    [property: JsonRequired] IReadOnlyList<OpeningCountLineRequestV1> Lines);
+
+/// <summary>
+/// One counted piece: its new label (id + printed code), its lot (heat/coil null = unknown), the product
+/// card version the counter read (Product's stock eligibility is asked for exactly that version) and the
+/// counted kilograms as a lossless decimal string.
+/// </summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record OpeningCountLineRequestV1(
+    [property: JsonRequired] Guid LineId,
+    [property: JsonRequired] Guid LabelId,
+    [property: JsonRequired] string LabelCode,
+    [property: JsonRequired] Guid LotId,
+    string? HeatNumber,
+    string? CoilNumber,
+    [property: JsonRequired] Guid ProductId,
+    [property: JsonRequired] string ProductVersion,
+    [property: JsonRequired] string QuantityKg);
+
+/// <summary>A stored opening count as read back.</summary>
+public sealed record OpeningCountViewV1(
+    Guid CountId,
+    Guid CompanyId,
+    Guid LocationId,
+    DateOnly CountedOn,
+    string SheetReference,
+    IReadOnlyList<OpeningCountLineViewV1> Lines);
+
+public sealed record OpeningCountLineViewV1(
+    Guid LineId,
+    Guid LabelId,
+    string LabelCode,
+    Guid LotId,
+    string? HeatNumber,
+    string? CoilNumber,
+    Guid ProductId,
+    string QuantityKg);
+
+/// <summary>A successful record: the count, whether it was a replay, and the correlation of its first recording.</summary>
+public sealed record OpeningCountResultV1(OpeningCountViewV1 Count, bool IsReplay, string OriginalCorrelationId);
+
+/// <summary>One refused field.</summary>
+public sealed record InventoryFieldIssueV1(string Field, string Code);
+
+/// <summary>
+/// A refused opening-count command: <see cref="Status"/> is the HTTP status the host answers with,
+/// <see cref="Code"/> the stable problem code, <see cref="Issues"/> the per-field (per-line) reasons.
+/// Nothing was written.
+/// </summary>
+public sealed class InventoryOpeningServiceException(int status, string code, IReadOnlyList<InventoryFieldIssueV1>? issues = null,
+    bool isReplay = false, string? originalCorrelationId = null) : Exception(code)
+{
+    public int Status { get; } = status;
+    public string Code { get; } = code;
+    public IReadOnlyList<InventoryFieldIssueV1> Issues { get; } = issues ?? [];
+    public bool IsReplay { get; } = isReplay;
+    public string? OriginalCorrelationId { get; } = originalCorrelationId;
+}
+
+/// <summary>The problem codes of the opening-count routes beside the store's and the domain's own codes.</summary>
+public static class InventoryOpeningCodesV1
+{
+    public const string Unauthenticated = "unauthenticated";
+    public const string Forbidden = "forbidden";
+    public const string ValidationFailed = "validation_failed";
+    public const string IdempotencyConflict = "idempotency_conflict";
+    public const string PermissionUnregistered = "inventory_permission_unregistered";
+    public const string LocationNotFound = "inventory_location_not_found";
+    public const string LocationInactive = "inventory_location_inactive";
+    public const string LocationExternal = "inventory_location_external";
+    public const string LocationUnavailable = "inventory_location_unavailable";
+    public const string ProductIneligible = "inventory_product_ineligible";
+    public const string ProductEligibilityUnavailable = "inventory_product_eligibility_unavailable";
+    public const string NotFound = "not_found";
+}
+
+/// <summary>What Organization says about one location of the company (read by the host's adapter).</summary>
+public enum InventoryLocationStatus
+{
+    NotFound = 0,
+    Active = 1,
+    Inactive = 2,
+
+    /// <summary>
+    /// An external location (a supplier's or fason party's yard): its custodian is another party, so an
+    /// opening — whose owner and custodian are the company itself — is not recorded there (DEC-STK-001).
+    /// </summary>
+    External = 3,
+}
+
+/// <summary>
+/// The location port of the opening command: the current state of one location of the company, as
+/// Organization holds it now. An implementation that cannot answer throws; it never guesses "active".
+/// </summary>
+public interface IInventoryLocationStatusPort
+{
+    Task<InventoryLocationStatus> ReadAsync(Guid companyId, Guid locationId, CancellationToken cancellationToken);
+}
+
+/// <summary>Product's stock answer for one counted product at one card version and date.</summary>
+public sealed record InventoryProductStockAnswer(bool IsEligible, IReadOnlyList<InventoryFieldIssueV1> Issues);
+
+/// <summary>
+/// The product port of the opening command: whether a product, at the card version the counter read, may
+/// be stocked on the counted-on date (Product's <c>IProductStockEligibilityV1</c> through the host's
+/// adapter). Unavailable owners throw <see cref="InventoryOpeningServiceException"/> 503; a refused
+/// product is an answer, never an exception.
+/// </summary>
+public interface IInventoryProductStockPort
+{
+    Task<InventoryProductStockAnswer> EvaluateAsync(Guid productId, string productVersion, DateOnly effectiveOn,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>The opening-count command surface (INV-OPEN-1 part 2).</summary>
+public interface IInventoryOpeningCommandService
+{
+    /// <summary>Records an opening count under ADR-011 (Idempotency-Key). Throws <see cref="InventoryOpeningServiceException"/> on refusal.</summary>
+    Task<OpeningCountResultV1> RecordAsync(OpeningCountRequestV1 request, InventoryCommandMetadata metadata,
+        CancellationToken cancellationToken);
+
+    /// <summary>A stored count of the company, or 404 <see cref="InventoryOpeningCodesV1.NotFound"/>.</summary>
+    Task<OpeningCountViewV1> ReadAsync(Guid countId, CancellationToken cancellationToken);
+}

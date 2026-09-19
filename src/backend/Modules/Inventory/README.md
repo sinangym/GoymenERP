@@ -150,9 +150,29 @@ adjustment and count-difference rules and their second approval are not relaxed.
 | One save: the count, its lines, each lot (new or the same stored facts), each new label, one receipt and balance per piece, and the audit events commit together or not at all | `InventoryStore.RecordAsync` | SQL |
 | R3: the count id is the identity; the same content is a replay, another content `inventory_opening_conflict` | `OpeningHash`, `OpeningCounts.ContentHash` | store |
 
-Not in this part: product eligibility per line (Product's `IProductStockEligibilityV1`, asked by the
-command service before the store; it needs #335 + the family release), the permission
-`inventory.opening-stock.record` (the grant is human), the endpoint, the UI, and any real opening data.
+## T07 opening stock (INV-OPEN-1, part 2: the command)
+
+`InventoryOpeningCommandService` (`IInventoryOpeningCommandService`) records a count under ADR-011 over
+the part-1 store. Every refusal writes no stock.
+
+| Rule | Answer | Evidence |
+|---|---|---|
+| `inventory.opening-stock.record`, company-wide, measured fresh (#276) before any read and again after each owner read (the stored key, the location, each product). An unregistered name is a setup gap, never a grant | 403 `forbidden`, 503 `inventory_permission_unregistered` | SQL (no grant, revoked after the location read) |
+| The location is Organization's ACTIVE internal location of the company, as it stands now (`IInventoryLocationStatusPort`) | 422 `inventory_location_inactive` / `_external`; unknown or another company's `inventory_location_not_found` (terminal); 503 `inventory_location_unavailable` | SQL (port double) |
+| Each counted product may be stocked at the card version the counter read, on the counted-on date (`IInventoryProductStockPort` → Product's `IProductStockEligibilityV1`). Any refused line refuses the count | 422 `inventory_product_ineligible` with `lines[i].*` issues; 503 `inventory_product_eligibility_unavailable` | SQL (port double) |
+| ADR-011: key = (company, `inventory.opening-count.record`, upper-case SHA-256 of the trimmed key) in `inventory.Commands`, written in the same save as the count. The same actor and payload replays with the first correlation (§5 fresh authority first); another actor or payload is a conflict that discloses nothing | 201 / replay (`IsReplay`, `OriginalCorrelationId`) / 409 `idempotency_conflict` | SQL |
+| The same count under a new key: no second effect; the key answers the count's first recording | replay with the count's first correlation | SQL |
+| §7 terminal: a conflict with what is stored (`inventory_opening_conflict`, `inventory_label_conflict`, `inventory_label_already_in_stock`, `inventory_label_code_taken`, `inventory_lot_conflict`, …) or a location not found is recorded alone and replayed | 409 / 422, replayed with the first correlation | SQL |
+| §8: two requests with one key meet at the save; the loser stores nothing and answers the winner's record | one count, one command row, both answer it | SQL (Barrier) |
+| A count id another company holds collides invisibly at `PK_OpeningCounts` | `inventory_opening_conflict`, no retry advice | SQL |
+| Forward fix: `AddInventoryCommands.Down` and `AddOpeningCounts.Down` refuse (THROW 51046) while commands, opening counts or count-sourced movements exist | the migration stays applied | SQL |
+| Book = count at opening; a later book/count difference is ST-05 with its own second approval, never this command | — | SQL |
+
+Not in this part (central, CARİ): the permission registration, `POST/GET /api/v1/inventory/opening-counts`
+with the replay headers and problem mapping, OpenAPI, the DI of the service and the host adapters of the two
+ports (Product stock eligibility, Organization location state), pins and the reviewed Sql entries of both Downs.
+Not anywhere yet: the grant (human), the UI, and any real opening data (the positive product path needs the
+family release, Q6).
 
 ## dependency_wait
 
