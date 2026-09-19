@@ -18,6 +18,8 @@ public sealed class ApprovedMoneyProfileProviderTests
     private static readonly DateOnly Approval = new(2026, 9, 18);
     private const string FinanceReceipt = "finance.manual-bank-receipt.v1";
     private const string SalesDraft = "sales.order-draft.v1";
+    // ACC-V0a: the Accounting owner's key on the same approved profile (a journal amount is a final TRY amount, Ö2).
+    private const string AccountingJournalAmount = "accounting.journal-amount.v1";
 
     [Theory]
     [InlineData(FinanceReceipt)]
@@ -138,7 +140,7 @@ public sealed class ApprovedMoneyProfileProviderTests
     {
         var entry = Assert.Single(ApprovedMoneyProfileCatalog.Approved.Entries);
         Assert.Same(ApprovedMoneyProfileCatalog.GdcTurkishLiraV1, entry);
-        Assert.Equal(new[] { FinanceReceipt, SalesDraft }.Order(StringComparer.Ordinal),
+        Assert.Equal(new[] { FinanceReceipt, SalesDraft, AccountingJournalAmount }.Order(StringComparer.Ordinal),
             entry.Operations.Order(StringComparer.Ordinal));
         Assert.Contains("5722637822", entry.Source, StringComparison.Ordinal);
     }
