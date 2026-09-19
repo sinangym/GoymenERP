@@ -108,6 +108,9 @@ public sealed class LogisticsPersistenceModelTests
             declarations.Select(declaration => (declaration.CapabilityId, declaration.RoutePath, declaration.RequiredPermissions.Single()))
                 .OrderBy(item => item.CapabilityId, StringComparer.Ordinal).ToArray());
         Assert.Equal(3, LogisticsPermissionManifestV1.Names.Count);
+        // Master v3 §27.8: L-02 is the instruction list, L-03 the new/edit workspace; the detail is a view of one L-02 row.
+        Assert.Equal(["L-03", "L-02-DETAIL", "L-02"],
+            declarations.OrderBy(declaration => declaration.CapabilityId, StringComparer.Ordinal).Select(declaration => declaration.ScreenId).ToArray());
     }
 
     private static LoadingInstructionRow Instruction(Guid company) => new()
