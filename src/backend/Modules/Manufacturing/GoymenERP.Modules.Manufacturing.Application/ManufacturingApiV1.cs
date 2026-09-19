@@ -720,7 +720,6 @@ public sealed partial class ManufacturingCommandService(
             nameof(CostStatus.NotCalculated), order.ClosedByUserId, order.ClosedAtUtc);
     }
 
-    /// <summary>Lossless invariant text without trailing zeros: 5.00 and 5 are both "5".</summary>
     /// <summary>
     /// GDC-BAL/1 per planned parent roll. BAL-003 is the roll's own <see cref="MassBalance.Reconciliation"/> (the
     /// close's calculation). BAL-004 and BAL-006 are asked with what the order can supply without a decision —
@@ -747,6 +746,7 @@ public sealed partial class ManufacturingCommandService(
         new(result.Outcome.ToString(), result.Value is { } computed ? Text(value(computed)) : null,
             result.MissingParameters, result.RefusalCode, result.RefusedParameter);
 
+    /// <summary>Lossless invariant text without trailing zeros: 5.00 and 5 are both "5".</summary>
     internal static string Text(decimal value) =>
         (value / 1.0000000000000000000000000000m).ToString(CultureInfo.InvariantCulture);
 

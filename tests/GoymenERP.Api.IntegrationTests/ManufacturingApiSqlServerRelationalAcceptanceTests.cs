@@ -230,7 +230,16 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
             var facts = await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Facts");
             var commands = await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Commands");
             var again = (await client.GetFromJsonAsync<MassBalanceViewV1>(path))!;
-            Assert.Equal((reopened.Version, reopened.Rolls.Single()), (again.Version, again.Rolls.Single()));
+            // Member by member: a record's Equals compares its list members (MissingParameters) by reference.
+            var before = reopened.Rolls.Single();
+            var after = again.Rolls.Single();
+            Assert.Equal((reopened.Version, before.ParentRollId, before.Difference), (again.Version, after.ParentRollId, after.Difference));
+            foreach (var (first, second) in new[] { (before.ScrapPercent, after.ScrapPercent), (before.ActualUnitKg, after.ActualUnitKg) })
+            {
+                Assert.Equal((first.Outcome, first.Value, first.RefusalCode, first.RefusedParameter),
+                    (second.Outcome, second.Value, second.RefusalCode, second.RefusedParameter));
+                Assert.Equal(first.MissingParameters, second.MissingParameters);
+            }
             Assert.Equal((facts, commands), (await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Facts"),
                 await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Commands")));
 
