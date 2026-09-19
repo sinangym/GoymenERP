@@ -150,4 +150,5 @@ internal sealed class UnconfiguredProductService : IProductService
     public Task<ProductReferenceOptions> GetReferenceOptionsAsync(ProductReferenceQuery query, CancellationToken cancellationToken) => throw Denied();
     public Task<ProductMutationResponse> CreateDraftAsync(CreateProductDraftRequest request, string idempotencyKey, CancellationToken cancellationToken) => throw Denied();
     public Task<ProductMutationResponse> EditDraftAsync(Guid id, EditProductDraftRequest request, string idempotencyKey, CancellationToken cancellationToken) => throw Denied();
+    public Task<ProductMutationResponse> ActivateAsync(Guid id, ActivateProductRequest request, string idempotencyKey, CancellationToken cancellationToken) => throw Denied();
 }

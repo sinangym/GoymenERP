@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Inventory.Application;
@@ -48,7 +49,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// <item><b>Audit:</b> ADR-009 envelope from <see cref="InventoryCommandMetadata"/>, in the same save.</item>
 /// </list>
 /// </summary>
-public sealed class InventoryStore(
+public sealed partial class InventoryStore(
     InventoryDbContext dbContext,
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
@@ -444,6 +445,11 @@ public sealed class InventoryStore(
 
     private async Task SaveAsync(CancellationToken cancellationToken)
     {
+        // A primary-key collision on a lot or label id (#324 P3-1) is either two first arrivals of this
+        // company racing — a retry reads the stored record — or an id another company holds, invisible
+        // here under the tenant filter: a retry would collide forever, so that is a conflict with no
+        // retry advice, and nothing about the other record is disclosed. The colliding id is the one SQL
+        // names as the duplicate key; if it cannot be read, the answer stays the retryable one.
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -460,15 +466,35 @@ public sealed class InventoryStore(
                 var message when message.Contains("UX_Movements_Source", StringComparison.Ordinal) => InventoryStoreCodes.DuplicateSource,
                 var message when message.Contains("IX_Labels_CompanyId_Code", StringComparison.Ordinal) => InventoryStoreCodes.LabelCodeTaken,
                 var message when message.Contains("PK_Movements", StringComparison.Ordinal) => InventoryStoreCodes.ConcurrentChange,
-                // Two first arrivals of one lot raced: retried, the loser reads the stored lot.
-                var message when message.Contains("PK_Lots", StringComparison.Ordinal) => InventoryStoreCodes.ConcurrentChange,
+                var message when message.Contains("'PK_Lots'", StringComparison.Ordinal) =>
+                    DuplicateKey(message) is { } lotId
+                    && !await dbContext.Lots.AsNoTracking().AnyAsync(row => row.Id == lotId, cancellationToken)
+                        ? InventoryStoreCodes.LotConflict
+                        : InventoryStoreCodes.ConcurrentChange,
+                var message when message.Contains("'PK_Labels'", StringComparison.Ordinal) =>
+                    DuplicateKey(message) is { } labelId
+                    && !await dbContext.Labels.AsNoTracking().AnyAsync(row => row.Id == labelId, cancellationToken)
+                        ? InventoryStoreCodes.LabelConflict
+                        : InventoryStoreCodes.ConcurrentChange,
                 // Two first movements of one source raced for its grain: retried, the loser reads it.
                 var message when message.Contains("PK_SourceGrains", StringComparison.Ordinal) => InventoryStoreCodes.ConcurrentChange,
                 _ => InventoryStoreCodes.ConcurrentChange,
             };
-            throw Refused(code, "Kayıt tekillik kuralına takıldı; hiçbir şey kaydedilmedi.", exception);
+            throw Refused(code, code is InventoryStoreCodes.LotConflict or InventoryStoreCodes.LabelConflict
+                ? "Bu kimlik bu şirkette kullanılamıyor; hiçbir şey kaydedilmedi, yeniden denemek aynı cevabı verir."
+                : "Kayıt tekillik kuralına takıldı; hiçbir şey kaydedilmedi.", exception);
         }
     }
+
+    /// <summary>The single GUID of a primary-key message: its duplicate key value (the only GUID in it).</summary>
+    private static Guid? DuplicateKey(string message)
+    {
+        var matches = GuidPattern().Matches(message);
+        return matches.Count == 1 && Guid.TryParseExact(matches[0].Value, "D", out var id) ? id : null;
+    }
+
+    [GeneratedRegex("[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}", RegexOptions.CultureInvariant)]
+    private static partial Regex GuidPattern();
 
     private async Task<bool> SourceTakenAsync(StockMovement movement, CancellationToken cancellationToken)
     {
