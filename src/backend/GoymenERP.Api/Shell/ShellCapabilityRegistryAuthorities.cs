@@ -94,8 +94,11 @@ internal static class ShellCapabilityRegistryAuthorities
     // close controls of that list, the journal list M-04 and its detail, the posting queues M-01): the normal
     // host (C+O+P+S(pub)+F(pub)+M(pub)+L(staged)+Pu(staged)+Acc(staged)). Computed by the ComputeRevision
     // reproduction, independently re-checked (DATA ONLY); pinned by test.
+    // RE-MEASURED after MFG-ORD (#360) landed: Manufacturing now declares FOUR capabilities, not two, so the
+    // earlier value of this row (sha256:kxDfAaAN…) is SUPERSEDED and describes a host that no longer exists.
+    // Its earlier independent check is superseded with it — a match against the old value is not evidence.
     internal const string CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10PurchasingV10AndAccountingV10 =
-        "sha256:kxDfAaANHzyy3UMQ654ChyyA54rdH94SZRyrkJWyWpo";
+        "sha256:oQPU6TLYV8t5VDbXWW8TZQ3vFuXGMJ1oC9KTRVLL6wk";
 
     internal const string CounterpartyListCreateLinkAndDetailV15 =
         "sha256:3GiwcHV6aVuN1Y-wBzElxLJLCok2bblGc6pRruhqTx4";
