@@ -65,7 +65,7 @@ async function fillFact(
   if (values.outputClass !== undefined) {
     await user.selectOptions(screen.getByLabelText('Çıktı sınıfı'), values.outputClass)
   }
-  const kg = screen.getByLabelText(/Kütle \(kg\)/)
+  const kg = screen.getByLabelText('Kütle (kg)')
   await user.clear(kg)
   await user.type(kg, values.kg ?? '250.5')
   const time = screen.getByLabelText('Zaman')
@@ -137,6 +137,20 @@ describe('order balances', () => {
 })
 
 describe('fact forms', () => {
+  it('names each control by its label alone: no option or help text in the accessible name', async () => {
+    // The mfg browser gate (run 35436388761) found a wrapping <label> folding the roll options into the
+    // select's name. A role query with a string name is an exact match, so any folded text fails here.
+    const user = userEvent.setup()
+    stub()
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    expect(screen.getByRole('combobox', { name: 'Ana rulo' })).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: 'Kütle (kg)' })).toBeTruthy()
+    expect(screen.getByLabelText('Zaman')).toBeTruthy()
+    await user.click(screen.getByLabelText('Çıktı bildirimi'))
+    expect(screen.getByRole('combobox', { name: 'Çıktı sınıfı' })).toBeTruthy()
+  })
+
   it('sends one frozen fact with its own key and id, then shows the RE-READ order', async () => {
     const user = userEvent.setup()
     const { recorded } = stub({
@@ -180,7 +194,7 @@ describe('fact forms', () => {
     await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
     await user.click(screen.getByLabelText('Çıktı bildirimi'))
     await user.selectOptions(screen.getByLabelText('Ana rulo'), ROLL_1)
-    await user.type(screen.getByLabelText(/Kütle \(kg\)/), '100')
+    await user.type(screen.getByLabelText('Kütle (kg)'), '100')
     await user.type(screen.getByLabelText('Zaman'), '2026-09-18T09:30')
     await user.click(screen.getByRole('button', { name: 'Kaydet' }))
     expect(await screen.findByText('Bir çıktı sınıfı seçin.')).toBeTruthy()
@@ -221,7 +235,7 @@ describe('fact forms', () => {
     expect(await screen.findByText(/Emir siz formu doldururken değişti/)).toBeTruthy()
     await waitFor(() => expect(reads(recorded)).toHaveLength(2))
     // The typed values stay for the next submit.
-    expect((screen.getByLabelText(/Kütle \(kg\)/) as HTMLInputElement).value).toBe('250.5')
+    expect((screen.getByLabelText('Kütle (kg)') as HTMLInputElement).value).toBe('250.5')
 
     await user.click(screen.getByRole('button', { name: 'Kaydet' }))
     await screen.findByText('Kaydedildi')
@@ -242,7 +256,7 @@ describe('fact forms', () => {
     await user.click(screen.getByRole('button', { name: 'Kaydet' }))
 
     expect(await screen.findByText('Sonuç bilinmiyor')).toBeTruthy()
-    expect((screen.getByLabelText(/Kütle \(kg\)/) as HTMLInputElement).disabled).toBe(true)
+    expect((screen.getByLabelText('Kütle (kg)') as HTMLInputElement).disabled).toBe(true)
     expect(screen.queryByRole('button', { name: 'Kaydet' })).toBeNull()
 
     await user.click(screen.getByRole('button', { name: 'Aynı olguyu yeniden gönder' }))
@@ -275,6 +289,6 @@ describe('fact forms', () => {
     renderAt(PATH)
     expect(await screen.findAllByText('Emir kapalı; yeni gerçekleşme kaydedilmez.')).not.toHaveLength(0)
     expect((screen.getByRole('button', { name: 'Kaydet' }) as HTMLInputElement).disabled).toBe(true)
-    expect((screen.getByLabelText(/Kütle \(kg\)/) as HTMLInputElement).disabled).toBe(true)
+    expect((screen.getByLabelText('Kütle (kg)') as HTMLInputElement).disabled).toBe(true)
   })
 })

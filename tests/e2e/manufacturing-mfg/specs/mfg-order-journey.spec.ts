@@ -58,11 +58,17 @@ function issuedCell(page: Page, rollId: string) {
   return rollRow(page, rollId).getByRole('cell').nth(1)
 }
 
+function kgField(page: Page) {
+  return page.getByRole('textbox', { name: 'Kütle (kg)', exact: true })
+}
+
 async function fillIssue(page: Page, rollId: string, kg: string) {
-  await page.getByLabel('Girdi çıkışı').check()
-  await page.getByLabel('Ana rulo').selectOption(rollId)
-  await page.getByLabel(/Kütle \(kg\)/).fill(kg)
-  await page.getByLabel('Zaman').fill('2026-09-18T09:30')
+  // Exact names: a label query is a substring match by default, and "Ana rulo" also names the
+  // balances section ("Ana rulo dengesi (kg)").
+  await page.getByRole('radio', { name: 'Girdi çıkışı', exact: true }).check()
+  await page.getByRole('combobox', { name: 'Ana rulo', exact: true }).selectOption(rollId)
+  await kgField(page).fill(kg)
+  await page.getByLabel('Zaman', { exact: true }).fill('2026-09-18T09:30')
 }
 
 test.describe('MFG order screen (real API, real SQL)', () => {
@@ -76,7 +82,7 @@ test.describe('MFG order screen (real API, real SQL)', () => {
     await fillIssue(page, arranged.rollId, '250.5')
     const post = page.waitForRequest((request) => FACT_RE.test(request.url()) && request.method() === 'POST')
     const reread = page.waitForResponse((response) => ORDER_RE.test(response.url()) && response.request().method() === 'GET')
-    await page.getByRole('button', { name: 'Kaydet' }).click()
+    await page.getByRole('button', { name: 'Kaydet', exact: true }).click()
 
     const sent = await post
     expect(sent.headers()['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/)
@@ -107,13 +113,13 @@ test.describe('MFG order screen (real API, real SQL)', () => {
 
     await openOrder(page, arranged.orderId)
     await fillIssue(page, arranged.rollId, '100')
-    await page.getByRole('button', { name: 'Kaydet' }).click()
+    await page.getByRole('button', { name: 'Kaydet', exact: true }).click()
     await expect(page.getByText('Sonuç bilinmiyor')).toBeVisible()
     expect(withheld).toBe(200)
-    await expect(page.getByLabel(/Kütle \(kg\)/)).toBeDisabled()
+    await expect(kgField(page)).toBeDisabled()
 
     const resend = page.waitForRequest((request) => FACT_RE.test(request.url()) && request.method() === 'POST')
-    await page.getByRole('button', { name: 'Aynı olguyu yeniden gönder' }).click()
+    await page.getByRole('button', { name: 'Aynı olguyu yeniden gönder', exact: true }).click()
     await resend
     await expect(page.getByText('Daha önce kaydedilmiş')).toBeVisible()
 
@@ -139,11 +145,11 @@ test.describe('MFG order screen (real API, real SQL)', () => {
     page.on('request', (request) => {
       if (FACT_RE.test(request.url()) && request.method() === 'POST') posts.push(request)
     })
-    await page.getByRole('button', { name: 'Kaydet' }).click()
+    await page.getByRole('button', { name: 'Kaydet', exact: true }).click()
     await expect(page.getByText(/Emir siz formu doldururken değişti/)).toBeVisible()
     await expect(issuedCell(page, arranged.rollId)).toHaveText('10')
 
-    await page.getByRole('button', { name: 'Kaydet' }).click()
+    await page.getByRole('button', { name: 'Kaydet', exact: true }).click()
     await expect(page.getByText('Kaydedildi', { exact: true })).toBeVisible()
     await expect(issuedCell(page, arranged.rollId)).toHaveText('60')
     expect(posts).toHaveLength(2)
@@ -168,7 +174,7 @@ test.describe('MFG order screen (real API, real SQL)', () => {
     await openOrder(page, arranged.orderId)
     await expect(rollRow(page, arranged.rollId)).toContainText('1000')
     await expect(page.getByRole('heading', { name: 'Gerçekleşme kaydı' })).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Kaydet' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Kaydet', exact: true })).toHaveCount(0)
     expect(posts).toEqual([])
     expectEveryAnswerRewritten(answered, rewritten)
   })

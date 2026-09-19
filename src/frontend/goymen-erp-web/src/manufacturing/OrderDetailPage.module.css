@@ -125,7 +125,7 @@
   gap: 12px;
   align-items: start;
 }
-.form label {
+.control {
   display: flex;
   flex-direction: column;
   gap: 4px;

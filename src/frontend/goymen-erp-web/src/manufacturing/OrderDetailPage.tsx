@@ -478,9 +478,12 @@ function FactSection({
           {FACT_KIND_HELP[form.kind]}
         </p>
         <div className={styles.form}>
-          <label>
-            Ana rulo
+          {/* Each label names only its control (htmlFor): a wrapping label would fold the options and
+              the help text into the accessible name. */}
+          <div className={styles.control}>
+            <label htmlFor="mfg-fact-roll">Ana rulo</label>
             <select
+              id="mfg-fact-roll"
               value={form.parentRollId}
               disabled={frozen}
               onChange={(event) => update({ parentRollId: event.target.value })}
@@ -492,11 +495,12 @@ function FactSection({
                 </option>
               ))}
             </select>
-          </label>
+          </div>
           {form.kind === 'outputs' ? (
-            <label>
-              Çıktı sınıfı
+            <div className={styles.control}>
+              <label htmlFor="mfg-fact-output-class">Çıktı sınıfı</label>
               <select
+                id="mfg-fact-output-class"
                 value={form.outputClass}
                 disabled={frozen}
                 onChange={(event) => update({ outputClass: event.target.value as OutputClass | '' })}
@@ -508,11 +512,12 @@ function FactSection({
                   </option>
                 ))}
               </select>
-            </label>
+            </div>
           ) : null}
-          <label>
-            Kütle (kg)
+          <div className={styles.control}>
+            <label htmlFor="mfg-fact-kg">Kütle (kg)</label>
             <input
+              id="mfg-fact-kg"
               type="text"
               inputMode="decimal"
               autoComplete="off"
@@ -524,16 +529,17 @@ function FactSection({
             <span id="mfg-kg-help" className={styles.help}>
               {KG_FORMAT_HELP}
             </span>
-          </label>
-          <label>
-            Zaman
+          </div>
+          <div className={styles.control}>
+            <label htmlFor="mfg-fact-occurred-at">Zaman</label>
             <input
+              id="mfg-fact-occurred-at"
               type="datetime-local"
               value={form.occurredAt}
               disabled={frozen}
               onChange={(event) => update({ occurredAt: event.target.value })}
             />
-          </label>
+          </div>
         </div>
         {error !== null ? (
           <p className={styles.error} role="alert">
