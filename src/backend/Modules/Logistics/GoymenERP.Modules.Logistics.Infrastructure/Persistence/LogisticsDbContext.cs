@@ -43,7 +43,8 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         ConfigureShares(modelBuilder);
         ConfigureAttempts(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
-        modelBuilder.Entity<AuditEvent>().HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+        modelBuilder.Entity<AuditEvent>()
+            .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
