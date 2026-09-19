@@ -151,7 +151,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
-                "b6ce24f17c5d9c8ae56ac36ebc45cb8269599db318a6206317fec632ff134ae3",
+                "ece62e44f90d8396f12fff01fbb0625b7d202b77196bf368fd3dffea5ced64f1",
 
             // organization
             ["tools/relational_inventory/organization.txt"] =
