@@ -139,8 +139,15 @@ public sealed class AccountingStore(
         row.ApprovedAtUtc = period.ApprovedAtUtc;
         row.Version = checked(versionBefore + 1);
         row.UpdatedAtUtc = period.ApprovedAtUtc!.Value;
+        // Ö4 in the audit record itself: who prepared the period and who (someone else) approved it.
+        var approval = JsonSerializer.Serialize(new
+        {
+            rule = "O4",
+            preparedBy = period.PreparedByUserId,
+            approvedBy = period.ApprovedByUserId,
+        }, Json);
         Audit(metadata, companyId, PeriodEntityType, period.Id.ToString("D"), "accounting.period.approved.v1", "Approve",
-            versionBefore, row.Version, before, PeriodAudit(period), "Muhasebe dönemi açılışı onaylandı");
+            versionBefore, row.Version, before, PeriodAudit(period), "Muhasebe dönemi açılışı onaylandı", approval);
         var record = new AccountingPeriodRecord(period, row.Version);
         Complete(metadata, companyId, record);
         await SaveAsync(cancellationToken);
@@ -768,7 +775,8 @@ public sealed class AccountingStore(
     }
 
     private void Audit(AccountingCommandMetadata metadata, Guid companyId, string entityType, string entityId, string eventType,
-        string operation, long? versionBefore, long? versionAfter, string before, string after, string reason)
+        string operation, long? versionBefore, long? versionAfter, string before, string after, string reason,
+        string? approvalContext = null)
     {
         auditEvents.Enqueue(new AuditEventDraft(
             companyId,
@@ -785,7 +793,7 @@ public sealed class AccountingStore(
             before,
             after,
             reason,
-            ApprovalContextJson: null,
+            ApprovalContextJson: approvalContext,
             AuditAiInvolvement.None,
             AiContextJson: null,
             metadata.SourceChannel,
