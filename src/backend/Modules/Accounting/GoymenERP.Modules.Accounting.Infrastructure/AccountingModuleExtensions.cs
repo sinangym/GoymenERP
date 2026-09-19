@@ -42,9 +42,14 @@ public static class AccountingModuleExtensions
             configureDbContext?.Invoke(serviceProvider, options);
         });
         services.TryAddSingleton(TimeProvider.System);
+        // Ö2 (ACC-V0): journal amounts are checked against the Settings owner's money profile; the host
+        // registers ISettingsPrerequisiteProvider (the Settings module), never a default here.
+        services.AddScoped<AccountingAmountScaleVerifier>();
         services.AddScoped<AccountingStore>();
         services.AddScoped<IAccountingPeriodStore>(serviceProvider => serviceProvider.GetRequiredService<AccountingStore>());
         services.AddScoped<IAccountingPostingStore>(serviceProvider => serviceProvider.GetRequiredService<AccountingStore>());
+        services.AddScoped<IAccountingCommandLog>(serviceProvider => serviceProvider.GetRequiredService<AccountingStore>());
+        services.AddScoped<AccountingApiService>();
         return services;
     }
 

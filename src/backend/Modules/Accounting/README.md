@@ -1,10 +1,11 @@
-# Accounting module (ACC-1 + ACC-2 domain, ACC-3 persistence)
+# Accounting module (ACC-1 + ACC-2 domain, ACC-3 persistence, ACC-V0 periods and reads)
 
-Plan #275 §7.6, R4, R6, §13; Ö2, Ö4, Ö5; ADR-002, ADR-009.
+Plan #275 §7.6, R4, R6, §13; Ö2, Ö4, Ö5; ADR-002, ADR-009, ADR-011.
 - The domain slice (ACC-1) is in memory.
 - ACC-3 adds the persistent store in the `accounting` schema.
-- There is still no HTTP, host wiring, permission or UI surface, so no user can post a real
-  journal yet.
+- ACC-V0 adds the period lifecycle with Ö4 maker≠checker, the authorized HTTP surface for periods and
+  for reading journals and queues, and the Ö2 scale check at posting. It is still not possible to
+  create, approve or reverse a voucher (ACC-V1), so no user posts a real journal yet.
 
 ## Identities
 
@@ -94,24 +95,32 @@ About re-drive:
 
 - Transaction, accounting and value dates are separate. The accounting date decides the period.
 - The recording instant must be UTC. Unset dates are refused.
-- `Close(closedByUserId, closedAtUtc)` records who closed the period and when.
-- A second close is refused with `accounting_period_already_closed`.
-- Checking the authority to close belongs to the caller. No reopen is modelled, because reopening
-  is an approval workflow (Ö4).
-- The caller resolves which period applies. Rejecting overlapping periods of one company belongs
-  to the future period store, not this aggregate. (INFO)
+- **Opening is maker≠checker (Ö4, #66 5722637822: "dönem açma … hazırlayandan farklı tek yetkili
+  onayında").** A period is born `Proposed` by its preparer (`AccountingPeriod.Propose`); it covers its
+  dates but takes no posting (`accounting_period_not_open`). `Approve(approver, at)` by ONE other
+  authorised person opens it; the preparer's own approval is refused (`accounting_period_self_approval`),
+  and so is a second approval (`accounting_period_not_proposed`). There is no other way to an open period.
+- `Close(closedByUserId, closedAtUtc)` closes an OPEN period and records who and when (Ö5: one authorised
+  act; Ö4 does not list closing, so no second person). A proposal cannot be closed; a second close is
+  refused with `accounting_period_already_closed`.
+- Checking the authority to propose, approve or close belongs to the caller (the HTTP surface below).
+- **Not modelled, by decision:** reopening (an approval workflow of its own), and withdrawing or
+  rejecting an unapproved proposal. Ö4 names only the approval; the withdraw/reject question is
+  NEEDS-BUSINESS #66 5742097485. Until it is answered, a wrong proposal keeps its dates.
+- The period store refuses a period that overlaps another period of the company, whatever its status.
 
 ## dependency_wait
 
-**Amount scale.** Ö2 settles a 2-decimal final amount for TL/USD/EUR. The journal still compares
-debit and credit exactly and applies no scale or rounding, because:
-- a journal carries only an opaque `CurrencyId`;
-- the effective per-currency money profile is Settings-owned approved data, which is not yet
-  supplied (see `Modules/Settings/README.md`: "do not approve … currency scale 2");
-- hardcoding 2 here would be a second source of the scale.
-
-When the Settings money profile is available, posting validates each amount against that
-profile's scale and refuses excess digits without rounding.
+**Amount scale (Ö2) — done in ACC-V0.** The journal still compares debit and credit exactly; the scale
+is never hard-coded. Posting (receive and correct) checks every known amount against the company's
+approved Settings money profile for the journal currency on its accounting date, under Accounting's own
+operation key `accounting.journal-amount.v1` (`AccountingAmountScaleVerifier`):
+- excess digits are refused (`accounting_amount_scale_exceeded`), never rounded; trailing zeros are not
+  precision; nothing of the delivery is stored;
+- a Settings refusal keeps Settings' own code (fail-closed): without the operation key on the approved
+  profile, or for a company without an approved source, every posting is refused;
+- a replayed delivery answers before the check, and an unknown amount (pending) is not checked.
+The operation key on the GDC/TRY profile is a central Settings change (CARİ), with Ö2 as its source.
 
 **Chart of accounts and mappings (T22).**
 - An account is still an opaque (company, id) identity with no foreign key, because no chart
@@ -119,8 +128,39 @@ profile's scale and refuses excess digits without rounding.
 - A missing mapping stays an exception-queue entry; nothing is posted to a guessed account.
 
 **Not here.**
-- Host DI and wiring, HTTP, permissions, UI.
+- Voucher create / approve / reverse (ACC-V1): waits on NEEDS-BUSINESS 5740501573 (chart of accounts),
+  5740501655 (voucher approval) and OPEN-009.
 - Posting rules, FX, OPEN-009 permissions.
+
+## ACC-V0: periods over HTTP, journal and queue reads
+
+`AccountingApiService` (Application) and `AccountingEndpoints` (API; the host mapping is central):
+
+| Operation | Permission (narrow, none granted) | Notes |
+|---|---|---|
+| `GET /api/v1/accounting/periods`, `GET …/periods/{id}` | `accounting.periods.read` | newest first; `isOwnProposal` per caller |
+| `POST /api/v1/accounting/periods` | `accounting.periods.propose` | `{periodId, startsOn, endsOn}` → 201 Proposed |
+| `POST …/periods/{id}/approval` | `accounting.periods.approve` | `{expectedVersion}`; the preparer gets 403 whatever they hold (Ö4) |
+| `POST …/periods/{id}/close` | `accounting.periods.close` | `{expectedVersion}`; one authorised act (Ö5) |
+| `GET /api/v1/accounting/journals`, `GET …/journals/{id}` | `accounting.journals.read` | M-04 read-only: source link, lines, balanced totals |
+| `GET /api/v1/accounting/posting-queues` | `accounting.posting-queues.read` | M-01 read-only: missing mappings and pending amounts |
+
+- Each read is its own name (Sinan's persona rule, #66 5738113623 §4): a period reader reads no journal,
+  a journal reader no queue.
+- **ADR-011:** each command is one attempt per (company, command, SHA-256 of the key), in
+  `accounting.Commands`. The same key, request and actor answers the stored result with
+  `Idempotency-Replayed` and `Idempotency-Original-Correlation-Id`; another request or actor is 409
+  `idempotency_conflict`. A success is recorded in the same save as the period change and its audit
+  event; an unknown period (404) and a stale version (409 `accounting_version_conflict`) are recorded as
+  the key's terminal answers; two attempts racing on one key leave one record and the loser answers from it.
+- **#276:** the permission is measured fresh before any stored answer is read; only a company-wide
+  grant writes, and its role codes go into the audit envelope. The approval's audit event carries the
+  O4 context (who prepared, who approved).
+- Company: only the server-resolved context; another company's period or journal is a code-less 404.
+- Migration `AddPeriodApproval`: the preparer and approval facts (`CK_Periods_Status` holds approver ≠
+  preparer in the schema too) and `Commands`. Up fails visibly on a table that already holds a period
+  (no environment does: Accounting was never host-wired). Down refuses with `THROW 51048` (Accounting's
+  module number) while any period or command record exists: a forward fix.
 
 ## Persistence (ACC-3)
 
@@ -214,6 +254,9 @@ migration and `AccountingStore`.
   schema, filters and write guard without a database, and the snapshot matching the model.
 - `tests/GoymenERP.Api.IntegrationTests/AccountingSqlServerRelationalAcceptanceTests.cs` holds the
   real SQL Server evidence: durability, replay, company isolation, the unique indexes without the
-  store, a one-original race, a close-versus-posting race, racing period openings, a same-id
-  different-content refusal for every operation (ACC-4) and rollback.
-- None of this is API or browser evidence.
+  store, a one-original race, a close-versus-posting race, racing period proposals, a same-id
+  different-content refusal for every operation (ACC-4) and rollback. Its ledger cases use a SYNTHETIC
+  scale-2 money profile (they are about the ledger, not the Settings source).
+- `tests/GoymenERP.Api.IntegrationTests/AccountingApiSqlServerRelationalAcceptanceTests.cs` (ACC-V0) is the
+  real host over HTTP: Ö4/Ö5, every ADR-011 answer, isolation, the narrow reads, and the Ö2 check against
+  Settings' REAL approved GDC/TRY profile. It is API and SQL evidence, not browser evidence.

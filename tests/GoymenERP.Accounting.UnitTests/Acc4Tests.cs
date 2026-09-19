@@ -40,7 +40,8 @@ public sealed class Acc4Tests
             .UseSqlServer("Server=unused.invalid;Database=unused;Connect Timeout=1;")
             .Options;
         await using var dbContext = new AccountingDbContext(options, companyContext);
-        var store = new AccountingStore(dbContext, companyContext, new AuditEventCollector(), TimeProvider.System);
+        var store = new AccountingStore(dbContext, companyContext, new AuditEventCollector(), TimeProvider.System,
+            new AccountingAmountScaleVerifier(SyntheticSettings.Scale(world.Company, 2)));
         var metadata = new AccountingCommandMetadata("synthetic-actor", "synthetic.accounting", ["SYNTHETIC"],
             "synthetic-correlation", null, "synthetic-key", "Web");
 

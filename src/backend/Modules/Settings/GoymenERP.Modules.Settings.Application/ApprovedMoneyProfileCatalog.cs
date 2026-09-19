@@ -25,7 +25,8 @@ public sealed record ApprovedMoneyProfileEntry(
 /// <b>Operations are the owners' keys, not Settings'.</b> A money profile answers only for the
 /// operations listed on it: the consuming module's technical mapping (Business #254 5654539215),
 /// published by its owner — Finance <c>finance.manual-bank-receipt.v1</c>, Sales
-/// <c>sales.order-draft.v1</c>. Settings references neither module; an integration test pins these
+/// <c>sales.order-draft.v1</c>, Accounting <c>accounting.journal-amount.v1</c> (ACC-V0a: a journal amount is a
+/// final TRY amount, Ö2 "nihai tutar 2"). Settings references none of them; an integration test pins these
 /// literals to the owners' constants.
 /// </para>
 /// <para>
@@ -60,6 +61,7 @@ public sealed class ApprovedMoneyProfileCatalog
         CurrencyCode: "TRY",
         Operations: new HashSet<string>(StringComparer.Ordinal)
         {
+            "accounting.journal-amount.v1",
             "finance.manual-bank-receipt.v1",
             "sales.order-draft.v1",
         },
@@ -69,7 +71,7 @@ public sealed class ApprovedMoneyProfileCatalog
         IsActive: true,
         EffectiveFrom: new DateOnly(2026, 9, 18),
         EffectiveThrough: null,
-        Source: "Sinan Ö2 2026-09-18 (#66 5722637822); operation keys: Finance/Sales owners (Business #254 5654539215)");
+        Source: "Sinan Ö2 2026-09-18 (#66 5722637822); operation keys: Finance/Sales/Accounting owners (Business #254 5654539215)");
 
     public static ApprovedMoneyProfileCatalog Approved { get; } = new([GdcTurkishLiraV1]);
 
