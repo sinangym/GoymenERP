@@ -4,6 +4,7 @@ using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 using GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 
 namespace GoymenERP.Purchasing.UnitTests;
 
@@ -44,12 +45,15 @@ public sealed class PurchasingPersistenceModelTests
         using PurchasingDbContext context = Context();
         var attempts = context.Model.FindEntityType(typeof(PurchaseAttemptRow))!;
         Assert.Equal(["CompanyId", "CommandName", "IdempotencyKeyHash"], attempts.FindPrimaryKey()!.Properties.Select(property => property.Name).ToArray());
-        Assert.Equal(PurchasingDbContext.IdentityCollation, attempts.FindProperty(nameof(PurchaseAttemptRow.IdempotencyKeyHash))!.GetCollation());
+        // Collations and index filters are design-time configuration, not in the read-optimized runtime model (the Sales persistence test's shape).
+        var design = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseAttemptRow))!;
+        Assert.Equal(PurchasingDbContext.IdentityCollation, design.FindProperty(nameof(PurchaseAttemptRow.IdempotencyKeyHash))!.GetCollation());
+        Assert.Equal(PurchasingDbContext.IdentityCollation, design.FindProperty(nameof(PurchaseAttemptRow.CommandName))!.GetCollation());
         // The Sales #338 lesson: one CREATE attempt per stored aggregate; the transition commands' attempts share the aggregate id.
-        var requestCreates = attempts.GetIndexes().Single(index => index.GetDatabaseName() == "UX_PurchaseAttempts_RequestId");
+        var requestCreates = design.GetIndexes().Single(index => index.GetDatabaseName() == "UX_PurchaseAttempts_RequestId");
         Assert.True(requestCreates.IsUnique);
         Assert.Equal("[RequestId] IS NOT NULL AND [CommandName] = N'purchasing.purchase-request.create.v1'", requestCreates.GetFilter());
-        var orderCreates = attempts.GetIndexes().Single(index => index.GetDatabaseName() == "UX_PurchaseAttempts_OrderId");
+        var orderCreates = design.GetIndexes().Single(index => index.GetDatabaseName() == "UX_PurchaseAttempts_OrderId");
         Assert.True(orderCreates.IsUnique);
         Assert.Equal("[OrderId] IS NOT NULL AND [CommandName] = N'purchasing.purchase-order.create.v1'", orderCreates.GetFilter());
         Assert.Equal((PurchasingCommands.RequestCreateV1, PurchasingCommands.OrderCreateV1),
