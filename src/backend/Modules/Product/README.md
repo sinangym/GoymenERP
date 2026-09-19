@@ -438,8 +438,16 @@ accepted; `ProductFamilyRequirementPolicyV2` encodes it exactly over the release
 - A card names a released family or none: `FK_Products_Families_FamilyId` (no card held a family
   before the registry). The registry migration's Down refuses (51044) while any Product or registry
   row exists: forward fix.
-- **Units stay closed** (PRD-UNIT-1): the unit catalogue still rejects every supplied unit, so no
-  card can hold the kg→kg bindings yet and eligibility stays negative on `references.units.*`.
+- **Units (PRD-UNIT-1, U-08 minimal).** A global card's unit reference is the Settings unit
+  IDENTITY: company-independent, "kg is kg in every company" (`SettingsUnitIdentitiesV1`), read through
+  Settings' `ISettingsUnitIdentityCatalogV1`. At save, the stock unit must be the kilogram identity
+  (Ö1 kg→kg) and the sales unit any known identity; the family policy keeps sales = stock. Only the
+  stock and sales roles are open; purchase, price, production and package stay `invalid_reference`
+  until their own decision. Whether a company may use the unit is its PROFILE, checked at eligibility
+  (`ProductUnitProfileAdapter`): a company with no usable kg profile answers `invalid_reference` there,
+  fail-closed. No unit, conversion or factor is added; reference options list the identities (the code
+  is shown, as the source has no display name). Without the Settings catalogue every unit is refused,
+  as before.
 
 ```powershell
 dotnet test tests/GoymenERP.Product.UnitTests/GoymenERP.Product.UnitTests.csproj --filter FullyQualifiedName~ProductSalesEligibilityServiceTests
