@@ -243,6 +243,36 @@ Pure, decimal, versioned calculators on the same core and under the same rules a
   - **Flag on the §28.7 golden:** the example does **not** state `EşZamanlıProfilAdedi`. 50 dk follows only with 3 (3000 m / 3 / 20 m/dk), so 3 is **derived from the master's result**. It is used only as a test input, and it is not a default.
   - PNT-004 is also measured with an explicitly stated count (2 → 1500 m, 75 dk).
 
+## MFG-9 slice 1 — the Cut-to-Length engine (Business 5737790175, DEC-PRDCT-001 order: the fifth engine)
+
+`Domain/Engines/CutToLength/CutToLengthEngineV1` (`GDC-CUT/1`) is master v3 §28.3 (CUT-001…008), on the same core and under the same rules as the engines above.
+
+| ID | Master §28.3 | Engine (call, evaluation order) |
+|---|---|---|
+| CUT-001 unit kg | `SacBirimKg(t, en, hedefBoy)` = §28.2 MAT-002 `t × en × boy × ρ[kg/dm³] / 1 000 000` | `Plan`: `t × W × L × ρ[kg/m³] / 10⁹` |
+| CUT-002 line kg | `BirimKg × Adet` | `Plan`: `t × W × L × ρ × n / 10⁹` (one division) |
+| CUT-003 line metres | `HedefBoy(mm) / 1000 × Adet` | `Plan`: `L × n / 1000` |
+| CUT-004 input metres | `HamKg × 1000 / (t × en × ρ[kg/dm³])` | `Plan`: `HamKg × 10⁶ / (t × W × ρ[kg/m³])` |
+| CUT-005 remaining kg | `HamKg − ΣPlanKg` | `Plan`, exact |
+| CUT-006 remaining metres | `HamToplamMetre − ΣPlanMetre` | `Plan`: `remainingKg × 10⁶ / (t × W × ρ)` (algebraically identical) |
+| CUT-007 pieces per raw length | `floor(HamBoy / (HedefBoy + KesimPayı))` | `CutsPerRawLength` |
+| CUT-008 length scrap | `HamBoy − (HedefBoy × KesimAdedi) − (KesimPayı × KesimSayısı)` | `LengthScrap`, exact |
+
+- **Density:** the one registry density in kg/m³, shared with WND / CR. The kg/dm³ forms of §28.2 / §28.3 map with ρ[kg/dm³] = ρ[kg/m³] / 1000.
+- **Exactness:**
+  - The planned kg is exact in decimal: each line divides a finite product by 10⁹, which terminates.
+  - CUT-006 is evaluated from the remaining kg, so an exact fit leaves exactly 0. `HamToplamMetre − ΣPlanMetre` would subtract CUT-004's often non-terminating quotient and could leave a 10⁻²⁵ residue (the #340 lesson).
+- **Negative remainders are refused** (§28.3: no normal record, an automatic block):
+  - planned kg above the input kg → `engine_plan_exceeds_input_mass`;
+  - pieces + cuts above the raw length → `engine_cuts_exceed_raw_length`.
+  - Planned metres above the coil's metres is the same condition as the kg one, so it is checked once, exactly.
+  - The authorized exception is Business's and is not encoded. A zero remainder is a value.
+- **The kerf (KesimPayı) is mandatory for CUT-007 / CUT-008**, the master's "hedef davranış". It is versioned by material / machine / saw profile (OPEN-007). A missing kerf is `Unavailable(kerfMm)`; a stated 0 is a value.
+- **CUT-008's pieces and cuts are both stated by the caller.** §28.3 does not define KesimSayısı against KesimAdedi (N or N−1 cuts), so the engine never derives one from the other. A stated 0 cuts is a value; negative is refused.
+- **Golden:** §28.3's example has no kerf, so it covers CUT-001…006: 28.750 kg, 3 × 1500; 3000×50 + 6000×55 + 4500×10 → 525,000 m; 18.545,625 kg plan; 10.204,375 kg remaining. Every value is exact; CUT-004 / CUT-006 are checked against a 40-digit reference.
+  - The master states no kerf golden ("yeni sürümde ayrıca hesaplanır"), so none is invented: CUT-007 / CUT-008 are tested with explicit inputs.
+  - Density 7850 kg/m³ is a test input.
+
 ## Behaviour kept on purpose — Business decision pending
 
 - **One approved plan can open more than one order** (`FromApprovedPlan` does not mark the plan as converted). §7.3 does not say whether a plan becomes one order or several partial ones; the question is open with Business (#66 5728934213, the same principle as Purchasing's request → several orders). Pinned by a test; changes only by that decision. The physical guard is Inventory's.
@@ -250,9 +280,9 @@ Pure, decimal, versioned calculators on the same core and under the same rules a
 ## What this module is not
 
 - No stock movement, lot or label: Inventory owns those.
-- No trim/kerf value, tolerance number, template, rounding stage or roll-substitution policy. The only formulas are the MFG-6, MFG-7 and MFG-8 engines above, and every parameter is supplied to them.
+- No trim/kerf value, tolerance number, template, rounding stage or roll-substitution policy. The only formulas are the five engines above (MFG-6…9, DEC-PRDCT-001's order complete), and every parameter is supplied to them.
 - No UI yet (the normal screen is the next card); HTTP since MFG-API, persistence since MFG-5 (above).
-- No other engine yet: cut-to-length (§28.3, kerf mandatory) follows in the DEC-PRDCT-001 order.
+- No planning, capacity or costing on top of the engines yet: each engine's plan slice (the #342 pattern) comes with its sources.
 
 ## dependency_wait
 
