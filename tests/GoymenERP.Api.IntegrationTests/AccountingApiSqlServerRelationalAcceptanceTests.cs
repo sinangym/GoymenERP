@@ -40,8 +40,8 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
     private static readonly Guid Lira = SettingsCurrencyIdentitiesV1.TurkishLira;
-    private static readonly DateOnly September1 = new(2026, 9, 1);
-    private static readonly DateOnly September30 = new(2026, 9, 30);
+    private static readonly DateOnly September1 = new DateOnly(2026, 9, 1);
+    private static readonly DateOnly September30 = new DateOnly(2026, 9, 30);
 
     private static readonly string[] PreparerGrants =
     [
@@ -55,7 +55,7 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
         AccountingPermissionManifestV1.PeriodsClose,
     ];
 
-    private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Web = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     /// <summary>
     /// Ö4 and Ö5 over HTTP with every ADR-011 answer: a proposal replays; its preparer's approval is 403
@@ -316,7 +316,7 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
 
     private static PostingRequest Request(Guid source, string messageId, AccountRef debit, AccountRef? credit, decimal amount,
         Guid? company = null) =>
-        new(
+        new PostingRequest(
             "synthetic-accounting-consumer",
             messageId,
             Guid.NewGuid(),
@@ -398,7 +398,7 @@ public sealed class AccountingApiSqlServerRelationalAcceptanceTests
             return client;
         }
 
-        public AccountingCommandMetadata Metadata() => new(Writer.ToString("D"), "synthetic.accounting.test-write",
+        public AccountingCommandMetadata Metadata() => new AccountingCommandMetadata(Writer.ToString("D"), "synthetic.accounting.test-write",
             ["SYNTHETIC-ACCOUNTING-TEST"], $"accv0-{Guid.NewGuid():N}", null, Guid.NewGuid().ToString("N"), "Web");
 
         public AccountingDbContext Context(Guid company)
