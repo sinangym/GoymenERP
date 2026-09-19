@@ -125,7 +125,7 @@ class SeedSourceTests(unittest.TestCase):
         self.assertNotIn("ConfigureTestServices", host)
 
     def test_only_the_runner_opens_the_fixture_writer_gate(self):
-        # Decision W1: the BrowserSuiteFixture:* keys come only from the runner's in-memory configuration.
+        # Decision W1: the BrowserSuiteFixture:* keys come only from the runner's host settings.
         host = (TOOL / "BrowserSuiteHost.cs").read_text(encoding="utf-8")
         for key in ("Host", "TestedCommit", "RunId", "ComposeProject"):
             with self.subTest(key=key):
@@ -138,23 +138,40 @@ class SeedSourceTests(unittest.TestCase):
                     with self.assertRaises(browser.ContractError):
                         browser.validate_suite_compose(model, suite, profile_tests.COMMIT, profile_tests.PROJECT)
 
-    def test_the_host_masks_envelope_keys_the_container_does_not_carry(self):
+    def test_the_host_removes_envelope_variables_the_container_does_not_carry(self):
         # The runner process has the run's GOYMEN_ERP_C01_E2E_* variables for every suite; a normal-profile
         # container has none, and any one of them would make the in-process host request the C-01 envelope.
+        # Program reads that gate before it builds the app, from the process environment: an in-memory
+        # mask is too late (u02 run 35411370499), so the variables are removed from the process.
         host = (TOOL / "BrowserSuiteHost.cs").read_text(encoding="utf-8")
-        self.assertIn(".Concat(MaskedProcessEnvelope())", host)
+        self.assertIn("Environment.SetEnvironmentVariable(name, null);", host)
         self.assertIn('name.StartsWith("GOYMEN_ERP_C01_E2E_", StringComparison.Ordinal)', host)
         self.assertIn('name.StartsWith("C01E2e__", StringComparison.Ordinal)', host)
         self.assertIn("!apiEnvironment.ContainsKey(name)", host)
+        # Create is the only way to a host, and it removes the envelope first; the runner uses it.
+        self.assertIn("    private BrowserSuiteHost(\n", host)
+        create = host.split("internal static BrowserSuiteHost Create(", 1)[1].split("\n    }\n", 1)[0]
+        self.assertLess(create.index("RemoveProcessEnvelope(apiEnvironment);"), create.index("return new BrowserSuiteHost("))
+        runner = (TOOL / "BrowserSuiteFixtureTool.cs").read_text(encoding="utf-8")
+        self.assertIn("BrowserSuiteHost.Create(", runner)
+        self.assertNotIn("new BrowserSuiteHost(", runner)
         activation = (ROOT / "src/backend/GoymenERP.Api/Shell/C01E2eShellCapabilityActivation.cs").read_text(
             encoding="utf-8")
-        # Every activation trigger key is one of the masked families.
+        # Every activation trigger key is one of the removed families.
         keys = activation.split("private static readonly string[] ConfigurationKeys =", 1)[1].split("];", 1)[0]
         for constant in re.findall(r"(\w+ConfigurationKey)", keys):
             value = re.search(rf'{constant} =\s*"([^"]+)"', activation).group(1)
             with self.subTest(key=value):
                 self.assertTrue(value.startswith(("GOYMEN_ERP_C01_E2E_", "C01E2e:")), value)
 
+    def test_the_host_passes_every_value_program_reads_as_a_host_setting(self):
+        # The shell profile (C01E2e:Profile) and the fixture-writer gate are read before the app is built;
+        # only host settings (UseSetting) are visible there. No value may travel as in-memory configuration.
+        host = (TOOL / "BrowserSuiteHost.cs").read_text(encoding="utf-8")
+        self.assertNotIn("ConfigureAppConfiguration", host)
+        self.assertNotIn("AddInMemoryCollection", host)
+        self.assertIn('builder.UseSetting(key.Replace("__", ":", StringComparison.Ordinal), value);', host)
+        self.assertIn("foreach (var (key, value) in FixtureWriterBinding())", host)
 
 class SeedExportTests(unittest.TestCase):
     OUTPUTS = {"org03": frozenset({"companyId", "recorderActor"})}
@@ -331,6 +348,8 @@ class SuiteIdentityTests(unittest.TestCase):
             "another start": {assignment + "ValidFromUtc": "2025-01-01T00:00:00+00:00"},
             "repeated synthetic id": {"IdentitySeed__Assignments__8__Id": "b4000000-0000-0000-0000-000000000001"},
             "user without an assignment": {key: None for key in self.identity() if "Assignments__8__" in key},
+            "actor without any user or assignment": {key: None for key in self.identity()
+                                                     if "Users__6__" in key or "Assignments__8__" in key},
             "role with an unlisted field": {role + "Description": "x"},
             "user without a display name": {user + "DisplayName": None},
             "assignment without its start": {assignment + "ValidFromUtc": None},
@@ -368,6 +387,111 @@ class SuiteIdentityTests(unittest.TestCase):
         }, suite="org03")
 
 
+class IssuerUserRuleTests(unittest.TestCase):
+    """The issuer-user rule (coordinator decision, a narrow D1 extension): a suite that binds the Product
+    issuer may seed one non-actor Identity user, the issuer's own, holding nothing."""
+
+    LOCAL = "b2000000-0000-4000-8000-000000000201"
+    EXTERNAL = "b2100000-0000-4000-8000-000000000201"
+
+    def issuer(self, suite="u02", **changes):
+        user = "IdentitySeed__Users__5__"
+        environment = {
+            "ProductRuntime__IssuerLocalUserId": self.LOCAL,
+            "ProductRuntime__IssuerExternalIdentityId": self.EXTERNAL,
+            user + "Id": self.LOCAL,
+            user + "DisplayName": f"SENTETIK browser-suite:{suite} Product issuer",
+            user + "ExternalIdentities__0__Id": self.EXTERNAL,
+            user + "ExternalIdentities__0__Issuer": "urn:goymen:development-bootstrap",
+            user + "ExternalIdentities__0__Subject": f"{suite}-issuer",
+        }
+        for key, value in changes.items():
+            if value is None:
+                environment.pop(key, None)
+            else:
+                environment[key] = value
+        return environment
+
+    @staticmethod
+    def _validate(extension, suite="u02"):
+        model = profile_tests.model(browser.profile_of(suite))
+        model["services"]["api"]["environment"].update(extension)
+        browser.validate_suite_compose(model, suite, profile_tests.COMMIT, profile_tests.PROJECT)
+
+    def test_the_u02_issuer_user_is_accepted(self):
+        self._validate(self.issuer())
+
+    def test_the_checked_in_override_files_pass_their_profiles(self):
+        # Every owner override in infra/browser-suites is valid against its suite's profile model.
+        directory = ROOT / browser.SUITE_OVERRIDE_DIRECTORY
+        for path in sorted(directory.glob("*.override.yml")) if directory.is_dir() else []:
+            suite = path.name.split(".", 1)[0]
+            environment = {}
+            for line in path.read_text(encoding="utf-8").splitlines():
+                match = re.fullmatch(r"      ([A-Za-z0-9_]+): (.+)", line)
+                if match:
+                    environment[match.group(1)] = match.group(2).strip('"')
+            with self.subTest(suite=suite):
+                self.assertTrue(environment)
+                self._validate(environment, suite)
+
+    def test_every_rule_refuses_its_violation(self):
+        user = "IdentitySeed__Users__5__"
+        cases = {
+            "user id is not the issuer's local id": {user + "Id": "b2000000-0000-4000-8000-000000000202"},
+            "external id is not the issuer's external id": {
+                user + "ExternalIdentities__0__Id": "b2100000-0000-4000-8000-000000000202"},
+            "subject is not <suite>-issuer": {user + "ExternalIdentities__0__Subject": "u02-product-issuer"},
+            "subject is a canonical actor": {user + "ExternalIdentities__0__Subject": "group-bootstrap-admin"},
+            "not SENTETIK": {user + "DisplayName": "Product issuer"},
+            "another issuer": {user + "ExternalIdentities__0__Issuer": "urn:other"},
+            "issuer keys absent": {"ProductRuntime__IssuerLocalUserId": None,
+                                   "ProductRuntime__IssuerExternalIdentityId": None},
+            "a second non-actor user": {
+                "IdentitySeed__Users__6__Id": "b2000000-0000-4000-8000-000000000203",
+                "IdentitySeed__Users__6__DisplayName": "SENTETIK another",
+                "IdentitySeed__Users__6__ExternalIdentities__0__Id": "b2100000-0000-4000-8000-000000000203",
+                "IdentitySeed__Users__6__ExternalIdentities__0__Issuer": "urn:goymen:development-bootstrap",
+                "IdentitySeed__Users__6__ExternalIdentities__0__Subject": "u02-other"},
+            "a role (u02 holds no permission)": {
+                "IdentitySeed__Roles__5__Id": "b3000000-0000-4000-8000-000000000201",
+                "IdentitySeed__Roles__5__Code": "BROWSER_U02_ISSUER",
+                "IdentitySeed__Roles__5__Name": "SENTETIK issuer",
+                "IdentitySeed__Roles__5__IsSystem": "false",
+                "IdentitySeed__Roles__5__Permissions__0": "product.operational-selection.read"},
+            "an assignment for the issuer": {
+                "IdentitySeed__Assignments__7__Id": "b4000000-0000-4000-8000-000000000201",
+                "IdentitySeed__Assignments__7__UserId": self.LOCAL,
+                "IdentitySeed__Assignments__7__RoleId": "30000000-0000-0000-0000-000000000003",
+                "IdentitySeed__Assignments__7__CompanyId": "10000000-0000-0000-0000-000000000001",
+                "IdentitySeed__Assignments__7__ValidFromUtc": "2026-01-01T00:00:00+00:00",
+                "IdentitySeed__Assignments__7__Scopes__0__Type": "Company",
+                "IdentitySeed__Assignments__7__Scopes__0__Id": "10000000-0000-0000-0000-000000000001"},
+        }
+        for label, changes in cases.items():
+            with self.subTest(label), self.assertRaises(browser.ContractError):
+                self._validate(self.issuer(**changes))
+
+    def test_a_suite_actor_cannot_be_named_as_the_issuer(self):
+        # s03 binds the issuer and has actors: an actor called s03-issuer would sign in as the issuer.
+        extension = self.issuer(suite="s03")
+        extension.update({
+            "BootstrapIdentity__Users__2__UserId": "s03-issuer",
+            "BootstrapIdentity__Users__2__DisplayName": "SENTETIK S03 issuer actor",
+        })
+        with self.assertRaisesRegex(browser.ContractError, "s03-issuer"):
+            self._validate(extension, suite="s03")
+
+    def test_a_suite_without_the_issuer_list_cannot_seed_a_non_actor_user(self):
+        # An identity-enabled suite that does not bind the issuer (org03 given an Identity list here).
+        extension = {key: value for key, value in self.issuer(suite="org03").items()
+                     if not key.startswith("ProductRuntime__")}
+        lists = {"org03": {"issuer": False, "actors": True, "identity": True}}
+        with mock.patch.dict(browser.SUITE_API_EXTENSIONS, lists), \
+                self.assertRaisesRegex(browser.ContractError, "only the bound Product issuer"):
+            self._validate(extension, suite="org03")
+
+
 class WorkflowTests(unittest.TestCase):
     @staticmethod
     def _step(name):
@@ -394,6 +518,27 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('${BROWSER_E2E_COMPOSE_OVERRIDE:+-f "$BROWSER_E2E_COMPOSE_OVERRIDE"}', step)
         restore = self._step("Restore suite fixture runner")
         self.assertIn("if: env.BROWSER_E2E_SUITE_FIXTURE == 'true'", restore)
+
+    def test_the_runner_is_built_without_the_envelope_and_run_without_building(self):
+        # Run 35392194453: building the runner builds the Api, whose build-time OpenAPI generation starts
+        # Program with the step's environment; the run's C-01 envelope variables made it request the envelope
+        # outside Testing. The build removes every envelope variable by prefix; materialize never builds.
+        build = self._step("Build the suite fixture runner")
+        self.assertIn("if: env.BROWSER_E2E_SUITE_FIXTURE == 'true'", build)
+        self.assertIn("compgen -e | grep -E '^(GOYMEN_ERP_C01_E2E_|C01E2e__)'", build)
+        self.assertIn('env "${envelope[@]}" dotnet build', build)
+        self.assertIn("tests/GoymenERP.BrowserSuiteFixtureTool/GoymenERP.BrowserSuiteFixtureTool.csproj", build)
+        materialize = self._step("Materialize the suite's fixture")
+        self.assertIn("--no-build", materialize)
+        order = [WORKFLOW.index(f"      - name: {name}\n")
+                 for name in ("Restore suite fixture runner", "Build the suite fixture runner",
+                              "Materialize the suite's fixture")]
+        self.assertEqual(sorted(order), order)
+        # No other step may build anything that references the Api with the envelope in its environment.
+        for step in re.split(r"\n      - name: ", WORKFLOW)[1:]:
+            if "BrowserSuiteFixtureTool.csproj" in step and not step.startswith("Restore suite fixture runner"):
+                with self.subTest(step=step.split("\n", 1)[0]):
+                    self.assertTrue("--no-build" in step or 'env "${envelope[@]}" dotnet build' in step)
 
     def test_the_profile_step_exports_a_boolean_fixture_flag(self):
         step = self._step("Select the suite's capability profile")

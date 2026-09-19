@@ -95,4 +95,16 @@ public sealed class ProductDbContext(DbContextOptions<ProductDbContext> options)
         participant.ValidateFlush(this);
         return base.SaveChangesAsync(acceptAllChangesOnSuccess: true, cancellationToken);
     }
+
+    internal Task<int> AddFixtureCodeGroupAsync(ProductCodeGroupRow group, CancellationToken cancellationToken)
+    {
+        // The gated browser-suite code-group port (Fixtures/ProductCodeGroupFixtureStore) only: the change
+        // set is exactly this one added group on an otherwise clean context — no card, code, counter or
+        // edit. This path does not enable any public SaveChanges overload either.
+        ArgumentNullException.ThrowIfNull(group);
+        if (ChangeTracker.Entries().Any())
+            throw new InvalidOperationException("A fixture code group is flushed only from a clean Product context.");
+        CodeGroups.Add(group);
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess: true, cancellationToken);
+    }
 }

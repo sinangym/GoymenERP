@@ -1,4 +1,5 @@
 using GoymenERP.Modules.Identity.Infrastructure.Fixtures;
+using GoymenERP.Modules.Product.Infrastructure.Fixtures;
 
 namespace GoymenERP.Api.Shell;
 
@@ -44,6 +45,9 @@ internal static class C01E2eFixtureWriterActivation
         RequireGate(environment, configuration);
         services.AddProductMasterAssignmentFixtureStore();
         services.AddScoped<C01E2eProductMasterAssignmentFixtureWriter>();
+        // u02 (#331): Product's code-group port (ÜRÜN's), behind the same gate.
+        services.AddProductCodeGroupFixtureStore();
+        services.AddScoped<C01E2eProductCodeGroupFixtureWriter>();
         return true;
     }
 
@@ -122,6 +126,41 @@ public sealed class C01E2eProductMasterAssignmentFixtureWriter
         if (!Enum.IsDefined(row.Operation))
         {
             throw new InvalidOperationException("Unknown Product master operation.");
+        }
+
+        return _store.EnsureAsync(row, cancellationToken);
+    }
+}
+
+/// <summary>
+/// Writes an explicit synthetic Product code group through Product's fixture port (coordinator decision
+/// W1/C, u02). The sibling of <see cref="C01E2eProductMasterAssignmentFixtureWriter"/>: constructing it
+/// outside the gate fails even if someone registers it by hand, and the group's name must name its suite
+/// (SENTETIK browser-suite:&lt;suite&gt; …), so every such row is traceable to its fixture. Registered only by
+/// <see cref="C01E2eFixtureWriterActivation"/>; written by ÜRÜN (#331), kept in this file by CARİ so the
+/// activation stays named in this file and Program.cs only.
+/// </summary>
+public sealed class C01E2eProductCodeGroupFixtureWriter
+{
+    public const string NamePrefix = "SENTETIK browser-suite:";
+
+    private readonly IProductCodeGroupFixtureStore _store;
+
+    public C01E2eProductCodeGroupFixtureWriter(
+        IHostEnvironment environment,
+        IConfiguration configuration,
+        IProductCodeGroupFixtureStore store)
+    {
+        C01E2eFixtureWriterActivation.RequireGate(environment, configuration);
+        _store = store;
+    }
+
+    public Task EnsureAsync(ProductCodeGroupFixtureRow row, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        if (!row.Name.StartsWith(NamePrefix, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"A fixture code group name must start '{NamePrefix}'.");
         }
 
         return _store.EnsureAsync(row, cancellationToken);
