@@ -45,6 +45,16 @@ public static class SalesDraftProblemCodesV1
 
     /// <summary>503: the Sales permission name is not registered in the central catalogue yet (setup, not a refusal).</summary>
     public const string PermissionUnregistered = "permission_unregistered";
+
+    /// <summary>
+    /// 409 (SALES-A1, contract delta): the internal-approval transition is not allowed from the draft's
+    /// current approval state (e.g. approving a draft that was never submitted); a terminal refusal,
+    /// recorded and replayed under the same key (ADR-011 §7). The field is <c>approvalState</c>.
+    /// </summary>
+    public const string StateConflict = "sales_state_conflict";
+
+    /// <summary>422 (SALES-A1, contract delta): the rejection reason is longer than the technical bound; refused, never cut.</summary>
+    public const string ApprovalReasonTooLong = "sales_approval_reason_too_long";
 }
 
 /// <summary>
@@ -69,4 +79,5 @@ public sealed class SalesDraftServiceException(int status, string code,
 /// </summary>
 public sealed record SalesDraftServiceBindings(
     string? CreatePermission = SalesPermissionManifestV1.DraftsCreate,
-    string? ReadPermission = SalesPermissionManifestV1.DraftsRead);
+    string? ReadPermission = SalesPermissionManifestV1.DraftsRead,
+    string? ApprovePermission = SalesPermissionManifestV1.OrdersApprove);

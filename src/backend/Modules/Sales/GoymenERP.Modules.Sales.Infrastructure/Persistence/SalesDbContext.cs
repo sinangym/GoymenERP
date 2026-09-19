@@ -31,6 +31,17 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// <summary>Binary collation: equality is exact, as the domain's ordinal identity comparison.</summary>
     public const string IdentityCollation = "Latin1_General_100_BIN2";
 
+    /// <summary>
+    /// SALES-A1 (CK_Drafts_Approval): Preparing (1) carries no fact; PendingApproval (2) the submission
+    /// only; Approved (3) the submission and the decision, no reason; Rejected (4) the submission and the
+    /// decision, the reason optional. The same rule the domain restores by (<c>RestoreApproval</c>).
+    /// </summary>
+    internal const string ApprovalConstraint =
+        "([ApprovalState] = 1 AND [SubmittedBy] IS NULL AND [SubmittedAtUtc] IS NULL AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) "
+        + "OR ([ApprovalState] = 2 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) "
+        + "OR ([ApprovalState] = 3 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [RejectionReason] IS NULL) "
+        + "OR ([ApprovalState] = 4 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND ([RejectionReason] IS NULL OR LEN([RejectionReason]) > 0))";
+
     internal DbSet<DraftNumberRow> DraftNumbers => Set<DraftNumberRow>();
 
     internal DbSet<DraftRow> Drafts => Set<DraftRow>();
@@ -99,6 +110,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                 + "AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [MoneyProfileId] <> '00000000-0000-0000-0000-000000000000'");
             table.HasCheckConstraint("CK_Drafts_State", "[Kind] = 1 AND [State] = 1 AND [Revision] = 0");
+            // SALES-A1: the approval facts follow the approval state exactly (a row cannot say "approved" without a decision).
+            table.HasCheckConstraint("CK_Drafts_Approval", ApprovalConstraint);
             table.HasCheckConstraint("CK_Drafts_Version", "[Version] >= 1");
             table.HasCheckConstraint("CK_Drafts_Text",
                 "LEN([DocumentNo]) > 0 AND LEN([MoneyOperation]) > 0 AND LEN([MoneyProfileVersion]) > 0 AND LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
@@ -133,6 +146,10 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         entity.Property(x => x.MoneyEffectiveThrough).HasColumnType("date");
         entity.Property(x => x.CreatedBy).HasMaxLength(128).IsRequired();
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.SubmittedBy).HasMaxLength(SalesOrderDraft.MaximumActorLength);
+        entity.Property(x => x.DecidedBy).HasMaxLength(SalesOrderDraft.MaximumActorLength);
+        entity.Property(x => x.RejectionReason).HasMaxLength(SalesOrderDraft.MaximumRejectionReasonLength);
+        entity.HasIndex(x => new { x.CompanyId, x.ApprovalState, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_Drafts_CompanyId_ApprovalState_CreatedAtUtc_Id");
         entity.HasIndex(x => new { x.CompanyId, x.DocumentNo }).IsUnique().HasDatabaseName("UX_Drafts_DocumentNo");
         entity.HasIndex(x => new { x.CompanyId, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_Drafts_CompanyId_CreatedAtUtc_Id");
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
@@ -268,7 +285,12 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                 string[] allowed = entry.Entity switch
                 {
                     DraftNumberRow => [nameof(DraftNumberRow.Next), nameof(DraftNumberRow.UpdatedAtUtc)],
-                    DraftRow => [nameof(DraftRow.UpdatedAtUtc)],
+                    // SALES-A1: the header moves only along the approval axis (state, facts, time; the version is the token).
+                    DraftRow =>
+                    [
+                        nameof(DraftRow.UpdatedAtUtc), nameof(DraftRow.ApprovalState), nameof(DraftRow.SubmittedBy), nameof(DraftRow.SubmittedAtUtc),
+                        nameof(DraftRow.DecidedBy), nameof(DraftRow.DecidedAtUtc), nameof(DraftRow.RejectionReason),
+                    ],
                     _ => [],
                 };
                 var changed = entry.Properties

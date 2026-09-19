@@ -37,12 +37,32 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
     public const string DetailRoutePath = "/satis/siparisler/:draftId";
     public const string DetailScreenId = "S-04";
 
+    /// <summary>
+    /// SALES-A1: the approve / reject control on the S-04 detail (the Finance bank-account approval
+    /// pattern): the detail's route and access plus <see cref="SalesPermissionManifestV1.OrdersApprove"/>.
+    /// A control, not a route (<c>ParentCapabilityId</c> = the detail). The submit button needs no
+    /// control of its own: it follows the create capability the shell already publishes.
+    /// </summary>
+    public const string ApproveCapabilityId = "sales.orders.approve";
+
     public string Owner => OwnerId;
 
     public string ContractVersion => OwnerContractVersion;
 
-    public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
-    [
+    public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations()
+    {
+        var detail = new ShellCapabilityDeclaration(
+            DetailCapabilityId,
+            DetailRouteId,
+            DetailRoutePath,
+            DetailScreenId,
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [SalesPermissionManifestV1.DraftsRead],
+            ImplementationAvailable: true);
+        return
+        [
         new ShellCapabilityDeclaration(
             ListCapabilityId,
             ListRouteId,
@@ -63,15 +83,15 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
             ShellCapabilityScopeRequirement.CompanyWide,
             [SalesPermissionManifestV1.DraftsCreate],
             ImplementationAvailable: true),
-        new ShellCapabilityDeclaration(
-            DetailCapabilityId,
-            DetailRouteId,
-            DetailRoutePath,
-            DetailScreenId,
-            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
-            ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
-            ShellCapabilityScopeRequirement.CompanyWide,
-            [SalesPermissionManifestV1.DraftsRead],
-            ImplementationAvailable: true),
-    ];
+        detail,
+        // SALES-A1: the decision is a control of the detail — a single company, the read plus the approve name.
+        detail with
+        {
+            CapabilityId = ApproveCapabilityId,
+            ContextRequirement = ShellCapabilityContextRequirement.SingleCompany,
+            ParentCapabilityId = DetailCapabilityId,
+            RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersApprove],
+        },
+        ];
+    }
 }

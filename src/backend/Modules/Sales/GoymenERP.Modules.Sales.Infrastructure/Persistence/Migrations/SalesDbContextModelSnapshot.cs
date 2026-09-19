@@ -501,6 +501,9 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
             b.Property<Guid>("Id")
                 .HasColumnType("uniqueidentifier");
 
+            b.Property<int>("ApprovalState")
+                .HasColumnType("int");
+
             b.Property<DateOnly>("BusinessDate")
                 .HasColumnType("date");
 
@@ -532,6 +535,13 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
 
             b.Property<Guid>("CurrencyId")
                 .HasColumnType("uniqueidentifier");
+
+            b.Property<DateTimeOffset?>("DecidedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("DecidedBy")
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
 
             b.Property<Guid?>("DeliveryAddressId")
                 .HasColumnType("uniqueidentifier");
@@ -597,6 +607,10 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
                 .HasMaxLength(128)
                 .HasColumnType("nvarchar(128)");
 
+            b.Property<string>("RejectionReason")
+                .HasMaxLength(4000)
+                .HasColumnType("nvarchar(4000)");
+
             b.Property<DateOnly?>("RequestedDeliveryDate")
                 .HasColumnType("date");
 
@@ -626,6 +640,13 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
             b.Property<int>("State")
                 .HasColumnType("int");
 
+            b.Property<DateTimeOffset?>("SubmittedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("SubmittedBy")
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
             b.Property<DateTimeOffset>("UpdatedAtUtc")
                 .HasColumnType("datetimeoffset");
 
@@ -637,6 +658,9 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
 
             b.HasAlternateKey("CompanyId", "Id");
 
+            b.HasIndex("CompanyId", "ApprovalState", "CreatedAtUtc", "Id")
+                .HasDatabaseName("IX_Drafts_CompanyId_ApprovalState_CreatedAtUtc_Id");
+
             b.HasIndex("CompanyId", "CreatedAtUtc", "Id")
                 .HasDatabaseName("IX_Drafts_CompanyId_CreatedAtUtc_Id");
 
@@ -646,6 +670,10 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
 
             b.ToTable("Drafts", "sales", t =>
             {
+                t.HasCheckConstraint(
+                    "CK_Drafts_Approval",
+                    "([ApprovalState] = 1 AND [SubmittedBy] IS NULL AND [SubmittedAtUtc] IS NULL AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([ApprovalState] = 2 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([ApprovalState] = 3 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [RejectionReason] IS NULL) OR ([ApprovalState] = 4 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [SubmittedAtUtc] IS NOT NULL AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND ([RejectionReason] IS NULL OR LEN([RejectionReason]) > 0))");
+
                 t.HasCheckConstraint(
                     "CK_Drafts_Identity",
                     "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [MoneyProfileId] <> '00000000-0000-0000-0000-000000000000'");

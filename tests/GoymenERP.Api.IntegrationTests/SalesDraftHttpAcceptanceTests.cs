@@ -149,10 +149,10 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         return new StringContent(JsonSerializer.Serialize(request, SalesDraftJson.Options), Encoding.UTF8, "application/json");
     }
 
-    private static SalesOrderDraftDetailView Detail(Guid draftId) => new(
+    private static SalesOrderDraftDetailView Detail(Guid draftId, string approvalState = "Preparing") => new(
         new SalesOrderDraftSummaryView(draftId, CompanyA, "SO-2026-000001", "Order", "Draft", "1", "Rev.0", Guid.NewGuid(), Guid.NewGuid(),
-            Guid.NewGuid(), new DateOnly(2026, 9, 18), new DateTimeOffset(2026, 9, 18, 14, 0, 0, TimeSpan.Zero), 0),
-        null, null, [], null, null, null, null, null, null);
+            Guid.NewGuid(), new DateOnly(2026, 9, 18), new DateTimeOffset(2026, 9, 18, 14, 0, 0, TimeSpan.Zero), 0, approvalState),
+        null, null, [], null, null, null, null, null, null, new SalesDraftApprovalV1(null, null, null, null, null));
 
     private WebApplicationFactory<Program> CreateHost(ISalesDraftService service) => factory.WithWebHostBuilder(builder =>
         builder.ConfigureTestServices(services =>
@@ -188,5 +188,162 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
 
         public Task<SalesOrderDraftListResponse> GetDraftListAsync(SalesOrderDraftListQuery query, CancellationToken cancellationToken = default) =>
             Task.FromResult(new SalesOrderDraftListResponse([], null));
+
+        /// <summary>SALES-A1: what the stub answers a state command with; the command name and body reach <see cref="StateCalls"/>.</summary>
+        public Func<string, Guid, SalesDraftStateCommandRequest, Task<SalesOrderDraftResponse>> State { get; set; } =
+            (_, id, _) => Task.FromResult(new SalesOrderDraftResponse(Detail(id, "PendingApproval"), false, "SENTETIK-corr"));
+
+        public List<(string Command, Guid DraftId, string ExpectedVersion, string? Reason, string Key)> StateCalls { get; } = [];
+
+        public Task<SalesOrderDraftResponse> SubmitDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
+            CancellationToken cancellationToken = default) => StateAsync("submit", draftId, request, metadata);
+
+        public Task<SalesOrderDraftResponse> ApproveDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
+            CancellationToken cancellationToken = default) => StateAsync("approve", draftId, request, metadata);
+
+        public Task<SalesOrderDraftResponse> RejectDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
+            CancellationToken cancellationToken = default) => StateAsync("reject", draftId, request, metadata);
+
+        private Task<SalesOrderDraftResponse> StateAsync(string command, Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata)
+        {
+            StateCalls.Add((command, draftId, request.ExpectedVersion, request.Reason, metadata.IdempotencyKey));
+            return State(command, draftId, request);
+        }
+    }
+
+    // ---- SALES-A1: the state command routes' wire ------------------------------------------------
+
+    [Theory]
+    [InlineData("submission", "submit")]
+    [InlineData("approval", "approve")]
+    [InlineData("rejection", "reject")]
+    public async Task A_state_command_answers_200_with_the_draft_and_the_replay_headers_only_on_a_replay(string segment, string command)
+    {
+        var draftId = Guid.NewGuid();
+        var service = new StubDraftService
+        {
+            State = (_, id, request) => Task.FromResult(new SalesOrderDraftResponse(Detail(id, "PendingApproval"),
+                request.ExpectedVersion == "2", "SENTETIK-first-corr")),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using (var first = await client.SendAsync(StateCommand(draftId, segment, "SENTETIK-s-1", "{\"expectedVersion\":\"1\"}")))
+        {
+            Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+            Assert.True(first.Headers.CacheControl is { Private: true, NoStore: true });
+            Assert.False(first.Headers.Contains("Idempotency-Replayed"));
+            var body = await first.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(draftId, body.GetProperty("detail").GetProperty("draft").GetProperty("id").GetGuid());
+            Assert.Equal("PendingApproval", body.GetProperty("detail").GetProperty("draft").GetProperty("approvalState").GetString());
+            Assert.False(body.GetProperty("isReplay").GetBoolean());
+            Assert.Equal(JsonValueKind.Null, body.GetProperty("detail").GetProperty("approval").GetProperty("submittedBy").ValueKind);
+        }
+
+        using (var replay = await client.SendAsync(StateCommand(draftId, segment, "SENTETIK-s-2", "{\"expectedVersion\":\"2\"}")))
+        {
+            Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+            Assert.Equal("true", Assert.Single(replay.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-first-corr", Assert.Single(replay.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+
+        Assert.Equal([(command, draftId, "1", null, "SENTETIK-s-1"), (command, draftId, "2", null, "SENTETIK-s-2")], service.StateCalls);
+    }
+
+    [Fact]
+    public async Task A_state_command_without_a_canonical_key_a_json_body_or_the_strict_shape_never_reaches_the_service()
+    {
+        var service = new StubDraftService();
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        var draftId = Guid.NewGuid();
+
+        using (var noKey = new HttpRequestMessage(HttpMethod.Post, $"{SalesEndpoints.DraftsPath}/{draftId:D}/submission")
+        {
+            Content = new StringContent("{\"expectedVersion\":\"1\"}", Encoding.UTF8, "application/json"),
+        })
+        {
+            using var response = await client.SendAsync(noKey);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal(SalesDraftProblemCodesV1.CommandMetadataInvalid,
+                (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        using (var text = new HttpRequestMessage(HttpMethod.Post, $"{SalesEndpoints.DraftsPath}/{draftId:D}/approval")
+        {
+            Content = new StringContent("expectedVersion=1", Encoding.UTF8, "text/plain"),
+        })
+        {
+            text.Headers.Add("Idempotency-Key", "SENTETIK-text");
+            Assert.Equal(HttpStatusCode.UnsupportedMediaType, (await client.SendAsync(text)).StatusCode);
+        }
+
+        // A missing version, a non-positive or non-integer one, an unknown member, and a reason outside the rejection: 400.
+        foreach (var (segment, json) in new[]
+                 {
+                     ("submission", "{}"), ("submission", "{\"expectedVersion\":\"0\"}"), ("approval", "{\"expectedVersion\":1}"),
+                     ("approval", "{\"expectedVersion\":\"1\",\"lifecycle\":\"Active\"}"), ("submission", "{\"expectedVersion\":\"1\",\"reason\":\"x\"}"),
+                     ("rejection", "{\"expectedVersion\":\"01\"}"),
+                 })
+        {
+            using var response = await client.SendAsync(StateCommand(draftId, segment, "SENTETIK-shape", json));
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("validation_failed", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        // The rejection carries its reason; null is "no reason", never a default text.
+        using (var rejected = await client.SendAsync(StateCommand(draftId, "rejection", "SENTETIK-r-1", "{\"expectedVersion\":\"3\",\"reason\":\"SENTETIK neden\"}")))
+        {
+            Assert.Equal(HttpStatusCode.OK, rejected.StatusCode);
+        }
+
+        Assert.Equal([("reject", draftId, "3", "SENTETIK neden", "SENTETIK-r-1")], service.StateCalls);
+    }
+
+    [Theory]
+    [InlineData(409, SalesDraftProblemCodesV1.StateConflict, true)]
+    [InlineData(409, SalesDraftProblemCodesV1.VersionConflict, true)]
+    [InlineData(422, SalesDraftProblemCodesV1.ApprovalReasonTooLong, false)]
+    [InlineData(404, "not_found", false)]
+    public async Task A_state_commands_refusal_carries_its_code_and_a_replayed_terminal_refusal_its_headers(int status, string code, bool replayed)
+    {
+        var service = new StubDraftService
+        {
+            State = (_, _, _) => throw new SalesDraftServiceException(status, code, [new("approvalState", code)], isReplay: replayed,
+                originalCorrelationId: replayed ? "SENTETIK-first-corr" : null),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using var response = await client.SendAsync(StateCommand(Guid.NewGuid(), "rejection", "SENTETIK-refused", "{\"expectedVersion\":\"1\"}"));
+
+        Assert.Equal(status, (int)response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        if (status == 404)
+        {
+            // Platform 404 stays code-less on this wire: the service's code never reaches it.
+            Assert.False(body.TryGetProperty("code", out var codeless) && codeless.GetString() == code);
+        }
+        else
+        {
+            Assert.Equal(code, body.GetProperty("code").GetString());
+            Assert.Equal("approvalState", body.GetProperty("errors")[0].GetProperty("field").GetString());
+        }
+
+        Assert.Equal(replayed, response.Headers.Contains("Idempotency-Replayed"));
+        if (replayed)
+        {
+            Assert.Equal("SENTETIK-first-corr", Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+    }
+
+    private static HttpRequestMessage StateCommand(Guid draftId, string segment, string idempotencyKey, string json)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, $"{SalesEndpoints.DraftsPath}/{draftId:D}/{segment}")
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Add("Idempotency-Key", idempotencyKey);
+        return request;
     }
 }
