@@ -5,6 +5,7 @@ using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 using GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace GoymenERP.Purchasing.UnitTests;
 
@@ -32,7 +33,7 @@ public sealed class PurchasingPersistenceModelTests
 
         Assert.Equal(["PurchaseAttempts", "PurchaseOrderLines", "PurchaseOrders", "PurchaseRequestLines", "PurchaseRequests"],
             new[] { typeof(PurchaseAttemptRow), typeof(PurchaseOrderLineRow), typeof(PurchaseOrderRow), typeof(PurchaseRequestLineRow), typeof(PurchaseRequestRow) }
-                .Select(type => context.Model.FindEntityType(type)!.GetTableName()).ToArray());
+                .Select(type => context.Model.FindEntityType(type)!.GetTableName()!).ToArray());
         var audit = context.Model.FindEntityType(typeof(AuditEvent))!;
         Assert.Equal(("audit", "AuditEvents"), (audit.GetSchema(), audit.GetTableName()));
         Assert.Equal(("organization", "Companies"), (context.Model.FindEntityType(typeof(OrganizationCompanyReference))!.GetSchema(),
@@ -43,10 +44,11 @@ public sealed class PurchasingPersistenceModelTests
     public void The_identities_are_the_attempt_key_the_line_ids_and_one_create_attempt_per_request_and_per_order()
     {
         using PurchasingDbContext context = Context();
-        var attempts = context.Model.FindEntityType(typeof(PurchaseAttemptRow))!;
+        // Check constraints, collations and index filters are design-time configuration, not in the read-optimized runtime model.
+        var designModel = context.GetService<IDesignTimeModel>().Model;
+        var attempts = designModel.FindEntityType(typeof(PurchaseAttemptRow))!;
         Assert.Equal(["CompanyId", "CommandName", "IdempotencyKeyHash"], attempts.FindPrimaryKey()!.Properties.Select(property => property.Name).ToArray());
-        // Collations and index filters are design-time configuration, not in the read-optimized runtime model (the Sales persistence test's shape).
-        var design = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseAttemptRow))!;
+        var design = designModel.FindEntityType(typeof(PurchaseAttemptRow))!;
         Assert.Equal(PurchasingDbContext.IdentityCollation, design.FindProperty(nameof(PurchaseAttemptRow.IdempotencyKeyHash))!.GetCollation());
         Assert.Equal(PurchasingDbContext.IdentityCollation, design.FindProperty(nameof(PurchaseAttemptRow.CommandName))!.GetCollation());
         // The Sales #338 lesson: one CREATE attempt per stored aggregate; the transition commands' attempts share the aggregate id.
@@ -59,7 +61,7 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Equal((PurchasingCommands.RequestCreateV1, PurchasingCommands.OrderCreateV1),
             ("purchasing.purchase-request.create.v1", "purchasing.purchase-order.create.v1"));
 
-        var orderLines = context.Model.FindEntityType(typeof(PurchaseOrderLineRow))!;
+        var orderLines = designModel.FindEntityType(typeof(PurchaseOrderLineRow))!;
         Assert.True(orderLines.GetIndexes().Single(index => index.GetDatabaseName() == "UX_PurchaseOrderLines_LineId").IsUnique);
         Assert.Contains(orderLines.GetIndexes(), index => index.GetDatabaseName() == "IX_PurchaseOrderLines_SourceRequestLine");
         Assert.Contains(orderLines.GetCheckConstraints(), check => check.Name == "CK_PurchaseOrderLines_Shares"
@@ -67,14 +69,14 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Equal((3, 3, 3), (orderLines.FindProperty(nameof(PurchaseOrderLineRow.Ordered))!.GetScale(),
             orderLines.FindProperty(nameof(PurchaseOrderLineRow.Technical))!.GetScale(), orderLines.FindProperty(nameof(PurchaseOrderLineRow.Accepted))!.GetScale()));
         Assert.Equal(64, orderLines.FindProperty(nameof(PurchaseOrderLineRow.ProductVersion))!.GetMaxLength());
-        var requestLines = context.Model.FindEntityType(typeof(PurchaseRequestLineRow))!;
+        var requestLines = designModel.FindEntityType(typeof(PurchaseRequestLineRow))!;
         Assert.True(requestLines.GetIndexes().Single(index => index.GetDatabaseName() == "UX_PurchaseRequestLines_LineId").IsUnique);
         Assert.Equal(3, requestLines.FindProperty(nameof(PurchaseRequestLineRow.Quantity))!.GetScale());
 
-        var requests = context.Model.FindEntityType(typeof(PurchaseRequestRow))!;
+        var requests = designModel.FindEntityType(typeof(PurchaseRequestRow))!;
         Assert.True(requests.FindProperty(nameof(PurchaseRequestRow.Version))!.IsConcurrencyToken);
         Assert.True(requests.FindProperty(nameof(PurchaseRequestRow.RowVersion))!.IsConcurrencyToken);
-        var orders = context.Model.FindEntityType(typeof(PurchaseOrderRow))!;
+        var orders = designModel.FindEntityType(typeof(PurchaseOrderRow))!;
         Assert.True(orders.FindProperty(nameof(PurchaseOrderRow.Version))!.IsConcurrencyToken);
         // A sourced order references its request in the same company; the reference is optional.
         Assert.Contains(orders.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(PurchaseRequestRow)
