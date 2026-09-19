@@ -41,7 +41,8 @@ public sealed class AccountingStore(
     AccountingDbContext dbContext,
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
-    TimeProvider timeProvider) : IAccountingPeriodStore, IAccountingPostingStore
+    TimeProvider timeProvider,
+    AccountingAmountScaleVerifier amounts) : IAccountingPeriodStore, IAccountingPostingStore, IAccountingCommandLog
 {
     private const int Open = 1;
     private const int Resolved = 2;
@@ -52,31 +53,41 @@ public sealed class AccountingStore(
     private const string JournalEntityType = "Accounting.Journal";
     private const string ExceptionEntityType = "Accounting.PostingException";
     private const string PendingEntityType = "Accounting.PendingValuation";
+    private const int MaximumPageSize = 100;
 
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
-    public async Task<AccountingWriteOutcome> OpenPeriodAsync(Guid periodId, DateOnly startsOn, DateOnly endsOn,
-        AccountingCommandMetadata metadata, CancellationToken cancellationToken = default)
+    public async Task<(AccountingPeriodRecord Record, AccountingWriteOutcome Outcome)> ProposePeriodAsync(Guid periodId,
+        DateOnly startsOn, DateOnly endsOn, Guid preparedByUserId, AccountingCommandMetadata metadata,
+        CancellationToken cancellationToken = default)
     {
         RequireMetadata(metadata);
         var companyId = RequireResolvedCompany();
-        var period = new AccountingPeriod(periodId, companyId, startsOn, endsOn);
+        var now = timeProvider.GetUtcNow();
+        // Ö4: a new period is a PROPOSAL; the domain refuses an empty id, company or preparer and reversed dates.
+        var period = AccountingPeriod.Propose(periodId, companyId, startsOn, endsOn, preparedByUserId, now);
 
         var existing = await dbContext.Periods.AsNoTracking().SingleOrDefaultAsync(row => row.Id == periodId, cancellationToken);
         if (existing is not null)
         {
-            return existing.StartsOn == startsOn && existing.EndsOn == endsOn
-                ? AccountingWriteOutcome.Replayed
-                : throw Refused(AccountingStoreCodes.PeriodConflict, "Aynı dönem kimliği başka tarihlerle verildi.");
+            if (existing.StartsOn != startsOn || existing.EndsOn != endsOn)
+            {
+                throw Refused(AccountingStoreCodes.PeriodConflict, "Aynı dönem kimliği başka tarihlerle verildi.");
+            }
+
+            // R3: the same id is the same proposal; another preparer under it is not a replay of this one.
+            return existing.PreparedByUserId == preparedByUserId
+                ? (new AccountingPeriodRecord(RestorePeriod(existing), existing.Version), AccountingWriteOutcome.Replayed)
+                : throw Refused(AccountingStoreCodes.PeriodPreparerConflict, "Aynı dönem kimliğini başka bir kişi önerdi.");
         }
 
+        // A proposal covers its dates too: no two periods of the company overlap, whatever their status.
         if (await dbContext.Periods.AsNoTracking().AnyAsync(row => row.StartsOn <= endsOn && row.EndsOn >= startsOn,
                 cancellationToken))
         {
             throw Refused(AccountingStoreCodes.PeriodOverlap, "Yeni dönem şirketin kayıtlı bir dönemiyle çakışıyor.");
         }
 
-        var now = timeProvider.GetUtcNow();
         var calendar = await dbContext.PeriodCalendars.SingleOrDefaultAsync(cancellationToken);
         if (calendar is null)
         {
@@ -94,24 +105,56 @@ public sealed class AccountingStore(
             CompanyId = companyId,
             StartsOn = period.StartsOn,
             EndsOn = period.EndsOn,
-            Status = (int)AccountingPeriodStatus.Open,
+            Status = (int)AccountingPeriodStatus.Proposed,
+            PreparedByUserId = period.PreparedByUserId,
+            PreparedAtUtc = period.PreparedAtUtc,
             Version = 1,
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
         });
-        Audit(metadata, companyId, PeriodEntityType, period.Id.ToString("D"), "accounting.period.opened.v1", "Open",
-            versionBefore: null, versionAfter: 1, before: "{}", after: PeriodAudit(period), "Muhasebe dönemi açıldı");
+        Audit(metadata, companyId, PeriodEntityType, period.Id.ToString("D"), "accounting.period.proposed.v1", "Propose",
+            versionBefore: null, versionAfter: 1, before: "{}", after: PeriodAudit(period), "Muhasebe dönemi açılış için önerildi");
+        var record = new AccountingPeriodRecord(period, 1);
+        Complete(metadata, companyId, record);
         await SaveAsync(cancellationToken);
-        return AccountingWriteOutcome.Recorded;
+        return (record, AccountingWriteOutcome.Recorded);
     }
 
-    public async Task ClosePeriodAsync(Guid periodId, Guid closedByUserId, AccountingCommandMetadata metadata,
-        CancellationToken cancellationToken = default)
+    public async Task<AccountingPeriodRecord> ApprovePeriodAsync(Guid periodId, long expectedVersion, Guid approvedByUserId,
+        AccountingCommandMetadata metadata, CancellationToken cancellationToken = default)
     {
         RequireMetadata(metadata);
         var companyId = RequireResolvedCompany();
         var row = await dbContext.Periods.SingleOrDefaultAsync(candidate => candidate.Id == periodId, cancellationToken)
             ?? throw Refused(AccountingStoreCodes.PeriodNotFound, "Bu şirketin böyle bir dönemi yok.");
+        RequireVersion(row, expectedVersion);
+        var period = RestorePeriod(row);
+        var before = PeriodAudit(period);
+        // Ö4: the domain refuses the preparer and anything that is not a proposal.
+        period.Approve(approvedByUserId, timeProvider.GetUtcNow());
+
+        var versionBefore = row.Version;
+        row.Status = (int)AccountingPeriodStatus.Open;
+        row.ApprovedByUserId = period.ApprovedByUserId;
+        row.ApprovedAtUtc = period.ApprovedAtUtc;
+        row.Version = checked(versionBefore + 1);
+        row.UpdatedAtUtc = period.ApprovedAtUtc!.Value;
+        Audit(metadata, companyId, PeriodEntityType, period.Id.ToString("D"), "accounting.period.approved.v1", "Approve",
+            versionBefore, row.Version, before, PeriodAudit(period), "Muhasebe dönemi açılışı onaylandı");
+        var record = new AccountingPeriodRecord(period, row.Version);
+        Complete(metadata, companyId, record);
+        await SaveAsync(cancellationToken);
+        return record;
+    }
+
+    public async Task<AccountingPeriodRecord> ClosePeriodAsync(Guid periodId, long expectedVersion, Guid closedByUserId,
+        AccountingCommandMetadata metadata, CancellationToken cancellationToken = default)
+    {
+        RequireMetadata(metadata);
+        var companyId = RequireResolvedCompany();
+        var row = await dbContext.Periods.SingleOrDefaultAsync(candidate => candidate.Id == periodId, cancellationToken)
+            ?? throw Refused(AccountingStoreCodes.PeriodNotFound, "Bu şirketin böyle bir dönemi yok.");
+        RequireVersion(row, expectedVersion);
         var period = RestorePeriod(row);
         var before = PeriodAudit(period);
         period.Close(closedByUserId, timeProvider.GetUtcNow());
@@ -124,14 +167,37 @@ public sealed class AccountingStore(
         row.UpdatedAtUtc = period.ClosedAtUtc!.Value;
         Audit(metadata, companyId, PeriodEntityType, period.Id.ToString("D"), "accounting.period.closed.v1", "Close",
             versionBefore, row.Version, before, PeriodAudit(period), "Muhasebe dönemi kapandı");
+        var record = new AccountingPeriodRecord(period, row.Version);
+        Complete(metadata, companyId, record);
         await SaveAsync(cancellationToken);
+        return record;
     }
 
-    public async Task<AccountingPeriod?> FindPeriodAsync(Guid periodId, CancellationToken cancellationToken = default)
+    public async Task<AccountingPeriodRecord?> FindPeriodAsync(Guid periodId, CancellationToken cancellationToken = default)
     {
         RequireResolvedCompany();
         var row = await dbContext.Periods.AsNoTracking().SingleOrDefaultAsync(candidate => candidate.Id == periodId, cancellationToken);
-        return row is null ? null : RestorePeriod(row);
+        return row is null ? null : new AccountingPeriodRecord(RestorePeriod(row), row.Version);
+    }
+
+    public async Task<AccountingPage<AccountingPeriodRecord>> ListPeriodsAsync(int pageSize, string? cursor,
+        CancellationToken cancellationToken = default)
+    {
+        var companyId = RequireResolvedCompany();
+        RequirePageSize(pageSize);
+        var query = dbContext.Periods.AsNoTracking();
+        if (cursor is not null)
+        {
+            // Periods of one company never overlap, so the start date alone orders them.
+            var startsOn = ListCursor.DecodePeriod(cursor, companyId);
+            query = query.Where(row => row.StartsOn < startsOn);
+        }
+
+        var rows = await query.OrderByDescending(row => row.StartsOn).Take(pageSize + 1).ToListAsync(cancellationToken);
+        var page = rows.Take(pageSize).ToArray();
+        return new AccountingPage<AccountingPeriodRecord>(
+            [.. page.Select(row => new AccountingPeriodRecord(RestorePeriod(row), row.Version))],
+            rows.Count > pageSize ? ListCursor.EncodePeriod(companyId, page[^1].StartsOn) : null);
     }
 
     public async Task<PostingOutcome> ReceiveAsync(PostingRequest request, Guid periodId, AccountingCommandMetadata metadata,
@@ -156,6 +222,10 @@ public sealed class AccountingStore(
         {
             return replay;
         }
+
+        // Ö2 (ACC-V0): every known amount at the currency's approved scale, before anything is decided.
+        await VerifyAmountsAsync(request.Source.CompanyId, request.CurrencyId, request.Dates.AccountingDate,
+            request.Lines.Where(line => line.Amount is not null).Select(line => line.Amount!.Value), cancellationToken);
 
         var (periodRow, period) = await LoadPeriodAsync(periodId, cancellationToken);
         var sourceId = request.Source.SourceId;
@@ -255,6 +325,13 @@ public sealed class AccountingStore(
         var rows = await dbContext.Journals.AsNoTracking()
             .Where(row => row.Id == correctedJournalId || row.CorrectionId == correctionId)
             .ToListAsync(cancellationToken);
+        if (rows.FirstOrDefault(row => row.Id == correctedJournalId) is { } corrected)
+        {
+            // Ö2: a correction is posted in the corrected journal's currency; its amounts at that scale.
+            await VerifyAmountsAsync(companyId, corrected.CurrencyId, dates.AccountingDate,
+                correctionLines.SelectMany(line => new[] { line.Debit, line.Credit }).Where(amount => amount != 0m), cancellationToken);
+        }
+
         var corrections = rows
             .Where(row => row.CorrectionId == correctionId && row.Kind == (int)JournalKind.Correction)
             .Select(row => new StoredCorrection(correctionId, row.Id))
@@ -280,6 +357,69 @@ public sealed class AccountingStore(
         RequireResolvedCompany();
         var rows = await dbContext.Journals.AsNoTracking().Where(row => row.Id == journalId).ToListAsync(cancellationToken);
         return rows.Count == 0 ? null : (await RestoreJournalsAsync(rows, cancellationToken)).Single();
+    }
+
+    public async Task<AccountingJournalRecord?> ReadJournalAsync(Guid journalId, CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        var rows = await dbContext.Journals.AsNoTracking().Where(row => row.Id == journalId).ToListAsync(cancellationToken);
+        return rows.Count == 0
+            ? null
+            : new AccountingJournalRecord((await RestoreJournalsAsync(rows, cancellationToken)).Single(), rows[0].PeriodId,
+                rows[0].StoredAtUtc);
+    }
+
+    public async Task<AccountingPage<AccountingJournalRecord>> ListJournalsAsync(Guid? periodId, int pageSize, string? cursor,
+        CancellationToken cancellationToken = default)
+    {
+        var companyId = RequireResolvedCompany();
+        RequirePageSize(pageSize);
+        var query = dbContext.Journals.AsNoTracking();
+        if (periodId is { } period)
+        {
+            query = query.Where(row => row.PeriodId == period);
+        }
+
+        if (cursor is not null)
+        {
+            var (accountingDate, storedAtUtc, id) = ListCursor.DecodeJournal(cursor, companyId, periodId);
+            query = query.Where(row => row.AccountingDate < accountingDate
+                || (row.AccountingDate == accountingDate && (row.StoredAtUtc < storedAtUtc
+                    || (row.StoredAtUtc == storedAtUtc && row.Id.CompareTo(id) < 0))));
+        }
+
+        var rows = await query
+            .OrderByDescending(row => row.AccountingDate).ThenByDescending(row => row.StoredAtUtc).ThenByDescending(row => row.Id)
+            .Take(pageSize + 1)
+            .ToListAsync(cancellationToken);
+        var page = rows.Take(pageSize).ToArray();
+        var journals = await RestoreJournalsAsync(page, cancellationToken);
+        var byId = journals.ToDictionary(journal => journal.Id);
+        return new AccountingPage<AccountingJournalRecord>(
+            [.. page.Select(row => new AccountingJournalRecord(byId[row.Id], row.PeriodId, row.StoredAtUtc))],
+            rows.Count > pageSize
+                ? ListCursor.EncodeJournal(companyId, periodId, page[^1].AccountingDate, page[^1].StoredAtUtc, page[^1].Id)
+                : null);
+    }
+
+    public async Task<AccountingCommandRecord?> FindCommandAsync(string commandName, string idempotencyKeyHash,
+        CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        var row = await dbContext.Commands.AsNoTracking().SingleOrDefaultAsync(
+            candidate => candidate.CommandName == commandName && candidate.IdempotencyKeyHash == idempotencyKeyHash,
+            cancellationToken);
+        return row is null
+            ? null
+            : new AccountingCommandRecord(row.CommandName, row.IdempotencyKeyHash, row.ActorId, row.PayloadHash,
+                row.ResultJson, row.CorrelationId);
+    }
+
+    public async Task RecordCommandAsync(AccountingCommandRecord record, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        AddCommand(RequireResolvedCompany(), record);
+        await SaveAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<PostingException>> ReadOpenExceptionsAsync(CancellationToken cancellationToken = default)
@@ -337,6 +477,52 @@ public sealed class AccountingStore(
             Journal: journal,
             Exception: entry is { MissingMappingKeys: not null } ? entry.ToException(delivery.CompanyId) : null,
             Pending: entry is { LinesAwaitingAmount: not null } ? entry.ToPending(delivery.CompanyId) : null);
+    }
+
+    /// <summary>
+    /// ADR-011 §6: the completed command's record joins the business change and its audit event in the
+    /// same save. Without a completion (a caller outside the HTTP surface) nothing is added.
+    /// </summary>
+    private void Complete(AccountingCommandMetadata metadata, Guid companyId, object result)
+    {
+        if (metadata.Completion is { } completion)
+        {
+            AddCommand(companyId, completion(result));
+        }
+    }
+
+    private void AddCommand(Guid companyId, AccountingCommandRecord record) =>
+        dbContext.Commands.Add(new AccountingCommandRow
+        {
+            CompanyId = companyId,
+            CommandName = record.CommandName,
+            IdempotencyKeyHash = record.IdempotencyKeyHash,
+            ActorId = record.ActorId,
+            PayloadHash = record.RequestHash,
+            ResultJson = record.ResultJson,
+            CorrelationId = record.OriginalCorrelationId,
+            RecordedAtUtc = timeProvider.GetUtcNow(),
+        });
+
+    /// <summary>The caller's version is the stored one, or the write is a terminal version conflict (§7).</summary>
+    private static void RequireVersion(PeriodRow row, long expectedVersion)
+    {
+        if (row.Version != expectedVersion)
+        {
+            throw new AccountingVersionConflictException(expectedVersion, row.Version);
+        }
+    }
+
+    private async Task VerifyAmountsAsync(Guid companyId, Guid currencyId, DateOnly accountingDate, IEnumerable<decimal> values,
+        CancellationToken cancellationToken) =>
+        await amounts.VerifyAsync(companyId, currencyId, accountingDate, values, cancellationToken);
+
+    private static void RequirePageSize(int pageSize)
+    {
+        if (pageSize is < 1 or > MaximumPageSize)
+        {
+            throw Refused(AccountingStoreCodes.ListRequestInvalid, "Sayfa boyutu 1 ile 100 arasında olmalıdır.");
+        }
     }
 
     private async Task<(PeriodRow Row, AccountingPeriod Period)> LoadPeriodAsync(Guid periodId, CancellationToken cancellationToken)
@@ -749,7 +935,8 @@ public sealed class AccountingStore(
     private static int Scale(decimal value) => (decimal.GetBits(value)[3] >> 16) & 0xFF;
 
     private static AccountingPeriod RestorePeriod(PeriodRow row) =>
-        AccountingPeriod.Restore(row.Id, row.CompanyId, row.StartsOn, row.EndsOn, row.ClosedByUserId, row.ClosedAtUtc);
+        AccountingPeriod.Restore(row.Id, row.CompanyId, row.StartsOn, row.EndsOn, row.PreparedByUserId, row.PreparedAtUtc,
+            row.ApprovedByUserId, row.ApprovedAtUtc, row.ClosedByUserId, row.ClosedAtUtc);
 
     private static PostingException ToException(PostingExceptionRow row) =>
         new PostingException(new SourceReference(row.CompanyId, row.SourceId, row.PostingPurpose), row.PostingRuleVersion,
@@ -767,6 +954,10 @@ public sealed class AccountingStore(
         period.StartsOn,
         period.EndsOn,
         status = period.Status.ToString(),
+        period.PreparedByUserId,
+        period.PreparedAtUtc,
+        period.ApprovedByUserId,
+        period.ApprovedAtUtc,
         period.ClosedByUserId,
         period.ClosedAtUtc,
     }, Json);
@@ -833,5 +1024,76 @@ public sealed class AccountingStore(
         public PendingValuation ToPending(Guid companyId) =>
             new PendingValuation(new SourceReference(companyId, SourceId, PostingPurpose), PostingRuleVersion,
                 LinesAwaitingAmount!.Value, FirstMessageId);
+    }
+
+    /// <summary>
+    /// An opaque keyset cursor bound to the company, the list's ordering and (for journals) its period
+    /// filter; any other cursor is refused (<see cref="AccountingStoreCodes.ListRequestInvalid"/>), never
+    /// read as a position in another list.
+    /// </summary>
+    internal static class ListCursor
+    {
+        private const string PeriodOrdering = "periods:startsOn desc";
+        private const string JournalOrdering = "journals:accountingDate desc, storedAtUtc desc, id desc";
+
+        public static string EncodePeriod(Guid companyId, DateOnly startsOn) =>
+            Encode(new Payload(companyId, PeriodOrdering, null, startsOn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), null, null));
+
+        public static DateOnly DecodePeriod(string cursor, Guid companyId)
+        {
+            var payload = Decode(cursor, companyId, PeriodOrdering, periodId: null);
+            return DateOnly.TryParseExact(payload.Date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
+                ? date
+                : throw Invalid();
+        }
+
+        public static string EncodeJournal(Guid companyId, Guid? periodId, DateOnly accountingDate, DateTimeOffset storedAtUtc, Guid id) =>
+            Encode(new Payload(companyId, JournalOrdering, periodId,
+                accountingDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                storedAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture), id));
+
+        public static (DateOnly AccountingDate, DateTimeOffset StoredAtUtc, Guid Id) DecodeJournal(string cursor, Guid companyId,
+            Guid? periodId)
+        {
+            var payload = Decode(cursor, companyId, JournalOrdering, periodId);
+            if (!DateOnly.TryParseExact(payload.Date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
+                || !DateTimeOffset.TryParseExact(payload.At, "O", CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var at)
+                || payload.Id is not { } id || id == Guid.Empty)
+            {
+                throw Invalid();
+            }
+
+            return (date, at, id);
+        }
+
+        private static string Encode(Payload payload) =>
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, Json)))
+                .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+        private static Payload Decode(string cursor, Guid companyId, string ordering, Guid? periodId)
+        {
+            Payload? payload;
+            try
+            {
+                var padded = cursor.Replace('-', '+').Replace('_', '/');
+                padded = padded.PadRight(padded.Length + (4 - padded.Length % 4) % 4, '=');
+                payload = JsonSerializer.Deserialize<Payload>(Encoding.UTF8.GetString(Convert.FromBase64String(padded)), Json);
+            }
+            catch (Exception exception) when (exception is FormatException or JsonException or ArgumentException)
+            {
+                throw Invalid(exception);
+            }
+
+            return payload is not null && payload.Company == companyId && payload.PeriodId == periodId
+                && string.Equals(payload.Ordering, ordering, StringComparison.Ordinal)
+                ? payload
+                : throw Invalid();
+        }
+
+        private static AccountingStoreException Invalid(Exception? inner = null) =>
+            Refused(AccountingStoreCodes.ListRequestInvalid, "Liste imleci bu şirketin ve bu listenin imleci değil.", inner);
+
+        private sealed record Payload(Guid Company, string Ordering, Guid? PeriodId, string? Date, string? At, Guid? Id);
     }
 }
