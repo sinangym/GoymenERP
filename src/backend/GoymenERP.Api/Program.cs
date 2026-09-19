@@ -12,6 +12,7 @@ using GoymenERP.BuildingBlocks.OpenApi;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Shell;
+using GoymenERP.Modules.Accounting.Infrastructure;
 using GoymenERP.Modules.Audit.Infrastructure;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure;
@@ -153,6 +154,12 @@ builder.Services.AddSalesModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
+// ACC-V0a: Accounting's periods, journals and posting queues (its verifier reads Settings' amount profile through
+// the Settings prerequisite provider the host already registers; no shell screen until ACC-V0b).
+builder.Services.AddAccountingModule(
+    builder.Configuration,
+    (services, options) => options.AddInterceptors(
+        services.GetRequiredService<AuditSaveChangesInterceptor>()));
 // Registered before the shell authority is chosen: the module table maps the provider set.
 builder.Services.AddSingleton<IShellCapabilityProvider, SalesShellCapabilityProvider>();
 // FIN-UI-1a (#325): Finance's (staged) receipt and bank-account screens, before the authority is chosen.
@@ -205,6 +212,7 @@ app.MapFinanceEndpoints();
 app.MapSalesEndpoints();
 app.MapInventoryEndpoints();
 app.MapManufacturingEndpoints();
+app.MapAccountingEndpoints();
 app.MapShellEndpoints();
 
 if (!isOpenApiDocumentGeneration
@@ -224,6 +232,8 @@ if (!isOpenApiDocumentGeneration
     await app.Services.InitializeSalesModuleAsync();
     // After Organization: Manufacturing's foreign keys reference its tables.
     await app.Services.InitializeManufacturingModuleAsync();
+    // After Organization: Accounting's foreign keys reference its tables.
+    await app.Services.InitializeAccountingModuleAsync();
 }
 
 await app.RunAsync();
