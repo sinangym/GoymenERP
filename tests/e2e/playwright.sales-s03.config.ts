@@ -7,11 +7,12 @@ import { defineConfig, devices } from '@playwright/test'
  * BROWSER_E2E_ARTIFACTS_DIR, BROWSER_E2E_JUNIT_FILE. No defaults: without the disposable stack the
  * suite fails, it never tests something else.
  *
- * v1 (this slice) is read-only and FAIL-CLOSED evidence: the shell publishes no granted Sales
- * capability yet (the provider is staged and the grant is a human gate), so both web profiles
- * must land on the neutral not-found block and read no draft. v2, after the shell mount, the
- * central registration and a synthetic disposable grant (BROWSER-CI stage 2), drives the real
- * create → replay → detail path. `retries: 0`, no trace/screenshot/video: artifacts are privacy-checked.
+ * v2a (S03 slice) runs on the `normal` profile against the REAL API and is explicitly negative
+ * evidence: the granted actor reads the real empty list, a create attempt is refused honestly and
+ * writes nothing, the ungranted profile is closed out. It needs the shell mount, the published
+ * Sales capabilities and a disposable grant (BROWSER-CI stage 2, real services only). v2b (the
+ * positive create → detail → list → replay → reopen path) waits for the Product activation path
+ * and the GDC data. `retries: 0`, no trace/screenshot/video: artifacts are privacy-checked.
  */
 
 function required(name: string): string {

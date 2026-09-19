@@ -213,7 +213,10 @@ public static class SalesEndpoints
             {
                 if (exception.IsReplay)
                 {
-                    ApplyReplayHeaders(httpContext, exception.OriginalCorrelationId ?? correlation.CorrelationId);
+                    // A replayed refusal always carries its first correlation (the attempt record requires
+                    // one); labelling this request as the original would be a lie, so it is a server fault.
+                    ApplyReplayHeaders(httpContext, exception.OriginalCorrelationId
+                        ?? throw new InvalidOperationException("Replayed refusal without its original correlation."));
                 }
 
                 return DraftProblem(exception, correlation);

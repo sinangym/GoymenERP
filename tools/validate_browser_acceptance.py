@@ -35,7 +35,8 @@ ContractError = c01.ContractError
 require = c01.require
 
 SUITES = ("smoke", "c03", "org03", "u02", "s03")
-READ_ONLY_SUITES = ("smoke", "c03", "s03")
+# s03 writes since S03 (#327): V2A-02 attempts a POST (nothing is stored, but it is no read-only run).
+READ_ONLY_SUITES = ("smoke", "c03")
 _SUITE_PATTERN = re.compile(r"^[a-z0-9]+$")
 
 PROFILES = ("c01-list-only", "cari-staged", "normal")

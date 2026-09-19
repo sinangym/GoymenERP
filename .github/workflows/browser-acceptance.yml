@@ -74,8 +74,8 @@ jobs:
             pr="$EVENT_PR"
           fi
           case "$suite" in
-            smoke|c03|s03) read_only=true ;;
-            org03|u02) read_only=false ;;
+            smoke|c03) read_only=true ;;
+            org03|u02|s03) read_only=false ;;
             *) echo "::error::BROWSER_SUITE_UNKNOWN: '$suite'"; exit 1 ;;
           esac
           [[ "$pr" =~ ^[1-9][0-9]*$ ]] || { echo "::error::BROWSER_PR_INVALID: '$pr'"; exit 1; }

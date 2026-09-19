@@ -93,6 +93,7 @@ export function SalesDraftCreatePage() {
       binding={binding}
       companyId={companyId}
       options={source.status === 'ready' ? source.options : null}
+      missing={source.status === 'unavailable' ? (source.missing ?? null) : null}
     />
   )
 }
@@ -101,10 +102,13 @@ function CreateForm({
   binding,
   companyId,
   options,
+  missing = null,
 }: {
   readonly binding: string
   readonly companyId: string
   readonly options: OrderDraftOptions | null
+  /** The unavailable source's own account of what is missing (S03); null when it says nothing. */
+  readonly missing?: readonly { readonly source: string; readonly reason: string }[] | null
 }) {
   const shell = useShellState()
   const dispatch = useShellDispatch()
@@ -317,9 +321,12 @@ function CreateForm({
       )}
 
       {options === null ? (
-        <p role="status" className={styles.notice} data-tone="unknown">
-          {T.referencesUnavailable}
-        </p>
+        <div role="status" className={styles.notice} data-tone="unknown">
+          <p>{T.referencesUnavailable}</p>
+          {missing !== null && missing.length > 0 ? (
+            <p data-testid="sales-references-missing">{T.referencesMissing(missing)}</p>
+          ) : null}
+        </div>
       ) : (
         <form onSubmit={onSubmit} noValidate>
           {errorEntries.length > 0 || serverMessages.length > 0 ? (
