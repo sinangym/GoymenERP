@@ -50,7 +50,9 @@ function answering(call: RecordedCall, isReplay = false): Response {
 }
 
 async function pickTheLine() {
-  await userEvent.selectOptions(await screen.findByLabelText(T.field.customer), `${PARTY}|${ACCOUNT}`)
+  const select = await screen.findByLabelText(T.field.customer)
+  await within(select).findByRole('option', { name: /Yükleme müşterisi/ })
+  await userEvent.selectOptions(select, `${PARTY}|${ACCOUNT}`)
   const picker = await screen.findByTestId('logistics-line-picker')
   const row = within(picker).getByTestId('logistics-pick-SO-2026-0001-1')
   await userEvent.click(within(row).getByRole('checkbox'))
@@ -62,7 +64,7 @@ describe('L-03 Yeni Yükleme Talimatı', () => {
     const harness = installFetch({ ...salesReads, onCreate: (_, call) => answering(call) })
     renderLogisticsApp('/lojistik/yukleme-talimatlari/yeni')
     const select = await screen.findByLabelText(T.field.customer)
-    expect(within(select).getByRole('option', { name: 'SENTETIK browser-suite:l04 Yükleme müşterisi' })).toBeTruthy()
+    expect(await within(select).findByRole('option', { name: 'SENTETIK browser-suite:l04 Yükleme müşterisi' })).toBeTruthy()
     expect(within(select).queryByRole('option', { name: /SO-2026-0001/ })).toBeNull()
     const quantity = await pickTheLine()
     expect(screen.getByTestId('logistics-lines-heading').textContent).toContain('SENTETIK browser-suite:l04 Yükleme müşterisi')
@@ -121,7 +123,10 @@ describe('L-03 Yeni Yükleme Talimatı', () => {
     renderLogisticsApp('/lojistik/yukleme-talimatlari/yeni')
     await userEvent.type(await pickTheLine(), '1')
     await userEvent.click(screen.getByTestId('logistics-create-button'))
-    await waitFor(() => expect(screen.getByTestId('logistics-create-notice').textContent).toBe(T.attempt.forbidden))
+    // A code-less 403 on the command is reported to the shell boundary (the Sales create page's rule, deny-first): the
+    // capability is stripped and the create route closes; nothing is shown as created and no second send leaves.
+    await waitFor(() => expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+    expect(screen.queryByTestId('logistics-created')).toBeNull()
     cleanup()
     vi.unstubAllGlobals()
     installFetch({ ...salesReads, onCreate: () => json({ status: 503, title: 'Service Unavailable', code: 'service_unavailable' }, 503) })
@@ -143,7 +148,8 @@ describe('L-03 Yeni Yükleme Talimatı', () => {
     renderLogisticsApp('/lojistik/yukleme-talimatlari/yeni')
     await userEvent.type(await pickTheLine(), '1.000')
     await userEvent.click(screen.getByTestId('logistics-create-button'))
-    await screen.findByText(T.validation.quantityAmbiguous)
+    // The refusal is shown twice on purpose: at the field and in the summary the focus moves to.
+    expect((await screen.findAllByText(T.validation.quantityAmbiguous)).length).toBeGreaterThan(0)
     expect(second.logisticsCalls().filter((call) => call.method === 'POST')).toHaveLength(0)
     expect(harness.logisticsCalls().filter((call) => call.method === 'POST')).toHaveLength(0)
   })
@@ -162,7 +168,7 @@ describe('L-03 Yeni Yükleme Talimatı', () => {
     installFetch({ onApprovedLines: () => json({ items: [approvedOrderLine(), other], nextCursor: null }) })
     renderLogisticsApp('/lojistik/yukleme-talimatlari/yeni')
     const select = await screen.findByLabelText(T.field.customer)
-    expect(within(select).getByRole('option', { name: 'SENTETIK browser-suite:l04 Yükleme müşterisi (SO-2026-0001)' })).toBeTruthy()
+    expect(await within(select).findByRole('option', { name: 'SENTETIK browser-suite:l04 Yükleme müşterisi (SO-2026-0001)' })).toBeTruthy()
     expect(within(select).getByRole('option', { name: 'SENTETIK browser-suite:l04 Yükleme müşterisi (SO-2026-0002)' })).toBeTruthy()
   })
 

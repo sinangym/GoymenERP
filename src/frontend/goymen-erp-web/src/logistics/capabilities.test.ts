@@ -49,7 +49,8 @@ describe('Logistics lane ↔ backend shell provider', () => {
   })
 
   it('the provider keeps every declaration STAGED until the flip', () => {
-    expect((providerText.match(/ImplementationAvailable: false/g) ?? []).length).toBe(3)
+    // The declaration form ends with `)`; the provider's doc comment mentions the same words inside `<c>…</c>`.
+    expect((providerText.match(/ImplementationAvailable: false\)/g) ?? []).length).toBe(3)
     expect(providerText).not.toMatch(/ImplementationAvailable: true/)
   })
 

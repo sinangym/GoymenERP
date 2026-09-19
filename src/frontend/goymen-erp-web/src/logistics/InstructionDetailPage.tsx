@@ -107,8 +107,10 @@ export function InstructionDetailPage() {
       commands={
         companyId === null ? null : (
           <>
-            <IssueCommand key={`issue:${namespace ?? ''}:${detail.instruction.id}:${detail.instruction.version}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
-            <LoadForm key={`load:${namespace ?? ''}:${detail.instruction.id}:${detail.instruction.version}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
+            {/* Keyed by namespace + record only (the Sales detail's rule): a re-read after a recorded command must not remount the
+                section, or the notice of the command that caused the version step would vanish with it. */}
+            <IssueCommand key={`issue:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
+            <LoadForm key={`load:${namespace ?? ''}:${detail.instruction.id}`} shell={shell} detail={detail} companyId={companyId} onRecorded={reread} />
           </>
         )
       }

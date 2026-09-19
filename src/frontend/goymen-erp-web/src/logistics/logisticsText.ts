@@ -75,7 +75,7 @@ export const INSTRUCTION_CREATE_TEXT = {
     unit: 'Birim',
     requestedDeliveryDate: 'Termin',
     instructed: 'Talimat miktarı',
-    note: 'Satır kaynağı Sipariş modülünün onaylı satırıdır; ürün ve müşteri sunucuda Sipariş sahibinden okunur. Bu okuma fiyat taşımaz.',
+    note: 'Satır kaynağı Sipariş modülünün onaylı satırıdır; ürün ve müşteri sunucuda Sipariş sahibinden okunur. Bu okuma yalnız kimlik, ad, birim ve miktar taşır.',
   },
   save: 'Talimatı oluştur',
   errorSummary: 'Talimat gönderilmedi. Şu alanları düzeltin:',

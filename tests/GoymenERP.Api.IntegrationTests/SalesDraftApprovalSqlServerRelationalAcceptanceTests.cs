@@ -505,7 +505,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
 
             var dbContext = new SalesDbContext(builder.Options, companyContext);
             var store = new SalesStore(dbContext, companyContext, collector, TimeProvider.System);
-            return new StoreScope(dbContext, store, new SalesOrderLineReferencePort(store));
+            return new StoreScope(dbContext, store, new SalesOrderLineReferencePort(store, companyContext));
         }
 
         /// <summary>A synthetic role with exactly these permissions in one company, assigned to a configured development user.</summary>

@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 
@@ -14,7 +15,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 /// company's draft is invisible under the tenant filter and answers
 /// <see cref="SalesOrderLineReferenceOutcomeV1.NotFound"/>, never 403.
 /// </summary>
-public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store) : ISalesOrderLineReferencePortV1
+public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICompanyContext companyContext) : ISalesOrderLineReferencePortV1
 {
     public async Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineAsync(Guid orderId, Guid lineId,
         CancellationToken cancellationToken = default)
@@ -62,6 +63,13 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store) : I
         }
 
         var position = cursor is null ? null : LinePosition.Decode(cursor);
+        if (position is not null && (!companyContext.IsResolved || position.CompanyId != companyContext.CompanyId))
+        {
+            // Deny-first (FİNANS #358 INFO-4): the composite cursor is bound to the company that read it and is refused for any
+            // other context outright — because it is foreign, not because the caller's own data happens to answer nothing.
+            throw new ArgumentException("Onaylı satır imleci bu şirketin imleci değil.", nameof(cursor));
+        }
+
         var items = new List<SalesApprovedLineReferenceV1>(pageSize);
         var draftCursor = position?.DraftCursor;
         // The draft the cursor stopped in is skipped through its last answered line wherever it is listed (still first, moved,
