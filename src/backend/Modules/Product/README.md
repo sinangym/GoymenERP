@@ -414,7 +414,10 @@ accepted; `ProductFamilyRequirementPolicyV2` encodes it exactly over the release
   `product_family_policy_unavailable` (as the unavailable source it replaced), draft save refuses
   any family and template (`invalid_reference`), and reference options keep `families` and
   `templates` unavailable. Nothing is seeded; the first release is loaded only by the decided route
-  (Business Q6) and every row carries its `SourceRef`.
+  (Business Q6) and every row carries its `SourceRef`. A release that IS loaded but malformed
+  (`product_family_policy_invalid`) reads the same way on the draft and options paths (fail-closed), but
+  the options read logs a warning with the code (#334 P3-1), so an operator fault does not look like "no
+  release" until an eligibility call reveals it; a missing release is the normal state and is not logged.
 - **Candidates.** A dictionary entry is Approved or Candidate. A candidate (a Göymen commercial code
   without an established meaning, or a web/standard suggestion) is held without an invented meaning
   or mass and never satisfies a controlled field: `family_value_candidate`. Only a field that takes
@@ -448,8 +451,12 @@ accepted; `ProductFamilyRequirementPolicyV2` encodes it exactly over the release
   (Ö1 kg→kg) and the sales unit any known identity; the family policy keeps sales = stock. Only the
   stock and sales roles are open; purchase, price, production and package stay `invalid_reference`
   until their own decision. Whether a company may use the unit is its PROFILE, checked at eligibility
-  (`ProductUnitProfileAdapter`): a company with no usable kg profile answers `invalid_reference` there,
-  fail-closed. No unit, conversion or factor is added; reference options list the identities (the code
+  (`ProductUnitProfileAdapter`), fail-closed: a well-formed profile that cannot be used on the date (inactive,
+  outside its window, not kilogram for stock) is the field error `references.units.stock` /
+  `references.units.sales` `invalid_reference`; a company WITHOUT such a profile gets the Settings answer
+  passed through as a `SettingsPrerequisiteException`, never a field error — `settings_provider_unavailable`
+  (no approved source for the company) or `settings_unit_profile_not_found` (a source without the unit) —
+  and consumers map those themselves (#335 P3-1). No unit, conversion or factor is added; reference options list the identities (the code
   is shown, as the source has no display name). Without the Settings catalogue every unit is refused,
   as before.
 

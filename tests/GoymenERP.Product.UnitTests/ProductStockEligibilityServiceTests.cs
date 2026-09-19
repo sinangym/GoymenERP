@@ -1,4 +1,6 @@
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Settings.Application;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
 using static GoymenERP.Product.UnitTests.ProductSalesEligibilityServiceTests;
@@ -134,6 +136,34 @@ public sealed class ProductStockEligibilityServiceTests
         Assert.Equal(("references.units.stock", "invalid_reference"), (result.Errors.Single().Field, result.Errors.Single().Code));
     }
 
+    /// <summary>
+    /// #335 P3-1: a company WITHOUT a usable kg profile is not <c>invalid_reference</c>. The real approved Settings
+    /// provider's own answer passes through as a Settings exception — no snapshot, no field error:
+    /// <c>settings_provider_unavailable</c> for a company with no approved source (company B), and
+    /// <c>settings_unit_profile_not_found</c> for an approved source without the card's stock unit.
+    /// (<c>invalid_reference</c> is only a well-formed profile that cannot be used on the date, above.)
+    /// </summary>
+    [Fact]
+    public async Task A_company_without_an_approved_kg_profile_gets_the_settings_answer_not_invalid_reference()
+    {
+        var companyB = Guid.Parse("20000000-0000-0000-0000-000000000002");
+        var world = new World();
+        world.Company.Set(companyB);
+        world.User.Allowed.Add(companyB);
+        var inB = new ProductStockEligibilityService(world.Company, world.User, new GrantedIn(companyB), world.Records, world.Family,
+            new ProductUnitProfileAdapter(new ApprovedSettingsPrerequisiteProvider(world.Company, world.User), world.Company));
+
+        var noSource = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() => inB.EvaluateAsync(StockSelection, default));
+        Assert.Equal("settings_provider_unavailable", noSource.Code);
+
+        // GDC has an approved source, but not for this card's (synthetic) stock unit.
+        var gdc = new World();
+        var inGdc = new ProductStockEligibilityService(gdc.Company, gdc.User, gdc.Authorization, gdc.Records, gdc.Family,
+            new ProductUnitProfileAdapter(new ApprovedSettingsPrerequisiteProvider(gdc.Company, gdc.User), gdc.Company));
+        var noUnit = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() => inGdc.EvaluateAsync(StockSelection, default));
+        Assert.Equal(SettingsPrerequisiteCodesV1.UnitProfileNotFound, noUnit.Code);
+    }
+
     [Fact]
     public async Task The_shipped_family_policy_keeps_every_otherwise_valid_selection_unavailable()
     {
@@ -191,5 +221,15 @@ public sealed class ProductStockEligibilityServiceTests
         var error = await Assert.ThrowsAsync<ProductOperationException>(() => StockService(world).EvaluateAsync(StockSelection, default));
 
         Assert.Equal((403, ProductSalesEligibilityService.AccessDeniedCode), (error.StatusCode, error.Code));
+    }
+
+    /// <summary>The narrow selection permission, granted company-wide in exactly one company.</summary>
+    private sealed class GrantedIn(Guid company) : IErpAuthorityRevalidationService
+    {
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(companyId == company && permission == ProductPermissionManifestV1.OperationalSelectionRead
+                ? GrantedScope(companyWide: true)
+                : PermissionScope.Denied);
     }
 }
