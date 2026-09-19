@@ -41,7 +41,7 @@ public sealed class ProductDraftValidator(IProductReferenceCatalog catalog)
             errors.Add(new("classification", "invalid_reference"));
         }
 
-        await ValidateReferencesAsync(references, errors, cancellationToken);
+        await ValidateReferencesAsync(request.FamilyId, references, errors, cancellationToken);
         ThrowIfInvalid(errors);
         return new(name, group, request.ClassId, request.FamilyId, roles, references);
     }
@@ -137,7 +137,7 @@ public sealed class ProductDraftValidator(IProductReferenceCatalog catalog)
         foreach (var (field, id) in Units(references.Units)) { RequireOptionalId(id, field, errors); }
     }
 
-    private async Task ValidateReferencesAsync(ProductReferences references, List<ProductFieldError> errors,
+    private async Task ValidateReferencesAsync(Guid? familyId, ProductReferences references, List<ProductFieldError> errors,
         CancellationToken cancellationToken)
     {
         foreach (var (field, id) in Units(references.Units))
@@ -150,7 +150,7 @@ public sealed class ProductDraftValidator(IProductReferenceCatalog catalog)
 
         if (references.TemplateId.HasValue)
         {
-            errors.AddRange(await catalog.ValidateTemplateAsync(references, cancellationToken));
+            errors.AddRange(await catalog.ValidateTemplateAsync(familyId, references, cancellationToken));
         }
 
         if (references.TrackingPolicyId.HasValue
