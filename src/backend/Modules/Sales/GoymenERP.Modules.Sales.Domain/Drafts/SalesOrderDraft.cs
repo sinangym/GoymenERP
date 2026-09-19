@@ -120,6 +120,9 @@ public sealed class SalesOrderDraft
 
     private readonly List<SalesOrderDraftLine> lines = [];
 
+    /// <summary>Set once the stored approval axis has been restored onto this instance; restoring is not a transition and runs once.</summary>
+    private bool approvalRestored;
+
     private SalesOrderDraft(Guid id, Guid companyId, string documentNo, SalesDraftHeader header,
         MoneyProfileSnapshot money, DateTimeOffset now)
     {
@@ -358,9 +361,11 @@ public sealed class SalesOrderDraft
             throw new ArgumentOutOfRangeException(nameof(state));
         }
 
-        if (ApprovalState != InternalApprovalState.Preparing || Approval != ApprovalFacts.None)
+        // Restoring is not a transition: it runs once, onto a freshly rebuilt draft. A Preparing restore leaves the
+        // axis where it was born, so the state alone cannot tell a rebuilt draft from a restored one; the flag does.
+        if (approvalRestored || ApprovalState != InternalApprovalState.Preparing || Approval != ApprovalFacts.None)
         {
-            throw new InvalidOperationException("Onay ekseni yalnız hazırlanan bir kurulum üzerine geri yüklenir.");
+            throw new InvalidOperationException("Onay ekseni yalnız hazırlanan bir kurulum üzerine ve yalnız bir kez geri yüklenir.");
         }
 
         var submitted = facts.SubmittedBy is not null && facts.SubmittedAtUtc is not null;
@@ -400,6 +405,7 @@ public sealed class SalesOrderDraft
         Approval = facts;
         Version = storedVersion;
         UpdatedAtUtc = updatedAtUtc.ToUniversalTime();
+        approvalRestored = true;
     }
 
     private static string RequireActor(string actorId)
