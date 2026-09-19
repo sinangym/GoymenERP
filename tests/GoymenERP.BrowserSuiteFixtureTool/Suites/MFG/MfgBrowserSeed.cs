@@ -22,6 +22,8 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
 {
     public const string RecorderActor = "mfg-recorder";
     public const string ReaderActor = "mfg-reader";
+    /// <summary>MFG-ORD: the close is its own authority — read + close, and no fact permission.</summary>
+    public const string CloserActor = "mfg-closer";
     public const string OrganizationActor = "company-a-user";
     public const string WorkCenterCode = "WC-SLIT";
 
@@ -91,6 +93,7 @@ public sealed class MfgBrowserSeed : IBrowserSuiteFixture
         {
             ["recorderActor"] = RecorderActor,
             ["readerActor"] = ReaderActor,
+            ["closerActor"] = CloserActor,
             ["companyId"] = CompanyGdc.ToString("D"),
             ["workCenterId"] = workCenterId.ToString("D"),
             ["orderId"] = OrderId.ToString("D"),

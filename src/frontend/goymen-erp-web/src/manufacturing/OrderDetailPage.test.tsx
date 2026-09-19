@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
+  CLOSER_CAPABILITIES,
   COMPANY_A,
   ORDER,
   READER_CAPABILITIES,
@@ -422,5 +423,99 @@ describe('fact forms', () => {
     expect(await screen.findAllByText('Emir kapalı; yeni gerçekleşme kaydedilmez.')).not.toHaveLength(0)
     expect((screen.getByRole('button', { name: 'Kaydet' }) as HTMLInputElement).disabled).toBe(true)
     expect((screen.getByLabelText('Kütle (kg)') as HTMLInputElement).disabled).toBe(true)
+  })
+})
+
+describe('the close (MFG-ORD)', () => {
+  it('is not drawn for a reader: closing is its own authority', async () => {
+    stub({ capabilities: READER_CAPABILITIES })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Üretim emri' })
+    expect(screen.queryByRole('button', { name: 'Emri kapat' })).toBeNull()
+  })
+
+  it('is not drawn for a recorder either: recording a fact does not close an order', async () => {
+    stub()
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Gerçekleşme kaydı' })
+    expect(screen.queryByRole('button', { name: 'Emri kapat' })).toBeNull()
+  })
+
+  it('confirms first, then sends the version it read under one key, and re-reads the order', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      capabilities: CLOSER_CAPABILITIES,
+      reads: [() => json(order({ version: 4 })), () => json(order({ version: 5, status: 'Closed', closedAtUtc: '2026-09-18T12:00:00.000Z', closedByUserId: '99999999-9999-9999-9999-999999999999' }))],
+      commands: [() => json(order({ version: 5, status: 'Closed' }))],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Emri kapat' })
+
+    // Nothing is sent before the confirmation.
+    await user.click(screen.getByRole('button', { name: 'Emri kapat' }))
+    expect(posts(recorded)).toHaveLength(0)
+    await user.click(screen.getByRole('button', { name: 'Evet, emri kapat' }))
+
+    await screen.findByText('Emir kapatıldı')
+    const post = posts(recorded).find((request) => request.url.endsWith('/close'))!
+    expect(post.body).toEqual({ expectedVersion: 4 })
+    expect(post.headers['Idempotency-Key']).toBeTruthy()
+    // The screen re-reads instead of predicting the closed order.
+    await waitFor(() => expect(reads(recorded).length).toBeGreaterThan(1))
+    expect(await screen.findByTestId('order-already-closed')).toBeTruthy()
+  })
+
+  it('shows the decided refusal reason and does not close the order', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      capabilities: CLOSER_CAPABILITIES,
+      commands: [() => problem(422, { code: 'manufacturing_unexplained_difference' })],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Emri kapat' })
+    await user.click(screen.getByRole('button', { name: 'Emri kapat' }))
+    await user.click(screen.getByRole('button', { name: 'Evet, emri kapat' }))
+
+    const refusal = await screen.findByTestId('close-refusal')
+    expect(refusal.textContent).toContain('açıklanamayan kütle farkı')
+    // No tolerance is offered anywhere on the screen: the rule says so in the section's help text AND in
+    // the refusal itself, so the phrase is expected twice, never once and never nowhere.
+    expect(screen.getAllByText(/tolerans ile geçilmez/)).toHaveLength(2)
+    expect(posts(recorded).filter((request) => request.url.endsWith('/close'))).toHaveLength(1)
+    expect(screen.queryByTestId('order-already-closed')).toBeNull()
+  })
+
+  it('keeps one key for an unknown outcome and sends the same command again', async () => {
+    const user = userEvent.setup()
+    const { recorded } = stub({
+      capabilities: CLOSER_CAPABILITIES,
+      commands: [() => problem(503, { code: 'service_unavailable' }), () => json(order({ version: 2, status: 'Closed' }))],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Emri kapat' })
+    await user.click(screen.getByRole('button', { name: 'Emri kapat' }))
+    await user.click(screen.getByRole('button', { name: 'Evet, emri kapat' }))
+
+    await screen.findByText('Kapanışın sonucu bilinmiyor')
+    await user.click(screen.getByRole('button', { name: 'Aynı işlem anahtarıyla yeniden gönder' }))
+    await screen.findByText('Emir kapatıldı')
+    const closes = posts(recorded).filter((request) => request.url.endsWith('/close'))
+    expect(closes).toHaveLength(2)
+    expect(closes[1].headers['Idempotency-Key']).toBe(closes[0].headers['Idempotency-Key'])
+    expect(closes[1].body).toEqual(closes[0].body)
+  })
+
+  it('reports a replayed close as history, not as a second close', async () => {
+    const user = userEvent.setup()
+    stub({
+      capabilities: CLOSER_CAPABILITIES,
+      commands: [() => json(order({ version: 2, status: 'Closed' }), 200, { 'Idempotency-Replayed': 'true' })],
+    })
+    renderAt(PATH)
+    await screen.findByRole('heading', { name: 'Emri kapat' })
+    await user.click(screen.getByRole('button', { name: 'Emri kapat' }))
+    await user.click(screen.getByRole('button', { name: 'Evet, emri kapat' }))
+
+    expect(await screen.findByText('Emir zaten kapatılmıştı')).toBeTruthy()
   })
 })
