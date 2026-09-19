@@ -61,15 +61,15 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     const answered = watchAnswers(page)
 
     await page.goto('/finans/banka-hesaplari/yeni')
-    await expect(page.getByRole('heading', { level: 1, name: 'Yeni banka hesabı öner' })).toBeVisible({ timeout: 30_000 })
-    const currency = page.getByLabel('Para birimi')
+    await expect(page.getByRole('heading', { level: 1, name: 'Yeni banka hesabı öner', exact: true })).toBeVisible({ timeout: 30_000 })
+    const currency = page.getByLabel('Para birimi', { exact: true })
     await expect(currency).toHaveValue('')
-    await page.getByLabel('Hesap adı').fill(ACCOUNT_NAME)
+    await page.getByLabel('Hesap adı', { exact: true }).fill(ACCOUNT_NAME)
     await currency.selectOption({ label: /^TRY — / })
 
     const post = page.waitForRequest((request) => PROPOSE_RE.test(request.url()) && request.method() === 'POST')
     const answer = page.waitForResponse((response) => PROPOSE_RE.test(response.url()) && response.request().method() === 'POST')
-    await page.getByRole('button', { name: 'Öner' }).click()
+    await page.getByRole('button', { name: 'Öner', exact: true }).click()
     const sent = await post
     expect(sent.headers()['idempotency-key']).toMatch(/^[0-9a-f]{32}$/)
     expect(Object.keys(sent.postDataJSON()).sort()).toEqual(['currencyId', 'displayName'])
@@ -92,7 +92,7 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     await accountRow(page).getByRole('button', { name: new RegExp(`Onayla: ${ACCOUNT_NAME}`) }).click()
     const post = page.waitForRequest((request) => APPROVAL_RE.test(request.url()) && request.method() === 'POST')
     const answer = page.waitForResponse((response) => APPROVAL_RE.test(response.url()) && response.request().method() === 'POST')
-    await page.getByRole('button', { name: 'Evet, onayla' }).click()
+    await page.getByRole('button', { name: 'Evet, onayla', exact: true }).click()
     const sent = await post
     expect(sent.postDataJSON()).toEqual({ expectedVersion: '1' })
     expect((await answer).status()).toBe(200)
@@ -107,16 +107,16 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
 
     const entry = new URLSearchParams({ partyId: env.seed.partyId, companyAccountId: env.seed.companyAccountId })
     await page.goto(`/finans/tahsilatlar/yeni?${entry.toString()}`)
-    await expect(page.getByRole('heading', { level: 1, name: 'Yeni tahsilat taslağı' })).toBeVisible({ timeout: 30_000 })
-    await page.getByLabel('Banka hesabı').selectOption({ label: ACCOUNT_NAME })
-    await page.getByLabel('Banka işlem tarihi').fill('2026-09-18')
+    await expect(page.getByRole('heading', { level: 1, name: 'Yeni tahsilat taslağı', exact: true })).toBeVisible({ timeout: 30_000 })
+    await page.getByLabel('Banka hesabı', { exact: true }).selectOption({ label: ACCOUNT_NAME })
+    await page.getByLabel('Banka işlem tarihi', { exact: true }).fill('2026-09-18')
     const amount = page.getByLabel(/^Tutar/)
     await expect(amount).toBeEnabled({ timeout: 30_000 })
     await amount.fill('1250,50')
 
     const post = page.waitForRequest((request) => DRAFT_RE.test(request.url()) && request.method() === 'POST')
     const answer = page.waitForResponse((response) => DRAFT_RE.test(response.url()) && response.request().method() === 'POST')
-    await page.getByRole('button', { name: 'Taslağı kaydet' }).click()
+    await page.getByRole('button', { name: 'Taslağı kaydet', exact: true }).click()
     const sent = await post
     expect(sent.postDataJSON()).toMatchObject({
       draftId: null,
@@ -130,7 +130,7 @@ test.describe.serial('FIN-01 bank account and draft (real API, real SQL)', () =>
     const rows = page.getByRole('row').filter({ hasText: 'Taslak' })
     await expect(rows).toHaveCount(1, { timeout: 30_000 })
     await rows.first().getByRole('button', { name: /^Aç/ }).click()
-    await expect(page.getByRole('heading', { level: 1, name: 'Tahsilat taslağı' })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: 'Tahsilat taslağı', exact: true })).toBeVisible()
     await expect(page.getByText('Taslak — para etkisi yok.', { exact: false })).toBeVisible()
     // Record and Reverse have no route (T05, OPEN-009): not offered.
     await expect(page.getByRole('button', { name: 'Kesin kayda al' })).toHaveCount(0)
