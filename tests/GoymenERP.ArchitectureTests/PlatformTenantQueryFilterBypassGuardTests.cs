@@ -48,8 +48,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // catalog. Re-fingerprinted for INV-OPEN-1 part 2: two scoped host ports of the opening command
     // (Organization's location module read, Product's stock eligibility). No OpenAPI-generation, network or
     // hosted-service surface of the startup source changed otherwise.
+    // Re-fingerprinted for LOG-4a: the Logistics module (the Cari customer port, AddLogisticsModule, its endpoints
+    // and initializer after Organization) and its staged shell provider before the authority is chosen.
     private const string ReviewedOpenApiStartupFingerprint =
-        "1636f6d9dec60972df11aa502145c9ac660be617d8a6a69de4b80031a456c600";
+        "bb43a947e38c2644d06a597e9fe7549db179bf8625b1ec58538422dcd38d0d23";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =

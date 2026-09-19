@@ -1,6 +1,7 @@
 using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 using GoymenERP.Modules.Finance.Infrastructure.Shell;
+using GoymenERP.Modules.Logistics.Infrastructure.Shell;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 using GoymenERP.Modules.Organization.Infrastructure.Shell;
 using GoymenERP.Modules.Product.Infrastructure.Shell;
@@ -72,6 +73,7 @@ internal static class C01E2eShellCapabilityActivation
         typeof(SalesShellCapabilityProvider),
         typeof(FinanceShellCapabilityProvider),
         typeof(ManufacturingShellCapabilityProvider),
+        typeof(LogisticsShellCapabilityProvider),
     ];
 
     // The accepted normal-host authority for each set of optional module providers present (in the
@@ -103,6 +105,14 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(ManufacturingShellCapabilityProvider),
             },
             ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10AndPublishedManufacturingV10),
+        // LOG-4a: Logistics's (staged) loading-instruction screens join the host set.
+        (new[]
+            {
+                typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
+                typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
+                typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
+            },
+            ShellCapabilityRegistryAuthorities.CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10AndLogisticsV10),
     ];
 
     private static string NormalAuthority(IServiceCollection services)

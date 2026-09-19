@@ -23,6 +23,7 @@ using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure;
 using GoymenERP.Modules.Logistics.Application.Contracts;
 using GoymenERP.Modules.Logistics.Infrastructure;
+using GoymenERP.Modules.Logistics.Infrastructure.Shell;
 using GoymenERP.Modules.Manufacturing.Infrastructure;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 using GoymenERP.Modules.Organization.Infrastructure;
@@ -168,6 +169,8 @@ builder.Services.AddSingleton<IShellCapabilityProvider, SalesShellCapabilityProv
 builder.Services.AddSingleton<IShellCapabilityProvider, FinanceShellCapabilityProvider>();
 // MFG-UI (#323): Manufacturing's (staged) order detail and facts control, before the authority is chosen.
 builder.Services.AddSingleton<IShellCapabilityProvider, ManufacturingShellCapabilityProvider>();
+// LOG-4a: Logistics's (staged) loading-instruction screens, before the authority is chosen.
+builder.Services.AddSingleton<IShellCapabilityProvider, LogisticsShellCapabilityProvider>();
 var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
     builder.Services,
     builder.Environment,
