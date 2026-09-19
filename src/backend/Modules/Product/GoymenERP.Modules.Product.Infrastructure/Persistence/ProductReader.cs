@@ -1,11 +1,12 @@
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Product.Infrastructure.Persistence;
 
 /// <summary>The read side for the eventual host service; it grants no command capability.</summary>
 public sealed class ProductReader(ProductReadStore store, ProductCursorCodec cursors,
-    IGroupSharedMasterAuthorizationService authority)
+    IGroupSharedMasterAuthorizationService authority, ISettingsUnitIdentityCatalogV1? units = null)
 {
     public Task<ProductPage> GetPageAsync(ProductListQuery query, CancellationToken cancellationToken) =>
         ReadAsync(async context =>
@@ -43,20 +44,23 @@ public sealed class ProductReader(ProductReadStore store, ProductCursorCodec cur
                 throw new ProductValidationException([new("groupId", "invalid_reference")]);
             // ClassId is echoed only as the requested filter, never as a verified
             // catalogue entry. Families and templates come from a well-formed released
-            // registry (PRD-FAM-1); without one they stay explicitly unavailable, as do
-            // classes, units and tracking policies.
+            // registry (PRD-FAM-1); units are Settings' company-independent identities
+            // (PRD-UNIT-1; the source has no display name, so the code is shown). What
+            // is not available stays listed as such, as do classes and tracking policies.
             var definition = await store.ReadFamilyDefinitionAsync(context, cancellationToken);
-            if (definition is null)
-            {
-                return new ProductReferenceOptions(query.GroupId, query.ClassId, [], [], [], [], [],
-                    ["classes", "families", "units", "trackingPolicies", "templates"]);
-            }
+            IReadOnlyList<UnitIdentityV1> identities = units is null ? [] : await units.ListAsync(cancellationToken);
+            var unavailable = new List<string> { "classes" };
+            if (definition is null) unavailable.Add("families");
+            if (identities.Count == 0) unavailable.Add("units");
+            unavailable.Add("trackingPolicies");
+            if (definition is null) unavailable.Add("templates");
 
             return new ProductReferenceOptions(query.GroupId, query.ClassId, [],
-                [.. definition.Families.Select(family => new ProductReferenceOption(family.Id, family.Name))],
-                [], [],
-                [.. definition.Templates.Select(template => new ProductTemplateOption(template.Id, template.Version, template.Name))],
-                ["classes", "units", "trackingPolicies"]);
+                [.. (definition?.Families ?? []).Select(family => new ProductReferenceOption(family.Id, family.Name))],
+                [.. identities.Select(identity => new ProductUnitOption(identity.UnitId, identity.Code, identity.Code, identity.IsKilogram))],
+                [],
+                [.. (definition?.Templates ?? []).Select(template => new ProductTemplateOption(template.Id, template.Version, template.Name))],
+                unavailable);
         }, cancellationToken);
 
     private async Task<T> ReadAsync<T>(Func<GroupSharedMasterReadContext, Task<T>> read, CancellationToken cancellationToken)

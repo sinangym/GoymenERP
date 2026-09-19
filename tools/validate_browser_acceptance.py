@@ -34,12 +34,12 @@ _spec.loader.exec_module(c01)
 ContractError = c01.ContractError
 require = c01.require
 
-SUITES = ("smoke", "c03", "org03", "u02", "s03")
+SUITES = ("smoke", "c03", "org03", "u02", "s03", "mfg")
 # s03 writes since S03 (#327): V2A-02 attempts a POST (nothing is stored, but it is no read-only run).
 READ_ONLY_SUITES = ("smoke", "c03")
 _SUITE_PATTERN = re.compile(r"^[a-z0-9]+$")
 
-PROFILES = ("c01-list-only", "cari-staged", "normal")
+PROFILES = ("c01-list-only", "cari-staged", "normal", "mfg-staged")
 SUITE_PROFILES = {
     "smoke": "c01-list-only",
     "c03": "cari-staged",
@@ -47,20 +47,29 @@ SUITE_PROFILES = {
     "u02": "normal",
     # S-03 v1 (#321): fail-closed evidence on the normal host (staged Sales screens, no grant).
     "s03": "normal",
+    # MFG-UI (#323, D4): the Manufacturing order screen opened only inside the disposable envelope.
+    "mfg": "mfg-staged",
 }
 PROFILE_COMPOSE_FILES = {
     "c01-list-only": "infra/docker-compose.c01-e2e.yml",
     "cari-staged": "infra/docker-compose.browser-cari-staged.yml",
     "normal": "infra/docker-compose.browser-normal.yml",
+    "mfg-staged": "infra/docker-compose.browser-mfg-staged.yml",
 }
 PROFILE_SUITE_LABELS = {
     "c01-list-only": "C01-REAL-BROWSER-E2E-V1",
     "cari-staged": "BROWSER-SUITE-CARI-STAGED-V1",
     "normal": "BROWSER-SUITE-NORMAL-V1",
+    "mfg-staged": "BROWSER-SUITE-MFG-STAGED-V1",
 }
 CANONICAL_SUITE_LABEL = PROFILE_SUITE_LABELS["c01-list-only"]
 CARI_STAGED_PROFILE_KEY = "C01E2e__Profile"
 CARI_STAGED_PROFILE_VALUE = "cari-list-detail"
+# Each envelope profile's exact C01E2e__Profile value (C01E2eShellCapabilityActivation's profiles).
+STAGED_PROFILE_VALUES = {
+    "cari-staged": CARI_STAGED_PROFILE_VALUE,
+    "mfg-staged": "manufacturing-order-detail",
+}
 # The disposable C-01 capability envelope, as the canonical compose file sets it on the API.
 ENVELOPE_KEYS = (
     "C01E2e__EnableListCapability",
@@ -104,6 +113,8 @@ SUITE_API_EXTENSIONS = {
     # S-03 (SİPARİŞ): the deployment's Product issuer binding (shared with u02, ÜRÜN's values), the
     # suite's actors and their Identity users and grants (coordinator decisions 1 and 3, a2 part 2).
     "s03": {"issuer": True, "actors": True, "identity": True},
+    # MFG (ORG, #323 5735635840): a recorder and a reader actor with their Identity users and grants.
+    "mfg": {"issuer": False, "actors": True, "identity": True},
 }
 ISSUER_KEYS = ("ProductRuntime__IssuerLocalUserId", "ProductRuntime__IssuerExternalIdentityId")
 
@@ -132,6 +143,14 @@ SUITE_IDENTITY_PERMISSIONS = {
     # SALES-A1 (coordinator): the approval and the draft's party read, for the v2b positive path.
     "s03": ("sales.drafts.create", "sales.drafts.read", "product.operational-selection.read",
             "counterparty.parties.read", "sales.orders.approve"),
+    # The five Manufacturing names (recorder); the reader holds only manufacturing.orders.read.
+    "mfg": (
+        "manufacturing.plans.write",
+        "manufacturing.plans.approve",
+        "manufacturing.orders.create",
+        "manufacturing.facts.record",
+        "manufacturing.orders.read",
+    ),
 }
 
 
@@ -274,6 +293,9 @@ FIXTURE_TOOL_SUITES_DIRECTORY = "tests/GoymenERP.BrowserSuiteFixtureTool/Suites"
 SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     # ÜRÜN's Suites/U02 seed (#331): the company, the gated code group and the two canonical actors.
     "u02": frozenset({"companyId", "codeGroupId", "authorizedActor", "unauthorizedActor"}),
+    # ORG's Suites/MFG seed (#323 5735635840): the actors, the company, the seeded work centre (read
+    # through the real Organization API) and the plan -> approval -> order it writes through the real API.
+    "mfg": frozenset({"recorderActor", "readerActor", "companyId", "workCenterId", "orderId", "rollId"}),
 }
 _OUTPUT_KEY = re.compile(r"^[a-z][A-Za-z0-9]{0,39}$")
 # Any non-nil lowercase GUID: seeded reference ids (companies, work centres) need not be RFC 4122.
@@ -401,9 +423,9 @@ def validate_suite_compose(model: dict, suite: str, expected_commit: str, expect
     canonical_environment = dict(environment)
     if profile == "c01-list-only":
         expected_keys = CANONICAL_API_ENVIRONMENT_KEYS
-    elif profile == "cari-staged":
-        require(environment.get(CARI_STAGED_PROFILE_KEY) == CARI_STAGED_PROFILE_VALUE,
-                "cari-staged API must carry the cari-list-detail profile")
+    elif profile in STAGED_PROFILE_VALUES:
+        require(environment.get(CARI_STAGED_PROFILE_KEY) == STAGED_PROFILE_VALUES[profile],
+                f"{profile} API must carry the {STAGED_PROFILE_VALUES[profile]} profile")
         expected_keys = CANONICAL_API_ENVIRONMENT_KEYS | {CARI_STAGED_PROFILE_KEY}
         del canonical_environment[CARI_STAGED_PROFILE_KEY]
     else:

@@ -3,6 +3,7 @@ using System.Data.Common;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Domain.Products;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -23,12 +24,14 @@ public sealed class ProductDraftParticipant : IAsyncDisposable
     private readonly GroupSharedMasterCommandContext authority;
     private readonly TimeProvider clock;
     private readonly Func<CancellationToken, Task>? onStaged;
+    private readonly ISettingsUnitIdentityCatalogV1? units;
     private int started;
     private bool disposed;
     private ProductDraftWriteResult? staged;
 
     private ProductDraftParticipant(ProductDbContext context, DbConnection connection, DbTransaction transaction,
-        GroupSharedMasterCommandContext authority, TimeProvider clock, Func<CancellationToken, Task>? onStaged)
+        GroupSharedMasterCommandContext authority, TimeProvider clock, Func<CancellationToken, Task>? onStaged,
+        ISettingsUnitIdentityCatalogV1? units)
     {
         this.context = context;
         this.connection = connection;
@@ -36,11 +39,12 @@ public sealed class ProductDraftParticipant : IAsyncDisposable
         this.authority = authority;
         this.clock = clock;
         this.onStaged = onStaged;
+        this.units = units;
     }
 
     public static async Task<ProductDraftParticipant> EnlistAsync(DbConnection connection, DbTransaction transaction,
         GroupSharedMasterCommandContext authority, CancellationToken cancellationToken, TimeProvider? clock = null,
-        Func<CancellationToken, Task>? onStaged = null)
+        Func<CancellationToken, Task>? onStaged = null, ISettingsUnitIdentityCatalogV1? units = null)
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(transaction);
@@ -55,7 +59,7 @@ public sealed class ProductDraftParticipant : IAsyncDisposable
         try
         {
             await context.Database.UseTransactionAsync(transaction, cancellationToken);
-            return new(context, connection, transaction, authority, clock ?? TimeProvider.System, onStaged);
+            return new(context, connection, transaction, authority, clock ?? TimeProvider.System, onStaged, units);
         }
         catch
         {
@@ -71,7 +75,8 @@ public sealed class ProductDraftParticipant : IAsyncDisposable
         EnsureActive();
         if (Interlocked.Exchange(ref started, 1) != 0)
             throw new InvalidOperationException("A Product participant can execute only one command attempt.");
-        staged = await ProductDraftOperation.StageAsync(context, authority, intent, clock, cancellationToken);
+        // PRD-UNIT-1: the Settings unit identities the host passes; without them every unit is rejected.
+        staged = await ProductDraftOperation.StageAsync(context, authority, intent, clock, cancellationToken, units);
         // The host may relay this point to its existing attempt observer. It lets
         // SQL tests pause after the actual read/validation but before any Product
         // flush, without exposing this context, transaction or request payload.

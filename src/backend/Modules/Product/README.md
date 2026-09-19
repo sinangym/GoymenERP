@@ -422,7 +422,11 @@ accepted; `ProductFamilyRequirementPolicyV2` encodes it exactly over the release
   (`family_value_parent_mismatch`).
 - **Applicability.** A designation applies with the zinc coating and a colour with the painted one;
   supplied elsewhere they are `family_field_not_applicable`. Whether a designation is required with
-  zinc (Q3) and what the colour list is (Q4) are open: neither is required.
+  zinc is open (not required). A non-role field may be released with an EMPTY dictionary while its
+  values are undecided (Business 5740811346: colour applies with the painted coating, no colour value
+  is activated): the release stays well formed, the field refuses every value
+  (`family_not_controlled`), and when it is required its cards stay closed (`required`). A role
+  field's dictionary still needs an approved entry.
 - The card must be bound to its family's template version (`references.templateId` missing →
   `required`, another template or version → `family_template_mismatch`); an attribute the template
   does not have is `family_field_unknown`.
@@ -438,8 +442,16 @@ accepted; `ProductFamilyRequirementPolicyV2` encodes it exactly over the release
 - A card names a released family or none: `FK_Products_Families_FamilyId` (no card held a family
   before the registry). The registry migration's Down refuses (51044) while any Product or registry
   row exists: forward fix.
-- **Units stay closed** (PRD-UNIT-1): the unit catalogue still rejects every supplied unit, so no
-  card can hold the kg→kg bindings yet and eligibility stays negative on `references.units.*`.
+- **Units (PRD-UNIT-1, U-08 minimal).** A global card's unit reference is the Settings unit
+  IDENTITY: company-independent, "kg is kg in every company" (`SettingsUnitIdentitiesV1`), read through
+  Settings' `ISettingsUnitIdentityCatalogV1`. At save, the stock unit must be the kilogram identity
+  (Ö1 kg→kg) and the sales unit any known identity; the family policy keeps sales = stock. Only the
+  stock and sales roles are open; purchase, price, production and package stay `invalid_reference`
+  until their own decision. Whether a company may use the unit is its PROFILE, checked at eligibility
+  (`ProductUnitProfileAdapter`): a company with no usable kg profile answers `invalid_reference` there,
+  fail-closed. No unit, conversion or factor is added; reference options list the identities (the code
+  is shown, as the source has no display name). Without the Settings catalogue every unit is refused,
+  as before.
 
 ```powershell
 dotnet test tests/GoymenERP.Product.UnitTests/GoymenERP.Product.UnitTests.csproj --filter FullyQualifiedName~ProductSalesEligibilityServiceTests

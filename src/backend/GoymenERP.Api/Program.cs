@@ -21,6 +21,7 @@ using GoymenERP.Modules.Finance.Infrastructure.Shell;
 using GoymenERP.Modules.Idempotency.Infrastructure;
 using GoymenERP.Modules.Inventory.Infrastructure;
 using GoymenERP.Modules.Manufacturing.Infrastructure;
+using GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 using GoymenERP.Modules.Organization.Infrastructure;
 using GoymenERP.Modules.Identity.Infrastructure;
 using GoymenERP.Modules.Product.Application.Contracts;
@@ -97,6 +98,8 @@ builder.Services.AddScoped<IFinanceDraftContextEndpointService, FinanceDraftCont
 builder.Services.AddSingleton<IFinanceDraftReadBinding, ManualReceiptDraftReadBinding>();
 builder.Services.AddScoped<ISettingsPrerequisiteProvider, ApprovedSettingsPrerequisiteProvider>();
 builder.Services.AddScoped<ISettingsMoneyCandidateReader, ApprovedSettingsPrerequisiteProvider>();
+// PRD-UNIT-1: the company-independent unit identities of the approved catalog (immutable source data).
+builder.Services.AddSingleton<ISettingsUnitIdentityCatalogV1, ApprovedSettingsUnitIdentityCatalog>();
 builder.Services.AddScoped<ISalesAccountSelectionSourceV1, CounterpartySalesAccountSelectionSourceV1>();
 // SALES-API (#321): the Sales reference reads are bound to the draft form's permission (the Sales
 // owner's decision), and the Cari account port serves the draft use case.
@@ -149,6 +152,8 @@ builder.Services.AddSalesModule(
 builder.Services.AddSingleton<IShellCapabilityProvider, SalesShellCapabilityProvider>();
 // FIN-UI-1a (#325): Finance's (staged) receipt and bank-account screens, before the authority is chosen.
 builder.Services.AddSingleton<IShellCapabilityProvider, FinanceShellCapabilityProvider>();
+// MFG-UI (#323): Manufacturing's (staged) order detail and facts control, before the authority is chosen.
+builder.Services.AddSingleton<IShellCapabilityProvider, ManufacturingShellCapabilityProvider>();
 var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
     builder.Services,
     builder.Environment,

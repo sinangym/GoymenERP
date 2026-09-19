@@ -41,12 +41,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "OpenApiDocumentGenerationMode.cs";
     private const string OpenApiStartupPath =
         "src/backend/GoymenERP.Api/Program.cs";
-    // Re-fingerprinted for FIN-UI-1a (#325) on top of BROWSER-CI a2 part 2 (#330) and SALES-API (#321): the
-    // staged Finance shell provider registered before the shell authority is chosen (C+O+P+S+F row), beside
-    // #330's one call to C01E2eFixtureWriterActivation.Configure. No OpenAPI-generation, network or
-    // hosted-service surface of the startup source changed otherwise.
+    // Re-fingerprinted for MFG-UI (#323) on top of FIN-UI-1a (#325), BROWSER-CI a2 part 2 (#330), SALES-API
+    // (#321) and PRD-UNIT-1 (#335): the staged Finance and Manufacturing shell providers registered before the
+    // shell authority is chosen (C+O+P+S+F+M row), beside #330's one call to
+    // C01E2eFixtureWriterActivation.Configure and #335's one singleton registration of Settings' unit-identity
+    // catalog. No OpenAPI-generation, network or hosted-service surface of the startup source changed otherwise.
     private const string ReviewedOpenApiStartupFingerprint =
-        "777a46487c2eb01d909d1b1cdee0af8ac1f8ea7400246af577b3bba600b8a01a";
+        "e737f071a4361b6369742c6c725efc4e10bcf63a933bfe942499c844e290c215";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -128,11 +129,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // inventory
             ["tools/relational_inventory/inventory.txt"] =
-                "e0b8743d49e562c718ebb7051aeea7675ab993f5102e8b960aa844d1c3dc0c49",
+                "9bbead2ad725a9afbf3a90970654fe6f1e0f86f440f59f999ad97f68b6701354",
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
-                "8b8b3bcd8cd5dc3598cfe1c84caa0fb78c724a4b1134e580a456ed92cb58f7ee",
+                "117270f5953021654cdbdc2986ad353582c9d4060a5cd3766a1a8bf699ea8cf3",
 
             // organization
             ["tools/relational_inventory/organization.txt"] =
@@ -144,7 +145,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // product
             ["tools/relational_inventory/product.txt"] =
-                "b6f7b933a360d1780e3454f46f38d9244ffe9085a2ae6264e2f2ccbd51d749a8",
+                "7994d6f4490ebbc0a5204e47afd28543050f90688a8a9d9e33f5542ed24a1223",
 
             // sales
             ["tools/relational_inventory/sales.txt"] =
@@ -202,7 +203,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // row and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
              + "Persistence/InventoryDbContext.cs"] =
-                "49a56885af157d474d86a1726c0e1591bcf612262036d81cf8f1e73be9571cdb",
+                "73c2a33c6a4fbc77079c4eb3f17e2eba237b4a16ba6b961554a2d50dccbf2809",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "0ad206ef3d741157f24c2433f887871e3fd576ef950ef57ad13b09adc9c3e0e5",
@@ -230,8 +231,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("5c532feecc486eaeccde7db76beeb3d7ecdac7c6fe1650ad94311298c2616d2f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
+                // Re-measured for PRD-UNIT-1: the Product participant gets Settings' unit-identity catalog
+                // (GetService; unregistered stays fail-closed). SqlClient/SqlConnection counts unchanged.
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductSqlCommandRunner.cs"] =
-                    new("a7b69d45b14f11c63c12f67b44bed0588dad1e549f7022804e03cc296285fdca",
+                    new("36ee56a13d31b3c4aea130b801db15b983768eacfc2f5827047059ead463ed36",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Microsoft.Data.SqlClient"] = 1, ["SqlConnection"] = 1 }),
                 ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Services/GroupSharedAuditSession.cs"] =
@@ -259,8 +262,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
                  + "Persistence/ProductDraftParticipant.cs"] =
+                    // Re-measured for PRD-UNIT-1 (ÜRÜN): unit identities are resolved through Settings'
+                    // catalog; System.Data.Common/DbConnection counts unchanged.
                     new(
-                        "9273f2b058ad8f9863504a5f1f5a4c2605431559d0e001c19793135aaf3a238d",
+                        "f59d7bbd85559638482f4caf718bff0bd5e596fc259424d8ac12553ba4f0d815",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1,
@@ -341,11 +346,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // (SqlException 2601/2627) after SaveChanges, as the Idempotency terminal store does.
                 // No connection, command or raw SQL. Re-fingerprinted for #333 (#324 P3-1): a lot/label
                 // primary-key collision reads, tenant-filtered and AsNoTracking, whether this company holds
-                // the id (retry) or not (conflict); still no connection, command or raw SQL.
+                // the id (retry) or not (conflict); still no connection, command or raw SQL. Re-fingerprinted
+                // for INV-OPEN-1 (T07 = A): the opening count is written through the same tenant-filtered
+                // context in one save; SqlClient count unchanged (1).
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
                     new(
-                        "af485f916d6c16be871e026ed1b747764ef8e3d34362226f1dd16e9e6fd93ce2",
+                        "478b3035fc958260d0f914a197d808a542f7d4fe0cad6b10833d1e67bcc73f4d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

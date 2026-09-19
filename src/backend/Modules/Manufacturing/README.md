@@ -89,8 +89,27 @@ Rules held here:
 - **R3 underneath:** the store still recognises the caller's plan / order / fact id with the same canonical content as the same record, whatever the key (the ledger's own identity, MFG-5). Other content under that id is 409 (`*_id_conflict`). Under a new key such a success is recorded as that key's answer.
 - **Concurrency:** `expectedVersion` → 409 `manufacturing_version_conflict` with `expectedVersion` / `currentVersion`; a lost race → 409 `manufacturing_concurrent_change`.
 - **Refusals:** a domain rule → 422 with its code; a work center that is not this company's → 422 `manufacturing_work_center_not_found`; a malformed request → 400 `manufacturing_request_invalid` with `field`.
+- **Read under concurrent writes (FİNANS #313 INFO-4):** the store re-reads an order whose row and facts were committed apart (RCSI reads each statement on its own), up to three times. If it still meets a commit, `GET /orders/{orderId}` answers 503 `service_unavailable`: a retryable consistency failure, never a 500. It is not a 409, because 409 belongs to commands. Any other store refusal keeps its own path.
+- **409 / 422 codes are one declared superset:** every write endpoint declares the same 409 (6) and 422 (23) `manufacturing_*` codes (`WithWriteProblems`). For example, the plan save also declares `manufacturing_output_already_declared`.
+  - It is a true superset: no endpoint returns a code it does not declare.
+  - A client branches on the code, not on the endpoint. A code a screen does not handle is shown as a generic refusal.
+  - Narrowing per endpoint is a separate change: the endpoint, the regenerated OpenAPI and the contract expectations change together.
 
 Not here: closing an order, a list or search, cost, Inventory movements (T15), or any role assignment.
+
+## MFG-UI — the order screen (approved card, D1–D5)
+
+- **Shell provider** `Infrastructure/Shell/ManufacturingShellCapabilityProvider`: `manufacturing.orders.detail` → `/uretim/emir/:orderId` (`manufacturing.orders.read`) and its control `manufacturing.orders.facts` (+ `manufacturing.facts.record`). Company-wide, single company.
+  - **Staged:** `ImplementationAvailable: false` until the `mfg` browser suite accepts the screen.
+  - `MFG-01` is a technical sub-view id. The canonical production screens (PR-09/13/14/15) are `DECISION_ONLY_REFERENCE_MISSING`, and this is not their locked reference.
+  - The host registers the provider in the central writer's round (`src/frontend/goymen-erp-web/src/manufacturing/SHARED_MOUNT_HANDOFF.md`).
+- **Frontend** `src/frontend/goymen-erp-web/src/manufacturing/`:
+  - The order's roll balances, as read from the server. The unexplained difference is signed; cost shows as a status.
+  - Four fact forms, drawn only with the facts capability.
+  - One Idempotency-Key and one fact id per frozen submit.
+  - After an accepted fact the order is re-read; nothing is predicted.
+  - An unknown outcome freezes the forms until the same snapshot is re-sent.
+  - A 401/403 on a re-send does not settle it, because authority is measured before the stored answer.
 
 ## Behaviour kept on purpose — Business decision pending
 

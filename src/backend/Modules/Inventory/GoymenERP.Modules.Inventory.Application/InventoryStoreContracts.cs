@@ -2,6 +2,7 @@ using GoymenERP.Modules.Inventory.Domain.Balances;
 using GoymenERP.Modules.Inventory.Domain.Labels;
 using GoymenERP.Modules.Inventory.Domain.Lots;
 using GoymenERP.Modules.Inventory.Domain.Movements;
+using GoymenERP.Modules.Inventory.Domain.Opening;
 
 namespace GoymenERP.Modules.Inventory.Application;
 
@@ -85,6 +86,9 @@ public static class InventoryStoreCodes
 
     /// <summary>A text or amount does not fit its stored column; it is refused, never cut.</summary>
     public const string ValueDoesNotFit = "inventory_value_does_not_fit";
+
+    /// <summary>The same opening count id was offered with another content (INV-OPEN-1, R3).</summary>
+    public const string OpeningConflict = "inventory_opening_conflict";
 }
 
 /// <summary>A stored stock fact could not be written; <see cref="Code"/> says why. Nothing was stored.</summary>
@@ -152,4 +156,26 @@ public interface IInventoryMovementStore
 
     /// <summary>Every stored movement that touched one label, in the order they were recorded.</summary>
     Task<IReadOnlyList<StockMovement>> ReadMovementsAsync(Guid labelId, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// The opening stock of the server-resolved company, recorded from a physical count (INV-OPEN-1,
+/// decision A #66 5738113623 §2). Whether each counted product may be stocked is the caller's question
+/// (Product's stock eligibility), asked before this store is reached.
+/// </summary>
+public interface IInventoryOpeningStore
+{
+    /// <summary>
+    /// Stores the count and, in ONE save, every counted piece's lot (new or the same stored facts), its new
+    /// label, its one receipt and the resulting balance, with their audit events. The count id is the R3
+    /// identity: the same count again is a replay with no second effect, another content under the same id
+    /// is <see cref="InventoryStoreCodes.OpeningConflict"/>. A piece whose label is already stored is refused
+    /// whole: with stock <c>inventory_label_already_in_stock</c> (opening is never an adjustment), without
+    /// it <see cref="InventoryStoreCodes.LabelConflict"/> (an opening registers new pieces only).
+    /// </summary>
+    Task<InventoryWriteOutcome> RecordAsync(OpeningCount count, InventoryCommandMetadata metadata,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>A stored count of this company, or null.</summary>
+    Task<OpeningCount?> ReadCountAsync(Guid countId, CancellationToken cancellationToken = default);
 }

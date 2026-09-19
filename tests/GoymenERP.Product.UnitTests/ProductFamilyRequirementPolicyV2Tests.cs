@@ -225,6 +225,38 @@ public sealed class ProductFamilyRequirementPolicyV2Tests
     }
 
     [Fact]
+    public async Task A_required_colour_with_no_values_keeps_only_painted_cards_closed()
+    {
+        // Business 5740811346: colour applies with the painted coating, but no colour value is activated
+        // yet. The field is required and its dictionary is empty: the release stays well formed, a painted
+        // card cannot pass (missing → required, any value → not controlled), and nothing else changes.
+        var definition = Definition();
+        definition = definition with
+        {
+            Templates = [definition.Templates[0] with
+            {
+                Fields = [.. definition.Templates[0].Fields.Select(field => field.Key == Colour ? field with { Required = true } : field)],
+            }],
+            Entries = [.. definition.Entries.Where(entry => entry.Dictionary != "syn-colours")],
+        };
+        var policy = Policy(definition);
+
+        Assert.Empty(await policy.ValidateAsync(Card(ValidAttributes()), default));
+        var zinc = ValidAttributes();
+        zinc[Coating] = Zinc;
+        Assert.Empty(await policy.ValidateAsync(Card(zinc), default));
+
+        var painted = ValidAttributes();
+        painted[Coating] = Painted;
+        var error = Assert.Single(await policy.ValidateAsync(Card(painted), default));
+        Assert.Equal(($"references.attributes.{Colour}", ProductFamilyPolicyCodesV1.Required), (error.Field, error.Code));
+
+        painted[Colour] = ColourApproved;
+        error = Assert.Single(await policy.ValidateAsync(Card(painted), default));
+        Assert.Equal(($"references.attributes.{Colour}", ProductFamilyPolicyCodesV1.NotControlled), (error.Field, error.Code));
+    }
+
+    [Fact]
     public async Task An_attribute_the_template_does_not_have_is_refused()
     {
         var attributes = ValidAttributes();
@@ -355,7 +387,7 @@ public sealed class ProductFamilyRequirementPolicyV2Tests
     [InlineData("no-explicit-none")]
     [InlineData("two-explicit-nones")]
     [InlineData("candidate-explicit-none")]
-    [InlineData("unknown-dictionary")]
+    [InlineData("role-empty-dictionary")]
     [InlineData("measure-with-dictionary")]
     [InlineData("condition-on-unknown-field")]
     [InlineData("condition-on-candidate-code")]
@@ -452,7 +484,8 @@ public sealed class ProductFamilyRequirementPolicyV2Tests
             "two-explicit-nones" => WithEntries(definition.Entries.Select(entry => entry.Code == Zinc ? entry with { IsExplicitNone = true } : entry)),
             "candidate-explicit-none" => WithEntries(definition.Entries.Select(entry =>
                 entry.Code == Uncoated ? entry with { Status = ProductDefinitionEntryStatusV2.Candidate } : entry)),
-            "unknown-dictionary" => WithFields(ChangeField(Colour, field => field with { Dictionary = "syn-unknown" })),
+            // A role field's dictionary must hold an approved entry; only a non-role field may be empty.
+            "role-empty-dictionary" => WithFields(ChangeField(Grade, field => field with { Dictionary = "syn-empty" })),
             "measure-with-dictionary" => WithFields(ChangeField(Width, field => field with { Dictionary = "syn-grades" })),
             "condition-on-unknown-field" => WithFields(ChangeField(Colour, field => field with { AppliesWhenField = "syn-missing" })),
             "condition-on-candidate-code" => WithFields(ChangeField(Designation, field => field with { AppliesWhenCode = GradeCandidate })),

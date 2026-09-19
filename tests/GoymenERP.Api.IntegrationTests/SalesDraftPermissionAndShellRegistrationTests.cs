@@ -72,7 +72,11 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         var registry = new ShellCapabilityRegistry(container.GetServices<IShellCapabilityProvider>(),
             new ShellCapabilityAuthorityCatalog([authority]));
         var sales = registry.Registrations.Where(item => item.Owner == SalesShellCapabilityProvider.OwnerId).ToArray();
-        Assert.Equal(3, sales.Length);
+        // Three screens plus the SALES-A1 approve control of the detail.
+        Assert.Equal(4, sales.Length);
+        Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId,
+            Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.ApproveCapabilityId)
+                .Declaration.ParentCapabilityId);
         // Published (S03-c, #328): available; each still opens only for an actor holding its Sales permission
         // in the context company (SalesShellCapabilitySqlServerRelationalAcceptanceTests).
         Assert.All(sales, item => Assert.True(item.Declaration.ImplementationAvailable));
