@@ -184,4 +184,47 @@ public sealed class StoredRecordTests
         Assert.Equal(ManufacturingStore.PlanHash(plan), ManufacturingStore.PlanHash(same));
         Assert.NotEqual(ManufacturingStore.PlanHash(plan), ManufacturingStore.PlanHash(other));
     }
+
+    [Fact]
+    public void A_plan_without_a_slitting_spec_keeps_its_MFG5_hash_so_every_stored_plan_keeps_its_replay_identity()
+    {
+        // The MFG-5 canonical content, written out: MFG-6 must not change it for a plan without a spec.
+        const string mfg5Canonical = "manufacturing.plan.v1|10000000-0000-0000-0000-000000000001|"
+            + "20000000-0000-0000-0000-00000000c001|1|1:10000|30000000-0000-0000-0000-00000000a001:10000;";
+        var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(RollA, Kg(10_000.000m))], new ProductionTarget(TargetBasis.InputMass, Kg(10_000m)));
+
+        Assert.Equal(
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(mfg5Canonical)))
+                .ToLowerInvariant(),
+            ManufacturingStore.PlanHash(plan));
+    }
+
+    [Fact]
+    public void A_slitting_spec_is_plan_content_its_lines_order_counts_and_winding_target_all_count()
+    {
+        var id = Guid.NewGuid();
+        ProductionPlan With(SlittingSpec? spec) => new(id, Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(RollA, Kg(28_750m))], target: null, spec);
+        var spec = new SlittingSpec([new SlitLine(150m, 4), new SlitLine(240m, 3)], Kg(2000m));
+        var hash = ManufacturingStore.PlanHash(With(spec));
+
+        Assert.Equal(hash, ManufacturingStore.PlanHash(With(
+            new SlittingSpec([new SlitLine(150.000m, 4), new SlitLine(240.0m, 3)], Kg(2000.000m)))));
+        Assert.NotEqual(hash, ManufacturingStore.PlanHash(With(null)));
+        Assert.NotEqual(hash, ManufacturingStore.PlanHash(With(new SlittingSpec([new SlitLine(240m, 3), new SlitLine(150m, 4)], Kg(2000m)))));
+        Assert.NotEqual(hash, ManufacturingStore.PlanHash(With(new SlittingSpec([new SlitLine(150m, 4), new SlitLine(240m, 2)], Kg(2000m)))));
+        Assert.NotEqual(hash, ManufacturingStore.PlanHash(With(new SlittingSpec([new SlitLine(150m, 4), new SlitLine(240m, 3)]))));
+        Assert.NotEqual(hash, ManufacturingStore.PlanHash(With(new SlittingSpec([new SlitLine(150m, 4), new SlitLine(240m, 3)], Kg(2001m)))));
+    }
+
+    [Fact]
+    public void A_plan_with_a_slitting_spec_is_restored_with_it()
+    {
+        var spec = new SlittingSpec([new SlitLine(150m, 4), new SlitLine(240m, 3)], Kg(2000m));
+        var restored = ProductionPlan.Restore(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.Slitting,
+            [new PlannedInput(RollA, Kg(28_750m))], target: null, approvedByUserId: null, approvedAtUtc: null, version: 1, spec);
+
+        Assert.Equal((PlanStatus.Draft, spec), (restored.Status, restored.Spec));
+    }
 }
