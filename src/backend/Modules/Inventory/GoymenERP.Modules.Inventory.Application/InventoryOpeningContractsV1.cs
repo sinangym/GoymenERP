@@ -96,7 +96,14 @@ public static class InventoryOpeningCodesV1
     public const string NotFound = "not_found";
 }
 
-/// <summary>What Organization says about one location of the company (read by the host's adapter).</summary>
+/// <summary>
+/// What Organization says about one location of the company, read by the host's adapter through Organization's
+/// company-scoped module read — never a user-authorized read, so a caller's missing Organization grant cannot look
+/// like a missing location. Only <see cref="Active"/> is opened; every other answer is refused with its own code.
+/// Inactive is the location's OWN state (no site cascade is decided anywhere). When several apply, the adapter
+/// answers the first of <see cref="NotFound"/>, <see cref="External"/>, <see cref="Inactive"/>: what the place is
+/// before its state, since reactivating an external location would not open it (T07 = A: the company's own location).
+/// </summary>
 public enum InventoryLocationStatus
 {
     NotFound = 0,
@@ -104,8 +111,9 @@ public enum InventoryLocationStatus
     Inactive = 2,
 
     /// <summary>
-    /// An external location (a supplier's or fason party's yard): its custodian is another party, so an
-    /// opening — whose owner and custodian are the company itself — is not recorded there (DEC-STK-001).
+    /// An external location (a supplier's or fason party's yard; Organization's <c>IsExternal</c>,
+    /// SINAN_KARARLARI_2026-08-31 §3): its custodian is another party, so an opening — whose owner and custodian
+    /// are the company itself — is not recorded there (DEC-STK-001).
     /// </summary>
     External = 3,
 }
