@@ -1,0 +1,12 @@
+{
+  "status": 409,
+  "title": "Conflict",
+  "code": "version_conflict",
+  "correlationId": "corr-9",
+  "errors": [
+    {
+      "field": "expectedVersion",
+      "code": "version_conflict"
+    }
+  ]
+}

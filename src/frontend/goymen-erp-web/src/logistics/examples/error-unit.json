@@ -1,0 +1,12 @@
+{
+  "status": 422,
+  "title": "Unprocessable Entity",
+  "code": "unsupported_unit",
+  "correlationId": "corr-9",
+  "errors": [
+    {
+      "field": "lines[0].unitId",
+      "code": "logistics_quantity_scale_exceeded"
+    }
+  ]
+}
