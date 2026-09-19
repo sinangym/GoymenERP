@@ -6,7 +6,7 @@
 
 Bu dosya bir istek değil, **uygulanmaya hazır kaynak**. Delta tamamen **ekleyicidir**: mevcut satırların hiçbiri değişmez.
 
-Delta uygulansa da ekran açılmaz. Sunucu iki kabiliyeti de **staged** (`ImplementationAvailable: false`) ilan ediyor; `CapabilityRoute` yayımlanmamış bir kabiliyeti fail-closed kapatır. Açma, `mfg` browser kabulünden sonra ayrı bir exact-head değişikliğidir. **Bu değişiklik MFG-UI-F'dir:** iki satır da yayımlandı, suite `normal` profilde koşar.
+**Durum: yayımlı (MFG-UI-F, #349).** Sunucu iki kabiliyeti de `ImplementationAvailable: true` ilan ediyor; `mfg` suite `normal` profilde koşar. Kayıt defteri her birini yalnız izni olan aktöre yayımlar, diğerleri için `CapabilityRoute` fail-closed kapatır. (Bu dosya ilk yazıldığında iki kabiliyet de staged'di; açma, `mfg` browser kabulünden sonra ayrı bir exact-head değişikliği olarak yapıldı.)
 
 ## Frontend (`src/shell/**`)
 
