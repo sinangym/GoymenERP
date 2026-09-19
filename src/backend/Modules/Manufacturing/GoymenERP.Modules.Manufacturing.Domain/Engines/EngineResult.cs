@@ -77,6 +77,12 @@ public static class EngineCodes
     /// <summary>A count (bands, coils) is not a positive whole number.</summary>
     public const string CountNotPositive = "engine_count_not_positive";
 
+    /// <summary>
+    /// A ratio that is a fraction by definition (the paint's solids ratio, PNT-006) is above 1 — e.g. a
+    /// percentage (55) given where the fraction (0,55) is meant. Refused, never divided by 100.
+    /// </summary>
+    public const string RatioAboveOne = "engine_ratio_above_one";
+
     /// <summary>SLT-004 ≤ net usable width is broken: the slit lines use more width than the coil has (master v3 §28.4).</summary>
     public const string UsedWidthExceedsNetWidth = "engine_used_width_exceeds_net_width";
 

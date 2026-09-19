@@ -54,6 +54,8 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
 
     internal DbSet<OpeningCountLineRow> OpeningCountLines => Set<OpeningCountLineRow>();
 
+    internal DbSet<InventoryCommandRow> Commands => Set<InventoryCommandRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -68,6 +70,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         ConfigureMovementLines(modelBuilder);
         ConfigureBalances(modelBuilder);
         ConfigureOpeningCounts(modelBuilder);
+        ConfigureCommands(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -351,6 +354,31 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
             .OnDelete(DeleteBehavior.Restrict);
         LabelOf(line);
         line.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// ADR-011 commands of the company (INV-OPEN-1 part 2): one row per (company, command, key hash), the
+    /// actor, the canonical payload hash and the result a replay repeats. Append-only.
+    /// </summary>
+    private void ConfigureCommands(ModelBuilder modelBuilder)
+    {
+        var command = modelBuilder.Entity<InventoryCommandRow>();
+        command.ToTable("Commands", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_Commands_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([PayloadHash]) = 64");
+            table.HasCheckConstraint("CK_Commands_Text",
+                "LEN([CommandName]) > 0 AND LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0 AND ISJSON([ResultJson]) = 1");
+        });
+        command.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        command.Property(x => x.CommandName).HasMaxLength(128).IsUnicode(false);
+        command.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false);
+        command.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
+        command.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        command.Property(x => x.ResultJson).HasColumnType("nvarchar(max)").IsRequired();
+        command.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        command.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        command.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     /// <summary>A row of one label, bound by (company, label) so it can never name another company's label.</summary>

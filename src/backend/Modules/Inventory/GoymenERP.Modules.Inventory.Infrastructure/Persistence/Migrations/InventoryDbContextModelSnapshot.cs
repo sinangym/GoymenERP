@@ -224,6 +224,61 @@ partial class InventoryDbContextModelSnapshot : ModelSnapshot
             });
         });
 
+        modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.InventoryCommandRow", b =>
+        {
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<string>("CommandName")
+                .HasMaxLength(128)
+                .IsUnicode(false)
+                .HasColumnType("varchar(128)");
+
+            b.Property<string>("IdempotencyKeyHash")
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<string>("ActorId")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<string>("CorrelationId")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<string>("PayloadHash")
+                .IsRequired()
+                .HasMaxLength(64)
+                .IsUnicode(false)
+                .HasColumnType("varchar(64)");
+
+            b.Property<DateTimeOffset>("RecordedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("ResultJson")
+                .IsRequired()
+                .HasColumnType("nvarchar(max)");
+
+            b.Property<Guid?>("TargetId")
+                .HasColumnType("uniqueidentifier");
+
+            b.HasKey("CompanyId", "CommandName", "IdempotencyKeyHash");
+
+            b.ToTable("Commands", "inventory", t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_Commands_Hashes",
+                    "LEN([IdempotencyKeyHash]) = 64 AND LEN([PayloadHash]) = 64");
+
+                t.HasCheckConstraint(
+                    "CK_Commands_Text",
+                    "LEN([CommandName]) > 0 AND LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0 AND ISJSON([ResultJson]) = 1");
+            });
+        });
+
         modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.LabelDocumentRow", b =>
         {
             b.Property<Guid>("CompanyId")
@@ -786,6 +841,15 @@ partial class InventoryDbContextModelSnapshot : ModelSnapshot
             b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OrganizationLocationReference", null)
                 .WithMany()
                 .HasForeignKey("CompanyId", "LocationId")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Inventory.Infrastructure.Persistence.InventoryCommandRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Inventory.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                .WithMany()
+                .HasForeignKey("CompanyId")
                 .OnDelete(DeleteBehavior.Restrict)
                 .IsRequired();
         });

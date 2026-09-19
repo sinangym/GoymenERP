@@ -9,6 +9,7 @@ using System.Text.RegularExpressions;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.Api.Contracts;
 using GoymenERP.BuildingBlocks.OpenApi;
+using GoymenERP.Modules.Inventory.Application;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Routing;
@@ -57,6 +58,13 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/inventory/labels/{labelId}/balances", "GetInventoryLabelBalancesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
             ParameterValues: ["path:labelId:true:type:string;format:uuid"]),
+        // INV-OPEN-1 part 2 (T07 = A): record an opening count (ADR-011) and read one back.
+        new("post", "/api/v1/inventory/opening-counts", "RecordInventoryOpeningCountV1",
+            AuthenticatedResponses("201:application/json", "200:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/OpeningCountRequestV1"),
+        new("get", "/api/v1/inventory/opening-counts/{countId}", "GetInventoryOpeningCountV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:countId:true:type:string;format:uuid"]),
         new("put", "/api/v1/organization/locations/{id}/active-state", "SetOrganizationLocationActiveStateV1",
             AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:"),
             "#/components/schemas/SetLocationActiveState",
@@ -248,6 +256,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetOrganizationLocationV1"] = "ref:LocationSummary",
             ["GetInventoryLabelV1"] = "ref:InventoryLabelViewV1",
             ["GetInventoryLabelBalancesV1"] = "ref:InventoryLabelBalancesV1",
+            ["RecordInventoryOpeningCountV1"] = "ref:OpeningCountViewV1",
+            ["GetInventoryOpeningCountV1"] = "ref:OpeningCountViewV1",
             ["SetOrganizationLocationActiveStateV1"] = "none",
             ["GetOrganizationWorkCentersV1"] = "array:WorkCenterSummary",
             ["GetCurrentIdentityV1"] = "ref:IdentityProfile",
@@ -302,6 +312,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetOrganizationWorkCentersV1",
         "GetInventoryLabelV1",
         "GetInventoryLabelBalancesV1",
+        "RecordInventoryOpeningCountV1",
+        "GetInventoryOpeningCountV1",
         "GetCounterpartyCompanyAccountLinkCandidatesV1",
         "CreateCounterpartyV1",
         "CreateCounterpartyCompanyAccountV1",
@@ -343,6 +355,7 @@ public sealed partial class OpenApiContractGenerationTests
 
     private static readonly HashSet<string> IdempotentOperations =
     [
+        "RecordInventoryOpeningCountV1",
         "UpdateCounterpartyContactInformationV1",
         "SetOrganizationLocationActiveStateV1",
         "CreateCounterpartyV1",
@@ -407,6 +420,8 @@ public sealed partial class OpenApiContractGenerationTests
                 ["RejectSalesOrderDraftV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["ProposeFinanceBankAccountV1"] = [StatusCodes.Status200OK],
                 ["ApproveFinanceBankAccountV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                // INV-OPEN-1 part 2: the count (200 on a replay) and the recorded terminal refusals (§7).
+                ["RecordInventoryOpeningCountV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
             };
 
     private static readonly HashSet<string> EmptyBodyPossible400Operations =
@@ -442,6 +457,7 @@ public sealed partial class OpenApiContractGenerationTests
         "ApproveFinanceBankAccountV1",
         "GetFinanceBankAccountMasterV1",
         "GetFinanceBankAccountCurrencyCandidatesV1",
+        "RecordInventoryOpeningCountV1",
     ];
 
     private static readonly HashSet<string> CodeLessProblemResponses =
@@ -449,6 +465,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetOrganizationLocationV1:404",
         "GetInventoryLabelV1:404",
         "GetInventoryLabelBalancesV1:404",
+        "GetInventoryOpeningCountV1:404",
         "SetOrganizationLocationActiveStateV1:404",
         "SetOrganizationLocationActiveStateV1:409",
         "GetFinanceManualReceiptDraftContextV1:404",
@@ -516,6 +533,10 @@ public sealed partial class OpenApiContractGenerationTests
     private static readonly IReadOnlyDictionary<string, string[]> AdditionalProblemCodes =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
+            // INV-OPEN-1 part 2: the owner's closed sets (InventoryOpeningCodesV1), read here, never retyped.
+            ["RecordInventoryOpeningCountV1:400"] = [.. InventoryOpeningCodesV1.Status400Codes.Order(StringComparer.Ordinal)],
+            ["RecordInventoryOpeningCountV1:409"] = [.. InventoryOpeningCodesV1.Status409Codes.Order(StringComparer.Ordinal)],
+            ["RecordInventoryOpeningCountV1:422"] = [.. InventoryOpeningCodesV1.Status422Codes.Order(StringComparer.Ordinal)],
             ["GetCounterpartiesV1:400"] = ["invalid_cursor", "validation_failed"],
             ["GetCounterpartiesV1:409"] = ["client_contract_required", "client_contract_unsupported"],
             ["GetCounterpartyV1:409"] = ["client_contract_required", "client_contract_unsupported"],
@@ -1064,6 +1085,17 @@ public sealed partial class OpenApiContractGenerationTests
                     ("labelId", "type:string;format:uuid"), ("physicalKg", "type:string"),
                     ("freeKg", "type:string"), ("blockedKg", "type:string"),
                     ("positions", "type:array;items:ref:InventoryPositionV1")),
+                ["OpeningCountViewV1"] = ObjectSchema(
+                    ["countId", "companyId", "locationId", "countedOn", "sheetReference", "lines"],
+                    ("countId", "type:string;format:uuid"), ("companyId", "type:string;format:uuid"),
+                    ("locationId", "type:string;format:uuid"), ("countedOn", "type:string;format:date"),
+                    ("sheetReference", "type:string"), ("lines", "type:array;items:ref:OpeningCountLineViewV1")),
+                ["OpeningCountLineViewV1"] = ObjectSchema(
+                    ["lineId", "labelId", "labelCode", "lotId", "heatNumber", "coilNumber", "productId", "quantityKg"],
+                    ("lineId", "type:string;format:uuid"), ("labelId", "type:string;format:uuid"),
+                    ("labelCode", "type:string"), ("lotId", "type:string;format:uuid"),
+                    ("heatNumber", "type:null|string"), ("coilNumber", "type:null|string"),
+                    ("productId", "type:string;format:uuid"), ("quantityKg", "type:string")),
                 ["InventoryPositionV1"] = ObjectSchema(
                     ["ownerKind", "ownerId", "custodianKind", "custodianId", "locationId", "productId", "block", "quantityKg"],
                     ("ownerKind", "type:string"), ("ownerId", "type:string;format:uuid"),
@@ -1113,6 +1145,18 @@ public sealed partial class OpenApiContractGenerationTests
         ExpectedRequestComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["OpeningCountRequestV1"] = ObjectSchema(
+                    ["countId", "locationId", "countedOn", "sheetReference", "lines"],
+                    ("countId", "type:string;format:uuid"), ("locationId", "type:string;format:uuid"),
+                    ("countedOn", "type:string;format:date"), ("sheetReference", "type:string"),
+                    ("lines", "type:array;items:ref:OpeningCountLineRequestV1")),
+                ["OpeningCountLineRequestV1"] = ObjectSchema(
+                    ["lineId", "labelId", "labelCode", "lotId", "heatNumber", "coilNumber", "productId", "productVersion", "quantityKg"],
+                    ("lineId", "type:string;format:uuid"), ("labelId", "type:string;format:uuid"),
+                    ("labelCode", "type:string"), ("lotId", "type:string;format:uuid"),
+                    ("heatNumber", "type:null|string"), ("coilNumber", "type:null|string"),
+                    ("productId", "type:string;format:uuid"), ("productVersion", "type:string"),
+                    ("quantityKg", "type:string")),
                 ["BankAccountApprovalBody"] = ObjectSchema(
                     ["expectedVersion"],
                     ("expectedVersion", "type:string")),
@@ -1799,9 +1843,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(54, operations.Count);
+        Assert.Equal(56, operations.Count);
         Assert.Equal(
-            54,
+            56,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());
@@ -2210,10 +2254,20 @@ public sealed partial class OpenApiContractGenerationTests
 
     private static string SnapshotSuccessSchema(JsonElement operation)
     {
-        var success = Assert.Single(
-            operation.GetProperty("responses").EnumerateObject(),
-            response => response.Name.StartsWith('2'));
-        if (!success.Value.TryGetProperty("content", out var content))
+        // An operation may declare more than one 2xx (INV-OPEN-1 part 2: 201 on the record, 200 on a
+        // replay); every one of them must then carry the same body, so one snapshot names them all.
+        var snapshots = operation.GetProperty("responses").EnumerateObject()
+            .Where(response => response.Name.StartsWith('2'))
+            .Select(response => SnapshotSuccessBody(response.Value))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        Assert.NotEmpty(snapshots);
+        return Assert.Single(snapshots);
+    }
+
+    private static string SnapshotSuccessBody(JsonElement success)
+    {
+        if (!success.TryGetProperty("content", out var content))
         {
             return "none";
         }

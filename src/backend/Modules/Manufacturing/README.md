@@ -199,9 +199,49 @@ Not here: closing an order, a list or search, cost, Inventory movements (T15), o
   - the scrap must be below the input mass; equal or more is `engine_scrap_not_below_input_mass`.
   - The scrap is supplied: a stated 0 is a value, a missing one is unavailable.
 - **Never a guess:** a missing input is `Unavailable` and is named; Ö2 kilogram and millimetre inputs take at most three decimals and are refused beyond. Nothing rounds.
+- **Refusal order (FİNANS #343 INFO-1):** "a refusal wins over missing values" covers **single-value** refusals (a non-positive value, a fourth decimal). A **cross-input** invariant (target < input thickness, scrap < input mass; SLT-004's used ≤ net width too) is checked only once every input is present. So a known-bad pair beside a missing density answers `Unavailable(density)`, and the refusal follows as soon as the missing value arrives.
+- **Carried (FİNANS #343 INFO-2), for the MFG-7 plan slice:** at plan time CR-002's scrap is an estimate, after production a measured fact. The plan gate (the #342 pattern) must name `scrapKg` as unavailable until a source for it exists, never pass 0 as a default. A stated 0 comes only from someone actually stating it.
+- **Carried (ÜRÜN #343 INFO-1), for the MFG-7 plan slice:** cold rolling reads two Product cards (input and target). Whether both must share the steel grade is an owner rule to state in that slice, not assume.
 - **One width:** the coil's width is one input for both sides, as §28.8 uses one `En`.
 - **Not in version 1:** multi-pass rolling, the pass plan, tolerance, work hardening and quality results. The master keeps these in the process model.
 - **Golden tests** (`ColdRollingEngineTests`): the §28.8 example (28.750 kg, 1500 mm, 2,00 → 1,50 mm → 1220,807 m, 1627,742 m, 1,333, %25) at the master's printed precision (±0.0005), plus an independent 40-digit reference (±1e-18). Its density 7850 kg/m³ and scrap 0 kg are test inputs, not production parameters.
+
+## MFG-8 slice 1 — the Tube / Profile and Painting engines (Business 5737790175, DEC-PRDCT-001 order)
+
+Pure, decimal, versioned calculators on the same core and under the same rules as the MFG-6 / MFG-7 engines: no I/O, no rounding, a missing input `Unavailable` and named, a single wrong value refused with a code, Ö2 on kg / nominal mm.
+
+- **`TubeProfileEngineV1` (`GDC-TUB/1`, master v3 §28.6):**
+
+| ID | Master | Call |
+|---|---|---|
+| TUB-001 pieces | `PaketSayısı × PaketİçiAdet` | `Run` (exact) |
+| TUB-002 metres | `ToplamAdet × Boy(mm) / 1000` | `Run` |
+| TUB-003 running minutes | `ToplamMetre / HatHızı(m/dk)` | `Run` |
+| TUB-004 kg | `BirimKg × ToplamAdet` | `Mass` |
+
+  - **Unit kg** (§28.6: the product / package master's; the geometric estimate is lower priority) is `Unavailable(unitKg)` until Product supplies it. This engine never estimates it.
+  - TUB-004 is its own call, so a missing unit mass never hides the length and time.
+  - **TUB-003 is the running time only.** Set-up, die change, planned stops and cleaning are not part of it; the capacity calendar adds them (§28.6).
+- **`PaintingEngineV1` (`GDC-PNT/1`, master v3 §28.7):**
+
+| ID | Master | Call |
+|---|---|---|
+| PNT-001 pieces | `PaketSayısı × PaketİçiAdet` | `Run` (exact) |
+| PNT-002 profile metres | `Adet × Boy(mm) / 1000` | `Run` |
+| PNT-003 line-pass metres | `ToplamProfilMetre / EşZamanlıProfilAdedi` | `Run` (one division) |
+| PNT-004 minutes | `HatGeçişMetre / HatHızı` | `Run` (one division) |
+| PNT-005 area | `ProfilÇevre(mm) × Boy(mm) × Adet / 1 000 000` | `Area` |
+| PNT-006 theoretical litres | `Alan × Mikron / (KatıMaddeOranı × 1000) × FireKatsayısı` | `Paint`, evaluated as `Alan × Mikron × FireKatsayısı / (KatıMaddeOranı × 1000)` (algebraically identical) |
+
+  - **Inputs, never hard-coded (§28.7):** the simultaneous profile count, the solids ratio, the scrap factor, the line speed and the film thickness.
+  - **Solids ratio:** a fraction by definition; above 1 is refused (`engine_ratio_above_one`), never read as a percentage.
+  - **Theoretical litres only:** not the cost, not the actual consumption.
+  - **Not in version 1:** colour change, transfer efficiency, paint density, coats, thinner, gun / line loss and rework (separate parameters or realizations, §28.7).
+- **Golden tests** (`TubeProfileAndPaintingEngineTests`): every result is exact in decimal (cross-checked with Python `decimal` at prec 40).
+  - §28.6: 20 × 50 × 6 m at 30 m/dk → 1000 pieces, 6000 m, 200 dk.
+  - §28.7: 10 × 50 × 6 m, perimeter 160 mm, 20 m/dk, 80 µm, solids 0,55, factor 1,10 → 480 m², 76,800 L, 50 dk.
+  - **Flag on the §28.7 golden:** the example does **not** state `EşZamanlıProfilAdedi`. 50 dk follows only with 3 (3000 m / 3 / 20 m/dk), so 3 is **derived from the master's result**. It is used only as a test input, and it is not a default.
+  - PNT-004 is also measured with an explicitly stated count (2 → 1500 m, 75 dk).
 
 ## Behaviour kept on purpose — Business decision pending
 
@@ -210,9 +250,9 @@ Not here: closing an order, a list or search, cost, Inventory movements (T15), o
 ## What this module is not
 
 - No stock movement, lot or label: Inventory owns those.
-- No trim/kerf value, tolerance number, template, rounding stage or roll-substitution policy. The only formulas are the MFG-6 engines and the MFG-7 cold-rolling engine above, and every parameter is supplied to them.
+- No trim/kerf value, tolerance number, template, rounding stage or roll-substitution policy. The only formulas are the MFG-6, MFG-7 and MFG-8 engines above, and every parameter is supplied to them.
 - No UI yet (the normal screen is the next card); HTTP since MFG-API, persistence since MFG-5 (above).
-- No other engine yet: tube/profile, painting and cut-to-length follow in the DEC-PRDCT-001 order.
+- No other engine yet: cut-to-length (§28.3, kerf mandatory) follows in the DEC-PRDCT-001 order.
 
 ## dependency_wait
 

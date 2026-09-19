@@ -194,3 +194,22 @@ internal sealed class OpeningCountLineRow : IInventoryTenantRow
     public Guid LotId { get; set; }
     public decimal QuantityKg { get; set; }
 }
+
+/// <summary>
+/// One ADR-011 command of the company (INV-OPEN-1 part 2): the key is (company, command, SHA-256 of the
+/// trimmed Idempotency-Key, uppercase hex); the actor and the canonical payload hash decide replay versus
+/// conflict; <see cref="ResultJson"/> is the answer a replay repeats — a success or an authorized terminal
+/// refusal (§7) — with the first <see cref="CorrelationId"/>. Append-only.
+/// </summary>
+internal sealed class InventoryCommandRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public string CommandName { get; set; } = string.Empty;
+    public string IdempotencyKeyHash { get; set; } = string.Empty;
+    public string ActorId { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public Guid? TargetId { get; set; }
+    public string ResultJson { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+}
