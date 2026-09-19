@@ -29,6 +29,15 @@ public static class AccountingErrorCodes
     public const string ReversalOfReversal = "accounting_reversal_of_reversal";
     public const string InvalidDates = "accounting_invalid_dates";
     public const string PeriodAlreadyClosed = "accounting_period_already_closed";
+
+    /// <summary>Ö4: the period's preparer tried to approve its own opening.</summary>
+    public const string PeriodSelfApproval = "accounting_period_self_approval";
+
+    /// <summary>Only a proposed period is approved (it is already open or closed).</summary>
+    public const string PeriodNotProposed = "accounting_period_not_proposed";
+
+    /// <summary>Only an open period is closed (a proposal is not open yet).</summary>
+    public const string PeriodNotOpen = "accounting_period_not_open";
     public const string CorrectionIdentityConflict = "accounting_correction_identity_conflict";
     public const string CorrectionContentConflict = "accounting_correction_content_conflict";
 }

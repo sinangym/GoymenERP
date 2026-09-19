@@ -280,6 +280,29 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/purchasing/orders/{id}/approval", "ApprovePurchaseOrderV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/ApprovePurchaseOrderRequest", ["path:id:true:type:string;format:uuid"]),
+        new("get", "/api/v1/accounting/periods", "GetAccountingPeriodsV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string"]),
+        new("post", "/api/v1/accounting/periods", "ProposeAccountingPeriodV1",
+            AuthenticatedResponses("201:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/ProposePeriodRequestV1"),
+        new("get", "/api/v1/accounting/periods/{periodId}", "GetAccountingPeriodV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json", "404:application/problem+json"),
+            ParameterValues: ["path:periodId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/accounting/periods/{periodId}/approval", "ApproveAccountingPeriodV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json", "404:application/problem+json"),
+            "#/components/schemas/PeriodCommandRequestV1", ["path:periodId:true:type:string;format:uuid"]),
+        new("post", "/api/v1/accounting/periods/{periodId}/close", "CloseAccountingPeriodV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json", "404:application/problem+json"),
+            "#/components/schemas/PeriodCommandRequestV1", ["path:periodId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/accounting/journals", "GetAccountingJournalsV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["query:periodId:false:type:string;format:uuid", "query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$", "query:cursor:false:type:string"]),
+        new("get", "/api/v1/accounting/journals/{journalId}", "GetAccountingJournalV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json", "404:application/problem+json"),
+            ParameterValues: ["path:journalId:true:type:string;format:uuid"]),
+        new("get", "/api/v1/accounting/posting-queues", "GetAccountingPostingQueuesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
         .. ProductOperations,
     ];
 
@@ -349,6 +372,14 @@ public sealed partial class OpenApiContractGenerationTests
             ["CreatePurchaseOrderV1"] = "ref:PurchaseOrderResponse",
             ["GetPurchaseOrderV1"] = "ref:PurchaseOrderDetailView",
             ["ApprovePurchaseOrderV1"] = "ref:PurchaseOrderResponse",
+            ["GetAccountingPeriodsV1"] = "ref:PeriodPageV1",
+            ["ProposeAccountingPeriodV1"] = "ref:PeriodViewV1",
+            ["GetAccountingPeriodV1"] = "ref:PeriodViewV1",
+            ["ApproveAccountingPeriodV1"] = "ref:PeriodViewV1",
+            ["CloseAccountingPeriodV1"] = "ref:PeriodViewV1",
+            ["GetAccountingJournalsV1"] = "ref:JournalPageV1",
+            ["GetAccountingJournalV1"] = "ref:JournalDetailV1",
+            ["GetAccountingPostingQueuesV1"] = "ref:PostingQueuesV1",
         };
 
     private static readonly HashSet<string> RequiredCompanyOperations =
@@ -409,6 +440,14 @@ public sealed partial class OpenApiContractGenerationTests
         "CreatePurchaseOrderV1",
         "GetPurchaseOrderV1",
         "ApprovePurchaseOrderV1",
+        "GetAccountingPeriodsV1",
+        "ProposeAccountingPeriodV1",
+        "GetAccountingPeriodV1",
+        "ApproveAccountingPeriodV1",
+        "CloseAccountingPeriodV1",
+        "GetAccountingJournalsV1",
+        "GetAccountingJournalV1",
+        "GetAccountingPostingQueuesV1",
     ];
 
     private static readonly HashSet<string> OptionalCompanyOperations =
@@ -447,6 +486,9 @@ public sealed partial class OpenApiContractGenerationTests
         "SubmitPurchaseRequestV1",
         "CreatePurchaseOrderV1",
         "ApprovePurchaseOrderV1",
+        "ProposeAccountingPeriodV1",
+        "ApproveAccountingPeriodV1",
+        "CloseAccountingPeriodV1",
     ];
 
     private static readonly IReadOnlyDictionary<string, HashSet<int>>
@@ -501,6 +543,9 @@ public sealed partial class OpenApiContractGenerationTests
                 ["SubmitPurchaseRequestV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["CreatePurchaseOrderV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
                 ["ApprovePurchaseOrderV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["ProposeAccountingPeriodV1"] = [StatusCodes.Status201Created],
+                ["ApproveAccountingPeriodV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["CloseAccountingPeriodV1"] = [StatusCodes.Status200OK, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
             };
 
     private static readonly HashSet<string> EmptyBodyPossible400Operations =
@@ -547,6 +592,9 @@ public sealed partial class OpenApiContractGenerationTests
         "GetPurchaseOrdersV1",
         "CreatePurchaseOrderV1",
         "ApprovePurchaseOrderV1",
+        "ProposeAccountingPeriodV1",
+        "ApproveAccountingPeriodV1",
+        "CloseAccountingPeriodV1",
     ];
 
     private static readonly HashSet<string> CodeLessProblemResponses =
@@ -578,6 +626,10 @@ public sealed partial class OpenApiContractGenerationTests
         "SubmitPurchaseRequestV1:404",
         "GetPurchaseOrderV1:404",
         "ApprovePurchaseOrderV1:404",
+        "GetAccountingPeriodV1:404",
+        "ApproveAccountingPeriodV1:404",
+        "CloseAccountingPeriodV1:404",
+        "GetAccountingJournalV1:404",
     ];
 
     private static readonly HashSet<string> MixedProblemResponses =
@@ -600,6 +652,9 @@ public sealed partial class OpenApiContractGenerationTests
         "ApproveFinanceBankAccountV1:400",
         "GetFinanceBankAccountMasterV1:400",
         "GetFinanceBankAccountCurrencyCandidatesV1:400",
+        "ProposeAccountingPeriodV1:400",
+        "ApproveAccountingPeriodV1:400",
+        "CloseAccountingPeriodV1:400",
     ];
 
     // MFG-API (#313): every Manufacturing write advertises the endpoint's one conflict and one
@@ -726,12 +781,94 @@ public sealed partial class OpenApiContractGenerationTests
             ["ApprovePurchaseOrderV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["ApprovePurchaseOrderV1:409"] = ["concurrent_change", "purchasing_order_state", "purchasing_request_line_over_sourced", "same_key_payload_mismatch", "version_conflict"],
             ["ApprovePurchaseOrderV1:422"] = ["validation_failed"],
+            ["GetAccountingPeriodsV1:400"] = ["accounting_request_invalid"],
+            ["ProposeAccountingPeriodV1:400"] = ["accounting_request_invalid"],
+            ["ProposeAccountingPeriodV1:409"] = ["accounting_concurrent_change", "accounting_period_conflict", "accounting_period_overlap", "accounting_period_preparer_conflict", "accounting_version_conflict", "idempotency_conflict"],
+            ["ProposeAccountingPeriodV1:422"] = ["accounting_invalid_reference", "accounting_period_already_closed", "accounting_period_invalid", "accounting_period_not_open", "accounting_period_not_proposed", "accounting_value_does_not_fit"],
+            ["GetAccountingPeriodV1:400"] = ["accounting_request_invalid"],
+            ["ApproveAccountingPeriodV1:400"] = ["accounting_request_invalid"],
+            ["ApproveAccountingPeriodV1:409"] = ["accounting_concurrent_change", "accounting_period_conflict", "accounting_period_overlap", "accounting_period_preparer_conflict", "accounting_version_conflict", "idempotency_conflict"],
+            ["ApproveAccountingPeriodV1:422"] = ["accounting_invalid_reference", "accounting_period_already_closed", "accounting_period_invalid", "accounting_period_not_open", "accounting_period_not_proposed", "accounting_value_does_not_fit"],
+            ["CloseAccountingPeriodV1:400"] = ["accounting_request_invalid"],
+            ["CloseAccountingPeriodV1:409"] = ["accounting_concurrent_change", "accounting_period_conflict", "accounting_period_overlap", "accounting_period_preparer_conflict", "accounting_version_conflict", "idempotency_conflict"],
+            ["CloseAccountingPeriodV1:422"] = ["accounting_invalid_reference", "accounting_period_already_closed", "accounting_period_invalid", "accounting_period_not_open", "accounting_period_not_proposed", "accounting_value_does_not_fit"],
+            ["GetAccountingJournalsV1:400"] = ["accounting_request_invalid"],
+            ["GetAccountingJournalV1:400"] = ["accounting_request_invalid"],
+            ["GetAccountingPostingQueuesV1:400"] = ["accounting_request_invalid"],
         };
 
     private static readonly IReadOnlyDictionary<string, ComponentSchemaExpectation>
         ExpectedSuccessComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["JournalDetailV1"] = ObjectSchema(
+                    ["journal", "lines"],
+                    ("journal", "ref:JournalSummaryV1"),
+                    ("lines", "type:array;items:ref:JournalLineViewV1")),
+                ["JournalLineViewV1"] = ObjectSchema(
+                    ["lineNumber", "accountId", "debit", "credit"],
+                    ("lineNumber", "type:integer|string;format:int32"),
+                    ("accountId", "type:string;format:uuid"),
+                    ("debit", "type:string"),
+                    ("credit", "type:string")),
+                ["JournalPageV1"] = ObjectSchema(
+                    ["items", "nextCursor"],
+                    ("items", "type:array;items:ref:JournalSummaryV1"),
+                    ("nextCursor", "type:null|string")),
+                ["JournalSummaryV1"] = ObjectSchema(
+                    ["journalId", "kind", "sourceId", "postingPurpose", "postingRuleVersion", "currencyId", "transactionDate", "accountingDate", "valueDate", "periodId", "linkedJournalId", "totalDebit", "totalCredit", "lineCount", "storedAtUtc"],
+                    ("journalId", "type:string;format:uuid"),
+                    ("kind", "type:string"),
+                    ("sourceId", "type:string;format:uuid"),
+                    ("postingPurpose", "type:string"),
+                    ("postingRuleVersion", "type:string"),
+                    ("currencyId", "type:string;format:uuid"),
+                    ("transactionDate", "type:string;format:date"),
+                    ("accountingDate", "type:string;format:date"),
+                    ("valueDate", "type:null|string;format:date"),
+                    ("periodId", "type:string;format:uuid"),
+                    ("linkedJournalId", "type:null|string;format:uuid"),
+                    ("totalDebit", "type:string"),
+                    ("totalCredit", "type:string"),
+                    ("lineCount", "type:integer|string;format:int32"),
+                    ("storedAtUtc", "type:string;format:date-time")),
+                ["PendingValuationViewV1"] = ObjectSchema(
+                    ["sourceId", "postingPurpose", "postingRuleVersion", "linesAwaitingAmount", "firstMessageId"],
+                    ("sourceId", "type:string;format:uuid"),
+                    ("postingPurpose", "type:string"),
+                    ("postingRuleVersion", "type:string"),
+                    ("linesAwaitingAmount", "type:integer|string;format:int32"),
+                    ("firstMessageId", "type:string")),
+                ["PeriodPageV1"] = ObjectSchema(
+                    ["items", "nextCursor"],
+                    ("items", "type:array;items:ref:PeriodViewV1"),
+                    ("nextCursor", "type:null|string")),
+                ["PeriodViewV1"] = ObjectSchema(
+                    ["periodId", "companyId", "startsOn", "endsOn", "status", "version", "preparedByUserId", "preparedAtUtc", "approvedByUserId", "approvedAtUtc", "closedByUserId", "closedAtUtc", "isOwnProposal"],
+                    ("periodId", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("startsOn", "type:string;format:date"),
+                    ("endsOn", "type:string;format:date"),
+                    ("status", "type:string"),
+                    ("version", "type:integer|string;format:int64"),
+                    ("preparedByUserId", "type:string;format:uuid"),
+                    ("preparedAtUtc", "type:string;format:date-time"),
+                    ("approvedByUserId", "type:null|string;format:uuid"),
+                    ("approvedAtUtc", "type:null|string;format:date-time"),
+                    ("closedByUserId", "type:null|string;format:uuid"),
+                    ("closedAtUtc", "type:null|string;format:date-time"),
+                    ("isOwnProposal", "type:boolean")),
+                ["PostingExceptionViewV1"] = ObjectSchema(
+                    ["sourceId", "postingPurpose", "postingRuleVersion", "missingMappingKeys", "firstMessageId"],
+                    ("sourceId", "type:string;format:uuid"),
+                    ("postingPurpose", "type:string"),
+                    ("postingRuleVersion", "type:string"),
+                    ("missingMappingKeys", "type:array;items:type:string"),
+                    ("firstMessageId", "type:string")),
+                ["PostingQueuesV1"] = ObjectSchema(
+                    ["exceptions", "pending"],
+                    ("exceptions", "type:array;items:ref:PostingExceptionViewV1"),
+                    ("pending", "type:array;items:ref:PendingValuationViewV1")),
                 ["PurchaseOrderDetailView"] = ObjectSchema(
                     ["order", "lines"],
                     ("order", "ref:PurchaseOrderSummaryView"),
@@ -1389,6 +1526,14 @@ public sealed partial class OpenApiContractGenerationTests
         ExpectedRequestComponentSchemas =
             new Dictionary<string, ComponentSchemaExpectation>(StringComparer.Ordinal)
             {
+                ["PeriodCommandRequestV1"] = ObjectSchema(
+                    ["expectedVersion"],
+                    ("expectedVersion", "type:integer|string;format:int64")),
+                ["ProposePeriodRequestV1"] = ObjectSchema(
+                    ["periodId", "startsOn", "endsOn"],
+                    ("periodId", "type:string;format:uuid"),
+                    ("startsOn", "type:string;format:date"),
+                    ("endsOn", "type:string;format:date")),
                 ["ApprovePurchaseOrderRequest"] = ObjectSchema(
                     ["expectedVersion"],
                     ("expectedVersion", "type:string")),
@@ -2141,9 +2286,9 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("JWT", bearer.Value.GetProperty("bearerFormat").GetString());
 
         var operations = ReadOperations(root.GetProperty("paths"));
-        Assert.Equal(69, operations.Count);
+        Assert.Equal(77, operations.Count);
         Assert.Equal(
-            69,
+            77,
             operations.Select(operation => operation.OperationId)
                 .Distinct(StringComparer.Ordinal)
                 .Count());

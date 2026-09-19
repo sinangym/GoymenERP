@@ -164,6 +164,31 @@ public static class ErpPermissions
     /// <inheritdoc cref="PurchasingOrdersCreate"/>
     public const string PurchasingOrdersApprove = "purchasing.orders.approve";
 
+    /// <summary>
+    /// ACC-V0a: the Accounting owner's names (AccountingPermissionManifestV1), the backend owners' technical mapping
+    /// (Business #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Each read is its own
+    /// narrow name and writing is apart from reading (Sinan #66 5738113623 §4); approving a period opening is for a
+    /// person other than its preparer (Ö4, #66 5722637822), which the Accounting service enforces on the command, not
+    /// through this catalogue. Registered, not granted: no role, seed or user receives them here. Company-wide only:
+    /// a period belongs to its company. Not Critical (#66 5743488059).
+    /// </summary>
+    public const string AccountingPeriodsRead = "accounting.periods.read";
+
+    /// <inheritdoc cref="AccountingPeriodsRead"/>
+    public const string AccountingPeriodsPropose = "accounting.periods.propose";
+
+    /// <inheritdoc cref="AccountingPeriodsRead"/>
+    public const string AccountingPeriodsApprove = "accounting.periods.approve";
+
+    /// <inheritdoc cref="AccountingPeriodsRead"/>
+    public const string AccountingPeriodsClose = "accounting.periods.close";
+
+    /// <inheritdoc cref="AccountingPeriodsRead"/>
+    public const string AccountingJournalsRead = "accounting.journals.read";
+
+    /// <inheritdoc cref="AccountingPeriodsRead"/>
+    public const string AccountingPostingQueuesRead = "accounting.posting-queues.read";
+
     public const string IdentityProfileRead = "identity.profile.read";
     public const string IdentityAccessRequest = "identity.access.request";
     public const string IdentityAccessApprove = "identity.access.approve";
@@ -200,6 +225,12 @@ public static class ErpPermissions
             PurchasingOrdersCreate,
             PurchasingOrdersRead,
             PurchasingOrdersApprove,
+            AccountingPeriodsRead,
+            AccountingPeriodsPropose,
+            AccountingPeriodsApprove,
+            AccountingPeriodsClose,
+            AccountingJournalsRead,
+            AccountingPostingQueuesRead,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,
@@ -249,6 +280,12 @@ public static class ErpPermissions
             PurchasingOrdersCreate,
             PurchasingOrdersRead,
             PurchasingOrdersApprove,
+            AccountingPeriodsRead,
+            AccountingPeriodsPropose,
+            AccountingPeriodsApprove,
+            AccountingPeriodsClose,
+            AccountingJournalsRead,
+            AccountingPostingQueuesRead,
             FinanceBankAccountRead,
             FinanceBankAccountPropose,
             FinanceBankAccountApprove,

@@ -1,4 +1,5 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.Modules.Accounting.Application;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Product.Application.Contracts;
@@ -96,9 +97,16 @@ public sealed class SettingsHostWiringTests
     [Theory]
     [InlineData("finance")]
     [InlineData("sales")]
+    // ACC-V0a: a journal amount is a final TRY amount (Ö2 "nihai tutar 2"), the same approved profile.
+    [InlineData("accounting")]
     public async Task GDC_TRY_resolves_to_the_approved_money_profile_for_each_owner_s_key_through_the_host(string owner)
     {
-        var operation = owner == "finance" ? FinanceMoneyOperations.ManualBankReceiptV1 : SalesMoneyOperations.OrderDraftV1;
+        var operation = owner switch
+        {
+            "finance" => FinanceMoneyOperations.ManualBankReceiptV1,
+            "sales" => SalesMoneyOperations.OrderDraftV1,
+            _ => AccountingMoneyOperations.JournalAmountV1,
+        };
         using var factory = Host(Gdc);
         using var scope = factory.Services.CreateScope();
         var provider = scope.ServiceProvider.GetRequiredService<ISettingsPrerequisiteProvider>();
@@ -115,11 +123,15 @@ public sealed class SettingsHostWiringTests
     [Fact]
     public void The_money_catalog_answers_exactly_the_owners_published_operation_keys()
     {
-        // Settings references neither module, so its literals are pinned here, where both owners'
-        // constants are visible: an owner renaming its key turns this red instead of silently
+        // Settings references none of the owner modules, so its literals are pinned here, where every owner's
+        // constant is visible: an owner renaming its key turns this red instead of silently
         // turning its money read into settings_provider_unavailable.
         Assert.Equal(
-            new[] { FinanceMoneyOperations.ManualBankReceiptV1, SalesMoneyOperations.OrderDraftV1 }.Order(StringComparer.Ordinal),
+            new[]
+            {
+                FinanceMoneyOperations.ManualBankReceiptV1, SalesMoneyOperations.OrderDraftV1,
+                AccountingMoneyOperations.JournalAmountV1,
+            }.Order(StringComparer.Ordinal),
             ApprovedMoneyProfileCatalog.GdcTurkishLiraV1.Operations.Order(StringComparer.Ordinal));
     }
 

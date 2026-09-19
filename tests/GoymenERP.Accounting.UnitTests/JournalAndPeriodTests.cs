@@ -146,7 +146,7 @@ public sealed class JournalAndPeriodTests
         Assert.Equal(AccountingErrorCodes.PeriodClosed, error.Code);
         Assert.Empty(world.Ledger.Journals);
         // Nothing was committed, so the same delivery is still new once a valid period applies.
-        var open = new AccountingPeriod(Guid.NewGuid(), world.Company, new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30));
+        var open = AccountingWorld.Opened(world.Company, new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30));
         Assert.Equal(PostingOutcomeKind.Posted, world.Ledger.Receive(world.Request("m-1"), open).Kind);
     }
 
@@ -154,8 +154,8 @@ public sealed class JournalAndPeriodTests
     public void The_period_must_cover_the_accounting_date_and_belong_to_the_company()
     {
         var world = new AccountingWorld();
-        var october = new AccountingPeriod(Guid.NewGuid(), world.Company, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31));
-        var foreign = new AccountingPeriod(Guid.NewGuid(), world.OtherCompany, new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30));
+        var october = AccountingWorld.Opened(world.Company, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31));
+        var foreign = AccountingWorld.Opened(world.OtherCompany, new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30));
 
         Assert.Equal(
             AccountingErrorCodes.PeriodDoesNotCover,
@@ -198,6 +198,6 @@ public sealed class JournalAndPeriodTests
         Assert.Equal(
             AccountingErrorCodes.PeriodInvalid,
             Assert.Throws<AccountingDomainException>(
-                () => new AccountingPeriod(Guid.NewGuid(), Guid.NewGuid(), new DateOnly(2026, 9, 30), new DateOnly(2026, 9, 1))).Code);
+                () => AccountingWorld.Opened(Guid.NewGuid(), new DateOnly(2026, 9, 30), new DateOnly(2026, 9, 1))).Code);
     }
 }
