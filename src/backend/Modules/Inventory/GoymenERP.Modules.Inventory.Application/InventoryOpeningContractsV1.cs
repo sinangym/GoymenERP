@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using GoymenERP.Modules.Inventory.Domain;
 
 namespace GoymenERP.Modules.Inventory.Application;
 
@@ -94,6 +95,41 @@ public static class InventoryOpeningCodesV1
     public const string ProductIneligible = "inventory_product_ineligible";
     public const string ProductEligibilityUnavailable = "inventory_product_eligibility_unavailable";
     public const string NotFound = "not_found";
+    public const string ProductVersionInvalid = "product_version_invalid";
+    public const string QuantityInvalid = "quantity_invalid";
+    public const string IdempotencyKeyInvalid = "idempotency_key_invalid";
+
+    /// <summary>
+    /// The CLOSED problem codes of the record route, per HTTP status (the OpenAPI lists exactly these). The
+    /// service answers nothing outside them: an unmapped store or domain code is an internal fault (500), never
+    /// a guessed 4xx. 401/403/404/503 are answered by the host as platform problems; their codes are listed for
+    /// the logs and the tests.
+    /// </summary>
+    public static IReadOnlySet<string> Status400Codes { get; } = Set(ValidationFailed);
+
+    public static IReadOnlySet<string> Status409Codes { get; } = Set(IdempotencyConflict, InventoryStoreCodes.ConcurrentChange,
+        InventoryStoreCodes.OpeningConflict, InventoryStoreCodes.LabelConflict, InventoryStoreCodes.LabelCodeTaken,
+        InventoryStoreCodes.LotConflict, InventoryRuleCodes.LabelAlreadyInStock, InventoryStoreCodes.DuplicateSource,
+        InventoryStoreCodes.MovementIdConflict);
+
+    public static IReadOnlySet<string> Status422Codes { get; } = Set(LocationNotFound, LocationInactive, LocationExternal,
+        ProductIneligible);
+
+    public static IReadOnlySet<string> Status503Codes { get; } = Set(PermissionUnregistered, LocationUnavailable,
+        ProductEligibilityUnavailable, InventoryScaleCodes.ProfileUnusable, "settings_provider_unavailable",
+        "settings_unit_profile_not_found", "settings_profile_invalid", "settings_access_denied", "settings_decimal_invalid",
+        "settings_decimal_scale_exceeded");
+
+    /// <summary>
+    /// The codes of a 400's <c>errors[]</c>. The per-line Product codes of a 422 (<c>lines[i].*</c>) are
+    /// Product's own and not listed here.
+    /// </summary>
+    public static IReadOnlySet<string> IssueCodes { get; } = Set(IdempotencyKeyInvalid, InventoryStoreCodes.ValueDoesNotFit,
+        InventoryRuleCodes.InvalidOpeningCount, ProductVersionInvalid, QuantityInvalid, InventoryRuleCodes.QuantityNotPositive,
+        InventoryRuleCodes.KilogramPrecisionExceeded, InventoryScaleCodes.ScaleExceeded, InventoryRuleCodes.LabelCompanyMismatch,
+        InventoryRuleCodes.MissingReference, InventoryRuleCodes.InvalidLabelOperation);
+
+    private static IReadOnlySet<string> Set(params string[] codes) => codes.ToHashSet(StringComparer.Ordinal);
 }
 
 /// <summary>
