@@ -242,9 +242,10 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         var constraint = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync("UPDATE sales.Drafts SET ApprovalState = 3 WHERE Id = @id", ("@id", third.Id)));
         Assert.Equal(547, constraint.Number);
         Assert.Contains("CK_Drafts_Approval", constraint.Message, StringComparison.Ordinal);
-        // Nothing else of the draft moved along the way: lines, slices and the number counter are as stored.
-        Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftLines"));
-        Assert.Equal(3, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Drafts WHERE Kind = 1 AND State = 1 AND Revision = 0"));
+        // Nothing else of the draft moved along the way: lines, slices and the number counter are as stored — the three
+        // one-line drafts plus the three-line `wide` draft of the line-page check above (6 lines, 4 drafts).
+        Assert.Equal(6, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftLines"));
+        Assert.Equal(4, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Drafts WHERE Kind = 1 AND State = 1 AND Revision = 0"));
     }
 
     [SqlServerFact]
