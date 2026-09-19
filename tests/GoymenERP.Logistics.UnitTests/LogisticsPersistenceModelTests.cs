@@ -4,6 +4,7 @@ using GoymenERP.Modules.Logistics.Application.Contracts;
 using GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 using GoymenERP.Modules.Logistics.Infrastructure.Shell;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 
 namespace GoymenERP.Logistics.UnitTests;
 
@@ -40,8 +41,11 @@ public sealed class LogisticsPersistenceModelTests
         using var context = Context();
         var attempts = context.Model.FindEntityType(typeof(LoadingAttemptRow))!;
         Assert.Equal(["CompanyId", "CommandName", "IdempotencyKeyHash"], attempts.FindPrimaryKey()!.Properties.Select(property => property.Name).ToArray());
-        Assert.Equal(LogisticsDbContext.IdentityCollation, attempts.FindProperty(nameof(LoadingAttemptRow.IdempotencyKeyHash))!.GetCollation());
-        var creates = attempts.GetIndexes().Single(index => index.GetDatabaseName() == "UX_LoadingAttempts_InstructionId");
+        // Collations and index filters are design-time configuration, not in the read-optimized runtime model (the Sales persistence test's shape).
+        var design = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(LoadingAttemptRow))!;
+        Assert.Equal(LogisticsDbContext.IdentityCollation, design.FindProperty(nameof(LoadingAttemptRow.IdempotencyKeyHash))!.GetCollation());
+        Assert.Equal(LogisticsDbContext.IdentityCollation, design.FindProperty(nameof(LoadingAttemptRow.CommandName))!.GetCollation());
+        var creates = design.GetIndexes().Single(index => index.GetDatabaseName() == "UX_LoadingAttempts_InstructionId");
         Assert.True(creates.IsUnique);
         Assert.Equal("[InstructionId] IS NOT NULL AND [CommandName] = N'logistics.loading-instruction.create.v1'", creates.GetFilter());
         var lines = context.Model.FindEntityType(typeof(LoadingInstructionLineRow))!;
