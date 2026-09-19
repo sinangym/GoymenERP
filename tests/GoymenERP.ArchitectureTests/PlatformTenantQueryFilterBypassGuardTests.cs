@@ -148,7 +148,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // sales
             ["tools/relational_inventory/sales.txt"] =
-                "e9d370fe16a4dc85de31dd3b870d72bb22779e92e05cb27028d7951bb4b103d5",
+                "2997befbcffefecf9ebcd4f6cecb32e4769fc87e5caae65eaa5b0a6cad569a94",
         };
     private const string ContinuousIntegrationWorkflowPath = ".github/workflows/ci.yml";
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
@@ -180,7 +180,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "886fd0d0a45de77804e1e6f2d2edef2c487299a4192717987779d5b0169edb03",
+                "073e79e6f4172e33d6ac8cd21369184829196cd9049795e57d0ab32441b4b816",
             // Re-measured for MFG-API (#313): the ADR-011 command log (CommandRecords) is mapped here, company-
             // scoped with the CompanyId filter like every other tenant row.
             // MFG-5 (#303): company-scoped like Organization; every tenant row and AuditEvent carries the
@@ -438,7 +438,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Sales.Infrastructure/"
                  + "SalesModuleExtensions.cs"] =
                     new(
-                        "c8731cff0edf9073c5e245d4f8e9576254e6398cc1a54bc56a88e660cac6df9f",
+                        "e9e9bc39b1e3291de032e62a3ab2d2ebd0ba70e32c8b2ad7828207e6c331cfdc",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -446,11 +446,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // SALES-P2 (#315): the SqlClient namespace only to recognise a unique-key violation
                 // (SqlException 2601/2627) after SaveChanges, as the other module stores do. No
-                // connection, command or raw SQL.
+                // connection, command or raw SQL. Re-fingerprinted for SALES-A1: the approval commands
+                // (one save each, attempts keyed per command); SqlClient count unchanged.
                 ["src/backend/Modules/Sales/"
                  + "GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs"] =
                     new(
-                        "eb7eefaefea26f02d6abf160acf69bfb030be1be1073b2a22185a4fe4608363c",
+                        "a8c96902696637b45c2b650f60ad17d8dbec3d975b999987b510a14122dd5bc5",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -526,6 +527,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         ReviewedMigrationMutationSources =
             new Dictionary<string, ReviewedMigrationMutationSource>(StringComparer.Ordinal)
             {
+                // SALES-A1: the Down's only raw SQL is the refusal (51045) while any draft left Preparing;
+                // forward fix, no approval fact is dropped.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260919120000_AddDraftApproval.cs"] =
+                    new("680dfb5f4280e64eadc2dfbd32cf6737573466095e5a88b29b0f1e1dbae8fded",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/20260912175128_InitialProductDrafts.cs"] =
                     new("09b167e9837c486f8487bc8a30518d37a98ee90d6cea5842a40df6fd7c7e00f8",
                         new Dictionary<string, int>(StringComparer.Ordinal)

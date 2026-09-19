@@ -23,6 +23,8 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
     [Theory]
     [InlineData(SalesPermissionManifestV1.DraftsCreate, ErpPermissions.SalesDraftsCreate)]
     [InlineData(SalesPermissionManifestV1.DraftsRead, ErpPermissions.SalesDraftsRead)]
+    // SALES-A1: the approval name. Company-wide, not Critical (the reason is on ErpPermissions.SalesOrdersApprove).
+    [InlineData(SalesPermissionManifestV1.OrdersApprove, ErpPermissions.SalesOrdersApprove)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);
@@ -30,6 +32,13 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         Assert.Single(ErpPermissions.All, known => known == ownerName);
         Assert.True(ErpPermissions.RequiresCompanyWideScope(ownerName));
         Assert.False(ErpPermissions.IsCritical(ownerName));
+    }
+
+    [Fact]
+    public void Every_owner_name_is_registered_and_nothing_else_under_sales()
+    {
+        Assert.Equal(SalesPermissionManifestV1.Names.Order(StringComparer.Ordinal),
+            ErpPermissions.All.Where(name => name.StartsWith("sales.", StringComparison.Ordinal)).Order(StringComparer.Ordinal));
     }
 
     [Fact]
