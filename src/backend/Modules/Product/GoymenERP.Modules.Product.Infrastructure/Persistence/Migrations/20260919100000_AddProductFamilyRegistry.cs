@@ -129,6 +129,7 @@ namespace GoymenERP.Modules.Product.Infrastructure.Persistence.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_TemplateFields", x => new { x.TemplateId, x.TemplateVersion, x.Key });
+                    table.CheckConstraint("CK_TemplateFields_Candidate", "[Required] = 0 OR [AllowsCandidate] = 0");
                     table.CheckConstraint("CK_TemplateFields_Condition", "([AppliesWhenField] IS NULL AND [AppliesWhenCode] IS NULL) OR ([AppliesWhenField] IS NOT NULL AND [AppliesWhenCode] IS NOT NULL)");
                     table.CheckConstraint("CK_TemplateFields_Key", "LEN([Key]) > 0 AND [Position] >= 1");
                     table.CheckConstraint("CK_TemplateFields_Kind", "([Kind] = 1 AND [Dictionary] IS NULL AND [AllowsCandidate] = 0 AND [ParentField] IS NULL) OR ([Kind] = 2 AND [Dictionary] IS NOT NULL AND LEN([Dictionary]) > 0)");

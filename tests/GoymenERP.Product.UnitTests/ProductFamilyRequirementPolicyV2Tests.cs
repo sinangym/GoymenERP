@@ -350,6 +350,7 @@ public sealed class ProductFamilyRequirementPolicyV2Tests
     [InlineData("role-conditional")]
     [InlineData("role-takes-candidates")]
     [InlineData("role-wrong-kind")]
+    [InlineData("required-field-takes-candidates")]
     [InlineData("quality-without-approved-entry")]
     [InlineData("no-explicit-none")]
     [InlineData("two-explicit-nones")]
@@ -443,6 +444,8 @@ public sealed class ProductFamilyRequirementPolicyV2Tests
             {
                 Kind = ProductTemplateFieldKindV2.DictionaryReference, Dictionary = "syn-grades",
             })),
+            // ORG #334 P3-1: an optional field that takes candidates made required would let a candidate pass.
+            "required-field-takes-candidates" => WithFields(ChangeField(SubGrade, field => field with { Required = true })),
             "quality-without-approved-entry" => WithEntries(definition.Entries.Where(entry => entry.Dictionary != "syn-grades"
                 || entry.Status == ProductDefinitionEntryStatusV2.Candidate)),
             "no-explicit-none" => WithEntries(definition.Entries.Select(entry => entry with { IsExplicitNone = false })),

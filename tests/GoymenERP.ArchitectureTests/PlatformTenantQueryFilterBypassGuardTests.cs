@@ -144,7 +144,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // product
             ["tools/relational_inventory/product.txt"] =
-                "a98c26fb0a034da5d048ee4c1dd55b33b4fb0c18750acfac1329887ef2d39aba",
+                "b6f7b933a360d1780e3454f46f38d9244ffe9085a2ae6264e2f2ccbd51d749a8",
 
             // sales
             ["tools/relational_inventory/sales.txt"] =
@@ -205,7 +205,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "49a56885af157d474d86a1726c0e1591bcf612262036d81cf8f1e73be9571cdb",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
-                "93f53fbed6e11dcac4d5412cfdabc4fc70daa59838ad8bd0783221353a776439",
+                "f1de76546547ef1f5e71ada046a865bb71382d7b7fbd9bfffc403d939c11b390",
             ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
              + "Persistence/GroupSharedCommandDbContext.cs"] =
                 "6fe01949b839e3005d33c3aa00c02982add6a1af63482005b43b277b95c5dfc3"
@@ -223,8 +223,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // here (no new database capability; MigrateAsync stays 2).
                 // Re-measured for #316 on top of C3: ProductShellCapabilityProvider is registered here (a
                 // singleton shell provider; no new database capability, MigrateAsync stays 2).
+                // Re-measured for PRD-FAM-1 (#334): the family definition source and policy are the V2
+                // registry pair (a scoped EF read over ProductDbContext; no new database capability,
+                // MigrateAsync stays 2).
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs"] =
-                    new("7830c950f624a2f0b29554841dcdb7cea1ab83a9fa70fadd40e2f8f3bae66419",
+                    new("5c532feecc486eaeccde7db76beeb3d7ecdac7c6fe1650ad94311298c2616d2f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductSqlCommandRunner.cs"] =
@@ -525,6 +528,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             {
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/20260912175128_InitialProductDrafts.cs"] =
                     new("09b167e9837c486f8487bc8a30518d37a98ee90d6cea5842a40df6fd7c7e00f8",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // PRD-FAM-1 (#334): the Down's only raw SQL is Product's existing rollback refusal (51044)
+                // while any card or registry row exists; forward fix, no row is dropped.
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/20260919100000_AddProductFamilyRegistry.cs"] =
+                    new("0327d0775e1f51dbe504e1797ed15af897b08e8474c68756ab1d91fd88de9844",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20260912175120_AddExplicitProductAssignments.cs"] =

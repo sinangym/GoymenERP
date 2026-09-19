@@ -210,7 +210,9 @@ public static class ProductFamilyDefinitionRulesV2
         foreach (var field in fields)
         {
             var reference = field.Kind == ProductTemplateFieldKindV2.DictionaryReference;
+            // A candidate never satisfies a required field: no required field takes candidates (ORG #334 P3-1).
             if (!Enum.IsDefined(field.Kind)
+                || (field.Required && field.AllowsCandidate)
                 || (reference ? string.IsNullOrWhiteSpace(field.Dictionary)
                     || definition.Entries.All(entry => entry.Dictionary != field.Dictionary)
                     : field.Dictionary is not null || field.AllowsCandidate || field.ParentField is not null)

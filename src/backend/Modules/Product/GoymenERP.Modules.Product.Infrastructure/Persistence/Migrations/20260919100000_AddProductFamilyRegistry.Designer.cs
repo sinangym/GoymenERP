@@ -393,6 +393,8 @@ namespace GoymenERP.Modules.Product.Infrastructure.Persistence.Migrations
 
                     b.ToTable("TemplateFields", "product", t =>
                         {
+                            t.HasCheckConstraint("CK_TemplateFields_Candidate", "[Required] = 0 OR [AllowsCandidate] = 0");
+
                             t.HasCheckConstraint("CK_TemplateFields_Condition", "([AppliesWhenField] IS NULL AND [AppliesWhenCode] IS NULL) OR ([AppliesWhenField] IS NOT NULL AND [AppliesWhenCode] IS NOT NULL)");
 
                             t.HasCheckConstraint("CK_TemplateFields_Key", "LEN([Key]) > 0 AND [Position] >= 1");
