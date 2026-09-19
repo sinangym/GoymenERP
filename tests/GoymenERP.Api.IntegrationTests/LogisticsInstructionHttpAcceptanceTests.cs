@@ -83,8 +83,8 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
         var service = new StubService
         {
             ApprovedLines = query => Task.FromResult(new LogisticsApprovedOrderLinePage(
-                [new LogisticsApprovedOrderLineView(Guid.NewGuid(), "SENTETIK SO-0001", Guid.NewGuid(), 1, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "7",
-                    "GDC-001", "Sentetik rulo", Guid.NewGuid(), "kg", "12.500", new DateOnly(2026, 9, 25), 0)],
+                [new LogisticsApprovedOrderLineView(Guid.NewGuid(), "SENTETIK SO-0001", Guid.NewGuid(), 1, Guid.NewGuid(), Guid.NewGuid(), "Sentetik Müşteri",
+                    Guid.NewGuid(), "7", "GDC-001", "Sentetik rulo", Guid.NewGuid(), "kg", "12.500", new DateOnly(2026, 9, 25), 0)],
                 query.Cursor is null ? "SENTETIK-next" : null)),
         };
         using var host = CreateHost(service);
@@ -96,8 +96,8 @@ public sealed class LogisticsInstructionHttpAcceptanceTests(GoymenErpApiFactory 
             var body = await response.Content.ReadFromJsonAsync<JsonElement>();
             var item = Assert.Single(body.GetProperty("items").EnumerateArray());
             Assert.Equal(
-                ["orderId", "documentNo", "lineId", "lineNo", "customerPartyId", "companyAccountId", "productId", "productVersion", "productCode", "productName",
-                    "unitId", "unitCode", "quantity", "requestedDeliveryDate", "revision"],
+                ["orderId", "documentNo", "lineId", "lineNo", "customerPartyId", "companyAccountId", "customerName", "productId", "productVersion", "productCode",
+                    "productName", "unitId", "unitCode", "quantity", "requestedDeliveryDate", "revision"],
                 item.EnumerateObject().Select(property => property.Name).ToArray());
             Assert.Equal(("12.500", "SENTETIK-next"), (item.GetProperty("quantity").GetString(), body.GetProperty("nextCursor").GetString()));
         }

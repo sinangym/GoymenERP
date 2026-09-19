@@ -193,8 +193,9 @@ export type LogisticsProblemCode = (typeof LOGISTICS_PROBLEM_CODE)[keyof typeof 
 /**
  * `GET /api/v1/logistics/loading-instructions/approved-order-lines?pageSize&cursor` (LOG-4b), under the
  * EXISTING `logistics.loading-instructions.create` grant: the APPROVED sales lines a loading instruction
- * may be opened on, as the Logistics owner answers them — identity, product name, unit code, the exact
- * quantity text and the requested delivery date. No price, discount or payment member EXISTS in the
+ * may be opened on, as the Logistics owner answers them — identity, the customer's NAME from Cari (the trade
+ * name, else the legal name; Business 5745076917: ids are not presentation), product name, unit code, the
+ * exact quantity text and the requested delivery date. No price, discount or payment member EXISTS in the
  * wire type (Sinan §4, #66 5738113623: the Sevkiyatçı sees orders, never prices). Deny-first here too:
  * the decoder takes exactly these members and refuses a body carrying any other.
  */
@@ -207,6 +208,8 @@ export interface ApprovedOrderLine {
   readonly lineNo: number
   readonly customerPartyId: string
   readonly companyAccountId: string
+  /** The Cari party's display name (trade name, else legal name), the Logistics owner's answer; never empty. */
+  readonly customerName: string
   readonly productId: string
   readonly productVersion: string
   readonly productCode: string
@@ -514,13 +517,13 @@ export function decodeProblem(value: unknown, status: number): LogisticsProblem 
 /* ── The approved-order-lines read ───────────────────────────────────────── */
 
 export const APPROVED_ORDER_LINE_KEYS = [
-  'orderId', 'documentNo', 'lineId', 'lineNo', 'customerPartyId', 'companyAccountId', 'productId', 'productVersion',
+  'orderId', 'documentNo', 'lineId', 'lineNo', 'customerPartyId', 'companyAccountId', 'customerName', 'productId', 'productVersion',
   'productCode', 'productName', 'unitId', 'unitCode', 'quantity', 'requestedDeliveryDate', 'revision',
 ] as const
 
 const isOwnerVersion = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0 && v.length <= 128
 
-/** Exactly the fifteen members; a body with any other member (a price, a discount, a payment term) is refused. */
+/** Exactly the sixteen members; a body with any other member (a price, a discount, a payment term) is refused. */
 export function decodeApprovedOrderLine(value: unknown): ApprovedOrderLine | null {
   const o = exact(value, APPROVED_ORDER_LINE_KEYS)
   if (
@@ -531,6 +534,7 @@ export function decodeApprovedOrderLine(value: unknown): ApprovedOrderLine | nul
     !isPositiveInt(o.lineNo, LIMITS.lines) ||
     !isReferenceId(o.customerPartyId) ||
     !isReferenceId(o.companyAccountId) ||
+    !isText(o.customerName, 400) ||
     !isReferenceId(o.productId) ||
     !isOwnerVersion(o.productVersion) ||
     !isText(o.productCode, 200) ||
@@ -550,6 +554,7 @@ export function decodeApprovedOrderLine(value: unknown): ApprovedOrderLine | nul
     lineNo: o.lineNo,
     customerPartyId: o.customerPartyId,
     companyAccountId: o.companyAccountId,
+    customerName: o.customerName,
     productId: o.productId,
     productVersion: o.productVersion,
     productCode: o.productCode,

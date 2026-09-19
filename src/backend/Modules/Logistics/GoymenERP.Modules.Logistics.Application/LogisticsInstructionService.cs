@@ -251,10 +251,41 @@ public sealed class LogisticsInstructionService(
             throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.ReferenceProviderInvalid);
         }
 
+        // Business 5745076917: the customer is shown by NAME (the Cari owner's, through the party-account port), never by an id.
+        // One fenced owner read per distinct customer of the page; a customer the owner no longer answers for is not loadable
+        // (the create would refuse it), so its lines are left out; a denial or an outage is the owner's answer for the whole read.
+        var names = new Dictionary<(Guid Party, Guid Account), string>();
+        var missing = new HashSet<(Guid Party, Guid Account)>();
+        foreach (var customer in page.Items.Select(item => (Party: item.PartyId, Account: item.CompanyAccountId)).Distinct())
+        {
+            var answer = await GuardedAsync(scope, bindings.CreatePermission,
+                () => accounts.GetAuthorizedAsync(customer.Party, customer.Account, cancellationToken), cancellationToken);
+            switch (answer.Outcome)
+            {
+                case LogisticsPartyAccountOutcomeV1.Found when answer.Account is { } account:
+                    if (account.PartyId != customer.Party || account.CompanyAccountId != customer.Account || account.CompanyId != scope.CompanyId
+                        || string.IsNullOrWhiteSpace(account.DisplayName))
+                    {
+                        throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.ReferenceProviderInvalid);
+                    }
+
+                    names[customer] = account.DisplayName;
+                    break;
+                case LogisticsPartyAccountOutcomeV1.NotFound:
+                    missing.Add(customer);
+                    break;
+                case LogisticsPartyAccountOutcomeV1.Denied:
+                    throw new LogisticsInstructionServiceException(403, "forbidden");
+                default:
+                    throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.CounterpartyProviderUnavailable);
+            }
+        }
+
         return new LogisticsApprovedOrderLinePage(
-            [.. page.Items.Select(item => new LogisticsApprovedOrderLineView(item.OrderId, item.DocumentNo, item.LineId, item.LineNo, item.PartyId,
-                item.CompanyAccountId, item.ProductId, item.ProductVersion, item.ProductCode, item.ProductName, item.OrderUnitId, item.UnitCode,
-                item.QuantityText, item.RequestedDeliveryDate, item.Revision))],
+            [.. page.Items.Where(item => !missing.Contains((item.PartyId, item.CompanyAccountId)))
+                .Select(item => new LogisticsApprovedOrderLineView(item.OrderId, item.DocumentNo, item.LineId, item.LineNo, item.PartyId,
+                    item.CompanyAccountId, names[(item.PartyId, item.CompanyAccountId)], item.ProductId, item.ProductVersion, item.ProductCode,
+                    item.ProductName, item.OrderUnitId, item.UnitCode, item.QuantityText, item.RequestedDeliveryDate, item.Revision))],
             page.NextCursor);
     }
 

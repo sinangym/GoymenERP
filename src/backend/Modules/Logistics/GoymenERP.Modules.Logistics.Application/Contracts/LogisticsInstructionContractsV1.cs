@@ -70,8 +70,9 @@ public sealed record LogisticsFieldError(string Field, string Code);
 /// the Sevkiyatçı sees orders, never prices — deny-first, so no price, discount, currency or payment member
 /// exists here; a contract test pins the member names). Read under the create name; the Sales owner answers.
 /// </summary>
+/// <param name="CustomerName">The Cari party's presentation name (trade name, else legal name) through the Logistics party-account port — Business 5745076917: a customer is shown by name, never by a technical id.</param>
 public sealed record LogisticsApprovedOrderLineView(
-    Guid OrderId, string DocumentNo, Guid LineId, int LineNo, Guid CustomerPartyId, Guid CompanyAccountId,
+    Guid OrderId, string DocumentNo, Guid LineId, int LineNo, Guid CustomerPartyId, Guid CompanyAccountId, string CustomerName,
     Guid ProductId, string ProductVersion, string ProductCode, string ProductName, Guid UnitId, string UnitCode,
     string Quantity, DateOnly? RequestedDeliveryDate, int Revision);
 

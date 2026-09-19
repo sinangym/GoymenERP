@@ -362,8 +362,10 @@ public sealed class CounterpartyLogisticsPartyAccountPortV1(ICompanyContext comp
         }
 
         var account = accounts[0];
+        // LOG-4b (Business 5745076917): the party's names travel with the answer so the loading screens show the customer by
+        // name, never by a technical id; still nothing of price or finance.
         return new(LogisticsPartyAccountOutcomeV1.Found, new LogisticsPartyAccountV1(party.Id, account.Id, account.CompanyId,
-            party.IsActive, account.IsActive, party.Version, account.Version));
+            party.IsActive, account.IsActive, party.Version, account.Version, party.LegalName, party.TradeName));
     }
 
     private bool IsCurrent() =>
