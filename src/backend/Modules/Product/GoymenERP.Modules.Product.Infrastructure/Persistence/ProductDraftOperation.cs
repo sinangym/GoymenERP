@@ -3,6 +3,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Product.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Domain.Products;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Product.Infrastructure.Persistence;
@@ -19,14 +20,14 @@ internal static class ProductDraftOperation
 
     public static async Task<ProductDraftWriteResult> StageAsync(ProductDbContext context,
         GroupSharedMasterCommandContext authority, ProductCommandIntent intent, TimeProvider clock,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, ISettingsUnitIdentityCatalogV1? units = null)
     {
         if (context.ChangeTracker.HasChanges())
             throw new InvalidOperationException("A Product attempt requires a fresh write context.");
         var envelope = JsonSerializer.Deserialize<FrozenEnvelope>(intent.CanonicalRequestJson, Json)
             ?? throw new InvalidOperationException("The frozen Product envelope is missing.");
         var operation = envelope.Operation;
-        var catalog = new ProductRegistryReferenceCatalog(context, authority);
+        var catalog = new ProductRegistryReferenceCatalog(context, authority, units);
         var validator = new ProductDraftValidator(catalog);
         if (operation == "product.draft.create.v1")
         {
