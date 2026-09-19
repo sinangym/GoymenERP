@@ -45,9 +45,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // (#321) and PRD-UNIT-1 (#335): the staged Finance and Manufacturing shell providers registered before the
     // shell authority is chosen (C+O+P+S+F+M row), beside #330's one call to
     // C01E2eFixtureWriterActivation.Configure and #335's one singleton registration of Settings' unit-identity
-    // catalog. No OpenAPI-generation, network or hosted-service surface of the startup source changed otherwise.
+    // catalog. Re-fingerprinted for INV-OPEN-1 part 2: two scoped host ports of the opening command
+    // (Organization's location module read, Product's stock eligibility). No OpenAPI-generation, network or
+    // hosted-service surface of the startup source changed otherwise.
     private const string ReviewedOpenApiStartupFingerprint =
-        "e737f071a4361b6369742c6c725efc4e10bcf63a933bfe942499c844e290c215";
+        "1636f6d9dec60972df11aa502145c9ac660be617d8a6a69de4b80031a456c600";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
@@ -356,7 +358,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // catch filter, as the other module stores do. No connection, command or raw SQL.
                 ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/InventoryOpeningCommandService.cs"] =
                     new(
-                        "0fa5b01cefdf49c8318a7153e6b85961f1775430c6a647b502b7630e10b4f320",
+                        "ba4b8c38495ffdded4eadeed4e858a7ef45e49ee94900da6e25c62cdb39609a3",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
