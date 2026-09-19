@@ -298,8 +298,21 @@ public sealed class LogisticsInstructionServiceTests
         // longer answers for is not loadable and is left out; the owner's denial or outage is the whole read's answer.
         world.Accounts.Fault = "no-trade-name";
         Assert.Equal("Sentetik Müşteri Anonim Şirketi", Assert.Single((await world.Service().GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery())).Items).CustomerName);
+        // #358 P1 (coordinator ruling): a customer the Cari owner does not answer (a missing grant reads the same as a missing
+        // party there) keeps its line on the page under a labelled reference, never a name and never a dropped line; a
+        // genuinely empty approved set is an empty page — the two must never look alike.
         world.Accounts.Fault = "not-found";
-        Assert.Empty((await world.Service().GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery())).Items);
+        var unreadable = Assert.Single((await world.Service().GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery())).Items);
+        Assert.Equal((OrderLine, $"ref. …{Party.ToString("D")[^8..]}"), (unreadable.LineId, unreadable.CustomerName));
+        Assert.DoesNotContain(Party.ToString("D"), unreadable.CustomerName, StringComparison.OrdinalIgnoreCase);
+        world.Accounts.Fault = "";
+        world.ResetOwnerCalls();
+        world.OrderLines.Fault = "empty";
+        var none = await world.Service().GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery());
+        Assert.Empty(none.Items);
+        Assert.Null(none.NextCursor);
+        Assert.Equal(0, world.Accounts.Calls);
+        world.OrderLines.Fault = "";
         world.Accounts.Fault = "unavailable";
         var cari = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() => world.Service().GetApprovedOrderLinesAsync(new LogisticsApprovedOrderLinesQuery()));
         Assert.Equal((503, LogisticsProblemCodesV1.CounterpartyProviderUnavailable), (cari.Status, cari.Code));
@@ -431,6 +444,7 @@ public sealed class LogisticsInstructionServiceTests
             {
                 "throws" => Task.FromException<SalesApprovedLinePageV1>(new InvalidOperationException("synthetic outage")),
                 "bad-cursor" => Task.FromException<SalesApprovedLinePageV1>(new ArgumentException("synthetic cursor")),
+                "empty" => Task.FromResult(new SalesApprovedLinePageV1([], null)),
                 "over-cap" => Task.FromResult(new SalesApprovedLinePageV1(
                     [
                         new SalesApprovedLineReferenceV1(Company, Order, "SENTETIK SO-0001", OrderLine, 1, Party, Account, Product, "7", "GDC-001",

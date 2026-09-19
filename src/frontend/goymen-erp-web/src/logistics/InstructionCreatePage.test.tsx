@@ -172,6 +172,16 @@ describe('L-03 Yeni Yükleme Talimatı', () => {
     expect(within(select).getByRole('option', { name: 'SENTETIK browser-suite:l04 Yükleme müşterisi (SO-2026-0002)' })).toBeTruthy()
   })
 
+  it('a customer the Cari owner did not name is offered under its labelled reference, never dropped (#358 P1)', async () => {
+    // The server's fallback shape (the Finance #356/#357 reference): non-empty text the decoder accepts, read as a reference.
+    installFetch({ onApprovedLines: () => json({ items: [approvedOrderLine({ customerName: 'ref. …11111111' })], nextCursor: null }) })
+    renderLogisticsApp('/lojistik/yukleme-talimatlari/yeni')
+    const select = await screen.findByLabelText(T.field.customer)
+    expect(await within(select).findByRole('option', { name: 'ref. …11111111' })).toBeTruthy()
+    expect(screen.queryByTestId('logistics-no-approved')).toBeNull()
+    expect(document.body.textContent).not.toContain(PARTY)
+  })
+
   it('a body carrying a price member is refused as malformed: no customer is offered and nothing can be sent', async () => {
     const harness = installFetch({ onApprovedLines: () => json({ items: [approvedOrderLine({ unitPrice: '12.50' })], nextCursor: null }) })
     renderLogisticsApp('/lojistik/yukleme-talimatlari/yeni')

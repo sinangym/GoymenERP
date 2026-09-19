@@ -254,12 +254,15 @@ public sealed class LogisticsInstructionService(
         }
 
         // Business 5745076917: the customer is shown by NAME (the Cari owner's, through the party-account port), never by an id.
-        // One fenced owner read per DISTINCT customer of the page, memoized for this request only (`names` / `missing` live in
-        // this call; never across requests, never an authority shortcut: the #276 fence is measured around every owner read);
-        // the line cap bounds the number of reads. A customer the owner no longer answers for is not loadable (the create would
-        // refuse it), so its lines are left out; a denial or an outage is the owner's answer for the whole read.
+        // One fenced owner read per DISTINCT customer of the page, memoized for this request only (`names` lives in this call;
+        // never across requests, never an authority shortcut: the #276 fence is measured around every owner read); the line
+        // cap bounds the number of reads. A customer the owner does not answer for (#358 P1, coordinator ruling: the Cari
+        // owner answers a missing grant exactly as a missing party — nothing — so a consumer cannot tell them apart) keeps its
+        // lines on the page under a LABELLED REFERENCE (the Finance #356/#357 shape, "ref. …" + the last 8 of the party id),
+        // never dropped: an empty page would say "nothing to load" while lines exist. The reference reads as a reference, not
+        // a name; picking such a line meets the create's own explicit refusal. A denial or an outage is the owner's answer
+        // for the whole read.
         var names = new Dictionary<(Guid Party, Guid Account), string>();
-        var missing = new HashSet<(Guid Party, Guid Account)>();
         foreach (var customer in page.Items.Select(item => (Party: item.PartyId, Account: item.CompanyAccountId)).Distinct())
         {
             var answer = await GuardedAsync(scope, bindings.CreatePermission,
@@ -276,7 +279,7 @@ public sealed class LogisticsInstructionService(
                     names[customer] = account.DisplayName;
                     break;
                 case LogisticsPartyAccountOutcomeV1.NotFound:
-                    missing.Add(customer);
+                    names[customer] = CustomerReference(customer.Party);
                     break;
                 case LogisticsPartyAccountOutcomeV1.Denied:
                     throw new LogisticsInstructionServiceException(403, "forbidden");
@@ -286,12 +289,15 @@ public sealed class LogisticsInstructionService(
         }
 
         return new LogisticsApprovedOrderLinePage(
-            [.. page.Items.Where(item => !missing.Contains((item.PartyId, item.CompanyAccountId)))
+            [.. page.Items
                 .Select(item => new LogisticsApprovedOrderLineView(item.OrderId, item.DocumentNo, item.LineId, item.LineNo, item.PartyId,
                     item.CompanyAccountId, names[(item.PartyId, item.CompanyAccountId)], item.ProductId, item.ProductVersion, item.ProductCode,
                     item.ProductName, item.OrderUnitId, item.UnitCode, item.QuantityText, item.RequestedDeliveryDate, item.Revision))],
             page.NextCursor);
     }
+
+    /// <summary>The labelled technical reference shown in place of a customer name the Cari owner did not answer: never mistakable for a title.</summary>
+    internal static string CustomerReference(Guid partyId) => $"ref. …{partyId.ToString("D")[^8..]}";
 
     // ---- mutations ------------------------------------------------------------------------------
 
