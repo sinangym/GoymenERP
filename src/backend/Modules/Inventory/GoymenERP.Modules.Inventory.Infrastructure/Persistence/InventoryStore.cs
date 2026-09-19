@@ -677,7 +677,7 @@ public sealed partial class InventoryStore(
         // company racing — a retry reads the stored record — or an id another company holds, invisible
         // here under the tenant filter: a retry would collide forever, so that is a conflict with no
         // retry advice, and nothing about the other record is disclosed. The colliding id is the one SQL
-        // names as the duplicate key; if it cannot be read, the answer stays the retryable one.
+        // names as the duplicate key in that key's own error; if it cannot be read, the answer stays the retryable one.
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -695,12 +695,12 @@ public sealed partial class InventoryStore(
                 var message when message.Contains("IX_Labels_CompanyId_Code", StringComparison.Ordinal) => InventoryStoreCodes.LabelCodeTaken,
                 var message when message.Contains("PK_Movements", StringComparison.Ordinal) => InventoryStoreCodes.ConcurrentChange,
                 var message when message.Contains("'PK_Lots'", StringComparison.Ordinal) =>
-                    DuplicateKey(message) is { } lotId
+                    DuplicateKey(Errors(sql), "'PK_Lots'") is { } lotId
                     && !await dbContext.Lots.AsNoTracking().AnyAsync(row => row.Id == lotId, cancellationToken)
                         ? InventoryStoreCodes.LotConflict
                         : InventoryStoreCodes.ConcurrentChange,
                 var message when message.Contains("'PK_Labels'", StringComparison.Ordinal) =>
-                    DuplicateKey(message) is { } labelId
+                    DuplicateKey(Errors(sql), "'PK_Labels'") is { } labelId
                     && !await dbContext.Labels.AsNoTracking().AnyAsync(row => row.Id == labelId, cancellationToken)
                         ? InventoryStoreCodes.LabelConflict
                         : InventoryStoreCodes.ConcurrentChange,
@@ -721,12 +721,28 @@ public sealed partial class InventoryStore(
         }
     }
 
-    /// <summary>The single GUID of a primary-key message: its duplicate key value (the only GUID in it).</summary>
-    private static Guid? DuplicateKey(string message)
+    /// <summary>
+    /// The duplicate key of one primary key: read from that key's OWN error, never from the combined message.
+    /// One save can collide on several keys (a lot and its label in the same batch, #333 SİPARİŞ P3-1); the
+    /// combined message then carries several GUIDs. Exactly one duplicate-key error (2601/2627) naming
+    /// <paramref name="constraint"/> must exist, and its message must carry exactly one GUID (a single-column
+    /// key); anything else is null, and the answer stays the retryable one.
+    /// </summary>
+    internal static Guid? DuplicateKey(IEnumerable<(int Number, string Message)> errors, string constraint)
     {
-        var matches = GuidPattern().Matches(message);
+        var own = errors.Where(error => error.Number is 2601 or 2627
+            && error.Message.Contains(constraint, StringComparison.Ordinal)).ToArray();
+        if (own.Length != 1)
+        {
+            return null;
+        }
+
+        var matches = GuidPattern().Matches(own[0].Message);
         return matches.Count == 1 && Guid.TryParseExact(matches[0].Value, "D", out var id) ? id : null;
     }
+
+    private static IEnumerable<(int Number, string Message)> Errors(SqlException sql) =>
+        sql.Errors.Cast<SqlError>().Select(error => (error.Number, error.Message));
 
     [GeneratedRegex("[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}", RegexOptions.CultureInvariant)]
     private static partial Regex GuidPattern();

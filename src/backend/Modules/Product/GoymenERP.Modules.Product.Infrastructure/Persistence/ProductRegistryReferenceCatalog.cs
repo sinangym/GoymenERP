@@ -92,20 +92,12 @@ public sealed class ProductRegistryReferenceCatalog : IProductReferenceCatalog
             .Select(key => new ProductFieldError(ProductFamilyDefinitionRulesV2.Field(key), "invalid_reference"))];
     }
 
-    /// <summary>The well-formed release, or null when there is none or it is malformed (fail-closed).</summary>
-    private async Task<ProductFamilyDefinitionV2?> ReleasedAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            var definition = await families.GetAsync(cancellationToken);
-            ProductFamilyDefinitionRulesV2.RequireWellFormed(definition);
-            return definition;
-        }
-        catch (ProductOperationException)
-        {
-            return null;
-        }
-    }
+    /// <summary>
+    /// The well-formed release, or null when there is none or it is malformed (fail-closed). The staging
+    /// operation has no logger; a malformed release is logged by the options read the Draft form makes first.
+    /// </summary>
+    private Task<ProductFamilyDefinitionV2?> ReleasedAsync(CancellationToken cancellationToken) =>
+        ProductFamilyReleaseRead.WellFormedAsync(families, logger: null, nameof(ProductRegistryReferenceCatalog), cancellationToken);
 
     private static Task<bool> Unavailable(CancellationToken cancellationToken)
     {

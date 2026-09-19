@@ -23,7 +23,8 @@ public sealed class ProductionPlan
         Guid workCenterId,
         ManufacturingProcess process,
         IEnumerable<PlannedInput> inputs,
-        ProductionTarget? target = null)
+        ProductionTarget? target = null,
+        SlittingSpec? spec = null)
     {
         Id = RequireId(id, nameof(id));
         CompanyId = RequireId(companyId, nameof(companyId));
@@ -54,6 +55,7 @@ public sealed class ProductionPlan
         }
 
         Target = target;
+        Spec = spec;
         Status = PlanStatus.Draft;
     }
 
@@ -68,6 +70,13 @@ public sealed class ProductionPlan
     /// <summary>The plan's declared target, or null when the plan declares none.</summary>
     public ProductionTarget? Target { get; }
 
+    /// <summary>
+    /// MFG-6: what the plan cuts, or null for a plan that claims no engine computation (the MFG-5 plan:
+    /// inputs and target only). Part of the plan's content: set at creation, never changed. A plan that
+    /// carries one is approved only through <see cref="SlittingApprovalGate"/>.
+    /// </summary>
+    public SlittingSpec? Spec { get; }
+
     public PlanStatus Status { get; private set; }
 
     /// <summary>Optimistic concurrency, as on the production order (MFG-3): Approve names the version it read.</summary>
@@ -81,8 +90,9 @@ public sealed class ProductionPlan
 
     /// <summary>
     /// Rebuilds a stored plan (MFG-5). Every rule of a new plan holds again, and the approval is
-    /// replayed through <see cref="Approve"/>, so a stored plan that breaks a rule is refused, not
-    /// repaired. The stored version must be the one the plan's own changes add up to.
+    /// replayed (version fence and draft rule), so a stored plan that breaks a rule is refused, not
+    /// repaired. The stored version must be the one the plan's own changes add up to. The MFG-6
+    /// approval gate is NOT re-run: a stored approval stands under the inputs it was approved with.
     /// </summary>
     public static ProductionPlan Restore(
         Guid id,
@@ -93,12 +103,13 @@ public sealed class ProductionPlan
         ProductionTarget? target,
         Guid? approvedByUserId,
         DateTimeOffset? approvedAtUtc,
-        long version)
+        long version,
+        SlittingSpec? spec = null)
     {
-        var plan = new ProductionPlan(id, companyId, workCenterId, process, inputs, target);
+        var plan = new ProductionPlan(id, companyId, workCenterId, process, inputs, target, spec);
         if (approvedByUserId is { } approvedBy && approvedAtUtc is { } approvedAt)
         {
-            plan.Approve(plan.Version, approvedBy, approvedAt);
+            plan.ApplyApproval(plan.Version, approvedBy, approvedAt);
         }
         else if (approvedByUserId is not null || approvedAtUtc is not null)
         {
@@ -115,7 +126,32 @@ public sealed class ProductionPlan
         return plan;
     }
 
-    public void Approve(long expectedVersion, Guid approvedByUserId, DateTimeOffset approvedAtUtc)
+    /// <summary>Approves with nothing known from outside: a plan with a slitting spec is then refused, naming every missing input.</summary>
+    public void Approve(long expectedVersion, Guid approvedByUserId, DateTimeOffset approvedAtUtc) =>
+        Approve(expectedVersion, approvedByUserId, approvedAtUtc, parameters: null);
+
+    /// <summary>
+    /// The version fence first, then "only a draft is approved", then — for a plan with a slitting spec —
+    /// the MFG-6 approval gate (<see cref="SlittingApprovalGate"/>): nothing is approved with gaps.
+    /// </summary>
+    public void Approve(long expectedVersion, Guid approvedByUserId, DateTimeOffset approvedAtUtc,
+        SlittingPlanParameters? parameters)
+    {
+        RequireApprovable(expectedVersion);
+        SlittingApprovalGate.Require(this, parameters);
+        ApplyApproval(expectedVersion, approvedByUserId, approvedAtUtc);
+    }
+
+    private void ApplyApproval(long expectedVersion, Guid approvedByUserId, DateTimeOffset approvedAtUtc)
+    {
+        RequireApprovable(expectedVersion);
+        ApprovedByUserId = RequireId(approvedByUserId, nameof(approvedByUserId));
+        ApprovedAtUtc = approvedAtUtc.ToUniversalTime();
+        Status = PlanStatus.Approved;
+        Version++;
+    }
+
+    private void RequireApprovable(long expectedVersion)
     {
         if (expectedVersion != Version)
         {
@@ -126,11 +162,6 @@ public sealed class ProductionPlan
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanNotDraft, "Yalnız taslak plan onaylanabilir.");
         }
-
-        ApprovedByUserId = RequireId(approvedByUserId, nameof(approvedByUserId));
-        ApprovedAtUtc = approvedAtUtc.ToUniversalTime();
-        Status = PlanStatus.Approved;
-        Version++;
     }
 
     private static Guid RequireId(Guid value, string parameterName) =>

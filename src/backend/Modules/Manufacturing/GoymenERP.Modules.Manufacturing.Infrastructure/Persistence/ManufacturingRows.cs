@@ -20,6 +20,10 @@ internal sealed class PlanRow : IManufacturingTenantRow
     public int Status { get; set; }
     public int? TargetBasis { get; set; }
     public decimal? TargetKg { get; set; }
+
+    /// <summary>MFG-6: the slitting spec's winding target, or null (no spec, or a spec that winds to no target).</summary>
+    public decimal? WindingTargetKg { get; set; }
+
     public Guid? ApprovedByUserId { get; set; }
     public DateTimeOffset? ApprovedAtUtc { get; set; }
     public long Version { get; set; }
@@ -37,6 +41,19 @@ internal sealed class PlanInputRow : IManufacturingTenantRow
     public Guid ParentRollId { get; set; }
     public int Sequence { get; set; }
     public decimal PlannedKg { get; set; }
+}
+
+/// <summary>
+/// MFG-6: one slit line of a plan's slitting spec, in the spec's own order. A plan has a spec exactly
+/// when it has slit lines. Part of the plan's content: never changes.
+/// </summary>
+internal sealed class PlanSlitLineRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid PlanId { get; set; }
+    public int Sequence { get; set; }
+    public decimal BandWidthMm { get; set; }
+    public int BandCount { get; set; }
 }
 
 /// <summary>

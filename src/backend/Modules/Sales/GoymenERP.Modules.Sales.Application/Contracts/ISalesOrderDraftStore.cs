@@ -36,6 +36,18 @@ public static class SalesDraftCommands
 {
     /// <summary>The create of an order draft (#257 POST /api/v1/sales/drafts).</summary>
     public const string CreateV1 = "sales.order-draft.create.v1";
+
+    /// <summary>SALES-A1: POST /api/v1/sales/drafts/{id}/submission — Preparing/Rejected → PendingApproval.</summary>
+    public const string SubmitV1 = "sales.order-draft.submit.v1";
+
+    /// <summary>SALES-A1: POST /api/v1/sales/drafts/{id}/approval — PendingApproval → Approved.</summary>
+    public const string ApproveV1 = "sales.order-draft.approve.v1";
+
+    /// <summary>SALES-A1: POST /api/v1/sales/drafts/{id}/rejection — PendingApproval → Rejected.</summary>
+    public const string RejectV1 = "sales.order-draft.reject.v1";
+
+    public static bool IsStateCommand(string commandName) =>
+        commandName is SubmitV1 or ApproveV1 or RejectV1;
 }
 
 /// <summary>The stable refusal codes of the Sales draft store, beside the domain's own rule codes.</summary>
@@ -86,6 +98,22 @@ public sealed record SalesDraftReplay(SalesOrderDraft? Draft, SalesDraftTerminal
 public sealed record SalesDraftPage(IReadOnlyList<SalesOrderDraft> Items, string? NextCursor);
 
 /// <summary>
+/// The audit facts of one internal-approval command (SALES-A1, ADR-009): the versioned event type
+/// (<c>sales.order-draft.submitted.v1</c> / <c>approved.v1</c> / <c>rejected.v1</c>), the audit
+/// operation and the user-facing reason. Written by the store in the same save as the draft's
+/// state, with the entity version before and after.
+/// </summary>
+public sealed record SalesDraftStateAudit(string EventType, string Operation, string Reason);
+
+/// <summary>
+/// What the store did for a state command: the draft after the transition (or the same stored
+/// result again, <see cref="SalesDraftWriteOutcome.Replayed"/>) and the correlation of the attempt
+/// that first recorded it. A replay answers the draft as it is NOW (the persisted record), marked
+/// as a replay with its first correlation — the Counterparty / Manufacturing pattern.
+/// </summary>
+public sealed record SalesDraftStateResult(SalesOrderDraft Draft, SalesDraftWriteOutcome Outcome, string OriginalCorrelationId);
+
+/// <summary>
 /// The persistent draft store of the server-resolved company (SALES-P2 implements it; SALES-P1
 /// only declares it). One call is one save: the header, the lines with their owner snapshots, the
 /// delivery slices, the attempt record and the audit event commit together or not at all.
@@ -122,9 +150,11 @@ public interface ISalesOrderDraftStore
     /// draft or the recorded terminal refusal — or null when the key is new. The same key with another
     /// content or another actor is <see cref="SalesDraftStoreCodes.SameKeyPayloadMismatch"/>. The
     /// caller checks authority before calling (§5) and reads no owner when a replay is found.
+    /// <paramref name="commandName"/> is the attempt identity's command (<see cref="SalesDraftCommands"/>);
+    /// the create by default.
     /// </summary>
     Task<SalesDraftReplay?> FindReplayAsync(SalesDraftWriteEnvelope envelope, string requestHash,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default, string commandName = SalesDraftCommands.CreateV1);
 
     /// <summary>
     /// ADR-011 §7: records a terminal refusal under the attempt key, so a retry with the same key,
@@ -132,13 +162,33 @@ public interface ISalesOrderDraftStore
     /// holding an attempt is <see cref="SalesDraftStoreCodes.ConcurrentChange"/> (the retry replays it).
     /// </summary>
     Task RecordRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash, SalesDraftTerminalRefusal refusal,
+        CancellationToken cancellationToken = default, string commandName = SalesDraftCommands.CreateV1);
+
+    /// <summary>
+    /// SALES-A1: one internal-approval transition of the company's stored draft in ONE save — the
+    /// draft's approval state, facts and version, the attempt record under
+    /// (<paramref name="commandName"/>, key hash) and the audit event commit together or not at all.
+    /// The caller has already measured its authority; <paramref name="mutate"/> is the domain
+    /// transition (it names the expected version and throws the rule refusal — the caller records
+    /// terminal refusals itself, ADR-011 §7). Another company's draft, or none, is null (never 403).
+    /// A same-key attempt already stored answers <see cref="SalesDraftWriteOutcome.Replayed"/> with the
+    /// draft as it is now; another content or actor is <see cref="SalesDraftStoreCodes.SameKeyPayloadMismatch"/>;
+    /// a lost race (attempt key, draft version) is <see cref="SalesDraftStoreCodes.ConcurrentChange"/>
+    /// with nothing stored.
+    /// </summary>
+    Task<SalesDraftStateResult?> UpdateDraftStateAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid draftId, Action<SalesOrderDraft, DateTimeOffset> mutate, SalesDraftStateAudit audit,
         CancellationToken cancellationToken = default);
 
     /// <summary>The company's stored draft, or null (another company's draft is null too, never 403).</summary>
     Task<SalesOrderDraft?> FindDraftAsync(Guid draftId, CancellationToken cancellationToken = default);
 
-    /// <summary>The company's drafts, newest first, by opaque company-bound cursor (#257: pageSize 1–100, default 50).</summary>
-    Task<SalesDraftPage> ListDraftsAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// The company's drafts, newest first, by opaque company-bound cursor (#257: pageSize 1–100,
+    /// default 50); <paramref name="approvalState"/> narrows to one internal approval state (SALES-A1).
+    /// </summary>
+    Task<SalesDraftPage> ListDraftsAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default,
+        InternalApprovalState? approvalState = null);
 }
 
 /// <summary>
@@ -152,7 +202,21 @@ public static class SalesDraftRequestHash
     public static string Compute(CreateSalesOrderDraftRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var canonical = JsonSerializer.Serialize(request, SalesDraftJson.Options);
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+        return Hash(JsonSerializer.Serialize(request, SalesDraftJson.Options));
     }
+
+    /// <summary>
+    /// SALES-A1: the canonical content of a state command — the command name, the draft, the expected
+    /// version and (for a rejection) the reason. The same key with another draft, version, command or
+    /// reason is another content (one 409, ADR-011 §3).
+    /// </summary>
+    public static string Compute(string commandName, Guid draftId, SalesDraftStateCommandRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
+        return Hash(JsonSerializer.Serialize(new { command = commandName, draftId, request.ExpectedVersion, request.Reason }, SalesDraftJson.Options));
+    }
+
+    private static string Hash(string canonical) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
 }

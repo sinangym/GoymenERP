@@ -2,7 +2,7 @@
  * User-facing Sales texts. Turkish, in one place, so they stay localizable.
  */
 
-import { SALES_PROBLEM_CODE, type SalesProblemCode } from './contract'
+import { APPROVAL_STATE, SALES_PROBLEM_CODE, type ApprovalState, type SalesProblemCode } from './contract'
 
 export const ORDER_DRAFT_TEXT = {
   heading: 'Yeni satış siparişi taslağı',
@@ -126,11 +126,21 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
   [SALES_PROBLEM_CODE.ownerReferenceUnavailable]: 'Adres, kişi ve benzeri referanslar bu sürümde kaydedilmez; alanları boş bırakın.',
   [SALES_PROBLEM_CODE.commandMetadataInvalid]: 'İşlem anahtarı eksik ya da geçersiz; gönderim yapılmadı.',
   [SALES_PROBLEM_CODE.invalidCursor]: 'Liste sayfası imleci geçersiz; listeyi baştan açın.',
+  [SALES_PROBLEM_CODE.stateConflict]: 'Bu işlem taslağın şu anki onay durumunda yapılamaz; taslağı yeniden açın.',
+  [SALES_PROBLEM_CODE.approvalReasonTooLong]: 'Ret nedeni en fazla 4000 karakter olabilir.',
 }
 
 export function problemCodeText(code: string | null): string | null {
   if (code === null) return null
   return Object.hasOwn(PROBLEM_CODE_TEXT, code) ? PROBLEM_CODE_TEXT[code as SalesProblemCode] : null
+}
+
+/** SALES-A1: the internal approval axis, one label per `InternalApprovalState`. */
+export const APPROVAL_STATE_TEXT: Record<ApprovalState, string> = {
+  [APPROVAL_STATE.preparing]: 'Hazırlanıyor',
+  [APPROVAL_STATE.pendingApproval]: 'Onay bekliyor',
+  [APPROVAL_STATE.approved]: 'Onaylı',
+  [APPROVAL_STATE.rejected]: 'Reddedildi',
 }
 
 export const ORDER_LIST_TEXT = {
@@ -139,7 +149,9 @@ export const ORDER_LIST_TEXT = {
   caption: 'Seçili şirketteki sipariş taslakları, en yeni önce',
   documentNo: 'Belge no',
   businessDate: 'Sipariş tarihi',
-  state: 'Durum',
+  state: 'İç onay',
+  filter: 'İç onay durumu',
+  filterAll: 'Tümü',
   revision: 'Revizyon',
   lineCount: 'Satır',
   createdAt: 'Oluşturulma',
@@ -153,6 +165,40 @@ export const ORDER_DETAIL_TEXT = {
   backToList: 'Sipariş taslakları',
   state: 'Durum',
   stateDraft: 'Taslak',
+  /** SALES-A1: the approval facts and the commands on the detail. */
+  approval: {
+    heading: 'İç onay',
+    state: 'İç onay durumu',
+    submittedBy: 'Onaya gönderen',
+    submittedAt: 'Gönderim zamanı',
+    decidedBy: 'Karar veren',
+    decidedAt: 'Karar zamanı',
+    rejectionReason: 'Ret nedeni',
+    notYet: 'Henüz yok',
+    noReason: 'Neden belirtilmedi',
+    // D4 (DEC-SAL-005): the linked effects are shown honestly — no consumer exists in this slice.
+    linkedEffects: 'Bağlı etki: tahsis 0 / yükleme talimatı 0 (bu dilimde tüketici yok).',
+    approvedNote: 'Onaylı taslağın satırları değişmez; değişiklik yeni bir revizyonla gelir (SALES-A2).',
+    rejectedNote: 'Reddedilen taslak aynı revizyonla yeniden onaya gönderilebilir; düzeltme SALES-A2 ile gelir.',
+    submit: 'Onaya gönder',
+    approve: 'Onayla',
+    reject: 'Reddet',
+    reasonLabel: 'Ret nedeni (isteğe bağlı)',
+    submitting: 'İşlem gönderiliyor…',
+    unknown:
+      'İşlemin sonucu alınamadı; kaydedilmiş olabilir. Aynı işlemi tekrar göndermek ikinci bir geçiş oluşturmaz.',
+    refusedAfterUnknown: 'Tekrar deneme reddedildi. Bu, önceki gönderimin uygulanmadığını göstermez.',
+    unauthenticated: 'Oturumunuz sona erdi; işlem uygulanmadı.',
+    forbidden: 'Bu şirkette bu işlem için yetkiniz yok; işlem uygulanmadı.',
+    notFound: 'Taslak bulunamadı; işlem uygulanmadı.',
+    conflict: 'İşlem taslağın güncel durumuyla çakıştı; taslak yeniden okundu.',
+    validation: 'İşlem uygulanmadı; gönderilen bilgi geçerli değil.',
+    unexpected: 'İşlem uygulanmadı. Beklenmeyen bir yanıt alındı.',
+    completed: 'İşlem kaydedildi.',
+    replayed: 'Bu işlem daha önce kaydedilmişti; güncel durum gösteriliyor.',
+    retry: 'Aynı işlemi tekrar dene',
+    abandon: 'Bu işlemi bırak',
+  },
   revision: 'Ticari revizyon',
   version: 'Kayıt sürümü',
   businessDate: 'Sipariş tarihi',

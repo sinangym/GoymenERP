@@ -19,7 +19,8 @@ public sealed class ManufacturingPersistenceModelTests
     private static readonly DateTimeOffset At = new(2026, 9, 18, 8, 0, 0, TimeSpan.Zero);
 
     private static readonly Type[] TenantRows =
-        [typeof(PlanRow), typeof(PlanInputRow), typeof(OrderRow), typeof(OrderInputRow), typeof(FactRow), typeof(CommandRow)];
+        [typeof(PlanRow), typeof(PlanInputRow), typeof(PlanSlitLineRow), typeof(OrderRow), typeof(OrderInputRow), typeof(FactRow),
+            typeof(CommandRow)];
 
     [Fact]
     public void Every_manufacturing_table_is_in_its_schema_and_filtered_by_the_active_company()
@@ -55,6 +56,7 @@ public sealed class ManufacturingPersistenceModelTests
         foreach (var (type, column, principal) in new[]
         {
             (typeof(PlanInputRow), "PlanId", typeof(PlanRow)),
+            (typeof(PlanSlitLineRow), "PlanId", typeof(PlanRow)),
             (typeof(OrderRow), "PlanId", typeof(PlanRow)),
             (typeof(OrderInputRow), "OrderId", typeof(OrderRow)),
             (typeof(FactRow), "OrderId", typeof(OrderRow)),
@@ -79,6 +81,8 @@ public sealed class ManufacturingPersistenceModelTests
             migration => migration.EndsWith("_InitialManufacturing", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddManufacturingCommands", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddPlanSlittingSpecs", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -100,6 +104,9 @@ public sealed class ManufacturingPersistenceModelTests
     [InlineData("delete-fact")]
     [InlineData("edit-fact-mass")]
     [InlineData("edit-plan-work-center")]
+    [InlineData("edit-plan-winding-target")]
+    [InlineData("edit-plan-slit-line")]
+    [InlineData("delete-plan-slit-line")]
     [InlineData("edit-order-plan")]
     [InlineData("edit-order-input")]
     [InlineData("edit-order-company")]
@@ -118,6 +125,16 @@ public sealed class ManufacturingPersistenceModelTests
                 break;
             case "edit-plan-work-center":
                 Attach(context, Plan()).WorkCenterId = Guid.NewGuid();
+                break;
+            case "edit-plan-winding-target":
+                // MFG-6: the slitting spec is plan content.
+                Attach(context, Plan()).WindingTargetKg = 5000m;
+                break;
+            case "edit-plan-slit-line":
+                Attach(context, SlitLine()).BandWidthMm = 250m;
+                break;
+            case "delete-plan-slit-line":
+                context.PlanSlitLines.Remove(Attach(context, SlitLine()));
                 break;
             case "edit-order-plan":
                 Attach(context, Order()).PlanId = Guid.NewGuid();
@@ -214,6 +231,11 @@ public sealed class ManufacturingPersistenceModelTests
         CompanyId = CompanyA, CommandName = "manufacturing.input.issue.v1", IdempotencyKeyHash = new string('A', 64),
         ActorId = "synthetic-actor", RequestHash = new string('B', 64), ResultJson = "{\"status\":2}",
         OriginalCorrelationId = "synthetic-correlation", RecordedAtUtc = At,
+    };
+
+    private static PlanSlitLineRow SlitLine() => new()
+    {
+        CompanyId = CompanyA, PlanId = Guid.NewGuid(), Sequence = 1, BandWidthMm = 150m, BandCount = 4,
     };
 
     private static PlanRow Plan() => new()

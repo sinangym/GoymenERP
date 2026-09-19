@@ -12,6 +12,42 @@ public enum SalesDraftState
     Draft = 1,
 }
 
+/// <summary>
+/// The INTERNAL APPROVAL axis of a draft (SALES-A1; DEC-SAL-001, DURUM_MAKINELERI "İç onay:
+/// Hazırlanıyor / Onay bekliyor / Onaylı / Reddedildi"). A separate axis from the lifecycle
+/// (<see cref="SalesDraftState"/>: Draft), from the commercial revision, and from sourcing,
+/// fulfilment and customer confirmation, none of which this slice opens. Transitions:
+/// <c>Preparing → PendingApproval</c> (<see cref="SalesOrderDraft.Submit"/>),
+/// <c>PendingApproval → Approved</c> (<see cref="SalesOrderDraft.Approve"/>),
+/// <c>PendingApproval → Rejected</c> (<see cref="SalesOrderDraft.Reject"/>), and
+/// <c>Rejected → PendingApproval</c> again (the same Rev.0; a correction of the lines is a revision,
+/// SALES-A2). An approved draft changes only through a revision (DEC-SAL-002, SALES-A2).
+/// </summary>
+public enum InternalApprovalState
+{
+    Preparing = 1,
+    PendingApproval = 2,
+    Approved = 3,
+    Rejected = 4,
+}
+
+/// <summary>
+/// Who submitted and who decided, when, and the rejection reason: the audit facts of the approval
+/// axis, carried by the draft and stored with it. Null means "has not happened": a draft in
+/// <see cref="InternalApprovalState.Preparing"/> has none; a submitted one has the submission; a
+/// decided one has both. The reason is free text the rejecting actor may give (an audit reason, not a
+/// policy); it is never required and never invented.
+/// </summary>
+public sealed record ApprovalFacts(
+    string? SubmittedBy,
+    DateTimeOffset? SubmittedAtUtc,
+    string? DecidedBy,
+    DateTimeOffset? DecidedAtUtc,
+    string? RejectionReason)
+{
+    public static ApprovalFacts None { get; } = new(null, null, null, null, null);
+}
+
 /// <summary>The header facts of a draft as the client sent them; identities only, validated by their owners at command time.</summary>
 public sealed record SalesDraftHeader(
     Guid PartyId,
@@ -78,7 +114,14 @@ public sealed class SalesOrderDraft
     public const int MaximumNoteLength = 4000;
     public const int MaximumDocumentNoLength = 64;
 
+    /// <summary>A rejection reason is audit text; it has the note's technical bound, not a policy of its own.</summary>
+    public const int MaximumRejectionReasonLength = MaximumNoteLength;
+    public const int MaximumActorLength = 128;
+
     private readonly List<SalesOrderDraftLine> lines = [];
+
+    /// <summary>Set once the stored approval axis has been restored onto this instance; restoring is not a transition and runs once.</summary>
+    private bool approvalRestored;
 
     private SalesOrderDraft(Guid id, Guid companyId, string documentNo, SalesDraftHeader header,
         MoneyProfileSnapshot money, DateTimeOffset now)
@@ -104,8 +147,17 @@ public sealed class SalesOrderDraft
 
     public SalesDraftState State => SalesDraftState.Draft;
 
+    /// <summary>The internal approval axis (SALES-A1); born <see cref="InternalApprovalState.Preparing"/>.</summary>
+    public InternalApprovalState ApprovalState { get; private set; } = InternalApprovalState.Preparing;
+
+    /// <summary>The approval facts as they stand: nothing until a submission, then who/when, then the decision.</summary>
+    public ApprovalFacts Approval { get; private set; } = ApprovalFacts.None;
+
     /// <summary>Commercial revision; <c>Rev.0</c> on the wire. Independent of <see cref="Version"/> and fixed in this slice (T33).</summary>
     public int Revision => 0;
+
+    /// <summary>Whether the lines may still change: only while the draft is being prepared or was rejected (DEC-SAL-002).</summary>
+    public bool LinesAreOpen => ApprovalState is InternalApprovalState.Preparing or InternalApprovalState.Rejected;
 
     /// <summary>Optimistic concurrency; starts at 1 and advances by one per recorded mutation.</summary>
     public long Version { get; private set; } = 1;
@@ -224,6 +276,153 @@ public sealed class SalesOrderDraft
             throw new SalesRuleException(SalesRuleCodes.DraftWithoutLines, "Satırsız taslak kaydedilmez.");
         }
     }
+
+    // ---- internal approval (SALES-A1) ------------------------------------------------------------
+
+    /// <summary>
+    /// Sends the draft for internal approval: <c>Preparing → PendingApproval</c>, or
+    /// <c>Rejected → PendingApproval</c> again (the same Rev.0; the lines are what they are — a
+    /// correction is a revision, SALES-A2). Any other state is <see cref="SalesRuleCodes.StateConflict"/>.
+    /// The submitter is recorded; who may submit is the caller's fence (the draft's create permission).
+    /// </summary>
+    public void Submit(long expectedVersion, string actorId, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireActor(actorId);
+        RequireStorable();
+        if (ApprovalState is not (InternalApprovalState.Preparing or InternalApprovalState.Rejected))
+        {
+            throw StateConflict("Yalnız hazırlanan ya da reddedilmiş taslak onaya gönderilir.");
+        }
+
+        ApprovalState = InternalApprovalState.PendingApproval;
+        Approval = new ApprovalFacts(actor, now.ToUniversalTime(), null, null, null);
+        Touch(now);
+    }
+
+    /// <summary>
+    /// Approves a pending draft: <c>PendingApproval → Approved</c>. The approved draft's lines are then
+    /// closed (DEC-SAL-002); nothing else changes — no allocation, loading, stock or money effect is
+    /// produced here (those are the consumers' own records, read through the line reference port).
+    /// The submitter approving their own draft is not refused (Business 5737989917: no maker≠checker).
+    /// </summary>
+    public void Approve(long expectedVersion, string actorId, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireActor(actorId);
+        if (ApprovalState != InternalApprovalState.PendingApproval)
+        {
+            throw StateConflict("Yalnız onay bekleyen taslak onaylanır.");
+        }
+
+        ApprovalState = InternalApprovalState.Approved;
+        Approval = Approval with { DecidedBy = actor, DecidedAtUtc = now.ToUniversalTime(), RejectionReason = null };
+        Touch(now);
+    }
+
+    /// <summary>
+    /// Rejects a pending draft: <c>PendingApproval → Rejected</c>, with an optional free-text reason
+    /// (audit text, bounded by <see cref="MaximumRejectionReasonLength"/>, never required). The draft
+    /// keeps Rev.0 and its lines; it may be submitted again as it is, or corrected by a revision (A2).
+    /// </summary>
+    public void Reject(long expectedVersion, string actorId, string? reason, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireActor(actorId);
+        var trimmedReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        if (trimmedReason is not null && trimmedReason.Length > MaximumRejectionReasonLength)
+        {
+            throw new SalesRuleException(SalesRuleCodes.ApprovalReasonTooLong,
+                $"Ret nedeni en fazla {MaximumRejectionReasonLength} karakterdir.");
+        }
+
+        if (ApprovalState != InternalApprovalState.PendingApproval)
+        {
+            throw StateConflict("Yalnız onay bekleyen taslak reddedilir.");
+        }
+
+        ApprovalState = InternalApprovalState.Rejected;
+        Approval = Approval with { DecidedBy = actor, DecidedAtUtc = now.ToUniversalTime(), RejectionReason = trimmedReason };
+        Touch(now);
+    }
+
+    /// <summary>
+    /// The store's rebuild of a stored draft: after the lines were added again through the domain,
+    /// the stored approval axis is restored as it was, without a transition. The facts must fit the
+    /// state exactly (a stored row that says "approved" without a decision is refused, not repaired),
+    /// and the stored version must be at least what the lines and the state's minimum transitions
+    /// account for; the stored version is then the draft's version.
+    /// </summary>
+    public void RestoreApproval(InternalApprovalState state, ApprovalFacts facts, long storedVersion, DateTimeOffset updatedAtUtc)
+    {
+        ArgumentNullException.ThrowIfNull(facts);
+        if (!Enum.IsDefined(state))
+        {
+            throw new ArgumentOutOfRangeException(nameof(state));
+        }
+
+        // Restoring is not a transition: it runs once, onto a freshly rebuilt draft. A Preparing restore leaves the
+        // axis where it was born, so the state alone cannot tell a rebuilt draft from a restored one; the flag does.
+        if (approvalRestored || ApprovalState != InternalApprovalState.Preparing || Approval != ApprovalFacts.None)
+        {
+            throw new InvalidOperationException("Onay ekseni yalnız hazırlanan bir kurulum üzerine ve yalnız bir kez geri yüklenir.");
+        }
+
+        var submitted = facts.SubmittedBy is not null && facts.SubmittedAtUtc is not null;
+        var decided = facts.DecidedBy is not null && facts.DecidedAtUtc is not null;
+        var consistent = state switch
+        {
+            InternalApprovalState.Preparing => facts == ApprovalFacts.None,
+            InternalApprovalState.PendingApproval => submitted && facts.DecidedBy is null && facts.DecidedAtUtc is null && facts.RejectionReason is null,
+            InternalApprovalState.Approved => submitted && decided && facts.RejectionReason is null,
+            InternalApprovalState.Rejected => submitted && decided,
+            _ => false,
+        };
+        if (!consistent || (facts.RejectionReason is { } reason && (reason.Length == 0 || reason.Length > MaximumRejectionReasonLength))
+            || facts.SubmittedBy is { Length: 0 } || facts.DecidedBy is { Length: 0 })
+        {
+            throw new InvalidOperationException("Kayıtlı onay olguları kayıtlı onay durumuyla uyuşmuyor.");
+        }
+
+        // A draft that never left Preparing has had no transition: its stored version must be EXACTLY the
+        // one the lines account for (a version raised outside the application does not restore silently,
+        // ÜRÜN #338 P3-1). A submitted draft has had at least one transition, a decided one at least two.
+        var minimumTransitions = state switch
+        {
+            InternalApprovalState.Preparing => 0,
+            InternalApprovalState.PendingApproval => 1,
+            _ => 2,
+        };
+        var consistentVersion = state == InternalApprovalState.Preparing
+            ? storedVersion == Version
+            : storedVersion >= Version + minimumTransitions;
+        if (!consistentVersion)
+        {
+            throw new InvalidOperationException("Kayıtlı sürüm, satırların ve onay geçişlerinin hesabıyla uyuşmuyor.");
+        }
+
+        ApprovalState = state;
+        Approval = facts;
+        Version = storedVersion;
+        UpdatedAtUtc = updatedAtUtc.ToUniversalTime();
+        approvalRestored = true;
+    }
+
+    private static string RequireActor(string actorId)
+    {
+        if (string.IsNullOrWhiteSpace(actorId))
+        {
+            throw new ArgumentException("Aktör kimliği boş olamaz.", nameof(actorId));
+        }
+
+        var actor = actorId.Trim();
+        return actor.Length <= MaximumActorLength
+            ? actor
+            : throw new ArgumentException($"Aktör kimliği en fazla {MaximumActorLength} karakterdir.", nameof(actorId));
+    }
+
+    private SalesRuleException StateConflict(string message) =>
+        new(SalesRuleCodes.StateConflict, $"{message} (durum: {ApprovalState}).");
 
     private void RequireSnapshots(ProductSnapshot product, UnitProfileSnapshot orderUnit)
     {
@@ -412,6 +611,12 @@ public sealed class SalesOrderDraft
         if (State != SalesDraftState.Draft)
         {
             throw new SalesRuleException(SalesRuleCodes.DraftNotDraft, "Yalnız taslak değiştirilebilir.");
+        }
+
+        // DEC-SAL-002: a submitted or approved draft does not change its lines; a change is a revision (A2).
+        if (!LinesAreOpen)
+        {
+            throw StateConflict("Onay bekleyen ya da onaylı taslağın satırları değişmez; değişiklik yeni bir revizyondur.");
         }
     }
 

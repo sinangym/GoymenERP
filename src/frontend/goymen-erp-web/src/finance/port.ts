@@ -16,6 +16,7 @@
  *    never put into a request body (company is server-bound, #258 README).
  */
 
+import type { BankAccountApprovalBody, BankAccountProposeRequest } from './bankAccountContract'
 import type { DraftSaveRequest, RecordRequest, ReverseRequest } from './contract'
 import type { DraftContextRequest } from './draftContext'
 import type { HttpReadReply } from './http'
@@ -44,4 +45,18 @@ export interface FinanceReceiptPort {
   record(scope: FinanceScope, idempotencyKey: string, request: RecordRequest): Promise<PortReply>
   /** → `CommandResult`. Original amount/currency/account are resolved server-side. */
   reverse(scope: FinanceScope, idempotencyKey: string, request: ReverseRequest): Promise<PortReply>
+
+  /** FIN-UI-1a: `GET /finance/bank-accounts/master` → `ReadResult<BankAccountMasterPage>` (F-04's list). */
+  listBankAccountMaster(scope: FinanceScope, signal: AbortSignal): Promise<PortReply>
+  /** FIN-UI-1a: `GET /finance/bank-accounts/currency-candidates` → `ReadResult<BankAccountCurrencyCandidates>`. */
+  bankAccountCurrencyCandidates(scope: FinanceScope, signal: AbortSignal): Promise<PortReply>
+  /** FIN-UI-1a: `POST /finance/bank-accounts` → `BankAccountCommandResult`. Never a money effect. */
+  proposeBankAccount(scope: FinanceScope, idempotencyKey: string, request: BankAccountProposeRequest): Promise<PortReply>
+  /** FIN-UI-1a: `POST /finance/bank-accounts/{accountId}/approval` → `BankAccountCommandResult` (Ö4 server-side). */
+  approveBankAccount(
+    scope: FinanceScope,
+    idempotencyKey: string,
+    accountId: string,
+    body: BankAccountApprovalBody,
+  ): Promise<PortReply>
 }

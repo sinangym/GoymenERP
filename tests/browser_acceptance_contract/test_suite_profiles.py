@@ -39,7 +39,8 @@ def model(profile):
     return result
 
 
-SUITE_FOR = {"c01-list-only": "smoke", "cari-staged": "c03", "normal": "org03", "mfg-staged": "mfg"}
+SUITE_FOR = {"c01-list-only": "smoke", "cari-staged": "c03", "normal": "org03", "mfg-staged": "mfg",
+             "fin-staged": "fin01"}
 
 
 class ProfileRegistryTests(unittest.TestCase):
@@ -104,6 +105,15 @@ class ComposeFileDerivationTests(unittest.TestCase):
         ).replace(browser.CANONICAL_SUITE_LABEL, browser.PROFILE_SUITE_LABELS["mfg-staged"])
         self.assertEqual(expected, staged)
 
+    def test_fin_staged_is_the_canonical_file_plus_its_profile_line(self):
+        # FIN-UI-1b (#332): the same two transforms, with the finance-bank-accounts-and-drafts profile.
+        staged = self._body((ROOT / browser.PROFILE_COMPOSE_FILES["fin-staged"]).read_text(encoding="utf-8"))
+        anchor = '      C01E2e__EnableListCapability: "true"\n'
+        expected = self.canonical.replace(
+            anchor, anchor + f"      {browser.CARI_STAGED_PROFILE_KEY}: {browser.STAGED_PROFILE_VALUES['fin-staged']}\n"
+        ).replace(browser.CANONICAL_SUITE_LABEL, browser.PROFILE_SUITE_LABELS["fin-staged"])
+        self.assertEqual(expected, staged)
+
     def test_each_staged_profile_value_is_an_activation_profile(self):
         activation = (ROOT / "src/backend/GoymenERP.Api/Shell/C01E2eShellCapabilityActivation.cs").read_text(
             encoding="utf-8")
@@ -113,7 +123,9 @@ class ComposeFileDerivationTests(unittest.TestCase):
 
     def test_a_staged_profile_refuses_the_other_profile_value(self):
         for profile, suite, wrong in (("mfg-staged", "mfg", "cari-list-detail"),
-                                      ("cari-staged", "c03", "manufacturing-order-detail")):
+                                      ("fin-staged", "fin01", "cari-list-detail"),
+                                      ("cari-staged", "c03", "manufacturing-order-detail"),
+                                      ("cari-staged", "c03", "finance-bank-accounts-and-drafts")):
             with self.subTest(profile=profile):
                 wrong_model = model(profile)
                 wrong_model["services"]["api"]["environment"][browser.CARI_STAGED_PROFILE_KEY] = wrong

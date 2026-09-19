@@ -175,6 +175,15 @@ ports (Product stock eligibility, Organization location state), pins and the rev
 Not anywhere yet: the grant (human), the UI, and any real opening data (the positive product path needs the
 family release, Q6).
 
+## #333 follow-up: the duplicate key of its own error
+
+A lot and its label can collide in ONE save (another company's lot and label ids in the same batch); the
+combined SQL message then carries two GUIDs. The colliding id is read from the named key's OWN error in
+`SqlException.Errors` (2601/2627, exactly one naming `'PK_Lots'` / `'PK_Labels'`, exactly one GUID in it);
+anything else is null and the answer stays the retryable `inventory_concurrent_change` — never a made-up
+conflict (`InventoryDuplicateKeyTests`; real SQL: company B offers A's lot and A's label in one call →
+`inventory_lot_conflict`).
+
 ## dependency_wait
 
 - **Central registration (CARİ, same branch, sequential):** the tenant guard's reviewed inventory (this DbContext's fingerprint, the design-time factory and the initializer's `Migrate`/`EnsureCreated` branch); the module-dependency allowlist edge `Inventory.Infrastructure → Audit.Infrastructure` (ADR-009); the `Api.IntegrationTests` project reference to Inventory; and the relational verifier's BROAD list and counts for `InventorySqlServerRelationalAcceptanceTests`.
