@@ -16,6 +16,8 @@ import {
   PENDING_NOTE,
   PENDING_TITLE,
   QUEUES_TITLE,
+  SOURCE_RECORD,
+  shortRef,
 } from './accountingText'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
@@ -90,7 +92,12 @@ function Queues({ namespace }: { readonly namespace: string | null }) {
               <tbody>
                 {exceptions.map((entry) => (
                   <tr key={`${entry.sourceId}|${entry.postingPurpose}`}>
-                    <td className={styles.mono}>{entry.sourceId}</td>
+                    <td>
+                      {SOURCE_RECORD}{' '}
+                      <span className={styles.mono} title={entry.sourceId}>
+                        {shortRef(entry.sourceId)}
+                      </span>
+                    </td>
                     <td>
                       {entry.postingPurpose} · {entry.postingRuleVersion}
                     </td>
@@ -120,7 +127,12 @@ function Queues({ namespace }: { readonly namespace: string | null }) {
               <tbody>
                 {pending.map((entry) => (
                   <tr key={`${entry.sourceId}|${entry.postingPurpose}`}>
-                    <td className={styles.mono}>{entry.sourceId}</td>
+                    <td>
+                      {SOURCE_RECORD}{' '}
+                      <span className={styles.mono} title={entry.sourceId}>
+                        {shortRef(entry.sourceId)}
+                      </span>
+                    </td>
                     <td>
                       {entry.postingPurpose} · {entry.postingRuleVersion}
                     </td>

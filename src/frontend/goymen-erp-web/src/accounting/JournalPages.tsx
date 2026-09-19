@@ -14,6 +14,8 @@ import { fetchJournal, fetchJournals } from './api'
 import { ACCOUNTING_ROUTE, journalDetailPath } from './capabilities'
 import type { JournalDetail, JournalPage, JournalSummary } from './contract'
 import {
+  ACCOUNT_COLUMN,
+  ACCOUNT_REF_NOTE,
   ALL_JOURNALS,
   DERIVED_NOTE,
   JOURNALS_INTRO,
@@ -22,7 +24,11 @@ import {
   JOURNAL_KIND_LABEL,
   MORE,
   OPEN_JOURNAL,
+  OPEN_LINKED_JOURNAL,
   PERIOD_FILTER_NOTE,
+  SOURCE_RECORD,
+  UNMAPPED_ACCOUNT,
+  shortRef,
 } from './accountingText'
 import { formatDecimalTextTr } from '../finance/decimalText'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
@@ -161,7 +167,7 @@ function Journals({ namespace, periodParam }: { readonly namespace: string | nul
                   <td className={styles.amount}>{amount(row.totalCredit)}</td>
                   <td>{row.lineCount}</td>
                   <td>
-                    <Link to={journalDetailPath(row.journalId)} aria-label={`${OPEN_JOURNAL}: ${row.accountingDate} ${row.sourceId}`}>
+                    <Link to={journalDetailPath(row.journalId)} aria-label={`${OPEN_JOURNAL}: ${row.accountingDate} ${JOURNAL_KIND_LABEL[row.kind]} ${shortRef(row.journalId)}`}>
                       {OPEN_JOURNAL}
                     </Link>
                   </td>
@@ -185,7 +191,10 @@ function Journals({ namespace, periodParam }: { readonly namespace: string | nul
 function SourceLink({ journal }: { readonly journal: JournalSummary }) {
   return (
     <span>
-      <span className={styles.mono}>{journal.sourceId}</span>
+      {SOURCE_RECORD}{' '}
+      <span className={styles.mono} title={journal.sourceId}>
+        {shortRef(journal.sourceId)}
+      </span>
       <br />
       <span className={styles.help}>
         {journal.postingPurpose} · {journal.postingRuleVersion}
@@ -296,19 +305,18 @@ function Detail({ namespace, journalId }: { readonly namespace: string | null; r
           <div className={styles.control}>
             <dt>Bağlı fiş</dt>
             <dd>
-              <Link to={journalDetailPath(journal.linkedJournalId)} className={styles.mono}>
-                {journal.linkedJournalId}
-              </Link>
+              <Link to={journalDetailPath(journal.linkedJournalId)}>{OPEN_LINKED_JOURNAL}</Link>
             </dd>
           </div>
         ) : null}
       </dl>
+      <p className={styles.help}>{ACCOUNT_REF_NOTE}</p>
       <div className={styles.tableWrap}>
         <table className={styles.table}>
           <thead>
             <tr>
               <th scope="col">Satır</th>
-              <th scope="col">Hesap</th>
+              <th scope="col">{ACCOUNT_COLUMN}</th>
               <th scope="col" className={styles.amount}>
                 Borç
               </th>
@@ -321,7 +329,12 @@ function Detail({ namespace, journalId }: { readonly namespace: string | null; r
             {lines.map((line) => (
               <tr key={line.lineNumber}>
                 <td>{line.lineNumber}</td>
-                <td className={styles.mono}>{line.accountId}</td>
+                <td>
+                  {UNMAPPED_ACCOUNT}{' '}
+                  <span className={styles.mono} title={line.accountId}>
+                    {shortRef(line.accountId)}
+                  </span>
+                </td>
                 <td className={styles.amount}>{amount(line.debit)}</td>
                 <td className={styles.amount}>{amount(line.credit)}</td>
               </tr>

@@ -6,6 +6,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import {
+  ACCOUNT_CREDIT,
+  ACCOUNT_DEBIT,
   JOURNAL,
   PERIOD_SEPTEMBER,
   READER_CAPABILITIES,
@@ -15,6 +17,7 @@ import {
   json,
   renderAt,
   requestsFor,
+  SOURCE,
 } from './testHarness'
 
 afterEach(() => {
@@ -47,6 +50,24 @@ describe('M-04 journals', () => {
     const page = screen.getByRole('heading', { name: 'Muhasebe fişi' }).closest('section') as HTMLElement
     expect(within(page).queryAllByRole('button')).toHaveLength(0)
     expect(recorded.filter((request) => request.method === 'POST')).toHaveLength(0)
+  })
+
+  it('presents account and source ids as labelled unmapped references, never as names (Business 5745076917)', async () => {
+    installFetch({
+      respond: (url) => (url.endsWith(`/accounting/journals/${JOURNAL}`) ? json(journalDetail()) : undefined),
+    })
+    renderAt(`/muhasebe/fisler/${JOURNAL}`)
+    expect(
+      await screen.findByText('Hesap planı henüz tanımlı değil: satırlar hesap adı değil, eşlenmemiş bir hesap referansı taşır.'),
+    ).toBeTruthy()
+    expect(screen.getByRole('columnheader', { name: 'Hesap referansı' })).toBeTruthy()
+    expect(screen.getAllByText(/^Eşlenmemiş hesap/)).toHaveLength(2)
+    // The full ids are never the visible text: each is a short, labelled reference with the full id as its title.
+    for (const id of [ACCOUNT_DEBIT, ACCOUNT_CREDIT, SOURCE]) {
+      expect(screen.queryByText(id)).toBeNull()
+      const references = screen.getAllByText(`ref. …${id.slice(-8)}`)
+      expect(references.map((reference) => reference.getAttribute('title'))).toContain(id)
+    }
   })
 
   it('closes the journal screens to a period reader without the journal capability', async () => {

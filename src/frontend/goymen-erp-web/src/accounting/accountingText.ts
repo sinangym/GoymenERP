@@ -57,6 +57,20 @@ export const DERIVED_NOTE = 'Bu fiş bir kaynak kaydının türev muhasebe kayd�
 export const PERIOD_FILTER_NOTE = 'Yalnız bir dönemin fişleri gösteriliyor.'
 export const ALL_JOURNALS = 'Tüm fişler'
 
+// Technical references are never presented as names (Business 5745076917). The chart of accounts is an open
+// decision (NEEDS-BUSINESS 5740501573), so a journal line carries an account REFERENCE with no account name;
+// a source record's name belongs to its owner module, which this screen does not read.
+export const ACCOUNT_COLUMN = 'Hesap referansı'
+export const UNMAPPED_ACCOUNT = 'Eşlenmemiş hesap'
+export const ACCOUNT_REF_NOTE =
+  'Hesap planı henüz tanımlı değil: satırlar hesap adı değil, eşlenmemiş bir hesap referansı taşır.'
+export const SOURCE_RECORD = 'Kaynak kayıt'
+export const OPEN_LINKED_JOURNAL = 'Bağlı fişi aç'
+export const REF_PREFIX = 'ref.'
+
+/** The last eight characters of a technical id, labelled as a reference; the full id stays in the title only. */
+export const shortRef = (id: string) => `${REF_PREFIX} …${id.slice(-8)}`
+
 export const QUEUES_TITLE = 'Muhasebe Kontrol'
 export const EXCEPTIONS_TITLE = 'Eşleme bekleyenler'
 export const EXCEPTIONS_NOTE = 'Eksik eşleme hiçbir hesaba tahminle kaydedilmez.'
