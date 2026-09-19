@@ -142,6 +142,67 @@ Not here: closing an order, a list or search, cost, Inventory movements (T15), o
   - WND-008's "**or** kg tolerance" branch. Version 1 encodes only the metre form, `YürüyenMetre + ToleransMetre ≥ GerekliMetre`. Whether a kg tolerance replaces the metre one, adds to it, and against which mass it is measured is not stated.
 - **Golden tests** (`tests/GoymenERP.Manufacturing.UnitTests/Engines`): the master's examples at the precision it prints (±0.0005), plus an independent 40-digit reference (±1e-18). The density 7850 kg/m³ there is the test input the examples imply, not a production parameter.
 
+- **Change log of `GDC-WND/1`** (§28.17 "yeni davranışta yeni sürüm"; FİNANS #342 INFO-1):
+  - **2026-09-19, #342:** `Fit` (WND-008/009) takes WND-003's computed outer diameter as a positive computed value. It no longer takes it as an Ö2 nominal millimetre, which refused its own engine's result (e.g. 1371.1401108… mm) for "more than 3 decimals".
+  - The input domain widened; every previously computed output is unchanged, and no engine result had been stored. So it stays `GDC-WND/1`. The line's maximum stays a nominal millimetre.
+
+## MFG-6 slice 2 — the plan's slitting spec and the fail-closed approval gate (approved)
+
+- **Spec as plan content** (`Domain/Plans/SlittingSpec`):
+  - the slit lines (band width, a nominal Ö2 millimetre; count);
+  - an optional winding target (kg).
+  - It is set when the plan is created and never changed, like the plan's inputs and target.
+  - Stored in the same save as the plan: `manufacturing.PlanSlitLines` (bound by company + plan) and `Plans.WindingTargetKg`.
+  - The content hash is extended **only** for a plan that has a spec, so every plan stored before keeps its hash and replay identity (pinned by a test on the MFG-5 canonical string).
+  - The same id with another spec is `manufacturing_plan_id_conflict`.
+- **Scope of the gate:** only a plan that carries a spec. A plan without one (the MFG-5 plan: inputs and target) claims no engine computation and is approved as before. The live MFG-API and the `mfg` browser suite create such plans; there is no HTTP surface for a spec yet (the API slice).
+- **Approval gate** (`SlittingApprovalGate`, inside `ProductionPlan.Approve`):
+  - Order: the version fence first, then "only a draft", then the gate.
+  - Per planned roll: the label must be known usable; SLT-001…007 and SLT-010 must compute with the roll's planned mass as the parent mass.
+  - With a winding target, per roll and band width: WND-001…004 and the WND-008/009 fit.
+  - Nothing is approved with gaps:
+    - a missing input → `manufacturing_plan_parameters_unavailable`, naming every one (sorted, distinct);
+    - an engine refusal → `manufacturing_plan_engine_refused` (the engine's code + parameter);
+    - a label known not usable → `manufacturing_plan_label_not_usable`;
+    - a fit that computes and fails → `manufacturing_plan_winding_does_not_fit` (`metresSufficient` / `diameterFits`). Fail-closed; an authorized exception path would be a Business decision.
+  - A refusal wins over missing inputs.
+  - Nothing changes on a refusal: no version, no approval, no audit.
+  - A stored approval is restored without re-running the gate.
+- **The outside inputs today** (`SlittingPlanParameters`): all unknown, so every approval of a plan with a spec is refused with the full list. None of these is defaulted or entered on the plan:
+  - `labelState`: Inventory's module read of the label (queued, ÜRÜN);
+  - `thicknessMm`, `parentWidthMm`: Product's role read (ÜRÜN; data waits on Q6 #66 5740511161);
+  - `netUsableWidthMm`, `densityKgPerCubicMetre`, `lineSpeedMetresPerMinute`, `innerDiameterMm`, `maximumOuterDiameterMm`, `toleranceMetres`: the Settings / Policy Registry (DEC-SET-001, OPEN-007, OPEN-004/005).
+- **No parameter snapshot yet.** Its source-version shape is the registry's and lands with the registry's first reader. The gate means no approval can happen without it.
+- **Engine fix carried here:** WND-009's outer diameter is WND-003's computed value. `WindingEngineV1.Fit` now takes it as a positive computed value, not an Ö2 nominal millimetre, which a computed diameter never is. The line's maximum stays nominal. The formula is unchanged, so this is not a new version.
+- **Migration** `20260919130000_AddPlanSlittingSpecs`: its Down refuses with `THROW 51047` (Manufacturing's one module number) while any spec is stored. Forward fix. Real SQL: it rolls back and forward cleanly with no spec, and refuses (51047) with one.
+- **Open item** (#66 NEEDS-BUSINESS 5741547443): whether a slitting plan's parent mass is the whole coil (the label's balance) or may be a part of it. Until it is answered, the engine takes the planned mass (the kg that passes the line) and **no rule** ties it to the label's balance either way. The balance itself also needs Inventory's module read.
+
+- **Carried (FİNANS #342 INFO-3):** the store's decimal(18,3) column bound `KilogramColumnLimit` also bounds the band width. It is to get a neutral name (e.g. `Decimal18Scale3Limit`) in the next slice that touches the guard-pinned `ManufacturingStore.cs` anyway. Deferred so that pure-domain slices stay non-central (coordinator ruling).
+
+## MFG-7 slice 1 — the Cold Rolling engine (Business 5737790175, DEC-PRDCT-001 order)
+
+`Domain/Engines/ColdRolling/ColdRollingEngineV1` (`GDC-CR/1`) is master v3 §28.8 (CR-001…005) exactly, on the same core (`EngineResult` / `EngineInputs` / `EngineMath`) and under the same rules as the MFG-6 engines: pure, decimal, versioned, no I/O.
+
+- **Formula card:**
+
+| ID | Master §28.8 | Engine (evaluation order) |
+|---|---|---|
+| CR-001 input metres | `HamKg × 1000 / (GirişKalınlık × En × Yoğunluk[kg/dm³])` | `inputKg × 1 000 000 / (inputThicknessMm × widthMm × density[kg/m³])` |
+| CR-002 output kg | `HamKg − FireKg` | `inputKg − scrapKg` (exact) |
+| CR-003 elongation | `GirişKalınlık / HedefKalınlık` | the same, one division |
+| CR-004 output metres | `ÇıkışKg × 1000 / (HedefKalınlık × En × Yoğunluk[kg/dm³])` | `outputKg × 1 000 000 / (targetThicknessMm × widthMm × density[kg/m³])` |
+| CR-005 reduction % | `(GirişKalınlık − HedefKalınlık) / GirişKalınlık × 100` | `(input − target) × 100 / input` |
+
+- **Unit mapping:** density is ONE registry parameter in kg/m³, shared with WND-001 (OPEN-007, DEC-SET-001). §28.8 writes it in kg/dm³ with ×1000. With ρ[kg/dm³] = ρ[kg/m³] / 1000, the ×1000 becomes ×1 000 000; the two forms are algebraically identical. Golden check: 28 750 × 10⁶ / (2 × 1500 × 7850) = 1220.807 m.
+- **Invariants (§28.8), refused with codes, never clamped:**
+  - the target thickness must be below the input thickness (`engine_target_thickness_not_below_input`);
+  - the scrap must be below the input mass; equal or more is `engine_scrap_not_below_input_mass`.
+  - The scrap is supplied: a stated 0 is a value, a missing one is unavailable.
+- **Never a guess:** a missing input is `Unavailable` and is named; Ö2 kilogram and millimetre inputs take at most three decimals and are refused beyond. Nothing rounds.
+- **One width:** the coil's width is one input for both sides, as §28.8 uses one `En`.
+- **Not in version 1:** multi-pass rolling, the pass plan, tolerance, work hardening and quality results. The master keeps these in the process model.
+- **Golden tests** (`ColdRollingEngineTests`): the §28.8 example (28.750 kg, 1500 mm, 2,00 → 1,50 mm → 1220,807 m, 1627,742 m, 1,333, %25) at the master's printed precision (±0.0005), plus an independent 40-digit reference (±1e-18). Its density 7850 kg/m³ and scrap 0 kg are test inputs, not production parameters.
+
 ## Behaviour kept on purpose — Business decision pending
 
 - **One approved plan can open more than one order** (`FromApprovedPlan` does not mark the plan as converted). §7.3 does not say whether a plan becomes one order or several partial ones; the question is open with Business (#66 5728934213, the same principle as Purchasing's request → several orders). Pinned by a test; changes only by that decision. The physical guard is Inventory's.
@@ -149,9 +210,9 @@ Not here: closing an order, a list or search, cost, Inventory movements (T15), o
 ## What this module is not
 
 - No stock movement, lot or label: Inventory owns those.
-- No trim/kerf value, tolerance number, template, rounding stage or roll-substitution policy. The only formulas are the two MFG-6 engines above, and every parameter is supplied to them.
+- No trim/kerf value, tolerance number, template, rounding stage or roll-substitution policy. The only formulas are the MFG-6 engines and the MFG-7 cold-rolling engine above, and every parameter is supplied to them.
 - No UI yet (the normal screen is the next card); HTTP since MFG-API, persistence since MFG-5 (above).
-- No other engine (cold rolling, tube/profile, painting, cut-to-length; DEC-PRDCT-001 order).
+- No other engine yet: tube/profile, painting and cut-to-length follow in the DEC-PRDCT-001 order.
 
 ## dependency_wait
 

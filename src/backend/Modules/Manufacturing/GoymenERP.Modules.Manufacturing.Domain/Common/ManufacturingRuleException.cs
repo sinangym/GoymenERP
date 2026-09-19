@@ -3,11 +3,15 @@ namespace GoymenERP.Modules.Manufacturing.Domain.Common;
 /// <summary>
 /// A manufacturing rule was broken. <see cref="Code"/> is one of <see cref="ManufacturingRuleCodes"/>:
 /// stable and machine-readable, so a test or a later application layer can tell WHICH rule held
-/// without parsing the message. Nothing is partly applied when this is thrown.
+/// without parsing the message. Nothing is partly applied when this is thrown. <see cref="Parameters"/>
+/// names what the rule found missing or wrong (MFG-6: the unavailable engine parameters), empty otherwise.
 /// </summary>
-public sealed class ManufacturingRuleException(string code, string message) : InvalidOperationException(message)
+public sealed class ManufacturingRuleException(string code, string message, IReadOnlyList<string>? parameters = null)
+    : InvalidOperationException(message)
 {
     public string Code { get; } = code;
+
+    public IReadOnlyList<string> Parameters { get; } = parameters ?? [];
 }
 
 /// <summary>
@@ -33,6 +37,34 @@ public static class ManufacturingRuleCodes
     public const string WipMeasurementNotLatest = "manufacturing_wip_measurement_not_latest";
 
     public const string UnexplainedDifference = "manufacturing_unexplained_difference";
+
+    /// <summary>A nominal millimetre carries more than three decimals (Ö2): refused, never rounded.</summary>
+    public const string MillimetrePrecisionExceeded = "manufacturing_millimetre_precision_exceeded";
+
+    /// <summary>A slitting spec names no slit line.</summary>
+    public const string SlittingSpecWithoutLines = "manufacturing_slitting_spec_without_lines";
+
+    /// <summary>
+    /// MFG-6: a plan with a slitting spec is approved only when every engine input is known. Some are not;
+    /// <see cref="ManufacturingRuleException.Parameters"/> names each one. Nothing is approved with gaps.
+    /// </summary>
+    public const string PlanParametersUnavailable = "manufacturing_plan_parameters_unavailable";
+
+    /// <summary>
+    /// MFG-6: an engine refused the plan's inputs (e.g. the slit lines use more width than the coil has).
+    /// <see cref="ManufacturingRuleException.Parameters"/> holds the engine's code and the parameter it named.
+    /// </summary>
+    public const string PlanEngineRefused = "manufacturing_plan_engine_refused";
+
+    /// <summary>
+    /// MFG-6: the winding fit computed and failed (WND-008 the band cannot reach its target length, or
+    /// WND-009 the coil exceeds the line's maximum outer diameter). <see cref="ManufacturingRuleException.Parameters"/>
+    /// names the failed check. Fail-closed: an authorized exception path, if any, is a Business decision.
+    /// </summary>
+    public const string PlanWindingDoesNotFit = "manufacturing_plan_winding_does_not_fit";
+
+    /// <summary>MFG-6: the label source says a planned parent roll's label cannot be used for this plan.</summary>
+    public const string PlanLabelNotUsable = "manufacturing_plan_label_not_usable";
 
     /// <summary>
     /// A stored plan or order does not rebuild under the rules that wrote it (MFG-5): a close trace

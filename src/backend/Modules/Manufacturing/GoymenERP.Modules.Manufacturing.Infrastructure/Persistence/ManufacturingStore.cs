@@ -59,7 +59,13 @@ public sealed class ManufacturingStore(
                 "Yalnız taslak plan kaydedilir; onay ayrı bir yazmadır.");
         }
 
-        RequireFits(plan.Inputs.Select(input => input.PlannedMass).Concat(plan.Target is { } t ? [t.Mass] : []));
+        RequireFits(plan.Inputs.Select(input => input.PlannedMass).Concat(plan.Target is { } t ? [t.Mass] : [])
+            .Concat(plan.Spec?.WindingTargetKg is { } winding ? [winding] : []));
+        // A band width is a decimal(18,3) millimetre: beyond the column it is refused, never cut.
+        if (plan.Spec is { } widths && widths.Lines.Any(line => line.BandWidthMm >= KilogramColumnLimit))
+        {
+            throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Bant eni kayıt sütununa sığmıyor.");
+        }
 
         var payloadHash = PlanHash(plan);
         var existing = await dbContext.Plans.AsNoTracking().SingleOrDefaultAsync(row => row.Id == plan.Id, cancellationToken);
@@ -80,6 +86,7 @@ public sealed class ManufacturingStore(
             Status = (int)plan.Status,
             TargetBasis = plan.Target is null ? null : (int)plan.Target.Basis,
             TargetKg = plan.Target?.Mass.Value,
+            WindingTargetKg = plan.Spec?.WindingTargetKg?.Value,
             Version = plan.Version,
             PayloadHash = payloadHash,
             CreatedAtUtc = now,
@@ -95,6 +102,20 @@ public sealed class ManufacturingStore(
                 ParentRollId = input.ParentRollId,
                 Sequence = ++sequence,
                 PlannedKg = input.PlannedMass.Value,
+            });
+        }
+
+        // MFG-6: the slitting spec is plan content, stored in the same save.
+        var lineSequence = 0;
+        foreach (var line in plan.Spec?.Lines ?? Array.Empty<SlitLine>())
+        {
+            dbContext.PlanSlitLines.Add(new PlanSlitLineRow
+            {
+                CompanyId = plan.CompanyId,
+                PlanId = plan.Id,
+                Sequence = ++lineSequence,
+                BandWidthMm = line.BandWidthMm,
+                BandCount = line.Count,
             });
         }
 
@@ -420,9 +441,14 @@ public sealed class ManufacturingStore(
             .Where(input => input.PlanId == row.Id)
             .OrderBy(input => input.Sequence)
             .ToListAsync(cancellationToken);
+        var lines = await dbContext.PlanSlitLines.AsNoTracking()
+            .Where(line => line.PlanId == row.Id)
+            .OrderBy(line => line.Sequence)
+            .ToListAsync(cancellationToken);
         return ProductionPlan.Restore(row.Id, row.CompanyId, row.WorkCenterId, (ManufacturingProcess)row.Process,
             inputs.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg))),
-            Target(row.TargetBasis, row.TargetKg), row.ApprovedByUserId, row.ApprovedAtUtc, row.Version);
+            Target(row.TargetBasis, row.TargetKg), row.ApprovedByUserId, row.ApprovedAtUtc, row.Version,
+            Spec(lines, row.WindingTargetKg));
     }
 
     private async Task<ProductionOrder> RestoreOrderAsync(OrderRow row, CancellationToken cancellationToken)
@@ -476,6 +502,24 @@ public sealed class ManufacturingStore(
                 fact.OccurredAtUtc)),
             row.ClosedByUserId, row.ClosedAtUtc, row.Version);
 
+    /// <summary>
+    /// A plan has a slitting spec exactly when it has slit lines; a winding target without lines is a
+    /// stored record the domain cannot have produced, and is refused, not repaired.
+    /// </summary>
+    private static SlittingSpec? Spec(IReadOnlyList<PlanSlitLineRow> lines, decimal? windingTargetKg)
+    {
+        if (lines.Count == 0)
+        {
+            return windingTargetKg is null
+                ? null
+                : throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                    "Kayıtlı sarım hedefi dilme satırı olmadan var olamaz.");
+        }
+
+        return new SlittingSpec(lines.Select(line => new SlitLine(line.BandWidthMm, line.BandCount)),
+            windingTargetKg is { } target ? new Kilograms(target) : null);
+    }
+
     private static ProductionTarget? Target(int? basis, decimal? kilograms) =>
         basis is null && kilograms is null
             ? null
@@ -506,6 +550,19 @@ public sealed class ManufacturingStore(
             builder.Append(input.ParentRollId.ToString("D")).Append(':').Append(Canonical(input.PlannedMass.Value)).Append(';');
         }
 
+        // MFG-6: only a plan WITH a slitting spec extends the canonical content, so every plan stored before
+        // it keeps its hash (and its replay identity) unchanged.
+        if (plan.Spec is { } spec)
+        {
+            builder.Append("|slitting.v1|")
+                .Append(spec.WindingTargetKg is { } winding ? Canonical(winding.Value) : "-").Append('|');
+            foreach (var line in spec.Lines)
+            {
+                builder.Append(Canonical(line.BandWidthMm)).Append('x')
+                    .Append(line.Count.ToString(CultureInfo.InvariantCulture)).Append(';');
+            }
+        }
+
         return Hash(builder.ToString());
     }
 
@@ -530,7 +587,25 @@ public sealed class ManufacturingStore(
     private static string Hash(string canonical) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
 
-    private static string PlanAudit(ProductionPlan plan) => JsonSerializer.Serialize(new
+    private static string PlanAudit(ProductionPlan plan) => plan.Spec is { } spec
+        // MFG-6: a plan with a slitting spec carries it in its audit; a plan without one keeps the MFG-5 shape.
+        ? JsonSerializer.Serialize(new
+        {
+            plan.Id,
+            plan.WorkCenterId,
+            process = plan.Process.ToString(),
+            status = plan.Status.ToString(),
+            target = plan.Target is null ? null : new { basis = plan.Target.Basis.ToString(), kg = plan.Target.Mass.Value },
+            inputs = plan.Inputs.Select(input => new { input.ParentRollId, kg = input.PlannedMass.Value }),
+            slitting = new
+            {
+                lines = spec.Lines.Select(line => new { bandWidthMm = line.BandWidthMm, count = line.Count }),
+                windingTargetKg = spec.WindingTargetKg?.Value,
+            },
+            plan.ApprovedByUserId,
+            plan.ApprovedAtUtc,
+        }, Json)
+        : JsonSerializer.Serialize(new
     {
         plan.Id,
         plan.WorkCenterId,

@@ -85,4 +85,10 @@ public static class EngineCodes
 
     /// <summary>The coil's inner diameter is not smaller than its maximum outer diameter.</summary>
     public const string InnerDiameterNotBelowMaximum = "engine_inner_diameter_not_below_maximum";
+
+    /// <summary>Master v3 §28.8: the target thickness must be below the input thickness (cold rolling only thins).</summary>
+    public const string TargetThicknessNotBelowInput = "engine_target_thickness_not_below_input";
+
+    /// <summary>Master v3 §28.8: the scrap cannot equal or exceed the input mass.</summary>
+    public const string ScrapNotBelowInputMass = "engine_scrap_not_below_input_mass";
 }

@@ -9,6 +9,8 @@ using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -260,6 +262,115 @@ public sealed class ManufacturingSqlServerRelationalAcceptanceTests
                 await a.Plans.SavePlanAsync(NewPlan(CompanyA, workCenterA), Metadata(run)));
         }
     }
+
+    /// <summary>
+    /// MFG-6 slice 2: a slitting spec is plan content in real SQL — stored with the plan in one save, read
+    /// back, replayed, and a different spec under the same id refused. Its approval is refused while any
+    /// engine input is unknown, naming each one, and nothing changes: no version, no approval, no audit.
+    /// </summary>
+    [SqlServerFact]
+    public async Task A_slitting_spec_is_plan_content_and_its_approval_is_refused_naming_every_missing_input()
+    {
+        await using var run = await Run.StartAsync();
+        var plan = SpecPlan(CompanyA, await run.WorkCenterOfAsync(CompanyA));
+
+        await using (var a = run.Store(CompanyA))
+        {
+            Assert.Equal(ManufacturingWriteOutcome.Recorded, await a.Plans.SavePlanAsync(plan, Metadata(run)));
+            Assert.Equal(ManufacturingWriteOutcome.Replayed, await a.Plans.SavePlanAsync(SpecPlan(plan), Metadata(run)));
+            Assert.Equal(ManufacturingStoreCodes.PlanIdConflict, (await Assert.ThrowsAsync<ManufacturingStoreException>(
+                () => a.Plans.SavePlanAsync(SpecPlan(plan, new SlittingSpec([new SlitLine(150m, 4)], Kg(2_000m))),
+                    Metadata(run)))).Code);
+        }
+
+        await using (var a = run.Store(CompanyA))
+        {
+            Assert.Equal(plan.Spec, (await a.Plans.FindPlanAsync(plan.Id))!.Spec);
+        }
+
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.PlanSlitLines WHERE PlanId = @p", ("@p", plan.Id)));
+        Assert.Equal(2_000m, await run.ScalarAsync<decimal>(
+            "SELECT WindingTargetKg FROM manufacturing.Plans WHERE Id = @p", ("@p", plan.Id)));
+        var auditsBefore = await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Manufacturing.ProductionPlan' AND EntityId = @p",
+            ("@p", plan.Id.ToString()));
+
+        await using (var a = run.Store(CompanyA))
+        {
+            var refusal = await Assert.ThrowsAsync<ManufacturingRuleException>(
+                () => a.Plans.ApprovePlanAsync(plan.Id, 1, run.Actor, At, Metadata(run)));
+            Assert.Equal(ManufacturingRuleCodes.PlanParametersUnavailable, refusal.Code);
+            Assert.Equal(
+                ["densityKgPerCubicMetre", "innerDiameterMm", "labelState", "lineSpeedMetresPerMinute", "maximumOuterDiameterMm",
+                    "netUsableWidthMm", "parentWidthMm", "thicknessMm", "toleranceMetres"],
+                refusal.Parameters);
+        }
+
+        Assert.Equal((1, 1L), (await run.ScalarAsync<int>("SELECT Status FROM manufacturing.Plans WHERE Id = @p", ("@p", plan.Id)),
+            await run.ScalarAsync<long>("SELECT Version FROM manufacturing.Plans WHERE Id = @p", ("@p", plan.Id))));
+        Assert.Equal(auditsBefore, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Manufacturing.ProductionPlan' AND EntityId = @p",
+            ("@p", plan.Id.ToString())));
+
+        // Another company neither finds the plan nor sees its lines.
+        await using (var b = run.Store(CompanyB))
+        {
+            Assert.Null(await b.Plans.FindPlanAsync(plan.Id));
+        }
+
+        await using (var context = run.Context(CompanyB))
+        {
+            Assert.Equal(0, await context.PlanSlitLines.CountAsync());
+        }
+    }
+
+    /// <summary>
+    /// MFG-6 slice 2's migration Down on real SQL: with no spec stored it rolls back and forward cleanly;
+    /// with a stored spec it refuses (THROW 51047, Manufacturing's module number) and keeps everything.
+    /// </summary>
+    [SqlServerFact]
+    public async Task The_slitting_spec_migration_rolls_back_only_while_no_spec_is_stored()
+    {
+        await using var run = await Run.StartAsync();
+        const string beforeSpecs = "20260918230000_AddManufacturingCommands";
+
+        await using (var context = run.Context(CompanyA))
+        {
+            var migrator = context.GetService<IMigrator>();
+            await migrator.MigrateAsync(beforeSpecs);
+            Assert.Equal(beforeSpecs, (await context.Database.GetAppliedMigrationsAsync()).Last());
+            Assert.Equal(0, await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM sys.tables WHERE [name] = N'PlanSlitLines' AND [schema_id] = SCHEMA_ID(N'manufacturing')"));
+            await context.Database.MigrateAsync();
+        }
+
+        var plan = SpecPlan(CompanyA, await run.WorkCenterOfAsync(CompanyA));
+        await using (var a = run.Store(CompanyA))
+        {
+            await a.Plans.SavePlanAsync(plan, Metadata(run));
+        }
+
+        await using (var context = run.Context(CompanyA))
+        {
+            var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(beforeSpecs));
+            Assert.Equal(51047, error.Number);
+            Assert.EndsWith("_AddPlanSlittingSpecs", (await context.Database.GetAppliedMigrationsAsync()).Last(),
+                StringComparison.Ordinal);
+        }
+
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM manufacturing.PlanSlitLines WHERE PlanId = @p", ("@p", plan.Id)));
+    }
+
+    /// <summary>A plan with the §28.4 golden slit lines and a winding target, on one roll of 28.750 kg.</summary>
+    private static ProductionPlan SpecPlan(Guid company, Guid workCenter) =>
+        new(Guid.NewGuid(), company, workCenter, ManufacturingProcess.Slitting, [new PlannedInput(RollA, Kg(28_750m))],
+            target: null, new SlittingSpec([new SlitLine(150m, 4), new SlitLine(240m, 3)], Kg(2_000m)));
+
+    /// <summary>The same plan (id, company, work center, inputs), with its own spec or another one.</summary>
+    private static ProductionPlan SpecPlan(ProductionPlan plan, SlittingSpec? spec = null) =>
+        new(plan.Id, plan.CompanyId, plan.WorkCenterId, plan.Process, plan.Inputs, plan.Target, spec ?? plan.Spec);
 
     private static Kilograms Kg(decimal value) => new(value);
 

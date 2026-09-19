@@ -133,7 +133,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
-                "117270f5953021654cdbdc2986ad353582c9d4060a5cd3766a1a8bf699ea8cf3",
+                "e7afbeca52eb463850b575975fbfb4103fb83d1acb32fecb30d2940d9125811b",
 
             // organization
             ["tools/relational_inventory/organization.txt"] =
@@ -188,7 +188,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/"
              + "Persistence/ManufacturingDbContext.cs"] =
-                "981990c42914015dbf03a33e046c5474ea17f59a0acb006d6a5a904ac4ecbca4",
+                "fc6818d5c21d556087c39bad90362c83cd83303e6d86f35cd4547685c91c6c10",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
@@ -439,7 +439,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "344aacdc7274d79f93879d498cd37eae125ffb636380d22db58781bbe2c0f8c7",
+                        "fefed185afff1a1a753fd8e56c81dbcaddf6ebfcce5a2fa448f1c448739c9db0",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -543,6 +543,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // forward fix, no approval fact or attempt is dropped.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20260919120000_AddDraftApproval.cs"] =
                     new("d5aa478dc70559fa55e54df47a2fc6703a4677b1db4caab425fbe9b3ea10e89c",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // MFG-6 slice 2: the Down's only raw SQL is Manufacturing's module refusal (51047) while any plan
+                // slitting spec is stored; forward fix, no spec is dropped.
+                ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/20260919130000_AddPlanSlittingSpecs.cs"] =
+                    new("2c9558291e1159f12ec838b7ab8d0a9e468630e384b0777896473a5f3c336f51",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/20260912175128_InitialProductDrafts.cs"] =

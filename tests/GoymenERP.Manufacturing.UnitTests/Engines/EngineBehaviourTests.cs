@@ -49,6 +49,21 @@ public sealed class EngineBehaviourTests
     }
 
     [Fact]
+    public void The_fit_takes_the_computed_outer_diameter_at_full_precision_but_a_nominal_maximum()
+    {
+        // WND-009 compares WND-003's COMPUTED diameter (1371.1401108…) with the line's nominal maximum. The
+        // computed one is not an Ö2 millimetre, so its precision is not refused (MFG-6 slice 2).
+        var computed = WindingEngineV1.Target(new WindingTargetInputV1(7850m, 3m, 1500m, 15000m, 508m)).Value!;
+        var fit = WindingEngineV1.Fit(new WindingFitInputV1(425m, 0m, computed.RequiredMetres, computed.OuterDiameterMm, 1500m));
+        Assert.Equal(new WindingFitV1(WindingEngineV1.FormulaVersion, MetresSufficient: true, DiameterFits: true), fit.Value);
+
+        // The maximum stays a nominal millimetre: a fourth decimal is still refused there.
+        var nominal = WindingEngineV1.Fit(new WindingFitInputV1(425m, 0m, computed.RequiredMetres, computed.OuterDiameterMm, 1500.0001m));
+        Assert.Equal((EngineOutcome.Refused, EngineCodes.PrecisionExceeded, "maximumOuterDiameterMm"),
+            (nominal.Outcome, nominal.RefusalCode, nominal.RefusedParameter));
+    }
+
+    [Fact]
     public void Used_width_beyond_the_net_width_is_refused_not_clamped()
     {
         // Master §28.4: the used width cannot exceed the net width. 150×4 + 240×4 = 1560 > 1500.

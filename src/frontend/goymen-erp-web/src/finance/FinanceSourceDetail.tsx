@@ -68,7 +68,18 @@ function conflictedVersion(state: AttemptState): string | null {
   return state.snapshot.request.body.expectedVersion
 }
 
-export function FinanceSourceDetail({ sourceId }: { readonly sourceId: string }) {
+/**
+ * `offerRecordReverse`: Record and Reverse have no route yet (T05; their authority is OPEN-009), so the
+ * mounted screen does NOT offer them — the HTTP port would only answer a local `Unavailable`, which
+ * must never look like a sent command. Off by default; component tests of the actions turn it on.
+ */
+export function FinanceSourceDetail({
+  sourceId,
+  offerRecordReverse = false,
+}: {
+  readonly sourceId: string
+  readonly offerRecordReverse?: boolean
+}) {
   const detail = useFinanceRead('source', [sourceId], (port, scope, signal) => port.sourceDetail(scope, { sourceId }, signal), decodeSourceDetailFor(sourceId))
   const banks = useFinanceRead('bank-accounts', [], (port, scope, signal) => port.listBankAccounts(scope, signal), decodeBankAccountPage)
   const record = useReceiptCommand('record', sourceId)
@@ -144,10 +155,10 @@ export function FinanceSourceDetail({ sourceId }: { readonly sourceId: string })
         </p>
       ) : null}
 
-      {data.source.stage === 'Draft' && !recordDone ? (
+      {offerRecordReverse && data.source.stage === 'Draft' && !recordDone ? (
         <RecordAction command={record} source={data} onReread={detail.refetch} />
       ) : null}
-      {data.source.stage === 'Recorded' && !reverseDone ? (
+      {offerRecordReverse && data.source.stage === 'Recorded' && !reverseDone ? (
         <ReverseAction command={reverse} source={data} onReread={detail.refetch} />
       ) : null}
     </div>

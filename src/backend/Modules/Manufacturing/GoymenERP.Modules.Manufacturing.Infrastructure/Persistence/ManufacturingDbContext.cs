@@ -32,6 +32,8 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
 
     internal DbSet<PlanInputRow> PlanInputs => Set<PlanInputRow>();
 
+    internal DbSet<PlanSlitLineRow> PlanSlitLines => Set<PlanSlitLineRow>();
+
     internal DbSet<OrderRow> Orders => Set<OrderRow>();
 
     internal DbSet<OrderInputRow> OrderInputs => Set<OrderInputRow>();
@@ -50,6 +52,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         ConfigureOrganizationReferences(modelBuilder);
         ConfigurePlans(modelBuilder);
         ConfigurePlanInputs(modelBuilder);
+        ConfigurePlanSlitLines(modelBuilder);
         ConfigureOrders(modelBuilder);
         ConfigureOrderInputs(modelBuilder);
         ConfigureFacts(modelBuilder);
@@ -98,11 +101,13 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                 "([Status] = 1 AND [ApprovedByUserId] IS NULL AND [ApprovedAtUtc] IS NULL) "
                 + "OR ([Status] = 2 AND [ApprovedByUserId] IS NOT NULL AND [ApprovedAtUtc] IS NOT NULL)");
             table.HasCheckConstraint("CK_Plans_Version", "[Version] >= 1");
+            table.HasCheckConstraint("CK_Plans_WindingTarget", "[WindingTargetKg] IS NULL OR [WindingTargetKg] > 0");
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
         entity.Property(x => x.Id).ValueGeneratedNever();
         entity.Property(x => x.TargetKg).HasPrecision(18, 3);
+        entity.Property(x => x.WindingTargetKg).HasPrecision(18, 3);
         entity.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.RowVersion).IsRowVersion();
@@ -124,6 +129,25 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         entity.HasKey(x => new { x.CompanyId, x.PlanId, x.ParentRollId });
         entity.HasIndex(x => new { x.CompanyId, x.PlanId, x.Sequence }).IsUnique();
         entity.Property(x => x.PlannedKg).HasPrecision(18, 3);
+        entity.HasOne<PlanRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PlanId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>MFG-6: a plan's slit lines, bound by (company, plan) like its inputs; append-only.</summary>
+    private void ConfigurePlanSlitLines(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<PlanSlitLineRow>();
+        entity.ToTable("PlanSlitLines", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PlanSlitLines_Width", "[BandWidthMm] > 0");
+            table.HasCheckConstraint("CK_PlanSlitLines_Count", "[BandCount] >= 1");
+            table.HasCheckConstraint("CK_PlanSlitLines_Sequence", "[Sequence] >= 1");
+        });
+        entity.HasKey(x => new { x.CompanyId, x.PlanId, x.Sequence });
+        entity.Property(x => x.BandWidthMm).HasPrecision(18, 3);
         entity.HasOne<PlanRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.PlanId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
