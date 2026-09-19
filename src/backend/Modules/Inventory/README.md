@@ -150,9 +150,33 @@ adjustment and count-difference rules and their second approval are not relaxed.
 | One save: the count, its lines, each lot (new or the same stored facts), each new label, one receipt and balance per piece, and the audit events commit together or not at all | `InventoryStore.RecordAsync` | SQL |
 | R3: the count id is the identity; the same content is a replay, another content `inventory_opening_conflict` | `OpeningHash`, `OpeningCounts.ContentHash` | store |
 
-Not in this part: product eligibility per line (Product's `IProductStockEligibilityV1`, asked by the
-command service before the store; it needs #335 + the family release), the permission
-`inventory.opening-stock.record` (the grant is human), the endpoint, the UI, and any real opening data.
+## T07 opening stock (INV-OPEN-1, part 2: the command)
+
+`InventoryOpeningCommandService` (`IInventoryOpeningCommandService`) records a count under ADR-011 over
+the part-1 store. Every refusal writes no stock.
+
+| Rule | Answer | Evidence |
+|---|---|---|
+| `inventory.opening-stock.record`, company-wide, measured fresh (#276) before any read and again after each owner read (the stored key, the location, each product). An unregistered name is a setup gap, never a grant | 403 `forbidden`, 503 `inventory_permission_unregistered` | SQL (no grant, revoked after the location read) |
+| The location is Organization's ACTIVE internal location of the company, as it stands now (`IInventoryLocationStatusPort`, bound centrally to Organization's company-scoped module read, never a user-authorized read). Inactive = the location's own `!IsActive` (no site cascade); External = `IsExternal` (SINAN_KARARLARI_2026-08-31 §3). When several apply the first wins: not found → external → inactive | 422 `inventory_location_not_found` (unknown or another company's; terminal) / `_external` / `_inactive`; 503 `inventory_location_unavailable` | SQL (port double) |
+| Each counted product may be stocked at the card version the counter read, on the counted-on date (`IInventoryProductStockPort` → Product's `IProductStockEligibilityV1`). Any refused line refuses the count | 422 `inventory_product_ineligible` with `lines[i].*` issues; 503 `inventory_product_eligibility_unavailable` | SQL (port double) |
+| ADR-011: key = (company, `inventory.opening-count.record`, upper-case SHA-256 of the trimmed key) in `inventory.Commands`, written in the same save as the count. The same actor and payload replays with the first correlation (§5 fresh authority first); another actor or payload is a conflict that discloses nothing | 201 / replay (`IsReplay`, `OriginalCorrelationId`) / 409 `idempotency_conflict` | SQL |
+| The same count under a new key: no second effect; the key answers the count's first recording — **200 replay** (`Idempotency-Replayed: true`, `Idempotency-Original-Correlation-Id` = the COUNT's first correlation, not this key's), and the new key records that answer | 200 replay | SQL |
+| **Terminal or not (consumers such as LOG-4 / PUR copy this split).** Terminal, recorded and replayed for the key: `inventory_location_not_found` (422) and the store conflicts `inventory_opening_conflict`, `inventory_label_conflict`, `inventory_label_code_taken`, `inventory_lot_conflict`, `inventory_label_already_in_stock`, `inventory_duplicate_source`, `inventory_movement_id_conflict` (409). NOT terminal (a retry of the key may succeed once the owner's state changes): `inventory_location_inactive` / `_external`, `inventory_product_ineligible` (422), every 503, `inventory_concurrent_change`, and every 400 | — | SQL + unit |
+| Authority is measured before each owner answer is used and right before the save; **nothing after the commit** (ORG #321 P3-1): a grant revoked after the commit never turns a stored count into a 403 | the stored answer | code (no test pins the absence) |
+| §7 terminal: a conflict with what is stored (`inventory_opening_conflict`, `inventory_label_conflict`, `inventory_label_already_in_stock`, `inventory_label_code_taken`, `inventory_lot_conflict`, …) or a location not found is recorded alone and replayed | 409 / 422, replayed with the first correlation | SQL |
+| §8: two requests with one key meet at the save; the loser stores nothing and answers the winner's record — the key is re-read after ANY refusal of the save, since the loser may collide on another index of the batch first | one count, one command row, both answer it | SQL (Barrier) |
+| The problem codes are CLOSED per status (`InventoryOpeningCodesV1.Status400/409/422/503Codes`, `IssueCodes`); an unmapped store or domain code is an internal fault, never a guessed 4xx | exactly the listed codes | unit |
+| A count id another company holds collides invisibly at `PK_OpeningCounts`; the id is read from that key's OWN error, as for lots and labels (#341, FİNANS INFO-3) | `inventory_opening_conflict`, no retry advice | SQL |
+| Company B (no approved kg source): the Product port over the real eligibility chain passes Settings' `settings_provider_unavailable` through, never a field error; GDC's kg card is eligible (ORG #341 P3-1). The release is SYNTHETIC, in the disposable test DB only | 503 `inventory_product_eligibility_unavailable` | SQL |
+| Forward fix: `AddInventoryCommands.Down` and `AddOpeningCounts.Down` refuse (THROW 51046) while commands, opening counts or count-sourced movements exist | the migration stays applied | SQL |
+| Book = count at opening; a later book/count difference is ST-05 with its own second approval, never this command | — | SQL |
+
+Not in this part (central, CARİ): the permission registration, `POST/GET /api/v1/inventory/opening-counts`
+with the replay headers and problem mapping, OpenAPI, the DI of the service and the host adapters of the two
+ports (Product stock eligibility, Organization location state), pins and the reviewed Sql entries of both Downs.
+Not anywhere yet: the grant (human), the UI, and any real opening data (the positive product path needs the
+family release, Q6).
 
 ## #333 follow-up: the duplicate key of its own error
 
