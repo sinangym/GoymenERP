@@ -165,7 +165,8 @@ the part-1 store. Every refusal writes no stock.
 | §7 terminal: a conflict with what is stored (`inventory_opening_conflict`, `inventory_label_conflict`, `inventory_label_already_in_stock`, `inventory_label_code_taken`, `inventory_lot_conflict`, …) or a location not found is recorded alone and replayed | 409 / 422, replayed with the first correlation | SQL |
 | §8: two requests with one key meet at the save; the loser stores nothing and answers the winner's record — the key is re-read after ANY refusal of the save, since the loser may collide on another index of the batch first | one count, one command row, both answer it | SQL (Barrier) |
 | The problem codes are CLOSED per status (`InventoryOpeningCodesV1.Status400/409/422/503Codes`, `IssueCodes`); an unmapped store or domain code is an internal fault, never a guessed 4xx | exactly the listed codes | unit |
-| A count id another company holds collides invisibly at `PK_OpeningCounts` | `inventory_opening_conflict`, no retry advice | SQL |
+| A count id another company holds collides invisibly at `PK_OpeningCounts`; the id is read from that key's OWN error, as for lots and labels (#341, FİNANS INFO-3) | `inventory_opening_conflict`, no retry advice | SQL |
+| Company B (no approved kg source): the Product port over the real eligibility chain passes Settings' `settings_provider_unavailable` through, never a field error; GDC's kg card is eligible (ORG #341 P3-1). The release is SYNTHETIC, in the disposable test DB only | 503 `inventory_product_eligibility_unavailable` | SQL |
 | Forward fix: `AddInventoryCommands.Down` and `AddOpeningCounts.Down` refuse (THROW 51046) while commands, opening counts or count-sourced movements exist | the migration stays applied | SQL |
 | Book = count at opening; a later book/count difference is ST-05 with its own second approval, never this command | — | SQL |
 

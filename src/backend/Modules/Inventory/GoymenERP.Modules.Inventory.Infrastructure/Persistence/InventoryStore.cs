@@ -706,7 +706,7 @@ public sealed partial class InventoryStore(
                         : InventoryStoreCodes.ConcurrentChange,
                 // The same for an opening count id (SİPARİŞ #337 P3): raced here, or held by another company.
                 var message when message.Contains("'PK_OpeningCounts'", StringComparison.Ordinal) =>
-                    DuplicateKey(message) is { } countId
+                    DuplicateKey(Errors(sql), "'PK_OpeningCounts'") is { } countId
                     && !await dbContext.OpeningCounts.AsNoTracking().AnyAsync(row => row.Id == countId, cancellationToken)
                         ? InventoryStoreCodes.OpeningConflict
                         : InventoryStoreCodes.ConcurrentChange,
