@@ -1,3 +1,5 @@
+import { financeRef } from './financeText'
+
 /**
  * Turkish text for F-04 Banka Hesapları (the bank-account master, FIN-UI-1a).
  *
@@ -23,8 +25,12 @@ export const BANK_COLUMN = {
 export const BANK_STATE_APPROVED = 'Onaylı — tahsilatta kullanılabilir'
 export const BANK_STATE_PENDING = 'Onay bekliyor'
 export const BANK_OWN_PROPOSAL = 'Sizin öneriniz — başka bir yetkili onaylamalı.'
-/** Shown when the currency's code is not known to this caller (the candidate read is the proposer's). */
-export const currencyFallback = (currencyId: string) => `Para birimi kimliği …${currencyId.slice(-4)}`
+/**
+ * Shown when the currency's code is not known to this caller (the candidate read is the proposer's).
+ * One reference shape across Finance (ORG #356 INFO-2): the shared `financeRef`, the last 8 characters, as
+ * Accounting shows a reference too. It is a labelled reference, never the currency's name.
+ */
+export const currencyFallback = (currencyId: string) => `Para birimi ${financeRef(currencyId)}`
 
 export const APPROVE = 'Onayla'
 export const APPROVE_CONFIRM_TITLE = 'Bu hesabı onaylıyor musunuz?'

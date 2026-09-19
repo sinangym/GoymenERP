@@ -88,7 +88,7 @@ describe('FinanceSourceList', () => {
     const reader = recordingPort(responder)
     renderFinance(<FinanceSourceList onOpen={() => {}} />, { port: reader.port })
     const other = (await screen.findByRole('rowheader', { name: `Numara verilmedi · ref. …${SECOND.slice(-8)}` })).closest('tr') as HTMLElement
-    within(other).getByText('Para birimi kimliği …2222')
+    within(other).getByText('Para birimi ref. …22222222')
     expect(reader.reads.map((read) => read.method)).not.toContain('bankAccountCurrencyCandidates')
   })
 })
