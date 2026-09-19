@@ -4,7 +4,12 @@ using GoymenERP.Modules.Logistics.Application.Contracts;
 namespace GoymenERP.Modules.Logistics.Infrastructure.Shell;
 
 /// <summary>
-/// Declares the three loading-instruction screens (L-01 list, L-03 new, L-04 detail) to the shell —
+/// Declares the three loading-instruction screens to the shell, on master v3 §27.8's table: L-02 "Yükleme
+/// Talimatları" is the list, L-03 "Yeni/Düzenle Yükleme Talimatı" the new-instruction workspace, and the
+/// detail is the read view of one L-02 row ("L-02-DETAIL", the F-02-DETAIL precedent; the master has no
+/// separate detail id). L-01 (Sevk Edilebilir Siparişler) and L-04 (Araç / Sürücü / Kapı) are other screens
+/// and are not declared here; recording a load is L-05's act (Fiilî Yükleme) and will be declared with that
+/// screen, in LOG-4a it is a server-measured command on the detail. STAGED —
 /// STAGED (<c>ImplementationAvailable: false</c>): LOG-4b brings the frontend, and the flip to published
 /// precedes its browser suite (the S03-c lesson: a staged declaration is never published, so nothing opens
 /// before the screens exist). A declaration grants nothing: the screens open only for an actor holding the
@@ -21,13 +26,13 @@ public sealed class LogisticsShellCapabilityProvider : IShellCapabilityProvider
 
     public const string ListCapabilityId = "logistics.instructions.list";
     public const string ListRoutePath = "/lojistik/yukleme-talimatlari";
-    public const string ListScreenId = "L-01";
+    public const string ListScreenId = "L-02";
     public const string CreateCapabilityId = "logistics.instructions.create";
     public const string CreateRoutePath = "/lojistik/yukleme-talimatlari/yeni";
     public const string CreateScreenId = "L-03";
     public const string DetailCapabilityId = "logistics.instructions.detail";
     public const string DetailRoutePath = "/lojistik/yukleme-talimatlari/:instructionId";
-    public const string DetailScreenId = "L-04";
+    public const string DetailScreenId = "L-02-DETAIL";
 
     public string Owner => OwnerId;
 
