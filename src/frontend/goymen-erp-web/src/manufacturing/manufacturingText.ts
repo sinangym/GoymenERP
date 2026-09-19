@@ -45,6 +45,29 @@ export const FACT_KIND_HELP: Record<FactKind, string> = {
 }
 
 export const COST_STATUS_TEXT = 'Hesaplanmadı'
+
+/** GDC-BAL/1 panel (BAL slice 2). The engine's input names, in the user's words; an unknown name is shown as it came. */
+export const ENGINE_PARAMETER_LABEL: Record<string, string> = {
+  fireKg: 'fire (kg)',
+  rawMaterialKg: 'hammadde (kg)',
+  actualKg: 'gerçek kg',
+  actualCount: 'gerçek adet',
+}
+
+export function engineParameterLabel(name: string): string {
+  return ENGINE_PARAMETER_LABEL[name] ?? name
+}
+
+export const MASS_BALANCE_HEADING = 'Kütle dengesi (GDC-BAL/1)'
+export const MASS_BALANCE_HELP =
+  'Emrin kapanışının kullandığı hesap: fiilî girdi − (iyi ürün + ikinci kalite + kullanılabilir artık + hurda + ' +
+  'proses kaybı + kalan WIP + onaylı ölçüm düzeltmesi). Fark işaretiyle gösterilir ve hiçbir sınıfa yazılmaz.'
+export const ENGINE_UNAVAILABLE = 'Hesaplanamıyor — eksik girdi:'
+export const ENGINE_REFUSED = 'Hesap reddedildi:'
+/** BAL-004 / BAL-006: why the order cannot supply their inputs yet (no number is guessed). */
+export const SCRAP_PERCENT_NOTE =
+  'Fire yüzdesinde hangi sınıfların fire sayılacağı ve hangi kütlenin taban olacağı iş kararı bekliyor.'
+export const ACTUAL_UNIT_KG_NOTE = 'Fiilî birim kg için emirde adet kaydı yok; adet, adet üreten süreçlerle gelecek.'
 export const REMAINING_UNAVAILABLE = 'Planda beyan edilmiş bir hedef yok; kalan hedef hesaplanmaz.'
 export const KG_FORMAT_HELP = 'Nokta ile ondalık, işaretsiz (ör. 1250.5). Ondalık sınırı şirketin kg profilinden gelir.'
 export const KG_FORMAT_ERROR = 'Kilogram biçimi geçersiz: işaretsiz, nokta ile ondalık bir sayı girin.'

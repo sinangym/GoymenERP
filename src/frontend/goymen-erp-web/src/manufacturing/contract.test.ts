@@ -4,8 +4,8 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { decodeOrder, factBody, isKilogramText, type FactSnapshot } from './contract'
-import { ROLL_1, order, roll } from './testHarness'
+import { decodeMassBalance, decodeOrder, factBody, isKilogramText, type FactSnapshot } from './contract'
+import { ROLL_1, massBalance, order, roll, rollBalance, unavailable } from './testHarness'
 
 describe('decodeOrder', () => {
   it('keeps every kilogram as the server wrote it, the signed difference included', () => {
@@ -51,6 +51,51 @@ describe('decodeOrder', () => {
     )
     expect(decoded?.target).toEqual({ basis: 'GoodOutputMass', kg: '900' })
     expect(decoded?.remainingTarget.remainingKg).toBe('-50')
+  })
+})
+
+describe('decodeMassBalance (GDC-BAL/1)', () => {
+  it("keeps BAL-003's signed difference as text and the engine's Unavailable with its input names", () => {
+    const decoded = decodeMassBalance(
+      massBalance({
+        rolls: [
+          rollBalance(ROLL_1, {
+            difference: { actualInputKg: '1000.125', accountedKg: '1002.625', differenceKg: '-2.5', isFullyAccounted: false },
+          }),
+        ],
+      }),
+    )
+    expect(decoded?.rolls[0].difference).toEqual({
+      actualInputKg: '1000.125',
+      accountedKg: '1002.625',
+      differenceKg: '-2.5',
+      isFullyAccounted: false,
+    })
+    expect(decoded?.rolls[0].scrapPercent).toEqual({
+      outcome: 'Unavailable',
+      value: null,
+      missingParameters: ['fireKg', 'rawMaterialKg'],
+      refusalCode: null,
+      refusedParameter: null,
+    })
+    expect(decoded?.formulaVersion).toBe('GDC-BAL/1 (master v3 §28.9)')
+  })
+
+  it.each([
+    ['a number where text is expected', { scrapPercent: { ...unavailable('fireKg'), value: 4 } }],
+    ['a computed answer without its value', { scrapPercent: { outcome: 'Computed', value: null, missingParameters: [], refusalCode: null, refusedParameter: null } }],
+    ['an unavailable answer that names no input', { actualUnitKg: unavailable() }],
+    ['an unknown outcome', { actualUnitKg: { ...unavailable('actualCount'), outcome: 'Estimated' } }],
+    ['a refused answer without its code', { scrapPercent: { outcome: 'Refused', value: null, missingParameters: [], refusalCode: null, refusedParameter: null } }],
+    ['a padded difference', { difference: { actualInputKg: '10', accountedKg: '0', differenceKg: '10.50', isFullyAccounted: false } }],
+    ['a difference without its flag', { difference: { actualInputKg: '10', accountedKg: '0', differenceKg: '10' } }],
+  ])('fails closed on %s', (_label, overrides) => {
+    expect(decodeMassBalance(massBalance({ rolls: [rollBalance(ROLL_1, overrides)] }))).toBeNull()
+  })
+
+  it('fails closed on a missing formula version or version', () => {
+    expect(decodeMassBalance(massBalance({ formulaVersion: '' }))).toBeNull()
+    expect(decodeMassBalance(massBalance({ version: 0 }))).toBeNull()
   })
 })
 

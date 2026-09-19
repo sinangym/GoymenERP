@@ -9,7 +9,7 @@
  * module's requirement.
  */
 
-import { decodeOrder, type ProductionOrderView } from './contract'
+import { decodeMassBalance, decodeOrder, type MassBalanceView, type ProductionOrderView } from './contract'
 import type { ViewOutcome } from '../shell/uiState'
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
@@ -60,4 +60,36 @@ export async function fetchOrder(
   if (response.status !== 200) return { type: 'http', status: response.status, body }
   const order = decodeOrder(body)
   return order === null ? { type: 'malformed' } : { type: 'ok-single', data: order }
+}
+
+/**
+ * `GET /api/v1/manufacturing/orders/{orderId}/mass-balance` — the order through GDC-BAL/1, the one calculator the
+ * close uses (BAL slice 2). Same read permission, company context and answers as {@link fetchOrder}; a read, so it
+ * runs again after every accepted fact, beside the order read.
+ */
+export async function fetchMassBalance(
+  companyId: string,
+  orderId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<MassBalanceView>> {
+  let response: Response
+  try {
+    response = await fetch(`${MANUFACTURING_BASE}/orders/${encodeURIComponent(orderId)}/mass-balance`, {
+      headers: { ...devHeaders(), 'X-Company-Id': companyId },
+      signal,
+    })
+  } catch {
+    if (signal?.aborted) return { type: 'fence-stale' }
+    return navigator.onLine ? { type: 'network-error' } : { type: 'offline' }
+  }
+  let body: unknown = null
+  try {
+    body = await response.json()
+  } catch {
+    if (signal?.aborted) return { type: 'fence-stale' }
+    body = null
+  }
+  if (response.status !== 200) return { type: 'http', status: response.status, body }
+  const balance = decodeMassBalance(body)
+  return balance === null ? { type: 'malformed' } : { type: 'ok-single', data: balance }
 }

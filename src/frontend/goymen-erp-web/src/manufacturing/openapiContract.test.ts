@@ -12,9 +12,9 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { decodeOrder, factBody, FACT_KINDS, OUTPUT_CLASSES, type FactSnapshot } from './contract'
+import { decodeMassBalance, decodeOrder, factBody, FACT_KINDS, OUTPUT_CLASSES, type FactSnapshot } from './contract'
 import { MANUFACTURING_BASE } from './api'
-import { order, roll, ROLL_1 } from './testHarness'
+import { massBalance, order, roll, ROLL_1 } from './testHarness'
 
 interface Schema {
   readonly properties?: Record<string, unknown>
@@ -91,6 +91,21 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     for (const kind of FACT_KINDS) {
       expect(document.paths[`${base}/${kind}`], kind).toHaveProperty('post')
     }
+  })
+
+  it('reads exactly the properties MassBalanceViewV1 (GDC-BAL/1) and its parts declare, all required', () => {
+    const view = massBalance()
+    const line = view.rolls[0]
+    expect(Object.keys(view).sort()).toEqual(names('MassBalanceViewV1'))
+    expect(Object.keys(line).sort()).toEqual(names('RollMassBalanceViewV1'))
+    expect(Object.keys(line.difference).sort()).toEqual(names('MassDifferenceViewV1'))
+    expect(Object.keys(line.scrapPercent).sort()).toEqual(names('EngineAnswerViewV1'))
+    for (const name of ['MassBalanceViewV1', 'RollMassBalanceViewV1', 'MassDifferenceViewV1', 'EngineAnswerViewV1']) {
+      expect([...(schema(name).required ?? [])].sort()).toEqual(names(name))
+    }
+    expect(decodeMassBalance(view)).not.toBeNull()
+    const base = `${MANUFACTURING_BASE.replace(/^.*\/api\/v1/, '/api/v1')}/orders/{orderId}`
+    expect(document.paths[`${base}/mass-balance`]).toHaveProperty('get')
   })
 
   it('knows the five output classes by the server names the domain uses', () => {

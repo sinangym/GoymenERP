@@ -14,12 +14,13 @@
  */
 
 import { expect, test, type BrowserContext, type Page, type Request, type Route } from '@playwright/test'
-import { arrangeOpenOrder, issueThroughApi, readOrder } from '../src/arrange.js'
+import { arrangeOpenOrder, issueThroughApi, readMassBalance, readOrder } from '../src/arrange.js'
 import { readEnvironment } from '../src/env.js'
 
 const env = readEnvironment()
 const FACT_RE = /\/api\/v1\/manufacturing\/orders\/[^/]+\/(input-issues|input-returns|wip-measurements|outputs)$/
 const ORDER_RE = /\/api\/v1\/manufacturing\/orders\/[^/]+$/
+const BALANCE_RE = /\/api\/v1\/manufacturing\/orders\/[^/]+\/mass-balance$/
 
 /** Binds `actor` to every API request of this context and records which requests it rewrote. */
 async function asActor(context: BrowserContext, actor: string): Promise<Set<Request>> {
@@ -49,8 +50,14 @@ async function openOrder(page: Page, orderId: string) {
   await expect(page.getByRole('heading', { name: 'Üretim emri' })).toBeVisible()
 }
 
+/** The roll's row in the roll-balance table (the GDC-BAL/1 panel has a row per roll too). */
 function rollRow(page: Page, rollId: string) {
-  return page.getByRole('row', { name: new RegExp(rollId) })
+  return page.getByRole('region', { name: 'Ana rulo dengesi (kg)', exact: true }).getByRole('row', { name: new RegExp(rollId) })
+}
+
+/** The roll's row in the GDC-BAL/1 panel (BAL slice 2). */
+function balanceRow(page: Page, rollId: string) {
+  return page.getByRole('region', { name: 'Kütle dengesi (GDC-BAL/1)', exact: true }).getByRole('row', { name: new RegExp(rollId) })
 }
 
 /** The roll's "Çıkan" cell: data cells are Planlanan, Çıkan, İade, … after the row header. */
@@ -82,6 +89,9 @@ test.describe('MFG order screen (real API, real SQL)', () => {
     await fillIssue(page, arranged.rollId, '250.5')
     const post = page.waitForRequest((request) => FACT_RE.test(request.url()) && request.method() === 'POST')
     const reread = page.waitForResponse((response) => ORDER_RE.test(response.url()) && response.request().method() === 'GET')
+    const rebalanced = page.waitForResponse(
+      (response) => BALANCE_RE.test(response.url()) && response.request().method() === 'GET' && response.url().includes(arranged.orderId),
+    )
     await page.getByRole('button', { name: 'Kaydet', exact: true }).click()
 
     const sent = await post
@@ -90,6 +100,17 @@ test.describe('MFG order screen (real API, real SQL)', () => {
     expect((await reread).status()).toBe(200)
     await expect(page.getByText('Kaydedildi', { exact: true })).toBeVisible()
     await expect(issuedCell(page, arranged.rollId)).toHaveText('250.5')
+
+    // GDC-BAL/1 (BAL slice 2): the panel reads its own GET again after the fact, and shows the server's BAL-003:
+    // 250.5 issued, nothing declared → 250.5 unaccounted. BAL-004 / BAL-006 are the engine's Unavailable, no number.
+    expect((await rebalanced).status()).toBe(200)
+    await expect(balanceRow(page, arranged.rollId).getByTestId('mass-difference')).toHaveText('250.5')
+    await expect(balanceRow(page, arranged.rollId).getByTestId('scrap-percent')).toContainText('Hesaplanamıyor')
+    await expect(balanceRow(page, arranged.rollId).getByTestId('actual-unit-kg')).toContainText('gerçek adet')
+    const balance = await readMassBalance(env, arranged.orderId)
+    const line = (balance.rolls as Array<{ difference: { differenceKg: string }; scrapPercent: { outcome: string } }>)[0]
+    expect(line.difference.differenceKg).toBe('250.5')
+    expect(line.scrapPercent.outcome).toBe('Unavailable')
 
     const stored = await readOrder(env, arranged.orderId)
     expect((stored.rolls as Array<{ issuedKg: string }>)[0].issuedKg).toBe('250.5')
@@ -175,6 +196,8 @@ test.describe('MFG order screen (real API, real SQL)', () => {
     await expect(rollRow(page, arranged.rollId)).toContainText('1000')
     await expect(page.getByRole('heading', { name: 'Gerçekleşme kaydı' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Kaydet', exact: true })).toHaveCount(0)
+    // The read grant alone opens the GDC-BAL/1 panel too: the same order, read through the close's calculator.
+    await expect(balanceRow(page, arranged.rollId).getByTestId('scrap-percent')).toContainText('Hesaplanamıyor')
     expect(posts).toEqual([])
     expectEveryAnswerRewritten(answered, rewritten)
   })
