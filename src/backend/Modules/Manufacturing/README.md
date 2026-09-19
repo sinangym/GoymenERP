@@ -221,6 +221,7 @@ Pure, decimal, versioned calculators on the same core and under the same rules a
 
   - **Unit kg** (§28.6: the product / package master's; the geometric estimate is lower priority) is `Unavailable(unitKg)` until Product supplies it. This engine never estimates it.
   - TUB-004 is its own call, so a missing unit mass never hides the length and time.
+  - **Carried (SİPARİŞ #344 INFO-1), for `GDC-TUB/2`:** `Mass` takes the unit kg as an Ö2 kg value (≤ 3 decimals), so 12,3456 is refused. Ö2's rule is for kg **quantities**; §28.1 (not locked) suggests 4–6 decimals for a unit kg, which comes from the Product master. Once Product's unit-kg precision is decided, the unit kg's scale changes with it, as a new version. No precision is chosen here.
   - **TUB-003 is the running time only.** Set-up, die change, planned stops and cleaning are not part of it; the capacity calendar adds them (§28.6).
 - **`PaintingEngineV1` (`GDC-PNT/1`, master v3 §28.7):**
 
@@ -236,6 +237,7 @@ Pure, decimal, versioned calculators on the same core and under the same rules a
   - **Inputs, never hard-coded (§28.7):** the simultaneous profile count, the solids ratio, the scrap factor, the line speed and the film thickness.
   - **Solids ratio:** a fraction by definition; above 1 is refused (`engine_ratio_above_one`), never read as a percentage.
   - **Theoretical litres only:** not the cost, not the actual consumption.
+  - **Scrap factor below 1 (FİNANS #344 INFO-1):** `GDC-PNT/1` accepts any positive `FireKatsayısı`, including 0 < factor < 1, which would mean negative loss and is almost certainly an input mistake. It is not refused in this version: refusing it (a validity check like the solids ratio's, not a policy number) is carried to the next Painting slice, as a new version.
   - **Not in version 1:** colour change, transfer efficiency, paint density, coats, thinner, gun / line loss and rework (separate parameters or realizations, §28.7).
 - **Golden tests** (`TubeProfileAndPaintingEngineTests`): every result is exact in decimal (cross-checked with Python `decimal` at prec 40).
   - §28.6: 20 × 50 × 6 m at 30 m/dk → 1000 pieces, 6000 m, 200 dk.

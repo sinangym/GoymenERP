@@ -28,7 +28,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// save interceptor. Every identity below is synthetic test data in this test's own database; no
 /// product, label or stock is seeded anywhere.
 /// </summary>
-public sealed class InventorySqlServerRelationalAcceptanceTests
+public sealed partial class InventorySqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
@@ -1089,6 +1089,8 @@ public sealed class InventorySqlServerRelationalAcceptanceTests
         public IInventoryLabelStore Labels => store;
         public IInventoryMovementStore Movements => store;
         public IInventoryOpeningStore Opening => store;
+        public InventoryDbContext DbContext => dbContext;
+        public InventoryStore Store => store;
 
         public ValueTask DisposeAsync() => dbContext.DisposeAsync();
     }

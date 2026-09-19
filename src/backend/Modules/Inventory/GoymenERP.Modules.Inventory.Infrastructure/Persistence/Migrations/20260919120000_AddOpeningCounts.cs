@@ -120,6 +120,14 @@ public sealed class AddOpeningCounts : Migration
 
     protected override void Down(MigrationBuilder migrationBuilder)
     {
+        // Forward fix (SİPARİŞ #337 P3, as #329/#334): an opening count and the stock it posted are never
+        // dropped by a rollback.
+        migrationBuilder.Sql("""
+            IF EXISTS (SELECT 1 FROM [inventory].[OpeningCounts])
+                OR EXISTS (SELECT 1 FROM [inventory].[Movements] WHERE [SourceKind] = N'inventory.opening-count')
+                THROW 51046, 'Opening counts and the stock they posted require a forward fix.', 1;
+            """);
+
         migrationBuilder.DropTable(
             name: "OpeningCountLines",
             schema: "inventory");
