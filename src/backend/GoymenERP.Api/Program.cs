@@ -21,6 +21,12 @@ using GoymenERP.Modules.Finance.Infrastructure.Shell;
 using GoymenERP.Modules.Idempotency.Infrastructure;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure;
+using GoymenERP.Modules.Logistics.Application.Contracts;
+using GoymenERP.Modules.Logistics.Infrastructure;
+using GoymenERP.Modules.Logistics.Infrastructure.Shell;
+using GoymenERP.Modules.Purchasing.Application.Contracts;
+using GoymenERP.Modules.Purchasing.Infrastructure;
+using GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 using GoymenERP.Modules.Manufacturing.Infrastructure;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 using GoymenERP.Modules.Organization.Infrastructure;
@@ -153,12 +159,31 @@ builder.Services.AddSalesModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
+// LOG-4a: the loading instruction's customer is the Cari owner's answer (the Sales party port's shape) and its
+// order lines are Sales's approved-line port (registered by the Sales module); nothing of either is copied.
+builder.Services.AddScoped<ILogisticsPartyAccountPortV1, CounterpartyLogisticsPartyAccountPortV1>();
+builder.Services.AddLogisticsModule(
+    builder.Configuration,
+    (services, options) => options.AddInterceptors(
+        services.GetRequiredService<AuditSaveChangesInterceptor>()));
+// PUR-4a: the order's supplier is the Cari owner's answer (the Sales party port's shape, plus the account's stored
+// Supplier role flag). No purchase-eligibility port is registered: Product has not published one (ÜRÜN #288 P3-3),
+// so the service answers 503 product_eligibility_unavailable fail-closed until the owner registers it.
+builder.Services.AddScoped<IPurchasingPartyAccountPortV1, CounterpartyPurchasingPartyAccountPortV1>();
+builder.Services.AddPurchasingModule(
+    builder.Configuration,
+    (services, options) => options.AddInterceptors(
+        services.GetRequiredService<AuditSaveChangesInterceptor>()));
 // Registered before the shell authority is chosen: the module table maps the provider set.
 builder.Services.AddSingleton<IShellCapabilityProvider, SalesShellCapabilityProvider>();
 // FIN-UI-1a (#325): Finance's (staged) receipt and bank-account screens, before the authority is chosen.
 builder.Services.AddSingleton<IShellCapabilityProvider, FinanceShellCapabilityProvider>();
 // MFG-UI (#323): Manufacturing's (staged) order detail and facts control, before the authority is chosen.
 builder.Services.AddSingleton<IShellCapabilityProvider, ManufacturingShellCapabilityProvider>();
+// LOG-4a: Logistics's (staged) loading-instruction screens, before the authority is chosen.
+builder.Services.AddSingleton<IShellCapabilityProvider, LogisticsShellCapabilityProvider>();
+// PUR-4a: Purchasing's (staged) order screens, before the authority is chosen.
+builder.Services.AddSingleton<IShellCapabilityProvider, PurchasingShellCapabilityProvider>();
 var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
     builder.Services,
     builder.Environment,
@@ -205,6 +230,8 @@ app.MapFinanceEndpoints();
 app.MapSalesEndpoints();
 app.MapInventoryEndpoints();
 app.MapManufacturingEndpoints();
+app.MapLogisticsEndpoints();
+app.MapPurchasingEndpoints();
 app.MapShellEndpoints();
 
 if (!isOpenApiDocumentGeneration
@@ -224,6 +251,10 @@ if (!isOpenApiDocumentGeneration
     await app.Services.InitializeSalesModuleAsync();
     // After Organization: Manufacturing's foreign keys reference its tables.
     await app.Services.InitializeManufacturingModuleAsync();
+    // After Organization: Logistics's foreign keys reference its tables.
+    await app.Services.InitializeLogisticsModuleAsync();
+    // After Organization: Purchasing's foreign keys reference its tables.
+    await app.Services.InitializePurchasingModuleAsync();
 }
 
 await app.RunAsync();

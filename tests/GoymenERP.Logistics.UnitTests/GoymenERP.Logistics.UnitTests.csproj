@@ -13,5 +13,6 @@
     <Using Include="Xunit" />
     <ProjectReference Include="../../src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Application/GoymenERP.Modules.Logistics.Application.csproj" />
     <ProjectReference Include="../../src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Domain/GoymenERP.Modules.Logistics.Domain.csproj" />
+    <ProjectReference Include="../../src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/GoymenERP.Modules.Logistics.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

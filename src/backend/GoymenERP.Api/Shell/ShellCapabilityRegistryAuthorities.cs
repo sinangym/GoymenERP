@@ -66,6 +66,18 @@ internal static class ShellCapabilityRegistryAuthorities
     internal const string CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10AndPublishedManufacturingV10 =
         "sha256:a5pdyL0p3KsMrsfEuwKWoXa8RtqJmZRAicrLmDAWxsU";
 
+    // LOG-4a: ... + Logistics 1.0 STAGED (the loading-instruction list L-02, new L-03 and detail L-02-DETAIL,
+    // master v3 §27.8): the normal host (C+O+P+S(published)+F(published)+M(published)+L(staged)). Computed by
+    // the ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
+    internal const string CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10AndLogisticsV10 =
+        "sha256:qmTCFPlD-biVAyLgFvimrWzMq9aC-5F-0o2AALnEZH8";
+
+    // PUR-4a: ... + Purchasing 1.0 STAGED (the purchase-order list P-03, new P-04 and detail P-03-DETAIL,
+    // master v3 §27.3): the normal host (C+O+P+S(pub)+F(pub)+M(pub)+L(staged)+Pu(staged)). Computed by the
+    // ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
+    internal const string CounterpartyV15OrganizationV10ProductV10PublishedSalesV10PublishedFinanceV10PublishedManufacturingV10LogisticsV10AndPurchasingV10 =
+        "sha256:gv0JwWffycJQ08eCF4U7vpHSVIyVahDWM-1XSZPNQ3I";
+
     internal const string CounterpartyListCreateLinkAndDetailV15 =
         "sha256:3GiwcHV6aVuN1Y-wBzElxLJLCok2bblGc6pRruhqTx4";
 
