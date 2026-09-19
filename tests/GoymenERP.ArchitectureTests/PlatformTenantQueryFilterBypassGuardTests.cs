@@ -126,7 +126,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // finance
             ["tools/relational_inventory/finance.txt"] =
-                "8e167cef2e6ecfb28c1aeadd621414ebdb10b20198060cd09e81f5201dafb563",
+                "cfd16410fe379d3482c4f49f5aebb1e47cd2e40808f370cc057e441d5ff66044",
 
             // identity
             ["tools/relational_inventory/identity.txt"] =
@@ -142,7 +142,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
-                "e7afbeca52eb463850b575975fbfb4103fb83d1acb32fecb30d2940d9125811b",
+                "d2319e1cab2894185ef5e9450886a90a9200be602cbfa5ec9f87e8da68f593fb",
 
             // organization
             ["tools/relational_inventory/organization.txt"] =

@@ -6,7 +6,7 @@
 
 Bu dosya bir istek değil, **uygulanmaya hazır kaynak**. Delta tamamen **ekleyicidir**: mevcut satırların hiçbiri değişmez.
 
-Delta uygulansa da ekran açılmaz. Sunucu iki kabiliyeti de **staged** (`ImplementationAvailable: false`) ilan ediyor; `CapabilityRoute` yayımlanmamış bir kabiliyeti fail-closed kapatır. Açma, `mfg` browser kabulünden sonra ayrı bir exact-head değişikliğidir.
+Delta uygulansa da ekran açılmaz. Sunucu iki kabiliyeti de **staged** (`ImplementationAvailable: false`) ilan ediyor; `CapabilityRoute` yayımlanmamış bir kabiliyeti fail-closed kapatır. Açma, `mfg` browser kabulünden sonra ayrı bir exact-head değişikliğidir. **Bu değişiklik MFG-UI-F'dir:** iki satır da yayımlandı, suite `normal` profilde koşar.
 
 ## Frontend (`src/shell/**`)
 
@@ -71,5 +71,5 @@ Bundan sonra `src/manufacturing/manufacturingRoutes.tsx` içindeki `as Capabilit
   - Bilinmeyen sonuçta dondurma olur; aynı anahtar ve aynı olgu kimliğiyle yeniden gönderilir.
   - Kural kodu metni gösterilir; bilinmeyen kod genel metinle, koduyla birlikte gösterilir.
   - Kapalı emirde form kapalıdır.
-- **Backend birim:** sağlayıcının kimlikleri ve rotası bu şeridin `capabilities.ts`'ine sabitli; ikisi de staged.
+- **Backend birim:** sağlayıcının kimlikleri ve rotası bu şeridin `capabilities.ts`'ine sabitli. #323'te ikisi de staged'di; MFG-UI-F'de ikisi de yayımlı.
 - **Kanıtlanmamış:** gerçek host'ta registry kaydı (merkezi tur), browser kabulü (`mfg` suite, D4 sonrası).
