@@ -84,11 +84,12 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
             [SalesPermissionManifestV1.DraftsCreate],
             ImplementationAvailable: true),
         detail,
-        // SALES-A1: the decision is a control of the detail — a single company, the read plus the approve name.
+        // SALES-A1: the decision is a control of the detail: exactly the detail's route, screen, precedence,
+        // context and scope (the registry requires a control to keep its parent's), plus the approve name.
+        // The command re-authorizes the company on the server on every send.
         detail with
         {
             CapabilityId = ApproveCapabilityId,
-            ContextRequirement = ShellCapabilityContextRequirement.SingleCompany,
             ParentCapabilityId = DetailCapabilityId,
             RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersApprove],
         },

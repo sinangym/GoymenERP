@@ -52,11 +52,12 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Null(detail.ParentCapabilityId);
 
         // SALES-A1: the decision is a control of the detail (the Finance bank-account approval pattern):
-        // the detail's route, a single company, the read plus the approve name — nothing of its own.
+        // exactly the detail's route, screen, precedence, context and scope (the registry's control rule),
+        // the read plus the approve name — nothing of its own.
         var approve = Assert.Single(declarations, item => item.CapabilityId == SalesShellCapabilityProvider.ApproveCapabilityId);
         Assert.Equal("sales.orders.approve", approve.CapabilityId);
-        Assert.Equal((detail.RouteId, detail.RoutePath, detail.ScreenId, detail.RoutePrecedence, ShellCapabilityContextRequirement.SingleCompany),
-            (approve.RouteId, approve.RoutePath, approve.ScreenId, approve.RoutePrecedence, approve.ContextRequirement));
+        Assert.Equal((detail.RouteId, detail.RoutePath, detail.ScreenId, detail.RoutePrecedence, detail.ContextRequirement, detail.ScopeRequirement),
+            (approve.RouteId, approve.RoutePath, approve.ScreenId, approve.RoutePrecedence, approve.ContextRequirement, approve.ScopeRequirement));
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, approve.ParentCapabilityId);
         Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersApprove], approve.RequiredPermissions);
     }
