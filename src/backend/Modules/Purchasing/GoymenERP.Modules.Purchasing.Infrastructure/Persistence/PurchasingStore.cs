@@ -102,7 +102,7 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
                 ProductVersion = ProductVersionOf(productVersionsByLineId, line.Id),
                 UnitId = line.UnitId,
                 UnitIsKilogram = line.Quantity.Unit == QuantityUnit.Kilogram,
-                Quantity = line.Quantity.Value,
+                Quantity = RequireFits(line.Quantity.Value),
             });
         }
 
@@ -300,7 +300,7 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
                 ProductVersion = ProductVersionOf(productVersionsByLineId, line.Id),
                 UnitId = line.UnitId,
                 UnitIsKilogram = line.Quantity.Unit == QuantityUnit.Kilogram,
-                Ordered = line.Quantity.Value,
+                Ordered = RequireFits(line.Quantity.Value),
                 Technical = 0m,
                 Accepted = 0m,
             });
@@ -810,6 +810,14 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(idempotencyKey.Trim())));
 
     private static PurchasingStoreException Refused(string code, string message, Exception? inner = null) => new PurchasingStoreException(code, message, inner);
+
+    // decimal(18,3): 15 integer digits and 3 decimals; a value outside is refused before the save, never a provider exception (FİNANS #350 P3-2).
+    private const decimal ColumnBound = 1_000_000_000_000_000m;
+
+    private static decimal RequireFits(decimal value) =>
+        value < ColumnBound && Quantity.SignificantDecimals(value) <= Quantity.KilogramScale
+            ? value
+            : throw Refused(PurchasingStoreCodes.ValueDoesNotFit, "Miktar decimal(18,3) sütununa sığmıyor; hiçbir şey kaydedilmedi.");
 
     /// <summary>The opaque, company-bound list cursor (the Sales shape): base64url of company | createdAtUtc ticks | id.</summary>
     internal static class ListCursor
