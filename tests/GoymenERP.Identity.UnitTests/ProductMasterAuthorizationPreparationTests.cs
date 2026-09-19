@@ -66,6 +66,58 @@ public sealed class ProductMasterAuthorizationPreparationTests
         Assert.False((await setup.Authority.GetSnapshotAsync(GroupSharedMasterKind.Product, GroupSharedMasterOperation.DraftCreate)).IsGranted);
     }
 
+    // #329 (security): every admitted operation reads only its own grant. Before the explicit mapping, a
+    // default arm read any operation beyond Read/DraftCreate as DraftBasicEdit; with Activate admitted, a
+    // DraftBasicEdit grant would have approved cards. Each other operation's grant must leave Activate denied.
+    [Theory]
+    [InlineData(ProductMasterOperation.Read)]
+    [InlineData(ProductMasterOperation.DraftCreate)]
+    [InlineData(ProductMasterOperation.DraftBasicEdit)]
+    public async Task An_activate_check_never_reads_another_operations_grant(ProductMasterOperation granted)
+    {
+        await using var setup = await Fixture.CreateAsync(granted);
+        Assert.True((await setup.Authority.GetSnapshotAsync(GroupSharedMasterKind.Product, ToShared(granted))).IsGranted);
+        Assert.False((await setup.Authority.GetSnapshotAsync(
+            GroupSharedMasterKind.Product, GroupSharedMasterOperation.Activate)).IsGranted);
+    }
+
+    [Fact]
+    public async Task An_activate_grant_opens_activate_and_nothing_else()
+    {
+        await using var setup = await Fixture.CreateAsync(ProductMasterOperation.Activate);
+        var activate = await setup.Authority.GetSnapshotAsync(GroupSharedMasterKind.Product, GroupSharedMasterOperation.Activate);
+        Assert.True(activate.IsGranted);
+        Assert.Equal(GroupSharedMasterOperation.Activate, activate.Operation);
+        foreach (var other in new[]
+                 {
+                     GroupSharedMasterOperation.Read, GroupSharedMasterOperation.DraftCreate,
+                     GroupSharedMasterOperation.DraftBasicEdit,
+                 })
+        {
+            Assert.False((await setup.Authority.GetSnapshotAsync(GroupSharedMasterKind.Product, other)).IsGranted);
+        }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(5)]
+    [InlineData(99)]
+    public async Task An_unknown_operation_is_denied_not_mapped(int unknown)
+    {
+        await using var setup = await Fixture.CreateAsync(ProductMasterOperation.DraftBasicEdit);
+        var snapshot = await setup.Authority.GetSnapshotAsync(GroupSharedMasterKind.Product, (GroupSharedMasterOperation)unknown);
+        Assert.False(snapshot.IsGranted);
+    }
+
+    private static GroupSharedMasterOperation ToShared(ProductMasterOperation operation) => operation switch
+    {
+        ProductMasterOperation.Read => GroupSharedMasterOperation.Read,
+        ProductMasterOperation.DraftCreate => GroupSharedMasterOperation.DraftCreate,
+        ProductMasterOperation.DraftBasicEdit => GroupSharedMasterOperation.DraftBasicEdit,
+        ProductMasterOperation.Activate => GroupSharedMasterOperation.Activate,
+        _ => throw new ArgumentOutOfRangeException(nameof(operation)),
+    };
+
     private sealed class Actor(Guid actorId, Guid origin) : ICurrentUser
     {
         public Guid ActorId { get; set; } = actorId;
@@ -102,7 +154,7 @@ public sealed class ProductMasterAuthorizationPreparationTests
         public RoleDefinition SystemRole => systemRole;
         public SqlProductMasterAuthorizationService Authority => authority;
 
-        public static async Task<Fixture> CreateAsync()
+        public static async Task<Fixture> CreateAsync(ProductMasterOperation granted = ProductMasterOperation.DraftCreate)
         {
             var name = Guid.NewGuid().ToString();
             var root = new InMemoryDatabaseRoot();
@@ -117,7 +169,7 @@ public sealed class ProductMasterAuthorizationPreparationTests
             var membership = new RoleAssignment(Guid.NewGuid(), user.Id, memberRole.Id, company.CompanyId,
                 DateTimeOffset.UtcNow.AddHours(-1), null, null);
             membership.AddScope(AccessScopeType.Company, company.CompanyId);
-            var grant = new ProductMasterAssignment(Guid.NewGuid(), user.Id, systemRole.Id, ProductMasterOperation.DraftCreate,
+            var grant = new ProductMasterAssignment(Guid.NewGuid(), user.Id, systemRole.Id, granted,
                 issuer.Id, external.Id, Guid.NewGuid(), "explicit-controlled-test-decision", DateTimeOffset.UtcNow.AddHours(-1), null);
             seed.AddRange(user, issuer, external, systemRole, memberRole, membership, grant);
             // InMemory does not generate SQL rowversion. The fixture supplies bytes; this is

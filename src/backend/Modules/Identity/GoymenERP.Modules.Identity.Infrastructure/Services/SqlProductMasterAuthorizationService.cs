@@ -23,7 +23,8 @@ public sealed class SqlProductMasterAuthorizationService(IdentityDbContext datab
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (subject != GroupSharedMasterKind.Product || operation is not
-            (GroupSharedMasterOperation.Read or GroupSharedMasterOperation.DraftCreate or GroupSharedMasterOperation.DraftBasicEdit)
+            (GroupSharedMasterOperation.Read or GroupSharedMasterOperation.DraftCreate
+                or GroupSharedMasterOperation.DraftBasicEdit or GroupSharedMasterOperation.Activate)
             || issuer is null || issuer.LocalUserId == Guid.Empty || issuer.ExternalIdentityId == Guid.Empty
             || !currentUser.IsAuthenticated || !companyContext.IsResolved
             || !Guid.TryParse(currentUser.UserId, out var actorId) || actorId == Guid.Empty)
@@ -31,11 +32,16 @@ public sealed class SqlProductMasterAuthorizationService(IdentityDbContext datab
         var origin = companyContext.CompanyId;
         if (!currentUser.CanAccessCompany(origin))
             return GroupSharedMasterAuthorizationSnapshot.Denied(subject, operation);
+        // Every admitted operation reads ONLY its own grant, by an explicit arm (#329): no default maps one
+        // operation onto another's assignment, which would read e.g. an Activate check as a DraftBasicEdit
+        // grant (a privilege escalation). An operation without an arm is refused, never widened.
         var productOperation = operation switch
         {
             GroupSharedMasterOperation.Read => ProductMasterOperation.Read,
             GroupSharedMasterOperation.DraftCreate => ProductMasterOperation.DraftCreate,
-            _ => ProductMasterOperation.DraftBasicEdit,
+            GroupSharedMasterOperation.DraftBasicEdit => ProductMasterOperation.DraftBasicEdit,
+            GroupSharedMasterOperation.Activate => ProductMasterOperation.Activate,
+            _ => throw new InvalidOperationException("A Product master operation without its own grant mapping."),
         };
         var now = (clock ?? TimeProvider.System).GetUtcNow();
         // Exactly one fresh statement per invocation. No request cache, tracked entity or

@@ -144,7 +144,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // product
             ["tools/relational_inventory/product.txt"] =
-                "f6b814f1b5cb5c7dbbef5dc074ff3cb74ebf48242a1c5cbe22e06a39e8796c2c",
+                "a98c26fb0a034da5d048ee4c1dd55b33b4fb0c18750acfac1329887ef2d39aba",
 
             // sales
             ["tools/relational_inventory/sales.txt"] =
@@ -208,7 +208,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "93f53fbed6e11dcac4d5412cfdabc4fc70daa59838ad8bd0783221353a776439",
             ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/"
              + "Persistence/GroupSharedCommandDbContext.cs"] =
-                "8049fa3a764b3695a477be42aa585c70268601871927429e33674ac860635d08"
+                "6fe01949b839e3005d33c3aa00c02982add6a1af63482005b43b277b95c5dfc3"
         };
 
     // Accepted module initializers own one exact Migrate/EnsureCreated provider branch each.
@@ -224,7 +224,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-measured for #316 on top of C3: ProductShellCapabilityProvider is registered here (a
                 // singleton shell provider; no new database capability, MigrateAsync stays 2).
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductRuntimeExtensions.cs"] =
-                    new("ef07c9ff234f99afe549309e4fd7bc244d84bf3ce458e5bd39ae57c67f86d8b1",
+                    new("7830c950f624a2f0b29554841dcdb7cea1ab83a9fa70fadd40e2f8f3bae66419",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["MigrateAsync"] = 2 }),
                 ["src/backend/GoymenERP.Api/ProductRuntime/ProductSqlCommandRunner.cs"] =
@@ -531,6 +531,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Persistence/Migrations/20260912175124_InitialGroupSharedTerminals.cs"] =
                     new("ed1ef07eb88ee1ea324479d5ab498d213ecf3cfdba4cf5ab4eae49292c4dc4c7",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // #329: each Down's only raw SQL is the module's existing rollback refusal (51042/51043).
+                ["src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Persistence/Migrations/20260918230000_AllowProductActivateAssignments.cs"] =
+                    new("7b5ca37647eb351caa33e1dcc24b5c726e9d732ab2b4e4e434e5c285d4f2dd30",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                ["src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Persistence/Migrations/20260918230100_AllowProductActivateTerminals.cs"] =
+                    new("4716d015c2cd1a883d84d95589654f2d57077c06c8c641f2f148234453138c15",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 ["src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Persistence/Migrations/20260912173914_AddGlobalProductAuditSubject.cs"] =

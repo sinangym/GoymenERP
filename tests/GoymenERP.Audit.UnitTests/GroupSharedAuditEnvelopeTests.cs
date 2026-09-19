@@ -85,6 +85,26 @@ public sealed class GroupSharedAuditEnvelopeTests
         Assert.Throws<ArgumentException>(() => GroupSharedAuditEventData.Create(envelope));
     }
 
+    // #329 (DEC-PRD-010): the card approval is evidence only as a one-step transition under its own
+    // event type and permission; the draft event types and a skipped version stay refused.
+    [Fact]
+    public void ActivationIsAcceptedOnlyAsAOneStepApprovalTransition()
+    {
+        var data = GroupSharedAuditEventFactory.Create(Activation());
+        Assert.Equal("Activate", data.Envelope.Operation);
+        Assert.Equal("product.card.activate", data.Envelope.PermissionCode);
+        data.ValidateIntegrity();
+        foreach (var envelope in new[]
+        {
+            data.Envelope with { EventType = "product.draft.basic-edited.v1" },
+            data.Envelope with { EventType = "product.draft.created.v1" },
+            data.Envelope with { PermissionCode = "product.draft.edit" },
+            data.Envelope with { EntityVersionAfter = 4 },
+            data.Envelope with { EntityVersionBefore = null, EntityVersionAfter = 1 },
+        })
+            Assert.Throws<ArgumentException>(() => GroupSharedAuditEventData.Create(envelope));
+    }
+
     [Fact]
     public void EmptySubjectAndNoncanonicalMetadataCannotBeNormalizedIntoValidEvidence()
     {
@@ -100,4 +120,10 @@ public sealed class GroupSharedAuditEnvelopeTests
             GroupSharedMasterOperation.DraftCreate, Actor, Origin, "revision-1"), GroupSharedMasterOperation.DraftCreate),
         Product, "product.draft.created.v1", null, 1, "{}", "{\"name\":\"draft\"}", "Create draft", "Web",
         null, null, "original-correlation", null, "request-key", "None", null);
+
+    private static GroupSharedAuditEventDraft Activation() => new(
+        GroupSharedMasterCommandContext.FromServerDecision(new(true, GroupSharedMasterKind.Product,
+            GroupSharedMasterOperation.Activate, Actor, Origin, "revision-1"), GroupSharedMasterOperation.Activate),
+        Product, "product.card.activated.v1", 2, 3, "{\"lifecycle\":\"Draft\"}", "{\"lifecycle\":\"Active\"}",
+        "Ürün kartı onayı", "Web", null, null, "original-correlation", null, "request-key", "None", null);
 }
