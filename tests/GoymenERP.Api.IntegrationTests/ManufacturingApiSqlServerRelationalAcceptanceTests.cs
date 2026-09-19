@@ -234,11 +234,11 @@ public sealed class ManufacturingApiSqlServerRelationalAcceptanceTests
             var before = reopened.Rolls.Single();
             var after = again.Rolls.Single();
             Assert.Equal((reopened.Version, before.ParentRollId, before.Difference), (again.Version, after.ParentRollId, after.Difference));
-            foreach (var (first, second) in new[] { (before.ScrapPercent, after.ScrapPercent), (before.ActualUnitKg, after.ActualUnitKg) })
+            foreach (var (beforeAnswer, afterAnswer) in new[] { (before.ScrapPercent, after.ScrapPercent), (before.ActualUnitKg, after.ActualUnitKg) })
             {
-                Assert.Equal((first.Outcome, first.Value, first.RefusalCode, first.RefusedParameter),
-                    (second.Outcome, second.Value, second.RefusalCode, second.RefusedParameter));
-                Assert.Equal(first.MissingParameters, second.MissingParameters);
+                Assert.Equal((beforeAnswer.Outcome, beforeAnswer.Value, beforeAnswer.RefusalCode, beforeAnswer.RefusedParameter),
+                    (afterAnswer.Outcome, afterAnswer.Value, afterAnswer.RefusalCode, afterAnswer.RefusedParameter));
+                Assert.Equal(beforeAnswer.MissingParameters, afterAnswer.MissingParameters);
             }
             Assert.Equal((facts, commands), (await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Facts"),
                 await run.ScalarAsync<int>("SELECT COUNT(*) FROM manufacturing.Commands")));
