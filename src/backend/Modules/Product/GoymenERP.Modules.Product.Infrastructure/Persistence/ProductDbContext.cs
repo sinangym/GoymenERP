@@ -132,6 +132,8 @@ public sealed class ProductDbContext(DbContextOptions<ProductDbContext> options)
                 "([AppliesWhenField] IS NULL AND [AppliesWhenCode] IS NULL) "
                 + "OR ([AppliesWhenField] IS NOT NULL AND [AppliesWhenCode] IS NOT NULL)");
             table.HasCheckConstraint("CK_TemplateFields_Key", "LEN([Key]) > 0 AND [Position] >= 1");
+            // A candidate never satisfies a required field (ORG #334 P3-1).
+            table.HasCheckConstraint("CK_TemplateFields_Candidate", "[Required] = 0 OR [AllowsCandidate] = 0");
         });
         field.HasKey(row => new { row.TemplateId, row.TemplateVersion, row.Key });
         field.Property(row => row.Key).HasMaxLength(64).IsUnicode(false).UseCollation(Binary);

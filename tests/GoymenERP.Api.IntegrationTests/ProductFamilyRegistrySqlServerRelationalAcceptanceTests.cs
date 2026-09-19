@@ -110,6 +110,9 @@ public sealed class ProductFamilyRegistrySqlServerRelationalAcceptanceTests
                     + "VALUES ('syn-grades', N'SYN-X', N'x', 3, 'SYNTHETIC-TEST', 0);", "CK_DictionaryEntries_Status"),
                 ("INSERT INTO [product].[TemplateFields] ([TemplateId], [TemplateVersion], [Key], [Position], [Kind], [Required], [AllowsCandidate]) "
                     + $"VALUES ('{TemplateId:D}', 1, 'syn-reference-without-dictionary', 99, 2, 0, 0);", "CK_TemplateFields_Kind"),
+                // ORG #334 P3-1: a required field never takes candidates.
+                ("INSERT INTO [product].[TemplateFields] ([TemplateId], [TemplateVersion], [Key], [Position], [Kind], [Required], [Dictionary], [AllowsCandidate]) "
+                    + $"VALUES ('{TemplateId:D}', 1, 'syn-required-candidate', 98, 2, 1, 'syn-subgrades', 1);", "CK_TemplateFields_Candidate"),
                 ("INSERT INTO [product].[TemplateFamilies] ([TemplateId], [TemplateVersion], [FamilyId]) "
                     + $"VALUES ('{TemplateId:D}', 1, '82000000-0000-4000-8000-0000000000ff');", "FK_TemplateFamilies_Families_FamilyId"),
             })
