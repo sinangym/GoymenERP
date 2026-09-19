@@ -20,7 +20,7 @@ public sealed class InventoryPersistenceModelTests
     private static readonly Type[] TenantRows =
         [
             typeof(LotRow), typeof(LabelRow), typeof(LabelPrintRow), typeof(LabelDocumentRow), typeof(MovementRow), typeof(MovementLineRow),
-            typeof(BalanceRow), typeof(SourceGrainRow),
+            typeof(BalanceRow), typeof(SourceGrainRow), typeof(OpeningCountRow), typeof(OpeningCountLineRow),
         ];
 
     [Fact]
@@ -114,6 +114,8 @@ public sealed class InventoryPersistenceModelTests
             migration => migration.EndsWith("_AddInventorySourceGrain", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddMaterialLots", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddOpeningCounts", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -169,6 +171,8 @@ public sealed class InventoryPersistenceModelTests
     [InlineData("edit-source-grain")]
     [InlineData("edit-lot-heat")]
     [InlineData("delete-lot")]
+    [InlineData("edit-opening-count")]
+    [InlineData("edit-opening-line")]
     public void Stored_stock_is_never_deleted_and_only_its_allowed_field_changes(string fault)
     {
         using var context = Context();
@@ -189,6 +193,21 @@ public sealed class InventoryPersistenceModelTests
                 break;
             case "delete-lot":
                 context.Lots.Remove(Attach(context, Lot()));
+                break;
+            case "edit-opening-count":
+                // INV-OPEN-1: the count document is append-only; a later difference is a new process (ST-05).
+                Attach(context, new OpeningCountRow
+                {
+                    Id = Guid.NewGuid(), CompanyId = CompanyA, LocationId = Guid.NewGuid(), CountedOn = new DateOnly(2026, 9, 19),
+                    SheetReference = "SYN-SHEET", ContentHash = new string('0', 64), RecordedBy = "synthetic", CorrelationId = "synthetic",
+                }).SheetReference = "SYN-CHANGED";
+                break;
+            case "edit-opening-line":
+                Attach(context, new OpeningCountLineRow
+                {
+                    CompanyId = CompanyA, CountId = Guid.NewGuid(), LineNumber = 1, LineId = Guid.NewGuid(),
+                    LabelId = Guid.NewGuid(), LotId = Guid.NewGuid(), QuantityKg = 100m,
+                }).QuantityKg = 99m;
                 break;
             case "edit-source-grain":
                 Attach(context, new SourceGrainRow
