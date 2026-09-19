@@ -64,4 +64,11 @@ public static class InventoryRuleCodes
     /// line after the whole. Both would count the same quantity twice (#293 ORG P3-1).
     /// </summary>
     public const string SourceGrainMismatch = "inventory_source_grain_mismatch";
+
+    /// <summary>
+    /// An opening count is not a valid count document: no counted piece, a piece counted twice, a lot
+    /// given with two sets of facts, a label that does not name its own lot, or a missing sheet reference
+    /// (INV-OPEN-1).
+    /// </summary>
+    public const string InvalidOpeningCount = "inventory_invalid_opening_count";
 }

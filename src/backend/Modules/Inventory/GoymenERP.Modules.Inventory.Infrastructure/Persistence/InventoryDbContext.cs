@@ -50,6 +50,10 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
 
     internal DbSet<BalanceRow> Balances => Set<BalanceRow>();
 
+    internal DbSet<OpeningCountRow> OpeningCounts => Set<OpeningCountRow>();
+
+    internal DbSet<OpeningCountLineRow> OpeningCountLines => Set<OpeningCountLineRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -63,6 +67,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         ConfigureMovements(modelBuilder);
         ConfigureMovementLines(modelBuilder);
         ConfigureBalances(modelBuilder);
+        ConfigureOpeningCounts(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -297,6 +302,55 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         LabelOf(entity);
         LocationOf(entity);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    /// <summary>
+    /// INV-OPEN-1: the count document and its counted pieces. A count is at one of its company's
+    /// locations; every line names a label of the company and its one receipt movement (the line id is
+    /// the movement id), so no line exists without its posted receipt. Append-only.
+    /// </summary>
+    private void ConfigureOpeningCounts(ModelBuilder modelBuilder)
+    {
+        var count = modelBuilder.Entity<OpeningCountRow>();
+        count.ToTable("OpeningCounts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OpeningCounts_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [LocationId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_OpeningCounts_Text",
+                "LEN([SheetReference]) > 0 AND LEN([ContentHash]) = 64 AND LEN([RecordedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        count.HasKey(x => x.Id);
+        count.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        count.Property(x => x.Id).ValueGeneratedNever();
+        count.Property(x => x.SheetReference).HasMaxLength(128).IsRequired();
+        count.Property(x => x.ContentHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        count.Property(x => x.RecordedBy).HasMaxLength(128).IsRequired();
+        count.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        count.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        LocationOf(count);
+        count.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var line = modelBuilder.Entity<OpeningCountLineRow>();
+        line.ToTable("OpeningCountLines", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_OpeningCountLines_LineNumber", "[LineNumber] >= 1");
+            table.HasCheckConstraint("CK_OpeningCountLines_Quantity", "[QuantityKg] > 0");
+        });
+        line.HasKey(x => new { x.CompanyId, x.CountId, x.LineNumber });
+        line.Property(x => x.QuantityKg).HasPrecision(18, 3);
+        line.HasIndex(x => new { x.CompanyId, x.LineId }).IsUnique();
+        line.HasOne<OpeningCountRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.CountId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        line.HasOne<MovementRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.LineId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        LabelOf(line);
+        line.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     /// <summary>A row of one label, bound by (company, label) so it can never name another company's label.</summary>

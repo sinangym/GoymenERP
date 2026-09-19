@@ -129,7 +129,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // inventory
             ["tools/relational_inventory/inventory.txt"] =
-                "e0b8743d49e562c718ebb7051aeea7675ab993f5102e8b960aa844d1c3dc0c49",
+                "9bbead2ad725a9afbf3a90970654fe6f1e0f86f440f59f999ad97f68b6701354",
 
             // manufacturing
             ["tools/relational_inventory/manufacturing.txt"] =
@@ -145,7 +145,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // product
             ["tools/relational_inventory/product.txt"] =
-                "15e67b1902045229482f995624e536aecaabd11877c47cccfb1fb2617226a414",
+                "7994d6f4490ebbc0a5204e47afd28543050f90688a8a9d9e33f5542ed24a1223",
 
             // sales
             ["tools/relational_inventory/sales.txt"] =
@@ -203,7 +203,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // row and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
              + "Persistence/InventoryDbContext.cs"] =
-                "49a56885af157d474d86a1726c0e1591bcf612262036d81cf8f1e73be9571cdb",
+                "73c2a33c6a4fbc77079c4eb3f17e2eba237b4a16ba6b961554a2d50dccbf2809",
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "Persistence/ProductDbContext.cs"] =
                 "0ad206ef3d741157f24c2433f887871e3fd576ef950ef57ad13b09adc9c3e0e5",
@@ -346,11 +346,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // (SqlException 2601/2627) after SaveChanges, as the Idempotency terminal store does.
                 // No connection, command or raw SQL. Re-fingerprinted for #333 (#324 P3-1): a lot/label
                 // primary-key collision reads, tenant-filtered and AsNoTracking, whether this company holds
-                // the id (retry) or not (conflict); still no connection, command or raw SQL.
+                // the id (retry) or not (conflict); still no connection, command or raw SQL. Re-fingerprinted
+                // for INV-OPEN-1 (T07 = A): the opening count is written through the same tenant-filtered
+                // context in one save; SqlClient count unchanged (1).
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.cs"] =
                     new(
-                        "af485f916d6c16be871e026ed1b747764ef8e3d34362226f1dd16e9e6fd93ce2",
+                        "478b3035fc958260d0f914a197d808a542f7d4fe0cad6b10833d1e67bcc73f4d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

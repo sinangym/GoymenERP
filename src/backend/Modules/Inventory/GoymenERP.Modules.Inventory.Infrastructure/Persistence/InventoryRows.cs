@@ -160,3 +160,37 @@ internal sealed class OrganizationLocationReference
     public Guid CompanyId { get; set; }
     public Guid Id { get; set; }
 }
+
+/// <summary>
+/// A stored opening count (INV-OPEN-1): the count document every opening receipt comes from. Company,
+/// location, counted-on date and the physical sheet's reference; no personal name (the recorder is in the
+/// audit). <see cref="ContentHash"/> is the canonical content, so the same id again is a replay or a
+/// conflict. Append-only.
+/// </summary>
+internal sealed class OpeningCountRow : IInventoryTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid LocationId { get; set; }
+    public DateOnly CountedOn { get; set; }
+    public string SheetReference { get; set; } = string.Empty;
+    public string ContentHash { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// One counted piece of an opening count, in its order. The line id is also the id of its one receipt
+/// movement, which the schema requires to exist (a line is never without its posted receipt). Append-only.
+/// </summary>
+internal sealed class OpeningCountLineRow : IInventoryTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid CountId { get; set; }
+    public int LineNumber { get; set; }
+    public Guid LineId { get; set; }
+    public Guid LabelId { get; set; }
+    public Guid LotId { get; set; }
+    public decimal QuantityKg { get; set; }
+}

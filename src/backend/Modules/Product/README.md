@@ -422,7 +422,11 @@ accepted; `ProductFamilyRequirementPolicyV2` encodes it exactly over the release
   (`family_value_parent_mismatch`).
 - **Applicability.** A designation applies with the zinc coating and a colour with the painted one;
   supplied elsewhere they are `family_field_not_applicable`. Whether a designation is required with
-  zinc (Q3) and what the colour list is (Q4) are open: neither is required.
+  zinc is open (not required). A non-role field may be released with an EMPTY dictionary while its
+  values are undecided (Business 5740811346: colour applies with the painted coating, no colour value
+  is activated): the release stays well formed, the field refuses every value
+  (`family_not_controlled`), and when it is required its cards stay closed (`required`). A role
+  field's dictionary still needs an approved entry.
 - The card must be bound to its family's template version (`references.templateId` missing →
   `required`, another template or version → `family_template_mismatch`); an attribute the template
   does not have is `family_field_unknown`.
