@@ -100,7 +100,15 @@ Not here: closing an order, a list or search, cost, Inventory movements (T15), o
 ## MFG-UI — the order screen (approved card, D1–D5)
 
 - **Shell provider** `Infrastructure/Shell/ManufacturingShellCapabilityProvider`: `manufacturing.orders.detail` → `/uretim/emir/:orderId` (`manufacturing.orders.read`) and its control `manufacturing.orders.facts` (+ `manufacturing.facts.record`). Company-wide, single company.
-  - **Staged:** `ImplementationAvailable: false` until the `mfg` browser suite accepts the screen.
+  - **Published (MFG-UI-F):** `ImplementationAvailable: true` on both rows. The `mfg` browser suite accepted the staged screen (#323, run 35438064043), and it runs on the `normal` profile since this change.
+    - The facts control is the detail with only its id, parent and permissions changed, so the registry's control rule holds by construction: same route, context and scope; the parent's permission kept; never available under a staged parent.
+    - Real SQL (`ManufacturingShellCapabilitySqlServerRelationalAcceptanceTests`, through the real host):
+      - no grant → nothing;
+      - `facts.record` alone → nothing;
+      - read + record → both; read alone → the order screen only;
+      - company A's grant asked in company B → nothing;
+      - a site-scoped grant → nothing, since the declarations are company-wide (K-1).
+    - Publishing grants nothing: every grant is a human gate.
   - `MFG-01` is a technical sub-view id. The canonical production screens (PR-09/13/14/15) are `DECISION_ONLY_REFERENCE_MISSING`, and this is not their locked reference.
   - The host registers the provider in the central writer's round (`src/frontend/goymen-erp-web/src/manufacturing/SHARED_MOUNT_HANDOFF.md`).
 - **Frontend** `src/frontend/goymen-erp-web/src/manufacturing/`:
