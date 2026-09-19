@@ -26,6 +26,7 @@ using GoymenERP.Modules.Logistics.Infrastructure;
 using GoymenERP.Modules.Logistics.Infrastructure.Shell;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Infrastructure;
+using GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 using GoymenERP.Modules.Manufacturing.Infrastructure;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
 using GoymenERP.Modules.Organization.Infrastructure;
@@ -181,6 +182,8 @@ builder.Services.AddSingleton<IShellCapabilityProvider, FinanceShellCapabilityPr
 builder.Services.AddSingleton<IShellCapabilityProvider, ManufacturingShellCapabilityProvider>();
 // LOG-4a: Logistics's (staged) loading-instruction screens, before the authority is chosen.
 builder.Services.AddSingleton<IShellCapabilityProvider, LogisticsShellCapabilityProvider>();
+// PUR-4a: Purchasing's (staged) order screens, before the authority is chosen.
+builder.Services.AddSingleton<IShellCapabilityProvider, PurchasingShellCapabilityProvider>();
 var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
     builder.Services,
     builder.Environment,

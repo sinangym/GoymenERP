@@ -50,8 +50,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // hosted-service surface of the startup source changed otherwise.
     // Re-fingerprinted for LOG-4a: the Logistics module (the Cari customer port, AddLogisticsModule, its endpoints
     // and initializer after Organization) and its staged shell provider before the authority is chosen.
+    // Re-fingerprinted for PUR-4a: the Purchasing module (the Cari supplier port, AddPurchasingModule, its endpoints
+    // and initializer after Organization) and its staged shell provider before the authority is chosen.
     private const string ReviewedOpenApiStartupFingerprint =
-        "bb43a947e38c2644d06a597e9fe7549db179bf8625b1ec58538422dcd38d0d23";
+        "cf506c912bade4647191b42125a4372f15c6088fe7d51f3d01a3337e0d91347f";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedIdentityReconcilerPath =
