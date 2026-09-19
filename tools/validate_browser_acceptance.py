@@ -34,7 +34,7 @@ _spec.loader.exec_module(c01)
 ContractError = c01.ContractError
 require = c01.require
 
-SUITES = ("smoke", "c03", "org03", "u02", "s03", "mfg", "fin01")
+SUITES = ("smoke", "c03", "org03", "u02", "s03", "mfg", "fin01", "s04")
 # s03 writes since S03 (#327): V2A-02 attempts a POST (nothing is stored, but it is no read-only run).
 READ_ONLY_SUITES = ("smoke", "c03")
 _SUITE_PATTERN = re.compile(r"^[a-z0-9]+$")
@@ -51,6 +51,8 @@ SUITE_PROFILES = {
     "mfg": "mfg-staged",
     # FIN-01: Finance's screens, published on the normal host (FIN-UI-1c; the staged profile of #332 retired).
     "fin01": "normal",
+    # S-04 (SİPARİŞ, SALES-A1): the approval journey on the normal host over a gated synthetic draft.
+    "s04": "normal",
 }
 PROFILE_COMPOSE_FILES = {
     "c01-list-only": "infra/docker-compose.c01-e2e.yml",
@@ -119,6 +121,8 @@ SUITE_API_EXTENSIONS = {
     "mfg": {"issuer": False, "actors": True, "identity": True},
     # FIN-01 (FİNANS, #332): a proposer and an approver actor with their Identity users and grants.
     "fin01": {"issuer": False, "actors": True, "identity": True},
+    # S-04 (SİPARİŞ): a preparer, an approver and a reader actor with their Identity users and grants.
+    "s04": {"issuer": False, "actors": True, "identity": True},
 }
 ISSUER_KEYS = ("ProductRuntime__IssuerLocalUserId", "ProductRuntime__IssuerExternalIdentityId")
 
@@ -166,6 +170,8 @@ SUITE_IDENTITY_PERMISSIONS = {
         "finance.manual-receipt.amount.read",
         "counterparty.parties.read",
     ),
+    # SALES-A1's approval axis: the preparer creates and reads, the approver approves and reads, the reader reads.
+    "s04": ("sales.drafts.create", "sales.drafts.read", "sales.orders.approve"),
 }
 
 
@@ -314,6 +320,9 @@ SUITE_FIXTURE_OUTPUTS: dict[str, frozenset[str]] = {
     # FİNANS's Suites/Fin01 seed (#332): the company, the customer opened through the real Cari API and
     # its company account, and the two suite actors. No SQL, no gated writer, no Finance row.
     "fin01": frozenset({"companyId", "partyId", "companyAccountId", "proposerActor", "approverActor"}),
+    # SİPARİŞ's Suites/S04 seed: the three actors, the company and the one Preparing draft written through
+    # the gated Sales draft writer (C01E2eSalesDraftFixtureWriter).
+    "s04": frozenset({"preparerActor", "approverActor", "readerActor", "companyId", "draftId"}),
 }
 _OUTPUT_KEY = re.compile(r"^[a-z][A-Za-z0-9]{0,39}$")
 # Any non-nil lowercase GUID: seeded reference ids (companies, work centres) need not be RFC 4122.

@@ -1,5 +1,6 @@
 using GoymenERP.Modules.Identity.Infrastructure.Fixtures;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
+using GoymenERP.Modules.Sales.Infrastructure.Fixtures;
 
 namespace GoymenERP.Api.Shell;
 
@@ -48,6 +49,9 @@ internal static class C01E2eFixtureWriterActivation
         // u02 (#331): Product's code-group port (ÜRÜN's), behind the same gate.
         services.AddProductCodeGroupFixtureStore();
         services.AddScoped<C01E2eProductCodeGroupFixtureWriter>();
+        // s04 (SALES-A1 browser acceptance): Sales's draft port (SİPARİŞ's), behind the same gate.
+        services.AddSalesDraftFixtureStore();
+        services.AddScoped<C01E2eSalesDraftFixtureWriter>();
         return true;
     }
 
@@ -164,5 +168,40 @@ public sealed class C01E2eProductCodeGroupFixtureWriter
         }
 
         return _store.EnsureAsync(row, cancellationToken);
+    }
+}
+
+/// <summary>
+/// Writes ONE explicit synthetic Preparing sales order draft through Sales's fixture port (coordinator
+/// decision W1/C, s04). The sibling of <see cref="C01E2eProductCodeGroupFixtureWriter"/>: constructing it
+/// outside the gate fails even if someone registers it by hand, and the request's label must name its suite
+/// (SENTETIK browser-suite:&lt;suite&gt; …), which the port requires on the document number and every product
+/// name. Registered only by <see cref="C01E2eFixtureWriterActivation"/>; written by SİPARİŞ (s04), kept in this
+/// file by CARİ so the activation stays named in this file and Program.cs only.
+/// </summary>
+public sealed class C01E2eSalesDraftFixtureWriter
+{
+    public const string LabelPrefix = "SENTETIK browser-suite:";
+
+    private readonly ISalesDraftFixtureStore _store;
+
+    public C01E2eSalesDraftFixtureWriter(
+        IHostEnvironment environment,
+        IConfiguration configuration,
+        ISalesDraftFixtureStore store)
+    {
+        C01E2eFixtureWriterActivation.RequireGate(environment, configuration);
+        _store = store;
+    }
+
+    public Task<SalesDraftFixtureOutcome> EnsureAsync(SalesDraftFixtureRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (!request.Label.StartsWith(LabelPrefix, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"A fixture draft label must start '{LabelPrefix}'.");
+        }
+
+        return _store.EnsureAsync(request, cancellationToken);
     }
 }

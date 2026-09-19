@@ -148,6 +148,28 @@ describe('S-04 commands', () => {
     expect(fetch.salesCalls().filter((c) => c.method === 'POST')).toHaveLength(1)
   })
 
+  it('a 409 version conflict says the draft moved, never the product-version sentence, and re-reads the draft (S04-03)', async () => {
+    let detailReads = 0
+    const fetch = installFetch({
+      capabilities: ALL_SALES_WITH_APPROVE,
+      onDetail: () => {
+        detailReads += 1
+        return json(detail(detailReads === 1 ? 'PendingApproval' : 'Approved', detailReads === 1 ? PENDING : { ...PENDING, decidedBy: 'onay-1', decidedAtUtc: '2026-09-19T09:05:00Z' }))
+      },
+      onCommand: () => json({ status: 409, title: 'Conflict', code: 'version_conflict', errors: [{ field: 'expectedVersion', code: 'version_conflict' }] }, 409),
+    })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    await screen.findByRole('heading', { name: 'SO-2026-0001' })
+    await userEvent.click(screen.getByRole('button', { name: T.approval.reject }))
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toBe(`${T.approval.conflict} ${T.approval.versionConflict}`)
+    expect(alert.textContent).not.toContain('Ürün bilgisi')
+    // The conflict re-reads the draft: the screen now shows the state the API holds, and no command remains.
+    expect((await screen.findAllByText('Onaylı')).length).toBeGreaterThan(0)
+    expect(screen.queryByRole('button', { name: T.approval.approve })).toBeNull()
+    expect(fetch.salesCalls().filter((c) => c.method === 'POST')).toHaveLength(1)
+  })
+
   it('a 409 state conflict is a refusal with its text and re-reads the draft; an unknown outcome keeps its key for the retry', async () => {
     const pending = deferred<Response>()
     let commands = 0
